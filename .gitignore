@@ -1,0 +1,53 @@
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python environments, downloaded tools and caches
+.venv/
+venv/
+.tools/
+.uv-cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# JavaScript dependencies and build output (keep lockfiles)
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Local processes, logs, browser captures and temporary outputs
+.runtime/
+*.log
+*.pid
+.playwright-cli/
+playwright-report/
+test-results/
+/frontend/output/
+.impeccable/
+*.tmp
+*.bak
+/backend/2.2
+
+# Editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo

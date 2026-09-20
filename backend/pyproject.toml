@@ -1,0 +1,48 @@
+[project]
+name = "short-drama-backend"
+version = "0.1.0"
+description = "AI short drama backend"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "sqlalchemy>=2.0.36,<2.1",
+  "pymysql[rsa]>=1.1,<2",
+  "pydantic>=2.10,<3",
+  "pydantic-settings>=2.7,<3",
+  "cryptography>=44",
+  "minio>=7.2,<8",
+  "urllib3>=2.2,<3",
+  "httpx>=0.28,<1",
+  "celery>=5.4,<6",
+  "pillow>=11,<13",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "httpx>=0.28,<1", "ruff>=0.11,<1"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/short_drama"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+  "integration: requires an explicitly configured MySQL test database",
+  "storage_integration: opt-in MinIO cloud object roundtrip and cleanup",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".tools", ".uv-cache"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/short_drama/api/**/*.py" = ["B008"]
