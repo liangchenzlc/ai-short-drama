@@ -10,16 +10,16 @@ export function readProjects(): WebProject[] {
     const saved: unknown = JSON.parse(localStorage.getItem(projectsKey) ?? '[]');
     return Array.isArray(saved) ? saved.filter((p): p is WebProject =>
       typeof p?.projectId === 'string' && typeof p.name === 'string' &&
-      ['16:9', '9:16'].includes(p.aspect) && typeof p.targetMs === 'number') : [];
+      ['16:9', '9:16'].includes(p.aspect)) : [];
   } catch { return []; }
 }
 export function writeProjects(items: WebProject[]) { localStorage.setItem(projectsKey, JSON.stringify(items)); }
 export function seedDemo() {
   if (localStorage.getItem(projectsKey) !== null) return;
   const projects: WebProject[] = [
-    { projectId: 'demo-rain', name: '雨夜借光', aspect: '16:9', targetMs: 60000, lastOpenedAt: '2026-09-18T08:00:00Z' },
-    { projectId: 'demo-summer', name: '夏日来信', aspect: '9:16', targetMs: 90000, lastOpenedAt: '2026-09-17T08:00:00Z' },
-    { projectId: 'demo-city', name: '城市的另一面', aspect: '16:9', targetMs: 120000, lastOpenedAt: '2026-09-16T08:00:00Z' },
+    { projectId: 'demo-rain', name: '雨夜借光', aspect: '16:9', lastOpenedAt: '2026-09-18T08:00:00Z' },
+    { projectId: 'demo-summer', name: '夏日来信', aspect: '9:16', lastOpenedAt: '2026-09-17T08:00:00Z' },
+    { projectId: 'demo-city', name: '城市的另一面', aspect: '16:9', lastOpenedAt: '2026-09-16T08:00:00Z' },
   ];
   const synopses = [
     '一场突如其来的雨，让调查员林小雨走进旧城深处。她借来一盏铜灯，循着一张旧地图寻找失踪的朋友，却发现灯的主人早已知道答案。',

@@ -1,7 +1,7 @@
+import { EpisodeModelSelect } from "../../../features/projects/EpisodeModelSelect";
 import { Button } from "antd";
 import React from "react";
 import {
-  DEMO_MODELS,
   sampleAssets,
 } from "../../../features/projects/episode-demo";
 import {
@@ -15,11 +15,13 @@ export function ScriptStage({
   readOnly,
   onChange,
   projectAspect,
+  visualReadOnly = false,
 }: {
   value: EpisodeWorkflow;
   readOnly: boolean;
   onChange: (next: EpisodeWorkflow) => void;
   projectAspect?: "16:9" | "9:16";
+  visualReadOnly?: boolean;
 }) {
   const currentSnapshot =
     value.reviews.script === "confirmed" &&
@@ -125,7 +127,7 @@ export function ScriptStage({
           画幅比例
           <select
             value={value.aspect}
-            disabled={readOnly}
+            disabled={readOnly || visualReadOnly}
             onChange={(event) =>
               changeVisual({ aspect: event.target.value as "16:9" | "9:16" })
             }
@@ -138,43 +140,23 @@ export function ScriptStage({
           视觉风格
           <input
             value={value.style}
-            readOnly={readOnly}
+            readOnly={readOnly || visualReadOnly}
             placeholder="例如：写实、国风"
             onChange={(event) => changeVisual({ style: event.target.value })}
           />
         </label>
         <label>
           素材分析模型
-          <select
+          <EpisodeModelSelect
+            kind="text"
+            label="素材分析模型"
             value={value.models.analysis}
             disabled={readOnly}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                models: { ...value.models, analysis: event.target.value },
-              })
-            }
-          >
-            <option
-              value={value.models.analysis}
-              hidden={
-                !DEMO_MODELS.analysis.some(
-                  (item) => item.value === value.models.analysis,
-                )
-              }
-            >
-              {DEMO_MODELS.analysis.find((item) => item.value === value.models.analysis)?.label ?? value.models.analysis}
-            </option>
-            {DEMO_MODELS.analysis
-              .filter((item) => item.value !== value.models.analysis)
-              .map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-          </select>
+            onChange={(id) => onChange({ ...value, models: { ...value.models, analysis: id } })}
+          />
         </label>
       </div>
+      {visualReadOnly && <p className="episode-help">本集画幅和风格已保存至服务端；可返回项目详情，通过「编辑分集」修改。</p>}
       {projectAspect && projectAspect !== value.aspect && (
         <p className="episode-help">
           本集画幅与项目设置不同；后续画面需保持本集画幅一致。

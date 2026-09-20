@@ -29,9 +29,7 @@ def test_generation_source_history_candidates_and_explicit_adoption(db_session):
             "base_url": "https://ark.cn-beijing.volces.com/api/v3",
         }
     )
-    project = ProjectService(db_session).create(
-        {"name": "Source", "aspect": "16:9", "target_ms": 1000}
-    )
+    project = ProjectService(db_session).create({"name": "Source", "aspect": "16:9"})
     episode = EpisodeService(db_session).create(
         {"project_id": project.id, "position": 1, "title": "E", "aspect": "16:9"}
     )

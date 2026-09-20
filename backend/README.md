@@ -25,7 +25,7 @@ uv run uvicorn short_drama.main:app --reload --host 127.0.0.1 --port 8000
 - MinIO 测试：<http://127.0.0.1:8000/api/v1/test/minio>，只读检查图片和视频 bucket；不可用或缺配置返回 503。
 - Swagger：<http://127.0.0.1:8000/docs>。
 
-应用启动不会建表或修改表。原有 17 张表见 [基础建表脚本](../docs/数据库模型/schema.mysql8.sql)；模型生成新增三表与配置缓存字段见 [增量脚本](../docs/数据库模型/migrations/2026-09-20-ai-generation/README.md)。用户已完成本次增量建表，不要重复执行。
+应用启动不会建表或修改表。新数据库只需执行[完整建表脚本](../docs/数据库模型/schema.mysql8.sql)，包含当前全部 20 张表、模型能力缓存及五种任务状态，项目已移除目标时长。脚本仅含 CREATE TABLE；执行前选定空数据库，并将连接设为 utf8mb4、UTC 和严格 SQL 模式。历史增量脚本保留供旧库升级使用，不应在完整建表后再次执行；当前业务库已完成相关迁移。
 
 ## 目录与事务
 
@@ -46,7 +46,30 @@ src/short_drama/
 
 service 每次调用拥有完整事务，成功提交，失败回滚；调用时应传入尚未开启事务的 Session。多个 DAO 在同一业务事务中共享 Session。服务返回已物化的 Read 模型，离开事务后不触发延迟加载。查询列表返回 `items/total/offset/limit`，limit 为 1–500。
 
-HTTP 已开放上述测试接口、AI 配置、异步生成和媒体资产管理；其余业务 CRUD 仍通过 Python service 提供。尚未接入用户认证和业务上传接口，生成资产不自动删除。
+HTTP 已开放上述测试接口、AI 配置、异步生成、媒体资产管理及项目/分集增删改查；其余业务 CRUD 仍通过 Python service 提供。尚未接入用户认证和业务上传接口，生成资产不自动删除。
+
+## 项目与分集管理
+
+- `POST /api/v1/projects`：`name/aspect` 必填，`synopsis/style` 可选；返回 201。
+- `POST /api/v1/projects/{project_id}/episodes`：`title` 必填，`synopsis/aspect/style` 可选；返回 201。省略画幅和风格时继承项目，显式空风格表示清空。排序由服务端在项目行锁内分配。
+- ID 返回字符串；时间为 UTC（Z）。拒绝客户端归属、排序、审计字段及已移除的 `target_ms`。创建不会生成示例或触发 AI，POST 不自动去重。
+- 现有数据库须先执行[目标时长移除迁移](../docs/数据库模型/migrations/2026-09-20-project-creation/README.md)，应用不自动迁移。
+- [完整契约与事务规则](../docs/superpowers/specs/2026-09-20-project-creation-api.md)。网页项目和分集基本信息已接入这些接口，制作内容仍为本地演示。
+
+| 方法与路径（前缀 `/api/v1`） | 用途 |
+| --- | --- |
+| `GET /projects?offset=0&limit=20&q=名称` | 项目分页，按最近打开时间及 ID 倒序，返回分集数量 |
+| `GET /projects/{id}` | 项目详情 |
+| `PATCH /projects/{id}` | 修改名称、梗概、风格、画幅 |
+| `POST /projects/{id}/open` | 记录最近打开时间，不改变项目修改时间 |
+| `DELETE /projects/{id}` | 删除项目，成功返回 204 |
+| `GET /projects/{id}/episodes?offset=0&limit=20` | 分集分页，按 position、ID 排序 |
+| `GET /projects/{id}/episodes/{episode_id}` | 分集详情，额外返回按排序计算的 episode_number |
+| `PATCH /projects/{id}/episodes/{episode_id}` | 修改标题、简介、独立画幅和风格 |
+| `DELETE /projects/{id}/episodes/{episode_id}` | 删除分集，成功返回 204 |
+
+所有分集读写均校验路径归属，不属于该项目的分集返回 404。分页 limit 为 1–100。
+删除沿用外键 RESTRICT：仍有关联分集、素材或制作内容时返回 409，不隐式级联删除。
 
 ## 异步生成启动
 
@@ -116,7 +139,6 @@ try:
             ProjectCreate(
                 name="新短剧",
                 aspect="9:16",
-                target_ms=60000,
             )
         )
         projects.update(project.id, {"synopsis": "故事梗概"})
@@ -185,7 +207,7 @@ uv run python scripts/run_integration.py
 
 脚本只复用服务器连接凭据，在该服务器创建随机名称 `short_drama_<uuid>_test` 的临时库，运行原始建表 SQL 和测试，最后仅删除此次创建的临时库。需要 CREATE DATABASE / DROP DATABASE 权限，不会写入或清空应用数据库。也可通过环境变量 `TEST_DATABASE_URL` 指定独立测试服务器（协议 mysql+pymysql，库名以 `_test` 结尾），直接运行 `uv run pytest tests/integration`。
 
-覆盖：17 表字段与约束映射、输入边界、雪花 ID 并发、DAO 事务归属、CRUD、审计、外键回滚、排序、AI 配置加密/版本/软删除、剧本确认、媒体回收恢复、来源批次及并发确认。MySQL 行锁、生成列和唯一约束均使用真实 MySQL 验证。
+覆盖：20 表字段与约束映射、输入边界、雪花 ID 并发、DAO 事务归属、CRUD、审计、外键回滚、排序、AI 配置加密/版本/软删除、剧本确认、媒体回收恢复、来源批次及并发确认。MySQL 行锁、生成列和唯一约束均使用真实 MySQL 验证；测试库仅执行完整建表脚本初始化。
 
 配置中的数据库口令与主密钥只放 `.env`；`.env`、虚拟环境和本地工具均被 `.gitignore` 排除。
 

@@ -18,7 +18,6 @@ def test_concurrent_confirmation_keeps_one_confirmed_script(db_session, mysql_en
         {
             "name": "Concurrent",
             "aspect": "16:9",
-            "target_ms": 1000,
         }
     )
     episode = EpisodeService(db_session).create(
@@ -68,7 +67,6 @@ def test_concurrent_first_media_create_keeps_one_slot(db_session, mysql_engine):
         {
             "name": "Concurrent media",
             "aspect": "16:9",
-            "target_ms": 1000,
         }
     )
     episode = EpisodeService(db_session).create(

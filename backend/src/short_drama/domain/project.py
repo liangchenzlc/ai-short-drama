@@ -8,7 +8,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.mysql import (
     BIGINT,
     DATETIME,
-    INTEGER,
     MEDIUMTEXT,
     VARCHAR,
 )
@@ -35,9 +34,6 @@ class Project(Base):
         VARCHAR(255), nullable=False, server_default=text("''"), comment="新分集默认风格"
     )
     aspect: Mapped[str] = mapped_column(VARCHAR(8), nullable=False, comment="新分集默认画幅")
-    target_ms: Mapped[int] = mapped_column(
-        INTEGER(unsigned=True), nullable=False, comment="项目目标时长，单位毫秒"
-    )
     last_opened_at: Mapped[datetime | None] = mapped_column(
         DATETIME(fsp=6), nullable=True, server_default=text("NULL"), comment="最近打开时间"
     )
@@ -74,7 +70,6 @@ class Project(Base):
         ),
         CheckConstraint("CHAR_LENGTH(TRIM(`name`)) > 0", name="ck_projects_name"),
         CheckConstraint("`aspect` IN ('16:9', '9:16')", name="ck_projects_aspect"),
-        CheckConstraint("`target_ms` BETWEEN 1000 AND 3600000", name="ck_projects_target"),
         {
             "mysql_engine": "InnoDB",
             "mysql_row_format": "DYNAMIC",

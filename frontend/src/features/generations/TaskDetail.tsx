@@ -96,7 +96,7 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
     </Drawer>
     <Modal open={!!action} title={action === 'retry' ? '确认重新生成' : action === 'cancel' ? '确认请求取消' : '确认安全恢复'} onCancel={() => !busy && setAction(null)} onOk={perform} confirmLoading={busy} closable={!busy} maskClosable={!busy} keyboard={!busy} cancelButtonProps={{ disabled: busy }} okText={action === 'retry' ? '新建生成任务' : action === 'cancel' ? '提交取消请求' : '恢复任务'}>
       <p>{action === 'retry' ? '将创建一个新任务，重新执行整次生成，可能再次产生费用。原任务和已保存资产会保留。' : action === 'cancel' ? '已发送给模型服务的请求可能无法取消，也可能已产生费用。任务状态会在确认后更新。' : '服务端将根据已保存的调用状态恢复查询、提交或结果保存。受理不明的请求不会被盲目重新提交。'}</p>
-      {action === 'retry' && detail && <div className="generation-retry-config"><label>重新选择模型配置（选填）</label><ConfigSelect kind={detail.service_type} value={configId} onChange={(value) => { setConfigId(value); clearAttempt(`retry:${id}`, attemptStorage()); }} disabled={busy} /><p className="generation-hint">留空沿用原任务配置；配置已更改或停用时请选择可用配置。</p></div>}
+      {action === 'retry' && detail && <div className="generation-retry-config"><label>重新选择模型配置（选填）</label><ConfigSelect kind={detail.service_type} autoDefault={false} value={configId} onChange={(value) => { setConfigId(value); clearAttempt(`retry:${id}`, attemptStorage()); }} disabled={busy} /><p className="generation-hint">留空沿用原任务配置；配置已更改或停用时请选择可用配置。</p></div>}
       {actionError && <Alert type="error" message={actionError} />}
     </Modal>
   </>;

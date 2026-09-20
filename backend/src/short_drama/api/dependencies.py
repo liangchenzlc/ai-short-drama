@@ -12,6 +12,18 @@ def get_session(request: Request) -> Iterator[Session]:
         yield session
 
 
+def get_project_service(session: Session = Depends(get_session)):
+    from short_drama.service.project_service import ProjectService
+
+    return ProjectService(session)
+
+
+def get_episode_service(session: Session = Depends(get_session)):
+    from short_drama.service.episode_service import EpisodeService
+
+    return EpisodeService(session)
+
+
 def get_storage_service(request: Request) -> StorageService:
     return StorageService(request.app.state.storage, request.app.state.settings)
 

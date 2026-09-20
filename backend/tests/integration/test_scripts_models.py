@@ -16,9 +16,7 @@ def seed(session):
     from short_drama.service.episode_service import EpisodeService
     from short_drama.service.project_service import ProjectService
 
-    project = ProjectService(session).create(
-        {"name": "Project", "aspect": "16:9", "target_ms": 1000}
-    )
+    project = ProjectService(session).create({"name": "Project", "aspect": "16:9"})
     episode = EpisodeService(session).create(
         {"project_id": project.id, "title": "First", "position": 1, "aspect": "16:9"}
     )

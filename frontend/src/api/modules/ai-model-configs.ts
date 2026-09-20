@@ -1,6 +1,7 @@
 import { http } from '../http';
 import type { AiModelConfigDto, AiModelConfigCreateDto, AiModelConfigUpdateDto, AiModelConfigListDto, ModelDiscoveryDto, ModelDiscoveryRequestDto } from '../types/ai-model-configs';
 import type { AiConfig, ConfigDraft, ServiceType } from '../../features/ai-config/config-model';
+import { notifyAiConfigsChanged } from '../../features/ai-config/config-events';
 
 const path = '/ai-model-configs';
 export function mapAiModelConfig(dto: AiModelConfigDto): AiConfig {
@@ -28,14 +29,23 @@ export const aiModelConfigs = {
   async get(id: string) { return mapAiModelConfig((await http.get<AiModelConfigDto>(`${path}/${id}`)).data); },
   async create(draft: ConfigDraft) {
     const body: AiModelConfigCreateDto = { ...draftFields(draft), service_type: draft.serviceType };
-    return mapAiModelConfig((await http.post<AiModelConfigDto>(path, body)).data);
+    const result = mapAiModelConfig((await http.post<AiModelConfigDto>(path, body)).data);
+    notifyAiConfigsChanged();
+    return result;
   },
   async update(id: string, rowVersion: string, draft: ConfigDraft) {
     const body: AiModelConfigUpdateDto = { ...draftFields(draft), row_version: rowVersion };
-    return mapAiModelConfig((await http.patch<AiModelConfigDto>(`${path}/${id}`, body)).data);
+    const result = mapAiModelConfig((await http.patch<AiModelConfigDto>(`${path}/${id}`, body)).data);
+    notifyAiConfigsChanged();
+    return result;
   },
-  async remove(id: string, rowVersion: string) { await http.delete(`${path}/${id}`, { params: { row_version: rowVersion } }); },
+  async remove(id: string, rowVersion: string) {
+    await http.delete(`${path}/${id}`, { params: { row_version: rowVersion } });
+    notifyAiConfigsChanged();
+  },
   async setDefault(id: string, rowVersion: string) {
-    return mapAiModelConfig((await http.put<AiModelConfigDto>(`${path}/${id}/default`, { row_version: rowVersion })).data);
+    const result = mapAiModelConfig((await http.put<AiModelConfigDto>(`${path}/${id}/default`, { row_version: rowVersion })).data);
+    notifyAiConfigsChanged();
+    return result;
   },
 };

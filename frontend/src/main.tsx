@@ -8,8 +8,6 @@ import { BrowserRouter } from 'react-router-dom';
 import "./app/styles.css";
 import "./app/studio.css";
 import "./app/web.css";
-import { seedDemo } from "./data/demo";
-seedDemo();
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ConfigProvider

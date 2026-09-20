@@ -326,3 +326,23 @@ input, textarea { caret-color: var(--accent); }
 .model-discovery-input .model-dropdown-toggle { display: grid; place-items: center; min-height: 28px; width: 28px; padding: 0; border: 0; background: transparent; box-shadow: none; }
 .model-discovery-input .model-dropdown-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .model-discovery-hint { margin: 0; color: var(--text-muted, #68716d); font-size: 12px; line-height: 1.6; }
+
+/* Server-backed project and episode management. */
+.project-search { max-width: 420px; margin-bottom: 20px; }
+.project-settings-form { display: grid; gap: 14px; }
+.project-settings-form label { display: grid; gap: 7px; min-width: 0; }
+.project-settings-form .form-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(140px, 1fr); gap: 16px; }
+.project-settings-form .ant-select, .studio-form .ant-select, .project-create-form .ant-select { width: 100%; }
+.project-settings-form p { margin: 0; }
+.project-form-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.project-form-actions [role="status"] { color: var(--sub); font-size: 13px; }
+.episode-item { display: flex; flex-direction: column; min-width: 0; }
+.episode-item .episode-card { flex: 1; width: 100%; text-align: left; }
+.episode-item .episode-card strong { overflow-wrap: anywhere; }
+.episode-item-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 0 12px; }
+.project-overview .ant-pagination, .projects-home > .ant-pagination { margin-top: 16px; }
+.ui-dialog > p { overflow-wrap: anywhere; }
+@media (max-width: 680px) {
+  .project-settings-form .form-row { grid-template-columns: minmax(0, 1fr); }
+  .overview-heading { flex-wrap: wrap; gap: 12px; }
+}

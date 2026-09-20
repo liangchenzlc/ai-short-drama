@@ -62,13 +62,11 @@ def test_ai_secrets_and_version_controls():
     [
         {"name": " "},
         {"name": "x" * 121},
-        {"target_ms": 999},
-        {"target_ms": 3600001},
         {"aspect": "1:1"},
     ],
 )
 def test_project_bounds(values):
-    data = {"name": "project", "target_ms": 1000, "aspect": "16:9"} | values
+    data = {"name": "project", "aspect": "16:9"} | values
     with pytest.raises(ValidationError):
         schemas.ProjectCreate(**data)
 

@@ -1,8 +1,8 @@
 # MySQL 8 数据表设计
 
-依据：[数据模型.md](./数据模型.md)。本文件是现有 17 个逻辑模型的 MySQL 物理设计，保留原逻辑文档；不增加用户、工作流槽位、分集模型选择或生成任务表。
+依据：[数据模型.md](./数据模型.md)及已实现的模型生成流程。本文件覆盖原有 17 个业务模型和新增的任务、调用记录、媒体资产三表，当前共 20 张表；不增加用户、工作流槽位或分集模型选择表。
 
-建表脚本：[schema.mysql8.sql](./schema.mysql8.sql)。会话初始化和全部建表 SQL 统一维护在该文件中。
+建表脚本：[schema.mysql8.sql](./schema.mysql8.sql)，统一维护全部 20 张表的最终 CREATE TABLE 定义，已合并配置能力缓存、任务五状态及移除项目目标时长的变更。新库只执行此文件；连接需预先使用 utf8mb4、UTC 和严格 SQL 模式。历史迁移仅供旧库升级，不与全量建表叠加执行。
 
 ## 设计约定
 
@@ -41,7 +41,6 @@
 | synopsis | MEDIUMTEXT | 否 | ('') | 故事梗概 |
 | style | VARCHAR(255) | 否 | '' | 新分集默认风格 |
 | aspect | VARCHAR(8) | 否 | 无，写入时必填 | 新分集默认画幅 |
-| target_ms | INT UNSIGNED | 否 | 无，写入时必填 | 项目目标时长，单位毫秒 |
 | last_opened_at | DATETIME(6) | 是 | NULL | 最近打开时间 |
 | created_at | DATETIME(6) | 是 | CURRENT_TIMESTAMP(6) | 创建时间；正常写入非空，历史未知可显式NULL |
 | updated_at | DATETIME(6) | 是 | CURRENT_TIMESTAMP(6) | 最近修改时间；正常写入非空，历史未知可显式NULL |
@@ -55,7 +54,6 @@
 | CHECK ck_projects_audit_time | 见建表脚本 | 时间均已知时，修改时间不得早于创建时间 |
 | CHECK ck_projects_name | 见建表脚本 | 名称非空 |
 | CHECK ck_projects_aspect | 见建表脚本 | 项目画幅 |
-| CHECK ck_projects_target | 见建表脚本 | 项目时长范围 |
 
 ## 2. AI模型配置 — ai_model_configs
 
@@ -70,6 +68,7 @@
 | provider | VARCHAR(120) COLLATE utf8mb4_0900_bin | 否 | 无，写入时必填 | 供应商名称 |
 | base_url | VARCHAR(2048) | 否 | '' | 服务基础地址 |
 | apikey | TEXT | 是 | NULL | 加密密钥信封（含算法/密钥版本/随机数/认证标签/密文的编码串），不存明文 |
+| capability_cache | JSON | 是 | NULL | 系统内部协议与能力缓存，不由用户编辑 |
 | enabled | TINYINT UNSIGNED | 否 | 1 | 是否允许用于新操作 |
 | is_deleted | TINYINT UNSIGNED | 否 | 0 | 是否逻辑删除 |
 | is_default | TINYINT UNSIGNED | 否 | 0 | 是否本类型默认配置 |
@@ -543,8 +542,20 @@
 - 保留 global_assets 作为独立收录的全局库，尚不改成所有 assets 的汇总查询。
 - AI 配置的 row_version 沿用现有逻辑模型；是否删除仍待确认。项目、分集不重新增加版本字段。
 - 不增加视频输入图片字段、输入快照或历史版本。生成记录能追溯来源 ID，不能还原后来被编辑过的历史正文。
-- 密钥加密、生成任务、待确认结果暂存、存储清理协调和用户系统没有在本文件扩展为新业务表。
+- 生成任务、调用记录与生成媒体资产已纳入完整建表脚本，见下文补充；密钥加密仍在应用层，存储清理协调和用户系统未增加独立业务表。
 
 ## 核对与执行范围
+
+当前全量建表入口为 `schema.mysql8.sql`，包含 20 张表，只有 CREATE TABLE 语句。
+新增三表的字段、默认值、索引、检查约束与外键以该 SQL 为准：
+
+| 表 | 用途与关键约束 |
+| --- | --- |
+| async_tasks | 模型生成任务及当前动作投递；idempotency_key 唯一；任务状态为 queued/running/succeeded/failed/cancelled；保留重试来源、消息版本、租约、取消标记与时间约束 |
+| ai_generation_records | 调用配置及请求快照、供应商任务标识、文本结果与错误；(task_id, call_no) 唯一；关联任务和模型配置；内部调用状态仍保留 unknown 作为受理不明证据 |
+| media_assets | 生成图片/视频资产；(record_id, output_index) 和 media_id 分别唯一；关联调用记录及媒体文件；保留名称与 row_version |
+
+`ai_model_configs.capability_cache` 已直接包含在建表定义中，项目目标时长不再存在。
+历史迁移脚本继续保留作为旧库升级记录，不参与新库初始化。
 
 已按逻辑模型进行字段覆盖、外键目标、建表依赖、索引字段与关键唯一约束核对。2026-09-18 后端验收在用户指定云服务器的独立临时测试库中，使用 MySQL 8.4.11 执行完整建表脚本，并通过 CRUD、外键回滚、条件唯一、回收恢复、批次事务及并发确认测试。测试库执行后清理，现有 ai_short_drama 的业务数据和表结构未修改；现有自增属性与应用显式写入雪花 ID 兼容，新建表脚本已取消自增。其他 MySQL 版本部署时仍需运行集成测试。

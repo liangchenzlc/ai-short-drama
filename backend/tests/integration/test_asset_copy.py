@@ -20,9 +20,7 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def shared_asset(db_session):
-    project = ProjectService(db_session).create(
-        {"name": "copy project", "aspect": "16:9", "target_ms": 1000}
-    )
+    project = ProjectService(db_session).create({"name": "copy project", "aspect": "16:9"})
     episode = EpisodeService(db_session).create(
         {"project_id": project.id, "title": "copy episode", "aspect": "16:9", "position": 1}
     )

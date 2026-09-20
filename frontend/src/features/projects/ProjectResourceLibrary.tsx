@@ -71,7 +71,7 @@ export function ProjectResourceLibrary({ projectId }: { projectId: string }) {
       <div className="overview-heading">
         <div>
           <h2 id="project-resources-title">资源库</h2>
-          <p>本剧使用的角色、场景与道具</p>
+          <p>本剧使用的角色、场景与道具 · 本地演示，暂未同步服务端</p>
         </div>
       </div>
       <div className="resource-toolbar">

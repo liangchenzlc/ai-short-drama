@@ -1,6 +1,6 @@
+import { EpisodeModelSelect } from "../../../features/projects/EpisodeModelSelect";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  DEMO_MODELS,
   sampleMotion,
 } from "../../../features/projects/episode-demo";
 import {
@@ -384,27 +384,13 @@ export function VideoStage({
       <div className="episode-stage-controls">
         <label>
           视频模型
-          <select
+          <EpisodeModelSelect
+            kind="video"
+            label="视频模型"
             value={value.models.video}
             disabled={readOnly}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                models: { ...value.models, video: event.target.value },
-              })
-            }
-          >
-            {!DEMO_MODELS.video.some(
-              (model) => model.value === value.models.video,
-            ) && (
-              <option value={value.models.video}>{value.models.video}</option>
-            )}
-            {DEMO_MODELS.video.map((model) => (
-              <option key={model.value} value={model.value}>
-                {model.label}
-              </option>
-            ))}
-          </select>
+            onChange={(id) => onChange({ ...value, models: { ...value.models, video: id } })}
+          />
         </label>
         <button
           type="button"

@@ -19,7 +19,7 @@ def test_services_reject_caller_owned_transaction():
 def test_constructed_schema_does_not_bypass_validation():
     from short_drama.service.project_service import ProjectService
 
-    forged = ProjectCreate.model_construct(name="", aspect="invalid", target_ms=-1)
+    forged = ProjectCreate.model_construct(name="", aspect="invalid")
     with Session() as session, pytest.raises(ValidationError):
         ProjectService(session).create(forged)
 
@@ -44,6 +44,4 @@ def test_service_rejects_forged_audit_identity():
     from short_drama.service.project_service import ProjectService
 
     with Session() as session, pytest.raises(ValidationError):
-        ProjectService(session).create(
-            {"name": "test", "aspect": "16:9", "target_ms": 1000, "created_by": 99}
-        )
+        ProjectService(session).create({"name": "test", "aspect": "16:9", "created_by": 99})

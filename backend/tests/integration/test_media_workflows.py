@@ -10,7 +10,7 @@ def media_context(session):
     from short_drama.service.project_service import ProjectService
     from short_drama.service.shot_script_service import ShotScriptService
 
-    project = ProjectService(session).create({"name": "Media", "aspect": "16:9", "target_ms": 1000})
+    project = ProjectService(session).create({"name": "Media", "aspect": "16:9"})
     episode = EpisodeService(session).create(
         {"project_id": project.id, "position": 1, "title": "One", "aspect": "16:9"}
     )

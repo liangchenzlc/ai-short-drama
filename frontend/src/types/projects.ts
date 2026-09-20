@@ -6,7 +6,6 @@ export interface RecentProject {
 
 export interface WebProject extends RecentProject {
   aspect: '16:9' | '9:16';
-  targetMs: number;
 }
 
 export interface ProjectSession {

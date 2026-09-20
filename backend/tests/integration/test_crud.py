@@ -40,7 +40,7 @@ def services(session):
 
 def seed(session):
     svc = services(session)
-    project = svc["Project"].create({"name": "project", "aspect": "16:9", "target_ms": 1000})
+    project = svc["Project"].create({"name": "project", "aspect": "16:9"})
     episode = svc["Episode"].create(
         {"project_id": project.id, "position": 1, "title": "episode", "aspect": "16:9"}
     )
@@ -146,9 +146,7 @@ def test_large_ids_serialize_without_precision_loss(db_session):
     large_id = 2**63 + 7
     with db_session.begin():
         db_session.execute(
-            text(
-                "INSERT INTO projects (id,name,aspect,target_ms) VALUES (:id,'large','16:9',1000)"
-            ),
+            text("INSERT INTO projects (id,name,aspect) VALUES (:id,'large','16:9')"),
             {"id": large_id},
         )
     row = services(db_session)["Project"].get(large_id)
@@ -173,7 +171,7 @@ def test_dao_flush_does_not_commit_caller_transaction(db_session):
     dao = ProjectDAO(db_session)
     with pytest.raises(RuntimeError, match="rollback"):
         with db_session.begin():
-            row = dao.create({"name": "temporary", "aspect": "16:9", "target_ms": 1000})
+            row = dao.create({"name": "temporary", "aspect": "16:9"})
             assert row.id > 2**53
             raise RuntimeError("rollback")
     assert services(db_session)["Project"].list().total == 0

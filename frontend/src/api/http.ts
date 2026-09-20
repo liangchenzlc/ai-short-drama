@@ -17,6 +17,7 @@ const fieldLabels: Record<string, string> = {
   'parameters.aspect': '画面比例', 'parameters.resolution': '分辨率', 'parameters.count': '候选数量',
   'parameters.duration_ms': '视频时长', 'parameters.max_output_tokens': '最大输出 Token', 'parameters.temperature': '随机程度',
   'source.shot_id': '来源分镜 ID', 'target.id': '目标 ID', expected_media_id: '当前媒体 ID',
+  title: '分集标题', synopsis: '梗概', aspect: '画幅', style: '风格',
 };
 const discoveryMessages: Record<string, string> = {
   model_discovery_auth: '模型服务认证失败，请检查 API 密钥及其权限。',

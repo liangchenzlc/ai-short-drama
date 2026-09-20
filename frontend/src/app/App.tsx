@@ -42,7 +42,7 @@ function StudioLayout() {
     <a className="skip-link" href="#main">跳到主内容</a>
     {!detail && <Sidebar page={page} kind={kind} onSelect={(next, nextKind) => navigate(next === 'projects' ? '/projects' : next === 'ai' ? '/ai' : next === 'tasks' ? '/tasks/text' : next === 'media-library' ? '/media-library/image' : `/assets/${nextKind ?? kind}`)} />}
     <div className="studio-content">
-      {!detail && <header className="studio-topbar"><span>创作空间 <span className="topbar-divider">/</span> {pageLabels[page]}</span><span className="connection ready"><i aria-hidden="true" />{page === 'ai' || page === 'tasks' || page === 'media-library' ? '服务端工作区' : '本地演示'}<span className="workspace-avatar" aria-label="个人工作区">创</span></span></header>}
+      {!detail && <header className="studio-topbar"><span>创作空间 <span className="topbar-divider">/</span> {pageLabels[page]}</span><span className="connection ready"><i aria-hidden="true" />{page === 'assets' ? '本地演示' : '服务端工作区'}<span className="workspace-avatar" aria-label="个人工作区">创</span></span></header>}
       <main id="main" tabIndex={-1} className="studio-main"><Outlet /></main>
     </div>
   </div>;

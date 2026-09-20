@@ -1,52 +1,67 @@
-import { useState, type FormEvent } from 'react';
-import { Button, Input, Select } from 'antd';
-import { Dialog } from '../../components/ui/Dialog';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Alert, Button, Input, Pagination, Select, Spin } from 'antd';
 import { useNavigate } from 'react-router-dom';
+import { Dialog } from '../../components/ui/Dialog';
 import { projectPath, episodePath } from '../../app/paths';
 import { ProjectList } from '../../features/projects/ProjectList';
-import { readProjects, writeProjects } from '../../data/demo';
+import { projectsApi, projectError, type RemoteProject } from '../../api/modules/projects';
+import { isCancelled } from '../../api/http';
 import { Icon } from '../../components/ui/Icon';
 
 export function ProjectsPage() {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState(readProjects);
+  const [projects, setProjects] = useState<RemoteProject[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [query, setQuery] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [creating, setCreating] = useState(false);
-  const [opening, setOpening] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
   const [aspect, setAspect] = useState<'16:9' | '9:16'>('16:9');
-  const [seconds, setSeconds] = useState('60');
-  const [query, setQuery] = useState('');
   const [error, setError] = useState('');
-  function open(id: string) { navigate(projectPath(id)); }
-  function create(event: FormEvent) {
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true); setLoadError('');
+    void projectsApi.list(offset, query, controller.signal).then((page) => {
+      if (controller.signal.aborted) return;
+      if (!page.items.length && offset > 0 && page.total <= offset) {
+        setOffset(Math.max(0, Math.ceil(page.total / 20) - 1) * 20); return;
+      }
+      setProjects(page.items); setTotal(page.total);
+    }).catch((cause) => { if (!isCancelled(cause) && !controller.signal.aborted) setLoadError(projectError(cause)); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [offset, query, revision]);
+  async function create(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     if (!name.trim()) { setError('请输入项目名称。'); return; }
-    if (!Number.isInteger(Number(seconds)) || Number(seconds) < 1 || Number(seconds) > 3600) { setError('目标时长请输入 1–3600 的整数。'); return; }
-    const project = { projectId: crypto.randomUUID(), name: name.trim(), aspect, targetMs: Number(seconds) * 1000, lastOpenedAt: new Date().toISOString() };
+    setBusy(true); setError('');
     try {
-      const next = [project, ...projects]; writeProjects(next); setProjects(next);
+      const project = await projectsApi.create({ name: name.trim(), aspect, synopsis: '', style: '' });
       navigate(projectPath(project.projectId));
-    } catch { setError('项目未能保存，请检查浏览器存储空间后重试。'); }
+    } catch (cause) { setError(projectError(cause, 'create')); }
+    finally { setBusy(false); }
   }
   return <section className="projects-home">
-    <>
-      <div className="studio-page-head"><div><h1>项目管理</h1><p>管理你的故事、分集与创作素材。</p></div>
-      <div className="project-actions"><Button onClick={() => setOpening(true)}>打开项目</Button><Button type="primary" icon={<Icon name="plus" size={16} />} onClick={() => { setError(''); setCreating(true); }}>新建项目</Button></div></div>
-      <ProjectList recent={projects} disabled={false} onOpen={open} onContinue={(id, item) => navigate(episodePath(id, item.id))} />
-    </>
-    {creating && <Dialog title="新建项目" className="project-create-dialog" onClose={() => setCreating(false)}>
+    <div className="studio-page-head"><div><h1>项目管理</h1><p>管理你的故事、分集与创作素材。</p></div>
+      <div className="project-actions"><Button onClick={() => setRevision((v) => v + 1)} disabled={loading}>刷新</Button><Button type="primary" icon={<Icon name="plus" size={16} />} onClick={() => { setName(''); setError(''); setCreating(true); }}>新建项目</Button></div></div>
+    <Input.Search className="project-search" aria-label="搜索项目名称" placeholder="搜索项目名称" maxLength={120} allowClear onSearch={(value) => { setQuery(value.trim()); setOffset(0); }} />
+    {loadError ? <Alert type="error" showIcon message={loadError} action={<Button onClick={() => setRevision((v) => v + 1)}>重试</Button>} />
+      : loading ? <div className="studio-empty" role="status"><Spin /> 正在加载项目…</div>
+      : <><ProjectList recent={projects} total={total} filtered={!!query} disabled={busy} onOpen={(id) => navigate(projectPath(id))} onContinue={(id, item) => navigate(episodePath(id, item.id))} />
+        <Pagination current={offset / 20 + 1} pageSize={20} total={total} hideOnSinglePage showSizeChanger={false} onChange={(page) => setOffset((page - 1) * 20)} /></>}
+    {creating && <Dialog title="新建项目" className="project-create-dialog" canClose={!busy} onClose={() => setCreating(false)}>
       <form className="project-form project-create-form" onSubmit={create}>
-        <label htmlFor="project-name">项目名称<Input id="project-name" autoFocus required maxLength={120} placeholder="例如：雨夜借光" value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <div className="form-row"><label htmlFor="project-aspect">画幅<Select id="project-aspect" value={aspect} onChange={setAspect} options={[{ value: '16:9', label: '横屏 16:9' }, { value: '9:16', label: '竖屏 9:16' }]} /></label><label htmlFor="project-seconds">目标时长（秒）<Input id="project-seconds" type="number" required min={1} max={3600} step={1} value={seconds} onChange={(e) => setSeconds(e.target.value)} /></label></div>
-        <p>输出设置：1080p · 24 帧/秒</p><p className="muted">项目与编辑内容保存在当前浏览器，无需选择本机目录。</p>
+        <label htmlFor="project-name">项目名称<Input id="project-name" autoFocus required maxLength={120} placeholder="例如：雨夜借光" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} /></label>
+        <label htmlFor="project-aspect">默认画幅<Select id="project-aspect" value={aspect} disabled={busy} onChange={setAspect} options={[{ value: '16:9', label: '横屏 16:9' }, { value: '9:16', label: '竖屏 9:16' }]} /></label>
+        <p className="muted">创建后可填写故事梗概，并添加第一集。</p>
         {error && <p role="alert" className="notice">{error}</p>}
-        <div className="dialog-actions"><Button onClick={() => setCreating(false)}>取消</Button><Button type="primary" htmlType="submit">创建项目</Button></div>
+        <div className="dialog-actions"><Button disabled={busy} onClick={() => setCreating(false)}>取消</Button><Button loading={busy} type="primary" htmlType="submit">创建项目</Button></div>
       </form>
-    </Dialog>}
-    {opening && <Dialog title="打开项目" onClose={() => setOpening(false)}>
-      <Input aria-label="搜索项目" placeholder="搜索项目名称" value={query} onChange={(e) => setQuery(e.target.value)} />
-      <div className="web-project-picker">{projects.filter((p) => p.name.includes(query.trim())).map((p) => <button key={p.projectId} onClick={() => open(p.projectId)}><strong>{p.name}</strong><span>{p.aspect} · {p.targetMs / 1000} 秒</span></button>)}</div>
-      {!projects.some((p) => p.name.includes(query.trim())) && <p className="studio-empty">未找到项目，试试其他名称。</p>}
     </Dialog>}
   </section>;
 }

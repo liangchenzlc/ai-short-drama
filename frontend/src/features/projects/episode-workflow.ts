@@ -524,12 +524,12 @@ const reviews = (): Record<StageId, Review> => ({
   video: "not_started",
 });
 const models = () => ({
-  script: "演示剧本模型",
-  analysis: "演示素材分析模型",
-  assetImage: "演示素材图片模型",
-  storyboardText: "演示分镜脚本模型",
-  storyboardImage: "演示分镜图片模型",
-  video: "演示分镜视频模型",
+  script: "",
+  analysis: "",
+  assetImage: "",
+  storyboardText: "",
+  storyboardImage: "",
+  video: "",
 });
 
 function resolvedDefaults(

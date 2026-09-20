@@ -56,19 +56,6 @@ def mysql_engine():
             for statement in source.split(";"):
                 if statement.strip():
                     connection.execute(text(statement))
-            migrations = sql_path.parent / "migrations" / "2026-09-20-ai-generation"
-            for number in range(1, 5):
-                migration = next(migrations.glob(f"00{number}_*.sql")).read_text(encoding="utf-8")
-                migration = re.sub(r"(?m)^\s*--.*$", "", migration)
-                for statement in migration.split(";"):
-                    statement = statement.strip()
-                    # Published scripts name the production DB. Never execute USE in tests.
-                    if not statement or re.match(r"^(USE|SET)\b", statement, re.I):
-                        continue
-                    if not re.match(r"^(CREATE TABLE|ALTER TABLE)\b", statement, re.I):
-                        pytest.fail("Unexpected migration statement")
-                    assert connection.scalar(text("SELECT DATABASE()")) == database
-                    connection.execute(text(statement))
         yield engine
     finally:
         if engine is not None:

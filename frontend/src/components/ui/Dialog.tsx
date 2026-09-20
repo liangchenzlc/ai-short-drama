@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { ConfigProvider } from "antd";
 
 export function Dialog({
   title,
@@ -41,7 +42,9 @@ export function Dialog({
           ×
         </button>
       </header>
-      {children}
+      <ConfigProvider getPopupContainer={(trigger) => trigger?.parentElement ?? ref.current ?? document.body}>
+        {children}
+      </ConfigProvider>
     </dialog>
   );
 }

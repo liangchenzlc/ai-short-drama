@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, Field
+from pydantic import AfterValidator, Field, field_serializer
 
 from .base import (
     Identifier,
@@ -42,3 +42,14 @@ class EpisodeRead(ReadModel):
     updated_at: datetime | None = None
     created_by: Identifier | None = None
     updated_by: Identifier | None = None
+
+    @field_serializer("created_at", "updated_at", when_used="json")
+    def serialize_utc(self, value: datetime | None):
+        if value is None:
+            return None
+        aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+        return aware.isoformat().replace("+00:00", "Z")
+
+
+class EpisodeDetail(EpisodeRead):
+    episode_number: int

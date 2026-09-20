@@ -4,14 +4,25 @@ import { aiModelConfigs } from '../../api/modules/ai-model-configs';
 import type { AiConfig } from '../ai-config/config-model';
 import type { GenerationKind } from '../../api/types/generations';
 import { generationError } from './presentation';
+import { AI_CONFIGS_CHANGED } from '../ai-config/config-events';
+import { resolveConfigSelection } from '../ai-config/config-selection';
 
-export function ConfigSelect({ kind, value, onChange, allowDefault = true, disabled = false }: {
-  kind: GenerationKind; value?: string; onChange?: (value: string | undefined) => void; allowDefault?: boolean; disabled?: boolean;
+export function ConfigSelect({ kind, value, onChange, allowDefault = true, autoDefault = true, disabled = false, label = '模型配置' }: {
+  kind: GenerationKind; value?: string; onChange?: (value: string | undefined) => void; allowDefault?: boolean; autoDefault?: boolean; disabled?: boolean; label?: string;
 }) {
   const [items, setItems] = useState<AiConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const refresh = () => setRevision((n) => n + 1);
+    window.addEventListener(AI_CONFIGS_CHANGED, refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener(AI_CONFIGS_CHANGED, refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError(''); setItems([]);
@@ -32,12 +43,13 @@ export function ConfigSelect({ kind, value, onChange, allowDefault = true, disab
     void load();
     return () => controller.abort();
   }, [kind, revision]);
+  const selected = resolveConfigSelection(items, kind, value, allowDefault && autoDefault);
   return <div className="generation-config-select">
-    <Select aria-label="模型配置" value={value} onChange={onChange} loading={loading} disabled={disabled} allowClear showSearch optionFilterProp="label"
-      placeholder={allowDefault ? '使用此类型的默认配置' : '全部模型配置'}
+    <Select aria-label={label} value={selected} onChange={onChange} loading={loading} disabled={disabled} allowClear showSearch optionFilterProp="label"
+      placeholder={!allowDefault ? '全部模型配置' : autoDefault ? '请选择模型配置' : '沿用原任务配置'}
       options={items.map((item) => ({ value: item.id, label: `${item.name} · ${item.modelKey}${item.isDefault ? '（默认）' : ''}${!item.enabled ? '（停用）' : ''}`, disabled: allowDefault && !item.enabled }))}
       notFoundContent={loading ? '加载中…' : '暂无配置，请先前往 AI 配置添加'} />
     {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={() => setRevision((n) => n + 1)}>重试</Button>} />}
-    {allowDefault && !loading && !error && !value && !items.some((item) => item.enabled && item.isDefault) && <Alert type="warning" showIcon message="尚未设置此类型的默认模型，请先选择一个已启用的模型。" />}
+    {allowDefault && autoDefault && !loading && !error && !selected && <Alert type="warning" showIcon message="尚未设置此类型的默认模型，请先选择一个已启用的模型。" />}
   </div>;
 }

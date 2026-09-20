@@ -17,7 +17,7 @@ def test_four_candidates_do_not_adopt_until_explicit_apply_and_stale_target_conf
 
     with generation_session() as session:
         model = config(session)
-        project = ProjectService(session).create({"name": "P", "aspect": "16:9", "target_ms": 1000})
+        project = ProjectService(session).create({"name": "P", "aspect": "16:9"})
         episode = EpisodeService(session).create(
             {"project_id": project.id, "position": 1, "title": "E", "aspect": "16:9"}
         )
@@ -136,7 +136,7 @@ def test_video_apply_uses_milliseconds_and_business_parameters(actual_ms, explic
 
     with generation_session() as session:
         config(session, "video")
-        project = ProjectService(session).create({"name": "P", "aspect": "16:9", "target_ms": 6000})
+        project = ProjectService(session).create({"name": "P", "aspect": "16:9"})
         episode = EpisodeService(session).create(
             {"project_id": project.id, "position": 1, "title": "E", "aspect": "16:9"}
         )

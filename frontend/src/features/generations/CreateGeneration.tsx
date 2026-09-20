@@ -59,7 +59,7 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
     <p className="generation-intro">选择模型并填写创作内容。任务提交后在后台执行，结果会保留在服务端。</p>
     <Form form={form} layout="vertical" onFinish={submit} disabled={pending} initialValues={{ count: 1, layout: 'single' }}
       onValuesChange={() => { clearAttempt(scope, attemptStorage()); setError(''); }}>
-      <Form.Item name="config_id" label="模型配置" extra={<span>留空使用此类型的默认配置。<Link to="/ai">管理 AI 配置</Link></span>}><ConfigSelect kind={kind} disabled={pending} /></Form.Item>
+      <Form.Item name="config_id" label="模型配置" extra={<span>默认选中此类型的默认模型；清除手动选择可恢复默认。<Link to="/ai">管理 AI 配置</Link></span>}><ConfigSelect kind={kind} disabled={pending} /></Form.Item>
       {kind === 'text' && <Form.Item name="system" label="创作要求（选填）"><Input.TextArea rows={2} maxLength={100000} placeholder="例如：你是一名短剧编剧，请使用对白推进情节。" /></Form.Item>}
       <Form.Item name="prompt" label={kind === 'text' ? '创作内容' : '画面描述'} rules={[{ required: true, whitespace: true, message: '请填写创作内容' }]}>
         <Input.TextArea rows={6} maxLength={200000} showCount placeholder={kind === 'text' ? '输入故事梗概、改编要求或需要处理的正文…' : kind === 'image' ? '描述主体、场景、构图与光线…' : '描述画面、镜头运动与主体动作…'} />

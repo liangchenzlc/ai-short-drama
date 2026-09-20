@@ -1,7 +1,7 @@
+import { EpisodeModelSelect } from "../../../features/projects/EpisodeModelSelect";
 import { Button } from "antd";
 import React from "react";
 import {
-  DEMO_MODELS,
   sampleScript,
 } from "../../../features/projects/episode-demo";
 import {
@@ -82,34 +82,13 @@ export function SourceStage({
       <div className="episode-stage-controls episode-source-controls">
         <label>
           剧本生成模型
-          <select
+          <EpisodeModelSelect
+            kind="text"
+            label="剧本生成模型"
             value={value.models.script}
             disabled={readOnly}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                models: { ...value.models, script: event.target.value },
-              })
-            }
-          >
-            <option
-              value={value.models.script}
-              hidden={
-                !DEMO_MODELS.script.some(
-                  (item) => item.value === value.models.script,
-                )
-              }
-            >
-              {DEMO_MODELS.script.find((item) => item.value === value.models.script)?.label ?? value.models.script}
-            </option>
-            {DEMO_MODELS.script
-              .filter((item) => item.value !== value.models.script)
-              .map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-          </select>
+            onChange={(id) => onChange({ ...value, models: { ...value.models, script: id } })}
+          />
         </label>
         <Button
           type="primary"
