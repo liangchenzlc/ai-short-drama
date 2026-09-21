@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, Drawer, Form, Input, InputNumber, Select, Spin } from 'antd';
+import { Alert, Button, Checkbox, Drawer, Form, Input, InputNumber, Select, Skeleton } from 'antd';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../../api/http';
 import { mediaLibrary } from '../../api/modules/media-library';
@@ -97,7 +97,7 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
     mutation.current = true; setBusy('apply'); setApplyError(''); setTargetLoaded(false); setTargetPreview(null);
     try {
       if (values.type === 'shot_image') {
-        if (!values.project_id?.trim() || !values.episode_id?.trim()) { setApplyError('读取分镜目标需要项目 ID 和分集 ID。'); return; }
+        if (!values.project_id?.trim() || !values.episode_id?.trim()) { setApplyError('读取分镜目标需要项目编号 和分集编号。'); return; }
         const result = await storyboardApi(values.project_id.trim(), values.episode_id.trim()).shot(values.id.trim());
         form.setFieldsValue({ expected_media_id: result.shot.image?.media_id ?? undefined, expected_row_version: result.shot.row_version, expected_context_hash: result.shot.context_hash });
         setTargetPreview({ name: `分镜 ${result.shot.position}`, url: result.shot.image?.url }); setTargetLoaded(true);
@@ -109,26 +109,30 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
     } catch (cause) { setApplyError(generationError(cause)); }
     finally { mutation.current = false; if (active.current) setBusy(null); }
   }
-  return <Drawer open title="资产详情" width={760} onClose={() => !busy && onClose()} closable={!busy} maskClosable={!busy} keyboard={!busy} rootClassName="generation-drawer">
-    <div className="generation-detail-toolbar"><span className="generation-id">{id}</span><Button onClick={refresh} loading={loading} disabled={!!busy}>刷新访问链接</Button></div>
+  function requestClose() {
+    if (busy || (asset && name !== asset.name && !window.confirm('资产名称尚未保存，确定关闭？'))) return;
+    onClose();
+  }
+  return <Drawer open title="资产详情" width={760} onClose={requestClose} closable={!busy} maskClosable={!busy} keyboard={!busy} rootClassName="generation-drawer">
+    <div className="generation-detail-toolbar"><span className="generation-id" title={id}>资产编号 {id}</span><Button onClick={refresh} loading={loading} disabled={!!busy}>刷新预览</Button></div>
     {error && <Alert type="error" showIcon message={error} />}
     {notice && <Alert type="success" showIcon message={notice} />}
-    {loading && !asset ? <div className="generation-loading"><Spin tip="加载资产…"><div /></Spin></div> : asset && <>
+    {loading && !asset ? <div className="generation-loading"><Skeleton title paragraph={{ rows: 5 }}/></div> : asset && <>
       <div className="asset-detail-preview">
         {asset.url && !previewError ? asset.media_type === 'image' ? <img src={asset.url} alt={asset.name} onError={() => setPreviewError(true)} /> : <video src={asset.url} controls preload="metadata" playsInline onError={() => setPreviewError(true)} />
-          : <div className="asset-preview-unavailable"><p>{previewError ? '预览链接已失效或文件暂时不可访问' : '暂时没有可用的预览链接'}</p><Button onClick={refresh}>刷新访问链接</Button></div>}
+          : <div className="asset-preview-unavailable"><p>{previewError ? '预览链接已失效或文件暂时不可访问' : '暂时没有可用的预览链接'}</p><Button onClick={refresh}>刷新预览</Button></div>}
       </div>
       <section className="generation-section"><h3>资产信息</h3>
         <form className="asset-rename" onSubmit={(event) => { event.preventDefault(); void rename(); }}><label htmlFor="asset-name">资产名称</label><div><Input id="asset-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={255} disabled={!!busy || loading || nameConflict} required /><Button htmlType="submit" loading={busy === 'rename'} disabled={!!busy || loading || nameConflict || !name.trim() || name.trim() === asset.name}>保存名称</Button></div></form>
         {nameError && <Alert type="error" showIcon message={nameError} action={nameConflict ? <Button onClick={() => { savedName.current = false; setNameConflict(false); setNameError(''); refresh(); }}>重新加载名称</Button> : undefined} />}
-        <dl className="generation-facts"><div><dt>媒体 ID</dt><dd className="generation-id">{asset.media_id}</dd></div><div><dt>尺寸</dt><dd>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : '未提供'}</dd></div>{asset.media_type === 'video' && <div><dt>时长</dt><dd>{asset.duration_ms != null ? `${asset.duration_ms / 1000} 秒` : '未提供'}</dd></div>}<div><dt>入库时间</dt><dd>{dateLabel(asset.created_at)}</dd></div><div><dt>来源任务</dt><dd><Link to={`/tasks/${asset.media_type}?task=${asset.generation_id}`}>{asset.generation_id}</Link></dd></div>{asset.source?.scene === 'shot_image' && <div><dt>来源分镜</dt><dd className="generation-id">{asset.source.shot_id}</dd></div>}</dl>
+        <dl className="generation-facts"><div><dt>媒体 ID</dt><dd className="generation-id">{asset.media_id}</dd></div><div><dt>尺寸</dt><dd>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : '未提供'}</dd></div>{asset.media_type === 'video' && <div><dt>时长</dt><dd>{asset.duration_ms != null ? `${asset.duration_ms / 1000} 秒` : '未提供'}</dd></div>}<div><dt>入库时间</dt><dd>{dateLabel(asset.created_at)}</dd></div><div><dt>来源任务</dt><dd><Link to={`/tasks/${asset.media_type}?task=${asset.generation_id}`}>查看生成任务</Link></dd></div>{asset.source?.scene === 'shot_image' && <div><dt>来源分镜</dt><dd className="generation-id">{asset.source.shot_id}</dd></div>}</dl>
       </section>
-      <section className="generation-section"><h3>采用到业务目标</h3><p className="generation-hint">资产已永久保存。请先读取目标详情，核对目标名称与当前图片，再明确确认采用。</p>
-        {!applyOpen ? <Button type="primary" disabled={!!busy} onClick={() => { setApplyOpen(true); setConfirmed(false); setApplyError(''); form.setFieldsValue({ type: asset.media_type === 'video' ? 'shot_video' : 'shot_image' }); }}>选择目标并确认采用</Button> :
+      <section className="generation-section"><h3>用于创作</h3><p className="generation-hint">可在分集分镜或素材编辑中选择这张图片。也可以在这里指定目标，核对后采用。</p>
+        {!applyOpen ? <Button type="primary" disabled={!!busy} onClick={() => { setApplyOpen(true); setConfirmed(false); setApplyError(''); form.setFieldsValue({ type: asset.media_type === 'video' ? 'shot_video' : 'shot_image' }); }}>指定创作目标</Button> :
           <Form form={form} layout="vertical" onFinish={apply} disabled={!!busy} onValuesChange={(changed) => { setConfirmed(false); setApplyConflict(false); if (Object.keys(changed).some((key) => ['type', 'id', 'project_id', 'episode_id'].includes(key))) { setTargetLoaded(false); setTargetPreview(null); } }}>
             <div className="generation-form-grid"><Form.Item name="type" label="目标类型" rules={[{ required: true }]}><Select options={asset.media_type === 'video' ? [{ value: 'shot_video', label: '分镜视频' }] : [{ value: 'shot_image', label: '分镜图片' }, { value: 'asset_image', label: '角色 / 场景 / 道具素材图片' }]} /></Form.Item>
-              <Form.Item name="id" label="目标的真实服务端 ID" rules={[{ required: true, message: '请输入目标 ID' }, idRule]}><Input placeholder="分镜 ID 或素材 ID" /></Form.Item></div>
-            {targetType === 'shot_image' && <div className="generation-form-grid"><Form.Item name="project_id" label="项目 ID" rules={[{ required: true, message: '请输入项目 ID' }, idRule]}><Input/></Form.Item><Form.Item name="episode_id" label="分集 ID" rules={[{ required: true, message: '请输入分集 ID' }, idRule]}><Input/></Form.Item></div>}
+              <Form.Item name="id" label="目标编号" rules={[{ required: true, message: '请输入目标 ID' }, idRule]}><Input placeholder="分镜 ID 或素材 ID" /></Form.Item></div>
+            {targetType === 'shot_image' && <div className="generation-form-grid"><Form.Item name="project_id" label="项目编号" rules={[{ required: true, message: '请输入项目编号' }, idRule]}><Input/></Form.Item><Form.Item name="episode_id" label="分集编号" rules={[{ required: true, message: '请输入分集编号' }, idRule]}><Input/></Form.Item></div>}
             {(targetType === 'shot_image' || targetType === 'asset_image') && <><Button onClick={() => void inspectTarget()} loading={busy === 'apply'}>读取并核对目标详情</Button>{targetLoaded && targetPreview && <Alert type="success" showIcon message={`已读取目标：${targetPreview.name}`} description={targetPreview.url ? <img src={targetPreview.url} alt="目标当前图片" style={{ maxWidth: 280, maxHeight: 180, objectFit: 'contain' }}/> : '目标当前没有图片'}/>}</>}
             {targetType === 'shot_video' ? <Form.Item name="expected_media_id" label="目标当前媒体 ID（无媒体则留空）" rules={[idRule]}><Input /></Form.Item> : <Form.Item name="expected_media_id" hidden><Input /></Form.Item>}
             {(targetType === 'shot_image' || targetType === 'asset_image') && <Form.Item name="expected_row_version" hidden rules={[{ required: true }]}><Input /></Form.Item>}

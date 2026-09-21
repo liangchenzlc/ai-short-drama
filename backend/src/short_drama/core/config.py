@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     generation_archive_budget_seconds: int = Field(default=86400, ge=60, le=604800)
     generation_download_timeout: int = Field(default=60, ge=10, le=600)
     generation_max_response_bytes: int = Field(default=8 * 1024**2, ge=1024, le=64 * 1024**2)
+    extraction_max_script_chars: int = Field(default=30000, ge=100, le=200000)
+    extraction_max_candidates: int = Field(default=100, ge=1, le=100)
+    extraction_max_output_tokens: int = Field(default=8192, ge=1024, le=32768)
 
     @property
     def rabbitmq_url(self) -> SecretStr:

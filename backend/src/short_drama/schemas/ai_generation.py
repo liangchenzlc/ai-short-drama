@@ -43,6 +43,20 @@ class ScriptShotsSource(InputModel):
     content_version: Identifier
 
 
+class ScriptAssetsSource(ScriptShotsSource):
+    scene: Literal["script_assets"]
+
+
+class ExtractionOptions(InputModel):
+    kinds: list[Literal["character", "scene", "prop"]] = Field(min_length=1, max_length=3)
+
+    @model_validator(mode="after")
+    def unique_kinds(self):
+        if len(set(self.kinds)) != len(self.kinds):
+            raise ValueError("Extraction kinds must be unique")
+        return self
+
+
 class TextMessage(InputModel):
     role: Literal["system", "user", "assistant"]
     content: Prompt
@@ -62,12 +76,21 @@ class TextGenerationCreate(InputModel):
     input: TextInput | None = None
     parameters: TextParameters = Field(default_factory=TextParameters)
     source: (
-        Annotated[NovelScriptSource | ScriptShotsSource, Field(discriminator="scene")] | None
+        Annotated[
+            NovelScriptSource | ScriptShotsSource | ScriptAssetsSource, Field(discriminator="scene")
+        ]
+        | None
     ) = None
     instructions: str = Field(default="", max_length=4000)
+    extraction: ExtractionOptions | None = None
 
     @model_validator(mode="after")
     def business_or_generic(self):
+        if self.source is not None and self.source.scene == "script_assets":
+            if self.extraction is None:
+                self.extraction = ExtractionOptions(kinds=["character", "scene", "prop"])
+        elif self.extraction is not None:
+            raise ValueError("Extraction options require script_assets source")
         if self.source is None:
             if self.input is None or self.instructions:
                 raise ValueError("Generic text requires messages and no business instructions")

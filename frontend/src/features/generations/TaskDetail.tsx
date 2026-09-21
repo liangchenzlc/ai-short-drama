@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Drawer, Empty, Modal, Spin, Tag } from 'antd';
+import { Alert, Button, Drawer, Empty, Modal, Skeleton, Tag } from 'antd';
 import { Link } from 'react-router-dom';
 import { generations } from '../../api/modules/generations';
 import type { GenerationDetail, GenerationReceipt, GenerationRecord } from '../../api/types/generations';
 import { attemptStorage, clearAttempt, isServerId, requestAttempt } from './attempt';
 import { ConfigSelect } from './ConfigSelect';
-import { dateLabel, generationError, kindLabels, taskLabel } from './presentation';
+import { dateLabel, generationError, kindLabels, statusLabels, taskLabel } from './presentation';
 import { episodePath } from '../../app/paths';
 
 type Action = 'cancel' | 'retry' | 'resume';
@@ -14,11 +14,12 @@ function BusinessResult({ detail }: { detail: GenerationDetail }) {
   const business = detail.result.business;
   const source = detail.source;
   if (!business && !detail.source_snapshot && !detail.effective_prompt) return null;
-  const episodeSource = source?.scene === 'novel_script' || source?.scene === 'script_shots' ? source : null;
+  const episodeSource = source?.scene === 'novel_script' || source?.scene === 'script_shots' || source?.scene === 'script_assets' ? source : null;
   return <div className="generation-business-result">
     {business?.kind === 'novel_script' && <p>已保存候选剧本 <strong>{business.script_id}</strong>，需在本集页面预览并明确设为当前编辑。</p>}
     {business?.kind === 'script_shots' && <p>结构化分镜候选共 <strong>{business.shots.length}</strong> 镜。{business.applied ? `已${business.applied.mode === 'append' ? '追加' : '替换'}应用。` : '尚未应用。'}</p>}
-    {episodeSource && <Link to={episodePath(episodeSource.project_id, episodeSource.episode_id, episodeSource.scene === 'novel_script' ? 'source' : 'storyboard')}>打开来源分集页面</Link>}
+    {business?.kind === 'script_assets' && <p>已提取 <strong>{business.items.length}</strong> 项文字素材，已采用 {business.items.filter(item => item.applied).length} 项。请在素材准备中核对名称、描述与图片生成提示词。</p>}
+    {episodeSource && <Link to={episodePath(episodeSource.project_id, episodeSource.episode_id, episodeSource.scene === 'novel_script' ? 'source' : episodeSource.scene === 'script_assets' ? 'assets' : 'storyboard')}>打开来源分集页面</Link>}
     {detail.effective_prompt && <details><summary>查看实际提示词</summary><pre className="generation-json">{detail.effective_prompt}</pre></details>}
     {detail.source_snapshot && <details><summary>查看来源快照摘要</summary><pre className="generation-json">{JSON.stringify(detail.source_snapshot, null, 2)}</pre></details>}
   </div>;
@@ -80,17 +81,17 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
   }
   return <>
     <Drawer open title="任务详情" width={760} onClose={() => !busy && onClose()} closable={!busy} keyboard={!busy} maskClosable={!busy} rootClassName="generation-drawer">
-      <div className="generation-detail-toolbar"><span className="generation-id">{id}</span><Button onClick={refresh} disabled={busy} loading={loading}>刷新</Button></div>
+      <div className="generation-detail-toolbar"><span className="generation-id" title={id}>任务编号 {id}</span><Button onClick={refresh} disabled={busy} loading={loading}>刷新</Button></div>
       {error && <Alert type="error" showIcon message={error} description={detail ? '保留上次已知状态，请刷新核对。' : undefined} />}
       {notice && <Alert type="success" showIcon message={notice} />}
-      {loading && !detail ? <div className="generation-loading"><Spin tip="加载任务…"><div /></Spin></div> : detail && <>
+      {loading && !detail ? <div className="generation-loading"><Skeleton title paragraph={{ rows: 5 }}/></div> : detail && <>
         <div className="generation-task-heading"><h2>{kindLabels[detail.service_type]}生成</h2><Tag className={`generation-status status-${detail.status}`}>{taskLabel(detail)}</Tag></div>
         <dl className="generation-facts"><div><dt>模型配置</dt><dd>{detail.config?.name ?? '—'} · {detail.config?.model_key ?? '—'}</dd></div><div><dt>创建时间</dt><dd>{dateLabel(detail.created_at)}</dd></div><div><dt>开始时间</dt><dd>{dateLabel(detail.started_at)}</dd></div><div><dt>完成时间</dt><dd>{dateLabel(detail.finished_at)}</dd></div></dl>
         {detail.error && <Alert type="warning" showIcon message={detail.error.message} description={`错误代码：${detail.error.code}`} />}
         <div className="generation-action-row">
           {detail.can_cancel && <Button disabled={busy} onClick={() => { setAction('cancel'); setActionError(''); }}>请求取消</Button>}
-          {detail.can_resume && <Button disabled={busy} onClick={() => { setAction('resume'); setActionError(''); }}>安全恢复</Button>}
-          {detail.can_retry && <Button disabled={busy} onClick={() => { setAction('retry'); setActionError(''); }}>重新生成</Button>}
+          {detail.can_resume && <Button type="primary" disabled={busy} onClick={() => { setAction('resume'); setActionError(''); }}>安全恢复</Button>}
+          {detail.can_retry && <Button type="primary" disabled={busy} onClick={() => { setAction('retry'); setActionError(''); }}>重新生成</Button>}
         </div>
         <section className="generation-section"><h3>生成结果</h3>
           {detail.result.partial && <Alert type="warning" showIcon message={`未全部完成，已保留 ${detail.result.assets.length} 个媒体结果。`} />}
@@ -103,11 +104,11 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
           <BusinessResult detail={detail}/>
         </section>
         <section className="generation-section"><h3>输入与参数</h3><details><summary>查看提交内容</summary><pre className="generation-json">{JSON.stringify({ input: detail.input, parameters: detail.parameters, ...(detail.source ? { source: detail.source } : {}) }, null, 2)}</pre></details></section>
-        <section className="generation-section"><h3>调用记录</h3>
+        <details className="generation-section generation-record-details"><summary>调用记录（{records.length}）</summary>
           {recordsError && <Alert type="error" message={recordsError} action={<Button onClick={refresh}>重试</Button>} />}
           {!recordsError && !records.length && <p className="generation-hint">暂无调用记录。</p>}
-          <ol className="generation-records">{records.map((record) => <li key={record.record_id}><div><strong>第 {record.call_no} 次调用</strong><span>{record.status === 'unknown' || record.status === 'failed' ? '失败' : record.status}</span></div><p>{dateLabel(record.started_at ?? record.created_at)}</p>{record.error && <p className="generation-record-error">{record.error.message}</p>}{record.finish_reason && <p>结束原因：{record.finish_reason}</p>}{record.usage && <details><summary>查看用量</summary><pre className="generation-json">{JSON.stringify(record.usage, null, 2)}</pre></details>}</li>)}</ol>
-        </section>
+          <ol className="generation-records">{records.map((record) => <li key={record.record_id}><div><strong>第 {record.call_no} 次调用</strong><span>{record.status === 'unknown' ? '状态待核实' : statusLabels[record.status as keyof typeof statusLabels] ?? record.status}</span></div><p>{dateLabel(record.started_at ?? record.created_at)}</p>{record.error && <p className="generation-record-error">{record.error.message}</p>}{record.finish_reason && <p>结束原因：{record.finish_reason}</p>}{record.usage && <details><summary>查看用量</summary><pre className="generation-json">{JSON.stringify(record.usage, null, 2)}</pre></details>}</li>)}</ol>
+        </details>
       </>}
     </Drawer>
     <Modal open={!!action} title={action === 'retry' ? '确认重新生成' : action === 'cancel' ? '确认请求取消' : '确认安全恢复'} onCancel={() => !busy && setAction(null)} onOk={perform} confirmLoading={busy} closable={!busy} maskClosable={!busy} keyboard={!busy} cancelButtonProps={{ disabled: busy }} okText={action === 'retry' ? '新建生成任务' : action === 'cancel' ? '提交取消请求' : '恢复任务'}>

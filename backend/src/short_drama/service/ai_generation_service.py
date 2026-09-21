@@ -30,7 +30,7 @@ ERROR_MESSAGES = {
     "archive_failed": "Generated results could not be saved.",
     "archive_timeout": "The result saving window expired.",
     "business_save_failed": "结果已保存，业务入库失败，可恢复本地保存。",
-    "invalid_structured_output": "模型返回的分镜结构不正确，原文已保留。",
+    "invalid_structured_output": "模型返回的结构不正确，原文已保留。请调整要求后重新生成。",
     "unknown_asset_reference": "模型引用了不存在于输入清单的素材，原文已保留。",
     "source_missing": "生成来源已不存在，原始结果已保留。",
     "empty_result": "模型未返回有效正文。",
@@ -154,7 +154,7 @@ class AIGenerationService(BaseService):
         if source and kind == "text":
             from .generation_context_service import GenerationContextService
 
-            payload = GenerationContextService(self.session).prepare_text(payload)
+            payload = GenerationContextService(self.session, self.settings).prepare_text(payload)
         elif source:
             if kind != "image" or source["scene"] != "shot_image":
                 raise BusinessError("Source scene does not support this generation type")

@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { Icon } from './Icon';
 import { ConfigProvider } from "antd";
 
 export function Dialog({
@@ -25,8 +26,8 @@ export function Dialog({
       ref={ref}
       className={["ui-dialog", className].filter(Boolean).join(" ")}
       onCancel={(event) => {
+        event.preventDefault();
         if (canClose) onClose();
-        else event.preventDefault();
       }}
       aria-label={title}
     >
@@ -39,7 +40,7 @@ export function Dialog({
           disabled={!canClose}
           aria-label="关闭弹窗"
         >
-          ×
+          <Icon name="close" size={18} />
         </button>
       </header>
       <ConfigProvider getPopupContainer={(trigger) => trigger?.parentElement ?? ref.current ?? document.body}>

@@ -78,10 +78,10 @@ export function ProjectOverview({ session, project, onProjectUpdated, onDeleted,
   }
   return <div className="project-overview">
     <section className="overview-card overview-info" aria-labelledby="project-info-title">
-      <div className="overview-heading"><h2 id="project-info-title">剧集信息</h2><Button danger disabled={saving || busy} onClick={() => { setDeleting('project'); setError(''); }}>删除项目</Button></div>
+      <div className="overview-heading"><h2 id="project-info-title">剧集信息</h2><Button type="text" danger disabled={saving || busy} onClick={() => { setDeleting('project'); setError(''); }}>删除项目</Button></div>
       <form className="project-settings-form" onSubmit={saveProject}>
         <label htmlFor="edit-project-name">项目名称<Input id="edit-project-name" required maxLength={120} value={details.name} disabled={saving} onChange={(e) => changeDetails({ name: e.target.value })} /></label>
-        <div className="form-row"><label htmlFor="project-style">默认图片 / 视频风格<Input id="project-style" maxLength={255} placeholder="例如：清透水彩、都市写实" value={details.style} disabled={saving} onChange={(e) => changeDetails({ style: e.target.value })} /></label>
+        <div className="form-row"><label htmlFor="project-style">默认视觉风格<Input id="project-style" maxLength={255} placeholder="例如：清透水彩、都市写实" value={details.style} disabled={saving} onChange={(e) => changeDetails({ style: e.target.value })} /></label>
           <label htmlFor="project-aspect">默认画幅<Select id="project-aspect" value={details.aspect} disabled={saving} onChange={(aspect: '16:9' | '9:16') => changeDetails({ aspect })} options={aspects} /></label></div>
         <p className="muted">默认设置仅用于新建分集，已有分集保留各自的设置。</p>
         <label htmlFor="project-synopsis">故事梗概<Input.TextArea id="project-synopsis" maxLength={2000} rows={3} value={details.synopsis} disabled={saving} onChange={(e) => changeDetails({ synopsis: e.target.value })} /></label>
@@ -93,11 +93,11 @@ export function ProjectOverview({ session, project, onProjectUpdated, onDeleted,
       <div className="overview-heading"><h2 id="episodes-title">分集列表 <small>共 {total} 集</small></h2><div className="project-actions"><Button disabled={loading} onClick={() => setRevision((v) => v + 1)}>刷新</Button><Button type="primary" disabled={saving || busy} onClick={() => editEpisode('new')}>新增一集</Button></div></div>
       {loadError ? <Alert type="error" message={loadError} action={<Button onClick={() => setRevision((v) => v + 1)}>重试</Button>} /> : loading ? <div className="studio-empty" role="status"><Spin /> 正在加载分集…</div> : episodes.length ? <>
         <div className="episode-grid">{episodes.map((item, index) => <div className="episode-item" key={item.id}>
-          <button type="button" className="episode-card" onClick={() => onOpenEpisode(item)} aria-label={`进入第 ${offset + index + 1} 集：${item.title}`}><span className="episode-number">第 {offset + index + 1} 集</span><strong>{item.title}</strong><span className="episode-synopsis">{item.synopsis || '尚未填写本集概要'}</span><span className="episode-enter">进入制作 →</span></button>
+          <button type="button" className="episode-card" onClick={() => onOpenEpisode(item)} aria-label={`进入第 ${offset + index + 1} 集：${item.title}`}><span className="episode-number">第 {offset + index + 1} 集</span><strong>{item.title}</strong><span className="episode-synopsis">{item.synopsis || '尚未填写本集概要'}</span><span className="episode-enter">进入创作</span></button>
           <div className="episode-item-actions"><Button size="small" onClick={() => editEpisode(item)}>编辑分集</Button><Button danger size="small" onClick={() => { setDeleting(item); setError(''); }}>删除</Button></div>
         </div>)}</div>
         <Pagination current={offset / 20 + 1} pageSize={20} total={total} hideOnSinglePage showSizeChanger={false} onChange={(page) => setOffset((page - 1) * 20)} />
-      </> : <p className="overview-empty">还没有分集。新增一集后，点击卡片进入制作流程。</p>}
+      </> : <div className="studio-empty"><h3>从第一集开始</h3><p>填写分集标题，即可进入小说、剧本和分镜创作。</p><Button type="primary" disabled={saving || busy} onClick={() => editEpisode('new')}>添加第一集</Button></div>}
     </section>
     <ProjectResourceLibrary projectId={session.projectId} />
     {editing && <Dialog title={editing === 'new' ? '新增一集' : '编辑分集'} canClose={!busy} onClose={() => setEditing(null)}><form className="studio-form" onSubmit={saveEpisode}>

@@ -1,7 +1,10 @@
 import type { CSSProperties } from 'react';
 
-export type IconName = 'film' | 'folder' | 'library' | 'tasks' | 'settings' | 'arrow' | 'plus' | 'person' | 'scene' | 'prop';
+export type IconName = 'film' | 'folder' | 'library' | 'tasks' | 'settings' | 'arrow' | 'plus' | 'person' | 'scene' | 'prop' | 'more' | 'close' | 'back';
 const paths: Record<IconName, string> = {
+  more: 'M5 12h.01 M12 12h.01 M19 12h.01',
+  close: 'M6 6l12 12 M18 6L6 18',
+  back: 'M19 12H5 M11 6l-6 6 6 6',
   film: 'M3 8h18v12H3z M3 8V4h18v4 M7 4l3 4 M13 4l3 4 M19 4l2 3 M10 12l5 3-5 3z',
   folder: 'M3 7V5h6l2 2h10v13H3z',
   library: 'M3 4h5v16H3z M11 4h4v16h-4z M18 4l3 15',

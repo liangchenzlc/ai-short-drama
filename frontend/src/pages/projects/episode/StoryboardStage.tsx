@@ -322,36 +322,37 @@ export function StoryboardStage({
   const active = page?.items.filter((shot) => !shot.deleted_at) ?? [];
   return <div className="storyboard-workspace">
     <div className="episode-stage-heading storyboard-heading">
-      <div><h2>分镜制作</h2><p>服务端持久化、逐镜自动保存，生成候选需明确追加或替换。</p></div>
+      <div><h2>分镜制作</h2><p>把剧本安排成镜头。修改自动保存，生成结果预览后再采用。</p></div>
       <div><Button onClick={download}>下载草稿</Button><Button disabled={readOnly || busy} onClick={() => void add()}>新增分镜</Button></div>
     </div>
     {message && <Alert type={message.includes('其他窗口') ? 'warning' : 'info'} showIcon message={message}/>}
     <Checkbox checked={includeArchived} onChange={(event) => void toggleArchived(event.target.checked)}>显示归档历史</Checkbox>
-    <section className="generation-section">
+    <section className="generation-section storyboard-generation">
       <h3>剧本生成分镜</h3>
-      <EpisodeModelSelect kind="text" label="分镜模型" value={value.models.storyboardText} disabled={readOnly || busy} onChange={(id) => onChange({ ...value, models: { ...value.models, storyboardText: id } })}/>
-      <EpisodeModelSelect kind="image" label="分镜生图模型" value={value.models.storyboardImage} disabled={readOnly || busy} onChange={(id) => onChange({ ...value, models: { ...value.models, storyboardImage: id } })}/>
-      <Input.TextArea rows={2} maxLength={4000} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="补充分镜要求（选填）"/>
+      <div className="storyboard-models"><label><span>分镜文字模型</span><EpisodeModelSelect kind="text" label="分镜模型" value={value.models.storyboardText} disabled={readOnly || busy} onChange={(id) => onChange({ ...value, models: { ...value.models, storyboardText: id } })}/></label>
+      <label><span>分镜生图模型</span><EpisodeModelSelect kind="image" label="分镜生图模型" value={value.models.storyboardImage} disabled={readOnly || busy} onChange={(id) => onChange({ ...value, models: { ...value.models, storyboardImage: id } })}/></label></div>
+      <Input.TextArea rows={2} maxLength={4000} value={instructions} onChange={(event) => setInstructions(event.target.value)} aria-label="补充分镜要求" disabled={readOnly || busy} placeholder="补充分镜要求（选填），例如：更多近景，突出人物情绪"/>
       <div className="dialog-actions"><Button type="primary" loading={busy} disabled={readOnly || !confirmed || !scriptId} onClick={() => void generateStoryboard()}>生成分镜脚本</Button><Button onClick={() => setTaskRevision((revision) => revision + 1)}>刷新任务</Button></div>
       {!confirmed && <p className="episode-help">请先确认当前剧本。</p>}
       <div className="storyboard-task-list">{tasks.map((task) => <div key={task.generation_id} className="resource-import-row"><span>{taskLabel(task)} · {task.generation_id}{task.error ? ` · ${task.error.message}` : ''}</span><Button disabled={task.status !== 'succeeded'} onClick={() => void previewTask(task)}>预览结果</Button></div>)}</div>
       {candidate && <StoryboardResultPreview task={candidate} busy={busy} error={message} onApply={(mode) => void applyResult(mode)}/>}
     </section>
     {loading && !page ? <Spin/> : <div className="storyboard-list">
+      {!page?.items.length && <div className="studio-empty"><h3>还没有镜头</h3><p>确认剧本后可让 AI 拆分镜头，也可以手动新增分镜。</p><Button disabled={readOnly || busy} onClick={() => void add()}>新增第一个分镜</Button></div>}
       {page?.items.map((shot) => <details className={`storyboard-item ${shot.deleted_at ? 'is-archived' : ''}`} key={shot.id} open={!shot.deleted_at}>
         <summary className="storyboard-summary"><strong>{shot.deleted_at ? '已归档' : `分镜 ${shot.position}`}</strong><span>{shot.script || '空分镜'}</span></summary>
         <div className="storyboard-expanded">
           <label>分镜脚本<Input.TextArea rows={4} value={shot.script} disabled={readOnly || !!shot.deleted_at} onChange={(event) => updateLocal(shot.id, { script: event.target.value })}/></label>
-          <label>关联素材<Select mode="multiple" style={{ width: '100%' }} value={shot.asset_ids} disabled={readOnly || !!shot.deleted_at} options={assets.map((asset) => ({ value: asset.id, label: `${asset.name}（${asset.kind}）` }))} onChange={(asset_ids) => updateLocal(shot.id, { asset_ids })}/></label>
+          <label>关联素材<Select mode="multiple" style={{ width: '100%' }} value={shot.asset_ids} disabled={readOnly || !!shot.deleted_at} options={assets.map((asset) => ({ value: asset.id, label: `${asset.name}（${({ character: '角色', scene: '场景', prop: '道具' })[asset.kind]}）` }))} onChange={(asset_ids) => updateLocal(shot.id, { asset_ids })}/></label>
           <div className="generation-form-grid">
-            <Select value={shot.image_settings.layout} disabled={readOnly || !!shot.deleted_at} options={['single', 'four', 'five', 'nine'].map((option) => ({ value: option, label: option }))} onChange={(layout) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, layout } })}/>
-            <Select value={shot.image_settings.aspect} disabled={readOnly || !!shot.deleted_at} options={['inherit', '16:9', '9:16', '1:1', '4:3', '3:4'].map((option) => ({ value: option, label: option }))} onChange={(aspect) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, aspect } })}/>
-            <Select value={shot.image_settings.resolution} disabled={readOnly || !!shot.deleted_at} options={['1K', '2K', '4K'].map((option) => ({ value: option, label: option }))} onChange={(resolution) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, resolution } })}/>
+            <label>画面布局<Select aria-label="画面布局" value={shot.image_settings.layout} disabled={readOnly || !!shot.deleted_at} options={Object.entries({ single: '单图', four: '四宫格', five: '五宫格', nine: '九宫格' }).map(([value, label]) => ({ value, label }))} onChange={(layout) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, layout } })}/></label>
+            <label>画幅比例<Select aria-label="画幅比例" value={shot.image_settings.aspect} disabled={readOnly || !!shot.deleted_at} options={['inherit', '16:9', '9:16', '1:1', '4:3', '3:4'].map((option) => ({ value: option, label: option === 'inherit' ? '跟随本集画幅' : option }))} onChange={(aspect) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, aspect } })}/></label>
+            <label>图片清晰度<Select aria-label="图片清晰度" value={shot.image_settings.resolution} disabled={readOnly || !!shot.deleted_at} options={['1K', '2K', '4K'].map((option) => ({ value: option, label: option }))} onChange={(resolution) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, resolution } })}/></label>
           </div>
           {!shot.deleted_at && <div className="dialog-actions">
-            <Button disabled={busy || shot.position === 1} onClick={() => void reorder(shot.id, -1)}>上移</Button>
-            <Button disabled={busy || shot.position === active.length} onClick={() => void reorder(shot.id, 1)}>下移</Button>
-            <Button danger disabled={busy} onClick={() => void archive(shot.id)}>归档</Button>
+            <Button disabled={readOnly || busy || shot.position === 1} onClick={() => void reorder(shot.id, -1)}>上移</Button>
+            <Button disabled={readOnly || busy || shot.position === active.length} onClick={() => void reorder(shot.id, 1)}>下移</Button>
+            <Button danger disabled={readOnly || busy} onClick={() => void archive(shot.id)}>归档</Button>
             <span>{dirty.current.has(shot.id) ? '等待保存' : saving.current.has(shot.id) ? '保存中' : `已保存 v${shot.row_version}`}</span>
           </div>}
           {!shot.deleted_at && <ShotImageCandidates

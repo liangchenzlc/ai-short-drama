@@ -270,6 +270,7 @@ class GenerationExecutionService:
                     elif (call.request_data.get("source") or {}).get("scene") in {
                         "novel_script",
                         "script_shots",
+                        "script_assets",
                     }:
                         data["archive_started_at"] = now.isoformat()
                         schedule(current, "save")

@@ -38,8 +38,9 @@ def asset_snapshot(asset):
 
 
 class GenerationContextService:
-    def __init__(self, session):
+    def __init__(self, session, settings=None):
         self.session = session
+        self.settings = settings
 
     def prepare_text(self, request):
         source = request["source"]
@@ -63,7 +64,7 @@ class GenerationContextService:
             )
             if document is None or not document.content.strip():
                 raise WorkflowError("novel_empty", "请先保存小说正文", 422)
-        else:
+        elif scene in {"script_shots", "script_assets"}:
             document = self.session.scalar(
                 select(EpisodeScript)
                 .where(
@@ -75,7 +76,11 @@ class GenerationContextService:
             if document is None:
                 raise NotFound("剧本不存在于当前分集")
             if document.id != episode.editing_script_id or document.state != "confirmed":
-                raise WorkflowError("script_not_confirmed", "请确认当前剧本后再生成分镜")
+                raise WorkflowError("script_not_confirmed", "请先确认当前剧本")
+            if not document.content.strip():
+                raise WorkflowError("script_empty", "请先填写并确认剧本", 422)
+        else:
+            raise WorkflowError("invalid_source", "不支持的文本业务场景", 422)
         snapshot = {
             "content": document.content,
             "content_hash": content_hash(document.content),
@@ -92,14 +97,28 @@ class GenerationContextService:
                 .with_for_update()
             )
             snapshot["assets"] = [asset_snapshot(asset) for asset in assets]
+        if scene == "script_assets":
+            max_chars = getattr(self.settings, "extraction_max_script_chars", 30000)
+            if len(document.content) > max_chars:
+                raise WorkflowError(
+                    "script_too_long", f"素材提取支持最多 {max_chars} 字，请拆分分集后重试", 422
+                )
+            snapshot["extraction"] = request["extraction"]
+            snapshot["max_candidates"] = getattr(self.settings, "extraction_max_candidates", 100)
+            token_limit = getattr(self.settings, "extraction_max_output_tokens", 8192)
+            request["parameters"]["max_output_tokens"] = min(
+                request["parameters"].get("max_output_tokens") or token_limit, token_limit
+            )
         source["source_id"] = str(document.id)
         source["novel_id" if scene == "novel_script" else "script_id"] = str(document.id)
         instructions = request.pop("instructions", "")
         request["source_snapshot"] = snapshot
         request["business_intent"] = {"instructions": instructions}
-        request["template_version"] = (
-            "novel-script-v1" if scene == "novel_script" else "script-shots-v1"
-        )
+        request["template_version"] = {
+            "novel_script": "novel-script-v1",
+            "script_shots": "script-shots-v1",
+            "script_assets": "script-assets-v1",
+        }[scene]
         request["input"] = {"messages": text_messages(scene, snapshot, instructions)}
         return request
 

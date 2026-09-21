@@ -15,6 +15,7 @@ from short_drama.domain import (
     NovelScriptRecord,
     ScriptShotRecord,
 )
+from short_drama.schemas.asset_extraction import parse_extraction_result
 from short_drama.schemas.base import parse_identifier
 from short_drama.schemas.storyboard_apply import StoryboardApply
 from short_drama.schemas.storyboard_result import parse_storyboard_result
@@ -39,10 +40,17 @@ class GenerationBusinessService(BaseService):
         if response.get("finish_reason") in {"length", "max_output_tokens"}:
             raise WorkflowError("text_truncated", "模型输出被截断", 422)
         source = record.request_data.get("source") or {}
-        if source.get("scene") not in {"novel_script", "script_shots"}:
+        if source.get("scene") not in {"novel_script", "script_shots", "script_assets"}:
             return None
         snapshot = record.request_data["source_snapshot"]
-        if source["scene"] == "script_shots":
+        if source["scene"] == "script_assets":
+            try:
+                result = parse_extraction_result(content, snapshot)
+            except ValueError:
+                raise WorkflowError(
+                    "invalid_structured_output", "素材提取格式或原文依据不正确，原始文本已保留", 422
+                ) from None
+        elif source["scene"] == "script_shots":
             try:
                 parsed = parse_storyboard_result(
                     content, {int(a["id"]) for a in snapshot["assets"]}

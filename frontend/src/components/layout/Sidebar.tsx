@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from '../ui/Icon';
 import type { AssetKind } from "../../features/assets/asset-model";
 
@@ -12,7 +12,8 @@ export function Sidebar({
   kind: AssetKind;
   onSelect: (page: MainPage, kind?: AssetKind) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(page === "assets");
+  useEffect(() => { setExpanded(page === "assets"); }, [page]);
   return (
     <aside className="studio-sidebar">
       <div className="studio-brand">
@@ -20,7 +21,7 @@ export function Sidebar({
           <Icon name="film" size={24} />
         </span>
         <span>
-          短剧工作台<small>故事，从这里成片</small>
+          短剧工作台<small>AI 短剧创作空间</small>
         </span>
       </div>
       <nav aria-label="主导航">
@@ -98,7 +99,7 @@ export function Sidebar({
         </button>
       </nav>
       <p className="studio-sidebar-foot">
-        业务内容保存至服务端；模型选择保存在当前浏览器
+        从故事出发，逐镜打磨。
       </p>
     </aside>
   );

@@ -46,7 +46,9 @@ class AssetLibraryService(BaseService):
         self.storage = (
             storage
             if callable(getattr(storage, "download_url", None))
-            else StorageService(storage, settings) if settings is not None and storage else None
+            else StorageService(storage, settings)
+            if settings is not None and storage
+            else None
         )
 
     def _validate_scope(self, kind, parent_id=None, project_id=None, *, for_update=False):
@@ -79,7 +81,11 @@ class AssetLibraryService(BaseService):
     def _lock_scope(self, kind, parent_id, project_id=None):
         parent = self._validate_scope(kind, parent_id, project_id, for_update=True)
         if kind == "global":
-            list(self.session.scalars(select(GlobalAsset).order_by(GlobalAsset.position).with_for_update()))
+            list(
+                self.session.scalars(
+                    select(GlobalAsset).order_by(GlobalAsset.position).with_for_update()
+                )
+            )
         return parent
 
     def _url(self, media):
@@ -90,9 +96,7 @@ class AssetLibraryService(BaseService):
     def _read(self, asset, media=None, *, link=None, library=False):
         schema = LibraryAssetRead if library else AssetRead
         values = {
-            name: getattr(asset, name)
-            for name in schema.model_fields
-            if hasattr(asset, name)
+            name: getattr(asset, name) for name in schema.model_fields if hasattr(asset, name)
         }
         values["reference_count"] = self.library.reference_count(asset.id)
         values["image"] = None
@@ -122,8 +126,7 @@ class AssetLibraryService(BaseService):
             )
             return {
                 "items": [
-                    self._read(asset, media, link=link, library=True)
-                    for link, asset, media in rows
+                    self._read(asset, media, link=link, library=True) for link, asset, media in rows
                 ],
                 "total": total,
                 "offset": offset,
@@ -144,17 +147,7 @@ class AssetLibraryService(BaseService):
                 existing = self.library.creation(key, for_update=True)
                 if existing is not None:
                     return self._creation_replay(kind, parent_id, existing, digest)
-                values = parsed.model_dump(exclude={"model_id", "media_id"})
-                values.update(
-                    model_id=None,
-                    media_id=None,
-                    state="unconfirmed",
-                    row_version=1,
-                    creation_key=key,
-                    creation_hash=digest,
-                )
-                asset = self.assets.create(self._creation_audit(values))
-                link = self._create_link(kind, parent_id, asset.id)
+                asset, link = self.create_locked(kind, parent_id, parsed, key, digest)
                 return self._read(asset, link=link, library=True), True
         except Conflict:
             # Different scope parents do not share a row lock. Resolve a creation-key
@@ -164,6 +157,29 @@ class AssetLibraryService(BaseService):
                 if existing is None:
                     raise
                 return self._creation_replay(kind, parent_id, existing, digest)
+
+    def create_locked(self, kind, parent_id, parsed, key, digest, *, model_id=None):
+        """Caller owns the scope lock, idempotency check, and transaction."""
+        values = parsed.model_dump(exclude={"model_id", "media_id"})
+        values.update(
+            model_id=model_id,
+            media_id=None,
+            state="unconfirmed",
+            row_version=1,
+            creation_key=key,
+            creation_hash=digest,
+        )
+        asset = self.assets.create(self._creation_audit(values))
+        return asset, self._create_link(kind, parent_id, asset.id)
+
+    def link_locked(self, kind, parent, asset_id):
+        """Link without committing; caller has locked the parent scope."""
+        existing = self.library.link(kind, parent.id, asset_id, for_update=True)
+        if existing is None:
+            if not self._may_link(kind, parent, asset_id):
+                raise NotFound("Asset is not available through this sharing path")
+            existing = self._create_link(kind, parent.id, asset_id)
+        return existing
 
     def _creation_replay(self, kind, parent_id, existing, digest):
         if existing.creation_hash != digest:
@@ -191,12 +207,15 @@ class AssetLibraryService(BaseService):
         if kind == "project":
             if self.library.link("global", None, asset_id) is not None:
                 return True
-            return self.session.scalar(
-                select(EpisodeAsset.id)
-                .join(Episode, Episode.id == EpisodeAsset.episode_id)
-                .where(Episode.project_id == parent.id, EpisodeAsset.asset_id == asset_id)
-                .limit(1)
-            ) is not None
+            return (
+                self.session.scalar(
+                    select(EpisodeAsset.id)
+                    .join(Episode, Episode.id == EpisodeAsset.episode_id)
+                    .where(Episode.project_id == parent.id, EpisodeAsset.asset_id == asset_id)
+                    .limit(1)
+                )
+                is not None
+            )
         return self.library.link("project", parent.project_id, asset_id) is not None
 
     def link(self, kind, parent_id, project_id, asset_id):
@@ -224,14 +243,16 @@ class AssetLibraryService(BaseService):
             asset = self.assets.get(asset_id, for_update=True)
             if asset.row_version != row_version:
                 raise WorkflowError(
-                    "asset_version_conflict", "Asset changed; refresh before removing",
+                    "asset_version_conflict",
+                    "Asset changed; refresh before removing",
                     details={"current_version": asset.row_version},
                 )
             if kind == "episode":
                 shot_ids = self.library.active_shot_ids(parent_id, asset_id)
                 if shot_ids:
                     raise WorkflowError(
-                        "asset_in_use", "Asset is used by active shots",
+                        "asset_in_use",
+                        "Asset is used by active shots",
                         details={"references": [str(value) for value in shot_ids]},
                     )
             BaseDAO(self.session, type(link)).delete(link)
@@ -254,7 +275,8 @@ class AssetLibraryService(BaseService):
                 raise NotFound("Asset does not exist")
             if asset.row_version != parsed.row_version:
                 raise WorkflowError(
-                    "asset_version_conflict", "Asset changed; refresh before saving",
+                    "asset_version_conflict",
+                    "Asset changed; refresh before saving",
                     details={"current_version": asset.row_version},
                 )
             if asset.kind != "scene" and values.get("scene_time"):

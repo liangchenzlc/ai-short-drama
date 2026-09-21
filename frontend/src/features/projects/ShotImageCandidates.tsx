@@ -7,6 +7,7 @@ import type { GenerationSummary, MediaAsset } from '../../api/types/generations'
 import type { ShotRead } from '../../api/modules/storyboard';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import { taskLabel } from '../generations/presentation';
+import { Dialog } from '../../components/ui/Dialog';
 import { shotImageApplyRequest, shotImageRequest } from './workflow-contract';
 
 async function loadAllCandidates(shotId: string, signal: AbortSignal) {
@@ -127,14 +128,16 @@ export function ShotImageCandidates({
   return <section className="shot-image-candidates">
     <h4>分镜图片</h4>
     {shot.image && <div><strong>当前采用</strong>{shot.image.url && <img src={shot.image.url} alt="当前采用分镜图"/>}{shot.image.is_stale && <Alert type="warning" message="创作内容已变化，请重新核对当前图片。"/>}</div>}
-    <div className="generation-form-grid"><Input.TextArea value={prompt} maxLength={4000} rows={2} onChange={(event) => setPrompt(event.target.value)} placeholder="补充画面要求（选填）"/><InputNumber min={1} max={4} value={count} onChange={(value) => setCount(value ?? 1)}/></div>
+    <div className="shot-image-controls"><label>补充画面要求 <small>选填</small><Input.TextArea value={prompt} disabled={disabled || busy} maxLength={4000} rows={3} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：逆光、雨夜街道，突出人物眼神"/></label><label>生成张数<InputNumber aria-label="生成张数" disabled={disabled || busy} min={1} max={4} value={count} onChange={(value) => setCount(value ?? 1)}/><small>每次 1–4 张</small></label></div>
     <div className="dialog-actions"><Button type="primary" loading={busy} disabled={disabled || !shot.script.trim()} onClick={() => void generate()}>生成图片</Button><Button loading={loading} onClick={() => { setTaskRevision((revision) => revision + 1); setCandidateRevision((revision) => revision + 1); }}>刷新状态与候选</Button></div>
     {message && <Alert type="info" showIcon message={message}/>}
-    <div>{tasks.map((task) => <div className="resource-import-row" key={task.generation_id}><span>{taskLabel(task)} · {task.generation_id}{task.error ? ` · ${task.error.message}` : ''}</span></div>)}</div>
-    {loading ? <Spin/> : <div className="asset-grid">{items.map((asset) => <article className="asset-card" key={asset.asset_id}>
+    {tasks.length > 0 && <details className="writing-task-history"><summary>生成记录（{tasks.length}）{tasks.some(task => task.status === 'queued' || task.status === 'running') ? '，正在处理中' : ''}</summary>{tasks.map((task) => <div className="resource-import-row" key={task.generation_id}><span>{taskLabel(task)} · {task.generation_id}{task.error ? ` · ${task.error.message}` : ''}</span></div>)}</details>}
+    {!shot.script.trim() && <p className="episode-help">先填写本镜脚本，再生成图片。</p>}
+    {loading ? <Spin/> : <div className="image-candidate-grid">{items.map((asset) => <article className="image-candidate" key={asset.asset_id}>
       {asset.url ? <button className="asset-library-preview" onClick={() => setPreview(asset)}><img src={asset.url} alt={asset.name}/></button> : <p>预览链接不可用</p>}
       <Button disabled={disabled || busy || shot.image?.media_asset_id === asset.asset_id} onClick={() => void apply(asset)}>{shot.image?.media_asset_id === asset.asset_id ? '当前采用' : '确认采用'}</Button>
     </article>)}</div>}
-    {preview && <div className="image-lightbox" role="dialog"><img src={preview.url ?? ''} alt={preview.name}/><Button onClick={() => setPreview(null)}>关闭预览</Button></div>}
+    {!loading && !items.length && <p className="episode-help">生成的图片会作为候选保留，预览后再确认采用。</p>}
+    {preview && <Dialog title="分镜图片预览" className="media-preview-dialog" canClose={!busy} onClose={() => setPreview(null)}><img className="full-image-preview" src={preview.url ?? ''} alt={preview.name}/><div className="dialog-actions"><Button disabled={busy} onClick={() => setPreview(null)}>关闭</Button><Button type="primary" loading={busy} disabled={disabled || busy || shot.image?.media_asset_id === preview.asset_id} onClick={() => void apply(preview)}>{shot.image?.media_asset_id === preview.asset_id ? '当前采用' : '确认采用'}</Button></div></Dialog>}
   </section>;
 }

@@ -34,6 +34,14 @@ const discoveryMessages: Record<string, string> = {
   model_discovery_too_large: '模型列表响应过大，请手动填写模型标识。',
 };
 const workflowMessages: Record<string, string> = {
+  result_version_conflict: '提取候选已被其他页面修改。当前编辑已保留，请重新载入后核对。',
+  candidate_unavailable: '候选不存在或已采用，请重新载入结果。',
+  candidate_already_applied: '此候选已采用，不能更换采用方式。',
+  duplicate_review_required: '发现同名或别名素材。请保存候选并重新核对匹配，选择复用或明确另建。',
+  invalid_asset_reference: '此素材已不可复用，请重新载入结果核对。',
+  result_not_ready: '提取结果尚未准备好，请稍后重试。',
+  script_too_long: '剧本超过素材提取长度限制，请拆分分集或调整服务端提取限额。',
+  script_empty: '请先填写并确认当前剧本。',
   writing_version_conflict: '小说或剧本版本已变化。草稿已保留，请重新加载后手动合并。',
   shot_version_conflict: '分镜已被其他窗口修改。输入已保留，请重新加载后合并。',
   storyboard_version_conflict: '分镜列表顺序已变化，请刷新列表后重试。',

@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
 import type { StageId } from "../../../features/projects/episode-workflow";
 
-export const episodeStages: { id: StageId; label: string }[] = [
-  { id: "source", label: "小说与剧本生成" },
-  { id: "script", label: "剧本确认与素材拆解" },
-  { id: "assets", label: "素材图片" },
-  { id: "storyboard", label: "分镜制作" },
+export const episodeStages: { id: StageId; label: string; description: string }[] = [
+  { id: "source", label: "小说改编", description: "整理原文，生成剧本" },
+  { id: "script", label: "剧本定稿", description: "编辑故事，确认剧本" },
+  { id: "assets", label: "素材准备", description: "角色、场景与道具" },
+  { id: "storyboard", label: "分镜制作", description: "编排镜头，生成画面" },
 ];
 
 // Older drafts still have a separate video review stage.
@@ -39,7 +39,7 @@ export function StageNav({
   }, [active]);
   return (
     <nav aria-label="分集制作流程" ref={navRef}>
-      {episodeStages.map(({ id, label }, index) => (
+      {episodeStages.map(({ id, label, description }, index) => (
         <button
           key={id}
           type="button"
@@ -48,7 +48,7 @@ export function StageNav({
           onClick={() => onSelect(id)}
         >
           <span>{String(index + 1).padStart(2, "0")}</span>
-          <span className="episode-stage-name">{label}</span>
+          <span className="episode-stage-name">{label}<small>{description}</small></span>
         </button>
       ))}
     </nav>

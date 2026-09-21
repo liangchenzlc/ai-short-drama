@@ -50,7 +50,8 @@ def list_generations(
     service_type: Literal["text", "image", "video"] | None = None,
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"] | None = None,
     config_id: Identifier | None = None,
-    source_scene: Literal["shot_image", "novel_script", "script_shots"] | None = None,
+    source_scene: Literal["shot_image", "novel_script", "script_shots", "script_assets"]
+    | None = None,
     source_id: Identifier | None = None,
     project_id: Identifier | None = None,
     episode_id: Identifier | None = None,

@@ -1,4 +1,6 @@
-﻿import { useEffect, useRef, useState } from 'react';
+﻿import { Button, Skeleton } from 'antd';
+import { Icon } from '../../components/ui/Icon';
+import { useEffect, useRef, useState } from 'react';
 import { aiModelConfigs } from '../../api/modules/ai-model-configs';
 import { ApiError, errorMessage, isCancelled } from '../../api/http';
 import { Dialog } from '../../components/ui/Dialog';
@@ -83,8 +85,8 @@ export function AiConfigPage() {
   }
 
   return <section className="studio-page ai-config-page" aria-labelledby="ai-title">
-    <div className="studio-page-head"><div><h1 id="ai-title">AI 配置</h1><p>管理文本创作、图片生成与视频生成的模型。</p></div></div>
-    <div className="preview-note" role="note">配置保存到服务端。每条配置对应一个模型；保存配置不会调用模型服务。</div>
+    <div className="studio-page-head"><div><h1 id="ai-title">AI 配置</h1><p>连接创作模型，为文字、图片和视频分别设置默认选择。</p></div><Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={!!busyId} onClick={() => { setEditing(null); setFormOpen(true); }}>添加{serviceLabels[tab]}</Button></div>
+    <div className="preview-note" role="note">为每类选择一个默认模型，创作时自动选用。保存配置不会发起生成。</div>
     <div className="studio-tabs" role="tablist" aria-label="AI 模型类别">
       {configTabs.map((kind, index) => <button key={kind} id={`model-tab-${kind}`} role="tab" aria-selected={tab === kind}
         aria-controls={`model-panel-${kind}`} tabIndex={tab === kind ? 0 : -1} className={tab === kind ? 'active' : ''}
@@ -101,10 +103,9 @@ export function AiConfigPage() {
     {configTabs.map((kind) => <div key={kind} id={`model-panel-${kind}`} role="tabpanel" aria-labelledby={`model-tab-${kind}`} hidden={tab !== kind}>
       {tab === kind && <>
         <div className="studio-toolbar">
-          <button className="studio-primary" disabled={!!busyId} onClick={() => { setEditing(null); setFormOpen(true); }}>添加{serviceLabels[kind]}</button>
-          <button disabled={loading || !!busyId} onClick={refresh}>刷新</button><span>每类可设置一个默认配置</span>
+          <span className="config-list-count">共 {total} 个{serviceLabels[kind]}</span><Button disabled={!!busyId} loading={loading} onClick={refresh}>刷新列表</Button>
         </div>
-        {loading ? <div className="studio-empty" role="status" aria-live="polite">正在加载配置…</div>
+        {loading ? <div className="studio-empty" role="status" aria-live="polite"><Skeleton title paragraph={{ rows: 3 }}/></div>
           : listError ? <div className="studio-empty" role="alert"><p>{listError}</p><button onClick={refresh}>重新加载</button></div>
           : <><ConfigTable items={items} serviceType={kind} busyId={busyId} onEdit={edit} onDefault={setDefault}
             onDelete={(item) => { setDeleting(item); setDeleteError(''); setDeleteConflict(false); }} />
@@ -127,7 +128,7 @@ export function AiConfigPage() {
       {deleteError && <p role="alert" className="form-error">{deleteError}</p>}
       <div className="dialog-actions"><button onClick={() => setDeleting(null)} disabled={!!busyId}>取消</button>
         {deleteConflict ? <button onClick={() => { setDeleting(null); refresh(); }}>重新加载列表</button>
-          : <button className="studio-primary" onClick={remove} disabled={!!busyId}>{busyId ? '删除中…' : '确认删除'}</button>}
+          : <button className="danger-button" onClick={remove} disabled={!!busyId}>{busyId ? '删除中…' : '确认删除'}</button>}
       </div>
     </Dialog>}
   </section>;
