@@ -33,7 +33,7 @@ uv sync
 uv run uvicorn short_drama.main:app --host 127.0.0.1 --port 8000
 ```
 
-异步生成还需独立启动调度器及三种 Worker，并为各进程分配不同的雪花节点 ID。数据库初始化、进程命令和 RabbitMQ 超时配置见 [后端说明](backend/README.md) 与 [模型生成运行说明](docs/模型生成运行说明.md)。
+异步生成还需独立启动调度器及三种 Worker，并为各进程分配不同的雪花节点 ID。数据库初始化、进程命令和 RabbitMQ 超时配置见 [后端说明](backend/README.md#异步生成启动)。
 
 前端（另开终端）：
 
