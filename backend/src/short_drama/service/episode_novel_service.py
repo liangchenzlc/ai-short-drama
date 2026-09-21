@@ -1,3 +1,4 @@
+from short_drama.dao.episode_writing_dao import VersionedDocumentDAO
 from short_drama.domain import Episode, EpisodeNovel
 from short_drama.schemas import EpisodeNovelCreate, EpisodeNovelRead, EpisodeNovelUpdate
 
@@ -11,3 +12,7 @@ class EpisodeNovelService(BaseService):
     read_schema = EpisodeNovelRead
     parent_model = Episode
     parent_field = "episode_id"
+
+    def __init__(self, session):
+        super().__init__(session)
+        self.dao = VersionedDocumentDAO(session, self.model)

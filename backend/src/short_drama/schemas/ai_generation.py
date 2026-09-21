@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, Field
+from pydantic import AfterValidator, Field, model_validator
 
 from .base import Identifier, InputModel, nonblank
 
@@ -14,6 +14,33 @@ class ShotImageSource(InputModel):
     scene: Literal["shot_image"]
     shot_id: Identifier
     layout: Literal["single", "four", "five", "nine"]
+    context_mode: Literal["saved"] | None = None
+    row_version: Identifier | None = None
+    context_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
+
+    @model_validator(mode="after")
+    def context_tokens(self):
+        if self.context_mode == "saved":
+            if self.row_version is None or self.context_hash is None:
+                raise ValueError("Saved context requires version and hash")
+        elif self.row_version is not None or self.context_hash is not None:
+            raise ValueError("Context tokens require saved mode")
+        return self
+
+
+class NovelScriptSource(InputModel):
+    scene: Literal["novel_script"]
+    project_id: Identifier
+    episode_id: Identifier
+    content_version: Identifier
+
+
+class ScriptShotsSource(InputModel):
+    scene: Literal["script_shots"]
+    project_id: Identifier
+    episode_id: Identifier
+    script_id: Identifier
+    content_version: Identifier
 
 
 class TextMessage(InputModel):
@@ -32,13 +59,25 @@ class TextParameters(InputModel):
 
 class TextGenerationCreate(InputModel):
     config_id: Identifier | None = None
-    input: TextInput
+    input: TextInput | None = None
     parameters: TextParameters = Field(default_factory=TextParameters)
-    source: None = None
+    source: (
+        Annotated[NovelScriptSource | ScriptShotsSource, Field(discriminator="scene")] | None
+    ) = None
+    instructions: str = Field(default="", max_length=4000)
+
+    @model_validator(mode="after")
+    def business_or_generic(self):
+        if self.source is None:
+            if self.input is None or self.instructions:
+                raise ValueError("Generic text requires messages and no business instructions")
+        elif self.input is not None:
+            raise ValueError("Business text uses saved content, not client messages")
+        return self
 
 
 class ImageInput(InputModel):
-    prompt: Prompt
+    prompt: str = Field(max_length=1048576)
     reference_media_ids: list[Identifier] = Field(default_factory=list, max_length=16)
 
 
@@ -53,6 +92,15 @@ class ImageGenerationCreate(InputModel):
     input: ImageInput
     parameters: ImageParameters = Field(default_factory=ImageParameters)
     source: ShotImageSource | None = None
+
+    @model_validator(mode="after")
+    def business_prompt(self):
+        if self.source and self.source.context_mode == "saved":
+            if len(self.input.prompt) > 4000:
+                raise ValueError("Supplement must be at most 4000 characters")
+        elif not self.input.prompt.strip():
+            raise ValueError("Prompt must not be blank")
+        return self
 
 
 class VideoInput(InputModel):

@@ -78,7 +78,7 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
       {kind === 'image' && <>
         <Form.Item name="reference_media_ids" label="参考图片媒体 ID（选填）" extra="使用资产详情中的媒体 ID，多个 ID 以逗号分隔，最多 16 张。" rules={[{ validator: (_, value?: string) => { const ids = (value ?? '').split(/[\s,，]+/).filter(Boolean); return ids.length <= 16 && ids.every(isServerId) ? Promise.resolve() : Promise.reject(new Error('最多填写 16 个真实服务端媒体 ID')); } }]}><Input placeholder="服务端媒体 ID" /></Form.Item>
         <details className="generation-source"><summary>关联真实分镜（选填）</summary>
-          <p>仅接受已经保存在服务端的分镜。当前项目页的本地演示分镜不能用于此处；留空即可独立生成。</p>
+          <p>仅接受已经保存在服务端的分镜。可从分镜详情复制服务端 ID；留空则创建独立生成任务。</p>
           <Form.Item name="source_id" label="来源分镜的服务端 ID" rules={[optionalId]}><Input placeholder="输入真实分镜 ID" /></Form.Item>
           <Form.Item name="layout" label="单张图片布局"><Select options={[{ value: 'single', label: '单图' }, { value: 'four', label: '四宫格' }, { value: 'five', label: '五宫格' }, { value: 'nine', label: '九宫格' }]} /></Form.Item>
         </details>

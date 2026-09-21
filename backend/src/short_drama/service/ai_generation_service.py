@@ -29,6 +29,11 @@ ERROR_MESSAGES = {
     "acceptance_unknown": "Model acceptance needs verification.",
     "archive_failed": "Generated results could not be saved.",
     "archive_timeout": "The result saving window expired.",
+    "business_save_failed": "结果已保存，业务入库失败，可恢复本地保存。",
+    "invalid_structured_output": "模型返回的分镜结构不正确，原文已保留。",
+    "unknown_asset_reference": "模型引用了不存在于输入清单的素材，原文已保留。",
+    "source_missing": "生成来源已不存在，原始结果已保留。",
+    "empty_result": "模型未返回有效正文。",
 }
 
 
@@ -53,7 +58,8 @@ def can_retry(task, record):
     return (
         task.status in {"failed", "cancelled"}
         and record.status not in {"sent", "unknown"}
-        and (task.error or {}).get("code") != "message_delivery_unknown"
+        and (task.error or {}).get("code")
+        not in {"message_delivery_unknown", "business_save_failed"}
     )
 
 
@@ -72,6 +78,15 @@ def resume_action(task, record):
     )
     if task.locked_until and task.locked_until > utcnow():
         return None
+    if (
+        task.status == "failed"
+        and record.status == "succeeded"
+        and getattr(record, "text_content", None)
+        and (task.error or {}).get("code")
+        in {"business_save_failed", "archive_timeout", "message_delivery_unknown"}
+        and response.get("finish_reason") not in {"length", "max_output_tokens"}
+    ):
+        return "save"
     if task.status == "failed" and record.status == "succeeded" and recoverable_media:
         return "save"
     if task.status != "failed" or (task.error or {}).get("code") != "message_delivery_unknown":
@@ -136,13 +151,22 @@ class AIGenerationService(BaseService):
 
     def _prepare(self, kind, payload):
         source = payload.get("source")
-        if source:
+        if source and kind == "text":
+            from .generation_context_service import GenerationContextService
+
+            payload = GenerationContextService(self.session).prepare_text(payload)
+        elif source:
             if kind != "image" or source["scene"] != "shot_image":
                 raise BusinessError("Source scene does not support this generation type")
-            shot = self._require(ShotScript, source["shot_id"])
-            episode = self._require(Episode, shot.episode_id)
-            source.update(episode_id=str(episode.id), project_id=str(episode.project_id))
-            payload["source_snapshot"] = {"script": shot.script, "position": shot.position}
+            if source.get("context_mode") == "saved":
+                from .generation_context_service import GenerationContextService
+
+                payload = GenerationContextService(self.session).prepare_shot_image(payload)
+            else:
+                shot = self._require(ShotScript, source["shot_id"])
+                episode = self._require(Episode, shot.episode_id)
+                source.update(episode_id=str(episode.id), project_id=str(episode.project_id))
+                payload["source_snapshot"] = {"script": shot.script, "position": shot.position}
         inputs = payload["input"]
         references = inputs.get("reference_media_ids", []) + [
             inputs[k] for k in ("first_frame_media_id", "last_frame_media_id") if inputs.get(k)
@@ -301,6 +325,7 @@ class AIGenerationService(BaseService):
                 )
             )
             output["result"] = {
+                "business": (latest.response_data or {}).get("business_result"),
                 "text": {
                     "record_id": str(latest.id),
                     "content": latest.text_content,
@@ -322,6 +347,8 @@ class AIGenerationService(BaseService):
                 "partial": (task.error or {}).get("code") == "partial_result"
                 or bool(assets and task.status == "failed"),
             }
+            output["source_snapshot"] = records[0].request_data.get("source_snapshot")
+            output["effective_prompt"] = records[0].request_data.get("input", {}).get("prompt")
             return output
 
     get = detail

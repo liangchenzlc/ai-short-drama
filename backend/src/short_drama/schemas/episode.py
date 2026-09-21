@@ -38,6 +38,9 @@ class EpisodeRead(ReadModel):
     synopsis: MediumText
     aspect: Literal["16:9", "9:16"]
     style: Annotated[str, Field(max_length=255)]
+    editing_script_id: Identifier | None = None
+    content_version: Identifier = 1
+    storyboard_version: Identifier = 1
     created_at: datetime | None = None
     updated_at: datetime | None = None
     created_by: Identifier | None = None

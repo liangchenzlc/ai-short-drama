@@ -12,6 +12,16 @@ class NotFound(BusinessError):
     code = "not_found"
 
 
+class WorkflowError(BusinessError):
+    """Stable business code and explicitly selected, non-sensitive UI details."""
+
+    def __init__(self, code, message, status_code=409, details=None):
+        self.code = code
+        self.status_code = status_code
+        self.details = details or {}
+        super().__init__(message)
+
+
 class GenerationRequestError(BusinessError):
     """Closed admission errors; never reflect provider messages or request content."""
 

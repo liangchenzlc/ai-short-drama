@@ -1,5 +1,6 @@
 from sqlalchemy import select
 
+from short_drama.dao.episode_writing_dao import VersionedDocumentDAO
 from short_drama.domain import Episode, EpisodeScript
 from short_drama.schemas.episode_script import (
     EpisodeScriptCreate,
@@ -17,6 +18,10 @@ class EpisodeScriptService(BaseService):
     read_schema = EpisodeScriptRead
     parent_model = Episode
     parent_field = "episode_id"
+
+    def __init__(self, session):
+        super().__init__(session)
+        self.dao = VersionedDocumentDAO(session, self.model)
 
     def _validate_update(self, entity, values):
         if "content" in values and values["content"] != entity.content:

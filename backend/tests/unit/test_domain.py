@@ -19,7 +19,7 @@ def normalized(value):
 
 def test_all_tables_and_columns_match_authoritative_sql():
     assert set(Base.metadata.tables) == set(TABLES)
-    assert len(TABLES) == 20
+    assert len(TABLES) == 21
     for name, body in TABLES.items():
         table = Base.metadata.tables[name]
         columns = {
@@ -150,7 +150,7 @@ def test_full_schema_is_create_only_and_ordered_by_foreign_keys():
     statements = [
         item.strip() for item in re.sub(r"(?m)^\s*--.*$", "", SQL).split(";") if item.strip()
     ]
-    assert len(statements) == 20
+    assert len(statements) == 21
     created = set()
     for statement in statements:
         match = re.match(r"CREATE TABLE `?(\w+)`?", statement)

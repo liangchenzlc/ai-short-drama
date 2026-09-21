@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -10,7 +11,23 @@ from short_drama.domain import AIModelConfig, Base
 def generation_session():
     """Local behavior fixture; MySQL constraint/concurrency tests stay integration tests."""
     engine = create_engine("sqlite://")
-    event.listen(engine, "connect", lambda db, _: db.create_function("CHAR_LENGTH", 1, len))
+    def sqlite_functions(db, _):
+        db.create_function("CHAR_LENGTH", 1, len)
+        db.create_function("JSON_ARRAY", 0, lambda: "[]")
+        db.create_function(
+            "JSON_TYPE",
+            1,
+            lambda value: (
+                "ARRAY"
+                if isinstance(json.loads(value), list)
+                else "OBJECT"
+                if isinstance(json.loads(value), dict)
+                else "SCALAR"
+            ),
+        )
+        db.create_function("JSON_LENGTH", 1, lambda value: len(json.loads(value)))
+
+    event.listen(engine, "connect", sqlite_functions)
     metadata = MetaData()
     for original in Base.metadata.sorted_tables:
         table = original.to_metadata(metadata)

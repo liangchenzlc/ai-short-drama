@@ -44,6 +44,24 @@ class Episode(Base):
     style: Mapped[str] = mapped_column(
         VARCHAR(255), nullable=False, server_default=text("''"), comment="本集风格"
     )
+    editing_script_id: Mapped[int | None] = mapped_column(
+        BIGINT(unsigned=True),
+        nullable=True,
+        server_default=text("NULL"),
+        comment="当前编辑剧本；由服务层校验同分集归属",
+    )
+    content_version: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True),
+        nullable=False,
+        server_default=text("1"),
+        comment="小说与剧本编辑的并发版本号",
+    )
+    storyboard_version: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True),
+        nullable=False,
+        server_default=text("1"),
+        comment="分镜集合并发版本",
+    )
     created_at: Mapped[datetime | None] = mapped_column(
         DATETIME(fsp=6),
         nullable=True,
@@ -79,6 +97,8 @@ class Episode(Base):
             onupdate="RESTRICT",
         ),
         CheckConstraint("`position` > 0", name="ck_episodes_position"),
+        CheckConstraint("`content_version` > 0", name="ck_episodes_content_version"),
+        CheckConstraint("`storyboard_version` > 0", name="ck_episodes_storyboard_version"),
         CheckConstraint(
             "`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`",
             name="ck_episodes_audit_time",

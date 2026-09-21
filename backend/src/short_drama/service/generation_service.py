@@ -9,6 +9,8 @@ from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import select
 
 from short_drama.core.exceptions import BusinessError, Conflict
+from short_drama.dao.episode_storyboard_dao import advance_storyboard_version
+from short_drama.domain import Episode, ShotScript
 from short_drama.schemas.base import Identifier, MediumText, parse_identifier
 from short_drama.schemas.episode_script import EpisodeScriptRead
 from short_drama.schemas.novel_script_record import NovelScriptRecordRead
@@ -91,6 +93,11 @@ class GenerationService:
             else:
                 records._validate_source(source)
                 records._validate_model(model_id, "text")
+                storyboard_episode = (
+                    records._require(Episode, source.episode_id)
+                    if outputs.model is ShotScript
+                    else None
+                )
                 maximum = (
                     self.session.scalar(
                         select(outputs.model.position)
@@ -128,6 +135,9 @@ class GenerationService:
                     for row in output_rows
                 ]
                 record_rows = records._persist_batch(payloads, source, created_at=now)
+                if storyboard_episode is not None:
+                    advance_storyboard_version(storyboard_episode)
+                    self.session.flush()
             return GenerationBatch(
                 batch_id=batch_id,
                 outputs=[outputs._read(row) for row in output_rows],

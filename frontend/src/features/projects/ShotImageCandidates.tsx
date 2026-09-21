@@ -1,0 +1,140 @@
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Button, Input, InputNumber, Spin } from 'antd';
+import { generations } from '../../api/modules/generations';
+import { mediaLibrary } from '../../api/modules/media-library';
+import { ApiError, errorMessage } from '../../api/http';
+import type { GenerationSummary, MediaAsset } from '../../api/types/generations';
+import type { ShotRead } from '../../api/modules/storyboard';
+import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
+import { taskLabel } from '../generations/presentation';
+import { shotImageApplyRequest, shotImageRequest } from './workflow-contract';
+
+async function loadAllCandidates(shotId: string, signal: AbortSignal) {
+  const items: MediaAsset[] = [];
+  let offset = 0;
+  let total = 1;
+  while (offset < total) {
+    const page = await mediaLibrary.list({ media_type: 'image', source_scene: 'shot_image', source_id: shotId, offset, limit: 100 }, signal);
+    items.push(...page.items); total = page.total; offset += page.items.length;
+    if (!page.items.length) break;
+  }
+  return items;
+}
+
+async function loadAllTasks(shotId: string, signal: AbortSignal) {
+  const items: GenerationSummary[] = [];
+  let offset = 0;
+  let total = 1;
+  while (offset < total) {
+    const page = await generations.list({ service_type: 'image', source_scene: 'shot_image', source_id: shotId, offset, limit: 100 }, signal);
+    items.push(...page.items); total = page.total; offset += page.items.length;
+    if (!page.items.length) break;
+  }
+  return items;
+}
+
+export function ShotImageCandidates({
+  shot, disabled, modelId, onChanged, flush, getShot, episodeAspect,
+}: {
+  shot: ShotRead;
+  disabled: boolean;
+  modelId: string;
+  onChanged: () => void;
+  flush: () => Promise<boolean>;
+  getShot: () => ShotRead | undefined;
+  episodeAspect: '16:9' | '9:16';
+}) {
+  const [items, setItems] = useState<MediaAsset[]>([]);
+  const [tasks, setTasks] = useState<GenerationSummary[]>([]);
+  const [prompt, setPrompt] = useState('');
+  const [count, setCount] = useState(1);
+  const [preview, setPreview] = useState<MediaAsset | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
+  const [candidateRevision, setCandidateRevision] = useState(0);
+  const [taskRevision, setTaskRevision] = useState(0);
+  const completed = useRef(new Set<string>());
+
+  useEffect(() => {
+    const controller = new AbortController(); setLoading(true);
+    loadAllCandidates(shot.id, controller.signal)
+      .then((assets) => { if (!controller.signal.aborted) setItems(assets); })
+      .catch((cause) => { if (!controller.signal.aborted) setMessage(errorMessage(cause)); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [shot.id, candidateRevision]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadAllTasks(shot.id, controller.signal).then((next) => {
+      if (controller.signal.aborted) return;
+      setTasks(next);
+      const finished = next.filter((task) => ['succeeded', 'failed', 'cancelled'].includes(task.status) && !completed.current.has(task.generation_id));
+      if (finished.length) {
+        for (const task of finished) completed.current.add(task.generation_id);
+        setCandidateRevision((revision) => revision + 1);
+      }
+    }).catch((cause) => { if (!controller.signal.aborted) setMessage(errorMessage(cause)); });
+    return () => controller.abort();
+  }, [shot.id, taskRevision]);
+
+  useEffect(() => {
+    if (!tasks.some((task) => task.status === 'queued' || task.status === 'running')) return;
+    const timer = setTimeout(() => setTaskRevision((revision) => revision + 1), 3000);
+    return () => clearTimeout(timer);
+  }, [tasks]);
+
+  async function generate() {
+    if (busy || disabled || !shot.script.trim()) return;
+    setBusy(true); setMessage('');
+    try {
+      if (!await flush()) { setMessage('分镜未保存，未发起生成。'); return; }
+      const current = getShot();
+      if (!current) return;
+      const body = {
+        ...(modelId ? { config_id: modelId } : {}),
+        ...shotImageRequest(current, prompt, [], count, episodeAspect),
+      };
+      const scope = `shot-image:${shot.id}`;
+      const idempotencyKey = await requestAttempt(scope, body, attemptStorage());
+      const task = await generations.generateImage(body, idempotencyKey);
+      clearAttempt(scope, attemptStorage());
+      setMessage(`图片任务 ${task.generation_id} 已提交。`);
+      setTaskRevision((revision) => revision + 1);
+    } catch (cause) { setMessage(errorMessage(cause)); }
+    finally { setBusy(false); }
+  }
+
+  async function apply(asset: MediaAsset, acknowledge = false, confirmed = false) {
+    if (busy || disabled || (!confirmed && !window.confirm('确认采用这张图片到当前分镜？旧图会进入回收记录。'))) return;
+    setBusy(true); setMessage('');
+    try {
+      if (!await flush()) return;
+      const current = getShot();
+      if (!current) return;
+      await mediaLibrary.apply(asset.asset_id, shotImageApplyRequest(current, acknowledge, episodeAspect));
+      setMessage('图片已采用。'); onChanged(); setCandidateRevision((revision) => revision + 1);
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.code === 'stale_generation_source' && !acknowledge
+        && window.confirm('图片基于旧创作上下文生成。核对预览后仍要采用到当前分镜吗？')) {
+        setBusy(false); return void apply(asset, true, true);
+      }
+      setMessage(errorMessage(cause));
+    } finally { setBusy(false); }
+  }
+
+  return <section className="shot-image-candidates">
+    <h4>分镜图片</h4>
+    {shot.image && <div><strong>当前采用</strong>{shot.image.url && <img src={shot.image.url} alt="当前采用分镜图"/>}{shot.image.is_stale && <Alert type="warning" message="创作内容已变化，请重新核对当前图片。"/>}</div>}
+    <div className="generation-form-grid"><Input.TextArea value={prompt} maxLength={4000} rows={2} onChange={(event) => setPrompt(event.target.value)} placeholder="补充画面要求（选填）"/><InputNumber min={1} max={4} value={count} onChange={(value) => setCount(value ?? 1)}/></div>
+    <div className="dialog-actions"><Button type="primary" loading={busy} disabled={disabled || !shot.script.trim()} onClick={() => void generate()}>生成图片</Button><Button loading={loading} onClick={() => { setTaskRevision((revision) => revision + 1); setCandidateRevision((revision) => revision + 1); }}>刷新状态与候选</Button></div>
+    {message && <Alert type="info" showIcon message={message}/>}
+    <div>{tasks.map((task) => <div className="resource-import-row" key={task.generation_id}><span>{taskLabel(task)} · {task.generation_id}{task.error ? ` · ${task.error.message}` : ''}</span></div>)}</div>
+    {loading ? <Spin/> : <div className="asset-grid">{items.map((asset) => <article className="asset-card" key={asset.asset_id}>
+      {asset.url ? <button className="asset-library-preview" onClick={() => setPreview(asset)}><img src={asset.url} alt={asset.name}/></button> : <p>预览链接不可用</p>}
+      <Button disabled={disabled || busy || shot.image?.media_asset_id === asset.asset_id} onClick={() => void apply(asset)}>{shot.image?.media_asset_id === asset.asset_id ? '当前采用' : '确认采用'}</Button>
+    </article>)}</div>}
+    {preview && <div className="image-lightbox" role="dialog"><img src={preview.url ?? ''} alt={preview.name}/><Button onClick={() => setPreview(null)}>关闭预览</Button></div>}
+  </section>;
+}

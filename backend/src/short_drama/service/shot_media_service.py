@@ -4,7 +4,8 @@ from sqlalchemy import select
 
 from short_drama.core.exceptions import BusinessError, Conflict
 from short_drama.dao.base import BaseDAO
-from short_drama.domain import AIModelConfig, MediaRecycleBin, ShotScript
+from short_drama.dao.episode_storyboard_dao import advance_shot_version, advance_storyboard_version
+from short_drama.domain import AIModelConfig, Episode, MediaRecycleBin, ShotScript
 
 from .base import BaseService, utcnow
 
@@ -71,13 +72,29 @@ class ShotMediaService(BaseService):
             BaseDAO(self.session, MediaRecycleBin).delete(entry)
 
     def _write_confirmed(self, values, shot, existing=None, historical=False):
+        if shot.deleted_at is not None:
+            from short_drama.core.exceptions import WorkflowError
+
+            raise WorkflowError("shot_archived", "Archived shots cannot adopt media")
         self._check_values(values, shot, historical=historical, previous=existing)
+        changed = existing is None or any(
+            getattr(existing, name) != value for name, value in values.items()
+        )
+        if not changed:
+            return existing
         if existing is not None and existing.media_id != values["media_id"]:
             recycle_snapshot(self.session, existing, "replaced")
         self._remove_recycle(shot.id, values["media_id"])
         if existing is None:
-            return self.dao.create(self._creation_audit(values))
-        return self._apply_update(existing, values)
+            result = self.dao.create(self._creation_audit(values))
+        else:
+            result = self._apply_update(existing, values)
+        episode = self._require(Episode, shot.episode_id)
+        shot.updated_at, shot.updated_by = utcnow(), None
+        advance_shot_version(shot)
+        advance_storyboard_version(episode)
+        self.session.flush()
+        return result
 
     def create(self, payload):
         values = self.create_schema.model_validate(
@@ -106,5 +123,11 @@ class ShotMediaService(BaseService):
         """Discard the confirmed slot, preserving its media and original parameters."""
         with self._transaction():
             entity = self._get_locked(identifier)
+            shot = self._require(ShotScript, entity.shot_id)
             recycle_snapshot(self.session, entity, "discarded")
             self.dao.delete(entity)
+            episode = self._require(Episode, shot.episode_id)
+            shot.updated_at, shot.updated_by = utcnow(), None
+            advance_shot_version(shot)
+            advance_storyboard_version(episode)
+            self.session.flush()

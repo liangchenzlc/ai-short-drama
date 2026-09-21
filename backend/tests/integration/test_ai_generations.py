@@ -5,12 +5,13 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
-from short_drama.core.exceptions import Conflict
+from short_drama.core.exceptions import Conflict, WorkflowError
 from short_drama.domain import AIGenerationRecord, MediaAsset, MediaFile, ShotImage
 from short_drama.service.ai_generation_service import AIGenerationService
 from short_drama.service.ai_model_config_service import AIModelConfigService
 from short_drama.service.base import utcnow
 from short_drama.service.episode_service import EpisodeService
+from short_drama.service.episode_storyboard_service import EpisodeStoryboardService
 from short_drama.service.media_asset_service import MediaAssetService
 from short_drama.service.project_service import ProjectService
 from short_drama.service.shot_script_service import ShotScriptService
@@ -87,9 +88,23 @@ def test_generation_source_history_candidates_and_explicit_adoption(db_session):
         assert db_session.scalar(select(ShotImage)) is None
     assets = MediaAssetService(db_session, settings, None)
     assert assets.list(filters=filters)["total"] == 4
-    target = {"target": {"type": "shot_image", "id": str(shot.id)}, "expected_media_id": None}
+    context = EpisodeStoryboardService(db_session).get_shot_context(project.id, episode.id, shot.id)
+    target = {
+        "target": {"type": "shot_image", "id": str(shot.id)},
+        "expected_media_id": None,
+        "expected_row_version": str(shot.row_version),
+        "expected_context_hash": context["context_hash"],
+        "acknowledge_stale_source": True,
+    }
+    applied = assets.apply(201, target)
+    assert applied["media_id"] == "101"
     assert assets.apply(201, target)["media_id"] == "101"
-    assert assets.apply(201, target)["media_id"] == "101"
-    with pytest.raises(Conflict):
+    with pytest.raises(WorkflowError, match="分镜内容已变化"):
         assets.apply(202, target)
-    assert assets.apply(202, {**target, "expected_media_id": "101"})["media_id"] == "102"
+    assert (
+        assets.apply(
+            202,
+            {**target, "expected_media_id": "101", "expected_row_version": applied["row_version"]},
+        )["media_id"]
+        == "102"
+    )

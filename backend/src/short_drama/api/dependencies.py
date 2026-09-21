@@ -24,6 +24,12 @@ def get_episode_service(session: Session = Depends(get_session)):
     return EpisodeService(session)
 
 
+def get_episode_writing_service(session: Session = Depends(get_session)):
+    from short_drama.service.episode_writing_service import EpisodeWritingService
+
+    return EpisodeWritingService(session)
+
+
 def get_storage_service(request: Request) -> StorageService:
     return StorageService(request.app.state.storage, request.app.state.settings)
 
@@ -42,3 +48,15 @@ def get_media_asset_service(request: Request, session: Session = Depends(get_ses
     from short_drama.service.media_asset_service import MediaAssetService
 
     return MediaAssetService(session, request.app.state.settings, request.app.state.storage)
+
+
+def get_asset_library_service(request: Request, session: Session = Depends(get_session)):
+    from short_drama.service.asset_library_service import AssetLibraryService
+
+    return AssetLibraryService(session, request.app.state.settings, request.app.state.storage)
+
+
+def get_asset_image_service(request: Request, session: Session = Depends(get_session)):
+    from short_drama.service.asset_image_service import AssetImageService
+
+    return AssetImageService(session, request.app.state.settings, request.app.state.storage)

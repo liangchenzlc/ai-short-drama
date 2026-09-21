@@ -9,7 +9,7 @@ from .base import BaseDAO
 
 def source_conditions(record, filters):
     scene, identifier = filters.get("source_scene"), filters.get("source_id")
-    if scene is not None and scene != "shot_image":
+    if scene is not None and scene not in {"shot_image", "novel_script", "script_shots"}:
         raise BusinessError("Unsupported source scene")
     if identifier is not None and scene is None:
         raise BusinessError("source_id requires source_scene")
@@ -17,7 +17,15 @@ def source_conditions(record, filters):
     if scene:
         conditions.append(record.request_data["source"]["scene"].as_string() == scene)
     if identifier:
-        conditions.append(record.request_data["source"]["shot_id"].as_string() == str(identifier))
+        field = {"shot_image": "shot_id", "novel_script": "novel_id", "script_shots": "script_id"}[
+            scene
+        ]
+        conditions.append(record.request_data["source"][field].as_string() == str(identifier))
+    for field in ("project_id", "episode_id"):
+        if filters.get(field) is not None:
+            conditions.append(
+                record.request_data["source"][field].as_string() == str(filters[field])
+            )
     return conditions
 
 

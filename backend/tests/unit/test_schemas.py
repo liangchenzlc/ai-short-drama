@@ -193,4 +193,15 @@ def test_read_schema_covers_exact_domain_columns_except_secret(class_name):
         expected.remove("apikey")
         expected.remove("capability_cache")
         expected.add("has_api_key")
+    if class_name == "AssetRead":
+        expected -= {
+            "creation_key",
+            "creation_hash",
+            "model_id",
+            "created_by",
+            "updated_by",
+        }
+        expected |= {"image", "reference_count"}
+    if class_name == "ShotScriptRead":
+        expected -= {"active_position", "creation_key", "creation_hash"}
     assert set(getattr(schemas, class_name).model_fields) == expected

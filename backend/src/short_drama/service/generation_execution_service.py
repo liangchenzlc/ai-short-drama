@@ -6,8 +6,11 @@ import threading
 from contextlib import contextmanager
 from copy import deepcopy
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from short_drama.ai import GenerationError, capability_fingerprint, select_adapter
 from short_drama.core.crypto import KeyCipher
+from short_drama.core.exceptions import WorkflowError
 from short_drama.dao.task_runtime_dao import (
     LeaseLost,
     TaskRuntimeDAO,
@@ -254,7 +257,7 @@ class GenerationExecutionService:
                 current.error = None
                 if task.service_type == "text":
                     call.text_content = result.text or ""
-                    if not call.text_content:
+                    if not call.text_content.strip():
                         finish(
                             current, "failed", {"code": "empty_result", "message": "模型未返回文本"}
                         )
@@ -264,6 +267,12 @@ class GenerationExecutionService:
                             "failed",
                             {"code": "text_truncated", "message": "文本未完整生成，已保留正文"},
                         )
+                    elif (call.request_data.get("source") or {}).get("scene") in {
+                        "novel_script",
+                        "script_shots",
+                    }:
+                        data["archive_started_at"] = now.isoformat()
+                        schedule(current, "save")
                     else:
                         finish(current, "succeeded")
                 else:
@@ -348,9 +357,7 @@ class GenerationExecutionService:
 
     def _save(self, task, record, version, token):
         if task.service_type == "text":
-            with self.factory.begin() as session:
-                current = owned_task(session, task.id, version, token)
-                finish(current, "succeeded" if record.text_content else "failed")
+            self._save_text(task, record, version, token)
             return
         data = record.response_data or {}
         transient = False
@@ -411,3 +418,40 @@ class GenerationExecutionService:
                         "message": "结果未全部保存，已有资产仍可使用",
                     },
                 )
+
+    def _save_text(self, task, record, version, token):
+        from .generation_business_service import GenerationBusinessService
+
+        try:
+            with self.factory.begin() as session:
+                current = owned_task(session, task.id, version, token)
+                GenerationBusinessService(session).save_text_result(task.id, record.id)
+                finish(current, "succeeded")
+        except WorkflowError as error:
+            with self.factory.begin() as session:
+                current = owned_task(session, task.id, version, token)
+                finish(current, "failed", {"code": error.code, "message": error.message})
+        except SQLAlchemyError:
+            # Raw response was committed before entering this local-only transaction.
+            with self.factory.begin() as session:
+                current = owned_task(session, task.id, version, token)
+                call = session.get(AIGenerationRecord, record.id)
+                data = deepcopy(call.response_data or {})
+                attempts = int(data.get("business_save_attempts", 0)) + 1
+                data["business_save_attempts"] = attempts
+                call.response_data = data
+                if archive_due(
+                    data,
+                    utcnow(),
+                    call.config_snapshot.get(
+                        "archive_budget_seconds", self.settings.generation_archive_budget_seconds
+                    ),
+                ):
+                    current.error = {"code": "business_save_failed", "message": "正在恢复结果保存"}
+                    schedule(current, "save", min(60, 2 ** min(attempts, 6)))
+                else:
+                    finish(
+                        current,
+                        "failed",
+                        {"code": "business_save_failed", "message": "结果保存失败"},
+                    )

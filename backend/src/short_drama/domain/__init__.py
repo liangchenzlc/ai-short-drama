@@ -1,6 +1,7 @@
 from .ai_generation_record import AIGenerationRecord
 from .ai_model_config import AIModelConfig
 from .asset import Asset
+from .asset_image_candidate import AssetImageCandidate
 from .async_task import AsyncTask
 from .base import Base
 from .episode import Episode
@@ -32,6 +33,7 @@ __all__ = [
     "EpisodeNovel",
     "EpisodeScript",
     "Asset",
+    "AssetImageCandidate",
     "GlobalAsset",
     "ProjectAsset",
     "EpisodeAsset",

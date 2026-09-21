@@ -6,8 +6,23 @@ import type { GenerationDetail, GenerationReceipt, GenerationRecord } from '../.
 import { attemptStorage, clearAttempt, isServerId, requestAttempt } from './attempt';
 import { ConfigSelect } from './ConfigSelect';
 import { dateLabel, generationError, kindLabels, taskLabel } from './presentation';
+import { episodePath } from '../../app/paths';
 
 type Action = 'cancel' | 'retry' | 'resume';
+
+function BusinessResult({ detail }: { detail: GenerationDetail }) {
+  const business = detail.result.business;
+  const source = detail.source;
+  if (!business && !detail.source_snapshot && !detail.effective_prompt) return null;
+  const episodeSource = source?.scene === 'novel_script' || source?.scene === 'script_shots' ? source : null;
+  return <div className="generation-business-result">
+    {business?.kind === 'novel_script' && <p>已保存候选剧本 <strong>{business.script_id}</strong>，需在本集页面预览并明确设为当前编辑。</p>}
+    {business?.kind === 'script_shots' && <p>结构化分镜候选共 <strong>{business.shots.length}</strong> 镜。{business.applied ? `已${business.applied.mode === 'append' ? '追加' : '替换'}应用。` : '尚未应用。'}</p>}
+    {episodeSource && <Link to={episodePath(episodeSource.project_id, episodeSource.episode_id, episodeSource.scene === 'novel_script' ? 'source' : 'storyboard')}>打开来源分集页面</Link>}
+    {detail.effective_prompt && <details><summary>查看实际提示词</summary><pre className="generation-json">{detail.effective_prompt}</pre></details>}
+    {detail.source_snapshot && <details><summary>查看来源快照摘要</summary><pre className="generation-json">{JSON.stringify(detail.source_snapshot, null, 2)}</pre></details>}
+  </div>;
+}
 export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; onClose: () => void; onChanged: () => void; onCreated: (value: GenerationReceipt) => void }) {
   const [detail, setDetail] = useState<GenerationDetail | null>(null);
   const [records, setRecords] = useState<GenerationRecord[]>([]);
@@ -85,6 +100,7 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
             <span>{asset.name}</span><small>查看资产与确认采用</small>
           </Link>)}</div>}
           {!detail.result.text && !detail.result.assets.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={detail.status === 'queued' || detail.status === 'running' ? '结果将在完成后显示' : '暂无已保存结果'} />}
+          <BusinessResult detail={detail}/>
         </section>
         <section className="generation-section"><h3>输入与参数</h3><details><summary>查看提交内容</summary><pre className="generation-json">{JSON.stringify({ input: detail.input, parameters: detail.parameters, ...(detail.source ? { source: detail.source } : {}) }, null, 2)}</pre></details></section>
         <section className="generation-section"><h3>调用记录</h3>

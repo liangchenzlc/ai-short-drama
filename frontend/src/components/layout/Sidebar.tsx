@@ -97,7 +97,9 @@ export function Sidebar({
           <Icon name="settings" />AI 配置
         </button>
       </nav>
-      <p className="studio-sidebar-foot">{page === 'ai' || page === 'tasks' || page === 'media-library' ? '配置、任务与资产保存在服务端' : '内容保存在当前浏览器'}</p>
+      <p className="studio-sidebar-foot">
+        业务内容保存至服务端；模型选择保存在当前浏览器
+      </p>
     </aside>
   );
 }

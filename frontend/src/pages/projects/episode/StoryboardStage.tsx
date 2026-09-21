@@ -1,309 +1,370 @@
-﻿import { Button } from "antd";
-import { sampleShots } from "../../../features/projects/episode-demo";
-import {
-  editShot,
-  type AssetItem,
-  type EpisodeWorkflow,
-} from "../../../features/projects/episode-workflow";
-import type { ListedMedia } from "../../../features/projects/episode-media";
-import { ImagePreview } from "./ImagePreview";
-import { ShotProductionTable } from "./ShotProductionTable";
-import { shotScript } from "../../../features/projects/shot-generation-settings";
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Button, Checkbox, Input, Select, Spin } from 'antd';
+import { ApiError, errorMessage } from '../../../api/http';
+import { storyboardApi, type ShotRead, type StoryboardPage } from '../../../api/modules/storyboard';
+import { assetLibraries, type LibraryAssetRead } from '../../../api/modules/assets';
+import { generations } from '../../../api/modules/generations';
+import type { GenerationDetail, GenerationSummary } from '../../../api/types/generations';
+import { EpisodeModelSelect } from '../../../features/projects/EpisodeModelSelect';
+import type { EpisodeWorkflow } from '../../../features/projects/episode-workflow';
+import type { WritingSession } from '../../../features/projects/writing-session';
+import type { NavigationBarrier } from '../../../features/projects/writing-navigation';
+import { moveShot, scriptShotsRequest } from '../../../features/projects/workflow-contract';
+import { hasUnsettledStoryboard, mergeStoryboardReload, shouldPollStoryboardTasks } from '../../../features/projects/storyboard-session';
+import { attemptStorage, clearAttempt, requestAttempt } from '../../../features/generations/attempt';
+import { taskLabel } from '../../../features/generations/presentation';
+import { StoryboardResultPreview } from '../../../features/projects/StoryboardResultPreview';
+import { ShotImageCandidates } from '../../../features/projects/ShotImageCandidates';
 
 export {
-  confirmShotText,
-  confirmStoryboard,
-  reorderStoryboardShots,
-  addStoryboardShot,
-  removeStoryboardShot,
-  createStoryboardGrids,
-  bindStoryboardGridCell,
-  confirmStoryboardGridCell,
-  adoptGridCellAsFirstFrame,
-} from "./storyboard-legacy";
+  confirmShotText, confirmStoryboard, reorderStoryboardShots, addStoryboardShot,
+  removeStoryboardShot, createStoryboardGrids, bindStoryboardGridCell,
+  confirmStoryboardGridCell, adoptGridCellAsFirstFrame,
+} from './storyboard-legacy';
 
-const assetKinds = [
-  { kind: "character", label: "角色" },
-  { kind: "scene", label: "场景" },
-  { kind: "prop", label: "道具" },
-] as const;
+type Api = ReturnType<typeof storyboardApi>;
 
-function AssetThumbnail({
-  asset,
-  projectId,
-  mediaItems,
-}: {
-  asset: AssetItem;
-  projectId?: string;
-  mediaItems: readonly ListedMedia[];
-}) {
-  const image = asset.imageCandidates.find(
-    (candidate) => candidate.id === asset.selectedImageId,
-  )?.value;
-  return (
-    <span className="storyboard-asset-thumbnail">
-      {image ? (
-        <ImagePreview
-          media={image}
-          label={asset.name}
-          projectId={projectId}
-          mediaItems={mediaItems}
-          kind={asset.kind}
-        />
-      ) : (
-        <span className="storyboard-thumbnail-empty">暂无图片</span>
-      )}
-    </span>
-  );
+async function loadAllShots(api: Api, signal: AbortSignal, includeArchived: boolean): Promise<StoryboardPage> {
+  let offset = 0;
+  let first: StoryboardPage | null = null;
+  const items: ShotRead[] = [];
+  while (first === null || offset < first.total) {
+    const page = await api.shots(signal, includeArchived, offset);
+    if (!first) first = page;
+    if (page.storyboard_version !== first.storyboard_version) {
+      if (offset === 0) throw new Error('storyboard changed during read');
+      return loadAllShots(api, signal, includeArchived);
+    }
+    items.push(...page.items);
+    offset += page.items.length;
+    if (!page.items.length) break;
+  }
+  return { ...(first as StoryboardPage), items, offset: 0, limit: items.length || 100 };
+}
+
+async function loadAllAssets(projectId: string, episodeId: string, signal: AbortSignal) {
+  const scope = { kind: 'episode' as const, projectId, episodeId };
+  const items: LibraryAssetRead[] = [];
+  let offset = 0;
+  let total = 1;
+  while (offset < total) {
+    const page = await assetLibraries.list(scope, { offset, limit: 100 }, signal);
+    items.push(...page.items); total = page.total; offset += page.items.length;
+    if (!page.items.length) break;
+  }
+  return items;
+}
+
+async function loadAllTasks(projectId: string, episodeId: string, scriptId: string | null, signal?: AbortSignal) {
+  const items: GenerationSummary[] = [];
+  let offset = 0;
+  let total = 1;
+  while (offset < total) {
+    const page = await generations.list({
+      service_type: 'text', project_id: projectId, episode_id: episodeId,
+      source_scene: 'script_shots', ...(scriptId ? { source_id: scriptId } : {}),
+      offset, limit: 100,
+    }, signal);
+    items.push(...page.items); total = page.total; offset += page.items.length;
+    if (!page.items.length) break;
+  }
+  return items;
 }
 
 export function StoryboardStage({
-  value,
-  readOnly,
-  onChange,
-  projectId,
-  mediaItems = [],
+  value, readOnly, onChange, projectId, episodeId, scriptId, confirmed,
+  writingSession, registerBarrier,
 }: {
   value: EpisodeWorkflow;
   readOnly: boolean;
   onChange: (next: EpisodeWorkflow) => void;
-  projectId?: string;
-  mediaItems?: readonly ListedMedia[];
+  projectId: string;
+  episodeId: string;
+  contentVersion: string;
+  scriptId: string | null;
+  confirmed: boolean;
+  writingSession: WritingSession;
+  registerBarrier: (barrier: NavigationBarrier | null) => void;
 }) {
-  const update = (next: EpisodeWorkflow) => {
-    if (!readOnly) onChange(next);
-  };
-  const generate = () => {
-    if (readOnly || !value.scriptDraft.trim()) return;
-    if (
-      value.shots.length > 0 &&
-      !window.confirm(
-        "重新生成将替换本集全部分镜脚本和素材关联，并清除这些镜头对应的分镜图及视频结果。是否继续？",
-      )
-    )
-      return;
-    update({
-      ...value,
-      shots: sampleShots(value.scriptDraft, value.assets).map((shot) => ({
-        ...shot,
-        id: crypto.randomUUID(),
-      })),
-      gridBatches: [],
-      reviews: { ...value.reviews, storyboard: "review", video: "not_started" },
+  const api = storyboardApi(projectId, episodeId);
+  const [page, setPageState] = useState<StoryboardPage | null>(null);
+  const pageRef = useRef<StoryboardPage | null>(null);
+  const [assets, setAssets] = useState<LibraryAssetRead[]>([]);
+  const [tasks, setTasks] = useState<GenerationSummary[]>([]);
+  const [candidate, setCandidate] = useState<GenerationDetail | null>(null);
+  const [instructions, setInstructions] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [storyboardRevision, setStoryboardRevision] = useState(0);
+  const [taskRevision, setTaskRevision] = useState(0);
+  const dirty = useRef(new Set<string>());
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const saving = useRef(new Map<string, Promise<boolean>>());
+
+  function setPage(next: StoryboardPage | null) {
+    pageRef.current = next;
+    setPageState(next);
+  }
+
+  function unsettledIds() {
+    return new Set([...dirty.current, ...saving.current.keys(), ...timers.current.keys()]);
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true); setMessage('');
+    Promise.all([
+      loadAllShots(api, controller.signal, includeArchived),
+      loadAllAssets(projectId, episodeId, controller.signal),
+    ]).then(([remote, library]) => {
+      if (controller.signal.aborted) return;
+      setPage(mergeStoryboardReload(remote, pageRef.current, unsettledIds()));
+      setAssets(library);
+    }).catch((cause) => {
+      if (!controller.signal.aborted) setMessage(errorMessage(cause));
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false);
     });
-  };
+    return () => controller.abort();
+  }, [projectId, episodeId, includeArchived, storyboardRevision]);
 
-  return (
-    <div className="storyboard-workspace">
-      <div className="episode-stage-heading storyboard-heading">
-        <div>
-          <h2>分镜制作</h2>
-          <p>逐镜编排脚本，查看分镜图与视频，保持创作上下文。</p>
-        </div>
-        <Button
-          type="primary"
-          disabled={readOnly || !value.scriptDraft.trim()}
-          onClick={generate}
-        >
-          生成分镜脚本
-        </Button>
-      </div>
-      <p className="storyboard-context">
-        {value.shots.length
-          ? `共 ${value.shots.length} 个分镜 · 点击条目展开`
-          : "生成后将在这里展示分镜列表"}
-        <span>当前为前端演示，图片与视频生成暂未开放。</span>
-      </p>
+  useEffect(() => {
+    const controller = new AbortController();
+    loadAllTasks(projectId, episodeId, scriptId, controller.signal)
+      .then((items) => { if (!controller.signal.aborted) setTasks(items); })
+      .catch((cause) => { if (!controller.signal.aborted) setMessage(errorMessage(cause)); });
+    return () => controller.abort();
+  }, [projectId, episodeId, scriptId, taskRevision]);
 
-      {!value.shots.length ? (
-        <div className="storyboard-empty">
-          <h3>从剧本开始编排镜头</h3>
-          <p>
-            {value.scriptDraft.trim()
-              ? "点击「生成分镜脚本」，查看镜头描述并关联本集素材。"
-              : "请先在「剧本确认与素材拆解」中填写本集剧本。"}
-          </p>
-        </div>
-      ) : (
-        <div className="storyboard-list" aria-label="分镜脚本列表">
-          {value.shots.map((shot, index) => (
-            <details className="storyboard-item" key={shot.id} open={index === 0}>
-              <summary className="storyboard-summary">
-                <span className="storyboard-summary-copy">
-                  <strong>分镜镜头 {index + 1}</strong>
-                  <span>
-                    {(shot.script ?? shot.description) || "暂无分镜描述"}
-                  </span>
-                </span>
-                <svg
-                  className="storyboard-chevron"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path d="m9 5 7 7-7 7" />
-                </svg>
-              </summary>
-              <div className="storyboard-expanded storyboard-shot-layout">
-<div className="storyboard-script-column">
-                <section className="storyboard-script">
-                  <label htmlFor={`shot-script-${shot.id}`}>分镜脚本</label>
-                  <textarea
-                    id={`shot-script-${shot.id}`}
-                    rows={4}
-                    value={shotScript(shot)}
-                    readOnly={readOnly}
-                    placeholder="描述本镜画面、人物动作与对白…"
-                    aria-describedby={`shot-script-note-${shot.id}`}
-                    onChange={(event) =>
-                      update(
-                        editShot(value, shot.id, {
-                          script: event.target.value,
-                        }),
-                      )
-                    }
-                  />
-                  <p id={`shot-script-note-${shot.id}`}>
-                    修改后自动保存，请核对已有图片与视频。
-                  </p>
-                </section>
-                <section
-                  className="storyboard-materials"
-                  aria-label={`分镜镜头 ${index + 1}关联素材`}
-                >
-                  <div
-                    className="storyboard-materials-table"
-                    aria-label={`分镜镜头 ${index + 1}关联素材分类`}
-                  >
-                    
-                      
-                        {assetKinds.map(({ kind, label }) => {
-                          const available = value.assets.filter(
-                            (asset) => asset.kind === kind,
-                          );
-                          const linked = available.filter((asset) =>
-                            shot.assetIds.includes(asset.id),
-                          );
-                          const remaining = available.filter(
-                            (asset) => !shot.assetIds.includes(asset.id),
-                          );
-                          return (
-                            <div className="storyboard-asset-group" key={kind}>
-                              <h4>{label}</h4>
-                              <div className="storyboard-asset-row">
-                                {linked.map((asset) => (
-                                  <div
-                                    className="storyboard-linked-asset"
-                                    key={asset.id}
-                                  >
-                                    <AssetThumbnail
-                                      asset={asset}
-                                      projectId={projectId}
-                                      mediaItems={mediaItems}
-                                    />
-                                    <span
-                                      className="storyboard-asset-name"
-                                      title={asset.name}
-                                    >
-                                      {asset.name || "未命名" + label}
-                                    </span>
-                                    {!readOnly && (
-                                      <button
-                                        className="storyboard-unlink"
-                                        type="button"
-                                        aria-label={`取消关联${asset.name || label}`}
-                                        onClick={() =>
-                                          update(
-                                            editShot(value, shot.id, {
-                                              assetIds: shot.assetIds.filter(
-                                                (id) => id !== asset.id,
-                                              ),
-                                            }),
-                                          )
-                                        }
-                                      >
-                                        <svg
-                                          viewBox="0 0 16 16"
-                                          aria-hidden="true"
-                                        >
-                                          <path d="m4 4 8 8m0-8-8 8" />
-                                        </svg>
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                                {linked.length === 0 && (
-                                  <span className="storyboard-no-assets">
-                                    未关联{label}
-                                  </span>
-                                )}
-                              </div>
-                              {!readOnly && (
-                                <details className="storyboard-asset-picker">
-                                  <summary>添加关联{label}</summary>
-                                  {remaining.length ? (
-                                    <div className="storyboard-asset-options">
-                                      {remaining.map((asset) => (
-                                        <button
-                                          type="button"
-                                          className="storyboard-asset-option"
-                                          key={asset.id}
-                                          onClick={() =>
-                                            update(
-                                              editShot(value, shot.id, {
-                                                assetIds: [
-                                                  ...new Set([
-                                                    ...shot.assetIds,
-                                                    asset.id,
-                                                  ]),
-                                                ],
-                                              }),
-                                            )
-                                          }
-                                        >
-                                          <AssetThumbnail
-                                            asset={asset}
-                                            projectId={projectId}
-                                            mediaItems={mediaItems}
-                                          />
-                                          <span>
-                                            {asset.name || "未命名" + label}
-                                          </span>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <p>
-                                      {available.length
-                                        ? "本集" + label + "已全部关联"
-                                        : "暂无可关联" +
-                                          label +
-                                          "，请先在素材图片步骤添加。"}
-                                    </p>
-                                  )}
-                                </details>
-                              )}
-                            </div>
-                          );
-                        })}
-                      
-                    
-                  </div>
-                </section>
-                </div>
-                <ShotProductionTable
-                  value={value}
-                  shot={shot} shotLabel={`分镜镜头 ${index + 1}`}
-                  readOnly={readOnly}
-                  onChange={update}
-                  projectId={projectId}
-                  mediaItems={mediaItems}
-                />
-              </div>
-            </details>
-          ))}
-        </div>
-      )}
+  useEffect(() => {
+    if (!shouldPollStoryboardTasks(tasks)) return;
+    const timer = setTimeout(() => setTaskRevision((revision) => revision + 1), 3000);
+    return () => clearTimeout(timer);
+  }, [tasks]);
+
+  useEffect(() => () => {
+    for (const timer of timers.current.values()) clearTimeout(timer);
+    timers.current.clear();
+  }, []);
+
+  function updateLocal(id: string, patch: Partial<Pick<ShotRead, 'script' | 'asset_ids' | 'image_settings'>>) {
+    const current = pageRef.current;
+    if (!current || readOnly) return;
+    setPage({ ...current, items: current.items.map((shot) => shot.id === id ? { ...shot, ...patch } : shot) });
+    dirty.current.add(id);
+    clearTimeout(timers.current.get(id));
+    timers.current.set(id, setTimeout(() => void saveShot(id), 1000));
+  }
+
+  function saveShot(id: string): Promise<boolean> {
+    clearTimeout(timers.current.get(id));
+    timers.current.delete(id);
+    const active = saving.current.get(id);
+    if (active) return active.then((ok) => ok && dirty.current.has(id) ? saveShot(id) : ok);
+    const shot = pageRef.current?.items.find((item) => item.id === id);
+    if (!shot || !dirty.current.has(id)) return Promise.resolve(true);
+    dirty.current.delete(id);
+    const operation = api.update(id, {
+      row_version: shot.row_version,
+      script: shot.script,
+      asset_ids: shot.asset_ids,
+      image_settings: shot.image_settings,
+    }).then((result) => {
+      const current = pageRef.current;
+      if (!current) return false;
+      const newer = dirty.current.has(id) || timers.current.has(id);
+      setPage({
+        ...current,
+        storyboard_version: result.storyboard_version,
+        items: current.items.map((item) => item.id !== id ? item : newer
+          ? { ...item, row_version: result.shot.row_version, context_hash: result.shot.context_hash, image: result.shot.image }
+          : result.shot),
+      });
+      return true;
+    }).catch((cause) => {
+      dirty.current.add(id);
+      setMessage(cause instanceof ApiError && cause.status === 409
+        ? '分镜已被其他窗口修改。你的输入仍保留，请下载草稿或刷新后手动合并。'
+        : errorMessage(cause));
+      return false;
+    }).finally(() => saving.current.delete(id));
+    saving.current.set(id, operation);
+    return operation;
+  }
+
+  async function flushAll() {
+    for (const timer of timers.current.values()) clearTimeout(timer);
+    timers.current.clear();
+    while (dirty.current.size || saving.current.size) {
+      const ids = [...new Set([...dirty.current, ...saving.current.keys()])];
+      const results = await Promise.all(ids.map(saveShot));
+      if (results.some((ok) => !ok)) return false;
+    }
+    return true;
+  }
+
+  useEffect(() => {
+    const barrier: NavigationBarrier = {
+      hasUnsettled: () => hasUnsettledStoryboard(dirty.current, saving.current, timers.current),
+      flush: flushAll,
+    };
+    registerBarrier(barrier);
+    return () => registerBarrier(null);
+  });
+
+  async function add() {
+    const current = pageRef.current;
+    if (!current || busy || !await flushAll()) return;
+    setBusy(true); setMessage('');
+    const scope = `new-shot:${projectId}:${episodeId}`;
+    try {
+      const body = { storyboard_version: pageRef.current!.storyboard_version };
+      const idempotencyKey = await requestAttempt(scope, body, attemptStorage());
+      await api.create(body.storyboard_version, idempotencyKey);
+      clearAttempt(scope, attemptStorage());
+      setStoryboardRevision((revision) => revision + 1);
+    } catch (cause) { setMessage(errorMessage(cause)); }
+    finally { setBusy(false); }
+  }
+
+  async function reorder(id: string, direction: -1 | 1) {
+    if (busy || !await flushAll()) return;
+    const current = pageRef.current;
+    if (!current) return;
+    const active = current.items.filter((shot) => !shot.deleted_at);
+    const next = moveShot(active, id, direction);
+    if (next === active) return;
+    setBusy(true);
+    try {
+      await api.order(current.storyboard_version, next.map((shot) => shot.id));
+      setStoryboardRevision((revision) => revision + 1);
+    } catch (cause) { setMessage(errorMessage(cause)); }
+    finally { setBusy(false); }
+  }
+
+  async function archive(id: string) {
+    if (busy || !window.confirm('归档此分镜？已采用媒体和历史生成记录会保留。') || !await flushAll()) return;
+    const latest = pageRef.current?.items.find((shot) => shot.id === id);
+    if (!latest) return;
+    setBusy(true);
+    try {
+      await api.remove(latest.id, latest.row_version);
+      setStoryboardRevision((revision) => revision + 1);
+    } catch (cause) { setMessage(errorMessage(cause)); }
+    finally { setBusy(false); }
+  }
+
+  async function toggleArchived(checked: boolean) {
+    if (!await flushAll()) {
+      setMessage('尚有未保存分镜，无法切换历史列表。');
+      return;
+    }
+    setIncludeArchived(checked);
+  }
+
+  async function generateStoryboard() {
+    if (busy || !confirmed || !scriptId) return;
+    setBusy(true); setMessage('');
+    try {
+      if (!await writingSession.flush()) { setMessage('剧本未保存，未发起生成。'); return; }
+      const latest = writingSession.getSnapshot();
+      if (!latest.confirmed || !latest.scriptId) { setMessage('请先确认当前编辑剧本。'); return; }
+      const body = {
+        ...(value.models.storyboardText ? { config_id: value.models.storyboardText } : {}),
+        ...scriptShotsRequest(projectId, episodeId, latest.scriptId, latest.contentVersion, instructions),
+      };
+      const scope = `script-shots:${projectId}:${episodeId}`;
+      const idempotencyKey = await requestAttempt(scope, body, attemptStorage());
+      const task = await generations.generateText(body, idempotencyKey);
+      clearAttempt(scope, attemptStorage());
+      setMessage(`分镜生成任务 ${task.generation_id} 已提交。`);
+      setTaskRevision((revision) => revision + 1);
+    } catch (cause) { setMessage(errorMessage(cause)); }
+    finally { setBusy(false); }
+  }
+
+  async function previewTask(task: GenerationSummary) {
+    setBusy(true); setMessage('');
+    try { setCandidate(await generations.detail(task.generation_id)); }
+    catch (cause) { setMessage(errorMessage(cause)); }
+    finally { setBusy(false); }
+  }
+
+  async function applyResult(mode: 'append' | 'replace') {
+    if (!candidate || busy || !await flushAll()) return;
+    const current = pageRef.current;
+    if (!current) return;
+    if (mode === 'replace' && !window.confirm(`替换会归档当前 ${current.items.filter((shot) => !shot.deleted_at).length} 个活动分镜，旧媒体与历史会保留。确定继续？`)) return;
+    setBusy(true); setMessage('');
+    try {
+      await api.apply(candidate.generation_id, {
+        mode,
+        content_version: writingSession.getSnapshot().contentVersion,
+        storyboard_version: current.storyboard_version,
+        confirm_replace: mode === 'replace',
+      });
+      setCandidate(null);
+      setStoryboardRevision((revision) => revision + 1);
+      setTaskRevision((revision) => revision + 1);
+    } catch (cause) { setMessage(errorMessage(cause)); }
+    finally { setBusy(false); }
+  }
+
+  function download() {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(pageRef.current, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url; link.download = `episode-${episodeId}-storyboard-draft.json`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  const active = page?.items.filter((shot) => !shot.deleted_at) ?? [];
+  return <div className="storyboard-workspace">
+    <div className="episode-stage-heading storyboard-heading">
+      <div><h2>分镜制作</h2><p>服务端持久化、逐镜自动保存，生成候选需明确追加或替换。</p></div>
+      <div><Button onClick={download}>下载草稿</Button><Button disabled={readOnly || busy} onClick={() => void add()}>新增分镜</Button></div>
     </div>
-  );
+    {message && <Alert type={message.includes('其他窗口') ? 'warning' : 'info'} showIcon message={message}/>}
+    <Checkbox checked={includeArchived} onChange={(event) => void toggleArchived(event.target.checked)}>显示归档历史</Checkbox>
+    <section className="generation-section">
+      <h3>剧本生成分镜</h3>
+      <EpisodeModelSelect kind="text" label="分镜模型" value={value.models.storyboardText} disabled={readOnly || busy} onChange={(id) => onChange({ ...value, models: { ...value.models, storyboardText: id } })}/>
+      <EpisodeModelSelect kind="image" label="分镜生图模型" value={value.models.storyboardImage} disabled={readOnly || busy} onChange={(id) => onChange({ ...value, models: { ...value.models, storyboardImage: id } })}/>
+      <Input.TextArea rows={2} maxLength={4000} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="补充分镜要求（选填）"/>
+      <div className="dialog-actions"><Button type="primary" loading={busy} disabled={readOnly || !confirmed || !scriptId} onClick={() => void generateStoryboard()}>生成分镜脚本</Button><Button onClick={() => setTaskRevision((revision) => revision + 1)}>刷新任务</Button></div>
+      {!confirmed && <p className="episode-help">请先确认当前剧本。</p>}
+      <div className="storyboard-task-list">{tasks.map((task) => <div key={task.generation_id} className="resource-import-row"><span>{taskLabel(task)} · {task.generation_id}{task.error ? ` · ${task.error.message}` : ''}</span><Button disabled={task.status !== 'succeeded'} onClick={() => void previewTask(task)}>预览结果</Button></div>)}</div>
+      {candidate && <StoryboardResultPreview task={candidate} busy={busy} error={message} onApply={(mode) => void applyResult(mode)}/>}
+    </section>
+    {loading && !page ? <Spin/> : <div className="storyboard-list">
+      {page?.items.map((shot) => <details className={`storyboard-item ${shot.deleted_at ? 'is-archived' : ''}`} key={shot.id} open={!shot.deleted_at}>
+        <summary className="storyboard-summary"><strong>{shot.deleted_at ? '已归档' : `分镜 ${shot.position}`}</strong><span>{shot.script || '空分镜'}</span></summary>
+        <div className="storyboard-expanded">
+          <label>分镜脚本<Input.TextArea rows={4} value={shot.script} disabled={readOnly || !!shot.deleted_at} onChange={(event) => updateLocal(shot.id, { script: event.target.value })}/></label>
+          <label>关联素材<Select mode="multiple" style={{ width: '100%' }} value={shot.asset_ids} disabled={readOnly || !!shot.deleted_at} options={assets.map((asset) => ({ value: asset.id, label: `${asset.name}（${asset.kind}）` }))} onChange={(asset_ids) => updateLocal(shot.id, { asset_ids })}/></label>
+          <div className="generation-form-grid">
+            <Select value={shot.image_settings.layout} disabled={readOnly || !!shot.deleted_at} options={['single', 'four', 'five', 'nine'].map((option) => ({ value: option, label: option }))} onChange={(layout) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, layout } })}/>
+            <Select value={shot.image_settings.aspect} disabled={readOnly || !!shot.deleted_at} options={['inherit', '16:9', '9:16', '1:1', '4:3', '3:4'].map((option) => ({ value: option, label: option }))} onChange={(aspect) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, aspect } })}/>
+            <Select value={shot.image_settings.resolution} disabled={readOnly || !!shot.deleted_at} options={['1K', '2K', '4K'].map((option) => ({ value: option, label: option }))} onChange={(resolution) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, resolution } })}/>
+          </div>
+          {!shot.deleted_at && <div className="dialog-actions">
+            <Button disabled={busy || shot.position === 1} onClick={() => void reorder(shot.id, -1)}>上移</Button>
+            <Button disabled={busy || shot.position === active.length} onClick={() => void reorder(shot.id, 1)}>下移</Button>
+            <Button danger disabled={busy} onClick={() => void archive(shot.id)}>归档</Button>
+            <span>{dirty.current.has(shot.id) ? '等待保存' : saving.current.has(shot.id) ? '保存中' : `已保存 v${shot.row_version}`}</span>
+          </div>}
+          {!shot.deleted_at && <ShotImageCandidates
+            shot={shot}
+            disabled={readOnly || busy}
+            modelId={value.models.storyboardImage}
+            episodeAspect={value.aspect}
+            flush={() => saveShot(shot.id)}
+            getShot={() => pageRef.current?.items.find((item) => item.id === shot.id)}
+            onChanged={() => setStoryboardRevision((revision) => revision + 1)}
+          />}
+        </div>
+      </details>)}
+    </div>}
+  </div>;
 }
-

@@ -8,7 +8,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.mysql import (
     BIGINT,
+    CHAR,
     DATETIME,
+    JSON,
     MEDIUMTEXT,
     VARCHAR,
 )
@@ -55,6 +57,27 @@ class Asset(Base):
         server_default=text("NULL"),
         comment="当前素材图片，尚未生成时可空",
     )
+    row_version: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), nullable=False, server_default=text("1"), comment="编辑并发版本"
+    )
+    state: Mapped[str] = mapped_column(
+        VARCHAR(16, collation="utf8mb4_0900_bin"),
+        nullable=False,
+        server_default=text("'unconfirmed'"),
+        comment="素材确认状态",
+    )
+    tags: Mapped[list] = mapped_column(
+        JSON(), nullable=False, server_default=text("(JSON_ARRAY())"), comment="素材标签数组"
+    )
+    scene_time: Mapped[str] = mapped_column(
+        VARCHAR(60), nullable=False, server_default=text("''"), comment="场景时间"
+    )
+    creation_key: Mapped[str | None] = mapped_column(
+        VARCHAR(128, collation="utf8mb4_0900_bin"), nullable=True, server_default=text("NULL")
+    )
+    creation_hash: Mapped[str | None] = mapped_column(
+        CHAR(64, charset="ascii", collation="ascii_bin"), nullable=True, server_default=text("NULL")
+    )
     created_at: Mapped[datetime | None] = mapped_column(
         DATETIME(fsp=6),
         nullable=True,
@@ -84,6 +107,7 @@ class Asset(Base):
         Index("idx_assets_kind_name", "kind", "name"),
         Index("idx_assets_model_id", "model_id"),
         Index("idx_assets_media_id", "media_id"),
+        Index("uk_assets_creation_key", "creation_key", unique=True),
         ForeignKeyConstraint(
             ["model_id"],
             ["ai_model_configs.id"],
@@ -104,6 +128,25 @@ class Asset(Base):
         ),
         CheckConstraint("`kind` IN ('character', 'scene', 'prop')", name="ck_assets_kind"),
         CheckConstraint("CHAR_LENGTH(TRIM(`name`)) > 0", name="ck_assets_name"),
+        CheckConstraint("`row_version` > 0", name="ck_assets_row_version"),
+        CheckConstraint(
+            "`state` IN ('unconfirmed', 'confirmed')", name="ck_assets_state"
+        ),
+        CheckConstraint(
+            "`state` <> 'confirmed' OR `media_id` IS NOT NULL", name="ck_assets_confirmed_media"
+        ),
+        CheckConstraint(
+            "JSON_TYPE(`tags`) = 'ARRAY' AND JSON_LENGTH(`tags`) <= 20", name="ck_assets_tags"
+        ),
+        CheckConstraint(
+            "`kind` = 'scene' OR `scene_time` = ''", name="ck_assets_scene_time"
+        ),
+        CheckConstraint(
+            "(`creation_key` IS NULL AND `creation_hash` IS NULL) OR "
+            "(`creation_key` IS NOT NULL AND CHAR_LENGTH(TRIM(`creation_key`)) > 0 "
+            "AND `creation_hash` IS NOT NULL AND CHAR_LENGTH(`creation_hash`) = 64)",
+            name="ck_assets_creation_pair",
+        ),
         {
             "mysql_engine": "InnoDB",
             "mysql_row_format": "DYNAMIC",

@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, Field
+from pydantic import AfterValidator, Field, model_validator
 
 from .ai_generation import Aspect
 from .base import Identifier, InputModel, nonblank
@@ -28,3 +28,14 @@ class MediaAssetApply(InputModel):
     expected_media_id: Identifier | None
     parameters: ApplyParameters = Field(default_factory=ApplyParameters)
     confirm_shared: bool = False
+    expected_row_version: Identifier | None = None
+    expected_context_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
+    acknowledge_stale_source: bool = False
+
+    @model_validator(mode="after")
+    def require_context(self):
+        if self.target.type in {"shot_image", "asset_image"} and self.expected_row_version is None:
+            raise ValueError("Image adoption requires target row version")
+        if self.target.type == "shot_image" and self.expected_context_hash is None:
+            raise ValueError("Shot image adoption requires context hash")
+        return self

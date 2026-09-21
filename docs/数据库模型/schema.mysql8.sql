@@ -1,7 +1,7 @@
 -- 短剧项目 MySQL 8 建表脚本
 -- 版本要求：MySQL 8.0.21+
 -- 执行前选定空数据库，连接使用 utf8mb4、UTC，并启用严格 SQL 模式（至少 STRICT_TRANS_TABLES）。
--- 按外键依赖顺序创建全部20张表；仅含 CREATE TABLE，不包含 USE、ALTER、数据修改或迁移操作。
+-- 按外键依赖顺序创建全部21张表；仅含 CREATE TABLE，不包含 USE、ALTER、数据修改或迁移操作。
 -- 字段、索引及应用事务规则见同目录 MySQL8数据表设计.md。
 -- 2026-09-20：合并模型生成三表与能力缓存，任务采用五种状态，项目已移除目标时长。
 
@@ -84,6 +84,9 @@ CREATE TABLE `episodes` (
   `synopsis` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '分集简介',
   `aspect` VARCHAR(8) COLLATE utf8mb4_0900_bin NOT NULL COMMENT '本集画幅',
   `style` VARCHAR(255) NOT NULL DEFAULT '' COMMENT '本集风格',
+  `editing_script_id` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '当前编辑剧本；应用保证属于本集，不设循环外键',
+  `content_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '小说、剧本与编辑选择共用的乐观并发版本',
+  `storyboard_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '分镜增改、关联、排序、归档与采用共用的乐观并发版本',
   `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
   `updated_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '最近修改时间；正常写入非空，历史未知可显式NULL',
   `created_by` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '创建人；预留用户ID，暂不设外键',
@@ -93,6 +96,8 @@ CREATE TABLE `episodes` (
   CONSTRAINT `fk_episodes_project_id` FOREIGN KEY (`project_id`)
     REFERENCES `projects` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `ck_episodes_position` CHECK (`position` > 0),
+  CONSTRAINT `ck_episodes_content_version` CHECK (`content_version` > 0),
+  CONSTRAINT `ck_episodes_storyboard_version` CHECK (`storyboard_version` > 0),
   CONSTRAINT `ck_episodes_audit_time` CHECK (`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`),
   CONSTRAINT `ck_episodes_title` CHECK (CHAR_LENGTH(TRIM(`title`)) > 0),
   CONSTRAINT `ck_episodes_aspect` CHECK (`aspect` IN ('16:9', '9:16'))
@@ -143,6 +148,12 @@ CREATE TABLE `assets` (
   `prompt` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '素材生成提示词',
   `model_id` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '使用的模型配置；手动建立、导入时可空',
   `media_id` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '当前素材图片，尚未生成时可空',
+  `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '素材元信息与采用图片的乐观并发版本',
+  `state` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'unconfirmed' COMMENT '素材确认状态',
+  `tags` JSON NOT NULL DEFAULT (JSON_ARRAY()) COMMENT '去空去重后的标签数组，最多20项',
+  `scene_time` VARCHAR(60) NOT NULL DEFAULT '' COMMENT '场景时间；非场景必须为空',
+  `creation_key` VARCHAR(128) COLLATE utf8mb4_0900_bin NULL DEFAULT NULL COMMENT '手动新建幂等键',
+  `creation_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL COMMENT '初始创建请求摘要',
   `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
   `updated_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '最近修改时间；正常写入非空，历史未知可显式NULL',
   `created_by` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '创建人；预留用户ID，暂不设外键',
@@ -151,6 +162,7 @@ CREATE TABLE `assets` (
   KEY `idx_assets_kind_name` (`kind`, `name`),
   KEY `idx_assets_model_id` (`model_id`),
   KEY `idx_assets_media_id` (`media_id`),
+  UNIQUE KEY `uk_assets_creation_key` (`creation_key`),
   CONSTRAINT `fk_assets_model_id` FOREIGN KEY (`model_id`)
     REFERENCES `ai_model_configs` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `fk_assets_media_id` FOREIGN KEY (`media_id`)
@@ -158,6 +170,16 @@ CREATE TABLE `assets` (
   CONSTRAINT `ck_assets_audit_time` CHECK (`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`),
   CONSTRAINT `ck_assets_kind` CHECK (`kind` IN ('character', 'scene', 'prop')),
   CONSTRAINT `ck_assets_name` CHECK (CHAR_LENGTH(TRIM(`name`)) > 0)
+  ,CONSTRAINT `ck_assets_row_version` CHECK (`row_version` > 0)
+  ,CONSTRAINT `ck_assets_state` CHECK (`state` IN ('unconfirmed', 'confirmed'))
+  ,CONSTRAINT `ck_assets_confirmed_media` CHECK (`state` <> 'confirmed' OR `media_id` IS NOT NULL)
+  ,CONSTRAINT `ck_assets_tags` CHECK (JSON_TYPE(`tags`) = 'ARRAY' AND JSON_LENGTH(`tags`) <= 20)
+  ,CONSTRAINT `ck_assets_scene_time` CHECK (`kind` = 'scene' OR `scene_time` = '')
+  ,CONSTRAINT `ck_assets_creation_pair` CHECK (
+    (`creation_key` IS NULL AND `creation_hash` IS NULL)
+    OR (`creation_key` IS NOT NULL AND CHAR_LENGTH(TRIM(`creation_key`)) > 0
+      AND `creation_hash` IS NOT NULL AND CHAR_LENGTH(`creation_hash`) = 64)
+  )
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='素材';
 
 CREATE TABLE `global_assets` (
@@ -215,16 +237,32 @@ CREATE TABLE `shot_scripts` (
   `episode_id` BIGINT UNSIGNED NOT NULL COMMENT '所属分集',
   `position` INT UNSIGNED NOT NULL COMMENT '分集内镜头顺序',
   `script` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '分镜脚本正文',
+  `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '单镜头保存、归档与采用的乐观并发版本',
+  `image_settings` JSON NULL DEFAULT NULL COMMENT '下一次生图设置：resolution/aspect/layout；NULL按默认值读取',
+  `deleted_at` DATETIME(6) NULL DEFAULT NULL COMMENT '归档时间；非空行不参与活动分镜列表',
+  `active_position` INT UNSIGNED GENERATED ALWAYS AS (CASE WHEN `deleted_at` IS NULL THEN `position` ELSE NULL END) STORED COMMENT '活动镜头顺序唯一键',
+  `creation_key` VARCHAR(128) COLLATE utf8mb4_0900_bin NULL DEFAULT NULL COMMENT '手动新建幂等键',
+  `creation_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL COMMENT '初始创建请求摘要',
   `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
   `updated_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '最近修改时间；正常写入非空，历史未知可显式NULL',
   `created_by` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '创建人；预留用户ID，暂不设外键',
   `updated_by` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '最近修改人；预留用户ID，暂不设外键',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_shots_episode_position` (`episode_id`, `position`),
+  UNIQUE KEY `uk_shots_episode_active_position` (`episode_id`, `active_position`),
+  UNIQUE KEY `uk_shots_creation_key` (`creation_key`),
   UNIQUE KEY `uk_shots_id_episode` (`id`, `episode_id`),
+  KEY `idx_shots_episode_deleted_position` (`episode_id`, `deleted_at`, `position`, `id`),
   CONSTRAINT `fk_shot_scripts_episode_id` FOREIGN KEY (`episode_id`)
     REFERENCES `episodes` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `ck_shot_scripts_position` CHECK (`position` > 0),
+  CONSTRAINT `ck_shot_scripts_row_version` CHECK (`row_version` > 0),
+  CONSTRAINT `ck_shot_scripts_image_settings` CHECK (`image_settings` IS NULL OR JSON_TYPE(`image_settings`) = 'OBJECT'),
+  CONSTRAINT `ck_shot_scripts_deleted_time` CHECK (`deleted_at` IS NULL OR `created_at` IS NULL OR `deleted_at` >= `created_at`),
+  CONSTRAINT `ck_shot_scripts_creation` CHECK (
+    (`creation_key` IS NULL AND `creation_hash` IS NULL)
+    OR (`creation_key` IS NOT NULL AND CHAR_LENGTH(TRIM(`creation_key`)) > 0
+      AND `creation_hash` IS NOT NULL AND CHAR_LENGTH(`creation_hash`) = 64)
+  ),
   CONSTRAINT `ck_shot_scripts_audit_time` CHECK (`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='分镜脚本';
 
@@ -249,6 +287,21 @@ CREATE TABLE `shot_assets` (
   CONSTRAINT `ck_shot_assets_audit_time` CHECK (`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='分镜素材关联';
 
+CREATE TABLE `asset_image_candidates` (
+  `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的记录标识',
+  `asset_id` BIGINT UNSIGNED NOT NULL COMMENT '角色、场景或道具本体',
+  `media_id` BIGINT UNSIGNED NOT NULL COMMENT '永久媒体文件',
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_asset_image_candidates_media` (`asset_id`, `media_id`),
+  KEY `idx_asset_image_candidates_time` (`asset_id`, `created_at`, `id`),
+  KEY `idx_asset_image_candidates_media` (`media_id`),
+  CONSTRAINT `fk_asset_image_candidates_asset` FOREIGN KEY (`asset_id`)
+    REFERENCES `assets` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `fk_asset_image_candidates_media` FOREIGN KEY (`media_id`)
+    REFERENCES `media_files` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='素材参考图片候选';
+
 CREATE TABLE `shot_images` (
   `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的记录标识',
   `episode_id` BIGINT UNSIGNED NOT NULL COMMENT '所属分集，与镜头一致',
@@ -260,6 +313,7 @@ CREATE TABLE `shot_images` (
   `media_id` BIGINT UNSIGNED NOT NULL COMMENT '用户确认采用的图片，不能为空',
   `state` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'confirmed' COMMENT '已确认；沿用指定字段，不表示生成任务状态',
   `model_id` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '生图配置；手动导入时可空',
+  `context_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL COMMENT '采用时的shot-context-v1摘要',
   `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
   `updated_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '最近修改时间；正常写入非空，历史未知可显式NULL',
   `created_by` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '创建人；预留用户ID，暂不设外键',
@@ -280,7 +334,8 @@ CREATE TABLE `shot_images` (
   CONSTRAINT `ck_shot_images_state` CHECK (`state` = 'confirmed'),
   CONSTRAINT `ck_shot_images_resolution` CHECK (CHAR_LENGTH(TRIM(`resolution`)) > 0),
   CONSTRAINT `ck_shot_images_layout` CHECK (`layout` IN ('single', 'four', 'five', 'nine')),
-  CONSTRAINT `ck_shot_images_aspect` CHECK (`aspect` IN ('16:9', '9:16', '1:1', '4:3', '3:4'))
+  CONSTRAINT `ck_shot_images_aspect` CHECK (`aspect` IN ('16:9', '9:16', '1:1', '4:3', '3:4')),
+  CONSTRAINT `ck_shot_images_context_hash` CHECK (`context_hash` IS NULL OR CHAR_LENGTH(`context_hash`) = 64)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='分镜图';
 
 CREATE TABLE `shot_videos` (

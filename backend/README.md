@@ -25,7 +25,7 @@ uv run uvicorn short_drama.main:app --reload --host 127.0.0.1 --port 8000
 - MinIO 测试：<http://127.0.0.1:8000/api/v1/test/minio>，只读检查图片和视频 bucket；不可用或缺配置返回 503。
 - Swagger：<http://127.0.0.1:8000/docs>。
 
-应用启动不会建表或修改表。新数据库只需执行[完整建表脚本](../docs/数据库模型/schema.mysql8.sql)，包含当前全部 20 张表、模型能力缓存及五种任务状态，项目已移除目标时长。脚本仅含 CREATE TABLE；执行前选定空数据库，并将连接设为 utf8mb4、UTC 和严格 SQL 模式。历史增量脚本保留供旧库升级使用，不应在完整建表后再次执行；当前业务库已完成相关迁移。
+应用启动不会建表或修改表。新数据库执行[完整建表脚本](../docs/数据库模型/schema.mysql8.sql)，包含当前全部 21 张表、模型能力缓存及五种任务状态，项目已移除目标时长。脚本仅含 CREATE TABLE；执行前选定空数据库，并将连接设为 utf8mb4、UTC 和严格 SQL 模式。历史增量脚本供旧库升级使用，五阶段工作流须按对应迁移 README 执行；实际业务库迁移进度见验收记录，不能根据代码版本推断已迁移。
 
 ## 目录与事务
 
@@ -34,7 +34,7 @@ src/short_drama/
   api/v1/       HTTP 路由、参数和响应
   service/      业务规则、事务、审计、并发锁
   dao/          参数化查询和 flush，不提交事务
-  domain/       20 个 SQLAlchemy 表映射
+  domain/       21 个 SQLAlchemy 表映射
   schemas/      独立 Pydantic Create / Update / Read
   db/           连接池、Session、UTC 与严格 SQL 模式
   storage/      MinIO SDK、流式传输、稳定对象定位值
@@ -46,7 +46,7 @@ src/short_drama/
 
 service 每次调用拥有完整事务，成功提交，失败回滚；调用时应传入尚未开启事务的 Session。多个 DAO 在同一业务事务中共享 Session。服务返回已物化的 Read 模型，离开事务后不触发延迟加载。查询列表返回 `items/total/offset/limit`，limit 为 1–500。
 
-HTTP 已开放上述测试接口、AI 配置、异步生成、媒体资产管理及项目/分集增删改查；其余业务 CRUD 仍通过 Python service 提供。尚未接入用户认证和业务上传接口，生成资产不自动删除。
+HTTP 已开放测试接口、AI 配置、异步生成、媒体资产管理、项目/分集、小说/剧本、分镜及三层素材库。素材图片上传作为候选保存，显式确认后才采用。尚未接入用户认证，生成资产不自动删除。
 
 ## 项目与分集管理
 
@@ -54,7 +54,7 @@ HTTP 已开放上述测试接口、AI 配置、异步生成、媒体资产管理
 - `POST /api/v1/projects/{project_id}/episodes`：`title` 必填，`synopsis/aspect/style` 可选；返回 201。省略画幅和风格时继承项目，显式空风格表示清空。排序由服务端在项目行锁内分配。
 - ID 返回字符串；时间为 UTC（Z）。拒绝客户端归属、排序、审计字段及已移除的 `target_ms`。创建不会生成示例或触发 AI，POST 不自动去重。
 - 现有数据库须先执行[目标时长移除迁移](../docs/数据库模型/migrations/2026-09-20-project-creation/README.md)，应用不自动迁移。
-- [完整契约与事务规则](../docs/superpowers/specs/2026-09-20-project-creation-api.md)。网页项目和分集基本信息已接入这些接口，制作内容仍为本地演示。
+- [项目契约与事务规则](../docs/superpowers/specs/2026-09-20-project-creation-api.md)；[五阶段工作流接口](../docs/api/2026-09-21-production-workflow-api.md)涵盖素材、分镜与业务生成。
 
 | 方法与路径（前缀 `/api/v1`） | 用途 |
 | --- | --- |
@@ -70,6 +70,35 @@ HTTP 已开放上述测试接口、AI 配置、异步生成、媒体资产管理
 
 所有分集读写均校验路径归属，不属于该项目的分集返回 404。分页 limit 为 1–100。
 删除沿用外键 RESTRICT：仍有关联分集、素材或制作内容时返回 409，不隐式级联删除。
+
+## 分集写作
+
+旧库先执行[分集写作迁移](../docs/数据库模型/migrations/2026-09-21-episode-writing/README.md)，再重启后台进程。迁移仅增加编辑稿指针和版本，保留已有小说与所有候选剧本；新库完整 schema 已包含这些字段。
+
+前缀为 `/api/v1/projects/{project_id}/episodes/{episode_id}`：
+
+| 方法 | 路径 | 请求 / 返回 |
+| --- | --- | --- |
+| GET | `/writing` | 返回 episode_id、content_version、novel、editing_script、confirmed_script_id；未创建的正文为 null，读取不建记录 |
+| PUT | `/novel` | content、content_version；返回 content_version、novel |
+| PUT | `/script` | content、content_version、script_id；仅首次创建时 script_id=null；返回 content_version、script |
+| PUT | `/editing-script` | script_id、content_version；返回完整 writing |
+| POST | `/scripts/{script_id}/confirm` | content_version；返回完整 writing |
+
+正文对象包含 id、content、updated_at；剧本额外包含 state（unconfirmed/confirmed）。ID 和版本返回字符串，时间为 UTC（Z）。所有写入在分集锁内校验版本，过期版本返回 409，错误归属返回 404，空白剧本确认和正文超限返回 422。单份正文上限 1 MiB UTF-8；允许空字符串，保留空白和换行，不接受 null。无变化保存不增加版本。
+
+小说和剧本独立保存。修改已确认剧本会取消该稿确认；确认另一份稿时在同一事务中取消旧稿确认，最多保留一份已确认稿。选中候选只是切换编辑对象；小说编辑不自动修改剧本。后台 AI 新增候选不改变编辑指针和 content_version，显式切换/确认才推进版本；不能绕开 Service 直接修改这些表。
+
+前端停顿 1 秒自动保存，小说/剧本串行提交最新版本，返回的旧响应不覆盖新输入。冲突暂停保存并允许下载草稿、明确载入服务端版本；网络异常先读取服务端核对。已有浏览器稿仅提供预览和显式导入，模型选择仍存于浏览器。确认是独立操作，不调用 AI；生成按钮创建异步任务。
+
+验证命令：
+
+```powershell
+.venv/Scripts/python.exe -m pytest tests/unit/test_episode_writing.py -q
+.venv/Scripts/python.exe scripts/run_integration.py tests/integration/test_episode_writing.py tests/integration/test_episode_writing_migration.py -q
+```
+
+第二条命令只在随机创建的一次性 `_test` 数据库中测试并发与迁移，不对应用库运行破坏性测试。
 
 ## 异步生成启动
 

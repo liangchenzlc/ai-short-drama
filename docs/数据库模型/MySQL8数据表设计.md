@@ -126,6 +126,8 @@
 
 用途：保存分集归属、排序、标题及制作设置；小说和剧本通过各自的 episode_id 联查。
 
+分集写作接口以 `content_version` 协调小说、剧本正文、编辑选择和确认状态的并发修改；分镜接口独立使用 `storyboard_version` 协调镜头增改、关联、排序、归档和媒体采用。所有写入先锁定分集行，实际变化才递增对应版本，空操作保持版本及审计时间。`editing_script_id` 由应用保证引用本集剧本，删除对应剧本时清空，不设置循环外键。存量库在启动新版运行时前依次执行分集写作迁移和 [五阶段生产工作流迁移](./migrations/2026-09-21-production-workflow/README.md)。写作接口正文限制为 UTF-8 1 MiB，保留空白，允许空字符串，不允许 NULL。
+
 | 字段 | MySQL 类型 | 可空 | 默认值 / 生成方式 | 说明 |
 | --- | --- | --- | --- | --- |
 | id | BIGINT UNSIGNED | 否 | 应用雪花算法生成 | 稳定且不可变的记录标识 |
@@ -135,6 +137,9 @@
 | synopsis | MEDIUMTEXT | 否 | ('') | 分集简介 |
 | aspect | VARCHAR(8) COLLATE utf8mb4_0900_bin | 否 | 无，写入时必填 | 本集画幅 |
 | style | VARCHAR(255) | 否 | '' | 本集风格 |
+| editing_script_id | BIGINT UNSIGNED | 是 | NULL | 当前编辑剧本，由应用保证属于本集 |
+| content_version | BIGINT UNSIGNED | 否 | 1 | 写作内容及选择的乐观并发版本，接口使用十进制字符串 |
+| storyboard_version | BIGINT UNSIGNED | 否 | 1 | 分镜集合乐观并发版本，接口使用十进制字符串 |
 | created_at | DATETIME(6) | 是 | CURRENT_TIMESTAMP(6) | 创建时间；正常写入非空，历史未知可显式NULL |
 | updated_at | DATETIME(6) | 是 | CURRENT_TIMESTAMP(6) | 最近修改时间；正常写入非空，历史未知可显式NULL |
 | created_by | BIGINT UNSIGNED | 是 | NULL | 创建人；预留用户ID，暂不设外键 |
@@ -146,6 +151,8 @@
 | UNIQUE uk_episodes_project_position | project_id, position | 项目内排序唯一；覆盖分集列表查询 |
 | FOREIGN KEY fk_episodes_project_id | (project_id) → projects(id) | 限制删除与修改被引用键 |
 | CHECK ck_episodes_position | 见建表脚本 | 排序为正整数 |
+| CHECK ck_episodes_content_version | content_version > 0 | 写作版本为正整数 |
+| CHECK ck_episodes_storyboard_version | storyboard_version > 0 | 分镜集合版本为正整数 |
 | CHECK ck_episodes_audit_time | 见建表脚本 | 时间均已知时，修改时间不得早于创建时间 |
 | CHECK ck_episodes_title | 见建表脚本 | 标题非空 |
 | CHECK ck_episodes_aspect | 见建表脚本 | 分集画幅 |
@@ -212,6 +219,12 @@
 | prompt | MEDIUMTEXT | 否 | ('') | 素材生成提示词 |
 | model_id | BIGINT UNSIGNED | 是 | NULL | 使用的模型配置；手动建立、导入时可空 |
 | media_id | BIGINT UNSIGNED | 是 | NULL | 当前素材图片，尚未生成时可空 |
+| row_version | BIGINT UNSIGNED | 否 | 1 | 素材元信息与采用图片的乐观并发版本 |
+| state | VARCHAR(16) COLLATE utf8mb4_0900_bin | 否 | 'unconfirmed' | unconfirmed / confirmed；confirmed 必须已有 media_id |
+| tags | JSON | 否 | JSON_ARRAY() | 去空去重后的标签数组，最多20项，每项最多40字符 |
+| scene_time | VARCHAR(60) | 否 | '' | 场景时间；非 scene 素材必须为空 |
+| creation_key | VARCHAR(128) COLLATE utf8mb4_0900_bin | 是 | NULL | 手动新建幂等键 |
+| creation_hash | CHAR(64) CHARACTER SET ascii COLLATE ascii_bin | 是 | NULL | 包含目标库范围的初始创建请求摘要 |
 | created_at | DATETIME(6) | 是 | CURRENT_TIMESTAMP(6) | 创建时间；正常写入非空，历史未知可显式NULL |
 | updated_at | DATETIME(6) | 是 | CURRENT_TIMESTAMP(6) | 最近修改时间；正常写入非空，历史未知可显式NULL |
 | created_by | BIGINT UNSIGNED | 是 | NULL | 创建人；预留用户ID，暂不设外键 |
@@ -223,11 +236,16 @@
 | INDEX idx_assets_kind_name | kind, name | 按类型筛选与名称前缀查找 |
 | INDEX idx_assets_model_id | model_id | 外键索引及反向引用查询 |
 | INDEX idx_assets_media_id | media_id | 外键索引及反向引用查询 |
+| UNIQUE uk_assets_creation_key | creation_key | 非空手动创建键全局唯一，多个历史NULL合法 |
 | FOREIGN KEY fk_assets_model_id | (model_id) → ai_model_configs(id) | 限制删除与修改被引用键 |
 | FOREIGN KEY fk_assets_media_id | (media_id) → media_files(id) | 限制删除与修改被引用键 |
 | CHECK ck_assets_audit_time | 见建表脚本 | 时间均已知时，修改时间不得早于创建时间 |
 | CHECK ck_assets_kind | 见建表脚本 | 素材类型 |
 | CHECK ck_assets_name | 见建表脚本 | 素材名称非空 |
+| CHECK ck_assets_row_version | row_version > 0 | 素材版本为正整数 |
+| CHECK ck_assets_state / ck_assets_confirmed_media | 见建表脚本 | 状态枚举；确认状态必须已有采用图片 |
+| CHECK ck_assets_tags / ck_assets_scene_time | 见建表脚本 | 标签为最多20项的JSON数组；非场景不保存场景时间 |
+| CHECK ck_assets_creation_pair | 见建表脚本 | 创建键与64位摘要同时为空或同时有效 |
 
 ## 8. 全部素材（全局库关联） — global_assets
 
@@ -297,7 +315,7 @@
 
 ## 11. 分镜脚本 — shot_scripts
 
-用途：保存每个镜头的分镜脚本及分集内顺序；界面按顺序显示“分镜镜头1、2……”而不保存标题。
+用途：保存每个镜头的分镜脚本及分集内顺序；界面按顺序显示“分镜镜头1、2……”而不保存标题。删除采用归档语义，`deleted_at` 非空的历史行保留图片、视频、素材和生成回溯关系。活动顺序由生成列实现唯一约束，归档行保留原 position。
 
 | 字段 | MySQL 类型 | 可空 | 默认值 / 生成方式 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -305,6 +323,12 @@
 | episode_id | BIGINT UNSIGNED | 否 | 无，写入时必填 | 所属分集 |
 | position | INT UNSIGNED | 否 | 无，写入时必填 | 分集内镜头顺序 |
 | script | MEDIUMTEXT | 否 | ('') | 分镜脚本正文 |
+| row_version | BIGINT UNSIGNED | 否 | 1 | 单镜头保存、归档与采用的乐观并发版本 |
+| image_settings | JSON | 是 | NULL | 下一次生图的完整 resolution/aspect/layout 对象；NULL按2K/inherit/single读取 |
+| deleted_at | DATETIME(6) | 是 | NULL | 归档时间，非空行不参与活动列表 |
+| active_position | INT UNSIGNED | 是 | 数据库生成（见建表脚本） | 活动时等于position，归档时NULL；应用不写入 |
+| creation_key | VARCHAR(128) COLLATE utf8mb4_0900_bin | 是 | NULL | 手动新建幂等键 |
+| creation_hash | CHAR(64) CHARACTER SET ascii COLLATE ascii_bin | 是 | NULL | 包含项目、分集和初始内容的请求摘要 |
 | created_at | DATETIME(6) | 是 | CURRENT_TIMESTAMP(6) | 创建时间；正常写入非空，历史未知可显式NULL |
 | updated_at | DATETIME(6) | 是 | CURRENT_TIMESTAMP(6) | 最近修改时间；正常写入非空，历史未知可显式NULL |
 | created_by | BIGINT UNSIGNED | 是 | NULL | 创建人；预留用户ID，暂不设外键 |
@@ -313,10 +337,16 @@
 | 索引 / 约束 | 字段或规则 | 用途 |
 | --- | --- | --- |
 | PRIMARY KEY | id | 聚簇主键 |
-| UNIQUE uk_shots_episode_position | episode_id, position | 镜头排序；用于分集镜头列表 |
+| UNIQUE uk_shots_episode_active_position | episode_id, active_position | 仅活动镜头排序唯一；允许归档行保留旧位置 |
+| UNIQUE uk_shots_creation_key | creation_key | 非空手动创建键全局唯一 |
 | UNIQUE uk_shots_id_episode | id, episode_id | 供分镜子表复合外键引用 |
+| INDEX idx_shots_episode_deleted_position | episode_id, deleted_at, position, id | 活动/归档列表与稳定分页 |
 | FOREIGN KEY fk_shot_scripts_episode_id | (episode_id) → episodes(id) | 限制删除与修改被引用键 |
 | CHECK ck_shot_scripts_position | 见建表脚本 | 排序为正整数 |
+| CHECK ck_shot_scripts_row_version | row_version > 0 | 行版本为正整数 |
+| CHECK ck_shot_scripts_image_settings | 见建表脚本 | 设置为空或JSON对象 |
+| CHECK ck_shot_scripts_deleted_time | 见建表脚本 | 已知创建时间时归档不得早于创建 |
+| CHECK ck_shot_scripts_creation | 见建表脚本 | 创建键与64位摘要成对有效 |
 | CHECK ck_shot_scripts_audit_time | 见建表脚本 | 时间均已知时，修改时间不得早于创建时间 |
 
 ## 12. 分镜素材关联 — shot_assets
@@ -361,6 +391,7 @@
 | media_id | BIGINT UNSIGNED | 否 | 无，写入时必填 | 用户确认采用的图片，不能为空 |
 | state | VARCHAR(16) COLLATE utf8mb4_0900_bin | 否 | 'confirmed' | 已确认；沿用指定字段，不表示生成任务状态 |
 | model_id | BIGINT UNSIGNED | 是 | NULL | 生图配置；手动导入时可空 |
+| context_hash | CHAR(64) CHARACTER SET ascii COLLATE ascii_bin | 是 | NULL | 采用时用户核对的 shot-context-v1 SHA-256；历史NULL表示需重新核对 |
 | created_at | DATETIME(6) | 是 | CURRENT_TIMESTAMP(6) | 创建时间；正常写入非空，历史未知可显式NULL |
 | updated_at | DATETIME(6) | 是 | CURRENT_TIMESTAMP(6) | 最近修改时间；正常写入非空，历史未知可显式NULL |
 | created_by | BIGINT UNSIGNED | 是 | NULL | 创建人；预留用户ID，暂不设外键 |
@@ -382,6 +413,27 @@
 | CHECK ck_shot_images_resolution | 见建表脚本 | 请求清晰度非空，能力由供应商适配器校验 |
 | CHECK ck_shot_images_layout | 见建表脚本 | 图片布局 |
 | CHECK ck_shot_images_aspect | 见建表脚本 | 图片具体画幅 |
+| CHECK ck_shot_images_context_hash | 见建表脚本 | 摘要为空或64字符 |
+
+### 13A. 素材参考图片候选 — asset_image_candidates
+
+用途：保存素材本体与永久图片文件的可选关系。上传图片直接建立候选，不伪造模型调用记录；生成来源可经 `media_files → media_assets → ai_generation_records` 追溯。历史 `assets.media_id` 由迁移脚本使用应用 Snowflake ID 回填，读取接口不隐式补建。
+
+| 字段 | MySQL 类型 | 可空 | 默认值 / 生成方式 | 说明 |
+| --- | --- | --- | --- | --- |
+| id | BIGINT UNSIGNED | 否 | 应用雪花算法生成 | 稳定关系标识 |
+| asset_id | BIGINT UNSIGNED | 否 | 无，写入时必填 | 素材本体 |
+| media_id | BIGINT UNSIGNED | 否 | 无，写入时必填 | 永久图片媒体文件 |
+| created_at | DATETIME(6) | 否 | CURRENT_TIMESTAMP(6) | 候选加入时间 |
+
+| 索引 / 约束 | 字段或规则 | 用途 |
+| --- | --- | --- |
+| PRIMARY KEY | id | 聚簇主键 |
+| UNIQUE uk_asset_image_candidates_media | asset_id, media_id | 同一素材不重复登记同一图片 |
+| INDEX idx_asset_image_candidates_time | asset_id, created_at, id | 候选历史倒序分页 |
+| INDEX idx_asset_image_candidates_media | media_id | 媒体反向引用检查 |
+| FOREIGN KEY fk_asset_image_candidates_asset | asset_id → assets.id | 限制删除被引用素材 |
+| FOREIGN KEY fk_asset_image_candidates_media | media_id → media_files.id | 限制删除被引用文件 |
 
 ## 14. 分镜视频 — shot_videos
 
@@ -520,6 +572,9 @@
 | 选择生成模型 | model_id 必须引用存在的配置 | 新操作校验 enabled=1、is_deleted=0 及 text/image/video 类型；停用或删除不得阻断旧结果的展示、恢复和来源关联 |
 | 图片与视频引用 | 媒体存在；正式表每个 shot_id 唯一且 state 固定为 confirmed | 图片表及素材只引用图片，视频表只引用视频；回收站参数形状必须与媒体格式匹配。媒体类型、稳定定位值一经引用不原地改作其他文件 |
 | 确认、替换、恢复 | 正式图/视频每镜最多一条；回收站同镜同媒体最多一条 | 先锁 shot_scripts 镜头行，校验归属及媒体类型；把旧结果及参数入回收站，再写新确认结果，并移除恢复来源的回收记录，一次提交。镜头尚无正式结果时也锁父镜头行，防止并发首次确认 |
+| 分镜增改与采用 | 活动position唯一，行/集合版本为正数，归档关系仍满足外键 | 按 episode→shot/活动集合顺序加锁；实际变化推进相应row_version及一次storyboard_version；重排先移入不冲突正整数区间；删除只设置deleted_at，不物理删除 |
+| 图片上下文时效 | context_hash为空或64字符 | 对 shot-context-v1 规范JSON计算SHA-256；正文、分集风格/画幅或素材创作字段变化使图片过期，下一次生图分辨率和临时URL不进入摘要 |
+| 素材候选与确认 | 候选关系唯一且两端存在 | 候选仅供预览；确认采用才改assets.media_id并推进row_version。共享编辑先展示引用影响，移除库入口不硬删素材或文件 |
 | 正式结果与回收互斥 | 两表各自唯一，但跨表互斥不能由 CHECK 表达 | 同一镜头同一 media_id 不同时出现在正式结果和回收站；确认、废弃、恢复共用镜头锁。相同媒体被其他镜头或素材使用不违反规则 |
 | 清理回收站与文件 | 所有引用媒体的表都有 RESTRICT 外键，阻止删除仍被引用的媒体元数据 | 清理时锁定 media_files 行并重新检查全部引用；只清理不再引用的文件。物理删除跨越存储系统，需可重试、幂等并防止清理期间新增引用，不能仅依赖一次无锁查询；具体协调机制留待后端设计 |
 | 生成来源同集 | 小说、剧本、分镜外键保证记录存在 | 两张生成记录表的来源与产出必须属于同一分集；创建后禁止改变这些实体的分集归属，以免破坏已有来源关系 |
@@ -538,22 +593,23 @@
 
 - 保留逻辑文档已经说明的受控冗余：shot_assets.episode_id 用于同集外键校验；两张生成来源表将批次元数据与结果放在同表，减少表数量，代价是由事务保证批次一致。
 - shot_images、shot_videos 的 shot_id 为候选键；各自的 episode_id 是跨表冗余，并通过复合外键保持一致。
-- 两个生成列完全由基础字段计算，没有独立编辑或同步入口；它们只服务条件唯一索引。
+- 三个生成列完全由基础字段计算，没有独立编辑或同步入口；它们只服务条件唯一索引。
 - 保留 global_assets 作为独立收录的全局库，尚不改成所有 assets 的汇总查询。
-- AI 配置的 row_version 沿用现有逻辑模型；是否删除仍待确认。项目、分集不重新增加版本字段。
+- AI 配置的 row_version 沿用现有逻辑模型；项目不增加版本字段，分集增加独立的 storyboard_version，避免分镜编辑与写作 content_version 相互制造冲突。
 - 不增加视频输入图片字段、输入快照或历史版本。生成记录能追溯来源 ID，不能还原后来被编辑过的历史正文。
 - 生成任务、调用记录与生成媒体资产已纳入完整建表脚本，见下文补充；密钥加密仍在应用层，存储清理协调和用户系统未增加独立业务表。
 
 ## 核对与执行范围
 
-当前全量建表入口为 `schema.mysql8.sql`，包含 20 张表，只有 CREATE TABLE 语句。
-新增三表的字段、默认值、索引、检查约束与外键以该 SQL 为准：
+当前全量建表入口为 `schema.mysql8.sql`，包含 21 张表，只有 CREATE TABLE 语句。存量升级使用 `migrations/2026-09-21-production-workflow/`，不以全量建表脚本覆盖业务库。
+新增四表及本次扩展字段、默认值、索引、检查约束与外键以该 SQL 为准：
 
 | 表 | 用途与关键约束 |
 | --- | --- |
 | async_tasks | 模型生成任务及当前动作投递；idempotency_key 唯一；任务状态为 queued/running/succeeded/failed/cancelled；保留重试来源、消息版本、租约、取消标记与时间约束 |
 | ai_generation_records | 调用配置及请求快照、供应商任务标识、文本结果与错误；(task_id, call_no) 唯一；关联任务和模型配置；内部调用状态仍保留 unknown 作为受理不明证据 |
 | media_assets | 生成图片/视频资产；(record_id, output_index) 和 media_id 分别唯一；关联调用记录及媒体文件；保留名称与 row_version |
+| asset_image_candidates | 素材参考图片候选；(asset_id, media_id) 唯一；关联素材本体与永久媒体文件 |
 
 `ai_model_configs.capability_cache` 已直接包含在建表定义中，项目目标时长不再存在。
 历史迁移脚本继续保留作为旧库升级记录，不参与新库初始化。

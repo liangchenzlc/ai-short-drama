@@ -35,9 +35,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(BusinessError)
     async def business_error(_request: Request, exc: BusinessError):
+        error = {"code": exc.code, "message": exc.message}
+        details = getattr(exc, "details", {})
+        safe = {}
+        if isinstance(details, dict):
+            version = details.get("current_version")
+            if isinstance(version, (str, int)) and str(version).isdigit():
+                safe["current_version"] = str(version)
+            count = details.get("reference_count")
+            if type(count) is int and count >= 0:
+                safe["reference_count"] = count
+            refs = details.get("references")
+            if isinstance(refs, list):
+                safe["references"] = [
+                    {k: str(r[k]) for k in ("type", "id", "name") if k in r}
+                    if isinstance(r, dict)
+                    else str(r)
+                    for r in refs[:100]
+                    if isinstance(r, dict) or (type(r) in (str, int) and str(r).isdigit())
+                ]
+        if safe:
+            error["details"] = safe
         return JSONResponse(
             status_code=exc.status_code,
-            content={"error": {"code": exc.code, "message": exc.message}},
+            content={"error": error},
         )
 
     @app.exception_handler(RequestValidationError)

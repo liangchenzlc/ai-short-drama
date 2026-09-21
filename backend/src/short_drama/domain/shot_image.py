@@ -9,6 +9,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.mysql import (
     BIGINT,
+    CHAR,
     DATETIME,
     MEDIUMTEXT,
     VARCHAR,
@@ -66,6 +67,12 @@ class ShotImage(Base):
         nullable=True,
         server_default=text("NULL"),
         comment="生图配置；手动导入时可空",
+    )
+    context_hash: Mapped[str | None] = mapped_column(
+        CHAR(64, charset="ascii", collation="ascii_bin"),
+        nullable=True,
+        server_default=text("NULL"),
+        comment="采用时的shot-context-v1摘要",
     )
     created_at: Mapped[datetime | None] = mapped_column(
         DATETIME(fsp=6),
@@ -130,6 +137,10 @@ class ShotImage(Base):
         ),
         CheckConstraint(
             "`aspect` IN ('16:9', '9:16', '1:1', '4:3', '3:4')", name="ck_shot_images_aspect"
+        ),
+        CheckConstraint(
+            "`context_hash` IS NULL OR CHAR_LENGTH(`context_hash`) = 64",
+            name="ck_shot_images_context_hash",
         ),
         {
             "mysql_engine": "InnoDB",

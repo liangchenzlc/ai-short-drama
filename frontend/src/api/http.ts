@@ -7,6 +7,7 @@ export class ApiError extends Error {
     public readonly code: string,
     public readonly status?: number,
     public readonly fields: ApiFieldError[] = [],
+    public readonly details?: { current_version?: string; references?: { type: string; id: string; name?: string }[]; reference_count?: number },
   ) { super(message); this.name = 'ApiError'; }
 }
 const fieldLabels: Record<string, string> = {
@@ -32,6 +33,20 @@ const discoveryMessages: Record<string, string> = {
   model_discovery_invalid_response: '服务返回的内容不是有效模型列表，可以手动填写模型标识。',
   model_discovery_too_large: '模型列表响应过大，请手动填写模型标识。',
 };
+const workflowMessages: Record<string, string> = {
+  writing_version_conflict: '小说或剧本版本已变化。草稿已保留，请重新加载后手动合并。',
+  shot_version_conflict: '分镜已被其他窗口修改。输入已保留，请重新加载后合并。',
+  storyboard_version_conflict: '分镜列表顺序已变化，请刷新列表后重试。',
+  asset_version_conflict: '素材已被其他页面修改，请刷新素材后重试。',
+  source_changed: '生成所基于的剧本已变化。候选仍保留，请基于当前剧本重新生成。',
+  script_not_confirmed: '请先保存并确认当前编辑剧本。',
+  asset_in_use: '素材仍被活动分镜引用，请先解除关联。',
+  shared_asset_confirmation_required: '此素材被多处共享引用，需要明确确认影响范围。',
+  stale_generation_source: '图片基于旧创作上下文生成，请核对后明确确认。',
+  shot_archived: '分镜已归档，不能继续修改或采用图片。',
+  result_already_applied: '此生成结果已经用另一种方式应用。',
+  novel_empty: '请先填写并保存小说正文。',
+};
 export const http = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1', timeout: 15_000 });
 
 // Never propagate AxiosError: its config can contain credentials. Do not reflect server input.
@@ -43,8 +58,8 @@ http.interceptors.response.use((response) => response, (cause: unknown) => {
   const fields: ApiFieldError[] = Array.isArray(envelope?.fields)
     ? envelope.fields.flatMap((entry: { field?: unknown }) => typeof entry?.field === 'string' && fieldLabels[entry.field]
       ? [{ field: entry.field, message: `请检查${fieldLabels[entry.field]}的填写内容。` }] : []) : [];
-  const discoveryMessage = typeof envelope?.code === 'string' && Object.hasOwn(discoveryMessages, envelope.code) ? discoveryMessages[envelope.code] : undefined;
-  const message = discoveryMessage || (status === 409 ? '配置已被修改，请重新加载最新配置后再操作。'
+  const codeMessage = typeof envelope?.code === 'string' ? (discoveryMessages[envelope.code] ?? workflowMessages[envelope.code]) : undefined;
+  const message = codeMessage || (status === 409 ? '数据已被修改，请重新加载最新内容后再操作。'
     : status === 404 ? '配置不存在或已被删除，请刷新列表。'
     : status === 422 ? '填写内容不符合要求，请检查后重试。'
     : status === 401 || status === 403 ? '没有操作权限，请检查登录状态。'
@@ -54,7 +69,8 @@ http.interceptors.response.use((response) => response, (cause: unknown) => {
     : !status ? '无法连接服务，请检查网络或服务是否启动。' : '请求失败，请重试。');
   const code = typeof envelope?.code === 'string' && /^[A-Z_]{1,64}$/i.test(envelope.code)
     ? envelope.code : status ? `HTTP_${status}` : 'NETWORK';
-  return Promise.reject(new ApiError(message, code, status, fields));
+  const details = envelope?.details && typeof envelope.details === 'object' ? envelope.details : undefined;
+  return Promise.reject(new ApiError(message, code, status, fields, details));
 });
 export const isCancelled = (error: unknown) => error instanceof ApiError && error.code === 'CANCELLED';
 export const errorMessage = (error: unknown) => error instanceof ApiError ? error.message : '操作失败，请重试。';

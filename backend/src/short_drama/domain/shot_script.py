@@ -2,15 +2,20 @@ from datetime import datetime
 
 from sqlalchemy import (
     CheckConstraint,
+    Computed,
     ForeignKeyConstraint,
+    Index,
     UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.mysql import (
     BIGINT,
+    CHAR,
     DATETIME,
     INTEGER,
+    JSON,
     MEDIUMTEXT,
+    VARCHAR,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,6 +40,29 @@ class ShotScript(Base):
     )
     script: Mapped[str] = mapped_column(
         MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="分镜脚本正文"
+    )
+    row_version: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), nullable=False, server_default=text("1"), comment="单镜头并发版本"
+    )
+    image_settings: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True),
+        nullable=True,
+        server_default=text("NULL"),
+        comment="下一次生图设置",
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DATETIME(fsp=6), nullable=True, server_default=text("NULL"), comment="归档时间"
+    )
+    active_position: Mapped[int | None] = mapped_column(
+        INTEGER(unsigned=True),
+        Computed("CASE WHEN `deleted_at` IS NULL THEN `position` ELSE NULL END", persisted=True),
+        nullable=True,
+    )
+    creation_key: Mapped[str | None] = mapped_column(
+        VARCHAR(128, collation="utf8mb4_0900_bin"), nullable=True, server_default=text("NULL")
+    )
+    creation_hash: Mapped[str | None] = mapped_column(
+        CHAR(64, charset="ascii", collation="ascii_bin"), nullable=True, server_default=text("NULL")
     )
     created_at: Mapped[datetime | None] = mapped_column(
         DATETIME(fsp=6),
@@ -62,8 +90,16 @@ class ShotScript(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("episode_id", "position", name="uk_shots_episode_position"),
+        UniqueConstraint("episode_id", "active_position", name="uk_shots_episode_active_position"),
+        UniqueConstraint("creation_key", name="uk_shots_creation_key"),
         UniqueConstraint("id", "episode_id", name="uk_shots_id_episode"),
+        Index(
+            "idx_shots_episode_deleted_position",
+            "episode_id",
+            "deleted_at",
+            "position",
+            "id",
+        ),
         ForeignKeyConstraint(
             ["episode_id"],
             ["episodes.id"],
@@ -72,6 +108,21 @@ class ShotScript(Base):
             onupdate="RESTRICT",
         ),
         CheckConstraint("`position` > 0", name="ck_shot_scripts_position"),
+        CheckConstraint("`row_version` > 0", name="ck_shot_scripts_row_version"),
+        CheckConstraint(
+            "`image_settings` IS NULL OR JSON_TYPE(`image_settings`) = 'OBJECT'",
+            name="ck_shot_scripts_image_settings",
+        ),
+        CheckConstraint(
+            "`deleted_at` IS NULL OR `created_at` IS NULL OR `deleted_at` >= `created_at`",
+            name="ck_shot_scripts_deleted_time",
+        ),
+        CheckConstraint(
+            "(`creation_key` IS NULL AND `creation_hash` IS NULL) OR "
+            "(`creation_key` IS NOT NULL AND CHAR_LENGTH(TRIM(`creation_key`)) > 0 "
+            "AND `creation_hash` IS NOT NULL AND CHAR_LENGTH(`creation_hash`) = 64)",
+            name="ck_shot_scripts_creation",
+        ),
         CheckConstraint(
             "`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`",
             name="ck_shot_scripts_audit_time",

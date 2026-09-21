@@ -6,11 +6,12 @@ from sqlalchemy import select
 
 
 def test_four_candidates_do_not_adopt_until_explicit_apply_and_stale_target_conflicts():
-    from short_drama.core.exceptions import Conflict
+    from short_drama.core.exceptions import WorkflowError
     from short_drama.domain import AIGenerationRecord, MediaAsset, MediaFile, ShotImage
     from short_drama.service.ai_generation_service import AIGenerationService
     from short_drama.service.base import utcnow
     from short_drama.service.episode_service import EpisodeService
+    from short_drama.service.episode_storyboard_service import EpisodeStoryboardService
     from short_drama.service.media_asset_service import MediaAssetService
     from short_drama.service.project_service import ProjectService
     from short_drama.service.shot_script_service import ShotScriptService
@@ -66,12 +67,39 @@ def test_four_candidates_do_not_adopt_until_explicit_apply_and_stale_target_conf
         assert session.scalar(select(ShotImage)) is None
         session.rollback()
         assets = MediaAssetService(session, settings, None)
-        body = {"target": {"type": "shot_image", "id": str(shot.id)}, "expected_media_id": None}
+        context = EpisodeStoryboardService(session).get_shot_context(
+            project.id, episode.id, shot.id
+        )
+        body = {
+            "target": {"type": "shot_image", "id": str(shot.id)},
+            "expected_media_id": None,
+            "expected_row_version": str(shot.row_version),
+            "expected_context_hash": context["context_hash"],
+            "acknowledge_stale_source": True,
+        }
+        with pytest.raises(WorkflowError) as stale:
+            assets.apply(201, {**body, "acknowledge_stale_source": False})
+        assert stale.value.code == "stale_generation_source"
+        applied = assets.apply(201, body)
+        assert applied["media_id"] == "101"
         assert assets.apply(201, body)["media_id"] == "101"
-        assert assets.apply(201, body)["media_id"] == "101"
-        with pytest.raises(Conflict):
+        with pytest.raises(WorkflowError, match="分镜内容已变化"):
             assets.apply(202, body)
-        assert assets.apply(202, {**body, "expected_media_id": "101"})["media_id"] == "102"
+        assert (
+            assets.apply(
+                202,
+                {
+                    **body,
+                    "expected_media_id": "101",
+                    "expected_row_version": applied["row_version"],
+                },
+            )["media_id"]
+            == "102"
+        )
+        from short_drama.domain import MediaRecycleBin
+
+        with session.begin():
+            assert len(list(session.scalars(select(MediaRecycleBin)))) == 1
 
 
 def test_rename_requires_current_version():

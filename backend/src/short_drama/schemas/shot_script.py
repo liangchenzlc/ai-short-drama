@@ -18,6 +18,7 @@ class ShotScriptCreate(InputModel):
 class ShotScriptUpdate(InputModel):
     position: PositiveUInt32 = None
     script: MediumText = None
+    row_version: Identifier = None
 
 
 class ShotScriptRead(ReadModel):
@@ -25,6 +26,9 @@ class ShotScriptRead(ReadModel):
     episode_id: Identifier
     position: PositiveUInt32
     script: MediumText
+    row_version: Identifier = 1
+    image_settings: dict | None = None
+    deleted_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     created_by: Identifier | None = None

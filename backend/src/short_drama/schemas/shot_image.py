@@ -21,6 +21,7 @@ class ShotImageCreate(InputModel):
     prompt: MediumText = ""
     media_id: Identifier
     model_id: Identifier | None = None
+    context_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
 
 
 class ShotImageUpdate(InputModel):
@@ -30,6 +31,7 @@ class ShotImageUpdate(InputModel):
     prompt: MediumText = None
     media_id: Identifier = None
     model_id: Identifier | None = None
+    context_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
 
 
 class ShotImageRead(ReadModel):
@@ -43,6 +45,7 @@ class ShotImageRead(ReadModel):
     media_id: Identifier
     state: Literal["confirmed"]
     model_id: Identifier | None = None
+    context_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     created_by: Identifier | None = None
