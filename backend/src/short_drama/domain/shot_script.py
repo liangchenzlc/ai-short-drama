@@ -48,7 +48,10 @@ class ShotScript(Base):
         comment="建议镜头时长（毫秒）",
     )
     source_excerpt: Mapped[str] = mapped_column(
-        MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="生成分镜的连续剧本原文依据"
+        MEDIUMTEXT(),
+        nullable=False,
+        server_default=text("('')"),
+        comment="生成分镜的连续剧本原文依据",
     )
     row_version: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, server_default=text("1"), comment="单镜头并发版本"

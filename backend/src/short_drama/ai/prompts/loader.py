@@ -1,10 +1,10 @@
 """Load UTF-8 prompt resources from the installed backend package."""
 
-from functools import lru_cache
+from functools import cache
 from importlib import resources
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_prompt(relative_path: str) -> str:
     parts = relative_path.replace("\\", "/").split("/")
     if not relative_path or any(part in {"", ".", ".."} for part in parts):
