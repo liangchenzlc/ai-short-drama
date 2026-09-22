@@ -28,6 +28,28 @@ test('storyboard exposes the persisted image model selection', () => {
   assert.match(imageSelect.onChange, /storyboardImage:\s*id/);
 });
 
+test('asset editor exposes a selectable image model for generation', () => {
+  const component = '../src/features/assets/AssetLibraryPanel.tsx';
+  const componentSource = readFileSync(new URL(component, import.meta.url), 'utf8');
+  const file = ts.createSourceFile(component, componentSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let imageSelect;
+  function visit(node) {
+    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === 'ConfigSelect') {
+      const attributes = Object.fromEntries(node.attributes.properties
+        .filter(ts.isJsxAttribute)
+        .map((attribute) => [attribute.name.getText(file), attribute.initializer?.getText(file)]));
+      if (attributes.kind === '"image"') imageSelect = attributes;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(file);
+  assert.ok(imageSelect, 'missing image ConfigSelect');
+  assert.equal(imageSelect.label, '"生图模型"');
+  assert.equal(imageSelect.value, '{imageModelId}');
+  assert.equal(imageSelect.onChange, '{setImageModelId}');
+  assert.equal(imageSelect.disabled, '{busy}');
+});
+
 test('novel and storyboard generation payloads use saved server versions without client messages', () => {
   assert.deepEqual(workflow.novelScriptRequest('12', '34', '56', '突出对白'), {
     source: { scene: 'novel_script', project_id: '12', episode_id: '34', content_version: '56' },
@@ -71,4 +93,34 @@ test('reorder is total and preserves decimal string ids', () => {
 test('asset patch and confirmation preserve explicit compare tokens', () => {
   assert.deepEqual(workflow.assetPatch({ row_version: '9', name: '  Lin  ', tags: [' lead ', 'lead', ''] }, true), { row_version: '9', name: 'Lin', tags: ['lead'], confirm_shared: true });
   assert.deepEqual(workflow.assetConfirmRequest({ row_version: '9', media_id: '23' }, '44', true), { row_version: '9', media_id: '44', expected_media_id: '23', confirm_shared: true });
+});
+
+test('asset editor hides the image gallery until an adopted image or candidate exists', () => {
+  assert.equal(typeof workflow.assetImagePresentation, 'function');
+  assert.deepEqual(workflow.assetImagePresentation(null, null, []), {
+    visible: false,
+    current: null,
+    alternatives: [],
+  });
+
+  const current = { media_id: '11', url: '/current.webp' };
+  const duplicate = { id: 'candidate-current', media_id: '11', url: '/current.webp' };
+  const alternative = { id: 'candidate-new', media_id: '12', url: '/new.webp' };
+  assert.deepEqual(workflow.assetImagePresentation('11', current, [alternative, duplicate]), {
+    visible: true,
+    current,
+    alternatives: [alternative],
+  });
+
+  assert.deepEqual(workflow.assetImagePresentation('11', null, [alternative, duplicate]), {
+    visible: true,
+    current: duplicate,
+    alternatives: [alternative],
+  });
+
+  assert.deepEqual(workflow.assetImagePresentation(null, null, [alternative]), {
+    visible: true,
+    current: null,
+    alternatives: [alternative],
+  });
 });

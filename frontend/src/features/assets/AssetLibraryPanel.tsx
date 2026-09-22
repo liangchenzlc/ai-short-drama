@@ -1,12 +1,13 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Alert, Button, Input, Pagination, Segmented, Skeleton, Tabs, Upload } from 'antd';
+import { Alert, Button, Input, Pagination, Segmented, Skeleton, Upload } from 'antd';
 import { ApiError, errorMessage } from '../../api/http';
 import { assetLibraries, type AssetCandidate, type AssetDraft, type AssetKind, type AssetScope, type LibraryAssetRead } from '../../api/modules/assets';
 import { Dialog } from '../../components/ui/Dialog';
 import { ImagePicker } from '../media-library/ImagePicker';
 import { Icon } from '../../components/ui/Icon';
+import { ConfigSelect } from '../generations/ConfigSelect';
 import { useAssetLibrary } from './useAssetLibrary';
-import { assetConfirmRequest, assetPatch } from '../projects/workflow-contract';
+import { assetConfirmRequest, assetImagePresentation, assetPatch } from '../projects/workflow-contract';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 
 const labels: Record<AssetKind, string> = { character: '角色', scene: '场景', prop: '道具' };
@@ -56,10 +57,11 @@ export function AssetLibraryPanel({
   const [imports, setImports] = useState<LibraryAssetRead[]>([]);
   const [showImport, setShowImport] = useState(false);
   const [showImages, setShowImages] = useState(false);
-  const [editorTab, setEditorTab] = useState('text');
+  const [imageModelId, setImageModelId] = useState<string | undefined>();
   const createAttemptScope = `asset-create:${scopeKey(scope)}:${kind}`;
   const createDirty = Object.values(fields(draft)).some((value) => Array.isArray(value) ? value.length > 0 : !!value);
   const selectedDirty = !!selected && !!selectedSaved && JSON.stringify(fields(selected)) !== JSON.stringify(fields(selectedSaved));
+  const imagePresentation = selected ? assetImagePresentation(selected.media_id, selected.image, candidates) : null;
 
   useEffect(() => {
     if (!selected) return;
@@ -82,7 +84,7 @@ export function AssetLibraryPanel({
     clearAttempt(createAttemptScope, attemptStorage()); setCreating(false); setDraft(blank(kind));
   }
 
-  function openSelected(item: LibraryAssetRead, tab = 'text') { setSelected(item); setSelectedSaved(item); setNotice(''); setCandidates([]); setEditorTab(tab); }
+  function openSelected(item: LibraryAssetRead) { setSelected(item); setSelectedSaved(item); setNotice(''); setCandidates([]); setImageModelId(undefined); }
   function closeSelected() {
     if (selectedDirty && !window.confirm('放弃尚未保存的素材修改？')) return;
     setSelected(null); setSelectedSaved(null);
@@ -189,7 +191,7 @@ export function AssetLibraryPanel({
     <div className="resource-toolbar"><Segmented aria-label="素材类别" value={kind} onChange={changeKind} options={(Object.keys(labels) as AssetKind[]).map((value) => ({ value, label: labels[value] }))}/><Input.Search value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); }} aria-label="搜索素材" placeholder={`搜索${labels[kind]}名称或描述`} allowClear/></div>
     {notice && <Alert type="info" showIcon message={notice}/>} {error && <Alert type="error" showIcon message={error} action={<Button onClick={refresh}>重试</Button>}/>}
     {loading ? <Skeleton title paragraph={{ rows: 3 }}/> : items.length ? <div className="asset-grid">{items.map((item) => <article className="asset-card library-resource-card" key={item.id}>
-      <button className="resource-image" aria-label={`查看 ${item.name} 的图片`} onClick={() => openSelected(item, 'images')}>{item.image?.url ? <img src={item.image.url} alt={item.name} loading="lazy"/> : <span><Icon name={item.kind === 'character' ? 'person' : item.kind} size={32}/>添加参考图</span>}</button>
+      <button className="resource-image" aria-label={`查看 ${item.name} 的详情`} onClick={() => openSelected(item)}>{item.image?.url ? <img src={item.image.url} alt={item.name} loading="lazy"/> : <span><Icon name={item.kind === 'character' ? 'person' : item.kind} size={32}/>添加参考图</span>}</button>
       <div className="asset-card-content"><h3>{item.name}</h3><p>{item.description || item.prompt || '补充外观或特征，方便后续创作。'}</p><div className="resource-meta"><span className={`status-badge ${item.state === 'confirmed' ? 'is-success' : 'is-pending'}`}>{item.state === 'confirmed' ? '已确认' : '待确认'}</span><small>{item.reference_count} 处引用</small></div></div>
       <div className="resource-card-actions"><Button type="link" onClick={() => openSelected(item)}>{readOnly ? '查看详情' : '编辑素材'}</Button>{shareTo && !readOnly && <Button type="link" disabled={busy} onClick={() => void share(item)}>共享到项目</Button>}{!readOnly && <Button type="link" danger disabled={busy} onClick={() => void remove(item)}>移除</Button>}</div>
     </article>)}</div> : !error && <div className="studio-empty"><h3>{query ? `没有找到匹配的${labels[kind]}` : `添加${labels[kind]}素材`}</h3><p>{query ? '试试其他关键词，或清空搜索。' : '添加文字描述和参考图，后续分镜可以直接关联使用。'}</p>{query ? <Button onClick={() => { setQuery(''); setOffset(0); }}>清空搜索</Button> : !readOnly && <Button onClick={() => { setNotice(''); setCreating(true); }}>新建{labels[kind]}</Button>}</div>}
@@ -198,18 +200,64 @@ export function AssetLibraryPanel({
 
     {creating && <Dialog title={`新建${labels[kind]}`} canClose={!busy} onClose={closeCreating}><form onSubmit={create}><AssetFields value={draft} disabled={busy} onChange={setDraft}/>{notice && <Alert type="error" showIcon message={notice}/>}<div className="dialog-actions"><Button disabled={busy} onClick={closeCreating}>取消</Button><Button type="primary" htmlType="submit" loading={busy} disabled={!draft.name.trim()}>创建{labels[kind]}</Button></div></form></Dialog>}
     {showImport && <Dialog title={`从${importFrom?.kind === 'project' ? '项目' : '全局'}素材库添加`} canClose={!busy} onClose={() => setShowImport(false)}>{notice && <Alert type="error" message={notice}/>} {busy ? <Skeleton paragraph={{ rows: 3 }}/> : imports.map((item) => <div className="resource-import-row" key={item.id}><div><strong>{item.name}</strong><p>{item.description}</p></div><Button disabled={busy} onClick={() => void link(item.id)}>添加到本库</Button></div>)}{!busy && !notice && !imports.length && <p>此分类暂无可添加的素材，可以先在当前库新建。</p>}</Dialog>}
-    {selected && <Dialog title={`编辑 ${selected.name}`} canClose={!busy} onClose={closeSelected}>
-      <Tabs activeKey={editorTab} onChange={setEditorTab} items={[{ key: 'text', label: '文字信息' }, { key: 'images', label: `图片候选（${candidates.length}）` }]}/>
-      <div hidden={editorTab !== 'text'}><AssetFields value={selected} disabled={readOnly || busy} onChange={(change) => setSelected({ ...selected, ...change })}/>
-      {notice && <Alert type="info" message={notice}/>}<div className="dialog-actions">{!readOnly && <Button type="primary" loading={busy} disabled={!selectedDirty} onClick={() => void save()}>保存文字</Button>}</div>
-      </div><div hidden={editorTab !== 'images'} className="asset-image-editor"><p>上传或选择参考图，确认采用后用于后续分镜。支持 PNG、JPEG、WebP，最大 20 MB。</p><div className="overview-heading">{!readOnly && <div><Upload disabled={busy} accept="image/png,image/jpeg,image/webp" showUploadList={false} beforeUpload={upload}><Button type="primary" loading={busy}>上传图片</Button></Upload><Button disabled={busy} onClick={() => setShowImages(true)}>从资产库选择</Button></div>}</div>
-      {candidateError && <Alert type="error" message={candidateError}/>}<div className="image-candidate-grid">{candidates.map((candidate) => <article className="image-candidate" key={candidate.id}><img src={candidate.url} alt={`${selected.name}候选`} loading="lazy"/><Button disabled={readOnly || busy || selected.media_id === candidate.media_id} onClick={() => void confirm(candidate)}>{selected.media_id === candidate.media_id ? '当前采用' : '确认采用'}</Button></article>)}</div>{!candidates.length && !candidateError && <p>添加第一张图片，确定素材的视觉形象。</p>}</div>
+    {selected && <Dialog title={`编辑 ${selected.name}`} className="asset-editor-drawer" canClose={!busy} onClose={closeSelected}>
+      <div className="asset-editor-drawer-body">
+        <div className="asset-editor-meta" aria-label="素材状态">
+          <span>{labels[selected.kind]}</span>
+          <span className={`status-badge ${selected.state === 'confirmed' ? 'is-success' : 'is-pending'}`}>{selected.state === 'confirmed' ? '已确认' : '待确认'}</span>
+          <small>{selected.reference_count} 处引用</small>
+        </div>
+
+        <section className="asset-editor-section" aria-labelledby="asset-editor-details-title">
+          <div className="asset-editor-section-heading">
+            <div><h3 id="asset-editor-details-title">素材信息</h3><p>整理可复用的文字特征，后续分镜会沿用这些内容。</p></div>
+          </div>
+          <AssetFields className="asset-editor-fields" value={selected} disabled={readOnly || busy} onChange={(change) => setSelected({ ...selected, ...change })}/>
+          {notice && (
+            <Alert type="info" showIcon message={notice}/>
+          )}
+        </section>
+
+        <section className="asset-editor-section asset-editor-media" aria-labelledby="asset-editor-media-title">
+          <div className="asset-editor-section-heading">
+            <div><h3 id="asset-editor-media-title">参考图片</h3><p>上传或选择图片，确认采用后作为后续分镜的视觉依据。</p></div>
+          </div>
+          {!readOnly && <div className="asset-editor-model-select">
+            <span>生图模型</span>
+            <ConfigSelect kind="image" value={imageModelId} onChange={setImageModelId} disabled={busy} label="生图模型"/>
+          </div>}
+          {!readOnly && <div className="asset-editor-media-actions">
+            <Button disabled aria-describedby="asset-generation-note">生成图片</Button>
+            <Upload disabled={busy} accept="image/png,image/jpeg,image/webp" showUploadList={false} beforeUpload={upload}><Button loading={busy}>上传图片</Button></Upload>
+            <Button disabled={busy} onClick={() => setShowImages(true)}>从资产库选择</Button>
+          </div>}
+          {!readOnly && <p id="asset-generation-note" className="asset-generation-note">生成图片将在下一步接入；当前可上传 PNG、JPEG、WebP，最大 20 MB。</p>}
+          {candidateError && (
+            <Alert type="error" showIcon message={candidateError}/>
+          )}
+
+          {imagePresentation?.visible && <div className="asset-image-gallery">
+            {imagePresentation.current && <figure className="asset-current-image">
+              <div className="asset-image-frame"><img src={imagePresentation.current.url ?? undefined} alt={`${selected.name}当前采用`} loading="lazy"/><span>当前采用</span></div>
+              <figcaption>当前视觉形象</figcaption>
+            </figure>}
+            {imagePresentation.alternatives.length > 0 && <div className="asset-image-alternatives">
+              <h4>{imagePresentation.current ? '其他候选' : '待选图片'}</h4>
+              <div className="image-candidate-grid">{imagePresentation.alternatives.map((candidate) => <article className="image-candidate" key={candidate.id}><img src={candidate.url} alt={`${selected.name}候选`} loading="lazy"/><Button disabled={readOnly || busy} onClick={() => void confirm(candidate)}>确认采用</Button></article>)}</div>
+            </div>}
+          </div>}
+        </section>
+      </div>
+      <div className="asset-editor-drawer-footer">
+        <Button disabled={busy} onClick={closeSelected}>{readOnly ? '关闭' : '取消'}</Button>
+        {!readOnly && <Button type="primary" loading={busy} disabled={!selectedDirty} onClick={() => void save()}>保存修改</Button>}
+      </div>
     </Dialog>}
     {showImages && selected && <ImagePicker busy={busy} onClose={() => setShowImages(false)} onSelect={addMedia}/>}
   </section>;
 }
 
-function AssetFields({ value, disabled, onChange }: { value: AssetDraft | LibraryAssetRead; disabled: boolean; onChange: (value: any) => void }) {
+function AssetFields({ value, disabled, onChange, className = '' }: { value: AssetDraft | LibraryAssetRead; disabled: boolean; onChange: (value: any) => void; className?: string }) {
   const set = (patch: object) => onChange({ ...value, ...patch });
-  return <div className="studio-form"><label>名称<Input value={value.name} disabled={disabled} onChange={(event) => set({ name: event.target.value })}/></label><label>分类<Input value={value.label} disabled={disabled} onChange={(event) => set({ label: event.target.value })}/></label><label>描述<Input.TextArea rows={3} value={value.description} disabled={disabled} onChange={(event) => set({ description: event.target.value })}/></label><label>提示词描述<Input.TextArea rows={3} value={value.prompt} disabled={disabled} onChange={(event) => set({ prompt: event.target.value })}/></label><label>标签<Input value={value.tags.join('，')} disabled={disabled} onChange={(event) => set({ tags: event.target.value.split(/[，,]/) })}/></label>{value.kind === 'scene' && <label>场景时间<Input value={value.scene_time} disabled={disabled} onChange={(event) => set({ scene_time: event.target.value })}/></label>}</div>;
+  return <div className={`studio-form ${className}`.trim()}><label className="asset-field-name">名称<Input value={value.name} disabled={disabled} onChange={(event) => set({ name: event.target.value })}/></label><label className="asset-field-label">分类<Input value={value.label} disabled={disabled} onChange={(event) => set({ label: event.target.value })}/></label><label className="asset-field-description">描述<Input.TextArea rows={4} value={value.description} disabled={disabled} onChange={(event) => set({ description: event.target.value })}/></label><label className="asset-field-prompt">提示词描述<Input.TextArea rows={5} value={value.prompt} disabled={disabled} onChange={(event) => set({ prompt: event.target.value })}/></label><label className="asset-field-tags">标签<Input value={value.tags.join('，')} disabled={disabled} onChange={(event) => set({ tags: event.target.value.split(/[，,]/) })}/></label>{value.kind === 'scene' && <label className="asset-field-scene-time">场景时间<Input value={value.scene_time} disabled={disabled} onChange={(event) => set({ scene_time: event.target.value })}/></label>}</div>;
 }

@@ -55,3 +55,20 @@ export function assetPatch<T extends { row_version: string; name?: string; tags?
 export function assetConfirmRequest(asset: { row_version: string; media_id?: string | null }, mediaId: string, confirmShared: boolean) {
   return { row_version: asset.row_version, media_id: mediaId, expected_media_id: asset.media_id ?? null, confirm_shared: confirmShared };
 }
+
+export function assetImagePresentation<
+  TCurrent extends { media_id: string; url?: string | null },
+  TCandidate extends { media_id: string; url?: string | null },
+>(
+  currentMediaId: string | null,
+  currentImage: TCurrent | null,
+  candidates: readonly TCandidate[],
+) {
+  const current = currentImage?.url
+    ? currentImage
+    : candidates.find((candidate) => candidate.media_id === currentMediaId && candidate.url) ?? null;
+  const alternatives = candidates.filter(
+    (candidate) => !!candidate.url && candidate.media_id !== current?.media_id,
+  );
+  return { visible: current !== null || alternatives.length > 0, current, alternatives };
+}
