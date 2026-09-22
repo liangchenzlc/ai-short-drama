@@ -59,6 +59,24 @@ def test_storyboard_options_default_validate_bounds_and_belong_only_to_script_sh
         )
 
 
+def test_omitted_and_explicit_default_storyboard_options_have_the_same_idempotency_intent():
+    source = {
+        "scene": "script_shots",
+        "project_id": "1",
+        "episode_id": "2",
+        "script_id": "3",
+        "content_version": "4",
+    }
+    omitted = TextGenerationCreate.model_validate({"source": source})
+    explicit = TextGenerationCreate.model_validate(
+        {"source": source, "storyboard": {"average_shot_duration_ms": 3000}}
+    )
+
+    assert omitted.model_dump(mode="json", exclude_unset=True) == explicit.model_dump(
+        mode="json", exclude_unset=True
+    )
+
+
 def test_generic_text_still_requires_messages_and_forbids_business_instructions():
     with pytest.raises(ValidationError):
         TextGenerationCreate.model_validate({})

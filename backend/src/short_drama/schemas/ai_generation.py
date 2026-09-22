@@ -98,7 +98,7 @@ class TextGenerationCreate(InputModel):
             raise ValueError("Extraction options require script_assets source")
         if self.source is not None and self.source.scene == "script_shots":
             if self.storyboard is None:
-                self.storyboard = StoryboardOptions()
+                self.storyboard = StoryboardOptions(average_shot_duration_ms=3000)
         elif self.storyboard is not None:
             raise ValueError("Storyboard options require script_shots source")
         if self.source is None:
