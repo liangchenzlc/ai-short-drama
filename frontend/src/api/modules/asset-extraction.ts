@@ -7,7 +7,10 @@ export interface ExtractionMatch {
 }
 export interface ExtractionCandidate {
   candidate_id: string;
-  original: AssetDraft & { aliases: string[]; evidence: string };
+  original: AssetDraft & {
+    aliases: string[]; evidence: string;
+    importance?: 'core' | 'continuity'; story_function?: string;
+  };
   draft: AssetDraft;
   matches: ExtractionMatch[];
   duplicate_candidates: string[];

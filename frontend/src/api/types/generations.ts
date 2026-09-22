@@ -12,6 +12,7 @@ export interface TextGenerationRequest extends CreateBase {
   input?: { messages: { role: 'system' | 'user' | 'assistant'; content: string }[] };
   source?: Extract<GenerationSource, { scene: 'novel_script' | 'script_shots' | 'script_assets' }>;
   extraction?: { kinds: ('character' | 'scene' | 'prop')[] };
+  storyboard?: { average_shot_duration_ms: number };
   instructions?: string;
   parameters: { temperature?: number; max_output_tokens?: number };
 }
@@ -47,7 +48,7 @@ export interface MediaAsset {
 export interface GenerationDetail extends GenerationSummary {
   input: Record<string, unknown>; parameters: Record<string, unknown>;
   started_at?: string | null; finished_at?: string | null;
-  result: { text: { record_id: string; content: string; finish_reason: string | null } | null; assets: MediaAsset[]; partial: boolean; business?: { kind: 'novel_script'; schema_version: 1; script_id: string } | { kind: 'script_shots'; schema_version: 1; shots: { script: string; asset_ids: string[] }[]; applied: { mode: 'append' | 'replace'; shot_ids: string[]; applied_at: string; storyboard_version: string } | null } | { kind: 'script_assets'; schema_version: 1; items: { candidate_id: string; applied: { asset_id: string } | null }[] } | null };
+  result: { text: { record_id: string; content: string; finish_reason: string | null } | null; assets: MediaAsset[]; partial: boolean; business?: { kind: 'novel_script'; schema_version: 1; script_id: string } | { kind: 'script_shots'; schema_version: 1; shots: { title?: string; source_excerpt?: string; story_beat?: string; script: string; duration_ms?: number; asset_ids: string[] }[]; applied: { mode: 'append' | 'replace'; shot_ids: string[]; applied_at: string; storyboard_version: string } | null } | { kind: 'script_assets'; schema_version: 1; items: { candidate_id: string; applied: { asset_id: string } | null }[] } | null };
   source_snapshot?: Record<string, unknown> | null;
   effective_prompt?: string | null;
 }

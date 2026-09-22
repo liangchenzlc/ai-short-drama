@@ -4,6 +4,7 @@ import test from 'node:test';
 import ts from 'typescript';
 
 const source = readFileSync(new URL('../src/features/projects/asset-extraction-contract.ts', import.meta.url), 'utf8');
+const reviewSource = readFileSync(new URL('../src/features/projects/ScriptAssetExtraction.tsx', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { scriptAssetsRequest, defaultAdoption, extractionApplyRequest } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const item = (id, matches = [], applied = null) => ({ candidate_id: id, draft: { name: id }, matches, applied });
@@ -16,6 +17,13 @@ test('extraction submits saved script, chosen categories and instructions withou
     extraction: { kinds: ['prop', 'scene'] }, instructions: '重要道具', parameters: {},
   });
   assert.throws(() => scriptAssetsRequest('1', '2', '3', '4', [], ''));
+});
+
+test('candidate review explains narrative importance before editable visual details', () => {
+  assert.match(reviewSource, /core:\s*'推动剧情'/);
+  assert.match(reviewSource, /continuity:\s*'维持连续性'/);
+  assert.match(reviewSource, /item\.original\.story_function/);
+  assert.match(reviewSource, /extraction-story-function/);
 });
 
 test('ambiguous names and aliases require explicit review', () => {

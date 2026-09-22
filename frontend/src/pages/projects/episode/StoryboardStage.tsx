@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, Input, Select, Spin } from 'antd';
+import { Alert, Button, Checkbox, Input, InputNumber, Segmented, Select, Spin } from 'antd';
 import { ApiError, errorMessage } from '../../../api/http';
 import { storyboardApi, type ShotRead, type StoryboardPage } from '../../../api/modules/storyboard';
 import { assetLibraries, type LibraryAssetRead } from '../../../api/modules/assets';
@@ -93,6 +93,8 @@ export function StoryboardStage({
   const [tasks, setTasks] = useState<GenerationSummary[]>([]);
   const [candidate, setCandidate] = useState<GenerationDetail | null>(null);
   const [instructions, setInstructions] = useState('');
+  const [durationMode, setDurationMode] = useState('3000');
+  const [averageShotDurationMs, setAverageShotDurationMs] = useState(3000);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -149,7 +151,7 @@ export function StoryboardStage({
     timers.current.clear();
   }, []);
 
-  function updateLocal(id: string, patch: Partial<Pick<ShotRead, 'script' | 'asset_ids' | 'image_settings'>>) {
+  function updateLocal(id: string, patch: Partial<Pick<ShotRead, 'script' | 'duration_ms' | 'asset_ids' | 'image_settings'>>) {
     const current = pageRef.current;
     if (!current || readOnly) return;
     setPage({ ...current, items: current.items.map((shot) => shot.id === id ? { ...shot, ...patch } : shot) });
@@ -169,6 +171,7 @@ export function StoryboardStage({
     const operation = api.update(id, {
       row_version: shot.row_version,
       script: shot.script,
+      duration_ms: shot.duration_ms,
       asset_ids: shot.asset_ids,
       image_settings: shot.image_settings,
     }).then((result) => {
@@ -273,7 +276,7 @@ export function StoryboardStage({
       if (!latest.confirmed || !latest.scriptId) { setMessage('请先确认当前编辑剧本。'); return; }
       const body = {
         ...(value.models.storyboardText ? { config_id: value.models.storyboardText } : {}),
-        ...scriptShotsRequest(projectId, episodeId, latest.scriptId, latest.contentVersion, instructions),
+        ...scriptShotsRequest(projectId, episodeId, latest.scriptId, latest.contentVersion, instructions, averageShotDurationMs),
       };
       const scope = `script-shots:${projectId}:${episodeId}`;
       const idempotencyKey = await requestAttempt(scope, body, attemptStorage());
@@ -331,20 +334,27 @@ export function StoryboardStage({
       <h3>剧本生成分镜</h3>
       <div className="storyboard-models"><label><span>分镜文字模型</span><EpisodeModelSelect kind="text" label="分镜模型" value={value.models.storyboardText} disabled={readOnly || busy} onChange={(id) => onChange({ ...value, models: { ...value.models, storyboardText: id } })}/></label>
       <label><span>分镜生图模型</span><EpisodeModelSelect kind="image" label="分镜生图模型" value={value.models.storyboardImage} disabled={readOnly || busy} onChange={(id) => onChange({ ...value, models: { ...value.models, storyboardImage: id } })}/></label></div>
+      <div className="storyboard-duration-control">
+        <div><strong>平均镜头时长</strong><small>系统会按动作、对白和情绪节拍分配实际时长，不会把每个镜头强制设成一样长。</small></div>
+        <Segmented aria-label="平均镜头时长预设" value={durationMode} disabled={readOnly || busy} options={[{ label: '2 秒', value: '2000' }, { label: '3 秒', value: '3000' }, { label: '5 秒', value: '5000' }, { label: '自定义', value: 'custom' }]} onChange={(next) => { const mode = String(next); setDurationMode(mode); if (mode !== 'custom') setAverageShotDurationMs(Number(mode)); }}/>
+        {durationMode === 'custom' && <label>自定义时长<InputNumber aria-label="自定义平均镜头时长" min={1} max={10} step={0.5} precision={1} value={averageShotDurationMs / 1000} addonAfter="秒" disabled={readOnly || busy} onChange={(seconds) => { if (seconds !== null) setAverageShotDurationMs(Math.round(seconds * 1000)); }}/></label>}
+      </div>
       <Input.TextArea rows={2} maxLength={4000} value={instructions} onChange={(event) => setInstructions(event.target.value)} aria-label="补充分镜要求" disabled={readOnly || busy} placeholder="补充分镜要求（选填），例如：更多近景，突出人物情绪"/>
       <div className="dialog-actions"><Button type="primary" loading={busy} disabled={readOnly || !confirmed || !scriptId} onClick={() => void generateStoryboard()}>生成分镜脚本</Button><Button onClick={() => setTaskRevision((revision) => revision + 1)}>刷新任务</Button></div>
       {!confirmed && <p className="episode-help">请先确认当前剧本。</p>}
       <div className="storyboard-task-list">{tasks.map((task) => <div key={task.generation_id} className="resource-import-row"><span>{taskLabel(task)} · {task.generation_id}{task.error ? ` · ${task.error.message}` : ''}</span><Button disabled={task.status !== 'succeeded'} onClick={() => void previewTask(task)}>预览结果</Button></div>)}</div>
-      {candidate && <StoryboardResultPreview task={candidate} busy={busy} error={message} onApply={(mode) => void applyResult(mode)}/>}
+      {candidate && <StoryboardResultPreview task={candidate} busy={busy} error={message} assetNames={Object.fromEntries(assets.map((asset) => [asset.id, asset.name]))} onApply={(mode) => void applyResult(mode)}/>}
     </section>
     {loading && !page ? <Spin/> : <div className="storyboard-list">
       {!page?.items.length && <div className="studio-empty"><h3>还没有镜头</h3><p>确认剧本后可让 AI 拆分镜头，也可以手动新增分镜。</p><Button disabled={readOnly || busy} onClick={() => void add()}>新增第一个分镜</Button></div>}
       {page?.items.map((shot) => <details className={`storyboard-item ${shot.deleted_at ? 'is-archived' : ''}`} key={shot.id} open={!shot.deleted_at}>
-        <summary className="storyboard-summary"><strong>{shot.deleted_at ? '已归档' : `分镜 ${shot.position}`}</strong><span>{shot.script || '空分镜'}</span></summary>
+        <summary className="storyboard-summary"><strong>{shot.deleted_at ? '已归档' : `分镜 ${shot.position}`}</strong><span className="storyboard-summary-duration">{Number((shot.duration_ms / 1000).toFixed(1))} 秒</span><span className="storyboard-summary-script">{shot.script || '空分镜'}</span></summary>
         <div className="storyboard-expanded">
           <label>分镜脚本<Input.TextArea rows={4} value={shot.script} disabled={readOnly || !!shot.deleted_at} onChange={(event) => updateLocal(shot.id, { script: event.target.value })}/></label>
+          {shot.source_excerpt && <details className="storyboard-source-excerpt"><summary>查看原文依据</summary><blockquote>{shot.source_excerpt}</blockquote></details>}
           <label>关联素材<Select mode="multiple" style={{ width: '100%' }} value={shot.asset_ids} disabled={readOnly || !!shot.deleted_at} options={assets.map((asset) => ({ value: asset.id, label: `${asset.name}（${({ character: '角色', scene: '场景', prop: '道具' })[asset.kind]}）` }))} onChange={(asset_ids) => updateLocal(shot.id, { asset_ids })}/></label>
           <div className="generation-form-grid">
+            <label>镜头时长<InputNumber aria-label={`分镜 ${shot.position} 时长`} min={1} max={10} step={0.5} precision={1} value={shot.duration_ms / 1000} addonAfter="秒" disabled={readOnly || !!shot.deleted_at} onChange={(seconds) => { if (seconds !== null) updateLocal(shot.id, { duration_ms: Math.round(seconds * 1000) }); }}/></label>
             <label>画面布局<Select aria-label="画面布局" value={shot.image_settings.layout} disabled={readOnly || !!shot.deleted_at} options={Object.entries({ single: '单图', four: '四宫格', five: '五宫格', nine: '九宫格' }).map(([value, label]) => ({ value, label }))} onChange={(layout) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, layout } })}/></label>
             <label>画幅比例<Select aria-label="画幅比例" value={shot.image_settings.aspect} disabled={readOnly || !!shot.deleted_at} options={['inherit', '16:9', '9:16', '1:1', '4:3', '3:4'].map((option) => ({ value: option, label: option === 'inherit' ? '跟随本集画幅' : option }))} onChange={(aspect) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, aspect } })}/></label>
             <label>图片清晰度<Select aria-label="图片清晰度" value={shot.image_settings.resolution} disabled={readOnly || !!shot.deleted_at} options={['1K', '2K', '4K'].map((option) => ({ value: option, label: option }))} onChange={(resolution) => updateLocal(shot.id, { image_settings: { ...shot.image_settings, resolution } })}/></label>

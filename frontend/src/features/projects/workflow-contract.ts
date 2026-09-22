@@ -10,8 +10,14 @@ export function novelScriptRequest(projectId: string, episodeId: string, content
   return { source: { scene: 'novel_script' as const, project_id: projectId, episode_id: episodeId, content_version: contentVersion }, instructions, parameters: { max_output_tokens: 8192 } };
 }
 
-export function scriptShotsRequest(projectId: string, episodeId: string, scriptId: string, contentVersion: string, instructions: string) {
-  return { source: { scene: 'script_shots' as const, project_id: projectId, episode_id: episodeId, script_id: scriptId, content_version: contentVersion }, instructions, parameters: { max_output_tokens: 8192 } };
+export function scriptShotsRequest(projectId: string, episodeId: string, scriptId: string, contentVersion: string, instructions: string, averageShotDurationMs = 3000) {
+  if (!Number.isInteger(averageShotDurationMs) || averageShotDurationMs < 1000 || averageShotDurationMs > 10000) throw new Error('average shot duration must be 1000..10000 ms');
+  return { source: { scene: 'script_shots' as const, project_id: projectId, episode_id: episodeId, script_id: scriptId, content_version: contentVersion }, storyboard: { average_shot_duration_ms: averageShotDurationMs }, instructions, parameters: { max_output_tokens: 8192 } };
+}
+
+export function storyboardTiming(shots: readonly { duration_ms?: number }[]) {
+  const total_ms = shots.reduce((total, shot) => total + (shot.duration_ms ?? 3000), 0);
+  return { total_ms, average_ms: shots.length ? Math.round(total_ms / shots.length) : 0 };
 }
 
 export function shotImageRequest(shot: WorkflowShot, prompt: string, referenceMediaIds: readonly string[], count: number, episodeAspect: '16:9' | '9:16' = '16:9') {

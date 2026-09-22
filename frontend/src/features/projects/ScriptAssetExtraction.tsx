@@ -15,6 +15,7 @@ import { attemptStorage, clearAttempt, requestAttempt } from '../generations/att
 import { dateLabel, generationError, taskLabel } from '../generations/presentation';
 
 const labels: Record<AssetKind, string> = { character: '角色', scene: '场景', prop: '道具' };
+const importanceLabels = { core: '推动剧情', continuity: '维持连续性' } as const;
 const allKinds = Object.keys(labels) as AssetKind[];
 const active = (task: GenerationSummary) => task.status === 'queued' || task.status === 'running';
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -235,6 +236,10 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
               const disabled = busy || readOnly || !!item.applied;
               return <article className="extraction-candidate" key={item.candidate_id}>
                 <header><Checkbox aria-label={`选择 ${draft.name}`} disabled={disabled || stale} checked={selected.has(item.candidate_id) && !item.applied} onChange={event => selectItem(item.candidate_id, event.target.checked)}/><h3>{draft.name}</h3>{item.applied ? <span className="status-badge is-success">已加入本集</span> : <Button type="text" disabled={disabled} onClick={() => setEditing(editing === item.candidate_id ? null : item.candidate_id)}>{editing === item.candidate_id ? '收起编辑' : '编辑'}</Button>}</header>
+                {item.original.story_function && <section className="extraction-story-function" aria-label="剧情作用">
+                  <span className={`extraction-importance is-${item.original.importance ?? 'continuity'}`}>{importanceLabels[item.original.importance ?? 'continuity']}</span>
+                  <div><h4>剧情作用</h4><p>{item.original.story_function}</p></div>
+                </section>}
                 {editing === item.candidate_id ? <div className="extraction-editor">
                   <label>名称<Input aria-label="素材名称" maxLength={255} value={draft.name} disabled={disabled} onChange={event => editDraft(item, { name: event.target.value })}/></label>
                   <label>类型<Select aria-label="素材类型" value={draft.kind} disabled={disabled} options={allKinds.map(value => ({ value, label: labels[value] }))} onChange={kind => { editDraft(item, { kind, scene_time: kind === 'scene' ? draft.scene_time : '' }); setTab(kind); }}/></label>
