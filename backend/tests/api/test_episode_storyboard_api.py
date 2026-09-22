@@ -68,5 +68,17 @@ def test_create_rejects_partial_image_settings_and_oversize_utf8_script():
                 json={"storyboard_version": "1", "script": "汉" * 10923},
             )
             assert oversized.status_code == 422
+            source_excerpt = await client.post(
+                url,
+                headers=headers,
+                json={"storyboard_version": "1", "source_excerpt": "client-owned"},
+            )
+            assert source_excerpt.status_code == 422
+            invalid_duration = await client.post(
+                url,
+                headers=headers,
+                json={"storyboard_version": "1", "duration_ms": 999},
+            )
+            assert invalid_duration.status_code == 422
 
     asyncio.run(run())

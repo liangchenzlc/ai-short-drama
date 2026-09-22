@@ -60,7 +60,11 @@ class ControlledProvider:
         text = (
             "EXT. GARDEN - DAY\nA character enters."
             if scene == "novel_script"
-            else '{"shots":[{"script":"Wide garden shot","asset_ids":[]}]}'
+            else (
+                '{"shots":[{"title":"Garden entrance","source_excerpt":"EXT. GARDEN - DAY",'
+                '"story_beat":"A character enters the garden.","script":"Wide garden shot",'
+                '"duration_ms":3000,"asset_ids":[]}]}'
+            )
         )
         return GenerationResult(
             status="succeeded", adapter="openai_chat.v1", text=text, finish_reason="stop"

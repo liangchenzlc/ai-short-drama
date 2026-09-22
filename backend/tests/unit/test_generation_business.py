@@ -29,6 +29,36 @@ def test_business_text_accepts_saved_source_without_client_messages():
         )
 
 
+def test_storyboard_options_default_validate_bounds_and_belong_only_to_script_shots():
+    source = {
+        "scene": "script_shots",
+        "project_id": "1",
+        "episode_id": "2",
+        "script_id": "3",
+        "content_version": "4",
+    }
+    parsed = TextGenerationCreate.model_validate({"source": source})
+    assert parsed.storyboard.average_shot_duration_ms == 3000
+    assert (
+        TextGenerationCreate.model_validate(
+            {"source": source, "storyboard": {"average_shot_duration_ms": 5000}}
+        ).storyboard.average_shot_duration_ms
+        == 5000
+    )
+    for invalid in (999, 10001, 3000.5):
+        with pytest.raises(ValidationError):
+            TextGenerationCreate.model_validate(
+                {"source": source, "storyboard": {"average_shot_duration_ms": invalid}}
+            )
+    with pytest.raises(ValidationError):
+        TextGenerationCreate.model_validate(
+            {
+                "source": {**source, "scene": "script_assets"},
+                "storyboard": {"average_shot_duration_ms": 5000},
+            }
+        )
+
+
 def test_generic_text_still_requires_messages_and_forbids_business_instructions():
     with pytest.raises(ValidationError):
         TextGenerationCreate.model_validate({})
@@ -64,30 +94,94 @@ def test_saved_image_allows_empty_supplement_but_requires_context_tokens():
 def test_structured_shots_accepts_one_fence_and_rejects_unknown_asset_or_extra_fields():
     from short_drama.schemas.storyboard_result import parse_storyboard_result
 
-    text = json.dumps({"shots": [{"script": "Wide shot", "asset_ids": ["11"]}]})
-    assert parse_storyboard_result("```json\n" + text + "\n```", {11}) == {
-        "shots": [{"script": "Wide shot", "asset_ids": ["11"]}]
+    source = "林晚走进客厅。她拿起桌上的证据。"
+    shot = {
+        "title": "进入客厅",
+        "source_excerpt": "林晚走进客厅。",
+        "story_beat": "主角进入关键地点。",
+        "script": "Wide shot",
+        "duration_ms": 3000,
+        "asset_ids": ["11"],
+    }
+    text = json.dumps({"shots": [shot]})
+    assert parse_storyboard_result("```json\n" + text + "\n```", {11}, source) == {
+        "shots": [shot]
     }
     with pytest.raises(ValueError):
-        parse_storyboard_result(text, {12})
+        parse_storyboard_result(text, {12}, source)
     with pytest.raises(ValueError):
-        parse_storyboard_result('{"shots":[{"script":"x","asset_ids":[],"id":"3"}]}', set())
+        parse_storyboard_result(
+            json.dumps({"shots": [{**shot, "asset_ids": [], "id": "3"}]}), set(), source
+        )
+
+
+def test_structured_shots_reject_unverified_or_reversed_source_and_invalid_duration():
+    from short_drama.schemas.storyboard_result import parse_storyboard_result
+
+    source = "林晚走进客厅。她拿起桌上的证据。"
+    base = {
+        "title": "节拍",
+        "story_beat": "剧情发生变化。",
+        "script": "镜头脚本",
+        "duration_ms": 3000,
+        "asset_ids": [],
+    }
+    invalid_batches = [
+        [{**base, "source_excerpt": "不存在的原文"}],
+        [
+            {**base, "source_excerpt": "她拿起桌上的证据。"},
+            {**base, "source_excerpt": "林晚走进客厅。"},
+        ],
+        [{**base, "source_excerpt": "林晚走进客厅。", "duration_ms": 999}],
+        [{**base, "source_excerpt": "林晚走进客厅。", "duration_ms": 10001}],
+    ]
+    for shots in invalid_batches:
+        with pytest.raises(ValueError):
+            parse_storyboard_result(json.dumps({"shots": shots}), set(), source)
 
 
 @pytest.mark.parametrize(
     "shots",
     [
         [],
-        [{"script": "", "asset_ids": []}],
-        [{"script": "x", "asset_ids": []}] * 101,
-        [{"script": "x", "asset_ids": ["11", "11"]}],
+        [
+            {
+                "title": "x",
+                "source_excerpt": "source",
+                "story_beat": "beat",
+                "script": "",
+                "duration_ms": 3000,
+                "asset_ids": [],
+            }
+        ],
+        [
+            {
+                "title": "x",
+                "source_excerpt": "source",
+                "story_beat": "beat",
+                "script": "x",
+                "duration_ms": 3000,
+                "asset_ids": [],
+            }
+        ]
+        * 101,
+        [
+            {
+                "title": "x",
+                "source_excerpt": "source",
+                "story_beat": "beat",
+                "script": "x",
+                "duration_ms": 3000,
+                "asset_ids": ["11", "11"],
+            }
+        ],
     ],
 )
 def test_structured_shots_rejects_empty_oversize_and_duplicate_refs(shots):
     from short_drama.schemas.storyboard_result import parse_storyboard_result
 
     with pytest.raises(ValueError):
-        parse_storyboard_result(json.dumps({"shots": shots}), {11})
+        parse_storyboard_result(json.dumps({"shots": shots}), {11}, "source")
 
 
 def test_novel_snapshot_replay_and_candidate_do_not_replace_editor():
@@ -205,14 +299,36 @@ def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archive
                     "episode_id": str(e),
                     "script_id": sid,
                     "content_version": "3",
-                }
+                },
+                "storyboard": {"average_shot_duration_ms": 5000},
             },
             "split-script",
         )
         tid = int(task["generation_id"])
         with session.begin():
             record = session.scalar(select(AIGenerationRecord))
-            record.text_content = '{"shots":[{"script":"new shot","asset_ids":[]}]}'
+            request = record.request_data
+            assert request["template_version"] == "script-shots-v1-r2"
+            assert request["source_snapshot"]["storyboard"] == {
+                "average_shot_duration_ms": 5000
+            }
+            user_envelope = json.loads(request["input"]["messages"][1]["content"])
+            assert user_envelope["source"]["storyboard"]["average_shot_duration_ms"] == 5000
+            assert "平均镜头时长" in request["input"]["messages"][0]["content"]
+            record.text_content = json.dumps(
+                {
+                    "shots": [
+                        {
+                            "title": "New shot",
+                            "source_excerpt": "script",
+                            "story_beat": "The scene begins.",
+                            "script": "new shot",
+                            "duration_ms": 3000,
+                            "asset_ids": [],
+                        }
+                    ]
+                }
+            )
             record.response_data = {"finish_reason": "stop"}
             GenerationBusinessService(session).save_text_result(tid, record.id)
             finish(session.get(AsyncTask, tid), "succeeded")
@@ -228,7 +344,10 @@ def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archive
         adopted = business.apply_storyboard(p, e, tid, payload)
         replay = business.apply_storyboard(p, e, tid, payload)
         assert replay["already_applied"] and replay["shot_ids"] == adopted["shot_ids"]
-        assert [row["script"] for row in board.list(p, e)["items"]] == ["new shot"]
+        generated = board.list(p, e)["items"]
+        assert [row["script"] for row in generated] == ["new shot"]
+        assert generated[0]["duration_ms"] == 3000
+        assert generated[0]["source_excerpt"] == "script"
         with session.begin():
             assert session.get(ShotScript, int(old["shot"]["id"])).deleted_at is not None
             assert len(list(session.scalars(select(ScriptShotRecord)))) == 1

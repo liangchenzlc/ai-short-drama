@@ -57,6 +57,10 @@ class ExtractionOptions(InputModel):
         return self
 
 
+class StoryboardOptions(InputModel):
+    average_shot_duration_ms: int = Field(default=3000, strict=True, ge=1000, le=10000)
+
+
 class TextMessage(InputModel):
     role: Literal["system", "user", "assistant"]
     content: Prompt
@@ -83,6 +87,7 @@ class TextGenerationCreate(InputModel):
     ) = None
     instructions: str = Field(default="", max_length=4000)
     extraction: ExtractionOptions | None = None
+    storyboard: StoryboardOptions | None = None
 
     @model_validator(mode="after")
     def business_or_generic(self):
@@ -91,6 +96,11 @@ class TextGenerationCreate(InputModel):
                 self.extraction = ExtractionOptions(kinds=["character", "scene", "prop"])
         elif self.extraction is not None:
             raise ValueError("Extraction options require script_assets source")
+        if self.source is not None and self.source.scene == "script_shots":
+            if self.storyboard is None:
+                self.storyboard = StoryboardOptions()
+        elif self.storyboard is not None:
+            raise ValueError("Storyboard options require script_shots source")
         if self.source is None:
             if self.input is None or self.instructions:
                 raise ValueError("Generic text requires messages and no business instructions")

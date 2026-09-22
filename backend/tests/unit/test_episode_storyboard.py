@@ -43,6 +43,7 @@ def test_shot_context_is_canonical_and_ignores_image_settings():
     context = normalize_shot_context(
         shot_id=7,
         script="  keep whitespace\n",
+        duration_ms=5000,
         episode_aspect="16:9",
         episode_style="ink",
         assets=assets,
@@ -50,7 +51,7 @@ def test_shot_context_is_canonical_and_ignores_image_settings():
     assert context == {
         "version": "shot-context-v1",
         "shot_id": "7",
-        "shot": {"script": "  keep whitespace\n"},
+        "shot": {"script": "  keep whitespace\n", "duration_ms": 5000},
         "episode": {"aspect": "16:9", "style": "ink"},
         "assets": [
             {
@@ -82,6 +83,7 @@ def test_shot_context_is_canonical_and_ignores_image_settings():
     digest = compute_shot_context_hash(
         shot_id=7,
         script="  keep whitespace\n",
+        duration_ms=5000,
         episode_aspect="16:9",
         episode_style="ink",
         assets=reversed(assets),
@@ -89,6 +91,7 @@ def test_shot_context_is_canonical_and_ignores_image_settings():
     assert digest == compute_shot_context_hash(
         shot_id=7,
         script="  keep whitespace\n",
+        duration_ms=5000,
         episode_aspect="16:9",
         episode_style="ink",
         assets=assets,
@@ -114,6 +117,8 @@ def test_create_replay_update_reorder_and_archive_preserve_versions_and_rows():
         assert first["created"] is True
         assert first["storyboard_version"] == "2"
         assert first["shot"]["row_version"] == "1"
+        assert first["shot"]["duration_ms"] == 3000
+        assert first["shot"]["source_excerpt"] == ""
         replay = service.create(project_id, episode_id, payload, "create-1")
         assert replay["created"] is False
         assert replay["shot"]["id"] == first["shot"]["id"]
@@ -122,6 +127,9 @@ def test_create_replay_update_reorder_and_archive_preserve_versions_and_rows():
         with pytest.raises(WorkflowError) as conflict:
             service.create(project_id, episode_id, {**payload, "script": "different"}, "create-1")
         assert conflict.value.code == "idempotency_conflict"
+        with pytest.raises(WorkflowError) as duration_conflict:
+            service.create(project_id, episode_id, {**payload, "duration_ms": 5000}, "create-1")
+        assert duration_conflict.value.code == "idempotency_conflict"
 
         same = service.update(
             project_id,
@@ -135,9 +143,11 @@ def test_create_replay_update_reorder_and_archive_preserve_versions_and_rows():
             project_id,
             episode_id,
             first["shot"]["id"],
-            {"row_version": "1", "script": "close-up"},
+            {"row_version": "1", "script": "close-up", "duration_ms": 5000},
         )
         assert changed["shot"]["row_version"] == "2"
+        assert changed["shot"]["duration_ms"] == 5000
+        assert changed["shot"]["source_excerpt"] == ""
         assert changed["storyboard_version"] == "3"
         with pytest.raises(WorkflowError) as stale:
             service.update(
@@ -240,6 +250,8 @@ def test_http_contract_for_storyboard_routes():
         "id": "7",
         "position": 1,
         "script": "",
+        "duration_ms": 3000,
+        "source_excerpt": "",
         "row_version": "1",
         "asset_ids": [],
         "image_settings": {"resolution": "2K", "aspect": "inherit", "layout": "single"},
@@ -301,8 +313,15 @@ def test_http_contract_for_storyboard_routes():
                 )
             ).status_code == 200
             assert (
-                await client.patch(root + "/7", json={"row_version": "1", "script": "x"})
+                await client.patch(
+                    root + "/7", json={"row_version": "1", "script": "x", "duration_ms": 5000}
+                )
             ).status_code == 200
+            assert (
+                await client.patch(
+                    root + "/7", json={"row_version": "1", "source_excerpt": "forged"}
+                )
+            ).status_code == 422
             assert (
                 await client.put(
                     root + "/order",

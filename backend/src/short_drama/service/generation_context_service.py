@@ -97,6 +97,7 @@ class GenerationContextService:
                 .with_for_update()
             )
             snapshot["assets"] = [asset_snapshot(asset) for asset in assets]
+            snapshot["storyboard"] = request["storyboard"]
         if scene == "script_assets":
             max_chars = getattr(self.settings, "extraction_max_script_chars", 30000)
             if len(document.content) > max_chars:
@@ -116,8 +117,8 @@ class GenerationContextService:
         request["business_intent"] = {"instructions": instructions}
         request["template_version"] = {
             "novel_script": "novel-script-v1",
-            "script_shots": "script-shots-v1",
-            "script_assets": "script-assets-v1",
+            "script_shots": "script-shots-v1-r2",
+            "script_assets": "script-assets-v1-r2",
         }[scene]
         request["input"] = {"messages": text_messages(scene, snapshot, instructions)}
         return request
@@ -159,6 +160,7 @@ class GenerationContextService:
         values = {
             "shot_id": shot.id,
             "script": shot.script,
+            "duration_ms": shot.duration_ms,
             "episode_aspect": episode.aspect,
             "episode_style": episode.style,
             "assets": assets,

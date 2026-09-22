@@ -17,7 +17,11 @@ def shot_text(value):
 
 
 class GeneratedShot(InputModel):
+    title: Annotated[str, Field(max_length=255), AfterValidator(nonblank)]
+    source_excerpt: Annotated[str, Field(max_length=8000), AfterValidator(nonblank)]
+    story_beat: Annotated[str, Field(max_length=8000), AfterValidator(nonblank)]
     script: Annotated[str, AfterValidator(shot_text)]
+    duration_ms: int = Field(strict=True, ge=1000, le=10000)
     asset_ids: list[Identifier] = Field(max_length=50)
 
     @model_validator(mode="after")
@@ -31,7 +35,9 @@ class StoryboardResult(InputModel):
     shots: list[GeneratedShot] = Field(min_length=1, max_length=100)
 
 
-def parse_storyboard_result(content: str, allowed_asset_ids: set[int]) -> dict:
+def parse_storyboard_result(
+    content: str, allowed_asset_ids: set[int], source_content: str
+) -> dict:
     if len(content.encode("utf-8")) > 1048576:
         raise ValueError("Structured output exceeds 1 MiB")
     stripped = content.strip()
@@ -41,4 +47,10 @@ def parse_storyboard_result(content: str, allowed_asset_ids: set[int]) -> dict:
     result = StoryboardResult.model_validate(json.loads(stripped))
     if any(set(shot.asset_ids) - allowed_asset_ids for shot in result.shots):
         raise ValueError("unknown_asset_reference")
+    previous_position = 0
+    for shot in result.shots:
+        position = source_content.find(shot.source_excerpt, previous_position)
+        if position < 0:
+            raise ValueError("unverified_or_reordered_source_excerpt")
+        previous_position = position
     return result.model_dump(mode="json")

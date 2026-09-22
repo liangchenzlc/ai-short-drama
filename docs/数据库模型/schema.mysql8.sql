@@ -237,6 +237,8 @@ CREATE TABLE `shot_scripts` (
   `episode_id` BIGINT UNSIGNED NOT NULL COMMENT '所属分集',
   `position` INT UNSIGNED NOT NULL COMMENT '分集内镜头顺序',
   `script` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '分镜脚本正文',
+  `duration_ms` INT UNSIGNED NOT NULL DEFAULT 3000 COMMENT '建议镜头时长（毫秒）',
+  `source_excerpt` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '生成分镜的连续剧本原文依据',
   `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '单镜头保存、归档与采用的乐观并发版本',
   `image_settings` JSON NULL DEFAULT NULL COMMENT '下一次生图设置：resolution/aspect/layout；NULL按默认值读取',
   `deleted_at` DATETIME(6) NULL DEFAULT NULL COMMENT '归档时间；非空行不参与活动分镜列表',
@@ -255,6 +257,7 @@ CREATE TABLE `shot_scripts` (
   CONSTRAINT `fk_shot_scripts_episode_id` FOREIGN KEY (`episode_id`)
     REFERENCES `episodes` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `ck_shot_scripts_position` CHECK (`position` > 0),
+  CONSTRAINT `ck_shot_scripts_duration_ms` CHECK (`duration_ms` BETWEEN 1000 AND 10000),
   CONSTRAINT `ck_shot_scripts_row_version` CHECK (`row_version` > 0),
   CONSTRAINT `ck_shot_scripts_image_settings` CHECK (`image_settings` IS NULL OR JSON_TYPE(`image_settings`) = 'OBJECT'),
   CONSTRAINT `ck_shot_scripts_deleted_time` CHECK (`deleted_at` IS NULL OR `created_at` IS NULL OR `deleted_at` >= `created_at`),

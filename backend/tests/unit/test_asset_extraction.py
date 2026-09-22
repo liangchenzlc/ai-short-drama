@@ -25,6 +25,8 @@ ITEMS = [
         "aliases": ["小晚"],
         "description": "走进客厅的人物。",
         "prompt": "短剧人物林晚",
+        "importance": "core",
+        "story_function": "主角进入关键地点并开始行动。",
         "evidence": "林晚拿起红伞",
     },
     {
@@ -32,6 +34,8 @@ ITEMS = [
         "name": "老宅客厅",
         "description": "老宅内的客厅。",
         "prompt": "老宅客厅，室内场景",
+        "importance": "continuity",
+        "story_function": "承载主角进入老宅后的连续行动。",
         "scene_time": "",
         "evidence": "老宅客厅",
     },
@@ -40,6 +44,8 @@ ITEMS = [
         "name": "红伞",
         "description": "林晚拿起的伞。",
         "prompt": "红色雨伞",
+        "importance": "core",
+        "story_function": "主角主动拿起并带入关键场景的物件。",
         "evidence": "拿起红伞",
     },
 ]
@@ -113,6 +119,8 @@ def test_extraction_options_are_scoped_unique_and_nonempty():
         {"description": ""},
         {"name": " "},
         {"kind": "video"},
+        {"importance": "decorative"},
+        {"story_function": " "},
         {"evidence": "虚构的原文"},
         {"media_id": None},
         {"scene_time": "夜"},
@@ -133,6 +141,10 @@ def test_parser_accepts_empty_and_fenced_json_but_not_wrong_category_or_excess()
     raw = json.dumps({"schema_version": 1, "items": [ITEMS[2]]})
     result = parse_extraction_result(f"```json\n{raw}\n```", snapshot)
     assert result["items"][0]["draft"]["prompt"] == "红色雨伞"
+    assert result["items"][0]["original"]["importance"] == "core"
+    assert result["items"][0]["original"]["story_function"].startswith("主角主动")
+    assert "importance" not in result["items"][0]["draft"]
+    assert "story_function" not in result["items"][0]["draft"]
     assert parse_extraction_result('{"schema_version":1,"items":[]}', snapshot)["items"] == []
     for raw in (
         "{",
@@ -160,7 +172,10 @@ def test_confirmation_gate_and_snapshot_settings():
             request = session.scalar(select(AIGenerationRecord)).request_data
             assert request["source_snapshot"]["content"] == SCRIPT
             assert request["source_snapshot"]["extraction"] == {"kinds": ["prop"]}
-            assert request["template_version"] == "script-assets-v1"
+            assert request["template_version"] == "script-assets-v1-r2"
+            system = request["input"]["messages"][0]["content"]
+            assert "删除测试" in system
+            assert "角色规则" not in system
             assert request["parameters"]["max_output_tokens"] == 8192
         page = api.list(0, 20, {"source_scene": "script_assets", "source_id": sid})
         assert page["items"][0]["generation_id"] == receipt["generation_id"]

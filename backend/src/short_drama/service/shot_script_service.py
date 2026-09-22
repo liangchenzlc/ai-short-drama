@@ -28,6 +28,7 @@ class ShotScriptService(BaseService):
                 self._creation_audit(
                     {
                         **values,
+                        "source_excerpt": "",
                         "row_version": 1,
                         "image_settings": None,
                         "deleted_at": None,

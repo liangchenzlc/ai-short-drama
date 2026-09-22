@@ -32,6 +32,7 @@ def _require_complete_image_settings(data):
 class StoryboardCreate(InputModel):
     storyboard_version: Identifier
     script: ShotScriptText = ""
+    duration_ms: int = Field(default=3000, strict=True, ge=1000, le=10000)
     asset_ids: list[Identifier] = Field(default_factory=list, max_length=100)
     image_settings: ShotImageSettings = Field(default_factory=ShotImageSettings)
 
@@ -48,6 +49,7 @@ class StoryboardCreate(InputModel):
 class StoryboardUpdate(InputModel):
     row_version: Identifier
     script: ShotScriptText = None
+    duration_ms: int = Field(default=None, strict=True, ge=1000, le=10000)
     asset_ids: list[Identifier] = Field(default=None, max_length=100)
     image_settings: ShotImageSettings = None
 
@@ -74,7 +76,11 @@ class StoryboardOrder(InputModel):
 
 
 class StoryboardGeneratedShot(InputModel):
+    title: str = ""
+    source_excerpt: Annotated[str, Field(max_length=8000)] = ""
+    story_beat: Annotated[str, Field(max_length=8000)] = ""
     script: ShotScriptText
+    duration_ms: int = Field(default=3000, strict=True, ge=1000, le=10000)
     asset_ids: list[Identifier] = Field(default_factory=list, max_length=100)
 
     @field_validator("asset_ids")
@@ -101,6 +107,8 @@ class StoryboardShotRead(ReadModel):
     id: Identifier
     position: int
     script: str
+    duration_ms: int
+    source_excerpt: str
     row_version: Identifier
     asset_ids: list[Identifier]
     image_settings: ShotImageSettings

@@ -49,6 +49,7 @@ def storyboard_creation_hash(project_id: int, episode_id: int, payload: dict) ->
         "project_id": str(project_id),
         "episode_id": str(episode_id),
         "script": payload["script"],
+        "duration_ms": payload["duration_ms"],
         "asset_ids": sorted(str(item) for item in payload["asset_ids"]),
         "image_settings": payload["image_settings"],
     }
@@ -112,6 +113,8 @@ class EpisodeStoryboardService(BaseService):
                     "episode_id": episode.id,
                     "position": position,
                     "script": values["script"],
+                    "duration_ms": values["duration_ms"],
+                    "source_excerpt": values["source_excerpt"],
                     "row_version": 1,
                     "image_settings": None,
                     "deleted_at": None,
@@ -133,6 +136,7 @@ class EpisodeStoryboardService(BaseService):
         values = {
             "shot_id": shot.id,
             "script": shot.script,
+            "duration_ms": shot.duration_ms,
             "episode_aspect": episode.aspect,
             "episode_style": episode.style,
             "assets": assets,
@@ -175,6 +179,8 @@ class EpisodeStoryboardService(BaseService):
             id=shot.id,
             position=shot.position,
             script=shot.script,
+            duration_ms=shot.duration_ms,
+            source_excerpt=shot.source_excerpt,
             row_version=shot.row_version,
             asset_ids=asset_ids,
             image_settings=ShotImageSettings.model_validate(settings),
@@ -240,6 +246,8 @@ class EpisodeStoryboardService(BaseService):
                     "episode_id": episode.id,
                     "position": max((row.position for row in active), default=0) + 1,
                     "script": data["script"],
+                    "duration_ms": data["duration_ms"],
+                    "source_excerpt": "",
                     "row_version": 1,
                     "image_settings": data["image_settings"],
                     "deleted_at": None,
@@ -272,6 +280,9 @@ class EpisodeStoryboardService(BaseService):
             changed = False
             if "script" in data and shot.script != data["script"]:
                 shot.script = data["script"]
+                changed = True
+            if "duration_ms" in data and shot.duration_ms != data["duration_ms"]:
+                shot.duration_ms = data["duration_ms"]
                 changed = True
             if "image_settings" in data:
                 settings = ShotImageSettings.model_validate(data["image_settings"]).model_dump()

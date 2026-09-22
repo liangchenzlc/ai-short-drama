@@ -53,7 +53,9 @@ class GenerationBusinessService(BaseService):
         elif source["scene"] == "script_shots":
             try:
                 parsed = parse_storyboard_result(
-                    content, {int(a["id"]) for a in snapshot["assets"]}
+                    content,
+                    {int(a["id"]) for a in snapshot["assets"]},
+                    snapshot["content"],
                 )
             except ValueError as error:
                 code = (

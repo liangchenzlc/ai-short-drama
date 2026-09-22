@@ -20,6 +20,7 @@ def normalize_shot_context(
     *,
     shot_id: int,
     script: str,
+    duration_ms: int,
     episode_aspect: str,
     episode_style: str,
     assets: Iterable[Mapping[str, Any] | object],
@@ -48,7 +49,7 @@ def normalize_shot_context(
     return {
         "version": SHOT_CONTEXT_VERSION,
         "shot_id": str(parse_identifier(shot_id)),
-        "shot": {"script": script},
+        "shot": {"script": script, "duration_ms": duration_ms},
         "episode": {"aspect": episode_aspect, "style": episode_style},
         "assets": normalized_assets,
     }

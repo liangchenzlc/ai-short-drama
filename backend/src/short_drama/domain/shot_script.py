@@ -41,6 +41,15 @@ class ShotScript(Base):
     script: Mapped[str] = mapped_column(
         MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="分镜脚本正文"
     )
+    duration_ms: Mapped[int] = mapped_column(
+        INTEGER(unsigned=True),
+        nullable=False,
+        server_default=text("3000"),
+        comment="建议镜头时长（毫秒）",
+    )
+    source_excerpt: Mapped[str] = mapped_column(
+        MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="生成分镜的连续剧本原文依据"
+    )
     row_version: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, server_default=text("1"), comment="单镜头并发版本"
     )
@@ -108,6 +117,9 @@ class ShotScript(Base):
             onupdate="RESTRICT",
         ),
         CheckConstraint("`position` > 0", name="ck_shot_scripts_position"),
+        CheckConstraint(
+            "`duration_ms` BETWEEN 1000 AND 10000", name="ck_shot_scripts_duration_ms"
+        ),
         CheckConstraint("`row_version` > 0", name="ck_shot_scripts_row_version"),
         CheckConstraint(
             "`image_settings` IS NULL OR JSON_TYPE(`image_settings`) = 'OBJECT'",

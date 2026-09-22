@@ -22,6 +22,8 @@ class ExtractionDraft(AssetLibraryCreate):
 
 class ExtractedAsset(ExtractionDraft):
     aliases: list[Name] = Field(default_factory=list, max_length=20)
+    importance: Literal["core", "continuity"]
+    story_function: RequiredText
     evidence: Annotated[str, Field(max_length=500), AfterValidator(nonblank)]
 
 
@@ -91,7 +93,9 @@ def parse_extraction_result(content, snapshot):
             raise ValueError("Unverified script evidence")
         original = item.model_dump(mode="json")
         draft = {
-            key: value for key, value in original.items() if key not in {"aliases", "evidence"}
+            key: value
+            for key, value in original.items()
+            if key not in {"aliases", "importance", "story_function", "evidence"}
         }
         items.append(
             {
