@@ -53,6 +53,9 @@ class ShotScript(Base):
         server_default=text("('')"),
         comment="生成分镜的连续剧本原文依据",
     )
+    reference_media_ids: Mapped[list] = mapped_column(
+        JSON(), nullable=False, server_default=text("(JSON_ARRAY())"), comment="持久化生成参考图片"
+    )
     row_version: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, server_default=text("1"), comment="单镜头并发版本"
     )

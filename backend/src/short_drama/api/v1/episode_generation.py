@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 
 from short_drama.api.dependencies import get_session
@@ -60,4 +60,18 @@ def apply_extraction_result(
 ):
     return AssetExtractionService(session).apply(
         project_id, episode_id, generation_id, body, idempotency_key
+    )
+
+
+@router.get("/storyboard-results/{generation_id}/shots")
+def storyboard_result_page(
+    project_id: Identifier,
+    episode_id: Identifier,
+    generation_id: Identifier,
+    session: Annotated[Session, Depends(get_session)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+):
+    return GenerationBusinessService(session).storyboard_result_page(
+        project_id, episode_id, generation_id, offset, limit
     )

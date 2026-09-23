@@ -1,38 +1,38 @@
-import { Alert, Button } from 'antd';
-import type { GenerationDetail } from '../../api/types/generations';
-import { storyboardTiming } from './workflow-contract';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Button, Skeleton } from 'antd';
+import { storyboardApi, type StoryboardResultPage } from '../../api/modules/storyboard';
+import { errorMessage } from '../../api/http';
+import { LazyLoadMore } from '../../components/ui/LazyLoadMore';
 
-const seconds = (milliseconds: number) => `${Number((milliseconds / 1000).toFixed(1))} 秒`;
-
-export function StoryboardResultPreview({ task, busy, disabled = false, error, assetNames = {}, onApply }: {
-  task: GenerationDetail;
-  busy: boolean;
-  disabled?: boolean;
-  error?: string;
-  assetNames?: Record<string, string>;
+export function StoryboardResultPreview({ projectId, episodeId, generationId, busy, disabled = false, error, onApply }: {
+  projectId: string; episodeId: string; generationId: string;
+  busy: boolean; disabled?: boolean; error?: string;
   onApply: (mode: 'append' | 'replace') => void;
 }) {
-  const result = task.result.business?.kind === 'script_shots' ? task.result.business : null;
-  if (!result) return <Alert type="warning" message="此任务没有可应用的结构化分镜结果。原始任务仍可在任务中心查看。"/>;
-  const timing = storyboardTiming(result.shots);
+  const [page, setPage] = useState<StoryboardResultPage | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failure, setFailure] = useState('');
+  const lock = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  async function load(append = false) {
+    if (lock.current) return;
+    lock.current = true; setLoading(true); setFailure('');
+    try {
+      const next = await storyboardApi(projectId, episodeId).resultShots(generationId, append ? page?.items.length : 0);
+      if (alive.current) setPage(previous => ({ ...next, items: append ? [...(previous?.items ?? []), ...next.items] : next.items }));
+    } catch (cause) { if (alive.current) setFailure(errorMessage(cause)); }
+    finally { lock.current = false; if (alive.current) setLoading(false); }
+  }
+  useEffect(() => { void load(); }, []);
   return <section className="storyboard-result-preview">
-    <header className="storyboard-result-heading">
-      <div><h3>生成候选 · {result.shots.length} 镜</h3><p>预计总时长 {seconds(timing.total_ms)}，平均每镜 {seconds(timing.average_ms)}</p></div>
-    </header>
-    {result.applied && <Alert type="success" message={`已${result.applied.mode === 'append' ? '追加' : '替换'}到活动分镜`}/>}
-    <ol>{result.shots.map((shot, index) => {
-      const duration = shot.duration_ms ?? 3000;
-      return <li key={index}>
-        <article>
-          <header><strong>{shot.title?.trim() || `分镜 ${index + 1}`}</strong><span>{seconds(duration)}</span></header>
-          {shot.story_beat && <div className="storyboard-beat"><h4>叙事节拍</h4><p>{shot.story_beat}</p></div>}
-          {shot.source_excerpt && <blockquote><span>原文依据</span>{shot.source_excerpt}</blockquote>}
-          <div className="storyboard-shot-copy"><h4>镜头脚本</h4><p>{shot.script}</p></div>
-          <small>{shot.asset_ids.length ? `关联素材：${shot.asset_ids.map(id => assetNames[id] ? `${assetNames[id]}（${id}）` : id).join('、')}` : '未关联素材'}</small>
-        </article>
-      </li>;
-    })}</ol>
+    <header className="storyboard-result-heading"><h3>分镜预览{page ? `（共 ${page.total} 镜）` : ''}</h3></header>
+    {page?.applied && <Alert type="success" message={`已${page.applied.mode === 'append' ? '追加' : '替换'}到当前分镜`}/>}
+    {loading && !page && <Skeleton active paragraph={{ rows: 5 }}/>}
+    <div className="lazy-scroll storyboard-result-scroll"><ol className="compact-shot-list">{page?.items.map(shot => <li key={shot.position}><strong>分镜 {String(shot.position).padStart(2, '0')}</strong><p>{shot.script}</p></li>)}</ol>
+      <LazyLoadMore hasMore={!page || page.items.length < page.total} loading={loading} error={failure} onLoad={() => void load(!!page)}/>
+    </div>
     {error && <Alert type="error" message={error}/>}
-    <div className="dialog-actions"><Button type="primary" loading={busy} disabled={disabled || !!result.applied} onClick={() => onApply('append')}>追加到现有分镜</Button><Button danger loading={busy} disabled={disabled || !!result.applied} onClick={() => onApply('replace')}>替换当前分镜…</Button></div>
+    <div className="dialog-actions"><Button type="primary" loading={busy} disabled={disabled || !page || !!page.applied} onClick={() => onApply('append')}>追加到现有分镜</Button><Button danger loading={busy} disabled={disabled || !page || !!page.applied} onClick={() => onApply('replace')}>替换当前分镜</Button></div>
   </section>;
 }

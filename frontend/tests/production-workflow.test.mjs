@@ -76,15 +76,15 @@ test('storyboard timing summarizes generated beats and defaults legacy durations
   assert.deepEqual(workflow.storyboardTiming([]), { total_ms: 0, average_ms: 0 });
 });
 
-test('storyboard review exposes duration controls and narrative beat evidence', () => {
+test('storyboard review keeps timing controls and loads compact result pages', () => {
   const stage = readFileSync(new URL('../src/pages/projects/episode/StoryboardStage.tsx', import.meta.url), 'utf8');
   const preview = readFileSync(new URL('../src/features/projects/StoryboardResultPreview.tsx', import.meta.url), 'utf8');
   assert.match(stage, /平均镜头时长/);
   assert.match(stage, /自定义/);
   assert.match(stage, /duration_ms:\s*shot\.duration_ms/);
-  assert.match(preview, /story_beat/);
-  assert.match(preview, /source_excerpt/);
-  assert.match(preview, /storyboardTiming/);
+  assert.match(preview, /resultShots/);
+  assert.match(preview, /LazyLoadMore/);
+  assert.doesNotMatch(preview, /story_beat|source_excerpt/);
 });
 
 test('saved shot image payload carries all concurrency and settings inputs', () => {

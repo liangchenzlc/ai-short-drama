@@ -92,10 +92,10 @@ export function ProjectOverview({ session, project, onProjectUpdated, onDeleted,
     <section className="overview-card" aria-labelledby="episodes-title">
       <div className="overview-heading"><h2 id="episodes-title">分集列表 <small>共 {total} 集</small></h2><div className="project-actions"><Button disabled={loading} onClick={() => setRevision((v) => v + 1)}>刷新</Button><Button type="primary" disabled={saving || busy} onClick={() => editEpisode('new')}>新增一集</Button></div></div>
       {loadError ? <Alert type="error" message={loadError} action={<Button onClick={() => setRevision((v) => v + 1)}>重试</Button>} /> : loading ? <div className="studio-empty" role="status"><Spin /> 正在加载分集…</div> : episodes.length ? <>
-        <div className="episode-grid">{episodes.map((item, index) => <div className="episode-item" key={item.id}>
+        <div className="episode-grid">{episodes.map((item, index) => <article className="episode-item" key={item.id}>
           <button type="button" className="episode-card" onClick={() => onOpenEpisode(item)} aria-label={`进入第 ${offset + index + 1} 集：${item.title}`}><span className="episode-number">第 {offset + index + 1} 集</span><strong>{item.title}</strong><span className="episode-synopsis">{item.synopsis || '尚未填写本集概要'}</span><span className="episode-enter">进入创作</span></button>
           <div className="episode-item-actions"><Button size="small" onClick={() => editEpisode(item)}>编辑分集</Button><Button danger size="small" onClick={() => { setDeleting(item); setError(''); }}>删除</Button></div>
-        </div>)}</div>
+        </article>)}</div>
         <Pagination current={offset / 20 + 1} pageSize={20} total={total} hideOnSinglePage showSizeChanger={false} onChange={(page) => setOffset((page - 1) * 20)} />
       </> : <div className="studio-empty"><h3>从第一集开始</h3><p>填写分集标题，即可进入小说、剧本和分镜创作。</p><Button type="primary" disabled={saving || busy} onClick={() => editEpisode('new')}>添加第一集</Button></div>}
     </section>

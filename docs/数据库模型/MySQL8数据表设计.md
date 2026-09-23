@@ -1,6 +1,6 @@
 # MySQL 8 数据库说明
 
-项目当前使用 **21 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已经合并全部历史迁移，包括分集写作、素材图片候选、分镜归档与并发控制、镜头建议时长和原文依据。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。
+项目当前使用 **21 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已经合并全部历史迁移，包括分集写作、素材图片候选、分镜归档与并发控制、镜头建议时长、原文依据和持久化生成参考图片。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。
 
 本文说明表的职责、关系及应用维护的约束，不另维护一份重复的字段清单。开发与测试见[开发说明](../development.md)，模块关系见[架构说明](../architecture.md)，接口见[API 文档](../api/README.md)。旧库升级使用[迁移目录](migrations/README.md)。
 
@@ -77,7 +77,7 @@
 
 集合创建、排序和分镜候选采用检查 `storyboard_version`；单镜头保存、归档检查 `row_version`；图片采用另外检查上下文摘要与当前媒体。分镜增改、排序、关联、归档或采用推进分镜集合版本，不与写作的 `content_version` 混用。素材本体变更不批量推进所有引用分集版本。
 
-`image_settings` 是下一次生图设置，数据库检查为 JSON object 或 NULL；应用限制为 `resolution/aspect/layout`，NULL 使用默认 `2K/inherit/single`。`shot_images.context_hash` 保存采用时的 `shot-context-v1` 摘要，用当前镜头正文与建议时长、分集风格/画幅及素材内容判断已采用图片是否过时。它不包含时间戳、版本号、临时 URL 或下一次生图设置；历史 NULL 表示需要重新核对。
+`image_settings` 是下一次生图设置，数据库检查为 JSON object 或 NULL；应用限制为 `resolution/aspect/layout`，NULL 使用默认 `2K/inherit/single`。`shot_images.context_hash` 保存采用时的 `shot-context-v1` 摘要，用当前镜头正文与建议时长、分集风格/画幅、上传参考图及素材内容判断已采用图片是否过时。它不包含时间戳、版本号、临时 URL 或下一次生图设置；历史 NULL 表示需要重新核对。
 
 图片和视频通过 `(shot_id, episode_id)` 复合外键绑定分集，`media_id` 引用永久文件，`model_id` 可空。生成成功不会自动覆盖已采用结果。采用、旧结果回收及恢复必须由同一事务协调；数据库的跨表外键不会自行保证“正式结果与回收记录不能同时存在”。表结构保留视频和回收关系不等于当前 API 已提供全部视频制作与回收操作，支持范围以 API 文档为准。
 
@@ -105,6 +105,10 @@
 业务来源、来源快照、模板版本及最终输入保存在调用记录 JSON 中。业务结果与应用采用标记沿用 `response_data`；在任务行锁下同事务保存输出与处理标记，重试不重复落库。`credential_cipher` 是调用所需的加密凭据，不允许把明文凭据写入请求、响应或日志。
 
 `media_assets` 是生成结果库，`assets` 是创作素材本体，两者通过文件关系衔接，不能互相替代。生成媒体先形成调用记录和永久文件/资产，用户采用后才进入正式分镜结果。
+
+## 持久化生成参考图
+
+`assets.reference_media_ids` 与 `shot_scripts.reference_media_ids` 为默认空数组的 JSON，按上传顺序保存十进制媒体 ID 字符串，最多 16 张。服务层校验引用图片存在、类型合法并去重；不自动创建候选或采用结果。移除只解除引用，文件仍供历史任务读取。素材/分镜内容摘要在参考列表非空时包含该字段，空列表保持旧摘要兼容。上传或移除推进所属 row_version，分镜还推进 storyboard_version。
 
 ## 结构验证与维护
 

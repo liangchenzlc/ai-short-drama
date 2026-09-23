@@ -121,7 +121,6 @@ def test_extraction_options_are_scoped_unique_and_nonempty():
         {"kind": "video"},
         {"importance": "decorative"},
         {"story_function": " "},
-        {"evidence": "虚构的原文"},
         {"media_id": None},
         {"scene_time": "夜"},
         {"tags": ["x" * 41]},
@@ -399,3 +398,25 @@ def test_configured_script_bound_rejects_input_without_submitting_a_task():
         assert error.value.code == "script_too_long"
         with session.begin():
             assert session.scalar(select(func.count()).select_from(AsyncTask)) == 1
+
+
+def test_extraction_accepts_absent_evidence_and_strips_legacy_evidence():
+    import json
+
+    from short_drama.schemas.asset_extraction import parse_extraction_result
+
+    item = {
+        "kind": "character",
+        "name": "林晚",
+        "description": "黑发",
+        "prompt": "portrait",
+        "importance": "core",
+        "story_function": "主角",
+    }
+    snapshot = {"content": "林晚出门", "extraction": {"kinds": ["character"]}}
+    for extra in ({}, {"evidence": "historical field"}):
+        result = parse_extraction_result(
+            json.dumps({"schema_version": 1, "items": [{**item, **extra}]}), snapshot
+        )
+        assert "evidence" not in result["items"][0]["original"]
+        assert "evidence" not in result["items"][0]["draft"]

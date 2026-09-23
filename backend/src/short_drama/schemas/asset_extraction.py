@@ -24,7 +24,13 @@ class ExtractedAsset(ExtractionDraft):
     aliases: list[Name] = Field(default_factory=list, max_length=20)
     importance: Literal["core", "continuity"]
     story_function: RequiredText
-    evidence: Annotated[str, Field(max_length=500), AfterValidator(nonblank)]
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_evidence(cls, values):
+        if isinstance(values, dict):
+            return {key: value for key, value in values.items() if key != "evidence"}
+        return values
 
 
 class ExtractionOutput(InputModel):
@@ -89,8 +95,6 @@ def parse_extraction_result(content, snapshot):
     for item in parsed.items:
         if item.kind not in snapshot["extraction"]["kinds"]:
             raise ValueError("Unrequested asset kind")
-        if item.evidence not in snapshot["content"]:
-            raise ValueError("Unverified script evidence")
         original = item.model_dump(mode="json")
         draft = {
             key: value

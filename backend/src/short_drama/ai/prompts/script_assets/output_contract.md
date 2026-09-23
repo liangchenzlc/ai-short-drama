@@ -7,7 +7,6 @@
 - `name`：非空字符串，最多 255 字符。
 - `description`、`prompt`、`story_function`：各为非空字符串，各最多 8000 字符。
 - `importance`：只能是 `core` 或 `continuity`。
-- `evidence`：非空字符串，最多 500 字符；必须从 `source.content` 逐字复制一段连续原文，不得改写或拼接。
 
 可选字段仅有：`aliases`（别名字符串数组，最多 20 个，每项最多 255 字符）、`label`（字符串，最多 120 字符）、`tags`（去重的非空字符串数组，最多 20 项，每项最多 40 字符）、`scene_time`（字符串，最多 60 字符，仅 `kind` 为 `scene` 时允许）。缺省时直接省略可选字段；不要输出 `model_id`、`media_id`、`state`、`row_version` 或服务端生成的候选 ID。
 

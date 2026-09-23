@@ -139,6 +139,30 @@ class GenerationContextService:
             raise WorkflowError(
                 "asset_version_conflict", "Asset changed; refresh before generating"
             )
+        if source.get("episode_id"):
+            episode = self.session.get(Episode, int(source["episode_id"]))
+            linked = self.session.scalar(
+                select(EpisodeAsset.id).where(
+                    EpisodeAsset.episode_id == int(source["episode_id"]),
+                    EpisodeAsset.asset_id == asset.id,
+                )
+            )
+            if (
+                episode is None
+                or str(episode.project_id) != str(source.get("project_id"))
+                or not linked
+            ):
+                raise WorkflowError("source_mismatch", "素材不属于所选分集", 422)
+        elif source.get("project_id"):
+            from short_drama.domain import ProjectAsset
+
+            if not self.session.scalar(
+                select(ProjectAsset.id).where(
+                    ProjectAsset.project_id == int(source["project_id"]),
+                    ProjectAsset.asset_id == asset.id,
+                )
+            ):
+                raise WorkflowError("source_mismatch", "素材不属于所选项目", 422)
         content = asset_image_content(asset)
         if not content["name"].strip() or not (
             content["description"].strip() or content["prompt"].strip()
@@ -158,7 +182,17 @@ class GenerationContextService:
         }
         request["input"] = {
             "prompt": asset_image_prompt(content, supplement),
-            "reference_media_ids": [],
+            "reference_media_ids": list(
+                dict.fromkeys(
+                    map(
+                        str,
+                        [
+                            *(getattr(asset, "reference_media_ids", None) or []),
+                            *request["input"].get("reference_media_ids", []),
+                        ],
+                    )
+                )
+            ),
         }
         return request
 
@@ -198,6 +232,7 @@ class GenerationContextService:
         )
         values = {
             "shot_id": shot.id,
+            "reference_media_ids": getattr(shot, "reference_media_ids", None) or [],
             "script": shot.script,
             "duration_ms": shot.duration_ms,
             "episode_aspect": episode.aspect,
@@ -232,6 +267,7 @@ class GenerationContextService:
         ):
             raise WorkflowError("generation_settings_changed", "请先保存图片设置")
         references = [str(a.media_id) for a in assets if a.media_id and a.state == "confirmed"]
+        references.extend(map(str, getattr(shot, "reference_media_ids", None) or []))
         extra = request["input"].get("reference_media_ids", [])
         for identifier in extra:
             if str(identifier) not in references and not self.session.scalar(

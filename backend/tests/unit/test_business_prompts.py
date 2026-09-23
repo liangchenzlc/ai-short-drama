@@ -63,7 +63,6 @@ def test_asset_prompt_describes_the_full_parser_contract():
         "prompt",
         "importance",
         "story_function",
-        "evidence",
         "aliases",
         "tags",
         "label",

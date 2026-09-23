@@ -9,6 +9,7 @@ from short_drama.schemas.base import Identifier
 from short_drama.schemas.episode_storyboard import (
     StoryboardCreate,
     StoryboardList,
+    StoryboardMove,
     StoryboardMutation,
     StoryboardOrder,
     StoryboardOrderResult,
@@ -106,3 +107,14 @@ def archive_shot(
 
         raise HTTPException(status_code=422, detail="If-Match must be a strong decimal ETag")
     service.archive(project_id, episode_id, shot_id, int(match.group(1)))
+
+
+@router.post("/{shot_id}/move")
+def move_shot(
+    project_id: ScopedId,
+    episode_id: ScopedId,
+    shot_id: ScopedId,
+    payload: StoryboardMove,
+    service: Storyboard,
+):
+    return service.move(project_id, episode_id, shot_id, payload)

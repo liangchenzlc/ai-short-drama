@@ -32,6 +32,8 @@ class AssetImageSource(InputModel):
     scene: Literal["asset_image"]
     asset_id: Identifier
     row_version: Identifier
+    project_id: Identifier | None = None
+    episode_id: Identifier | None = None
 
 
 class NovelScriptSource(InputModel):
@@ -137,8 +139,6 @@ class ImageGenerationCreate(InputModel):
     @model_validator(mode="after")
     def business_prompt(self):
         if self.source and self.source.scene == "asset_image":
-            if self.input.reference_media_ids:
-                raise ValueError("Asset image generation does not accept reference media")
             if len(self.input.prompt) > 4000:
                 raise ValueError("Supplement must be at most 4000 characters")
         elif self.source and self.source.context_mode == "saved":

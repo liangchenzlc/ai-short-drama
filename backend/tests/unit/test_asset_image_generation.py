@@ -108,7 +108,6 @@ def test_asset_prompt_contains_saved_content_and_separate_supplement(kind):
 @pytest.mark.parametrize(
     "body",
     [
-        request(input={"prompt": "", "reference_media_ids": ["9"]}),
         request(input={"prompt": "x" * 4001}),
         {"input": {"prompt": ""}, "source": {"scene": "asset_image", "asset_id": "1"}},
         {"input": {"prompt": ""}},
@@ -161,3 +160,12 @@ def test_asset_image_create_freezes_saved_content_without_mutating_asset():
             "unconfirmed",
             7,
         )
+
+
+def test_asset_image_accepts_reference_inputs():
+    from short_drama.schemas.ai_generation import ImageGenerationCreate
+
+    parsed = ImageGenerationCreate.model_validate(
+        request(input={"prompt": "", "reference_media_ids": ["9"]})
+    )
+    assert parsed.input.reference_media_ids == [9]

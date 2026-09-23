@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping
 
 from pydantic import TypeAdapter
 
-from short_drama.core.exceptions import BusinessError, Conflict, WorkflowError
+from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
 from short_drama.dao.base import BaseDAO
 from short_drama.dao.episode_storyboard_dao import (
     EpisodeStoryboardDAO,
@@ -136,6 +136,7 @@ class EpisodeStoryboardService(BaseService):
         assets = self.dao.assets(shot.id) if assets is None else assets
         values = {
             "shot_id": shot.id,
+            "reference_media_ids": getattr(shot, "reference_media_ids", None) or [],
             "script": shot.script,
             "duration_ms": shot.duration_ms,
             "episode_aspect": episode.aspect,
@@ -352,6 +353,36 @@ class EpisodeStoryboardService(BaseService):
                 "storyboard_version": str(episode.storyboard_version),
                 "ordered_ids": [str(item) for item in identifiers],
             }
+
+    def move(self, project_id, episode_id, shot_id, payload):
+        from short_drama.schemas.episode_storyboard import StoryboardMove
+
+        data = StoryboardMove.model_validate(payload)
+        with self._transaction():
+            episode = self.lock_episode(project_id, episode_id, data.storyboard_version)
+            rows = self.dao.list_active_for_update(episode.id)
+            index = next(
+                (i for i, row in enumerate(rows) if row.id == parse_identifier(shot_id)), None
+            )
+            if index is None:
+                raise NotFound("分镜不存在")
+            neighbor = index + data.direction
+            if 0 <= neighbor < len(rows):
+                first, second = rows[index], rows[neighbor]
+                old_first, old_second = first.position, second.position
+                if max(row.position for row in rows) >= 2**32 - 1:
+                    raise Conflict("Insufficient temporary ordering space")
+                first.position = max(row.position for row in rows) + 1
+                self.session.flush()
+                second.position = old_first
+                self.session.flush()
+                first.position = old_second
+                for row in (first, second):
+                    row.updated_at = utcnow()
+                    advance_shot_version(row)
+                advance_storyboard_version(episode)
+                self.session.flush()
+            return {"storyboard_version": str(episode.storyboard_version)}
 
     def archive(self, project_id, episode_id, shot_id, row_version):
         with self._transaction():

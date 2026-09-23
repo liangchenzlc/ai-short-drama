@@ -5,7 +5,7 @@ export interface Page<T> { items: T[]; total: number; offset: number; limit: num
 export type ImageLayout = 'single' | 'four' | 'five' | 'nine';
 export type GenerationSource =
   | { scene: 'shot_image'; shot_id: string; layout: ImageLayout; context_mode?: 'saved'; row_version?: string; context_hash?: string }
-  | { scene: 'asset_image'; asset_id: string; row_version: string }
+  | { scene: 'asset_image'; asset_id: string; row_version: string; project_id?: string; episode_id?: string }
   | { scene: 'novel_script'; project_id: string; episode_id: string; content_version: string }
   | { scene: 'script_shots' | 'script_assets'; project_id: string; episode_id: string; script_id: string; content_version: string };
 interface CreateBase { config_id?: string }
@@ -29,6 +29,7 @@ export interface VideoGenerationRequest extends CreateBase {
 export interface GenerationReceipt { generation_id: string; service_type: GenerationKind; status: TaskStatus }
 export interface SafeTaskError { code: string; message: string; http_status?: number }
 export interface GenerationSummary extends GenerationReceipt {
+  display_context?: { project?: string | null; episode?: string | null; subject: string; scope: string };
   config?: { id: string; name: string; model_key: string; provider: string } | null;
   created_at: string;
   updated_at?: string | null;

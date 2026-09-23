@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, Button, Checkbox, Empty, Input, Select, Spin, Tabs } from 'antd';
+import { Popover } from 'antd';
+import { Icon } from '../../components/ui/Icon';
 import { assetExtractionApi, type ExtractionCandidate, type ExtractionResult } from '../../api/modules/asset-extraction';
 import type { AssetDraft, AssetKind } from '../../api/modules/assets';
 import { generations } from '../../api/modules/generations';
@@ -235,7 +237,7 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
               const draft = drafts[item.candidate_id] ?? item.draft;
               const disabled = busy || readOnly || !!item.applied;
               return <article className="extraction-candidate" key={item.candidate_id}>
-                <header><Checkbox aria-label={`选择 ${draft.name}`} disabled={disabled || stale} checked={selected.has(item.candidate_id) && !item.applied} onChange={event => selectItem(item.candidate_id, event.target.checked)}/><h3>{draft.name}</h3>{item.applied ? <span className="status-badge is-success">已加入本集</span> : <Button type="text" disabled={disabled} onClick={() => setEditing(editing === item.candidate_id ? null : item.candidate_id)}>{editing === item.candidate_id ? '收起编辑' : '编辑'}</Button>}</header>
+                <header><Checkbox aria-label={`选择 ${draft.name}`} disabled={disabled || stale} checked={selected.has(item.candidate_id) && !item.applied} onChange={event => selectItem(item.candidate_id, event.target.checked)}/><h3>{draft.name}</h3><Popover trigger="click" title="图片生成提示词" content={<div className="extraction-prompt-popover"><Input.TextArea aria-label="图片生成提示词" value={draft.prompt} readOnly={disabled} maxLength={8000} autoSize={{ minRows: 4, maxRows: 12 }} onChange={event => editDraft(item, { prompt: event.target.value })}/></div>}><Button type="text" size="small" aria-label={`查看 ${draft.name} 的图片生成提示词`} icon={<Icon name="film" size={18}/>}/></Popover>{item.applied ? <span className="status-badge is-success">已加入本集</span> : <Button type="text" disabled={disabled} onClick={() => setEditing(editing === item.candidate_id ? null : item.candidate_id)}>{editing === item.candidate_id ? '收起编辑' : '编辑'}</Button>}</header>
                 {item.original.story_function && <section className="extraction-story-function" aria-label="剧情作用">
                   <span className={`extraction-importance is-${item.original.importance ?? 'continuity'}`}>{importanceLabels[item.original.importance ?? 'continuity']}</span>
                   <div><h4>剧情作用</h4><p>{item.original.story_function}</p></div>
@@ -244,11 +246,11 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
                   <label>名称<Input aria-label="素材名称" maxLength={255} value={draft.name} disabled={disabled} onChange={event => editDraft(item, { name: event.target.value })}/></label>
                   <label>类型<Select aria-label="素材类型" value={draft.kind} disabled={disabled} options={allKinds.map(value => ({ value, label: labels[value] }))} onChange={kind => { editDraft(item, { kind, scene_time: kind === 'scene' ? draft.scene_time : '' }); setTab(kind); }}/></label>
                   <label>描述<Input.TextArea aria-label="素材描述" autoSize={{ minRows: 2, maxRows: 8 }} maxLength={8000} value={draft.description} disabled={disabled} onChange={event => editDraft(item, { description: event.target.value })}/></label>
-                  <label>图片生成提示词<Input.TextArea aria-label="图片生成提示词" autoSize={{ minRows: 3, maxRows: 10 }} maxLength={8000} value={draft.prompt} disabled={disabled} onChange={event => editDraft(item, { prompt: event.target.value })}/></label>
+
                   {draft.kind === 'scene' && <label>场景时间<Input maxLength={60} value={draft.scene_time} disabled={disabled} onChange={event => editDraft(item, { scene_time: event.target.value })}/></label>}
                   <label>标签<Select aria-label="素材标签" mode="tags" value={draft.tags} disabled={disabled} maxCount={20} onChange={tags => editDraft(item, { tags })}/></label>
-                </div> : <div className="extraction-copy"><div><h4>描述</h4><ExtractionText text={draft.description}/></div><div className="extraction-prompt"><div><h4>图片生成提示词</h4><Button size="small" type="text" onClick={() => void run(async () => { await navigator.clipboard.writeText(draft.prompt); setMessage(`已复制「${draft.name}」的图片生成提示词。`); })}>复制</Button></div><ExtractionText text={draft.prompt}/></div></div>}
-                <details className="extraction-evidence"><summary>查看原文依据{item.original.aliases.length ? '与别名' : ''}</summary><blockquote>{item.original.evidence}</blockquote>{item.original.aliases.length > 0 && <p>别名：{item.original.aliases.join('、')}</p>}</details>
+                </div> : <div className="extraction-copy"><div><h4>描述</h4><ExtractionText text={draft.description}/></div></div>}
+                {item.original.aliases.length > 0 && <p className="episode-help">别名：{item.original.aliases.join('、')}</p>}
                 {!item.applied && <div className="extraction-adoption"><label>采用方式<Select aria-label={`${draft.name}的采用方式`} disabled={disabled || dirty} value={choices[item.candidate_id] || undefined} placeholder={dirty ? '保存候选后核对匹配' : '请选择新建或复用'} options={[{ value: 'create', label: item.matches.length || item.duplicate_candidates?.length ? '明确另建素材' : '新建本集素材' }, ...item.matches.map(match => ({ value: match.asset_id, label: `复用${match.scope === 'episode' ? '本集' : '项目'}素材：${match.name}` }))]} onChange={value => setChoices(previous => ({ ...previous, [item.candidate_id]: value }))}/></label>{choices[item.candidate_id] && choices[item.candidate_id] !== 'create' && <p>沿用已有素材的描述、提示词与图片，提取文字保留在本次记录中。</p>}{item.matches.length > 0 && <p>{item.matches.length > 1 || !item.matches[0].exact ? '发现疑似重复素材，请核对后选择。' : '发现同名素材，可复用或明确另建。'}</p>}{!!item.duplicate_candidates?.length && <p>本次结果还有同名候选，请只选择需要的项，或修改名称后明确另建。</p>}</div>}
               </article>;
             })}

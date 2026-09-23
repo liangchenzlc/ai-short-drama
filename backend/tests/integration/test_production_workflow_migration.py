@@ -189,7 +189,7 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
         connection.exec_driver_sql(
             "ALTER TABLE shot_scripts "
             "DROP CHECK ck_shot_scripts_duration_ms, "
-            "DROP COLUMN source_excerpt, DROP COLUMN duration_ms, "
+            "DROP COLUMN source_excerpt, DROP COLUMN duration_ms, DROP COLUMN reference_media_ids, "
             "DROP CHECK ck_shot_scripts_row_version, "
             "DROP CHECK ck_shot_scripts_image_settings, "
             "DROP CHECK ck_shot_scripts_deleted_time, "
@@ -208,7 +208,7 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
             "DROP CHECK ck_assets_scene_time, DROP CHECK ck_assets_creation_pair, "
             "DROP INDEX uk_assets_creation_key, DROP COLUMN creation_hash, "
             "DROP COLUMN creation_key, DROP COLUMN scene_time, DROP COLUMN tags, "
-            "DROP COLUMN state, DROP COLUMN row_version"
+            "DROP COLUMN state, DROP COLUMN row_version, DROP COLUMN reference_media_ids"
         )
         connection.exec_driver_sql(
             "ALTER TABLE episodes DROP CHECK ck_episodes_storyboard_version, "
@@ -248,12 +248,11 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
         assert connection.scalar(text("SELECT row_version FROM shot_scripts WHERE id=9007")) == 1
         assert connection.scalar(text("SELECT row_version FROM assets WHERE id=9004")) == 1
         assert connection.scalar(text("SELECT context_hash FROM shot_images WHERE id=9009")) is None
-        # The canonical schema also includes the later storyboard prompt migration.
-        # Apply it after the production migration to reproduce the complete upgrade path.
-        prompt_migrations = MIGRATIONS.parent / "2026-09-22-storyboard-prompts"
-        for path in sorted(prompt_migrations.glob("*.sql")):
-            for statement in mysql_statements(path):
-                connection.exec_driver_sql(statement)
+        # Reproduce the complete upgrade path, including later additive migrations.
+        for directory in ("2026-09-22-storyboard-prompts", "2026-09-24-generation-references"):
+            for path in sorted((MIGRATIONS.parent / directory).glob("*.sql")):
+                for statement in mysql_statements(path):
+                    connection.exec_driver_sql(statement)
         assert contract_snapshot(connection) == canonical
 
         connection.exec_driver_sql("UPDATE episodes SET storyboard_version=7 WHERE id=9002")

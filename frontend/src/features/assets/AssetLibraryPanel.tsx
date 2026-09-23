@@ -9,6 +9,7 @@ import { Icon } from '../../components/ui/Icon';
 import { useAssetLibrary } from './useAssetLibrary';
 import { assetConfirmRequest, assetImagePresentation, assetPatch } from '../projects/workflow-contract';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
+import { ReferenceImages } from '../generations/ReferenceImages';
 import { AssetImageGeneration } from './AssetImageGeneration';
 
 const labels: Record<AssetKind, string> = { character: '角色', scene: '场景', prop: '道具' };
@@ -272,7 +273,7 @@ export function AssetLibraryPanel({
     <Pagination current={Math.floor(offset / 20) + 1} pageSize={20} total={total} hideOnSinglePage showSizeChanger={false} onChange={(page) => setOffset((page - 1) * 20)}/>
     {legacyDownload && <details className="legacy-tools"><summary>旧版草稿</summary><p>如需找回旧版浏览器中的素材记录，可下载备份。</p><Button onClick={legacyDownload}>下载浏览器旧稿</Button></details>}
 
-    {creating && <Dialog title={`新建${labels[kind]}`} canClose={!busy} onClose={closeCreating}><form onSubmit={create}><AssetFields value={draft} disabled={busy} onChange={setDraft}/>{notice && <Alert type="error" showIcon message={notice}/>}<div className="dialog-actions"><Button disabled={busy} onClick={closeCreating}>取消</Button><Button type="primary" htmlType="submit" loading={busy} disabled={!draft.name.trim()}>创建{labels[kind]}</Button></div></form></Dialog>}
+    {creating && <Dialog title={`新建${labels[kind]}`} className="asset-editor-drawer asset-create-drawer" canClose={!busy} onClose={closeCreating}><form onSubmit={create}><AssetFields value={draft} disabled={busy} onChange={setDraft}/>{notice && <Alert type="error" showIcon message={notice}/>}<div className="dialog-actions"><Button disabled={busy} onClick={closeCreating}>取消</Button><Button type="primary" htmlType="submit" loading={busy} disabled={!draft.name.trim()}>创建{labels[kind]}</Button></div></form></Dialog>}
     {showImport && <Dialog title={`从${importFrom?.kind === 'project' ? '项目' : '全局'}素材库添加`} canClose={!busy} onClose={() => setShowImport(false)}>{notice && <Alert type="error" message={notice}/>} {busy ? <Skeleton paragraph={{ rows: 3 }}/> : imports.map((item) => <div className="resource-import-row" key={item.id}><div><strong>{item.name}</strong><p>{item.description}</p></div><Button disabled={busy} onClick={() => void link(item.id)}>添加到本库</Button></div>)}{!busy && !notice && !imports.length && <p>此分类暂无可添加的素材，可以先在当前库新建。</p>}</Dialog>}
     {selected && <Dialog title={`编辑 ${selected.name}`} className="asset-editor-drawer" canClose={!busy && !generationSubmitting} onClose={closeSelected}>
       <div className="asset-editor-drawer-body">
@@ -294,10 +295,16 @@ export function AssetLibraryPanel({
 
         <section className="asset-editor-section asset-editor-media" aria-labelledby="asset-editor-media-title">
           <div className="asset-editor-section-heading">
-            <div><h3 id="asset-editor-media-title">参考图片</h3><p>上传或选择图片，确认采用后作为后续分镜的视觉依据。</p></div>
+            <div><h3 id="asset-editor-media-title">生成图片</h3><p>上传或选择图片，确认采用后作为后续分镜的视觉依据。</p></div>
           </div>
+          <ReferenceImages kind="asset" ownerId={selected.id} version={selected.row_version} disabled={readOnly || busy || generationSubmitting} beforeChange={saveBeforeGenerate} onBusyChange={setGenerationSubmitting} onChanged={async () => {
+            const remote = await assetLibraries.detail(selected.id);
+            setSelected(current => current ? { ...current, ...remote } : current);
+            setSelectedSaved(current => current ? { ...current, ...remote } : current); refresh();
+          }}/>
           <AssetImageGeneration
             asset={selected}
+            scope={scope}
             readOnly={readOnly}
             onSaveBeforeGenerate={saveBeforeGenerate}
             onCandidatesChanged={() => void loadCandidates(false)}

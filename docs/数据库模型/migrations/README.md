@@ -13,6 +13,7 @@
 | 3 | [分集写作](2026-09-21-episode-writing/README.md) | 增加编辑剧本指针与 `content_version`，初始化未修改分集的编辑选择 |
 | 4 | [生产工作流](2026-09-21-production-workflow/README.md) | 增加分镜集合/单镜头版本、归档与活动顺序、素材持久化及图片候选、采用上下文摘要；回填历史当前图片候选 |
 | 5 | [分镜时长与原文依据](2026-09-22-storyboard-prompts/README.md) | 增加 `shot_scripts.duration_ms/source_excerpt` 及建议时长 CHECK |
+| 6 | [生成参考图片](2026-09-24-generation-references/README.md) | 为 assets/shot_scripts 增加默认空数组 reference_media_ids，输入参考图独立于采用图片 |
 
 第一批旧脚本显式含有 `USE ai_short_drama`，执行前必须检查目标库名并在审阅副本中按实际库名调整；其他迁移依赖连接已选定的数据库。不要在错误的默认数据库上执行，也不要把第一批脚本原样用于任意命名的新库。
 

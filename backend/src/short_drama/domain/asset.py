@@ -57,6 +57,9 @@ class Asset(Base):
         server_default=text("NULL"),
         comment="当前素材图片，尚未生成时可空",
     )
+    reference_media_ids: Mapped[list] = mapped_column(
+        JSON(), nullable=False, server_default=text("(JSON_ARRAY())"), comment="持久化生成参考图片"
+    )
     row_version: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, server_default=text("1"), comment="编辑并发版本"
     )

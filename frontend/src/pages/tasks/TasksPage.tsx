@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, Empty, Form, Input, Pagination, Select, Table, Tabs, Tag } from 'antd';
+import { taskOrigin } from '../../features/generations/task-content';
 import { Icon } from '../../components/ui/Icon';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { generations } from '../../api/modules/generations';
@@ -54,7 +55,10 @@ export function TasksPage({ kind }: { kind: GenerationKind }) {
     {error && <Alert type="error" showIcon message={error} description={data ? '保留上次查询结果，请刷新核对最新状态。' : undefined} action={<Button onClick={refresh}>重新加载</Button>} />}
     <Table<GenerationSummary> rowKey="generation_id" dataSource={data?.items ?? []} loading={loading} pagination={false}
       locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? '暂时无法加载任务' : filtered ? '没有匹配的任务，试试其他条件' : `开始第一次${kindLabels[kind]}生成`}>{!error && <Button type={filtered ? 'default' : 'primary'} onClick={() => filtered ? setParams({}) : setCreating(true)}>{filtered ? '清除筛选' : `新建${kindLabels[kind]}任务`}</Button>}</Empty> }}
+      scroll={{ x: 800 }}
       columns={[
+        { title: '任务 ID', key: 'id', width: 190, render: (_, item) => <button className="generation-link" onClick={() => selectTask(item.generation_id)}>{item.generation_id}</button> },
+        { title: '项目 / 集 / 主题', key: 'origin', width: 300, render: (_, item) => <span>{taskOrigin(item)}</span> },
         { title: '任务 / 模型', key: 'task', render: (_, item) => <div className="generation-task-cell"><button className="generation-link" onClick={() => selectTask(item.generation_id)}>{item.source?.scene === 'script_assets' ? '剧本素材提取' : item.config?.name ?? `${kindLabels[kind]}生成`}</button><span>{item.source?.scene === 'script_assets' ? item.config?.name : item.config?.model_key ?? item.generation_id}</span></div> },
         { title: '状态', key: 'status', width: 105, render: (_, item) => <div className="task-state-cell"><Tag className={`generation-status status-${item.status}`}>{taskLabel(item)}</Tag>{item.error && <span title={item.error.message}>{item.error.message}</span>}</div> },
         { title: '创建时间', dataIndex: 'created_at', width: 185, responsive: ['md'], render: (value: string) => dateLabel(value) },

@@ -20,7 +20,15 @@ npm run build
 npm run preview
 ```
 
-`build` 包含类型检查，产物为 `dist/`；当前Vite preview会继承开发配置的API代理；静态dist文件本身不含代理能力，正式部署仍需配置反向代理。Node测试覆盖保存队列、导航、版本冲突、模型选择、生成契约和部分UI源码约定，不代替浏览器交互测试。
+`build` 包含类型检查，产物为 `dist/`；当前Vite preview会继承开发配置的API代理；静态dist文件本身不含代理能力，正式部署仍需配置反向代理。Node 测试覆盖保存队列、导航、版本冲突、模型选择、生成契约和部分 UI 源码约定。另有 Playwright 浏览器测试，拦截全部 API 并拒绝外部请求，不调用真实模型。
+
+```powershell
+npx playwright install chromium
+npm run test:e2e
+# 已有本地 Chromium 时可通过 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH 指定路径
+```
+
+浏览器测试启动独立 Vite 端口 4175，覆盖桌面与 390px 窄屏、TXT 导入、抽屉、参考图持久化、懒加载、历史采用与任务提示词。失败截图与 trace 保存在忽略的 `.runtime/browser-results/`。
 
 ## 路由
 
@@ -28,7 +36,7 @@ npm run preview
 | --- | --- |
 | `/projects` | 项目搜索、分页和继续创作 |
 | `/projects/:projectId` | 项目信息、分集、项目资源库 |
-| `/projects/:projectId/episodes/:episodeId/:stage?` | 分集制作；stage为source/script/assets/storyboard |
+| `/projects/:projectId/episodes/:episodeId/:stage?` | 三步分集制作；stage 为 source/assets/storyboard，旧 script 链接打开定稿标签 |
 | `/assets/:kind` | character/scene/prop三类全局素材 |
 | `/ai` | 文本、图片、视频模型配置 |
 | `/tasks/:kind` | text/image/video生成任务 |
@@ -52,7 +60,7 @@ npm run preview
 
 小说与剧本停顿1秒自动保存，串行队列共享服务器版本，旧响应不覆盖新输入。切步骤/离开页面先等待保存，失败则保留草稿并要求明确处理；刷新关闭用浏览器离开提示。冲突可下载草稿，再载入服务端版本手动核对。
 
-AI结果先预览后采用。素材上传不自动确认，分镜生成不直接覆盖镜头，任务页成功不等于项目已采用。详情页与任务列表刷新使用当前服务器状态；临时媒体URL失效时重新读取。
+AI 设置栏与正文并列，小说/定稿合并为标签页；分镜每批 20 条按需加载，历史候选放在弹窗。素材和分镜的参考图通过专用接口持久化，独立于生成候选及当前采用图。AI结果先预览后采用。素材上传不自动确认，分镜生成不直接覆盖镜头，任务页成功不等于项目已采用。详情页与任务列表刷新使用当前服务器状态；临时媒体URL失效时重新读取。
 
 旧版浏览器正文只允许显式导入；旧素材/制作数据提供JSON下载，不自动上传或覆盖服务端数据。保留兼容读取不代表浏览器存储仍是业务数据源。
 

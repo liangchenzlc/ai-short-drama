@@ -201,7 +201,8 @@ def test_read_schema_covers_exact_domain_columns_except_secret(class_name):
             "created_by",
             "updated_by",
         }
+        expected -= {"reference_media_ids"}  # Exposed by the dedicated input-image endpoint.
         expected |= {"image", "reference_count"}
     if class_name == "ShotScriptRead":
-        expected -= {"active_position", "creation_key", "creation_hash"}
+        expected -= {"active_position", "creation_key", "creation_hash", "reference_media_ids"}
     assert set(getattr(schemas, class_name).model_fields) == expected

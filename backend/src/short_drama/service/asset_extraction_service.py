@@ -120,6 +120,9 @@ class AssetExtractionService(BaseService):
             "items": [
                 {
                     **item,
+                    "original": {
+                        key: value for key, value in item["original"].items() if key != "evidence"
+                    },
                     "matches": self._matches(item, available),
                     "duplicate_candidates": [
                         other["candidate_id"]

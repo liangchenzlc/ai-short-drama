@@ -6,6 +6,9 @@ def asset_image_content(asset) -> dict:
     fields = ("kind", "name", "description", "prompt", "label", "tags", "scene_time")
     result = {field: getattr(asset, field) for field in fields}
     result["tags"] = sorted(set(result["tags"] or []))
+    references = getattr(asset, "reference_media_ids", None) or []
+    if references:
+        result["reference_media_ids"] = list(map(str, references))
     return result
 
 

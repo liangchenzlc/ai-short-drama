@@ -51,7 +51,7 @@ export const projectsApi = {
   async createEpisode(id: string, body: EpisodeFields) {
     return episode((await http.post<EpisodeDto>(episodesPath(id), body)).data);
   },
-  async updateEpisode(id: string, episodeId: string, body: EpisodeFields) {
+  async updateEpisode(id: string, episodeId: string, body: Partial<EpisodeFields>) {
     return episode((await http.patch<EpisodeDto>(`${episodesPath(id)}/${episodeId}`, body)).data);
   },
   async removeEpisode(id: string, episodeId: string) { await http.delete(`${episodesPath(id)}/${episodeId}`); },

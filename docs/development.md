@@ -121,6 +121,8 @@ npm run typecheck
 npm run build
 ```
 
+另可执行 `npx playwright install chromium` 后 `npm run test:e2e`，使用无付费调用的 API 测试替身验证桌面与窄屏；可用环境变量 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 指定已安装的 Chromium。端口 4175 必须可用。
+
 Node 测试覆盖纯逻辑、保存会话、请求契约和部分组件源码约定，不是浏览器端到端测试。生产构建不能证明真实模型可用或桌面/移动端交互已验收。
 
 真实 MySQL 验证：

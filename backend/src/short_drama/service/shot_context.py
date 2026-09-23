@@ -24,6 +24,7 @@ def normalize_shot_context(
     episode_aspect: str,
     episode_style: str,
     assets: Iterable[Mapping[str, Any] | object],
+    reference_media_ids: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Return the versioned, URL-free representation described by shot-context-v1."""
 
@@ -52,6 +53,11 @@ def normalize_shot_context(
         "shot": {"script": script, "duration_ms": duration_ms},
         "episode": {"aspect": episode_aspect, "style": episode_style},
         "assets": normalized_assets,
+        **(
+            {"reference_media_ids": list(map(str, reference_media_ids))}
+            if reference_media_ids
+            else {}
+        ),
     }
 
 

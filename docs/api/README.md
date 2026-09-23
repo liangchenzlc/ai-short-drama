@@ -76,6 +76,8 @@
 
 对外状态为 `queued/running/succeeded/failed/cancelled`。调用记录中的未知受理结果不是自动重发依据。取消不保证远端取消或免费；retry 可能再次计费，复用原输入快照；resume 不是再次付费生成的快捷方式。客户端依据 `can_*` 显示操作，不自行猜测。
 
+任务摘要及详情提供 `display_context:{project,episode,subject,scope}`，新任务冻结可读名称，旧任务按现存来源解析。素材来源可携带 project_id/episode_id，后端核对素材库归属。前端输入区只呈现提示词，协议仍保留采用所需参数。
+
 任务详情的 `parameters` 返回冻结的业务参数（例如 `aspect/resolution/count`），用于候选预览与采用；`resolved_parameters` 单独返回最新调用的模型接口参数（例如 OpenAI 的 `size/n`）。两者字段和单位可能不同，不能相互替代。历史任务同样从其已保存的原始请求读取业务参数。
 
 通用输入：
@@ -105,7 +107,7 @@ OpenAI Images 接入的 `gpt-image-*` 模型（包括网关别名）支持参考
 }
 ```
 
-ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 是可为空的补充要求（≤4000字符），reference_media_ids 必须为空。名称及描述/prompt 的已保存内容由服务端读取，版本冲突返回 `asset_version_conflict`，缺少必要内容返回 `asset_content_required`。参数省略时沿用模型默认；不隐式继承入口项目风格。
+ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 是可为空的补充要求（≤4000字符），reference_media_ids 可传额外输入参考图，并与素材已保存参考图合并去重（合计最多 16 张）。名称及描述/prompt 的已保存内容由服务端读取，版本冲突返回 `asset_version_conflict`，缺少必要内容返回 `asset_content_required`。参数省略时沿用模型默认；不隐式继承入口项目风格。
 
 任务和媒体库列表都支持 `source_scene=asset_image&source_id=<素材ID>`。同一共享素材跨库使用相同历史，复制素材的新 ID 不继承原任务。任务详情提供 source_snapshot 与 effective_prompt；幂等重放先返回既有任务，不因素材后来编辑而重新生成。
 
@@ -148,7 +150,7 @@ ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 
 | PATCH | 同上 | `{result_version,items:[{candidate_id,draft}]}`，保存人工修改 |
 | POST | `E/asset-extraction-results/{generation_id}/apply` | 部分采用，需 Idempotency-Key |
 
-候选 ID 为32位十六进制字符串，不是雪花 ID。候选 original 含类别、名称、别名、描述、提示词、`importance`（core/continuity）、叙事作用与原文依据；draft 是可编辑素材字段。显示叙事依据帮助判断是否需要这个素材，不把文本里每个名词都当成必须生成的对象。
+候选 ID 为32位十六进制字符串，不是雪花 ID。候选 original 含类别、名称、别名、描述、提示词、`importance`（core/continuity）与叙事作用；draft 是可编辑素材字段。提取协议不再要求或返回 evidence，旧结果中的该字段在读取时忽略。叙事作用帮助判断是否需要这个素材，不把文本里每个名词都当成必须生成的对象。
 
 采用请求：
 
@@ -241,3 +243,15 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 ## 依赖检查
 
 `GET /test` 返回服务可达；`GET /test/db` 检查数据库；`GET /test/minio` 检查配置的两个bucket。它们不执行生成。部署和测试命令见[开发与运行](../development.md)。
+
+
+## 生成参考图与分页分镜
+
+- `GET /generation-references/{kind}/{owner_id}`：kind 为 asset 或 shot，返回 `{row_version,items:[{media_id,name,url,width,height}]}`。
+- `POST` 同路径：multipart `file` 上传，`If-Match` 为所属素材/分镜当前 row_version。支持 PNG/JPEG/WebP、20 MiB、4000 万像素，最多 16 张；重复内容去重，不创建候选或自动采用。
+- `DELETE /generation-references/{kind}/{owner_id}/{media_id}`：同样需要 `If-Match`；仅解除关联，保留历史生成所需文件。
+- 参考图变化推进所属行版本，分镜同时推进集合版本及上下文摘要；旧版本返回 409 `reference_version_conflict`。保存图会与关联素材的确认图合并用于生成，不支持参考图的模型明确报错。
+- `GET E/storyboard-results/{generation_id}/shots?offset=0&limit=20`：分页返回 `{generation_id,items:[{position,script}],total,offset,limit,applied}`，只读取本集成功分镜任务。采用仍是整批操作，不限当前加载的页。
+- `POST E/shots/{shot_id}/move`：`{storyboard_version,direction}`，direction 为 -1 或 1。服务端交换相邻活动镜头，返回新集合版本，客户端无需加载整集排序 ID。
+
+旧数据库须先执行 [参考图增量迁移](../数据库模型/migrations/2026-09-24-generation-references/README.md)。

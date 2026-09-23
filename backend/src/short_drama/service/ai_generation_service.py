@@ -7,7 +7,12 @@ import json
 from sqlalchemy import select
 
 from short_drama.ai import GenerationError, validate_request
-from short_drama.core.exceptions import BusinessError, Conflict, GenerationRequestError
+from short_drama.core.exceptions import (
+    BusinessError,
+    Conflict,
+    GenerationRequestError,
+    WorkflowError,
+)
 from short_drama.dao.ai_generation_record_dao import AIGenerationRecordDAO
 from short_drama.dao.async_task_dao import AsyncTaskDAO
 from short_drama.domain import AIModelConfig, AsyncTask, Episode, MediaAsset, ShotScript
@@ -194,10 +199,15 @@ class AIGenerationService(BaseService):
                 episode = self._require(Episode, shot.episode_id)
                 source.update(episode_id=str(episode.id), project_id=str(episode.project_id))
                 payload["source_snapshot"] = {"script": shot.script, "position": shot.position}
+        from .generation_presentation import generation_display_context
+
+        payload["display_context"] = generation_display_context(self.session, payload)
         inputs = payload["input"]
         references = inputs.get("reference_media_ids", []) + [
             inputs[k] for k in ("first_frame_media_id", "last_frame_media_id") if inputs.get(k)
         ]
+        if len(set(references)) > 16:
+            raise WorkflowError("reference_limit_exceeded", "参考图片不能超过16张", 422)
         for identifier in references:
             media = self._validate_media(identifier, "image")
             if not media.storage_locator.startswith("minio://"):
@@ -206,6 +216,8 @@ class AIGenerationService(BaseService):
         return payload
 
     def _summary(self, task, record=None):
+        from .generation_presentation import generation_display_context
+
         records = self.record_dao.for_task(task.id, include_text=False)
         record = record or records[0]
         latest = records[-1]
@@ -224,6 +236,8 @@ class AIGenerationService(BaseService):
                 **{k: config.get(k) for k in ("name", "model_key", "provider")},
             },
             "source": record.request_data.get("source"),
+            "display_context": record.request_data.get("display_context")
+            or generation_display_context(self.session, record.request_data),
             "created_at": task.created_at,
             "updated_at": task.updated_at,
             "started_at": task.started_at,

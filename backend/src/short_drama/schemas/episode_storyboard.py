@@ -134,3 +134,8 @@ class StoryboardList(ReadModel):
 class StoryboardOrderResult(ReadModel):
     storyboard_version: Identifier
     ordered_ids: list[Identifier]
+
+
+class StoryboardMove(InputModel):
+    storyboard_version: Identifier
+    direction: Literal[-1, 1]

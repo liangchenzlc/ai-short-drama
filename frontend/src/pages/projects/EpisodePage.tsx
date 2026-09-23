@@ -7,7 +7,6 @@ import type { RemoteEpisode } from '../../api/modules/projects';
 import { readWorkflow, saveWorkflow, nearestPendingStage, type EpisodeWorkflow, type StageId } from '../../features/projects/episode-workflow';
 import { episodeStages, StageNav, visibleEpisodeStage } from './episode/StageNav';
 import { SourceStage } from './episode/SourceStage';
-import { ScriptStage } from './episode/ScriptStage';
 import { AssetsStage } from './episode/AssetsStage';
 import { StoryboardStage } from './episode/StoryboardStage';
 import { useEpisodeWriting } from '../../features/projects/useEpisodeWriting';
@@ -38,8 +37,10 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
   const [legacy] = useState(() => ({ novel: value.novel, script: value.scriptDraft }));
   const [showLegacy, setShowLegacy] = useState(false);
   const { stage } = useParams();
+  const [writingTab, setWritingTab] = useState(stage === 'script' ? 'script' : 'novel');
+  const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
-  const step = episodeStages.find((item) => item.id === stage)?.id ?? visibleEpisodeStage(nearestPendingStage(workflow));
+  const step = stage === 'script' ? 'source' : episodeStages.find((item) => item.id === stage)?.id ?? visibleEpisodeStage(nearestPendingStage(workflow));
   useEffect(() => {
     if (stage !== step) navigate(episodePath(session.projectId, episode.id, step), { replace: true });
   }, [stage, step, session.projectId, episode.id, navigate]);
@@ -50,6 +51,7 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
   const writingLabel = { loading: '正在载入服务端内容…', saved: '正文已保存', unsaved: '有未保存的修改', saving: '正在保存…', error: '保存已暂停', conflict: '版本冲突，保存已暂停' }[writing.status];
   const current = episodeStages.findIndex((stage) => stage.id === step);
   function goToStep(next: StageId) {
+    if (next === 'script') setWritingTab('script');
     navigate(episodePath(session.projectId, episode.id, visibleEpisodeStage(next)));
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
@@ -77,18 +79,17 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
   return <div className="episode-page web-episode">
     <header className="episode-top"><Button type="link" className="detail-back" icon={<Icon name="back" size={16}/>} onClick={onBack}>返回项目详情</Button><div><span>{session.project.name} / 第 {number} 集</span><h1>{episode.title}</h1></div><span className={`episode-save-state state-${writing.status}`} title="小说与剧本的自动保存状态" role={writing.message ? 'alert' : 'status'}>{writingLabel}</span></header>
     {readOnly && <p className="episode-readonly-notice">当前为只读模式，可查看本集内容。</p>}
-    <div className="episode-layout">
-      <aside className="episode-sidebar"><div className="episode-sidebar-inner"><p className="episode-nav-title">创作流程</p><StageNav active={step} onSelect={goToStep}/><div className="episode-context-summary"><strong>{value.aspect} 画幅</strong><span>{value.style || '未设置视觉风格'}</span><p>正文自动保存。生成后先预览，再选择采用。</p></div></div></aside>
+    <div className={`episode-layout${collapsed ? ' is-collapsed' : ''}`}>
+      <aside className="episode-sidebar"><div className="episode-sidebar-inner"><div className="episode-nav-heading"><p className="episode-nav-title">创作流程</p><Button type="text" aria-label={collapsed ? '展开创作流程' : '收起创作流程'} aria-expanded={!collapsed} icon={<Icon name={collapsed ? 'arrow' : 'back'} size={18}/>} onClick={() => setCollapsed(!collapsed)}/></div><StageNav active={step} onSelect={goToStep}/><div className="episode-context-summary"><strong>{value.aspect} 画幅</strong><span>{value.style || '未设置视觉风格'}</span><p>正文自动保存。生成后先预览，再选择采用。</p></div></div></aside>
       <div className="episode-content">
         {localError && <Alert type="error" showIcon message={localError}/>}
 
         {writing.message && <Alert type={writing.status === 'conflict' ? 'warning' : 'error'} showIcon message={writing.message} action={<div><Button disabled={writing.busy} onClick={exportDraft}>下载当前草稿</Button>{writing.status !== 'conflict' && <Button disabled={writing.busy} onClick={() => void writing.session.retry()}>重试</Button>}<Button disabled={writing.busy} onClick={reloadWriting}>载入服务端版本</Button></div>}/>}
         {(legacy.novel || legacy.script) && <p className="episode-help">发现浏览器旧稿，不会自动上传。<Button type="link" onClick={() => setShowLegacy(true)}>预览与导入</Button></p>}
         {!writing.loaded && (step === 'source' || step === 'script') && <div className="studio-empty" role="status">{writing.status === 'loading' ? <><Spin/> 正在载入本集内容…</> : '内容未载入，请重试后编辑。'}</div>}
-        {writing.loaded && <section hidden={step !== 'source'} id="episode-stage-source" data-testid="episode-stage-source" className="episode-stage" aria-label="小说与剧本生成"><SourceStage value={value} novel={writing.novel} readOnly={writingReadOnly} onChange={update} onEdit={content => writing.session.edit('novel', content)} projectId={session.projectId} episodeId={episode.id} contentVersion={writing.contentVersion} writingSession={writing.session} onWriteScript={() => goToStep('script')}/></section>}
-        {writing.loaded && <section hidden={step !== 'script'} id="episode-stage-script" data-testid="episode-stage-script" className="episode-stage" aria-label="剧本编辑与确认"><ScriptStage value={value} script={writing.script} confirmed={writing.confirmed} busy={writing.busy} readOnly={writingReadOnly} onEdit={content => writing.session.edit('script', content)} onConfirm={() => void writing.session.confirm()} onContinue={() => goToStep('assets')} projectAspect={session.project.aspect}/></section>}
+        {writing.loaded && <section hidden={step !== 'source'} id="episode-stage-source" data-testid="episode-stage-source" className="episode-stage" aria-label="小说与剧本创作"><SourceStage value={value} writing={writing} readOnly={writingReadOnly} onChange={update} projectId={session.projectId} episodeId={episode.id} writingSession={writing.session} tab={writingTab} onTab={setWritingTab} onContinue={() => goToStep('assets')}/></section>}
         <section hidden={step !== 'assets'} id="episode-stage-assets" data-testid="episode-stage-assets" className="episode-stage" aria-label="素材准备"><AssetsStage value={workflow} readOnly={readOnly} ready={ready} projectId={session.projectId} episodeId={episode.id} onChange={update} onApply={update} writingSession={writing.session} onConfirmScript={() => goToStep('script')} registerBarrier={barrier => { extractionBarrier.current = barrier; }}/></section>
-        <section hidden={step !== 'storyboard'} id="episode-stage-storyboard" data-testid="episode-stage-storyboard" className="episode-stage" aria-label="分镜制作"><StoryboardStage value={workflow} readOnly={writingReadOnly} onChange={update} projectId={session.projectId} episodeId={episode.id} contentVersion={writing.contentVersion} scriptId={writing.scriptId} confirmed={writing.confirmed} writingSession={writing.session} registerBarrier={(barrier) => { storyboardBarrier.current = barrier; }}/></section>
+        {step === 'storyboard' && <section id="episode-stage-storyboard" data-testid="episode-stage-storyboard" className="episode-stage" aria-label="分镜制作"><StoryboardStage value={workflow} readOnly={writingReadOnly} onChange={update} projectId={session.projectId} episodeId={episode.id} contentVersion={writing.contentVersion} scriptId={writing.scriptId} confirmed={writing.confirmed} writingSession={writing.session} registerBarrier={(barrier) => { storyboardBarrier.current = barrier; }}/></section>}
         <footer className="episode-step-footer">{current > 0 && <Button className="episode-step-previous" onClick={() => goToStep(episodeStages[current - 1].id)}>上一步</Button>}<span>步骤 {current + 1} / {episodeStages.length}</span>{current < episodeStages.length - 1 && <Button className="episode-step-next" onClick={() => goToStep(episodeStages[current + 1].id)}>下一步：{episodeStages[current + 1].label}</Button>}</footer>
       </div>
     </div>

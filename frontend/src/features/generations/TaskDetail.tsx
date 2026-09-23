@@ -7,6 +7,7 @@ import type { GenerationDetail, GenerationReceipt, GenerationRecord } from '../.
 import { attemptStorage, clearAttempt, isServerId, requestAttempt } from './attempt';
 import { ConfigSelect } from './ConfigSelect';
 import { dateLabel, generationError, kindLabels, statusLabels, taskLabel } from './presentation';
+import { taskOrigin, taskPrompts } from './task-content';
 import { episodePath } from '../../app/paths';
 
 type Action = 'cancel' | 'retry' | 'resume';
@@ -21,8 +22,6 @@ function BusinessResult({ detail }: { detail: GenerationDetail }) {
     {business?.kind === 'script_shots' && <p>结构化分镜候选共 <strong>{business.shots.length}</strong> 镜。{business.applied ? `已${business.applied.mode === 'append' ? '追加' : '替换'}应用。` : '尚未应用。'}</p>}
     {business?.kind === 'script_assets' && <p>已提取 <strong>{business.items.length}</strong> 项文字素材，已采用 {business.items.filter(item => item.applied).length} 项。请在素材准备中核对名称、描述与图片生成提示词。</p>}
     {episodeSource && <Link to={episodePath(episodeSource.project_id, episodeSource.episode_id, episodeSource.scene === 'novel_script' ? 'source' : episodeSource.scene === 'script_assets' ? 'assets' : 'storyboard')}>打开来源分集页面</Link>}
-    {detail.effective_prompt && <details><summary>查看实际提示词</summary><pre className="generation-json">{detail.effective_prompt}</pre></details>}
-    {detail.source_snapshot && <details><summary>查看来源快照摘要</summary><pre className="generation-json">{JSON.stringify(detail.source_snapshot, null, 2)}</pre></details>}
   </div>;
 }
 export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; onClose: () => void; onChanged: () => void; onCreated: (value: GenerationReceipt) => void }) {
@@ -86,7 +85,7 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
       {error && <Alert type="error" showIcon message={error} description={detail ? '保留上次已知状态，请刷新核对。' : undefined} />}
       {notice && <Alert type="success" showIcon message={notice} />}
       {loading && !detail ? <div className="generation-loading"><Skeleton title paragraph={{ rows: 5 }}/></div> : detail && <>
-        <div className="generation-task-heading"><h2>{kindLabels[detail.service_type]}生成</h2><Tag className={`generation-status status-${detail.status}`}>{taskLabel(detail)}</Tag></div>
+        <div className="generation-task-heading"><h2>{taskOrigin(detail)}</h2><Tag className={`generation-status status-${detail.status}`}>{taskLabel(detail)}</Tag></div>
         <dl className="generation-facts"><div><dt>模型配置</dt><dd>{detail.config?.name ?? '—'} · {detail.config?.model_key ?? '—'}</dd></div><div><dt>创建时间</dt><dd>{dateLabel(detail.created_at)}</dd></div><div><dt>开始时间</dt><dd>{dateLabel(detail.started_at)}</dd></div><div><dt>完成时间</dt><dd>{dateLabel(detail.finished_at)}</dd></div></dl>
         {detail.error && <Alert type="warning" showIcon message={detail.error.message} description={`错误代码：${detail.error.code}`} />}
         <div className="generation-action-row">
@@ -104,7 +103,7 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
           {!detail.result.text && !detail.result.assets.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={detail.status === 'queued' || detail.status === 'running' ? '结果将在完成后显示' : '暂无已保存结果'} />}
           <BusinessResult detail={detail}/>
         </section>
-        <section className="generation-section"><h3>输入与参数</h3><details><summary>查看提交内容</summary><pre className="generation-json">{JSON.stringify({ input: detail.input, parameters: detail.parameters, ...(detail.source ? { source: detail.source } : {}) }, null, 2)}</pre></details></section>
+        <section className="generation-section"><h3>提示词</h3>{taskPrompts(detail).length ? taskPrompts(detail).map((prompt, index) => <div key={index}><h4>{prompt.label}</h4><pre className="generation-text-result">{prompt.content}</pre></div>) : <p className="generation-hint">此任务未保存提示词。</p>}</section>
         <details className="generation-section generation-record-details"><summary>调用记录（{records.length}）</summary>
           {recordsError && <Alert type="error" message={recordsError} action={<Button onClick={refresh}>重试</Button>} />}
           {!recordsError && !records.length && <p className="generation-hint">暂无调用记录。</p>}

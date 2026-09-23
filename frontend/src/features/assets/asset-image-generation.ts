@@ -1,8 +1,9 @@
-import type { LibraryAssetRead } from '../../api/modules/assets';
+import type { LibraryAssetRead, AssetScope } from '../../api/modules/assets';
 import type { GenerationSummary, ImageGenerationRequest } from '../../api/types/generations';
 
 export interface AssetImageOptions {
   configId?: string;
+  scope?: AssetScope;
   supplement: string;
   count: number;
   aspect?: ImageGenerationRequest['parameters']['aspect'];
@@ -12,7 +13,7 @@ export interface AssetImageOptions {
 export function buildAssetImageRequest(asset: Pick<LibraryAssetRead, 'id' | 'row_version'>, options: AssetImageOptions): ImageGenerationRequest {
   return {
     ...(options.configId ? { config_id: options.configId } : {}),
-    source: { scene: 'asset_image', asset_id: asset.id, row_version: asset.row_version },
+    source: { scene: 'asset_image', asset_id: asset.id, row_version: asset.row_version, ...(options.scope && options.scope.kind !== 'global' ? { project_id: options.scope.projectId } : {}), ...(options.scope?.kind === 'episode' ? { episode_id: options.scope.episodeId } : {}) },
     input: { prompt: options.supplement, reference_media_ids: [] },
     parameters: {
       count: options.count,

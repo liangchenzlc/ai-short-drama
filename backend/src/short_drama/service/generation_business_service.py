@@ -48,7 +48,7 @@ class GenerationBusinessService(BaseService):
                 result = parse_extraction_result(content, snapshot)
             except ValueError:
                 raise WorkflowError(
-                    "invalid_structured_output", "素材提取格式或原文依据不正确，原始文本已保留", 422
+                    "invalid_structured_output", "素材提取格式不正确，原始文本已保留", 422
                 ) from None
         elif source["scene"] == "script_shots":
             try:
@@ -117,6 +117,42 @@ class GenerationBusinessService(BaseService):
         record.updated_at = utcnow()
         self.session.flush()
         return result
+
+    def storyboard_result_page(self, project_id, episode_id, generation_id, offset=0, limit=20):
+        self.dao.validate_pagination(offset, limit)
+        project_id, episode_id, generation_id = map(
+            parse_identifier, (project_id, episode_id, generation_id)
+        )
+        with self._transaction():
+            task = self._require(AsyncTask, generation_id, for_update=False)
+            record = self.session.scalar(
+                select(AIGenerationRecord)
+                .where(AIGenerationRecord.task_id == generation_id)
+                .order_by(AIGenerationRecord.call_no.desc())
+                .limit(1)
+            )
+            source = (record.request_data.get("source") or {}) if record else {}
+            if (
+                source.get("scene") != "script_shots"
+                or str(source.get("project_id")) != str(project_id)
+                or str(source.get("episode_id")) != str(episode_id)
+            ):
+                raise WorkflowError("not_found", "此生成结果不属于当前分集", 404)
+            result = (record.response_data or {}).get("business_result") or {}
+            if task.status != "succeeded" or result.get("kind") != "script_shots":
+                raise WorkflowError("result_not_ready", "分镜结果尚不可用")
+            shots = result.get("shots", [])
+            return {
+                "generation_id": str(generation_id),
+                "total": len(shots),
+                "offset": offset,
+                "limit": limit,
+                "applied": result.get("applied"),
+                "items": [
+                    {"position": index + 1, "script": shot["script"]}
+                    for index, shot in enumerate(shots[offset : offset + limit], offset)
+                ],
+            }
 
     def apply_storyboard(self, project_id, episode_id, generation_id, payload):
         from .episode_storyboard_service import EpisodeStoryboardService

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Input, InputNumber, Spin } from 'antd';
 import { generations } from '../../api/modules/generations';
 import { mediaLibrary } from '../../api/modules/media-library';
@@ -8,6 +8,9 @@ import type { GenerationDetail, MediaAsset } from '../../api/types/generations';
 import type { ShotRead } from '../../api/modules/storyboard';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import { taskLabel } from '../generations/presentation';
+import { Dialog } from '../../components/ui/Dialog';
+import { ReferenceImages } from '../generations/ReferenceImages';
+import type { ReferenceImage } from '../../api/modules/generation-references';
 import { TaskDetail } from '../generations/TaskDetail';
 import { ImagePreview, PreviewImage } from '../../components/ui/ImagePreview';
 import { shotImageApplyRequest, shotImageRequest } from './workflow-contract';
@@ -16,13 +19,16 @@ import { imageGenerationBlockReason, summarizeShotReferences, type ImageCapabili
 import { useShotImageGeneration } from './useShotImageGeneration';
 import { pendingShotAttempt, startShotAttempt, finishShotAttempt } from './shot-image-attempt';
 
-export function ShotImageCandidates({ shot, disabled, modelId, capabilities, capabilitiesLoading, onRefreshCapabilities, onChanged, prepareShot, episodeAspect }: {
+export function ShotImageCandidates({ shot, disabled, modelId, capabilities, capabilitiesLoading, onRefreshCapabilities, onChanged, prepareShot, episodeAspect, settings }: {
   shot: ShotRead; disabled: boolean; modelId: string | undefined; capabilities: ImageCapabilities | null;
   capabilitiesLoading: boolean; onRefreshCapabilities: () => void; onChanged: () => void;
-  prepareShot: () => Promise<PreparedShot | null>; episodeAspect: '16:9' | '9:16';
+  prepareShot: () => Promise<PreparedShot | null>; episodeAspect: '16:9' | '9:16'; settings?: ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const history = useShotImageGeneration({ shotId: shot.id, enabled: expanded });
+  const expanded = true;
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [uploaded, setUploaded] = useState<ReferenceImage[]>([]);
+  const [referenceBusy, setReferenceBusy] = useState(false);
+  const history = useShotImageGeneration({ shotId: shot.id, enabled: historyOpen });
   const [prompt, setPrompt] = useState('');
   const [count, setCount] = useState(1);
   const [preview, setPreview] = useState<MediaAsset | null>(null);
@@ -53,12 +59,12 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
   }, [expanded, referenceKey, shot.context_hash, referencesRevision]);
 
   const references = summarizeShotReferences(shot.asset_ids, assets);
-  const blockReason = imageGenerationBlockReason(modelId, capabilities, references.referenceMediaIds.length, capabilitiesLoading)
+  const blockReason = imageGenerationBlockReason(modelId, capabilities, new Set([...references.referenceMediaIds, ...uploaded.map(item => item.media_id)]).size, capabilitiesLoading)
     || (referencesLoading ? '正在核对参考素材…' : referencesError)
     || (references.missingAssetIds.length ? '关联素材尚未加载完整，请刷新核对。' : '');
 
   async function generate() {
-    if (mutation.current || disabled || blockReason || uncertain || !shot.script.trim()) return;
+    if (mutation.current || disabled || referenceBusy || blockReason || uncertain || !shot.script.trim()) return;
     mutation.current = true; setBusy(true); setMessage('');
     let prepared: PreparedShot | null = null;
     let owner: string | undefined;
@@ -70,7 +76,7 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
       if (!alive.current || !prepared.isCurrent()) return;
       setAssets(latestAssets);
       const latest = summarizeShotReferences(current.asset_ids, latestAssets);
-      const reason = imageGenerationBlockReason(modelId, capabilities, latest.referenceMediaIds.length, capabilitiesLoading);
+      const reason = imageGenerationBlockReason(modelId, capabilities, new Set([...latest.referenceMediaIds, ...uploaded.map(item => item.media_id)]).size, capabilitiesLoading);
       if (reason) { setMessage(reason); return; }
       if (latest.referenceMediaIds.join(',') !== references.referenceMediaIds.join(',')) {
         setMessage('参考图片已变化，请核对后重新点击生成。'); return;
@@ -84,7 +90,7 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
       const task = await generations.generateImage(body, key);
       if (finishShotAttempt(shot.id, owner, attemptStorage())) clearAttempt(scope, attemptStorage());
       if (!alive.current) return;
-      setUncertain(false); setMessage(`图片任务 ${task.generation_id} 已提交。`);
+      setHistoryOpen(true); setUncertain(false); setMessage(`图片任务 ${task.generation_id} 已提交。`);
       void history.refresh();
     } catch (cause) {
       const rejected = cause instanceof ApiError && !!cause.status && cause.status < 500 && cause.status !== 408;
@@ -144,16 +150,23 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
   }
 
   return <section className="shot-image-candidates">
-    <div className="dialog-actions shot-image-heading"><h4>分镜图片</h4><Button aria-expanded={expanded} disabled={busy} onClick={() => setExpanded(!expanded)}>{expanded ? '收起图片操作' : '展开图片操作'}</Button></div>
+    <div className="dialog-actions shot-image-heading"><h4>生成图片</h4><Button disabled={busy || referenceBusy} onClick={() => setHistoryOpen(true)}>生成记录</Button></div>
     {shot.image && <div><strong>当前采用</strong>{shot.image.url && <PreviewImage triggerClassName="shot-current-preview" src={shot.image.url} alt="当前采用分镜图"/>}{shot.image.is_stale && <Alert type="warning" message="创作内容已变化，请重新核对当前图片。"/>}</div>}
     {expanded && <>
       <ShotReferenceAssets assetIds={shot.asset_ids} assets={assets} loading={referencesLoading} error={referencesError} onRefresh={() => setReferencesRevision((revision) => revision + 1)}/>
-      <div className="shot-image-controls"><label>补充画面要求 <small>选填</small><Input.TextArea value={prompt} disabled={disabled || busy} maxLength={4000} rows={3} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：逆光、雨夜街道，突出人物眼神"/></label><label>生成张数<InputNumber aria-label="生成张数" disabled={disabled || busy} min={1} max={4} value={count} onChange={(next) => setCount(next ?? 1)}/><small>每次 1–4 张</small></label></div>
+      <ReferenceImages kind="shot" ownerId={shot.id} version={shot.row_version} disabled={disabled || busy} onLoaded={setUploaded} onBusyChange={setReferenceBusy} beforeChange={async () => {
+        const prepared = await prepareShot();
+        return prepared ? { row_version: prepared.shot.row_version, release: prepared.release } : null;
+      }} onChanged={() => onChanged()}/>
+      {settings}
+      <div className="shot-image-controls"><label>补充画面要求 <small>选填</small><Input.TextArea value={prompt} disabled={disabled || busy} maxLength={4000} rows={3} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：逆光、雨夜街道，突出人物眼神"/></label><label>图片数量<InputNumber aria-label="图片数量" disabled={disabled || busy} min={1} max={4} value={count} onChange={(next) => setCount(next ?? 1)}/><small>每次 1–4 张</small></label></div>
       {blockReason && <Alert type="warning" showIcon message={blockReason} action={<Button size="small" onClick={onRefreshCapabilities}>刷新模型能力</Button>}/>}
       {uncertain && <Alert type="warning" showIcon message="上次生成请求的受理结果尚未确认，请先查看记录，避免重复计费。" action={<Button disabled={busy} onClick={acknowledgeUnknown}>已核对记录</Button>}/>}
-      <div className="dialog-actions"><Button type="primary" loading={busy} disabled={disabled || !!blockReason || uncertain || !shot.script.trim()} onClick={() => void generate()}>生成图片</Button><Button loading={history.loading} onClick={() => { void history.refresh(); setReferencesRevision((revision) => revision + 1); onChanged(); }}>刷新状态与候选</Button></div>
+      <div className="dialog-actions"><Button type="primary" loading={busy} disabled={disabled || referenceBusy || !!blockReason || uncertain || !shot.script.trim()} onClick={() => void generate()}>生成图片</Button></div>
       {message && <Alert type="info" showIcon message={message}/>}{history.error && <Alert type="warning" showIcon message={history.error}/>}
-      {history.tasks.length > 0 && <details className="writing-task-history"><summary>生成记录（已加载 {history.tasks.length}）</summary>{history.tasks.map((task) => <div className="resource-import-row" key={task.generation_id}><span>{taskLabel(task)} · {task.generation_id}{task.error ? ` · ${task.error.message}` : ''}</span><Button onClick={() => setTaskId(task.generation_id)}>查看任务</Button></div>)}</details>}
+    </>}
+    {historyOpen && <Dialog title="分镜图片生成记录" className="storyboard-history-dialog" canClose={!busy} onClose={() => setHistoryOpen(false)}><div className="shot-image-history-body">
+      {history.tasks.length > 0 && <div className="writing-task-history"><h4>任务记录</h4>{history.tasks.map((task) => <div className="resource-import-row" key={task.generation_id}><span>{taskLabel(task)} · {task.generation_id}{task.error ? ` · ${task.error.message}` : ''}</span><Button onClick={() => { setHistoryOpen(false); setTaskId(task.generation_id); }}>查看任务</Button></div>)}</div>}
       {history.hasMoreTasks && <Button onClick={() => void history.loadMoreTasks()}>加载更多记录</Button>}
       {!shot.script.trim() && <p className="episode-help">先填写本镜脚本，再生成图片。</p>}
       {history.loading && !history.candidates.length ? <Spin/> : <div className="image-candidate-grid">{history.candidates.map((asset) => <article className="image-candidate" key={asset.asset_id}>
@@ -162,7 +175,7 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
       </article>)}</div>}
       {history.hasMoreCandidates && <Button onClick={() => void history.loadMoreCandidates()}>加载更多候选</Button>}
       {!history.loading && !history.candidates.length && <p className="episode-help">生成的图片会作为候选保留，预览后再确认采用。</p>}
-    </>}
+    </div></Dialog>}
     {taskId && <TaskDetail id={taskId} onClose={() => setTaskId(null)} onChanged={() => { void history.refresh(); }} onCreated={(task) => { setTaskId(task.generation_id); void history.refresh(); }}/ >}
     {preview?.url && <ImagePreview title="分镜图片预览" src={preview.url} alt={preview.name} canClose={!busy} onClose={() => { previewSequence.current++; setPreview(null); }} footer={<>
       <span>{previewDetail ? `原生成参数：${previewDetail.source?.scene === 'shot_image' ? previewDetail.source.layout : '未知'} · ${previewDetail.parameters.aspect ?? '未知画幅'} · ${previewDetail.parameters.resolution ?? '未知分辨率'}` : '正在读取原生成参数…'}</span>

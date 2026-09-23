@@ -35,7 +35,7 @@ function mount(context, overrides = {}) {
     shots: async () => page([shot(), { ...shot('12'), position: 2 }]),
     shot: async id => ({ shot: shot(id), storyboard_version: '1' }),
     update: async (id, body) => ({ shot: { ...shot(id), ...body, row_version: '2' }, storyboard_version: '2' }),
-    order: async () => {}, remove: async () => {}, ...overrides,
+    move: async () => {}, order: async () => {}, remove: async () => {}, ...overrides,
   };
   const capabilityCalls = [];
   const capabilities = { known: true, reference_images: true, parameters: [], first_frame: false, last_frame: false };
@@ -71,6 +71,8 @@ function mount(context, overrides = {}) {
     '../../../features/generations/attempt': {},
     '../../../features/generations/presentation': { taskLabel: () => '' },
     '../../../features/projects/StoryboardResultPreview': { StoryboardResultPreview: 'StoryboardResultPreview' },
+    '../../../components/ui/Dialog': { Dialog: 'Dialog' },
+    '../../../components/ui/LazyLoadMore': { LazyLoadMore: 'LazyLoadMore' },
     '../../../features/projects/ShotImageCandidates': { ShotImageCandidates: 'ShotImageCandidates' },
   }, { window });
   let props = { value: { aspect: '16:9', models: { storyboardText: '', storyboardImage: '' } }, readOnly: false, projectId: '1', episodeId: '1', scriptId: null, confirmed: false, writingSession: {}, registerBarrier: next => { barrier = next; }, onChange: next => { props.value = next; } };
@@ -78,6 +80,15 @@ function mount(context, overrides = {}) {
     props = { ...props, ...patch }; cursor = 0; effects = []; layouts = [];
     tree = StoryboardStage(props);
     for (const callback of [...layouts, ...effects]) callback();
+    // Open only the first visible shot, as a user now does before editing.
+    if (!nodes('ShotImageCandidates').length) {
+      const row = nodes('button').find(button => button.className === 'storyboard-summary');
+      if (row && !row.disabled) {
+        row.onClick(); cursor = 0; effects = []; layouts = [];
+        tree = StoryboardStage(props);
+        for (const callback of [...layouts, ...effects]) callback();
+      }
+    }
     return tree;
   };
   const nodes = type => {
@@ -102,7 +113,7 @@ test('stage holds a synchronous per-shot lock through submission and blocks edit
   assert.equal(await original.prepareShot(), null);
   await flush(); setup.render();
   assert.equal(setup.nodes('TextArea')[1].disabled, true);
-  assert.equal(setup.nodes('TextArea')[2].disabled, false);
+  assert.equal(setup.nodes('ShotImageCandidates').length, 1);
   setup.nodes('TextArea')[1].onChange({ target: { value: 'blocked edit' } });
   for (const button of setup.nodes('Button').filter(button => ['上移', '下移', '归档'].includes(button.children))) {
     if (button.disabled) await button.onClick();
@@ -148,7 +159,7 @@ test('resolved default is queried once and focus invalidates capability without 
   assert.equal(typeof select.onResolvedChange, 'function');
   select.onResolvedChange('7'); setup.render(); await flush(); setup.render();
   assert.deepEqual(setup.capabilityCalls.map(call => call.id), ['7']);
-  assert.equal(setup.nodes('ShotImageCandidates').length, 2);
+  assert.equal(setup.nodes('ShotImageCandidates').length, 1);
   assert.ok(setup.nodes('ShotImageCandidates').every(item => item.modelId === '7' && item.capabilities?.known));
   setup.window.dispatchEvent(new Event('focus')); setup.render();
   assert.ok(setup.nodes('ShotImageCandidates').every(item => item.modelId === '7' && item.capabilities === null && item.capabilitiesLoading));

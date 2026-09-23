@@ -2,15 +2,14 @@ import { useEffect, useRef } from "react";
 import type { StageId } from "../../../features/projects/episode-workflow";
 
 export const episodeStages: { id: StageId; label: string; description: string }[] = [
-  { id: "source", label: "小说改编", description: "整理原文，生成剧本" },
-  { id: "script", label: "剧本定稿", description: "编辑故事，确认剧本" },
+  { id: "source", label: "小说改编", description: "小说与剧本定稿" },
   { id: "assets", label: "素材准备", description: "角色、场景与道具" },
   { id: "storyboard", label: "分镜制作", description: "编排镜头，生成画面" },
 ];
 
 // Older drafts still have a separate video review stage.
 export function visibleEpisodeStage(id: StageId): StageId {
-  return id === "video" ? "storyboard" : id;
+  return id === "video" ? "storyboard" : id === "script" ? "source" : id;
 }
 
 export function StageNav({
