@@ -4,7 +4,7 @@ import json
 import re
 from typing import Annotated
 
-from pydantic import AfterValidator, Field, model_validator
+from pydantic import AfterValidator, AliasChoices, Field, model_validator
 
 from .base import Identifier, InputModel, nonblank
 
@@ -20,7 +20,9 @@ class GeneratedShot(InputModel):
     title: Annotated[str, Field(max_length=255), AfterValidator(nonblank)]
     source_excerpt: Annotated[str, Field(max_length=8000), AfterValidator(nonblank)]
     story_beat: Annotated[str, Field(max_length=8000), AfterValidator(nonblank)]
-    script: Annotated[str, AfterValidator(shot_text)]
+    script: Annotated[str, AfterValidator(shot_text)] = Field(
+        validation_alias=AliasChoices("script", "visual_script")
+    )
     duration_ms: int = Field(strict=True, ge=1000, le=10000)
     asset_ids: list[Identifier] = Field(max_length=50)
 
@@ -35,9 +37,7 @@ class StoryboardResult(InputModel):
     shots: list[GeneratedShot] = Field(min_length=1, max_length=100)
 
 
-def parse_storyboard_result(
-    content: str, allowed_asset_ids: set[int], source_content: str
-) -> dict:
+def parse_storyboard_result(content: str, allowed_asset_ids: set[int], source_content: str) -> dict:
     if len(content.encode("utf-8")) > 1048576:
         raise ValueError("Structured output exceeds 1 MiB")
     stripped = content.strip()

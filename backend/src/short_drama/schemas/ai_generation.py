@@ -28,6 +28,12 @@ class ShotImageSource(InputModel):
         return self
 
 
+class AssetImageSource(InputModel):
+    scene: Literal["asset_image"]
+    asset_id: Identifier
+    row_version: Identifier
+
+
 class NovelScriptSource(InputModel):
     scene: Literal["novel_script"]
     project_id: Identifier
@@ -124,11 +130,18 @@ class ImageGenerationCreate(InputModel):
     config_id: Identifier | None = None
     input: ImageInput
     parameters: ImageParameters = Field(default_factory=ImageParameters)
-    source: ShotImageSource | None = None
+    source: Annotated[ShotImageSource | AssetImageSource, Field(discriminator="scene")] | None = (
+        None
+    )
 
     @model_validator(mode="after")
     def business_prompt(self):
-        if self.source and self.source.context_mode == "saved":
+        if self.source and self.source.scene == "asset_image":
+            if self.input.reference_media_ids:
+                raise ValueError("Asset image generation does not accept reference media")
+            if len(self.input.prompt) > 4000:
+                raise ValueError("Supplement must be at most 4000 characters")
+        elif self.source and self.source.context_mode == "saved":
             if len(self.input.prompt) > 4000:
                 raise ValueError("Supplement must be at most 4000 characters")
         elif not self.input.prompt.strip():

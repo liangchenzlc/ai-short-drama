@@ -38,12 +38,14 @@ def test_all_tables_and_columns_match_authoritative_sql():
             expected_type = expected_type.split(" GENERATED")[0]
             expected_type = expected_type.split(" COLLATE")[0].split(" CHARACTER SET")[0]
             expected_type = re.sub(r"^INT\b", "INTEGER", expected_type)
-            assert str(column.type.compile(dialect=dialect())).startswith(expected_type)
+            actual_type = str(column.type.compile(dialect=dialect()))
+            actual_type = actual_type.split(" COLLATE")[0].split(" CHARACTER SET")[0]
+            assert actual_type == expected_type, (name, column_name)
             assert column.nullable == ("NOT NULL" not in declaration)
             assert bool(column.computed) == ("GENERATED ALWAYS" in declaration)
             if column.computed is not None:
                 assert column.computed.persisted is True
-                assert str(column.computed.sqltext) in declaration
+                assert normalized(str(column.computed.sqltext)) in normalized(declaration)
             else:
                 expected_default = re.search(r"DEFAULT (.*)$", declaration)
                 if expected_default:
@@ -53,6 +55,9 @@ def test_all_tables_and_columns_match_authoritative_sql():
             collation = re.search(r"COLLATE (\w+)", declaration)
             if collation:
                 assert column.type.collation == collation[1]
+            charset = re.search(r"CHARACTER SET (\w+)", declaration)
+            if charset:
+                assert column.type.charset == charset[1]
             if column_name == "id":
                 assert column.primary_key and column.autoincrement is False
 
@@ -89,7 +94,11 @@ def test_constraints_indexes_and_mysql_compilation_match_sql():
                 )
         for index in table.indexes:
             expected = "`, `".join(column.name for column in index.columns)
-            assert normalized(f"KEY `{index.name}` (`{expected}`)") in normalized(body)
+            unique = "UNIQUE " if index.unique else ""
+            assert re.search(rf"(?m)^  {unique}KEY `{index.name}` \(`{expected}`\),?$", body), (
+                name,
+                index.name,
+            )
 
 
 def test_creation_only_tables_do_not_gain_update_audit():

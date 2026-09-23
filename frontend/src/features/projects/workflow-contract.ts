@@ -29,14 +29,13 @@ export function shotImageRequest(shot: WorkflowShot, prompt: string, referenceMe
   };
 }
 
-export function shotImageApplyRequest(shot: WorkflowShot, acknowledgeStaleSource: boolean, episodeAspect: '16:9' | '9:16' = '16:9') {
+export function shotImageApplyRequest(shot: WorkflowShot, acknowledgeStaleSource: boolean) {
   return {
     target: { type: 'shot_image' as const, id: shot.id },
     expected_media_id: shot.image?.media_id ?? null,
     expected_row_version: shot.row_version,
     expected_context_hash: shot.context_hash,
     acknowledge_stale_source: acknowledgeStaleSource,
-    parameters: { ...shot.image_settings, aspect: shot.image_settings.aspect === 'inherit' ? episodeAspect : shot.image_settings.aspect },
   };
 }
 

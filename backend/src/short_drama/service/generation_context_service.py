@@ -4,7 +4,7 @@ import hashlib
 
 from sqlalchemy import select
 
-from short_drama.ai.business_prompts import image_prompt, text_messages
+from short_drama.ai.business_prompts import asset_image_prompt, image_prompt, text_messages
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import (
     Asset,
@@ -116,11 +116,50 @@ class GenerationContextService:
         request["source_snapshot"] = snapshot
         request["business_intent"] = {"instructions": instructions}
         request["template_version"] = {
-            "novel_script": "novel-script-v1",
-            "script_shots": "script-shots-v1-r2",
-            "script_assets": "script-assets-v1-r2",
+            "novel_script": "novel-script-v1-r2",
+            "script_shots": "script-shots-v1-r3",
+            "script_assets": "script-assets-v1-r3",
         }[scene]
         request["input"] = {"messages": text_messages(scene, snapshot, instructions)}
+        return request
+
+    def prepare_asset_image(self, request):
+        from .asset_image_context import asset_image_content, asset_image_content_hash
+
+        source = request["source"]
+        asset = self.session.scalar(
+            select(Asset)
+            .where(Asset.id == int(source["asset_id"]))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if asset is None:
+            raise NotFound("Asset does not exist")
+        if asset.row_version != int(source["row_version"]):
+            raise WorkflowError(
+                "asset_version_conflict", "Asset changed; refresh before generating"
+            )
+        content = asset_image_content(asset)
+        if not content["name"].strip() or not (
+            content["description"].strip() or content["prompt"].strip()
+        ):
+            raise WorkflowError(
+                "asset_content_required",
+                "Provide a name and either description or prompt before generating",
+                400,
+            )
+        supplement = request["input"].get("prompt", "")
+        request["source_snapshot"] = {
+            "asset": content,
+            "asset_row_version": str(asset.row_version),
+            "asset_content_hash": asset_image_content_hash(content),
+            "template_version": "asset-image-v1",
+            "instructions": supplement,
+        }
+        request["input"] = {
+            "prompt": asset_image_prompt(content, supplement),
+            "reference_media_ids": [],
+        }
         return request
 
     def locked_shot_context(self, shot_id):

@@ -24,11 +24,14 @@ def media_context(session):
 
 def test_replace_restore_and_discard_are_atomic(db_session):
     from short_drama.domain import MediaRecycleBin, ShotImage
+    from short_drama.service.episode_storyboard_service import EpisodeStoryboardService
     from short_drama.service.media_recycle_bin_service import MediaRecycleBinService
     from short_drama.service.shot_image_service import ShotImageService
 
     episode, shot, first, second, _ = media_context(db_session)
     images = ShotImageService(db_session)
+    board = EpisodeStoryboardService(db_session)
+    context_hash = board.get_shot_context(episode.project_id, episode.id, shot.id)["context_hash"]
     value = images.create(
         {
             "episode_id": episode.id,
@@ -36,10 +39,13 @@ def test_replace_restore_and_discard_are_atomic(db_session):
             "media_id": first.id,
             "aspect": "16:9",
             "prompt": "original",
+            "context_hash": context_hash,
         }
     )
     replaced = images.update(value.id, {"media_id": second.id, "prompt": "replacement"})
     assert replaced.media_id == second.id
+    assert replaced.context_hash == context_hash
+    assert board.list(episode.project_id, episode.id)["items"][0]["image"]["is_stale"] is False
     recycle = MediaRecycleBinService(db_session)
     old = recycle.list().items[0]
     assert old.media_id == first.id
@@ -47,6 +53,10 @@ def test_replace_restore_and_discard_are_atomic(db_session):
     restored = recycle.restore(old.id)
     assert restored.media_id == first.id
     assert restored.prompt == "original"
+    assert restored.context_hash is None
+    restored_shot = board.list(episode.project_id, episode.id)["items"][0]
+    assert restored_shot["image"]["media_id"] == str(first.id)
+    assert restored_shot["image"]["is_stale"] is True
     assert [row.media_id for row in recycle.list().items] == [second.id]
     images.delete(restored.id)
     assert images.list().total == 0

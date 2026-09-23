@@ -1,5 +1,6 @@
 from sqlalchemy import select
 
+from short_drama.domain import AIGenerationRecord, MediaAsset
 from short_drama.domain.asset_image_candidate import AssetImageCandidate
 from short_drama.domain.media_file import MediaFile
 
@@ -22,8 +23,10 @@ class AssetImageCandidateDAO(BaseDAO):
     def list_with_media(self, asset_id, offset, limit):
         self.validate_pagination(offset, limit)
         statement = (
-            select(AssetImageCandidate, MediaFile)
+            select(AssetImageCandidate, MediaFile, MediaAsset, AIGenerationRecord)
             .join(MediaFile, MediaFile.id == AssetImageCandidate.media_id)
+            .outerjoin(MediaAsset, MediaAsset.media_id == MediaFile.id)
+            .outerjoin(AIGenerationRecord, AIGenerationRecord.id == MediaAsset.record_id)
             .where(AssetImageCandidate.asset_id == asset_id)
             .order_by(AssetImageCandidate.created_at.desc(), AssetImageCandidate.id.desc())
             .offset(offset)

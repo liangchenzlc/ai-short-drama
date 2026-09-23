@@ -254,20 +254,26 @@ def test_openai_images_preserves_count_and_base64(gateway, provider):
 
 def test_ark_image_reference_and_sequential_images(gateway, provider):
     base, state, calls = provider
+    references = [
+        "https://cdn.example/character.png",
+        "https://cdn.example/scene.png",
+        "https://cdn.example/prop.png",
+    ]
     state["body"] = {
         "data": [{"url": "https://cdn.example/a.png"}, {"url": "https://cdn.example/b.png"}]
     }
     result = gateway.submit(
         snapshot(base + "/api/v3", "image", "doubao-seedream-4-5"),
         {
-            "input": {"prompt": "scene", "reference_urls": ["https://cdn.example/ref.png"]},
+            "input": {"prompt": "scene", "reference_urls": references},
             "parameters": {"count": 2, "resolution": "2K"},
         },
         "test-secret",
         "ark_images.v1",
     )
     assert calls[0][1] == "/api/v3/images/generations"
-    assert calls[0][3]["image"] == ["https://cdn.example/ref.png"]
+    assert calls[0][3]["image"] == references
+    assert len(calls) == 1
     assert calls[0][3]["sequential_image_generation_options"] == {"max_images": 2}
     assert len(result.outputs) == 2
 

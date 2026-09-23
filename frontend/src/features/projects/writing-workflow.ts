@@ -1,7 +1,7 @@
 import type { EpisodeWorkflow } from './episode-workflow';
 import type { WritingSnapshot } from './writing-session';
 
-/** Project authoritative writing into the remaining local demonstration stages only in memory. */
+/** Project server writing into the stage view without changing the browser legacy snapshot. */
 export function projectWritingWorkflow(local: EpisodeWorkflow, writing: Pick<WritingSnapshot, 'loaded' | 'novel' | 'script' | 'confirmed'>): EpisodeWorkflow {
   const novel = writing.loaded ? writing.novel : '';
   const script = writing.loaded ? writing.script : '';

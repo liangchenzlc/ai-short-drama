@@ -27,7 +27,7 @@ CreationKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_l
 def _version(value):
     if not isinstance(value, str) or len(value) > 24:
         raise WorkflowError("invalid_version", "If-Match must be a quoted asset version", 422)
-    if value.startswith('W/'):
+    if value.startswith("W/"):
         raise WorkflowError("invalid_version", "A strong If-Match asset version is required", 422)
     if len(value) < 3 or value[0] != '"' or value[-1] != '"':
         raise WorkflowError("invalid_version", "If-Match must be a quoted asset version", 422)
@@ -94,8 +94,11 @@ def list_project_assets(
 
 @router.post("/projects/{project_id}/assets", response_model=LibraryAssetRead)
 def create_project_asset(
-    project_id: ScopedId, payload: AssetLibraryCreate, key: CreationKey,
-    response: Response, service: Libraries,
+    project_id: ScopedId,
+    payload: AssetLibraryCreate,
+    key: CreationKey,
+    response: Response,
+    service: Libraries,
 ):
     result, created = service.create("project", project_id, project_id, payload, key)
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
@@ -109,7 +112,9 @@ def link_project_asset(project_id: ScopedId, asset_id: AssetId, service: Librari
 
 @router.delete("/projects/{project_id}/assets/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
 def unlink_project_asset(
-    project_id: ScopedId, asset_id: AssetId, service: Libraries,
+    project_id: ScopedId,
+    asset_id: AssetId,
+    service: Libraries,
     if_match: Annotated[str, Header(alias="If-Match")],
 ):
     service.unlink("project", project_id, project_id, asset_id, _version(if_match))
@@ -121,7 +126,9 @@ def unlink_project_asset(
     response_model=PageResponse[LibraryAssetRead],
 )
 def list_episode_assets(
-    project_id: ScopedId, episode_id: ScopedId, service: Libraries,
+    project_id: ScopedId,
+    episode_id: ScopedId,
+    service: Libraries,
     kind: Annotated[Literal["character", "scene", "prop"] | None, Query()] = None,
     q: Annotated[str, Query(max_length=120)] = "",
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -130,12 +137,14 @@ def list_episode_assets(
     return _list(service, "episode", episode_id, project_id, kind, q, offset, limit)
 
 
-@router.post(
-    "/projects/{project_id}/episodes/{episode_id}/assets", response_model=LibraryAssetRead
-)
+@router.post("/projects/{project_id}/episodes/{episode_id}/assets", response_model=LibraryAssetRead)
 def create_episode_asset(
-    project_id: ScopedId, episode_id: ScopedId, payload: AssetLibraryCreate,
-    key: CreationKey, response: Response, service: Libraries,
+    project_id: ScopedId,
+    episode_id: ScopedId,
+    payload: AssetLibraryCreate,
+    key: CreationKey,
+    response: Response,
+    service: Libraries,
 ):
     result, created = service.create("episode", episode_id, project_id, payload, key)
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
@@ -157,7 +166,10 @@ def link_episode_asset(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def unlink_episode_asset(
-    project_id: ScopedId, episode_id: ScopedId, asset_id: AssetId, service: Libraries,
+    project_id: ScopedId,
+    episode_id: ScopedId,
+    asset_id: AssetId,
+    service: Libraries,
     if_match: Annotated[str, Header(alias="If-Match")],
 ):
     service.unlink("episode", episode_id, project_id, asset_id, _version(if_match))
@@ -179,7 +191,8 @@ def patch_asset(asset_id: AssetId, payload: AssetPatch, service: Libraries):
     response_model=PageResponse[AssetImageCandidateRead],
 )
 def list_asset_image_candidates(
-    asset_id: AssetId, service: Images,
+    asset_id: AssetId,
+    service: Images,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
@@ -197,7 +210,9 @@ def add_asset_image_candidate(
 
 @router.post("/assets/{asset_id}/image-candidates/upload", response_model=AssetImageCandidateRead)
 def upload_asset_image_candidate(
-    asset_id: AssetId, response: Response, service: Images,
+    asset_id: AssetId,
+    response: Response,
+    service: Images,
     file: Annotated[UploadFile, File()],
 ):
     result, created = service.upload(

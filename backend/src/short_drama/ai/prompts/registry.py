@@ -20,7 +20,6 @@ def system_prompt(scene: str, *, kinds: Iterable[str] = ()) -> str:
         return _parts(
             "novel_script/system.md",
             "common/source_boundary.md",
-            "common/structured_output.md",
         )
     if scene == "script_shots":
         return _parts(
@@ -28,6 +27,7 @@ def system_prompt(scene: str, *, kinds: Iterable[str] = ()) -> str:
             "script_shots/segmentation_rules.md",
             "script_shots/duration_rules.md",
             "common/source_boundary.md",
+            "script_shots/output_contract.md",
             "common/structured_output.md",
         )
     if scene == "script_assets":
@@ -39,6 +39,7 @@ def system_prompt(scene: str, *, kinds: Iterable[str] = ()) -> str:
             "script_assets/system.md",
             *(_ASSET_RULES[kind] for kind in selected),
             "common/source_boundary.md",
+            "script_assets/output_contract.md",
             "common/structured_output.md",
         )
     raise ValueError("Unsupported text scene")

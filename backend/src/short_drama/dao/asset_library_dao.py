@@ -77,12 +77,39 @@ class AssetLibraryDAO:
             total += self.session.scalar(
                 select(func.count()).select_from(model).where(model.asset_id == asset_id)
             )
-        shot_query = select(func.count()).select_from(ShotAsset).join(
-            ShotScript, ShotScript.id == ShotAsset.shot_id
-        ).where(ShotAsset.asset_id == asset_id)
+        shot_query = (
+            select(func.count())
+            .select_from(ShotAsset)
+            .join(ShotScript, ShotScript.id == ShotAsset.shot_id)
+            .where(ShotAsset.asset_id == asset_id)
+        )
         if hasattr(ShotScript, "deleted_at"):
             shot_query = shot_query.where(ShotScript.deleted_at.is_(None))
         return total + self.session.scalar(shot_query)
+
+    def reference_counts(self, asset_ids):
+        counts = {asset_id: 0 for asset_id in asset_ids}
+        if not counts:
+            return counts
+        for model in (GlobalAsset, ProjectAsset, EpisodeAsset):
+            rows = self.session.execute(
+                select(model.asset_id, func.count())
+                .where(model.asset_id.in_(counts))
+                .group_by(model.asset_id)
+            )
+            for asset_id, count in rows:
+                counts[asset_id] += count
+        shot_query = (
+            select(ShotAsset.asset_id, func.count())
+            .join(ShotScript, ShotScript.id == ShotAsset.shot_id)
+            .where(ShotAsset.asset_id.in_(counts))
+            .group_by(ShotAsset.asset_id)
+        )
+        if hasattr(ShotScript, "deleted_at"):
+            shot_query = shot_query.where(ShotScript.deleted_at.is_(None))
+        for asset_id, count in self.session.execute(shot_query):
+            counts[asset_id] += count
+        return counts
 
     def active_shot_ids(self, episode_id, asset_id):
         statement = (
@@ -104,9 +131,12 @@ class AssetLibraryDAO:
         return self.session.scalar(select(MediaFile).where(MediaFile.id == media_id))
 
     def is_global(self, asset_id):
-        return self.session.scalar(
-            select(GlobalAsset.id).where(GlobalAsset.asset_id == asset_id).limit(1)
-        ) is not None
+        return (
+            self.session.scalar(
+                select(GlobalAsset.id).where(GlobalAsset.asset_id == asset_id).limit(1)
+            )
+            is not None
+        )
 
     def project_ids(self, asset_id):
         direct = set(

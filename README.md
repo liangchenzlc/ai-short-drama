@@ -1,54 +1,44 @@
 # AI Short Drama
 
-AI 短剧创作项目，包含模型配置、文本/图片/视频生成任务管理、生成资产库及项目分镜编辑界面。
+面向个人创作者的 AI 短剧工作台。项目与分集、小说和剧本、角色/场景/道具、分镜及生成结果保存在服务端；AI 结果先成为候选，由用户明确采用。
+
+## 当前能力
+
+| 环节 | 已实现 | 当前边界 |
+| --- | --- | --- |
+| 项目与分集 | 创建、编辑、搜索、分页、最近打开 | 单用户，无登录和权限隔离 |
+| 小说与剧本 | 自动保存、候选剧本、切换编辑稿、确认、版本冲突处理 | 小说修改不会自动重写剧本 |
+| 素材准备 | 剧本 AI 提取、候选审核、三层素材库、详情 AI 生图、图片上传与采用 | 生成候选需明确采用；首期不支持素材图生图 |
+| 分镜制作 | AI 拆镜、原文依据、时长、编辑、排序、素材关联、归档 | 宫格图片尚无切格制作流程 |
+| 分镜图片 | 关联素材参考图、异步生成、候选预览、采用、过期提示 | 可用参数取决于模型适配能力 |
+| 通用生成 | 文本/图片/视频任务、取消、按条件恢复或重试、媒体资产库 | 视频任务尚未接入分集分镜制作页面 |
+| 成片 | — | 未实现配音、字幕、时间线剪辑和成片导出 |
+
+分集页面目前为四步：**小说改编 → 剧本定稿 → 素材准备 → 分镜制作**。接口、页面和模型供应商支持范围分别说明，不将存在后台接口等同于页面已完成。
 
 ## 技术栈
 
-- 后端：Python、uv、FastAPI、SQLAlchemy / PyMySQL，按 API → Service → DAO 分层。
-- 异步任务：Celery / RabbitMQ，MySQL 保存任务与调用记录。
-- 对象存储：MinIO，分别保存图片和视频。
-- 前端：React、TypeScript、Vite、Ant Design、Axios。
+- 前端：React 19、TypeScript、Vite、Ant Design、Axios、React Router。
+- 后端：Python 3.12+、FastAPI、Pydantic、SQLAlchemy/PyMySQL。
+- 数据与任务：MySQL 8.0.21+、RabbitMQ、Celery、MinIO。
 
-## 目录
+## 开始开发
 
-```text
-backend/                 后端应用、测试与启动脚本
-frontend/                前端应用与测试
-docs/数据库模型/          数据表设计、建表 SQL 与迁移
-docs/superpowers/         设计方案与实施记录
-docs/reviews/             代码审查记录
-```
+准备 Python、uv、Node.js 20.19+ 或 22.12+，以及 MySQL、RabbitMQ 和 MinIO。按[开发与运行指南](docs/development.md)配置环境、初始化数据库、启动 API/调度器/Worker 和前端。
 
-## 本地运行
+**新库只需执行完整建表文件：[schema.mysql8.sql](docs/数据库模型/schema.mysql8.sql)。** 文件包含全部 21 张表，按外键依赖排序，仅含 `CREATE TABLE`，无需再执行历史增量脚本。已有数据的数据库使用[迁移指南](docs/数据库模型/migrations/README.md)，应用不会自动迁移。
 
-准备 Python、uv、Node.js，以及可访问的 MySQL、RabbitMQ 和 MinIO。连接配置均从本地环境读取，仓库不包含真实凭据。
+## 文档导航
 
-后端：
+| 文档 | 用途 |
+| --- | --- |
+| [开发与运行](docs/development.md) | 环境配置、启动、测试、部署、故障定位 |
+| [系统架构](docs/architecture.md) | 分层、事务、任务状态、数据保存和扩展边界 |
+| [接口约定](docs/api/README.md) | 当前 HTTP 路由、版本与幂等契约 |
+| [数据库设计](docs/数据库模型/MySQL8数据表设计.md) | 完整数据模型、约束及初始化说明 |
+| [后端开发入口](backend/README.md) | 代码目录与测试入口 |
+| [前端开发入口](frontend/README.md) | 页面路由、模块职责与验证命令 |
+| [产品范围](frontend/PRODUCT.md) | 实际工作流、保存规则与未实现能力 |
+| [界面设计约定](frontend/DESIGN.md) | 布局、状态、交互与可访问性 |
 
-```powershell
-cd backend
-Copy-Item .env.example .env
-# 按实际环境填写 .env 中的数据库、消息队列、存储和加密配置。
-uv sync
-uv run uvicorn short_drama.main:app --host 127.0.0.1 --port 8000
-```
-
-异步生成还需独立启动调度器及三种 Worker，并为各进程分配不同的雪花节点 ID。数据库初始化、进程命令和 RabbitMQ 超时配置见 [后端说明](backend/README.md#异步生成启动)。
-
-前端（另开终端）：
-
-```powershell
-cd frontend
-npm ci
-npm run dev
-```
-
-默认前端地址为 `http://127.0.0.1:5173`，API 文档为 `http://127.0.0.1:8000/docs`。前端默认将 API 请求代理到本机后端；需要调整时参考 [前端说明](frontend/README.md)。
-
-## 当前范围
-
-项目和分集信息、小说/剧本、分镜、角色/场景/道具通过后端保存。小说生成剧本、确认剧本生成分镜、分镜生图复用异步生成任务；生成结果先成为候选，用户明确采用后才更新当前业务内容。图片生成结果全部进入资产库，未采用的图片仍保留。素材支持上传、预览和确认；素材 AI 分析、生视频制作和图片切格不在本轮接入范围。
-
-当前按本地单用户方式运行，尚未接入登录与多用户权限。新库执行 `docs/数据库模型/schema.mysql8.sql` 创建全部 21 张表；旧库依次参考[分集写作迁移](docs/数据库模型/migrations/2026-09-21-episode-writing/README.md)和[五阶段工作流迁移](docs/数据库模型/migrations/2026-09-21-production-workflow/README.md)，完成迁移后再启用新代码。当前工作区部署及验收进度见[验收记录](docs/superpowers/plans/2026-09-21-production-workflow-verification.md)。
-
-环境文件、虚拟环境、依赖目录、构建产物、运行日志及临时截图均已排除；保留 `.env.example`、`uv.lock` 和 `package-lock.json`，用于配置与依赖复现。
+环境文件、依赖、缓存、运行日志与截图不提交；保留 `.env.example`、`uv.lock` 和 `package-lock.json`。历史设计和实施过程可通过 Git 历史查看，维护文档以当前实现为准。

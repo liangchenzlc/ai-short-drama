@@ -98,7 +98,10 @@ def test_copy_preserves_historical_disabled_model_but_rejects_new_selection(
             {"service_type": "image", "name": "other", "model_key": "image-2", "provider": "test"}
         )
         old_id, other_id = model.id, another.id
-    assets.update(original.id, {"model_id": old_id})
+    assets.update(
+        original.id,
+        {"model_id": old_id, "row_version": original.row_version, "confirm_shared": True},
+    )
     with db_session.begin():
         db_session.execute(text("UPDATE ai_model_configs SET enabled=0"))
     copied = assets.copy_for_library("episode", links["episode"].id, {"name": "historical copy"})

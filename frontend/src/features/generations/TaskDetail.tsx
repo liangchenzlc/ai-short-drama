@@ -1,3 +1,4 @@
+import { PreviewImage } from '../../components/ui/ImagePreview';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Drawer, Empty, Modal, Skeleton, Tag } from 'antd';
 import { Link } from 'react-router-dom';
@@ -96,10 +97,10 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
         <section className="generation-section"><h3>生成结果</h3>
           {detail.result.partial && <Alert type="warning" showIcon message={`未全部完成，已保留 ${detail.result.assets.length} 个媒体结果。`} />}
           {detail.result.text && <><pre className="generation-text-result">{detail.result.text.content}</pre>{detail.result.text.finish_reason === 'length' && <p className="generation-hint">正文已达到输出长度限制，以上内容已保留。</p>}</>}
-          {!!detail.result.assets.length && <div className="generation-result-assets">{detail.result.assets.map((asset) => <Link key={asset.asset_id} to={`/media-library/${asset.media_type}?asset=${asset.asset_id}`} className="generation-result-asset">
-            {asset.media_type === 'image' && asset.url ? <img src={asset.url} alt={asset.name} loading="lazy" /> : <span className="generation-media-placeholder">{asset.media_type === 'video' ? '视频' : '图片'}</span>}
-            <span>{asset.name}</span><small>查看资产与确认采用</small>
-          </Link>)}</div>}
+          {!!detail.result.assets.length && <div className="generation-result-assets">{detail.result.assets.map((asset) => <article key={asset.asset_id} className="generation-result-asset">
+            {asset.media_type === 'image' && asset.url ? <PreviewImage src={asset.url} alt={asset.name}/> : <span className="generation-media-placeholder">{asset.media_type === 'video' ? '视频' : '图片'}</span>}
+            <span>{asset.name}</span><Link to={`/media-library/${asset.media_type}?asset=${asset.asset_id}`}>查看资产与确认采用</Link>
+          </article>)}</div>}
           {!detail.result.text && !detail.result.assets.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={detail.status === 'queued' || detail.status === 'running' ? '结果将在完成后显示' : '暂无已保存结果'} />}
           <BusinessResult detail={detail}/>
         </section>

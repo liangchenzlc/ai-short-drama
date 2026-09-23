@@ -11,6 +11,7 @@ from short_drama.domain import AIModelConfig, Base
 def generation_session():
     """Local behavior fixture; MySQL constraint/concurrency tests stay integration tests."""
     engine = create_engine("sqlite://")
+
     def sqlite_functions(db, _):
         db.create_function("CHAR_LENGTH", 1, len)
         db.create_function("JSON_ARRAY", 0, lambda: "[]")

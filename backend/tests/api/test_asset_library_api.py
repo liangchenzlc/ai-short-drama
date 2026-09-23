@@ -38,9 +38,7 @@ def test_asset_routes_require_idempotency_and_expose_real_multipart_upload():
     assert "/api/v1/libraries/global/assets" in document["paths"]
     upload = document["paths"]["/api/v1/assets/{asset_id}/image-candidates/upload"]["post"]
     assert "multipart/form-data" in upload["requestBody"]["content"]
-    parameters = document["paths"]["/api/v1/projects/{project_id}/assets"]["post"][
-        "parameters"
-    ]
+    parameters = document["paths"]["/api/v1/projects/{project_id}/assets"]["post"]["parameters"]
     key = next(parameter for parameter in parameters if parameter["name"] == "Idempotency-Key")
     assert key["required"] is True
 

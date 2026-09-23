@@ -13,8 +13,7 @@ from sqlalchemy.orm import Session
 from short_drama.db.session import configure_mysql
 
 
-@pytest.fixture(scope="session")
-def mysql_engine():
+def isolated_mysql_database():
     configured = os.environ.get("TEST_DATABASE_URL")
     if not configured:
         pytest.skip("TEST_DATABASE_URL is absent; real MySQL integration tests skipped")
@@ -66,6 +65,17 @@ def mysql_engine():
         server.dispose()
 
 
+@pytest.fixture(scope="session")
+def mysql_engine():
+    yield from isolated_mysql_database()
+
+
+@pytest.fixture
+def migration_mysql_engine():
+    """Keep exact schema comparisons independent of earlier DDL-mutating tests."""
+    yield from isolated_mysql_database()
+
+
 @pytest.fixture
 def db_session(mysql_engine):
     from short_drama.domain.base import Base
@@ -74,6 +84,10 @@ def db_session(mysql_engine):
         yield session
     with mysql_engine.begin() as connection:
         for table in reversed(Base.metadata.sorted_tables):
+            if table.name == "async_tasks":
+                # MySQL checks RESTRICT per row, including rows deleted in this statement.
+                # Break only the nullable retry chain inside this disposable test database.
+                connection.execute(table.update().values(retry_of_id=None))
             connection.execute(table.delete())
 
 

@@ -16,7 +16,7 @@ def list_assets(
     service: Service,
     media_type: Literal["image", "video"] | None = None,
     name: Annotated[str | None, Query(max_length=255)] = None,
-    source_scene: Literal["shot_image"] | None = None,
+    source_scene: Literal["shot_image", "asset_image"] | None = None,
     source_id: Identifier | None = None,
     project_id: Identifier | None = None,
     episode_id: Identifier | None = None,

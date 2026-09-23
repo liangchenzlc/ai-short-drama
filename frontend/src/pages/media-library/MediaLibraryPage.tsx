@@ -1,3 +1,4 @@
+import { PreviewImage } from '../../components/ui/ImagePreview';
 import { Alert, Button, Empty, Form, Input, Pagination, Skeleton, Tabs } from 'antd';
 import { Icon } from '../../components/ui/Icon';
 import { useEffect, useState } from 'react';
@@ -38,14 +39,11 @@ export function MediaLibraryPage({ kind }: { kind: 'image' | 'video' }) {
       <Form.Item name="created_before" label="入库时间止"><Input type="datetime-local" /></Form.Item>
       <div className="generation-filter-actions"><Button type="primary" htmlType="submit">筛选</Button><Button onClick={() => { form.setFieldsValue({ name: undefined, source_id: undefined, created_after: undefined, created_before: undefined }); setParams({}); }}>重置</Button></div>
     </Form></details>
-    <div className="generation-list-toolbar"><p>{data ? `共 ${data.total} 个${kind === 'image' ? '图片' : '视频'}资产` : '已保存资产'}<span>点击画面查看详情</span></p><Button onClick={refresh} loading={loading}>刷新</Button></div>
+    <div className="generation-list-toolbar"><p>{data ? `共 ${data.total} 个${kind === 'image' ? '图片' : '视频'}资产` : '已保存资产'}<span>{kind === 'image' ? '点击图片预览大图' : '点击画面查看详情'}</span></p><Button onClick={refresh} loading={loading}>刷新</Button></div>
     {error && <Alert type="error" showIcon message={error} action={<Button onClick={refresh}>重新加载</Button>} />}
     {loading && !data ? <div className="asset-library-skeleton" role="status" aria-label="正在加载资产">{[0, 1, 2].map(item => <Skeleton key={item} title paragraph={{ rows: 3 }}/>)}</div> : data?.items.length ? <div className="asset-library-grid" aria-busy={loading}>
       {data.items.map((asset) => <article key={asset.asset_id} className="asset-library-item">
-        <button className="asset-library-preview" onClick={() => selectAsset(asset.asset_id)} aria-label={`预览${asset.name}`}>
-          {kind === 'image' && asset.url ? <img src={asset.url} alt={asset.name} loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none'; }} /> : null}
-          <span className="asset-library-placeholder"><Icon name={kind === 'video' ? 'film' : 'scene'} size={32}/>{kind === 'video' ? '预览视频' : '查看图片'}</span>
-        </button>
+        {kind === 'image' && asset.url ? <PreviewImage triggerClassName="asset-library-preview" src={asset.url} alt={asset.name}/> : <button type="button" className="asset-library-preview" onClick={() => selectAsset(asset.asset_id)} aria-label={`查看${asset.name}`}><span className="asset-library-placeholder"><Icon name={kind === 'video' ? 'film' : 'scene'} size={32}/>{kind === 'video' ? '预览视频' : '查看图片详情'}</span></button>}
         <div className="asset-library-caption"><h2>{asset.name}</h2><p>{dateLabel(asset.created_at)}</p><div><span>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : kind === 'video' ? '视频资产' : '图片资产'}</span><Button onClick={() => selectAsset(asset.asset_id)}>查看详情</Button></div></div>
       </article>)}
     </div> : <div className="generation-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? '暂时无法加载资产' : filtered ? '没有找到匹配的资产' : '还没有作品，先完成一次生成'} />{!error && <Button type={filtered ? 'default' : 'primary'} onClick={() => filtered ? setParams({}) : navigate(`/tasks/${kind}`)}>{filtered ? '清除筛选' : `前往${kind === 'image' ? '图片' : '视频'}生成`}</Button>}</div>}

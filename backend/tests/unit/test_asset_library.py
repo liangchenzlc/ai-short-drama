@@ -1,7 +1,7 @@
 import pytest
 from generation_fixtures import generation_session
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import Asset
@@ -10,6 +10,42 @@ from short_drama.schemas.asset_library import AssetLibraryCreate
 from short_drama.service.asset_library_service import AssetLibraryService, creation_fingerprint
 from short_drama.service.episode_service import EpisodeService
 from short_drama.service.project_service import ProjectService
+
+
+def test_project_asset_list_keeps_query_count_bounded_as_page_grows():
+    with generation_session() as session:
+        project = ProjectService(session).create({"name": "P", "aspect": "16:9"})
+        service = AssetLibraryService(session)
+        ids = [
+            service.create(
+                "project",
+                project.id,
+                project.id,
+                {"kind": "prop", "name": f"prop-{index}"},
+                f"asset-{index}",
+            )[0].id
+            for index in range(3)
+        ]
+        episode = EpisodeService(session).create(
+            {"project_id": project.id, "position": 1, "title": "E", "aspect": "16:9"}
+        )
+        service.link("episode", episode.id, project.id, ids[1])
+        statements = []
+
+        def count_query(_connection, _cursor, statement, _parameters, _context, _many):
+            if statement.lstrip().upper().startswith("SELECT"):
+                statements.append(statement)
+
+        engine = session.get_bind()
+        event.listen(engine, "before_cursor_execute", count_query)
+        try:
+            page = service.list("project", project.id, project.id)
+        finally:
+            event.remove(engine, "before_cursor_execute", count_query)
+
+        assert [item.id for item in page["items"]] == ids
+        assert [item.reference_count for item in page["items"]] == [1, 2, 1]
+        assert len(statements) <= 7
 
 
 def test_asset_create_normalizes_tags_and_enforces_scene_time_scope():

@@ -93,12 +93,14 @@ class AssetLibraryService(BaseService):
             return None
         return self.storage.download_url(media.storage_locator)
 
-    def _read(self, asset, media=None, *, link=None, library=False):
+    def _read(self, asset, media=None, *, link=None, library=False, reference_count=None):
         schema = LibraryAssetRead if library else AssetRead
         values = {
             name: getattr(asset, name) for name in schema.model_fields if hasattr(asset, name)
         }
-        values["reference_count"] = self.library.reference_count(asset.id)
+        values["reference_count"] = (
+            self.library.reference_count(asset.id) if reference_count is None else reference_count
+        )
         values["image"] = None
         if media is not None:
             values["image"] = AssetImageRead(
@@ -124,9 +126,13 @@ class AssetLibraryService(BaseService):
             rows, total = self.library.links(
                 kind, parent_id, asset_kind=asset_kind, query=q, offset=offset, limit=limit
             )
+            counts = self.library.reference_counts([asset.id for _link, asset, _media in rows])
             return {
                 "items": [
-                    self._read(asset, media, link=link, library=True) for link, asset, media in rows
+                    self._read(
+                        asset, media, link=link, library=True, reference_count=counts[asset.id]
+                    )
+                    for link, asset, media in rows
                 ],
                 "total": total,
                 "offset": offset,

@@ -27,3 +27,10 @@ export type AiModelConfigUpdateDto = Partial<Omit<AiModelConfigCreateDto, 'servi
 export interface AiModelConfigListDto { items: AiModelConfigDto[]; total: number; offset: number; limit: number }
 export interface ModelDiscoveryRequestDto { base_url: string; apikey?: string | null; config_id?: string }
 export interface ModelDiscoveryDto { items: { id: string }[]; truncated: boolean }
+export interface AiModelCapabilitiesDto {
+  known: boolean;
+  parameters: string[];
+  reference_images: boolean;
+  first_frame: boolean;
+  last_frame: boolean;
+}

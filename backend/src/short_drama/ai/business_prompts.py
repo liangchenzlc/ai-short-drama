@@ -33,3 +33,30 @@ def image_prompt(snapshot, supplement, layout):
             f"补充要求：{supplement}" if supplement else "",
         ]
     ).strip()
+
+
+def asset_image_prompt(content: dict, supplement: str) -> str:
+    rule = {
+        "character": (
+            "Preserve a distinct, repeatable identity, facial features, body shape, "
+            "clothing, and accessories."
+        ),
+        "scene": (
+            "Show spatial layout, architecture, atmosphere, and the saved scene_time consistently."
+        ),
+        "prop": "Show recognizable shape, material, construction details, scale, and condition.",
+    }[content["kind"]]
+    parts = [
+        "Create one production-ready visual reference image for the saved asset.",
+        rule,
+        "Use description as factual context and prompt as visual direction.",
+        (
+            "Default to one coherent image with no collage, no split panel, no caption, "
+            "no logo, and no text."
+        ),
+        "Saved asset data (authoritative):",
+        json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+    ]
+    if supplement:
+        parts.extend(["Additional requirements for this generation only:", supplement])
+    return "\n".join(parts)

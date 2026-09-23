@@ -1,61 +1,59 @@
-﻿# AI 短剧工作台 · 网页演示
+# 前端
 
-基于 `C:/Users/snow/code/ai-video-integration/frontend` 页面与制作流程改造的 React + Vite + TypeScript 前端，采用适合网页的紧凑布局与石墨灰、琥珀色主题。项目、正文、素材、分镜、生成任务和采用结果通过 Axios 连接后端并持久化；模型选择保留为浏览器偏好。无需 Electron。产品范围见 [PRODUCT.md](PRODUCT.md)，视觉约定见 [DESIGN.md](DESIGN.md)。
+React 19 + TypeScript + Vite + Ant Design 网页工作台。项目、正文、素材、分镜、生成任务和采用结果通过 Axios 连接后端；模型选择保留为浏览器偏好。无需 Electron。
 
-## 运行
+## 运行与检查
 
-在本目录执行（Node.js 20.19+ 或 22.12+）：
+Node.js 20.19+ 或 22.12+，在本目录执行：
 
-```sh
-npm install
+```powershell
+npm ci
 npm run dev
 ```
 
-开发地址：<http://localhost:5173>（绑定 `127.0.0.1`，端口占用时启动失败）。
+开发地址 `http://127.0.0.1:5173`，API 默认代理至 `http://127.0.0.1:8000`。修改代理时使用 `.env.local`，参照 [.env.example](.env.example)，禁止在 VITE 变量放凭据。
 
-```sh
+```powershell
+npm test
+npm run typecheck
 npm run build
 npm run preview
 ```
 
-构建结果位于 `dist/`；预览地址以终端输出为准，默认端口为 `4173`。`npm run typecheck` 可单独检查 TypeScript。
+`build` 包含类型检查，产物为 `dist/`；当前Vite preview会继承开发配置的API代理；静态dist文件本身不含代理能力，正式部署仍需配置反向代理。Node测试覆盖保存队列、导航、版本冲突、模型选择、生成契约和部分UI源码约定，不代替浏览器交互测试。
 
-## 页面与交互
+## 路由
 
-- 项目管理：紧凑项目列表、新建与打开项目、继续分集创作。
-- 项目详情：剧集信息、分集列表、项目资源库。
-- 分集制作：按步骤编辑小说与剧本、维护本集素材、生成和编辑分镜，并预览后明确采用剧本、分镜和图片候选。
-- 全局素材库：角色、场景、道具的创建、搜索与删除。
-- AI 配置：仅保留文本模型、生图模型、生视频模型三个标签，各分类独立添加、编辑、删除及设置默认配置。
+| 路径 | 页面 |
+| --- | --- |
+| `/projects` | 项目搜索、分页和继续创作 |
+| `/projects/:projectId` | 项目信息、分集、项目资源库 |
+| `/projects/:projectId/episodes/:episodeId/:stage?` | 分集制作；stage为source/script/assets/storyboard |
+| `/assets/:kind` | character/scene/prop三类全局素材 |
+| `/ai` | 文本、图片、视频模型配置 |
+| `/tasks/:kind` | text/image/video生成任务 |
+| `/media-library/:kind` | image/video生成媒体资产 |
 
-分集小说与剧本连接服务端：编辑停顿 1 秒自动保存，剧本可单独确认；修改已确认剧本后需重新确认。小说改动不会修改或取消确认剧本。小说生成剧本、剧本生成分镜、素材库与分镜生图均创建真实后端任务或记录，结果只在用户明确选择后应用。素材 AI 分析和视频生成尚未接入，相关入口保持禁用。
+旧video和无效步骤链接按当前待处理阶段规范化；旧快照算出的video阶段映射到storyboard。BrowserRouter使用真实路径；生产部署要配置API代理、SPA fallback及正确的Vite资源base，详见[部署限制](../docs/development.md#部署与维护)。
 
-## 数据保存
+## 模块职责
 
-项目、分集信息、小说、剧本、三层素材库、分镜、生成任务和采用结果保存在服务端数据库。模型选择保存在 `localStorage`，旧版浏览器素材与制作草稿仅提供下载，不会自动上传或覆盖服务端数据。视频阶段仍保留旧稿兼容和后续接入范围。
+- `src/app`：应用入口、路由、主题和样式。
+- `src/pages`：项目、分集、素材、任务、资产和配置页面。
+- `src/features/projects`：正文保存会话、导航保护、素材提取、分镜候选与图片采用。
+- `src/features/assets`：三层素材库共用UI和请求状态。
+- `src/features/generations`：通用生成、任务详情、轮询与幂等请求标识。
+- `src/features/media-library`：媒体详情与图片选择器。
+- `src/api`：DTO、请求封装和统一错误；见[前端API约定](src/api/README.md)。
 
-打开分集会先载入服务端小说与剧本，读取失败时不显示可编辑的空白稿。旧版浏览器草稿可预览并分别显式导入，不会自动上传。小说与剧本共享串行保存队列及服务端版本；网络失败会核实保存结果，版本冲突会暂停自动保存并保留页面草稿。可下载草稿备份，再载入服务端版本手动合并。草稿尚未保存时，切换步骤或离开页面会先保存；失败时需要明确确认放弃。刷新或关闭页面由浏览器提示未保存内容。
+`episode-workflow.ts`仍承担旧浏览器快照读取/校验与模型偏好兼容。保留的旧媒体、宫格、video类型不是当前页面能力；对应演示生成组件已经移除。不要绕过服务端重新启用本地生成结果。
 
-队列与导航回归测试：`node --test tests/writing-session.test.mjs tests/writing-navigation.test.mjs`。部署前先完成后端 episode writing 数据库迁移，详见仓库部署文档。
+## 保存与交互
 
-AI 配置保存在后端数据库，按文本、生图、生视频类型分页查询。API Key 随表单提交到后端加密保存，响应只返回是否已配置；前端不把密钥写入浏览器存储。编辑时留空保留原密钥，也可明确选择清除。保存配置不会调用模型服务。
+小说与剧本停顿1秒自动保存，串行队列共享服务器版本，旧响应不覆盖新输入。切步骤/离开页面先等待保存，失败则保留草稿并要求明确处理；刷新关闭用浏览器离开提示。冲突可下载草稿，再载入服务端版本手动核对。
 
-新增或编辑时，填写服务地址和 API 密钥后点击「获取模型」，即可搜索选择服务返回的模型标识；未提供列表接口的服务可手动填写。探测只读取模型目录，不执行生成，也不会自动保存表单。编辑配置可复用已保存密钥，更换服务地址后需重新输入该服务的密钥。
+AI结果先预览后采用。素材上传不自动确认，分镜生成不直接覆盖镜头，任务页成功不等于项目已采用。详情页与任务列表刷新使用当前服务器状态；临时媒体URL失效时重新读取。
 
-## 路由与部署
+旧版浏览器正文只允许显式导入；旧素材/制作数据提供JSON下载，不自动上传或覆盖服务端数据。保留兼容读取不代表浏览器存储仍是业务数据源。
 
-页面使用 React Router（BrowserRouter），支持直接访问、刷新及浏览器前进后退：
-
-- `/projects`：项目管理。
-- `/projects/:projectId`：项目详情。
-- `/projects/:projectId/episodes/:episodeId/:stage`：分集制作；步骤为 `source`、`script`、`assets`、`storyboard`。省略步骤时进入本集待完成步骤。
-- `/assets/character`、`/assets/scene`、`/assets/prop`：素材分类。
-- `/ai`：AI 配置。
-
-部署到静态托管时，需要将未命中文件的页面路径回退到 `index.html`（SPA fallback），以支持深层链接刷新。Vite 开发和预览服务器已支持此行为。
-
-## AI 配置接口联调
-
-先按后端 README 启动 API，再运行本前端。开发服务器将 `/api` 代理到 `http://127.0.0.1:8000`。需要更改时复制 `.env.example` 为 `.env.local`，设置 `API_PROXY_TARGET` 并重启 Vite；浏览器请求前缀由 `VITE_API_BASE_URL` 控制，默认 `/api/v1`。环境文件不得包含模型密钥或数据库凭据。
-
-生产部署应在同域名把 `/api/` 反向代理到后端，并在其后配置 SPA fallback。Vite 开发代理不会进入构建产物。详细请求分层、DTO、错误和版本冲突约定见 [API 约定](src/api/README.md)。
+产品边界见[PRODUCT.md](PRODUCT.md)，界面约定见[DESIGN.md](DESIGN.md)，后端契约见[接口说明](../docs/api/README.md)。

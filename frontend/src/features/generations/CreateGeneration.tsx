@@ -1,3 +1,4 @@
+import { PreviewImage } from '../../components/ui/ImagePreview';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Drawer, Form, Input, InputNumber, Select } from 'antd';
 import { Link } from 'react-router-dom';
@@ -92,7 +93,7 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
       </div>
       {kind === 'image' && <>
         <Form.Item name="reference_media_ids" hidden><Input /></Form.Item>
-        <div className="generation-reference-field"><div><strong>参考图片 <span>选填，最多 16 张</span></strong><Button disabled={pending || referenceIds.split(',').filter(Boolean).length >= 16} onClick={() => setImageTarget('reference_media_ids')}>选择图片</Button></div><div className="reference-thumbnail-list">{referenceIds.split(',').filter(Boolean).map(id => <div key={id}>{picked[id]?.url && <img src={picked[id].url!} alt={picked[id].name}/>}<span>{picked[id]?.name || '参考图片'}</span><Button size="small" disabled={pending} aria-label={`移除参考图片 ${picked[id]?.name || ''}`} onClick={() => setImageField('reference_media_ids', referenceIds.split(',').filter(value => value !== id).join(','))}>移除</Button></div>)}</div></div>
+        <div className="generation-reference-field"><div><strong>参考图片 <span>选填，最多 16 张</span></strong><Button disabled={pending || referenceIds.split(',').filter(Boolean).length >= 16} onClick={() => setImageTarget('reference_media_ids')}>选择图片</Button></div><div className="reference-thumbnail-list">{referenceIds.split(',').filter(Boolean).map(id => <div key={id}>{picked[id]?.url && <PreviewImage src={picked[id].url!} alt={picked[id].name}/>}<span>{picked[id]?.name || '参考图片'}</span><Button size="small" disabled={pending} aria-label={`移除参考图片 ${picked[id]?.name || ''}`} onClick={() => setImageField('reference_media_ids', referenceIds.split(',').filter(value => value !== id).join(','))}>移除</Button></div>)}</div></div>
         <details className="generation-source"><summary>关联真实分镜（选填）</summary>
           <p>仅接受已经保存在服务端的分镜。可从分镜详情复制服务端 ID；留空则创建独立生成任务。</p>
           <Form.Item name="source_id" label="来源分镜的服务端 ID" rules={[optionalId]}><Input placeholder="输入真实分镜 ID" /></Form.Item>
@@ -100,7 +101,7 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
         </details>
       </>}
       {kind === 'video' && <div className="generation-form-grid">
-        {(['first_frame_media_id', 'last_frame_media_id'] as const).map(field => { const id = field === 'first_frame_media_id' ? firstFrame : lastFrame; return <div className="frame-picker" key={field}><Form.Item name={field} hidden><Input /></Form.Item><strong>{field === 'first_frame_media_id' ? '首帧图片' : '尾帧图片'} <small>选填</small></strong>{id && picked[id]?.url && <img src={picked[id].url!} alt={picked[id].name}/>}<div><Button disabled={pending} onClick={() => setImageTarget(field)}>{id ? '更换图片' : '选择图片'}</Button>{id && <Button disabled={pending} onClick={() => setImageField(field, undefined)}>移除</Button>}</div></div>; })}
+        {(['first_frame_media_id', 'last_frame_media_id'] as const).map(field => { const id = field === 'first_frame_media_id' ? firstFrame : lastFrame; return <div className="frame-picker" key={field}><Form.Item name={field} hidden><Input /></Form.Item><strong>{field === 'first_frame_media_id' ? '首帧图片' : '尾帧图片'} <small>选填</small></strong>{id && picked[id]?.url && <PreviewImage src={picked[id].url!} alt={picked[id].name}/>}<div><Button disabled={pending} onClick={() => setImageTarget(field)}>{id ? '更换图片' : '选择图片'}</Button>{id && <Button disabled={pending} onClick={() => setImageField(field, undefined)}>移除</Button>}</div></div>; })}
       </div>}
       <p className="generation-hint">可选参数需符合所选模型能力。提交生成可能产生模型调用费用，生成结果不会自动替换项目内容。</p>
       {error && <Alert type="error" showIcon message={error} description="表单已保留。保持内容不变再次提交会复用本次请求；修改内容后会作为新请求提交。" />}

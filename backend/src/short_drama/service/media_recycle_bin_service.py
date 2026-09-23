@@ -46,9 +46,13 @@ class MediaRecycleBinService(BaseService):
             values = {
                 name: getattr(entry, name)
                 for name in service.create_schema.model_fields
-                if name != "episode_id"
+                if name not in {"episode_id", "context_hash"}
             }
             values["episode_id"] = shot.episode_id
+            if service.media_kind == "image":
+                # Recycle records have no historical context digest. Never borrow the
+                # current image's digest: restored images must remain marked stale.
+                values["context_hash"] = None
             values = service.create_schema.model_validate(values).model_dump()
             existing = self.session.scalar(
                 select(service.model)

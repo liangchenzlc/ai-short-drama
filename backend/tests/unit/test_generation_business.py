@@ -122,9 +122,7 @@ def test_structured_shots_accepts_one_fence_and_rejects_unknown_asset_or_extra_f
         "asset_ids": ["11"],
     }
     text = json.dumps({"shots": [shot]})
-    assert parse_storyboard_result("```json\n" + text + "\n```", {11}, source) == {
-        "shots": [shot]
-    }
+    assert parse_storyboard_result("```json\n" + text + "\n```", {11}, source) == {"shots": [shot]}
     with pytest.raises(ValueError):
         parse_storyboard_result(text, {12}, source)
     with pytest.raises(ValueError):
@@ -285,7 +283,8 @@ def test_image_adoption_requires_editor_and_context_tokens_but_video_contract_un
     )
 
 
-def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archived_history():
+@pytest.mark.parametrize("mode", ["append", "replace"])
+def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archived_history(mode):
     from generation_fixtures import config, generation_session, settings
     from sqlalchemy import select
     from test_episode_writing import setup
@@ -305,9 +304,7 @@ def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archive
         sid = saved["script"]["id"]
         writing.confirm(p, e, sid, {"content_version": "2"})
         board = EpisodeStoryboardService(session)
-        old = board.create(
-            p, e, {"storyboard_version": "1", "script": "old shot"}, "old-shot"
-        )
+        old = board.create(p, e, {"storyboard_version": "1", "script": "old shot"}, "old-shot")
         task, _ = AIGenerationService(session, settings).create(
             "text",
             {
@@ -326,10 +323,8 @@ def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archive
         with session.begin():
             record = session.scalar(select(AIGenerationRecord))
             request = record.request_data
-            assert request["template_version"] == "script-shots-v1-r2"
-            assert request["source_snapshot"]["storyboard"] == {
-                "average_shot_duration_ms": 5000
-            }
+            assert request["template_version"] == "script-shots-v1-r3"
+            assert request["source_snapshot"]["storyboard"] == {"average_shot_duration_ms": 5000}
             user_envelope = json.loads(request["input"]["messages"][1]["content"])
             assert user_envelope["source"]["storyboard"]["average_shot_duration_ms"] == 5000
             assert "平均镜头时长" in request["input"]["messages"][0]["content"]
@@ -353,8 +348,8 @@ def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archive
         before = board.list(p, e)
         assert [row["script"] for row in before["items"]] == ["old shot"]
         payload = {
-            "mode": "replace",
-            "confirm_replace": True,
+            "mode": mode,
+            "confirm_replace": mode == "replace",
             "content_version": "3",
             "storyboard_version": before["storyboard_version"],
         }
@@ -363,11 +358,14 @@ def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archive
         replay = business.apply_storyboard(p, e, tid, payload)
         assert replay["already_applied"] and replay["shot_ids"] == adopted["shot_ids"]
         generated = board.list(p, e)["items"]
-        assert [row["script"] for row in generated] == ["new shot"]
-        assert generated[0]["duration_ms"] == 3000
-        assert generated[0]["source_excerpt"] == "script"
+        assert [row["script"] for row in generated] == (
+            ["old shot", "new shot"] if mode == "append" else ["new shot"]
+        )
+        assert generated[-1]["duration_ms"] == 3000
+        assert generated[-1]["source_excerpt"] == "script"
         with session.begin():
-            assert session.get(ShotScript, int(old["shot"]["id"])).deleted_at is not None
+            archived = session.get(ShotScript, int(old["shot"]["id"])).deleted_at is not None
+            assert archived == (mode == "replace")
             assert len(list(session.scalars(select(ScriptShotRecord)))) == 1
 
 

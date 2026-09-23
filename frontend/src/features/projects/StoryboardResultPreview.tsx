@@ -4,9 +4,10 @@ import { storyboardTiming } from './workflow-contract';
 
 const seconds = (milliseconds: number) => `${Number((milliseconds / 1000).toFixed(1))} 秒`;
 
-export function StoryboardResultPreview({ task, busy, error, assetNames = {}, onApply }: {
+export function StoryboardResultPreview({ task, busy, disabled = false, error, assetNames = {}, onApply }: {
   task: GenerationDetail;
   busy: boolean;
+  disabled?: boolean;
   error?: string;
   assetNames?: Record<string, string>;
   onApply: (mode: 'append' | 'replace') => void;
@@ -32,6 +33,6 @@ export function StoryboardResultPreview({ task, busy, error, assetNames = {}, on
       </li>;
     })}</ol>
     {error && <Alert type="error" message={error}/>}
-    <div className="dialog-actions"><Button type="primary" loading={busy} disabled={!!result.applied} onClick={() => onApply('append')}>追加到现有分镜</Button><Button danger loading={busy} disabled={!!result.applied} onClick={() => onApply('replace')}>替换当前分镜…</Button></div>
+    <div className="dialog-actions"><Button type="primary" loading={busy} disabled={disabled || !!result.applied} onClick={() => onApply('append')}>追加到现有分镜</Button><Button danger loading={busy} disabled={disabled || !!result.applied} onClick={() => onApply('replace')}>替换当前分镜…</Button></div>
   </section>;
 }

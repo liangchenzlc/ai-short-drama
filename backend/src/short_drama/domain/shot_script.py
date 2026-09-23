@@ -120,9 +120,7 @@ class ShotScript(Base):
             onupdate="RESTRICT",
         ),
         CheckConstraint("`position` > 0", name="ck_shot_scripts_position"),
-        CheckConstraint(
-            "`duration_ms` BETWEEN 1000 AND 10000", name="ck_shot_scripts_duration_ms"
-        ),
+        CheckConstraint("`duration_ms` BETWEEN 1000 AND 10000", name="ck_shot_scripts_duration_ms"),
         CheckConstraint("`row_version` > 0", name="ck_shot_scripts_row_version"),
         CheckConstraint(
             "`image_settings` IS NULL OR JSON_TYPE(`image_settings`) = 'OBJECT'",

@@ -33,6 +33,7 @@ from .shot_context import compute_shot_context_hash, normalize_shot_context
 
 DEFAULT_IMAGE_SETTINGS = {"resolution": "2K", "aspect": "inherit", "layout": "single"}
 MAX_ACTIVE_SHOTS = 500
+_UNSET = object()
 
 
 def normalize_creation_key(value: str) -> str:
@@ -150,8 +151,8 @@ class EpisodeStoryboardService(BaseService):
             context, digest = self._context(episode, shot)
             return {"context": context, "context_hash": digest}
 
-    def _image(self, episode, shot, current_hash):
-        result = self.dao.image_row(shot.id)
+    def _image(self, episode, shot, current_hash, row=_UNSET):
+        result = self.dao.image_row(shot.id) if row is _UNSET else row
         if result is None:
             return None
         image, media, media_asset_id = result
@@ -170,9 +171,11 @@ class EpisodeStoryboardService(BaseService):
             "is_stale": image.context_hash is None or image.context_hash != current_hash,
         }
 
-    def _shot(self, episode, shot):
-        asset_ids = self.dao.asset_ids(shot.id)
-        assets = self.dao.assets(shot.id)
+    def _shot(self, episode, shot, *, assets=None, image_row=_UNSET):
+        asset_ids = (
+            self.dao.asset_ids(shot.id) if assets is None else [asset.id for asset in assets]
+        )
+        assets = self.dao.assets(shot.id) if assets is None else assets
         _context, digest = self._context(episode, shot, assets)
         settings = shot.image_settings or DEFAULT_IMAGE_SETTINGS
         return StoryboardShotRead(
@@ -185,7 +188,7 @@ class EpisodeStoryboardService(BaseService):
             asset_ids=asset_ids,
             image_settings=ShotImageSettings.model_validate(settings),
             context_hash=digest,
-            image=self._image(episode, shot, digest),
+            image=self._image(episode, shot, digest, image_row),
             deleted_at=shot.deleted_at,
         ).model_dump(mode="json")
 
@@ -196,10 +199,19 @@ class EpisodeStoryboardService(BaseService):
         with self._transaction():
             episode = self.lock_episode(project_id, episode_id)
             rows, total = self.dao.list_rows(episode.id, include_archived, offset, limit)
+            assets_by_shot, images_by_shot = self.dao.list_details([row.id for row in rows])
             return {
                 "episode_id": str(episode.id),
                 "storyboard_version": str(episode.storyboard_version),
-                "items": [self._shot(episode, row) for row in rows],
+                "items": [
+                    self._shot(
+                        episode,
+                        row,
+                        assets=assets_by_shot[row.id],
+                        image_row=images_by_shot.get(row.id),
+                    )
+                    for row in rows
+                ],
                 "total": total,
                 "offset": offset,
                 "limit": limit,

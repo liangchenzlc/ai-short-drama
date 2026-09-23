@@ -114,7 +114,7 @@ def contract_snapshot(connection):
         "keys": [tuple(row.values()) for row in keys],
         "checks": [
             (table_name, constraint_name, re.sub(r"[\s`]", "", clause).lower())
-            for table_name, constraint_name, clause in checks
+            for table_name, constraint_name, clause in (row.values() for row in checks)
         ],
     }
 
@@ -137,9 +137,9 @@ def rows(connection, table):
 
 
 def test_full_production_migration_is_reentrant_preserves_data_and_matches_canonical(
-    mysql_engine,
+    migration_mysql_engine,
 ):
-    with mysql_engine.connect() as connection:
+    with migration_mysql_engine.connect() as connection:
         database = connection.scalar(text("SELECT DATABASE()"))
         assert re.fullmatch(r"short_drama_[a-f0-9]{32}_test", database)
         canonical = contract_snapshot(connection)
@@ -188,6 +188,8 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
         )
         connection.exec_driver_sql(
             "ALTER TABLE shot_scripts "
+            "DROP CHECK ck_shot_scripts_duration_ms, "
+            "DROP COLUMN source_excerpt, DROP COLUMN duration_ms, "
             "DROP CHECK ck_shot_scripts_row_version, "
             "DROP CHECK ck_shot_scripts_image_settings, "
             "DROP CHECK ck_shot_scripts_deleted_time, "
@@ -232,7 +234,7 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
             "003_shot_image_context.sql",
         ):
             run_sql(connection, name)
-        run_backfill(mysql_engine)
+        run_backfill(migration_mysql_engine)
         run_sql(connection, "005_verify.sql")
 
         for table, expected in before.items():
@@ -246,6 +248,12 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
         assert connection.scalar(text("SELECT row_version FROM shot_scripts WHERE id=9007")) == 1
         assert connection.scalar(text("SELECT row_version FROM assets WHERE id=9004")) == 1
         assert connection.scalar(text("SELECT context_hash FROM shot_images WHERE id=9009")) is None
+        # The canonical schema also includes the later storyboard prompt migration.
+        # Apply it after the production migration to reproduce the complete upgrade path.
+        prompt_migrations = MIGRATIONS.parent / "2026-09-22-storyboard-prompts"
+        for path in sorted(prompt_migrations.glob("*.sql")):
+            for statement in mysql_statements(path):
+                connection.exec_driver_sql(statement)
         assert contract_snapshot(connection) == canonical
 
         connection.exec_driver_sql("UPDATE episodes SET storyboard_version=7 WHERE id=9002")
@@ -259,7 +267,7 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
             "003_shot_image_context.sql",
         ):
             run_sql(connection, name)
-        run_backfill(mysql_engine)
+        run_backfill(migration_mysql_engine)
         run_sql(connection, "005_verify.sql")
         assert connection.scalar(text("SELECT storyboard_version FROM episodes WHERE id=9002")) == 7
         assert connection.scalar(text("SELECT row_version FROM shot_scripts WHERE id=9007")) == 8

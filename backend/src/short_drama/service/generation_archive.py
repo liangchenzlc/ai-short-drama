@@ -10,8 +10,9 @@ from sqlalchemy import select
 
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import NotFound
+from short_drama.dao.asset_image_candidate_dao import AssetImageCandidateDAO
 from short_drama.dao.task_runtime_dao import LeaseLost, owned_task
-from short_drama.domain import AIGenerationRecord, MediaAsset, MediaFile
+from short_drama.domain import AIGenerationRecord, Asset, MediaAsset, MediaFile
 from short_drama.service.base import utcnow
 from short_drama.storage.models import ObjectLocation
 from short_drama.utils.snowflake import next_id
@@ -143,17 +144,45 @@ class GenerationArchive:
                 raise ValueError("Existing archive object does not match output")
         return meta
 
+    def _link_asset_candidate(self, session, request: dict, media_id: int) -> str | None:
+        source = request.get("source") or {}
+        if source.get("scene") != "asset_image":
+            return None
+        asset = session.get(Asset, int(source["asset_id"]), with_for_update=True)
+        if asset is None:
+            return "source_missing"
+        candidates = AssetImageCandidateDAO(session)
+        candidate = candidates.get_for_asset(asset.id, media_id, for_update=True)
+        if candidate is None:
+            candidates.create({"asset_id": asset.id, "media_id": media_id})
+        return "linked"
+
     def save_one(self, task, record, entry, version, token):
-        with self.factory() as session:
+        with self.factory.begin() as session:
+            owned_task(session, task.id, version, token)
+            current_record = session.get(AIGenerationRecord, record.id)
             existing = session.scalar(
                 select(MediaAsset).where(
                     MediaAsset.record_id == record.id,
                     MediaAsset.output_index == entry["output_index"],
                 )
             )
-            if existing:
+            if existing is not None:
                 if existing.id != int(entry["asset_id"]):
                     raise ValueError("Output identity conflict")
+                candidate_status = self._link_asset_candidate(
+                    session, current_record.request_data, existing.media_id
+                )
+                data = dict(current_record.response_data or {})
+                manifest = [dict(item) for item in data.get("media_manifest", [])]
+                for item in manifest:
+                    if item["output_index"] == entry["output_index"]:
+                        item["saved"] = True
+                        if candidate_status is not None:
+                            item["candidate_status"] = candidate_status
+                data["media_manifest"] = manifest
+                current_record.response_data = data
+                current_record.updated_at = utcnow()
                 return True
         if not entry.get("locator"):
             if not entry.get("source_cipher"):
@@ -163,10 +192,7 @@ class GenerationArchive:
             entry = {**entry, **self._store(task.id, record.id, entry, data)}
         location = ObjectLocation.parse(
             entry["locator"],
-            {
-                self.settings.minio_image_bucket,
-                self.settings.minio_video_bucket,
-            },
+            {self.settings.minio_image_bucket, self.settings.minio_video_bucket},
         )
         stored = self.storage.stat(location.bucket, location.object_name)
         if stored.size != entry["byte_size"]:
@@ -180,8 +206,8 @@ class GenerationArchive:
                     MediaAsset.output_index == entry["output_index"],
                 )
             )
-            if asset:
-                return True
+            if asset is not None and asset.id != int(entry["asset_id"]):
+                raise ValueError("Output identity conflict")
             media = session.scalar(
                 select(MediaFile).where(MediaFile.storage_locator == entry["locator"])
             )
@@ -203,9 +229,9 @@ class GenerationArchive:
                 session.flush()
             elif media.checksum_sha256 != entry["checksum"]:
                 raise ValueError("Stored metadata does not match output")
-            label = "图片" if task.service_type == "image" else "视频"
-            session.add(
-                MediaAsset(
+            if asset is None:
+                label = "\u56fe\u7247" if task.service_type == "image" else "\u89c6\u9891"
+                asset = MediaAsset(
                     id=int(entry["asset_id"]),
                     record_id=record.id,
                     output_index=entry["output_index"],
@@ -216,6 +242,12 @@ class GenerationArchive:
                     created_at=now,
                     updated_at=now,
                 )
+                session.add(asset)
+                session.flush()
+            elif asset.media_id != media.id:
+                raise ValueError("Output media identity conflict")
+            candidate_status = self._link_asset_candidate(
+                session, current_record.request_data, media.id
             )
             data = dict(current_record.response_data or {})
             manifest = [dict(item) for item in data.get("media_manifest", [])]
@@ -225,6 +257,8 @@ class GenerationArchive:
                     item.pop("source_cipher", None)
                     item.pop("save_error", None)
                     item["saved"] = True
+                    if candidate_status is not None:
+                        item["candidate_status"] = candidate_status
             data["media_manifest"] = manifest
             current_record.response_data = data
             current_record.updated_at = now

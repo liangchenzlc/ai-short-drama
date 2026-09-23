@@ -362,8 +362,11 @@ class GenerationExecutionService:
             return
         data = record.response_data or {}
         transient = False
+        request_source = (record.request_data.get("source") or {}).get("scene")
         for entry in data.get("media_manifest", []):
-            if entry.get("saved"):
+            if entry.get("saved") and not (
+                request_source == "asset_image" and not entry.get("candidate_status")
+            ):
                 continue
             if not archive_due(
                 data,
@@ -398,7 +401,15 @@ class GenerationExecutionService:
             call = latest_record(session, task.id)
             data = call.response_data or {}
             entries = data.get("media_manifest", [])
-            saved = sum(bool(item.get("saved")) for item in entries)
+            source_scene = (call.request_data.get("source") or {}).get("scene")
+
+            def complete(item):
+                return bool(item.get("saved")) and (
+                    source_scene != "asset_image"
+                    or item.get("candidate_status") in {"linked", "source_missing"}
+                )
+
+            saved = sum(complete(item) for item in entries)
             if saved >= data.get("expected_count", 1) and saved == len(entries):
                 finish(current, "succeeded")
             elif transient and archive_due(

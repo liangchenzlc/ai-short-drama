@@ -129,18 +129,14 @@ class Asset(Base):
         CheckConstraint("`kind` IN ('character', 'scene', 'prop')", name="ck_assets_kind"),
         CheckConstraint("CHAR_LENGTH(TRIM(`name`)) > 0", name="ck_assets_name"),
         CheckConstraint("`row_version` > 0", name="ck_assets_row_version"),
-        CheckConstraint(
-            "`state` IN ('unconfirmed', 'confirmed')", name="ck_assets_state"
-        ),
+        CheckConstraint("`state` IN ('unconfirmed', 'confirmed')", name="ck_assets_state"),
         CheckConstraint(
             "`state` <> 'confirmed' OR `media_id` IS NOT NULL", name="ck_assets_confirmed_media"
         ),
         CheckConstraint(
             "JSON_TYPE(`tags`) = 'ARRAY' AND JSON_LENGTH(`tags`) <= 20", name="ck_assets_tags"
         ),
-        CheckConstraint(
-            "`kind` = 'scene' OR `scene_time` = ''", name="ck_assets_scene_time"
-        ),
+        CheckConstraint("`kind` = 'scene' OR `scene_time` = ''", name="ck_assets_scene_time"),
         CheckConstraint(
             "(`creation_key` IS NULL AND `creation_hash` IS NULL) OR "
             "(`creation_key` IS NOT NULL AND CHAR_LENGTH(TRIM(`creation_key`)) > 0 "

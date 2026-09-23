@@ -67,22 +67,45 @@ def test_four_candidates_do_not_adopt_until_explicit_apply_and_stale_target_conf
         assert session.scalar(select(ShotImage)) is None
         session.rollback()
         assets = MediaAssetService(session, settings, None)
-        context = EpisodeStoryboardService(session).get_shot_context(
-            project.id, episode.id, shot.id
-        )
+        board = EpisodeStoryboardService(session)
+        current = board.update(
+            project.id,
+            episode.id,
+            shot.id,
+            {
+                "row_version": str(shot.row_version),
+                "image_settings": {"layout": "single", "aspect": "inherit", "resolution": "4K"},
+            },
+        )["shot"]
         body = {
             "target": {"type": "shot_image", "id": str(shot.id)},
             "expected_media_id": None,
-            "expected_row_version": str(shot.row_version),
-            "expected_context_hash": context["context_hash"],
+            "expected_row_version": current["row_version"],
+            "expected_context_hash": current["context_hash"],
             "acknowledge_stale_source": True,
         }
         with pytest.raises(WorkflowError) as stale:
             assets.apply(201, {**body, "acknowledge_stale_source": False})
         assert stale.value.code == "stale_generation_source"
+        for stale_token in (
+            {"expected_row_version": str(int(current["row_version"]) - 1)},
+            {"expected_context_hash": "0" * 64},
+            {"expected_media_id": "104"},
+        ):
+            with pytest.raises(WorkflowError) as conflict:
+                assets.apply(201, {**body, **stale_token})
+            assert conflict.value.code == "shot_version_conflict"
+        with pytest.raises(WorkflowError) as parameters:
+            assets.apply(201, {**body, "parameters": {"resolution": "4K"}})
+        assert parameters.value.code == "generation_parameters_conflict"
         applied = assets.apply(201, body)
         assert applied["media_id"] == "101"
-        assert assets.apply(201, body)["media_id"] == "101"
+        assert assets.apply(201, body) == applied
+        saved = board.get(project.id, episode.id, shot.id)["shot"]
+        assert saved["image"]["resolution"] == "2K"
+        assert saved["image"]["layout"] == "single"
+        assert saved["image"]["aspect"] == "16:9"
+        assert saved["image_settings"]["resolution"] == "4K"
         with pytest.raises(WorkflowError, match="分镜内容已变化"):
             assets.apply(202, body)
         assert (
@@ -98,6 +121,21 @@ def test_four_candidates_do_not_adopt_until_explicit_apply_and_stale_target_conf
         )
         from short_drama.domain import MediaRecycleBin
 
+        with session.begin():
+            assert len(list(session.scalars(select(MediaRecycleBin)))) == 1
+            assert session.get(MediaFile, 101) is not None
+
+        replacement_body = {
+            **body,
+            "expected_media_id": "101",
+            "expected_row_version": applied["row_version"],
+        }
+        repeated = assets.apply(202, replacement_body)
+        saved = board.get(project.id, episode.id, shot.id)["shot"]
+        assert saved["row_version"] == repeated["row_version"]
+        assert saved["image"]["media_id"] == "102"
+        assert saved["image"]["resolution"] == "2K"
+        assert saved["image_settings"]["resolution"] == "4K"
         with session.begin():
             assert len(list(session.scalars(select(MediaRecycleBin)))) == 1
 

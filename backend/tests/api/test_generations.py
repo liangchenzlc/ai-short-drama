@@ -53,3 +53,25 @@ def test_unknown_generation_source_and_missing_adoption_expectation_rejected():
         ).status_code
         == 422
     )
+
+
+def test_asset_image_source_is_exposed_in_creation_and_both_history_filters():
+    document = send("GET", "/openapi.json").json()
+    source = document["components"]["schemas"]["ImageGenerationCreate"]["properties"]["source"]
+    union = next(item for item in source["anyOf"] if "discriminator" in item)
+    assert set(union["discriminator"]["mapping"]) == {"shot_image", "asset_image"}
+    for path in ("/api/v1/ai/generations", "/api/v1/media-library/items"):
+        parameter = next(
+            p for p in document["paths"][path]["get"]["parameters"] if p["name"] == "source_scene"
+        )
+        choices = next(item["enum"] for item in parameter["schema"]["anyOf"] if "enum" in item)
+        assert "asset_image" in choices
+    assert (
+        send(
+            "POST",
+            "/api/v1/ai/generations/image",
+            headers={"Idempotency-Key": "asset-test"},
+            json={"input": {"prompt": ""}, "source": {"scene": "asset_image", "asset_id": "101"}},
+        ).status_code
+        == 422
+    )

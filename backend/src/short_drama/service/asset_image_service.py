@@ -17,6 +17,7 @@ from short_drama.domain.media_file import MediaFile
 from short_drama.schemas.asset_image_candidate import (
     AssetConfirm,
     AssetImageCandidateRead,
+    AssetImageGeneration,
 )
 from short_drama.schemas.base import parse_identifier
 
@@ -111,7 +112,7 @@ class AssetImageService(BaseService):
             if self.assets.get(parse_identifier(asset_id)) is None:
                 raise NotFound("Asset does not exist")
 
-    def _candidate_read(self, candidate, media):
+    def _candidate_read(self, candidate, media, asset=None, generated=None):
         return AssetImageCandidateRead(
             id=candidate.id,
             media_id=media.id,
@@ -119,22 +120,46 @@ class AssetImageService(BaseService):
             width=media.width,
             height=media.height,
             created_at=candidate.created_at,
+            generation=self._candidate_generation(asset, generated),
+        )
+
+    def _candidate_generation(self, asset, generated):
+        source = (generated.request_data.get("source") or {}) if generated is not None else {}
+        if generated is None or source.get("scene") != "asset_image":
+            return None
+        from .asset_image_context import asset_image_stale_reason
+
+        request = generated.request_data
+        snapshot = request.get("source_snapshot") or {}
+        reason = asset_image_stale_reason(asset, request)
+        return AssetImageGeneration(
+            generation_id=generated.task_id,
+            record_id=generated.id,
+            source_asset_id=source["asset_id"],
+            source_row_version=snapshot.get("asset_row_version"),
+            source_content_hash=snapshot.get("asset_content_hash"),
+            is_stale=reason is not None,
+            stale_reason=reason,
         )
 
     def list(self, asset_id, offset=0, limit=20):
         asset_id = parse_identifier(asset_id)
         self.candidates.validate_pagination(offset, limit)
         with self._transaction():
-            if self.assets.get(asset_id) is None:
+            asset = self.assets.get(asset_id)
+            if asset is None:
                 raise NotFound("Asset does not exist")
             rows = self.candidates.list_with_media(asset_id, offset, limit)
             total = self.session.scalar(
-                select(func.count()).select_from(AssetImageCandidate).where(
-                    AssetImageCandidate.asset_id == asset_id
-                )
+                select(func.count())
+                .select_from(AssetImageCandidate)
+                .where(AssetImageCandidate.asset_id == asset_id)
             )
             return {
-                "items": [self._candidate_read(candidate, media) for candidate, media in rows],
+                "items": [
+                    self._candidate_read(candidate, media, asset, generated)
+                    for candidate, media, _media_asset, generated in rows
+                ],
                 "total": total,
                 "offset": offset,
                 "limit": limit,
@@ -150,9 +175,7 @@ class AssetImageService(BaseService):
     def _shared_uploaded_image(self, asset_id, media_id):
         source_ids = set(
             self.session.scalars(
-                select(AssetImageCandidate.asset_id).where(
-                    AssetImageCandidate.media_id == media_id
-                )
+                select(AssetImageCandidate.asset_id).where(AssetImageCandidate.media_id == media_id)
             )
         )
         target_projects = self.library.project_ids(asset_id)
@@ -166,7 +189,11 @@ class AssetImageService(BaseService):
         asset_id, media_id = parse_identifier(asset_id), parse_identifier(media_id)
         with self._transaction():
             candidate, media, created = self.ensure_candidate_locked(asset_id, media_id)
-        return self._candidate_read(candidate, media), created
+            asset = self.assets.get(asset_id)
+            generated_row = self._generated_image(media_id)
+            generated = generated_row[1] if generated_row is not None else None
+            result = self._candidate_read(candidate, media, asset, generated)
+        return result, created
 
     def ensure_candidate_locked(self, asset_id, media_id):
         """Ensure a generated image candidate while the caller owns the transaction."""
@@ -200,7 +227,9 @@ class AssetImageService(BaseService):
             )
             if duplicate is not None:
                 candidate, media = duplicate
-                return candidate, media, False
+                asset = self.assets.get(asset_id)
+                result = self._candidate_read(candidate, media, asset, None)
+                return result, False
             now = utcnow()
             media = self.media.create(
                 {
@@ -219,16 +248,21 @@ class AssetImageService(BaseService):
                 }
             )
             candidate = self.candidates.create({"asset_id": asset_id, "media_id": media.id})
-            return candidate, media, True
+            asset = self.assets.get(asset_id)
+            result = self._candidate_read(candidate, media, asset, None)
+            return result, True
 
     def _storage_locator_exists(self, locator):
         """Resolve uncertain commit outcomes before compensating an uploaded object."""
         with self._transaction():
-            return self.session.scalar(
-                select(func.count()).select_from(MediaFile).where(
-                    MediaFile.storage_locator == locator
+            return (
+                self.session.scalar(
+                    select(func.count())
+                    .select_from(MediaFile)
+                    .where(MediaFile.storage_locator == locator)
                 )
-            ) > 0
+                > 0
+            )
 
     def upload(self, asset_id, stream, length, name, content_type=None):
         asset_id = parse_identifier(asset_id)
@@ -240,9 +274,7 @@ class AssetImageService(BaseService):
         inspected = inspect_image_upload(stream, content_type)
         if length is not None and length != inspected.byte_size:
             inspected.stream.close()
-            raise WorkflowError(
-                "invalid_image", "Upload byte length does not match the file", 422
-            )
+            raise WorkflowError("invalid_image", "Upload byte length does not match the file", 422)
         stored = None
         try:
             stored = self.storage.upload(
@@ -251,9 +283,7 @@ class AssetImageService(BaseService):
                 content_type=inspected.content_type,
             )
             try:
-                candidate, media, created = self._persist_upload(
-                    asset_id, inspected, stored, name
-                )
+                result, created = self._persist_upload(asset_id, inspected, stored, name)
             except Exception:
                 # A failed commit acknowledgement is ambiguous. Delete only after a fresh
                 # database check proves the locator never became durable. If that check is
@@ -264,15 +294,13 @@ class AssetImageService(BaseService):
                     locator_exists = True
                 if not locator_exists:
                     try:
-                        self.storage.delete(
-                            stored.storage_locator, version_id=stored.version_id
-                        )
+                        self.storage.delete(stored.storage_locator, version_id=stored.version_id)
                     except Exception:
                         pass
                 raise
             if not created:
                 self.storage.delete(stored.storage_locator, version_id=stored.version_id)
-            return self._candidate_read(candidate, media), created
+            return result, created
         except Exception:
             raise
         finally:
@@ -283,9 +311,9 @@ class AssetImageService(BaseService):
         parsed = AssetConfirm.model_validate(payload)
         with self._transaction():
             asset, media = self.confirm_locked(asset_id, parsed)
-            result = AssetLibraryService(
-                self.session, self.settings, self.storage
-            )._read(asset, media)
+            result = AssetLibraryService(self.session, self.settings, self.storage)._read(
+                asset, media
+            )
         return result
 
     def confirm_locked(self, asset_id, payload, *, add_generated_candidate=False):
@@ -299,7 +327,8 @@ class AssetImageService(BaseService):
             raise NotFound("Asset does not exist")
         if asset.row_version != parsed.row_version:
             raise WorkflowError(
-                "asset_version_conflict", "Asset changed; refresh before confirming",
+                "asset_version_conflict",
+                "Asset changed; refresh before confirming",
                 details={"current_version": asset.row_version},
             )
         if asset.media_id != parsed.expected_media_id:
@@ -318,6 +347,17 @@ class AssetImageService(BaseService):
             )
         if asset.state == "confirmed" and asset.media_id == parsed.media_id:
             return asset, media
+        generated = self._generated_image(parsed.media_id)
+        if generated is not None:
+            from .asset_image_context import asset_image_stale_reason
+
+            stale_reason = asset_image_stale_reason(asset, generated[1].request_data)
+            if stale_reason is not None and not parsed.acknowledge_stale_source:
+                raise WorkflowError(
+                    "stale_source",
+                    "This image was generated from different or older asset content",
+                    details={"reason": stale_reason},
+                )
         references = self.library.reference_count(asset.id)
         if references > 1 and not parsed.confirm_shared:
             raise WorkflowError(

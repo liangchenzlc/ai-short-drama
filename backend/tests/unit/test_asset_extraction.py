@@ -172,7 +172,7 @@ def test_confirmation_gate_and_snapshot_settings():
             request = session.scalar(select(AIGenerationRecord)).request_data
             assert request["source_snapshot"]["content"] == SCRIPT
             assert request["source_snapshot"]["extraction"] == {"kinds": ["prop"]}
-            assert request["template_version"] == "script-assets-v1-r2"
+            assert request["template_version"] == "script-assets-v1-r3"
             system = request["input"]["messages"][0]["content"]
             assert "删除测试" in system
             assert "角色规则" not in system

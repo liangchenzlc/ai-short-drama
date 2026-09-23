@@ -1,3 +1,4 @@
+import { PreviewImage } from '../../components/ui/ImagePreview';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Checkbox, Drawer, Form, Input, InputNumber, Select, Skeleton } from 'antd';
 import { Link } from 'react-router-dom';
@@ -119,7 +120,7 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
     {notice && <Alert type="success" showIcon message={notice} />}
     {loading && !asset ? <div className="generation-loading"><Skeleton title paragraph={{ rows: 5 }}/></div> : asset && <>
       <div className="asset-detail-preview">
-        {asset.url && !previewError ? asset.media_type === 'image' ? <img src={asset.url} alt={asset.name} onError={() => setPreviewError(true)} /> : <video src={asset.url} controls preload="metadata" playsInline onError={() => setPreviewError(true)} />
+        {asset.url && !previewError ? asset.media_type === 'image' ? <PreviewImage src={asset.url} alt={asset.name} onError={() => setPreviewError(true)}/> : <video src={asset.url} controls preload="metadata" playsInline onError={() => setPreviewError(true)} />
           : <div className="asset-preview-unavailable"><p>{previewError ? '预览链接已失效或文件暂时不可访问' : '暂时没有可用的预览链接'}</p><Button onClick={refresh}>刷新预览</Button></div>}
       </div>
       <section className="generation-section"><h3>资产信息</h3>
@@ -133,7 +134,7 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
             <div className="generation-form-grid"><Form.Item name="type" label="目标类型" rules={[{ required: true }]}><Select options={asset.media_type === 'video' ? [{ value: 'shot_video', label: '分镜视频' }] : [{ value: 'shot_image', label: '分镜图片' }, { value: 'asset_image', label: '角色 / 场景 / 道具素材图片' }]} /></Form.Item>
               <Form.Item name="id" label="目标编号" rules={[{ required: true, message: '请输入目标 ID' }, idRule]}><Input placeholder="分镜 ID 或素材 ID" /></Form.Item></div>
             {targetType === 'shot_image' && <div className="generation-form-grid"><Form.Item name="project_id" label="项目编号" rules={[{ required: true, message: '请输入项目编号' }, idRule]}><Input/></Form.Item><Form.Item name="episode_id" label="分集编号" rules={[{ required: true, message: '请输入分集编号' }, idRule]}><Input/></Form.Item></div>}
-            {(targetType === 'shot_image' || targetType === 'asset_image') && <><Button onClick={() => void inspectTarget()} loading={busy === 'apply'}>读取并核对目标详情</Button>{targetLoaded && targetPreview && <Alert type="success" showIcon message={`已读取目标：${targetPreview.name}`} description={targetPreview.url ? <img src={targetPreview.url} alt="目标当前图片" style={{ maxWidth: 280, maxHeight: 180, objectFit: 'contain' }}/> : '目标当前没有图片'}/>}</>}
+            {(targetType === 'shot_image' || targetType === 'asset_image') && <><Button onClick={() => void inspectTarget()} loading={busy === 'apply'}>读取并核对目标详情</Button>{targetLoaded && targetPreview && <Alert type="success" showIcon message={`已读取目标：${targetPreview.name}`} description={targetPreview.url ? <PreviewImage src={targetPreview.url} alt="目标当前图片" style={{ maxWidth: 280, maxHeight: 180, objectFit: 'contain' }}/> : '目标当前没有图片'}/>}</>}
             {targetType === 'shot_video' ? <Form.Item name="expected_media_id" label="目标当前媒体 ID（无媒体则留空）" rules={[idRule]}><Input /></Form.Item> : <Form.Item name="expected_media_id" hidden><Input /></Form.Item>}
             {(targetType === 'shot_image' || targetType === 'asset_image') && <Form.Item name="expected_row_version" hidden rules={[{ required: true }]}><Input /></Form.Item>}
             {targetType === 'shot_image' && <Form.Item name="expected_context_hash" hidden rules={[{ required: true, pattern: /^[0-9a-f]{64}$/ }]}><Input /></Form.Item>}

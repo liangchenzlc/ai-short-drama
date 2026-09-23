@@ -17,7 +17,7 @@ const fieldLabels: Record<string, string> = {
   'input.reference_media_ids': '参考图片媒体 ID', 'input.first_frame_media_id': '首帧媒体 ID', 'input.last_frame_media_id': '尾帧媒体 ID',
   'parameters.aspect': '画面比例', 'parameters.resolution': '分辨率', 'parameters.count': '候选数量',
   'parameters.duration_ms': '视频时长', 'parameters.max_output_tokens': '最大输出 Token', 'parameters.temperature': '随机程度',
-  'source.shot_id': '来源分镜 ID', 'target.id': '目标 ID', expected_media_id: '当前媒体 ID',
+  'source.shot_id': '来源分镜 ID', 'source.asset_id': '来源素材 ID', 'source.row_version': '素材版本', 'target.id': '目标 ID', expected_media_id: '当前媒体 ID',
   title: '分集标题', synopsis: '梗概', aspect: '画幅', style: '风格',
 };
 const discoveryMessages: Record<string, string> = {
@@ -51,6 +51,7 @@ const workflowMessages: Record<string, string> = {
   asset_in_use: '素材仍被活动分镜引用，请先解除关联。',
   shared_asset_confirmation_required: '此素材被多处共享引用，需要明确确认影响范围。',
   stale_generation_source: '图片基于旧创作上下文生成，请核对后明确确认。',
+  stale_source: '图片基于素材的旧内容生成，请核对后明确确认。',
   shot_archived: '分镜已归档，不能继续修改或采用图片。',
   result_already_applied: '此生成结果已经用另一种方式应用。',
   novel_empty: '请先填写并保存小说正文。',

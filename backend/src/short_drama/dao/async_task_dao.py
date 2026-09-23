@@ -14,6 +14,7 @@ def source_conditions(record, filters):
         "novel_script",
         "script_shots",
         "script_assets",
+        "asset_image",
     }:
         raise BusinessError("Unsupported source scene")
     if identifier is not None and scene is None:
@@ -27,6 +28,7 @@ def source_conditions(record, filters):
             "novel_script": "novel_id",
             "script_shots": "script_id",
             "script_assets": "script_id",
+            "asset_image": "asset_id",
         }[scene]
         conditions.append(record.request_data["source"][field].as_string() == str(identifier))
     for field in ("project_id", "episode_id"):

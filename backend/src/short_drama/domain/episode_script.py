@@ -33,7 +33,7 @@ class EpisodeScript(Base):
         BIGINT(unsigned=True), nullable=False, comment="所属分集"
     )
     position: Mapped[int] = mapped_column(
-        INTEGER(unsigned=True), nullable=False, comment="同一分集内剧本排序，沿用原候选排序"
+        INTEGER(unsigned=True), nullable=False, comment="同一分集内剧本排序"
     )
     content: Mapped[str] = mapped_column(
         MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="剧本正文"

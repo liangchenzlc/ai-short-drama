@@ -28,8 +28,8 @@ test('storyboard exposes the persisted image model selection', () => {
   assert.match(imageSelect.onChange, /storyboardImage:\s*id/);
 });
 
-test('asset editor exposes a selectable image model for generation', () => {
-  const component = '../src/features/assets/AssetLibraryPanel.tsx';
+test('asset image generation resolves the enabled default model into its request state', () => {
+  const component = '../src/features/assets/AssetImageGeneration.tsx';
   const componentSource = readFileSync(new URL(component, import.meta.url), 'utf8');
   const file = ts.createSourceFile(component, componentSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let imageSelect;
@@ -45,11 +45,11 @@ test('asset editor exposes a selectable image model for generation', () => {
   visit(file);
   assert.ok(imageSelect, 'missing image ConfigSelect');
   assert.equal(imageSelect.label, '"生图模型"');
-  assert.equal(imageSelect.value, '{imageModelId}');
-  assert.equal(imageSelect.onChange, '{setImageModelId}');
-  assert.equal(imageSelect.disabled, '{busy}');
+  assert.equal(imageSelect.value, '{configId}');
+  assert.equal(imageSelect.onChange, '{setConfigId}');
+  assert.equal(imageSelect.onResolvedChange, '{setConfigId}');
+  assert.equal(imageSelect.disabled, '{submitting}');
 });
-
 test('novel and storyboard generation payloads use saved server versions without client messages', () => {
   assert.deepEqual(workflow.novelScriptRequest('12', '34', '56', '突出对白'), {
     source: { scene: 'novel_script', project_id: '12', episode_id: '34', content_version: '56' },
@@ -100,13 +100,12 @@ test('saved shot image resolves inherit to the episode aspect before request', (
   const request = workflow.shotImageRequest(shot, '', [], 1, '9:16');
   assert.equal(request.parameters.aspect, '9:16');
   assert.equal(request.source.layout, 'single');
-  assert.equal(workflow.shotImageApplyRequest(shot, false, '9:16').parameters.aspect, '9:16');
+  assert.equal('parameters' in workflow.shotImageApplyRequest(shot, false), false);
 });
 
 test('shot image apply cannot omit row, media, or context compare tokens', () => {
   assert.deepEqual(workflow.shotImageApplyRequest({ id: '91', row_version: '4', context_hash: 'b'.repeat(64), image: { media_id: '11' }, image_settings: { layout: 'single', aspect: '9:16', resolution: '4K' } }, false), {
     target: { type: 'shot_image', id: '91' }, expected_media_id: '11', expected_row_version: '4', expected_context_hash: 'b'.repeat(64), acknowledge_stale_source: false,
-    parameters: { layout: 'single', aspect: '9:16', resolution: '4K' },
   });
 });
 

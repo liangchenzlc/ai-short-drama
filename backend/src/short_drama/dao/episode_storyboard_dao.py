@@ -173,3 +173,24 @@ class EpisodeStoryboardDAO(BaseDAO):
             .outerjoin(MediaAsset, MediaAsset.media_id == MediaFile.id)
             .where(ShotImage.shot_id == shot_id)
         ).first()
+
+    def list_details(self, shot_ids: list[int]):
+        assets = {shot_id: [] for shot_id in shot_ids}
+        images = {}
+        if not shot_ids:
+            return assets, images
+        for shot_id, asset in self.session.execute(
+            select(ShotAsset.shot_id, Asset)
+            .join(Asset, Asset.id == ShotAsset.asset_id)
+            .where(ShotAsset.shot_id.in_(shot_ids))
+            .order_by(ShotAsset.shot_id, Asset.id)
+        ):
+            assets[shot_id].append(asset)
+        for shot_id, image, media, media_asset_id in self.session.execute(
+            select(ShotImage.shot_id, ShotImage, MediaFile, MediaAsset.id)
+            .join(MediaFile, MediaFile.id == ShotImage.media_id)
+            .outerjoin(MediaAsset, MediaAsset.media_id == MediaFile.id)
+            .where(ShotImage.shot_id.in_(shot_ids))
+        ):
+            images[shot_id] = (image, media, media_asset_id)
+        return assets, images

@@ -45,7 +45,8 @@ class AssetService(BaseService):
             entity = self._get_locked(identifier)
             if entity.row_version != expected:
                 raise WorkflowError(
-                    "asset_version_conflict", "Asset changed; refresh before saving",
+                    "asset_version_conflict",
+                    "Asset changed; refresh before saving",
                     details={"current_version": entity.row_version},
                 )
             self._validate_update(entity, values)
@@ -85,9 +86,11 @@ class AssetService(BaseService):
         with association_service._transaction():
             association = association_service._get_locked(link_id)
             original = self._require(Asset, association.asset_id)
+            model_id = patch.pop("model_id", original.model_id)
             values = {field: getattr(original, field) for field in AssetCreate.model_fields}
             values.update(patch)
             values = AssetCreate.model_validate(values).model_dump()
+            values["model_id"] = model_id
             # Historical model selections are preserved; newly selected references
             # receive exactly the same validation as an explicit asset edit.
             self._validate_update(original, values)

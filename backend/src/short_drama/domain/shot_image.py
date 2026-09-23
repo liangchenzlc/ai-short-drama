@@ -60,7 +60,7 @@ class ShotImage(Base):
         VARCHAR(16, collation="utf8mb4_0900_bin"),
         nullable=False,
         server_default=text("'confirmed'"),
-        comment="已确认；沿用指定字段，不表示生成任务状态",
+        comment="仅保存已确认采用的结果",
     )
     model_id: Mapped[int | None] = mapped_column(
         BIGINT(unsigned=True),

@@ -3,7 +3,8 @@
 -- 执行前选定空数据库，连接使用 utf8mb4、UTC，并启用严格 SQL 模式（至少 STRICT_TRANS_TABLES）。
 -- 按外键依赖顺序创建全部21张表；仅含 CREATE TABLE，不包含 USE、ALTER、数据修改或迁移操作。
 -- 字段、索引及应用事务规则见同目录 MySQL8数据表设计.md。
--- 2026-09-20：合并模型生成三表与能力缓存，任务采用五种状态，项目已移除目标时长。
+-- 当前结构包含模型生成、分集写作、生产工作流及分镜时长/原文依据的全部变更。
+-- 旧库升级入口：migrations/README.md；不要对已建库重复执行本文件。
 
 CREATE TABLE `projects` (
   `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的记录标识',
@@ -35,7 +36,7 @@ CREATE TABLE `ai_model_configs` (
   `enabled` TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '是否允许用于新操作',
   `is_deleted` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '是否逻辑删除',
   `is_default` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '是否本类型默认配置',
-  `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '沿用旧表；是否与其他表一并删除见文末',
+  `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '配置修改、删除与默认切换的乐观并发版本',
   `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
   `updated_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '最近修改时间；正常写入非空，历史未知可显式NULL',
   `created_by` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '创建人；预留用户ID，暂不设外键',
@@ -121,7 +122,7 @@ CREATE TABLE `episode_novels` (
 CREATE TABLE `episode_scripts` (
   `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的记录标识',
   `episode_id` BIGINT UNSIGNED NOT NULL COMMENT '所属分集',
-  `position` INT UNSIGNED NOT NULL COMMENT '同一分集内剧本排序，沿用原候选排序',
+  `position` INT UNSIGNED NOT NULL COMMENT '同一分集内剧本排序',
   `content` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '剧本正文',
   `state` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'unconfirmed' COMMENT '未确认 / 已确认',
   `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
@@ -169,13 +170,13 @@ CREATE TABLE `assets` (
     REFERENCES `media_files` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `ck_assets_audit_time` CHECK (`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`),
   CONSTRAINT `ck_assets_kind` CHECK (`kind` IN ('character', 'scene', 'prop')),
-  CONSTRAINT `ck_assets_name` CHECK (CHAR_LENGTH(TRIM(`name`)) > 0)
-  ,CONSTRAINT `ck_assets_row_version` CHECK (`row_version` > 0)
-  ,CONSTRAINT `ck_assets_state` CHECK (`state` IN ('unconfirmed', 'confirmed'))
-  ,CONSTRAINT `ck_assets_confirmed_media` CHECK (`state` <> 'confirmed' OR `media_id` IS NOT NULL)
-  ,CONSTRAINT `ck_assets_tags` CHECK (JSON_TYPE(`tags`) = 'ARRAY' AND JSON_LENGTH(`tags`) <= 20)
-  ,CONSTRAINT `ck_assets_scene_time` CHECK (`kind` = 'scene' OR `scene_time` = '')
-  ,CONSTRAINT `ck_assets_creation_pair` CHECK (
+  CONSTRAINT `ck_assets_name` CHECK (CHAR_LENGTH(TRIM(`name`)) > 0),
+  CONSTRAINT `ck_assets_row_version` CHECK (`row_version` > 0),
+  CONSTRAINT `ck_assets_state` CHECK (`state` IN ('unconfirmed', 'confirmed')),
+  CONSTRAINT `ck_assets_confirmed_media` CHECK (`state` <> 'confirmed' OR `media_id` IS NOT NULL),
+  CONSTRAINT `ck_assets_tags` CHECK (JSON_TYPE(`tags`) = 'ARRAY' AND JSON_LENGTH(`tags`) <= 20),
+  CONSTRAINT `ck_assets_scene_time` CHECK (`kind` = 'scene' OR `scene_time` = ''),
+  CONSTRAINT `ck_assets_creation_pair` CHECK (
     (`creation_key` IS NULL AND `creation_hash` IS NULL)
     OR (`creation_key` IS NOT NULL AND CHAR_LENGTH(TRIM(`creation_key`)) > 0
       AND `creation_hash` IS NOT NULL AND CHAR_LENGTH(`creation_hash`) = 64)
@@ -314,7 +315,7 @@ CREATE TABLE `shot_images` (
   `resolution` VARCHAR(32) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT '2K' COMMENT '请求清晰度，如1K、2K、4K',
   `prompt` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '本次生图提示词',
   `media_id` BIGINT UNSIGNED NOT NULL COMMENT '用户确认采用的图片，不能为空',
-  `state` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'confirmed' COMMENT '已确认；沿用指定字段，不表示生成任务状态',
+  `state` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'confirmed' COMMENT '仅保存已确认采用的结果',
   `model_id` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '生图配置；手动导入时可空',
   `context_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL COMMENT '采用时的shot-context-v1摘要',
   `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
@@ -349,7 +350,7 @@ CREATE TABLE `shot_videos` (
   `duration` BIGINT UNSIGNED NOT NULL COMMENT '请求视频时长，统一单位毫秒',
   `prompt` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '本次生视频提示词',
   `media_id` BIGINT UNSIGNED NOT NULL COMMENT '用户确认采用的视频，不能为空',
-  `state` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'confirmed' COMMENT '已确认；沿用指定字段，不表示生成任务状态',
+  `state` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'confirmed' COMMENT '仅保存已确认采用的结果',
   `model_id` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '生视频配置；手动导入时可空',
   `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
   `updated_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '最近修改时间；正常写入非空，历史未知可显式NULL',
@@ -449,127 +450,124 @@ CREATE TABLE `novel_script_records` (
   CONSTRAINT `ck_novel_script_records_batch` CHECK (`batch_id` > 0)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='小说生成剧本记录';
 
-CREATE TABLE async_tasks (
-  id BIGINT UNSIGNED NOT NULL,
-  service_type VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL,
-  status VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'queued',
-  idempotency_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
-  request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  retry_of_id BIGINT UNSIGNED NULL,
-  next_action VARCHAR(16) COLLATE utf8mb4_0900_bin NULL,
-  next_run_at DATETIME(6) NULL,
-  message_status VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'pending',
-  message_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
-  publish_count TINYINT UNSIGNED NOT NULL DEFAULT 0,
-  lock_token VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
-  locked_until DATETIME(6) NULL,
-  cancel_requested TINYINT UNSIGNED NOT NULL DEFAULT 0,
-  error JSON NULL,
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  started_at DATETIME(6) NULL,
-  finished_at DATETIME(6) NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY uk_async_tasks_idempotency (idempotency_key),
-  KEY idx_async_tasks_publish (message_status, next_run_at, id),
-  KEY idx_async_tasks_lock (message_status, locked_until, id),
-  KEY idx_async_tasks_history (service_type, status, created_at, id),
-  KEY idx_async_tasks_retry (retry_of_id),
-  CONSTRAINT fk_async_tasks_retry FOREIGN KEY (retry_of_id)
-    REFERENCES async_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT ck_async_tasks_type CHECK (service_type IN ('text','image','video')),
-  CONSTRAINT ck_async_tasks_status CHECK (
-    status IN ('queued','running','succeeded','failed','cancelled')
+CREATE TABLE `async_tasks` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `service_type` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL,
+  `status` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'queued',
+  `idempotency_key` VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
+  `request_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `retry_of_id` BIGINT UNSIGNED NULL,
+  `next_action` VARCHAR(16) COLLATE utf8mb4_0900_bin NULL,
+  `next_run_at` DATETIME(6) NULL,
+  `message_status` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'pending',
+  `message_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `publish_count` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `lock_token` VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `locked_until` DATETIME(6) NULL,
+  `cancel_requested` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `error` JSON NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `started_at` DATETIME(6) NULL,
+  `finished_at` DATETIME(6) NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_async_tasks_idempotency` (`idempotency_key`),
+  KEY `idx_async_tasks_publish` (`message_status`, `next_run_at`, `id`),
+  KEY `idx_async_tasks_lock` (`message_status`, `locked_until`, `id`),
+  KEY `idx_async_tasks_history` (`service_type`, `status`, `created_at`, `id`),
+  KEY `idx_async_tasks_retry` (`retry_of_id`),
+  CONSTRAINT `fk_async_tasks_retry` FOREIGN KEY (`retry_of_id`)
+    REFERENCES `async_tasks` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `ck_async_tasks_type` CHECK (`service_type` IN ('text','image','video')),
+  CONSTRAINT `ck_async_tasks_status` CHECK (
+    `status` IN ('queued','running','succeeded','failed','cancelled')
   ),
-  CONSTRAINT ck_async_tasks_action CHECK (
-    next_action IS NULL OR next_action IN ('submit','poll','save')
+  CONSTRAINT `ck_async_tasks_action` CHECK (
+    `next_action` IS NULL OR `next_action` IN ('submit','poll','save')
   ),
-  CONSTRAINT ck_async_tasks_message CHECK (
-    message_status IN ('pending','publishing','published','idle')
+  CONSTRAINT `ck_async_tasks_message` CHECK (
+    `message_status` IN ('pending','publishing','published','idle')
   ),
-  CONSTRAINT ck_async_tasks_required CHECK (
-    CHAR_LENGTH(TRIM(idempotency_key)) > 0
-    AND CHAR_LENGTH(request_hash) = 64 AND message_version > 0
+  CONSTRAINT `ck_async_tasks_required` CHECK (
+    CHAR_LENGTH(TRIM(`idempotency_key`)) > 0
+    AND CHAR_LENGTH(`request_hash`) = 64 AND `message_version` > 0
   ),
-  CONSTRAINT ck_async_tasks_retry_self CHECK (retry_of_id IS NULL OR retry_of_id <> id),
-  CONSTRAINT ck_async_tasks_cancel CHECK (cancel_requested IN (0,1)),
-  CONSTRAINT ck_async_tasks_lock_pair CHECK (
-    (lock_token IS NULL AND locked_until IS NULL)
-    OR (lock_token IS NOT NULL AND locked_until IS NOT NULL)
+  CONSTRAINT `ck_async_tasks_retry_self` CHECK (`retry_of_id` IS NULL OR `retry_of_id` <> `id`),
+  CONSTRAINT `ck_async_tasks_cancel` CHECK (`cancel_requested` IN (0,1)),
+  CONSTRAINT `ck_async_tasks_lock_pair` CHECK (
+    (`lock_token` IS NULL AND `locked_until` IS NULL)
+    OR (`lock_token` IS NOT NULL AND `locked_until` IS NOT NULL)
   ),
-  CONSTRAINT ck_async_tasks_terminal_time CHECK (
-    (status IN ('succeeded','failed','cancelled') AND finished_at IS NOT NULL)
-    OR (status IN ('queued','running') AND finished_at IS NULL)
+  CONSTRAINT `ck_async_tasks_terminal_time` CHECK (
+    (`status` IN ('succeeded','failed','cancelled') AND `finished_at` IS NOT NULL)
+    OR (`status` IN ('queued','running') AND `finished_at` IS NULL)
   ),
-  CONSTRAINT ck_async_tasks_time CHECK (
-    updated_at >= created_at
-    AND (started_at IS NULL OR started_at >= created_at)
-    AND (finished_at IS NULL OR finished_at >= created_at)
-    AND (started_at IS NULL OR finished_at IS NULL OR finished_at >= started_at)
+  CONSTRAINT `ck_async_tasks_time` CHECK (
+    `updated_at` >= `created_at`
+    AND (`started_at` IS NULL OR `started_at` >= `created_at`)
+    AND (`finished_at` IS NULL OR `finished_at` >= `created_at`)
+    AND (`started_at` IS NULL OR `finished_at` IS NULL OR `finished_at` >= `started_at`)
   )
-) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4
-  COLLATE=utf8mb4_0900_ai_ci COMMENT='模型生成任务及当前动作投递';
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='模型生成任务及当前动作投递';
 
-CREATE TABLE ai_generation_records (
-  id BIGINT UNSIGNED NOT NULL,
-  task_id BIGINT UNSIGNED NOT NULL,
-  call_no INT UNSIGNED NOT NULL,
-  config_id BIGINT UNSIGNED NOT NULL,
-  config_snapshot JSON NOT NULL,
-  request_data JSON NOT NULL,
-  credential_cipher TEXT NULL,
-  adapter VARCHAR(64) COLLATE utf8mb4_0900_bin NULL,
-  provider_task_id VARCHAR(255) COLLATE utf8mb4_0900_bin NULL,
-  status VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'prepared',
-  text_content MEDIUMTEXT NULL,
-  response_data JSON NULL,
-  error JSON NULL,
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  started_at DATETIME(6) NULL,
-  finished_at DATETIME(6) NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY uk_ai_records_call (task_id, call_no),
-  KEY idx_ai_records_config_time (config_id, created_at, id),
-  KEY idx_ai_records_provider_task (provider_task_id),
-  CONSTRAINT fk_ai_records_task FOREIGN KEY (task_id)
-    REFERENCES async_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_ai_records_config FOREIGN KEY (config_id)
-    REFERENCES ai_model_configs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT ck_ai_records_call_no CHECK (call_no > 0),
-  CONSTRAINT ck_ai_records_status CHECK (
-    status IN ('prepared','sent','succeeded','failed','unknown')
+CREATE TABLE `ai_generation_records` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `task_id` BIGINT UNSIGNED NOT NULL,
+  `call_no` INT UNSIGNED NOT NULL,
+  `config_id` BIGINT UNSIGNED NOT NULL,
+  `config_snapshot` JSON NOT NULL,
+  `request_data` JSON NOT NULL,
+  `credential_cipher` TEXT NULL,
+  `adapter` VARCHAR(64) COLLATE utf8mb4_0900_bin NULL,
+  `provider_task_id` VARCHAR(255) COLLATE utf8mb4_0900_bin NULL,
+  `status` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'prepared',
+  `text_content` MEDIUMTEXT NULL,
+  `response_data` JSON NULL,
+  `error` JSON NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `started_at` DATETIME(6) NULL,
+  `finished_at` DATETIME(6) NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ai_records_call` (`task_id`, `call_no`),
+  KEY `idx_ai_records_config_time` (`config_id`, `created_at`, `id`),
+  KEY `idx_ai_records_provider_task` (`provider_task_id`),
+  CONSTRAINT `fk_ai_records_task` FOREIGN KEY (`task_id`)
+    REFERENCES `async_tasks` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `fk_ai_records_config` FOREIGN KEY (`config_id`)
+    REFERENCES `ai_model_configs` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `ck_ai_records_call_no` CHECK (`call_no` > 0),
+  CONSTRAINT `ck_ai_records_status` CHECK (
+    `status` IN ('prepared','sent','succeeded','failed','unknown')
   ),
-  CONSTRAINT ck_ai_records_time CHECK (
-    updated_at >= created_at
-    AND (started_at IS NULL OR started_at >= created_at)
-    AND (finished_at IS NULL OR finished_at >= created_at)
-    AND (started_at IS NULL OR finished_at IS NULL OR finished_at >= started_at)
+  CONSTRAINT `ck_ai_records_time` CHECK (
+    `updated_at` >= `created_at`
+    AND (`started_at` IS NULL OR `started_at` >= `created_at`)
+    AND (`finished_at` IS NULL OR `finished_at` >= `created_at`)
+    AND (`started_at` IS NULL OR `finished_at` IS NULL OR `finished_at` >= `started_at`)
   )
-) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4
-  COLLATE=utf8mb4_0900_ai_ci COMMENT='模型调用记录与文本结果';
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='模型调用记录与文本结果';
 
-CREATE TABLE media_assets (
-  id BIGINT UNSIGNED NOT NULL,
-  record_id BIGINT UNSIGNED NOT NULL,
-  output_index INT UNSIGNED NOT NULL,
-  media_id BIGINT UNSIGNED NOT NULL,
-  media_type VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  row_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  PRIMARY KEY (id),
-  UNIQUE KEY uk_media_assets_record_output (record_id, output_index),
-  UNIQUE KEY uk_media_assets_media (media_id),
-  KEY idx_media_assets_type_time (media_type, created_at, id),
-  CONSTRAINT fk_media_assets_record FOREIGN KEY (record_id)
-    REFERENCES ai_generation_records (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_media_assets_media FOREIGN KEY (media_id)
-    REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT ck_media_assets_type CHECK (media_type IN ('image','video')),
-  CONSTRAINT ck_media_assets_name CHECK (CHAR_LENGTH(TRIM(name)) > 0),
-  CONSTRAINT ck_media_assets_numbers CHECK (output_index > 0 AND row_version > 0),
-  CONSTRAINT ck_media_assets_time CHECK (updated_at >= created_at)
-) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4
-  COLLATE=utf8mb4_0900_ai_ci COMMENT='生成图片视频结果与资产库';
+CREATE TABLE `media_assets` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `record_id` BIGINT UNSIGNED NOT NULL,
+  `output_index` INT UNSIGNED NOT NULL,
+  `media_id` BIGINT UNSIGNED NOT NULL,
+  `media_type` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_media_assets_record_output` (`record_id`, `output_index`),
+  UNIQUE KEY `uk_media_assets_media` (`media_id`),
+  KEY `idx_media_assets_type_time` (`media_type`, `created_at`, `id`),
+  CONSTRAINT `fk_media_assets_record` FOREIGN KEY (`record_id`)
+    REFERENCES `ai_generation_records` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `fk_media_assets_media` FOREIGN KEY (`media_id`)
+    REFERENCES `media_files` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `ck_media_assets_type` CHECK (`media_type` IN ('image','video')),
+  CONSTRAINT `ck_media_assets_name` CHECK (CHAR_LENGTH(TRIM(`name`)) > 0),
+  CONSTRAINT `ck_media_assets_numbers` CHECK (`output_index` > 0 AND `row_version` > 0),
+  CONSTRAINT `ck_media_assets_time` CHECK (`updated_at` >= `created_at`)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='生成图片视频结果与资产库';

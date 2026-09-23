@@ -145,9 +145,7 @@ def test_upload_deduplicates_then_explicit_confirm_advances_asset_version():
         storage = Storage()
         service = AssetImageService(session, SimpleNamespace(), storage)
         data = image_bytes()
-        first, created = service.upload(
-            item.id, BytesIO(data), len(data), "one.png", "image/png"
-        )
+        first, created = service.upload(item.id, BytesIO(data), len(data), "one.png", "image/png")
         assert created is True
         assert AssetLibraryService(session).get(item.id).row_version == 1
         sibling, _ = AssetLibraryService(session).create(
@@ -171,9 +169,7 @@ def test_upload_deduplicates_then_explicit_confirm_advances_asset_version():
         with pytest.raises(WorkflowError) as error:
             service.add_candidate(foreign.id, first.media_id)
         assert error.value.code == "media_not_shareable"
-        replay, created = service.upload(
-            item.id, BytesIO(data), len(data), "two.png", "image/png"
-        )
+        replay, created = service.upload(item.id, BytesIO(data), len(data), "two.png", "image/png")
         assert created is False
         assert replay.id == first.id
         assert storage.deleted == [("minio://image/2.png", "v2")]

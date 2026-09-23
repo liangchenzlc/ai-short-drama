@@ -88,16 +88,21 @@ def test_crud_audit_pagination_and_restrict(db_session):
     }
     for name, row in rows.items():
         service = svc[name]
-        assert service.get(row.id).id == row.id
+        before = service.get(row.id)
+        assert before.id == row.id
         assert isinstance(row.model_dump(mode="json")["id"], str)
         page = service.list(limit=1)
         assert len(page.items) == page.total == 1
         assert row.created_at is not None
         assert row.created_by is None
-        unchanged = service.update(row.id, {})
+        version = {"row_version": before.row_version} if name == "Asset" else {}
+        unchanged = service.update(row.id, version)
         if hasattr(row, "updated_at"):
-            assert unchanged.updated_at == row.updated_at
-        changed = service.update(row.id, updates[name])
+            assert unchanged.updated_at == before.updated_at
+        patch = {**updates[name], **version}
+        if name == "Asset":
+            patch["confirm_shared"] = True
+        changed = service.update(row.id, patch)
         for key, value in updates[name].items():
             assert getattr(changed, key) == value
         with pytest.raises(NotFound):
@@ -114,11 +119,22 @@ def test_crud_audit_pagination_and_restrict(db_session):
         "EpisodeNovel",
         "Asset",
         "MediaFile",
-        "Episode",
-        "Project",
     ):
         svc[name].delete(rows[name].id)
         assert svc[name].list().total == 0
+    # Archived shots remain durable and continue to restrict parent deletion.
+    from short_drama.domain import ShotScript
+
+    with db_session.begin():
+        archived = db_session.get(ShotScript, rows["ShotScript"].id)
+        assert archived is not None
+        assert archived.deleted_at is not None
+    with pytest.raises(Conflict):
+        svc["Episode"].delete(rows["Episode"].id)
+    with pytest.raises(Conflict):
+        svc["Project"].delete(rows["Project"].id)
+    assert svc["Episode"].get(rows["Episode"].id).title == "changed"
+    assert svc["Project"].get(rows["Project"].id).name == "changed"
 
 
 def test_reorder_swaps_without_unique_conflict_and_rolls_back_invalid_ids(db_session):
@@ -157,7 +173,14 @@ def test_media_and_ownership_validation(db_session):
     svc, rows = seed(db_session)
     video = svc["MediaFile"].create({"format_code": "video/mp4", "storage_locator": uuid4().hex})
     with pytest.raises(BusinessError):
-        svc["Asset"].update(rows["Asset"].id, {"media_id": video.id})
+        svc["Asset"].update(
+            rows["Asset"].id,
+            {
+                "media_id": video.id,
+                "row_version": rows["Asset"].row_version,
+                "confirm_shared": True,
+            },
+        )
     assert svc["Asset"].get(rows["Asset"].id).media_id == rows["MediaFile"].id
     with pytest.raises(ValidationError):
         svc["Episode"].update(rows["Episode"].id, {"project_id": 77})
@@ -192,12 +215,19 @@ def test_disabled_historical_model_allows_unrelated_asset_edits(db_session):
         )
         model_id = model.id
     assets = services(db_session)["Asset"]
-    original = assets.create({"kind": "scene", "name": "first", "model_id": model_id})
+    original = assets.create({"kind": "scene", "name": "first"})
+    original = assets.update(
+        original.id, {"model_id": model_id, "row_version": original.row_version}
+    )
     with db_session.begin():
         db_session.execute(
             text("UPDATE ai_model_configs SET enabled=0 WHERE id=:id"), {"id": model_id}
         )
-    assert assets.update(original.id, {"name": "renamed"}).name == "renamed"
+    renamed = assets.update(original.id, {"name": "renamed", "row_version": original.row_version})
+    assert renamed.name == "renamed"
+    assert renamed.model_id == model_id
+    another = assets.create({"kind": "scene", "name": "new"})
     with pytest.raises(BusinessError):
-        assets.create({"kind": "scene", "name": "new", "model_id": model_id})
-    assert assets.list().total == 1
+        assets.update(another.id, {"model_id": model_id, "row_version": another.row_version})
+    assert assets.get(another.id).model_id is None
+    assert assets.list().total == 2

@@ -1,5 +1,5 @@
 import { http } from '../http';
-import type { AiModelConfigDto, AiModelConfigCreateDto, AiModelConfigUpdateDto, AiModelConfigListDto, ModelDiscoveryDto, ModelDiscoveryRequestDto } from '../types/ai-model-configs';
+import type { AiModelConfigDto, AiModelConfigCreateDto, AiModelConfigUpdateDto, AiModelConfigListDto, AiModelCapabilitiesDto, ModelDiscoveryDto, ModelDiscoveryRequestDto } from '../types/ai-model-configs';
 import type { AiConfig, ConfigDraft, ServiceType } from '../../features/ai-config/config-model';
 import { notifyAiConfigsChanged } from '../../features/ai-config/config-events';
 
@@ -19,6 +19,9 @@ function draftFields(draft: ConfigDraft): Omit<AiModelConfigCreateDto, 'service_
   };
 }
 export const aiModelConfigs = {
+  async capabilities(id: string, signal?: AbortSignal) {
+    return (await http.get<AiModelCapabilitiesDto>(`${path}/${encodeURIComponent(id)}/capabilities`, { signal })).data;
+  },
   async discoverModels(body: ModelDiscoveryRequestDto, signal?: AbortSignal) {
     return (await http.post<ModelDiscoveryDto>(`${path}/discover-models`, body, { signal, timeout: 20_000 })).data;
   },

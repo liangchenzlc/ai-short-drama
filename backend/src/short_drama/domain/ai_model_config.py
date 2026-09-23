@@ -72,7 +72,7 @@ class AIModelConfig(Base):
         BIGINT(unsigned=True),
         nullable=False,
         server_default=text("1"),
-        comment="沿用旧表；是否与其他表一并删除见文末",
+        comment="配置修改、删除与默认切换的乐观并发版本",
     )
     created_at: Mapped[datetime | None] = mapped_column(
         DATETIME(fsp=6),

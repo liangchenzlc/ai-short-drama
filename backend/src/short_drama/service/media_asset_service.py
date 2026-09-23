@@ -239,6 +239,7 @@ class MediaAssetService(BaseService):
                 "media_id": asset.media_id,
                 "expected_media_id": parsed.expected_media_id,
                 "confirm_shared": parsed.confirm_shared,
+                "acknowledge_stale_source": parsed.acknowledge_stale_source,
             },
             add_generated_candidate=True,
         )

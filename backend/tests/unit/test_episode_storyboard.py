@@ -3,6 +3,7 @@ import asyncio
 import httpx
 import pytest
 from generation_fixtures import generation_session
+from sqlalchemy import event
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.service.asset_service import AssetService
@@ -17,6 +18,48 @@ def setup_storyboard(session):
         project.id, {"title": "first", "style": "ink"}
     )
     return project.id, episode.id
+
+
+def test_storyboard_list_keeps_query_count_bounded_as_shots_grow():
+    from short_drama.service.episode_storyboard_service import EpisodeStoryboardService
+
+    with generation_session() as session:
+        project_id, episode_id = setup_storyboard(session)
+        asset = AssetService(session).create({"kind": "prop", "name": "umbrella"})
+        EpisodeAssetService(session).create(
+            {"episode_id": episode_id, "asset_id": asset.id, "position": 1}
+        )
+        service = EpisodeStoryboardService(session)
+        version = "1"
+        for index in range(3):
+            created = service.create(
+                project_id,
+                episode_id,
+                {
+                    "storyboard_version": version,
+                    "script": f"shot-{index}",
+                    "asset_ids": [str(asset.id)] if index == 1 else [],
+                    "image_settings": {"resolution": "2K", "aspect": "inherit", "layout": "single"},
+                },
+                f"shot-{index}",
+            )
+            version = created["storyboard_version"]
+        statements = []
+
+        def count_query(_connection, _cursor, statement, _parameters, _context, _many):
+            if statement.lstrip().upper().startswith("SELECT"):
+                statements.append(statement)
+
+        engine = session.get_bind()
+        event.listen(engine, "before_cursor_execute", count_query)
+        try:
+            page = service.list(project_id, episode_id)
+        finally:
+            event.remove(engine, "before_cursor_execute", count_query)
+
+        assert [item["script"] for item in page["items"]] == ["shot-0", "shot-1", "shot-2"]
+        assert [item["asset_ids"] for item in page["items"]] == [[], [str(asset.id)], []]
+        assert len(statements) <= 6
 
 
 def test_shot_context_is_canonical_and_ignores_image_settings():

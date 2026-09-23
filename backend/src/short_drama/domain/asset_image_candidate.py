@@ -22,12 +22,18 @@ class AssetImageCandidate(Base):
         Index("idx_asset_image_candidates_time", "asset_id", "created_at", "id"),
         Index("idx_asset_image_candidates_media", "media_id"),
         ForeignKeyConstraint(
-            ["asset_id"], ["assets.id"], name="fk_asset_image_candidates_asset",
-            ondelete="RESTRICT", onupdate="RESTRICT",
+            ["asset_id"],
+            ["assets.id"],
+            name="fk_asset_image_candidates_asset",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ["media_id"], ["media_files.id"], name="fk_asset_image_candidates_media",
-            ondelete="RESTRICT", onupdate="RESTRICT",
+            ["media_id"],
+            ["media_files.id"],
+            name="fk_asset_image_candidates_media",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
         ),
         {
             "mysql_engine": "InnoDB",

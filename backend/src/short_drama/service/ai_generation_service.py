@@ -13,6 +13,7 @@ from short_drama.dao.async_task_dao import AsyncTaskDAO
 from short_drama.domain import AIModelConfig, AsyncTask, Episode, MediaAsset, ShotScript
 from short_drama.schemas.ai_generation import GENERATION_SCHEMAS, GenerationRetry
 from short_drama.schemas.base import parse_identifier
+from short_drama.schemas.storyboard_result import parse_storyboard_result
 
 from .base import BaseService, utcnow
 
@@ -63,6 +64,22 @@ def can_retry(task, record):
     )
 
 
+def can_reparse_storyboard(record):
+    request = getattr(record, "request_data", None) or {}
+    if (request.get("source") or {}).get("scene") != "script_shots":
+        return False
+    snapshot = request.get("source_snapshot") or {}
+    try:
+        parse_storyboard_result(
+            record.text_content,
+            {int(asset["id"]) for asset in snapshot["assets"]},
+            snapshot["content"],
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    return True
+
+
 def resume_action(task, record):
     response = record.response_data or {}
     entries = response.get("media_manifest", [])
@@ -82,9 +99,15 @@ def resume_action(task, record):
         task.status == "failed"
         and record.status == "succeeded"
         and getattr(record, "text_content", None)
-        and (task.error or {}).get("code")
-        in {"business_save_failed", "archive_timeout", "message_delivery_unknown"}
         and response.get("finish_reason") not in {"length", "max_output_tokens"}
+        and (
+            (task.error or {}).get("code")
+            in {"business_save_failed", "archive_timeout", "message_delivery_unknown"}
+            or (
+                (task.error or {}).get("code") == "invalid_structured_output"
+                and can_reparse_storyboard(record)
+            )
+        )
     ):
         return "save"
     if task.status == "failed" and record.status == "succeeded" and recoverable_media:
@@ -156,9 +179,13 @@ class AIGenerationService(BaseService):
 
             payload = GenerationContextService(self.session, self.settings).prepare_text(payload)
         elif source:
-            if kind != "image" or source["scene"] != "shot_image":
+            if kind != "image" or source["scene"] not in {"shot_image", "asset_image"}:
                 raise BusinessError("Source scene does not support this generation type")
-            if source.get("context_mode") == "saved":
+            if source["scene"] == "asset_image":
+                from .generation_context_service import GenerationContextService
+
+                payload = GenerationContextService(self.session).prepare_asset_image(payload)
+            elif source.get("context_mode") == "saved":
                 from .generation_context_service import GenerationContextService
 
                 payload = GenerationContextService(self.session).prepare_shot_image(payload)
@@ -183,6 +210,10 @@ class AIGenerationService(BaseService):
         record = record or records[0]
         latest = records[-1]
         config = record.config_snapshot
+        can_resume = bool(resume_action(task, latest))
+        error = safe_error(task.error)
+        if can_resume and error and error["code"] == "invalid_structured_output":
+            error["message"] = "已保留的模型原文现可解析，请使用安全恢复保存结果，无需重新生成。"
         return {
             "generation_id": str(task.id),
             "service_type": task.service_type,
@@ -197,10 +228,10 @@ class AIGenerationService(BaseService):
             "updated_at": task.updated_at,
             "started_at": task.started_at,
             "finished_at": task.finished_at,
-            "error": safe_error(task.error),
+            "error": error,
             "can_cancel": task.status in {"queued", "running"} and not task.cancel_requested,
             "can_retry": can_retry(task, latest),
-            "can_resume": bool(resume_action(task, latest)),
+            "can_resume": can_resume,
             "cancel_requested": bool(task.cancel_requested),
             "retry_of_id": str(task.retry_of_id) if task.retry_of_id else None,
         }
@@ -346,6 +377,15 @@ class AIGenerationService(BaseService):
                 ],
                 "partial": (task.error or {}).get("code") == "partial_result"
                 or bool(assets and task.status == "failed"),
+                "warnings": [
+                    {
+                        "code": "asset_source_missing",
+                        "message": "原素材已不存在，图片已保存至媒体库",
+                        "output_index": item["output_index"],
+                    }
+                    for item in (latest.response_data or {}).get("media_manifest", [])
+                    if item.get("candidate_status") == "source_missing"
+                ],
             }
             output["source_snapshot"] = records[0].request_data.get("source_snapshot")
             output["effective_prompt"] = records[0].request_data.get("input", {}).get("prompt")

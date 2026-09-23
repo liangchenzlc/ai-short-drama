@@ -7,8 +7,8 @@ import { generationError } from './presentation';
 import { AI_CONFIGS_CHANGED } from '../ai-config/config-events';
 import { resolveConfigSelection } from '../ai-config/config-selection';
 
-export function ConfigSelect({ kind, value, onChange, allowDefault = true, autoDefault = true, disabled = false, label = '模型配置' }: {
-  kind: GenerationKind; value?: string; onChange?: (value: string | undefined) => void; allowDefault?: boolean; autoDefault?: boolean; disabled?: boolean; label?: string;
+export function ConfigSelect({ kind, value, onChange, onResolvedChange, allowDefault = true, autoDefault = true, disabled = false, label = '模型配置' }: {
+  kind: GenerationKind; value?: string; onChange?: (value: string | undefined) => void; onResolvedChange?: (value: string | undefined) => void; allowDefault?: boolean; autoDefault?: boolean; disabled?: boolean; label?: string;
 }) {
   const [items, setItems] = useState<AiConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,6 +44,8 @@ export function ConfigSelect({ kind, value, onChange, allowDefault = true, autoD
     return () => controller.abort();
   }, [kind, revision]);
   const selected = resolveConfigSelection(items, kind, value, allowDefault && autoDefault);
+  const usableSelected = selected && items.some((item) => item.id === selected && item.enabled && item.serviceType === kind) ? selected : undefined;
+  useEffect(() => { if (!loading) onResolvedChange?.(usableSelected); }, [loading, onResolvedChange, usableSelected]);
   return <div className="generation-config-select">
     <Select aria-label={label} value={selected} onChange={onChange} loading={loading} disabled={disabled} allowClear showSearch optionFilterProp="label"
       placeholder={!allowDefault ? '全部模型配置' : autoDefault ? '请选择模型配置' : '沿用原任务配置'}
