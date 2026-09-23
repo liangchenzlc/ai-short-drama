@@ -5,7 +5,8 @@ from generation_fixtures import config, generation_session, settings
 from sqlalchemy import select
 
 
-def test_four_candidates_do_not_adopt_until_explicit_apply_and_stale_target_conflicts():
+@pytest.mark.parametrize("provider", ["ark", "openai"])
+def test_four_candidates_do_not_adopt_until_explicit_apply_and_stale_target_conflicts(provider):
     from short_drama.core.exceptions import WorkflowError
     from short_drama.domain import AIGenerationRecord, MediaAsset, MediaFile, ShotImage
     from short_drama.service.ai_generation_service import AIGenerationService
@@ -18,6 +19,10 @@ def test_four_candidates_do_not_adopt_until_explicit_apply_and_stale_target_conf
 
     with generation_session() as session:
         model = config(session)
+        if provider == "openai":
+            model.base_url = "https://relay.example/v1"
+            model.model_key = "gpt-image-2.5-flare"
+            session.commit()
         project = ProjectService(session).create({"name": "P", "aspect": "16:9"})
         episode = EpisodeService(session).create(
             {"project_id": project.id, "position": 1, "title": "E", "aspect": "16:9"}
@@ -61,9 +66,12 @@ def test_four_candidates_do_not_adopt_until_explicit_apply_and_stale_target_conf
         model.enabled = 0
         model.is_default = 0
         session.commit()
-        assert AIGenerationService(session, settings).detail(generation["generation_id"])["result"][
-            "assets"
-        ]
+        detail = AIGenerationService(session, settings).detail(generation["generation_id"])
+        assert detail["result"]["assets"]
+        assert detail["source"]["shot_id"] == str(shot.id)
+        assert detail["source"]["layout"] == "single"
+        assert detail["parameters"] == {"count": 4, "aspect": "16:9", "resolution": "2K"}
+        assert detail["resolved_parameters"] != detail["parameters"]
         assert session.scalar(select(ShotImage)) is None
         session.rollback()
         assets = MediaAssetService(session, settings, None)

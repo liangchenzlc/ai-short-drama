@@ -2,6 +2,9 @@
 
 import json
 import time
+from io import BytesIO
+
+from PIL import Image
 
 from .adapters import (
     ADAPTER_TYPES,
@@ -13,8 +16,11 @@ from .adapters import (
     validate_request,
 )
 from .streaming import decode_text_stream
-from .transport import SafeTransport
+from .transport import MultipartBody, SafeTransport
 from .types import GenerationError
+
+MAX_REFERENCE_IMAGE_BYTES = 50 * 1024**2
+MAX_REFERENCE_TOTAL_BYTES = 100 * 1024**2
 
 
 def _credential(value):
@@ -51,7 +57,14 @@ class GenerationGateway:
         secret = _credential(credential)
         if secret:
             headers["Authorization"] = f"Bearer {secret}"
-        body_response = self._json_request("POST", url, snapshot, headers, body)
+        body_response = self._json_request(
+            "POST",
+            url,
+            snapshot,
+            headers,
+            body,
+            multipart=adapter == "openai_images.v1" and bool(body.get("image")),
+        )
         result = parse_result(body_response, adapter, submitted=True)
         result.resolved_parameters = resolved_parameters(body)
         return self._sanitize(result, secret, submitted=True)
@@ -69,7 +82,35 @@ class GenerationGateway:
         result = parse_result(body, adapter, submitted=False, task_id=provider_task_id)
         return self._sanitize(result, secret, submitted=False)
 
-    def _json_request(self, method, url, snapshot, headers, body):
+    def _image_edit_body(self, body, deadline):
+        fields = [(key, str(value)) for key, value in body.items() if key != "image"]
+        # Bound aggregate memory as well as each file; never silently omit a ref.
+        remaining = MAX_REFERENCE_TOTAL_BYTES
+        formats = {
+            "PNG": ("png", "image/png"),
+            "JPEG": ("jpg", "image/jpeg"),
+            "WEBP": ("webp", "image/webp"),
+        }
+        for index, url in enumerate(body["image"]):
+            if remaining <= 0:
+                raise GenerationError("reference_images_too_large")
+            data, _ = self.transport.download_media(
+                url, min(MAX_REFERENCE_IMAGE_BYTES, remaining), deadline=deadline
+            )
+            try:
+                with Image.open(BytesIO(data)) as image:
+                    file_format = formats.get(image.format)
+                    image.verify()
+                if file_format is None:
+                    raise ValueError
+            except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
+                raise GenerationError("invalid_reference_image") from None
+            extension, mime = file_format
+            fields.append(("image[]", (f"reference-{index + 1}.{extension}", data, mime)))
+            remaining -= len(data)
+        return MultipartBody(fields)
+
+    def _json_request(self, method, url, snapshot, headers, body, *, multipart=False):
         default_budget = {"text": 3600, "image": 300, "video": 1800}.get(
             snapshot.get("service_type"), 3600
         )
@@ -82,6 +123,8 @@ class GenerationGateway:
         # Each poll is bounded separately; the runtime owns the overall task deadline.
         if method == "GET":
             budget = min(budget, 30)
+        deadline = time.monotonic() + budget
+        request_body = self._image_edit_body(body, deadline) if multipart else body
         max_bytes = getattr(self.settings, "generation_max_response_bytes", 8 * 1024**2)
         if snapshot.get("service_type") == "image":
             image_limit = getattr(self.settings, "generation_max_image_bytes", 50 * 1024**2)
@@ -90,9 +133,9 @@ class GenerationGateway:
             method,
             url,
             headers=headers,
-            body=body,
+            body=request_body,
             max_bytes=max_bytes,
-            deadline=time.monotonic() + budget,
+            deadline=deadline,
         )
         submitting = method == "POST"
         if status in (404, 405):

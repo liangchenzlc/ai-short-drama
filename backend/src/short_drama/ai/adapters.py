@@ -19,7 +19,7 @@ ADAPTER_TYPES = {
     "dashscope_video.v1": "video",
 }
 
-RESOLVER_VERSION = "2026-09-20.1"
+RESOLVER_VERSION = "2026-09-23.1"
 
 
 def capability_fingerprint(snapshot, credential_identity):
@@ -89,6 +89,7 @@ def endpoint(base_url, suffix, adapter):
             "/chat/completions",
             "/responses",
             "/images/generations",
+            "/images/edits",
             "/contents/generations/tasks",
         ):
             if path.endswith(ending):
@@ -101,6 +102,12 @@ def endpoint(base_url, suffix, adapter):
 
 def _unsupported():
     raise GenerationError("unsupported_parameters")
+
+
+def _openai_image_references(model):
+    # Includes provider aliases such as gpt-image-2.5-flare. This describes the
+    # implemented Images edit protocol, not verified provider entitlement.
+    return model.startswith("gpt-image-")
 
 
 def _size(parameters, *, family, model):
@@ -119,6 +126,34 @@ def _size(parameters, *, family, model):
                 _unsupported()
         return f"{width}{'*' if family == 'dashscope' else 'x'}{height}"
     if family == "openai":
+        if re.match(r"^gpt-image-2(?:[.-]|$)", model):
+            # App presets, expressed as pixels rather than provider-specific
+            # resolution labels. Keep legacy GPT Image / DALL-E rules below.
+            presets = {
+                "1K": {
+                    "1:1": "1024x1024",
+                    "16:9": "1536x864",
+                    "9:16": "864x1536",
+                    "4:3": "1152x864",
+                    "3:4": "864x1152",
+                    "3:2": "1536x1024",
+                    "2:3": "1024x1536",
+                },
+                "2K": {
+                    "1:1": "2048x2048",
+                    "16:9": "2560x1440",
+                    "9:16": "1440x2560",
+                    "4:3": "2304x1728",
+                    "3:4": "1728x2304",
+                    "3:2": "2496x1664",
+                    "2:3": "1664x2496",
+                },
+            }
+            tier = "1K" if resolution in (None, "1024") else resolution
+            size = presets.get(tier, {}).get(aspect or "1:1")
+            if not size:
+                _unsupported()
+            return size
         if resolution not in (None, "1K", "1024"):
             _unsupported()
         sizes = {"1:1": "1024x1024", "3:2": "1536x1024", "2:3": "1024x1536"}
@@ -232,8 +267,9 @@ def build_submission(snapshot, request, adapter):
         if type(count) is not int or not 1 <= count <= 4:
             _unsupported()
         if adapter == "openai_images.v1":
-            # Multipart edits are a separate contract, not silently treated as text-to-image.
-            if refs or (model.startswith("dall-e-3") and count != 1):
+            if refs and (not _openai_image_references(model) or len(refs) > 16):
+                _unsupported()
+            if model.startswith("dall-e-3") and count != 1:
                 _unsupported()
             body.update(prompt=prompt, n=count)
             try:
@@ -242,7 +278,11 @@ def build_submission(snapshot, request, adapter):
                 raise GenerationError("unsupported_image_size") from None
             if size:
                 body["size"] = size
-            suffix = "/images/generations"
+            if refs:
+                # A pure request recipe; the gateway downloads and uploads the
+                # files only during execution, never during admission validation.
+                body["image"] = refs
+            suffix = "/images/edits" if refs else "/images/generations"
         elif adapter == "ark_images.v1":
             body.update(prompt=prompt, response_format="url", stream=False)
             if refs:
@@ -566,7 +606,8 @@ def capabilities(snapshot):
             "video": ["aspect", "resolution", "duration_ms"],
         }[kind],
         "reference_images": adapter == "ark_images.v1"
-        or (adapter == "dashscope_images.v1" and edit),
+        or (adapter == "dashscope_images.v1" and edit)
+        or (adapter == "openai_images.v1" and _openai_image_references(model)),
         "first_frame": kind == "video",
         "last_frame": adapter == "ark_video.v1"
         or (adapter == "dashscope_video.v1" and "kf2v" in snapshot.get("model_key", "")),

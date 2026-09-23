@@ -87,9 +87,9 @@ uv run celery -A short_drama.tasks.celery_app:app worker --pool=threads --concur
 
 线程池里的线程共享同一进程雪花生成器。不要直接改成共用同一节点 ID 的 prefork 多进程或多个 Uvicorn Worker。重启复用节点前，应确认旧进程已停止且时钟超过旧进程最后发号时间。
 
-自定义 namespace 为 `studio_dev` 时，队列是 `studio_dev.tasks.ai.text/image/video`，所有进程配置必须一致。默认 namespace 不加前缀。
+自定义 namespace 为 `studio_dev` 时，队列是 `studio_dev.tasks.ai.text/image/video`，所有进程配置必须一致。默认 namespace 不加前缀。不同数据库或独立开发环境共用 RabbitMQ 时必须使用不同 namespace，避免另一环境消费并丢弃本环境的任务。手动启动时同步修改 `-Q` 队列名。
 
-Windows 可选用 `scripts/start_generation.ps1 -Role api|scheduler|text|image|video` 分别后台启动，PID/输出写入 `backend/.runtime/`。脚本使用现有 `.venv`、固定默认队列和上表节点号；每个角色只启动一次，不与手动进程重复启动。它不是通用生产进程管理器，也不会因进程启动成功就保证依赖健康。
+Windows 可选用 `scripts/start_generation.ps1 -Role api|scheduler|text|image|video` 分别后台启动，PID/输出写入 `backend/.runtime/`。脚本使用现有 `.venv`，从后端 Settings 自动解析实际队列名，并使用上表节点号；每个角色只启动一次，不与手动进程重复启动。它不是通用生产进程管理器，也不会因进程启动成功就保证依赖健康。
 
 ## 启动前端
 
@@ -152,7 +152,9 @@ uv run python scripts/check_generation_infra.py
 uv run python scripts/check_minio.py
 ```
 
-`check_generation_infra.py` 的队列检查固定使用默认 `tasks.ai.text/image/video`；自定义 namespace 时应另行核对对应队列，不以该脚本的队列结果判断自定义部署是否健康。
+`check_generation_infra.py` 按当前 Settings 检查实际 namespace 下的队列与消费者数量。
+
+已成功生成且有持久化媒体记录的 `save` 消息，若投递后超过一个执行租约周期仍无人接手，调度器会增加消息版本并仅重投保存动作；旧版本消息失效，归档按输出标识幂等保存，不重新调用模型。超过归档预算则转为可恢复的保存超时。`submit/poll` 的已投递消息不使用此规则，避免重复付费生成。
 
 HTTP 检查：`GET /api/v1/test`、`/api/v1/test/db`、`/api/v1/test/minio`。API 启动不主动探活数据库和 MinIO，因此不能只凭进程存活判断系统可用。
 

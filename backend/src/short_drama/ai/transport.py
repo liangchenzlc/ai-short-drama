@@ -4,12 +4,18 @@ import ipaddress
 import json
 import socket
 import time
+from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import urllib3
 from urllib3.exceptions import HTTPError, NewConnectionError, TimeoutError
 
 from .types import GenerationError
+
+
+@dataclass
+class MultipartBody:
+    fields: list[tuple[str, str | tuple[str, bytes, str]]]
 
 
 def validated_url(value, *, query=False):
@@ -71,7 +77,11 @@ class SafeTransport:
                 raise GenerationError("unsafe_address")
         except ValueError:
             raise GenerationError("unsafe_address") from None
-        encoded = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
+        content_type = "application/json"
+        if isinstance(body, MultipartBody):
+            encoded, content_type = urllib3.encode_multipart_formdata(body.fields)
+        else:
+            encoded = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
         request_headers = {
             "Accept": "application/json" if body is not None else "*/*",
             "Accept-Encoding": "identity",
@@ -80,7 +90,7 @@ class SafeTransport:
             "Host": parts.netloc,
         }
         if encoded is not None:
-            request_headers["Content-Type"] = "application/json"
+            request_headers["Content-Type"] = content_type
         path = urlunsplit(("", "", parts.path, parts.query, ""))
         # Even connection errors do not cause an implicit second POST. GET may try other pinned IPs.
         candidates = addresses[:1] if method == "POST" else addresses[:4]
@@ -155,10 +165,13 @@ class SafeTransport:
                 pool.close()
         raise last_error from None
 
-    def download_media(self, url, max_bytes):
+    def download_media(self, url, max_bytes, *, deadline=None):
         if not isinstance(max_bytes, int) or not 0 < max_bytes <= 1024**3:
             raise GenerationError("invalid_media_limit")
-        deadline = time.monotonic() + getattr(self.settings, "generation_download_timeout", 60)
+        download_deadline = time.monotonic() + getattr(
+            self.settings, "generation_download_timeout", 60
+        )
+        deadline = min(deadline, download_deadline) if deadline is not None else download_deadline
         current = validated_url(url, query=True)
         for _ in range(4):
             # No caller-controlled headers and no model credential can reach this path.

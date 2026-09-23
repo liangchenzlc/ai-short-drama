@@ -4,7 +4,10 @@ import importlib.util
 import json
 import threading
 import time
+from email import policy
+from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
@@ -110,9 +113,30 @@ def provider():
     class Handler(BaseHTTPRequestHandler):
         def handle_request(self):
             body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
-            calls.append(
-                (self.command, self.path, dict(self.headers), json.loads(body) if body else None)
-            )
+            if self.headers.get_content_type() == "multipart/form-data":
+                message = BytesParser(policy=policy.default).parsebytes(
+                    f"Content-Type: {self.headers['Content-Type']}\r\n\r\n".encode() + body
+                )
+                parsed = [
+                    (
+                        part.get_param("name", header="content-disposition"),
+                        part.get_filename(),
+                        part.get_content_type(),
+                        part.get_payload(decode=True),
+                    )
+                    for part in message.iter_parts()
+                ]
+            else:
+                parsed = json.loads(body) if body else None
+            calls.append((self.command, self.path, dict(self.headers), parsed))
+            if self.path in state.get("media", {}):
+                data, mime = state["media"][self.path]
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if state.get("disconnect"):
                 self.connection.close()
                 return
@@ -250,6 +274,196 @@ def test_openai_images_preserves_count_and_base64(gateway, provider):
     assert calls[0][1] == "/v1/images/generations"
     assert calls[0][3] == {"model": "gpt-image-2", "prompt": "scene", "n": 1, "size": "1024x1024"}
     assert result.outputs[0] == {"base64": "aW1hZ2U=", "media_type": "image", "mime": "image/png"}
+
+
+def reference_image(format="PNG", color="red"):
+    from PIL import Image
+
+    output = BytesIO()
+    Image.new("RGB", (4, 4), color).save(output, format=format)
+    return output.getvalue()
+
+
+@pytest.mark.parametrize("base_path", ["", "/v1", "/v1/images/generations", "/v1/images/edits"])
+def test_gpt_image_edits_upload_all_references_without_leaking_credentials(
+    gateway, provider, base_path
+):
+    base, state, calls = provider
+    png, jpeg = reference_image(), reference_image("JPEG", "blue")
+    state["media"] = {
+        "/character?signature=abc": (png, "application/octet-stream"),
+        "/scene": (jpeg, "image/jpeg"),
+    }
+    state["body"] = {"data": [{"b64_json": "aW1hZ2U="}, {"url": "https://cdn.example/b.png"}]}
+    request = {
+        "input": {"prompt": "场景参考", "reference_urls": [base + path for path in state["media"]]},
+        "parameters": {"count": 2, "aspect": "16:9", "resolution": "2K"},
+    }
+    result = gateway.submit(
+        snapshot(base + base_path, "image", "gpt-image-2.5-flare"), request, "test-secret"
+    )
+    assert [(call[0], call[1]) for call in calls] == [
+        ("GET", "/character?signature=abc"),
+        ("GET", "/scene"),
+        ("POST", "/v1/images/edits"),
+    ]
+    assert all("Authorization" not in call[2] for call in calls[:2])
+    assert calls[2][2]["Authorization"] == "Bearer test-secret"
+    fields = calls[2][3]
+    assert {name: data.decode() for name, filename, _, data in fields if filename is None} == {
+        "model": "gpt-image-2.5-flare",
+        "prompt": "场景参考",
+        "n": "2",
+        "size": "2560x1440",
+    }
+    assert [(name, mime, data) for name, filename, mime, data in fields if filename] == [
+        ("image[]", "image/png", png),
+        ("image[]", "image/jpeg", jpeg),
+    ]
+    assert result.status == "succeeded" and len(result.outputs) == 2
+    assert result.resolved_parameters == {"n": 2, "size": "2560x1440"}
+    assert "image" not in request["input"]
+
+
+@pytest.mark.parametrize(
+    "model", ["gpt-image-1", "gpt-image-1.5", "gpt-image-2", "gpt-image-2.5-flare"]
+)
+def test_gpt_image_reference_admission_is_pure_and_matches_capabilities(model):
+    from short_drama.ai import capabilities, validate_request
+
+    snap = snapshot("https://provider.example/v1", "image", model)
+    request = {"input": {"prompt": "scene", "reference_media_ids": ["1", "2"]}}
+    assert capabilities(snap)["reference_images"] is True
+    assert validate_request(snap, request)["resolved_parameters"] == {"n": 1}
+    assert request == {"input": {"prompt": "scene", "reference_media_ids": ["1", "2"]}}
+
+
+@pytest.mark.parametrize("model,count", [("dall-e-3", 1), ("unknown", 1), ("gpt-image-2", 17)])
+def test_unsupported_image_edits_are_rejected_before_any_http(gateway, provider, model, count):
+    from short_drama.ai import GenerationError, capabilities
+
+    base, _, calls = provider
+    snap = snapshot(base, "image", model)
+    with pytest.raises(GenerationError, match="unsupported_parameters"):
+        gateway.submit(
+            snap, {"input": {"prompt": "hi", "reference_urls": [base + "/ref"] * count}}, "secret"
+        )
+    assert not calls
+    if model != "gpt-image-2":
+        assert not capabilities(snap)["reference_images"]
+
+
+@pytest.mark.parametrize("data", [b"not an image", reference_image("GIF")])
+def test_invalid_reference_file_never_submits_generation(gateway, provider, data):
+    from short_drama.ai import GenerationError
+
+    base, state, calls = provider
+    state["media"] = {"/ref": (data, "image/png")}
+    with pytest.raises(GenerationError) as error:
+        gateway.submit(
+            snapshot(base, "image", "gpt-image-2"),
+            {"input": {"prompt": "scene", "reference_urls": [base + "/ref"]}},
+            "secret",
+        )
+    assert error.value.code == "invalid_reference_image"
+    assert not error.value.accepted_unknown
+    assert [call[0] for call in calls] == ["GET"]
+
+
+@pytest.mark.parametrize(
+    "status,code,unknown", [(404, "provider_endpoint", False), (503, "upstream_unavailable", True)]
+)
+def test_edit_error_never_falls_back_to_text_to_image(gateway, provider, status, code, unknown):
+    from short_drama.ai import GenerationError
+
+    base, state, calls = provider
+    state.update(media={"/ref": (reference_image(), "image/png")}, status=status)
+    with pytest.raises(GenerationError) as error:
+        gateway.submit(
+            snapshot(base, "image", "gpt-image-2"),
+            {"input": {"prompt": "scene", "reference_urls": [base + "/ref"]}},
+            "secret",
+        )
+    assert error.value.code == code and error.value.accepted_unknown is unknown
+    assert [(call[0], call[1]) for call in calls] == [("GET", "/ref"), ("POST", "/v1/images/edits")]
+
+
+def test_edit_reference_download_blocks_private_destinations(provider):
+    from short_drama.ai import GenerationError, GenerationGateway
+
+    base, _, calls = provider
+    gateway = GenerationGateway(SimpleNamespace())
+    with pytest.raises(GenerationError) as error:
+        gateway.submit(
+            snapshot("https://provider.example/v1", "image", "gpt-image-2"),
+            {"input": {"prompt": "scene", "reference_urls": [base + "/ref"]}},
+            "secret",
+        )
+    assert error.value.code == "unsafe_address" and not error.value.accepted_unknown
+    assert not calls
+
+
+@pytest.mark.parametrize("per_file,total", [(1, 1024), (1024, 100)])
+def test_edit_downloads_enforce_file_and_total_limits(
+    gateway, provider, monkeypatch, per_file, total
+):
+    from short_drama.ai import GenerationError
+
+    monkeypatch.setattr("short_drama.ai.gateway.MAX_REFERENCE_IMAGE_BYTES", per_file)
+    monkeypatch.setattr("short_drama.ai.gateway.MAX_REFERENCE_TOTAL_BYTES", total)
+    base, state, calls = provider
+    data = reference_image()
+    assert len(data) < 100 < 2 * len(data)
+    state["media"] = {"/a": (data, "image/png"), "/b": (data, "image/png")}
+    with pytest.raises(GenerationError) as error:
+        gateway.submit(
+            snapshot(base, "image", "gpt-image-2"),
+            {"input": {"prompt": "scene", "reference_urls": [base + "/a", base + "/b"]}},
+            "secret",
+        )
+    assert error.value.code == "response_too_large" and not error.value.accepted_unknown
+    assert all(call[0] == "GET" for call in calls)
+
+
+def test_edit_downloads_and_post_share_one_deadline(gateway, provider, monkeypatch):
+    base, state, _ = provider
+    state.update(
+        media={"/ref": (reference_image("WEBP"), "image/webp")},
+        body={"data": [{"b64_json": "aW1hZ2U="}]},
+    )
+    deadlines = []
+    original = gateway.transport.request
+
+    def request(*args, **kwargs):
+        deadlines.append(kwargs["deadline"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(gateway.transport, "request", request)
+    gateway.submit(
+        snapshot(base, "image", "gpt-image-2"),
+        {"input": {"prompt": "scene", "reference_urls": [base + "/ref"]}},
+        "secret",
+    )
+    assert len(deadlines) == 2 and deadlines[0] == deadlines[1]
+
+
+@pytest.mark.parametrize(
+    "aspect,size", [("16:9", "2560x1440"), ("9:16", "1440x2560"), ("1:1", "2048x2048")]
+)
+def test_gpt_image_2_default_storyboard_resolution_preserves_aspect(aspect, size):
+    from short_drama.ai import GenerationError, validate_request
+
+    request = {
+        "input": {"prompt": "scene", "reference_media_ids": ["1"]},
+        "parameters": {"aspect": aspect, "resolution": "2K"},
+    }
+    value = validate_request(
+        snapshot("https://provider.example/v1", "image", "gpt-image-2.5-flare"), request
+    )
+    assert value["resolved_parameters"] == {"n": 1, "size": size}
+    with pytest.raises(GenerationError) as error:
+        validate_request(snapshot("https://provider.example/v1", "image", "gpt-image-1"), request)
+    assert error.value.code == "unsupported_image_size"
 
 
 def test_ark_image_reference_and_sequential_images(gateway, provider):

@@ -18,9 +18,16 @@ def test_upstream_failure_explains_unknown_result_and_only_exposes_valid_http_st
 
 
 @pytest.mark.parametrize(
-    "parameters", [{"resolution": "2K"}, {"aspect": "16:9"}, {"aspect": "4:3", "count": 1}]
+    "model_key,parameters",
+    [
+        ("gpt-image-1", {"resolution": "2K"}),
+        ("gpt-image-1", {"aspect": "16:9"}),
+        ("gpt-image-1", {"aspect": "4:3", "count": 1}),
+        ("gpt-image-2", {"resolution": "8K"}),
+        ("gpt-image-2", {"resolution": "4K"}),
+    ],
 )
-def test_image_size_rejection_is_actionable_and_creates_no_task(parameters):
+def test_image_size_rejection_is_actionable_and_creates_no_task(model_key, parameters):
     from sqlalchemy import select
 
     from short_drama.core.exceptions import BusinessError
@@ -30,7 +37,7 @@ def test_image_size_rejection_is_actionable_and_creates_no_task(parameters):
     with generation_session() as session:
         model = config(session)
         model.base_url = "https://relay.example"
-        model.model_key = "gpt-image-2"
+        model.model_key = model_key
         session.commit()
         with pytest.raises(BusinessError) as error:
             AIGenerationService(session, settings).create(
@@ -38,6 +45,74 @@ def test_image_size_rejection_is_actionable_and_creates_no_task(parameters):
             )
         assert error.value.code == "generation_unsupported_image_size"
         assert session.scalar(select(AsyncTask)) is None
+
+
+def test_saved_storyboard_gpt_image_alias_keeps_reference_and_default_2k_settings():
+    from sqlalchemy import select
+    from test_episode_storyboard import setup_storyboard
+
+    from short_drama.domain import AIGenerationRecord, Asset, MediaFile
+    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.asset_service import AssetService
+    from short_drama.service.episode_asset_service import EpisodeAssetService
+    from short_drama.service.episode_storyboard_service import EpisodeStoryboardService
+
+    with generation_session() as session:
+        model = config(session)
+        model.base_url = "https://relay.example"
+        model.model_key = "gpt-image-2.5-flare"
+        session.add(
+            MediaFile(id=100, format_code="image/png", storage_locator="minio://image/ref.png")
+        )
+        session.commit()
+        project_id, episode_id = setup_storyboard(session)
+        asset = AssetService(session).create(
+            {"kind": "character", "name": "Actor", "media_id": 100}
+        )
+        session.get(Asset, asset.id).state = "confirmed"
+        session.commit()
+        EpisodeAssetService(session).create(
+            {"episode_id": episode_id, "asset_id": asset.id, "position": 1}
+        )
+        board = EpisodeStoryboardService(session)
+        shot = board.create(
+            project_id,
+            episode_id,
+            {
+                "storyboard_version": "1",
+                "script": "Actor enters the room.",
+                "asset_ids": [str(asset.id)],
+            },
+            "create-shot",
+        )["shot"]
+        payload = {
+            "config_id": str(model.id),
+            "input": {"prompt": "Keep the character consistent"},
+            "parameters": {"aspect": "16:9", "resolution": "2K", "count": 1},
+            "source": {
+                "scene": "shot_image",
+                "shot_id": shot["id"],
+                "layout": "single",
+                "context_mode": "saved",
+                "row_version": shot["row_version"],
+                "context_hash": shot["context_hash"],
+            },
+        }
+        service = AIGenerationService(session, settings)
+        task, created = service.create("image", payload, "generate-shot")
+        assert created and task["status"] == "queued"
+        record = session.scalar(select(AIGenerationRecord))
+        assert record.adapter == "openai_images.v1"
+        assert list(map(str, record.request_data["input"]["reference_media_ids"])) == ["100"]
+        assert record.request_data["resolved_parameters"] == {"n": 1, "size": "2560x1440"}
+        session.commit()
+        detail = service.detail(task["generation_id"])
+        assert detail["parameters"] == {"aspect": "16:9", "resolution": "2K", "count": 1}
+        assert detail["resolved_parameters"] == {"n": 1, "size": "2560x1440"}
+        assert detail["source"]["shot_id"] == shot["id"]
+        assert detail["source"]["layout"] == "single"
+        replay, created = service.create("image", payload, "generate-shot")
+        assert not created and replay["generation_id"] == task["generation_id"]
 
 
 def test_missing_default_configuration_has_distinct_error():

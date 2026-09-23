@@ -50,6 +50,6 @@ export function imageGenerationBlockReason(modelId: string | undefined, capabili
   if (!modelId) return '请先选择一个已启用的分镜生图模型。';
   if (loading) return '正在核对模型能力…';
   if (!capabilities?.known) return '模型能力尚未确认，请刷新能力或更换模型。';
-  if (referenceCount && !capabilities.reference_images) return '当前模型不支持参考图，请更换支持参考图的模型；不会自动丢弃关联图片。';
+  if (referenceCount && !capabilities.reference_images) return '当前模型接入方式暂不支持参考图，请更换已支持参考图的模型配置；不会自动丢弃关联图片。';
   return '';
 }

@@ -76,6 +76,8 @@
 
 对外状态为 `queued/running/succeeded/failed/cancelled`。调用记录中的未知受理结果不是自动重发依据。取消不保证远端取消或免费；retry 可能再次计费，复用原输入快照；resume 不是再次付费生成的快捷方式。客户端依据 `can_*` 显示操作，不自行猜测。
 
+任务详情的 `parameters` 返回冻结的业务参数（例如 `aspect/resolution/count`），用于候选预览与采用；`resolved_parameters` 单独返回最新调用的模型接口参数（例如 OpenAI 的 `size/n`）。两者字段和单位可能不同，不能相互替代。历史任务同样从其已保存的原始请求读取业务参数。
+
 通用输入：
 
 | 类型 | input | parameters |
@@ -84,7 +86,11 @@
 | image | `prompt`、`reference_media_ids`（最多16） | `aspect/resolution/count`，count 1–4，默认1 |
 | video | `prompt`、`first_frame_media_id/last_frame_media_id` | `aspect/resolution/duration_ms` |
 
-媒体引用必须是可用的持久化图片。可选参数仍需满足所选协议与具体模型限制；不支持的字段被拒绝，不静默丢弃。视频时长接口单位为毫秒，某些适配器只接受整秒。OpenAI Images 当前不支持参考图编辑。
+媒体引用必须是可用的持久化图片。可选参数仍需满足所选协议与具体模型限制；不支持的字段被拒绝，不静默丢弃。视频时长接口单位为毫秒，某些适配器只接受整秒。
+
+OpenAI Images 接入的 `gpt-image-*` 模型（包括网关别名）支持参考图请求：无参考图调用 `/images/generations`，有参考图调用 `/images/edits`，通过 multipart 的 `image[]` 上传全部图片。执行时解析媒体 ID、下载并校验 PNG/JPEG/WebP；最多 16 张，单张最多 50 MiB、合计最多 100 MiB。参考图下载不携带模型密钥，与生成请求共用任务调用预算；下载或编辑失败不回退为无参考图生成，也不自动重发 POST。
+
+`gpt-image-2` 系列支持将应用的 `1K/2K` 预设转换为明确像素尺寸，例如 `2K + 16:9` 为 `2560x1440`、`2K + 9:16` 为 `1440x2560`。其他尺寸可通过通用接口传入明确像素值，由上游验证；`4K` 标签尚未映射。能力接口表示项目已实现的协议能力，不代表第三方网关、模型别名或账号已通过真实生成验证。
 
 ### 素材图片生成
 

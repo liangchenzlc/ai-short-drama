@@ -25,9 +25,18 @@ try {
     } elseif ($Role -eq 'scheduler') {
         $processArguments = @('-m', 'short_drama.tasks.runtime')
     } else {
+        Push-Location $backendDirectory
+        try {
+            $queueName = & $pythonExecutable -c "import sys; from short_drama.core.config import Settings; from short_drama.tasks.celery_app import topology; print(topology(Settings())[2][sys.argv[1]].name)" $Role
+            if ($LASTEXITCODE -ne 0 -or $queueName -notmatch '^[a-zA-Z0-9_.]+$') {
+                throw 'Unable to resolve the configured generation queue'
+            }
+        } finally {
+            Pop-Location
+        }
         $workerConcurrency = if ($Role -eq 'text') { '4' } else { '2' }
         $processArguments = @('-m', 'celery', '-A', 'short_drama.tasks.celery_app:app', 'worker',
-            '--pool=threads', "--concurrency=$workerConcurrency", '-Q', "tasks.ai.$Role",
+            '--pool=threads', "--concurrency=$workerConcurrency", '-Q', $queueName,
             "--hostname=$Role@%h", '--loglevel=WARNING')
     }
     $process = Start-Process -FilePath $pythonExecutable -ArgumentList $processArguments `

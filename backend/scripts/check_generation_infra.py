@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 from short_drama.core.config import Settings
 from short_drama.db.session import build_engine
+from short_drama.tasks.celery_app import topology
 
 settings = Settings()
 engine = build_engine(settings)
@@ -55,21 +56,19 @@ try:
     ) as broker:
         broker.connect()
         print("RabbitMQ AMQP authentication and vhost: connected")
-        for kind in ("text", "image", "video"):
+        for queue in topology(settings)[2].values():
             channel = broker.channel()
             try:
-                declaration = channel.queue_declare(queue=f"tasks.ai.{kind}", passive=True)
+                declaration = channel.queue_declare(queue=queue.name, passive=True)
                 print(
-                    f"RabbitMQ tasks.ai.{kind}: messages={declaration.message_count}, "
+                    f"RabbitMQ {queue.name}: messages={declaration.message_count}, "
                     f"consumers={declaration.consumer_count}"
                 )
             except Exception as error:
                 if getattr(error, "reply_code", None) == 404:
-                    print(f"RabbitMQ tasks.ai.{kind}: does not exist")
+                    print(f"RabbitMQ {queue.name}: does not exist")
                 else:
-                    print(
-                        f"RabbitMQ tasks.ai.{kind}: passive check failed ({type(error).__name__})"
-                    )
+                    print(f"RabbitMQ {queue.name}: passive check failed ({type(error).__name__})")
             finally:
                 try:
                     channel.close()

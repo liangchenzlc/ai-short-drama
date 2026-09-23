@@ -344,9 +344,10 @@ class AIGenerationService(BaseService):
             output = self._summary(task, latest)
             output.update(
                 input=records[0].request_data.get("input"),
-                parameters=records[0].request_data.get(
-                    "resolved_parameters", records[0].request_data.get("parameters")
-                ),
+                # Adoption and previews use the frozen business request, not
+                # provider fields such as size/n or duration measured in seconds.
+                parameters=records[0].request_data.get("parameters") or {},
+                resolved_parameters=latest.request_data.get("resolved_parameters") or {},
             )
             assets = list(
                 self.session.scalars(
