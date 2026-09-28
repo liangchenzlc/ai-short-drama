@@ -33,6 +33,6 @@ export function StoryboardResultPreview({ projectId, episodeId, generationId, bu
       <LazyLoadMore hasMore={!page || page.items.length < page.total} loading={loading} error={failure} onLoad={() => void load(!!page)}/>
     </div>
     {error && <Alert type="error" message={error}/>}
-    <div className="dialog-actions"><Button type="primary" loading={busy} disabled={disabled || !page || !!page.applied} onClick={() => onApply('append')}>追加到现有分镜</Button><Button danger loading={busy} disabled={disabled || !page || !!page.applied} onClick={() => onApply('replace')}>替换当前分镜</Button></div>
+    <div className="dialog-actions storyboard-apply-actions"><Button type="primary" loading={busy} disabled={disabled || !page || !!page.applied} onClick={() => onApply('append')}>追加到现有分镜</Button><Button danger loading={busy} disabled={disabled || !page || !!page.applied} onClick={() => onApply('replace')}>替换当前分镜</Button></div>
   </section>;
 }

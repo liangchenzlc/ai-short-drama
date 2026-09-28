@@ -1,5 +1,6 @@
 """Synchronous calls only; durable scheduling and recording belong to the runtime."""
 
+import base64
 import json
 import time
 from io import BytesIO
@@ -49,9 +50,43 @@ class GenerationGateway:
         self.settings = settings
         self.transport = SafeTransport(settings)
 
-    def submit(self, snapshot, request_data, credential, adapter=None):
+    def submit(self, snapshot, request_data, credential, adapter=None, *, reference_loader=None):
         adapter = adapter or select_adapter(snapshot)
         url, headers, body = build_submission(snapshot, request_data, adapter)
+        if adapter in {"ark_video.v1", "dashscope_video.v1"} and reference_loader is not None:
+            deadline = time.monotonic() + float(snapshot.get("budget_seconds", 1800))
+            frame_urls = []
+            for index in range(
+                sum(
+                    bool(request_data["input"].get(f"{name}_frame_media_id"))
+                    for name in ("first", "last")
+                )
+            ):
+                data = reference_loader(index, 10 * 1024**2, deadline)
+                if len(data) > 10 * 1024**2:
+                    raise GenerationError("reference_images_too_large")
+                try:
+                    with Image.open(BytesIO(data)) as frame:
+                        mime = {"PNG": "image/png", "JPEG": "image/jpeg", "WEBP": "image/webp"}.get(
+                            frame.format
+                        )
+                        frame.verify()
+                    if mime is None:
+                        raise ValueError
+                except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
+                    raise GenerationError("invalid_reference_image") from None
+                frame_urls.append(f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}")
+            if adapter == "ark_video.v1":
+                for item, url_value in zip(body["content"][1:], frame_urls, strict=True):
+                    item["image_url"]["url"] = url_value
+            else:
+                keys = [
+                    key
+                    for key in ("img_url", "first_frame_url", "last_frame_url")
+                    if key in body["input"]
+                ]
+                for key, url_value in zip(keys, frame_urls, strict=True):
+                    body["input"][key] = url_value
         if snapshot.get("service_type") == "text" and body.get("stream"):
             headers["Accept"] = "text/event-stream, application/json"
         secret = _credential(credential)
@@ -64,6 +99,8 @@ class GenerationGateway:
             headers,
             body,
             multipart=adapter == "openai_images.v1" and bool(body.get("image")),
+            modelhub_upload=adapter == "modelhub_video.v1" and bool(body.get("image_file_1")),
+            reference_loader=reference_loader,
         )
         result = parse_result(body_response, adapter, submitted=True)
         result.resolved_parameters = resolved_parameters(body)
@@ -82,8 +119,12 @@ class GenerationGateway:
         result = parse_result(body, adapter, submitted=False, task_id=provider_task_id)
         return self._sanitize(result, secret, submitted=False)
 
-    def _image_edit_body(self, body, deadline):
-        fields = [(key, str(value)) for key, value in body.items() if key != "image"]
+    def _image_edit_body(self, body, deadline, reference_loader=None, *, modelhub=False):
+        image_keys = (
+            [key for key in body if key.startswith("image_file_")] if modelhub else ["image"]
+        )
+        refs = [body[key] for key in image_keys] if modelhub else body["image"]
+        fields = [(key, str(value)) for key, value in body.items() if key not in image_keys]
         # Bound aggregate memory as well as each file; never silently omit a ref.
         remaining = MAX_REFERENCE_TOTAL_BYTES
         formats = {
@@ -91,12 +132,18 @@ class GenerationGateway:
             "JPEG": ("jpg", "image/jpeg"),
             "WEBP": ("webp", "image/webp"),
         }
-        for index, url in enumerate(body["image"]):
+        for index, url in enumerate(refs):
             if remaining <= 0:
                 raise GenerationError("reference_images_too_large")
-            data, _ = self.transport.download_media(
-                url, min(MAX_REFERENCE_IMAGE_BYTES, remaining), deadline=deadline
-            )
+            limit = min(10 * 1024**2 if modelhub else MAX_REFERENCE_IMAGE_BYTES, remaining)
+            if reference_loader is None:
+                data, _ = self.transport.download_media(url, limit, deadline=deadline)
+            else:
+                # Runtime-only callback, bound to persisted media IDs. Never accepted
+                # from request JSON and never used for arbitrary external URLs.
+                data = reference_loader(index, limit, deadline)
+            if len(data) > limit:
+                raise GenerationError("reference_images_too_large")
             try:
                 with Image.open(BytesIO(data)) as image:
                     file_format = formats.get(image.format)
@@ -106,11 +153,23 @@ class GenerationGateway:
             except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
                 raise GenerationError("invalid_reference_image") from None
             extension, mime = file_format
-            fields.append(("image[]", (f"reference-{index + 1}.{extension}", data, mime)))
+            field_name = image_keys[index] if modelhub else "image[]"
+            fields.append((field_name, (f"reference-{index + 1}.{extension}", data, mime)))
             remaining -= len(data)
         return MultipartBody(fields)
 
-    def _json_request(self, method, url, snapshot, headers, body, *, multipart=False):
+    def _json_request(
+        self,
+        method,
+        url,
+        snapshot,
+        headers,
+        body,
+        *,
+        multipart=False,
+        modelhub_upload=False,
+        reference_loader=None,
+    ):
         default_budget = {"text": 3600, "image": 300, "video": 1800}.get(
             snapshot.get("service_type"), 3600
         )
@@ -124,7 +183,11 @@ class GenerationGateway:
         if method == "GET":
             budget = min(budget, 30)
         deadline = time.monotonic() + budget
-        request_body = self._image_edit_body(body, deadline) if multipart else body
+        request_body = (
+            self._image_edit_body(body, deadline, reference_loader, modelhub=modelhub_upload)
+            if multipart or modelhub_upload
+            else body
+        )
         max_bytes = getattr(self.settings, "generation_max_response_bytes", 8 * 1024**2)
         if snapshot.get("service_type") == "image":
             image_limit = getattr(self.settings, "generation_max_image_bytes", 50 * 1024**2)

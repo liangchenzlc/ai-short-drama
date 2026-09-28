@@ -5,6 +5,7 @@ import hashlib
 from sqlalchemy import select
 
 from short_drama.ai.business_prompts import asset_image_prompt, image_prompt, text_messages
+from short_drama.ai.prompts.registry import PROMPT_VERSIONS
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import (
     Asset,
@@ -115,11 +116,7 @@ class GenerationContextService:
         instructions = request.pop("instructions", "")
         request["source_snapshot"] = snapshot
         request["business_intent"] = {"instructions": instructions}
-        request["template_version"] = {
-            "novel_script": "novel-script-v1-r2",
-            "script_shots": "script-shots-v1-r3",
-            "script_assets": "script-assets-v1-r3",
-        }[scene]
+        request["template_version"] = PROMPT_VERSIONS[scene]
         request["input"] = {"messages": text_messages(scene, snapshot, instructions)}
         return request
 
@@ -177,7 +174,7 @@ class GenerationContextService:
             "asset": content,
             "asset_row_version": str(asset.row_version),
             "asset_content_hash": asset_image_content_hash(content),
-            "template_version": "asset-image-v1",
+            "template_version": PROMPT_VERSIONS["asset_image"],
             "instructions": supplement,
         }
         request["input"] = {
@@ -291,9 +288,64 @@ class GenerationContextService:
             "row_version": str(shot.row_version),
         }
         request["business_intent"] = {"instructions": supplement}
-        request["template_version"] = "shot-image-v1"
+        request["template_version"] = PROMPT_VERSIONS["shot_image"]
         request["input"] = {
             "prompt": image_prompt(snapshot, supplement, source["layout"]),
             "reference_media_ids": references,
         }
+        return request
+
+    def prepare_shot_video(self, request):
+        from short_drama.ai.business_prompts import video_prompt_parts
+        from short_drama.domain import ShotImage
+
+        from .shot_video_context import DEFAULT_VIDEO_SETTINGS, video_context_hash
+
+        source = request["source"]
+        episode, shot, _assets, snapshot, image_hash = self.locked_shot_context(source["shot_id"])
+        image = self.session.scalar(
+            select(ShotImage).where(ShotImage.shot_id == shot.id).with_for_update()
+        )
+        if image is None:
+            raise WorkflowError("video_reference_required", "请先采用一张分镜参考图", 422)
+        if image.context_hash != image_hash:
+            raise WorkflowError(
+                "video_reference_stale", "分镜图已过期，请先核对并采用当前内容的图片"
+            )
+        settings = shot.video_settings or DEFAULT_VIDEO_SETTINGS
+        digest = video_context_hash(image_hash, image.media_id, shot.video_prompt, settings)
+        if (
+            shot.row_version != int(source["row_version"])
+            or source["context_hash"] != digest
+            or int(source["reference_media_id"]) != image.media_id
+        ):
+            raise WorkflowError("shot_version_conflict", "分镜、提示词或参考图已变化，请刷新后生成")
+        if not shot.script.strip():
+            raise WorkflowError("shot_empty", "请先保存分镜正文", 422)
+        duration = settings.get("duration_ms") or shot.duration_ms
+        expected = {"duration_ms": duration, "resolution": settings["resolution"]}
+        supplied = {k: v for k, v in request["parameters"].items() if v is not None}
+        if supplied and supplied != expected:
+            raise WorkflowError("generation_settings_changed", "请先保存视频时长和清晰度", 422)
+        snapshot = {**snapshot, "video_duration_ms": duration}
+        parts = video_prompt_parts(snapshot, shot.video_prompt)
+        source.update(
+            project_id=str(episode.project_id), episode_id=str(episode.id), source_id=str(shot.id)
+        )
+        request["source_snapshot"] = {
+            **snapshot,
+            "context_hash": digest,
+            "shot_context_hash": image_hash,
+            "reference_media_id": str(image.media_id),
+            "reference_layout": image.layout,
+            "input_mode": "omni_reference",
+            "row_version": str(shot.row_version),
+            "video_prompt": shot.video_prompt,
+            "video_settings": settings,
+            "system_prompt": parts["system"],
+            "user_prompt": parts["user"],
+        }
+        request["template_version"] = PROMPT_VERSIONS["shot_video"]
+        request["parameters"] = {**expected, "aspect": episode.aspect}
+        request["input"] = {"prompt": parts["prompt"], "reference_media_ids": [str(image.media_id)]}
         return request

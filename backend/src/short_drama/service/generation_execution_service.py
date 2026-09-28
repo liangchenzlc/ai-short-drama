@@ -22,6 +22,7 @@ from short_drama.dao.task_runtime_dao import (
 from short_drama.domain import AIGenerationRecord, AIModelConfig, MediaFile
 from short_drama.service.base import utcnow
 from short_drama.service.generation_archive import GenerationArchive
+from short_drama.service.generation_references import StoredImageReferences
 from short_drama.service.storage_service import StorageService
 from short_drama.tasks.state import archive_due, recovery_action
 from short_drama.utils.snowflake import next_id
@@ -178,7 +179,23 @@ class GenerationExecutionService:
         # HTTP deadlines bound each action; poll reconciliation has its own window.
         snapshot = {**record.config_snapshot, "budget_seconds": max(1, int(budget - elapsed))}
         if task.next_action == "submit":
-            result = self.gateway.submit(snapshot, request, credential, adapter=adapter)
+            options = {}
+            media_ids = request.get("input", {}).get("reference_media_ids")
+            if adapter in {"openai_images.v1", "modelhub_video.v1"} and media_ids:
+                options["reference_loader"] = StoredImageReferences(
+                    self.factory, self.storage, self.settings, media_ids
+                )
+            if adapter in {"ark_video.v1", "dashscope_video.v1", "modelhub_video.v1"}:
+                frames = [
+                    request["input"][f"{name}_frame_media_id"]
+                    for name in ("first", "last")
+                    if request["input"].get(f"{name}_frame_media_id")
+                ]
+                if frames:
+                    options["reference_loader"] = StoredImageReferences(
+                        self.factory, self.storage, self.settings, frames
+                    )
+            result = self.gateway.submit(snapshot, request, credential, adapter=adapter, **options)
         else:
             snapshot["budget_seconds"] = min(60, budget)
             result = self.gateway.poll(snapshot, record.provider_task_id, credential, adapter)

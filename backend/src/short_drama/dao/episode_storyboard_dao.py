@@ -11,6 +11,7 @@ from short_drama.domain.media_file import MediaFile
 from short_drama.domain.shot_asset import ShotAsset
 from short_drama.domain.shot_image import ShotImage
 from short_drama.domain.shot_script import ShotScript
+from short_drama.domain.shot_video import ShotVideo
 from short_drama.schemas.base import UINT64_MAX
 
 from .base import BaseDAO
@@ -173,6 +174,21 @@ class EpisodeStoryboardDAO(BaseDAO):
             .outerjoin(MediaAsset, MediaAsset.media_id == MediaFile.id)
             .where(ShotImage.shot_id == shot_id)
         ).first()
+
+    def video_rows(self, shot_ids):
+        return (
+            {
+                video.shot_id: (video, media, asset_id)
+                for video, media, asset_id in self.session.execute(
+                    select(ShotVideo, MediaFile, MediaAsset.id)
+                    .join(MediaFile, MediaFile.id == ShotVideo.media_id)
+                    .outerjoin(MediaAsset, MediaAsset.media_id == MediaFile.id)
+                    .where(ShotVideo.shot_id.in_(shot_ids))
+                )
+            }
+            if shot_ids
+            else {}
+        )
 
     def list_details(self, shot_ids: list[int]):
         assets = {shot_id: [] for shot_id in shot_ids}

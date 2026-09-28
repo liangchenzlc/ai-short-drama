@@ -1,5 +1,5 @@
 -- 短剧项目 MySQL 8 建表脚本
--- 版本要求：MySQL 8.0.21+
+-- 版本要求：MySQL 8.0.24+
 -- 执行前选定空数据库，连接使用 utf8mb4、UTC，并启用严格 SQL 模式（至少 STRICT_TRANS_TABLES）。
 -- 按外键依赖顺序创建全部21张表；仅含 CREATE TABLE，不包含 USE、ALTER、数据修改或迁移操作。
 -- 字段、索引及应用事务规则见同目录 MySQL8数据表设计.md。
@@ -54,6 +54,8 @@ CREATE TABLE `ai_model_configs` (
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI模型配置';
 
 CREATE TABLE `media_files` (
+  `video_metadata` JSON NULL COMMENT 'ffprobe actual video metadata',
+  CONSTRAINT `ck_media_video_metadata` CHECK (video_metadata IS NULL OR JSON_TYPE(video_metadata) = 'OBJECT'),
   `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的记录标识',
   `format_code` VARCHAR(127) COLLATE utf8mb4_0900_bin NOT NULL COMMENT '直接保存规范 MIME，例如 image/png、video/mp4；演示资源可用 demo:image',
   `storage_locator` VARCHAR(700) COLLATE utf8mb4_0900_bin NOT NULL COMMENT '稳定存储定位值，不保存临时签名 URL 或 Blob URL',
@@ -244,6 +246,8 @@ CREATE TABLE `shot_scripts` (
   `reference_media_ids` JSON NOT NULL DEFAULT (JSON_ARRAY()) COMMENT '持久化生成参考图片',
   `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '单镜头保存、归档与采用的乐观并发版本',
   `image_settings` JSON NULL DEFAULT NULL COMMENT '下一次生图设置：resolution/aspect/layout；NULL按默认值读取',
+  `video_prompt` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '视频用户提示词；空值使用分镜默认内容',
+  `video_settings` JSON NULL DEFAULT NULL COMMENT '下一次视频设置',
   `deleted_at` DATETIME(6) NULL DEFAULT NULL COMMENT '归档时间；非空行不参与活动分镜列表',
   `active_position` INT UNSIGNED GENERATED ALWAYS AS (CASE WHEN `deleted_at` IS NULL THEN `position` ELSE NULL END) STORED COMMENT '活动镜头顺序唯一键',
   `creation_key` VARCHAR(128) COLLATE utf8mb4_0900_bin NULL DEFAULT NULL COMMENT '手动新建幂等键',
@@ -263,6 +267,7 @@ CREATE TABLE `shot_scripts` (
   CONSTRAINT `ck_shot_scripts_duration_ms` CHECK (`duration_ms` BETWEEN 1000 AND 10000),
   CONSTRAINT `ck_shot_scripts_row_version` CHECK (`row_version` > 0),
   CONSTRAINT `ck_shot_scripts_image_settings` CHECK (`image_settings` IS NULL OR JSON_TYPE(`image_settings`) = 'OBJECT'),
+  CONSTRAINT `ck_shot_scripts_video_settings` CHECK (`video_settings` IS NULL OR JSON_TYPE(`video_settings`) = 'OBJECT'),
   CONSTRAINT `ck_shot_scripts_deleted_time` CHECK (`deleted_at` IS NULL OR `created_at` IS NULL OR `deleted_at` >= `created_at`),
   CONSTRAINT `ck_shot_scripts_creation` CHECK (
     (`creation_key` IS NULL AND `creation_hash` IS NULL)
@@ -348,6 +353,8 @@ CREATE TABLE `shot_videos` (
   `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的记录标识',
   `episode_id` BIGINT UNSIGNED NOT NULL COMMENT '所属分集，与镜头一致',
   `shot_id` BIGINT UNSIGNED NOT NULL COMMENT '所属镜头',
+  `context_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL,
+  `first_frame_media_id` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '生成使用的首帧',
   `resolution` VARCHAR(32) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT '1080p' COMMENT '请求清晰度，如720p、1080p',
   `duration` BIGINT UNSIGNED NOT NULL COMMENT '请求视频时长，统一单位毫秒',
   `prompt` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '本次生视频提示词',
@@ -362,10 +369,12 @@ CREATE TABLE `shot_videos` (
   UNIQUE KEY `uk_shot_videos_shot` (`shot_id`),
   KEY `idx_shot_videos_episode` (`episode_id`, `shot_id`),
   KEY `idx_shot_videos_media_id` (`media_id`),
+  KEY `idx_shot_videos_first_frame` (`first_frame_media_id`),
   KEY `idx_shot_videos_model_id` (`model_id`),
   KEY `idx_shot_videos_shot_id_episode_id` (`shot_id`, `episode_id`),
   CONSTRAINT `fk_shot_videos_media_id` FOREIGN KEY (`media_id`)
     REFERENCES `media_files` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `fk_shot_videos_first_frame` FOREIGN KEY (`first_frame_media_id`) REFERENCES `media_files` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `fk_shot_videos_model_id` FOREIGN KEY (`model_id`)
     REFERENCES `ai_model_configs` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `fk_shot_videos_shot_episode` FOREIGN KEY (`shot_id`, `episode_id`)
@@ -573,3 +582,83 @@ CREATE TABLE `media_assets` (
   CONSTRAINT `ck_media_assets_numbers` CHECK (`output_index` > 0 AND `row_version` > 0),
   CONSTRAINT `ck_media_assets_time` CHECK (`updated_at` >= `created_at`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='生成图片视频结果与资产库';
+
+
+CREATE TABLE `episode_assemblies` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `episode_id` BIGINT UNSIGNED NOT NULL,
+  `aspect` VARCHAR(8) NOT NULL,
+  `resolution` VARCHAR(16) NOT NULL DEFAULT '720p',
+  `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `current_media_id` BIGINT UNSIGNED NULL,
+  `created_at` DATETIME(6) NOT NULL,
+  `updated_at` DATETIME(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ck_assemblies_aspect` CHECK (aspect IN ('16:9','9:16')),
+  CONSTRAINT `ck_assemblies_resolution` CHECK (resolution IN ('720p','1080p')),
+  CONSTRAINT `ck_assemblies_version` CHECK (row_version > 0),
+  CONSTRAINT `fk_assemblies_episode` FOREIGN KEY (`episode_id`) REFERENCES `episodes` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `fk_assemblies_media` FOREIGN KEY (`current_media_id`) REFERENCES `media_files` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_assemblies_episode` (`episode_id`)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='分集成片草稿与当前采用成片';
+
+CREATE TABLE `episode_assembly_clips` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `assembly_id` BIGINT UNSIGNED NOT NULL,
+  `shot_id` BIGINT UNSIGNED NOT NULL,
+  `media_id` BIGINT UNSIGNED NULL,
+  `position` INT UNSIGNED NOT NULL,
+  `included` INT UNSIGNED NOT NULL DEFAULT 1,
+  `muted` INT UNSIGNED NOT NULL DEFAULT 0,
+  `trim_in_ms` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `trim_out_ms` BIGINT UNSIGNED NULL,
+  `source_context_hash` CHAR(64) CHARACTER SET ascii NULL,
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ck_assembly_clips_flags` CHECK (included IN (0,1) AND muted IN (0,1)),
+  CONSTRAINT `ck_assembly_clips_position` CHECK (position > 0),
+  CONSTRAINT `ck_assembly_clips_trim` CHECK (trim_out_ms IS NULL OR trim_out_ms > trim_in_ms),
+  CONSTRAINT `fk_assembly_clips_assembly` FOREIGN KEY (`assembly_id`) REFERENCES `episode_assemblies` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `fk_assembly_clips_media` FOREIGN KEY (`media_id`) REFERENCES `media_files` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `fk_assembly_clips_shot` FOREIGN KEY (`shot_id`) REFERENCES `shot_scripts` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_assembly_clips_position` (`assembly_id`, `position`),
+  UNIQUE KEY `uk_assembly_clips_shot` (`assembly_id`, `shot_id`)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='成片片段顺序与非破坏性剪辑设置';
+
+CREATE TABLE `episode_render_jobs` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `assembly_id` BIGINT UNSIGNED NOT NULL,
+  `kind` VARCHAR(16) NOT NULL,
+  `status` VARCHAR(16) NOT NULL DEFAULT 'queued',
+  `stage` VARCHAR(24) NOT NULL DEFAULT 'queued',
+  `snapshot` JSON NOT NULL,
+  `context_hash` CHAR(64) CHARACTER SET ascii NOT NULL,
+  `idempotency_key` VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
+  `request_hash` CHAR(64) CHARACTER SET ascii NOT NULL,
+  `progress` INT UNSIGNED NOT NULL DEFAULT 0,
+  `attempts` INT UNSIGNED NOT NULL DEFAULT 0,
+  `message_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `next_run_at` DATETIME(6) NOT NULL,
+  `lease_token` CHAR(32) CHARACTER SET ascii NULL,
+  `locked_until` DATETIME(6) NULL,
+  `cancel_requested` INT UNSIGNED NOT NULL DEFAULT 0,
+  `output_media_id` BIGINT UNSIGNED NULL,
+  `manifest` JSON NULL,
+  `error` JSON NULL,
+  `retry_of_id` BIGINT UNSIGNED NULL COMMENT '原任务ID，由服务层验证同成片归属',
+  `created_at` DATETIME(6) NOT NULL,
+  `updated_at` DATETIME(6) NOT NULL,
+  `finished_at` DATETIME(6) NULL,
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ck_render_jobs_error` CHECK (error IS NULL OR JSON_TYPE(error) = 'OBJECT'),
+  CONSTRAINT `ck_render_jobs_kind` CHECK (kind IN ('probe','export')),
+  CONSTRAINT `ck_render_jobs_manifest` CHECK (manifest IS NULL OR JSON_TYPE(manifest) = 'OBJECT'),
+  CONSTRAINT `ck_render_jobs_progress` CHECK (progress <= 100 AND cancel_requested IN (0,1)),
+  CONSTRAINT `ck_render_jobs_snapshot` CHECK (JSON_TYPE(snapshot) = 'OBJECT'),
+  CONSTRAINT `ck_render_jobs_status` CHECK (status IN ('queued','running','succeeded','failed','cancelled')),
+  CONSTRAINT `ck_render_jobs_version` CHECK (message_version > 0),
+  CONSTRAINT `fk_render_jobs_assembly` FOREIGN KEY (`assembly_id`) REFERENCES `episode_assemblies` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `fk_render_jobs_media` FOREIGN KEY (`output_media_id`) REFERENCES `media_files` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_render_jobs_request` (`assembly_id`, `kind`, `idempotency_key`),
+  KEY `idx_render_jobs_history` (`assembly_id`, `kind`, `created_at`, `id`),
+  KEY `idx_render_jobs_schedule` (`status`, `next_run_at`)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='本地媒体探测与成片合成任务，不调用AI供应商';

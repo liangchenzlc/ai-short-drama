@@ -34,6 +34,8 @@ class ShotScriptRead(ReadModel):
     source_excerpt: MediumText = ""
     row_version: Identifier = 1
     image_settings: dict | None = None
+    video_prompt: MediumText = ""
+    video_settings: dict | None = None
     deleted_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

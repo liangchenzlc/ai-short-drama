@@ -8,6 +8,7 @@ from short_drama.core.logging import configure_logging
 from short_drama.db.session import build_engine, session_factory
 from short_drama.tasks.publisher import Publisher
 from short_drama.tasks.recovery import purge_credentials, recover
+from short_drama.tasks.render import RenderPublisher, cleanup_render_scratch
 
 
 def main():
@@ -16,6 +17,7 @@ def main():
     engine = build_engine(settings)
     factory = session_factory(engine)
     publisher = Publisher(factory, settings)
+    renders = RenderPublisher(factory, settings)
     log = logging.getLogger(__name__)
     next_cleanup = 0
     try:
@@ -24,9 +26,13 @@ def main():
                 recover(factory, settings)
                 if time.monotonic() >= next_cleanup:
                     purge_credentials(factory)
+                    cleanup_render_scratch(settings)
                     next_cleanup = time.monotonic() + 3600
                 for _ in range(100):
                     if not publisher.tick():
+                        break
+                for _ in range(10):
+                    if not renders.tick():
                         break
             except Exception:
                 log.warning(

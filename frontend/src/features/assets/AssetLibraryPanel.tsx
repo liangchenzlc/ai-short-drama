@@ -17,9 +17,9 @@ const blank = (kind: AssetKind): AssetDraft => ({ kind, name: '', label: '', des
 const scopeKey = (scope: AssetScope) => scope.kind === 'global' ? 'global' : scope.kind === 'project' ? `project:${scope.projectId}` : `episode:${scope.projectId}:${scope.episodeId}`;
 const fields = (asset: AssetDraft | LibraryAssetRead) => ({ name: asset.name, label: asset.label, description: asset.description, prompt: asset.prompt, tags: asset.tags, scene_time: asset.scene_time });
 
-async function loadAllLibrary(scope: AssetScope, kind: AssetKind) {
+async function loadAllLibrary(scope: AssetScope, kind: AssetKind, signal?: AbortSignal) {
   const items: LibraryAssetRead[] = []; let offset = 0; let total = 1;
-  while (offset < total) { const page = await assetLibraries.list(scope, { kind, offset, limit: 100 }); items.push(...page.items); total = page.total; offset += page.items.length; if (!page.items.length) break; }
+  while (offset < total) { const page = await assetLibraries.list(scope, { kind, offset, limit: 100 }, signal); items.push(...page.items); total = page.total; offset += page.items.length; if (!page.items.length) break; }
   return items;
 }
 
@@ -56,6 +56,10 @@ export function AssetLibraryPanel({
   const [notice, setNotice] = useState('');
   const [imports, setImports] = useState<LibraryAssetRead[]>([]);
   const [showImport, setShowImport] = useState(false);
+  const [importQuery, setImportQuery] = useState('');
+  const [importLoading, setImportLoading] = useState(false);
+  const importRequestRef = useRef<AbortController | null>(null);
+  useEffect(() => () => importRequestRef.current?.abort(), []);
   const [showImages, setShowImages] = useState(false);
   const operationRef = useRef(false);
   const adoptionRef = useRef(false);
@@ -161,12 +165,22 @@ export function AssetLibraryPanel({
     finally { setBusy(false); }
   }
 
+  function closeImports() {
+    importRequestRef.current?.abort();
+    setImportLoading(false); setShowImport(false);
+  }
+
   async function openImports() {
     if (!importFrom) return;
-    setImports([]); setShowImport(true); setBusy(true); setNotice('');
-    try { const source = await loadAllLibrary(importFrom, kind); setImports(source.filter((item) => !items.some((own) => own.id === item.id))); }
-    catch (cause) { setNotice(errorMessage(cause)); }
-    finally { setBusy(false); }
+    importRequestRef.current?.abort();
+    const controller = new AbortController();
+    importRequestRef.current = controller;
+    setImports([]); setImportQuery(''); setShowImport(true); setImportLoading(true); setNotice('');
+    try {
+      const source = await loadAllLibrary(importFrom, kind, controller.signal);
+      if (!controller.signal.aborted) setImports(source.filter((item) => !items.some((own) => own.id === item.id)));
+    } catch (cause) { if (!controller.signal.aborted) setNotice(errorMessage(cause)); }
+    finally { if (!controller.signal.aborted) setImportLoading(false); }
   }
 
   async function link(id: string) {
@@ -263,19 +277,19 @@ export function AssetLibraryPanel({
   }
   return <section className="overview-card remote-asset-library" aria-label={title}>
     <div className="overview-heading"><div><h2>{title}</h2><p>保持人物与画面一致，准备好本集要用的素材。</p></div><div>{toolbar}{importFrom && !readOnly && <Button disabled={busy} onClick={() => void openImports()}>从{importFrom.kind === 'project' ? '项目' : '全局'}库添加</Button>}{!readOnly && <Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={busy} onClick={() => { setNotice(''); setCreating(true); }}>新建{labels[kind]}</Button>}</div></div>
-    <div className="resource-toolbar"><Segmented aria-label="素材类别" value={kind} onChange={changeKind} options={(Object.keys(labels) as AssetKind[]).map((value) => ({ value, label: labels[value] }))}/><Input.Search value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); }} aria-label="搜索素材" placeholder={`搜索${labels[kind]}名称或描述`} allowClear/></div>
+    <div className="resource-toolbar"><Segmented aria-label="素材类别" value={kind} onChange={changeKind} options={(Object.keys(labels) as AssetKind[]).map((value) => ({ value, label: labels[value] }))}/><span className="asset-library-count" aria-live="polite">{loading ? '正在载入…' : `共 ${total} 个${labels[kind]}`}</span><Input.Search value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); }} aria-label="搜索素材" placeholder={`搜索${labels[kind]}名称或描述`} allowClear/></div>
     {notice && <Alert type="info" showIcon message={notice}/>} {error && <Alert type="error" showIcon message={error} action={<Button onClick={refresh}>重试</Button>}/>}
     {loading ? <Skeleton title paragraph={{ rows: 3 }}/> : items.length ? <div className="asset-grid">{items.map((item) => <article className="asset-card library-resource-card" key={item.id}>
-      <>{item.image?.url ? <PreviewImage triggerClassName="resource-image" src={item.image.url} alt={item.name}/> : <button type="button" className="resource-image" aria-label={`查看 ${item.name} 的详情`} onClick={() => openSelected(item)}><span><Icon name={item.kind === 'character' ? 'person' : item.kind} size={32}/>添加参考图</span></button>}</>
-      <div className="asset-card-content"><h3>{item.name}</h3><p>{item.description || item.prompt || '补充外观或特征，方便后续创作。'}</p><div className="resource-meta"><span className={`status-badge ${item.state === 'confirmed' ? 'is-success' : 'is-pending'}`}>{item.state === 'confirmed' ? '已确认' : '待确认'}</span><small>{item.reference_count} 处引用</small></div></div>
+      <>{item.image?.url ? <PreviewImage triggerClassName="resource-image" src={item.image.url} alt={item.name}/> : <button type="button" className="resource-image" aria-label={`查看 ${item.name} 的详情`} onClick={() => openSelected(item)}><span><Icon name={item.kind === 'character' ? 'person' : item.kind} size={28}/>暂无图片</span></button>}</>
+      <div className="asset-card-content"><h3><button type="button" className="asset-name-button" onClick={() => openSelected(item)}>{item.name}</button></h3><p>{item.description || item.prompt || '补充外观或特征，方便后续创作。'}</p><div className="resource-meta"><span className={`status-badge ${item.state === 'confirmed' ? 'is-success' : 'is-pending'}`}>{item.state === 'confirmed' ? '已确认' : '待确认'}</span><small>{item.reference_count} 处引用</small></div></div>
       <div className="resource-card-actions"><Button type="link" onClick={() => openSelected(item)}>{readOnly ? '查看详情' : '编辑素材'}</Button>{shareTo && !readOnly && <Button type="link" disabled={busy} onClick={() => void share(item)}>共享到项目</Button>}{!readOnly && <Button type="link" danger disabled={busy} onClick={() => void remove(item)}>移除</Button>}</div>
     </article>)}</div> : !error && <div className="studio-empty"><h3>{query ? `没有找到匹配的${labels[kind]}` : `添加${labels[kind]}素材`}</h3><p>{query ? '试试其他关键词，或清空搜索。' : '添加文字描述和参考图，后续分镜可以直接关联使用。'}</p>{query ? <Button onClick={() => { setQuery(''); setOffset(0); }}>清空搜索</Button> : !readOnly && <Button onClick={() => { setNotice(''); setCreating(true); }}>新建{labels[kind]}</Button>}</div>}
     <Pagination current={Math.floor(offset / 20) + 1} pageSize={20} total={total} hideOnSinglePage showSizeChanger={false} onChange={(page) => setOffset((page - 1) * 20)}/>
     {legacyDownload && <details className="legacy-tools"><summary>旧版草稿</summary><p>如需找回旧版浏览器中的素材记录，可下载备份。</p><Button onClick={legacyDownload}>下载浏览器旧稿</Button></details>}
 
-    {creating && <Dialog title={`新建${labels[kind]}`} className="asset-editor-drawer asset-create-drawer" canClose={!busy} onClose={closeCreating}><form onSubmit={create}><AssetFields value={draft} disabled={busy} onChange={setDraft}/>{notice && <Alert type="error" showIcon message={notice}/>}<div className="dialog-actions"><Button disabled={busy} onClick={closeCreating}>取消</Button><Button type="primary" htmlType="submit" loading={busy} disabled={!draft.name.trim()}>创建{labels[kind]}</Button></div></form></Dialog>}
-    {showImport && <Dialog title={`从${importFrom?.kind === 'project' ? '项目' : '全局'}素材库添加`} canClose={!busy} onClose={() => setShowImport(false)}>{notice && <Alert type="error" message={notice}/>} {busy ? <Skeleton paragraph={{ rows: 3 }}/> : imports.map((item) => <div className="resource-import-row" key={item.id}><div><strong>{item.name}</strong><p>{item.description}</p></div><Button disabled={busy} onClick={() => void link(item.id)}>添加到本库</Button></div>)}{!busy && !notice && !imports.length && <p>此分类暂无可添加的素材，可以先在当前库新建。</p>}</Dialog>}
-    {selected && <Dialog title={`编辑 ${selected.name}`} className="asset-editor-drawer" canClose={!busy && !generationSubmitting} onClose={closeSelected}>
+    {creating && <Dialog title={`新建${labels[kind]}`} className="asset-editor-drawer asset-create-drawer" canClose={!busy} onClose={closeCreating}><form onSubmit={create}><div className="asset-create-body"><p className="episode-help">先保存文字信息，再上传参考图或生成图片。</p><AssetFields className="asset-editor-fields" value={draft} disabled={busy} onChange={setDraft}/>{notice && <Alert type="error" showIcon message={notice}/>}</div><div className="asset-editor-drawer-footer"><span role="status">{createDirty ? '尚未创建' : '名称必填，其他信息可稍后补充'}</span><Button disabled={busy} onClick={closeCreating}>取消</Button><Button type="primary" htmlType="submit" loading={busy} disabled={!draft.name.trim()}>创建{labels[kind]}</Button></div></form></Dialog>}
+    {showImport && <Dialog title={`从${importFrom?.kind === 'project' ? '项目' : '全局'}素材库添加`} className="asset-import-dialog" canClose={!busy} onClose={closeImports}><div className="asset-import-search"><Input.Search aria-label="搜索可添加素材" placeholder="搜索名称或描述" value={importQuery} allowClear onChange={event => setImportQuery(event.target.value)}/></div><div className="asset-import-body">{notice && <Alert type="error" message={notice}/>} {importLoading ? <Skeleton paragraph={{ rows: 3 }}/> : imports.filter(item => !importQuery.trim() || (item.name + item.description).toLocaleLowerCase().includes(importQuery.trim().toLocaleLowerCase())).map((item) => <div className="resource-import-row" key={item.id}><div><strong>{item.name}</strong><p>{item.description}</p></div><Button disabled={busy} onClick={() => void link(item.id)}>添加到本库</Button></div>)}{!importLoading && !notice && !imports.length && <p>此分类暂无可添加的素材，可以先在当前库新建。</p>}{!importLoading && !!imports.length && !imports.some(item => !importQuery.trim() || (item.name + item.description).toLocaleLowerCase().includes(importQuery.trim().toLocaleLowerCase())) && <p className="episode-help">没有找到匹配素材，请换个关键词。</p>}</div><div className="production-dialog-footer"><span>添加后共享同一素材，修改会同步。</span><Button disabled={busy} onClick={closeImports}>关闭</Button></div></Dialog>}
+    {selected && <Dialog title={`${readOnly ? '查看' : '编辑'} ${selected.name}`} className="asset-editor-drawer" canClose={!busy && !generationSubmitting} onClose={closeSelected}>
       <div className="asset-editor-drawer-body">
         <div className="asset-editor-meta" aria-label="素材状态">
           <span>{labels[selected.kind]}</span>
@@ -283,7 +297,11 @@ export function AssetLibraryPanel({
           <small>{selected.reference_count} 处引用</small>
         </div>
 
-        <section className="asset-editor-section" aria-labelledby="asset-editor-details-title">
+        <nav className="asset-editor-section-nav" aria-label="素材编辑区域">
+          <Button onClick={() => document.getElementById('asset-editor-details-title')?.scrollIntoView({ block: 'start' })}>素材信息</Button>
+          <Button onClick={() => document.getElementById('asset-editor-media-title')?.scrollIntoView({ block: 'start' })}>图片与生成</Button>
+        </nav>
+        <div className="asset-editor-columns"><section className="asset-editor-section" aria-labelledby="asset-editor-details-title">
           <div className="asset-editor-section-heading">
             <div><h3 id="asset-editor-details-title">素材信息</h3><p>整理可复用的文字特征，后续分镜会沿用这些内容。</p></div>
           </div>
@@ -291,11 +309,16 @@ export function AssetLibraryPanel({
           {notice && (
             <Alert type="info" showIcon message={notice}/>
           )}
+            {imagePresentation?.current && <figure className="asset-current-image">
+              <div className="asset-image-frame"><PreviewImage src={imagePresentation.current.url ?? ''} alt={`${selected.name}当前采用`}/><span>当前采用</span></div>
+              <figcaption>当前视觉形象</figcaption>
+            </figure>}
+
         </section>
 
         <section className="asset-editor-section asset-editor-media" aria-labelledby="asset-editor-media-title">
           <div className="asset-editor-section-heading">
-            <div><h3 id="asset-editor-media-title">生成图片</h3><p>上传或选择图片，确认采用后作为后续分镜的视觉依据。</p></div>
+            <div><h3 id="asset-editor-media-title">图片与生成</h3><p>上传或选择图片，确认采用后作为后续分镜的视觉依据。</p></div>
           </div>
           <ReferenceImages kind="asset" ownerId={selected.id} version={selected.row_version} disabled={readOnly || busy || generationSubmitting} beforeChange={saveBeforeGenerate} onBusyChange={setGenerationSubmitting} onChanged={async () => {
             const remote = await assetLibraries.detail(selected.id);
@@ -316,11 +339,7 @@ export function AssetLibraryPanel({
           </div>}
           <p className="asset-generation-note">支持 PNG、JPEG、WebP，最大 20 MB。候选不会自动采用。</p>
           {candidateError && <Alert type="error" showIcon message={candidateError}/>}
-          {imagePresentation?.visible && <div className="asset-image-gallery">
-            {imagePresentation.current && <figure className="asset-current-image">
-              <div className="asset-image-frame"><PreviewImage src={imagePresentation.current.url ?? ''} alt={`${selected.name}当前采用`}/><span>当前采用</span></div>
-              <figcaption>当前视觉形象</figcaption>
-            </figure>}
+          {!!imagePresentation?.alternatives.length && <div className="asset-image-gallery">
             {imagePresentation.alternatives.length > 0 && <div className="asset-image-alternatives">
               <h4>{imagePresentation.current ? '其他候选' : '待选图片'}</h4>
               <div className="image-candidate-grid">{imagePresentation.alternatives.map((candidate) => <article className="image-candidate" key={candidate.id}>
@@ -331,11 +350,11 @@ export function AssetLibraryPanel({
               {candidates.length < candidateTotal && <Button loading={candidateLoading} disabled={candidateLoading} onClick={() => void loadCandidates(true)}>加载更多候选</Button>}
             </div>}
           </div>}
-        </section>
+        </section></div>
       </div>
       <div className="asset-editor-drawer-footer">
-        <Button disabled={busy || generationSubmitting} onClick={closeSelected}>{readOnly ? '关闭' : '取消'}</Button>
-        {!readOnly && <Button type="primary" loading={busy || generationSubmitting} disabled={!selectedDirty || generationSubmitting} onClick={() => void save()}>保存修改</Button>}
+        <span role="status">{busy ? '正在保存…' : generationSubmitting ? '正在提交图片操作…' : selectedDirty ? '有未保存的修改' : '所有修改已保存'}</span><Button disabled={busy || generationSubmitting} onClick={closeSelected}>{selectedDirty ? '取消' : '关闭'}</Button>
+        {!readOnly && <Button type="primary" loading={busy || generationSubmitting} disabled={!selectedDirty || !selected.name.trim() || generationSubmitting} onClick={() => void save()}>保存修改</Button>}
       </div>
     </Dialog>}
     {showImages && selected && <ImagePicker busy={busy} onClose={() => setShowImages(false)} onSelect={addMedia}/>}
@@ -344,5 +363,5 @@ export function AssetLibraryPanel({
 
 function AssetFields({ value, disabled, onChange, className = '' }: { value: AssetDraft | LibraryAssetRead; disabled: boolean; onChange: (value: any) => void; className?: string }) {
   const set = (patch: object) => onChange({ ...value, ...patch });
-  return <div className={`studio-form ${className}`.trim()}><label className="asset-field-name">名称<Input value={value.name} disabled={disabled} onChange={(event) => set({ name: event.target.value })}/></label><label className="asset-field-label">分类<Input value={value.label} disabled={disabled} onChange={(event) => set({ label: event.target.value })}/></label><label className="asset-field-description">描述<Input.TextArea rows={4} value={value.description} disabled={disabled} onChange={(event) => set({ description: event.target.value })}/></label><label className="asset-field-prompt">提示词描述<Input.TextArea rows={5} value={value.prompt} disabled={disabled} onChange={(event) => set({ prompt: event.target.value })}/></label><label className="asset-field-tags">标签<Input value={value.tags.join('，')} disabled={disabled} onChange={(event) => set({ tags: event.target.value.split(/[，,]/) })}/></label>{value.kind === 'scene' && <label className="asset-field-scene-time">场景时间<Input value={value.scene_time} disabled={disabled} onChange={(event) => set({ scene_time: event.target.value })}/></label>}</div>;
+  return <div className={`studio-form ${className}`.trim()}><label className="asset-field-name">名称<Input maxLength={255} value={value.name} disabled={disabled} onChange={(event) => set({ name: event.target.value })}/></label><label className="asset-field-label">分类<Input maxLength={120} value={value.label} disabled={disabled} onChange={(event) => set({ label: event.target.value })}/></label><label className="asset-field-description">描述<Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} value={value.description} disabled={disabled} onChange={(event) => set({ description: event.target.value })}/></label><label className="asset-field-prompt">提示词描述<Input.TextArea autoSize={{ minRows: 4, maxRows: 10 }} value={value.prompt} disabled={disabled} onChange={(event) => set({ prompt: event.target.value })}/></label><label className="asset-field-tags">标签<Input value={value.tags.join('，')} disabled={disabled} onChange={(event) => set({ tags: event.target.value.split(/[，,]/) })}/></label>{value.kind === 'scene' && <label className="asset-field-scene-time">场景时间<Input value={value.scene_time} disabled={disabled} onChange={(event) => set({ scene_time: event.target.value })}/></label>}</div>;
 }

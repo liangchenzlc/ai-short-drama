@@ -6,11 +6,9 @@ from short_drama.core.exceptions import BusinessError, Conflict, WorkflowError
 from short_drama.dao.media_asset_dao import MediaAssetDAO
 from short_drama.domain import (
     AIGenerationRecord,
-    Episode,
     MediaAsset,
     MediaFile,
     ShotImage,
-    ShotScript,
     ShotVideo,
 )
 from short_drama.schemas.media_asset import MediaAssetApply, MediaAssetRename
@@ -98,66 +96,96 @@ class MediaAssetService(BaseService):
             kind = "video" if parsed.target.type == "shot_video" else "image"
             if asset.media_type != kind:
                 raise BusinessError("Asset type does not match the target")
-            request = record.request_data
             if parsed.target.type == "shot_image":
                 return self._apply_shot_image(asset, record, parsed)
             if parsed.target.type == "asset_image":
                 return self._apply_asset_image(asset, parsed)
-            # Provider-native fields have protocol-specific units and representations.
-            # Adoption uses only validated business parameters and explicit overrides.
-            parameters = {
-                **request.get("parameters", {}),
-                **parsed.parameters.model_dump(exclude_none=True),
-            }
-            prompt = request.get("input", {}).get("prompt", "")
-            episode_id = self.session.scalar(
-                select(ShotScript.episode_id).where(ShotScript.id == parsed.target.id)
-            )
-            if episode_id is None:
-                from short_drama.core.exceptions import NotFound
+            if parsed.target.type == "shot_video":
+                return self._apply_shot_video(asset, record, parsed)
 
-                raise NotFound("Shot does not exist")
-            self._require(Episode, episode_id)
-            shot = self._require(ShotScript, parsed.target.id)
-            model = ShotImage if kind == "image" else ShotVideo
-            current = self.session.scalar(
-                select(model).where(model.shot_id == shot.id).with_for_update()
+    def _apply_shot_video(self, asset, record, parsed):
+        from .generation_context_service import GenerationContextService
+        from .shot_video_context import video_context_hash
+
+        episode, shot, _assets, _snapshot, shot_hash = GenerationContextService(
+            self.session
+        ).locked_shot_context(parsed.target.id)
+        image = self.session.scalar(
+            select(ShotImage).where(ShotImage.shot_id == shot.id).with_for_update()
+        )
+        current = self.session.scalar(
+            select(ShotVideo).where(ShotVideo.shot_id == shot.id).with_for_update()
+        )
+        digest = video_context_hash(
+            shot_hash, image.media_id if image else None, shot.video_prompt, shot.video_settings
+        )
+
+        def response():
+            return {
+                "target": parsed.target.model_dump(mode="json"),
+                "media_id": str(asset.media_id),
+                "row_version": str(shot.row_version),
+                "storyboard_version": str(episode.storyboard_version),
+                "context_hash": digest,
+            }
+
+        if current and current.media_id == asset.media_id and current.context_hash == digest:
+            return response()
+        # Legacy generic adoption also uses this path; context tokens are now required
+        # at all entry points, rather than silently bypassing source/version checks.
+        if (
+            parsed.expected_row_version != shot.row_version
+            or parsed.expected_context_hash != digest
+        ):
+            raise WorkflowError(
+                "shot_version_conflict", "分镜、提示词或参考图已变化，请重新核对后采用"
             )
-            if current is not None and current.media_id == asset.media_id:
-                return {
-                    "target": parsed.target.model_dump(mode="json"),
-                    "media_id": str(asset.media_id),
-                }
-            if (current.media_id if current else None) != parsed.expected_media_id:
-                raise Conflict("Target media changed; refresh before adopting")
-            values = {
+        if (current.media_id if current else None) != parsed.expected_media_id:
+            raise WorkflowError("shot_version_conflict", "当前视频已变化，请重新选择")
+        request = record.request_data
+        source, captured = request.get("source") or {}, request.get("source_snapshot") or {}
+        if (
+            source.get("scene") != "shot_video"
+            or str(source.get("shot_id")) != str(shot.id)
+            or captured.get("context_hash") != digest
+        ) and not parsed.acknowledge_stale_source:
+            raise WorkflowError(
+                "stale_generation_source", "此视频来自其他或较早的创作内容，请明确确认采用"
+            )
+        original = request.get("parameters", {})
+        provided = parsed.parameters.model_dump(exclude_none=True)
+        for name, key in (
+            (("resolution", "resolution"), ("duration", "duration_ms"))
+            if source.get("scene") == "shot_video"
+            else ()
+        ):
+            if original.get(key) and provided.get(name) and original[key] != provided[name]:
+                raise WorkflowError(
+                    "generation_parameters_conflict", "采用参数必须与生成记录一致", 422
+                )
+        media = self._require(MediaFile, asset.media_id, for_update=False)
+        resolution = provided.get("resolution") or original.get("resolution")
+        duration = provided.get("duration") or media.duration_ms or original.get("duration_ms")
+        if not resolution or not duration:
+            raise WorkflowError("missing_adoption_parameters", "请补全视频清晰度和实际时长", 422)
+        values = ShotVideoService.create_schema.model_validate(
+            {
                 "episode_id": shot.episode_id,
                 "shot_id": shot.id,
                 "media_id": asset.media_id,
                 "model_id": record.config_id,
-                "prompt": prompt,
+                "prompt": request.get("input", {}).get("prompt", ""),
+                "resolution": resolution,
+                "duration": duration,
+                "context_hash": captured.get("context_hash"),
+                "first_frame_media_id": request.get("input", {}).get("first_frame_media_id"),
             }
-            if not parameters.get("resolution"):
-                raise BusinessError("Provide the resolution before adopting this result")
-            values["resolution"] = parameters["resolution"]
-            media = self._require(MediaFile, asset.media_id, for_update=False)
-            duration = (
-                parsed.parameters.duration
-                or media.duration_ms
-                or request.get("parameters", {}).get("duration_ms")
-            )
-            if not duration:
-                raise BusinessError(
-                    "Provide actual duration in milliseconds before adopting this video"
-                )
-            values["duration"] = duration
-            service = ShotVideoService(self.session)
-            values = service.create_schema.model_validate(values).model_dump()
-            service._write_confirmed(values, shot, existing=current, historical=True)
-            return {
-                "target": parsed.target.model_dump(mode="json"),
-                "media_id": str(asset.media_id),
-            }
+        ).model_dump()
+        ShotVideoService(self.session)._write_confirmed(
+            values, shot, existing=current, historical=True
+        )
+        self.session.flush()
+        return response()
 
     def _apply_shot_image(self, asset, record, parsed):
         from .generation_context_service import GenerationContextService

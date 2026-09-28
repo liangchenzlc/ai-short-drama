@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     extraction_max_script_chars: int = Field(default=30000, ge=100, le=200000)
     extraction_max_candidates: int = Field(default=100, ge=1, le=100)
     extraction_max_output_tokens: int = Field(default=8192, ge=1024, le=32768)
+    render_ffmpeg_path: str = "ffmpeg"
+    render_ffprobe_path: str = "ffprobe"
+    render_scratch_root: str = ".runtime/renders"
+    render_timeout_seconds: int = Field(default=3600, ge=30, le=86400)
+    render_max_duration_ms: int = Field(default=3600000, ge=1000, le=86400000)
+    render_max_source_bytes: int = Field(default=2 * 1024**3, ge=1024)
+    render_max_scratch_bytes: int = Field(default=20 * 1024**3, ge=1024)
 
     @property
     def rabbitmq_url(self) -> SecretStr:

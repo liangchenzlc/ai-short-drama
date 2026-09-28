@@ -73,7 +73,9 @@ function mount(context, overrides = {}) {
     '../../../features/projects/StoryboardResultPreview': { StoryboardResultPreview: 'StoryboardResultPreview' },
     '../../../components/ui/Dialog': { Dialog: 'Dialog' },
     '../../../components/ui/LazyLoadMore': { LazyLoadMore: 'LazyLoadMore' },
+    '../../../features/projects/ShotAssetPicker': { ShotAssetPicker: 'ShotAssetPicker' },
     '../../../features/projects/ShotImageCandidates': { ShotImageCandidates: 'ShotImageCandidates' },
+    '../../../features/projects/ShotVideoCandidates': { ShotVideoCandidates: 'ShotVideoCandidates' },
   }, { window });
   let props = { value: { aspect: '16:9', models: { storyboardText: '', storyboardImage: '' } }, readOnly: false, projectId: '1', episodeId: '1', scriptId: null, confirmed: false, writingSession: {}, registerBarrier: next => { barrier = next; }, onChange: next => { props.value = next; } };
   const render = patch => {
@@ -102,6 +104,25 @@ function mount(context, overrides = {}) {
   return { api, configs, capabilityCalls, window, render, nodes, unmount, get barrier() { return barrier; }, get props() { return props; } };
 }
 
+test('adoption survives focus and model refresh while generation preparation is invalidated', async context => {
+  const pending = deferred();
+  const setup = mount(context, { shot: async () => pending.promise });
+  await flush(); setup.render();
+  const preparation = setup.nodes('ShotImageCandidates')[0].prepareShot('adoption');
+  await flush();
+  setup.window.dispatchEvent(new Event('focus')); setup.render();
+  pending.resolve({ shot: shot(), storyboard_version: '1' });
+  const prepared = await preparation;
+  assert.ok(prepared, 'model refresh must not silently cancel adopting an existing image');
+  assert.equal(prepared.isCurrent(), true);
+  setup.window.dispatchEvent(new Event('focus')); setup.render();
+  assert.equal(prepared.isCurrent(), true, 'stale-image confirmation may restore focus again');
+  prepared.release();
+  const generation = setup.nodes('ShotImageCandidates')[0].prepareShot();
+  setup.window.dispatchEvent(new Event('focus')); setup.render();
+  assert.equal(await generation, null);
+});
+
 test('stage holds a synchronous per-shot lock through submission and blocks editing and ordering', async context => {
   const pending = deferred();
   let reads = 0; let orders = 0; let archives = 0;
@@ -114,6 +135,7 @@ test('stage holds a synchronous per-shot lock through submission and blocks edit
   await flush(); setup.render();
   assert.equal(setup.nodes('TextArea')[1].disabled, true);
   assert.equal(setup.nodes('ShotImageCandidates').length, 1);
+  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, true);
   setup.nodes('TextArea')[1].onChange({ target: { value: 'blocked edit' } });
   for (const button of setup.nodes('Button').filter(button => ['上移', '下移', '归档'].includes(button.children))) {
     if (button.disabled) await button.onClick();
@@ -125,6 +147,7 @@ test('stage holds a synchronous per-shot lock through submission and blocks edit
   setup.render(); assert.equal(setup.nodes('TextArea')[1].disabled, true);
   prepared.release(); prepared.release(); setup.render();
   assert.equal(setup.nodes('TextArea')[1].disabled, false);
+  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
 });
 
 test('preparation accepts changed remote context but stops until reviewed', async context => {
@@ -160,6 +183,7 @@ test('resolved default is queried once and focus invalidates capability without 
   select.onResolvedChange('7'); setup.render(); await flush(); setup.render();
   assert.deepEqual(setup.capabilityCalls.map(call => call.id), ['7']);
   assert.equal(setup.nodes('ShotImageCandidates').length, 1);
+
   assert.ok(setup.nodes('ShotImageCandidates').every(item => item.modelId === '7' && item.capabilities?.known));
   setup.window.dispatchEvent(new Event('focus')); setup.render();
   assert.ok(setup.nodes('ShotImageCandidates').every(item => item.modelId === '7' && item.capabilities === null && item.capabilitiesLoading));
@@ -187,6 +211,7 @@ test('save completes before single-shot read and read errors retain the saved dr
   assert.deepEqual(calls.map(call => call.kind), ['save', 'read']);
   assert.equal(setup.nodes('TextArea')[1].value, 'draft to save');
   assert.equal(setup.nodes('TextArea')[1].disabled, false);
+  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
   assert.ok(setup.nodes('Alert').some(alert => alert.message === 'read offline'));
 });
 
@@ -201,15 +226,16 @@ test('failed saves keep dirty drafts through refresh and never read the shot', a
   setup.nodes('ShotImageCandidates')[0].onChanged(); setup.render(); await flush(); setup.render();
   assert.equal(setup.nodes('TextArea')[1].value, 'unsaved draft');
   assert.equal(setup.nodes('TextArea')[1].disabled, false);
+  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
   assert.equal(reads, 0);
 });
 
-for (const invalidation of ['readOnly', 'aspect', 'episode', 'unmount']) {
-  test(`preparation rejects a late read after ${invalidation} changes`, async context => {
+for (const purpose of ['generation', 'adoption']) for (const invalidation of ['readOnly', 'aspect', 'episode', 'unmount']) {
+  test(`${purpose} preparation rejects a late read after ${invalidation} changes`, async context => {
     const pending = deferred();
     const setup = mount(context, { shot: async () => pending.promise });
     await flush(); setup.render();
-    const preparation = setup.nodes('ShotImageCandidates')[0].prepareShot();
+    const preparation = setup.nodes('ShotImageCandidates')[0].prepareShot(purpose);
     await flush();
     if (invalidation === 'readOnly') setup.render({ readOnly: true });
     if (invalidation === 'aspect') setup.render({ value: { ...setup.props.value, aspect: '9:16' } });
@@ -268,4 +294,5 @@ test('navigation waits for release and stale release cannot unlock a new context
   next.release(); setup.render();
   assert.equal(await setup.barrier.flush(), true);
   assert.equal(setup.nodes('TextArea')[1].disabled, false);
+  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
 });

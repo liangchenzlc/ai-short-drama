@@ -52,11 +52,12 @@ function updateCursor(cursor: Cursor, ids: string[], total: number, first: boole
 }
 
 export function createShotImageHistory({
-  shotId, api, onChange, describeError,
+  shotId, api, onChange, describeError, kind = 'image',
   schedule = (callback, delay) => setTimeout(callback, delay),
   cancel = timer => clearTimeout(timer),
 }: {
   shotId: string;
+  kind?: 'image' | 'video';
   api: HistoryApi;
   onChange: (state: ShotImageHistoryState) => void;
   describeError: (cause: unknown) => string;
@@ -74,9 +75,10 @@ export function createShotImageHistory({
   let pendingCount = 0;
   const taskId = (task: GenerationSummary) => task.generation_id;
   const assetId = (asset: MediaAsset) => asset.asset_id;
-  const scoped = (item: GenerationSummary | MediaAsset) => item.source?.scene === 'shot_image' && item.source.shot_id === shotId;
-  const validTask = (task: GenerationSummary) => task.service_type === 'image' && scoped(task);
-  const validCandidate = (asset: MediaAsset) => asset.media_type === 'image' && scoped(asset);
+  const scene = kind === 'image' ? 'shot_image' : 'shot_video';
+  const scoped = (item: GenerationSummary | MediaAsset) => (item.source?.scene === 'shot_image' || item.source?.scene === 'shot_video') && item.source.scene === scene && item.source.shot_id === shotId;
+  const validTask = (task: GenerationSummary) => task.service_type === kind && scoped(task);
+  const validCandidate = (asset: MediaAsset) => asset.media_type === kind && scoped(asset);
 
   function publish(changes: Partial<ShotImageHistoryState>) {
     state = { ...state, ...changes, hasMoreTasks: taskCursor.offset < taskCursor.total, hasMoreCandidates: candidateCursor.offset < candidateCursor.total };
@@ -105,7 +107,7 @@ export function createShotImageHistory({
     };
     const observedActive = new Set<string>();
     const taskPage = async (offset: number, status?: 'queued' | 'running') => {
-      const page = await api.listTasks({ service_type: 'image', source_scene: 'shot_image', source_id: shotId, offset, limit: PAGE_SIZE, ...(status ? { status } : {}) }, signal);
+      const page = await api.listTasks({ service_type: kind, source_scene: scene, source_id: shotId, offset, limit: PAGE_SIZE, ...(status ? { status } : {}) }, signal);
       if (signal.aborted) return undefined;
       for (const task of page.items.filter(validTask)) {
         if (status && active(task)) observedActive.add(task.generation_id);
@@ -115,7 +117,7 @@ export function createShotImageHistory({
       return page;
     };
     const candidatePage = async (offset: number) => {
-      const page = await api.listCandidates({ media_type: 'image', source_scene: 'shot_image', source_id: shotId, offset, limit: PAGE_SIZE }, signal);
+      const page = await api.listCandidates({ media_type: kind, source_scene: scene, source_id: shotId, offset, limit: PAGE_SIZE }, signal);
       if (signal.aborted) return;
       updateCursor(candidateCursor, page.items.map(assetId), page.total, refreshing && offset === 0);
       loadedCandidateEnd = Math.max(loadedCandidateEnd, offset + page.items.length);

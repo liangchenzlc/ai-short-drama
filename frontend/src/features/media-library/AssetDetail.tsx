@@ -64,7 +64,7 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
     } finally { mutation.current = false; if (active.current) setBusy(null); }
   }
   async function apply(values: ApplyValues, acknowledgeStaleSource = false) {
-    if (!asset || !confirmed || applyConflict || mutation.current || (values.type !== 'shot_video' && !targetLoaded)) return;
+    if (!asset || !confirmed || applyConflict || mutation.current || !targetLoaded) return;
     mutation.current = true; setBusy('apply'); setApplyError(''); setNotice('');
     try {
       const parameters = {
@@ -74,8 +74,8 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
         ...(values.type === 'shot_video' && values.duration != null ? { duration: values.duration } : {}),
       };
       const request: ApplyAssetRequest = { target: { type: values.type, id: values.id.trim() }, expected_media_id: values.expected_media_id?.trim() || null,
-        ...(values.type === 'shot_image' || values.type === 'asset_image' ? { expected_row_version: values.expected_row_version?.trim() } : {}),
-        ...(values.type === 'shot_image' ? { expected_context_hash: values.expected_context_hash?.trim(), acknowledge_stale_source: acknowledgeStaleSource } : {}),
+        ...(values.type === 'shot_image' || values.type === 'shot_video' || values.type === 'asset_image' ? { expected_row_version: values.expected_row_version?.trim() } : {}),
+        ...(values.type !== 'asset_image' ? { expected_context_hash: values.expected_context_hash?.trim(), acknowledge_stale_source: acknowledgeStaleSource } : {}),
         ...(Object.keys(parameters).length ? { parameters } : {}), ...(values.type === 'asset_image' ? { confirm_shared: values.confirm_shared === true } : {}),
       };
       await mediaLibrary.apply(id, request);
@@ -83,7 +83,7 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
     } catch (cause) {
       if (active.current) {
         if (cause instanceof ApiError && cause.code === 'stale_generation_source' && !acknowledgeStaleSource
-          && window.confirm('此图片来自旧创作上下文。你已核对当前目标名称与图片，仍要采用吗？')) {
+          && window.confirm('此结果来自其他或较早的创作内容。你已核对当前目标与媒体，仍要采用吗？')) {
           mutation.current = false; setBusy(null); return void apply(values, true);
         }
         const conflict = cause instanceof ApiError && cause.status === 409;
@@ -97,11 +97,12 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
     if (!values.type || !values.id?.trim() || mutation.current) return;
     mutation.current = true; setBusy('apply'); setApplyError(''); setTargetLoaded(false); setTargetPreview(null);
     try {
-      if (values.type === 'shot_image') {
+      if (values.type === 'shot_image' || values.type === 'shot_video') {
         if (!values.project_id?.trim() || !values.episode_id?.trim()) { setApplyError('读取分镜目标需要项目编号 和分集编号。'); return; }
         const result = await storyboardApi(values.project_id.trim(), values.episode_id.trim()).shot(values.id.trim());
-        form.setFieldsValue({ expected_media_id: result.shot.image?.media_id ?? undefined, expected_row_version: result.shot.row_version, expected_context_hash: result.shot.context_hash });
-        setTargetPreview({ name: `分镜 ${result.shot.position}`, url: result.shot.image?.url }); setTargetLoaded(true);
+        const target = values.type === 'shot_video' ? result.shot.video : result.shot.image;
+        form.setFieldsValue({ expected_media_id: target?.media_id ?? undefined, expected_row_version: result.shot.row_version, expected_context_hash: values.type === 'shot_video' ? result.shot.video_context_hash : result.shot.context_hash });
+        setTargetPreview({ name: `分镜 ${result.shot.position}`, url: values.type === 'shot_video' ? null : result.shot.image?.url }); setTargetLoaded(true);
       } else if (values.type === 'asset_image') {
         const target = await assetLibraries.detail(values.id.trim());
         form.setFieldsValue({ expected_media_id: target.media_id ?? undefined, expected_row_version: target.row_version });
@@ -133,11 +134,11 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
           <Form form={form} layout="vertical" onFinish={apply} disabled={!!busy} onValuesChange={(changed) => { setConfirmed(false); setApplyConflict(false); if (Object.keys(changed).some((key) => ['type', 'id', 'project_id', 'episode_id'].includes(key))) { setTargetLoaded(false); setTargetPreview(null); } }}>
             <div className="generation-form-grid"><Form.Item name="type" label="目标类型" rules={[{ required: true }]}><Select options={asset.media_type === 'video' ? [{ value: 'shot_video', label: '分镜视频' }] : [{ value: 'shot_image', label: '分镜图片' }, { value: 'asset_image', label: '角色 / 场景 / 道具素材图片' }]} /></Form.Item>
               <Form.Item name="id" label="目标编号" rules={[{ required: true, message: '请输入目标 ID' }, idRule]}><Input placeholder="分镜 ID 或素材 ID" /></Form.Item></div>
-            {targetType === 'shot_image' && <div className="generation-form-grid"><Form.Item name="project_id" label="项目编号" rules={[{ required: true, message: '请输入项目编号' }, idRule]}><Input/></Form.Item><Form.Item name="episode_id" label="分集编号" rules={[{ required: true, message: '请输入分集编号' }, idRule]}><Input/></Form.Item></div>}
-            {(targetType === 'shot_image' || targetType === 'asset_image') && <><Button onClick={() => void inspectTarget()} loading={busy === 'apply'}>读取并核对目标详情</Button>{targetLoaded && targetPreview && <Alert type="success" showIcon message={`已读取目标：${targetPreview.name}`} description={targetPreview.url ? <PreviewImage src={targetPreview.url} alt="目标当前图片" style={{ maxWidth: 280, maxHeight: 180, objectFit: 'contain' }}/> : '目标当前没有图片'}/>}</>}
-            {targetType === 'shot_video' ? <Form.Item name="expected_media_id" label="目标当前媒体 ID（无媒体则留空）" rules={[idRule]}><Input /></Form.Item> : <Form.Item name="expected_media_id" hidden><Input /></Form.Item>}
-            {(targetType === 'shot_image' || targetType === 'asset_image') && <Form.Item name="expected_row_version" hidden rules={[{ required: true }]}><Input /></Form.Item>}
-            {targetType === 'shot_image' && <Form.Item name="expected_context_hash" hidden rules={[{ required: true, pattern: /^[0-9a-f]{64}$/ }]}><Input /></Form.Item>}
+            {targetType !== 'asset_image' && <div className="generation-form-grid"><Form.Item name="project_id" label="项目编号" rules={[{ required: true, message: '请输入项目编号' }, idRule]}><Input/></Form.Item><Form.Item name="episode_id" label="分集编号" rules={[{ required: true, message: '请输入分集编号' }, idRule]}><Input/></Form.Item></div>}
+            {(targetType === 'shot_image' || targetType === 'shot_video' || targetType === 'asset_image') && <><Button onClick={() => void inspectTarget()} loading={busy === 'apply'}>读取并核对目标详情</Button>{targetLoaded && targetPreview && <Alert type="success" showIcon message={`已读取目标：${targetPreview.name}`} description={targetPreview.url ? <PreviewImage src={targetPreview.url} alt="目标当前图片" style={{ maxWidth: 280, maxHeight: 180, objectFit: 'contain' }}/> : '目标当前没有图片'}/>}</>}
+            <Form.Item name="expected_media_id" hidden><Input /></Form.Item>
+            {(targetType === 'shot_image' || targetType === 'shot_video' || targetType === 'asset_image') && <Form.Item name="expected_row_version" hidden rules={[{ required: true }]}><Input /></Form.Item>}
+            {targetType !== 'asset_image' && <Form.Item name="expected_context_hash" hidden rules={[{ required: true, pattern: /^[0-9a-f]{64}$/ }]}><Input /></Form.Item>}
             {targetType !== 'asset_image' && <><p className="generation-hint">以下业务参数优先沿用生成快照；快照缺少时必须明确填写。不会自动裁剪或转码。</p><div className="generation-form-grid">
               {targetType === 'shot_image' && <Form.Item name="layout" label="图片布局（按需补充）"><Select allowClear placeholder="沿用生成快照" options={[{ value: 'single', label: '单图' }, { value: 'four', label: '四宫格' }, { value: 'five', label: '五宫格' }, { value: 'nine', label: '九宫格' }]} /></Form.Item>}
               <Form.Item name="aspect" label="画面比例（按需补充）"><Select allowClear placeholder="沿用生成快照" options={['16:9', '9:16', '1:1', '4:3', '3:4'].map((value) => ({ value, label: value }))} /></Form.Item><Form.Item name="resolution" label="分辨率（按需补充）"><Input maxLength={32} placeholder="例如 2K / 1080p" /></Form.Item>
@@ -145,7 +146,7 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
             </div></>}
             {targetType === 'asset_image' && <Form.Item name="confirm_shared" valuePropName="checked"><Checkbox>我确认共享素材的图片变化会影响引用此素材的项目。</Checkbox></Form.Item>}
             {applyError && <Alert type="error" showIcon message={applyError} />}
-            <Checkbox checked={confirmed} disabled={!!busy || applyConflict || (targetType !== 'shot_video' && !targetLoaded)} onChange={(event) => setConfirmed(event.target.checked)}>我已核对真实目标和当前媒体，确认采用此资产。</Checkbox>
+            <Checkbox checked={confirmed} disabled={!!busy || applyConflict || !targetLoaded} onChange={(event) => setConfirmed(event.target.checked)}>我已核对真实目标和当前媒体，确认采用此资产。</Checkbox>
             <div className="generation-form-actions"><Button onClick={() => setApplyOpen(false)} disabled={!!busy}>收起</Button><Button type="primary" htmlType="submit" loading={busy === 'apply'} disabled={!!busy || !confirmed || applyConflict}>确认采用</Button></div>
           </Form>}
       </section>

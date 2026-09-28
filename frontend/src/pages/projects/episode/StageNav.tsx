@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
-import type { StageId } from "../../../features/projects/episode-workflow";
+import type { EpisodeNavigationStage as StageId } from "../../../features/projects/episode-workflow";
 
 export const episodeStages: { id: StageId; label: string; description: string }[] = [
   { id: "source", label: "小说改编", description: "小说与剧本定稿" },
   { id: "assets", label: "素材准备", description: "角色、场景与道具" },
   { id: "storyboard", label: "分镜制作", description: "编排镜头，生成画面" },
+  { id: "assembly", label: "成片合成与导出", description: "剪辑片段，导出本集成片" },
 ];
 
 // Older drafts still have a separate video review stage.

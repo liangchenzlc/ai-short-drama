@@ -99,7 +99,7 @@ npm ci
 npm run dev
 ```
 
-地址 `http://127.0.0.1:5173`。端口被占用时退出，不自动换端口。开发服务器将 `/api` 转发至 `http://127.0.0.1:8000`。
+地址 `http://127.0.0.1:8080`。端口被占用时退出，不自动换端口。开发服务器将 `/api` 转发至 `http://127.0.0.1:8000`。
 
 如需调整，复制 `frontend/.env.example` 为 `.env.local`，设置 `API_PROXY_TARGET` 后重启 Vite。`VITE_API_BASE_URL` 默认 `/api/v1`，会进入浏览器产物，只能放公开配置。
 
@@ -168,7 +168,7 @@ HTTP 检查：`GET /api/v1/test`、`/api/v1/test/db`、`/api/v1/test/minio`。AP
 | 生图参数拒绝 | 模型是否支持参考图、画幅、分辨率与张数；独立任务可先省略可选参数 |
 | 图片 URL 无法显示 | 签名是否过期；浏览器是否能访问 MinIO endpoint；HTTPS 页面是否引用 HTTP 资源 |
 | 旧库缺字段/表 | 核对迁移索引和 schema；重启 API 不能补数据库结构 |
-| 读配置正常但保存 Key 失败 | `ENCRYPTION_KEY` 是否有效，已有密文是否仍使用原主密钥 |
+| 读配置正常但保存 Key 失败 | 检查 `ENCRYPTION_KEY` 是否为有效的 Base64 编码 32 字节主密钥；旧密文无法解密时，可在编辑页明确输入新 Key 并保存以修复，或明确清除。留空保留旧值，不会修复旧密文 |
 
 RabbitMQ 消费确认超时需要覆盖单次 Worker 调用时长。较长文本/视频预算应同步评估 broker 的 `consumer_timeout`；应用不会替部署者修改 RabbitMQ 配置。
 

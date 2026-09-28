@@ -37,3 +37,21 @@ def execute_generation(task_id, message_version):
         raise Reject(
             "Action interrupted; database recovery will reconcile", requeue=False
         ) from None
+
+
+@lru_cache(maxsize=1)
+def render_service():
+    from short_drama.tasks.render import RenderExecutor
+
+    settings = Settings()
+    return RenderExecutor(session_factory(build_engine(settings)), settings, MinioStorage(settings))
+
+
+@app.task(
+    name="short_drama.execute_render",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    ignore_result=True,
+)
+def execute_render(job_id, message_version):
+    render_service().execute(job_id, message_version)

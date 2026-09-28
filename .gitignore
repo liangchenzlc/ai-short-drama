@@ -38,6 +38,8 @@ coverage/
 playwright-report/
 test-results/
 /frontend/output/
+/output/playwright/
+/backend/.codex_contract.py
 .impeccable/
 *.tmp
 *.bak

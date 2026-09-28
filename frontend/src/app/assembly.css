@@ -1,0 +1,78 @@
+.assembly-workspace { --assembly-accent: #087f75; --assembly-ink: #203235; --assembly-muted: #5d7073; color: var(--assembly-ink); min-width: 0; }
+.assembly-workspace ::selection { background: #c5e8e2; color: #203235; }
+.assembly-workspace :focus-visible { outline: 2px solid var(--assembly-accent); outline-offset: 3px; }
+.assembly-workspace input { caret-color: var(--assembly-accent); }
+.assembly-workspace a { color: #076f66; text-underline-offset: 4px; }
+.assembly-heading, .assembly-heading-actions, .assembly-context, .assembly-panel-heading, .assembly-trim-title, .assembly-export-bar, .assembly-export-actions, .assembly-current { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.assembly-heading { margin-bottom: 26px; flex-wrap: wrap; }
+.assembly-heading h2 { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: -.025em; }
+.assembly-heading p { margin: 6px 0 0; color: var(--assembly-muted); }
+.assembly-save { font-size: 12px; color: var(--assembly-muted); }
+.assembly-save.is-error { color: #a13c2e; }
+.assembly-context { padding-bottom: 14px; font-size: 13px; color: var(--assembly-muted); }
+.assembly-desk { display: grid; grid-template-columns: minmax(230px, .85fr) minmax(0, 2fr); gap: 24px; align-items: start; }
+.assembly-panel-heading { min-height: 46px; margin-bottom: 8px; }
+.assembly-panel-heading h3, .assembly-trim h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.assembly-panel-heading > span { font-size: 11px; color: var(--assembly-muted); }
+.assembly-sequence { min-width: 0; }
+.assembly-sequence ol { list-style: none; margin: 0; padding: 0 8px 0 0; max-height: 660px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #9bafad #eef3f2; }
+.assembly-clip { padding: 12px; margin-bottom: 8px; border: 1px solid #dce5e3; border-radius: 12px; background: #fff; }
+.assembly-clip.is-selected { border-color: var(--assembly-accent); background: #edf7f4; }
+.assembly-clip.is-excluded { background: #f3f5f4; }
+.assembly-clip.is-excluded .assembly-thumbnail img { filter: grayscale(1); }
+.assembly-clip-top { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.assembly-clip-duration { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--assembly-muted); }
+.assembly-clip-select { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; align-items: center; width: 100%; background: transparent; border: 0; padding: 12px 0 4px; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.assembly-clip-select p { font-size: 12px; line-height: 1.6; margin: 0 0 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.assembly-clip-select small { font-size: 11px; color: var(--assembly-muted); }
+.assembly-clip-select .assembly-issue { color: #97501c; }
+.assembly-thumbnail { height: 58px; background: #dce7e4; border-radius: 6px; display: grid; place-items: center; position: relative; overflow: hidden; }
+.assembly-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+.assembly-thumbnail > span { position: absolute; bottom: 3px; left: 4px; background: #203235; color: #fff; padding: 1px 4px; border-radius: 3px; font-size: 10px; font-variant-numeric: tabular-nums; }
+.assembly-reorder { display: flex; justify-content: flex-end; }
+.assembly-preview { min-width: 0; }
+.assembly-screen { background: #152726; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.assembly-screen.is-portrait { aspect-ratio: auto; height: 410px; }
+.assembly-screen video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.assembly-no-video { display: grid; justify-items: center; gap: 12px; color: #d6e5e1; padding: 20px; text-align: center; }
+.assembly-no-video p { margin: 0; }
+.assembly-trim { padding-top: 22px; }
+.assembly-trim-title > span { font-size: 12px; color: var(--assembly-muted); font-variant-numeric: tabular-nums; }
+.assembly-trim .ant-slider { margin: 20px 6px; }
+.assembly-trim-controls, .assembly-trim-shortcuts { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.assembly-trim-controls label { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.assembly-trim-controls .ant-input-number { width: 106px; }
+.assembly-trim-shortcuts { margin-top: 16px; }
+.assembly-mute { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; }
+.assembly-mute .ant-switch { min-height: 22px; height: 22px; padding: 0; }
+.assembly-preview-note { color: var(--assembly-muted); font-size: 12px; line-height: 1.6; margin: 20px 0 0; }
+.assembly-export-bar { position: relative; margin-top: 28px; padding: 18px 22px; background: #fff; border: 1px solid #d5e0dd; border-radius: 14px; flex-wrap: wrap; }
+.assembly-export-bar > div:first-child { display: grid; gap: 5px; }
+.assembly-export-bar strong { font-size: 14px; font-weight: 600; }
+.assembly-total { margin-left: 14px; font-size: 22px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.assembly-export-bar > div > span { font-size: 12px; color: var(--assembly-muted); }
+.assembly-export-actions { flex-wrap: wrap; }
+.assembly-export-actions label { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.assembly-export-actions .ant-select { width: 96px; }
+.assembly-render-status { display: flex; align-items: center; gap: 20px; padding: 18px 0 0; flex-wrap: wrap; }
+.assembly-render-status > div:first-child { display: grid; gap: 4px; }
+.assembly-render-status span { font-size: 12px; color: var(--assembly-muted); }
+.assembly-render-status .ant-progress { flex: 1; min-width: 120px; }
+.assembly-current { justify-content: flex-start; flex-wrap: wrap; padding: 20px 0 0; font-size: 13px; }
+.assembly-inline-actions, .assembly-dialog-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.assembly-dialog-actions { margin-top: 24px; justify-content: flex-end; }
+.assembly-empty { min-height: 430px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 36px; text-align: center; }
+.assembly-empty-frame { width: 128px; height: 76px; background: #e2eeea; color: #087f75; display: grid; place-items: center; border-radius: 12px; margin-bottom: 14px; }
+.assembly-empty h3 { font-size: 22px; margin: 0 0 12px; }
+.assembly-empty p { max-width: 38ch; line-height: 1.8; color: var(--assembly-muted); margin: 0 0 24px; }
+.assembly-list-empty { padding: 22px; line-height: 1.8; color: var(--assembly-muted); }
+.assembly-workspace > .ant-alert { margin-bottom: 16px; }
+.assembly-history-dialog { width: min(820px, calc(100vw - 32px)); }
+.assembly-history article { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 20px 0; border-bottom: 1px solid #dce5e3; flex-wrap: wrap; }
+.assembly-history article > div:first-child { display: grid; gap: 5px; }
+.assembly-history time, .assembly-history article span { color: #5d7073; font-size: 12px; }
+.assembly-history article p { color: #a13c2e; margin: 6px 0 0; }
+.assembly-result-dialog { width: min(1000px, calc(100vw - 32px)); }
+.assembly-result-dialog video { display: block; width: 100%; max-height: 70vh; background: #152726; margin-bottom: 16px; }
+@media (max-width: 1100px) { .assembly-desk { grid-template-columns: minmax(210px, .9fr) minmax(0, 1.5fr); gap: 16px; } .assembly-panel-heading > span { display: none; } .assembly-mute { margin-left: 0; } }
+@media (max-width: 760px) { .assembly-heading { margin-bottom: 18px; } .assembly-heading h2 { font-size: 22px; } .assembly-heading-actions { width: 100%; } .assembly-desk { display: flex; flex-direction: column; } .assembly-preview { order: -1; width: 100%; } .assembly-sequence { width: 100%; } .assembly-sequence ol { max-height: 430px; padding-right: 4px; } .assembly-export-bar { position: static; padding: 16px; gap: 14px; } .assembly-export-actions { width: 100%; justify-content: space-between; gap: 10px; } .assembly-export-actions label { gap: 6px; } .assembly-trim-title { flex-wrap: wrap; gap: 6px; } .assembly-trim-shortcuts { gap: 8px; } .assembly-empty { padding: 24px 8px; min-height: 360px; } .assembly-screen.is-portrait { height: 360px; } }

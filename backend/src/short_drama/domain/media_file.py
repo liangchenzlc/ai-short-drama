@@ -10,6 +10,7 @@ from sqlalchemy.dialects.mysql import (
     CHAR,
     DATETIME,
     INTEGER,
+    JSON,
     VARCHAR,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -19,6 +20,10 @@ from .base import Base
 
 class MediaFile(Base):
     __tablename__ = "media_files"
+
+    video_metadata: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True, comment="ffprobe实际视频信息与探测版本，非请求参数"
+    )
 
     id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True),
@@ -87,6 +92,10 @@ class MediaFile(Base):
     )
 
     __table_args__ = (
+        CheckConstraint(
+            "video_metadata IS NULL OR JSON_TYPE(video_metadata) = 'OBJECT'",
+            name="ck_media_video_metadata",
+        ),
         UniqueConstraint("storage_locator", name="uk_media_locator"),
         CheckConstraint(
             "`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`",

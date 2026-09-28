@@ -65,6 +65,18 @@ class ShotScript(Base):
         server_default=text("NULL"),
         comment="下一次生图设置",
     )
+    video_prompt: Mapped[str] = mapped_column(
+        MEDIUMTEXT(),
+        nullable=False,
+        server_default=text("('')"),
+        comment="视频用户提示词；空值使用分镜默认内容",
+    )
+    video_settings: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True),
+        nullable=True,
+        server_default=text("NULL"),
+        comment="下一次视频设置",
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DATETIME(fsp=6), nullable=True, server_default=text("NULL"), comment="归档时间"
     )
@@ -128,6 +140,10 @@ class ShotScript(Base):
         CheckConstraint(
             "`image_settings` IS NULL OR JSON_TYPE(`image_settings`) = 'OBJECT'",
             name="ck_shot_scripts_image_settings",
+        ),
+        CheckConstraint(
+            "`video_settings` IS NULL OR JSON_TYPE(`video_settings`) = 'OBJECT'",
+            name="ck_shot_scripts_video_settings",
         ),
         CheckConstraint(
             "`deleted_at` IS NULL OR `created_at` IS NULL OR `deleted_at` >= `created_at`",

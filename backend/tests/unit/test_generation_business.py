@@ -258,7 +258,7 @@ def test_truncated_text_cannot_be_resumed_as_success():
     assert resume_action(task, record) is None
 
 
-def test_image_adoption_requires_editor_and_context_tokens_but_video_contract_unchanged():
+def test_media_adoption_requires_editor_and_context_tokens():
     from short_drama.schemas.media_asset import MediaAssetApply
 
     with pytest.raises(ValidationError):
@@ -277,7 +277,12 @@ def test_image_adoption_requires_editor_and_context_tokens_but_video_contract_un
     assert not parsed.acknowledge_stale_source
     assert (
         MediaAssetApply.model_validate(
-            {"target": {"type": "shot_video", "id": "11"}, "expected_media_id": None}
+            {
+                "target": {"type": "shot_video", "id": "11"},
+                "expected_media_id": None,
+                "expected_row_version": "2",
+                "expected_context_hash": "a" * 64,
+            }
         ).target.type
         == "shot_video"
     )
@@ -323,7 +328,7 @@ def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archive
         with session.begin():
             record = session.scalar(select(AIGenerationRecord))
             request = record.request_data
-            assert request["template_version"] == "script-shots-v1-r3"
+            assert request["template_version"] == "script-shots-v2"
             assert request["source_snapshot"]["storyboard"] == {"average_shot_duration_ms": 5000}
             user_envelope = json.loads(request["input"]["messages"][1]["content"])
             assert user_envelope["source"]["storyboard"]["average_shot_duration_ms"] == 5000

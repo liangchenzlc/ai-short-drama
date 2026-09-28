@@ -12,6 +12,13 @@ class ShotImageSettings(InputModel):
     layout: Literal["single", "four", "five", "nine"] = "single"
 
 
+class ShotVideoSettings(InputModel):
+    resolution: Literal["480p", "720p", "1080p"] = "720p"
+    duration_ms: int | None = Field(
+        default=None, strict=True, ge=1000, le=3600000, multiple_of=1000
+    )
+
+
 def shot_script_text(value: str) -> str:
     if len(value.encode("utf-8")) > 32 * 1024:
         raise ValueError("shot script exceeds 32 KiB UTF-8")
@@ -52,6 +59,8 @@ class StoryboardUpdate(InputModel):
     duration_ms: int = Field(default=None, strict=True, ge=1000, le=10000)
     asset_ids: list[Identifier] = Field(default=None, max_length=100)
     image_settings: ShotImageSettings = None
+    video_prompt: Annotated[str, Field(max_length=16000)] = None
+    video_settings: ShotVideoSettings = None
 
     _complete_settings = model_validator(mode="before")(_require_complete_image_settings)
 
@@ -103,6 +112,16 @@ class ShotImageRead(ReadModel):
     is_stale: bool
 
 
+class ShotVideoRead(ReadModel):
+    media_id: Identifier
+    media_asset_id: Identifier | None = None
+    url: str | None = None
+    resolution: str
+    duration_ms: int
+    is_stale: bool
+    first_frame_media_id: Identifier | None = None
+
+
 class StoryboardShotRead(ReadModel):
     id: Identifier
     position: int
@@ -114,6 +133,12 @@ class StoryboardShotRead(ReadModel):
     image_settings: ShotImageSettings
     context_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     image: ShotImageRead | None
+    video_prompt: str = ""
+    video_default_prompt: str = ""
+    video_system_prompt: str = ""
+    video_settings: ShotVideoSettings = Field(default_factory=ShotVideoSettings)
+    video_context_hash: str = ""
+    video: ShotVideoRead | None = None
     deleted_at: datetime | None
 
 

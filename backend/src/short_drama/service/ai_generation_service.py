@@ -23,6 +23,19 @@ from short_drama.schemas.storyboard_result import parse_storyboard_result
 from .base import BaseService, utcnow
 
 ERROR_MESSAGES = {
+    "transport_error": (
+        "与模型服务通信时连接中断，未收到完整结果，无法确认服务商是否已受理。"
+        "系统未自动重发，请先核对服务商调用记录。"
+    ),
+    "upload_timeout": (
+        "向模型服务上传参考图片超时，无法确认服务商是否已受理。"
+        "系统未自动重发，请先核对服务商调用记录；可压缩参考图或检查网络后重新生成。"
+    ),
+    "unsafe_address": "图片或模型服务地址被安全检查拦截，请检查存储与模型服务的地址配置。",
+    "reference_missing": "参考图片已不存在，请重新选择素材图片后生成。",
+    "reference_storage_unavailable": "暂时无法读取参考图片，请检查对象存储服务后重试。",
+    "reference_images_too_large": "参考图片超过上传大小限制，请压缩图片或减少参考图片数量。",
+    "invalid_reference_image": "参考图片损坏或格式不受支持，请使用 PNG、JPEG 或 WebP 图片。",
     "timeout": "等待模型响应超时，任务已失败；生成请求未自动重发，请核对服务商调用记录。",
     "generation_timeout": "生成任务超过等待时限，任务已失败；已停止自动查询和生成。",
     "upstream_unavailable": (
@@ -183,6 +196,10 @@ class AIGenerationService(BaseService):
             from .generation_context_service import GenerationContextService
 
             payload = GenerationContextService(self.session, self.settings).prepare_text(payload)
+        elif source and kind == "video" and source["scene"] == "shot_video":
+            from .generation_context_service import GenerationContextService
+
+            payload = GenerationContextService(self.session).prepare_shot_video(payload)
         elif source:
             if kind != "image" or source["scene"] not in {"shot_image", "asset_image"}:
                 raise BusinessError("Source scene does not support this generation type")

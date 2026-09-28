@@ -38,7 +38,7 @@ def make_celery(settings=None):
         include=["short_drama.tasks.worker"],
     )
     app.conf.update(
-        task_queues=tuple(queues.values()),
+        task_queues=(*queues.values(), render_queue(settings)),
         task_create_missing_queues=False,
         task_default_queue=queues["text"].name,
         task_default_exchange=exchange.name,
@@ -65,6 +65,16 @@ def make_celery(settings=None):
         timezone="UTC",
     )
     return app
+
+
+def render_queue(settings):
+    exchange, _, _ = topology(settings)
+    return Queue(
+        f"{settings.generation_queue_namespace}.tasks.render",
+        exchange=exchange,
+        routing_key="render",
+        durable=True,
+    )
 
 
 app = make_celery()

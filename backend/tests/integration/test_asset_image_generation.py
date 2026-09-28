@@ -1,6 +1,7 @@
 """Asset image business flow on disposable MySQL; providers/storage are local doubles."""
 
 import base64
+import json
 from contextlib import contextmanager
 from copy import deepcopy
 from io import BytesIO
@@ -369,6 +370,77 @@ def test_shot_references_deduplicate_confirmed_assets_and_exclude_unconfirmed_im
     assert flow.provider.calls[-1]["input"]["reference_media_ids"] == confirmed_media[:3]
     assert flow.provider.calls[-1]["input"]["reference_urls"] == reference_urls[:3]
     assert len(flow.provider.calls) == 6
+
+
+def test_openai_shot_reads_saved_references_from_private_storage(flow, monkeypatch):
+    from short_drama.ai import GenerationGateway
+    from short_drama.ai.transport import MultipartBody
+    from short_drama.domain import MediaFile
+
+    shot = ShotScriptService(flow.session).create(
+        {"episode_id": flow.episode.id, "position": 1, "script": "A student enters the hall."}
+    )
+    expected = []
+    for kind in ("character", "scene", "prop"):
+        asset = create_asset(flow, kind)
+        assert drain(flow, submit(flow, asset)) == "succeeded"
+        candidate = flow.images.list(asset.id)["items"][0]
+        flow.images.confirm(
+            asset.id,
+            {
+                "row_version": str(asset.row_version),
+                "expected_media_id": None,
+                "media_id": str(candidate.media_id),
+            },
+        )
+        flow.library.link("episode", flow.episode.id, flow.project.id, asset.id)
+        ShotAssetService(flow.session).create(
+            {"episode_id": flow.episode.id, "shot_id": shot.id, "asset_id": asset.id}
+        )
+        with flow.factory() as session:
+            media = session.get(MediaFile, candidate.media_id)
+            location = ObjectLocation.parse(
+                media.storage_locator, {flow.settings.minio_image_bucket}
+            )
+            expected.append(flow.storage.objects[location.bucket, location.object_name][0])
+
+    flow.config = AIModelConfigService(flow.session).create(
+        {
+            "service_type": "image",
+            "name": "multipart",
+            "model_key": "gpt-image-2.5-flare",
+            "provider": "openai",
+            "base_url": "https://provider.invalid/v1",
+        }
+    )
+    monkeypatch.setattr(flow.storage, "presigned_get", lambda *_: "http://127.0.0.1:9000/ref")
+    gateway = GenerationGateway(flow.settings)
+    calls = []
+
+    def capture(method, url, **kwargs):
+        assert method == "POST" and url == "https://provider.invalid/v1/images/edits"
+        body = kwargs["body"]
+        assert isinstance(body, MultipartBody)
+        files = [value[1] for key, value in body.fields if key == "image[]"]
+        assert files == expected
+        calls.append(url)
+        return (
+            200,
+            {},
+            json.dumps({"data": [{"b64_json": base64.b64encode(expected[0]).decode()}]}).encode(),
+        )
+
+    monkeypatch.setattr(gateway.transport, "request", capture)
+    flow.executor = GenerationExecutionService(flow.factory, flow.settings, gateway, flow.storage)
+    task_id = submit_shot(flow, shot.id)
+    assert drain(flow, task_id) == "succeeded"
+    assert len(calls) == 1
+    with flow.factory() as session:
+        record = session.scalar(
+            select(AIGenerationRecord).where(AIGenerationRecord.task_id == int(task_id))
+        )
+        assert len(record.request_data["input"]["reference_media_ids"]) == 3
+        assert "reference_loader" not in json.dumps(record.request_data)
 
 
 def test_historical_shot_candidate_preserves_parameters_and_requires_current_target(flow):

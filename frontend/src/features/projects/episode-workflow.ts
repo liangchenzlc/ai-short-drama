@@ -7,6 +7,7 @@ import {
 } from "./shot-generation-settings";
 
 export type StageId = "source" | "script" | "assets" | "storyboard" | "video";
+export type EpisodeNavigationStage = StageId | 'assembly';
 export type Review = "not_started" | "review" | "confirmed" | "stale";
 export type DemoRun = "idle" | "preparing" | "running" | "failed";
 export type MediaRef = {

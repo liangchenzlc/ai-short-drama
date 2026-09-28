@@ -4,6 +4,8 @@ Python 3.12+ / FastAPI / SQLAlchemy 2 / MySQL 8。负责创作数据、AI 配置
 
 ## 开发入口
 
+MySQL、RabbitMQ 和 MinIO 可在仓库根目录执行 `docker compose up -d` 一键准备，包含新库建表和 bucket 初始化；连接配置见 [Docker 依赖指南](../docs/docker.md)。
+
 在本目录执行：
 
 ```powershell
@@ -56,6 +58,16 @@ uv run python scripts/run_integration.py
 该脚本复用 `.env` 中的服务器连接配置，在服务器创建随机 `_test` 数据库，结束后仅删除该临时库；需要 CREATE/DROP DATABASE 权限。不会以应用库作为测试库。RabbitMQ/MinIO 测试另需显式启用，详见[测试分层](../docs/development.md#测试与验证)。
 
 ## 修改约定
+
+### 成片合成运行
+
+第四步使用独立的本地合成队列，不调用 AI 模型。先执行 `scripts/apply_assembly_migration.py`，再启动 `scripts/start_generation.ps1 -Role render`（单并发，独立雪花节点 5）。调度器仍为 `short_drama.tasks.runtime`。
+
+安装 FFmpeg（含 libx264）和 ffprobe 并加入 PATH，或配置 `RENDER_FFMPEG_PATH` / `RENDER_FFPROBE_PATH`。开发环境也支持 `backend/.tools/ffmpeg/*/bin` 中的便携版本。缺少 ffprobe 时使用 FFmpeg 解码首帧并读取实际容器信息。工具二进制不纳入 Git。
+
+临时文件默认写入 `backend/.runtime/renders`。`RENDER_MAX_SOURCE_BYTES` 默认 2 GiB，`RENDER_MAX_SCRATCH_BYTES` 默认每任务 20 GiB，`RENDER_TIMEOUT_SECONDS` 默认每次编码 3600 秒，`RENDER_MAX_DURATION_MS` 默认 1 小时。输出上传失败保留校验后的成片用于重试，成功任务清理临时目录，7 天后的尝试目录由调度器清理。取消只终止该任务自己的子进程。数据库租约防止重复执行和过期进程写回。
+
+完整接口见 [成片 API](../docs/api/episode-assembly.md)，数据升级见 [合成迁移](../docs/数据库模型/migrations/2026-09-28-episode-assembly/README.md)。
 
 - 表结构变更同时修改 ORM、完整 SQL、旧库迁移和数据库说明。
 - HTTP 变更同步 Pydantic、前端 DTO 和接口说明；不得绕过 Service 修改正文、排序、确认或采用状态。

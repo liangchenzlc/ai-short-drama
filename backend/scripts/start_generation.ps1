@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('api', 'scheduler', 'text', 'image', 'video')]
+    [ValidateSet('api', 'scheduler', 'text', 'image', 'video', 'render')]
     [string]$Role
 )
 
@@ -16,7 +16,7 @@ if (Test-Path -LiteralPath $pidFile) {
         throw "$Role already has a recorded running process: $existingProcessId"
     }
 }
-$roleNodes = @{ api = '1'; scheduler = '10'; text = '2'; image = '3'; video = '4' }
+$roleNodes = @{ api = '1'; scheduler = '10'; text = '2'; image = '3'; video = '4'; render = '5' }
 $originalNode = $env:SNOWFLAKE_WORKER_ID
 try {
     $env:SNOWFLAKE_WORKER_ID = $roleNodes[$Role]
@@ -27,14 +27,14 @@ try {
     } else {
         Push-Location $backendDirectory
         try {
-            $queueName = & $pythonExecutable -c "import sys; from short_drama.core.config import Settings; from short_drama.tasks.celery_app import topology; print(topology(Settings())[2][sys.argv[1]].name)" $Role
+            $queueName = & $pythonExecutable -c "import sys; from short_drama.core.config import Settings; from short_drama.tasks.celery_app import topology, render_queue; s=Settings(); print(render_queue(s).name if sys.argv[1] == 'render' else topology(s)[2][sys.argv[1]].name)" $Role
             if ($LASTEXITCODE -ne 0 -or $queueName -notmatch '^[a-zA-Z0-9_.]+$') {
                 throw 'Unable to resolve the configured generation queue'
             }
         } finally {
             Pop-Location
         }
-        $workerConcurrency = if ($Role -eq 'text') { '4' } else { '2' }
+        $workerConcurrency = if ($Role -eq 'text') { '4' } elseif ($Role -eq 'render') { '1' } else { '2' }
         $processArguments = @('-m', 'celery', '-A', 'short_drama.tasks.celery_app:app', 'worker',
             '--pool=threads', "--concurrency=$workerConcurrency", '-Q', $queueName,
             "--hostname=$Role@%h", '--loglevel=WARNING')

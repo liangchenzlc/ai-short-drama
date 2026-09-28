@@ -34,8 +34,8 @@ class MediaAssetApply(InputModel):
 
     @model_validator(mode="after")
     def require_context(self):
-        if self.target.type in {"shot_image", "asset_image"} and self.expected_row_version is None:
-            raise ValueError("Image adoption requires target row version")
-        if self.target.type == "shot_image" and self.expected_context_hash is None:
-            raise ValueError("Shot image adoption requires context hash")
+        if self.expected_row_version is None:
+            raise ValueError("Media adoption requires target row version")
+        if self.target.type in {"shot_image", "shot_video"} and self.expected_context_hash is None:
+            raise ValueError("Shot media adoption requires context hash")
         return self

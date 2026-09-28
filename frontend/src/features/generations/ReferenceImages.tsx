@@ -42,8 +42,8 @@ export function ReferenceImages({ kind, ownerId, version, disabled, beforeChange
     return false;
   }
   return <section className="generation-reference-images" aria-label="上传的参考图片">
-    <div className="reference-images-heading"><h4>参考图片</h4><Upload accept="image/png,image/jpeg,image/webp" showUploadList={false} disabled={disabled || busy || loading || !!error || items.length >= 16} beforeUpload={file => change(file)}><Button disabled={disabled || busy || loading || !!error || items.length >= 16} loading={busy}>添加参考图片</Button></Upload></div>
-    <p className="episode-help">上传图片用于指导生成，保存后可重复使用。支持 PNG、JPEG、WebP，每张最多 20 MB。</p>
+    <div className="reference-images-heading"><h4>参考图片 <small>{items.length}/16</small></h4><Upload accept="image/png,image/jpeg,image/webp" showUploadList={false} disabled={disabled || busy || loading || !!error || items.length >= 16} beforeUpload={file => change(file)}><Button disabled={disabled || busy || loading || !!error || items.length >= 16} loading={busy}>添加参考图片</Button></Upload></div>
+    <p className="episode-help">用于指导生成，可重复使用。PNG / JPEG / WebP，每张最多 20 MB。</p>
     {error && <Alert type="error" message={error} action={<Button disabled={busy} onClick={() => setRevision(value => value + 1)}>重新加载</Button>}/>}
     {loading && !items.length ? <Skeleton active paragraph={{ rows: 1 }}/> : <div className="reference-image-strip">{items.map(item => <figure key={item.media_id}><PreviewImage src={item.url} alt={item.name || '生成参考图'}/><figcaption title={item.name}>{item.name || '参考图片'}</figcaption><Button size="small" disabled={disabled || busy} onClick={() => void change(undefined, item.media_id)}>移除</Button></figure>)}</div>}
   </section>;

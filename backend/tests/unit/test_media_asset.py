@@ -253,7 +253,16 @@ def test_video_apply_uses_milliseconds_and_business_parameters(actual_ms, explic
             )
         )
         session.commit()
-        body = {"target": {"type": "shot_video", "id": str(shot.id)}, "expected_media_id": None}
+        from short_drama.service.episode_storyboard_service import EpisodeStoryboardService
+
+        current = EpisodeStoryboardService(session).get(project.id, episode.id, shot.id)["shot"]
+        body = {
+            "target": {"type": "shot_video", "id": str(shot.id)},
+            "expected_media_id": None,
+            "expected_row_version": current["row_version"],
+            "expected_context_hash": current["video_context_hash"],
+            "acknowledge_stale_source": True,
+        }
         if explicit_ms is not None:
             body["parameters"] = {"duration": explicit_ms}
         MediaAssetService(session, settings, None).apply(201, body)

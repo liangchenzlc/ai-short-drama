@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-开发地址 `http://127.0.0.1:5173`，API 默认代理至 `http://127.0.0.1:8000`。修改代理时使用 `.env.local`，参照 [.env.example](.env.example)，禁止在 VITE 变量放凭据。
+开发地址 `http://127.0.0.1:8080`，API 默认代理至 `http://127.0.0.1:8000`。修改代理时使用 `.env.local`，参照 [.env.example](.env.example)，禁止在 VITE 变量放凭据。
 
 ```powershell
 npm test
@@ -36,7 +36,7 @@ npm run test:e2e
 | --- | --- |
 | `/projects` | 项目搜索、分页和继续创作 |
 | `/projects/:projectId` | 项目信息、分集、项目资源库 |
-| `/projects/:projectId/episodes/:episodeId/:stage?` | 三步分集制作；stage 为 source/assets/storyboard，旧 script 链接打开定稿标签 |
+| `/projects/:projectId/episodes/:episodeId/:stage?` | 四步分集制作；stage 为 source/assets/storyboard/assembly，旧 script 链接打开定稿标签 |
 | `/assets/:kind` | character/scene/prop三类全局素材 |
 | `/ai` | 文本、图片、视频模型配置 |
 | `/tasks/:kind` | text/image/video生成任务 |
@@ -48,7 +48,7 @@ npm run test:e2e
 
 - `src/app`：应用入口、路由、主题和样式。
 - `src/pages`：项目、分集、素材、任务、资产和配置页面。
-- `src/features/projects`：正文保存会话、导航保护、素材提取、分镜候选与图片采用。
+- `src/features/projects`：正文保存会话、导航保护、素材提取、分镜候选与图片采用、成片草稿保存与编辑。
 - `src/features/assets`：三层素材库共用UI和请求状态。
 - `src/features/generations`：通用生成、任务详情、轮询与幂等请求标识。
 - `src/features/media-library`：媒体详情与图片选择器。

@@ -33,4 +33,5 @@ export interface AiModelCapabilitiesDto {
   reference_images: boolean;
   first_frame: boolean;
   last_frame: boolean;
+  video_input?: { first_frame: boolean; reference_images?: boolean; duration_seconds: number[] | null; resolutions: string[] | null };
 }

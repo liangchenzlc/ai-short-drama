@@ -148,14 +148,21 @@ class AIModelConfigService(BaseService):
             if "apikey" in values:
                 secret = values.pop("apikey")
                 plaintext = secret.get_secret_value() if secret else ""
-                try:
-                    old_plaintext = (
-                        self._key_cipher().decrypt(entity.apikey) if entity.apikey else ""
-                    )
-                except ValueError:
-                    raise ConfigurationError("Stored API key cannot be decrypted") from None
-                if plaintext != old_plaintext:
-                    values["apikey"] = self._encrypt_key(secret)
+                if not plaintext:
+                    # Explicit clearing must also work when the old key is unreadable.
+                    values["apikey"] = None
+                else:
+                    cipher = self._key_cipher()
+                    old_plaintext = None
+                    if entity.apikey:
+                        try:
+                            old_plaintext = cipher.decrypt(entity.apikey)
+                        except ValueError:
+                            # An explicit replacement repairs an unreadable credential.
+                            # Missing/invalid master-key configuration still fails above.
+                            pass
+                    if plaintext != old_plaintext:
+                        values["apikey"] = self._encrypt_key(secret)
             if values.get("enabled") == 0:
                 values["is_default"] = 0
             return self._read(self._versioned_update(entity, values, expected))

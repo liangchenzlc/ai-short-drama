@@ -51,7 +51,7 @@ def list_generations(
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"] | None = None,
     config_id: Identifier | None = None,
     source_scene: Literal[
-        "shot_image", "asset_image", "novel_script", "script_shots", "script_assets"
+        "shot_image", "shot_video", "asset_image", "novel_script", "script_shots", "script_assets"
     ]
     | None = None,
     source_id: Identifier | None = None,

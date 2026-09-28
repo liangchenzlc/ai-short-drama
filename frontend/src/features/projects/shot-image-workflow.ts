@@ -22,6 +22,7 @@ export function summarizeShotReferences(assetIds: readonly string[], assets: rea
 export function shotPreparationChanged(local: ShotRead, remote: ShotRead): boolean {
   return local.id !== remote.id || local.row_version !== remote.row_version || local.context_hash !== remote.context_hash
     || !!remote.deleted_at || (local.image?.media_id ?? null) !== (remote.image?.media_id ?? null)
+    || local.video_context_hash !== remote.video_context_hash || (local.video?.media_id ?? null) !== (remote.video?.media_id ?? null)
     || local.image_settings.layout !== remote.image_settings.layout || local.image_settings.aspect !== remote.image_settings.aspect
     || local.image_settings.resolution !== remote.image_settings.resolution;
 }

@@ -17,9 +17,10 @@ ADAPTER_TYPES = {
     "ark_video.v1": "video",
     "dashscope_images.v1": "image",
     "dashscope_video.v1": "video",
+    "modelhub_video.v1": "video",
 }
 
-RESOLVER_VERSION = "2026-09-23.1"
+RESOLVER_VERSION = "2026-09-28.2"
 
 
 def capability_fingerprint(snapshot, credential_identity):
@@ -67,6 +68,8 @@ def select_adapter(snapshot):
         # Images is a documented common protocol; unsupported gateways fail explicitly.
         return "openai_images.v1"
     if kind == "video":
+        if host == "api.modelhub.cc":
+            return "modelhub_video.v1"
         if ark:
             return "ark_video.v1"
         if dashscope:
@@ -91,6 +94,7 @@ def endpoint(base_url, suffix, adapter):
             "/images/generations",
             "/images/edits",
             "/contents/generations/tasks",
+            "/videos/generations",
         ):
             if path.endswith(ending):
                 path = path[: -len(ending)]
@@ -332,10 +336,21 @@ def build_submission(snapshot, request, adapter):
                 "last_frame_media_id",
                 "first_frame_url",
                 "last_frame_url",
+                "reference_media_ids",
+                "reference_urls",
             },
         )
         prompt = value.get("prompt")
         first, last = value.get("first_frame_url"), value.get("last_frame_url")
+        refs = value.get("reference_urls", [])
+        if not isinstance(refs, list) or len(refs) > 9:
+            _unsupported()
+        if value.get("reference_media_ids") and not refs:
+            raise GenerationError("unresolved_media_reference")
+        if refs and (adapter != "modelhub_video.v1" or first or last):
+            _unsupported()
+        for ref in refs:
+            validated_url(ref, query=True)
         if not isinstance(prompt, str) or not prompt.strip():
             _unsupported()
         for name in ("first", "last"):
@@ -346,13 +361,44 @@ def build_submission(snapshot, request, adapter):
                 validated_url(ref, query=True)
         if last and not first:
             _unsupported()
+        video_options = video_input_capabilities(snapshot, adapter)
+        if (request.get("source") or {}).get("scene") == "shot_video":
+            if not video_options["reference_images" if refs else "first_frame"]:
+                _unsupported()
+            durations = video_options["duration_seconds"]
+            if durations and params.get("duration_ms", 0) // 1000 not in durations:
+                _unsupported()
         native_params = {}
         if "duration_ms" in params:
             duration = params["duration_ms"]
             if type(duration) is not int or duration <= 0 or duration % 1000:
                 _unsupported()
             native_params["duration"] = duration // 1000
-        if adapter == "ark_video.v1":
+        if adapter == "modelhub_video.v1":
+            # Public ModelHub model catalogue + /quick-start, checked 2026-09-28.
+            # Only the configured Mini model has a verified parameter contract.
+            if model != "seedance-2.0-mini":
+                _unsupported()
+            duration = native_params.get("duration", 5)
+            resolution = params.get("resolution", "720p").lower()
+            ratio = params.get("aspect", "auto" if first else "9:16")
+            if (
+                duration not in range(4, 16)
+                or resolution not in ("480p", "720p")
+                or ratio not in ("21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "auto")
+            ):
+                _unsupported()
+            body.update(
+                prompt=prompt,
+                duration=duration,
+                resolution=resolution,
+                ratio=ratio,
+                functionMode="first_last_frames" if first else "omni_reference",
+            )
+            for index, ref in enumerate(refs or list(filter(None, (first, last))), 1):
+                body[f"image_file_{index}"] = ref
+            suffix = "/videos/generations"
+        elif adapter == "ark_video.v1":
             body["content"] = [{"type": "text", "text": prompt}]
             for role, ref in (("first_frame", first), ("last_frame", last)):
                 if ref:
@@ -417,6 +463,8 @@ def poll_endpoint(snapshot, task_id, adapter):
     encoded = quote(task_id, safe="")
     if adapter == "ark_video.v1":
         suffix = f"/contents/generations/tasks/{encoded}"
+    elif adapter == "modelhub_video.v1":
+        suffix = f"/videos/tasks/{encoded}"
     elif adapter in ("dashscope_video.v1", "dashscope_images.v1"):
         suffix = f"/tasks/{encoded}"
     elif adapter == "openai_responses.v1":
@@ -483,6 +531,33 @@ def parse_result(body, adapter, *, submitted, task_id=None):
                 elif not item.get("error"):
                     invalid()
             if not result.outputs:
+                invalid()
+        elif adapter == "modelhub_video.v1":
+            status = body.get("status")
+            result.provider_task_id = body.get("task_id") or body.get("id") or task_id
+            if status in (
+                "processing",
+                "in_queue",
+                "pending",
+                "queued",
+                "not_start",
+                "submitted",
+            ) or (status is None and submitted):
+                result.status = "submitted"
+            elif status in ("failed", "cancelled", "blocked"):
+                result.status = "failed"
+                result.error = {
+                    "code": "provider_failed",
+                    "message": "The provider could not complete generation.",
+                }
+            elif status in ("success", "completed"):
+                result.outputs = [
+                    {
+                        "url": (body.get("result") or {}).get("url") or body.get("url"),
+                        "media_type": "video",
+                    }
+                ]
+            else:
                 invalid()
         elif adapter == "ark_video.v1":
             status = body.get("status")
@@ -554,7 +629,8 @@ def resolved_parameters(body):
     return {
         k: v
         for k, v in body.items()
-        if k
+        if not k.startswith("image_file_")
+        and k
         not in {
             "model",
             "prompt",
@@ -582,6 +658,39 @@ def validate_request(snapshot, request_data, adapter=None):
     return {"adapter": adapter, "resolved_parameters": resolved_parameters(body)}
 
 
+def video_input_capabilities(snapshot, adapter):
+    model = snapshot.get("model_key", "")
+    if adapter == "modelhub_video.v1":
+        supported = model == "seedance-2.0-mini"
+        return {
+            "first_frame": supported,
+            "reference_images": supported,
+            "duration_seconds": list(range(4, 16)) if supported else None,
+            "resolutions": ["720p", "480p"] if supported else None,
+        }
+    durations = {
+        "wan2.2-i2v-plus": [5],
+        "wan2.2-i2v-flash": [5],
+        "wanx2.1-i2v-plus": [5],
+        "wanx2.1-i2v-turbo": [5],
+        "wan2.6-i2v": [5, 10, 15],
+        "wan2.5-i2v-preview": [5, 10],
+    }.get(model)
+    resolutions = {
+        "wan2.2-i2v-plus": ["480p", "1080p"],
+        "wanx2.1-i2v-plus": ["720p"],
+        "wanx2.1-i2v-turbo": ["480p", "720p"],
+        "wan2.6-i2v": ["720p", "1080p"],
+    }.get(model)
+    return {
+        "reference_images": False,
+        "first_frame": adapter == "ark_video.v1"
+        or (adapter == "dashscope_video.v1" and "i2v" in model),
+        "duration_seconds": durations,
+        "resolutions": resolutions,
+    }
+
+
 def capabilities(snapshot):
     """Local protocol support, not proof of account/model entitlement or a paid probe."""
     empty = {
@@ -606,9 +715,12 @@ def capabilities(snapshot):
             "video": ["aspect", "resolution", "duration_ms"],
         }[kind],
         "reference_images": adapter == "ark_images.v1"
+        or (adapter == "modelhub_video.v1" and model == "seedance-2.0-mini")
         or (adapter == "dashscope_images.v1" and edit)
         or (adapter == "openai_images.v1" and _openai_image_references(model)),
         "first_frame": kind == "video",
         "last_frame": adapter == "ark_video.v1"
+        or (adapter == "modelhub_video.v1" and model == "seedance-2.0-mini")
         or (adapter == "dashscope_video.v1" and "kf2v" in snapshot.get("model_key", "")),
+        **({"video_input": video_input_capabilities(snapshot, adapter)} if kind == "video" else {}),
     }

@@ -5,7 +5,7 @@ async (page) => {
   page.removeAllListeners('pageerror');
   await page.goto('about:blank');
   page.setDefaultTimeout(8000);
-  const base = 'http://127.0.0.1:5173';
+  const base = 'http://127.0.0.1:8080';
   const root = '/api/v1/projects/10/episodes/20';
   const requests = [];
   const unexpected = [];

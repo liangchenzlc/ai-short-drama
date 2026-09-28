@@ -4,6 +4,7 @@ export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancel
 export interface Page<T> { items: T[]; total: number; offset: number; limit: number }
 export type ImageLayout = 'single' | 'four' | 'five' | 'nine';
 export type GenerationSource =
+  | { scene: 'shot_video'; shot_id: string; row_version: string; context_hash: string; reference_media_id: string }
   | { scene: 'shot_image'; shot_id: string; layout: ImageLayout; context_mode?: 'saved'; row_version?: string; context_hash?: string }
   | { scene: 'asset_image'; asset_id: string; row_version: string; project_id?: string; episode_id?: string }
   | { scene: 'novel_script'; project_id: string; episode_id: string; content_version: string }
@@ -23,7 +24,8 @@ export interface ImageGenerationRequest extends CreateBase {
   parameters: { aspect?: string; resolution?: string; count: number };
 }
 export interface VideoGenerationRequest extends CreateBase {
-  input: { prompt: string; first_frame_media_id?: string; last_frame_media_id?: string };
+  input?: { prompt: string; reference_media_ids?: string[]; first_frame_media_id?: string; last_frame_media_id?: string };
+  source?: Extract<GenerationSource, { scene: 'shot_video' }>;
   parameters: { aspect?: string; resolution?: string; duration_ms?: number };
 }
 export interface GenerationReceipt { generation_id: string; service_type: GenerationKind; status: TaskStatus }

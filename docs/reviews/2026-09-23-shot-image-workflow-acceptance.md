@@ -37,7 +37,7 @@
 
 ## 浏览器验证
 
-`frontend/scripts/shot-image-acceptance.mjs` 内嵌隔离页面与全部 API 替身，真实运行 `ShotImageCandidates` 和 `TaskDetail`。使用 Playwright CLI 的 `run-code --filename=scripts/shot-image-acceptance.mjs --raw`，本地 Vite 默认地址为 `http://127.0.0.1:5173`。
+`frontend/scripts/shot-image-acceptance.mjs` 内嵌隔离页面与全部 API 替身，真实运行 `ShotImageCandidates` 和 `TaskDetail`。使用 Playwright CLI 的 `run-code --filename=scripts/shot-image-acceptance.mjs --raw`，本地 Vite 默认地址为 `http://127.0.0.1:8080`。
 
 最终组件13项通过：折叠零历史请求、参考图/能力提示、双击一次提交、原参数预览和采用、旧来源确认保持目标令牌、缺少来源拒绝采用、任务和候选分页、任务详情、桌面/窄屏布局、关闭停止轮询、未知受理跨重开/刷新保护、晚到A回执不清除B的owner与幂等记录、无未模拟 API 请求与运行时错误。桌面及390px窄屏截图已检查，无横向溢出；截图中的图片明确标注为模拟数据。
 

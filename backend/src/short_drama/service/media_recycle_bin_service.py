@@ -46,10 +46,10 @@ class MediaRecycleBinService(BaseService):
             values = {
                 name: getattr(entry, name)
                 for name in service.create_schema.model_fields
-                if name not in {"episode_id", "context_hash"}
+                if name not in {"episode_id", "context_hash", "first_frame_media_id"}
             }
             values["episode_id"] = shot.episode_id
-            if service.media_kind == "image":
+            if service.media_kind in {"image", "video"}:
                 # Recycle records have no historical context digest. Never borrow the
                 # current image's digest: restored images must remain marked stale.
                 values["context_hash"] = None

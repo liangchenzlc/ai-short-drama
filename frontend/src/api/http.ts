@@ -34,6 +34,18 @@ const discoveryMessages: Record<string, string> = {
   model_discovery_too_large: '模型列表响应过大，请手动填写模型标识。',
 };
 const workflowMessages: Record<string, string> = {
+  assembly_version_conflict: '成片草稿已在其他窗口修改。当前编辑已保留，请下载草稿后重新载入。',
+  assembly_source_changed: '分镜来源已变化，请重新载入并核对后再操作。',
+  assembly_trim_invalid: '裁剪范围超出视频实际时长，请调整起点和终点。',
+  assembly_not_ready: '请补齐已勾选的视频、等待检测完成，并检查裁剪范围。',
+  assembly_stale_source: '部分视频与当前分镜或草稿不同，请核对并确认使用旧版本。',
+  assembly_clip_set: '片段列表已变化，请先下载草稿再重新载入。',
+  assembly_limit: '已超过成片数量或时长上限，请减少片段后重试。',
+  assembly_job_state: '任务状态已变化，请刷新导出记录。',
+  assembly_idempotency_conflict: '导出请求发生冲突，请刷新记录检查是否已提交。',
+  video_reference_required: '请先采用一张分镜参考图，再生成视频。',
+  video_reference_stale: '分镜图已过期，请先核对并采用当前内容的图片。',
+  generation_settings_changed: '生成设置已变化，请先保存并重新核对。',
   result_version_conflict: '提取候选已被其他页面修改。当前编辑已保留，请重新载入后核对。',
   candidate_unavailable: '候选不存在或已采用，请重新载入结果。',
   candidate_already_applied: '此候选已采用，不能更换采用方式。',

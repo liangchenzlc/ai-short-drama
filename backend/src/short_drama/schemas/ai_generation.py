@@ -151,8 +151,17 @@ class ImageGenerationCreate(InputModel):
 
 class VideoInput(InputModel):
     prompt: Prompt
+    reference_media_ids: list[Identifier] = Field(default_factory=list, max_length=9)
     first_frame_media_id: Identifier | None = None
     last_frame_media_id: Identifier | None = None
+
+
+class ShotVideoSource(InputModel):
+    scene: Literal["shot_video"]
+    shot_id: Identifier
+    row_version: Identifier
+    context_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    reference_media_id: Identifier
 
 
 class VideoParameters(InputModel):
@@ -163,9 +172,17 @@ class VideoParameters(InputModel):
 
 class VideoGenerationCreate(InputModel):
     config_id: Identifier | None = None
-    input: VideoInput
+    input: VideoInput | None = None
     parameters: VideoParameters = Field(default_factory=VideoParameters)
-    source: None = None
+    source: ShotVideoSource | None = None
+
+    @model_validator(mode="after")
+    def business_or_generic(self):
+        if self.source is None and self.input is None:
+            raise ValueError("Generic video requires input")
+        if self.source is not None and self.input is not None:
+            raise ValueError("Shot video uses saved prompt and reference image")
+        return self
 
 
 class GenerationRetry(InputModel):

@@ -1,0 +1,111 @@
+name: ai-short-drama-deps
+
+# Local development dependencies. See docs/docker.md for backend settings.
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-short_drama_root_dev}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-short_drama}
+      MYSQL_USER: ${MYSQL_USER:-short_drama}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-short_drama_dev}
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+      - --sql-mode=STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - type: bind
+        source: ./docs/数据库模型/schema.mysql8.sql
+        target: /docker-entrypoint-initdb.d/001-schema.sql
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          MYSQL_PWD="$${MYSQL_PASSWORD}" mysql --protocol=TCP
+          -h 127.0.0.1 -u "$${MYSQL_USER}" -D "$${MYSQL_DATABASE}"
+          -e 'SELECT 1' > /dev/null 2>&1
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    hostname: short-drama-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-short_drama}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-short_drama_mq_dev}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - type: bind
+        source: ./docker/rabbitmq.conf
+        target: /etc/rabbitmq/rabbitmq.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, check_running]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-short_drama}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-short_drama_minio_dev}
+      MINIO_REGION_NAME: us-east-1
+    command: [server, /data, --console-address, ":9001"]
+    ports:
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: [CMD, curl, -f, http://127.0.0.1:9000/minio/health/ready]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-short_drama}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-short_drama_minio_dev}
+      MINIO_IMAGE_BUCKET: ${MINIO_IMAGE_BUCKET:-image}
+      MINIO_VIDEO_BUCKET: ${MINIO_VIDEO_BUCKET:-video}
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing "local/$${MINIO_IMAGE_BUCKET}"
+        mc mb --ignore-existing "local/$${MINIO_VIDEO_BUCKET}"
+        mc anonymous set none "local/$${MINIO_IMAGE_BUCKET}"
+        mc anonymous set none "local/$${MINIO_VIDEO_BUCKET}"
+        echo "MinIO image/video buckets are ready (private)."
+
+volumes:
+  mysql-data:
+  rabbitmq-data:
+  minio-data:

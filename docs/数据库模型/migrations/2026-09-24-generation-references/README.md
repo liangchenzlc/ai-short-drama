@@ -14,3 +14,15 @@
 ## 验证
 
 在 backend 目录执行 `python scripts/run_integration.py tests/integration/test_generation_reference_migration.py -q`。fixture 使用随机隔离库验证旧数据保留及完整 schema 一致性，不升级实际业务库。运行时不会自动执行此迁移。
+
+## 漏迁移导致的 503
+
+若项目列表正常，但分镜和素材接口均返回 `503 database_unavailable`，先检查当前库是否遗漏本迁移。ORM 查询会读取 `assets.reference_media_ids` 和 `shot_scripts.reference_media_ids`；缺列会触发 MySQL 1054（Unknown column），被服务层转换成通用数据库不可用响应。
+
+在 backend 目录执行只读检查：
+
+```powershell
+uv run python scripts/check_db_schema.py
+```
+
+该命令检查全部 ORM 表和字段是否存在；退出码 0 表示无缺项，1 表示有缺表/缺列，2 表示数据库检查失败。不检查类型、默认值或约束，也不会自动修改数据库。按上述执行步骤备份并补齐缺列后，再运行检查及分镜、素材列表请求。无需修改前端代理或重复创建数据库。

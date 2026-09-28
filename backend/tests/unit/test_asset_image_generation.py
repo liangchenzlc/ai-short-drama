@@ -100,9 +100,13 @@ def test_asset_prompt_contains_saved_content_and_separate_supplement(kind):
     assert kind in prompt
     assert "saved-name" in prompt and "saved-description" in prompt
     assert "extra-lighting" in prompt
-    assert "no collage" in prompt and "no text" in prompt
-    rule = {"character": "identity", "scene": "spatial layout", "prop": "material"}[kind]
+    rule = {
+        "character": "## 人物四视图版式",
+        "scene": "## 场景单图版式",
+        "prop": "## 道具四视图版式",
+    }[kind]
     assert rule in prompt
+    assert "no collage" not in prompt
 
 
 @pytest.mark.parametrize(

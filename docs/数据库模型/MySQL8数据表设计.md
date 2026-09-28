@@ -1,16 +1,26 @@
 # MySQL 8 数据库说明
 
-项目当前使用 **21 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已经合并全部历史迁移，包括分集写作、素材图片候选、分镜归档与并发控制、镜头建议时长、原文依据和持久化生成参考图片。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。
+项目当前使用 **24 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已经合并全部历史迁移，包括分集写作、素材图片候选、分镜归档与并发控制、镜头建议时长、原文依据、持久化生成参考图片、分镜视频与成片合成。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。
 
 本文说明表的职责、关系及应用维护的约束，不另维护一份重复的字段清单。开发与测试见[开发说明](../development.md)，模块关系见[架构说明](../architecture.md)，接口见[API 文档](../api/README.md)。旧库升级使用[迁移目录](migrations/README.md)。
 
 ## 初始化与升级
 
-新库要求 MySQL **8.0.21+**。先由数据库管理员创建并选定空数据库，连接使用 `utf8mb4`、UTC（`+00:00`）及严格 SQL 模式（至少 `STRICT_TRANS_TABLES`），再执行完整的 `schema.mysql8.sql`。文件只包含按外键依赖顺序排列的 21 条 `CREATE TABLE`，不创建数据库、不设置连接、不导入数据，也不自动选择业务库。
+新库要求 MySQL **8.0.21+**。先由数据库管理员创建并选定空数据库，连接使用 `utf8mb4`、UTC（`+00:00`）及严格 SQL 模式（至少 `STRICT_TRANS_TABLES`），再执行完整的 `schema.mysql8.sql`。文件只包含按外键依赖顺序排列的 24 条 `CREATE TABLE`，不创建数据库、不设置连接、不导入数据，也不自动选择业务库。
 
 已有数据库不能用全量脚本覆盖。根据实际字段、索引、约束和已执行记录判断缺少哪些迁移，按[迁移顺序](migrations/README.md)补齐；应用启动不会自动迁移。新库执行完整脚本后无需叠加历史迁移。
 
 ## 物理约定
+
+### 成片合成（3 张）
+
+| 表 | 职责 |
+| --- | --- |
+| `episode_assemblies` | 每集唯一的成片草稿，保存画幅、清晰度、版本和当前成片媒体 |
+| `episode_assembly_clips` | 独立顺序、来源媒体、包含/排除、裁剪起止及静音，不改动分镜视频 |
+| `episode_render_jobs` | 检测/导出任务、不可变快照、幂等键、进度、取消、重试、租约与输出媒体 |
+
+`media_files.video_metadata` 缓存从真实文件读取的视频信息。它不接受客户端编辑，也不使用模型请求时长作为实际时长。导出与采用分别提交，旧成片不因草稿变化而删除。完整新增结构见[合成迁移](migrations/2026-09-28-episode-assembly/README.md)。
 
 | 项目 | 当前约定 |
 | --- | --- |
@@ -68,10 +78,12 @@
 | `shot_scripts` | 分镜正文、排序、`duration_ms`、`source_excerpt`、版本、生图设置和归档时间 | 属于分集；`duration_ms` 默认 3000，范围 1000–10000；`source_excerpt` 默认空；活动顺序唯一 |
 | `shot_assets` | 镜头使用的素材 | `(shot_id, asset_id)` 唯一；`(shot_id, episode_id)` 复合外键保证镜头归属 |
 | `shot_images` | 镜头当前已采用图片及生成参数、`context_hash` | 每镜最多一行；图片、画幅和布局必填，状态固定 `confirmed` |
-| `shot_videos` | 镜头当前已采用视频及生成参数 | 每镜最多一行；`duration` 为正数，单位毫秒，状态固定 `confirmed` |
+| `shot_videos` | 镜头当前已采用视频及生成参数、`context_hash`、`first_frame_media_id` | 每镜最多一行；`duration` 为正数，单位毫秒，状态固定 `confirmed`；首帧可空且引用媒体文件 |
 | `media_recycle_bin` | 废弃或替换的分镜媒体与恢复所需参数 | `(shot_id, media_id)` 唯一；`reason` 为 `discarded/replaced`；图片布局/画幅与视频时长互斥 |
 
 镜头建议时长 `shot_scripts.duration_ms`、请求视频时长 `shot_videos.duration` 与文件实际时长 `media_files.duration_ms` 各有职责，不相互覆盖。`source_excerpt` 保存生成分镜对应的连续剧本原文依据；历史行不推测原文，保持空字符串。
+
+`shot_scripts.video_prompt` 默认空，表示自动使用分镜默认视频内容；`video_settings` 为可空 JSON 对象，当前保存清晰度，NULL 读取为 720p。两者通过分镜版本控制保存，不进入图片上下文摘要。视频摘要 v2 覆盖分镜上下文、当前参考图媒体 ID、全能参考模式、视频提示词和设置；不包含当前视频或 row_version，避免采用后自身过期。全能参考图及排版保存在生成记录的输入与来源快照中；`shot_videos.first_frame_media_id` 仅保留历史或通用首帧任务来源，全能参考任务不填充，不复用该列冒充首帧。
 
 `shot_scripts.deleted_at` 非空代表归档，历史引用保留。`active_position` 在活动镜头上等于 `position`，归档后为 NULL；`(episode_id, active_position)` 唯一，允许归档镜头保留原顺序。排序在锁定分集和镜头后，先移到不冲突的正整数区间，再写最终顺序，同一事务提交。创建幂等键与摘要也成对维护。
 
@@ -112,7 +124,7 @@
 
 ## 结构验证与维护
 
-修改数据库结构时，同步维护总 SQL、Domain、适用于旧库的迁移和相关测试。`backend/tests/unit/test_domain.py` 无需数据库即可核对 21 表及列、类型、可空性、默认值、生成列、索引、CHECK、外键和依赖顺序，并验证总 SQL 只有 CREATE TABLE。
+修改数据库结构时，同步维护总 SQL、Domain、适用于旧库的迁移和相关测试。`backend/tests/unit/test_domain.py` 无需数据库即可核对 24 表及列、类型、可空性、默认值、生成列、索引、CHECK、外键和依赖顺序，并验证总 SQL 只有 CREATE TABLE。
 
 MySQL 集成测试使用 `backend/scripts/run_integration.py` 及测试 fixture 在配置的服务器上创建随机隔离库 `short_drama_<随机值>_test`，从总 SQL 初始化，结束后清理。迁移测试在该隔离库重建旧结构，检查升级、重入和数据保留；不得将业务库直接配置成测试目标。测试运行方式见开发说明。
 

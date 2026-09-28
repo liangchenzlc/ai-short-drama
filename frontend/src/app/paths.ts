@@ -1,4 +1,4 @@
-import type { StageId } from '../features/projects/episode-workflow';
+import type { EpisodeNavigationStage as StageId } from '../features/projects/episode-workflow';
 
 export const projectPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}`;
 export const episodePath = (projectId: string, episodeId: string, stage?: StageId) =>

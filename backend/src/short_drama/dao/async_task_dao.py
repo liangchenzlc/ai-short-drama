@@ -11,6 +11,7 @@ def source_conditions(record, filters):
     scene, identifier = filters.get("source_scene"), filters.get("source_id")
     if scene is not None and scene not in {
         "shot_image",
+        "shot_video",
         "novel_script",
         "script_shots",
         "script_assets",
@@ -25,6 +26,7 @@ def source_conditions(record, filters):
     if identifier:
         field = {
             "shot_image": "shot_id",
+            "shot_video": "shot_id",
             "novel_script": "novel_id",
             "script_shots": "script_id",
             "script_assets": "script_id",

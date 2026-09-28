@@ -5,6 +5,7 @@ from .asset_image_candidate import AssetImageCandidate
 from .async_task import AsyncTask
 from .base import Base
 from .episode import Episode
+from .episode_assembly import EpisodeAssembly, EpisodeAssemblyClip, EpisodeRenderJob
 from .episode_asset import EpisodeAsset
 from .episode_novel import EpisodeNovel
 from .episode_script import EpisodeScript
@@ -30,6 +31,9 @@ __all__ = [
     "AIModelConfig",
     "MediaFile",
     "Episode",
+    "EpisodeAssembly",
+    "EpisodeAssemblyClip",
+    "EpisodeRenderJob",
     "EpisodeNovel",
     "EpisodeScript",
     "Asset",

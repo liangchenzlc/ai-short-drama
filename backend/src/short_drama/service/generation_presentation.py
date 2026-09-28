@@ -15,13 +15,14 @@ def generation_display_context(session, request):
         "script_assets": "素材提取",
         "script_shots": "分镜脚本",
     }.get(scene, "通用生成")
-    if scene == "shot_image":
+    if scene in {"shot_image", "shot_video"}:
+        action = "生图" if scene == "shot_image" else "视频"
         shot = session.get(ShotScript, int(source["shot_id"]))
         if shot is not None:
             episode_id = str(shot.episode_id)
-            subject = f"分镜 {shot.position:02d} 生图"
+            subject = f"分镜 {shot.position:02d} {action}"
         else:
-            subject = f"分镜 {source['shot_id']} 生图"
+            subject = f"分镜 {source['shot_id']} {action}"
     elif scene == "asset_image":
         asset = snapshot.get("asset") or {}
         if not asset:

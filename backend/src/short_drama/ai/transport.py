@@ -4,11 +4,12 @@ import ipaddress
 import json
 import socket
 import time
+from builtins import TimeoutError as SocketTimeout
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import urllib3
-from urllib3.exceptions import HTTPError, NewConnectionError, TimeoutError
+from urllib3.exceptions import HTTPError, NewConnectionError, ProtocolError, TimeoutError
 
 from .types import GenerationError
 
@@ -78,7 +79,8 @@ class SafeTransport:
         except ValueError:
             raise GenerationError("unsafe_address") from None
         content_type = "application/json"
-        if isinstance(body, MultipartBody):
+        multipart = isinstance(body, MultipartBody)
+        if multipart:
             encoded, content_type = urllib3.encode_multipart_formdata(body.fields)
         else:
             encoded = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -121,7 +123,14 @@ class SafeTransport:
                     retries=False,
                     preload_content=False,
                     timeout=urllib3.Timeout(
-                        total=remaining, connect=min(10, remaining), read=remaining
+                        # urllib3 retains the connect timeout while sending the
+                        # entire body. Reference uploads need the action budget,
+                        # not the short timeout used for small JSON requests.
+                        total=remaining,
+                        connect=remaining
+                        if multipart or (encoded and len(encoded) > 1024**2)
+                        else min(10, remaining),
+                        read=remaining,
                     ),
                 )
                 response_headers = dict(response.headers)
@@ -153,6 +162,13 @@ class SafeTransport:
             except TimeoutError:
                 last_error = GenerationError(
                     "timeout", accepted_unknown=method == "POST", retryable=method != "POST"
+                )
+            except ProtocolError as error:
+                write_timeout = any(isinstance(arg, SocketTimeout) for arg in error.args)
+                last_error = GenerationError(
+                    "upload_timeout" if multipart and write_timeout else "transport_error",
+                    accepted_unknown=method == "POST",
+                    retryable=method != "POST",
                 )
             except (HTTPError, OSError, ValueError):
                 last_error = GenerationError(

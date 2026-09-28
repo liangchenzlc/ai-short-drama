@@ -21,6 +21,8 @@ class ShotVideoCreate(InputModel):
     prompt: MediumText = ""
     media_id: Identifier
     model_id: Identifier | None = None
+    context_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
+    first_frame_media_id: Identifier | None = None
 
 
 class ShotVideoUpdate(InputModel):
@@ -32,6 +34,8 @@ class ShotVideoUpdate(InputModel):
 
 
 class ShotVideoRead(ReadModel):
+    context_hash: str | None = None
+    first_frame_media_id: Identifier | None = None
     id: Identifier
     episode_id: Identifier
     shot_id: Identifier

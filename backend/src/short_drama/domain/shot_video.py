@@ -9,6 +9,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.mysql import (
     BIGINT,
+    CHAR,
     DATETIME,
     MEDIUMTEXT,
     VARCHAR,
@@ -43,6 +44,12 @@ class ShotVideo(Base):
     )
     prompt: Mapped[str] = mapped_column(
         MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="本次生视频提示词"
+    )
+    context_hash: Mapped[str | None] = mapped_column(
+        CHAR(64, charset="ascii", collation="ascii_bin"), nullable=True, server_default=text("NULL")
+    )
+    first_frame_media_id: Mapped[int | None] = mapped_column(
+        BIGINT(unsigned=True), nullable=True, server_default=text("NULL"), comment="生成使用的首帧"
     )
     media_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, comment="用户确认采用的视频，不能为空"
@@ -88,12 +95,20 @@ class ShotVideo(Base):
         UniqueConstraint("shot_id", name="uk_shot_videos_shot"),
         Index("idx_shot_videos_episode", "episode_id", "shot_id"),
         Index("idx_shot_videos_media_id", "media_id"),
+        Index("idx_shot_videos_first_frame", "first_frame_media_id"),
         Index("idx_shot_videos_model_id", "model_id"),
         Index("idx_shot_videos_shot_id_episode_id", "shot_id", "episode_id"),
         ForeignKeyConstraint(
             ["media_id"],
             ["media_files.id"],
             name="fk_shot_videos_media_id",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["first_frame_media_id"],
+            ["media_files.id"],
+            name="fk_shot_videos_first_frame",
             ondelete="RESTRICT",
             onupdate="RESTRICT",
         ),

@@ -447,7 +447,7 @@ input, textarea { caret-color: var(--accent); }
 .writing-assistant h3 { display: flex; align-items: center; gap: 9px; margin: 0 0 10px; font-size: 17px; }
 .writing-assistant h3 svg { color: var(--accent); }
 .writing-assistant > p { font-size: 13px; line-height: 1.75; margin: 0 0 22px; }
-.writing-control { display: grid; gap: 8px; margin-bottom: 20px; font-size: 13px; }
+.writing-control { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 8px; margin-bottom: 20px; font-size: 13px; }
 .writing-control small { color: var(--sub); margin-left: 6px; }
 .writing-control .ant-select { width: 100%; }
 .writing-assistant .writing-assistant-hint { font-size: 12px; margin: 12px 0 0; }

@@ -5,7 +5,7 @@ async (page) => {
   page.removeAllListeners('pageerror');
   await page.goto('about:blank');
   page.setDefaultTimeout(5000);
-  const base = 'http://127.0.0.1:5173';
+  const base = 'http://127.0.0.1:8080';
   const results = [];
   const requests = [];
   const dialogs = [];

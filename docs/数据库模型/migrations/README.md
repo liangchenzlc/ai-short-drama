@@ -14,6 +14,7 @@
 | 4 | [生产工作流](2026-09-21-production-workflow/README.md) | 增加分镜集合/单镜头版本、归档与活动顺序、素材持久化及图片候选、采用上下文摘要；回填历史当前图片候选 |
 | 5 | [分镜时长与原文依据](2026-09-22-storyboard-prompts/README.md) | 增加 `shot_scripts.duration_ms/source_excerpt` 及建议时长 CHECK |
 | 6 | [生成参考图片](2026-09-24-generation-references/README.md) | 为 assets/shot_scripts 增加默认空数组 reference_media_ids，输入参考图独立于采用图片 |
+| 7 | [分镜视频](2026-09-28-shot-video/README.md) | 增加视频提示词、设置、首帧来源及视频上下文摘要；保留历史视频 |
 
 第一批旧脚本显式含有 `USE ai_short_drama`，执行前必须检查目标库名并在审阅副本中按实际库名调整；其他迁移依赖连接已选定的数据库。不要在错误的默认数据库上执行，也不要把第一批脚本原样用于任意命名的新库。
 
@@ -28,5 +29,7 @@
 文档不记录某个个人业务库“已经完成升级”的状态。发布人员应在部署记录中保存执行时间、脚本版本和验证结果。
 
 ## 测试
+
+新增 [2026-09-28 成片合成与导出](2026-09-28-episode-assembly/README.md)：三张成片表和 `media_files.video_metadata`，可使用 Python 升级程序安全重入。全量 `schema.mysql8.sql` 已同步为 24 张表。
 
 迁移测试保留在 `backend/tests/integration`，通过[开发说明](../../development.md)中的 `backend/scripts/run_integration.py` 运行。测试 fixture 创建随机隔离数据库，从当前总 SQL 建库，再在隔离库内模拟旧结构和历史数据，验证迁移、重入和数据保留。迁移 SQL 和 Python 回填是运维交付的一部分，不能因为它们不被运行时 import 就当作无引用代码删除。

@@ -183,11 +183,18 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
 
         connection.exec_driver_sql("DROP TABLE asset_image_candidates")
         connection.exec_driver_sql(
+            "ALTER TABLE shot_videos DROP FOREIGN KEY fk_shot_videos_first_frame, "
+            "DROP INDEX idx_shot_videos_first_frame, DROP COLUMN first_frame_media_id, "
+            "DROP COLUMN context_hash"
+        )
+        connection.exec_driver_sql(
             "ALTER TABLE shot_images DROP CHECK ck_shot_images_context_hash, "
             "DROP COLUMN context_hash"
         )
         connection.exec_driver_sql(
             "ALTER TABLE shot_scripts "
+            "DROP CHECK ck_shot_scripts_video_settings, "
+            "DROP COLUMN video_prompt, DROP COLUMN video_settings, "
             "DROP CHECK ck_shot_scripts_duration_ms, "
             "DROP COLUMN source_excerpt, DROP COLUMN duration_ms, DROP COLUMN reference_media_ids, "
             "DROP CHECK ck_shot_scripts_row_version, "
@@ -249,7 +256,11 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
         assert connection.scalar(text("SELECT row_version FROM assets WHERE id=9004")) == 1
         assert connection.scalar(text("SELECT context_hash FROM shot_images WHERE id=9009")) is None
         # Reproduce the complete upgrade path, including later additive migrations.
-        for directory in ("2026-09-22-storyboard-prompts", "2026-09-24-generation-references"):
+        for directory in (
+            "2026-09-22-storyboard-prompts",
+            "2026-09-24-generation-references",
+            "2026-09-28-shot-video",
+        ):
             for path in sorted((MIGRATIONS.parent / directory).glob("*.sql")):
                 for statement in mysql_statements(path):
                     connection.exec_driver_sql(statement)

@@ -181,6 +181,220 @@ def snapshot(base, kind="text", model="model"):
     return {"base_url": base, "service_type": kind, "model_key": model, "budget_seconds": 5}
 
 
+@pytest.mark.parametrize("adapter", ["ark_video.v1", "dashscope_video.v1"])
+def test_video_uploads_stored_frame_bytes_without_fetching_local_url(gateway, provider, adapter):
+    import base64
+
+    from PIL import Image
+
+    base, state, calls = provider
+    state["body"] = (
+        {"id": "video-1"}
+        if adapter == "ark_video.v1"
+        else {"output": {"task_id": "video-1", "task_status": "PENDING"}}
+    )
+    stream = BytesIO()
+    Image.new("RGB", (16, 9), "blue").save(stream, "PNG")
+    content = stream.getvalue()
+
+    def loader(index, limit, deadline):
+        assert index == 0 and limit == 10 * 1024**2 and deadline > time.monotonic()
+        return content
+
+    request = {
+        "input": {
+            "prompt": "raise umbrella",
+            "first_frame_media_id": "42",
+            "first_frame_url": "http://127.0.0.1:9000/image/frame.png?signature=private",
+        },
+        "parameters": {"duration_ms": 5000, "resolution": "720p"},
+    }
+    result = gateway.submit(
+        snapshot(base, "video", "wan2.6-i2v"),
+        request,
+        "test-secret",
+        adapter,
+        reference_loader=loader,
+    )
+    body = calls[0][3]
+    url = (
+        body["content"][1]["image_url"]["url"]
+        if adapter == "ark_video.v1"
+        else body["input"]["img_url"]
+    )
+    assert url.startswith("data:image/png;base64,")
+    assert base64.b64decode(url.split(",", 1)[1]) == content
+    assert "signature=private" not in json.dumps(body)
+    assert "base64" not in json.dumps(result.resolved_parameters)
+    assert request["input"]["first_frame_url"].startswith("http://127.0.0.1")
+    assert len(calls) == 1
+
+
+def test_invalid_video_frame_never_submits_provider_request(gateway, provider):
+    from short_drama.ai import GenerationError
+
+    base, _state, calls = provider
+    with pytest.raises(GenerationError, match="invalid_reference_image"):
+        gateway.submit(
+            snapshot(base, "video"),
+            {
+                "input": {
+                    "prompt": "move",
+                    "first_frame_media_id": "1",
+                    "first_frame_url": "http://127.0.0.1:9000/image/1",
+                }
+            },
+            "test-secret",
+            "ark_video.v1",
+            reference_loader=lambda *_: b"not an image",
+        )
+    assert calls == []
+
+
+@pytest.mark.parametrize("frame_count", [1, 2])
+@pytest.mark.parametrize("mode", ["frames", "reference"])
+def test_modelhub_multipart_frames_and_poll(gateway, provider, frame_count, mode):
+    from PIL import Image
+
+    base, state, calls = provider
+    state["body"] = {"task_id": "video-mini-1", "status": "submitted"}
+    stream = BytesIO()
+    Image.new("RGB", (9, 16), "blue").save(stream, "PNG")
+    data = stream.getvalue()
+    inputs = {"prompt": "Raise umbrella, camera slowly pushes in."}
+    for name in ("first", "last")[:frame_count]:
+        inputs[f"{name}_frame_media_id"] = "42"
+        inputs[f"{name}_frame_url"] = "http://127.0.0.1:9000/frame.png?private=1"
+    if mode == "reference":
+        inputs = {
+            "prompt": "Use the storyboard panels as visual references, no grid in the video.",
+            "reference_media_ids": ["42"] * frame_count,
+            "reference_urls": ["http://127.0.0.1:9000/grid.png?private=1"] * frame_count,
+        }
+    loaded = []
+
+    def loader(index, limit, deadline):
+        assert limit == 10 * 1024**2 and deadline > time.monotonic()
+        loaded.append(index)
+        return data
+
+    snap = snapshot(base, "video", "seedance-2.0-mini")
+    result = gateway.submit(
+        snap,
+        {
+            "input": inputs,
+            "parameters": {
+                "duration_ms": 5000,
+                **({"aspect": "16:9"} if mode == "reference" else {}),
+            },
+        },
+        "test-secret",
+        "modelhub_video.v1",
+        reference_loader=loader,
+    )
+    assert result.status == "submitted" and result.provider_task_id == "video-mini-1"
+    assert calls[0][:2] == ("POST", "/v1/videos/generations")
+    assert calls[0][2]["Authorization"] == "Bearer test-secret"
+    fields = {field[0]: field[3] for field in calls[0][3]}
+    assert fields["functionMode"] == (
+        b"omni_reference" if mode == "reference" else b"first_last_frames"
+    )
+    assert fields["ratio"] == (b"16:9" if mode == "reference" else b"auto")
+    assert fields["duration"] == b"5"
+    assert fields["resolution"] == b"720p"
+    assert loaded == list(range(frame_count))
+    for index in range(frame_count):
+        assert fields[f"image_file_{index + 1}"] == data
+    assert b"private=1" not in b"".join(fields.values())
+    assert not any(key.startswith("image_file_") for key in result.resolved_parameters)
+    state["body"] = {"status": "completed", "result": {"url": "https://cdn.example/video.mp4"}}
+    result = gateway.poll(snap, "video-mini-1", "test-secret", "modelhub_video.v1")
+    assert calls[-1][:2] == ("GET", "/v1/videos/tasks/video-mini-1")
+    assert result.outputs == [{"url": "https://cdn.example/video.mp4", "media_type": "video"}]
+    assert len(calls) == 2
+
+
+def test_modelhub_capabilities_and_exact_host():
+    from short_drama.ai.adapters import capabilities, select_adapter
+
+    snap = snapshot("https://api.modelhub.cc", "video", "seedance-2.0-mini")
+    assert select_adapter(snap) == "modelhub_video.v1"
+    caps = capabilities(snap)
+    assert caps["video_input"] == {
+        "first_frame": True,
+        "reference_images": True,
+        "duration_seconds": list(range(4, 16)),
+        "resolutions": ["720p", "480p"],
+    }
+    assert not capabilities({**snap, "base_url": "https://api.modelhub.cc.example"})["known"]
+    assert not capabilities({**snap, "model_key": "unknown"})["video_input"]["first_frame"]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"duration_ms": 3000},
+        {"duration_ms": 16000},
+        {"duration_ms": 4500},
+        {"resolution": "1080p"},
+        {"aspect": "3:2"},
+    ],
+)
+def test_modelhub_invalid_parameters_never_submit(gateway, provider, params):
+    from short_drama.ai import GenerationError
+
+    base, _, calls = provider
+    with pytest.raises(GenerationError, match="unsupported_parameters"):
+        gateway.submit(
+            snapshot(base, "video", "seedance-2.0-mini"),
+            {"input": {"prompt": "move"}, "parameters": params},
+            "test-secret",
+            "modelhub_video.v1",
+        )
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"status": "submitted"},
+        {"status": "completed", "result": {}},
+        {"status": "unrecognized", "task_id": "task-1"},
+    ],
+)
+def test_modelhub_ambiguous_submit_does_not_authorize_retry(body):
+    from short_drama.ai import GenerationError
+    from short_drama.ai.adapters import parse_result
+
+    with pytest.raises(GenerationError) as caught:
+        parse_result(body, "modelhub_video.v1", submitted=True)
+    assert caught.value.accepted_unknown and not caught.value.retryable
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "processing",
+        "in_queue",
+        "pending",
+        "queued",
+        "not_start",
+        "submitted",
+        "failed",
+        "cancelled",
+        "blocked",
+    ],
+)
+def test_modelhub_poll_states(status):
+    from short_drama.ai.adapters import parse_result
+
+    result = parse_result(
+        {"status": status}, "modelhub_video.v1", submitted=False, task_id="task-1"
+    )
+    expected = "failed" if status in ("failed", "cancelled", "blocked") else "submitted"
+    assert result.status == expected and result.provider_task_id == "task-1"
+
+
 @pytest.mark.parametrize(
     "base,kind,model,expected",
     [
@@ -400,6 +614,44 @@ def test_edit_reference_download_blocks_private_destinations(provider):
             "secret",
         )
     assert error.value.code == "unsafe_address" and not error.value.accepted_unknown
+    assert not calls
+
+
+def test_trusted_references_upload_in_order_without_fetching_private_urls(gateway, provider):
+    base, state, calls = provider
+    state["body"] = {"data": [{"b64_json": "aW1hZ2U="}]}
+    images = [reference_image(fmt) for fmt in ("PNG", "JPEG", "WEBP")]
+    loaded = []
+
+    def load(index, limit, deadline):
+        loaded.append((index, limit, deadline))
+        return images[index]
+
+    result = gateway.submit(
+        snapshot(base, "image", "gpt-image-2.5-flare"),
+        {"input": {"prompt": "scene", "reference_urls": ["http://10.0.0.1/ref"] * 3}},
+        "test-secret",
+        reference_loader=load,
+    )
+    assert result.status == "succeeded"
+    assert [(call[0], call[1]) for call in calls] == [("POST", "/v1/images/edits")]
+    files = [(mime, data) for _, filename, mime, data in calls[0][3] if filename]
+    assert files == list(zip(("image/png", "image/jpeg", "image/webp"), images, strict=True))
+    assert [item[0] for item in loaded] == [0, 1, 2]
+    assert len({item[2] for item in loaded}) == 1
+
+
+def test_corrupt_trusted_reference_never_submits(gateway, provider):
+    from short_drama.ai import GenerationError
+
+    base, _, calls = provider
+    with pytest.raises(GenerationError, match="invalid_reference_image"):
+        gateway.submit(
+            snapshot(base, "image", "gpt-image-2"),
+            {"input": {"prompt": "scene", "reference_urls": ["http://10.0.0.1/ref"]}},
+            "secret",
+            reference_loader=lambda *_: b"broken",
+        )
     assert not calls
 
 
@@ -966,3 +1218,91 @@ def test_https_pins_validated_ip_and_verifies_original_hostname(monkeypatch):
         connections[0]["server_hostname"] == connections[0]["assert_hostname"] == "provider.example"
     )
     assert connections[0]["cert_reqs"] == "CERT_REQUIRED"
+
+
+@pytest.mark.parametrize("multipart,budget", [(True, 60), (True, 4), (False, 60)])
+def test_upload_timeout_uses_remaining_budget_without_enabling_retries(
+    monkeypatch, multipart, budget
+):
+    from short_drama.ai import transport
+
+    monkeypatch.setattr(transport.time, "monotonic", lambda: 100)
+    monkeypatch.setattr(
+        transport.socket, "getaddrinfo", lambda *_args, **_kwargs: [(2, 1, 6, "", ("8.8.8.8", 443))]
+    )
+    calls = []
+
+    class Pool:
+        def __init__(self, **_kwargs):
+            pass
+
+        def request(self, method, path, **kwargs):
+            calls.append((method, path))
+            timeout = kwargs["timeout"]
+            assert timeout.total == budget
+            assert timeout.connect_timeout == (budget if multipart else 10)
+            assert kwargs["retries"] is False
+            assert kwargs["redirect"] is False
+            return SimpleNamespace(
+                status=401, headers={}, close=lambda: None, release_conn=lambda: None
+            )
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(transport.urllib3, "HTTPSConnectionPool", Pool)
+    body = (
+        transport.MultipartBody([("image[]", ("ref.png", b"image", "image/png"))])
+        if multipart
+        else {"prompt": "test"}
+    )
+    result = transport.SafeTransport(SimpleNamespace()).request(
+        "POST",
+        "https://provider.example/v1/images/edits",
+        body=body,
+        max_bytes=1024,
+        deadline=100 + budget,
+    )
+    assert result[0] == 401 and len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "cause,code",
+    [
+        (TimeoutError("private details"), "upload_timeout"),
+        (ConnectionResetError("private details"), "transport_error"),
+    ],
+)
+def test_interrupted_upload_is_unknown_and_never_resent(monkeypatch, cause, code):
+    from short_drama.ai import GenerationError, transport
+    from short_drama.service.ai_generation_service import safe_error
+
+    monkeypatch.setattr(
+        transport.socket, "getaddrinfo", lambda *_args, **_kwargs: [(2, 1, 6, "", ("8.8.8.8", 443))]
+    )
+    calls = []
+
+    class Pool:
+        def __init__(self, **_kwargs):
+            pass
+
+        def request(self, *args, **kwargs):
+            calls.append(args)
+            raise transport.ProtocolError("Connection aborted", cause)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(transport.urllib3, "HTTPSConnectionPool", Pool)
+    with pytest.raises(GenerationError) as caught:
+        transport.SafeTransport(SimpleNamespace()).request(
+            "POST",
+            "https://provider.example/v1/images/edits",
+            body=transport.MultipartBody([("image[]", ("ref.png", b"image", "image/png"))]),
+            max_bytes=1024,
+            deadline=time.monotonic() + 60,
+        )
+    assert caught.value.code == code and caught.value.accepted_unknown
+    assert not caught.value.retryable and len(calls) == 1
+    assert "private" not in str(caught.value)
+    assert "未自动重发" in safe_error({"code": code})["message"]

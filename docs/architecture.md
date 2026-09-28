@@ -98,4 +98,10 @@ AI Key 使用 AES-256-GCM 加密信封，主密钥来自 `ENCRYPTION_KEY`。配�
 
 ## 后续开发边界
 
-接下来完成选定模型的参考图联调、分镜视频业务来源/候选/采用，再实现最小成片导出。现有视频任务和 `shot_videos` 是可复用基础，但当前分集页面没有视频制作步骤。音频、字幕、剪辑、宫格切图和多用户权限尚未实现。
+分镜制作已接入全能参考图视频的业务来源、候选和采用。`shot-video-context-v2` 组合分镜上下文、已采用参考图、全能参考模式、视频用户提示词和视频设置，排除当前采用视频及并发版本；仅编辑视频提示词不会让分镜图过期。参考图支持单图或宫格，新任务冻结系统/用户提示词、参考图排版与素材快照，历史任务保持原输入。旧首帧任务的摘要与新模式不同，作为历史候选采用时需核对来源。
+
+视频 Worker 通过对象存储读取图片。ModelHub 全能参考图使用 multipart 文件上传；通用首尾帧请求保留方舟/百炼的 Base64 输入。单图最多 10 MiB，检查真实 PNG/JPEG/WebP 格式，避免供应商读取本机签名 URL；图片数据只存在于发送阶段，不写入任务 JSON。
+
+ModelHub 使用独立的 `modelhub_video.v1` 适配器，仅自动识别 `api.modelhub.cc`。当前验证的参数合同是 `seedance-2.0-mini`：`POST /v1/videos/generations` 上传 `image_file_1`，分镜视频固定 `functionMode=omni_reference`，`ratio` 使用分集画幅；通过 `GET /v1/videos/tasks/{task_id}` 查询结果。原生时长范围 4–15 秒、480p/720p；视频时长可在 `video_settings.duration_ms` 独立保存，缺省沿用分镜时长，设置后可使用完整的 4–15 秒范围，不修改分镜脚本时长或使分镜图过期。能力来自公开文档，不代表账户权限或实时渠道可用性，真实付费生成效果仍需验收。
+
+成片合成使用独立的 `episode_assemblies` / `episode_assembly_clips` 草稿及 `episode_render_jobs` 任务。调度器向独立 render 队列投递，单并发 Worker 下载已管理素材、探测实际时长、使用 FFmpeg 统一编码拼接并归档至 MinIO。租约隔离过期进程，冻结快照隔离编辑，失败重试复用校验后的成片。该流程不调用 AI 模型。音频制作、字幕、多轨剪辑、宫格切图和多用户权限尚未实现。

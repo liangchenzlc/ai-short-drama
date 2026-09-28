@@ -20,6 +20,7 @@ from short_drama.domain.shot_script import ShotScript
 from short_drama.schemas.base import parse_identifier
 from short_drama.schemas.episode_storyboard import (
     ShotImageSettings,
+    ShotVideoSettings,
     StoryboardCreate,
     StoryboardGeneratedShot,
     StoryboardOrder,
@@ -30,6 +31,7 @@ from short_drama.service.storage_service import StorageService
 
 from .base import BaseService, utcnow
 from .shot_context import compute_shot_context_hash, normalize_shot_context
+from .shot_video_context import DEFAULT_VIDEO_SETTINGS, video_context_hash
 
 DEFAULT_IMAGE_SETTINGS = {"resolution": "2K", "aspect": "inherit", "layout": "single"}
 MAX_ACTIVE_SHOTS = 500
@@ -172,13 +174,39 @@ class EpisodeStoryboardService(BaseService):
             "is_stale": image.context_hash is None or image.context_hash != current_hash,
         }
 
-    def _shot(self, episode, shot, *, assets=None, image_row=_UNSET):
+    def _shot(self, episode, shot, *, assets=None, image_row=_UNSET, video_row=_UNSET):
+        from short_drama.ai.business_prompts import video_default_prompt
+        from short_drama.ai.prompts.registry import shot_video_system_prompt
+
         asset_ids = (
             self.dao.asset_ids(shot.id) if assets is None else [asset.id for asset in assets]
         )
         assets = self.dao.assets(shot.id) if assets is None else assets
         _context, digest = self._context(episode, shot, assets)
         settings = shot.image_settings or DEFAULT_IMAGE_SETTINGS
+        image = self._image(episode, shot, digest, image_row)
+        prompt = getattr(shot, "video_prompt", "") or ""
+        video_settings = getattr(shot, "video_settings", None) or DEFAULT_VIDEO_SETTINGS
+        video_hash = video_context_hash(
+            digest, image["media_id"] if image else None, prompt, video_settings
+        )
+        result = self.dao.video_rows([shot.id]).get(shot.id) if video_row is _UNSET else video_row
+        video = None
+        if result:
+            current, media, asset_id = result
+            video = {
+                "media_id": str(media.id),
+                "media_asset_id": str(asset_id) if asset_id else None,
+                "url": StorageService(self.storage, self.settings).download_url(
+                    media.storage_locator
+                )
+                if self.storage is not None and self.settings is not None
+                else None,
+                "resolution": current.resolution,
+                "duration_ms": media.duration_ms or current.duration,
+                "first_frame_media_id": current.first_frame_media_id,
+                "is_stale": current.context_hash != video_hash,
+            }
         return StoryboardShotRead(
             id=shot.id,
             position=shot.position,
@@ -189,7 +217,13 @@ class EpisodeStoryboardService(BaseService):
             asset_ids=asset_ids,
             image_settings=ShotImageSettings.model_validate(settings),
             context_hash=digest,
-            image=self._image(episode, shot, digest, image_row),
+            image=image,
+            video_prompt=prompt,
+            video_default_prompt=video_default_prompt(_context),
+            video_system_prompt=shot_video_system_prompt(),
+            video_settings=video_settings,
+            video_context_hash=video_hash,
+            video=video,
             deleted_at=shot.deleted_at,
         ).model_dump(mode="json")
 
@@ -201,6 +235,7 @@ class EpisodeStoryboardService(BaseService):
             episode = self.lock_episode(project_id, episode_id)
             rows, total = self.dao.list_rows(episode.id, include_archived, offset, limit)
             assets_by_shot, images_by_shot = self.dao.list_details([row.id for row in rows])
+            videos_by_shot = self.dao.video_rows([row.id for row in rows])
             return {
                 "episode_id": str(episode.id),
                 "storyboard_version": str(episode.storyboard_version),
@@ -210,6 +245,7 @@ class EpisodeStoryboardService(BaseService):
                         row,
                         assets=assets_by_shot[row.id],
                         image_row=images_by_shot.get(row.id),
+                        video_row=videos_by_shot.get(row.id),
                     )
                     for row in rows
                 ],
@@ -291,6 +327,16 @@ class EpisodeStoryboardService(BaseService):
             require_shot_version(shot, data.pop("row_version"))
             now = utcnow()
             changed = False
+            if "video_prompt" in data and shot.video_prompt != data["video_prompt"]:
+                shot.video_prompt = data["video_prompt"]
+                changed = True
+            if "video_settings" in data:
+                settings = ShotVideoSettings.model_validate(data["video_settings"]).model_dump(
+                    exclude_none=True
+                )
+                if (shot.video_settings or DEFAULT_VIDEO_SETTINGS) != settings:
+                    shot.video_settings = settings
+                    changed = True
             if "script" in data and shot.script != data["script"]:
                 shot.script = data["script"]
                 changed = True

@@ -4,7 +4,7 @@ import { generations } from '../../api/modules/generations';
 import { mediaLibrary } from '../../api/modules/media-library';
 import { createShotImageHistory, emptyShotImageHistory } from './shot-image-history';
 
-export function useShotImageGeneration({ shotId, enabled }: { shotId: string; enabled: boolean }) {
+export function useShotImageGeneration({ shotId, enabled, kind = 'image' }: { shotId: string; enabled: boolean; kind?: 'image' | 'video' }) {
   const [snapshot, setSnapshot] = useState(() => ({ shotId, ...emptyShotImageHistory() }));
   const history = useRef<ReturnType<typeof createShotImageHistory> | null>(null);
   const current = useRef({ shotId, enabled });
@@ -14,6 +14,7 @@ export function useShotImageGeneration({ shotId, enabled }: { shotId: string; en
     let alive = true;
     const session = createShotImageHistory({
       shotId,
+      kind,
       api: { listTasks: generations.list, listCandidates: mediaLibrary.list, detail: generations.detail },
       describeError: errorMessage,
       onChange: state => {
@@ -27,7 +28,7 @@ export function useShotImageGeneration({ shotId, enabled }: { shotId: string; en
       session.stop();
       if (history.current === session) history.current = null;
     };
-  }, [shotId]);
+  }, [shotId, kind]);
 
   useEffect(() => {
     const session = history.current;
@@ -44,7 +45,7 @@ export function useShotImageGeneration({ shotId, enabled }: { shotId: string; en
       window.removeEventListener('focus', resume);
       session.stop();
     };
-  }, [shotId, enabled]);
+  }, [shotId, enabled, kind]);
 
   const invoke = useCallback((operation: 'refresh' | 'loadMoreTasks' | 'loadMoreCandidates') => {
     if (!current.current.enabled || document.visibilityState === 'hidden') return Promise.resolve();

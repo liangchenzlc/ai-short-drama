@@ -236,7 +236,7 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 
 - asset_image：必须带expected_row_version，可用confirm_shared；会添加候选并执行素材确认逻辑，不使用parameters中的生成参数。
 - shot_image：必须带expected_row_version和expected_context_hash；来源不同/过期需acknowledge_stale_source=true，但不能跳过当前并发版本检查。parameters可补layout/aspect/resolution，但不得与已有生成记录中的值冲突。分镜候选页面省略parameters，采用原生成记录中的参数；当前图片设置不同不应被传成历史图片参数。
-- shot_video：已有通用采用能力，比较expected_media_id。需要分辨率和时长，不持久化画幅；parameters.resolution可覆盖请求值，duration优先使用显式值、其次媒体实际时长、最后生成请求时长，单位均为毫秒。当前没有与shot_image等价的参数一致性和业务来源上下文校验，也未接入分集制作页面。
+- shot_video：必须带 expected_row_version 和 expected_context_hash（来自分镜的 video_context_hash），并比较 expected_media_id。不同或过期来源需明确 acknowledge_stale_source，不能绕过当前版本冲突；分镜视频任务的补充参数不得与生成快照冲突，页面直接沿用原参数。通用视频仍可补充时长与清晰度，但同样需要目标版本与来源核对。单位统一毫秒；同一已采用且来源未变的视频允许重复采用请求返回当前状态。
 
 生成输出不会因未采用而自动删除；替换旧分镜媒体保留回收记录。HTTP 当前未提供物理媒体删除或自动清理接口。签名URL过期后应重新读取详情。
 
@@ -255,3 +255,29 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 - `POST E/shots/{shot_id}/move`：`{storyboard_version,direction}`，direction 为 -1 或 1。服务端交换相邻活动镜头，返回新集合版本，客户端无需加载整集排序 ID。
 
 旧数据库须先执行 [参考图增量迁移](../数据库模型/migrations/2026-09-24-generation-references/README.md)。
+
+## 分镜图生视频
+
+旧库还需执行 [分镜视频迁移](../数据库模型/migrations/2026-09-28-shot-video/README.md)。分镜 PATCH 新增 `video_prompt`（最多 16000 字符，空表示使用默认内容）、`video_settings:{resolution}`（480p/720p/1080p）。GET 返回 `video_default_prompt`、`video_system_prompt`、`video_context_hash` 及 `video`（播放 URL、时长、清晰度和 is_stale）。历史 `first_frame_media_id` 字段保留；全能参考任务不填该字段，参考信息保存在生成记录中。
+
+`POST /ai/generations/video` 支持以下业务来源，保留通用 `input` 请求；业务来源与客户端 `input` 互斥：
+
+```json
+{
+  "config_id": "123",
+  "source": {
+    "scene": "shot_video", "shot_id": "456", "row_version": "3",
+    "context_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "reference_media_id": "789"
+  }
+}
+```
+
+ID、版本及 hash 必须替换为实际读取值。服务端从保存内容装配提示词、时长与清晰度，并校验参考图为本镜当前未过期图片，允许 single/four/five/nine 排版。可传 parameters，但需完整匹配已保存时长与清晰度；服务端从分集设置补充 aspect，避免宫格整图比例决定视频比例。ModelHub 发送 `functionMode=omni_reference`，输入为 `reference_media_ids`，不用首尾帧字段。生成历史与媒体库支持 `source_scene=shot_video&source_id=<shot_id>`。
+
+模型能力返回可选 `video_input:{first_frame,reference_images,duration_seconds,resolutions}`。分镜视频需要 reference_images=true，仅支持首帧的模型不能替代全能参考模式。通用视频仍保留原首尾帧输入，另支持 reference_media_ids（最多 9 张），两种方式不可混用。数组为 NULL 表示尚无该模型的完整本地约束，不等于已验证全部参数；整数秒等协议规则仍由服务端校验。
+
+视频设置另支持 `video_settings.duration_ms`：可空整数毫秒，1000–3600000 且必须整秒，实际生成范围由模型约束。缺省或 NULL 沿用分镜脚本时长；设置后独立保存，不修改 `shot.duration_ms` 或图片上下文。生成参数与提示词均使用有效视频时长，当前 ModelHub Mini 可设 4–15 秒。
+# 成片功能补充
+
+[成片合成与导出 API](episode-assembly.md)：草稿、同步、检测、导出、取消、重试、下载与当前成片。

@@ -41,7 +41,7 @@ export function AssetImageGeneration({
       </div>
     </div>}
     {(submitError || refreshError) && <Alert type="warning" showIcon message={submitError || refreshError}/>}
-    <div className="asset-generation-history-heading">
+    <details className="asset-generation-history"><summary>生成记录 <span>{tasks.length ? `${tasks.length} 条${tasks.some(active) ? '，有任务处理中' : ''}` : '暂无记录'}</span></summary><div className="asset-generation-history-heading">
       <h4>生成记录</h4>
       <Button size="small" disabled={submitting} onClick={() => void load()}>刷新</Button>
     </div>
@@ -60,6 +60,6 @@ export function AssetImageGeneration({
         </article>;
       })}
     </div>}
-    {hasMore && <Button disabled={submitting || !!actionTaskId} onClick={() => void loadMore()}>加载更多生成记录</Button>}
+    {hasMore && <Button disabled={submitting || !!actionTaskId} onClick={() => void loadMore()}>加载更多生成记录</Button>}</details>
   </div>;
 }
