@@ -1,0 +1,32 @@
+async (page) => {
+  await page.setViewportSize({width:1440,height:1080});
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelector('video.is-active')?.readyState>=2);
+  const player = page.getByRole('region',{name:'时间轴成片预览'});
+  await player.getByRole('button',{name:'全屏',exact:true}).click();
+  await page.waitForFunction(()=>document.fullscreenElement?.classList.contains('assembly-player'));
+  await player.getByRole('button',{name:'播放',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('video.is-active')?.currentTime>.2);
+  await player.getByRole('button',{name:'暂停',exact:true}).click();
+  const before = await player.getByRole('status',{name:'播放位置'}).textContent();
+  await player.getByRole('button',{name:'下一帧',exact:true}).click();
+  await page.waitForFunction(before=>document.querySelector('output[aria-label="播放位置"]').textContent!==before,before);
+  await page.screenshot({path:'.impeccable/review/timeline-fullscreen.png'});
+  await player.getByRole('button',{name:'全屏',exact:true}).click();
+  await page.waitForFunction(()=>!document.fullscreenElement);
+  await player.getByRole('button',{name:'播放',exact:true}).click();
+  await player.getByRole('button',{name:'全屏',exact:true}).click();
+  await player.getByRole('button',{name:'暂停',exact:true}).click();
+  await player.getByRole('button',{name:'全屏',exact:true}).click();
+  await page.waitForFunction(()=>!document.fullscreenElement);
+  await page.getByRole('button',{name:'适应全部',exact:true}).click();
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:'.impeccable/review/timeline-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole('button',{name:'适应全部',exact:true}).click();
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:'.impeccable/review/timeline-mobile.png',fullPage:true});
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)) throw new Error('Mobile overflow');
+  await page.setViewportSize({width:1440,height:1080});
+  return {passed:true,fullscreen:'play, pause, step and exit; enter while playing',mobileOverflow:false};
+}

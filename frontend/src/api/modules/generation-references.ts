@@ -1,6 +1,10 @@
 import { http } from '../http';
 export interface ReferenceImage { media_id: string; name: string; url: string; width?: number; height?: number }
 export interface ReferenceImages { row_version: string; items: ReferenceImage[] }
+export async function uploadTaskReference(file: File): Promise<ReferenceImage> {
+  const body = new FormData(); body.append('file', file);
+  return (await http.post<ReferenceImage>('/generation-references/uploads', body, { timeout: 120_000 })).data;
+}
 export function generationReferences(kind: 'asset' | 'shot', ownerId: string) {
   const root = `/generation-references/${kind}/${encodeURIComponent(ownerId)}`;
   return {

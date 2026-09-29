@@ -8,11 +8,12 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test tests",
     "test:e2e": "playwright test"
   },
   "dependencies": {
     "@ant-design/v5-patch-for-react-19": "^1.0.3",
+    "@xzdarcy/react-timeline-editor": "^1.0.0",
     "antd": "^5.29.3",
     "axios": "^1.20.0",
     "react": "^19.1.0",

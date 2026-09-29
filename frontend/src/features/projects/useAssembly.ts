@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { assemblyApi, type AssemblyState } from '../../api/modules/assembly';
+import { assemblyApi, type AssemblyClip, type AssemblyState } from '../../api/modules/assembly';
 import { errorMessage } from '../../api/http';
 import type { NavigationBarrier } from './writing-navigation';
 
@@ -8,6 +8,8 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
   const [value, setValue] = useState<AssemblyState | null>(null);
   const [status, setStatus] = useState<'loading' | 'saved' | 'unsaved' | 'saving' | 'error'>('loading');
   const [error, setError] = useState('');
+  const past = useRef<AssemblyClip[][]>([]);
+  const future = useRef<AssemblyClip[][]>([]);
   const state = useRef({ value: null as AssemblyState | null, revision: 0, saved: 0, paused: false, mounted: true });
   const pending = useRef<Promise<boolean> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,9 +50,15 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
     return pending.current;
   }
   const flushRef = useRef(flush); flushRef.current = flush;
-  function edit(transform: (value: AssemblyState) => AssemblyState) {
+  function edit(transform: (value: AssemblyState) => AssemblyState, record = true) {
     if (!state.current.value?.assembly) return;
-    replace(transform(state.current.value)); state.current.revision++;
+    const before = state.current.value;
+    const next = transform(before);
+    if (next === before) return;
+    if (record && next.clips !== before.clips) {
+      past.current = [...past.current.slice(-99), before.clips ?? []]; future.current = [];
+    }
+    replace(next); state.current.revision++;
     setStatus(state.current.paused ? 'error' : 'unsaved');
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void flushRef.current(), 650);
@@ -59,7 +67,32 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
     if (pending.current) await pending.current;
     const next = await api.get();
     state.current.saved = state.current.revision; state.current.paused = false;
+    past.current = []; future.current = [];
     replace(next); setError(''); setStatus('saved');
+  }
+  function undo() {
+    const clips = past.current.pop();
+    if (!clips || !state.current.value) return;
+    future.current.push(state.current.value.clips ?? []);
+    edit(current => ({ ...current, clips }), false);
+  }
+  function redo() {
+    const clips = future.current.pop();
+    if (!clips || !state.current.value) return;
+    past.current.push(state.current.value.clips ?? []);
+    edit(current => ({ ...current, clips }), false);
+  }
+  async function refreshMedia() {
+    const fresh = await api.get();
+    if (!state.current.mounted || !state.current.value) return;
+    const sources = [...fresh.clips ?? [], ...fresh.sources ?? []];
+    const hydrate = (clips: AssemblyClip[]) => clips.map(c => {
+      const match = sources.find(s => s.media_id === c.media_id);
+      return match ? { ...c, url: match.url, poster: match.poster, filmstrip: match.filmstrip } : c;
+    });
+    replace({ ...state.current.value, clips: hydrate(state.current.value.clips ?? []),
+      sources: hydrate(state.current.value.sources ?? []), jobs: fresh.jobs });
+    past.current = past.current.map(hydrate); future.current = future.current.map(hydrate);
   }
   useEffect(() => {
     state.current.mounted = true;
@@ -70,6 +103,8 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
     const interval = setInterval(() => { if (!state.current.paused && state.current.saved === state.current.revision && !pending.current) void load().catch(() => {}); }, 4000);
     return () => { cancelled = true; state.current.mounted = false; clearInterval(interval); if (timer.current) clearTimeout(timer.current); register.current(null); };
   }, [api]); // project/episode remount owns this editing session
-  return { api, value, status, error, edit, flush, load, replace, reload, latest: () => state.current.value,
+  return { api, value, status, error, edit, flush, load, replace, reload, undo, redo, refreshMedia,
+    canUndo: past.current.length > 0, canRedo: future.current.length > 0,
+    clearHistory: () => { past.current = []; future.current = []; }, latest: () => state.current.value,
     retrySave: async () => { state.current.paused = false; return flush(); } };
 }

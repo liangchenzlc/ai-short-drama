@@ -1,0 +1,38 @@
+async (page) => {
+  const read = () => page.evaluate(async () => (await fetch('/api/v1/projects/10/episodes/20/assembly')).json());
+  const save = async () => { if (!await page.evaluate(() => window.assemblyBarrier.flush())) throw new Error('Save failed'); };
+  const before = await read();
+  await page.locator('.assembly-track-clip').first().scrollIntoViewIfNeeded();
+  const first = await page.locator('.assembly-track-clip').first().boundingBox();
+  await page.mouse.move(first.x + first.width * .7, first.y + first.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(first.x + first.width * .7 + 420, first.y + first.height / 2, {steps:16});
+  await page.mouse.up();
+  await save();
+  const moved = await read();
+  if (moved.clips[0].id === before.clips[0].id) throw new Error('Timeline drag did not reorder');
+  const handle = await page.locator('.timeline-editor-action-left-stretch').first().boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + 34, handle.y + handle.height / 2, {steps:10});
+  await page.mouse.up();
+  await save();
+  const trimmed = await read();
+  if (trimmed.clips[0].trim_in_ms <= moved.clips[0].trim_in_ms) throw new Error('Edge trim did not update source in-point');
+  await page.locator('.assembly-source-list article').first().dragTo(page.locator('.assembly-timeline-canvas'), {targetPosition:{x:50,y:70}});
+  await save();
+  if ((await read()).clips.length !== trimmed.clips.length + 1) throw new Error('Dragging source onto timeline failed');
+  await page.getByRole('button',{name:'适应全部',exact:true}).click();
+  await page.getByRole('spinbutton',{name:'定位时间（秒）'}).fill('0.5');
+  await page.getByRole('spinbutton',{name:'定位时间（秒）'}).press('Tab');
+  await page.waitForFunction(()=>document.querySelector('video.is-active')?.readyState>=2);
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:'.impeccable/review/timeline-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:'.impeccable/review/timeline-mobile.png',fullPage:true});
+  const overflow = await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
+  if (overflow) throw new Error('Mobile page overflows horizontally');
+  await page.setViewportSize({width:1440,height:1080});
+  console.log(JSON.stringify({passed:true,drag:true,edgeTrim:true,sourceDrop:true,mobileOverflow:overflow}));
+}

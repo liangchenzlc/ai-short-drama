@@ -51,3 +51,38 @@ def test_reference_routes_validate_owner_and_version_and_accept_multipart(monkey
             assert calls == [("asset", 7), ("asset", 8)]
 
     asyncio.run(run())
+
+
+def test_standalone_reference_upload_needs_no_owner_or_version(monkeypatch):
+    class Uploads:
+        def __init__(self, session, settings, storage):
+            pass
+
+        def upload(self, stream, size, name, content_type):
+            assert (stream.read(), size, name, content_type) == (
+                b"image",
+                5,
+                "reference.png",
+                "image/png",
+            )
+            return {"media_id": str(2**60), "name": name, "url": "https://signed.test/ref.png"}
+
+    monkeypatch.setattr(generation_references, "TaskReferenceService", Uploads)
+
+    async def run():
+        app = create_app(Settings(_env_file=None))
+        app.state.settings = Settings(_env_file=None)
+        app.state.storage = None
+        app.dependency_overrides[get_session] = lambda: None
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://test"
+        ) as client:
+            url = "/api/v1/generation-references/uploads"
+            assert (await client.post(url)).status_code == 422
+            result = await client.post(
+                url, files={"file": ("reference.png", b"image", "image/png")}
+            )
+            assert result.status_code == 201
+            assert result.json()["media_id"] == str(2**60)
+
+    asyncio.run(run())

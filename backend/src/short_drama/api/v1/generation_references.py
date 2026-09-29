@@ -7,9 +7,21 @@ from short_drama.api.dependencies import get_session
 from short_drama.api.v1.assets import _version
 from short_drama.schemas.base import Identifier
 from short_drama.service.generation_reference_service import GenerationReferenceService
+from short_drama.service.task_reference_service import TaskReferenceService
 
 router = APIRouter(prefix="/generation-references", tags=["Generation reference images"])
 SessionDep = Annotated[Session, Depends(get_session)]
+
+
+@router.post("/uploads", status_code=201)
+def upload_task_reference(
+    request: Request,
+    session: SessionDep,
+    file: Annotated[UploadFile, File()],
+):
+    return TaskReferenceService(
+        session, request.app.state.settings, request.app.state.storage
+    ).upload(file.file, file.size, file.filename or "", file.content_type)
 
 
 def service(request, session, kind, version=None):

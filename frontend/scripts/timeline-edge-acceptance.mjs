@@ -1,0 +1,41 @@
+async (page) => {
+  const root = 'http://127.0.0.1:8080/api/v1/projects/10/episodes/20/assembly';
+  const original = await page.evaluate(async root => (await fetch(root)).json(), root);
+  // Simulate a version conflict after an actual edit; the local clip must survive.
+  const conflict = route => route.request().method() === 'PATCH' ? route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({error:{code:'assembly_version_conflict'}})}) : route.fallback();
+  await page.route(root, conflict);
+  await page.getByRole('button',{name:'添加镜头 1',exact:true}).click();
+  if (await page.evaluate(()=>window.assemblyBarrier.flush())) throw new Error('Conflict did not pause saving');
+  await page.getByText('成片草稿已在其他窗口修改。当前编辑已保留，请下载草稿后重新载入。',{exact:true}).waitFor();
+  if (await page.locator('.assembly-track-clip').count() <= original.clips.length) throw new Error('Conflict discarded local edit');
+  await page.unroute(root, conflict);
+  await page.getByRole('button',{name:'重试保存',exact:true}).click();
+  await page.getByText('成片草稿已保存',{exact:true}).waitFor();
+  const large = {...original, clips:Array.from({length:300},(_,i)=>({...original.sources[i%3],id:String(10000+i),duration_ms:12000,trim_in_ms:0,trim_out_ms:12000,url:'http://127.0.0.1:8080/.runtime/timeline-long-fixture.mp4',position:i+1})),jobs:[]};
+  const largeRoute = route => route.request().method()==='GET' ? route.fulfill({contentType:'application/json',body:JSON.stringify(large)}) : route.fallback();
+  await page.route(root,largeRoute);
+  const started=Date.now();
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelectorAll('.assembly-track-clip').length===300);
+  const loadMs=Date.now()-started;
+  await page.getByRole('button',{name:'适应全部',exact:true}).click();
+  const seekStart=Date.now();
+  await page.getByRole('spinbutton',{name:'定位时间（秒）'}).fill('3599');
+  await page.getByRole('spinbutton',{name:'定位时间（秒）'}).press('Tab');
+  await page.waitForFunction(()=>Math.abs(Number(document.querySelector('.assembly-jump input').value)-3599)<.05);
+  const seekMs=Date.now()-seekStart;
+  if(await page.locator('.assembly-player video').count()!==2) throw new Error('Decoder pool is not bounded');
+  await page.unroute(root,largeRoute);
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelector('video.is-active')?.readyState>=2);
+  await page.getByRole('button',{name:'适应全部',exact:true}).click();
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:'.impeccable/review/timeline-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole('button',{name:'适应全部',exact:true}).click();
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:'.impeccable/review/timeline-mobile.png',fullPage:true});
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)) throw new Error('Mobile overflow');
+  await page.setViewportSize({width:1440,height:1080});
+  return {passed:true,conflictRetained:true,clips:300,durationSeconds:3600,loadMs,seekMs,videoElements:2};
+}

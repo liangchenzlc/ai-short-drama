@@ -32,4 +32,6 @@
 
 新增 [2026-09-28 成片合成与导出](2026-09-28-episode-assembly/README.md)：三张成片表和 `media_files.video_metadata`，可使用 Python 升级程序安全重入。全量 `schema.mysql8.sql` 已同步为 24 张表。
 
+新增 [2026-09-29 时间轴剪辑](2026-09-29-assembly-timeline/README.md)：同一分镜的多个片段、稳定片段标识、删除保留记录、保存幂等回执及合成预览任务。表数仍为 24。
+
 迁移测试保留在 `backend/tests/integration`，通过[开发说明](../../development.md)中的 `backend/scripts/run_integration.py` 运行。测试 fixture 创建随机隔离数据库，从当前总 SQL 建库，再在隔离库内模拟旧结构和历史数据，验证迁移、重入和数据保留。迁移 SQL 和 Python 回填是运维交付的一部分，不能因为它们不被运行时 import 就当作无引用代码删除。

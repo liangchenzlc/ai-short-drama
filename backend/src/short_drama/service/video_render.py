@@ -160,9 +160,121 @@ class VideoRenderer:
             "fps": fps[1] if fps else "0",
         }
 
+    def preview_assets(self, source, info, directory):
+        """Browser-compatible proxy and a bounded filmstrip, derived once per source."""
+        ffmpeg = executable(self.settings.render_ffmpeg_path)
+        proxy = directory / "proxy.mp4"
+        thumbnail = directory / "thumbnail.jpg"
+        frames = max(1, (info["duration_ms"] * 30 + 500) // 1000)
+        self.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-y",
+                "-protocol_whitelist",
+                "file,pipe",
+                "-i",
+                str(source),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a:0?",
+                "-vf",
+                f"scale=-2:360,fps=30,tpad=stop_mode=clone:stop_duration=0.04,trim=end_frame={frames},setpts=PTS-STARTPTS",
+                "-af",
+                "aresample=48000:async=1:first_pts=0,apad",
+                "-t",
+                str(frames / 30),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "26",
+                "-pix_fmt",
+                "yuv420p",
+                "-g",
+                "30",
+                "-bf",
+                "0",
+                "-c:a",
+                "aac",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "-movflags",
+                "+faststart",
+                "-threads",
+                "2",
+                str(proxy),
+            ],
+            directory,
+            stage="preparing",
+            progress=40,
+        )
+        self.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-y",
+                "-protocol_whitelist",
+                "file,pipe",
+                "-i",
+                str(proxy),
+                "-vf",
+                "thumbnail,scale=320:-2",
+                "-frames:v",
+                "1",
+                str(thumbnail),
+            ],
+            directory,
+            stage="preparing",
+            progress=60,
+        )
+        filmstrip = directory / "filmstrip.jpg"
+        count = min(24, max(1, (frames + 29) // 30))
+        self.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-y",
+                "-protocol_whitelist",
+                "file,pipe",
+                "-i",
+                str(proxy),
+                "-vf",
+                f"fps={count * 30}/{frames}:start_time=0:round=up,"
+                "scale=160:90:force_original_aspect_ratio=decrease,"
+                "pad=160:90:(ow-iw)/2:(oh-ih)/2,setsar=1,"
+                f"tile={count}x1:nb_frames={count}",
+                "-frames:v",
+                "1",
+                "-q:v",
+                "3",
+                str(filmstrip),
+            ],
+            directory,
+            stage="preparing",
+            progress=70,
+        )
+        info["filmstrip_count"] = count
+        info["filmstrip_interval_ms"] = frames * 1000 / 30 / count
+        return proxy, thumbnail, filmstrip
+
     def render(self, snapshot, sources, directory):
         ffmpeg = executable(self.settings.render_ffmpeg_path)
-        height = 1080 if snapshot["resolution"] == "1080p" else 720
+        precise = snapshot.get("version", 1) >= 2
+        height = {"1080p": 1080, "preview": 360}.get(snapshot["resolution"], 720)
         width = height * 16 // 9
         if snapshot["aspect"] == "9:16":
             width, height = height, width
@@ -174,12 +286,20 @@ class VideoRenderer:
             start, end = clip["trim_in_ms"], clip["trim_out_ms"]
             if start < 0 or end > info["duration_ms"] or end <= start:
                 raise RuntimeError("来源实际时长已变化，裁剪范围无效，请同步视频后重试")
-            seconds = (end - start) / 1000
-            total += end - start
-            segment = directory / f"segment-{index}.mp4"
-            part = directory / f"segment-{index}.part.mp4"
+            start_frame, end_frame = (start * 30 + 500) // 1000, (end * 30 + 500) // 1000
+            frames = end_frame - start_frame
+            if precise and frames < 1:
+                raise RuntimeError("片段长度不足一帧，请调整裁剪范围")
+            seconds = frames / 30 if precise else (end - start) / 1000
+            total += seconds * 1000
+            extension = "mov" if precise else "mp4"
+            segment = directory / f"segment-{index}.{extension}"
+            part = directory / f"segment-{index}.part.{extension}"
             signature = hashlib.sha256(
-                json.dumps([clip, width, height], sort_keys=True).encode()
+                json.dumps(
+                    [clip, width, height, snapshot.get("version", 1), "source-frame-grid-v2"],
+                    sort_keys=True,
+                ).encode()
             ).hexdigest()
             record = directory / f"segment-{index}.json"
             cached = json.loads(record.read_text()) if record.exists() else {}
@@ -197,8 +317,7 @@ class VideoRenderer:
                     "-y",
                     "-protocol_whitelist",
                     "file,pipe",
-                    "-ss",
-                    str(start / 1000),
+                    *([] if precise else ["-ss", str(start / 1000)]),
                     "-i",
                     str(source),
                 ]
@@ -213,9 +332,24 @@ class VideoRenderer:
                     "-t",
                     str(seconds),
                     "-vf",
-                    f"scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,setpts=PTS-STARTPTS",
+                    # Normalize the original source on the same 30 fps grid as
+                    # the browser proxy BEFORE trimming. Input seeking resets
+                    # that grid and can choose a different frame for 24 fps media.
+                    "fps=30,"
+                    + (
+                        "tpad=stop_mode=clone:stop_duration=0.04,"
+                        f"trim=start_frame={start_frame}:end_frame={end_frame},"
+                        if precise
+                        else ""
+                    )
+                    + "setpts=PTS-STARTPTS,"
+                    + f"scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1",
                     "-af",
-                    "aresample=48000:async=1:first_pts=0,apad",
+                    "aresample=48000:async=1:first_pts=0,apad"
+                    + (
+                        f",atrim=start_sample={start_frame * 1600}:end_sample={end_frame * 1600},asetpts=PTS-STARTPTS"
+                        if precise else ""
+                    ),
                     "-c:v",
                     "libx264",
                     "-preset",
@@ -227,7 +361,7 @@ class VideoRenderer:
                     "-threads",
                     "2",
                     "-c:a",
-                    "aac",
+                    "pcm_s16le" if precise else "aac",
                     "-ar",
                     "48000",
                     "-ac",
@@ -238,6 +372,8 @@ class VideoRenderer:
                     "+faststart",
                     str(part),
                 ]
+                if precise:
+                    args[-1:-1] = ["-bf", "0", "-video_track_timescale", "30000"]
                 self.run(
                     args,
                     directory,
@@ -267,8 +403,11 @@ class VideoRenderer:
                 "1",
                 "-i",
                 str(listing),
-                "-c",
+                "-c:v",
                 "copy",
+                "-c:a",
+                "aac" if precise else "copy",
+                *(["-b:a", "192k", "-t", str(total / 1000)] if precise else []),
                 "-movflags",
                 "+faststart",
                 str(part),
@@ -281,7 +420,8 @@ class VideoRenderer:
         if (
             (metadata["width"], metadata["height"]) != (width, height)
             or not metadata["has_audio"]
-            or abs(metadata["duration_ms"] - total) > max(200, len(segments) * 70)
+            or abs(metadata["duration_ms"] - total)
+            > (40 if precise else max(200, len(segments) * 70))
         ):
             raise RuntimeError("导出文件校验失败，请重试")
         part.replace(output)

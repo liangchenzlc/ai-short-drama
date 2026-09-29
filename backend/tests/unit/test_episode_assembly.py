@@ -90,7 +90,7 @@ def test_assembly_actual_duration_snapshot_replay_conflict_and_retry():
         )
 
 
-def test_missing_video_blocks_export_and_sync_resets_replaced_trim():
+def test_missing_video_blocks_export_and_sync_preserves_replaced_trim():
     with generation_session() as session:
         f, svc = flow(session)
         state = svc.initialize(f.project, f.episode)
@@ -116,7 +116,7 @@ def test_missing_video_blocks_export_and_sync_resets_replaced_trim():
         with pytest.raises(WorkflowError):
             svc.export(f.project, f.episode, export_body(changed), "unacknowledged")
         synced = svc.sync(f.project, f.episode, export_body(changed))
-        assert synced["clips"][0]["trim_in_ms"] == 0
+        assert synced["clips"][0]["trim_in_ms"] == 500
         assert synced["clips"][0]["issue"] == "preparing"
         with pytest.raises(WorkflowError):
             svc.export(f.project, f.episode, export_body(synced), "preparing")

@@ -7,7 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 
 from short_drama.domain import EpisodeRenderJob, MediaFile
 from short_drama.service.base import utcnow
@@ -48,7 +48,15 @@ class RenderPublisher:
             job = session.scalar(
                 select(EpisodeRenderJob)
                 .where(EpisodeRenderJob.status == "queued", EpisodeRenderJob.next_run_at <= now)
-                .order_by(EpisodeRenderJob.next_run_at, EpisodeRenderJob.id)
+                .order_by(
+                    case(
+                        (EpisodeRenderJob.kind == "export", 0),
+                        (EpisodeRenderJob.kind == "probe", 1),
+                        else_=2,
+                    ),
+                    EpisodeRenderJob.next_run_at,
+                    EpisodeRenderJob.id,
+                )
                 .limit(1)
                 .with_for_update(skip_locked=True)
             )
@@ -113,12 +121,13 @@ class RenderExecutor:
 
         renderer = VideoRenderer(self.settings, heartbeat)
         stored = None
+        pending_derivatives = []
         committed = False
         try:
             # Recover a verified completed file after upload failure, without encoding again.
             output, metadata = None, None
             candidates = [int(job_id)] + ([retry_of] if retry_of else [])
-            if kind == "export":
+            if kind in ("export", "preview"):
                 for candidate in candidates:
                     for manifest in root.glob(f"{candidate}-*/completed.json"):
                         saved = json.loads(manifest.read_text())
@@ -163,6 +172,22 @@ class RenderExecutor:
                             info = renderer.probe(path)
                         except (RuntimeError, ValueError):
                             info = {"probe_version": 1, "error": "无法读取实际视频，请替换来源"}
+                        if not info.get("error"):
+                            proxy, thumbnail, filmstrip = renderer.preview_assets(
+                                path, info, directory
+                            )
+                            for asset, mime, key in (
+                                (proxy, "video/mp4", "preview_locator"),
+                                (thumbnail, "image/jpeg", "thumbnail_locator"),
+                                (filmstrip, "image/jpeg", "filmstrip_locator"),
+                            ):
+                                with asset.open("rb") as stream:
+                                    derivative = self.storage.upload(
+                                        stream, length=asset.stat().st_size, content_type=mime
+                                    )
+                                pending_derivatives.append(derivative.storage_locator)
+                                info[key] = derivative.storage_locator
+                            info["preview_version"] = 2
                         heartbeat("preparing", int((index + 1) / len(entries) * 90), True)
                         with self.factory.begin() as session:
                             current = session.scalar(
@@ -174,9 +199,13 @@ class RenderExecutor:
                                 raise RenderCancelled()
                             media = session.get(MediaFile, int(mid))
                             media.video_metadata = info
+                        pending_derivatives.clear()
                         path.unlink()
-                if kind == "export":
-                    output, metadata = renderer.render(snapshot, sources, directory)
+                if kind in ("export", "preview"):
+                    render_snapshot = (
+                        {**snapshot, "resolution": "preview"} if kind == "preview" else snapshot
+                    )
+                    output, metadata = renderer.render(render_snapshot, sources, directory)
             if output:
                 sha = checksum(output)
                 (directory / "completed.json").write_text(
@@ -225,6 +254,11 @@ class RenderExecutor:
             committed = True
             shutil.rmtree(directory)
         except Exception as error:
+            for locator in pending_derivatives:
+                try:
+                    self.storage.delete(locator)
+                except Exception:
+                    pass
             if stored and not committed:
                 try:
                     self.storage.delete(stored.storage_locator)

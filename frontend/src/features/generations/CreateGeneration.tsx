@@ -7,7 +7,8 @@ import type { GenerationKind, GenerationReceipt, ImageGenerationRequest, TextGen
 import { attemptStorage, clearAttempt, isServerId, requestAttempt } from './attempt';
 import { ConfigSelect } from './ConfigSelect';
 import { ImagePicker } from '../media-library/ImagePicker';
-import type { MediaAsset } from '../../api/types/generations';
+import { uploadTaskReference, type ReferenceImage } from '../../api/modules/generation-references';
+import { errorMessage } from '../../api/http';
 import { generationError, kindLabels } from './presentation';
 
 interface FormValues {
@@ -22,7 +23,12 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [imageTarget, setImageTarget] = useState<'reference_media_ids' | 'first_frame_media_id' | 'last_frame_media_id' | null>(null);
-  const [picked, setPicked] = useState<Record<string, MediaAsset>>({});
+  const [picked, setPicked] = useState<Record<string, Pick<ReferenceImage, 'name'> & { url?: string | null }>>({});
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
+  const [uploadError, setUploadError] = useState('');
+  const uploadLock = useRef(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const referenceIds: string = Form.useWatch('reference_media_ids', form) ?? '';
   const firstFrame: string = Form.useWatch('first_frame_media_id', form) ?? '';
   const lastFrame: string = Form.useWatch('last_frame_media_id', form) ?? '';
@@ -31,15 +37,47 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
   const scope = `create:${kind}`;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   function requestClose() {
-    if (pending || (form.isFieldsTouched() && !window.confirm('关闭会放弃尚未提交的任务内容，确定关闭？'))) return;
+    if (inFlight.current || uploadLock.current || (form.isFieldsTouched() && !window.confirm('关闭会放弃尚未提交的任务内容，确定关闭？'))) return;
     onClose();
   }
   function setImageField(field: 'reference_media_ids' | 'first_frame_media_id' | 'last_frame_media_id', value: string | undefined) {
     form.setFields([{ name: field, value, touched: true }]);
     clearAttempt(scope, attemptStorage()); setError('');
   }
+  async function uploadReferences(files: File[]) {
+    if (!files.length || inFlight.current || uploadLock.current) return;
+    const ids: string[] = (form.getFieldValue('reference_media_ids') ?? '').split(',').filter(Boolean);
+    if (ids.length + files.length > 16) {
+      setUploadError(`最多添加 16 张参考图片，还可添加 ${16 - ids.length} 张。请重新选择。`); return;
+    }
+    uploadLock.current = true; setUploading(true); setUploadError('');
+    const failures: string[] = [];
+    try {
+      for (const [index, file] of files.entries()) {
+        if (!alive.current) break;
+        setUploadProgress(`正在上传 ${index + 1}/${files.length}`);
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+          failures.push(`${file.name}：仅支持 PNG、JPEG 或 WebP。`); continue;
+        }
+        if (file.size > 20 * 1024 * 1024) {
+          failures.push(`${file.name}：每张图片不能超过 20 MiB。`); continue;
+        }
+        try {
+          const image = await uploadTaskReference(file);
+          if (!alive.current) break;
+          ids.push(image.media_id);
+          setPicked(current => ({ ...current, [image.media_id]: image }));
+          setImageField('reference_media_ids', ids.join(','));
+        } catch (cause) { failures.push(`${file.name}：${errorMessage(cause)}`); }
+      }
+      if (alive.current) setUploadError(failures.join('\n'));
+    } finally {
+      uploadLock.current = false;
+      if (alive.current) { setUploading(false); setUploadProgress(''); }
+    }
+  }
   async function submit(values: FormValues) {
-    if (inFlight.current) return;
+    if (inFlight.current || uploadLock.current) return;
     inFlight.current = true; setPending(true); setError('');
     try {
       const config = values.config_id ? { config_id: values.config_id } : {};
@@ -71,7 +109,7 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
     } catch (cause) { if (alive.current) setError(generationError(cause)); }
     finally { inFlight.current = false; if (alive.current) setPending(false); }
   }
-  return <><Drawer open title={`新建${kindLabels[kind]}任务`} width={600} onClose={requestClose} closable={!pending} maskClosable={!pending} keyboard={!pending} rootClassName="generation-drawer generation-create-drawer" footer={<div className="generation-form-actions"><Button onClick={requestClose} disabled={pending}>取消</Button><Button type="primary" htmlType="submit" form={`create-generation-${kind}`} loading={pending}>提交{kindLabels[kind]}任务</Button></div>}>
+  return <><Drawer open title={`新建${kindLabels[kind]}任务`} width={600} onClose={requestClose} closable={!pending && !uploading} maskClosable={!pending && !uploading} keyboard={!pending && !uploading} rootClassName="generation-drawer generation-create-drawer" footer={<div className="generation-form-actions"><Button onClick={requestClose} disabled={pending || uploading}>取消</Button><Button type="primary" htmlType="submit" form={`create-generation-${kind}`} loading={pending} disabled={uploading}>提交{kindLabels[kind]}任务</Button></div>}>
     <p className="generation-intro">选择模型并填写创作内容。任务提交后在后台执行，结果会保留在服务端。</p>
     <Form id={`create-generation-${kind}`} form={form} layout="vertical" onFinish={submit} disabled={pending} initialValues={{ count: 1, layout: 'single' }}
       onValuesChange={() => { clearAttempt(scope, attemptStorage()); setError(''); }}>
@@ -93,7 +131,21 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
       </div>
       {kind === 'image' && <>
         <Form.Item name="reference_media_ids" hidden><Input /></Form.Item>
-        <div className="generation-reference-field"><div><strong>参考图片 <span>选填，最多 16 张</span></strong><Button disabled={pending || referenceIds.split(',').filter(Boolean).length >= 16} onClick={() => setImageTarget('reference_media_ids')}>选择图片</Button></div><div className="reference-thumbnail-list">{referenceIds.split(',').filter(Boolean).map(id => <div key={id}>{picked[id]?.url && <PreviewImage src={picked[id].url!} alt={picked[id].name}/>}<span>{picked[id]?.name || '参考图片'}</span><Button size="small" disabled={pending} aria-label={`移除参考图片 ${picked[id]?.name || ''}`} onClick={() => setImageField('reference_media_ids', referenceIds.split(',').filter(value => value !== id).join(','))}>移除</Button></div>)}</div></div>
+        <div className="generation-reference-field">
+          <div><strong>参考图片 <span>选填，{referenceIds.split(',').filter(Boolean).length}/16 张</span></strong>
+            <div className="generation-reference-actions">
+              <Button disabled={pending || uploading || referenceIds.split(',').filter(Boolean).length >= 16} onClick={() => setImageTarget('reference_media_ids')}>选择图片</Button>
+              <Button disabled={pending || uploading || referenceIds.split(',').filter(Boolean).length >= 16} loading={uploading} onClick={() => fileInput.current?.click()}>上传本地图片</Button>
+            </div>
+          </div>
+          <input ref={fileInput} type="file" hidden multiple accept="image/png,image/jpeg,image/webp" aria-label="上传本地参考图片" disabled={pending || uploading} onChange={event => {
+            const files = Array.from(event.target.files ?? []); event.target.value = ''; void uploadReferences(files);
+          }}/>
+          <p className="generation-hint">可多选 PNG、JPEG、WebP，每张最多 20 MiB。上传后自动加入本次任务参考图。</p>
+          <div role="status" aria-live="polite">{uploadProgress}</div>
+          {uploadError && <Alert type="error" showIcon message="部分图片未能添加，请重新选择上传" description={<span className="generation-upload-error">{uploadError}</span>} />}
+          <div className="reference-thumbnail-list">{referenceIds.split(',').filter(Boolean).map(id => <div key={id}>{picked[id]?.url && <PreviewImage src={picked[id].url!} alt={picked[id].name}/>}<span title={picked[id]?.name}>{picked[id]?.name || '参考图片'}</span><Button size="small" disabled={pending || uploading} aria-label={`移除参考图片 ${picked[id]?.name || ''}`} onClick={() => setImageField('reference_media_ids', referenceIds.split(',').filter(value => value !== id).join(','))}>移除</Button></div>)}</div>
+        </div>
         <details className="generation-source"><summary>关联真实分镜（选填）</summary>
           <p>仅接受已经保存在服务端的分镜。可从分镜详情复制服务端 ID；留空则创建独立生成任务。</p>
           <Form.Item name="source_id" label="来源分镜的服务端 ID" rules={[optionalId]}><Input placeholder="输入真实分镜 ID" /></Form.Item>
@@ -106,7 +158,8 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
       <p className="generation-hint">可选参数需符合所选模型能力。提交生成可能产生模型调用费用，生成结果不会自动替换项目内容。</p>
       {error && <Alert type="error" showIcon message={error} description="表单已保留。保持内容不变再次提交会复用本次请求；修改内容后会作为新请求提交。" />}
     </Form>
-  </Drawer>{imageTarget && <ImagePicker busy={pending} onClose={() => setImageTarget(null)} onSelect={async (id, asset) => {
+  </Drawer>{imageTarget && <ImagePicker busy={pending || uploading} onClose={() => setImageTarget(null)} onSelect={async (id, asset) => {
+    if (inFlight.current || uploadLock.current) return false;
     if (imageTarget === 'reference_media_ids') {
       const ids = (form.getFieldValue('reference_media_ids') ?? '').split(',').filter(Boolean);
       if (!ids.includes(id) && ids.length >= 16) return false;

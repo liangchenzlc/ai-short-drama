@@ -766,7 +766,9 @@ html:has(.asset-editor-drawer[open]), body:has(.asset-editor-drawer[open]) { ove
 .generation-create-drawer .ant-drawer-footer { padding: 16px 24px; }
 .generation-create-drawer .ant-drawer-footer .generation-form-actions { margin: 0; padding: 0; }
 .generation-reference-field { margin: 8px 0 26px; }
-.generation-reference-field > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.generation-reference-field > div:first-child { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.generation-reference-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.generation-upload-error { white-space: pre-line; overflow-wrap: anywhere; }
 .generation-reference-field strong, .frame-picker strong { font-size: 13px; font-weight: 500; }
 .generation-reference-field strong > span, .frame-picker small { font-size: 12px; color: var(--sub); font-weight: 400; margin-left: 5px; }
 .reference-thumbnail-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }

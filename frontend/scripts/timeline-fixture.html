@@ -1,0 +1,14 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module">
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import '@ant-design/v5-patch-for-react-19';
+import { ConfigProvider } from 'antd';
+import { AssemblyStage } from '/src/pages/projects/episode/AssemblyStage.tsx';
+import { studioTheme } from '/src/app/theme.ts';
+import '/src/app/styles.css'; import '/src/app/studio.css'; import '/src/app/web.css';
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode, null,
+React.createElement(ConfigProvider, {theme: studioTheme, button: {autoInsertSpace: false}},
+React.createElement('main', {style:{maxWidth:1360, margin:'0 auto', padding:24}},
+React.createElement('p', {style:{color:'#5d7073', fontSize:12}}, '时间轴剪辑验收 · FFmpeg 合成测试素材'),
+React.createElement(AssemblyStage, {projectId:'10',episodeId:'20',readOnly:false,registerBarrier: barrier => window.assemblyBarrier = barrier,onStoryboard:()=>{}})))));
+</script></body></html>

@@ -61,16 +61,18 @@ uv run python scripts/run_integration.py
 
 ### 成片合成运行
 
-第四步使用独立的本地合成队列，不调用 AI 模型。先执行 `scripts/apply_assembly_migration.py`，再启动 `scripts/start_generation.ps1 -Role render`（单并发，独立雪花节点 5）。调度器仍为 `short_drama.tasks.runtime`。
+第四步使用独立的本地合成队列，不调用 AI 模型。旧库先执行 `scripts/apply_assembly_migration.py`，再执行 `scripts/apply_timeline_migration.py`；后者升级独立片段、保存回执与预览任务，先备份成片表并拒绝在有待处理渲染任务时执行。新库使用最新完整建表 SQL，无需历史迁移。再启动 `scripts/start_generation.ps1 -Role render`（单并发，独立雪花节点 5）。调度器仍为 `short_drama.tasks.runtime`。
 
 安装 FFmpeg（含 libx264）和 ffprobe 并加入 PATH，或配置 `RENDER_FFMPEG_PATH` / `RENDER_FFPROBE_PATH`。开发环境也支持 `backend/.tools/ffmpeg/*/bin` 中的便携版本。缺少 ffprobe 时使用 FFmpeg 解码首帧并读取实际容器信息。工具二进制不纳入 Git。
 
 临时文件默认写入 `backend/.runtime/renders`。`RENDER_MAX_SOURCE_BYTES` 默认 2 GiB，`RENDER_MAX_SCRATCH_BYTES` 默认每任务 20 GiB，`RENDER_TIMEOUT_SECONDS` 默认每次编码 3600 秒，`RENDER_MAX_DURATION_MS` 默认 1 小时。输出上传失败保留校验后的成片用于重试，成功任务清理临时目录，7 天后的尝试目录由调度器清理。取消只终止该任务自己的子进程。数据库租约防止重复执行和过期进程写回。
 
-完整接口见 [成片 API](../docs/api/episode-assembly.md)，数据升级见 [合成迁移](../docs/数据库模型/migrations/2026-09-28-episode-assembly/README.md)。
+探测同时缓存 360p/30fps 预览代理、代表缩略图及最多 24 格的采样拼图（每格 160×90）。拼图地址、格数和采样间隔保存在媒体 JSON 元数据，无需新增数据库迁移。已有草稿打开时通过幂等初始化补齐预览素材，不修改剪辑或来源选择；生成前仍使用已有缩略图。合成预览使用 360p，正式导出读取原素材。新增编辑快照为 v2，按 30fps 边界裁剪，拼接 PCM 中间音频后统一编码 AAC。旧 v1 任务可继续读取和重试。任务优先投递正式导出，已运行的预览不会被抢占。
+
+完整接口见 [成片 API](../docs/api/episode-assembly.md)，数据升级见 [时间轴迁移](../docs/数据库模型/migrations/2026-09-29-assembly-timeline/README.md)。
 
 - 表结构变更同时修改 ORM、完整 SQL、旧库迁移和数据库说明。
 - HTTP 变更同步 Pydantic、前端 DTO 和接口说明；不得绕过 Service 修改正文、排序、确认或采用状态。
-- ID 与版本对外为十进制字符串，时间为 UTC；不要在前端转成 `Number`。
+- 数据库 ID 与版本对外为十进制字符串，新增剪辑片段对外使用稳定 UUID，时间为 UTC；不要在前端将 ID 转成 `Number`。
 - 模型密钥只放环境或加密保存；不得写入日志、测试快照或前端配置。
 - 生成输出与当前采用分开；失败恢复不得隐式重复提交可能已受理的模型请求。

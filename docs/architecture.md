@@ -104,4 +104,6 @@ AI Key 使用 AES-256-GCM 加密信封，主密钥来自 `ENCRYPTION_KEY`。配�
 
 ModelHub 使用独立的 `modelhub_video.v1` 适配器，仅自动识别 `api.modelhub.cc`。当前验证的参数合同是 `seedance-2.0-mini`：`POST /v1/videos/generations` 上传 `image_file_1`，分镜视频固定 `functionMode=omni_reference`，`ratio` 使用分集画幅；通过 `GET /v1/videos/tasks/{task_id}` 查询结果。原生时长范围 4–15 秒、480p/720p；视频时长可在 `video_settings.duration_ms` 独立保存，缺省沿用分镜时长，设置后可使用完整的 4–15 秒范围，不修改分镜脚本时长或使分镜图过期。能力来自公开文档，不代表账户权限或实时渠道可用性，真实付费生成效果仍需验收。
 
-成片合成使用独立的 `episode_assemblies` / `episode_assembly_clips` 草稿及 `episode_render_jobs` 任务。调度器向独立 render 队列投递，单并发 Worker 下载已管理素材、探测实际时长、使用 FFmpeg 统一编码拼接并归档至 MinIO。租约隔离过期进程，冻结快照隔离编辑，失败重试复用校验后的成片。该流程不调用 AI 模型。音频制作、字幕、多轨剪辑、宫格切图和多用户权限尚未实现。
+成片合成使用独立的 `episode_assemblies` / `episode_assembly_clips` 草稿及 `episode_render_jobs` 任务。一个分镜可对应多个独立剪辑片段，删除保留来源记录以支持撤销，保存采用版本校验和请求回执。前端单轨编辑器以 30fps 帧坐标分割、裁剪、排序，由两个视频元素预加载并连续预览；后台合成预览和正式导出使用相同冻结快照，播放器可查看实际输出及其只读时间轴。
+
+调度器按正式导出、素材探测、合成预览的顺序向独立 render 队列投递（不抢占运行中任务）。单并发 Worker 下载已管理素材，探测实际时长并生成预览代理和缩略图。FFmpeg 使用原素材逐片段按帧裁剪，以 PCM 音频中间文件拼接后统一编码 AAC，避免短片段积累音频填充误差，最终归档至 MinIO。租约隔离过期进程，失败重试复用校验后的成片。该流程不调用 AI 模型。音频制作、字幕、多轨剪辑、宫格切图和多用户权限尚未实现。

@@ -1,3 +1,5 @@
+// Historical acceptance for the replaced list editor. Use timeline-*.mjs instead;
+// see docs/reviews/2026-09-29-assembly-timeline.md at the repository root.
 async (page) => {
   const base = 'http://127.0.0.1:8080';
   const root = '/api/v1/projects/10/episodes/20/assembly';

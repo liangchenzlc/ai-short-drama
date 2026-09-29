@@ -28,6 +28,7 @@ class EpisodeAssembly(Base):
         BIGINT(unsigned=True), nullable=False, server_default=text("1")
     )
     current_media_id: Mapped[int | None] = mapped_column(BIGINT(unsigned=True), nullable=True)
+    last_edit_receipt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6), nullable=False)
     __table_args__ = (
@@ -70,11 +71,16 @@ class EpisodeAssemblyClip(Base):
         BIGINT(unsigned=True), nullable=False, server_default=text("0")
     )
     trim_out_ms: Mapped[int | None] = mapped_column(BIGINT(unsigned=True), nullable=True)
+    client_key: Mapped[str | None] = mapped_column(CHAR(36, charset="ascii"), nullable=True)
+    removed: Mapped[int] = mapped_column(
+        INTEGER(unsigned=True), nullable=False, server_default=text("0")
+    )
     source_context_hash: Mapped[str | None] = mapped_column(
         CHAR(64, charset="ascii"), nullable=True
     )
     __table_args__ = (
-        UniqueConstraint("assembly_id", "shot_id", name="uk_assembly_clips_shot"),
+        UniqueConstraint("assembly_id", "client_key", name="uk_assembly_clips_client"),
+        Index("idx_assembly_clips_shot", "assembly_id", "shot_id"),
         UniqueConstraint("assembly_id", "position", name="uk_assembly_clips_position"),
         ForeignKeyConstraint(
             ["assembly_id"],
@@ -98,6 +104,7 @@ class EpisodeAssemblyClip(Base):
             onupdate="RESTRICT",
         ),
         CheckConstraint("position > 0", name="ck_assembly_clips_position"),
+        CheckConstraint("removed IN (0,1)", name="ck_assembly_clips_removed"),
         CheckConstraint("included IN (0,1) AND muted IN (0,1)", name="ck_assembly_clips_flags"),
         CheckConstraint(
             "trim_out_ms IS NULL OR trim_out_ms > trim_in_ms", name="ck_assembly_clips_trim"
@@ -163,7 +170,7 @@ class EpisodeRenderJob(Base):
             ondelete="RESTRICT",
             onupdate="RESTRICT",
         ),
-        CheckConstraint("kind IN ('probe','export')", name="ck_render_jobs_kind"),
+        CheckConstraint("kind IN ('probe','export','preview')", name="ck_render_jobs_kind"),
         CheckConstraint(
             "status IN ('queued','running','succeeded','failed','cancelled')",
             name="ck_render_jobs_status",

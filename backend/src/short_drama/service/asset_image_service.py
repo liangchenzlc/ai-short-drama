@@ -265,12 +265,15 @@ class AssetImageService(BaseService):
             )
 
     def upload(self, asset_id, stream, length, name, content_type=None):
-        asset_id = parse_identifier(asset_id)
+        return self._upload_image(parse_identifier(asset_id), stream, length, name, content_type)
+
+    def _upload_image(self, asset_id, stream, length, name, content_type=None):
         if length is not None and (
             type(length) is not int or length < 0 or length > MAX_UPLOAD_BYTES
         ):
             raise WorkflowError("upload_too_large", "Image upload must not exceed 20 MiB", 413)
-        self._ensure_asset_exists(asset_id)
+        if asset_id is not None:
+            self._ensure_asset_exists(asset_id)
         inspected = inspect_image_upload(stream, content_type)
         if length is not None and length != inspected.byte_size:
             inspected.stream.close()

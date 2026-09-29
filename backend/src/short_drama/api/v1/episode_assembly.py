@@ -72,6 +72,17 @@ def history(
     return svc.jobs(project_id, episode_id, offset, limit)
 
 
+@router.post("/previews", status_code=202)
+def preview(
+    project_id: ScopedId,
+    episode_id: ScopedId,
+    payload: AssemblyExport,
+    svc: Service,
+    idempotency_key: Key,
+):
+    return svc.export(project_id, episode_id, payload, idempotency_key, kind="preview")
+
+
 @router.get("/exports/{job_id}")
 def job(project_id: ScopedId, episode_id: ScopedId, job_id: ScopedId, svc: Service):
     return svc.job_action(project_id, episode_id, job_id, "get")

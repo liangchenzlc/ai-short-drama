@@ -48,7 +48,7 @@ npm run test:e2e
 
 - `src/app`：应用入口、路由、主题和样式。
 - `src/pages`：项目、分集、素材、任务、资产和配置页面。
-- `src/features/projects`：正文保存会话、导航保护、素材提取、分镜候选与图片采用、成片草稿保存与编辑。
+- `src/features/projects`：正文保存会话、导航保护、素材提取、分镜候选与图片采用；成片的帧编辑模型、双视频播放器、单轨时间轴、会话内撤销重做和串行自动保存。
 - `src/features/assets`：三层素材库共用UI和请求状态。
 - `src/features/generations`：通用生成、任务详情、轮询与幂等请求标识。
 - `src/features/media-library`：媒体详情与图片选择器。
@@ -65,3 +65,5 @@ AI 设置栏与正文并列，小说/定稿合并为标签页；分镜每批 20 
 旧版浏览器正文只允许显式导入；旧素材/制作数据提供JSON下载，不自动上传或覆盖服务端数据。保留兼容读取不代表浏览器存储仍是业务数据源。
 
 产品边界见[PRODUCT.md](PRODUCT.md)，界面约定见[DESIGN.md](DESIGN.md)，后端契约见[接口说明](../docs/api/README.md)。
+
+时间轴验收与运行条件见[实施验收记录](../docs/reviews/2026-09-29-assembly-timeline.md)，依赖与上游参考见[时间轴依赖](docs/timeline-dependencies.md)。`scripts/timeline-*.mjs` 为 Playwright CLI 的浏览器验收函数，使用隔离 API 测试替身和真实本地视频，不是 `test:e2e` 自动收集的测试。旧 `scripts/assembly-acceptance.mjs` 对应已替换的列表式剪辑界面，停止用于当前版本验收。

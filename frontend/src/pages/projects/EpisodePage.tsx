@@ -1,11 +1,12 @@
 ﻿import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { Alert, Button, Spin } from 'antd';
+import { lazy, Suspense } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { episodePath } from '../../app/paths';
 import type { ProjectSession } from '../../types/projects';
 import type { RemoteEpisode } from '../../api/modules/projects';
 import { readWorkflow, saveWorkflow, nearestPendingStage, type EpisodeWorkflow, type EpisodeNavigationStage as StageId } from '../../features/projects/episode-workflow';
-import { AssemblyStage } from './episode/AssemblyStage';
+const AssemblyStage = lazy(() => import('./episode/AssemblyStage').then(module => ({ default: module.AssemblyStage })));
 import { episodeStages, StageNav, visibleEpisodeStage } from './episode/StageNav';
 import { SourceStage } from './episode/SourceStage';
 import { AssetsStage } from './episode/AssetsStage';
@@ -92,7 +93,7 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
         {writing.loaded && <section hidden={step !== 'source'} id="episode-stage-source" data-testid="episode-stage-source" className="episode-stage" aria-label="小说与剧本创作"><SourceStage value={value} writing={writing} readOnly={writingReadOnly} onChange={update} projectId={session.projectId} episodeId={episode.id} writingSession={writing.session} tab={writingTab} onTab={setWritingTab} onContinue={() => goToStep('assets')}/></section>}
         <section hidden={step !== 'assets'} id="episode-stage-assets" data-testid="episode-stage-assets" className="episode-stage" aria-label="素材准备"><AssetsStage value={workflow} readOnly={readOnly} ready={ready} projectId={session.projectId} episodeId={episode.id} onChange={update} onApply={update} writingSession={writing.session} onConfirmScript={() => goToStep('script')} registerBarrier={barrier => { extractionBarrier.current = barrier; }}/></section>
         {step === 'storyboard' && <section id="episode-stage-storyboard" data-testid="episode-stage-storyboard" className="episode-stage" aria-label="分镜制作"><StoryboardStage value={workflow} readOnly={writingReadOnly} onChange={update} projectId={session.projectId} episodeId={episode.id} contentVersion={writing.contentVersion} scriptId={writing.scriptId} confirmed={writing.confirmed} writingSession={writing.session} registerBarrier={(barrier) => { storyboardBarrier.current = barrier; }}/></section>}
-        {step === 'assembly' && <section id="episode-stage-assembly" className="episode-stage"><AssemblyStage projectId={session.projectId} episodeId={episode.id} readOnly={readOnly} registerBarrier={barrier => { assemblyBarrier.current = barrier; }} onStoryboard={() => goToStep('storyboard')}/></section>}
+        {step === 'assembly' && <section id="episode-stage-assembly" className="episode-stage"><Suspense fallback={<Spin tip="正在载入剪辑工作台…"><div style={{ minHeight: 320 }}/></Spin>}><AssemblyStage projectId={session.projectId} episodeId={episode.id} readOnly={readOnly} registerBarrier={barrier => { assemblyBarrier.current = barrier; }} onStoryboard={() => goToStep('storyboard')}/></Suspense></section>}
         <footer className="episode-step-footer">{current > 0 && <Button className="episode-step-previous" onClick={() => goToStep(episodeStages[current - 1].id)}>上一步</Button>}<span>步骤 {current + 1} / {episodeStages.length}</span>{current < episodeStages.length - 1 && <Button className="episode-step-next" onClick={() => goToStep(episodeStages[current + 1].id)}>下一步：{episodeStages[current + 1].label}</Button>}</footer>
       </div>
     </div>

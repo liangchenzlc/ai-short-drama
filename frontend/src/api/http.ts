@@ -34,6 +34,8 @@ const discoveryMessages: Record<string, string> = {
   model_discovery_too_large: '模型列表响应过大，请手动填写模型标识。',
 };
 const workflowMessages: Record<string, string> = {
+  invalid_image: '图片损坏或格式不受支持，请选择有效的 PNG、JPEG 或 WebP 图片（最多 4000 万像素）。',
+  upload_too_large: '每张图片不能超过 20 MiB，请压缩后重新上传。',
   assembly_version_conflict: '成片草稿已在其他窗口修改。当前编辑已保留，请下载草稿后重新载入。',
   assembly_source_changed: '分镜来源已变化，请重新载入并核对后再操作。',
   assembly_trim_invalid: '裁剪范围超出视频实际时长，请调整起点和终点。',

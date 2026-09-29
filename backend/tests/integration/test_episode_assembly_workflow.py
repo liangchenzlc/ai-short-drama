@@ -3,6 +3,7 @@
 import asyncio
 import subprocess
 from io import BytesIO
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -110,6 +111,8 @@ def test_http_probe_export_retry_download_apply_and_duplicate_worker(flow, tmp_p
             state = (await client.get(root)).json()
             assert state["clips"][0]["duration_ms"] == 2000
             assert state["clips"][0]["issue"] is None
+            assert state["clips"][0]["filmstrip"]["count"] == 2
+            assert state["clips"][0]["filmstrip"]["url"]
             edit = {
                 "row_version": state["assembly"]["row_version"],
                 "resolution": "720p",
@@ -128,6 +131,32 @@ def test_http_probe_export_retry_download_apply_and_duplicate_worker(flow, tmp_p
             state = edited.json()
             conflict = await client.patch(root, json=edit)
             assert conflict.status_code == 409
+            # A split creates a second persistent instance of the same source.
+            split_id = str(uuid4())
+            split_body = {
+                **edit,
+                "row_version": state["assembly"]["row_version"],
+                "request_id": "split-once",
+                "clips": [
+                    {**edit["clips"][0], "trim_out_ms": 1000},
+                    {
+                        **edit["clips"][0],
+                        "id": split_id,
+                        "source_clip_id": state["clips"][0]["id"],
+                        "trim_in_ms": 1000,
+                    },
+                ],
+            }
+            response = await client.patch(root, json=split_body)
+            assert response.status_code == 200, response.text
+            state = response.json()
+            replay = await client.patch(root, json=split_body)
+            assert replay.status_code == 200
+            assert replay.json()["assembly"]["row_version"] == state["assembly"]["row_version"]
+            assert len((await client.get(root)).json()["clips"]) == 2
+            prepared = (await client.post(root + "/initialize")).json()
+            assert prepared["assembly"]["row_version"] == state["assembly"]["row_version"]
+            assert prepared["clips"] == state["clips"]
             body = {
                 "row_version": state["assembly"]["row_version"],
                 "source_hash": state["source_hash"],
@@ -184,3 +213,54 @@ def test_http_probe_export_retry_download_apply_and_duplicate_worker(flow, tmp_p
             assert forbidden.status_code == 404
 
     asyncio.run(scenario())
+
+
+def test_timeline_migration_is_repeatable_and_preserves_existing_edits(flow):
+    import importlib.util
+    from pathlib import Path
+
+    from sqlalchemy import text
+
+    from short_drama.service.episode_assembly_service import EpisodeAssemblyService
+
+    storyboard = EpisodeStoryboardService(flow.session)
+    storyboard.create(
+        flow.project.id,
+        flow.episode.id,
+        {"storyboard_version": "1", "script": "Migration test", "duration_ms": 5000},
+        "migration-source",
+    )
+    svc = EpisodeAssemblyService(flow.session)
+    state = svc.initialize(flow.project.id, flow.episode.id)
+    flow.session.commit()
+    engine = flow.session.get_bind()
+    with engine.begin() as connection:
+        # Reconstruct the immediately preceding schema in this disposable test database.
+        connection.exec_driver_sql(
+            "ALTER TABLE episode_assembly_clips ADD UNIQUE KEY "
+            "uk_assembly_clips_shot (assembly_id, shot_id)"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE episode_assembly_clips DROP INDEX uk_assembly_clips_client, "
+            "DROP INDEX idx_assembly_clips_shot, DROP CHECK ck_assembly_clips_removed, "
+            "DROP COLUMN client_key, DROP COLUMN removed"
+        )
+        connection.exec_driver_sql("ALTER TABLE episode_assemblies DROP COLUMN last_edit_receipt")
+        connection.exec_driver_sql(
+            "ALTER TABLE episode_render_jobs DROP CHECK ck_render_jobs_kind, "
+            "ADD CONSTRAINT ck_render_jobs_kind CHECK (kind IN ('probe','export'))"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "timeline_migration", Path("scripts/apply_timeline_migration.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.migrate(connection)
+        module.migrate(connection)
+        assert (
+            connection.scalar(text("SELECT COUNT(*) FROM episode_assembly_clips WHERE removed = 0"))
+            == 1
+        )
+    flow.session.expire_all()
+    restored = svc.get(flow.project.id, flow.episode.id)
+    assert restored["clips"][0]["id"] == state["clips"][0]["id"]

@@ -1,0 +1,88 @@
+async (page) => {
+  const assert = (value, message) => { if (!value) throw new Error(message); };
+  const root = 'http://127.0.0.1:8080/api/v1/projects/10/episodes/20/assembly';
+  const read = () => page.evaluate(async root => (await fetch(root)).json(), root);
+  const save = async () => assert(await page.evaluate(() => window.assemblyBarrier.flush()), 'Save failed');
+  const jump = page.getByRole('spinbutton', {name:'定位时间（秒）'});
+  const at = async seconds => {
+    await jump.fill(String(seconds)); await jump.press('Tab');
+    await page.waitForFunction(seconds => Math.abs(Number(document.querySelector('.assembly-jump input').value)-seconds)<.02, seconds);
+  };
+  const ready = () => page.waitForFunction(() => {
+    const v=document.querySelector('video.is-active');
+    return v?.readyState>=2 && !v.seeking && !document.querySelector('.assembly-player-message');
+  });
+  await page.setViewportSize({width:1440,height:1080});
+  await at(0); await ready();
+  await page.getByRole('button',{name:'下一段',exact:true}).click();
+  assert(Number(await jump.inputValue())===3,'Next clip did not seek its start');
+  await page.getByRole('button',{name:'上一段',exact:true}).click();
+  assert(Number(await jump.inputValue())===0,'Previous clip did not seek its start');
+  await page.locator('.assembly-timeline').scrollIntoViewIfNeeded();
+  const canvas = await page.locator('.assembly-timeline-canvas').boundingBox();
+  await page.mouse.click(canvas.x+20+297,canvas.y+16);
+  assert(Number(await jump.inputValue())===3,'Ruler did not snap to cut');
+  assert((await page.locator('.assembly-timeline-feedback').textContent()).includes('已吸附'),'Missing snap feedback');
+  await page.getByRole('button',{name:'吸附已开启',exact:true}).click();
+  await page.mouse.click(canvas.x+20+297,canvas.y+16);
+  assert(Number(await jump.inputValue())<3,'Disabled snapping still snaps');
+  await page.getByRole('button',{name:'吸附已关闭',exact:true}).click();
+  await at(1);
+  const cursor = await page.locator('.timeline-editor-cursor-top').boundingBox();
+  await page.mouse.move(cursor.x+4,cursor.y+4); await page.mouse.down();
+  await page.mouse.move(canvas.x+20+297,cursor.y+4,{steps:12}); await page.mouse.up();
+  assert(Number(await jump.inputValue())===3,'Dragged playhead did not snap');
+  await at(1.5); await ready();
+  const right = await page.locator('.timeline-editor-action-right-stretch').first().boundingBox();
+  await page.mouse.move(right.x+right.width/2,right.y+right.height/2); await page.mouse.down();
+  await page.mouse.move(canvas.x+20+152,right.y+right.height/2,{steps:12}); await page.mouse.up();
+  await save();
+  assert((await read()).clips[0].trim_out_ms===1500,'Clip edge did not snap to playhead');
+  await page.getByRole('button',{name:'撤销',exact:true}).click(); await save();
+  await page.locator('.assembly-track-clip').first().hover({position:{x:30,y:25}});
+  await page.getByRole('tooltip').filter({hasText:'来源范围'}).waitFor();
+  assert((await page.getByRole('tooltip').textContent()).includes('保留时长'),'Clip details missing');
+  await at(1); await ready();
+  // Rapid stepping must accumulate while asynchronous decoders are still seeking.
+  await page.evaluate(() => {
+    const button = document.querySelector('button[aria-label="下一帧"]');
+    button.click(); button.click(); button.click();
+  });
+  await ready(); assert(Math.abs(Number(await jump.inputValue())-1.1)<.01,'Rapid frame steps were lost');
+  await at(2.7); await ready();
+  await page.getByRole('button',{name:'播放',exact:true}).click();
+  await page.waitForFunction(()=>Number(document.querySelector('.assembly-jump input').value)>3.2);
+  await page.getByRole('button',{name:'暂停',exact:true}).click();
+  assert(await page.locator('.assembly-player video').count()===2,'Playback added decoders');
+  assert(await page.locator('video.is-active').getAttribute('data-media-id')==='102','Cut failed to switch source');
+  await at(6.1); await ready();
+  assert(await page.locator('video.is-active').evaluate(v=>v.muted),'Muted clip has live audio');
+  // Real media error plus refreshed URL: retry must keep the target and use new props.
+  await at(1.5); await ready();
+  const initial = await read();
+  const refreshed = {...initial, clips:initial.clips.map(c=>({...c,url:c.url+'?refreshed=1'})),sources:initial.sources.map(c=>({...c,url:c.url+'?refreshed=1'}))};
+  const refreshRoute=route=>route.request().method()==='GET'?route.fulfill({contentType:'application/json',body:JSON.stringify(refreshed)}):route.fallback();
+  await page.route(root,refreshRoute);
+  await page.evaluate(()=>{const v=document.querySelector('video.is-active');v.src='/.runtime/missing-reliability-fixture.mp4';v.load();});
+  await page.getByRole('button',{name:'刷新视频并重试',exact:true}).click();
+  await ready();
+  const recovered=await page.locator('video.is-active').evaluate(v=>({src:v.currentSrc,time:v.currentTime,paused:v.paused}));
+  assert(recovered.src.includes('refreshed=1')&&Math.abs(recovered.time-1.5)<.04&&recovered.paused,'Retry lost position or refreshed URL');
+  await page.unroute(root,refreshRoute);
+  await page.getByRole('button',{name:'合成预览',exact:true}).click();
+  await page.locator('.assembly-result-screen video').waitFor();
+  await page.waitForFunction(()=>document.querySelector('.assembly-result-screen video')?.readyState>=2);
+  await at(1.2);
+  await page.evaluate(()=>{const v=document.querySelector('.assembly-result-screen video');v.dispatchEvent(new Event('error'));});
+  await page.getByRole('button',{name:'刷新成片并重试',exact:true}).click();
+  await page.waitForFunction(()=>{const v=document.querySelector('.assembly-result-screen video');return v?.readyState>=2&&!v.seeking&&Math.abs(v.currentTime-1.2)<.05&&!document.querySelector('.assembly-player-message');});
+  await page.getByRole('button',{name:'剪辑预览',exact:true}).click(); await ready();
+  await page.locator('.assembly-timeline').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'.impeccable/review/timeline-reliability-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole('button',{name:'适应全部',exact:true}).click();
+  assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),'Mobile overflow');
+  await page.screenshot({path:'.impeccable/review/timeline-reliability-mobile.png',fullPage:true});
+  await page.setViewportSize({width:1440,height:1080});
+  return {passed:true,navigation:true,snapRuler:true,snapCursor:true,snapTrim:true,tooltip:true,rapidSeek:true,cutPlayback:true,mute:true,retryPreservesPosition:true,resultRetry:true};
+}

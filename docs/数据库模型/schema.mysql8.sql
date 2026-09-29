@@ -591,6 +591,7 @@ CREATE TABLE `episode_assemblies` (
   `resolution` VARCHAR(16) NOT NULL DEFAULT '720p',
   `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
   `current_media_id` BIGINT UNSIGNED NULL,
+  `last_edit_receipt` JSON NULL,
   `created_at` DATETIME(6) NOT NULL,
   `updated_at` DATETIME(6) NOT NULL,
   PRIMARY KEY (`id`),
@@ -612,16 +613,20 @@ CREATE TABLE `episode_assembly_clips` (
   `muted` INT UNSIGNED NOT NULL DEFAULT 0,
   `trim_in_ms` BIGINT UNSIGNED NOT NULL DEFAULT 0,
   `trim_out_ms` BIGINT UNSIGNED NULL,
+  `client_key` CHAR(36) CHARACTER SET ascii NULL,
+  `removed` INT UNSIGNED NOT NULL DEFAULT 0,
   `source_context_hash` CHAR(64) CHARACTER SET ascii NULL,
   PRIMARY KEY (`id`),
   CONSTRAINT `ck_assembly_clips_flags` CHECK (included IN (0,1) AND muted IN (0,1)),
   CONSTRAINT `ck_assembly_clips_position` CHECK (position > 0),
+  CONSTRAINT `ck_assembly_clips_removed` CHECK (removed IN (0,1)),
   CONSTRAINT `ck_assembly_clips_trim` CHECK (trim_out_ms IS NULL OR trim_out_ms > trim_in_ms),
   CONSTRAINT `fk_assembly_clips_assembly` FOREIGN KEY (`assembly_id`) REFERENCES `episode_assemblies` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `fk_assembly_clips_media` FOREIGN KEY (`media_id`) REFERENCES `media_files` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `fk_assembly_clips_shot` FOREIGN KEY (`shot_id`) REFERENCES `shot_scripts` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_assembly_clips_client` (`assembly_id`, `client_key`),
   UNIQUE KEY `uk_assembly_clips_position` (`assembly_id`, `position`),
-  UNIQUE KEY `uk_assembly_clips_shot` (`assembly_id`, `shot_id`)
+  KEY `idx_assembly_clips_shot` (`assembly_id`, `shot_id`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='成片片段顺序与非破坏性剪辑设置';
 
 CREATE TABLE `episode_render_jobs` (
@@ -650,7 +655,7 @@ CREATE TABLE `episode_render_jobs` (
   `finished_at` DATETIME(6) NULL,
   PRIMARY KEY (`id`),
   CONSTRAINT `ck_render_jobs_error` CHECK (error IS NULL OR JSON_TYPE(error) = 'OBJECT'),
-  CONSTRAINT `ck_render_jobs_kind` CHECK (kind IN ('probe','export')),
+  CONSTRAINT `ck_render_jobs_kind` CHECK (kind IN ('probe','export','preview')),
   CONSTRAINT `ck_render_jobs_manifest` CHECK (manifest IS NULL OR JSON_TYPE(manifest) = 'OBJECT'),
   CONSTRAINT `ck_render_jobs_progress` CHECK (progress <= 100 AND cancel_requested IN (0,1)),
   CONSTRAINT `ck_render_jobs_snapshot` CHECK (JSON_TYPE(snapshot) = 'OBJECT'),
