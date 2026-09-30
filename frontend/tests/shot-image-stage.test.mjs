@@ -69,13 +69,16 @@ function mount(context, overrides = {}) {
     '../../../features/projects/storyboard-session': session,
     '../../../features/projects/shot-image-workflow': workflow,
     '../../../features/generations/attempt': {},
+    '../../../features/generations/BatchGeneration': { BatchLauncher: 'BatchLauncher', useBatchSelection: () => ({ enabled: false, ids: [], setIds() {}, toggle() {} }) },
     '../../../features/generations/presentation': { taskLabel: () => '' },
     '../../../features/projects/StoryboardResultPreview': { StoryboardResultPreview: 'StoryboardResultPreview' },
     '../../../components/ui/Dialog': { Dialog: 'Dialog' },
+    '../../../components/ui/confirm': { confirmAction: async () => true },
     '../../../components/ui/LazyLoadMore': { LazyLoadMore: 'LazyLoadMore' },
     '../../../features/projects/ShotAssetPicker': { ShotAssetPicker: 'ShotAssetPicker' },
     '../../../features/projects/ShotImageCandidates': { ShotImageCandidates: 'ShotImageCandidates' },
     '../../../features/projects/ShotVideoCandidates': { ShotVideoCandidates: 'ShotVideoCandidates' },
+    '../../../features/projects/NativeVoicePanel': { NativeDialoguePanel: 'NativeDialoguePanel', NativeSoundMode: 'NativeSoundMode' },
   }, { window });
   let props = { value: { aspect: '16:9', models: { storyboardText: '', storyboardImage: '' } }, readOnly: false, projectId: '1', episodeId: '1', scriptId: null, confirmed: false, writingSession: {}, registerBarrier: next => { barrier = next; }, onChange: next => { props.value = next; } };
   const render = patch => {

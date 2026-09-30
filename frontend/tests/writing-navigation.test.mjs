@@ -12,14 +12,13 @@ function setup(override = {}) {
   const emit=(type,event)=>{for(const {fn} of [...(listeners.get(type)??[])].sort((a,b)=>Number(b.capture)-Number(a.capture))){fn(event);if(event.stopped)break;}};
   const browser={
     history:{get state(){return {idx:index};},go(delta){queueMicrotask(()=>{index+=delta;emit('popstate',{state:{idx:index},stopImmediatePropagation(){this.stopped=true;}});});}},
-    confirm(){confirmations++;return false;},
     addEventListener(type,fn,capture=false){listeners.set(type,[...(listeners.get(type)??[]),{fn,capture}]);},
     removeEventListener(type,fn){listeners.set(type,(listeners.get(type)??[]).filter(item=>item.fn!==fn));},
   };
   browser.addEventListener('popstate',event=>{rendered=event.state.idx;});
   const navigator={push(){index++;rendered=index;},replace(){replacements++;rendered=index;}};
   const session={getSnapshot:()=>({dirty,busy:false,status:'unsaved',loaded:true,...override}),async flush(){const ok=await waiting.promise;if(ok)dirty=false;return ok;}};
-  const remove=installWritingNavigationGuard(navigator,session,browser);
+  const remove=installWritingNavigationGuard(navigator,session,browser,undefined,async()=>{confirmations++;return false;});
   return {browser,navigator,waiting,remove,emit,get index(){return index;},get rendered(){return rendered;},get confirmations(){return confirmations;},get replacements(){return replacements;}};
 }
 test('initial content loading does not guard the first route normalization',()=>{
@@ -52,7 +51,7 @@ test('unresolved save error guards navigation and unload even when draft equals 
 test('storyboard barrier joins internal navigation after writing is already saved',async()=>{
   let routed=false,flushed=0;
   const listeners=new Map();
-  const browser={history:{state:{idx:0},go(){}},confirm(){return false;},addEventListener(type,fn){listeners.set(type,fn);},removeEventListener(){}};
+  const browser={history:{state:{idx:0},go(){}},addEventListener(type,fn){listeners.set(type,fn);},removeEventListener(){}};
   const navigator={push(){routed=true;},replace(){}};
   const session={getSnapshot:()=>({dirty:false,busy:false,status:'saved',loaded:true}),async flush(){return true;}};
   let unsettled=true;

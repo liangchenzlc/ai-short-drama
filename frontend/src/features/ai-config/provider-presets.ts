@@ -8,6 +8,7 @@ export interface ProviderPreset {
 }
 
 export const providerPresets: Record<ServiceType, ProviderPreset[]> = {
+  audio: [{ id: 'bailian', label: '阿里云百炼（北京）', baseUrl: 'https://dashscope.aliyuncs.com/api/v1', models: ['cosyvoice-v3.5-flash'] }],
   text: [
     {
       id: "openai",

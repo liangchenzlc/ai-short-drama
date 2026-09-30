@@ -1,13 +1,4 @@
-:root {
-  font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif;
-  color: #e1e8e9;
-  background: #172124;
-  font-synthesis: none;
-  --muted: #a8b9bd;
-  --line: #34464b;
-  --accent: #a3cfbc;
-  --surface: #1e2b2f;
-}
+@import './tokens.css';
 * {
   box-sizing: border-box;
 }
@@ -23,21 +14,21 @@ summary {
   font: inherit;
   color: inherit;
   cursor: pointer;
-  border: 1px solid #50666a;
-  background: #293d41;
+  border: 1px solid var(--hair);
+  background: var(--surface-raised);
   border-radius: 6px;
   padding: 10px 16px;
   min-height: 42px;
 }
 :where(button:not(.ant-btn)):hover:not(:disabled) {
-  background: #385156;
+  background: var(--surface-raised);
 }
 :where(button:not(.ant-btn)):disabled {
   cursor: default;
   opacity: 0.48;
 }
 :focus-visible {
-  outline: 3px solid #badfcf;
+  outline: 3px solid var(--accent-border);
   outline-offset: 4px;
 }
 .connection {
@@ -50,7 +41,7 @@ summary {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #bdc7c9;
+  background: var(--surface-muted);
 }
 .connection.ready i {
   background: var(--accent);
@@ -58,7 +49,7 @@ summary {
 .connection.failed i,
 .connection.disconnected i,
 .connection.incompatible i {
-  background: #e6bb87;
+  background: var(--danger-bg);
 }
 main {
   padding: 28px 42px 40px;
@@ -141,9 +132,9 @@ details p {
 .notice {
   margin-top: 16px;
   padding: 12px 16px;
-  border-left: 3px solid #e6bb87;
-  background: #382f27;
-  color: #efd7b8;
+  border-left: 3px solid var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning);
 }
 .projects-home {
   margin: 28px 0 40px;
@@ -155,13 +146,13 @@ details p {
   margin: 18px 0;
 }
 .primary-button {
-  background: #b8d7ce;
-  color: #142421;
-  border-color: #b8d7ce;
+  background: var(--accent-fill);
+  color: var(--accent);
+  border-color: var(--accent-border);
 }
 .primary-button:hover {
-  background: #d3e8e1;
-  color: #142421;
+  background: var(--accent-fill);
+  color: var(--accent);
 }
 .project-form h3,
 .recent-projects h3 {
@@ -169,16 +160,16 @@ details p {
   font-size: 19px;
 }
 .muted {
-  color: #acbec1;
+  color: var(--sub);
   line-height: 1.65;
 }
 .project-form {
   max-width: 680px;
   margin: 28px 0;
   padding: 24px;
-  border: 1px solid #425256;
+  border: 1px solid var(--hair);
   border-radius: 12px;
-  background: #1d2a2e;
+  background: var(--canvas);
 }
 .project-form fieldset {
   border: 0;
@@ -198,14 +189,14 @@ details p {
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
-  border: 1px solid #6e8489;
+  border: 1px solid var(--hair);
   border-radius: 6px;
-  background: #142125;
-  color: #edf2f2;
+  background: var(--canvas);
+  color: var(--ink);
   font: inherit;
 }
 .project-form input::placeholder {
-  color: #a4b6ba;
+  color: var(--sub);
 }
 .form-row {
   display: flex;
@@ -225,8 +216,8 @@ details p {
   left: 16px;
   top: -80px;
   z-index: 10;
-  background: #e1e8e9;
-  color: #121d20;
+  background: var(--pale);
+  color: var(--accent);
   padding: 12px;
 }
 .skip-link:focus {
@@ -258,7 +249,7 @@ details p {
 .story-draft {
   margin: 24px 0;
   padding: 24px;
-  border: 1px solid var(--line, #d4dcd7);
+  border: 1px solid var(--line, var(--hair));
   border-radius: 12px;
 }
 .draft-toolbar {
@@ -285,22 +276,22 @@ details p {
   resize: vertical;
   min-height: 90px;
   padding: 14px 16px;
-  border: 1px solid #9caea6;
+  border: 1px solid var(--hair);
   border-radius: 8px;
-  color: #172124;
-  background: #fffefa;
+  color: var(--ink);
+  background: var(--pale);
   font: inherit;
   font-weight: 400;
   line-height: 1.75;
 }
 .draft-field textarea:focus {
-  outline: 2px solid #507b6b;
+  outline: 2px solid var(--accent-border);
   outline-offset: 2px;
 }
 .draft-conflict {
   padding: 18px;
   margin: 16px 0;
-  border: 1px solid #a17739;
+  border: 1px solid var(--danger-border);
   border-radius: 8px;
 }
 .draft-conflict pre {
@@ -355,10 +346,10 @@ details p {
 .media-library input {
   min-height: 44px;
   padding: 10px 12px;
-  border: 1px solid #6e8489;
+  border: 1px solid var(--hair);
   border-radius: 6px;
-  color: #edf2f2;
-  background: #142125;
+  color: var(--ink);
+  background: var(--canvas);
   font: inherit;
   color-scheme: dark;
 }
@@ -456,16 +447,16 @@ details p {
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
-  border: 1px solid #6e8489;
+  border: 1px solid var(--hair);
   border-radius: 6px;
-  color: #edf2f2;
-  background: #142125;
+  color: var(--ink);
+  background: var(--canvas);
   color-scheme: dark;
   font: inherit;
   caret-color: var(--accent);
 }
 .settings-fields input::placeholder {
-  color: #9caeb3;
+  color: var(--sub);
 }
 .settings-fields input:focus-visible,
 .settings-fields select:focus-visible {
@@ -603,7 +594,7 @@ details p {
   height: 92px;
   border-radius: 8px;
   object-fit: cover;
-  background: #152126;
+  background: var(--canvas);
 }
 .task-activity {
   padding-block: 16px;
@@ -676,9 +667,9 @@ details p {
 .version-empty-state {
   margin-block: 20px;
   padding: 20px;
-  border: 1px solid #75664e;
+  border: 1px solid var(--warning-border);
   border-radius: 8px;
-  background: #2d2a24;
+  background: var(--warning-bg);
 }
 .version-pending h3,
 .version-empty-state h3 {
@@ -708,7 +699,7 @@ details p {
   margin: 0 0 16px;
 }
 .version-workspace > aside li + li {
-  border-top: 1px solid #304146;
+  border-top: 1px solid var(--hair);
 }
 .version-workspace > aside li button {
   display: grid;
@@ -722,11 +713,11 @@ details p {
   text-align: left;
 }
 .version-workspace > aside li button:hover:not(:disabled) {
-  background: #24363a;
+  background: var(--canvas);
 }
 .version-workspace > aside li button.selected {
-  background: #2a403f;
-  color: #e1f1eb;
+  background: var(--surface-raised);
+  color: var(--ink);
 }
 .version-workspace > aside li button span,
 .version-workspace > aside li button small {
@@ -762,7 +753,7 @@ details p {
 .version-state-strip strong {
   display: block;
   margin-bottom: 5px;
-  color: #e4ebec;
+  color: var(--ink);
   font-size: 13px;
 }
 .version-columns {
@@ -775,7 +766,7 @@ details p {
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #1b282c;
+  background: var(--canvas);
 }
 .version-columns > article > header {
   display: flex;
@@ -799,7 +790,7 @@ details p {
   aspect-ratio: 4 / 3;
   border-radius: 8px;
   object-fit: cover;
-  background: #152126;
+  background: var(--canvas);
 }
 .version-media figcaption {
   margin-top: 6px;
@@ -818,7 +809,7 @@ details p {
 .version-columns .story-plan-preview {
   max-height: 540px;
   overflow: auto;
-  scrollbar-color: #58706f #1b282c;
+  scrollbar-color: var(--border-hover) var(--border-hover);
   scrollbar-width: thin;
 }
 .version-columns .story-plan-preview > section {
@@ -929,10 +920,10 @@ details p {
   min-width: 0;
   min-height: 44px;
   padding: 10px 12px;
-  border: 1px solid #6e8489;
+  border: 1px solid var(--hair);
   border-radius: 6px;
-  background: #142125;
-  color: #edf2f2;
+  background: var(--canvas);
+  color: var(--ink);
   color-scheme: dark;
   font: inherit;
   line-height: 1.5;
@@ -946,7 +937,7 @@ details p {
 .story-structure input::placeholder,
 .content-fields input::placeholder,
 .reference-review input::placeholder {
-  color: #9caeb3;
+  color: var(--sub);
 }
 .story-structure .form-row,
 .content-fields .form-row {
@@ -999,9 +990,9 @@ details p {
   margin-bottom: 8px;
 }
 .workbench-index button[aria-pressed="true"] {
-  color: #d9f3e7;
-  background: #293f3e;
-  border-color: #668878;
+  color: var(--ink);
+  background: var(--surface-raised);
+  border-color: var(--hair);
 }
 .shot-order-row {
   display: flex;
@@ -1121,7 +1112,7 @@ details p {
     gap: 8px;
     overflow-x: auto;
     padding-bottom: 8px;
-    scrollbar-color: #58706f #172124;
+    scrollbar-color: var(--border-hover) var(--border-hover);
     scrollbar-width: thin;
   }
   .version-workspace > aside li {
@@ -1153,9 +1144,9 @@ details p {
   background: transparent;
 }
 .production-tabs button.selected {
-  background: #304d49;
+  background: var(--surface-raised);
   border-color: var(--accent);
-  color: #e4fff0;
+  color: var(--ink);
 }
 .production-layout {
   display: grid;
@@ -1180,7 +1171,7 @@ details p {
 }
 .production-index button[aria-pressed="true"] {
   border-color: var(--accent);
-  background: #304d49;
+  background: var(--surface-raised);
 }
 .production-index small {
   display: block;
@@ -1259,8 +1250,8 @@ details p {
   padding-top: 14px;
 }
 .production-preview {
-  border-color: #6c9987;
-  background: #243a37;
+  border-color: var(--hair);
+  background: var(--canvas);
 }
 .production-issues article header {
   display: flex;

@@ -1,5 +1,6 @@
-export type ServiceType = "text" | "image" | "video";
+export type ServiceType = "text" | "image" | "video" | "audio";
 export const serviceLabels: Record<ServiceType, string> = {
+  audio: "配音模型",
   text: "文本模型",
   image: "生图模型",
   video: "生视频模型",

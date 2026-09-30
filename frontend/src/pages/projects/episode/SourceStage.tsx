@@ -1,3 +1,4 @@
+import { confirmAction } from '../../../components/ui/confirm';
 import { useRef, useState } from 'react';
 import { Alert, Button, Tabs } from 'antd';
 import { EpisodeModelSelect } from '../../../features/projects/EpisodeModelSelect';
@@ -23,7 +24,7 @@ export function SourceStage({ value, writing, readOnly, onChange, projectId, epi
     try {
       if (!file.name.toLowerCase().endsWith('.txt')) throw new Error('请选择 .txt 文件。');
       const content = decodeNovelFile(await file.arrayBuffer());
-      if (writingSession.getSnapshot().novel.trim() && !window.confirm('导入将替换本集小说正文并自动保存，剧本不受影响。继续导入？')) return;
+      if (writingSession.getSnapshot().novel.trim() && !await confirmAction('导入将替换本集小说正文并自动保存，剧本不受影响。继续导入？')) return;
       writingSession.edit('novel', content);
       await writingSession.flush();
     } catch (cause) { setError(cause instanceof Error ? cause.message : '文件读取失败，请重新选择。'); }

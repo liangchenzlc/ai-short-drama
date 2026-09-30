@@ -1,16 +1,20 @@
 ﻿import { useLayoutEffect } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useMatch, useNavigate, useParams } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { Skeleton } from 'antd';
+import { RouteBoundary } from '../components/ui/RouteBoundary';
 import { Sidebar, type MainPage } from '../components/layout/Sidebar';
 import type { AssetKind } from '../features/assets/asset-model';
-import { AssetsPage } from '../pages/assets/AssetsPage';
-import { AiConfigPage } from '../pages/ai-config/AiConfigPage';
 import { AiConfigSessionProvider } from '../features/ai-config/AiConfigSession';
 import { ProjectsPage } from '../pages/projects/ProjectsPage';
-import { ProjectRoute } from '../pages/projects/ProjectRoute';
 import { NotFoundPage } from './NotFoundPage';
-import { TasksPage } from '../pages/tasks/TasksPage';
-import { MediaLibraryPage } from '../pages/media-library/MediaLibraryPage';
 import './generations.css';
+
+const AssetsPage = lazy(() => import('../pages/assets/AssetsPage').then(module => ({ default: module.AssetsPage })));
+const AiConfigPage = lazy(() => import('../pages/ai-config/AiConfigPage').then(module => ({ default: module.AiConfigPage })));
+const ProjectRoute = lazy(() => import('../pages/projects/ProjectRoute').then(module => ({ default: module.ProjectRoute })));
+const TasksPage = lazy(() => import('../pages/tasks/TasksPage').then(module => ({ default: module.TasksPage })));
+const MediaLibraryPage = lazy(() => import('../pages/media-library/MediaLibraryPage').then(module => ({ default: module.MediaLibraryPage })));
 
 function AssetRoute() {
   const { kind } = useParams();
@@ -19,7 +23,7 @@ function AssetRoute() {
 }
 function TaskRoute() {
   const { kind } = useParams();
-  if (kind !== 'text' && kind !== 'image' && kind !== 'video') return <NotFoundPage message="任务类型不存在。" />;
+  if (kind !== 'text' && kind !== 'image' && kind !== 'video' && kind !== 'audio') return <NotFoundPage message="任务类型不存在。" />;
   return <TasksPage key={kind} kind={kind} />;
 }
 function MediaLibraryRoute() {
@@ -43,7 +47,7 @@ function StudioLayout() {
     {!detail && <Sidebar page={page} kind={kind} onSelect={(next, nextKind) => navigate(next === 'projects' ? '/projects' : next === 'ai' ? '/ai' : next === 'tasks' ? '/tasks/text' : next === 'media-library' ? '/media-library/image' : `/assets/${nextKind ?? kind}`)} />}
     <div className="studio-content">
       {!detail && <header className="studio-topbar"><span>创作空间 <span className="topbar-divider">/</span> {pageLabels[page]}</span><span className="workspace-label">个人创作空间<span className="workspace-avatar" aria-label="个人工作区">创</span></span></header>}
-      <main id="main" tabIndex={-1} className="studio-main"><Outlet /></main>
+      <main id="main" tabIndex={-1} className="studio-main"><RouteBoundary resetKey={pathname}><Suspense fallback={<div className="route-loading" role="status" aria-label="正在加载工作区"><Skeleton active title paragraph={{ rows: 4 }}/></div>}><Outlet /></Suspense></RouteBoundary></main>
     </div>
   </div>;
 }

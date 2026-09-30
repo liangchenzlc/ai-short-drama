@@ -1,3 +1,4 @@
+import { confirmAction } from '../../components/ui/confirm';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Input, Skeleton } from 'antd';
 import { Dialog } from '../../components/ui/Dialog';
@@ -124,7 +125,7 @@ export function NovelScriptGeneration({
   }
 
   async function select(item: ScriptCandidate) {
-    if (disabled || busy || !window.confirm('切换前会先保存当前剧本草稿。确定设为当前编辑剧本？')) return;
+    if (disabled || busy || !await confirmAction('切换前会先保存当前剧本草稿。确定设为当前编辑剧本？')) return;
     setBusy(true); setMessage(''); setMessageType('error');
     try {
       if (!await session.select(item.id)) setMessage('未能切换，当前草稿已保留。');

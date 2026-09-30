@@ -10,6 +10,7 @@ import "./app/styles.css";
 import "./app/studio.css";
 import "./app/web.css";
 import "./app/production.css";
+import './app/workbench.css';
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ConfigProvider

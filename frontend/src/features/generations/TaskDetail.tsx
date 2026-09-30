@@ -89,6 +89,8 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
         <dl className="generation-facts"><div><dt>模型配置</dt><dd>{detail.config?.name ?? '—'} · {detail.config?.model_key ?? '—'}</dd></div><div><dt>创建时间</dt><dd>{dateLabel(detail.created_at)}</dd></div><div><dt>开始时间</dt><dd>{dateLabel(detail.started_at)}</dd></div><div><dt>完成时间</dt><dd>{dateLabel(detail.finished_at)}</dd></div></dl>
         {detail.error && <Alert type="warning" showIcon message={detail.error.message} description={`错误代码：${detail.error.code}`} />}
         <div className="generation-action-row">
+          {(detail.source?.scene === 'dialogue_audio' || detail.source?.scene === 'dialogue_extract') && <Link to={episodePath(detail.source.project_id, detail.source.episode_id, 'assembly')}>打开本集声音面板</Link>}
+          {detail.batch_id && <Link to={`/tasks/${detail.service_type}?batch=${detail.batch_id}`}>查看来源批次／重试失败项</Link>}
           {detail.can_cancel && <Button disabled={busy} onClick={() => { setAction('cancel'); setActionError(''); }}>请求取消</Button>}
           {detail.can_resume && <Button type="primary" disabled={busy} onClick={() => { setAction('resume'); setActionError(''); }}>安全恢复</Button>}
           {detail.can_retry && <Button type="primary" disabled={busy} onClick={() => { setAction('retry'); setActionError(''); }}>重新生成</Button>}
@@ -98,7 +100,7 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
           {detail.result.text && <><pre className="generation-text-result">{detail.result.text.content}</pre>{detail.result.text.finish_reason === 'length' && <p className="generation-hint">正文已达到输出长度限制，以上内容已保留。</p>}</>}
           {!!detail.result.assets.length && <div className="generation-result-assets">{detail.result.assets.map((asset) => <article key={asset.asset_id} className="generation-result-asset">
             {asset.media_type === 'image' && asset.url ? <PreviewImage src={asset.url} alt={asset.name}/> : <span className="generation-media-placeholder">{asset.media_type === 'video' ? '视频' : '图片'}</span>}
-            <span>{asset.name}</span><Link to={`/media-library/${asset.media_type}?asset=${asset.asset_id}`}>查看资产与确认采用</Link>
+            <span>{asset.name}</span>{asset.media_type === 'audio' ? <><audio controls preload="metadata" src={asset.url ?? undefined}/><p>在本集“配音、字幕和配乐”面板中核对并采用。</p></> : <Link to={`/media-library/${asset.media_type}?asset=${asset.asset_id}`}>查看资产与确认采用</Link>}
           </article>)}</div>}
           {!detail.result.text && !detail.result.assets.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={detail.status === 'queued' || detail.status === 'running' ? '结果将在完成后显示' : '暂无已保存结果'} />}
           <BusinessResult detail={detail}/>

@@ -1,3 +1,4 @@
+import { confirmAction } from '../../components/ui/confirm';
 ﻿import { useState, type FormEvent } from 'react';
 import { Dialog } from '../../components/ui/Dialog';
 import { ApiError, errorMessage } from '../../api/http';
@@ -15,8 +16,8 @@ export function ConfigForm({ existing, serviceType, onClose, onSave, onReload }:
   const [form, setForm] = useState<ConfigDraft>(existing
     ? { ...existing, apiKey: '', clearApiKey: false } : { ...emptyConfig, serviceType });
   const [initial] = useState(() => JSON.stringify(form));
-  function requestClose() {
-    if (pending || (JSON.stringify(form) !== initial && !window.confirm('关闭会放弃尚未保存的配置修改，确定关闭？'))) return;
+  async function requestClose() {
+    if (pending || (JSON.stringify(form) !== initial && !await confirmAction('关闭会放弃尚未保存的配置修改，确定关闭？'))) return;
     onClose();
   }
   const [error, setError] = useState('');

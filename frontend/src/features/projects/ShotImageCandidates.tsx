@@ -1,3 +1,4 @@
+import { confirmAction } from '../../components/ui/confirm';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, InputNumber, Spin } from 'antd';
 import { generations } from '../../api/modules/generations';
@@ -123,7 +124,7 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
         setMessage('候选来源或生成参数不完整，无法直接采用；请查看任务详情。'); return;
       }
       const description = `${source.layout} · ${detail.parameters.aspect} · ${detail.parameters.resolution}`;
-      if (!window.confirm(`确认采用这张图片？原生成参数：${description}。采用不会改写下次生成设置，旧图会保留在回收记录。`)) return;
+      if (!await confirmAction(`确认采用这张图片？原生成参数：${description}。采用不会改写下次生成设置，旧图会保留在回收记录。`)) return;
       prepared = await prepareShot('adoption');
       if (!alive.current) return;
       if (!prepared || !prepared.isCurrent()) {
@@ -133,7 +134,7 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
       try { await mediaLibrary.apply(asset.asset_id, body); }
       catch (cause) {
         if (!(cause instanceof ApiError) || cause.code !== 'stale_generation_source') throw cause;
-        if (!alive.current || !window.confirm('图片基于较早的创作上下文生成。核对预览后仍要采用吗？')) return;
+        if (!alive.current || !await confirmAction('图片基于较早的创作上下文生成。核对预览后仍要采用吗？')) return;
         if (!prepared.isCurrent()) {
           setMessage('分镜状态已变化，本次未采用图片，请核对后重试。'); return;
         }
@@ -148,8 +149,8 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
     finally { prepared?.release(); mutation.current = false; if (alive.current) setBusy(false); }
   }
 
-  function acknowledgeUnknown() {
-    if (!window.confirm('请先查看生成记录确认上次请求是否已创建任务。清除此保护后再次生成可能重复计费，确定已核对并继续？')) return;
+  async function acknowledgeUnknown() {
+    if (!await confirmAction('请先查看生成记录确认上次请求是否已创建任务。清除此保护后再次生成可能重复计费，确定已核对并继续？')) return;
     const owner = pendingShotAttempt(shot.id, attemptStorage());
     if (owner) finishShotAttempt(shot.id, owner, attemptStorage());
     setUncertain(false);

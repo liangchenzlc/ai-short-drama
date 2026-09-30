@@ -1,3 +1,4 @@
+import { confirmAction } from '../../components/ui/confirm';
 import { PreviewImage } from '../../components/ui/ImagePreview';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Checkbox, Drawer, Form, Input, InputNumber, Select, Skeleton } from 'antd';
@@ -83,7 +84,7 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
     } catch (cause) {
       if (active.current) {
         if (cause instanceof ApiError && cause.code === 'stale_generation_source' && !acknowledgeStaleSource
-          && window.confirm('此结果来自其他或较早的创作内容。你已核对当前目标与媒体，仍要采用吗？')) {
+          && await confirmAction('此结果来自其他或较早的创作内容。你已核对当前目标与媒体，仍要采用吗？')) {
           mutation.current = false; setBusy(null); return void apply(values, true);
         }
         const conflict = cause instanceof ApiError && cause.status === 409;
@@ -111,8 +112,8 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
     } catch (cause) { setApplyError(generationError(cause)); }
     finally { mutation.current = false; if (active.current) setBusy(null); }
   }
-  function requestClose() {
-    if (busy || (asset && name !== asset.name && !window.confirm('资产名称尚未保存，确定关闭？'))) return;
+  async function requestClose() {
+    if (busy || (asset && name !== asset.name && !await confirmAction('资产名称尚未保存，确定关闭？'))) return;
     onClose();
   }
   return <Drawer open title="资产详情" width={760} onClose={requestClose} closable={!busy} maskClosable={!busy} keyboard={!busy} rootClassName="generation-drawer">

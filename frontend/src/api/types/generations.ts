@@ -4,6 +4,9 @@ export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancel
 export interface Page<T> { items: T[]; total: number; offset: number; limit: number }
 export type ImageLayout = 'single' | 'four' | 'five' | 'nine';
 export type GenerationSource =
+  | { scene: 'character_voice_design'; project_id: string; asset_id: string; voice_prompt: string; preview_text: string }
+  | { scene: 'dialogue_extract'; project_id: string; episode_id: string }
+  | { scene: 'dialogue_audio'; project_id: string; episode_id: string; row_version: string; line_id: string }
   | { scene: 'shot_video'; shot_id: string; row_version: string; context_hash: string; reference_media_id: string }
   | { scene: 'shot_image'; shot_id: string; layout: ImageLayout; context_mode?: 'saved'; row_version?: string; context_hash?: string }
   | { scene: 'asset_image'; asset_id: string; row_version: string; project_id?: string; episode_id?: string }
@@ -12,7 +15,7 @@ export type GenerationSource =
 interface CreateBase { config_id?: string }
 export interface TextGenerationRequest extends CreateBase {
   input?: { messages: { role: 'system' | 'user' | 'assistant'; content: string }[] };
-  source?: Extract<GenerationSource, { scene: 'novel_script' | 'script_shots' | 'script_assets' }>;
+  source?: Extract<GenerationSource, { scene: 'novel_script' | 'script_shots' | 'script_assets' | 'dialogue_extract' }>;
   extraction?: { kinds: ('character' | 'scene' | 'prop')[] };
   storyboard?: { average_shot_duration_ms: number };
   instructions?: string;
@@ -29,8 +32,13 @@ export interface VideoGenerationRequest extends CreateBase {
   parameters: { aspect?: string; resolution?: string; duration_ms?: number };
 }
 export interface GenerationReceipt { generation_id: string; service_type: GenerationKind; status: TaskStatus }
+export interface AudioGenerationRequest extends CreateBase {
+  input?: { text: string }; parameters?: { voice: string };
+  source?: Extract<GenerationSource, { scene: 'dialogue_audio' }>;
+}
 export interface SafeTaskError { code: string; message: string; http_status?: number }
 export interface GenerationSummary extends GenerationReceipt {
+  batch_id?: string | null;
   display_context?: { project?: string | null; episode?: string | null; subject: string; scope: string };
   config?: { id: string; name: string; model_key: string; provider: string } | null;
   created_at: string;
@@ -43,8 +51,9 @@ export interface GenerationSummary extends GenerationReceipt {
   can_resume: boolean;
 }
 export interface MediaAsset {
+  native_quality?: { technical_pass: boolean; issue: string | null; voice_fidelity: string } | null;
   asset_id: string; record_id: string; generation_id: string; media_id: string;
-  media_type: 'image' | 'video'; name: string; row_version: string; url: string | null;
+  media_type: 'image' | 'video' | 'audio'; name: string; row_version: string; url: string | null;
   source?: GenerationSource | null;
   width?: number | null; height?: number | null; duration_ms?: number | null;
   byte_size?: string | null; created_at?: string; updated_at?: string | null;

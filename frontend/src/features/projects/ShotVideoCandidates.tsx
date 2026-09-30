@@ -1,3 +1,4 @@
+import { confirmAction } from '../../components/ui/confirm';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Input, InputNumber, Select, Spin } from 'antd';
 import { ApiError, errorMessage } from '../../api/http';
@@ -100,7 +101,7 @@ export function ShotVideoCandidates({ shot, disabled, model, onModelChange, onEd
       try { await mediaLibrary.apply(asset.asset_id, body); }
       catch (cause) {
         if (!(cause instanceof ApiError) || cause.code !== 'stale_generation_source') throw cause;
-        if (!window.confirm('此视频使用的分镜、提示词或参考图与当前内容不同。已核对视频，仍要采用吗？')) return;
+        if (!await confirmAction('此视频使用的分镜、提示词、参考图、对白或音色与当前内容不同。已核对视频，仍要采用吗？')) return;
         if (!prepared.isCurrent() || !alive.current) return;
         await mediaLibrary.apply(asset.asset_id, { ...body, acknowledge_stale_source: true });
       }
@@ -110,8 +111,8 @@ export function ShotVideoCandidates({ shot, disabled, model, onModelChange, onEd
     finally { prepared?.release(); mutation.current = false; if (alive.current) setBusy(false); }
   }
 
-  function acknowledgeUnknown() {
-    if (!window.confirm('请先查看生成记录核对上次请求是否已受理。解除保护后再次生成可能重复计费，确定继续？')) return;
+  async function acknowledgeUnknown() {
+    if (!await confirmAction('请先查看生成记录核对上次请求是否已受理。解除保护后再次生成可能重复计费，确定继续？')) return;
     const owner = pendingShotAttempt(scope, attemptStorage());
     if (owner) finishShotAttempt(scope, owner, attemptStorage());
     setUncertain(false);
@@ -131,7 +132,7 @@ export function ShotVideoCandidates({ shot, disabled, model, onModelChange, onEd
     <label className="writing-control"><span>视频提示词</span><Input.TextArea aria-label="视频提示词" autoSize={{ minRows: 5, maxRows: 12 }} maxLength={16000}
       value={shot.video_prompt || shot.video_default_prompt} disabled={disabled || busy} onChange={event => onEdit({ video_prompt: event.target.value })}/></label>
     <div className="shot-video-prompt-actions">
-      <Button type="link" disabled={disabled || busy || !shot.video_prompt} onClick={() => { if (window.confirm('恢复默认内容将替换本镜已编辑的视频提示词，确定继续？')) onEdit({ video_prompt: '' }); }}>恢复分镜默认内容</Button></div>
+      <Button type="link" disabled={disabled || busy || !shot.video_prompt} onClick={async () => { if (await confirmAction('恢复默认内容将替换本镜已编辑的视频提示词，确定继续？')) onEdit({ video_prompt: '' }); }}>恢复分镜默认内容</Button></div>
     <div className="shot-generation-toolbar">
       <label>视频模型<EpisodeModelSelect kind="video" value={model} label="视频模型" disabled={disabled || busy} onResolvedChange={onResolved} onChange={id => { setModelId(undefined); setCapabilities(null); onModelChange(id); }}/></label>
       <label>视频清晰度<Select aria-label="视频清晰度" value={shot.video_settings.resolution} disabled={disabled || busy}
@@ -154,9 +155,9 @@ export function ShotVideoCandidates({ shot, disabled, model, onModelChange, onEd
         {message && <Alert type="info" showIcon message={message}/>}{history.error && <Alert type="error" showIcon message={history.error}/>}
         {history.loading && !history.candidates.length ? <Spin/> : !history.candidates.length ? <p className="episode-help">暂无视频候选，生成完成后会显示在这里。</p> :
           <div className="shot-video-candidates">{history.candidates.map(asset => <article key={asset.asset_id}>
-            <CandidateVideo asset={asset} onRefresh={() => void history.refresh()}/>
+            <CandidateVideo asset={asset} onRefresh={() => void history.refresh()}/>{asset.native_quality && <Alert type={asset.native_quality.technical_pass ? 'info' : 'error'} message={asset.native_quality.technical_pass ? '音轨检查通过。采用前请试听核对音色、台词、说话顺序与口型。' : '未检测到有效对白音轨，此候选不能采用。'}/>}
             <div className="candidate-history-toolbar"><span>{asset.name}{asset.duration_ms ? ` · ${asset.duration_ms / 1000} 秒` : ''}</span>
-              <Button type="primary" disabled={disabled || busy || shot.video?.media_id === asset.media_id} onClick={() => void apply(asset)}>{shot.video?.media_id === asset.media_id ? '当前采用' : '确认采用'}</Button></div>
+              <Button type="primary" disabled={disabled || busy || asset.native_quality?.technical_pass === false || shot.video?.media_id === asset.media_id} onClick={() => void apply(asset)}>{shot.video?.media_id === asset.media_id ? '当前采用' : '确认采用'}</Button></div>
           </article>)}</div>}
         {history.hasMoreCandidates && <Button onClick={() => void history.loadMoreCandidates()}>加载更多视频</Button>}
         <details className="shot-task-records" open={!history.candidates.length}><summary>任务记录 · {history.tasks.length} 条</summary>

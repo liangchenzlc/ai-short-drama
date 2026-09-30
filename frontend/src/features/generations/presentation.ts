@@ -1,6 +1,6 @@
 import { ApiError, errorMessage } from '../../api/http';
 import type { GenerationSummary, TaskStatus } from '../../api/types/generations';
-export const kindLabels = { text: '文本', image: '图片', video: '视频' };
+export const kindLabels = { text: '文本', image: '图片', video: '视频', audio: '配音' };
 export const statusLabels: Record<TaskStatus, string> = { queued: '排队中', running: '处理中', succeeded: '已完成', failed: '失败', cancelled: '已取消' };
 export function taskLabel(task: GenerationSummary) {
   if (task.status !== 'running') return statusLabels[task.status];

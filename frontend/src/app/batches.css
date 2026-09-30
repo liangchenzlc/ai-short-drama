@@ -1,0 +1,8 @@
+.batch-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-block: 12px; }
+.batch-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
+.batch-form > * { min-width: 0; }
+.batch-form h2, .batch-form p { margin: 0; }
+.batch-form > label, .batch-fields label { display: grid; gap: 8px; }
+.batch-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.batch-item-select { padding: 8px 12px; }
+@media (max-width: 600px) { .batch-fields { grid-template-columns: 1fr; } }

@@ -1,0 +1,17 @@
+.sound-fieldset { border: 0; padding: 0; min-width: 0; }
+.sound-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+.sound-actions > .ant-input { width: 180px; }
+.sound-editor { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; margin: 20px 0; }
+.sound-editor nav { max-height: 600px; overflow: auto; }
+.sound-editor nav button { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; background: transparent; border: 1px solid var(--hair); border-radius: 8px; padding: 12px; margin-bottom: 8px; cursor: pointer; }
+.sound-editor nav button[aria-pressed=true] { border-color: var(--accent, var(--accent-border)); background: var(--pale); }
+.sound-editor nav span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.sound-fields { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.sound-fields label, .sound-subtitle label { display: flex; flex-direction: column; gap: 6px; }
+.sound-fields audio, .sound-candidate audio { width: 100%; }
+.sound-candidate { border-top: 1px solid var(--hair); padding: 12px 0; }
+.sound-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 12px; }
+.sound-subtitle { display: grid; grid-template-columns: 120px 120px minmax(0,1fr) auto; gap: 12px; align-items: end; margin: 16px 0; }
+.sound-extraction pre { max-height: 220px; white-space: pre-wrap; overflow: auto; }
+.sound-file input { display: block; max-width: 240px; }
+@media (max-width: 640px) { .sound-editor { grid-template-columns: 1fr; } .sound-editor nav { max-height: 200px; } .sound-subtitle { grid-template-columns: 1fr 1fr; } .sound-subtitle label:nth-child(3) { grid-column: 1 / -1; } }

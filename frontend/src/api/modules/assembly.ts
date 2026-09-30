@@ -39,7 +39,7 @@ export function assemblyApi(projectId: string, episodeId: string) {
     sync: async (value: AssemblyState) => (await http.post<AssemblyState>(`${root}/sync`, { row_version: value.assembly!.row_version, source_hash: value.source_hash })).data,
     export: async (value: AssemblyState, acknowledge: boolean, key: string) => (await http.post<RenderJob>(`${root}/exports`, { row_version: value.assembly!.row_version, source_hash: value.source_hash, acknowledge_stale_source: acknowledge }, { headers: { 'Idempotency-Key': key } })).data,
     preview: async (value: AssemblyState, acknowledge: boolean, key: string) => (await http.post<RenderJob>(`${root}/previews`, { row_version: value.assembly!.row_version, source_hash: value.source_hash, acknowledge_stale_source: acknowledge }, { headers: { 'Idempotency-Key': key } })).data,
-    job: async (id: string) => (await http.get<RenderJob>(`${root}/exports/${id}`)).data,
+    job: async (id: string, signal?: AbortSignal) => (await http.get<RenderJob>(`${root}/exports/${id}`, { signal })).data,
     history: async (offset = 0) => (await http.get<{ items: RenderJob[]; has_more: boolean }>(`${root}/exports`, { params: { offset, limit: 20 } })).data,
     cancel: async (id: string) => (await http.post<RenderJob>(`${root}/exports/${id}/cancel`)).data,
     retry: async (id: string, key: string) => (await http.post<RenderJob>(`${root}/exports/${id}/retry`, {}, { headers: { 'Idempotency-Key': key } })).data,

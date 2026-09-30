@@ -3,6 +3,7 @@ import { UNSAFE_NavigationContext } from 'react-router-dom';
 import { episodeWritingApi } from '../../api/modules/episode-writing';
 import { WritingSession } from './writing-session';
 import { installWritingNavigationGuard, type NavigationBarrier } from './writing-navigation';
+import { confirmAction } from '../../components/ui/confirm';
 
 export function useEpisodeWriting(projectId: string, episodeId: string, extraBarrier?: () => NavigationBarrier | null) {
   const session = useMemo(() => new WritingSession(episodeWritingApi(projectId, episodeId)), [projectId, episodeId]);
@@ -15,6 +16,6 @@ export function useEpisodeWriting(projectId: string, episodeId: string, extraBar
     // React StrictMode immediately mounts the same effect again in development.
     return () => { cleanup.current = setTimeout(() => session.dispose(), 0); };
   }, [session]);
-  useLayoutEffect(() => installWritingNavigationGuard(navigator, session, window, extraBarrier), [navigator, session, extraBarrier]);
+  useLayoutEffect(() => installWritingNavigationGuard(navigator, session, window, extraBarrier, confirmAction), [navigator, session, extraBarrier]);
   return { ...state, session };
 }

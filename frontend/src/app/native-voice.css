@@ -1,0 +1,14 @@
+.native-voice, .native-dialogue { display: grid; gap: 12px; min-width: 0; padding-block: 20px; border-top: 1px solid var(--border, var(--hair)); }
+.native-voice h3, .native-dialogue h4, .native-voice p, .native-dialogue p { margin: 0; }
+.native-voice p, .native-dialogue p { max-width: 70ch; overflow-wrap: anywhere; }
+.native-voice fieldset { display: grid; gap: 14px; min-width: 0; border: 0; padding: 0; }
+.native-voice label { display: grid; gap: 6px; min-width: 0; }
+.native-voice label.ant-checkbox-wrapper { display: inline-flex; }
+.native-actions, .native-mode { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.native-mode { margin-block: 12px; }
+.native-candidates { display: grid; gap: 20px; padding: 0; margin: 8px 0 0; list-style: none; }
+.native-candidates li, .native-line { display: grid; gap: 10px; padding-block: 16px; border-top: 1px solid var(--border, var(--hair)); min-width: 0; }
+.native-voice audio, .native-dialogue audio { display: block; width: min(100%, 380px); margin-block: 8px; }
+.native-voice button { min-height: 36px; }
+.native-dialogue-dialog > header { position: sticky; top: 0; z-index: 2; background: var(--surface); }
+.native-dialogue-dialog > .native-voice { padding: 20px; border-top: 0; }

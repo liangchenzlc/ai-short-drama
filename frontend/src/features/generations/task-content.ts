@@ -5,6 +5,8 @@ export function taskOrigin(task: { display_context?: { project?: string | null; 
 }
 
 export function taskPrompts(detail: { input: Record<string, unknown>; effective_prompt?: string | null }): { label: string; content: string }[] {
+  if (typeof detail.input.voice_prompt === 'string') return [{ label: '声音描述', content: detail.input.voice_prompt }, { label: '试音文本', content: String(detail.input.preview_text ?? '') }];
+  if (typeof detail.input.text === 'string') return [{ label: '配音文本', content: detail.input.text }];
   const prompt = detail.effective_prompt || detail.input.prompt;
   if (typeof prompt === 'string' && prompt.trim()) return [{ label: '生成提示词', content: prompt }];
   if (!Array.isArray(detail.input.messages)) return [];

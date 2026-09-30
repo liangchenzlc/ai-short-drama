@@ -1,4 +1,4 @@
-export type ServiceTypeDto = 'text' | 'image' | 'video';
+export type ServiceTypeDto = 'text' | 'image' | 'video' | 'audio';
 export interface AiModelConfigDto {
   id: string;
   service_type: ServiceTypeDto;
@@ -33,5 +33,5 @@ export interface AiModelCapabilitiesDto {
   reference_images: boolean;
   first_frame: boolean;
   last_frame: boolean;
-  video_input?: { first_frame: boolean; reference_images?: boolean; duration_seconds: number[] | null; resolutions: string[] | null };
+  video_input?: { first_frame: boolean; reference_images?: boolean; duration_seconds: number[] | null; resolutions: string[] | null; audio_references?: boolean; generate_audio?: boolean; audio_evidence?: string; voice_fidelity?: string };
 }

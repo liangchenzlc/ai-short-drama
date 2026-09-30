@@ -1,5 +1,6 @@
+import { confirmAction } from '../../../components/ui/confirm';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Alert, Button, Input, InputNumber, Segmented, Select, Spin } from 'antd';
+import { Alert, Button, Checkbox, Input, InputNumber, Segmented, Select, Spin } from 'antd';
 import { ApiError, errorMessage } from '../../../api/http';
 import { storyboardApi, type ShotRead, type StoryboardPage } from '../../../api/modules/storyboard';
 import { assetLibraries, type LibraryAssetRead } from '../../../api/modules/assets';
@@ -20,7 +21,9 @@ import { Dialog } from '../../../components/ui/Dialog';
 import { LazyLoadMore } from '../../../components/ui/LazyLoadMore';
 import { ShotAssetPicker } from '../../../features/projects/ShotAssetPicker';
 import { ShotVideoCandidates } from '../../../features/projects/ShotVideoCandidates';
+import { NativeDialoguePanel, NativeSoundMode } from '../../../features/projects/NativeVoicePanel';
 import { ShotImageCandidates } from '../../../features/projects/ShotImageCandidates';
+import { BatchLauncher, useBatchSelection } from '../../../features/generations/BatchGeneration';
 import { prepareShotOperation, type ImageCapabilities, type PreparedShot } from '../../../features/projects/shot-image-workflow';
 
 type Api = ReturnType<typeof storyboardApi>;
@@ -67,6 +70,7 @@ export function StoryboardStage({
   registerBarrier: (barrier: NavigationBarrier | null) => void;
 }) {
   const api = storyboardApi(projectId, episodeId);
+  const batchSelection = useBatchSelection(`${projectId}:${episodeId}`);
   const [page, setPageState] = useState<StoryboardPage | null>(null);
   const pageRef = useRef<StoryboardPage | null>(null);
   const [assets, setAssets] = useState<LibraryAssetRead[]>([]);
@@ -91,6 +95,12 @@ export function StoryboardStage({
   const taskMoreLock = useRef(false);
   const [storyboardRevision, setStoryboardRevision] = useState(0);
   const [taskRevision, setTaskRevision] = useState(0);
+  const dialogueBarrier = useRef<NavigationBarrier | null>(null);
+  const registerDialogueBarrier = useCallback((barrier: NavigationBarrier | null) => { dialogueBarrier.current = barrier; }, []);
+  const leaveDialogue = (next: () => void) => {
+    if (!dialogueBarrier.current?.hasUnsettled()) { next(); return; }
+    void confirmAction('分镜对白尚未保存，确定放弃并切换？').then(accepted => { if (accepted) next(); });
+  };
   const dirty = useRef(new Set<string>());
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const saving = useRef(new Map<string, Promise<boolean>>());
@@ -341,8 +351,8 @@ export function StoryboardStage({
 
   useEffect(() => {
     const barrier: NavigationBarrier = {
-      hasUnsettled: () => shotLocks.current.size > 0 || hasUnsettledStoryboard(dirty.current, saving.current, timers.current),
-      flush: async () => shotLocks.current.size === 0 && await flushAll() && shotLocks.current.size === 0,
+      hasUnsettled: () => !!dialogueBarrier.current?.hasUnsettled() || shotLocks.current.size > 0 || hasUnsettledStoryboard(dirty.current, saving.current, timers.current),
+      flush: async () => !dialogueBarrier.current?.hasUnsettled() && shotLocks.current.size === 0 && await flushAll() && shotLocks.current.size === 0,
     };
     registerBarrier(barrier);
     return () => registerBarrier(null);
@@ -419,7 +429,7 @@ export function StoryboardStage({
     if (!candidate || busy || shotLocks.current.size || !await flushAll() || shotLocks.current.size) return;
     const current = pageRef.current;
     if (!current) return;
-    if (mode === 'replace' && !window.confirm(`替换会移出当前 ${current.total} 个分镜，旧媒体与历史会保留。确定继续？`)) return;
+    if (mode === 'replace' && !await confirmAction(`替换会移出当前 ${current.total} 个分镜，旧媒体与历史会保留。确定继续？`)) return;
     setBusy(true); setMessage('');
     try {
       await api.apply(candidate.generation_id, {
@@ -436,6 +446,7 @@ export function StoryboardStage({
   }
 
   return <div className="storyboard-workspace">
+    <NativeSoundMode projectId={projectId} disabled={readOnly || busy || loading || dirty.current.size > 0 || saving.current.size > 0} onChanged={() => setStoryboardRevision(revision => revision + 1)}/>
     <div className="episode-stage-heading storyboard-heading"><div><h2>分镜制作</h2><p>先编排镜头，再生成分镜图与视频。修改自动保存。</p></div><Button disabled={readOnly || busy || loading || !!loadError || !page} onClick={() => void add()}>新增分镜</Button></div>
     {message && <Alert type={message.includes('其他窗口') ? 'warning' : 'info'} showIcon message={message}/>}
     {loadError && <Alert type="error" showIcon message={`分镜列表加载失败：${loadError}`} action={<Button loading={loading} onClick={() => setStoryboardRevision(revision => revision + 1)}>重新加载分镜列表</Button>}/>}
@@ -461,11 +472,13 @@ export function StoryboardStage({
       </aside>
       <section className="creation-editor storyboard-editor" aria-label="分镜创作区域">
         <div className="storyboard-editor-heading"><h3>本集分镜</h3><span>{page ? `共 ${page.total} 镜` : loading ? '正在载入' : '尚未加载'}</span></div>
+        {!readOnly && <BatchLauncher scope={{ library: 'episode', project_id: projectId, episode_id: episodeId }} selection={batchSelection} loadedIds={page?.items.map(shot => shot.id) ?? []} disabled={busy || loading || !!loadError || lockedShots.size > 0} beforePreflight={flushAll}/>}
         {moreError && <Button onClick={() => setStoryboardRevision(revision => revision + 1)}>重新加载分镜列表</Button>}
         {loading && !page ? <Spin/> : <div className="storyboard-list lazy-scroll">
           {page && !page.items.length && !loadError && <div className="studio-empty"><h3>还没有镜头</h3><p>确认剧本后生成分镜，或手动新增第一个镜头。</p><Button disabled={readOnly || busy || loading} onClick={() => void add()}>新增第一个分镜</Button></div>}
           {page?.items.map(shot => <article className={`storyboard-item${selectedShotId === shot.id ? ' is-selected' : ''}`} key={shot.id}>
-            <button type="button" className="storyboard-summary" aria-expanded={selectedShotId === shot.id} aria-controls={`shot-editor-${shot.id}`} disabled={lockedShots.size > 0} onClick={() => setSelectedShotId(selectedShotId === shot.id ? null : shot.id)}>
+            {batchSelection.enabled && !readOnly && <Checkbox className="batch-item-select" aria-label={`批量选择分镜 ${shot.position}`} checked={batchSelection.ids.includes(shot.id)} onChange={event => batchSelection.toggle(shot.id, event.target.checked)}>批量选择</Checkbox>}
+            <button type="button" className="storyboard-summary" aria-expanded={selectedShotId === shot.id} aria-controls={`shot-editor-${shot.id}`} disabled={lockedShots.size > 0} onClick={() => leaveDialogue(() => setSelectedShotId(selectedShotId === shot.id ? null : shot.id))}>
               <strong>分镜 {String(shot.position).padStart(2, '0')}</strong>
               <span className="storyboard-summary-script">{shot.script || '空分镜，点击编写'}</span>
               <span className="shot-summary-duration">{shot.duration_ms / 1000} 秒</span>
@@ -478,7 +491,8 @@ export function StoryboardStage({
                 <Input.TextArea aria-label={`分镜 ${shot.position} 脚本`} autoSize={{ minRows: 3, maxRows: 5 }} value={shot.script} disabled={readOnly || lockedShots.has(shot.id)} onChange={event => updateLocal(shot.id, { script: event.target.value })}/>
               </div>
               <ShotAssetPicker assets={assets} assetIds={shot.asset_ids} disabled={readOnly || busy || lockedShots.has(shot.id)} onChange={asset_ids => updateLocal(shot.id, { asset_ids })}/>
-              <Segmented aria-label="分镜媒体类型" value={mediaTab} disabled={lockedShots.has(shot.id)} options={[{ label: '分镜图', value: 'image' }, { label: '分镜视频', value: 'video' }]} onChange={next => setMediaTab(String(next))}/>
+                <Segmented aria-label="分镜媒体类型" value={mediaTab} disabled={lockedShots.has(shot.id)} options={[{ label: '分镜图', value: 'image' }, { label: '分镜视频', value: 'video' }]} onChange={next => leaveDialogue(() => setMediaTab(String(next)))}/>
+              {mediaTab === 'video' && <NativeDialoguePanel key={shot.id} revision={storyboardRevision} registerBarrier={registerDialogueBarrier} projectId={projectId} episodeId={episodeId} shotId={shot.id} disabled={readOnly || busy || lockedShots.has(shot.id)} prepare={() => saveShot(shot.id)} onChanged={() => setStoryboardRevision(revision => revision + 1)}/>}
               {mediaTab === 'video' ? <ShotVideoCandidates key={shot.id} shot={shot} disabled={readOnly || busy || lockedShots.has(shot.id)} model={value.models.video} onModelChange={id => onChange({ ...value, models: { ...value.models, video: id } })} onEdit={patch => updateLocal(shot.id, patch)} prepareShot={() => prepareShot(shot.id, 'adoption')} onChanged={() => setStoryboardRevision(revision => revision + 1)}/> : <ShotImageCandidates shot={shot} disabled={readOnly || busy || lockedShots.has(shot.id)} modelId={imageModelId} capabilities={imageCapabilities} capabilitiesLoading={capabilitiesLoading} onRefreshCapabilities={refreshCapabilities} episodeAspect={value.aspect} prepareShot={purpose => prepareShot(shot.id, purpose)} onChanged={() => setStoryboardRevision(revision => revision + 1)} settings={<>
                 <label>图片清晰度<Select aria-label="图片清晰度" value={shot.image_settings.resolution} disabled={readOnly || lockedShots.has(shot.id)} options={['1K', '2K', '4K'].map(value => ({ value, label: value }))} onChange={resolution => updateLocal(shot.id, { image_settings: { ...shot.image_settings, resolution } })}/></label>
                 <label>图片比例<Select aria-label="图片比例" value={shot.image_settings.aspect} disabled={readOnly || lockedShots.has(shot.id)} options={['inherit', '16:9', '9:16', '1:1', '4:3', '3:4'].map(value => ({ value, label: value === 'inherit' ? '跟随本集画幅' : value }))} onChange={aspect => updateLocal(shot.id, { image_settings: { ...shot.image_settings, aspect } })}/></label>

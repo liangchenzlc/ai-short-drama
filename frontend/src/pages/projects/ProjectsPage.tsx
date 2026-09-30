@@ -53,7 +53,7 @@ export function ProjectsPage() {
   }
   return <section className="projects-home">
     <div className="studio-page-head"><div><h1>项目管理</h1><p>管理你的故事、分集与创作素材。</p></div>
-      <div className="project-actions"><Button onClick={() => setRevision((v) => v + 1)} disabled={loading}>刷新</Button><Button type="primary" icon={<Icon name="plus" size={16} />} onClick={() => { setName(''); setError(''); setCreating(true); }}>新建项目</Button></div></div>
+      <div className="project-actions"><Button icon={<Icon name="refresh" size={15}/>} onClick={() => setRevision((v) => v + 1)} disabled={loading}>刷新</Button><Button type="primary" icon={<Icon name="plus" size={16} />} onClick={() => { setName(''); setError(''); setCreating(true); }}>新建项目</Button></div></div>
     <div className="project-search-bar"><Input.Search className="project-search" value={search} onChange={(event) => setSearch(event.target.value)} aria-label="搜索项目名称" placeholder="搜索项目名称" maxLength={120} allowClear onSearch={(value) => { setQuery(value.trim()); setOffset(0); }} /><span>找到故事，接着创作</span></div>
     {loadError ? <Alert type="error" showIcon message={loadError} action={<Button onClick={() => setRevision((v) => v + 1)}>重试</Button>} />
       : loading ? <div className="project-skeleton" role="status" aria-label="正在加载项目">{[0, 1, 2].map(item => <Skeleton key={item} title paragraph={{ rows: 2 }} />)}</div>

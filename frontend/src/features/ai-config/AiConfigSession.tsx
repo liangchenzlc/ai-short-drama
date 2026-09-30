@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import type { ServiceType } from './config-model';
 
-export const configTabs = ['text', 'image', 'video'] as const;
+export const configTabs = ['text', 'image', 'video', 'audio'] as const;
 function useSession() {
   const [tab, setTab] = useState<ServiceType>('text');
   return { tab, setTab };

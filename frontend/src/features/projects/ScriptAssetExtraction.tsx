@@ -1,3 +1,4 @@
+import { confirmAction } from '../../components/ui/confirm';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, Button, Checkbox, Empty, Input, Select, Spin, Tabs } from 'antd';
 import { Popover } from 'antd';
@@ -174,7 +175,7 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
 
   async function reloadResult() {
     await run(async () => {
-      if (dirty && !window.confirm('重新载入会放弃尚未保存的候选修改。确定继续？')) return;
+      if (dirty && !await confirmAction('重新载入会放弃尚未保存的候选修改。确定继续？')) return;
       if (activeId) acceptResult(await api.get(activeId), true);
     });
   }

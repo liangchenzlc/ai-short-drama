@@ -11,7 +11,7 @@ export function hasUnsettledWriting(state: WritingSnapshot) {
 
 /** Guard BrowserRouter's navigator and capture POP before its history listener.
  * Keep the current entry mounted while saving, then replay an accepted transition. */
-export function installWritingNavigationGuard(navigator: Navigator, session: WritingSession, browser: Window = window, extraBarrier?: () => NavigationBarrier | null) {
+export function installWritingNavigationGuard(navigator: Navigator, session: WritingSession, browser: Window = window, extraBarrier?: () => NavigationBarrier | null, confirmLeave: (message: string) => Promise<boolean> = async () => false) {
   let active = true;
   let index: number = browser.history.state?.idx ?? 0;
   let reverting = false;
@@ -30,7 +30,9 @@ export function installWritingNavigationGuard(navigator: Navigator, session: Wri
       const barrier = extraBarrier?.();
       const saved = writingSaved && (!barrier?.hasUnsettled() || await barrier.flush());
       if (!active || !pending) return;
-      pending.allowed = saved || browser.confirm('内容尚未全部保存。离开会丢失当前页面的未保存草稿。确定离开？');
+      const allowed = saved || await confirmLeave('内容尚未全部保存。离开会丢失当前页面的未保存草稿。确定离开？');
+      if (!active || !pending) return;
+      pending.allowed = allowed;
       finish();
     });
   };

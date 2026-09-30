@@ -1,3 +1,4 @@
+import { confirmAction } from '../../components/ui/confirm';
 import { PreviewImage } from '../../components/ui/ImagePreview';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Drawer, Form, Input, InputNumber, Select } from 'antd';
@@ -12,6 +13,7 @@ import { errorMessage } from '../../api/http';
 import { generationError, kindLabels } from './presentation';
 
 interface FormValues {
+  voice?: string;
   config_id?: string; prompt: string; system?: string; temperature?: number; max_output_tokens?: number;
   reference_media_ids?: string; first_frame_media_id?: string; last_frame_media_id?: string;
   aspect?: string; resolution?: string; count?: number; duration_seconds?: number;
@@ -36,8 +38,8 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
   const alive = useRef(true);
   const scope = `create:${kind}`;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  function requestClose() {
-    if (inFlight.current || uploadLock.current || (form.isFieldsTouched() && !window.confirm('关闭会放弃尚未提交的任务内容，确定关闭？'))) return;
+  async function requestClose() {
+    if (inFlight.current || uploadLock.current || (form.isFieldsTouched() && !await confirmAction('关闭会放弃尚未提交的任务内容，确定关闭？'))) return;
     onClose();
   }
   function setImageField(field: 'reference_media_ids' | 'first_frame_media_id' | 'last_frame_media_id', value: string | undefined) {
@@ -88,6 +90,9 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
           { role: 'user', content: values.prompt.trim() },
         ] }, parameters: { ...(values.temperature != null ? { temperature: values.temperature } : {}), ...(values.max_output_tokens != null ? { max_output_tokens: values.max_output_tokens } : {}) } };
         result = await generations.generateText(body, await requestAttempt(scope, body, attemptStorage()));
+      } else if (kind === 'audio') {
+        const body = { ...config, input: { text: values.prompt.trim() }, parameters: { voice: values.voice!.trim() } };
+        result = await generations.generateAudio(body, await requestAttempt(scope, body, attemptStorage()));
       } else if (kind === 'image') {
         const references = (values.reference_media_ids ?? '').split(/[\s,，]+/).filter(Boolean);
         if (references.some((id) => !isServerId(id))) throw new Error('reference');
@@ -115,11 +120,11 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
       onValuesChange={() => { clearAttempt(scope, attemptStorage()); setError(''); }}>
       <Form.Item name="config_id" label="模型配置" extra={<span>默认选中此类型的默认模型；清除手动选择可恢复默认。<Link to="/ai">管理 AI 配置</Link></span>}><ConfigSelect kind={kind} disabled={pending} /></Form.Item>
       {kind === 'text' && <Form.Item name="system" label="创作要求（选填）"><Input.TextArea rows={2} maxLength={100000} placeholder="例如：你是一名短剧编剧，请使用对白推进情节。" /></Form.Item>}
-      <Form.Item name="prompt" label={kind === 'text' ? '创作内容' : '画面描述'} rules={[{ required: true, whitespace: true, message: '请填写创作内容' }]}>
-        <Input.TextArea rows={6} maxLength={200000} showCount placeholder={kind === 'text' ? '输入故事梗概、改编要求或需要处理的正文…' : kind === 'image' ? '描述主体、场景、构图与光线…' : '描述画面、镜头运动与主体动作…'} />
+      <Form.Item name="prompt" label={kind === 'audio' ? '配音文本' : kind === 'text' ? '创作内容' : '画面描述'} rules={[{ required: true, whitespace: true, message: '请填写创作内容' }]}>
+        <Input.TextArea rows={6} maxLength={kind === 'audio' ? 4096 : 200000} showCount placeholder={kind === 'audio' ? '输入需要朗读的台词…' : kind === 'text' ? '输入故事梗概、改编要求或需要处理的正文…' : kind === 'image' ? '描述主体、场景、构图与光线…' : '描述画面、镜头运动与主体动作…'} />
       </Form.Item>
       <div className="generation-form-grid">
-        {kind === 'text' ? <>
+        {kind === 'audio' ? <Form.Item name="voice" label="音色标识" rules={[{ required: true, whitespace: true }]} extra="填写配音服务支持的音色标识；模型须兼容 audio/speech。"><Input maxLength={128}/></Form.Item> : kind === 'text' ? <>
           <Form.Item name="temperature" label="随机程度（选填）"><InputNumber min={0} max={2} step={0.1} placeholder="模型默认值" /></Form.Item>
           <Form.Item name="max_output_tokens" label="最大输出 Token（选填）"><InputNumber min={1} max={1000000} precision={0} placeholder="模型默认值" /></Form.Item>
         </> : <>
@@ -153,7 +158,7 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
         </details>
       </>}
       {kind === 'video' && <div className="generation-form-grid">
-        {(['first_frame_media_id', 'last_frame_media_id'] as const).map(field => { const id = field === 'first_frame_media_id' ? firstFrame : lastFrame; return <div className="frame-picker" key={field}><Form.Item name={field} hidden><Input /></Form.Item><strong>{field === 'first_frame_media_id' ? '首帧图片' : '尾帧图片'} <small>选填</small></strong>{id && picked[id]?.url && <PreviewImage src={picked[id].url!} alt={picked[id].name}/>}<div><Button disabled={pending} onClick={() => setImageTarget(field)}>{id ? '更换图片' : '选择图片'}</Button>{id && <Button disabled={pending} onClick={() => setImageField(field, undefined)}>移除</Button>}</div></div>; })}
+        {(['first_frame_media_id', 'last_frame_media_id'] as const).map(field => { const id = field === 'first_frame_media_id' ? firstFrame : lastFrame; return <div className="frame-picker" key={field}><Form.Item name={field} hidden><Input type="hidden" /></Form.Item><strong>{field === 'first_frame_media_id' ? '首帧图片' : '尾帧图片'} <small>选填</small></strong>{id && picked[id]?.url && <PreviewImage src={picked[id].url!} alt={picked[id].name}/>}<div><Button disabled={pending} onClick={() => setImageTarget(field)}>{id ? '更换图片' : '选择图片'}</Button>{id && <Button disabled={pending} onClick={() => setImageField(field, undefined)}>移除</Button>}</div></div>; })}
       </div>}
       <p className="generation-hint">可选参数需符合所选模型能力。提交生成可能产生模型调用费用，生成结果不会自动替换项目内容。</p>
       {error && <Alert type="error" showIcon message={error} description="表单已保留。保持内容不变再次提交会复用本次请求；修改内容后会作为新请求提交。" />}

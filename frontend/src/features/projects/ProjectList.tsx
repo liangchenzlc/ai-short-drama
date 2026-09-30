@@ -28,7 +28,7 @@ export function ProjectList({ recent, total, filtered, disabled, onOpen, onConti
       <section className="continue-project"><div className="context-heading"><Icon name="film" size={18} /><h2>继续创作</h2></div>
         {loading ? <p role="status">正在加载分集…</p> : error ? <><p role="alert">{error}</p><Button onClick={() => setRevision((v) => v + 1)}>重试</Button></> : first ? <><h3>{first.name}</h3><p>从分集进入，继续打磨你的故事。</p><div className="continue-episodes">{episodes.map((e, i) => <button key={e.id} disabled={disabled} onClick={() => onContinue(first.projectId, e)}><span>{String(i + 1).padStart(2, '0')}</span><strong>{e.title}</strong><Icon name="arrow" size={16}/></button>)}</div></> : <p>添加分集后，在这里继续制作。</p>}
       </section>
-      <section className="workflow-guide"><h2>从故事到镜头</h2><ol><li><strong>整理剧本</strong><span>导入原文，确认本集故事。</span></li><li><strong>准备素材</strong><span>统一角色、场景与道具。</span></li><li><strong>制作分镜</strong><span>细化镜头和画面提示词。</span></li></ol></section>
+      <section className="workflow-guide"><h2>从故事到成片</h2><ol><li><strong>整理剧本</strong><span>导入原文，确认本集故事。</span></li><li><strong>准备素材</strong><span>统一角色、场景与道具。</span></li><li><strong>制作分镜</strong><span>细化镜头，核对画面与视频。</span></li><li><strong>剪辑成片</strong><span>调整节奏，完成声音与导出。</span></li></ol></section>
     </aside>
   </div>;
 }

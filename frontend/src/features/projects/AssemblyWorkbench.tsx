@@ -101,11 +101,11 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
       <div className="assembly-monitor" id={`${layoutId}-monitor`}>
         <div className="assembly-monitor-heading"><div className="assembly-mode-switch">
           <Button type={!result ? 'primary' : 'text'} onClick={() => { onResult(null); setFrame(0); setPlaying(false); }}>剪辑预览</Button>
-          <Button type={result?.kind === 'export' ? 'primary' : 'text'} disabled={!recent.length} onClick={() => { player.current?.pause(); onResult(recent[0]); setFrame(0); }}>导出成片</Button>
+          <Button type={result?.kind === 'export' ? 'primary' : 'text'} disabled={!recent.length} onClick={() => { player.current?.pause(); onResult(recent[0]); setFrame(0); }}>成片回看</Button>
         </div><Button disabled={disabled || !total || clips.some(c => c.included && c.issue)} loading={previewBusy} onClick={onPreview}>合成预览</Button></div>
         {result ? <AssemblyResultPlayer key={result.id} job={result} aspect={editor.value?.assembly?.aspect ?? '16:9'}
           stale={result.is_stale || result.context_hash !== editor.value?.context_hash || editor.status !== 'saved'}
-          videoRef={resultVideo} refresh={() => editor.api.job(result.id)} onResult={onResult} onFrame={setFrame} onPlaying={setPlaying} download={editor.api.download(result.id)}/>
+          videoRef={resultVideo} refresh={signal => editor.api.job(result.id, signal)} onResult={onResult} onFrame={setFrame} onPlaying={setPlaying} download={editor.api.download(result.id)}/>
           : <AssemblyPlayer ref={player} clips={clips} aspect={editor.value?.assembly?.aspect ?? '16:9'} onFrame={at => { setFrame(at); if (playing) { const entry = locateFrame(entries, at); if (entry) setSelected(entry.clip.id); } }} onPlaying={setPlaying} onRefresh={editor.refreshMedia}/>}
       </div>
     </div>

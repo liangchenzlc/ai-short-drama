@@ -1,59 +1,337 @@
-# 界面设计与交互约定
+---
+name: 短剧工作台
+description: 冷黑、紧凑的中文桌面创作与剪辑界面
+colors:
+  accent-fill: "#4c5cc7"
+  accent-hover: "#5261ca"
+  accent: "#a5b2ff"
+  accent-strong: "#d5dcff"
+  pale: "#222840"
+  accent-border: "#495886"
+  canvas: "#0b0d12"
+  navigation: "#101219"
+  surface: "#14171f"
+  surface-muted: "#1a1e28"
+  surface-raised: "#1c202b"
+  surface-hover: "#222838"
+  ink: "#edf0f7"
+  sub: "#a6afc2"
+  placeholder: "#959fb4"
+  disabled-ink: "#6c7588"
+  hair: "#292f3d"
+  border-control: "#333b4c"
+  border-hover: "#56617a"
+  on-accent: "#ffffff"
+  success: "#69cfac"
+  success-bg: "#142e27"
+  success-border: "#2c5b4c"
+  warning: "#e9b96d"
+  warning-bg: "#30271b"
+  warning-border: "#675033"
+  danger: "#f38995"
+  danger-bg: "#321e28"
+  danger-border: "#68404b"
+typography:
+  page-title:
+    fontFamily: '"Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+    fontSize: "26px"
+    fontWeight: 650
+    lineHeight: 1.35
+    letterSpacing: "-0.025em"
+  stage-title:
+    fontFamily: '"Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+    fontSize: "21px"
+    fontWeight: 600
+    lineHeight: 1.4
+    letterSpacing: "-0.02em"
+  body:
+    fontFamily: '"Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+    fontSize: "13px"
+    lineHeight: 1.6
+  editor:
+    fontFamily: '"Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+    fontSize: "14px"
+    lineHeight: 2
+  label:
+    fontFamily: '"Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+    fontSize: "12px"
+  native-action:
+    fontFamily: '"Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+    fontSize: "13px"
+    fontWeight: 600
+    lineHeight: 1.6
+  technical:
+    fontFamily: "Consolas, monospace"
+    fontSize: "13px"
+    lineHeight: 1.8
+rounded:
+  tag: "4px"
+  status: "5px"
+  control: "7px"
+  media: "8px"
+  inset: "9px"
+  monitor: "10px"
+  panel: "12px"
+spacing:
+  field-gap: "6px"
+  action-gap: "8px"
+  group-gap: "12px"
+  section-gap: "16px"
+  production-inset: "20px"
+  dialog-inset: "22px"
+  compact-inset: "24px"
+  workspace-inline: "32px"
+components:
+  button-primary:
+    backgroundColor: "{colors.accent-fill}"
+    textColor: "{colors.on-accent}"
+    typography: "{typography.native-action}"
+    rounded: "{rounded.control}"
+    padding: "6px 12px"
+  button-primary-hover:
+    backgroundColor: "{colors.accent-hover}"
+    textColor: "{colors.on-accent}"
+  button-secondary:
+    backgroundColor: "{colors.surface-raised}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+    padding: "6px 12px"
+  button-secondary-hover:
+    backgroundColor: "{colors.surface-hover}"
+  button-link:
+    backgroundColor: "transparent"
+    textColor: "{colors.accent}"
+    typography: "{typography.native-action}"
+    rounded: "0px"
+    padding: "0px"
+  button-link-hover:
+    textColor: "{colors.accent-strong}"
+  input:
+    backgroundColor: "{colors.canvas}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+    padding: "6px 10px"
+  navigation:
+    backgroundColor: "transparent"
+    textColor: "{colors.sub}"
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+    padding: "9px 11px"
+  navigation-selected:
+    backgroundColor: "{colors.pale}"
+    textColor: "{colors.accent-strong}"
+  filter-chip:
+    backgroundColor: "transparent"
+    textColor: "{colors.sub}"
+    typography: "{typography.label}"
+    rounded: "{rounded.control}"
+    padding: "4px 11px"
+  filter-chip-selected:
+    backgroundColor: "{colors.pale}"
+    textColor: "{colors.accent-strong}"
+  tag-success:
+    backgroundColor: "{colors.success-bg}"
+    textColor: "{colors.success}"
+    rounded: "{rounded.tag}"
+    padding: "2px 9px"
+  card-project:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.panel}"
+    padding: "17px 18px"
+  card-project-hover:
+    backgroundColor: "{colors.surface-raised}"
+  storyboard-row:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    rounded: "0px"
+    padding: "10px 16px"
+  storyboard-row-selected:
+    backgroundColor: "{colors.pale}"
+    textColor: "{colors.accent-strong}"
+  timeline-clip:
+    backgroundColor: "{colors.pale}"
+    textColor: "{colors.accent}"
+    rounded: "{rounded.tag}"
+    padding: "10px"
+  timeline-label-selected:
+    backgroundColor: "{colors.accent-fill}"
+    textColor: "{colors.ink}"
+    padding: "0px 4px"
+    height: "20px"
+---
 
-界面服务于持续编辑和候选核对。当前产品范围见[PRODUCT.md](PRODUCT.md)，路由及模块见[README.md](README.md)。本文描述维护规则，不记录一次性截图或历史验收结果。
+# Design System: 短剧工作台
 
-## 视觉基础
+## Overview
 
-主题来源为[src/app/theme.ts](src/app/theme.ts)，原生控件在CSS中采用同一配色：主色深青绿`#087f75`、内容背景`#f4f7f7`、正文`#203235`、次要文字`#5d7073`、白色编辑表面。主色用于主要操作、当前步骤与选择状态，避免在长正文背景大面积使用。
+**Creative North Star: "冷黑剪辑工作台"**
 
-字体为Segoe UI/PingFang SC/Microsoft YaHei/sans-serif。默认文字14px、控件40px、圆角8px；沿用明确标题层级和左对齐。布局以相关内容的邻近分组为主，不增加无业务价值的统计卡片。
+冷黑剪辑工作台把正文、镜头、素材和候选放在视线中心。黑色画布承载连续编辑，紧凑工具围绕内容排列；标题负责定位，模型设置和低频选项按需展开。视觉服务于中文桌面创作的扫描、核对与剪辑。
 
-## 信息组织
+冷灰表面通过明度、边线和留白分层，蓝紫色标记操作入口与当前选择，成功、警告、错误各有独立语义。系统字体保持熟悉的阅读感；短促状态变化和轻微弹窗入场提供反馈。桌面窗口收缩时调整列宽、间距和局部滚动，保持内容与操作可达。
 
-- 项目列表展示名称、梗概、分集数、风格和最近打开，提供清楚的进入创作入口。
-- 项目详情组织基本信息、分集和项目资源；编辑分集与删除操作位于同一分集 item 内，项目设置使用显式保存。
-- 分集一次展示四步中的一个步骤，流程栏标题右侧按钮可收起为窄栏；窄屏使用横向导航。下一步不代表上一阶段已经确认。
-- 成片标题栏提供专注剪辑入口，开启后隐藏分集外围标题、流程栏和步骤导航，保留保存状态及退出入口；专注标题栏随滚动保持可见。素材区可折叠，桌面分隔条可拖动或键盘调整高度，窄屏按自然比例展示并隐藏高度调整条。片段属性区及重置布局入口已移除。布局变化不卸载播放器，不改写剪辑草稿。
-- 成片页桌面左侧为分镜视频素材，右侧为大播放器，下方排列剪辑工具和单视频时间轴；窄屏按播放器、工具、时间轴、素材顺序堆叠。轨道以连续采样缩略图表示内容，支持分割、删除、排序、边缘拖动及键盘逐帧裁剪；裁剪时显示来源入出点和保留时长，排序时显示插入位置，缩放围绕播放头，刻度密度随缩放调整。静音和恢复完整位于工具栏。编辑自动保存并支持会话内撤销/重做。合成预览和实际成片在同一播放器查看，并展示提交时的只读轨道。导出栏位于编辑区之后，不遮挡控件。任务在后台运行，导出与采用分开，来源变更需显式同步。详细表面约定见 [docs/assembly-surface.md](docs/assembly-surface.md)。
-- 小说改编桌面布局为“流程栏 | AI 模型功能栏 | 创作区”。分镜使用顶部紧凑模型工具栏，平均时长与补充要求按需展开；主要空间留给镜头列表。小说与定稿用标签切换，候选放入生成记录弹窗；窄屏顺序堆叠。
-- 素材直接展示角色/场景/道具分类、数量和搜索，新建与编辑使用右侧抽屉。新建抽屉约半屏，编辑抽屉宽屏并排展示文字信息与图片生成；当前采用图放在文字信息下方。窄屏占满并提供区域跳转。保存状态和按钮固定在底部；参考图独立展示，生成记录按需展开。添加已有素材支持搜索，读取时允许关闭并取消请求。
-- 分镜默认一行显示镜号、省略脚本、时长和图片状态，滚动分页加载；只有选中镜头展开编辑器，宽屏短脚本与素材选择并排，窄屏上下排列；时长紧邻脚本标题。角色、道具、场景各一行，选择项和已关联项均展示缩略图与名称，支持搜索。图片清晰度、比例、布局、数量和生成按钮集中一行，窄屏换行；不提供逐镜上移、下移和补充画面要求。历史弹窗优先显示候选图，任务记录按需展开；标题与操作区固定，中间内容滚动。
-- 任务列表显示 ID 与项目/集/主题，详情输入区仅显示提示词。常用搜索/状态优先展示，进阶筛选收起；无数据与无搜索结果分别说明。
+**Key Characteristics:**
 
-## 操作与状态
+- 黑色画布与三层冷灰内容表面。
+- 紧凑控件、明确中文标签和就近状态反馈。
+- 蓝紫操作与选择色，独立的成功、警告、错误语义。
+- 内容优先、局部滚动、固定弹窗操作区和可见键盘焦点。
 
-使用明确中文标签说明模型、画幅、清晰度、张数和时长；不要只靠placeholder传达字段含义。技术ID主要用于接口，不要求用户靠手工填写ID完成已有的图片选择流程。
+本规范提取自当前实现；设计变量由 [tokens.css](src/app/tokens.css) 与 [theme.ts](src/app/theme.ts) 定义，布局与状态由 [workbench.css](src/app/workbench.css)、[production.css](src/app/production.css) 及实际组件补充。产品事实见 [PRODUCT.md](PRODUCT.md)，本次表面方向见 [ui-redesign-surface.md](docs/ui-redesign-surface.md)。
 
-区分载入、未保存、保存中、已保存、冲突、失败、候选、当前采用。反馈就近放在对应编辑器/弹窗；失败保留输入。冲突先核对，不能悄悄覆盖。生成成功先预览再采用，删除、替换与共享影响要说明对象和范围。
+## Colors
 
-素材提取设置、任务状态和候选核对在同一弹窗切换；展示叙事作用与重复提示，允许分项选择；原文依据不再提取或展示，图片提示词放在名称旁的图标浮层中。长字段可展开，关闭前处理未保存修改，不强制弹出已完成任务。
+冷灰构成编辑环境，浅蓝紫用于可读的文字与焦点，较深蓝紫用于带浅色文字的填充。
 
-## 键盘与响应式
+### Primary
 
-保持可见焦点、语义按钮/标签、步骤`aria-current`、保存状态与错误提示。弹窗支持Escape、焦点管理，嵌套下拉层挂载在dialog内部。图片有有意义的替代文字；颜色不能独立表达确认或错误。
+- **冷蓝紫填充**（`accent-fill`）：原生主要操作、步骤编号与选中时间轴标签；悬停使用 `accent-hover`。
+- **浅蓝紫**（`accent`）：链接、播放头、焦点和图标；`accent-strong` 用于当前导航与选择文字。
+- **蓝灰选择面**（`pale` / `accent-border`）：选中行、导航、筛选与候选的背景和边线。
 
-窄屏将相关双列收为单列，宽表在容器内滚动，步骤导航横向滚动并显示当前步骤。遵循减少动态效果偏好；新增界面需检查长标题、空内容、慢网络、错误及只读状态。
+Ant Design 使用 `darkAlgorithm`；`accent-fill` 对应其 `colorPrimary` 种子，实际主按钮、悬停、禁用与派生颜色由算法生成，不能把种子值当作每个 Ant Design 控件的最终像素颜色。原生填充、链接和选择色各保留自己的用途。
 
-## 界面验收要求
+### Neutral
 
-修改后运行测试和构建，再用真实浏览器检查桌面与窄屏：深链接刷新、返回/前进、未保存离开、候选采用、版本冲突、弹窗键盘操作及无页面横向溢出。测试替身、构建成功和人工浏览器验收应分别记录；未执行的检查不写为已通过。
+- **黑色画布**（`canvas`）：页面、文字输入底与媒体留白。
+- **导航冷黑**（`navigation`）：侧栏、顶栏与分集标题栏。
+- **内容冷灰**（`surface`）：编辑器、列表条目、素材卡与监视器外框。
+- **分组冷灰**（`surface-muted`）：表头、嵌套设置、分区标题与次级内容。
+- **浮层冷灰**（`surface-raised`）：弹窗与原生次级按钮；`surface-hover` 表达悬停反馈。
+- **亮正文**（`ink`）与**次级冷灰文字**（`sub`）：正文和辅助说明；占位提示使用 `placeholder`，Ant Design 禁用文字使用 `disabled-ink`。
+- **细分隔线**（`hair`）、**控件边线**（`border-control`）与**悬停边线**（`border-hover`）：分别划分内容、界定输入和反馈交互。`on-accent` 用于原生主按钮文字。
 
-## 通用图片预览
+### Semantic States
 
-`src/components/ui/ImagePreview.tsx` 统一承载图片放大查看，沿用素材候选预览的弹窗样式。普通缩略图使用 `PreviewImage`，点击或键盘 Enter/Space 打开；支持 Esc 关闭、适应窗口/原始尺寸切换、图片尺寸显示、加载反馈与失败重试。弹窗使用原生 dialog 并挂载到 body，覆盖素材抽屉和图片选择器，关闭后回到原入口。
+成功使用 `success` 及其深色底、边线，表示已保存、已完成或可用；警告使用 `warning` 组合，提示来源过期或需核对；错误与破坏性操作使用 `danger` 组合。状态必须同时带中文文字或图标。
 
-```tsx
-<PreviewImage src={image.url} alt={image.name} triggerClassName="asset-library-preview" />
-```
+### Named Rules
 
-`triggerClassName` 控制缩略图按钮，`className`、`style` 及图片事件作用于缩略图本身。组件包含按钮，不能再嵌套于按钮或链接；图片负责预览，详情、选择与采用使用独立操作。
+**The Readable Accent Rule.** 小字号文字必须按实际填充与前景检查对比度；原生主按钮使用 `on-accent`，选中时间轴标签使用 `ink`，Ant Design 派生色另行检查。
 
-需保留采用操作的受控预览使用 `ImagePreview`，打开时挂载，传入 `src`、`alt`、`onClose`，通过 `footer` 传入业务按钮、`canClose` 阻止提交期间关闭。预览组件自身不修改素材、不调用生成接口；链接过期时提示关闭并刷新来源页面。
+## Typography
 
-目前接入素材列表/编辑抽屉、分镜当前图与候选、任务生成结果、媒体资产列表/详情、图片选择器、生成参考图与首尾帧。
+**Display Font:** 页面标题沿用系统字体，没有独立展示字体。
 
-图片预览工具栏提供可开关的局部放大镜（2/3/4 倍，默认 2 倍）。鼠标移动或触屏按住拖动时显示圆形镜片；按图片实际显示区域定位，自动排除适应窗口后的留白，支持原始尺寸模式下的滚动偏移。镜片保持在预览区域内，离开图片、滚动或切换模式时隐藏。触屏开启放大镜时拖动用于查看细节，关闭后恢复原图滚动。
+**Body Font:** Segoe UI，按系统可用性回退到 PingFang SC、Microsoft YaHei、sans-serif。
 
-## 制作页面的空间节奏
+**Label/Mono Font:** 中文标签沿用正文；技术 JSON 内容使用 Consolas、monospace。
 
-素材和分镜使用 `src/app/production.css` 统一局部布局：字段内部 6–8px、同组 12px、分区 16–20px，延续现有青绿色、字体和控件。通过重排和折叠低频信息提升密度，保留手机触控尺寸、焦点提示、未保存保护与错误恢复；不以隐藏业务内容换取紧凑。
+**Character:** 字形选择以长时间编辑和中文扫描为准。紧凑标签与正文拉开层次，正文编辑器保留更宽松的行距。
+
+### Hierarchy
+
+- **Headline:** 页面标题使用 `page-title`；分集阶段标题使用 `stage-title`，局部标题按已有组件保持层次。
+- **Title:** 弹窗标题为中等强调（16px、600）；素材与分镜分区标题多为紧凑尺寸（14–15px）。
+- **Body:** 通用界面使用 `body`；说明段落通常使用更松行距（1.75），任务页简介限制阅读宽度（65ch）。
+- **Editor:** 小说与剧本使用 `editor`；分镜脚本使用紧凑正文（13px、1.7 行距）。
+- **Label:** 字段说明使用 `label`；状态与元数据使用小字号（11px）。时间、任务表与镜号使用等宽数字排列。
+- **Action:** Ant Design 按钮为中等字重（500）；原生配置保存按钮与任务链接使用 `native-action`。
+
+### Named Rules
+
+**The Task Hierarchy Rule.** 用标题、邻近分组和行距区分信息层级；紧凑工具不压缩小说与剧本的阅读行距。
+
+## Layout
+
+通用工作区由固定宽度侧栏（200px）、窄顶栏（52px）和流式内容区组成。内容最大宽度受限（1700px），默认内边距为上下分层与左右编辑留白（30px 32px 40px）。项目页使用制作条目与继续创作区域；项目详情和分集使用各自标题栏，分集四步流程栏可收起，主编辑区占用剩余空间。
+
+间距以字段内、操作组、内容分区递进。`field-gap` 与 `action-gap` 保持控件邻近；`group-gap` 与 `section-gap` 分开功能组；制作区、弹窗和工作区使用相应 inset。素材编辑抽屉把文字与图片设置并排，分镜只展开选中镜头，成片把素材区、监视器、工具和时间轴组织成编辑桌。
+
+桌面收缩规则由实际媒体查询组成：窗口在 901–1280px 时侧栏收至 182px，主区使用 `compact-inset`，工具可换行；1200px 以下写作模型栏收至 240px；1100px 以下素材编辑抽屉改为 `min(900px, 94vw)`，分镜工具操作移到下一行；1700px 以上项目条目采用两列。1150px 以下项目详情改为单列。更窄的既有回退规则仍在源码中，当前交付验证范围是桌面 1024、1280、1440、1920px。
+
+任务表保留明确列宽（总宽 1120px，其中任务 / 模型列 250px），空间不足时由表格自己的横向滚动承载。长历史与候选在浮层正文内滚动；标题和采用、保存、导出动作保留在滚动区外。原生视频表单的内部媒体 ID 字段隐藏并保留表单登记，用户通过图片选择器操作。
+
+## Elevation & Depth
+
+深度主要来自冷灰明度和细边线。项目条目、编辑器和按钮在静止时保持平面，按钮不添加主色阴影；弹窗、抽屉和下拉浮层使用结构性阴影，区分当前操作层与后台内容。
+
+### Shadow Vocabulary
+
+- **原生浮层阴影**（`--shadow-overlay: 0 24px 80px rgb(0 0 0 / 55%)`）：当前原生 Dialog 和素材抽屉的遮挡层。
+- **Ant Design 浮层阴影**（`0 12px 36px rgba(0, 0, 0, 0.35)` / `0 16px 48px rgba(0, 0, 0, 0.45)`）：主题中的主、次浮层阴影。
+- **Ant Design 输入焦点**（`0 0 0 2px rgba(101, 116, 239, 0.18)`）：输入框活动态。
+- **原生表单焦点**（`0 0 0 3px var(--surface-muted)`）：配置输入等原生表单的焦点辅助层，同时改变边线。
+- **时间轴选中描边**（`inset 0 0 0 1px rgb(0 0 0 / 45%)`）：缩略图之上的选中轮廓。
+
+### Named Rules
+
+**The Quiet Surface Rule.** 编辑内容默认平面呈现；阴影用于操作层与焦点，卡片悬停通过明度和边线反馈。
+
+## Shapes
+
+控件用小圆角，内容面板用较大圆角：`control` 与 `panel` 为主要形状。媒体框、嵌套设置、监视器和标签使用 frontmatter 中各自已有圆角；分镜连续行保留直角分隔，避免给每行重复加卡片边框。素材抽屉只保留左侧外圆角，贴合窗口右缘。图标采用现有 SVG 线性图标（1.6px 描边、圆端点和连接）。
+
+## Components
+
+### Buttons
+
+紧凑、直接，操作文字说明结果。
+
+- **Shape:** 原生控件采用 `control`；默认最小高度为 34px，内边距由对应组件 token 定义。Ant Design 常规、小、大控件分别为 34 / 28 / 38px，按钮横向内边距为 13px。
+- **Primary:** 原生保存配置使用 `button-primary` 和悬停变体；Ant Design 主操作继承暗色主题种子与算法。
+- **Hover / Focus:** 原生颜色与边线过渡为 160ms；键盘按钮焦点使用浅蓝紫轮廓（2px，外移 3px）。禁用原生按钮降低透明度（0.45）并禁止提交。
+- **Secondary / Link:** 次级按钮使用浮层冷灰，悬停提高表面与边线亮度；任务链接保持透明底，悬停文字变亮并出现下划线。删除与放弃修改使用明确中文动词及危险态。
+
+### Chips
+
+筛选和状态各表达自己的含义。
+
+状态筛选为可按压按钮（最小 30px），当前项使用选择底和选择边线，并通过 `aria-pressed` 表达状态。任务标签是只读信息，字号为 11px，成功、失败、排队与取消各带文字；不把只读标签做成伪按钮。
+
+### Cards / Containers
+
+条目易扫描，编辑表面给内容留空间。
+
+项目条目使用 `card-project`：画幅图标板、名称、梗概、分集与风格、最近打开时间及进入指向组成一个可键盘操作的入口。悬停提高表面明度与蓝灰边线。图标板表达画幅，不伪造项目封面。素材卡和编辑器沿用内容冷灰、细边线与面板圆角；选中素材、分镜与时间轴通过选择底或描边反馈。
+
+### Inputs / Fields
+
+字段标签明确，输入结果可核对。
+
+原生配置输入使用黑色输入底、控件边线和 `control`，最小高度 34px；悬停保持原样，焦点改变蓝紫边线与辅助层。Ant Design 输入使用暗色主题及主题焦点阴影，Select 的已选菜单项使用既有蓝灰底（`#2a304d`）与强选择文字。占位符保持可读，但字段含义由中文标签提供。错误就近提示并保留输入；处理中禁用提交。参考图、首尾帧通过图片选择与预览操作，隐藏内部 ID。
+
+### Navigation
+
+当前位置有明确选择底，其他入口安静排列。
+
+通用侧栏按钮包含线性图标与中文名称，当前入口使用 `aria-current`、选择底和边线；素材分类按需展开。分集四步导航保留顺序编号和当前步骤，可收为窄栏。导航悬停提高表面明度，键盘焦点与按钮一致。桌面尺寸调整只改变空间分配，步骤编号不表示内容已经确认。
+
+### Dialogs / Drawers
+
+操作层有完整的标题、正文和出口。
+
+原生 Dialog 采用浮层冷灰、控件边线、面板圆角及结构性阴影；背景遮罩为冷黑半透明层（`rgb(2 4 10 / 72%)`）。标题区有关闭按钮，正文按用途滚动。同步、导出、历史、采用成片共享正文 inset（20px 22px）与固定页脚（16px 22px 20px）；普通成片操作弹窗宽度受限（560px），历史弹窗较宽（820px），并为窗口四周保留空间。
+
+应用确认使用统一样式和 Ant Design 按钮，说明对象与影响，先聚焦取消；嵌套弹窗关闭后恢复原入口焦点。Dialog 包含可见控件的 Tab 循环、Escape 关闭及内部下拉层挂载；提交期间按业务规则阻止关闭。刷新或关闭浏览器时，未保存保护仍由浏览器管理的 `beforeunload` 承担。
+
+弹窗入场为短暂淡入与上移复位（180ms，从 6px 位移返回，`--ease-out`）；Ant Design 中、慢运动为 0.18 / 0.24s；分镜展开箭头为 160ms 旋转。减少动态效果偏好会把动画和过渡缩短至近乎即时（0.01ms），并关闭平滑滚动。
+
+### Editing Selection
+
+选中对象的位置稳定，内容与候选有清楚边界。
+
+分镜摘要行包含镜号、省略脚本、时长与状态；展开行在列表内保留摘要位置，编辑器展示脚本、关联素材、图片与视频。候选先预览，再通过显式采用改变当前结果。成片时间轴的选中轮廓覆盖缩略图，标签使用深蓝紫填充与亮文字，播放头使用浅蓝紫；专注剪辑收起外围导航并保留退出与保存反馈。
+
+`.impeccable/design.json` 展示原生按钮、字段、导航、筛选、状态、项目条目、分镜摘要与时间轴片段。片段的变量带当前值回退，可在独立 shadow DOM 中展示；色阶仅供色板预览，由已提取颜色推导，不构成新增实现变量。应用组件的状态逻辑仍由实际 React 组件承担。
+
+## Do's and Don'ts
+
+### Do:
+
+- **Do** 从共享颜色角色与组件 token 延续冷黑工作台，保持正文、镜头和候选优先。
+- **Do** 用明确中文标签、文字状态和就近反馈说明保存、生成、候选与当前采用。
+- **Do** 保留可见键盘焦点、图片预览入口、弹窗内滚动和固定操作区。
+- **Do** 在桌面窗口收缩时重排功能组，并把宽表与长历史的滚动限制在自己的容器内。
+- **Do** 对删除、替换、共享影响和放弃修改使用有对象、有后果的应用确认。
+
+### Don't:
+
+- **Don't** 恢复已替换的浅色青绿视觉体系，或把编辑工作台改为营销首屏。
+- **Don't** 用过大的控件、重复卡片阴影、虚构统计或无业务用途的装饰面板挤占编辑空间。
+- **Don't** 把内部媒体 ID 作为可见输入，或让用户靠填写 ID 完成图片选择。
+- **Don't** 仅靠颜色表达确认、错误或候选采用，也不要把步骤序号视为完成状态。
+- **Don't** 自动采用生成候选、隐藏失败后的输入，或静默覆盖版本冲突。

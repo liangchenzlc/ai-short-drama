@@ -1,3 +1,4 @@
+import { confirmAction } from '../../components/ui/confirm';
 ﻿import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { Alert, Button, Spin } from 'antd';
 import { lazy, Suspense } from 'react';
@@ -71,12 +72,12 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
     const link = document.createElement('a'); link.href = url; link.download = `episode-${episode.id}-draft.txt`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  function reloadWriting() {
-    if (hasUnsettledWriting(writing) && !window.confirm('载入服务端版本会替换当前草稿，尚未核实的保存结果也将以服务端为准。请先下载草稿备份。确定继续？')) return;
+  async function reloadWriting() {
+    if (hasUnsettledWriting(writing) && !await confirmAction('载入服务端版本会替换当前草稿，尚未核实的保存结果也将以服务端为准。请先下载草稿备份。确定继续？')) return;
     void writing.session.load();
   }
-  function importLegacy(field: 'novel' | 'script') {
-    if (!window.confirm('将用浏览器旧稿替换当前编辑内容，并自动保存至服务端。确定导入？')) return;
+  async function importLegacy(field: 'novel' | 'script') {
+    if (!await confirmAction('将用浏览器旧稿替换当前编辑内容，并自动保存至服务端。确定导入？')) return;
     writing.session.edit(field, legacy[field]); setShowLegacy(false);
   }
   return <div className="episode-page web-episode">
