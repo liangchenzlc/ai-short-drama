@@ -48,6 +48,7 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     requests.push({ path, method, query, body });
     const reply = (data: any, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) });
     const paged = (items: any[]) => { const offset = Number(query.get('offset') || 0); const limit = Number(query.get('limit') || 20); return { items: items.slice(offset, offset + limit), total: items.length, offset, limit }; };
+    if (path === '/auth/capabilities') return reply({ enabled: false });
     if (path === '/native-voice/capabilities' || path === '/ai/generation-batches/capabilities') return reply({ enabled: ui });
     if (path === '/projects') {
       if (controls.delayProjects) await new Promise(resolve => setTimeout(resolve, controls.delayProjects));

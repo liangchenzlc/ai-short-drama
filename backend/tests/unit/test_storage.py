@@ -162,7 +162,7 @@ def test_signed_url_expiry_rejected_before_network(expiry):
     sdk.presigned_get_object.assert_not_called()
 
 
-def test_signed_url_uses_configured_default_expiry():
+def test_authenticated_signed_url_caps_configured_expiry_to_five_minutes():
     from datetime import timedelta
 
     store, sdk = service()
@@ -171,7 +171,7 @@ def test_signed_url_uses_configured_default_expiry():
     sdk.presigned_get_object.assert_called_once_with(
         "image",
         "a",
-        expires=timedelta(seconds=900),
+        expires=timedelta(seconds=300),
     )
 
 

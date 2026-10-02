@@ -36,6 +36,7 @@ export function BatchLauncher({ scope, selection, loadedIds, disabled, beforePre
   if (!selection.enabled) return null;
   return <div className="batch-toolbar">
     <Checkbox disabled={disabled || !loadedIds.length} checked={!!loadedIds.length && loadedIds.every(id => selection.ids.includes(id))}
+      indeterminate={loadedIds.some(id => selection.ids.includes(id)) && !loadedIds.every(id => selection.ids.includes(id))}
       onChange={event => selection.setIds(event.target.checked ? [...new Set([...selection.ids, ...loadedIds])] : selection.ids.filter(id => !loadedIds.includes(id)))}>选择已加载项</Checkbox>
     <span>已选 {selection.ids.length} 项</span>
     <Button disabled={disabled || !selection.ids.length} onClick={() => { setAll(false); setOpen(true); }}>批量生成所选</Button>
@@ -138,7 +139,7 @@ export function BatchProgress({ id: initialId, onClose }: { id: string; onClose:
     {!data ? <Spin/> : <div className="batch-form"><h2>{labels[data.scene]} · {labels[data.status]}</h2>
       <p>离开页面后任务继续。生成结果不会自动采用。</p>
       <div className="batch-toolbar">{Object.entries(data.counts).map(([state, count]) => <Tag key={state}>{labels[state]} {count}</Tag>)}</div>
-      <div className="batch-toolbar"><Button disabled={busy || data.status !== 'running'} onClick={() => void control('pause')}>暂停后续任务</Button><Button disabled={busy || !['paused', 'needs_review'].includes(data.status)} onClick={() => void control('resume')}>恢复批次</Button><Button danger disabled={busy || !ongoing(data.status)} onClick={() => void control('cancel')}>取消批次</Button><Button onClick={() => setRevision(v => v + 1)}>刷新进度</Button></div>
+      <div className="batch-toolbar"><Button disabled={busy || data.can_control === false || data.status !== 'running'} onClick={() => void control('pause')}>暂停后续任务</Button><Button disabled={busy || data.can_control === false || !['paused', 'needs_review'].includes(data.status)} onClick={() => void control('resume')}>恢复批次</Button><Button danger disabled={busy || data.can_cancel === false || !ongoing(data.status)} onClick={() => void control('cancel')}>取消批次</Button><Button onClick={() => setRevision(v => v + 1)}>刷新进度</Button></div>
       {scope?.project_id && scope.episode_id && <Link to={episodePath(scope.project_id, scope.episode_id, data.scene === 'asset_image' ? 'assets' : 'storyboard')}>打开来源分集审核候选</Link>}
       {data.status === 'needs_review' && <Alert type="warning" message="有任务受理结果不明，后续派发已暂停。请进入任务详情核对，系统不会自动重发。"/>}
       <Table rowKey="id" dataSource={data.items} pagination={false} scroll={{ x: 620 }}

@@ -47,6 +47,11 @@ class BaseService:
         try:
             mutex = self._global_order_lock() if self.global_ordered else nullcontext()
             with mutex, self.session.begin():
+                project_id = self.session.info.get("request_project")
+                if project_id:
+                    from short_drama.db.access import require_project
+
+                    require_project(self.session, project_id)
                 yield
         except IntegrityError:
             raise Conflict("Operation conflicts with an existing or referenced record") from None
@@ -65,7 +70,11 @@ class BaseService:
         engine = self.session.get_bind().engine
         with engine.connect() as connection:
             name = connection.scalar(
-                text("SELECT CONCAT('short_drama:global:', LEFT(SHA2(DATABASE(), 256), 40))")
+                text(
+                    "SELECT CONCAT('short_drama:global:', "
+                    "LEFT(SHA2(CONCAT(DATABASE(), :scope), 256), 40))"
+                ),
+                {"scope": str(getattr(self.session.info.get("actor"), "user_id", 0))},
             )
             acquired = connection.scalar(text("SELECT GET_LOCK(:name, 5)"), {"name": name})
             if acquired != 1:
@@ -136,7 +145,7 @@ class BaseService:
         media = self._require(MediaFile, identifier)
         is_image = media.format_code == "demo:image" or media.format_code.startswith("image/")
         if (kind == "image" and not is_image) or (
-            kind == "video" and not media.format_code.startswith("video/")
+            kind in {"video", "audio"} and not media.format_code.startswith(f"{kind}/")
         ):
             raise BusinessError("Media type does not match this operation")
         return media
@@ -157,7 +166,7 @@ class BaseService:
                 values[key] = now
         for key in ("created_by", "updated_by"):
             if key in self.dao.fields:
-                values[key] = None
+                values[key] = getattr(self.session.info.get("actor"), "user_id", None)
         return values
 
     def _apply_update(self, entity, values):
@@ -166,7 +175,7 @@ class BaseService:
             if "updated_at" in self.dao.fields:
                 changes["updated_at"] = max(utcnow(), entity.created_at or datetime.min)
             if "updated_by" in self.dao.fields:
-                changes["updated_by"] = None
+                changes["updated_by"] = getattr(self.session.info.get("actor"), "user_id", None)
             self.dao.update(entity, changes)
         return entity
 

@@ -9,13 +9,13 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from legacy_identity import session_factory
 from PIL import Image
 from sqlalchemy import delete, func, select
 
 from short_drama.ai import GenerationResult
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
-from short_drama.db.session import session_factory
 from short_drama.domain import (
     AIGenerationRecord,
     Asset,
@@ -763,7 +763,12 @@ def test_concurrent_adoption_allows_one_version_writer(flow):
     barrier = Barrier(2)
 
     def adopt(candidate):
-        with Session(flow.session.get_bind(), expire_on_commit=False, autoflush=False) as session:
+        with Session(
+            flow.session.get_bind(),
+            expire_on_commit=False,
+            autoflush=False,
+            info={"legacy_user_id": 1},
+        ) as session:
             barrier.wait(timeout=10)
             try:
                 result = AssetImageService(session, flow.settings, flow.storage).confirm(

@@ -16,13 +16,14 @@ from sqlalchemy.dialects.mysql import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
+from .collaboration import ResourceScope
 
 
-class MediaFile(Base):
+class MediaFile(ResourceScope, Base):
     __tablename__ = "media_files"
 
     video_metadata: Mapped[dict | None] = mapped_column(
-        JSON, nullable=True, comment="ffprobe实际视频信息与探测版本，非请求参数"
+        JSON(none_as_null=True), nullable=True, comment="ffprobe实际视频信息与探测版本，非请求参数"
     )
 
     id: Mapped[int] = mapped_column(
@@ -93,6 +94,9 @@ class MediaFile(Base):
 
     __table_args__ = (
         CheckConstraint(
+            "(scope_user_id IS NULL) <> (project_id IS NULL)", name="ck_media_file_scope"
+        ),
+        CheckConstraint(
             "video_metadata IS NULL OR JSON_TYPE(video_metadata) = 'OBJECT'",
             name="ck_media_video_metadata",
         ),
@@ -104,7 +108,7 @@ class MediaFile(Base):
         CheckConstraint("CHAR_LENGTH(TRIM(`storage_locator`)) > 0", name="ck_media_locator"),
         CheckConstraint(
             "`format_code` = 'demo:image' OR `format_code` LIKE 'image/%' "
-            "OR `format_code` LIKE 'video/%'",
+            "OR `format_code` LIKE 'video/%' OR `format_code` LIKE 'audio/%'",
             name="ck_media_format",
         ),
         CheckConstraint(
@@ -113,7 +117,8 @@ class MediaFile(Base):
         ),
         CheckConstraint(
             "(`duration_ms` IS NULL OR `duration_ms` > 0) "
-            "AND (`format_code` LIKE 'video/%' OR `duration_ms` IS NULL)",
+            "AND (`format_code` LIKE 'video/%' OR `format_code` LIKE 'audio/%' "
+            "OR `duration_ms` IS NULL)",
             name="ck_media_duration",
         ),
         CheckConstraint(

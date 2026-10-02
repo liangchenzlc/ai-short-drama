@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Button, InputNumber } from 'antd';
 import type { AssemblyClip, RenderJob } from '../../api/modules/assembly';
 import type { useAssembly } from './useAssembly';
@@ -7,7 +7,7 @@ import { AssemblyResultPlayer } from './AssemblyResultPlayer';
 import { AssemblyTimeline } from './AssemblyTimeline';
 import { AssemblyResizeHandle } from './AssemblyResizeHandle';
 import { useAssemblyLayout } from './useAssemblyLayout';
-import { addClip, buildTimeline, FPS, framecode, locateFrame, moveClip, splitClip, toFrame } from './assembly-editing';
+import { addClip, buildTimeline, canAddSource, clipFrames, FPS, framecode, isIncludedVideo, locateFrame, moveClip, renderedTimeline, splitClip, toFrame } from './assembly-editing';
 
 const issues = { missing: '缺少视频', preparing: '检测中', invalid: '视频不可用', trim: '裁剪超出时长' };
 
@@ -25,19 +25,15 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
   // The media bin follows storyboard order, independently of edits on the track.
   const sources = useMemo(() => [...(editor.value?.sources ?? [...new Map(clips.map(c => [c.shot_id, c])).values()])]
     .sort((a, b) => a.shot_position - b.shot_position), [editor.value?.sources, clips]);
-  const selection = clips.find(c => c.id === selected) ?? clips.find(c => c.included);
+  const selection = clips.find(c => c.id === selected && c.media_id) ?? clips.find(isIncludedVideo);
   const entries = useMemo(() => buildTimeline(clips), [clips]);
   const total = entries.at(-1)?.end ?? 0;
   const selectedEntry = entries.find(e => e.clip.id === selection?.id);
   const splitEnabled = !!selectedEntry && frame > selectedEntry.start && frame < selectedEntry.end;
   const locked = disabled || !!result;
-  const renderedClips = useMemo<AssemblyClip[]>(() => (result?.timeline ?? []).map((entry, index) => ({
-    ...(sources.find(c => c.shot_id === entry.shot_id) ?? {}), id: entry.clip_id,
-    shot_id: entry.shot_id, shot_position: sources.find(c => c.shot_id === entry.shot_id)?.shot_position ?? index + 1,
-    media_id: null, position: index + 1, included: true, muted: entry.muted,
-    trim_in_ms: entry.trim_in_ms, trim_out_ms: entry.trim_out_ms, duration_ms: entry.trim_out_ms,
-    script: '', url: null, poster: null, filmstrip: null, issue: null, is_stale: false, archived: false,
-  })), [result, sources]);
+  const renderedClips = useMemo(() => result ? renderedTimeline(result, sources) : [], [result, sources]);
+  const hiddenClips = clips.filter(c => isIncludedVideo(c) && clipFrames(c) === 0);
+  useEffect(() => { setFrame(0); setPlaying(false); }, [result?.id]);
   function update(next: AssemblyClip[]) {
     if (locked || next === clips) return;
     player.current?.pause(); setNotice('');
@@ -46,6 +42,7 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
   function add(id: string, index = clips.length) {
     const source = sources.find(s => s.id === id);
     if (!source || locked) return;
+    if (!canAddSource(source)) { setNotice(`镜头 ${source.shot_position} ${source.issue ? issues[source.issue] : '尚不可播放'}，请等待检测完成或补齐视频后再添加。`); return; }
     if (clips.length >= 300) { setNotice('轨道最多支持 300 个片段，请先移除不需要的片段。'); return; }
     const next = addClip(clips, source, index);
     update(next); setSelected(next[index].id);
@@ -56,16 +53,19 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
     const id = crypto.randomUUID();
     update(splitClip(clips, selection.id, frame, id)); setSelected(id);
   }
-  function remove() {
-    if (!selection || locked) return;
-    const index = clips.findIndex(c => c.id === selection.id);
-    const next = clips.filter(c => c.id !== selection.id);
-    update(next); setSelected(next[Math.min(index, next.length - 1)]?.id ?? '');
+  function remove(id = selection?.id) {
+    if (!id || locked) return;
+    const index = clips.findIndex(c => c.id === id);
+    const next = clips.filter(c => c.id !== id).map((c, i) => ({ ...c, position: i + 1 }));
+    update(next); setSelected(next.slice(index).find(isIncludedVideo)?.id ?? next.find(isIncludedVideo)?.id ?? '');
   }
   function seek(at: number) {
     const end = result ? buildTimeline(renderedClips).at(-1)?.end ?? toFrame(result.duration_ms ?? 0) : total;
     const next = Math.max(0, Math.min(at, end));
-    if (result && resultVideo.current) { resultVideo.current.pause(); resultVideo.current.currentTime = next / FPS; setFrame(next); }
+    if (result && resultVideo.current) {
+      const video = resultVideo.current;
+      video.pause(); video.currentTime = Number.isFinite(video.duration) ? Math.min(next / FPS, video.duration) : next / FPS; setFrame(next);
+    }
     else {
       const entry = locateFrame(entries, next);
       if (entry) setSelected(entry.clip.id);
@@ -91,10 +91,10 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
       <aside id={`${layoutId}-media`} className="assembly-media-bin" aria-label="分镜视频素材" hidden={!layout.layout.media}>
         <div className="assembly-panel-heading"><h3>分镜视频</h3><span>{sources.length} 个</span></div>
         <p className="assembly-bin-help">拖入轨道，或点击添加</p>
-        <div className="assembly-source-list">{sources.map(source => <article key={source.shot_id} draggable={!locked && !!source.url}
-          onDragStart={event => { event.dataTransfer.setData('application/x-assembly-source', source.id); event.dataTransfer.effectAllowed = 'copy'; }}>
+        <div className="assembly-source-list">{sources.map(source => <article key={source.shot_id} draggable={!locked && canAddSource(source)}
+          onDragStart={event => { if (locked || !canAddSource(source)) { event.preventDefault(); return; } event.dataTransfer.setData('application/x-assembly-source', source.id); event.dataTransfer.effectAllowed = 'copy'; }}>
           <div className="assembly-source-image">{source.poster ? <img src={source.poster} alt={`镜头 ${source.shot_position}`} loading="lazy" draggable={false}/> : <span>镜头 {String(source.shot_position).padStart(2, '0')}</span>}<small>{framecode(toFrame(source.duration_ms ?? 0))}</small></div>
-          <div className="assembly-source-meta"><strong>镜头 {String(source.shot_position).padStart(2, '0')}</strong><Button size="small" disabled={locked || !source.url || !!source.issue} aria-label={`添加镜头 ${source.shot_position}`} onClick={() => add(source.id)}>添加</Button></div>
+          <div className="assembly-source-meta"><strong>镜头 {String(source.shot_position).padStart(2, '0')}</strong><Button size="small" disabled={locked || !canAddSource(source)} aria-label={`添加镜头 ${source.shot_position}`} onClick={() => add(source.id)}>添加</Button></div>
           <p title={source.script}>{source.issue ? issues[source.issue] : source.script || '分镜视频'}</p>
         </article>)}</div>
       </aside>
@@ -102,8 +102,8 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
         <div className="assembly-monitor-heading"><div className="assembly-mode-switch">
           <Button type={!result ? 'primary' : 'text'} onClick={() => { onResult(null); setFrame(0); setPlaying(false); }}>剪辑预览</Button>
           <Button type={result?.kind === 'export' ? 'primary' : 'text'} disabled={!recent.length} onClick={() => { player.current?.pause(); onResult(recent[0]); setFrame(0); }}>成片回看</Button>
-        </div><Button disabled={disabled || !total || clips.some(c => c.included && c.issue)} loading={previewBusy} onClick={onPreview}>合成预览</Button></div>
-        {result ? <AssemblyResultPlayer key={result.id} job={result} aspect={editor.value?.assembly?.aspect ?? '16:9'}
+        </div><Button disabled={disabled || !total || clips.some(c => isIncludedVideo(c) && c.issue)} loading={previewBusy} onClick={onPreview}>合成预览</Button></div>
+        {result ? <AssemblyResultPlayer key={result.id} job={result} aspect={result.aspect ?? editor.value?.assembly?.aspect ?? '16:9'}
           stale={result.is_stale || result.context_hash !== editor.value?.context_hash || editor.status !== 'saved'}
           videoRef={resultVideo} refresh={signal => editor.api.job(result.id, signal)} onResult={onResult} onFrame={setFrame} onPlaying={setPlaying} download={editor.api.download(result.id)}/>
           : <AssemblyPlayer ref={player} clips={clips} aspect={editor.value?.assembly?.aspect ?? '16:9'} onFrame={at => { setFrame(at); if (playing) { const entry = locateFrame(entries, at); if (entry) setSelected(entry.clip.id); } }} onPlaying={setPlaying} onRefresh={editor.refreshMedia}/>}
@@ -113,7 +113,7 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
     <div className="assembly-edit-tools">
       <Button disabled={locked || !editor.canUndo} onClick={() => history('undo')}>撤销</Button><Button disabled={locked || !editor.canRedo} onClick={() => history('redo')}>重做</Button>
       <span className="assembly-tool-divider"/>
-      <Button disabled={locked || !splitEnabled} onClick={split}>分割</Button><Button disabled={locked || !selection} onClick={remove}>删除片段</Button>
+      <Button disabled={locked || !splitEnabled} onClick={split}>分割</Button><Button disabled={locked || !selection} onClick={() => remove()}>删除片段</Button>
       <Button disabled={locked || !selection || clips.indexOf(selection) <= 0} onClick={() => selection && update(moveClip(clips, selection.id, clips.indexOf(selection) - 1))}>前移</Button>
       <Button disabled={locked || !selection || clips.indexOf(selection) >= clips.length - 1} onClick={() => selection && update(moveClip(clips, selection.id, clips.indexOf(selection) + 1))}>后移</Button>
       <Button disabled={locked || !selection} aria-pressed={selection?.muted ?? false} onClick={() => selection && update(clips.map(c => c.id === selection.id ? { ...c, muted: !c.muted } : c))}>{selection?.muted ? '恢复原声' : '片段静音'}</Button>
@@ -121,6 +121,10 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
       <label className="assembly-jump">定位 <InputNumber aria-label="定位时间（秒）" min={0} max={(result?.duration_ms ?? total / FPS * 1000) / 1000} step={1 / FPS} precision={3} value={frame / FPS} onChange={v => { if (v !== null) seek(Math.round(v * FPS)); }}/> 秒</label>
     </div>
     {notice && <p role="alert" className="assembly-edit-notice">{notice}</p>}
+    {!result && hiddenClips.length > 0 && <div className="assembly-edit-notice" aria-label="无法显示在时间轴的片段">
+      {hiddenClips.map(c => <p key={c.id} className="assembly-inline-actions">镜头 {c.shot_position} · {c.issue ? issues[c.issue] : '片段不足一帧'}，无法显示在时间轴。
+        <Button size="small" disabled={locked} aria-label={`移除镜头 ${c.shot_position} 的问题片段`} onClick={() => remove(c.id)}>移除片段</Button></p>)}
+    </div>}
     <AssemblyTimeline id={`${layoutId}-track`} height={layout.desktop ? layout.layout.trackHeight : 152} clips={result ? renderedClips : clips} selected={result ? locateFrame(buildTimeline(renderedClips), frame)?.clip.id ?? '' : selection?.id ?? ''}
       frame={frame} playing={playing} disabled={locked} onSelect={select} onSeek={seek} onChange={update}
       onPause={() => { player.current?.pause(); resultVideo.current?.pause(); }} onAdd={add}/>

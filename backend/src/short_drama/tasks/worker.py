@@ -15,8 +15,12 @@ from short_drama.tasks.celery_app import app
 @lru_cache(maxsize=1)
 def execution_service():
     settings = Settings()
+    engine = build_engine(settings)
+    from short_drama.db.readiness import assert_identity_ready
+
+    assert_identity_ready(engine, settings)
     return GenerationExecutionService(
-        session_factory(build_engine(settings)),
+        session_factory(engine),
         settings,
         GenerationGateway(settings),
         MinioStorage(settings),
@@ -44,7 +48,11 @@ def render_service():
     from short_drama.tasks.render import RenderExecutor
 
     settings = Settings()
-    return RenderExecutor(session_factory(build_engine(settings)), settings, MinioStorage(settings))
+    engine = build_engine(settings)
+    from short_drama.db.readiness import assert_identity_ready
+
+    assert_identity_ready(engine, settings)
+    return RenderExecutor(session_factory(engine), settings, MinioStorage(settings))
 
 
 @app.task(

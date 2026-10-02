@@ -91,6 +91,18 @@ def test_http_probe_export_retry_download_apply_and_duplicate_worker(flow, tmp_p
         )
     )
     flow.session.commit()
+    missing = storyboard.create(
+        flow.project.id,
+        flow.episode.id,
+        {
+            "storyboard_version": storyboard.get(flow.project.id, flow.episode.id, shot["id"])[
+                "storyboard_version"
+            ],
+            "script": "A shot without adopted video",
+            "duration_ms": 5000,
+        },
+        "assembly-missing-source",
+    )["shot"]
     executor = RenderExecutor(flow.factory, settings, flow.storage)
     app = create_app(settings)
     app.state.settings, app.state.storage = settings, flow.storage
@@ -103,9 +115,12 @@ def test_http_probe_export_retry_download_apply_and_duplicate_worker(flow, tmp_p
         ) as client:
             empty = await client.get(root)
             assert empty.status_code == 200 and empty.json()["assembly"] is None
+            assert empty.json()["source_count"] == 1
             initialized = await client.post(root + "/initialize")
             assert initialized.status_code == 200, initialized.text
             state = initialized.json()
+            missing_clip = next(c for c in state["clips"] if c["shot_id"] == missing["id"])
+            assert missing_clip["included"] is True and missing_clip["issue"] == "missing"
             probe = state["jobs"][0]
             executor.execute(probe["id"], 1)
             state = (await client.get(root)).json()
@@ -113,6 +128,20 @@ def test_http_probe_export_retry_download_apply_and_duplicate_worker(flow, tmp_p
             assert state["clips"][0]["issue"] is None
             assert state["clips"][0]["filmstrip"]["count"] == 2
             assert state["clips"][0]["filmstrip"]["url"]
+            # Reserved shots remain in the draft but never enter a render snapshot.
+            preview = await client.post(
+                root + "/previews",
+                json={
+                    "row_version": state["assembly"]["row_version"],
+                    "source_hash": state["source_hash"],
+                },
+                headers={"Idempotency-Key": "preview-with-reserved-shot"},
+            )
+            assert preview.status_code == 202, preview.text
+            assert [c["media_id"] for c in preview.json()["timeline"]] == ["301"]
+            executor.execute(preview.json()["id"], 1)
+            ready_preview = (await client.get(root + f"/exports/{preview.json()['id']}")).json()
+            assert ready_preview["status"] == "succeeded", ready_preview
             edit = {
                 "row_version": state["assembly"]["row_version"],
                 "resolution": "720p",
@@ -191,6 +220,9 @@ def test_http_probe_export_retry_download_apply_and_duplicate_worker(flow, tmp_p
             executor.execute(retry_job["id"], 1)
             ready = (await client.get(root + f"/exports/{retry_job['id']}")).json()
             assert ready["status"] == "succeeded", ready
+            assert ready["timeline"][0]["media_id"] == "301"
+            assert ready["timeline"][0]["filmstrip"]["url"]
+            assert ready["aspect"] == "16:9"
             assert abs(ready["duration_ms"] - 1500) < 120
             downloaded = await client.get(root + f"/exports/{retry_job['id']}/download")
             assert downloaded.status_code == 200 and downloaded.content[4:8] == b"ftyp"

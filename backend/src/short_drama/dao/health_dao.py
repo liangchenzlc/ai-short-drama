@@ -7,4 +7,5 @@ class HealthDAO:
         self.session = session
 
     def ping(self) -> bool:
-        return self.session.scalar(text("SELECT 1")) == 1
+        # Constant infrastructure probe; no application table or caller SQL is exposed.
+        return self.session.connection().scalar(text("SELECT 1")) == 1

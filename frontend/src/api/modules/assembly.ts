@@ -9,11 +9,15 @@ export interface AssemblyClip {
   issue: 'missing' | 'invalid' | 'preparing' | 'trim' | null;
 }
 export interface RenderJob {
+  can_cancel?: boolean; can_retry?: boolean; initiated_by?: string | null;
   id: string; kind: 'probe' | 'export' | 'preview'; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
   stage: string; progress: number; cancel_requested: boolean; error: { message: string } | null;
   created_at: string; finished_at: string | null; context_hash: string; url: string | null;
   media_id: string | null; duration_ms: number | null; is_stale: boolean;
-  timeline?: { clip_id: string; shot_id: string; trim_in_ms: number; trim_out_ms: number; muted: boolean }[];
+  aspect?: string; resolution?: string;
+  timeline?: { clip_id: string; shot_id: string; trim_in_ms: number; trim_out_ms: number; muted: boolean;
+    media_id?: string | null; duration_ms?: number | null; url?: string | null; poster?: string | null;
+    filmstrip?: AssemblyClip['filmstrip']; }[];
 }
 export interface AssemblyState {
   assembly: { id: string; row_version: string; aspect: string; resolution: '720p' | '1080p'; current_media_id: string | null } | null;

@@ -120,7 +120,9 @@ def test_concurrent_identical_upload_keeps_one_candidate_and_compensates_loser(
 
     def upload():
         try:
-            with Session(mysql_engine, expire_on_commit=False, autoflush=False) as session:
+            with Session(
+                mysql_engine, expire_on_commit=False, autoflush=False, info={"legacy_user_id": 1}
+            ) as session:
                 result, created = AssetImageService(session, SimpleNamespace(), Storage()).upload(
                     item.id, BytesIO(data), len(data), "same.png", "image/png"
                 )

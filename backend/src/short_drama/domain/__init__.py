@@ -9,6 +9,7 @@ from .episode_assembly import EpisodeAssembly, EpisodeAssemblyClip, EpisodeRende
 from .episode_asset import EpisodeAsset
 from .episode_novel import EpisodeNovel
 from .episode_script import EpisodeScript
+from .generation_batch import GenerationBatchItem, GenerationBatchJob
 from .global_asset import GlobalAsset
 from .media_asset import MediaAsset
 from .media_file import MediaFile
@@ -23,6 +24,14 @@ from .shot_script import ShotScript
 from .shot_video import ShotVideo
 
 __all__ = [
+    "CharacterVoice",
+    "ProjectSoundMode",
+    "ShotDialogue",
+    "EpisodeSound",
+    "ProjectVoiceDefaults",
+    "SoundMediaReference",
+    "GenerationBatchItem",
+    "GenerationBatchJob",
     "AsyncTask",
     "AIGenerationRecord",
     "MediaAsset",
@@ -48,4 +57,34 @@ __all__ = [
     "ScriptShotRecord",
     "MediaRecycleBin",
     "NovelScriptRecord",
+]
+
+from .collaboration import (
+    AuditEvent,
+    AuthRateLimit,
+    EmailChallenge,
+    EmailOutbox,
+    ProjectInvitation,
+    ProjectMember,
+    ResourceImport,
+    User,
+    UserModelPreference,
+    UserProjectState,
+    UserSession,
+)
+from .episode_sound import EpisodeSound, ProjectVoiceDefaults, SoundMediaReference
+from .native_voice import CharacterVoice, ProjectSoundMode, ShotDialogue
+
+__all__ += [
+    "User",
+    "UserSession",
+    "EmailChallenge",
+    "ProjectMember",
+    "ProjectInvitation",
+    "AuditEvent",
+    "UserModelPreference",
+    "UserProjectState",
+    "EmailOutbox",
+    "AuthRateLimit",
+    "ResourceImport",
 ]

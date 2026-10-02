@@ -1,5 +1,6 @@
 ﻿import { Button, Skeleton } from 'antd';
 import { Icon } from '../../components/ui/Icon';
+import { ListToolbar, PageHeader } from '../../components/ui/Workspace';
 import { useEffect, useRef, useState } from 'react';
 import { aiModelConfigs } from '../../api/modules/ai-model-configs';
 import { ApiError, errorMessage, isCancelled } from '../../api/http';
@@ -85,7 +86,7 @@ export function AiConfigPage() {
   }
 
   return <section className="studio-page ai-config-page" aria-labelledby="ai-title">
-    <div className="studio-page-head"><div><h1 id="ai-title">AI 配置</h1><p>连接创作模型，为文字、图片和视频分别设置默认选择。</p></div><Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={!!busyId} onClick={() => { setEditing(null); setFormOpen(true); }}>添加{serviceLabels[tab]}</Button></div>
+    <PageHeader id="ai-title" title="AI 配置" description="连接创作模型，为文字、图片和视频分别设置默认选择。" actions={<Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={!!busyId} onClick={() => { setEditing(null); setFormOpen(true); }}>添加{serviceLabels[tab]}</Button>} />
     <div className="preview-note" role="note">为每类选择一个默认模型，创作时自动选用。保存配置不会发起生成。</div>
     <div className="studio-tabs" role="tablist" aria-label="AI 模型类别">
       {configTabs.map((kind, index) => <button key={kind} id={`model-tab-${kind}`} role="tab" aria-selected={tab === kind}
@@ -102,9 +103,7 @@ export function AiConfigPage() {
     {actionError && <div role="alert" className="form-error config-feedback">{actionError}<button onClick={() => { setActionError(''); refresh(); }} disabled={loading || !!busyId}>重新加载列表</button></div>}
     {configTabs.map((kind) => <div key={kind} id={`model-panel-${kind}`} role="tabpanel" aria-labelledby={`model-tab-${kind}`} hidden={tab !== kind}>
       {tab === kind && <>
-        <div className="studio-toolbar">
-          <span className="config-list-count">共 {total} 个{serviceLabels[kind]}</span><Button disabled={!!busyId} loading={loading} onClick={refresh}>刷新列表</Button>
-        </div>
+        <ListToolbar count={`共 ${total} 个${serviceLabels[kind]}`} actions={<Button disabled={!!busyId} loading={loading} onClick={refresh}>刷新列表</Button>} />
         {loading ? <div className="studio-empty" role="status" aria-live="polite"><Skeleton title paragraph={{ rows: 3 }}/></div>
           : listError ? <div className="studio-empty" role="alert"><p>{listError}</p><button onClick={refresh}>重新加载</button></div>
           : <><ConfigTable items={items} serviceType={kind} busyId={busyId} onEdit={edit} onDefault={setDefault}

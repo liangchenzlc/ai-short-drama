@@ -1,6 +1,8 @@
+import { useAuth } from '../../features/auth/AuthSession';
 import type { AssetKind } from '../../features/assets/asset-model';
 import { AssetLibraryPanel } from '../../features/assets/AssetLibraryPanel';
 import { useNavigate } from 'react-router-dom';
+import { PageHeader } from '../../components/ui/Workspace';
 
 function downloadLegacy() {
   const content = localStorage.getItem('avi-global-assets-v1') ?? '[]';
@@ -9,5 +11,7 @@ function downloadLegacy() {
 }
 export function AssetsPage({ kind: _kind }: { kind: AssetKind }) {
   const navigate = useNavigate();
-  return <section className="studio-page global-assets-page" aria-label="全局素材库"><div className="studio-page-head"><div><h1>全局素材库</h1><p>集中整理角色、场景与道具，在不同项目中复用。</p></div></div><AssetLibraryPanel scope={{ kind: 'global' }} title="共享素材" initialKind={_kind} onKindChange={kind => navigate(`/assets/${kind}`)} legacyDownload={downloadLegacy}/></section>;
+  const auth = useAuth();
+  const title = auth.enabled ? '个人素材库' : '全局素材库';
+  return <section className="studio-page global-assets-page" aria-label={title}><PageHeader title={title} description={auth.enabled ? '整理自己的角色、场景与道具，导入项目时创建独立副本。' : '集中整理角色、场景与道具，在不同项目中复用。'} /><AssetLibraryPanel scope={{ kind: 'global' }} title={auth.enabled ? '我的素材' : '共享素材'} initialKind={_kind} onKindChange={kind => navigate(`/assets/${kind}`)} legacyDownload={auth.enabled ? undefined : downloadLegacy}/></section>;
 }

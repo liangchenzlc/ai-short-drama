@@ -103,7 +103,8 @@ def resume_action(task, record):
     entries = response.get("media_manifest", [])
     recoverable_media = bool(entries) and (
         any(
-            not item.get("saved") and (item.get("source_cipher") or item.get("locator"))
+            not item.get("saved")
+            and (item.get("source_cipher") or item.get("locator") or item.get("inline_cipher"))
             for item in entries
         )
         or (
@@ -190,16 +191,59 @@ class AIGenerationService(BaseService):
             raise GenerationRequestError("default_config_missing")
         return model
 
+    def _lock_payload_scope(self, payload):
+        actor = self.session.info.get("actor")
+        if not actor:
+            return
+        from short_drama.db.access import require_project, scope_of, set_scope
+        from short_drama.domain import Asset, EpisodeNovel, EpisodeScript
+
+        source = payload.get("source") or {}
+        project_id = source.get("project_id") or payload.get("project_id")
+        scope = (None, int(project_id)) if project_id else (actor.user_id, None)
+        for field, model in [
+            ("asset_id", Asset),
+            ("shot_id", ShotScript),
+            ("novel_id", EpisodeNovel),
+            ("script_id", EpisodeScript),
+        ]:
+            if source.get(field):
+                actual = scope_of(
+                    self.session, self._require(model, source[field], for_update=False)
+                )
+                if project_id and actual[1] != int(project_id):
+                    raise WorkflowError("not_found", "Source does not belong to this project", 404)
+                scope = actual
+                break
+        if scope[1]:
+            require_project(self.session, scope[1])
+        set_scope(self.session, scope)
+
     def _prepare(self, kind, payload):
         source = payload.get("source")
-        if source and kind == "text":
+        if source and source["scene"] == "character_voice_design":
+            from .native_voice_service import NativeVoiceService
+
+            payload = NativeVoiceService(self.session, self.settings).prepare_design(payload)
+        elif source and source["scene"] in {"dialogue_audio", "dialogue_extract"}:
+            from .episode_sound_service import EpisodeSoundService
+
+            sound = EpisodeSoundService(self.session, self.settings)
+            payload = (
+                sound.prepare_speech(payload)
+                if kind == "audio"
+                else sound.prepare_extraction(payload)
+            )
+        elif source and kind == "text":
             from .generation_context_service import GenerationContextService
 
             payload = GenerationContextService(self.session, self.settings).prepare_text(payload)
         elif source and kind == "video" and source["scene"] == "shot_video":
             from .generation_context_service import GenerationContextService
 
-            payload = GenerationContextService(self.session).prepare_shot_video(payload)
+            payload = GenerationContextService(self.session, self.settings).prepare_shot_video(
+                payload
+            )
         elif source:
             if kind != "image" or source["scene"] not in {"shot_image", "asset_image"}:
                 raise BusinessError("Source scene does not support this generation type")
@@ -230,6 +274,8 @@ class AIGenerationService(BaseService):
             if not media.storage_locator.startswith("minio://"):
                 raise BusinessError("Reference media must be permanently stored")
         payload["resolved_parameters"] = copy.deepcopy(payload["parameters"])
+        for identifier in inputs.get("audio_reference_media_ids", []):
+            self._validate_media(identifier, "audio")
         return payload
 
     def _summary(self, task, record=None):
@@ -239,7 +285,19 @@ class AIGenerationService(BaseService):
         record = record or records[0]
         latest = records[-1]
         config = record.config_snapshot
-        can_resume = bool(resume_action(task, latest))
+        actor = self.session.info.get("actor")
+        own_task = actor is None or task.initiated_by == actor.user_id
+        owner_can_cancel = False
+        if actor and task.project_id:
+            from short_drama.domain import Project
+
+            owner_can_cancel = (
+                self.session.scalar(
+                    select(Project.owner_user_id).where(Project.id == task.project_id)
+                )
+                == actor.user_id
+            )
+        can_resume = own_task and bool(resume_action(task, latest))
         error = safe_error(task.error)
         if can_resume and error and error["code"] == "invalid_structured_output":
             error["message"] = "已保留的模型原文现可解析，请使用安全恢复保存结果，无需重新生成。"
@@ -260,14 +318,25 @@ class AIGenerationService(BaseService):
             "started_at": task.started_at,
             "finished_at": task.finished_at,
             "error": error,
-            "can_cancel": task.status in {"queued", "running"} and not task.cancel_requested,
-            "can_retry": can_retry(task, latest),
+            "can_cancel": (own_task or owner_can_cancel)
+            and task.status in {"queued", "running"}
+            and not task.cancel_requested,
+            "initiated_by": str(task.initiated_by) if task.initiated_by else None,
+            "can_retry": own_task
+            and can_retry(task, latest)
+            and not record.request_data.get("batch_id")
+            and (record.request_data.get("source") or {}).get("scene")
+            not in {"dialogue_audio", "character_voice_design"},
+            "batch_id": record.request_data.get("batch_id"),
             "can_resume": can_resume,
             "cancel_requested": bool(task.cancel_requested),
             "retry_of_id": str(task.retry_of_id) if task.retry_of_id else None,
         }
 
     def _existing(self, key, request_hash):
+        from short_drama.db.access import scoped_key
+
+        key = scoped_key(self.session, key)
         task = self.dao.by_key(key)
         if task:
             if task.request_hash != request_hash:
@@ -276,6 +345,40 @@ class AIGenerationService(BaseService):
         return None
 
     def _insert(self, kind, payload, key, digest, config, retry_of_id=None):
+        from short_drama.db.access import require_project, scope_of, scoped_key, set_scope
+
+        key = scoped_key(self.session, key)
+        actor = self.session.info.get("actor")
+        if actor:
+            source = payload.get("source") or {}
+            project_id = source.get("project_id") or payload.get("project_id")
+            if source.get("asset_id"):
+                from short_drama.domain import Asset
+
+                resource = self._require(Asset, source["asset_id"], for_update=False)
+                scope = scope_of(self.session, resource)
+                if project_id and scope[1] != int(project_id):
+                    raise WorkflowError("not_found", "Source does not belong to this project", 404)
+            else:
+                scope = (None, int(project_id)) if project_id else (actor.user_id, None)
+            if scope[1]:
+                require_project(self.session, scope[1])
+            set_scope(self.session, scope)
+            from short_drama.domain import MediaFile
+
+            inputs = payload.get("input") or {}
+            references = list(inputs.get("reference_media_ids", [])) + list(
+                inputs.get("audio_reference_media_ids", [])
+            )
+            references += [
+                inputs[k] for k in ("first_frame_media_id", "last_frame_media_id") if inputs.get(k)
+            ]
+            for identifier in references:
+                media = self._require(MediaFile, identifier, for_update=False)
+                if scope_of(self.session, media) != scope:
+                    raise WorkflowError(
+                        "not_found", "Import reference media into this scope first", 404
+                    )
         now = utcnow()
         snapshot = {
             k: getattr(config, k)
@@ -288,14 +391,20 @@ class AIGenerationService(BaseService):
             budget_seconds=getattr(
                 self.settings,
                 f"generation_{kind}_budget_seconds",
-                {"text": 3600, "image": 300, "video": 1800}[kind],
+                {"text": 3600, "image": 300, "video": 1800, "audio": 300}[kind],
             ),
             archive_budget_seconds=getattr(
                 self.settings, "generation_archive_budget_seconds", 86400
             ),
         )
         try:
-            validated = validate_request(snapshot, payload)
+            validated = validate_request(
+                snapshot,
+                payload,
+                "dashscope_voice_design.v1"
+                if (payload.get("source") or {}).get("scene") == "character_voice_design"
+                else None,
+            )
         except GenerationError as error:
             raise GenerationRequestError(error.code) from None
         payload["resolved_parameters"] = validated["resolved_parameters"]
@@ -343,6 +452,7 @@ class AIGenerationService(BaseService):
                 existing = self._existing(key, digest)
                 if existing:
                     return existing
+                self._lock_payload_scope(parsed.model_dump(mode="json", exclude_none=True))
                 config = self._config(kind, parsed.config_id)
                 request = self._prepare(kind, parsed.model_dump(mode="json", exclude_none=True))
                 return self._insert(kind, request, key, digest, config)
@@ -450,6 +560,8 @@ class AIGenerationService(BaseService):
                                 "total_tokens",
                                 "prompt_tokens",
                                 "completion_tokens",
+                                "input_characters",
+                                "audio_duration_ms",
                             }
                             and isinstance(v, (int, float))
                         },
@@ -459,9 +571,23 @@ class AIGenerationService(BaseService):
                 ]
             }
 
+    def _authorize_task_action(self, task, action):
+        actor = self.session.info.get("actor")
+        if not actor or task.initiated_by == actor.user_id:
+            return
+        if action == "cancel" and task.project_id:
+            from short_drama.db.access import require_project
+
+            require_project(self.session, task.project_id, owner=True)
+            return
+        raise WorkflowError(
+            "task_actor_required", "Only the task initiator can perform this action", 403
+        )
+
     def cancel(self, identifier):
         with self._transaction():
             task = self._require(AsyncTask, identifier)
+            self._authorize_task_action(task, "cancel")
             record = self.record_dao.for_task(task.id)[-1]
             if task.status in {"queued", "running"}:
                 task.cancel_requested = 1
@@ -478,6 +604,7 @@ class AIGenerationService(BaseService):
     def resume(self, identifier):
         with self._transaction():
             task = self._require(AsyncTask, identifier)
+            self._authorize_task_action(task, "resume")
             record = self.record_dao.for_task(task.id)[-1]
             if task.status in {"queued", "running"}:
                 return self._summary(task, record)
@@ -535,10 +662,22 @@ class AIGenerationService(BaseService):
             if existing:
                 return existing
             task = self._require(AsyncTask, identifier)
+            self._authorize_task_action(task, "retry")
             records = self.record_dao.for_task(task.id)
             if not can_retry(task, records[-1]):
                 raise Conflict("This task cannot safely be regenerated")
             record = records[0]
+            if (record.request_data.get("source") or {}).get("scene") in {
+                "dialogue_audio",
+                "character_voice_design",
+            }:
+                raise WorkflowError(
+                    "audio_retry_required", "请从角色声音或台词面板核对后重新生成", 409
+                )
+            if record.request_data.get("batch_id"):
+                raise WorkflowError(
+                    "batch_retry_required", "请从批次详情重新生成失败项，以保持并发限制", 409
+                )
             config = self._config(task.service_type, parsed.config_id or record.config_id)
             if parsed.config_id is None and str(config.row_version) != str(
                 record.config_snapshot["row_version"]

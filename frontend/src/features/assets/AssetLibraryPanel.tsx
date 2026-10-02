@@ -3,6 +3,8 @@ import { PreviewImage } from '../../components/ui/ImagePreview';
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Alert, Button, Checkbox, Input, Pagination, Segmented, Skeleton, Upload } from 'antd';
 import { ApiError, errorMessage } from '../../api/http';
+import { http } from '../../api/http';
+import { useAuth } from '../auth/AuthSession';
 import { assetLibraries, type AssetCandidate, type AssetDraft, type AssetKind, type AssetScope, type LibraryAssetRead } from '../../api/modules/assets';
 import { Dialog } from '../../components/ui/Dialog';
 import { ImagePicker } from '../media-library/ImagePicker';
@@ -40,6 +42,9 @@ export function AssetLibraryPanel({
   toolbar?: ReactNode;
   refreshToken?: number;
 }) {
+  const auth = useAuth();
+  const copiesOnImport = auth.enabled && scope.kind === 'project' && importFrom?.kind === 'global';
+  const importLibrary = importFrom?.kind === 'project' ? '项目' : auth.enabled ? '个人' : '全局';
   const [kind, setKind] = useState<AssetKind>(initialKind);
   const [query, setQuery] = useState('');
   const batchSelection = useBatchSelection(`${scopeKey(scope)}:${kind}:${query}`);
@@ -58,6 +63,7 @@ export function AssetLibraryPanel({
   const [busy, setBusy] = useState(false);
   const [generationSubmitting, setGenerationSubmitting] = useState(false);
   const [notice, setNotice] = useState('');
+  const [importNoticeType, setImportNoticeType] = useState<'info' | 'error'>('info');
   const [imports, setImports] = useState<LibraryAssetRead[]>([]);
   const [showImport, setShowImport] = useState(false);
   const [importQuery, setImportQuery] = useState('');
@@ -179,18 +185,35 @@ export function AssetLibraryPanel({
     importRequestRef.current?.abort();
     const controller = new AbortController();
     importRequestRef.current = controller;
-    setImports([]); setImportQuery(''); setShowImport(true); setImportLoading(true); setNotice('');
+    setImports([]); setImportQuery(''); setShowImport(true); setImportLoading(true); setNotice(''); setImportNoticeType('info');
     try {
       const source = await loadAllLibrary(importFrom, kind, controller.signal);
       if (!controller.signal.aborted) setImports(source.filter((item) => !items.some((own) => own.id === item.id)));
-    } catch (cause) { if (!controller.signal.aborted) setNotice(errorMessage(cause)); }
+    } catch (cause) { if (!controller.signal.aborted) { setImportNoticeType('error'); setNotice(errorMessage(cause)); } }
     finally { if (!controller.signal.aborted) setImportLoading(false); }
   }
 
   async function link(id: string) {
-    setBusy(true);
-    try { await assetLibraries.link(scope, id); setShowImport(false); refresh(); }
-    catch (cause) { setNotice(errorMessage(cause)); }
+    setBusy(true); setImportNoticeType('info'); setNotice('');
+    try {
+      if (copiesOnImport && scope.kind === 'project') {
+        const payload = { source_type: 'asset', source_id: id };
+        const attemptScope = `import:${scope.projectId}:${id}`;
+        const key = await requestAttempt(attemptScope, payload, attemptStorage());
+        const job = (await http.post(`/projects/${scope.projectId}/imports`, payload, { headers: { 'Idempotency-Key': key } })).data;
+        setNotice('正在复制素材和媒体文件，请稍候…');
+        let complete = false;
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          const state = (await http.get(`/projects/${scope.projectId}/imports/${job.id}`)).data;
+          if (state.status === 'succeeded') { complete = true; clearAttempt(attemptScope, attemptStorage()); break; }
+          if (state.status === 'failed' || state.status === 'cancelled') { clearAttempt(attemptScope, attemptStorage()); setImportNoticeType('error'); setNotice('复制未完成，请检查项目权限与存储服务后重试。'); return; }
+          await new Promise(resolve => window.setTimeout(resolve, 1000));
+        }
+        if (!complete) { setNotice('复制仍在进行，请稍后刷新。再次选择此素材会继续核对同一次导入。'); refresh(); return; }
+      } else await assetLibraries.link(scope, id);
+      setNotice(''); setShowImport(false); refresh();
+    }
+    catch (cause) { setImportNoticeType('error'); setNotice(errorMessage(cause)); }
     finally { setBusy(false); }
   }
 
@@ -280,9 +303,9 @@ export function AssetLibraryPanel({
     }
   }
   return <section className="overview-card remote-asset-library" aria-label={title}>
-    {!readOnly && <BatchLauncher scope={{ library: scope.kind, ...(scope.kind !== 'global' ? { project_id: scope.projectId } : {}), ...(scope.kind === 'episode' ? { episode_id: scope.episodeId } : {}), asset_kind: kind, search: query.trim() }} selection={batchSelection} loadedIds={items.map(item => item.id)} disabled={busy || loading || creating || !!selected}/>}
-    <div className="overview-heading"><div><h2>{title}</h2><p>保持人物与画面一致，准备好本集要用的素材。</p></div><div>{toolbar}{importFrom && !readOnly && <Button disabled={busy} onClick={() => void openImports()}>从{importFrom.kind === 'project' ? '项目' : '全局'}库添加</Button>}{!readOnly && <Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={busy} onClick={() => { setNotice(''); setCreating(true); }}>新建{labels[kind]}</Button>}</div></div>
+    <div className="overview-heading"><div><h2>{title}</h2><p>保持人物与画面一致，准备好本集要用的素材。</p></div><div>{toolbar}{importFrom && !readOnly && <Button disabled={busy} onClick={() => void openImports()}>从{importLibrary}库{copiesOnImport ? '复制' : '添加'}</Button>}{!readOnly && <Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={busy} onClick={() => { setNotice(''); setCreating(true); }}>新建{labels[kind]}</Button>}</div></div>
     <div className="resource-toolbar"><Segmented aria-label="素材类别" value={kind} onChange={changeKind} options={(Object.keys(labels) as AssetKind[]).map((value) => ({ value, label: labels[value] }))}/><span className="asset-library-count" aria-live="polite">{loading ? '正在载入…' : `共 ${total} 个${labels[kind]}`}</span><Input.Search value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); }} aria-label="搜索素材" placeholder={`搜索${labels[kind]}名称或描述`} allowClear/></div>
+    {!readOnly && <BatchLauncher scope={{ library: scope.kind, ...(scope.kind !== 'global' ? { project_id: scope.projectId } : {}), ...(scope.kind === 'episode' ? { episode_id: scope.episodeId } : {}), asset_kind: kind, search: query.trim() }} selection={batchSelection} loadedIds={items.map(item => item.id)} disabled={busy || loading || creating || !!selected}/>}
     {notice && <Alert type="info" showIcon message={notice}/>} {error && <Alert type="error" showIcon message={error} action={<Button onClick={refresh}>重试</Button>}/>}
     {loading ? <Skeleton title paragraph={{ rows: 3 }}/> : items.length ? <div className="asset-grid">{items.map((item) => <article className="asset-card library-resource-card" key={item.id}>
       {batchSelection.enabled && !readOnly && <Checkbox className="batch-item-select" aria-label={`批量选择 ${item.name}`} checked={batchSelection.ids.includes(item.id)} onChange={event => batchSelection.toggle(item.id, event.target.checked)}>批量选择</Checkbox>}
@@ -294,7 +317,7 @@ export function AssetLibraryPanel({
     {legacyDownload && <details className="legacy-tools"><summary>旧版草稿</summary><p>如需找回旧版浏览器中的素材记录，可下载备份。</p><Button onClick={legacyDownload}>下载浏览器旧稿</Button></details>}
 
     {creating && <Dialog title={`新建${labels[kind]}`} className="asset-editor-drawer asset-create-drawer" canClose={!busy} onClose={closeCreating}><form onSubmit={create}><div className="asset-create-body"><p className="episode-help">先保存文字信息，再上传参考图或生成图片。</p><AssetFields className="asset-editor-fields" value={draft} disabled={busy} onChange={setDraft}/>{notice && <Alert type="error" showIcon message={notice}/>}</div><div className="asset-editor-drawer-footer"><span role="status">{createDirty ? '尚未创建' : '名称必填，其他信息可稍后补充'}</span><Button disabled={busy} onClick={closeCreating}>取消</Button><Button type="primary" htmlType="submit" loading={busy} disabled={!draft.name.trim()}>创建{labels[kind]}</Button></div></form></Dialog>}
-    {showImport && <Dialog title={`从${importFrom?.kind === 'project' ? '项目' : '全局'}素材库添加`} className="asset-import-dialog" canClose={!busy} onClose={closeImports}><div className="asset-import-search"><Input.Search aria-label="搜索可添加素材" placeholder="搜索名称或描述" value={importQuery} allowClear onChange={event => setImportQuery(event.target.value)}/></div><div className="asset-import-body">{notice && <Alert type="error" message={notice}/>} {importLoading ? <Skeleton paragraph={{ rows: 3 }}/> : imports.filter(item => !importQuery.trim() || (item.name + item.description).toLocaleLowerCase().includes(importQuery.trim().toLocaleLowerCase())).map((item) => <div className="resource-import-row" key={item.id}><div><strong>{item.name}</strong><p>{item.description}</p></div><Button disabled={busy} onClick={() => void link(item.id)}>添加到本库</Button></div>)}{!importLoading && !notice && !imports.length && <p>此分类暂无可添加的素材，可以先在当前库新建。</p>}{!importLoading && !!imports.length && !imports.some(item => !importQuery.trim() || (item.name + item.description).toLocaleLowerCase().includes(importQuery.trim().toLocaleLowerCase())) && <p className="episode-help">没有找到匹配素材，请换个关键词。</p>}</div><div className="production-dialog-footer"><span>添加后共享同一素材，修改会同步。</span><Button disabled={busy} onClick={closeImports}>关闭</Button></div></Dialog>}
+    {showImport && <Dialog title={`从${importLibrary}素材库${copiesOnImport ? '复制' : '添加'}`} className="asset-import-dialog" canClose={!busy} onClose={closeImports}><div className="asset-import-search"><Input.Search aria-label="搜索可添加素材" placeholder="搜索名称或描述" value={importQuery} allowClear onChange={event => setImportQuery(event.target.value)}/></div><div className="asset-import-body">{notice && <Alert type={importNoticeType} message={notice}/>} {importLoading ? <Skeleton paragraph={{ rows: 3 }}/> : imports.filter(item => !importQuery.trim() || (item.name + item.description).toLocaleLowerCase().includes(importQuery.trim().toLocaleLowerCase())).map((item) => <div className="resource-import-row" key={item.id}><div><strong>{item.name}</strong><p>{item.description}</p></div><Button disabled={busy} onClick={() => void link(item.id)}>{copiesOnImport ? '复制到项目' : '添加到本库'}</Button></div>)}{!importLoading && !notice && !imports.length && <p>此分类暂无可添加的素材，可以先在当前库新建。</p>}{!importLoading && !!imports.length && !imports.some(item => !importQuery.trim() || (item.name + item.description).toLocaleLowerCase().includes(importQuery.trim().toLocaleLowerCase())) && <p className="episode-help">没有找到匹配素材，请换个关键词。</p>}</div><div className="production-dialog-footer"><span>{copiesOnImport ? '素材与媒体创建独立副本，后续修改分别保存。' : auth.enabled ? '同一项目内引用同一素材，修改会同步。' : '添加后共享同一素材，修改会同步。'}</span><Button disabled={busy} onClick={closeImports}>关闭</Button></div></Dialog>}
     {selected && <Dialog title={`${readOnly ? '查看' : '编辑'} ${selected.name}`} className="asset-editor-drawer" canClose={!busy && !generationSubmitting} onClose={closeSelected}>
       <div className="asset-editor-drawer-body">
         <div className="asset-editor-meta" aria-label="素材状态">
@@ -364,7 +387,7 @@ export function AssetLibraryPanel({
         {!readOnly && <Button type="primary" loading={busy || generationSubmitting} disabled={!selectedDirty || !selected.name.trim() || generationSubmitting} onClick={() => void save()}>保存修改</Button>}
       </div>
     </Dialog>}
-    {showImages && selected && <ImagePicker busy={busy} onClose={() => setShowImages(false)} onSelect={addMedia}/>}
+    {showImages && selected && <ImagePicker busy={busy} projectId={scope.kind === 'global' ? undefined : scope.projectId} onClose={() => setShowImages(false)} onSelect={addMedia}/>}
   </section>;
 }
 

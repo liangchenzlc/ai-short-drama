@@ -4,12 +4,12 @@ import os
 
 import httpx
 import pytest
+from legacy_identity import session_factory
 from sqlalchemy import select
 
 from short_drama.api.dependencies import get_session
 from short_drama.core.config import Settings
 from short_drama.core.crypto import KeyCipher
-from short_drama.db.session import session_factory
 from short_drama.domain import AIModelConfig
 from short_drama.main import create_app
 

@@ -40,3 +40,7 @@ def build_engine(settings: Settings) -> Engine:
 
 def session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+
+
+# Register access checks once, for both API and worker Session implementations.
+from . import access as _access  # noqa: F401, E402

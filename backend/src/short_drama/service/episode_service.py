@@ -66,8 +66,19 @@ class EpisodeService(BaseService):
 
     def update_for_project(self, project_id, episode_id, payload):
         values = self._payload(EpisodePatchRequest, payload)
+        version = values.pop("row_version", None)
         with self._transaction():
             episode = self._scoped_episode(project_id, episode_id, for_update=True)
+            if self.session.info.get("actor") and version != episode.row_version:
+                from short_drama.core.exceptions import WorkflowError
+
+                raise WorkflowError(
+                    "episode_version_conflict",
+                    "Episode settings changed; reload and merge your edits",
+                    409,
+                )
+            if any(getattr(episode, k) != v for k, v in values.items()):
+                values["row_version"] = episode.row_version + 1
             return self._read(self._apply_update(episode, values))
 
     def delete_for_project(self, project_id, episode_id):

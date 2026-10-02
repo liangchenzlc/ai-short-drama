@@ -290,7 +290,7 @@ input, textarea { caret-color: var(--accent); }
   .episode-step-footer .ant-btn { font-size: 12px; }
   .project-create-dialog .form-row { flex-direction: column; }
 }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; } }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 /* API configuration states keep the existing compact form and table language. */
 .ai-config-form fieldset { display: grid; gap: 16px; min-width: 0; padding: 0; margin: 0; border: 0; }
@@ -360,7 +360,7 @@ input, textarea { caret-color: var(--accent); }
 .ui-dialog .dialog-actions { flex-wrap: wrap; }
 .project-search-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .project-search-bar .project-search { margin: 0; }
-.project-search-bar > span { color: var(--sub); font-size: 12px; }
+.project-search-hint { color: var(--sub); font-size: 12px; }
 .project-skeleton { display: grid; gap: 28px; padding: 24px; border-radius: 12px; background: var(--surface); }
 .project-list-heading > span, .project-row-meta, .project-row-tail, .project-slate > span { font-size: 12px; }
 .project-row-synopsis { font-size: 13px; }
@@ -564,7 +564,7 @@ input, textarea { caret-color: var(--accent); }
   .studio-page-head h1 { font-size: 24px; }
   .studio-page-head p { font-size: 13px; }
   .workspace-label { font-size: 11px; }
-  .project-search-bar > span { display: none; }
+  .project-search-hint { display: none; }
   .web-project-row { min-height: 126px; padding: 16px 12px; }
   .project-slate { width: 48px; height: 72px; }
   .project-row-tail { min-width: 18px; }
@@ -639,7 +639,7 @@ html:has(.asset-editor-drawer[open]), body:has(.asset-editor-drawer[open]) { ove
 .asset-editor-section-heading p { max-width: 54ch; margin: 6px 0 0; color: var(--sub); font-size: 13px; line-height: 1.65; }
 .asset-editor-fields.studio-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(170px, .58fr); gap: 18px 14px; max-height: none; padding: 0; overflow: visible; }
 .asset-editor-fields > label { display: grid; align-content: start; gap: 8px; min-width: 0; color: var(--ink); font-size: 13px; font-weight: 500; }
-.asset-editor-fields:is(.asset-field-description, .asset-field-prompt, .asset-field-tags, .asset-field-scene-time) { grid-column: 1 / -1; }
+.asset-editor-fields > :is(.asset-field-description, .asset-field-prompt, .asset-field-tags, .asset-field-scene-time) { grid-column: 1 / -1; }
 .asset-editor-fields textarea { resize: vertical; line-height: 1.7; }
 .asset-editor-fields + .ant-alert { margin-top: 18px; }
 .asset-editor-model-select { display: grid; gap: 8px; margin-bottom: 14px; color: var(--ink); font-size: 13px; font-weight: 500; }
@@ -807,7 +807,7 @@ html:has(.asset-editor-drawer[open]), body:has(.asset-editor-drawer[open]) { ove
   .model-config-dialog .studio-form { padding: 20px; }
   .model-config-dialog input:not([type='checkbox']), .model-config-dialog select { font-size: 16px; }
 }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0s !important; scroll-behavior: auto !important; } }
+@media (prefers-reduced-motion: reduce) { .asset-editor-drawer[open] { animation: none; } }
 .asset-extraction-dialog[open] { display: flex; flex-direction: column; width: min(960px, calc(100vw - 48px)); max-width: none; height: min(820px, calc(100dvh - 64px)); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; color: var(--ink); }
 .asset-extraction-dialog.is-settings { width: min(600px, calc(100vw - 48px)); height: auto; }
 .asset-extraction-dialog > header { flex: 0 0 auto; border-bottom: 1px solid var(--hair); }

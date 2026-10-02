@@ -2978,13 +2978,7 @@ select {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    transition-duration: 0ms !important;
-    animation-duration: 0ms !important;
-  }
+  html { scroll-behavior: auto; }
 }
 .remote-asset-library .overview-heading > div:last-child,
 .remote-asset-library .resource-toolbar,

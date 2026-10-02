@@ -50,6 +50,9 @@ class Episode(Base):
         server_default=text("NULL"),
         comment="当前编辑剧本；由服务层校验同分集归属",
     )
+    row_version: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), nullable=False, server_default=text("1")
+    )
     content_version: Mapped[int] = mapped_column(
         BIGINT(unsigned=True),
         nullable=False,

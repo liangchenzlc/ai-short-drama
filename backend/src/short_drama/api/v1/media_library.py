@@ -14,7 +14,8 @@ Service = Annotated[object, Depends(get_media_asset_service)]
 @router.get("")
 def list_assets(
     service: Service,
-    media_type: Literal["image", "video"] | None = None,
+    resource_scope: Literal["all", "personal", "project"] = "all",
+    media_type: Literal["image", "video", "audio"] | None = None,
     name: Annotated[str | None, Query(max_length=255)] = None,
     source_scene: Literal["shot_image", "shot_video", "asset_image"] | None = None,
     source_id: Identifier | None = None,
@@ -29,6 +30,7 @@ def list_assets(
         offset,
         limit,
         {
+            "resource_scope": resource_scope,
             "media_type": media_type,
             "name": name,
             "source_scene": source_scene,

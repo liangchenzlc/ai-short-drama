@@ -17,9 +17,10 @@ from sqlalchemy.dialects.mysql import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
+from .collaboration import ResourceScope
 
 
-class Asset(Base):
+class Asset(ResourceScope, Base):
     __tablename__ = "assets"
 
     id: Mapped[int] = mapped_column(
@@ -107,6 +108,7 @@ class Asset(Base):
     )
 
     __table_args__ = (
+        CheckConstraint("(scope_user_id IS NULL) <> (project_id IS NULL)", name="ck_asset_scope"),
         Index("idx_assets_kind_name", "kind", "name"),
         Index("idx_assets_model_id", "model_id"),
         Index("idx_assets_media_id", "media_id"),

@@ -10,8 +10,8 @@ import type { NavigationBarrier } from './writing-navigation';
 import '../../app/sound.css';
 
 const newLine = (): Dialogue => ({ id: crypto.randomUUID(), character: '旁白', text: '', voice: '', config_id: null, start_ms: 0, media_id: null, adopted_hash: null });
-export function SoundPanel({ projectId, episodeId, disabled, flushVideo, onSaved, registerBarrier }: {
-  projectId: string; episodeId: string; disabled: boolean; flushVideo: () => Promise<boolean>; onSaved: () => Promise<unknown>; registerBarrier: (barrier: NavigationBarrier | null) => void;
+export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled, flushVideo, onSaved, registerBarrier }: {
+  projectId: string; episodeId: string; disabled: boolean; readOnly?: boolean; flushVideo: () => Promise<boolean>; onSaved: () => Promise<unknown>; registerBarrier: (barrier: NavigationBarrier | null) => void;
 }) {
   const api = useMemo(() => soundApi(projectId, episodeId), [projectId, episodeId]);
   const [enabled, setEnabled] = useState(false), [open, setOpen] = useState(false);
@@ -51,7 +51,7 @@ export function SoundPanel({ projectId, episodeId, disabled, flushVideo, onSaved
     finally { lock.current = false; if (mounted.current) setBusy(false); }
   }
   async function saveDocument(markReviewed = reviewed): Promise<SoundState | null> {
-    if (!state || !doc || disabled || !await flushVideo()) return null;
+    if (!state || !doc || readOnly || !await flushVideo()) return null;
     const body = { row_version: state.row_version, timeline_hash: state.timeline_hash, document: doc, reviewed: markReviewed };
     const request_id = await requestAttempt(`${scope}:save`, body, attemptStorage());
     const next = await api.save({ ...body, request_id });

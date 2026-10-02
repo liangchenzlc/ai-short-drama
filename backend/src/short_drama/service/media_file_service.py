@@ -12,5 +12,7 @@ class MediaFileService(BaseService):
     read_schema = MediaFileRead
 
     def _validate_update(self, entity, values):
-        if values.get("duration_ms") is not None and not entity.format_code.startswith("video/"):
+        if values.get("duration_ms") is not None and not entity.format_code.startswith(
+            ("video/", "audio/")
+        ):
             raise BusinessError("Only video media may have duration_ms")

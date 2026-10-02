@@ -32,6 +32,10 @@ class GenerationReferenceService(AssetImageService):
             raise NotFound("参考图片所属内容不存在")
         if lock and owner.row_version != self.expected_version:
             raise WorkflowError("reference_version_conflict", "内容已修改，请刷新后重试")
+        if self.session.info.get("actor"):
+            from short_drama.db.access import scope_of, set_scope
+
+            set_scope(self.session, scope_of(self.session, owner))
         return owner, episode
 
     def _read_references(self, owner):

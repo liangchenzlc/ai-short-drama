@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     CheckConstraint,
+    ForeignKey,
     Index,
     text,
 )
@@ -26,6 +27,15 @@ class Project(Base):
         nullable=False,
         comment="应用雪花算法生成；稳定且不可变的记录标识",
     )
+    owner_user_id: Mapped[int | None] = mapped_column(
+        BIGINT(unsigned=True),
+        ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT"),
+        nullable=False,
+    )
+    row_version: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), nullable=False, server_default=text("1")
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DATETIME(fsp=6), nullable=True)
     name: Mapped[str] = mapped_column(VARCHAR(120), nullable=False, comment="项目名称，允许重名")
     synopsis: Mapped[str] = mapped_column(
         MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="故事梗概"

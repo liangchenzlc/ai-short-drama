@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, model_validator
 
 from .base import Identifier, InputModel, nonblank
+from .native_voice import VoiceDesignSource
 
 Prompt = Annotated[str, Field(min_length=1, max_length=1048576), AfterValidator(nonblank)]
 Aspect = Literal["16:9", "9:16", "1:1", "4:3", "3:4"]
@@ -83,13 +84,21 @@ class TextParameters(InputModel):
     max_output_tokens: int | None = Field(default=None, strict=True, ge=1, le=1000000)
 
 
+class DialogueExtractSource(InputModel):
+    scene: Literal["dialogue_extract"]
+    project_id: Identifier
+    episode_id: Identifier
+
+
 class TextGenerationCreate(InputModel):
+    project_id: Identifier | None = None
     config_id: Identifier | None = None
     input: TextInput | None = None
     parameters: TextParameters = Field(default_factory=TextParameters)
     source: (
         Annotated[
-            NovelScriptSource | ScriptShotsSource | ScriptAssetsSource, Field(discriminator="scene")
+            NovelScriptSource | ScriptShotsSource | ScriptAssetsSource | DialogueExtractSource,
+            Field(discriminator="scene"),
         ]
         | None
     ) = None
@@ -129,6 +138,7 @@ class ImageParameters(InputModel):
 
 
 class ImageGenerationCreate(InputModel):
+    project_id: Identifier | None = None
     config_id: Identifier | None = None
     input: ImageInput
     parameters: ImageParameters = Field(default_factory=ImageParameters)
@@ -171,6 +181,7 @@ class VideoParameters(InputModel):
 
 
 class VideoGenerationCreate(InputModel):
+    project_id: Identifier | None = None
     config_id: Identifier | None = None
     input: VideoInput | None = None
     parameters: VideoParameters = Field(default_factory=VideoParameters)
@@ -189,7 +200,42 @@ class GenerationRetry(InputModel):
     config_id: Identifier | None = None
 
 
+class AudioInput(InputModel):
+    text: Annotated[str, Field(min_length=1, max_length=4096), AfterValidator(nonblank)]
+
+
+class AudioParameters(InputModel):
+    voice: Annotated[str, Field(min_length=1, max_length=128), AfterValidator(nonblank)]
+
+
+class DialogueAudioSource(InputModel):
+    scene: Literal["dialogue_audio"]
+    project_id: Identifier
+    episode_id: Identifier
+    row_version: Identifier
+    line_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
+
+
+class AudioGenerationCreate(InputModel):
+    project_id: Identifier | None = None
+    config_id: Identifier | None = None
+    input: AudioInput | None = None
+    parameters: AudioParameters | None = None
+    source: (
+        Annotated[DialogueAudioSource | VoiceDesignSource, Field(discriminator="scene")] | None
+    ) = None
+
+    @model_validator(mode="after")
+    def business_or_generic(self):
+        if self.source is None and (self.input is None or self.parameters is None):
+            raise ValueError("配音需要文本与音色")
+        if self.source is not None and (self.input is not None or self.parameters is not None):
+            raise ValueError("台词配音读取已保存台词")
+        return self
+
+
 GENERATION_SCHEMAS = {
+    "audio": AudioGenerationCreate,
     "text": TextGenerationCreate,
     "image": ImageGenerationCreate,
     "video": VideoGenerationCreate,

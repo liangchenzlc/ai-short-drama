@@ -17,6 +17,30 @@ from short_drama.tasks.celery_app import make_celery, render_queue
 from short_drama.utils.snowflake import next_id
 
 
+def restore_completed_render(renderer, root, directory, candidates, snapshot):
+    """A partial or damaged recovery cache must not prevent a fresh render."""
+    for candidate in candidates:
+        for manifest in root.glob(f"{candidate}-*/completed.json"):
+            try:
+                saved = json.loads(manifest.read_text(encoding="utf-8"))
+                cached = manifest.parent / "output.mp4"
+                if (
+                    not isinstance(saved, dict)
+                    or saved.get("snapshot") != snapshot
+                    or not cached.is_file()
+                    or saved.get("checksum") != checksum(cached)
+                ):
+                    continue
+                metadata = renderer.probe(cached)
+            except (OSError, ValueError, RuntimeError):
+                # Interrupted manifest writes and invalid cached media are replaceable.
+                continue
+            output = directory / "output.mp4"
+            shutil.copyfile(cached, output)
+            return output, metadata
+    return None, None
+
+
 class RenderPublisher:
     def __init__(self, factory, settings):
         self.factory, self.settings = factory, settings
@@ -83,10 +107,33 @@ class RenderExecutor:
     def execute(self, job_id, version):
         token = uuid4().hex
         with self.factory.begin() as session:
+            from types import SimpleNamespace
+
+            from short_drama.db.access import scope_of
+            from short_drama.domain import Project
+            from short_drama.service.task_access import may_submit
+
+            preview = session.get(EpisodeRenderJob, int(job_id))
+            project_id = scope_of(session, preview)[1] if preview else None
+            if project_id:
+                session.scalar(select(Project).where(Project.id == project_id).with_for_update())
             job = session.scalar(
-                select(EpisodeRenderJob).where(EpisodeRenderJob.id == int(job_id)).with_for_update()
+                select(EpisodeRenderJob)
+                .where(EpisodeRenderJob.id == int(job_id))
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
             if not job or job.status != "queued" or job.message_version != int(version):
+                return
+            if self.settings.auth_enabled and not may_submit(
+                session,
+                SimpleNamespace(
+                    initiated_by=job.initiated_by,
+                    project_id=project_id,
+                    scope_user_id=None,
+                ),
+            ):
+                job.status, job.stage, job.finished_at = "cancelled", "cancelled", utcnow()
                 return
             job.status, job.stage, job.lease_token = "running", "preparing", token
             job.locked_until = utcnow() + timedelta(seconds=120)
@@ -128,23 +175,13 @@ class RenderExecutor:
             output, metadata = None, None
             candidates = [int(job_id)] + ([retry_of] if retry_of else [])
             if kind in ("export", "preview"):
-                for candidate in candidates:
-                    for manifest in root.glob(f"{candidate}-*/completed.json"):
-                        saved = json.loads(manifest.read_text())
-                        cached = manifest.parent / "output.mp4"
-                        if (
-                            saved.get("snapshot") == snapshot
-                            and cached.exists()
-                            and saved.get("checksum") == checksum(cached)
-                        ):
-                            output = directory / "output.mp4"
-                            shutil.copyfile(cached, output)
-                            metadata = renderer.probe(output)
-                            break
-                    if output:
-                        break
+                output, metadata = restore_completed_render(
+                    renderer, root, directory, candidates, snapshot
+                )
             if output is None:
                 entries = snapshot["media"] if kind == "probe" else snapshot["clips"]
+                if kind != "probe":
+                    entries = entries + snapshot.get("sound", {}).get("media", [])
                 sources = {}
                 for index, entry in enumerate(entries):
                     heartbeat("preparing", int(index / max(1, len(entries)) * 10), True)
@@ -198,7 +235,11 @@ class RenderExecutor:
                             if current.lease_token != token or current.cancel_requested:
                                 raise RenderCancelled()
                             media = session.get(MediaFile, int(mid))
-                            media.video_metadata = info
+                            quality = (media.video_metadata or {}).get("native_quality")
+                            media.video_metadata = {
+                                **info,
+                                **({"native_quality": quality} if quality is not None else {}),
+                            }
                         pending_derivatives.clear()
                         path.unlink()
                 if kind in ("export", "preview"):
@@ -226,7 +267,14 @@ class RenderExecutor:
                 if job.lease_token != token or job.cancel_requested:
                     raise RenderCancelled()
                 if stored:
+                    from short_drama.db.access import scope_of
+
+                    scope = scope_of(session, job)
                     media = MediaFile(
+                        scope_user_id=scope[0],
+                        project_id=scope[1],
+                        created_by=job.initiated_by,
+                        updated_by=job.initiated_by,
                         id=next_id(),
                         format_code="video/mp4",
                         storage_locator=stored.storage_locator,

@@ -31,6 +31,7 @@ class EpisodeUpdate(InputModel):
 
 
 class EpisodeRead(ReadModel):
+    row_version: Identifier = 1
     id: Identifier
     project_id: Identifier
     position: PositiveUInt32

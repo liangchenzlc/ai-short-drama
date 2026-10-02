@@ -325,6 +325,13 @@ def test_modelhub_capabilities_and_exact_host():
         "reference_images": True,
         "duration_seconds": list(range(4, 16)),
         "resolutions": ["720p", "480p"],
+        "audio_references": True,
+        "generate_audio": True,
+        "max_audio_references": 2,
+        "audio_min_ms": 3000,
+        "audio_max_ms": 7500,
+        "audio_evidence": "documented_channel_dependent",
+        "voice_fidelity": "unverified",
     }
     assert not capabilities({**snap, "base_url": "https://api.modelhub.cc.example"})["known"]
     assert not capabilities({**snap, "model_key": "unknown"})["video_input"]["first_frame"]

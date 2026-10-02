@@ -7,7 +7,7 @@ import pytest
 from short_drama.ai import GenerationError
 from short_drama.core.exceptions import NotFound, StorageUnavailable
 from short_drama.service.ai_generation_service import safe_error
-from short_drama.service.generation_references import StoredImageReferences
+from short_drama.service.generation_references import StoredAudioReferences, StoredImageReferences
 
 
 @pytest.fixture
@@ -33,7 +33,9 @@ def references():
         yield SimpleNamespace(get=lambda _, identifier: state.media if identifier == 1 else None)
 
     state.media = SimpleNamespace(storage_locator="minio://images/saved.png")
-    settings = SimpleNamespace(minio_image_bucket="images", minio_video_bucket="videos")
+    settings = SimpleNamespace(
+        minio_image_bucket="images", minio_video_bucket="videos", minio_audio_bucket="audio"
+    )
     return factory, Storage(), settings, state
 
 
@@ -42,6 +44,22 @@ def test_saved_reference_is_read_and_stream_closed(references):
     loader = StoredImageReferences(factory, storage, settings, ["1"])
     assert loader(0, 4, time.monotonic() + 10) == b"abcd"
     assert state.closed
+
+
+def test_audio_reference_uses_frozen_checksum_and_rejects_replaced_bytes(references):
+    import hashlib
+
+    factory, storage, settings, state = references
+    loader = StoredAudioReferences(
+        factory,
+        storage,
+        settings,
+        [{"media_id": "1", "checksum": hashlib.sha256(b"abcd").hexdigest()}],
+    )
+    assert loader(0, 4, time.monotonic() + 10) == b"abcd"
+    state.chunks = [b"abce"]
+    with pytest.raises(GenerationError, match="audio_reference_changed"):
+        loader(0, 4, time.monotonic() + 10)
 
 
 @pytest.mark.parametrize("reported_size", [4, 1])

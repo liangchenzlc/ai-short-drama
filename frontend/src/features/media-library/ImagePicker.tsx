@@ -2,13 +2,16 @@ import { PreviewImage } from '../../components/ui/ImagePreview';
 import { useEffect, useState } from 'react';
 import { Alert, Button, Input, Pagination, Skeleton } from 'antd';
 import { mediaLibrary } from '../../api/modules/media-library';
-import { errorMessage } from '../../api/http';
+import { errorMessage, http } from '../../api/http';
 import type { MediaAsset } from '../../api/types/generations';
 import { Dialog } from '../../components/ui/Dialog';
+import { useAuth } from '../auth/AuthSession';
+import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 
-export function ImagePicker({ busy, onClose, onSelect }: {
-  busy: boolean; onClose: () => void; onSelect: (mediaId: string, asset: MediaAsset) => Promise<boolean>;
+export function ImagePicker({ busy, onClose, onSelect, projectId }: {
+  busy: boolean; onClose: () => void; onSelect: (mediaId: string, asset: MediaAsset) => Promise<boolean>; projectId?: string;
 }) {
+  const auth = useAuth();
   const [items, setItems] = useState<MediaAsset[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -20,22 +23,41 @@ export function ImagePicker({ busy, onClose, onSelect }: {
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError('');
-    void mediaLibrary.list({ media_type: 'image', name: query || undefined, offset, limit: 12 }, controller.signal)
+    void mediaLibrary.list({ media_type: 'image', resource_scope: auth.enabled && !projectId ? 'personal' : 'all', name: query || undefined, offset, limit: 12 }, controller.signal)
       .then(page => { if (!controller.signal.aborted) { setItems(page.items); setTotal(page.total); } })
       .catch(cause => { if (!controller.signal.aborted) setError(errorMessage(cause)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [query, offset, revision]);
+  }, [query, offset, revision, auth.enabled, projectId]);
   async function choose(item: MediaAsset) {
     if (busy || choosing) return;
     setChoosing(item.asset_id); setError('');
-    try { if (await onSelect(item.media_id, item)) onClose(); else setError('图片未能添加，请关闭选择器查看错误详情，或重试。'); }
+    try {
+      let mediaId = item.media_id;
+      if (auth.enabled && projectId && item.project_id !== projectId) {
+        const payload = { source_type: 'media', source_id: item.media_id };
+        const slot = `media-import:${projectId}:${item.media_id}`;
+        const key = await requestAttempt(slot, payload, attemptStorage());
+        const job = (await http.post(`/projects/${projectId}/imports`, payload, { headers: { 'Idempotency-Key': key } })).data;
+        let result: string | null = null;
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          const state = (await http.get(`/projects/${projectId}/imports/${job.id}`)).data;
+          if (state.status === 'succeeded') { result = state.result_id; clearAttempt(slot, attemptStorage()); break; }
+          if (state.status === 'failed' || state.status === 'cancelled') { clearAttempt(slot, attemptStorage()); setError('图片复制未完成，请检查项目权限与存储服务后重试。'); return; }
+          await new Promise(resolve => window.setTimeout(resolve, 1000));
+        }
+        if (!result) { setError('图片仍在复制。请稍后再次选择，此操作会核对同一次复制。'); return; }
+        mediaId = result;
+      }
+      if (await onSelect(mediaId, item)) onClose(); else setError('图片未能添加，请关闭选择器查看错误详情，或重试。');
+    }
     catch (cause) { setError(errorMessage(cause)); }
     finally { setChoosing(null); }
   }
   return <Dialog title="从图片资产库选择" className="media-picker-dialog" canClose={!busy && !choosing} onClose={onClose}>
     <div className="media-picker-body">
       <p>点击图片查看大图，点击“选择此图片”添加。确认采用后才会更新素材。</p>
+      {auth.enabled && projectId && <p>其他范围的图片会先复制成独立项目文件；本项目内的图片可直接引用。</p>}
       <Input.Search aria-label="搜索图片名称" placeholder="搜索图片名称" allowClear disabled={busy || !!choosing} onSearch={name => { setQuery(name.trim()); setOffset(0); }}/>
       {error && <Alert type="error" showIcon message={error} action={<Button onClick={() => setRevision(value => value + 1)}>重试</Button>}/>}
       {loading ? <Skeleton paragraph={{ rows: 4 }}/> : items.length ? <div className="media-picker-grid">{items.map(item => <article className="media-picker-item" key={item.asset_id}>

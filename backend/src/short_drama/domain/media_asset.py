@@ -53,7 +53,7 @@ class MediaAsset(Base):
             ondelete="RESTRICT",
             onupdate="RESTRICT",
         ),
-        CheckConstraint("media_type IN ('image','video')", name="ck_media_assets_type"),
+        CheckConstraint("media_type IN ('image','video','audio')", name="ck_media_assets_type"),
         CheckConstraint("CHAR_LENGTH(TRIM(name)) > 0", name="ck_media_assets_name"),
         CheckConstraint("output_index > 0 AND row_version > 0", name="ck_media_assets_numbers"),
         CheckConstraint("updated_at >= created_at", name="ck_media_assets_time"),

@@ -45,7 +45,9 @@ def test_concurrent_initial_save_has_one_winner(mysql_engine, db_session, kind):
     barrier = Barrier(2)
 
     def save(index):
-        with Session(mysql_engine, expire_on_commit=False, autoflush=False) as session:
+        with Session(
+            mysql_engine, expire_on_commit=False, autoflush=False, info={"legacy_user_id": 1}
+        ) as session:
             writing = EpisodeWritingService(session)
             payload = {"content_version": "1", "content": f"  writer {index}\n"}
             if kind == "script":

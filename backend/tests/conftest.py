@@ -1,3 +1,8 @@
+import os
+
+# Existing single-user fixtures exercise isolated services; identity tests opt in explicitly.
+os.environ.setdefault("AUTH_ENABLED", "false")
+
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer

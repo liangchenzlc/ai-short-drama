@@ -1,14 +1,65 @@
 # MySQL 8 数据库说明
 
-项目当前使用 **24 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已经合并全部历史迁移，包括分集写作、素材图片候选、分镜归档与并发控制、镜头建议时长、原文依据、持久化生成参考图片、分镜视频与成片合成。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。
+项目当前使用 **43 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已合并写作、素材、分镜、成片、批量生成、声音、原生音色及账号协作结构。原有 32 张业务表保留，新增 11 张身份与协作表。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。
 
 本文说明表的职责、关系及应用维护的约束，不另维护一份重复的字段清单。开发与测试见[开发说明](../development.md)，模块关系见[架构说明](../architecture.md)，接口见[API 文档](../api/README.md)。旧库升级使用[迁移目录](migrations/README.md)。
 
+## 保持完整 SQL 同步
+
+完整建表文件由当前 Domain 模型生成，包含全部表、字段、默认值、生成列、主键、索引、外键及 CHECK。修改模型后，在 `backend/` 下执行：
+
+```powershell
+uv run python scripts/export_schema.py
+uv run python scripts/export_schema.py --check
+```
+
+`--check` 只读；完整 SQL 与当前模型不一致时返回非零退出码。生成脚本使用固定输出路径，不会连接或修改数据库。结构变更仍需提供并执行已有数据库的增量迁移，验证全量 SQL 能在隔离空库中执行。
+
 ## 初始化与升级
 
-新库要求 MySQL **8.0.21+**。先由数据库管理员创建并选定空数据库，连接使用 `utf8mb4`、UTC（`+00:00`）及严格 SQL 模式（至少 `STRICT_TRANS_TABLES`），再执行完整的 `schema.mysql8.sql`。文件只包含按外键依赖顺序排列的 24 条 `CREATE TABLE`，不创建数据库、不设置连接、不导入数据，也不自动选择业务库。
+新库要求 MySQL **8.0.21+**。先由数据库管理员创建并选定空数据库，连接使用 `utf8mb4`、UTC（`+00:00`）及严格 SQL 模式（至少 `STRICT_TRANS_TABLES`），再执行完整的 `schema.mysql8.sql`。文件只包含按外键依赖顺序排列的 43 条 `CREATE TABLE`，不创建数据库、不设置连接、不导入数据，也不自动选择业务库。
 
 已有数据库不能用全量脚本覆盖。根据实际字段、索引、约束和已执行记录判断缺少哪些迁移，按[迁移顺序](migrations/README.md)补齐；应用启动不会自动迁移。新库执行完整脚本后无需叠加历史迁移。
+
+账号模式启用前必须按[协作部署说明](../collaboration-deployment.md)明确指定已验证的历史所有者，拆分跨范围素材和物理文件，再安装非空、外键、范围 CHECK 及账号唯一约束。注册不自动领取历史数据；结构或归属未完成时 API 与 Worker 拒绝启动。
+
+## 身份、归属与协作（11 张）
+
+详细决策、权限矩阵及 Goal 验证见[协作设计](../plans/2026-10-02-project-collaboration.md)。
+
+| 表 | 职责 |
+| --- | --- |
+| `users` | 唯一账号名、规范化唯一邮箱、密码摘要、验证时间和状态 |
+| `user_sessions` | 会话与 CSRF 摘要、过期和撤销 |
+| `email_challenges` | 用途、账号、邮箱与邀请绑定的证明、失败尝试和消费 |
+| `project_members` | 项目与账号唯一关系、有效/移除/退出状态 |
+| `project_invitations` | 定向受邀账号或邮箱、令牌摘要、七天有效期、撤销与接受 |
+| `audit_events` | 安全元数据审计，不记录正文、密码或密钥 |
+| `user_model_preferences` | 本人创作上下文与模型选择 |
+| `user_project_states` | 本人的项目最近打开时间 |
+| `email_outbox` | 加密验证码邮件载荷、租约、发送重试及载荷清除 |
+| `auth_rate_limits` | 多 API 进程共用的持久化限流计数 |
+| `resource_imports` | 跨范围复制的幂等收据、快照、稳定目标、租约、重试及清理时间 |
+
+项目只有一个 `owner_user_id`；有效协作者通过 `project_members` 加入。`projects.owner_user_id`、`ai_model_configs.owner_user_id` 和 `global_assets.user_id` 非空且引用用户。
+
+`assets/media_files/async_tasks/generation_batches` 用 `scope_user_id/project_id` 表示个人或项目范围，CHECK 强制恰好一个非空。其余资源通过分集、分镜、素材或任务等父链确定范围。跨表引用在服务事务与 ORM 写入守卫中校验，列表、计数、JOIN 和别名查询也经过范围过滤。
+
+`created_by/updated_by` 只记录真实作者；历史未知保持 NULL，不能用这些字段代替所有权。任务、批次和渲染的 `initiated_by` 用于控制取消、重试与恢复。协作者退出后项目成果继续归项目所有，未提交工作被取消，已受理调用可归档成果。
+
+## 批量、声音与原生音色（8 张）
+
+| 表 | 职责 |
+| --- | --- |
+| `generation_batches`、`generation_batch_items` | 持久化批次与子项、受控并发、快照、重试与审核 |
+| `episode_sounds` | 分集声音草稿、配乐、字幕与版本 |
+| `project_voice_defaults` | 项目角色的传统配音默认值 |
+| `sound_media_references` | 声音对媒体的引用 |
+| `project_sound_modes` | 项目传统或原生视频声音模式 |
+| `character_voices` | 项目角色的原生音色绑定 |
+| `shot_dialogues` | 分镜台词及原生视频对话设置 |
+
+这些数据继承所属项目权限；个人素材复制不带入项目音色绑定。既有生产功能的详细约束与增量升级步骤见[迁移目录](migrations/README.md)。
 
 ## 物理约定
 
@@ -31,11 +82,11 @@
 | 主键 | `BIGINT UNSIGNED`，由应用雪花算法生成，不使用 `AUTO_INCREMENT`；API 中 ID 以十进制字符串传递 |
 | 时间 | `DATETIME(6)`，连接统一 UTC；数据库默认创建时间，应用维护修改时间，不使用 `ON UPDATE CURRENT_TIMESTAMP` |
 | 历史审计 | 传统业务表允许未知审计时间为 NULL；任务、调用记录、生成媒体资产和素材候选的创建时间必须非空，前三者的修改时间也必须非空 |
-| 用户预留 | `created_by`、`updated_by` 可空，无用户外键；不伪造未知操作人 |
+| 作者审计 | `created_by`、`updated_by` 可空，旧表保留无外键形式；新操作记录真实账号，历史未知不伪造 |
 | 正文 | 小说、剧本、分镜、描述和提示词使用 `MEDIUMTEXT`；大多数空正文默认 `('')` |
 | 删除 | 所有外键使用 `ON DELETE RESTRICT ON UPDATE RESTRICT`，由应用显式维护关系；不会自动级联清理文件 |
 | 枚举 | `VARCHAR` 配合 CHECK；标志使用 `TINYINT UNSIGNED` 配合 CHECK |
-| 条件唯一 | 三个持久生成列 `default_service_type`、`confirmed_episode_id`、`active_position` 实现条件唯一，应用不写入这些列 |
+| 条件唯一 | 持久生成列 `default_service_type`、`confirmed_episode_id`、`active_position` 支持条件唯一，应用不写入这些列；模型默认值按账号隔离 |
 
 普通索引支持列表筛选、顺序和关系查询；唯一索引维护默认配置、已确认剧本、活动镜头顺序及请求去重等不变量。CHECK 只能校验本行，跨表媒体类型、模型服务类型及业务归属仍由应用事务校验。
 
@@ -45,8 +96,8 @@
 
 | 表 | 职责与关键字段 | 关系和约束 |
 | --- | --- | --- |
-| `projects` | 项目名称、梗概、默认 `style/aspect`、`last_opened_at` | 名称允许重名；画幅为 `16:9/9:16`；没有项目目标时长字段 |
-| `episodes` | 分集标题、简介、自己的制作设置、`editing_script_id`、`content_version`、`storyboard_version` | 属于项目；`(project_id, position)` 唯一；两个版本默认 1 且为正数 |
+| `projects` | 所有者、项目名称、梗概、默认 `style/aspect`、`row_version`、`archived_at` | 名称允许重名；画幅为 `16:9/9:16`；账号模式删除为归档，最近打开存入个人状态表 |
+| `episodes` | 分集标题、简介、自己的制作设置、`editing_script_id`、`content_version`、`storyboard_version`、`row_version` | 属于项目；`(project_id, position)` 唯一；正文、分镜集合和设置版本分别维护 |
 | `episode_novels` | 分集当前小说正文 `content` | `episode_id` 唯一，每集最多一条小说 |
 | `episode_scripts` | 多份剧本正文、排序、`state` | `(episode_id, position)` 唯一；状态为 `unconfirmed/confirmed`；生成列确保每集最多一份已确认剧本 |
 
@@ -54,9 +105,9 @@
 
 ### 模型配置（1 张）
 
-`ai_model_configs` 每行对应一种服务的一个具体模型。`service_type` 为 `text/image/video`，`provider/model_key/base_url` 标识调用配置，`apikey` 仅存加密信封，解密主密钥在数据库之外。`capability_cache` 是内部协议与能力缓存。
+`ai_model_configs` 每行属于一个账号，对应一种服务的一个具体模型。`service_type` 为 `text/image/video/audio`，`provider/model_key/base_url` 标识调用配置，`apikey` 仅存加密信封，解密主密钥在数据库之外。`capability_cache` 是内部协议与能力缓存。项目成员只能使用本人的配置；项目生成成果可以共享。
 
-`enabled` 控制新操作可用性，`is_deleted` 保留历史引用，`is_default` 标识该服务默认项。默认配置必须启用且未删除，`default_service_type` 的唯一约束保证每种服务最多一个未删除默认项。配置编辑、删除及默认切换使用 `row_version`；历史调用使用独立快照，不把当前配置误当作调用时配置。
+`enabled` 控制新操作可用性，`is_deleted` 保留历史引用，`is_default` 标识该服务默认项。默认配置必须启用且未删除，`(owner_user_id, default_service_type)` 的唯一约束保证每个账号每种服务最多一个未删除默认项。配置编辑、删除及默认切换使用 `row_version`；历史调用使用独立快照，不把当前配置误当作调用时配置。
 
 ### 媒体与素材（6 张）
 
@@ -64,12 +115,12 @@
 | --- | --- | --- |
 | `media_files` | MIME、稳定 `storage_locator`、尺寸、字节数、实际时长及 SHA-256 | 定位值完整唯一；不保存临时签名 URL 或 Blob URL；摘要不作为全库唯一身份 |
 | `assets` | 角色、场景或道具本体；名称、`label`、描述、提示词、`tags`、`scene_time`、当前图片、确认状态和版本 | `kind` 为 `character/scene/prop`；`media_id` 指向当前采用图片，`model_id` 可空；确认时必须已有图片 |
-| `global_assets` | 全局素材库收录关系和排序 | `asset_id` 唯一、`position` 唯一 |
+| `global_assets` | 当前账号的个人素材库收录关系和排序，路径兼容旧命名 | `asset_id` 唯一、`(user_id, position)` 唯一 |
 | `project_assets` | 项目素材库收录关系和排序 | `(project_id, asset_id)` 和 `(project_id, position)` 分别唯一 |
 | `episode_assets` | 分集素材库收录关系和排序 | `(episode_id, asset_id)` 和 `(episode_id, position)` 分别唯一 |
 | `asset_image_candidates` | 素材可选图片与文件的关系 | `(asset_id, media_id)` 唯一；只记录候选关联及创建时间，不复制媒体元数据 |
 
-三个素材库引用同一 `assets` 本体，共享修改会影响所有引用处。删除库收录关系不等于删除素材或实际文件。素材编辑、确认与采用使用本体 `row_version`；手动创建通过唯一 `creation_key` 和初始 `creation_hash` 去重，两字段必须同时为空或同时有效。
+同一项目的项目库与分集库可以引用同一 `assets` 本体，共享修改会影响本项目内的引用处。个人或其他项目导入时，通过 `resource_imports` 复制本体、当前媒体和参考图片，物理存储独立；不复制私有模型配置、生成历史或项目音色。删除库收录关系不等于删除素材或实际文件。素材编辑、确认与采用使用本体 `row_version`；手动创建通过唯一 `creation_key` 和初始 `creation_hash` 去重，两字段必须同时为空或同时有效。
 
 `label` 是单一分类文本，多标签单独保存在 `tags` 数组中。数据库检查数组最多 20 项，应用校验每项字符串、长度、去空和去重。仅场景允许非空 `scene_time`。候选可来自上传或生成，上传不需要伪造 AI 调用记录；历史当前图片由专用迁移回填为候选，读取操作不隐式回填。
 
@@ -126,7 +177,7 @@
 
 ## 结构验证与维护
 
-修改数据库结构时，同步维护总 SQL、Domain、适用于旧库的迁移和相关测试。`backend/tests/unit/test_domain.py` 无需数据库即可核对 24 表及列、类型、可空性、默认值、生成列、索引、CHECK、外键和依赖顺序，并验证总 SQL 只有 CREATE TABLE。
+修改数据库结构时，同步维护总 SQL、Domain、适用于旧库的迁移和相关测试。`backend/tests/unit/test_domain.py` 无需数据库即可核对 43 表及列、类型、可空性、默认值、生成列、索引、CHECK、外键和依赖顺序，并验证总 SQL 只有 CREATE TABLE。`backend/scripts/export_schema.py` 从 Domain 导出完整 SQL，旧库仍使用专用增量迁移。
 
 MySQL 集成测试使用 `backend/scripts/run_integration.py` 及测试 fixture 在配置的服务器上创建随机隔离库 `short_drama_<随机值>_test`，从总 SQL 初始化，结束后清理。迁移测试在该隔离库重建旧结构，检查升级、重入和数据保留；不得将业务库直接配置成测试目标。测试运行方式见开发说明。
 

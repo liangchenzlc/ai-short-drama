@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     CheckConstraint,
+    ForeignKey,
     ForeignKeyConstraint,
     UniqueConstraint,
     text,
@@ -26,6 +27,11 @@ class GlobalAsset(Base):
         nullable=False,
         comment="应用雪花算法生成；稳定且不可变的记录标识",
     )
+    user_id: Mapped[int | None] = mapped_column(
+        BIGINT(unsigned=True),
+        ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT"),
+        nullable=False,
+    )
     asset_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), nullable=False, comment="素材本体")
     position: Mapped[int] = mapped_column(
         INTEGER(unsigned=True), nullable=False, comment="全局库排序"
@@ -45,7 +51,7 @@ class GlobalAsset(Base):
 
     __table_args__ = (
         UniqueConstraint("asset_id", name="uk_global_assets_asset"),
-        UniqueConstraint("position", name="uk_global_assets_position"),
+        UniqueConstraint("user_id", "position", name="uk_global_assets_position"),
         ForeignKeyConstraint(
             ["asset_id"],
             ["assets.id"],

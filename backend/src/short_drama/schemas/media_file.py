@@ -18,7 +18,8 @@ class MediaFileCreate(InputModel):
     format_code: Annotated[
         str,
         Field(
-            max_length=127, pattern=r"^(?:demo:image|(?:image|video)/[a-z0-9][a-z0-9!#$&^_.+-]*)$"
+            max_length=127,
+            pattern=r"^(?:demo:image|(?:image|video|audio)/[a-z0-9][a-z0-9!#$&^_.+-]*)$",
         ),
     ]
     storage_locator: Annotated[str, Field(max_length=700), AfterValidator(nonblank)]
@@ -33,7 +34,7 @@ class MediaFileCreate(InputModel):
 
     @model_validator(mode="after")
     def validate_media_duration(self):
-        if self.duration_ms is not None and not self.format_code.startswith("video/"):
+        if self.duration_ms is not None and not self.format_code.startswith(("video/", "audio/")):
             raise ValueError("only video media may have duration_ms")
         return self
 
@@ -55,7 +56,8 @@ class MediaFileRead(ReadModel):
     format_code: Annotated[
         str,
         Field(
-            max_length=127, pattern=r"^(?:demo:image|(?:image|video)/[a-z0-9][a-z0-9!#$&^_.+-]*)$"
+            max_length=127,
+            pattern=r"^(?:demo:image|(?:image|video|audio)/[a-z0-9][a-z0-9!#$&^_.+-]*)$",
         ),
     ]
     storage_locator: Annotated[str, Field(max_length=700), AfterValidator(nonblank)]

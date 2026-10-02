@@ -42,6 +42,8 @@ class MediaAssetService(BaseService):
             "record_id": str(record.id),
             "generation_id": str(record.task_id),
             "media_id": str(media.id),
+            "project_id": str(media.project_id) if media.project_id else None,
+            "scope_user_id": str(media.scope_user_id) if media.scope_user_id else None,
             "media_type": asset.media_type,
             "name": asset.name,
             "row_version": str(asset.row_version),
@@ -50,6 +52,7 @@ class MediaAssetService(BaseService):
             "width": media.width,
             "height": media.height,
             "duration_ms": media.duration_ms,
+            "native_quality": (media.video_metadata or {}).get("native_quality"),
             "byte_size": str(media.byte_size) if media.byte_size is not None else None,
             "created_at": asset.created_at,
             "updated_at": asset.updated_at,
@@ -107,6 +110,14 @@ class MediaAssetService(BaseService):
         from .generation_context_service import GenerationContextService
         from .shot_video_context import video_context_hash
 
+        native = (record.request_data.get("source_snapshot") or {}).get("native_speech")
+        if native is not None:
+            media = self._require(MediaFile, asset.media_id, for_update=False)
+            if not (media.video_metadata or {}).get("native_quality", {}).get("technical_pass"):
+                raise WorkflowError(
+                    "native_audio_invalid", "原生视频缺少有效对白音轨，不能采用；请核对候选", 422
+                )
+
         episode, shot, _assets, _snapshot, shot_hash = GenerationContextService(
             self.session
         ).locked_shot_context(parsed.target.id)
@@ -117,7 +128,12 @@ class MediaAssetService(BaseService):
             select(ShotVideo).where(ShotVideo.shot_id == shot.id).with_for_update()
         )
         digest = video_context_hash(
-            shot_hash, image.media_id if image else None, shot.video_prompt, shot.video_settings
+            shot_hash,
+            image.media_id if image else None,
+            shot.video_prompt,
+            shot.video_settings,
+            session=self.session,
+            shot=shot,
         )
 
         def response():

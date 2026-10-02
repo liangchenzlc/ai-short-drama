@@ -34,6 +34,20 @@ const discoveryMessages: Record<string, string> = {
   model_discovery_too_large: '模型列表响应过大，请手动填写模型标识。',
 };
 const workflowMessages: Record<string, string> = {
+  authentication_required: '登录已失效，请重新登录后继续。',
+  login_failed: '账号名或密码不正确，请核对后重试。',
+  email_verification_required: '请先验证注册邮箱，再登录或接受项目邀请。',
+  email_proof_invalid: '验证码无效或已过期，请重新获取验证码。',
+  account_unavailable: '账号名或邮箱已被使用，请更换或找回已有账号。',
+  invitation_identity_mismatch: '此链接属于另一个受邀账号，请切换到受邀账号。',
+  invitation_unavailable: '邀请已过期或已撤销，请联系项目主人重新邀请。',
+  already_member: '此账号已经拥有项目访问权限。',
+  project_owner_required: '只有项目主人可以执行此操作。',
+  task_actor_required: '此操作需要由任务发起者执行。',
+  rate_limited: '操作过于频繁，请稍后再试。',
+  csrf_failed: '请求验证未通过，请重新加载页面后重试。',
+  project_version_conflict: '项目设置已被其他成员修改。输入仍保留，请重新读取后手动合并。',
+  episode_version_conflict: '分集设置已被其他成员修改。输入仍保留，请重新读取后手动合并。',
   audio_retry_required: '请从声音面板核对当前台词后重新生成配音。',
   batch_retry_required: '请从批次详情选择失败项重新生成，以保持批次并发限制。',
   sound_review_required: '声音或视频剪辑已变化，请打开声音面板核对时间并确认。',
@@ -85,11 +99,19 @@ const workflowMessages: Record<string, string> = {
 };
 export const http = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1', timeout: 15_000 });
 
+http.interceptors.request.use(config => {
+  if (!['get', 'head', 'options'].includes(config.method ?? 'get')) {
+    const cookie = document.cookie.split('; ').find(value => value.startsWith('sd_csrf='));
+    if (cookie) config.headers.set('X-CSRF-Token', decodeURIComponent(cookie.slice(8)));
+  }
+  return config;
+});
 // Never propagate AxiosError: its config can contain credentials. Do not reflect server input.
 http.interceptors.response.use((response) => response, (cause: unknown) => {
   if (axios.isCancel(cause)) return Promise.reject(new ApiError('请求已取消', 'CANCELLED'));
   if (!axios.isAxiosError(cause)) return Promise.reject(new ApiError('请求失败，请重试。', 'UNKNOWN'));
   const status = cause.response?.status;
+  if (status === 401 && !cause.config?.url?.startsWith("/auth/")) window.dispatchEvent(new Event("session-expired"));
   const envelope = cause.response?.data?.error;
   const fields: ApiFieldError[] = Array.isArray(envelope?.fields)
     ? envelope.fields.flatMap((entry: { field?: unknown }) => typeof entry?.field === 'string' && fieldLabels[entry.field]

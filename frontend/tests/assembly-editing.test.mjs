@@ -5,12 +5,12 @@ import ts from 'typescript';
 
 const source = readFileSync(new URL('../src/features/projects/assembly-editing.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const { moveClip, nextPlayable, clipDuration, timecode, buildTimeline, splitClip, trimClip, addClip, locateFrame } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const { moveClip, nextPlayable, clipDuration, timecode, buildTimeline, splitClip, trimClip, addClip, locateFrame, canAddSource, renderedTimeline } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const clips = [
-  { id: '1', position: 1, included: true, url: '/1.mp4', trim_in_ms: 500, trim_out_ms: 2500, duration_ms: 4000 },
-  { id: '2', position: 2, included: false, url: '/2.mp4' },
-  { id: '3', position: 3, included: true, issue: 'missing' },
-  { id: '4', position: 4, included: true, url: '/4.mp4' },
+  { id: '1', media_id: '101', position: 1, included: true, url: '/1.mp4', trim_in_ms: 500, trim_out_ms: 2500, duration_ms: 4000 },
+  { id: '2', media_id: '102', position: 2, included: false, url: '/2.mp4' },
+  { id: '3', media_id: null, position: 3, included: true, issue: 'missing' },
+  { id: '4', media_id: '104', position: 4, included: true, url: '/4.mp4' },
 ];
 test('composition ordering is independent and preserves every edit', () => {
   const moved = moveClip(clips, '1', 3);
@@ -52,4 +52,44 @@ test('rough playback skips excluded or invalid sources and ends cleanly', () => 
   assert.equal(clipDuration(clips[0]), 2000);
   assert.equal(clipDuration({ trim_in_ms: 500, trim_out_ms: null, duration_ms: 4000 }), 3500);
   assert.equal(timecode(61500), '01:01.5');
+});
+
+test('adding sources requires playable media and at least one frame', () => {
+  assert.equal(canAddSource(clips[0]), true);
+  for (const issue of ['missing', 'preparing', 'invalid', 'trim']) {
+    assert.equal(canAddSource({ ...clips[0], issue }), false);
+  }
+  assert.equal(canAddSource({ ...clips[0], url: null }), false);
+  assert.equal(canAddSource({ ...clips[0], media_id: null }), false);
+  assert.equal(canAddSource({ ...clips[0], duration_ms: null }), false);
+  assert.equal(canAddSource({ ...clips[0], duration_ms: 1 }), false);
+});
+
+test('reserved shots take no timeline time and retain their draft decisions', () => {
+  const placeholder = { ...clips[0], id: 'reserved', media_id: null, issue: 'missing', url: null };
+  const draft = [placeholder, clips[0], placeholder];
+  assert.deepEqual(buildTimeline(draft).map(e => [e.clip.id, e.start, e.end]), [['1', 0, 60]]);
+  assert.equal(placeholder.included, true);
+  assert.equal(draft.length, 3);
+  const boundMissing = { ...placeholder, media_id: 'lost-media' };
+  assert.equal(buildTimeline([boundMissing])[0].clip.id, 'reserved');
+});
+
+test('result timeline retains frozen media and never borrows a replacement shot image', () => {
+  const sources = [{ ...clips[0], shot_id: 'shot-a', media_id: 'new-video', poster: '/new-poster.jpg', filmstrip: { url: '/new-sheet.jpg' }, shot_position: 7 }];
+  const frozen = { clip_id: 'old-clip', shot_id: 'shot-a', media_id: 'old-video', trim_in_ms: 500,
+    trim_out_ms: 2500, duration_ms: 3000, muted: true, url: '/old.mp4', poster: '/old-poster.jpg',
+    filmstrip: { url: '/old-sheet.jpg', count: 4, interval_ms: 1000 } };
+  const track = renderedTimeline({ timeline: [frozen] }, sources);
+  assert.equal(track[0].media_id, 'old-video');
+  assert.equal(track[0].poster, '/old-poster.jpg');
+  assert.equal(track[0].filmstrip.url, '/old-sheet.jpg');
+  assert.equal(track[0].muted, true);
+  assert.equal(track[0].duration_ms, 3000);
+  assert.equal(buildTimeline(track).at(-1).end, 60);
+  const legacy = renderedTimeline({ timeline: [{ ...frozen, media_id: undefined, poster: undefined, filmstrip: undefined, url: undefined }] }, sources);
+  assert.equal(legacy[0].poster, null);
+  assert.equal(legacy[0].filmstrip, null);
+  assert.equal(legacy[0].url, null);
+  assert.equal(renderedTimeline({ timeline: [{ ...frozen, media_id: 'new-video', poster: undefined }] }, sources)[0].poster, '/new-poster.jpg');
 });

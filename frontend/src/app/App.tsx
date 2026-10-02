@@ -9,6 +9,11 @@ import { AiConfigSessionProvider } from '../features/ai-config/AiConfigSession';
 import { ProjectsPage } from '../pages/projects/ProjectsPage';
 import { NotFoundPage } from './NotFoundPage';
 import './generations.css';
+import { AuthGate, useAuth } from '../features/auth/AuthSession';
+import { AccountControls } from '../features/auth/AccountControls';
+import { AccountCenterProvider } from '../features/auth/AccountCenter';
+import { LoginPage, RegisterPage, EmailProofPage, InvitationPage } from '../features/auth/AccountPages';
+import { ModelPreferencesProvider } from '../features/auth/ModelPreferences';
 
 const AssetsPage = lazy(() => import('../pages/assets/AssetsPage').then(module => ({ default: module.AssetsPage })));
 const AiConfigPage = lazy(() => import('../pages/ai-config/AiConfigPage').then(module => ({ default: module.AiConfigPage })));
@@ -33,6 +38,7 @@ function MediaLibraryRoute() {
 }
 function StudioLayout() {
   const { pathname } = useLocation();
+  const auth = useAuth();
   const navigate = useNavigate();
   const episode = useMatch('/projects/:projectId/episodes/:episodeId/:stage?');
   const project = useMatch('/projects/:projectId');
@@ -42,18 +48,25 @@ function StudioLayout() {
   const kind: AssetKind = asset?.params.kind === 'scene' ? 'scene' : asset?.params.kind === 'prop' ? 'prop' : 'character';
   const detail = !!(episode || project);
   useLayoutEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [pathname]);
-  return <div className={detail ? `studio studio-detail studio-${episode ? 'episode' : 'detail'}` : 'studio'}>
+  return <AccountCenterProvider><div className={detail ? `studio studio-detail studio-${episode ? 'episode' : 'detail'}` : 'studio'}>
     <a className="skip-link" href="#main">跳到主内容</a>
     {!detail && <Sidebar page={page} kind={kind} onSelect={(next, nextKind) => navigate(next === 'projects' ? '/projects' : next === 'ai' ? '/ai' : next === 'tasks' ? '/tasks/text' : next === 'media-library' ? '/media-library/image' : `/assets/${nextKind ?? kind}`)} />}
     <div className="studio-content">
-      {!detail && <header className="studio-topbar"><span>创作空间 <span className="topbar-divider">/</span> {pageLabels[page]}</span><span className="workspace-label">个人创作空间<span className="workspace-avatar" aria-label="个人工作区">创</span></span></header>}
+      {!detail && <header className="studio-topbar"><span>创作空间 <span className="topbar-divider">/</span> {pageLabels[page]}</span>{auth.enabled && auth.user ? <AccountControls /> : <span className="workspace-label">个人创作空间</span>}</header>}
       <main id="main" tabIndex={-1} className="studio-main"><RouteBoundary resetKey={pathname}><Suspense fallback={<div className="route-loading" role="status" aria-label="正在加载工作区"><Skeleton active title paragraph={{ rows: 4 }}/></div>}><Outlet /></Suspense></RouteBoundary></main>
     </div>
-  </div>;
+  </div></AccountCenterProvider>;
 }
 function ProjectLayout() { return <div className="studio-projects"><Outlet /></div>; }
 export function App() {
-  return <AiConfigSessionProvider><Routes>
+  const auth = useAuth();
+  return <AiConfigSessionProvider key={auth.user?.id ?? 'anonymous'}><ModelPreferencesProvider><Routes>
+    <Route path="login" element={<LoginPage />} />
+    <Route path="register" element={<RegisterPage />} />
+    <Route path="verify-email" element={<EmailProofPage />} />
+    <Route path="reset-password" element={<EmailProofPage reset />} />
+    <Route path="invite/:token" element={<InvitationPage />} />
+    <Route element={<AuthGate />}>
     <Route element={<StudioLayout />}>
       <Route index element={<Navigate to="/projects" replace />} />
       <Route path="projects" element={<ProjectLayout />}>
@@ -68,8 +81,9 @@ export function App() {
       <Route path="tasks/:kind" element={<TaskRoute />} />
       <Route path="media-library" element={<Navigate to="/media-library/image" replace />} />
       <Route path="media-library/:kind" element={<MediaLibraryRoute />} />
-      <Route path="*" element={<NotFoundPage />} />
+      </Route>
+    <Route path="*" element={<NotFoundPage />} />
     </Route>
-  </Routes></AiConfigSessionProvider>;
+  </Routes></ModelPreferencesProvider></AiConfigSessionProvider>;
 }
 

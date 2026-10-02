@@ -138,6 +138,7 @@ class StoryboardShotRead(ReadModel):
     video_system_prompt: str = ""
     video_settings: ShotVideoSettings = Field(default_factory=ShotVideoSettings)
     video_context_hash: str = ""
+    native_speech: dict | None = None
     video: ShotVideoRead | None = None
     deleted_at: datetime | None
 

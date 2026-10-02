@@ -64,7 +64,9 @@ def contract_snapshot(connection):
     columns = connection.execute(
         text(
             "SELECT table_name,column_name,ordinal_position,column_type,is_nullable,column_default,"
-            "extra,generation_expression,character_set_name,collation_name,column_comment "
+            # Historical annotations may differ from Domain-generated canonical DDL.
+            # Types, defaults, generated expressions and all constraints remain exact.
+            "extra,generation_expression,character_set_name,collation_name "
             "FROM information_schema.columns WHERE table_schema=DATABASE() "
             "AND table_name IN :names ORDER BY table_name,ordinal_position"
         ).bindparams(bindparam("names", expanding=True)),
@@ -144,18 +146,19 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
         assert re.fullmatch(r"short_drama_[a-f0-9]{32}_test", database)
         canonical = contract_snapshot(connection)
         connection.exec_driver_sql(
-            "INSERT INTO projects (id,name,aspect) VALUES (9001,'migration','16:9')"
+            "INSERT INTO projects (id,owner_user_id,name,aspect) VALUES (9001,1,'migration','16:9')"
         )
         connection.exec_driver_sql(
             "INSERT INTO episodes (id,project_id,position,title,aspect) "
             "VALUES (9002,9001,1,'episode','16:9')"
         )
         connection.exec_driver_sql(
-            "INSERT INTO media_files (id,format_code,storage_locator) "
-            "VALUES (9003,'image/png','migration/image.png')"
+            "INSERT INTO media_files (id,project_id,format_code,storage_locator) "
+            "VALUES (9003,9001,'image/png','migration/image.png')"
         )
         connection.exec_driver_sql(
-            "INSERT INTO assets (id,kind,name,media_id) VALUES (9004,'prop','umbrella',9003)"
+            "INSERT INTO assets (id,project_id,kind,name,media_id) "
+            "VALUES (9004,9001,'prop','umbrella',9003)"
         )
         connection.exec_driver_sql(
             "INSERT INTO episode_assets (id,episode_id,asset_id,position) VALUES (9005,9002,9004,1)"

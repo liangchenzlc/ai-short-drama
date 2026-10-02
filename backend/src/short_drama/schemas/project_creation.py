@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, StringConstraints
 
-from .base import InputModel
+from .base import Identifier, InputModel
 
 
 class ProjectCreateRequest(InputModel):
@@ -23,6 +23,7 @@ class EpisodeCreateRequest(InputModel):
 
 
 class ProjectPatchRequest(InputModel):
+    row_version: Identifier | None = None
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)] = (
         None
     )
@@ -32,6 +33,7 @@ class ProjectPatchRequest(InputModel):
 
 
 class EpisodePatchRequest(InputModel):
+    row_version: Identifier | None = None
     title: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
     ] = None

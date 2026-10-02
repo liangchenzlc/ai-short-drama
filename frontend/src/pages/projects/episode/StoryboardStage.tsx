@@ -477,7 +477,7 @@ export function StoryboardStage({
         {loading && !page ? <Spin/> : <div className="storyboard-list lazy-scroll">
           {page && !page.items.length && !loadError && <div className="studio-empty"><h3>还没有镜头</h3><p>确认剧本后生成分镜，或手动新增第一个镜头。</p><Button disabled={readOnly || busy || loading} onClick={() => void add()}>新增第一个分镜</Button></div>}
           {page?.items.map(shot => <article className={`storyboard-item${selectedShotId === shot.id ? ' is-selected' : ''}`} key={shot.id}>
-            {batchSelection.enabled && !readOnly && <Checkbox className="batch-item-select" aria-label={`批量选择分镜 ${shot.position}`} checked={batchSelection.ids.includes(shot.id)} onChange={event => batchSelection.toggle(shot.id, event.target.checked)}>批量选择</Checkbox>}
+            {batchSelection.enabled && !readOnly && <Checkbox className="batch-item-select" aria-label={`批量选择分镜 ${shot.position}`} title={`批量选择分镜 ${shot.position}`} checked={batchSelection.ids.includes(shot.id)} onChange={event => batchSelection.toggle(shot.id, event.target.checked)} />}
             <button type="button" className="storyboard-summary" aria-expanded={selectedShotId === shot.id} aria-controls={`shot-editor-${shot.id}`} disabled={lockedShots.size > 0} onClick={() => leaveDialogue(() => setSelectedShotId(selectedShotId === shot.id ? null : shot.id))}>
               <strong>分镜 {String(shot.position).padStart(2, '0')}</strong>
               <span className="storyboard-summary-script">{shot.script || '空分镜，点击编写'}</span>

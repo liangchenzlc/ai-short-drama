@@ -915,6 +915,7 @@ name = "short-drama-backend"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "argon2-cffi" },
     { name = "celery" },
     { name = "cryptography" },
     { name = "fastapi" },
@@ -939,6 +940,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "argon2-cffi", specifier = ">=25,<26" },
     { name = "celery", specifier = ">=5.4,<6" },
     { name = "cryptography", specifier = ">=44" },
     { name = "fastapi", specifier = ">=0.115,<1" },

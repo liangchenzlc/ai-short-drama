@@ -2,7 +2,14 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Index, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.mysql import BIGINT, CHAR, DATETIME, INTEGER, JSON, VARCHAR
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -114,6 +121,11 @@ class EpisodeAssemblyClip(Base):
 
 
 class EpisodeRenderJob(Base):
+    initiated_by: Mapped[int | None] = mapped_column(
+        BIGINT(unsigned=True),
+        ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT"),
+        nullable=True,
+    )
     __tablename__ = "episode_render_jobs"
     id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True, autoincrement=False)
     assembly_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), nullable=False)

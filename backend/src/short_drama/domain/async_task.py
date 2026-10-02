@@ -1,6 +1,13 @@
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Index, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.mysql import (
     BIGINT,
     CHAR,
@@ -12,11 +19,17 @@ from sqlalchemy.dialects.mysql import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
+from .collaboration import ResourceScope
 
 
-class AsyncTask(Base):
+class AsyncTask(ResourceScope, Base):
     __tablename__ = "async_tasks"
 
+    initiated_by: Mapped[int | None] = mapped_column(
+        BIGINT(unsigned=True),
+        ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT"),
+        nullable=True,
+    )
     id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, primary_key=True, autoincrement=False
     )
@@ -64,6 +77,9 @@ class AsyncTask(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DATETIME(fsp=6), nullable=True)
 
     __table_args__ = (
+        CheckConstraint(
+            "(scope_user_id IS NULL) <> (project_id IS NULL)", name="ck_async_task_scope"
+        ),
         UniqueConstraint("idempotency_key", name="uk_async_tasks_idempotency"),
         Index("idx_async_tasks_publish", "message_status", "next_run_at", "id"),
         Index("idx_async_tasks_lock", "message_status", "locked_until", "id"),
@@ -76,7 +92,9 @@ class AsyncTask(Base):
             ondelete="RESTRICT",
             onupdate="RESTRICT",
         ),
-        CheckConstraint("service_type IN ('text','image','video')", name="ck_async_tasks_type"),
+        CheckConstraint(
+            "service_type IN ('text','image','video','audio')", name="ck_async_tasks_type"
+        ),
         CheckConstraint(
             "status IN ('queued','running','succeeded','failed','cancelled')",
             name="ck_async_tasks_status",

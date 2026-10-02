@@ -313,7 +313,9 @@ class GenerationContextService:
                 "video_reference_stale", "分镜图已过期，请先核对并采用当前内容的图片"
             )
         settings = shot.video_settings or DEFAULT_VIDEO_SETTINGS
-        digest = video_context_hash(image_hash, image.media_id, shot.video_prompt, settings)
+        digest = video_context_hash(
+            image_hash, image.media_id, shot.video_prompt, settings, session=self.session, shot=shot
+        )
         if (
             shot.row_version != int(source["row_version"])
             or source["context_hash"] != digest
@@ -348,4 +350,14 @@ class GenerationContextService:
         request["template_version"] = PROMPT_VERSIONS["shot_video"]
         request["parameters"] = {**expected, "aspect": episode.aspect}
         request["input"] = {"prompt": parts["prompt"], "reference_media_ids": [str(image.media_id)]}
+        from .native_voice_service import native_context, native_prompt
+
+        native = native_context(self.session, shot, strict=True, settings=self.settings)
+        if native is not None:
+            request["source_snapshot"]["native_speech"] = native
+            request["input"]["audio_reference_media_ids"] = [
+                v["media_id"] for v in native["voices"]
+            ]
+            request["input"]["prompt"] += native_prompt(native)
+            request["parameters"]["generate_audio"] = True
         return request

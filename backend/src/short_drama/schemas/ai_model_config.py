@@ -12,7 +12,7 @@ from .base import (
 
 
 class AIModelConfigCreate(InputModel):
-    service_type: Literal["text", "image", "video"]
+    service_type: Literal["text", "image", "video", "audio"]
     name: Annotated[str, Field(max_length=120), AfterValidator(nonblank)]
     model_key: Annotated[str, Field(max_length=255), AfterValidator(nonblank)]
     provider: Annotated[str, Field(max_length=120), AfterValidator(nonblank)]
@@ -32,8 +32,9 @@ class AIModelConfigUpdate(InputModel):
 
 
 class AIModelConfigRead(ReadModel):
+    owner_user_id: Identifier | None = None
     id: Identifier
-    service_type: Literal["text", "image", "video"]
+    service_type: Literal["text", "image", "video", "audio"]
     name: Annotated[str, Field(max_length=120), AfterValidator(nonblank)]
     model_key: Annotated[str, Field(max_length=255), AfterValidator(nonblank)]
     provider: Annotated[str, Field(max_length=120), AfterValidator(nonblank)]

@@ -37,8 +37,8 @@ function RemoteProjectRoute({ projectId, episodeId }: { projectId: string; episo
     void projectsApi.open(projectId, controller.signal).catch(() => {});
     return () => controller.abort();
   }, [projectId]);
-  if (loading) return <div className="studio-empty" role="status"><Spin /> 正在打开项目…</div>;
-  if (error || !project) return <section className="projects-home"><Button onClick={() => navigate('/projects')}>返回项目管理</Button><Alert type="error" showIcon message={error || '项目不存在。'} action={<Button onClick={() => setRevision((v) => v + 1)}>重试</Button>} /></section>;
+  if (loading) return <section className="projects-home"><ProjectDetailHeader session={null} canClose onBack={() => navigate('/projects')} onClose={() => navigate('/projects')} /><div className="studio-empty" role="status"><Spin /> 正在打开项目…</div></section>;
+  if (error || !project) return <section className="projects-home"><ProjectDetailHeader session={null} canClose fallbackTitle="项目无法打开" onBack={() => navigate('/projects')} onClose={() => navigate('/projects')} /><Alert type="error" showIcon message={error || '项目不存在。'} action={<Button onClick={() => setRevision((v) => v + 1)}>重试</Button>} /></section>;
   const session: ProjectSession = { projectId, projectSessionId: projectId, mode: 'write', project };
   if (episodeId && episode) return <EpisodePage session={session} episode={episode} number={episode.number ?? 1} ready onBack={() => navigate(projectPath(projectId))} />;
   return <section className="projects-home">

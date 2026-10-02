@@ -11,6 +11,7 @@
 | MySQL | 8.0.21+，InnoDB、utf8mb4、严格模式、UTC |
 | RabbitMQ | 可访问的 AMQP 服务；5672 默认明文，TLS 端口按部署配置 |
 | MinIO | 预先准备图片和视频两个 bucket，应用不会自动创建 |
+| FFmpeg / FFprobe | 成片探测、预览和导出需要；加入 PATH 或设置 `RENDER_FFMPEG_PATH` / `RENDER_FFPROBE_PATH` |
 
 ```powershell
 # backend/
@@ -21,6 +22,8 @@ Copy-Item .env.example .env
 
 填写 `backend/.env`。Settings 从当前工作目录读取 `.env`，所以 API、调度器、Worker 和脚本都应从 `backend/` 启动。
 
+账号与项目协作默认启用。已有库先完成 [明确归属迁移](collaboration-deployment.md)，启动只检查结构和归属，不自动分配数据。配置精确的 `PUBLIC_ORIGIN`、安全 Cookie 和 SMTP；本机 HTTP 开发设 `AUTH_COOKIE_SECURE=false`。完整设计及三项 Goal 验证见 [协作实施记录](plans/2026-10-02-project-collaboration.md)。
+
 | 配置 | 含义与注意事项 |
 | --- | --- |
 | `DB_HOST/PORT/USER/PASSWORD/NAME` | 应用数据库连接；不要把测试临时库写成应用库 |
@@ -30,7 +33,7 @@ Copy-Item .env.example .env
 | `MINIO_ENDPOINT` | `host:port`，不带协议或路径，浏览器也必须能访问该地址 |
 | `MINIO_ACCESS_KEY/SECRET_KEY/SECURE` | 凭据及是否 HTTPS，与实际服务一致 |
 | `MINIO_IMAGE_BUCKET/VIDEO_BUCKET` | 默认 `image/video`，两者必须不同 |
-| `MINIO_PRESIGN_EXPIRY` | 临时媒体 URL 有效秒数，默认 900 |
+| `MINIO_PRESIGN_EXPIRY` | 默认 300；账号模式最多五分钟 |
 | `MODEL_DISCOVERY_ALLOWED_HOSTS` | 仅需内网模型网关时设置精确主机名 JSON 数组，默认 `[]` |
 | `GENERATION_*_BUDGET_SECONDS` | 文本/图片/视频执行和媒体归档预算，详见 `.env.example` |
 | `EXTRACTION_MAX_*` | 提取输入字符、候选数和输出 Token 上限，默认 30000/100/8192 |
@@ -47,13 +50,13 @@ uv run python -c "import base64,secrets; print(base64.b64encode(secrets.token_by
 
 ## 初始化与升级数据库
 
-新库先创建并选定空数据库，按[数据库说明](数据库模型/MySQL8数据表设计.md)执行 [schema.mysql8.sql](数据库模型/schema.mysql8.sql)。该文件仅有当前 21 张表的完整 `CREATE TABLE`，不要再拼接增量迁移，也不要对已有表重复执行。
+新库先创建并选定空数据库，按[数据库说明](数据库模型/MySQL8数据表设计.md)执行 [schema.mysql8.sql](数据库模型/schema.mysql8.sql)。该文件仅有当前 43 张表的完整 `CREATE TABLE`，不要再拼接增量迁移，也不要对已有表重复执行。
 
 旧库按[迁移索引](数据库模型/migrations/README.md)核验基线，备份后执行所缺批次及各自验证脚本。应用不执行自动建表或迁移；只替换代码不能替代数据库升级。
 
 ## 启动后端
 
-需要五个独立进程，以下各段分别在独立终端执行。默认队列下：
+需要六个独立进程，以下各段分别在独立终端执行。默认队列下：
 
 ```powershell
 # API
@@ -85,11 +88,17 @@ $env:SNOWFLAKE_WORKER_ID = '4'
 uv run celery -A short_drama.tasks.celery_app:app worker --pool=threads --concurrency=2 -Q tasks.ai.video --hostname='video@%h' --loglevel=WARNING
 ```
 
+```powershell
+# 成片渲染 Worker
+$env:SNOWFLAKE_WORKER_ID = '5'
+uv run celery -A short_drama.tasks.celery_app:app worker --pool=threads --concurrency=1 -Q short_drama.tasks.render --hostname='render@%h' --loglevel=WARNING
+```
+
 线程池里的线程共享同一进程雪花生成器。不要直接改成共用同一节点 ID 的 prefork 多进程或多个 Uvicorn Worker。重启复用节点前，应确认旧进程已停止且时钟超过旧进程最后发号时间。
 
 自定义 namespace 为 `studio_dev` 时，队列是 `studio_dev.tasks.ai.text/image/video`，所有进程配置必须一致。默认 namespace 不加前缀。不同数据库或独立开发环境共用 RabbitMQ 时必须使用不同 namespace，避免另一环境消费并丢弃本环境的任务。手动启动时同步修改 `-Q` 队列名。
 
-Windows 可选用 `scripts/start_generation.ps1 -Role api|scheduler|text|image|video` 分别后台启动，PID/输出写入 `backend/.runtime/`。脚本使用现有 `.venv`，从后端 Settings 自动解析实际队列名，并使用上表节点号；每个角色只启动一次，不与手动进程重复启动。它不是通用生产进程管理器，也不会因进程启动成功就保证依赖健康。
+Windows 可选用 `scripts/start_generation.ps1 -Role api|scheduler|text|image|video|render` 分别后台启动，PID/输出写入 `backend/.runtime/`。脚本使用现有 `.venv`，从后端 Settings 自动解析实际队列名，并使用上表节点号；每个角色只启动一次，不与手动进程重复启动。成片队列始终为 `<GENERATION_QUEUE_NAMESPACE>.tasks.render`。它不是通用生产进程管理器，也不会因进程启动成功就保证依赖健康。
 
 ## 启动前端
 
@@ -182,3 +191,5 @@ RabbitMQ 消费确认超时需要覆盖单次 Worker 调用时长。较长文本
 - 备份 MySQL、MinIO 对象和加密主密钥，验证恢复流程；不能只备份数据库中的临时媒体 URL。
 - 不按名称批量删除验收数据。若存在旧 `.runtime/*manifest*` 清单，先核实具体 ID、对象与引用，再按清单精确处理；仓库历史验收记录不能证明这些对象仍存在。
 - SQL、接口、产品能力变化时同步对应维护文档；不在当前文档里累计机器 PID、一次性截图路径或历史通过数量。
+
+播放恢复、分镜/素材批量任务及配音字幕配乐的部署、开关、worker 和验收方式见[制作功能说明](production-features.md)。新增声音制作依赖音频桶及配音 worker；烧录中文字幕还需配置字体。

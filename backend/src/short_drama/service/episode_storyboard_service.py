@@ -178,6 +178,8 @@ class EpisodeStoryboardService(BaseService):
         from short_drama.ai.business_prompts import video_default_prompt
         from short_drama.ai.prompts.registry import shot_video_system_prompt
 
+        from .native_voice_service import native_context
+
         asset_ids = (
             self.dao.asset_ids(shot.id) if assets is None else [asset.id for asset in assets]
         )
@@ -188,7 +190,12 @@ class EpisodeStoryboardService(BaseService):
         prompt = getattr(shot, "video_prompt", "") or ""
         video_settings = getattr(shot, "video_settings", None) or DEFAULT_VIDEO_SETTINGS
         video_hash = video_context_hash(
-            digest, image["media_id"] if image else None, prompt, video_settings
+            digest,
+            image["media_id"] if image else None,
+            prompt,
+            video_settings,
+            session=self.session,
+            shot=shot,
         )
         result = self.dao.video_rows([shot.id]).get(shot.id) if video_row is _UNSET else video_row
         video = None
@@ -223,6 +230,7 @@ class EpisodeStoryboardService(BaseService):
             video_system_prompt=shot_video_system_prompt(),
             video_settings=video_settings,
             video_context_hash=video_hash,
+            native_speech=native_context(self.session, shot, settings=self.settings),
             video=video,
             deleted_at=shot.deleted_at,
         ).model_dump(mode="json")
@@ -267,7 +275,9 @@ class EpisodeStoryboardService(BaseService):
         # Creation defaults are part of the immutable idempotency intent.
         raw = payload.model_dump() if isinstance(payload, StoryboardCreate) else payload
         data = StoryboardCreate.model_validate(raw).model_dump()
-        key = normalize_creation_key(idempotency_key)
+        from short_drama.db.access import scoped_key
+
+        key = scoped_key(self.session, normalize_creation_key(idempotency_key))
         project_id, episode_id = parse_identifier(project_id), parse_identifier(episode_id)
         data["image_settings"] = ShotImageSettings.model_validate(
             data["image_settings"]

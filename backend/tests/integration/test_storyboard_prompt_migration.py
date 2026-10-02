@@ -26,7 +26,7 @@ def test_storyboard_prompt_migration_preserves_data_and_matches_canonical(migrat
         assert re.fullmatch(r"short_drama_[a-f0-9]{32}_test", database)
         canonical = contract_snapshot(connection)
         connection.exec_driver_sql(
-            "INSERT INTO projects (id,name,aspect) VALUES (9101,'migration','16:9')"
+            "INSERT INTO projects (id,owner_user_id,name,aspect) VALUES (9101,1,'migration','16:9')"
         )
         connection.exec_driver_sql(
             "INSERT INTO episodes (id,project_id,position,title,aspect) "

@@ -67,11 +67,18 @@ class MinioStorage:
             raise StorageUnavailable("Object storage is unavailable") from None
 
     def check_buckets(self) -> dict[str, str]:
+        buckets = [self.settings.minio_image_bucket, self.settings.minio_video_bucket]
+        if self.settings.audio_production_enabled:
+            buckets.append(self.settings.minio_audio_bucket)
         with self._errors():
-            for bucket in (self.settings.minio_image_bucket, self.settings.minio_video_bucket):
+            for bucket in buckets:
                 if not self.client.bucket_exists(bucket):
                     raise StorageUnavailable("Required storage bucket is unavailable")
-        return {"image": "ok", "video": "ok"}
+        return {
+            "image": "ok",
+            "video": "ok",
+            **({"audio": "ok"} if self.settings.audio_production_enabled else {}),
+        }
 
     def put(
         self, bucket: str, key: str, data: BinaryIO, length: int, content_type: str
@@ -130,3 +137,10 @@ class MinioStorage:
     def close(self) -> None:
         if self._pool is not None:
             self._pool.clear()
+
+    def copy(self, bucket: str, source_name: str, target_name: str) -> StoredObject:
+        from minio.commonconfig import CopySource
+
+        with self._errors():
+            self.client.copy_object(bucket, target_name, CopySource(bucket, source_name))
+            return self.stat(bucket, target_name)

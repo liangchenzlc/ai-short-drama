@@ -28,7 +28,7 @@ def discover_models(payload: ModelDiscoveryRequest, request: Request, service: C
 @router.get("", response_model=PageResponse[AIModelConfigRead])
 def list_configs(
     service: ConfigService,
-    service_type: Annotated[Literal["text", "image", "video"] | None, Query()] = None,
+    service_type: Annotated[Literal["text", "image", "video", "audio"] | None, Query()] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):

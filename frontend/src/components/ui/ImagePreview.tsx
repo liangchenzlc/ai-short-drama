@@ -144,7 +144,7 @@ export function PreviewImage({ src, alt, triggerClassName, previewTitle, loading
     <button type="button" className={['image-preview-trigger', triggerClassName].filter(Boolean).join(' ')}
       aria-label={`预览${alt || '图片'}`} aria-haspopup="dialog" title="点击查看大图" disabled={!src}
       onClick={(event) => { event.stopPropagation(); setOpenSrc(src); }}>
-      {failedSrc === src ? <span className="image-preview-unavailable">图片暂不可用，点击重试</span> : <img {...imageProps} src={src} alt={alt} loading={loading}
+      {failedSrc === src ? <span className="image-preview-unavailable">图片暂不可用，点击重试</span> : <img decoding="async" {...imageProps} src={src} alt={alt} loading={loading}
         onLoad={(event) => { setFailedSrc(null); onLoad?.(event); }}
         onError={(event) => { setFailedSrc(src); onError?.(event); }}/>}
     </button>

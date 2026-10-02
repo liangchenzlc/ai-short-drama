@@ -2,6 +2,7 @@
 
 import os
 import re
+from contextlib import closing
 from pathlib import Path
 from uuid import uuid4
 
@@ -73,7 +74,25 @@ def mysql_engine():
 @pytest.fixture
 def migration_mysql_engine():
     """Keep exact schema comparisons independent of earlier DDL-mutating tests."""
-    yield from isolated_mysql_database()
+    from short_drama.domain.collaboration import User
+    from short_drama.service.base import utcnow
+
+    with closing(isolated_mysql_database()) as databases:
+        engine = next(databases)
+        with engine.begin() as connection:
+            connection.execute(
+                User.__table__.insert().values(
+                    id=1,
+                    username="legacy_migration_fixture",
+                    display_name="Legacy migration fixture",
+                    email="migration@example.test",
+                    password_hash="test-only",
+                    status="active",
+                    email_verified_at=utcnow(),
+                    created_at=utcnow(),
+                )
+            )
+        yield engine
 
 
 @pytest.fixture
@@ -81,6 +100,23 @@ def db_session(mysql_engine):
     from short_drama.domain.base import Base
 
     with Session(mysql_engine, expire_on_commit=False, autoflush=False) as session:
+        from short_drama.domain.collaboration import User
+        from short_drama.service.base import utcnow
+
+        session.info["legacy_user_id"] = 1
+        with session.begin():
+            session.add(
+                User(
+                    id=1,
+                    username="legacy_fixture",
+                    display_name="Legacy fixture",
+                    email="legacy@example.test",
+                    password_hash="test-only",
+                    status="active",
+                    email_verified_at=utcnow(),
+                    created_at=utcnow(),
+                )
+            )
         yield session
     with mysql_engine.begin() as connection:
         for table in reversed(Base.metadata.sorted_tables):

@@ -1,6 +1,6 @@
 # 后端
 
-Python 3.12+ / FastAPI / SQLAlchemy 2 / MySQL 8。负责创作数据、AI 配置、异步生成、媒体存储与候选采用。当前为单用户应用，不含登录与多用户授权。
+Python 3.12+ / FastAPI / SQLAlchemy 2 / MySQL 8。负责账号与项目权限、共同创作数据、个人 AI 配置、异步生成、媒体存储与候选采用。账号模式默认启用；已有库先按[协作部署说明](../docs/collaboration-deployment.md)完成归属迁移和邮件配置。
 
 ## 开发入口
 
@@ -28,8 +28,8 @@ src/short_drama/
   schemas/      Pydantic 输入/输出模型及结构化模型结果验证
   service/      业务规则、事务边界、版本检查与采用
   dao/          SQLAlchemy 查询与持久化操作
-  domain/       全部 21 张表的 ORM 映射
-  db/           连接池、Session、MySQL 连接配置
+  domain/       全部 43 张表的 ORM 映射
+  db/           连接池、Session、资源范围过滤与迁移就绪检查
   ai/           提示词模板、协议适配、受限网络传输
   tasks/        Publisher、Recovery、Celery Worker
   storage/      MinIO 适配器

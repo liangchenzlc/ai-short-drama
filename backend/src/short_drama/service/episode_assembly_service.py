@@ -6,7 +6,9 @@ import json
 from sqlalchemy import select
 
 from short_drama.core.exceptions import NotFound, WorkflowError
+from short_drama.db.access import require_project, scope_of, scoped_key
 from short_drama.domain import (
+    Episode,
     EpisodeAssembly,
     EpisodeAssemblyClip,
     EpisodeRenderJob,
@@ -88,6 +90,8 @@ class EpisodeAssemblyService(BaseService):
                 str(image[1].id) if image else None,
                 shot.video_prompt or "",
                 shot.video_settings or DEFAULT_VIDEO_SETTINGS,
+                session=self.session,
+                shot=shot,
             )
             video = videos.get(shot.id)
             result[shot.id] = {
@@ -145,6 +149,22 @@ class EpisodeAssemblyService(BaseService):
         assembly.updated_at = utcnow()
 
     def _snapshot(self, assembly, clips):
+        snapshot = self._video_snapshot(assembly, clips)
+        if getattr(self.settings, "audio_production_enabled", False):
+            from .episode_sound_service import EpisodeSoundService
+
+            sound = EpisodeSoundService(self.session, self.settings, self.storage).snapshot(
+                assembly, snapshot
+            )
+            if sound is not None:
+                snapshot = {**snapshot, "version": 3, "sound": sound}
+        return snapshot
+
+    def _video_snapshot(self, assembly, clips):
+        from .native_voice_service import project_mode
+
+        episode = self.session.get(Episode, assembly.episode_id)
+        native = project_mode(self.session, episode.project_id, self.settings) == "native"
         media_ids = [c.media_id for c in clips if c.media_id]
         media = {
             m.id: m
@@ -152,7 +172,8 @@ class EpisodeAssemblyService(BaseService):
         }
         items = []
         for c in clips:
-            if not c.included:
+            # Empty shots remain in the draft and participate after video is synced.
+            if not c.included or c.media_id is None:
                 continue
             m = media.get(c.media_id)
             metadata = m.video_metadata if m else None
@@ -174,6 +195,7 @@ class EpisodeAssemblyService(BaseService):
             )
         return {
             "version": 2,
+            **({"sound_mode": "native"} if native else {}),
             "aspect": assembly.aspect,
             "resolution": assembly.resolution,
             "fps": 30,
@@ -181,7 +203,50 @@ class EpisodeAssemblyService(BaseService):
         }
 
     def _job_read(self, job, current_hash=None):
+        actor = self.session.info.get("actor")
+        own_job = actor is None or job.initiated_by == actor.user_id
+        can_cancel = own_job
+        if actor and not own_job:
+            from short_drama.domain import Project
+
+            project_id = scope_of(self.session, job)[1]
+            can_cancel = (
+                self.session.scalar(select(Project.owner_user_id).where(Project.id == project_id))
+                == actor.user_id
+            )
         media = self.session.get(MediaFile, job.output_media_id) if job.output_media_id else None
+        clips = job.snapshot.get("clips", [])
+        source_ids = {int(c["media_id"]) for c in clips if c.get("media_id")}
+        sources = {
+            m.id: m
+            for m in self.session.scalars(select(MediaFile).where(MediaFile.id.in_(source_ids)))
+        }
+        timeline = []
+        for clip in clips:
+            source = sources.get(int(clip["media_id"])) if clip.get("media_id") else None
+            metadata = source.video_metadata if source else None
+            timeline.append(
+                {
+                    **{
+                        k: clip[k]
+                        for k in ("clip_id", "shot_id", "trim_in_ms", "trim_out_ms", "muted")
+                    },
+                    "media_id": clip.get("media_id"),
+                    "duration_ms": clip.get("duration_ms") or (metadata or {}).get("duration_ms"),
+                    "url": self._derived_url(metadata, "preview_locator") or self._url(source),
+                    "poster": self._derived_url(metadata, "thumbnail_locator"),
+                    "filmstrip": {
+                        "url": self._derived_url(metadata, "filmstrip_locator"),
+                        "count": metadata["filmstrip_count"],
+                        "interval_ms": metadata["filmstrip_interval_ms"],
+                    }
+                    if metadata
+                    and metadata.get("filmstrip_locator")
+                    and metadata.get("filmstrip_count")
+                    and metadata.get("filmstrip_interval_ms")
+                    else None,
+                }
+            )
         return {
             "id": str(job.id),
             "kind": job.kind,
@@ -189,18 +254,20 @@ class EpisodeAssemblyService(BaseService):
             "stage": job.stage,
             "progress": job.progress,
             "cancel_requested": bool(job.cancel_requested),
+            "initiated_by": str(job.initiated_by) if job.initiated_by else None,
+            "can_cancel": can_cancel and job.status in {"queued", "running"},
+            "can_retry": own_job and job.status in {"failed", "cancelled"},
             "error": job.error,
             "created_at": job.created_at,
             "finished_at": job.finished_at,
             "context_hash": job.context_hash,
+            "aspect": job.snapshot.get("aspect"),
+            "resolution": job.snapshot.get("resolution"),
             "url": self._url(media),
             "media_id": str(media.id) if media else None,
             "duration_ms": media.duration_ms if media else None,
             "is_stale": current_hash is not None and current_hash != job.context_hash,
-            "timeline": [
-                {k: c[k] for k in ("clip_id", "shot_id", "trim_in_ms", "trim_out_ms", "muted")}
-                for c in job.snapshot.get("clips", [])
-            ],
+            "timeline": timeline,
         }
 
     def _read(self, episode, assembly, sources=None):
@@ -210,7 +277,9 @@ class EpisodeAssemblyService(BaseService):
             return {
                 "assembly": None,
                 "source_hash": source_hash,
-                "source_count": sum(not s["archived"] for s in sources.values()),
+                "source_count": sum(
+                    not s["archived"] and s["media_id"] is not None for s in sources.values()
+                ),
             }
         clips = self._clips(assembly, include_removed=True)
         media = {
@@ -398,15 +467,22 @@ class EpisodeAssemblyService(BaseService):
             or not m.video_metadata.get("filmstrip_locator")
         ]
         if pending:
-            snapshot = {"media": [{"id": str(m.id), "locator": m.storage_locator} for m in pending]}
-            active = self.session.scalar(
-                select(EpisodeRenderJob.id).where(
+            active = self.session.scalars(
+                select(EpisodeRenderJob).where(
                     EpisodeRenderJob.assembly_id == assembly.id,
                     EpisodeRenderJob.kind == "probe",
                     EpisodeRenderJob.status.in_(["queued", "running"]),
+                    EpisodeRenderJob.cancel_requested == 0,
                 )
             )
-            if not active:
+            covered = {
+                str(entry["id"]) for job in active for entry in job.snapshot.get("media", [])
+            }
+            pending = [m for m in pending if str(m.id) not in covered]
+            if pending:
+                snapshot = {
+                    "media": [{"id": str(m.id), "locator": m.storage_locator} for m in pending]
+                }
                 self._new_job(assembly, "probe", snapshot, str(next_id()))
 
     def initialize(self, project_id, episode_id):
@@ -552,7 +628,7 @@ class EpisodeAssemblyService(BaseService):
 
     def export(self, project_id, episode_id, payload, key, kind="export"):
         data = AssemblyExport.model_validate(payload)
-        key = normalize_creation_key(key)
+        key = scoped_key(self.session, normalize_creation_key(key))
         with self._transaction():
             episode, assembly = self._scope(project_id, episode_id)
             request_hash = digest(data.model_dump(mode="json"))
@@ -575,7 +651,7 @@ class EpisodeAssemblyService(BaseService):
                 raise WorkflowError(
                     "assembly_source_changed", "分镜来源已变化，请刷新核对后重试", 409
                 )
-            included = [c for c in read["clips"] if c["included"]]
+            included = [c for c in read["clips"] if c["included"] and c["media_id"] is not None]
             if not included or any(c["issue"] for c in included):
                 raise WorkflowError(
                     "assembly_not_ready", "请补齐视频、等待检测完成并检查裁剪范围后导出", 422
@@ -585,6 +661,9 @@ class EpisodeAssemblyService(BaseService):
                     "assembly_stale_source", "部分视频对应旧分镜，请核对后确认使用", 409
                 )
             snapshot = self._snapshot(assembly, self._clips(assembly))
+            from .episode_sound_service import validate_sound_snapshot
+
+            validate_sound_snapshot(snapshot)
             if kind == "preview":
                 # Preview uses the same edit decisions and frame rate as export.
                 cached = self.session.scalar(
@@ -645,12 +724,20 @@ class EpisodeAssemblyService(BaseService):
             )
             if not job:
                 raise NotFound("导出任务不存在")
+            actor = self.session.info.get("actor")
+            if actor and action in {"cancel", "retry"} and job.initiated_by != actor.user_id:
+                if action == "cancel":
+                    require_project(self.session, project_id, owner=True)
+                else:
+                    raise WorkflowError(
+                        "task_actor_required", "Only the task initiator can retry", 403
+                    )
             if action == "cancel" and job.status in ("queued", "running"):
                 job.cancel_requested = 1
                 if job.status == "queued":
                     job.status, job.stage, job.finished_at = "cancelled", "cancelled", utcnow()
             elif action == "retry":
-                key = normalize_creation_key(key)
+                key = scoped_key(self.session, normalize_creation_key(key))
                 previous = self.session.scalar(
                     select(EpisodeRenderJob).where(
                         EpisodeRenderJob.assembly_id == assembly.id,

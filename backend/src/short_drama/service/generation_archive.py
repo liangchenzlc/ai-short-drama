@@ -17,7 +17,7 @@ from short_drama.service.base import utcnow
 from short_drama.storage.models import ObjectLocation
 from short_drama.utils.snowflake import next_id
 
-MAX_MEDIA_BYTES = {"image": 50 * 1024**2, "video": 1024**3}
+MAX_MEDIA_BYTES = {"image": 50 * 1024**2, "video": 1024**3, "audio": 100 * 1024**2}
 
 
 def inspect_media(data, kind):
@@ -70,6 +70,12 @@ class GenerationArchive:
             if output.get("url"):
                 entry["source_cipher"] = self._cipher().encrypt(output["url"])
             elif output.get("base64"):
+                if record.adapter == "dashscope_voice_design.v1":
+                    # Durably store the bounded preview BEFORE any object write. A restart
+                    # restores the original bytes and never creates another remote voice.
+                    entry["inline_cipher"] = self._cipher().encrypt(output["base64"])
+                    manifest.append(entry)
+                    continue
                 try:
                     data = base64.b64decode(output["base64"], validate=True)
                     entry.update(self._describe(task.id, record.id, entry, data))
@@ -102,11 +108,38 @@ class GenerationArchive:
             # it never repeats generation and never hands another worker a local path.
 
     def _describe(self, task_id, record_id, entry, data):
-        meta = inspect_media(data, entry["media_type"])
+        if entry["media_type"] == "audio":
+            from pathlib import Path
+            from tempfile import TemporaryDirectory
+
+            from .audio_media import inspect_audio
+
+            with TemporaryDirectory() as directory:
+                path = Path(directory) / "speech.media"
+                path.write_bytes(data)
+                meta = inspect_audio(path, self.settings)
+        else:
+            meta = inspect_media(data, entry["media_type"])
+        if entry["media_type"] == "video":
+            with self.factory() as session:
+                record = session.get(AIGenerationRecord, record_id)
+                native = (record.request_data.get("source_snapshot") or {}).get("native_speech")
+            if native is not None:
+                from .native_video_media import inspect_native_video
+
+                quality = inspect_native_video(data, self.settings, bool(native["lines"]))
+                meta.update(
+                    duration_ms=quality["duration_ms"],
+                    width=quality["width"],
+                    height=quality["height"],
+                    video_metadata=quality,
+                )
         checksum = hashlib.sha256(data).hexdigest()
         bucket = (
             self.settings.minio_image_bucket
             if entry["media_type"] == "image"
+            else self.settings.minio_audio_bucket
+            if entry["media_type"] == "audio"
             else self.settings.minio_video_bucket
         )
         # Different bytes from an expired worker must never overwrite the active result.
@@ -125,6 +158,7 @@ class GenerationArchive:
             {
                 self.settings.minio_image_bucket,
                 self.settings.minio_video_bucket,
+                self.settings.minio_audio_bucket,
             },
         )
         bucket, key, checksum = location.bucket, location.object_name, meta["checksum"]
@@ -184,7 +218,10 @@ class GenerationArchive:
                 current_record.response_data = data
                 current_record.updated_at = utcnow()
                 return True
-        if not entry.get("locator"):
+        if entry.get("inline_cipher"):
+            data = base64.b64decode(self._cipher().decrypt(entry["inline_cipher"]), validate=True)
+            entry = {**entry, **self._store(task.id, record.id, entry, data)}
+        elif not entry.get("locator"):
             if not entry.get("source_cipher"):
                 return False
             url = self._cipher().decrypt(entry["source_cipher"])
@@ -192,7 +229,11 @@ class GenerationArchive:
             entry = {**entry, **self._store(task.id, record.id, entry, data)}
         location = ObjectLocation.parse(
             entry["locator"],
-            {self.settings.minio_image_bucket, self.settings.minio_video_bucket},
+            {
+                self.settings.minio_image_bucket,
+                self.settings.minio_video_bucket,
+                self.settings.minio_audio_bucket,
+            },
         )
         stored = self.storage.stat(location.bucket, location.object_name)
         if stored.size != entry["byte_size"]:
@@ -214,6 +255,10 @@ class GenerationArchive:
             now = utcnow()
             if media is None:
                 media = MediaFile(
+                    scope_user_id=task.scope_user_id,
+                    project_id=task.project_id,
+                    created_by=task.initiated_by,
+                    updated_by=task.initiated_by,
                     id=next_id(),
                     format_code=entry["mime"],
                     storage_locator=entry["locator"],
@@ -221,7 +266,13 @@ class GenerationArchive:
                     byte_size=entry["byte_size"],
                     width=entry.get("width"),
                     height=entry.get("height"),
+                    duration_ms=entry.get("duration_ms"),
                     checksum_sha256=entry["checksum"],
+                    **(
+                        {"video_metadata": entry["video_metadata"]}
+                        if entry.get("video_metadata")
+                        else {}
+                    ),
                     created_at=now,
                     updated_at=now,
                 )
@@ -230,7 +281,7 @@ class GenerationArchive:
             elif media.checksum_sha256 != entry["checksum"]:
                 raise ValueError("Stored metadata does not match output")
             if asset is None:
-                label = "\u56fe\u7247" if task.service_type == "image" else "\u89c6\u9891"
+                label = {"image": "图片", "video": "视频", "audio": "配音"}[task.service_type]
                 asset = MediaAsset(
                     id=int(entry["asset_id"]),
                     record_id=record.id,
@@ -255,11 +306,17 @@ class GenerationArchive:
                 if item["output_index"] == entry["output_index"]:
                     item.update(entry)
                     item.pop("source_cipher", None)
+                    item.pop("inline_cipher", None)
                     item.pop("save_error", None)
                     item["saved"] = True
                     if candidate_status is not None:
                         item["candidate_status"] = candidate_status
             data["media_manifest"] = manifest
+            if task.service_type == "audio":
+                data["usage"] = {
+                    **data.get("usage", {}),
+                    "audio_duration_ms": entry.get("duration_ms"),
+                }
             current_record.response_data = data
             current_record.updated_at = now
         return True

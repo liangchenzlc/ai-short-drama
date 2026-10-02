@@ -51,6 +51,7 @@ export interface GenerationSummary extends GenerationReceipt {
   can_resume: boolean;
 }
 export interface MediaAsset {
+  project_id?: string | null; scope_user_id?: string | null;
   native_quality?: { technical_pass: boolean; issue: string | null; voice_fidelity: string } | null;
   asset_id: string; record_id: string; generation_id: string; media_id: string;
   media_type: 'image' | 'video' | 'audio'; name: string; row_version: string; url: string | null;
@@ -75,7 +76,7 @@ export interface GenerationFilters {
   service_type: GenerationKind; status?: string; config_id?: string; source_scene?: string; project_id?: string; episode_id?: string;
   source_id?: string; created_after?: string; created_before?: string; offset: number; limit: number;
 }
-export interface AssetFilters { media_type: 'image' | 'video'; name?: string; source_scene?: string; source_id?: string; created_after?: string; created_before?: string; offset: number; limit: number }
+export interface AssetFilters { media_type: 'image' | 'video'; resource_scope?: 'all' | 'personal' | 'project'; project_id?: string; name?: string; source_scene?: string; source_id?: string; created_after?: string; created_before?: string; offset: number; limit: number }
 export interface ApplyAssetRequest {
   target: { type: 'shot_image' | 'shot_video' | 'asset_image'; id: string };
   expected_media_id: string | null;

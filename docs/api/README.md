@@ -1,6 +1,6 @@
 # HTTP API 约定
 
-当前接口统一使用 `/api/v1`。本文描述已实现契约；完整字段、类型和默认值以运行中的 `/openapi.json`、`/docs` 及 [Pydantic schemas](../../backend/src/short_drama/schemas) 为准。无登录与多用户鉴权；路径归属检查不等于权限隔离。
+当前接口统一使用 `/api/v1`。本文描述已实现契约；完整字段、类型和默认值以运行中的 `/openapi.json`、`/docs` 及 [Pydantic schemas](../../backend/src/short_drama/schemas) 为准。账号验证默认启用；项目访问取决于所有者或有效成员关系，个人素材和模型配置只对本人开放。
 
 下文 `E` 表示 `/projects/{project_id}/episodes/{episode_id}`；`L` 表示以下三种素材库路径之一：`/libraries/global/assets`、`/projects/{project_id}/assets`、`E/assets`。`asset_id` 在素材接口表示角色/场景/道具本体，在 `/media-library/items` 表示生成媒体资产，两者不能混用；`media_id` 则是文件元数据 ID。
 
@@ -13,6 +13,33 @@
 - 404 表示不存在或嵌套归属错误；409 为版本/业务冲突；422 为参数/内容校验；413 为上传超限；503 为依赖不可用。
 - `Idempotency-Key` 长度 1–128，生成、新任务重试、素材/分镜新建、素材提取采用必填。同键同请求返回原结果，同键异参 409。项目/分集创建不提供该保障。
 - 读取内容不创建空白稿，不自动生成或采用。未保存内容应先成功保存，再提交依赖它的操作。
+
+## 账号与协作
+
+写请求需要与 `PUBLIC_ORIGIN` 相同的 Origin。登录后附带 HttpOnly `sd_session` Cookie 和 `X-CSRF-Token`（对应 `sd_csrf` Cookie）。未登录返回 401，角色不允许返回 403，无资源权限返回 404。错误邮箱证明返回 422，失效邀请返回 410，限流返回 429。
+
+退出接口允许过期会话清除浏览器 Cookie，仍校验 Origin；有效会话退出仍需 CSRF 验证。邀请匿名预览只返回状态和 `requires_login`，受邀账号登录后才返回项目名称。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/auth/capabilities` | 是否启用账号验证 |
+| POST | `/auth/register` | username/display_name/email/password；201 返回 challenge_id，不返回验证码 |
+| POST | `/auth/verification/request`、`/auth/verification/confirm` | 注册邮箱证明，发送请求不泄露邮箱是否存在 |
+| POST | `/auth/login`、`/auth/logout` | 账号名/密码登录，退出撤销会话 |
+| GET | `/auth/me` | 当前账号信息 |
+| POST | `/auth/password/request`、`/auth/password/reset` | 邮箱证明重置密码，并撤销既有会话 |
+| GET | `/users/search?q=...` | 已验证账号搜索，不返回其他人的邮箱 |
+| GET / DELETE | `/projects/{project_id}/members`、`/projects/{project_id}/members/{user_id}` | 查看成员、主人移除成员 |
+| POST | `/projects/{project_id}/leave` | 协作者退出，产出保留 |
+| GET / POST / DELETE | `/projects/{project_id}/invitations[/{invitation_id}]` | 主人管理绑定账号或邮箱的七天邀请；创建时才返回完整链接 |
+| GET / POST | `/invitations/{token}`、`/invitations/{token}/verification`、`/invitations/{token}/accept` | 预览、发送本次邀请码邮箱证明、提交 challenge_id/code 接受 |
+| GET / PUT | `/users/me/model-preferences` | 按 context_key 保存本人 config_id；null 清除偏好 |
+| GET | `/projects/{project_id}/activity` | 最近 100 条无正文/凭据的操作记录 |
+| POST / GET | `/projects/{project_id}/imports[/{import_id}]` | 异步独立复制 asset/media；POST 需要 Idempotency-Key，202 返回可查询收据 |
+
+项目和分集设置 PATCH 带 `row_version`，冲突返回 409。账号模式的项目 DELETE 是归档，保留历史数据。`/libraries/global` 为个人库；跨范围素材或文件先导入，再引用。任务与媒体历史支持 `resource_scope=all|personal|project`，项目筛选按真实项目归属执行。
+
+新提交、重试、恢复与取消遵守 [协作权限矩阵](../plans/2026-10-02-project-collaboration.md)。API 不接受客户端提供的 owner、scope_user_id、initiated_by 或操作人字段。
 
 ## 项目与分集
 

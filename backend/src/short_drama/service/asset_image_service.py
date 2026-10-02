@@ -231,6 +231,10 @@ class AssetImageService(BaseService):
                 result = self._candidate_read(candidate, media, asset, None)
                 return result, False
             now = utcnow()
+            if self.session.info.get("actor"):
+                from short_drama.db.access import scope_of, set_scope
+
+                set_scope(self.session, scope_of(self.session, self.assets.get(asset_id)))
             media = self.media.create(
                 {
                     "format_code": inspected.content_type,

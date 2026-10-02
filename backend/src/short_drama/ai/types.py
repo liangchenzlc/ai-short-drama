@@ -37,3 +37,4 @@ class GenerationResult:
     finish_reason: str | None = None
     error: dict | None = None
     resolved_parameters: dict = field(default_factory=dict)
+    voice: dict = field(default_factory=dict)

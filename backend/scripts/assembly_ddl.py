@@ -6,9 +6,9 @@ from sqlalchemy.dialects.mysql import dialect
 from short_drama.domain import EpisodeAssembly, EpisodeAssemblyClip, EpisodeRenderJob
 
 
-def tables_ddl():
+def tables_ddl(models=(EpisodeAssembly, EpisodeAssemblyClip, EpisodeRenderJob)):
     statements = []
-    for model in (EpisodeAssembly, EpisodeAssemblyClip, EpisodeRenderJob):
+    for model in models:
         table = model.__table__
         lines = []
         for column in table.columns:
@@ -22,7 +22,8 @@ def tables_ddl():
             if column.comment:
                 line += " COMMENT '" + column.comment.replace("'", "''") + "'"
             lines.append(line)
-        lines.append("  PRIMARY KEY (`id`)")
+        primary = ", ".join(f"`{c.name}`" for c in table.primary_key.columns)
+        lines.append(f"  PRIMARY KEY ({primary})")
         for constraint in sorted(table.constraints, key=lambda c: c.name or ""):
             name = constraint.name
             if isinstance(constraint, UniqueConstraint):
@@ -45,7 +46,7 @@ def tables_ddl():
             f"CREATE TABLE `{table.name}` (\n"
             + ",\n".join(lines)
             + "\n) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 "
-            + f"COLLATE=utf8mb4_0900_ai_ci COMMENT='{table.comment}';"
+            + f"COLLATE=utf8mb4_0900_ai_ci COMMENT='{table.comment or ''}';"
         )
     return "\n\n".join(statements)
 

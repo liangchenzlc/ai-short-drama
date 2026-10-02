@@ -29,6 +29,9 @@ class ProjectUpdate(InputModel):
 
 
 class ProjectRead(ReadModel):
+    owner_user_id: Identifier | None = None
+    row_version: Identifier = 1
+    capabilities: dict[str, bool] = Field(default_factory=dict)
     id: Identifier
     name: Annotated[str, Field(max_length=120), AfterValidator(nonblank)]
     synopsis: MediumText

@@ -23,6 +23,8 @@ MySQL 是任务状态和业务结果的持久化依据。RabbitMQ 承载调度�
 
 ## 前后端分层
 
+账号 Session 带可信 Actor，统一 ORM 查询过滤与事务内写入检查保护个人和项目资源；项目父链继续沿用既有业务关系。身份、邀请、复制、撤权和历史迁移的完整模型及边界见 [共同创作设计](plans/2026-10-02-project-collaboration.md)。系统 Session 仅用于认证、显式成员操作、Worker 和运维迁移，不由 HTTP 输入开启。
+
 前端 `app` 管路由和布局，`pages` 组合页面，`features` 管业务组件与编辑会话，`api/modules` 封装请求，`api/http.ts` 统一错误。正文保存、分镜保存、任务轮询分别维护自己的状态；路由离开保护等待未完成的保存。
 
 后端遵循 API → Service → DAO → ORM。Pydantic 校验请求和输出，Service 验证归属及业务条件，并在一次事务内组合多个 DAO；成功提交、异常回滚。独立 Service 调用应使用尚未开始事务的 Session，返回物化 DTO，不依赖事务外的懒加载。

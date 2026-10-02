@@ -186,7 +186,10 @@ def test_rename_requires_current_version():
         session.commit()
         storage = SimpleNamespace(presigned_get=lambda *_: "https://signed.example/1")
         configured = SimpleNamespace(
-            minio_image_bucket="images", minio_video_bucket="videos", minio_presign_expiry=300
+            minio_image_bucket="images",
+            minio_video_bucket="videos",
+            minio_audio_bucket="audio",
+            minio_presign_expiry=300,
         )
         assets = MediaAssetService(session, configured, storage)
         assert assets.rename(201, {"name": "New", "row_version": "1"})["row_version"] == "2"

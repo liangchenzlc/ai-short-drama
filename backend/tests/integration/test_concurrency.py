@@ -34,7 +34,9 @@ def test_concurrent_confirmation_keeps_one_confirmed_script(db_session, mysql_en
     barrier = Barrier(2)
 
     def confirm(identifier):
-        with Session(mysql_engine, expire_on_commit=False, autoflush=False) as session:
+        with Session(
+            mysql_engine, expire_on_commit=False, autoflush=False, info={"legacy_user_id": 1}
+        ) as session:
             barrier.wait(timeout=10)
             return EpisodeScriptService(session).confirm(identifier)
 
@@ -86,7 +88,9 @@ def test_concurrent_first_media_create_keeps_one_slot(db_session, mysql_engine):
     barrier = Barrier(2)
 
     def create(identifier):
-        with Session(mysql_engine, expire_on_commit=False, autoflush=False) as session:
+        with Session(
+            mysql_engine, expire_on_commit=False, autoflush=False, info={"legacy_user_id": 1}
+        ) as session:
             barrier.wait(timeout=10)
             try:
                 ShotImageService(session).create(

@@ -1,24 +1,16 @@
 import React from "react";
 import "@ant-design/v5-patch-for-react-19";
 import { createRoot } from "react-dom/client";
-import { ConfigProvider } from "antd";
-import zhCN from "antd/locale/zh_CN";
+import { AuthProvider } from "./features/auth/AuthSession";
 import { App } from "./app/App";
-import { studioTheme } from "./app/theme";
+import { StudioProvider } from './components/ui/StudioProvider';
 import { BrowserRouter } from 'react-router-dom';
 import "./app/styles.css";
 import "./app/studio.css";
 import "./app/web.css";
 import "./app/production.css";
 import './app/workbench.css';
+import './app/identity.css';
 createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <ConfigProvider
-      button={{ autoInsertSpace: false }}
-      locale={zhCN}
-      theme={studioTheme}
-    >
-      <BrowserRouter><App /></BrowserRouter>
-    </ConfigProvider>
-  </React.StrictMode>,
+  <React.StrictMode><StudioProvider><BrowserRouter><AuthProvider><App /></AuthProvider></BrowserRouter></StudioProvider></React.StrictMode>,
 );

@@ -11,13 +11,13 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
+from legacy_identity import session_factory
 from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from short_drama.ai import GenerationResult
 from short_drama.core.config import Settings
-from short_drama.db.session import session_factory
 from short_drama.domain import (
     AsyncTask,
     MediaAsset,
@@ -201,7 +201,9 @@ def test_novel_to_storyboard_and_explicit_image_adoption(mysql_engine, db_sessio
         barrier = Barrier(2)
 
         def apply_storyboard(_attempt):
-            with Session(mysql_engine, expire_on_commit=False, autoflush=False) as session:
+            with Session(
+                mysql_engine, expire_on_commit=False, autoflush=False, info={"legacy_user_id": 1}
+            ) as session:
                 barrier.wait(timeout=10)
                 return GenerationBusinessService(session).apply_storyboard(
                     p, e, task["generation_id"], payload
@@ -262,7 +264,12 @@ def test_novel_to_storyboard_and_explicit_image_adoption(mysql_engine, db_sessio
             image_barrier = Barrier(2)
 
             def adopt_image(_attempt):
-                with Session(mysql_engine, expire_on_commit=False, autoflush=False) as session:
+                with Session(
+                    mysql_engine,
+                    expire_on_commit=False,
+                    autoflush=False,
+                    info={"legacy_user_id": 1},
+                ) as session:
                     image_barrier.wait(timeout=10)
                     return MediaAssetService(session, settings, storage).apply(asset_id, body)
 

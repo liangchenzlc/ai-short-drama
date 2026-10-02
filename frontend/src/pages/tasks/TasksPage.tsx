@@ -3,6 +3,7 @@ import { BatchHistory } from '../../features/generations/BatchGeneration';
 import { Alert, Button, Empty, Form, Input, Pagination, Select, Table, Tabs, Tag } from 'antd';
 import { taskOrigin } from '../../features/generations/task-content';
 import { Icon } from '../../components/ui/Icon';
+import { FilterPanel, ListToolbar, PageHeader } from '../../components/ui/Workspace';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { generations } from '../../api/modules/generations';
 import type { GenerationFilters, GenerationKind, GenerationReceipt, GenerationSummary } from '../../api/types/generations';
@@ -40,11 +41,13 @@ export function TasksPage({ kind }: { kind: GenerationKind }) {
     setParams(next);
   }
   return <section className="studio-page generation-page" aria-labelledby="tasks-title">
-    <div className="studio-page-head"><div><h1 id="tasks-title">任务管理</h1><p>查看生成进度，处理失败任务，找到已完成的作品。</p></div><Button type="primary" icon={<Icon name="plus" size={16}/>} onClick={() => setCreating(true)}>新建{kindLabels[kind]}任务</Button></div>
-    <BatchHistory selectedId={params.get('batch') ?? undefined} onSelect={id => { const next = new URLSearchParams(params); if (id) next.set('batch', id); else next.delete('batch'); setParams(next); }}/>
+    <PageHeader id="tasks-title" title="任务管理" description="查看生成进度，处理失败任务，找到已完成的作品。" actions={<>
+      <BatchHistory selectedId={params.get('batch') ?? undefined} onSelect={id => { const next = new URLSearchParams(params); if (id) next.set('batch', id); else next.delete('batch'); setParams(next); }}/>
+      <Button type="primary" icon={<Icon name="plus" size={16}/>} onClick={() => setCreating(true)}>新建{kindLabels[kind]}任务</Button>
+    </>} />
     <Tabs activeKey={kind} onChange={(value) => navigate(`/tasks/${value}`)} items={Object.entries(kindLabels).map(([key, label]) => ({ key, label: `${label}任务` }))} />
     <nav className="task-status-filters" aria-label="按任务状态筛选">{[['', '全部'], ...Object.entries(statusLabels)].map(([value, label]) => <button key={value} type="button" aria-pressed={(filterValue('status') || '') === value} onClick={() => { const next = new URLSearchParams(params); if (value) next.set('status', value); else next.delete('status'); next.delete('offset'); setParams(next); }}>{label}</button>)}</nav>
-    <details className="generation-filter-panel" open={filtersOpen} onToggle={(event) => setFiltersOpen(event.currentTarget.open)}><summary>更多筛选<span>模型、来源与时间</span></summary>
+    <FilterPanel open={filtersOpen} onOpenChange={setFiltersOpen} hint="模型、来源与时间">
     <Form form={form} layout="vertical" className="generation-filters" initialValues={Object.fromEntries(filterNames.map((name) => [name, params.get(name) ?? undefined]))} onFinish={filter}>
       <Form.Item name="status" hidden><Input /></Form.Item>
       <Form.Item name="config_id" label="模型配置"><ConfigSelect kind={kind} allowDefault={false} /></Form.Item>
@@ -52,8 +55,8 @@ export function TasksPage({ kind }: { kind: GenerationKind }) {
       <Form.Item name="created_after" label="创建时间起"><Input type="datetime-local" /></Form.Item>
       <Form.Item name="created_before" label="创建时间止"><Input type="datetime-local" /></Form.Item>
       <div className="generation-filter-actions"><Button htmlType="submit" type="primary">筛选</Button><Button onClick={() => { form.resetFields(); form.setFieldsValue(Object.fromEntries(filterNames.map((name) => [name, undefined]))); setParams({}); }}>重置</Button></div>
-    </Form></details>
-    <div className="generation-list-toolbar"><p>{data ? `共 ${data.total} 个任务` : '生成历史'}<span>{data && activeTasks(data.items) ? '本页有任务处理中，状态自动更新' : '按创建时间查看生成记录'}</span></p><div className="list-toolbar-actions">{filtered && <Button onClick={() => setParams({})}>清除筛选</Button>}<Button onClick={refresh} loading={loading}>刷新</Button></div></div>
+    </Form></FilterPanel>
+    <ListToolbar count={data ? `共 ${data.total} 个任务` : '生成历史'} hint={data && activeTasks(data.items) ? '本页有任务处理中，状态自动更新' : '按创建时间查看生成记录'} actions={<>{filtered && <Button onClick={() => setParams({})}>清除筛选</Button>}<Button onClick={refresh} loading={loading}>刷新</Button></>} />
     {error && <Alert type="error" showIcon message={error} description={data ? '保留上次查询结果，请刷新核对最新状态。' : undefined} action={<Button onClick={refresh}>重新加载</Button>} />}
     <Table<GenerationSummary> rowKey="generation_id" dataSource={data?.items ?? []} loading={loading} pagination={false}
       locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? '暂时无法加载任务' : filtered ? '没有匹配的任务，试试其他条件' : `开始第一次${kindLabels[kind]}生成`}>{!error && <Button type={filtered ? 'default' : 'primary'} onClick={() => filtered ? setParams({}) : setCreating(true)}>{filtered ? '清除筛选' : `新建${kindLabels[kind]}任务`}</Button>}</Empty> }}
@@ -64,7 +67,7 @@ export function TasksPage({ kind }: { kind: GenerationKind }) {
         { title: '任务 / 模型', key: 'task', width: 250, render: (_, item) => <div className="generation-task-cell"><button className="generation-link" onClick={() => selectTask(item.generation_id)}>{item.source?.scene === 'script_assets' ? '剧本素材提取' : item.config?.name ?? `${kindLabels[kind]}生成`}</button><span>{item.source?.scene === 'script_assets' ? item.config?.name : item.config?.model_key ?? item.generation_id}</span></div> },
         { title: '状态', key: 'status', width: 105, render: (_, item) => <div className="task-state-cell"><Tag className={`generation-status status-${item.status}`}>{taskLabel(item)}</Tag>{item.error && <span title={item.error.message}>{item.error.message}</span>}</div> },
         { title: '创建时间', dataIndex: 'created_at', width: 185, responsive: ['md'], render: (value: string) => dateLabel(value) },
-        { title: '操作', key: 'action', width: 90, render: (_, item) => <Button onClick={() => selectTask(item.generation_id)}>详情</Button> },
+        { title: '操作', key: 'action', width: 90, fixed: 'right', render: (_, item) => <Button onClick={() => selectTask(item.generation_id)}>详情</Button> },
       ]} />
     <Pagination className="generation-pagination" current={Math.floor(offset / 20) + 1} pageSize={20} total={data?.total ?? 0} showSizeChanger={false} hideOnSinglePage onChange={(page) => { const next = new URLSearchParams(params); next.set('offset', String((page - 1) * 20)); setParams(next); }} />
     {creating && <CreateGeneration kind={kind} onClose={() => setCreating(false)} onCreated={created} />}

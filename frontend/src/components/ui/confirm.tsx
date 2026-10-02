@@ -1,7 +1,6 @@
 import { createRoot } from 'react-dom/client';
-import { Button, ConfigProvider } from 'antd';
-import zhCN from 'antd/locale/zh_CN';
-import { studioTheme } from '../../app/theme';
+import { Button } from 'antd';
+import { StudioProvider } from './StudioProvider';
 import { Dialog } from './Dialog';
 import { Icon } from './Icon';
 
@@ -28,7 +27,7 @@ export function confirmAction(message: string, options: ConfirmationOptions = {}
         root.unmount(); host.remove(); open = false; resolve(accepted);
       });
     };
-    root.render(<ConfigProvider theme={studioTheme} locale={zhCN} button={{ autoInsertSpace: false }}>
+    root.render(<StudioProvider>
       <Dialog title={options.title ?? (discard ? '未保存的修改' : remove ? '确认移除' : '确认操作')}
         className="studio-confirm-dialog" onClose={() => finish(false)}>
         <div className={`studio-confirm-content${danger ? ' is-danger' : ''}`}>
@@ -42,6 +41,6 @@ export function confirmAction(message: string, options: ConfirmationOptions = {}
           </Button>
         </div>
       </Dialog>
-    </ConfigProvider>);
+    </StudioProvider>);
   });
 }

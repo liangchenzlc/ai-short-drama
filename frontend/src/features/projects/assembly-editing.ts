@@ -1,4 +1,4 @@
-import type { AssemblyClip } from '../../api/modules/assembly';
+import type { AssemblyClip, RenderJob } from '../../api/modules/assembly';
 
 export function clipDuration(clip: AssemblyClip) { return Math.max(0, (clip.trim_out_ms ?? clip.duration_ms ?? 0) - clip.trim_in_ms); }
 export function moveClip(clips: AssemblyClip[], id: string, target: number) {
@@ -9,7 +9,7 @@ export function moveClip(clips: AssemblyClip[], id: string, target: number) {
 }
 export function nextPlayable(clips: AssemblyClip[], id?: string) {
   const index = id ? clips.findIndex(clip => clip.id === id) : -1;
-  return clips.slice(index + 1).find(clip => clip.included && !clip.issue && clip.url);
+  return clips.slice(index + 1).find(clip => isIncludedVideo(clip) && !clip.issue && clip.url);
 }
 export function timecode(ms: number) {
   const seconds = Math.max(0, ms) / 1000;
@@ -21,10 +21,27 @@ export const toFrame = (ms: number) => Math.round(ms * FPS / 1000);
 export const toMs = (frame: number) => Math.round(frame * 1000 / FPS);
 export const snapMs = (ms: number) => toMs(toFrame(ms));
 export const clipFrames = (clip: AssemblyClip) => Math.max(0, toFrame(clip.trim_out_ms ?? clip.duration_ms ?? 0) - toFrame(clip.trim_in_ms));
+export const isIncludedVideo = (clip: AssemblyClip) => clip.included && !!clip.media_id;
+export const canAddSource = (source: AssemblyClip) => !!source.media_id && !!source.url && !source.issue && toFrame(source.duration_ms ?? 0) > 0;
+/** A result always shows its frozen media, even after the storyboard adopts a replacement. */
+export function renderedTimeline(job: RenderJob, sources: AssemblyClip[]): AssemblyClip[] {
+  return (job.timeline ?? []).map((entry, index) => {
+    const source = entry.media_id ? sources.find(c => c.media_id === entry.media_id) : undefined;
+    return {
+      id: entry.clip_id, shot_id: entry.shot_id, shot_position: source?.shot_position ?? index + 1,
+      media_id: entry.media_id ?? null, position: index + 1, included: true, muted: entry.muted,
+      trim_in_ms: entry.trim_in_ms, trim_out_ms: entry.trim_out_ms, duration_ms: entry.duration_ms ?? entry.trim_out_ms,
+      script: '', url: entry.url ?? source?.url ?? null, poster: entry.poster ?? source?.poster ?? null,
+      filmstrip: entry.filmstrip ?? source?.filmstrip ?? null, issue: null, is_stale: false, archived: false,
+    };
+  });
+}
 export interface TimelineEntry { clip: AssemblyClip; start: number; end: number }
 export function buildTimeline(clips: AssemblyClip[]): TimelineEntry[] {
   let frame = 0;
-  return clips.filter(c => c.included).map(clip => {
+  // Missing-media placeholders stay in the draft without taking a timeline slot.
+  // Older result timelines can lack media IDs while still having frozen timings.
+  return clips.filter(c => c.included && (c.media_id || c.issue !== 'missing')).map(clip => {
     const start = frame; frame += clipFrames(clip);
     return { clip, start, end: frame };
   });

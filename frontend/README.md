@@ -37,10 +37,12 @@ npm run test:e2e
 | `/projects` | 项目搜索、分页和继续创作 |
 | `/projects/:projectId` | 项目信息、分集、项目资源库 |
 | `/projects/:projectId/episodes/:episodeId/:stage?` | 四步分集制作；stage 为 source/assets/storyboard/assembly，旧 script 链接打开定稿标签 |
-| `/assets/:kind` | character/scene/prop三类全局素材 |
+| `/assets/:kind` | character/scene/prop 三类个人素材 |
 | `/ai` | 文本、图片、视频模型配置 |
 | `/tasks/:kind` | text/image/video生成任务 |
 | `/media-library/:kind` | image/video生成媒体资产 |
+| `/login`、`/register`、`/verify-email`、`/reset-password` | 登录、注册、邮箱验证和密码找回 |
+| `/invite/:token` | 定向邀请预览、指定账号登录及本次邮箱验证 |
 
 旧video和无效步骤链接按当前待处理阶段规范化；旧快照算出的video阶段映射到storyboard。BrowserRouter使用真实路径；生产部署要配置API代理、SPA fallback及正确的Vite资源base，详见[部署限制](../docs/development.md#部署与维护)。
 
@@ -50,6 +52,7 @@ npm run test:e2e
 - `src/pages`：项目、分集、素材、任务、资产和配置页面。
 - `src/features/projects`：正文保存会话、导航保护、素材提取、分镜候选与图片采用；成片的帧编辑模型、双视频播放器、单轨时间轴、会话内撤销重做和串行自动保存。
 - `src/features/assets`：三层素材库共用UI和请求状态。
+- `src/features/auth`：账号会话、过期时保留编辑、账号草稿隔离与个人模型偏好。
 - `src/features/generations`：通用生成、任务详情、轮询与幂等请求标识。
 - `src/features/media-library`：媒体详情与图片选择器。
 - `src/api`：DTO、请求封装和统一错误；见[前端API约定](src/api/README.md)。
@@ -62,7 +65,7 @@ npm run test:e2e
 
 AI 设置栏与正文并列，小说/定稿合并为标签页；分镜每批 20 条按需加载，历史候选放在弹窗。素材和分镜的参考图通过专用接口持久化，独立于生成候选及当前采用图。AI结果先预览后采用。素材上传不自动确认，分镜生成不直接覆盖镜头，任务页成功不等于项目已采用。详情页与任务列表刷新使用当前服务器状态；临时媒体URL失效时重新读取。
 
-旧版浏览器正文只允许显式导入；旧素材/制作数据提供JSON下载，不自动上传或覆盖服务端数据。保留兼容读取不代表浏览器存储仍是业务数据源。
+账号模式只读取本人命名空间下的浏览器草稿。未归属的旧版正文/素材仅在受控兼容模式提供显式导入或 JSON 下载，不自动上传或覆盖任何账号数据。保留兼容读取不代表浏览器存储仍是业务数据源。设计与部署见[共同创作方案](../docs/plans/2026-10-02-project-collaboration.md)和[迁移说明](../docs/collaboration-deployment.md)。
 
 产品边界见[PRODUCT.md](PRODUCT.md)，界面约定见[DESIGN.md](DESIGN.md)，后端契约见[接口说明](../docs/api/README.md)。
 

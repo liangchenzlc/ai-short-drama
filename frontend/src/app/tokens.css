@@ -40,5 +40,15 @@
   --shadow-overlay: 0 24px 80px rgb(0 0 0 / 55%);
   --radius-control: 7px;
   --radius-panel: 12px;
+  --space-field: 6px;
+  --space-action: 8px;
+  --space-group: 12px;
+  --space-section: 24px;
+  --control-height: 34px;
+  --control-height-touch: 44px;
+  --text-label: 12px;
+  --text-body: 13px;
+  --text-section: 17px;
+  --text-page: 26px;
   --ease-out: cubic-bezier(.16, 1, .3, 1);
 }

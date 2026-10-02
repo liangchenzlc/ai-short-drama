@@ -308,7 +308,7 @@ Ant Design 使用 `darkAlgorithm`；`accent-fill` 对应其 `colorPrimary` 种�
 
 应用确认使用统一样式和 Ant Design 按钮，说明对象与影响，先聚焦取消；嵌套弹窗关闭后恢复原入口焦点。Dialog 包含可见控件的 Tab 循环、Escape 关闭及内部下拉层挂载；提交期间按业务规则阻止关闭。刷新或关闭浏览器时，未保存保护仍由浏览器管理的 `beforeunload` 承担。
 
-弹窗入场为短暂淡入与上移复位（180ms，从 6px 位移返回，`--ease-out`）；Ant Design 中、慢运动为 0.18 / 0.24s；分镜展开箭头为 160ms 旋转。减少动态效果偏好会把动画和过渡缩短至近乎即时（0.01ms），并关闭平滑滚动。
+弹窗入场为短暂淡入与上移复位（180ms，从 6px 位移返回，`--ease-out`）；Ant Design 中、慢运动为 0.18 / 0.24s；分镜展开箭头为 160ms 旋转。减少动态效果偏好由 `useReducedMotion` 订阅并交给 `StudioProvider`，关闭 Ant Design 运动；原生弹窗与抽屉关闭入场动画，展开箭头关闭旋转过渡，滚动改为即时，颜色与边线反馈仍保留。
 
 ### Editing Selection
 

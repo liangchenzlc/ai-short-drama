@@ -11,6 +11,9 @@ def generation_display_context(session, request):
     snapshot = request.get("source_snapshot") or {}
     project_id, episode_id = source.get("project_id"), source.get("episode_id")
     subject = {
+        "character_voice_design": f"角色声音：{snapshot.get('name') or source.get('asset_id', '')}",
+        "dialogue_audio": "台词配音",
+        "dialogue_extract": "台词提取",
         "novel_script": "小说改编",
         "script_assets": "素材提取",
         "script_shots": "分镜脚本",

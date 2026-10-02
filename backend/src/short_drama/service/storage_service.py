@@ -8,8 +8,11 @@ from short_drama.storage.minio import MinioStorage
 from short_drama.storage.models import ObjectLocation, StoredObject
 from short_drama.utils.snowflake import next_id
 
-_MIME = re.compile(r"^(image|video)/[a-z0-9][a-z0-9!#$&^_.+-]*$")
+_MIME = re.compile(r"^(image|video|audio)/[a-z0-9][a-z0-9!#$&^_.+-]*$")
 _EXTENSIONS = {
+    "audio/mpeg": ".mp3",
+    "audio/wav": ".wav",
+    "audio/mp4": ".m4a",
     "image/png": ".png",
     "image/jpeg": ".jpg",
     "image/webp": ".webp",
@@ -33,7 +36,11 @@ class StorageService:
     def __init__(self, storage: MinioStorage, settings: Settings):
         self.storage = storage
         self.settings = settings
-        self._buckets = {"image": settings.minio_image_bucket, "video": settings.minio_video_bucket}
+        self._buckets = {
+            "image": settings.minio_image_bucket,
+            "video": settings.minio_video_bucket,
+            "audio": settings.minio_audio_bucket,
+        }
 
     def _location(self, locator: str) -> ObjectLocation:
         return ObjectLocation.parse(locator, allowed_buckets=set(self._buckets.values()))
@@ -76,4 +83,6 @@ class StorageService:
         expiry = self.settings.minio_presign_expiry if expires_seconds is None else expires_seconds
         if type(expiry) is not int or not 1 <= expiry <= 604800:
             raise BusinessError("Signed URL expiry must be an integer between 1 and 604800 seconds")
+        if getattr(self.settings, "auth_enabled", True):
+            expiry = min(expiry, 300)
         return self.storage.presigned_get(location.bucket, location.object_name, expiry)

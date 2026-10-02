@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import type { AssetKind } from "../../features/assets/asset-model";
 
@@ -16,25 +17,21 @@ export function Sidebar({
   useEffect(() => { setExpanded(page === "assets"); }, [page]);
   return (
     <aside className="studio-sidebar">
-      <div className="studio-brand">
+      <Link className="studio-brand" to="/projects" aria-label="短剧工作台首页">
         <span className="studio-brand-mark" aria-hidden="true">
           <Icon name="film" size={24} />
         </span>
         <span>
           短剧工作台<small>AI 短剧创作空间</small>
         </span>
-      </div>
+      </Link>
       <nav aria-label="主导航">
-        <button
+        <Link to="/projects"
           className={page === "projects" ? "studio-nav active" : "studio-nav"}
-          onClick={() => {
-            setExpanded(false);
-            onSelect("projects");
-          }}
           aria-current={page === "projects" ? "page" : undefined}
         >
           <Icon name="folder" />项目管理
-        </button>
+        </Link>
         <button
           type="button"
           className={
@@ -63,40 +60,33 @@ export function Sidebar({
               ["prop", "道具"],
             ] as const
           ).map(([value, label]) => (
-            <button
+            <Link to={`/assets/${value}`}
               key={value}
               className={
                 page === "assets" && kind === value
                   ? "studio-subnav-item active"
                   : "studio-subnav-item"
               }
-              onClick={() => onSelect("assets", value)}
               aria-current={
                 page === "assets" && kind === value ? "page" : undefined
               }
             >
               {label}
-            </button>
+            </Link>
           ))}
         </div>
-        <button className={page === 'tasks' ? 'studio-nav active' : 'studio-nav'}
-          onClick={() => { setExpanded(false); onSelect('tasks'); }} aria-current={page === 'tasks' ? 'page' : undefined}>
+        <Link to="/tasks/text" className={page === 'tasks' ? 'studio-nav active' : 'studio-nav'} aria-current={page === 'tasks' ? 'page' : undefined}>
           <Icon name="tasks" />任务管理
-        </button>
-        <button className={page === 'media-library' ? 'studio-nav active' : 'studio-nav'}
-          onClick={() => { setExpanded(false); onSelect('media-library'); }} aria-current={page === 'media-library' ? 'page' : undefined}>
+        </Link>
+        <Link to="/media-library/image" className={page === 'media-library' ? 'studio-nav active' : 'studio-nav'} aria-current={page === 'media-library' ? 'page' : undefined}>
           <Icon name="scene" />资产库
-        </button>
-        <button
+        </Link>
+        <Link to="/ai"
           className={page === "ai" ? "studio-nav active" : "studio-nav"}
-          onClick={() => {
-            setExpanded(false);
-            onSelect("ai");
-          }}
           aria-current={page === "ai" ? "page" : undefined}
         >
           <Icon name="settings" />AI 配置
-        </button>
+        </Link>
       </nav>
       <p className="studio-sidebar-foot">
         从故事出发，逐镜打磨。

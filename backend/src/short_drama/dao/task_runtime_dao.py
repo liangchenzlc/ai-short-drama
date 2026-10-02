@@ -134,6 +134,9 @@ class TaskRuntimeDAO:
     def claim_execution(self, task_id, version):
         now = utcnow()
         with self.factory.begin() as session:
+            from short_drama.service.task_access import lock_resource_project, may_submit
+
+            lock_resource_project(session, AsyncTask, task_id)
             task = session.scalar(
                 select(AsyncTask).where(AsyncTask.id == task_id).with_for_update()
             )
@@ -150,6 +153,13 @@ class TaskRuntimeDAO:
                 ):
                     return None
             elif task.message_status not in {"pending", "publishing", "published"}:
+                return None
+            if (
+                record.status == "prepared"
+                and task.next_action == "submit"
+                and not may_submit(session, task)
+            ):
+                finish(task, "cancelled", {"code": "access_revoked"})
                 return None
             if task.cancel_requested and record.status == "prepared":
                 finish(task, "cancelled")

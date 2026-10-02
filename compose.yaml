@@ -95,15 +95,18 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-short_drama_minio_dev}
       MINIO_IMAGE_BUCKET: ${MINIO_IMAGE_BUCKET:-image}
       MINIO_VIDEO_BUCKET: ${MINIO_VIDEO_BUCKET:-video}
+      MINIO_AUDIO_BUCKET: ${MINIO_AUDIO_BUCKET:-short-drama-audio}
     entrypoint: [/bin/sh, -ec]
     command:
       - |
         mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
         mc mb --ignore-existing "local/$${MINIO_IMAGE_BUCKET}"
         mc mb --ignore-existing "local/$${MINIO_VIDEO_BUCKET}"
+        mc mb --ignore-existing "local/$${MINIO_AUDIO_BUCKET}"
         mc anonymous set none "local/$${MINIO_IMAGE_BUCKET}"
         mc anonymous set none "local/$${MINIO_VIDEO_BUCKET}"
-        echo "MinIO image/video buckets are ready (private)."
+        mc anonymous set none "local/$${MINIO_AUDIO_BUCKET}"
+        echo "MinIO image/video/audio buckets are ready (private)."
 
 volumes:
   mysql-data:

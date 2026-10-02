@@ -16,12 +16,12 @@ from uuid import uuid4
 import pytest
 from celery.contrib.testing.worker import start_worker
 from kombu import Queue
+from legacy_identity import session_factory
 from PIL import Image
 from sqlalchemy import select
 
 from short_drama.ai import GenerationGateway
 from short_drama.core.config import Settings
-from short_drama.db.session import session_factory
 from short_drama.domain import AIGenerationRecord, AIModelConfig, AsyncTask, MediaAsset, MediaFile
 from short_drama.service.ai_generation_service import AIGenerationService
 from short_drama.service.generation_execution_service import GenerationExecutionService
@@ -35,7 +35,7 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.mark.skipif(os.getenv("RUN_GENERATION_BROKER_TESTS") != "1", reason="Broker test opt-in")
-def test_three_generation_actions_cross_real_broker_and_archive(
+def test_four_generation_actions_cross_real_broker_and_archive(
     mysql_engine, db_session, monkeypatch
 ):
     from short_drama.tasks import worker
@@ -44,12 +44,21 @@ def test_three_generation_actions_cross_real_broker_and_archive(
     Image.new("RGB", (8, 6), "orange").save(image_bytes, "PNG")
     # Container header is a protocol fixture, not a claim of playable vendor video.
     video_bytes = b"\x00\x00\x00\x18ftypisom\x00\x00\x00\x00isomiso2"
+    import wave
+
+    audio_bytes = BytesIO()
+    with wave.open(audio_bytes, "wb") as recording:
+        recording.setparams((1, 2, 48000, 0, "NONE", "not compressed"))
+        recording.writeframes(b"\0\0" * 4800)
     posts = []
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
             posts.append((self.path, body))
+            if self.path.endswith("/audio/speech"):
+                self.respond(audio_bytes.getvalue(), "audio/wav")
+                return
             if self.path.endswith("/chat/completions"):
                 result = {
                     "choices": [
@@ -94,6 +103,7 @@ def test_three_generation_actions_cross_real_broker_and_archive(
             "generation_queue_namespace": namespace,
             "model_discovery_allowed_hosts": ["127.0.0.1"],
             "generation_poll_seconds": 3,
+            "minio_audio_bucket": "audio-test-" + uuid4().hex,
         }
     )
     factory = session_factory(mysql_engine)
@@ -104,10 +114,13 @@ def test_three_generation_actions_cross_real_broker_and_archive(
     exchange, dead_exchange, queues = topology(settings)
     publisher = Publisher(factory, settings)
     ids = []
+    audio_bucket_created = False
     try:
         storage.check_buckets()
+        storage.client.make_bucket(settings.minio_audio_bucket)
+        audio_bucket_created = True
         with factory.begin() as session:
-            for kind in ("text", "image", "video"):
+            for kind in ("text", "image", "video", "audio"):
                 path = "/api/v3/contents/generations/tasks" if kind == "video" else "/v1"
                 config = AIModelConfig(
                     id=next_id(),
@@ -130,6 +143,8 @@ def test_three_generation_actions_cross_real_broker_and_archive(
                 else {"prompt": "fixture media"},
                 "parameters": {},
             }
+            if kind == "audio":
+                payload.update(input={"text": "语音链路测试"}, parameters={"voice": "fixture"})
             with factory() as session:
                 created, _ = AIGenerationService(session, settings).create(
                     kind, payload, str(uuid4())
@@ -151,25 +166,29 @@ def test_three_generation_actions_cross_real_broker_and_archive(
                     states = list(
                         session.scalars(select(AsyncTask.status).where(AsyncTask.id.in_(tasks)))
                     )
-                if len(states) == 3 and all(status == "succeeded" for status in states):
+                if len(states) == 4 and all(status == "succeeded" for status in states):
                     break
                 time.sleep(0.15)
-            assert states == ["succeeded"] * 3, states
+            assert states == ["succeeded"] * 4, states
             with factory() as session:
                 records = list(
                     session.scalars(
                         select(AIGenerationRecord).where(AIGenerationRecord.task_id.in_(tasks))
                     )
                 )
-                assert len(records) == 3
+                assert len(records) == 4
                 assert any(record.text_content == "消息队列联调文本" for record in records)
                 assets = list(session.scalars(select(MediaAsset)))
-                assert sorted(asset.media_type for asset in assets) == ["image", "video"]
+                assert sorted(asset.media_type for asset in assets) == ["audio", "image", "video"]
                 image_media = session.get(
                     MediaFile, next(a.media_id for a in assets if a.media_type == "image")
                 )
                 assert (image_media.width, image_media.height) == (8, 6)
-            assert len(posts) == 3, "A completed action was submitted more than once"
+                audio_media = session.get(
+                    MediaFile, next(a.media_id for a in assets if a.media_type == "audio")
+                )
+                assert audio_media.duration_ms == 100
+            assert len(posts) == 4, "A completed action was submitted more than once"
     finally:
         # Prefix comes solely from a generated namespace; never touch application queues.
         try:
@@ -187,10 +206,16 @@ def test_three_generation_actions_cross_real_broker_and_archive(
                 for media in session.scalars(select(MediaFile)):
                     location = ObjectLocation.parse(
                         media.storage_locator,
-                        {settings.minio_image_bucket, settings.minio_video_bucket},
+                        {
+                            settings.minio_image_bucket,
+                            settings.minio_video_bucket,
+                            settings.minio_audio_bucket,
+                        },
                     )
                     assert location.object_name.startswith("generations/")
                     storage.remove(location.bucket, location.object_name)
+            if audio_bucket_created:
+                storage.client.remove_bucket(settings.minio_audio_bucket)
             storage.close()
             server.shutdown()
             server.server_close()

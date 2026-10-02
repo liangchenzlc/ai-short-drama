@@ -138,7 +138,7 @@ def test_generation_domain_matches_fixed_storage_contract():
     from short_drama import domain
 
     assert hasattr(domain, "AsyncTask"), "Generation task mapping is missing"
-    assert len(domain.AsyncTask.__table__.columns) == 19
+    assert len(domain.AsyncTask.__table__.columns) == 22
     assert len(domain.AIGenerationRecord.__table__.columns) == 17
     assert len(domain.MediaAsset.__table__.columns) == 9
     assert "capability_cache" in domain.AIModelConfig.__table__.columns

@@ -10,6 +10,9 @@ from .transport import validated_url
 from .types import GenerationError, GenerationResult
 
 ADAPTER_TYPES = {
+    "dashscope_voice_design.v1": "audio",
+    "dashscope_speech.v1": "audio",
+    "openai_speech.v1": "audio",
     "openai_chat.v1": "text",
     "openai_responses.v1": "text",
     "openai_images.v1": "image",
@@ -20,7 +23,7 @@ ADAPTER_TYPES = {
     "modelhub_video.v1": "video",
 }
 
-RESOLVER_VERSION = "2026-09-28.2"
+RESOLVER_VERSION = "2026-09-30.2"
 
 
 def capability_fingerprint(snapshot, credential_identity):
@@ -42,9 +45,11 @@ def select_adapter(snapshot):
     identity = snapshot.get("credential_identity")
     if isinstance(cache, dict) and isinstance(identity, str):
         cached_adapter = cache.get("adapter")
-        if ADAPTER_TYPES.get(cached_adapter) == kind and cache.get(
-            "fingerprint"
-        ) == capability_fingerprint(snapshot, identity):
+        if (
+            cached_adapter != "dashscope_voice_design.v1"
+            and ADAPTER_TYPES.get(cached_adapter) == kind
+            and cache.get("fingerprint") == capability_fingerprint(snapshot, identity)
+        ):
             return cached_adapter
     host, path = parts.hostname, parts.path.rstrip("/")
     ark = host.endswith(".volces.com") or "/api/v3/contents/generations" in path
@@ -58,6 +63,17 @@ def select_adapter(snapshot):
         or host.endswith(".maas.aliyuncs.com")
         or "/api/v1/services/aigc/" in path
     )
+    if kind == "audio":
+        if (
+            dashscope
+            and "/compatible-mode" not in path
+            and (
+                snapshot.get("model_key", "").startswith("cosyvoice-")
+                or path.endswith("/services/audio/tts/SpeechSynthesizer")
+            )
+        ):
+            return "dashscope_speech.v1"
+        return "openai_speech.v1"
     if kind == "text":
         return "openai_responses.v1" if path.endswith("/responses") else "openai_chat.v1"
     if kind == "image":
@@ -89,6 +105,7 @@ def endpoint(base_url, suffix, adapter):
         path += "/api/v1"
     else:
         for ending in (
+            "/audio/speech",
             "/chat/completions",
             "/responses",
             "/images/generations",
@@ -225,14 +242,73 @@ def build_submission(snapshot, request, adapter):
         raise GenerationError("unsupported_protocol")
     params = {k: v for k, v in request.get("parameters", {}).items() if v is not None}
     supported = {
+        "audio": {"voice"},
         "text": {"temperature", "max_output_tokens"},
         "image": {"aspect", "resolution", "count"},
-        "video": {"aspect", "resolution", "duration_ms"},
+        "video": {"aspect", "resolution", "duration_ms", "generate_audio"},
     }[kind]
     if params.keys() - supported:
         _unsupported()
     model = snapshot["model_key"]
     body, headers = {"model": model}, {}
+    if adapter == "dashscope_voice_design.v1":
+        if select_adapter(snapshot) != "dashscope_speech.v1" or model != "cosyvoice-v3.5-flash":
+            raise GenerationError("unsupported_voice_design")
+        value = _input(request, {"voice_prompt", "preview_text"})
+        if (
+            params
+            or not isinstance(value.get("voice_prompt"), str)
+            or not 1 <= len(value["voice_prompt"].strip()) <= 500
+            or not isinstance(value.get("preview_text"), str)
+            or not 15 <= len(value["preview_text"].strip()) <= 200
+        ):
+            _unsupported()
+        return (
+            endpoint(snapshot["base_url"], "/services/audio/tts/customization", adapter),
+            {},
+            {
+                "model": "voice-enrollment",
+                "input": {
+                    "action": "create_voice",
+                    "target_model": model,
+                    "prefix": "drama",
+                    **value,
+                },
+                "parameters": {"sample_rate": 24000, "response_format": "wav"},
+            },
+        )
+    if kind == "audio":
+        value = _input(request, {"text"})
+        if (
+            not isinstance(value.get("text"), str)
+            or not value["text"].strip()
+            or len(value["text"]) > 4096
+        ):
+            _unsupported()
+        if not isinstance(params.get("voice"), str) or not params["voice"].strip():
+            _unsupported()
+        if adapter == "dashscope_speech.v1":
+            if model not in {
+                "cosyvoice-v3.5-flash",
+                "cosyvoice-v3.5-plus",
+                "cosyvoice-v3-flash",
+                "cosyvoice-v3-plus",
+                "cosyvoice-v2",
+            }:
+                _unsupported()
+            body["input"] = {
+                "text": value["text"],
+                "voice": params["voice"],
+                "format": "wav",
+                "sample_rate": 24000,
+            }
+            return (
+                endpoint(snapshot["base_url"], "/services/audio/tts/SpeechSynthesizer", adapter),
+                headers,
+                body,
+            )
+        body.update(input=value["text"], voice=params["voice"], response_format="wav")
+        return endpoint(snapshot["base_url"], "/audio/speech", adapter), headers, body
     if kind == "text":
         value = _input(request, {"messages"})
         messages = value.get("messages")
@@ -338,11 +414,27 @@ def build_submission(snapshot, request, adapter):
                 "last_frame_url",
                 "reference_media_ids",
                 "reference_urls",
+                "audio_reference_media_ids",
+                "audio_reference_urls",
             },
         )
         prompt = value.get("prompt")
         first, last = value.get("first_frame_url"), value.get("last_frame_url")
         refs = value.get("reference_urls", [])
+        audio_refs = value.get("audio_reference_urls", [])
+        if (
+            not isinstance(audio_refs, list)
+            or len(audio_refs) > 2
+            or (audio_refs and (adapter != "modelhub_video.v1" or first or last))
+            or (value.get("audio_reference_media_ids") and not audio_refs)
+        ):
+            _unsupported()
+        if "generate_audio" in params and (
+            adapter != "modelhub_video.v1" or type(params["generate_audio"]) is not bool
+        ):
+            raise GenerationError("native_audio_unsupported")
+        for ref in audio_refs:
+            validated_url(ref, query=True)
         if not isinstance(refs, list) or len(refs) > 9:
             _unsupported()
         if value.get("reference_media_ids") and not refs:
@@ -397,6 +489,10 @@ def build_submission(snapshot, request, adapter):
             )
             for index, ref in enumerate(refs or list(filter(None, (first, last))), 1):
                 body[f"image_file_{index}"] = ref
+            for index, ref in enumerate(audio_refs, 1):
+                body[f"audio_file_{index}"] = ref
+            if "generate_audio" in params:
+                body["generate_audio"] = params["generate_audio"]
             suffix = "/videos/generations"
         elif adapter == "ark_video.v1":
             body["content"] = [{"type": "text", "text": prompt}]
@@ -489,7 +585,35 @@ def parse_result(body, adapter, *, submitted, task_id=None):
         result.error = {"code": "provider_rejected", "message": "The provider rejected generation."}
         return result
     try:
-        if adapter == "openai_chat.v1":
+        if adapter == "dashscope_voice_design.v1":
+            output = body["output"]
+            preview = output["preview_audio"]
+            voice_id = output["voice_id"]
+            if (
+                not isinstance(voice_id, str)
+                or not voice_id
+                or len(voice_id) > 255
+                or output.get("target_model") != "cosyvoice-v3.5-flash"
+                or preview.get("response_format") != "wav"
+                or not isinstance(preview.get("data"), str)
+                or len(preview["data"]) > 14 * 1024**2
+            ):
+                invalid()
+            result.provider_task_id = body.get("request_id")
+            if not isinstance(result.provider_task_id, str) or not result.provider_task_id:
+                invalid()
+            result.voice = {"voice_id": voice_id, "target_model": output["target_model"]}
+            result.outputs = [{"base64": preview["data"], "media_type": "audio"}]
+        elif adapter == "dashscope_speech.v1":
+            output = body["output"]
+            if output.get("finish_reason") != "stop":
+                invalid()
+            result.provider_task_id = body.get("request_id")
+            if not isinstance(result.provider_task_id, str) or not result.provider_task_id:
+                invalid()
+            result.outputs = [{"url": output["audio"]["url"], "media_type": "audio"}]
+            result.finish_reason = "stop"
+        elif adapter == "openai_chat.v1":
             choice = body["choices"][0]
             result.text = choice["message"]["content"]
             result.finish_reason = choice.get("finish_reason")
@@ -624,12 +748,14 @@ def parse_result(body, adapter, *, submitted, task_id=None):
 
 
 def resolved_parameters(body):
+    if isinstance(body.get("input"), dict) and "text" in body["input"] and "voice" in body["input"]:
+        return {k: v for k, v in body["input"].items() if k != "text"}
     if "parameters" in body:
         return body["parameters"]
     return {
         k: v
         for k, v in body.items()
-        if not k.startswith("image_file_")
+        if not k.startswith(("image_file_", "audio_file_"))
         and k
         not in {
             "model",
@@ -651,6 +777,11 @@ def validate_request(snapshot, request_data, adapter=None):
         inputs["reference_urls"] = [
             f"https://reference.invalid/{i}" for i, _ in enumerate(inputs["reference_media_ids"])
         ]
+    if inputs.get("audio_reference_media_ids") and "audio_reference_urls" not in inputs:
+        inputs["audio_reference_urls"] = [
+            f"https://reference.invalid/audio/{i}"
+            for i, _ in enumerate(inputs["audio_reference_media_ids"])
+        ]
     for name in ("first", "last"):
         if inputs.get(f"{name}_frame_media_id") and not inputs.get(f"{name}_frame_url"):
             inputs[f"{name}_frame_url"] = f"https://reference.invalid/{name}"
@@ -667,6 +798,13 @@ def video_input_capabilities(snapshot, adapter):
             "reference_images": supported,
             "duration_seconds": list(range(4, 16)) if supported else None,
             "resolutions": ["720p", "480p"] if supported else None,
+            "audio_references": supported,
+            "generate_audio": supported,
+            "max_audio_references": 2 if supported else 0,
+            "audio_min_ms": 3000,
+            "audio_max_ms": 7500,
+            "audio_evidence": "documented_channel_dependent" if supported else "unsupported",
+            "voice_fidelity": "unverified",
         }
     durations = {
         "wan2.2-i2v-plus": [5],
@@ -710,6 +848,7 @@ def capabilities(snapshot):
     return {
         "known": True,
         "parameters": {
+            "audio": ["voice"],
             "text": ["temperature", "max_output_tokens"],
             "image": ["aspect", "resolution", "count"],
             "video": ["aspect", "resolution", "duration_ms"],

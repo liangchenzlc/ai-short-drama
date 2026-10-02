@@ -1,6 +1,7 @@
 import { PreviewImage } from '../../components/ui/ImagePreview';
 import { Alert, Button, Empty, Form, Input, Pagination, Skeleton, Tabs } from 'antd';
 import { Icon } from '../../components/ui/Icon';
+import { FilterPanel, ListToolbar, PageHeader } from '../../components/ui/Workspace';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { mediaLibrary } from '../../api/modules/media-library';
@@ -28,18 +29,18 @@ export function MediaLibraryPage({ kind }: { kind: 'image' | 'video' }) {
   const selected = params.get('asset');
   function selectAsset(id?: string) { const next = new URLSearchParams(params); if (id) next.set('asset', id); else next.delete('asset'); setParams(next); }
   return <section className="studio-page generation-page" aria-labelledby="media-library-title">
-    <div className="studio-page-head"><div><h1 id="media-library-title">资产库</h1><p>收藏每一次生成的画面，预览、整理，再用到作品中。</p></div><Button onClick={() => navigate(`/tasks/${kind}`)}>查看生成任务</Button></div>
+    <PageHeader id="media-library-title" title="资产库" description="收藏每一次生成的画面，预览、整理，再用到作品中。" actions={<Button onClick={() => navigate(`/tasks/${kind}`)}>查看生成任务</Button>} />
     <Tabs activeKey={kind} onChange={(value) => navigate(`/media-library/${value}`)} items={[{ key: 'image', label: '图片资产' }, { key: 'video', label: '视频资产' }]} />
     <div className="library-search-bar"><Input.Search value={search} onChange={event => setSearch(event.target.value)} aria-label="搜索资产名称" placeholder={`搜索${kind === 'image' ? '图片' : '视频'}名称`} allowClear maxLength={255} onSearch={name => { const next = new URLSearchParams(params); if (name.trim()) next.set('name', name.trim()); else next.delete('name'); next.delete('offset'); setParams(next); }}/>{filtered && <Button onClick={() => setParams({})}>清除筛选</Button>}</div>
-    <details className="generation-filter-panel" open={filtersOpen} onToggle={(event) => setFiltersOpen(event.currentTarget.open)}><summary>更多筛选<span>来源与入库时间</span></summary>
+    <FilterPanel open={filtersOpen} onOpenChange={setFiltersOpen} hint="来源与入库时间">
     <Form form={form} layout="vertical" className="generation-filters asset-filters" initialValues={JSON.parse(filterKey)} onFinish={(values) => { const next = new URLSearchParams(); for (const field of ['name', 'source_id', 'created_after', 'created_before']) if (values[field]?.trim()) next.set(field, values[field].trim()); setParams(next); }}>
       <Form.Item name="name" hidden><Input /></Form.Item>
       {kind === 'image' && <Form.Item name="source_id" label="来源分镜编号" rules={[{ validator: (_, value?: string) => !value || isServerId(value.trim()) ? Promise.resolve() : Promise.reject(new Error('请输入有效的分镜编号')) }]}><Input placeholder="输入分镜编号（选填）" /></Form.Item>}
       <Form.Item name="created_after" label="入库时间起"><Input type="datetime-local" /></Form.Item>
       <Form.Item name="created_before" label="入库时间止"><Input type="datetime-local" /></Form.Item>
       <div className="generation-filter-actions"><Button type="primary" htmlType="submit">筛选</Button><Button onClick={() => { form.setFieldsValue({ name: undefined, source_id: undefined, created_after: undefined, created_before: undefined }); setParams({}); }}>重置</Button></div>
-    </Form></details>
-    <div className="generation-list-toolbar"><p>{data ? `共 ${data.total} 个${kind === 'image' ? '图片' : '视频'}资产` : '已保存资产'}<span>{kind === 'image' ? '点击图片预览大图' : '点击画面查看详情'}</span></p><Button onClick={refresh} loading={loading}>刷新</Button></div>
+    </Form></FilterPanel>
+    <ListToolbar count={data ? `共 ${data.total} 个${kind === 'image' ? '图片' : '视频'}资产` : '已保存资产'} hint={kind === 'image' ? '点击图片预览大图' : '点击画面查看详情'} actions={<Button onClick={refresh} loading={loading}>刷新</Button>} />
     {error && <Alert type="error" showIcon message={error} action={<Button onClick={refresh}>重新加载</Button>} />}
     {loading && !data ? <div className="asset-library-skeleton" role="status" aria-label="正在加载资产">{[0, 1, 2].map(item => <Skeleton key={item} title paragraph={{ rows: 3 }}/>)}</div> : data?.items.length ? <div className="asset-library-grid" aria-busy={loading}>
       {data.items.map((asset) => <article key={asset.asset_id} className="asset-library-item">

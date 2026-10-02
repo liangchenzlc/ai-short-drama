@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Header, Query, Response
 
 from short_drama.api.dependencies import get_ai_generation_service
 from short_drama.schemas.ai_generation import (
+    AudioGenerationCreate,
     GenerationRetry,
     ImageGenerationCreate,
     TextGenerationCreate,
@@ -21,6 +22,13 @@ def _created(service, kind, body, key, response):
     result, created = service.create(kind, body, key)
     response.status_code = 202 if created else 200
     return result
+
+
+@router.post("/audio", status_code=202)
+def create_audio(
+    body: AudioGenerationCreate, response: Response, service: Service, idempotency_key: Key
+):
+    return _created(service, "audio", body, idempotency_key, response)
 
 
 @router.post("/text", status_code=202)
@@ -47,11 +55,20 @@ def create_video(
 @router.get("")
 def list_generations(
     service: Service,
-    service_type: Literal["text", "image", "video"] | None = None,
+    resource_scope: Literal["all", "personal", "project"] = "all",
+    service_type: Literal["text", "image", "video", "audio"] | None = None,
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"] | None = None,
     config_id: Identifier | None = None,
     source_scene: Literal[
-        "shot_image", "shot_video", "asset_image", "novel_script", "script_shots", "script_assets"
+        "shot_image",
+        "shot_video",
+        "asset_image",
+        "novel_script",
+        "script_shots",
+        "script_assets",
+        "character_voice_design",
+        "dialogue_audio",
+        "dialogue_extract",
     ]
     | None = None,
     source_id: Identifier | None = None,
@@ -66,6 +83,7 @@ def list_generations(
         offset,
         limit,
         {
+            "resource_scope": resource_scope,
             "service_type": service_type,
             "status": status,
             "config_id": config_id,

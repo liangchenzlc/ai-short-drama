@@ -1,10 +1,20 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('api', 'scheduler', 'text', 'image', 'video', 'render')]
+    [ValidateSet('api', 'scheduler', 'text', 'image', 'video', 'audio', 'render')]
     [string]$Role
 )
 
 $ErrorActionPreference = 'Stop'
+# Windows environment blocks can contain both Path and PATH. PowerShell 5.1
+# Start-Process rejects the duplicate while constructing its child environment.
+$processPathNames = @([System.Environment]::GetEnvironmentVariables('Process').Keys | Where-Object { $_ -ieq 'Path' })
+if ($processPathNames.Count -gt 1) {
+    $processPathValue = [System.Environment]::GetEnvironmentVariable('Path', 'Process')
+    foreach ($processPathName in $processPathNames) {
+        [System.Environment]::SetEnvironmentVariable($processPathName, $null, 'Process')
+    }
+    [System.Environment]::SetEnvironmentVariable('Path', $processPathValue, 'Process')
+}
 $backendDirectory = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $pythonExecutable = Join-Path $backendDirectory '.venv/Scripts/python.exe'
 $runtimeDirectory = Join-Path $backendDirectory '.runtime'
@@ -16,7 +26,7 @@ if (Test-Path -LiteralPath $pidFile) {
         throw "$Role already has a recorded running process: $existingProcessId"
     }
 }
-$roleNodes = @{ api = '1'; scheduler = '10'; text = '2'; image = '3'; video = '4'; render = '5' }
+$roleNodes = @{ api = '1'; scheduler = '10'; text = '2'; image = '3'; video = '4'; render = '5'; audio = '6' }
 $originalNode = $env:SNOWFLAKE_WORKER_ID
 try {
     $env:SNOWFLAKE_WORKER_ID = $roleNodes[$Role]

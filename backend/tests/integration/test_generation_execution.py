@@ -4,9 +4,9 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from legacy_identity import session_factory
 
 from short_drama.core.config import Settings
-from short_drama.db.session import session_factory
 from short_drama.domain import AIGenerationRecord, AIModelConfig, AsyncTask
 from short_drama.service.base import utcnow
 from short_drama.utils.snowflake import next_id

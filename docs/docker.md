@@ -6,7 +6,7 @@
 
 | 服务 | 用途 | Compose 镜像 | 默认本机端口 |
 | --- | --- | --- | --- |
-| MySQL | 21 张业务表、异步任务状态、生成结果和媒体元数据 | `mysql:8.4`（满足 8.0.21+ 要求） | 3306 |
+| MySQL | 43 张表：账号与项目权限、业务数据、异步任务和媒体元数据 | `mysql:8.4`（满足 8.0.21+ 要求） | 3306 |
 | RabbitMQ | Celery 文本、图片、视频任务消息和死信交换机 | `rabbitmq:4.1-management` | 5672；管理页面 15672 |
 | MinIO | 图片、视频对象存储和临时签名 URL | `minio/minio:RELEASE.2025-04-22T22-12-26Z` | S3 API 9000；控制台 9001 |
 
@@ -24,7 +24,7 @@ docker compose up -d
 
 无需先创建根目录 `.env`，Compose 内置了本地开发默认值。首次启动会拉取镜像，并执行以下初始化：
 
-- MySQL 创建 `short_drama` 数据库和同名应用用户；仅在数据卷为空时执行仓库的完整 `schema.mysql8.sql`，创建 21 张表。
+- MySQL 创建 `short_drama` 数据库和同名应用用户；仅在数据卷为空时执行仓库的完整 `schema.mysql8.sql`，创建 43 张表。已有卷按[协作迁移](collaboration-deployment.md)显式升级，容器重启不会补齐结构。
 - RabbitMQ 创建 `short_drama` 用户，使用 `/` vhost。
 - `minio-init` 等待 MinIO 健康后创建 `image`、`video` 两个私有 bucket，重复执行不会删除已有对象。
 - 三个服务使用独立命名数据卷，并配置健康检查和自动重启。
@@ -82,7 +82,7 @@ MINIO_VIDEO_BUCKET=video
 uv run python -c "import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"
 ```
 
-随后按[开发指南](development.md#启动后端)启动 API、调度器和三个 Worker，并给各进程分配不同的 `SNOWFLAKE_WORKER_ID`。本 Compose 只启动外部依赖。API 启动后可用 `/api/v1/test/db` 和 `/api/v1/test/minio` 检查连接。
+随后按[开发指南](development.md#启动后端)启动 API、调度器和四个 Worker（文本、图片、视频、成片），并给各进程分配不同的 `SNOWFLAKE_WORKER_ID`。成片 Worker 还需要宿主机安装 FFmpeg / FFprobe。本 Compose 只启动外部依赖。API 启动后可用 `/api/v1/test/db` 和 `/api/v1/test/minio` 检查连接。
 
 默认 MySQL 应用用户仅有 `short_drama` 库权限，足以运行应用；创建随机数据库的集成测试需要另行配置具有 CREATE/DROP DATABASE 权限的测试用户。
 
@@ -107,3 +107,5 @@ docker compose run --rm minio-init
 ```
 
 不要随意使用 `docker compose down -v`，它会删除这套服务的数据卷。更新 SQL 文件不会自动升级已有数据库；旧库仍需按[迁移指南](数据库模型/migrations/README.md)执行增量迁移。
+
+声音制作增加私有桶 `MINIO_AUDIO_BUCKET`（默认 `short-drama-audio`），`minio-init` 可重复创建。数据库增量迁移、配音队列与 FFmpeg/中文字幕字体配置见[制作功能说明](production-features.md)。依赖容器启动不等于 API、调度器或配音 worker 已启动。

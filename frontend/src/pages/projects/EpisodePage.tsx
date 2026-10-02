@@ -18,12 +18,17 @@ import { Icon } from '../../components/ui/Icon';
 import { projectWritingWorkflow, retainLocalWorkflow } from '../../features/projects/writing-workflow';
 import { hasUnsettledWriting } from '../../features/projects/writing-navigation';
 import type { NavigationBarrier } from '../../features/projects/writing-navigation';
+import { useAuth } from '../../features/auth/AuthSession';
+import { AccountControls } from '../../features/auth/AccountControls';
+import { accountStorage, workflowStorage } from '../../features/auth/account-storage';
 
 export function EpisodePage(props: ComponentProps<typeof EpisodeWorkspace>) {
   return <EpisodeWorkspace key={`${props.session.projectId}:${props.episode.id}:${props.session.mode}`} {...props} />;
 }
 function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session: ProjectSession; episode: RemoteEpisode; number: number; ready: boolean; onBack: () => void }) {
-  const [value, setValue] = useState(() => ({ ...readWorkflow(session.projectId, episode.id, { aspect: episode.aspect, style: episode.style }), aspect: episode.aspect, style: episode.style }));
+  const auth = useAuth();
+  const storage = auth.enabled && auth.user ? accountStorage(auth.user.id) : workflowStorage();
+  const [value, setValue] = useState(() => ({ ...readWorkflow(session.projectId, episode.id, { aspect: episode.aspect, style: episode.style }, storage), aspect: episode.aspect, style: episode.style }));
   const storyboardBarrier = useRef<NavigationBarrier | null>(null);
   const extractionBarrier = useRef<NavigationBarrier | null>(null);
   const assemblyBarrier = useRef<NavigationBarrier | null>(null);
@@ -64,7 +69,7 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
     const changed = typeof change === 'function' ? change(projectWritingWorkflow(latest.current, writing)) : change;
     const next = retainLocalWorkflow(latest.current, changed);
     latest.current = next; setValue(next);
-    const result = saveWorkflow(session.projectId, episode.id, next);
+    const result = saveWorkflow(session.projectId, episode.id, next, storage);
     setLocalError(result.ok ? '' : result.error);
   }
   function exportDraft() {
@@ -81,7 +86,7 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
     writing.session.edit(field, legacy[field]); setShowLegacy(false);
   }
   return <div className="episode-page web-episode">
-    <header className="episode-top"><Button type="link" className="detail-back" icon={<Icon name="back" size={16}/>} onClick={onBack}>返回项目详情</Button><div><span>{session.project.name} / 第 {number} 集</span><h1>{episode.title}</h1></div><span className={`episode-save-state state-${writing.status}`} title="小说与剧本的自动保存状态" role={writing.message ? 'alert' : 'status'}>{writingLabel}</span></header>
+    <header className="episode-top"><Button type="link" className="detail-back" icon={<Icon name="back" size={16}/>} onClick={onBack}>返回项目详情</Button><div className="episode-heading"><span>{session.project.name} / 第 {number} 集</span><h1>{episode.title}</h1></div><span className={`episode-save-state state-${writing.status}`} title="小说与剧本的自动保存状态" role={writing.message ? 'alert' : 'status'}>{writingLabel}</span><AccountControls /></header>
     {readOnly && <p className="episode-readonly-notice">当前为只读模式，可查看本集内容。</p>}
     <div className={`episode-layout${collapsed ? ' is-collapsed' : ''}`}>
       <aside className="episode-sidebar"><div className="episode-sidebar-inner"><div className="episode-nav-heading"><p className="episode-nav-title">创作流程</p><Button type="text" aria-label={collapsed ? '展开创作流程' : '收起创作流程'} aria-expanded={!collapsed} icon={<Icon name={collapsed ? 'arrow' : 'back'} size={18}/>} onClick={() => setCollapsed(!collapsed)}/></div><StageNav active={step} onSelect={goToStep}/><div className="episode-context-summary"><strong>{value.aspect} 画幅</strong><span>{value.style || '未设置视觉风格'}</span><p>正文自动保存。生成后先预览，再选择采用。</p></div></div></aside>

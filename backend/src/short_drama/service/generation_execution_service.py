@@ -19,10 +19,10 @@ from short_drama.dao.task_runtime_dao import (
     owned_task,
     schedule,
 )
-from short_drama.domain import AIGenerationRecord, AIModelConfig, MediaFile
+from short_drama.domain import AIGenerationRecord, AIModelConfig, AsyncTask, MediaFile
 from short_drama.service.base import utcnow
 from short_drama.service.generation_archive import GenerationArchive
-from short_drama.service.generation_references import StoredImageReferences
+from short_drama.service.generation_references import StoredAudioReferences, StoredImageReferences
 from short_drama.service.storage_service import StorageService
 from short_drama.tasks.state import archive_due, recovery_action
 from short_drama.utils.snowflake import next_id
@@ -103,6 +103,11 @@ class GenerationExecutionService:
 
             if data.get("reference_media_ids"):
                 data["reference_urls"] = [media_url(value) for value in data["reference_media_ids"]]
+            if data.get("audio_reference_media_ids"):
+                data["audio_reference_urls"] = [
+                    f"https://reference.invalid/audio/{i}"
+                    for i, _ in enumerate(data["audio_reference_media_ids"])
+                ]
             for frame in ("first", "last"):
                 if data.get(f"{frame}_frame_media_id"):
                     data[f"{frame}_frame_url"] = media_url(data[f"{frame}_frame_media_id"])
@@ -151,9 +156,16 @@ class GenerationExecutionService:
             else None
         )
         with self.factory.begin() as session:
+            if task.next_action == "submit":
+                from .task_access import lock_resource_project, may_submit
+
+                lock_resource_project(session, AsyncTask, task.id)
             current = owned_task(session, task.id, version, token)
             call = session.get(AIGenerationRecord, record.id)
             if task.next_action == "submit":
+                if not may_submit(session, current):
+                    finish(current, "cancelled", {"code": "access_revoked"})
+                    return
                 if current.cancel_requested:
                     finish(current, "cancelled")
                     return
@@ -180,6 +192,11 @@ class GenerationExecutionService:
         snapshot = {**record.config_snapshot, "budget_seconds": max(1, int(budget - elapsed))}
         if task.next_action == "submit":
             options = {}
+            voices = (request.get("source_snapshot", {}).get("native_speech") or {}).get("voices")
+            if voices:
+                options["audio_reference_loader"] = StoredAudioReferences(
+                    self.factory, self.storage, self.settings, voices
+                )
             media_ids = request.get("input", {}).get("reference_media_ids")
             if adapter in {"openai_images.v1", "modelhub_video.v1"} and media_ids:
                 options["reference_loader"] = StoredImageReferences(
@@ -213,7 +230,7 @@ class GenerationExecutionService:
             call.updated_at = now
             if result.status in {"submitted", "succeeded"}:
                 config = session.get(AIModelConfig, call.config_id)
-                if config:
+                if config and result.adapter != "dashscope_voice_design.v1":
                     current_snapshot = {
                         field: getattr(config, field)
                         for field in (
@@ -237,6 +254,7 @@ class GenerationExecutionService:
                 **(call.response_data or {}),
                 "usage": result.usage or {},
                 "finish_reason": result.finish_reason,
+                **({"voice": result.voice} if result.voice else {}),
             }
             if result.status == "submitted":
                 if not call.provider_task_id:

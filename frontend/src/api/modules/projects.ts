@@ -3,23 +3,27 @@ import type { WebProject } from '../../types/projects';
 import type { Episode } from '../../features/projects/project-detail-model';
 
 interface ProjectDto {
+  row_version?: string; owner_user_id?: string; capabilities?: Record<string, boolean>;
   id: string; name: string; synopsis: string; aspect: '16:9' | '9:16'; style: string;
   last_opened_at: string | null; created_at: string | null; episode_count?: number;
 }
 interface EpisodeDto {
+  row_version?: string;
   id: string; project_id: string; position: number; title: string; synopsis: string;
   aspect: '16:9' | '9:16'; style: string; episode_number?: number;
 }
 interface Page<T> { items: T[]; total: number; offset: number; limit: number }
-export interface RemoteProject extends WebProject { synopsis: string; style: string; episodeCount: number }
-export interface RemoteEpisode extends Episode { projectId: string; position: number; aspect: '16:9' | '9:16'; style: string; number?: number }
-export interface ProjectFields { name: string; aspect: '16:9' | '9:16'; synopsis: string; style: string }
-export interface EpisodeFields { title: string; synopsis: string; aspect?: '16:9' | '9:16'; style?: string }
+export interface RemoteProject extends WebProject { rowVersion?: string; ownerUserId?: string; capabilities?: Record<string, boolean>; synopsis: string; style: string; episodeCount: number }
+export interface RemoteEpisode extends Episode { rowVersion?: string; projectId: string; position: number; aspect: '16:9' | '9:16'; style: string; number?: number }
+export interface ProjectFields { row_version?: string; name: string; aspect: '16:9' | '9:16'; synopsis: string; style: string }
+export interface EpisodeFields { row_version?: string; title: string; synopsis: string; aspect?: '16:9' | '9:16'; style?: string }
 const project = (dto: ProjectDto): RemoteProject => ({
+  rowVersion: dto.row_version, ownerUserId: dto.owner_user_id, capabilities: dto.capabilities,
   projectId: dto.id, name: dto.name, aspect: dto.aspect, style: dto.style, synopsis: dto.synopsis,
   lastOpenedAt: dto.last_opened_at ?? dto.created_at ?? '', episodeCount: dto.episode_count ?? 0,
 });
 const episode = (dto: EpisodeDto): RemoteEpisode => ({
+  rowVersion: dto.row_version,
   id: dto.id, projectId: dto.project_id, position: dto.position, title: dto.title,
   synopsis: dto.synopsis, aspect: dto.aspect, style: dto.style, number: dto.episode_number,
 });
@@ -62,7 +66,7 @@ export function projectError(error: unknown, action?: 'delete' | 'create') {
     if (error.status === 404) return '项目或分集不存在，可能已被删除。请刷新后重试。';
     if (error.status === 409) return action === 'delete'
       ? '仍有关联分集、素材或制作内容，暂时无法删除。请先清理关联内容。'
-      : '数据正在被修改，请刷新后重试。';
+      : errorMessage(error);
     if (action === 'create' && (!error.status || error.status >= 500))
       return '未能确认创建结果。请先关闭弹窗并刷新列表，确认是否已创建，避免重复提交。';
   }

@@ -84,7 +84,7 @@ def test_media_metadata_constraints_and_immutable_identity():
         {"height": 2**32},
         {"duration_ms": 5},
         {"checksum_sha256": "short"},
-        {"format_code": "audio/wav"},
+        {"format_code": "application/octet-stream"},
     ):
         with pytest.raises(ValidationError):
             schemas.MediaFileCreate(
@@ -92,6 +92,12 @@ def test_media_metadata_constraints_and_immutable_identity():
             )
     with pytest.raises(ValidationError):
         schemas.MediaFileUpdate(storage_locator="other")
+    assert (
+        schemas.MediaFileCreate(
+            format_code="audio/wav", storage_locator="a", duration_ms=1000
+        ).duration_ms
+        == 1000
+    )
     assert (
         schemas.MediaFileCreate(
             format_code="video/mp4", storage_locator="a", duration_ms=1
@@ -189,12 +195,21 @@ def test_read_schema_covers_exact_domain_columns_except_secret(class_name):
 
     model = getattr(domain, class_name.removesuffix("Read"))
     expected = set(model.__table__.columns.keys())
+    if class_name == "ProjectRead":
+        expected.remove("archived_at")
+        expected.add("capabilities")
+    if class_name == "GlobalAssetRead":
+        expected.discard("user_id")
+    if class_name == "MediaFileRead":
+        expected -= {"scope_user_id", "project_id"}
     if class_name == "AIModelConfigRead":
         expected.remove("apikey")
         expected.remove("capability_cache")
         expected.add("has_api_key")
     if class_name == "AssetRead":
         expected -= {
+            "scope_user_id",
+            "project_id",
             "creation_key",
             "creation_hash",
             "model_id",

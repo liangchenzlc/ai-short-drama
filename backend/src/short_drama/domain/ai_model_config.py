@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import (
     CheckConstraint,
     Computed,
+    ForeignKey,
     Index,
     UniqueConstraint,
     text,
@@ -23,6 +24,11 @@ from .base import Base
 class AIModelConfig(Base):
     __tablename__ = "ai_model_configs"
 
+    owner_user_id: Mapped[int | None] = mapped_column(
+        BIGINT(unsigned=True),
+        ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT"),
+        nullable=False,
+    )
     capability_cache: Mapped[dict | None] = mapped_column(JSON(), nullable=True)
 
     id: Mapped[int] = mapped_column(
@@ -109,13 +115,15 @@ class AIModelConfig(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("default_service_type", name="uk_ai_default_service"),
+        UniqueConstraint("owner_user_id", "default_service_type", name="uk_ai_default_service"),
         Index("idx_ai_type_available", "service_type", "is_deleted", "enabled"),
         CheckConstraint(
             "`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`",
             name="ck_ai_model_configs_audit_time",
         ),
-        CheckConstraint("`service_type` IN ('text', 'image', 'video')", name="ck_ai_service_type"),
+        CheckConstraint(
+            "`service_type` IN ('text', 'image', 'video', 'audio')", name="ck_ai_service_type"
+        ),
         CheckConstraint(
             "CHAR_LENGTH(TRIM(`name`)) > 0 AND CHAR_LENGTH(TRIM(`model_key`)) > 0 "
             "AND CHAR_LENGTH(TRIM(`provider`)) > 0",

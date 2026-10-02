@@ -6,12 +6,12 @@ from threading import Barrier
 
 import httpx
 import pytest
+from legacy_identity import session_factory
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from short_drama.api.dependencies import get_session
 from short_drama.core.config import Settings
-from short_drama.db.session import session_factory
 from short_drama.domain import Episode, Project
 from short_drama.main import create_app
 from short_drama.service.episode_service import EpisodeService
@@ -64,7 +64,9 @@ def test_concurrent_append_to_empty_and_gapped_collections(mysql_engine, db_sess
         barrier = Barrier(4)
 
         def append(index):
-            with Session(mysql_engine, expire_on_commit=False, autoflush=False) as session:
+            with Session(
+                mysql_engine, expire_on_commit=False, autoflush=False, info={"legacy_user_id": 1}
+            ) as session:
                 barrier.wait(timeout=10)
                 return EpisodeService(session).create_for_project(project.id, {"title": str(index)})
 

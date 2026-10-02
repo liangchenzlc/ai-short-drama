@@ -162,7 +162,9 @@ def test_large_ids_serialize_without_precision_loss(db_session):
     large_id = 2**63 + 7
     with db_session.begin():
         db_session.execute(
-            text("INSERT INTO projects (id,name,aspect) VALUES (:id,'large','16:9')"),
+            text(
+                "INSERT INTO projects (id,owner_user_id,name,aspect) VALUES (:id,1,'large','16:9')"
+            ),
             {"id": large_id},
         )
     row = services(db_session)["Project"].get(large_id)

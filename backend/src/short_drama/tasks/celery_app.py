@@ -24,7 +24,7 @@ def topology(settings):
                 "x-dead-letter-routing-key": kind,
             },
         )
-        for kind in ("text", "image", "video")
+        for kind in ("text", "image", "video", "audio")
     }
     return exchange, dead_exchange, queues
 

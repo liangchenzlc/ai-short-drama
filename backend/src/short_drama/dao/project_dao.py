@@ -21,10 +21,24 @@ class ProjectDAO(BaseDAO):
             .correlate(Project)
             .scalar_subquery()
         )
+        actor = self.session.info.get("actor")
+        opened = Project.last_opened_at
+        if actor:
+            from short_drama.domain.collaboration import UserProjectState
+
+            opened = (
+                select(UserProjectState.last_opened_at)
+                .where(
+                    UserProjectState.user_id == actor.user_id,
+                    UserProjectState.project_id == Project.id,
+                )
+                .correlate(Project)
+                .scalar_subquery()
+            )
         rows = self.session.execute(
             select(Project, episode_count)
             .where(*conditions)
-            .order_by(Project.last_opened_at.desc(), Project.id.desc())
+            .order_by(opened.desc(), Project.id.desc())
             .offset(offset)
             .limit(limit)
         ).all()

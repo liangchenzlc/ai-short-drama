@@ -1,5 +1,6 @@
 """Read persisted reference media through configured storage, never a caller URL."""
 
+import hashlib
 import time
 
 from short_drama.ai import GenerationError
@@ -44,3 +45,15 @@ class StoredImageReferences:
             raise GenerationError("reference_missing") from None
         except BusinessError:
             raise GenerationError("reference_storage_unavailable") from None
+
+
+class StoredAudioReferences(StoredImageReferences):
+    def __init__(self, factory, storage, settings, voices):
+        super().__init__(factory, storage, settings, [v["media_id"] for v in voices])
+        self.checksums = [v["checksum"] for v in voices]
+
+    def __call__(self, index, max_bytes, deadline):
+        data = super().__call__(index, max_bytes, deadline)
+        if hashlib.sha256(data).hexdigest() != self.checksums[index]:
+            raise GenerationError("audio_reference_changed")
+        return data

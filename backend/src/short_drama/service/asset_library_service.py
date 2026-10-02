@@ -102,6 +102,10 @@ class AssetLibraryService(BaseService):
             self.library.reference_count(asset.id) if reference_count is None else reference_count
         )
         values["image"] = None
+        if self.session.info.get("actor") and "model_id" in schema.model_fields:
+            from .model_preference_service import get_model_preference
+
+            values["model_id"] = get_model_preference(self.session, f"asset:{asset.id}:image")
         if media is not None:
             values["image"] = AssetImageRead(
                 media_id=media.id,
@@ -145,6 +149,9 @@ class AssetLibraryService(BaseService):
             raise WorkflowError(
                 "validation_error", "Idempotency-Key must contain 1 to 128 characters", 422
             )
+        from short_drama.db.access import scoped_key
+
+        key = scoped_key(self.session, key)
         parsed = AssetLibraryCreate.model_validate(payload)
         digest = creation_fingerprint(kind, parent_id, parsed)
         try:
@@ -175,6 +182,17 @@ class AssetLibraryService(BaseService):
             creation_key=key,
             creation_hash=digest,
         )
+        actor = self.session.info.get("actor")
+        if actor:
+            from short_drama.db.access import set_scope
+
+            if kind == "global":
+                set_scope(self.session, (actor.user_id, None))
+            elif kind == "project":
+                set_scope(self.session, (None, int(parent_id)))
+            else:
+                episode = self._require(Episode, parent_id, for_update=False)
+                set_scope(self.session, (None, episode.project_id))
         asset = self.assets.create(self._creation_audit(values))
         return asset, self._create_link(kind, parent_id, asset.id)
 
@@ -288,6 +306,12 @@ class AssetLibraryService(BaseService):
             if asset.kind != "scene" and values.get("scene_time"):
                 raise WorkflowError(
                     "invalid_asset", "scene_time is only allowed for scene assets", 400
+                )
+            if self.session.info.get("actor") and "model_id" in values:
+                from .model_preference_service import save_model_preference
+
+                save_model_preference(
+                    self.session, f"asset:{asset.id}:image", values.pop("model_id")
                 )
             changes = {
                 name: value for name, value in values.items() if getattr(asset, name) != value

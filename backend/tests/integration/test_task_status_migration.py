@@ -4,11 +4,11 @@ import re
 from pathlib import Path
 
 import pytest
+from legacy_identity import session_factory
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from test_generation_execution import seeded
 
-from short_drama.db.session import session_factory
 from short_drama.domain import AsyncTask
 
 pytestmark = pytest.mark.integration

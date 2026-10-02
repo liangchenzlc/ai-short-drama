@@ -12,20 +12,28 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
   const future = useRef<AssemblyClip[][]>([]);
   const state = useRef({ value: null as AssemblyState | null, revision: 0, saved: 0, paused: false, mounted: true });
   const pending = useRef<Promise<boolean> | null>(null);
+  const latestLoad = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const register = useRef(registerBarrier); register.current = registerBarrier;
   function replace(next: AssemblyState) { state.current.value = next; if (state.current.mounted) setValue(next); }
   async function load() {
+    const request = ++latestLoad.current;
     const revision = state.current.revision;
     const before = state.current.value;
     const next = await api.get();
-    if (!state.current.mounted) return next;
+    if (!state.current.mounted || request !== latestLoad.current) return next;
     if (state.current.value === before && state.current.revision === revision && state.current.saved === revision && !pending.current) replace(next);
+    else if (state.current.value?.assembly?.id === next.assembly?.id && state.current.value) {
+      // Render progress is independent of unsaved clip edits; never hide a finished
+      // or failed export just because a draft save is paused.
+      replace({ ...state.current.value, jobs: next.jobs });
+    }
     return next;
   }
   function flush(): Promise<boolean> {
     if (timer.current) clearTimeout(timer.current);
     if (pending.current) return pending.current;
+    if (!state.current.value) return Promise.resolve(false);
     if (state.current.paused) return Promise.resolve(false);
     const run = async () => {
       while (state.current.saved !== state.current.revision) {
@@ -65,10 +73,17 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
   }
   async function reload() {
     if (pending.current) await pending.current;
-    const next = await api.get();
-    state.current.saved = state.current.revision; state.current.paused = false;
-    past.current = []; future.current = [];
-    replace(next); setError(''); setStatus('saved');
+    if (!state.current.value && state.current.mounted) setStatus('loading');
+    try {
+      const next = await api.get();
+      if (!state.current.mounted) return;
+      state.current.saved = state.current.revision; state.current.paused = false;
+      past.current = []; future.current = [];
+      replace(next); setError(''); setStatus('saved');
+    } catch (cause) {
+      if (state.current.mounted) { setError(errorMessage(cause)); setStatus('error'); }
+      throw cause;
+    }
   }
   function undo() {
     const clips = past.current.pop();
@@ -100,11 +115,19 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
     const initial = async () => { try { const next = await api.get(); if (!cancelled) { replace(next); setStatus('saved'); } } catch (cause) { if (!cancelled) { setError(errorMessage(cause)); setStatus('error'); } } };
     void initial();
     register.current({ hasUnsettled: () => state.current.revision !== state.current.saved || !!pending.current, flush: () => flushRef.current() });
-    const interval = setInterval(() => { if (!state.current.paused && state.current.saved === state.current.revision && !pending.current) void load().catch(() => {}); }, 4000);
+    let polling = false;
+    const interval = setInterval(() => {
+      if (polling || !state.current.value) return;
+      polling = true;
+      void load().catch(() => {}).finally(() => { polling = false; });
+    }, 4000);
     return () => { cancelled = true; state.current.mounted = false; clearInterval(interval); if (timer.current) clearTimeout(timer.current); register.current(null); };
   }, [api]); // project/episode remount owns this editing session
   return { api, value, status, error, edit, flush, load, replace, reload, undo, redo, refreshMedia,
     canUndo: past.current.length > 0, canRedo: future.current.length > 0,
     clearHistory: () => { past.current = []; future.current = []; }, latest: () => state.current.value,
-    retrySave: async () => { state.current.paused = false; return flush(); } };
+    retrySave: async () => {
+      if (!state.current.value) { try { await reload(); return true; } catch { return false; } }
+      state.current.paused = false; return flush();
+    } };
 }

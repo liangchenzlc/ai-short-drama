@@ -19,9 +19,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         configure_logging()
         engine = build_engine(settings)
-        app.state.session_factory = session_factory(engine)
-        app.state.settings = settings
+        from short_drama.db.readiness import assert_identity_ready
+
         try:
+            assert_identity_ready(engine, settings)
+            app.state.session_factory = session_factory(engine)
+            app.state.settings = settings
             storage = MinioStorage(settings)
             app.state.storage = storage
             try:
@@ -32,6 +35,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             engine.dispose()
 
     app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+
+    app.state.settings = settings
+    from short_drama.api.identity_middleware import install_identity
+
+    install_identity(app, settings)
 
     @app.exception_handler(BusinessError)
     async def business_error(_request: Request, exc: BusinessError):

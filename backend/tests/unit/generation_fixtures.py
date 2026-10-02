@@ -39,7 +39,25 @@ def generation_session():
                 if "CURRENT_TIMESTAMP" in str(column.server_default.arg):
                     column.server_default.arg = text("CURRENT_TIMESTAMP")
     metadata.create_all(engine)
-    return Session(engine, expire_on_commit=False)
+    session = Session(engine, expire_on_commit=False)
+    session.info["legacy_user_id"] = 1
+    from short_drama.domain.collaboration import User
+    from short_drama.service.base import utcnow
+
+    session.add(
+        User(
+            id=1,
+            username="legacy_fixture",
+            display_name="Legacy",
+            email="legacy@example.test",
+            password_hash="test-only",
+            status="active",
+            email_verified_at=utcnow(),
+            created_at=utcnow(),
+        )
+    )
+    session.commit()
+    return session
 
 
 def config(session, kind="image", identifier=1):

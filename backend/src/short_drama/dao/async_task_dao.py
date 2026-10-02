@@ -7,7 +7,7 @@ from short_drama.domain import AIGenerationRecord, AsyncTask
 from .base import BaseDAO
 
 
-def source_conditions(record, filters):
+def source_conditions(record, filters, *, scoped=False):
     scene, identifier = filters.get("source_scene"), filters.get("source_id")
     if scene is not None and scene not in {
         "shot_image",
@@ -16,6 +16,9 @@ def source_conditions(record, filters):
         "script_shots",
         "script_assets",
         "asset_image",
+        "character_voice_design",
+        "dialogue_audio",
+        "dialogue_extract",
     }:
         raise BusinessError("Unsupported source scene")
     if identifier is not None and scene is None:
@@ -31,14 +34,33 @@ def source_conditions(record, filters):
             "script_shots": "script_id",
             "script_assets": "script_id",
             "asset_image": "asset_id",
+            "character_voice_design": "asset_id",
+            "dialogue_audio": "shot_id",
+            "dialogue_extract": "shot_id",
         }[scene]
         conditions.append(record.request_data["source"][field].as_string() == str(identifier))
     for field in ("project_id", "episode_id"):
+        if scoped and field == "project_id":
+            continue
         if filters.get(field) is not None:
             conditions.append(
                 record.request_data["source"][field].as_string() == str(filters[field])
             )
     return conditions
+
+
+def scope_conditions(model, filters, session):
+    actor = session.info.get("actor")
+    if not actor:
+        return []
+    scope = filters.get("resource_scope", "all")
+    if scope == "personal":
+        return [model.scope_user_id == actor.user_id]
+    if filters.get("project_id"):
+        return [model.project_id == int(filters["project_id"])]
+    if scope == "project":
+        return [model.project_id.is_not(None)]
+    return []
 
 
 class AsyncTaskDAO(BaseDAO):
@@ -49,7 +71,10 @@ class AsyncTaskDAO(BaseDAO):
         return self.session.scalar(select(AsyncTask).where(AsyncTask.idempotency_key == key))
 
     def history(self, filters, offset, limit):
-        conditions = source_conditions(AIGenerationRecord, filters)
+        conditions = source_conditions(
+            AIGenerationRecord, filters, scoped=bool(self.session.info.get("actor"))
+        )
+        conditions.extend(scope_conditions(AsyncTask, filters, self.session))
         for key in ("service_type", "status"):
             if filters.get(key) is not None:
                 conditions.append(getattr(AsyncTask, key) == filters[key])

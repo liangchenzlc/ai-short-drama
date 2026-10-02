@@ -2,7 +2,7 @@ from sqlalchemy import func, select
 
 from short_drama.domain import AIGenerationRecord, MediaAsset, MediaFile
 
-from .async_task_dao import source_conditions
+from .async_task_dao import scope_conditions, source_conditions
 from .base import BaseDAO
 
 
@@ -11,7 +11,10 @@ class MediaAssetDAO(BaseDAO):
         super().__init__(session, MediaAsset)
 
     def history(self, filters, offset, limit):
-        conditions = source_conditions(AIGenerationRecord, filters)
+        conditions = source_conditions(
+            AIGenerationRecord, filters, scoped=bool(self.session.info.get("actor"))
+        )
+        conditions.extend(scope_conditions(MediaFile, filters, self.session))
         if filters.get("media_type"):
             conditions.append(MediaAsset.media_type == filters["media_type"])
         if filters.get("name"):

@@ -343,12 +343,15 @@ class VideoRenderer:
                         else ""
                     )
                     + "setpts=PTS-STARTPTS,"
-                    + f"scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1",
+                    + f"scale={width}:{height}:force_original_aspect_ratio=decrease:"
+                    + f"force_divisible_by=2,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1",
                     "-af",
                     "aresample=48000:async=1:first_pts=0,apad"
                     + (
-                        f",atrim=start_sample={start_frame * 1600}:end_sample={end_frame * 1600},asetpts=PTS-STARTPTS"
-                        if precise else ""
+                        f",atrim=start_sample={start_frame * 1600}:"
+                        f"end_sample={end_frame * 1600},asetpts=PTS-STARTPTS"
+                        if precise
+                        else ""
                     ),
                     "-c:v",
                     "libx264",
@@ -416,6 +419,10 @@ class VideoRenderer:
             stage="joining",
             progress=88,
         )
+        if snapshot.get("sound"):
+            from .sound_render import mix_sound
+
+            mix_sound(self, part, snapshot["sound"], sources, directory, total, width, height)
         metadata = self.probe(part)
         if (
             (metadata["width"], metadata["height"]) != (width, height)
