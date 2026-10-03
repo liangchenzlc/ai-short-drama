@@ -155,6 +155,15 @@ class GenerationBusinessService(BaseService):
             }
 
     def apply_storyboard(self, project_id, episode_id, generation_id, payload):
+        with self._transaction():
+            return self.apply_storyboard_locked(project_id, episode_id, generation_id, payload)
+
+    def apply_storyboard_locked(self, project_id, episode_id, generation_id, payload):
+        """Caller owns the project lock and transaction; adoption and receipt are atomic."""
+        from short_drama.core.exceptions import BusinessError
+
+        if not self.session.in_transaction():
+            raise BusinessError("Native adoption requires an active transaction")
         from .episode_storyboard_service import EpisodeStoryboardService
         from .generation_context_service import content_hash
 
@@ -162,88 +171,85 @@ class GenerationBusinessService(BaseService):
         project_id, episode_id, generation_id = map(
             parse_identifier, (project_id, episode_id, generation_id)
         )
-        with self._transaction():
-            task = self._require(AsyncTask, generation_id)
-            record = self.session.scalar(
-                select(AIGenerationRecord)
-                .where(AIGenerationRecord.task_id == generation_id)
-                .order_by(AIGenerationRecord.call_no.desc())
-                .limit(1)
-            )
-            source = (record.request_data.get("source") or {}) if record else {}
-            if (
-                source.get("scene") != "script_shots"
-                or str(source.get("project_id")) != str(project_id)
-                or str(source.get("episode_id")) != str(episode_id)
-            ):
-                raise WorkflowError("not_found", "此生成结果不属于当前分集", 404)
-            storyboard = EpisodeStoryboardService(self.session)
-            episode = storyboard.lock_episode(project_id, episode_id)
-            data = deepcopy(record.response_data or {})
-            result = data.get("business_result") or {}
-            if task.status != "succeeded" or result.get("kind") != "script_shots":
-                raise WorkflowError("result_not_ready", "分镜结果尚不可采用")
-            applied = result.get("applied")
-            if applied:
-                if applied["mode"] != parsed.mode:
-                    raise WorkflowError(
-                        "result_already_applied", "该结果已经采用，不能换模式重复应用"
-                    )
-                return {
-                    "generation_id": str(generation_id),
-                    "mode": applied["mode"],
-                    "shot_ids": applied["shot_ids"],
-                    "storyboard_version": str(episode.storyboard_version),
-                    "already_applied": True,
-                }
-            if episode.content_version != parsed.content_version:
-                raise WorkflowError("writing_version_conflict", "剧本版本已变化，请重新核对")
-            storyboard.lock_episode(project_id, episode_id, parsed.storyboard_version)
-            script = self.session.scalar(
-                select(EpisodeScript)
-                .where(
-                    EpisodeScript.id == int(source["script_id"]),
-                    EpisodeScript.episode_id == episode_id,
-                )
-                .with_for_update()
-            )
-            if (
-                script is None
-                or script.id != episode.editing_script_id
-                or script.state != "confirmed"
-                or content_hash(script.content)
-                != record.request_data["source_snapshot"]["content_hash"]
-            ):
-                raise WorkflowError("source_changed", "来源剧本已变化，请基于当前确认剧本重新生成")
-            if parsed.mode == "replace":
-                storyboard.archive_active_locked(storyboard.list_active_for_update(episode.id))
-            rows = storyboard.create_generated_locked(episode, result["shots"])
-            records = BaseDAO(self.session, ScriptShotRecord)
-            now = utcnow()
-            for row in rows:
-                records.create(
-                    {
-                        "script_id": script.id,
-                        "shot_id": row.id,
-                        "batch_id": task.id,
-                        "model_id": record.config_id,
-                        "created_at": now,
-                    }
-                )
-            storyboard.advance_storyboard_version(episode)
-            result["applied"] = {
-                "mode": parsed.mode,
-                "shot_ids": [str(row.id) for row in rows],
-                "applied_at": now.isoformat() + "Z",
-                "storyboard_version": str(episode.storyboard_version),
-            }
-            data["business_result"] = result
-            record.response_data = data
-            self.session.flush()
+        task = self._require(AsyncTask, generation_id)
+        record = self.session.scalar(
+            select(AIGenerationRecord)
+            .where(AIGenerationRecord.task_id == generation_id)
+            .order_by(AIGenerationRecord.call_no.desc())
+            .limit(1)
+        )
+        source = (record.request_data.get("source") or {}) if record else {}
+        if (
+            source.get("scene") != "script_shots"
+            or str(source.get("project_id")) != str(project_id)
+            or str(source.get("episode_id")) != str(episode_id)
+        ):
+            raise WorkflowError("not_found", "此生成结果不属于当前分集", 404)
+        storyboard = EpisodeStoryboardService(self.session)
+        episode = storyboard.lock_episode(project_id, episode_id)
+        data = deepcopy(record.response_data or {})
+        result = data.get("business_result") or {}
+        if task.status != "succeeded" or result.get("kind") != "script_shots":
+            raise WorkflowError("result_not_ready", "分镜结果尚不可采用")
+        applied = result.get("applied")
+        if applied:
+            if applied["mode"] != parsed.mode:
+                raise WorkflowError("result_already_applied", "该结果已经采用，不能换模式重复应用")
             return {
                 "generation_id": str(generation_id),
-                "mode": parsed.mode,
-                "shot_ids": result["applied"]["shot_ids"],
+                "mode": applied["mode"],
+                "shot_ids": applied["shot_ids"],
                 "storyboard_version": str(episode.storyboard_version),
-                "already_applied": False,
+                "already_applied": True,
             }
+        if episode.content_version != parsed.content_version:
+            raise WorkflowError("writing_version_conflict", "剧本版本已变化，请重新核对")
+        storyboard.lock_episode(project_id, episode_id, parsed.storyboard_version)
+        script = self.session.scalar(
+            select(EpisodeScript)
+            .where(
+                EpisodeScript.id == int(source["script_id"]),
+                EpisodeScript.episode_id == episode_id,
+            )
+            .with_for_update()
+        )
+        if (
+            script is None
+            or script.id != episode.editing_script_id
+            or script.state != "confirmed"
+            or content_hash(script.content)
+            != record.request_data["source_snapshot"]["content_hash"]
+        ):
+            raise WorkflowError("source_changed", "来源剧本已变化，请基于当前确认剧本重新生成")
+        if parsed.mode == "replace":
+            storyboard.archive_active_locked(storyboard.list_active_for_update(episode.id))
+        rows = storyboard.create_generated_locked(episode, result["shots"])
+        records = BaseDAO(self.session, ScriptShotRecord)
+        now = utcnow()
+        for row in rows:
+            records.create(
+                {
+                    "script_id": script.id,
+                    "shot_id": row.id,
+                    "batch_id": task.id,
+                    "model_id": record.config_id,
+                    "created_at": now,
+                }
+            )
+        storyboard.advance_storyboard_version(episode)
+        result["applied"] = {
+            "mode": parsed.mode,
+            "shot_ids": [str(row.id) for row in rows],
+            "applied_at": now.isoformat() + "Z",
+            "storyboard_version": str(episode.storyboard_version),
+        }
+        data["business_result"] = result
+        record.response_data = data
+        self.session.flush()
+        return {
+            "generation_id": str(generation_id),
+            "mode": parsed.mode,
+            "shot_ids": result["applied"]["shot_ids"],
+            "storyboard_version": str(episode.storyboard_version),
+            "already_applied": False,
+        }

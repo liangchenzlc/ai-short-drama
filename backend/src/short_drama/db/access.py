@@ -9,7 +9,7 @@ from sqlalchemy import and_, event, false, inspect, or_, select
 from sqlalchemy.orm import Session, with_loader_criteria
 
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.domain import Base
+from short_drama.domain import AGENT_PRIVATE_TABLES, AGENT_TABLES, Base
 from short_drama.domain.collaboration import AuditEvent, ResourceScope
 from short_drama.utils.snowflake import next_id
 
@@ -38,6 +38,15 @@ def allowed_ids(name, user_id):
 def condition(table, user_id):
     name = table.original.name if hasattr(table, "original") else table.name
     c = table.c
+    # Private execution data never inherits the ordinary shared-project predicate.
+    if name == "agent_conversations":
+        return and_(c.owner_user_id == user_id, c.project_id.in_(project_ids(user_id)))
+    if name in {"agent_messages", "agent_runs", "agent_events"}:
+        return c.conversation_id.in_(allowed_ids("agent_conversations", user_id))
+    if name in {"agent_turns", "agent_tool_calls"}:
+        return c.run_id.in_(allowed_ids("agent_runs", user_id))
+    if name == "agent_artifacts":
+        return c.project_id.in_(project_ids(user_id))
     if name == "projects":
         members = Base.metadata.tables["project_members"].alias("project_access_members")
         return and_(
@@ -101,6 +110,12 @@ def restrict_queries(state):
     if not state.is_orm_statement:
         raise WorkflowError(
             "unscoped_query_forbidden", "Use scoped ORM queries for account data", 403
+        )
+    if (state.is_update or state.is_delete) and any(
+        mapper.local_table.name in AGENT_TABLES for mapper in state.all_mappers
+    ):
+        raise WorkflowError(
+            "guarded_agent_bulk_write", "Agent records require checked entity writes", 403
         )
     if state.is_update:
         protected = {
@@ -172,6 +187,9 @@ def scope_of(session, entity):
     """Resolve the actual ownership path, independent of the caller's entry point."""
     table = inspect(type(entity)).local_table
     name = table.name
+    if name in AGENT_PRIVATE_TABLES:
+        conversation = _agent_conversation(session, entity)
+        return (None, conversation.project_id)
     if name == "projects":
         return (None, entity.id)
     if isinstance(entity, ResourceScope):
@@ -210,6 +228,195 @@ def scope_of(session, entity):
                 raise NotFound("Referenced resource does not exist")
             return scope_of(session, obj)
     return (None, None)
+
+
+def _agent_parent(session, name, identifier):
+    model = next(m.class_ for m in Base.registry.mappers if m.local_table.name == name)
+    entity = next((x for x in session.new if isinstance(x, model) and x.id == identifier), None)
+    if entity is None:
+        entity = session.scalar(select(model).where(model.id == identifier))
+    if entity is None:
+        raise NotFound("Agent parent does not exist")
+    return entity
+
+
+def _agent_conversation(session, entity):
+    name = inspect(type(entity)).local_table.name
+    if name == "agent_conversations":
+        return entity
+    if name in {"agent_messages", "agent_runs", "agent_events"}:
+        return _agent_parent(session, "agent_conversations", entity.conversation_id)
+    if name == "agent_turns" or name == "agent_tool_calls":
+        run = _agent_parent(session, "agent_runs", entity.run_id)
+        return _agent_parent(session, "agent_conversations", run.conversation_id)
+    raise NotFound("Agent parent does not exist")
+
+
+def _guard_agent_write(session, entity, actor, new):
+    name = inspect(type(entity)).local_table.name
+    if name in AGENT_PRIVATE_TABLES:
+        if new and name == "agent_conversations":
+            entity.owner_user_id = actor.user_id
+        conversation = _agent_conversation(session, entity)
+        if conversation.owner_user_id != actor.user_id:
+            raise NotFound("Resource does not exist")
+        require_project(session, conversation.project_id)
+        episode = _agent_parent(session, "episodes", conversation.episode_id)
+        if episode.project_id != conversation.project_id:
+            raise NotFound("Episode does not belong to this project")
+        if name == "agent_runs":
+            if new and entity.initiated_by is None:
+                entity.initiated_by = actor.user_id
+            if entity.initiated_by != actor.user_id:
+                raise NotFound("Run initiator does not own this conversation")
+            if new:
+                _agent_parent(session, "ai_model_configs", entity.model_config_id)
+        immutable = {
+            "owner_user_id",
+            "project_id",
+            "episode_id",
+            "conversation_id",
+            "run_id",
+            "turn_id",
+            "trigger_message_id",
+            "initiated_by",
+            "model_config_id",
+        }
+        if not new and any(
+            field in inspect(type(entity)).local_table.c
+            and inspect(entity).attrs[field].history.has_changes()
+            for field in immutable
+        ):
+            raise WorkflowError("ownership_immutable", "Agent ownership cannot be changed", 403)
+        frozen = {
+            "agent_messages": {
+                "content",
+                "role",
+                "seq",
+                "references",
+                "artifacts",
+                "idempotency_key",
+                "request_hash",
+                "created_at",
+            },
+            "agent_tool_calls": {
+                "arguments",
+                "arguments_hash",
+                "idempotency_key",
+                "provider_call_id",
+                "call_index",
+                "tool_name",
+                "created_at",
+            },
+            "agent_events": {"seq", "event_type", "payload", "created_at"},
+        }.get(name, set())
+        if not new and any(inspect(entity).attrs[field].history.has_changes() for field in frozen):
+            raise WorkflowError("agent_record_immutable", "Append a new Agent record", 403)
+    elif name == "agent_artifacts":
+        require_project(session, entity.project_id)
+        episode = _agent_parent(session, "episodes", entity.episode_id)
+        if episode.project_id != entity.project_id:
+            raise NotFound("Episode does not belong to this project")
+        if new:
+            tool = _agent_parent(session, "agent_tool_calls", entity.tool_call_id)
+            conversation = _agent_conversation(session, tool)
+            if (conversation.project_id, conversation.episode_id) != (
+                entity.project_id,
+                entity.episode_id,
+            ):
+                raise NotFound("Artifact origin does not belong to this episode")
+            _guard_artifact_references(session, entity)
+        else:
+            immutable = {
+                "project_id",
+                "episode_id",
+                "tool_call_id",
+                "result_index",
+                "kind",
+                "source_snapshot",
+                "source_content",
+                "proposed_patch",
+                "script_id",
+                "parent_script_id",
+                "generation_task_id",
+                "media_asset_id",
+                "media_id",
+                "target_asset_id",
+                "target_shot_id",
+                "created_by",
+            }
+            if any(inspect(entity).attrs[field].history.has_changes() for field in immutable):
+                raise WorkflowError(
+                    "agent_artifact_immutable", "Create a new candidate to change its source", 403
+                )
+
+
+def _guard_artifact_references(session, artifact):
+    for field, table in (
+        ("script_id", "episode_scripts"),
+        ("parent_script_id", "episode_scripts"),
+        ("target_shot_id", "shot_scripts"),
+    ):
+        identifier = getattr(artifact, field)
+        if identifier:
+            parent = _agent_parent(session, table, identifier)
+            if parent.episode_id != artifact.episode_id:
+                raise NotFound("Artifact reference is outside this episode")
+    for field, table in (
+        ("target_asset_id", "assets"),
+        ("generation_task_id", "async_tasks"),
+        ("media_asset_id", "media_assets"),
+        ("media_id", "media_files"),
+    ):
+        identifier = getattr(artifact, field)
+        if identifier:
+            parent = _agent_parent(session, table, identifier)
+            if scope_of(session, parent) != (None, artifact.project_id):
+                raise NotFound("Artifact reference is outside this project")
+    if artifact.target_asset_id:
+        from short_drama.domain import EpisodeAsset
+
+        linked = next(
+            (
+                x
+                for x in session.new
+                if isinstance(x, EpisodeAsset)
+                and x.episode_id == artifact.episode_id
+                and x.asset_id == artifact.target_asset_id
+            ),
+            None,
+        )
+        if linked is None:
+            linked = session.scalar(
+                select(EpisodeAsset).where(
+                    EpisodeAsset.episode_id == artifact.episode_id,
+                    EpisodeAsset.asset_id == artifact.target_asset_id,
+                )
+            )
+        if linked is None:
+            raise NotFound("Artifact asset is not linked to this episode")
+    if artifact.media_asset_id:
+        media = _agent_parent(session, "media_assets", artifact.media_asset_id)
+        record = _agent_parent(session, "ai_generation_records", media.record_id)
+        if artifact.media_id and artifact.media_id != media.media_id:
+            raise NotFound("Artifact media references do not match")
+        if artifact.generation_task_id and artifact.generation_task_id != record.task_id:
+            raise NotFound("Artifact generation references do not match")
+    if artifact.generation_task_id:
+        from short_drama.domain import AIGenerationRecord
+
+        record = session.scalar(
+            select(AIGenerationRecord)
+            .where(
+                AIGenerationRecord.task_id == artifact.generation_task_id,
+            )
+            .order_by(AIGenerationRecord.call_no)
+            .limit(1)
+        )
+        if record:
+            episode_id = (record.request_data.get("source") or {}).get("episode_id")
+            if episode_id and str(artifact.episode_id) != str(episode_id):
+                raise NotFound("Artifact generation is outside this episode")
 
 
 def set_scope(session, scope):
@@ -260,6 +467,8 @@ def guard_writes(session, _context, _instances):
         }:
             continue
         new = entity in session.new
+        if actor and name in AGENT_TABLES:
+            _guard_agent_write(session, entity, actor, new)
         if new:
             if name in {"projects", "ai_model_configs"}:
                 entity.owner_user_id = user_id
@@ -321,6 +530,10 @@ def guard_writes(session, _context, _instances):
             entity.created_by = actor.user_id
         if hasattr(entity, "updated_by"):
             entity.updated_by = actor.user_id
+        # A project audit is shared. Private chat/object identifiers belong only
+        # in the conversation's own event log, never in this public timeline.
+        if name in AGENT_PRIVATE_TABLES:
+            continue
         session.info.setdefault("pending_audit", []).append(
             AuditEvent(
                 id=next_id(),

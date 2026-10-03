@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('api', 'scheduler', 'text', 'image', 'video', 'audio', 'render')]
-    [string]$Role
+    [ValidateSet('api', 'scheduler', 'text', 'image', 'video', 'audio', 'render', 'agent')]
+    [string]$Role,
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,15 +19,14 @@ if ($processPathNames.Count -gt 1) {
 $backendDirectory = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $pythonExecutable = Join-Path $backendDirectory '.venv/Scripts/python.exe'
 $runtimeDirectory = Join-Path $backendDirectory '.runtime'
-New-Item -ItemType Directory -Path $runtimeDirectory -Force | Out-Null
 $pidFile = Join-Path $runtimeDirectory "$Role.pid"
-if (Test-Path -LiteralPath $pidFile) {
+if (-not $DryRun -and (Test-Path -LiteralPath $pidFile)) {
     $existingProcessId = [int](Get-Content -LiteralPath $pidFile)
     if (Get-Process -Id $existingProcessId -ErrorAction SilentlyContinue) {
         throw "$Role already has a recorded running process: $existingProcessId"
     }
 }
-$roleNodes = @{ api = '1'; scheduler = '10'; text = '2'; image = '3'; video = '4'; render = '5'; audio = '6' }
+$roleNodes = @{ api = '1'; scheduler = '10'; text = '2'; image = '3'; video = '4'; render = '5'; audio = '6'; agent = '7' }
 $originalNode = $env:SNOWFLAKE_WORKER_ID
 try {
     $env:SNOWFLAKE_WORKER_ID = $roleNodes[$Role]
@@ -37,7 +37,7 @@ try {
     } else {
         Push-Location $backendDirectory
         try {
-            $queueName = & $pythonExecutable -c "import sys; from short_drama.core.config import Settings; from short_drama.tasks.celery_app import topology, render_queue; s=Settings(); print(render_queue(s).name if sys.argv[1] == 'render' else topology(s)[2][sys.argv[1]].name)" $Role
+            $queueName = & $pythonExecutable -c "import sys; from short_drama.core.config import Settings; from short_drama.tasks.celery_app import topology, render_queue, agent_queue; s=Settings(); role=sys.argv[1]; print(agent_queue(s).name if role == 'agent' else render_queue(s).name if role == 'render' else topology(s)[2][role].name)" $Role
             if ($LASTEXITCODE -ne 0 -or $queueName -notmatch '^[a-zA-Z0-9_.]+$') {
                 throw 'Unable to resolve the configured generation queue'
             }
@@ -49,6 +49,11 @@ try {
             '--pool=threads', "--concurrency=$workerConcurrency", '-Q', $queueName,
             "--hostname=$Role@%h", '--loglevel=WARNING')
     }
+    if ($DryRun) {
+        Write-Output "$Role command (SNOWFLAKE_WORKER_ID=$($roleNodes[$Role])): python $($processArguments -join ' ')"
+        return
+    }
+    New-Item -ItemType Directory -Path $runtimeDirectory -Force | Out-Null
     $process = Start-Process -FilePath $pythonExecutable -ArgumentList $processArguments `
         -WorkingDirectory $backendDirectory -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput (Join-Path $runtimeDirectory "$Role.out.log") `

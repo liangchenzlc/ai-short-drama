@@ -1,9 +1,10 @@
 from typing import Literal
 
-from short_drama.core.exceptions import BusinessError, WorkflowError
+from short_drama.core.exceptions import BusinessError, Conflict, WorkflowError
 from short_drama.dao.asset_library_dao import AssetLibraryDAO
 from short_drama.domain import Asset
 from short_drama.schemas.asset import AssetCreate, AssetRecordRead, AssetUpdate
+from short_drama.schemas.base import UINT64_MAX
 
 from .base import BaseService
 from .episode_asset_service import EpisodeAssetService
@@ -43,25 +44,32 @@ class AssetService(BaseService):
             raise BusinessError("Asset updates require row_version")
         with self._transaction():
             entity = self._get_locked(identifier)
-            if entity.row_version != expected:
-                raise WorkflowError(
-                    "asset_version_conflict",
-                    "Asset changed; refresh before saving",
-                    details={"current_version": entity.row_version},
-                )
-            self._validate_update(entity, values)
-            changes = {key: value for key, value in values.items() if getattr(entity, key) != value}
-            if not changes:
-                return self._read(entity)
-            references = AssetLibraryDAO(self.session).reference_count(entity.id)
-            if references > 1 and not confirm_shared:
-                raise WorkflowError(
-                    "shared_asset_confirmation_required",
-                    "Confirm updating every reference to this shared asset",
-                    details={"reference_count": references},
-                )
-            changes.update(row_version=entity.row_version + 1, state="unconfirmed")
-            return self._read(self._apply_update(entity, changes))
+            self.apply_patch_locked(entity, values, expected, confirm_shared=confirm_shared)
+            return self._read(entity)
+
+    def apply_patch_locked(self, entity, values, expected, *, confirm_shared=False):
+        """Caller owns project/asset locks and the transaction, including any receipt."""
+        if entity.row_version != expected:
+            raise WorkflowError(
+                "asset_version_conflict",
+                "Asset changed; refresh before saving",
+                details={"current_version": entity.row_version},
+            )
+        self._validate_update(entity, values)
+        changes = {key: value for key, value in values.items() if getattr(entity, key) != value}
+        if not changes:
+            return entity
+        references = AssetLibraryDAO(self.session).reference_count(entity.id)
+        if references > 1 and not confirm_shared:
+            raise WorkflowError(
+                "shared_asset_confirmation_required",
+                "Confirm updating every reference to this shared asset",
+                details={"reference_count": references},
+            )
+        if entity.row_version >= UINT64_MAX:
+            raise Conflict("Asset version exhausted")
+        changes.update(row_version=entity.row_version + 1, state="unconfirmed")
+        return self._apply_update(entity, changes)
 
     def copy_for_library(
         self,

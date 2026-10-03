@@ -46,21 +46,24 @@ class ShotScriptService(BaseService):
         with self._transaction():
             shot = self._get_locked(identifier)
             episode = self._require(Episode, shot.episode_id)
-            if shot.deleted_at is not None:
-                raise WorkflowError("shot_archived", "Archived shots cannot be edited")
             expected = values.pop("row_version", None)
-            if expected is not None:
-                require_shot_version(shot, expected)
-            changes = {
-                name: value for name, value in values.items() if getattr(shot, name) != value
-            }
-            if changes:
-                changes.update(updated_at=utcnow(), updated_by=None)
-                self.dao.update(shot, changes)
-                advance_shot_version(shot)
-                advance_storyboard_version(episode)
-                self.session.flush()
+            self.apply_patch_locked(episode, shot, values, expected)
             return self._read(shot)
+
+    def apply_patch_locked(self, episode, shot, values, expected=None):
+        """Caller owns episode/shot locks and the transaction, including any receipt."""
+        if shot.deleted_at is not None:
+            raise WorkflowError("shot_archived", "Archived shots cannot be edited")
+        if expected is not None:
+            require_shot_version(shot, expected)
+        changes = {name: value for name, value in values.items() if getattr(shot, name) != value}
+        if changes:
+            changes.update(updated_at=utcnow(), updated_by=None)
+            self.dao.update(shot, changes)
+            advance_shot_version(shot)
+            advance_storyboard_version(episode)
+            self.session.flush()
+        return shot
 
     def delete(self, identifier):
         with self._transaction():

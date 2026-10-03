@@ -1,7 +1,8 @@
 import os
 
-# Existing single-user fixtures exercise isolated services; identity tests opt in explicitly.
+# Legacy single-user fixtures opt out of auth and Agent; their tests opt in explicitly.
 os.environ.setdefault("AUTH_ENABLED", "false")
+os.environ.setdefault("AGENT_ENABLED", "false")
 
 import json
 import threading

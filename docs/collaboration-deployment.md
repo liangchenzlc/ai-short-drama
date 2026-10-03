@@ -60,7 +60,9 @@ backfill 拒绝活动生成或渲染任务。它在事务内分配项目/配置/
 
 ## 新数据库
 
-执行完整 [schema.mysql8.sql](数据库模型/schema.mysql8.sql) 创建 43 张表，不再执行历史增量 SQL。配置身份、邮件和存储后直接启动，第一位注册者只拥有自己新建的数据。
+执行完整 [schema.mysql8.sql](数据库模型/schema.mysql8.sql) 创建 50 张表，不再执行历史增量 SQL。配置身份、邮件和存储后直接启动，第一位注册者只拥有自己新建的数据。
+
+Agent 模式默认开启，在账号迁移之外还需要新增七表、独立 Worker 与显式能力验证；已有库迁移前须显式设置 `AGENT_ENABLED=false`。新库完整 SQL 已包含 Agent 表；启动和回退见 [Agent 部署](agent-deployment.md)。
 
 ## 验证命令与上线验收
 

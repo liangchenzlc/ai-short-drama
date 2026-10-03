@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     minio_audio_bucket: str = "short-drama-audio"
     generation_audio_budget_seconds: int = 300
     generation_batches_enabled: bool = False
+    agent_enabled: bool = True
+    agent_lease_seconds: int = Field(default=180, ge=150, le=3600)
+    agent_poll_seconds: int = Field(default=5, ge=3, le=60)
     generation_batch_image_concurrency: int = Field(default=2, ge=1, le=8)
     generation_batch_video_concurrency: int = Field(default=1, ge=1, le=4)
     generation_download_timeout: int = Field(default=60, ge=10, le=600)
@@ -116,6 +119,12 @@ class Settings(BaseSettings):
         if endpoint.port is not None and not 1 <= endpoint.port <= 65535:
             raise ValueError("Invalid MinIO port")
         return value
+
+    @model_validator(mode="after")
+    def agent_requires_identity(self):
+        if self.agent_enabled and not self.auth_enabled:
+            raise ValueError("AGENT_ENABLED requires AUTH_ENABLED")
+        return self
 
     @model_validator(mode="after")
     def distinct_media_buckets(self):

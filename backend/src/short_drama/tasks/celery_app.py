@@ -35,10 +35,10 @@ def make_celery(settings=None):
     app = Celery(
         "short_drama",
         broker=settings.rabbitmq_url.get_secret_value(),
-        include=["short_drama.tasks.worker"],
+        include=["short_drama.tasks.worker", "short_drama.tasks.agent_worker"],
     )
     app.conf.update(
-        task_queues=(*queues.values(), render_queue(settings)),
+        task_queues=(*queues.values(), render_queue(settings), agent_queue(settings)),
         task_create_missing_queues=False,
         task_default_queue=queues["text"].name,
         task_default_exchange=exchange.name,
@@ -74,6 +74,20 @@ def render_queue(settings):
         exchange=exchange,
         routing_key="render",
         durable=True,
+    )
+
+
+def agent_queue(settings):
+    exchange, dead_exchange, _ = topology(settings)
+    return Queue(
+        f"{settings.generation_queue_namespace}.tasks.agent",
+        exchange=exchange,
+        routing_key="agent",
+        durable=True,
+        queue_arguments={
+            "x-dead-letter-exchange": dead_exchange.name,
+            "x-dead-letter-routing-key": "agent",
+        },
     )
 
 

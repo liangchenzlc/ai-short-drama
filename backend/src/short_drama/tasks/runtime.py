@@ -16,17 +16,30 @@ def main():
     configure_logging()
     settings = Settings()
     engine = build_engine(settings)
-    from short_drama.db.readiness import assert_identity_ready
+    from short_drama.db.readiness import (
+        assert_agent_ready,
+        assert_identity_ready,
+        inspect_agent_schema,
+    )
 
     assert_identity_ready(engine, settings)
+    assert_agent_ready(engine, settings)
+    with engine.connect() as connection:
+        agent_schema_available = inspect_agent_schema(connection)["status"] == "ready"
     factory = session_factory(engine)
     publisher = Publisher(factory, settings)
     renders = RenderPublisher(factory, settings)
+    if settings.agent_enabled:
+        from short_drama.agent.publisher import AgentPublisher
+        from short_drama.agent.recovery import recover as recover_agent
+
+        agents = AgentPublisher(factory, settings)
     from short_drama.storage.minio import MinioStorage
 
     storage = MinioStorage(settings)
     log = logging.getLogger(__name__)
     next_cleanup = 0
+    next_agent_poll = 0
     try:
         while True:
             try:
@@ -38,6 +51,13 @@ def main():
                 process_import(factory, storage, settings)
                 recover(factory, settings)
                 dispatch_batches(factory, settings)
+                if settings.agent_enabled:
+                    recover_agent(factory, settings)
+                if agent_schema_available and time.monotonic() >= next_agent_poll:
+                    from short_drama.agent.native_tasks import collect_native_results
+
+                    collect_native_results(factory, settings)
+                    next_agent_poll = time.monotonic() + settings.agent_poll_seconds
                 if time.monotonic() >= next_cleanup:
                     from short_drama.tasks.email import prune_limits
 
@@ -54,6 +74,10 @@ def main():
                 for _ in range(10):
                     if not renders.tick():
                         break
+                if settings.agent_enabled:
+                    for _ in range(50):
+                        if not agents.tick():
+                            break
             except Exception:
                 log.warning(
                     "Generation scheduler unavailable; retrying without exposing credentials"

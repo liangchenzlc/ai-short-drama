@@ -324,6 +324,7 @@ class AIGenerationService(BaseService):
             "initiated_by": str(task.initiated_by) if task.initiated_by else None,
             "can_retry": own_task
             and can_retry(task, latest)
+            and not record.config_snapshot.get("agent_managed")
             and not record.request_data.get("batch_id")
             and (record.request_data.get("source") or {}).get("scene")
             not in {"dialogue_audio", "character_voice_design"},
@@ -449,19 +450,40 @@ class AIGenerationService(BaseService):
         digest = self._hash(kind, parsed.model_dump(mode="json", exclude_unset=True), "create")
         try:
             with self._transaction():
-                existing = self._existing(key, digest)
-                if existing:
-                    return existing
-                self._lock_payload_scope(parsed.model_dump(mode="json", exclude_none=True))
-                config = self._config(kind, parsed.config_id)
-                request = self._prepare(kind, parsed.model_dump(mode="json", exclude_none=True))
-                return self._insert(kind, request, key, digest, config)
+                return self.create_locked(kind, parsed, key, request_hash=digest)
         except Conflict:
             with self._transaction():
                 existing = self._existing(key, digest)
                 if existing:
                     return existing
             raise
+
+    def create_locked(
+        self, kind, payload, idempotency_key, *, request_hash=None, prepare_transform=None
+    ):
+        """Admission core for an already authorized caller holding the project lock.
+
+        Agent callers reserve budget and link the parent Tool in this same transaction.
+        The public create method retains its own transaction and conflict replay contract.
+        """
+        if not self.session.in_transaction() or kind not in GENERATION_SCHEMAS:
+            raise BusinessError("Generation admission requires an active transaction")
+        if isinstance(payload, GENERATION_SCHEMAS[kind]):
+            payload = payload.model_dump(mode="json", exclude_unset=True)
+        parsed = GENERATION_SCHEMAS[kind].model_validate(payload)
+        key = self._key(idempotency_key)
+        request_hash = request_hash or self._hash(
+            kind, parsed.model_dump(mode="json", exclude_unset=True), "create"
+        )
+        existing = self._existing(key, request_hash)
+        if existing:
+            return existing
+        self._lock_payload_scope(parsed.model_dump(mode="json", exclude_none=True))
+        config = self._config(kind, parsed.config_id)
+        request = self._prepare(kind, parsed.model_dump(mode="json", exclude_none=True))
+        if prepare_transform is not None:
+            request = prepare_transform(request)
+        return self._insert(kind, request, key, request_hash, config)
 
     create_generation = create
 
@@ -667,6 +689,8 @@ class AIGenerationService(BaseService):
             if not can_retry(task, records[-1]):
                 raise Conflict("This task cannot safely be regenerated")
             record = records[0]
+            if record.config_snapshot.get("agent_managed"):
+                raise WorkflowError("agent_retry_requires_plan", "请在创作对话中重新授权生成", 409)
             if (record.request_data.get("source") or {}).get("scene") in {
                 "dialogue_audio",
                 "character_voice_design",

@@ -6,8 +6,8 @@
 
 | 服务 | 用途 | Compose 镜像 | 默认本机端口 |
 | --- | --- | --- | --- |
-| MySQL | 43 张表：账号与项目权限、业务数据、异步任务和媒体元数据 | `mysql:8.4`（满足 8.0.21+ 要求） | 3306 |
-| RabbitMQ | Celery 文本、图片、视频任务消息和死信交换机 | `rabbitmq:4.1-management` | 5672；管理页面 15672 |
+| MySQL | 50 张表：账号与项目权限、业务数据、异步任务和媒体元数据 | `mysql:8.4`（满足 8.0.21+ 要求） | 3306 |
+| RabbitMQ | Celery 原生、成片、Agent 任务消息和死信交换机 | `rabbitmq:4.1-management` | 5672；管理页面 15672 |
 | MinIO | 图片、视频对象存储和临时签名 URL | `minio/minio:RELEASE.2025-04-22T22-12-26Z` | S3 API 9000；控制台 9001 |
 
 Celery 是后端 Python 进程，不是额外的数据库服务；任务结果由 MySQL 保存，当前没有 Redis 依赖。队列由后端调度器和 Worker 声明。RabbitMQ 配置将消费确认超时设为 25 小时，覆盖应用允许的最长 24 小时视频执行预算。
@@ -24,7 +24,7 @@ docker compose up -d
 
 无需先创建根目录 `.env`，Compose 内置了本地开发默认值。首次启动会拉取镜像，并执行以下初始化：
 
-- MySQL 创建 `short_drama` 数据库和同名应用用户；仅在数据卷为空时执行仓库的完整 `schema.mysql8.sql`，创建 43 张表。已有卷按[协作迁移](collaboration-deployment.md)显式升级，容器重启不会补齐结构。
+- MySQL 创建 `short_drama` 数据库和同名应用用户；仅在数据卷为空时执行仓库的完整 `schema.mysql8.sql`，创建 50 张表。已有卷按[协作迁移](collaboration-deployment.md)显式升级，容器重启不会补齐结构。
 - RabbitMQ 创建 `short_drama` 用户，使用 `/` vhost。
 - `minio-init` 等待 MinIO 健康后创建 `image`、`video` 两个私有 bucket，重复执行不会删除已有对象。
 - 三个服务使用独立命名数据卷，并配置健康检查和自动重启。
@@ -82,7 +82,7 @@ MINIO_VIDEO_BUCKET=video
 uv run python -c "import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"
 ```
 
-随后按[开发指南](development.md#启动后端)启动 API、调度器和四个 Worker（文本、图片、视频、成片），并给各进程分配不同的 `SNOWFLAKE_WORKER_ID`。成片 Worker 还需要宿主机安装 FFmpeg / FFprobe。本 Compose 只启动外部依赖。API 启动后可用 `/api/v1/test/db` 和 `/api/v1/test/minio` 检查连接。
+随后按[开发指南](development.md#启动后端)启动 API、调度器及所用队列的独立 Worker（默认文本、图片、视频、成片与 Agent；音频按启用情况增加），并给各进程分配不同的 `SNOWFLAKE_WORKER_ID`。成片 Worker 还需要宿主机安装 FFmpeg / FFprobe。本 Compose 只启动外部依赖。Agent 默认开启，已有库启动前需显式七表迁移并准备独立 Worker；迁移期间或暂不使用时显式设置 `AGENT_ENABLED=false`，详见 [Agent 部署](agent-deployment.md)；不增加新的依赖容器。API 启动后可用 `/api/v1/test/db` 和 `/api/v1/test/minio` 检查连接。
 
 默认 MySQL 应用用户仅有 `short_drama` 库权限，足以运行应用；创建随机数据库的集成测试需要另行配置具有 CREATE/DROP DATABASE 权限的测试用户。
 

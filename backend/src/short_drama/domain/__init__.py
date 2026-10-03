@@ -1,3 +1,14 @@
+from .agent import (
+    AGENT_PRIVATE_TABLES,
+    AGENT_TABLES,
+    AgentArtifact,
+    AgentConversation,
+    AgentEvent,
+    AgentMessage,
+    AgentRun,
+    AgentToolCall,
+    AgentTurn,
+)
 from .ai_generation_record import AIGenerationRecord
 from .ai_model_config import AIModelConfig
 from .asset import Asset
@@ -87,4 +98,16 @@ __all__ += [
     "EmailOutbox",
     "AuthRateLimit",
     "ResourceImport",
+]
+
+__all__ += [
+    "AGENT_PRIVATE_TABLES",
+    "AGENT_TABLES",
+    "AgentConversation",
+    "AgentMessage",
+    "AgentRun",
+    "AgentTurn",
+    "AgentToolCall",
+    "AgentEvent",
+    "AgentArtifact",
 ]

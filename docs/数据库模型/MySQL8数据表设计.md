@@ -1,6 +1,6 @@
 # MySQL 8 数据库说明
 
-项目当前使用 **43 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已合并写作、素材、分镜、成片、批量生成、声音、原生音色及账号协作结构。原有 32 张业务表保留，新增 11 张身份与协作表。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。
+项目当前使用 **50 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已合并写作、素材、分镜、成片、批量生成、声音、原生音色、账号协作及 Agent 结构。原有 32 张业务表和 11 张身份与协作表保留，Agent 增加 7 张独立表。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。
 
 本文说明表的职责、关系及应用维护的约束，不另维护一份重复的字段清单。开发与测试见[开发说明](../development.md)，模块关系见[架构说明](../architecture.md)，接口见[API 文档](../api/README.md)。旧库升级使用[迁移目录](migrations/README.md)。
 
@@ -17,7 +17,7 @@ uv run python scripts/export_schema.py --check
 
 ## 初始化与升级
 
-新库要求 MySQL **8.0.21+**。先由数据库管理员创建并选定空数据库，连接使用 `utf8mb4`、UTC（`+00:00`）及严格 SQL 模式（至少 `STRICT_TRANS_TABLES`），再执行完整的 `schema.mysql8.sql`。文件只包含按外键依赖顺序排列的 43 条 `CREATE TABLE`，不创建数据库、不设置连接、不导入数据，也不自动选择业务库。
+新库要求 MySQL **8.0.21+**。先由数据库管理员创建并选定空数据库，连接使用 `utf8mb4`、UTC（`+00:00`）及严格 SQL 模式（至少 `STRICT_TRANS_TABLES`），再执行完整的 `schema.mysql8.sql`。文件只包含按外键依赖顺序排列的 50 条 `CREATE TABLE`，不创建数据库、不设置连接、不导入数据，也不自动选择业务库。
 
 已有数据库不能用全量脚本覆盖。根据实际字段、索引、约束和已执行记录判断缺少哪些迁移，按[迁移顺序](migrations/README.md)补齐；应用启动不会自动迁移。新库执行完整脚本后无需叠加历史迁移。
 
@@ -46,6 +46,22 @@ uv run python scripts/export_schema.py --check
 `assets/media_files/async_tasks/generation_batches` 用 `scope_user_id/project_id` 表示个人或项目范围，CHECK 强制恰好一个非空。其余资源通过分集、分镜、素材或任务等父链确定范围。跨表引用在服务事务与 ORM 写入守卫中校验，列表、计数、JOIN 和别名查询也经过范围过滤。
 
 `created_by/updated_by` 只记录真实作者；历史未知保持 NULL，不能用这些字段代替所有权。任务、批次和渲染的 `initiated_by` 用于控制取消、重试与恢复。协作者退出后项目成果继续归项目所有，未提交工作被取消，已受理调用可归档成果。
+
+## Agent 创作与候选（7 张）
+
+| 表 | 职责与读取范围 |
+| --- | --- |
+| `agent_conversations` | 单分集的私有会话、固定创作要求、消息与事件序号；本人且仍有项目权限才能读取 |
+| `agent_messages` | 追加的用户与助手消息、引用和幂等键；继承会话私有范围 |
+| `agent_runs` | 私有任务状态、检查点、预算、使用量和租约；每个会话至多一个活动 Run |
+| `agent_turns` | 每次决策调用的私有请求、响应、状态与使用量；继承 Run 范围 |
+| `agent_tool_calls` | 私有工具意图、参数、逐任务审批与原生生成任务关联；继承 Run 范围 |
+| `agent_events` | 私有状态事件；`seq` 在会话内唯一，独立于消息序号 |
+| `agent_artifacts` | 项目共享的文本、剧本、素材、分镜和图像/视频候选；保存不可变来源、类型化引用、建议补丁与采用回执 |
+
+Run 的触发消息、Tool 的 Turn 和 Event 的 Run 使用复合外键保证父链一致。候选的剧本与镜头引用必须属于同一分集，素材必须关联该分集，任务与媒体必须属于同一项目且互相匹配；由服务和 ORM 守卫校验跨表范围。私有会话记录不进入项目共享审计。
+
+Agent 默认关闭，旧库显式执行[Agent 迁移](migrations/2026-10-02-agent-mode/README.md)后才能启用；不修改既有表。基础账户 readiness 在功能关闭时忽略 Agent 表，启用时校验完整字段、索引、外键、CHECK 表达式与启用状态。共享候选的 API 不暴露私有工具 ID、会话历史或检查点。
 
 ## 批量、声音与原生音色（8 张）
 
@@ -177,7 +193,7 @@ uv run python scripts/export_schema.py --check
 
 ## 结构验证与维护
 
-修改数据库结构时，同步维护总 SQL、Domain、适用于旧库的迁移和相关测试。`backend/tests/unit/test_domain.py` 无需数据库即可核对 43 表及列、类型、可空性、默认值、生成列、索引、CHECK、外键和依赖顺序，并验证总 SQL 只有 CREATE TABLE。`backend/scripts/export_schema.py` 从 Domain 导出完整 SQL，旧库仍使用专用增量迁移。
+修改数据库结构时，同步维护总 SQL、Domain、适用于旧库的迁移和相关测试。`backend/tests/unit/test_domain.py` 无需数据库即可核对 50 表及列、类型、可空性、默认值、生成列、索引、CHECK、外键和依赖顺序，并验证总 SQL 只有 CREATE TABLE。`backend/scripts/export_schema.py` 从 Domain 导出完整 SQL，旧库仍使用专用增量迁移。
 
 MySQL 集成测试使用 `backend/scripts/run_integration.py` 及测试 fixture 在配置的服务器上创建随机隔离库 `short_drama_<随机值>_test`，从总 SQL 初始化，结束后清理。迁移测试在该隔离库重建旧结构，检查升级、重入和数据保留；不得将业务库直接配置成测试目标。测试运行方式见开发说明。
 

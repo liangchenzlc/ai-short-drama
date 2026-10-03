@@ -92,19 +92,27 @@ class MediaAssetService(BaseService):
             return self._dto(asset)
 
     def apply(self, identifier, payload):
-        parsed = MediaAssetApply.model_validate(payload)
         with self._transaction():
-            asset = self._require(MediaAsset, identifier, for_update=False)
-            record = self._require(AIGenerationRecord, asset.record_id, for_update=False)
-            kind = "video" if parsed.target.type == "shot_video" else "image"
-            if asset.media_type != kind:
-                raise BusinessError("Asset type does not match the target")
-            if parsed.target.type == "shot_image":
-                return self._apply_shot_image(asset, record, parsed)
-            if parsed.target.type == "asset_image":
-                return self._apply_asset_image(asset, parsed)
-            if parsed.target.type == "shot_video":
-                return self._apply_shot_video(asset, record, parsed)
+            return self.apply_locked(identifier, payload)
+
+    def apply_locked(self, identifier, payload):
+        """Caller owns the project lock and transaction; adoption and receipt are atomic."""
+        from short_drama.core.exceptions import BusinessError
+
+        if not self.session.in_transaction():
+            raise BusinessError("Native adoption requires an active transaction")
+        parsed = MediaAssetApply.model_validate(payload)
+        asset = self._require(MediaAsset, identifier, for_update=False)
+        record = self._require(AIGenerationRecord, asset.record_id, for_update=False)
+        kind = "video" if parsed.target.type == "shot_video" else "image"
+        if asset.media_type != kind:
+            raise BusinessError("Asset type does not match the target")
+        if parsed.target.type == "shot_image":
+            return self._apply_shot_image(asset, record, parsed)
+        if parsed.target.type == "asset_image":
+            return self._apply_asset_image(asset, parsed)
+        if parsed.target.type == "shot_video":
+            return self._apply_shot_video(asset, record, parsed)
 
     def _apply_shot_video(self, asset, record, parsed):
         from .generation_context_service import GenerationContextService

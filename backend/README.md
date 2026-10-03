@@ -16,7 +16,7 @@ Copy-Item .env.example .env
 uv run uvicorn short_drama.main:app --host 127.0.0.1 --port 8000
 ```
 
-API 文档：`http://127.0.0.1:8000/docs`，机器可读契约：`/openapi.json`。数据库初始化和异步任务的另外四个进程见[开发与运行](../docs/development.md)。只启动 API 不能执行生成任务。
+API 文档：`http://127.0.0.1:8000/docs`，机器可读契约：`/openapi.json`。数据库初始化、scheduler 与各类独立 Worker 的启动见[开发与运行](../docs/development.md)。只启动 API 不能执行生成任务。
 
 `uv.cmd` 是可选的本地工具包装器，仅在 `backend/.tools/uv/uv.exe` 已存在时可用；它不会安装 uv。标准开发流程使用系统安装的 `uv`。
 
@@ -28,9 +28,10 @@ src/short_drama/
   schemas/      Pydantic 输入/输出模型及结构化模型结果验证
   service/      业务规则、事务边界、版本检查与采用
   dao/          SQLAlchemy 查询与持久化操作
-  domain/       全部 43 张表的 ORM 映射
+  domain/       全部 50 张表的 ORM 映射
   db/           连接池、Session、资源范围过滤与迁移就绪检查
   ai/           提示词模板、协议适配、受限网络传输
+  agent/        持久决策段、延迟工具、候选、授权与安全恢复
   tasks/        Publisher、Recovery、Celery Worker
   storage/      MinIO 适配器
   core/         配置、异常、日志和密钥加密
@@ -56,6 +57,8 @@ uv run python scripts/run_integration.py
 ```
 
 该脚本复用 `.env` 中的服务器连接配置，在服务器创建随机 `_test` 数据库，结束后仅删除该临时库；需要 CREATE/DROP DATABASE 权限。不会以应用库作为测试库。RabbitMQ/MinIO 测试另需显式启用，详见[测试分层](../docs/development.md#测试与验证)。
+
+Agent 模式默认开启，启动需显式七表迁移、账号认证及独立 Agent Worker；尚未升级的环境须显式设置 `AGENT_ENABLED=false`。迁移、节点/队列命名、SSE 代理、unknown 处理和关闭步骤见 [Agent 部署](../docs/agent-deployment.md)。
 
 ## 修改约定
 

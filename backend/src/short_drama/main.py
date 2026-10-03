@@ -19,10 +19,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         configure_logging()
         engine = build_engine(settings)
-        from short_drama.db.readiness import assert_identity_ready
+        from short_drama.db.readiness import (
+            assert_agent_ready,
+            assert_identity_ready,
+            inspect_agent_schema,
+        )
 
         try:
             assert_identity_ready(engine, settings)
+            assert_agent_ready(engine, settings)
+            app.state.agent_schema_ready = False
+            if settings.auth_enabled:
+                with engine.connect() as connection:
+                    app.state.agent_schema_ready = (
+                        inspect_agent_schema(connection)["status"] == "ready"
+                    )
             app.state.session_factory = session_factory(engine)
             app.state.settings = settings
             storage = MinioStorage(settings)

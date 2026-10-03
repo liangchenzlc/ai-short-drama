@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from short_drama.api.v1.agent import router as agent_router
+from short_drama.api.v1.agent_artifacts import router as agent_artifacts_router
 from short_drama.api.v1.ai_generations import router as ai_generations_router
 from short_drama.api.v1.ai_model_configs import router as ai_model_configs_router
 from short_drama.api.v1.assets import router as assets_router
@@ -18,6 +20,8 @@ from short_drama.api.v1.projects import router as projects_router
 from short_drama.api.v1.test import router as test_router
 
 router = APIRouter(prefix="/api/v1")
+router.include_router(agent_router)
+router.include_router(agent_artifacts_router)
 router.include_router(episode_assembly_router)
 router.include_router(episode_sound_router)
 router.include_router(test_router)

@@ -54,7 +54,20 @@ class SafeTransport:
     def __init__(self, settings):
         self.settings = settings
 
-    def request(self, method, url, *, headers=None, body=None, max_bytes, deadline, query=False):
+    def request(
+        self,
+        method,
+        url,
+        *,
+        headers=None,
+        body=None,
+        max_bytes,
+        deadline,
+        query=False,
+        on_headers=None,
+        on_chunk=None,
+        on_send=None,
+    ):
         url = validated_url(url, query=query)
         parts = urlsplit(url)
         port = parts.port or (443 if parts.scheme == "https" else 80)
@@ -84,13 +97,17 @@ class SafeTransport:
             encoded, content_type = urllib3.encode_multipart_formdata(body.fields)
         else:
             encoded = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
-        request_headers = {
-            "Accept": "application/json" if body is not None else "*/*",
-            "Accept-Encoding": "identity",
-            "User-Agent": "ShortDrama-Generation/1.0",
-            **(headers or {}),
-            "Host": parts.netloc,
-        }
+        # HTTP names are case-insensitive; SDKs provide lowercase names. A plain
+        # dict would send both those names and our defaults as separate headers.
+        request_headers = urllib3.HTTPHeaderDict(
+            {
+                "Accept": "application/json" if body is not None else "*/*",
+                "Accept-Encoding": "identity",
+                "User-Agent": "ShortDrama-Generation/1.0",
+            }
+        )
+        request_headers.update(headers or {})
+        request_headers["Host"] = parts.netloc
         if encoded is not None:
             request_headers["Content-Type"] = content_type
         path = urlunsplit(("", "", parts.path, parts.query, ""))
@@ -114,6 +131,11 @@ class SafeTransport:
             )
             response = None
             try:
+                if on_send is not None:
+                    on_send()
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise GenerationError("timeout", accepted_unknown=method == "POST")
                 response = pool.request(
                     method,
                     path,
@@ -134,6 +156,8 @@ class SafeTransport:
                     ),
                 )
                 response_headers = dict(response.headers)
+                if on_headers is not None:
+                    on_headers(response.status, response_headers)
                 # Error bodies carry no useful trusted data; do not read or reflect them.
                 if response.status < 200 or response.status >= 300:
                     return response.status, response_headers, b""
@@ -156,6 +180,8 @@ class SafeTransport:
                         raise GenerationError(
                             "response_too_large", accepted_unknown=method == "POST"
                         )
+                    if on_chunk is not None:
+                        on_chunk(chunk)
                 return response.status, response_headers, bytes(data)
             except NewConnectionError:
                 last_error = GenerationError("connection_error", retryable=True)

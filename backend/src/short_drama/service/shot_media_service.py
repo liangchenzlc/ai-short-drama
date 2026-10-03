@@ -52,7 +52,17 @@ class ShotMediaService(BaseService):
         self._validate_media(values["media_id"], self.media_kind)
         model_id = values.get("model_id")
         if model_id is not None:
-            if historical or (previous is not None and model_id == previous.model_id):
+            if historical:
+                # The project-shared generation record proves this historical
+                # reference. Read only its type, never another member's private
+                # configuration/credentials; new selection still requires ownership.
+                table = AIModelConfig.__table__
+                service_type = self.session.connection().scalar(
+                    select(table.c.service_type).where(table.c.id == model_id)
+                )
+                if service_type != self.media_kind:
+                    raise BusinessError("Model type does not match media")
+            elif previous is not None and model_id == previous.model_id:
                 model = self._require(AIModelConfig, model_id)
                 if model.service_type != self.media_kind:
                     raise BusinessError("Model type does not match media")

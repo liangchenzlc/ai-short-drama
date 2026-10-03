@@ -6,6 +6,7 @@ import threading
 from contextlib import contextmanager
 from copy import deepcopy
 
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from short_drama.ai import GenerationError, capability_fingerprint, select_adapter
@@ -163,19 +164,32 @@ class GenerationExecutionService:
             current = owned_task(session, task.id, version, token)
             call = session.get(AIGenerationRecord, record.id)
             if task.next_action == "submit":
-                if not may_submit(session, current):
+                if not may_submit(
+                    session, current, agent_enabled=getattr(self.settings, "agent_enabled", False)
+                ):
                     finish(current, "cancelled", {"code": "access_revoked"})
                     return
                 if current.cancel_requested:
                     finish(current, "cancelled")
                     return
-                config = session.get(AIModelConfig, call.config_id)
+                config = session.scalar(
+                    select(AIModelConfig)
+                    .where(AIModelConfig.id == call.config_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
                 if config is None or not config.enabled or config.is_deleted:
                     finish(
                         current,
                         "failed",
                         {"code": "configuration_disabled", "message": "模型配置已停用，未提交生成"},
                     )
+                    return
+                if call.config_snapshot.get("agent_managed") and (
+                    config.owner_user_id != current.initiated_by
+                    or str(config.row_version) != str(call.config_snapshot["row_version"])
+                ):
+                    finish(current, "failed", {"code": "agent_configuration_changed"})
                     return
                 call.status = "sent"
                 call.started_at = utcnow()
@@ -245,6 +259,7 @@ class GenerationExecutionService:
                         current_snapshot, identity
                     ) == capability_fingerprint(call.config_snapshot, captured_identity):
                         config.capability_cache = {
+                            **(config.capability_cache or {}),
                             "adapter": result.adapter,
                             "fingerprint": capability_fingerprint(current_snapshot, identity),
                         }
@@ -358,6 +373,7 @@ class GenerationExecutionService:
                 finish(current, "failed", safe_error)
             elif (
                 error.protocol_mismatch
+                and not call.config_snapshot.get("agent_managed")
                 and call.call_no == 1
                 and call.adapter
                 in {
