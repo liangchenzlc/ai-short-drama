@@ -353,3 +353,94 @@ test('late automatic creation stays out of assembly and is restored to its origi
   expect(state.errors).toEqual([]);
   expect(state.unexpected).toEqual([]);
 });
+
+test('collapsing prompt creation widens the editor and keeps drafts and keyboard focus', async ({ page }) => {
+  const state = await agentFixture(page);
+  await page.goto(`${root}/source`);
+  const novel = page.getByRole('textbox', { name: '本集小说正文' });
+  await expect(novel).toBeVisible();
+  const requirements = page.getByPlaceholder('例如：突出主角冲突，保留关键对白，结尾设置悬念。');
+  await requirements.fill('收起后仍保留车站对白');
+  const initialWidth = (await novel.boundingBox())!.width;
+  const initialUrl = page.url();
+  const collapse = page.getByRole('button', { name: '收起 AI 创作区域', exact: true });
+  await expect(collapse).toHaveAttribute('aria-expanded', 'true');
+  await expect(collapse).toHaveAttribute('aria-controls', 'agent-conversation-pane');
+  await collapse.focus();
+  await page.keyboard.press('Enter');
+  const expand = page.getByRole('button', { name: '展开 AI 创作区域', exact: true });
+  await expect(expand).toHaveAttribute('aria-expanded', 'false');
+  await expect(expand).toBeFocused();
+  await expect(page.getByRole('region', { name: 'AI 创作区域', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('separator', { name: '调整对话区域宽度' })).toHaveCount(0);
+  await expect.poll(async () => (await novel.boundingBox())?.width ?? 0).toBeGreaterThan(initialWidth + 200);
+  await expect(page).toHaveURL(initialUrl);
+  await page.keyboard.press('Space');
+  await expect(collapse).toHaveAttribute('aria-expanded', 'true');
+  await expect(collapse).toBeFocused();
+  await expect(page.getByRole('region', { name: 'AI 创作区域', exact: true })).toBeVisible();
+  await expect(page.getByRole('separator', { name: '调整对话区域宽度' })).toBeVisible();
+  await expect(requirements).toHaveValue('收起后仍保留车站对白');
+  await expect(page.getByRole('radio', { name: '提示词创作', exact: true })).toBeChecked();
+  await expect(page).toHaveURL(initialUrl);
+  expect(state.mutations).toEqual([]);
+  expect(state.requests.filter(request => request.method === 'POST' && request.path.startsWith('/ai/generations'))).toEqual([]);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('collapsed Agent creation preserves drafts across responsive views and stays absent in assembly', async ({ page }) => {
+  const state = await agentFixture(page);
+  await page.goto(`${root}/source?mode=agent`);
+  await expect(page).toHaveURL(url => url.searchParams.get('conversation') === '301');
+  const draft = page.getByRole('textbox', { name: '创作要求', exact: true });
+  await expect(draft).toBeVisible();
+  await draft.fill('保留这段尚未发送的 Agent 草稿');
+  const initialUrl = page.url();
+  await page.setViewportSize({ width: 1440, height: 800 });
+  for (const scrollTop of [70, 270]) {
+    await page.locator('#agent-conversation-pane').evaluate((pane, position) => { pane.scrollTop = position; }, scrollTop);
+    await expect.poll(async () => page.getByRole('radio', { name: 'Agent 创作', exact: true }).evaluate((input, position) => {
+      const pane = document.getElementById('agent-conversation-pane')!;
+      const toolbar = input.closest('.creation-mode-toolbar')!;
+      const label = input.closest('label')!;
+      const paneRect = pane.getBoundingClientRect();
+      const toolbarRect = toolbar.getBoundingClientRect();
+      const labelRect = label.getBoundingClientRect();
+      const modeHit = document.elementFromPoint(labelRect.x + labelRect.width / 2, labelRect.y + labelRect.height / 2);
+      const collapse = document.querySelector<HTMLButtonElement>('button[aria-controls="agent-conversation-pane"]')!;
+      const collapseRect = collapse.getBoundingClientRect();
+      const collapseHit = document.elementFromPoint(collapseRect.x + collapseRect.width / 2, collapseRect.y + collapseRect.height / 2);
+      return pane.scrollTop > position - 5 && toolbarRect.top >= paneRect.top && toolbarRect.top < paneRect.top + 5
+        && collapseRect.top >= toolbarRect.top && collapseRect.bottom <= toolbarRect.bottom
+        && label.contains(modeHit) && collapse.contains(collapseHit);
+    }, scrollTop)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`agent-collapsible-scroll-${scrollTop}.png`), fullPage: true, animations: 'disabled' });
+  }
+  await page.getByRole('button', { name: '收起 AI 创作区域', exact: true }).click();
+  await expect(page.getByRole('button', { name: '展开 AI 创作区域', exact: true })).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('complementary', { name: 'Agent 创作对话', exact: true })).toHaveCount(0);
+  await expect(page).toHaveURL(initialUrl);
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await expect(page.getByRole('button', { name: /^(收起|展开) AI 创作区域$/ })).toHaveCount(0);
+  await page.getByRole('tab', { name: 'AI 创作', exact: true }).click();
+  await expect(draft).toBeVisible();
+  await expect(draft).toHaveValue('保留这段尚未发送的 Agent 草稿');
+  await expect(page.getByRole('radio', { name: 'Agent 创作', exact: true })).toBeChecked();
+  await expect(page).toHaveURL(initialUrl);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const expand = page.getByRole('button', { name: '展开 AI 创作区域', exact: true });
+  await expect(expand).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('region', { name: 'AI 创作区域', exact: true })).toHaveCount(0);
+  await expand.click();
+  await expect(draft).toBeVisible();
+  await expect(draft).toHaveValue('保留这段尚未发送的 Agent 草稿');
+  await expect(page).toHaveURL(initialUrl);
+  expect(state.mutations).toHaveLength(1);
+  await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /成片合成与导出/ }).click();
+  await expect(page.getByRole('region', { name: '视频时间轴', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(收起|展开) AI 创作区域$/ })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'AI 创作区域', exact: true })).toHaveCount(0);
+  expect(state.mutations).toHaveLength(1);
+  expect(state.requests.filter(request => request.method === 'POST' && request.path.startsWith('/ai/generations'))).toEqual([]);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});

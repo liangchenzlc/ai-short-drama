@@ -29,6 +29,15 @@
 .web-episode .writing-layout.creation-workspace, .web-episode .storyboard-columns { display: block; }
 .web-episode .storyboard-expanded { grid-template-columns: minmax(0, 1fr); }
 .web-episode .agent-episode-layout.is-agent.is-wide { grid-template-columns: minmax(480px, 1fr) 20px var(--agent-panel-width); }
+.web-episode .agent-episode-layout.is-agent.is-wide.is-ai-collapsed { grid-template-columns: minmax(0, 1fr) 44px; column-gap: 12px; }
+.agent-creation-rail { position: sticky; top: 18px; min-width: 0; }
+.agent-creation-rail[hidden], .agent-creation-collapse[hidden] { display: none; }
+.agent-creation-collapse { position: absolute; top: 17px; right: 18px; z-index: 2; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--sub); cursor: pointer; }
+.agent-creation-collapse:hover { border-color: var(--border-hover); background: var(--surface-hover); color: var(--ink); }
+.agent-creation-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.is-ai-collapsed .agent-creation-collapse { position: static; width: 44px; height: 44px; border-color: var(--hair); background: var(--surface); }
+.is-wide .creation-mode-toolbar { position: sticky; top: 0; z-index: 1; padding-right: 64px; border-radius: 11px 11px 0 0; background: var(--surface); }
+.is-compact .agent-creation-rail { position: static; }
 .web-episode .agent-conversation-pane { max-height: calc(100dvh - 108px); overflow-y: auto; scrollbar-gutter: stable; }
 @media (max-width: 1024px) {
   .web-episode .agent-conversation-pane { max-height: none; overflow: visible; }
