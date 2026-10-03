@@ -1,6 +1,7 @@
 import { Button, Dropdown } from 'antd';
 import { Icon } from '../../components/ui/Icon';
 import { serviceLabels, type AiConfig, type ServiceType } from './config-model';
+import './config-table.css';
 
 export function ConfigTable({ items, serviceType, busyId, onEdit, onDelete, onDefault }: {
   items: AiConfig[]; serviceType: ServiceType; busyId: string | null;
@@ -9,10 +10,11 @@ export function ConfigTable({ items, serviceType, busyId, onEdit, onDelete, onDe
   if (!items.length) return <div className="studio-empty"><h2>还没有{serviceLabels[serviceType]}</h2><p>添加一个模型配置，就能在创作时使用。</p></div>;
   return <div className="config-table-wrap"><table className="config-table">
     <caption className="sr-only">{serviceLabels[serviceType]}配置</caption>
-    <thead><tr><th scope="col">模型名称</th><th scope="col">模型与服务地址</th><th scope="col">状态</th><th scope="col">密钥</th><th scope="col">操作</th></tr></thead>
+    <thead><tr><th scope="col">模型名称</th><th scope="col">模型</th><th scope="col">服务地址</th><th scope="col">状态</th><th scope="col">密钥</th><th scope="col">操作</th></tr></thead>
     <tbody>{items.map(item => <tr key={item.id} aria-busy={busyId === item.id}>
       <td data-label="模型名称"><div className="config-identity"><strong>{item.name}</strong>{item.isDefault && <span className="status-badge">默认模型</span>}</div><span className="config-secondary">{item.provider}</span></td>
-      <td data-label="模型与地址"><span className="config-model-key">{item.modelKey}</span><span className="config-secondary config-url" title={item.baseUrl}>{item.baseUrl || '未设置地址'}</span></td>
+      <td data-label="模型"><span className="config-model-key">{item.modelKey}</span></td>
+      <td data-label="服务地址"><span className="config-secondary config-url" title={item.baseUrl}>{item.baseUrl || '未设置地址'}</span></td>
       <td data-label="状态"><span className={`status-badge ${item.enabled ? 'is-success' : 'is-neutral'}`}>{item.enabled ? '已启用' : '已停用'}</span></td>
       <td data-label="密钥">{item.hasApiKey ? '已配置' : '未配置'}</td>
       <td data-label="操作"><div className="config-actions"><Button disabled={!!busyId} onClick={() => onEdit(item)}>编辑</Button><Dropdown trigger={['click']} menu={{ items: [

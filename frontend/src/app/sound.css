@@ -14,4 +14,14 @@
 .sound-subtitle { display: grid; grid-template-columns: 120px 120px minmax(0,1fr) auto; gap: 12px; align-items: end; margin: 16px 0; }
 .sound-extraction pre { max-height: 220px; white-space: pre-wrap; overflow: auto; }
 .sound-file input { display: block; max-width: 240px; }
+.sound-drawer .ant-drawer-content-wrapper { max-width: 100vw; }
+.sound-inline { min-width: 0; }
+.sound-inline > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.sound-inline h3 { margin: 0; font-size: 15px; }
+.sound-inline .sound-editor { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.sound-inline .sound-editor nav { max-height: 200px; }
+.sound-inline .sound-subtitle { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.sound-inline .sound-subtitle label:nth-child(3) { grid-column: 1 / -1; }
+.sound-inline .sound-fields input[type="file"] { max-width: 100%; }
+.sound-inline .sound-actions { gap: 8px; }
 @media (max-width: 640px) { .sound-editor { grid-template-columns: 1fr; } .sound-editor nav { max-height: 200px; } .sound-subtitle { grid-template-columns: 1fr 1fr; } .sound-subtitle label:nth-child(3) { grid-column: 1 / -1; } }

@@ -1,54 +1,69 @@
-import { PreviewImage } from '../../components/ui/ImagePreview';
-import { Alert, Button, Empty, Form, Input, Pagination, Skeleton, Tabs } from 'antd';
-import { Icon } from '../../components/ui/Icon';
-import { FilterPanel, ListToolbar, PageHeader } from '../../components/ui/Workspace';
-import { useEffect, useState } from 'react';
+import { Alert, Button, Empty, Pagination, Skeleton, Tabs } from 'antd';
+import { lazy, Suspense, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { mediaLibrary } from '../../api/modules/media-library';
-import { AssetDetail } from '../../features/media-library/AssetDetail';
-import { dateLabel } from '../../features/generations/presentation';
-import { isServerId } from '../../features/generations/attempt';
+import type { AssetFilters, MediaAsset } from '../../api/types/generations';
+import { Icon } from '../../components/ui/Icon';
+import { ListToolbar, PageHeader } from '../../components/ui/Workspace';
 import { useRemotePage } from '../../features/generations/useRemotePage';
-import type { AssetFilters } from '../../api/types/generations';
+import './media-library.css';
+
+const AssetDetail = lazy(() => import('../../features/media-library/AssetDetail').then(module => ({ default: module.AssetDetail })));
+
+function MediaCard({ asset, onSelect }: { asset: MediaAsset; onSelect: (id: string) => void }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const available = asset.url && asset.url !== failedUrl;
+  return <button type="button" className="media-gallery-card" onClick={() => onSelect(asset.asset_id)}
+    aria-label={`查看${asset.name}`} aria-haspopup="dialog">
+    {available ? asset.media_type === 'video'
+      ? <video src={asset.url!} preload="metadata" muted playsInline aria-hidden="true"
+        onError={() => setFailedUrl(asset.url)}/>
+      : <img src={asset.url!} alt="" loading="lazy" decoding="async"
+        width={asset.width ?? undefined} height={asset.height ?? undefined}
+        onError={() => setFailedUrl(asset.url)}/>
+      : <span className="media-gallery-placeholder" aria-hidden="true">
+        <Icon name={asset.media_type === 'video' ? 'film' : 'scene'} size={32}/>
+      </span>}
+    <span className="media-gallery-name">{asset.name}</span>
+  </button>;
+}
 
 export function MediaLibraryPage({ kind }: { kind: 'image' | 'video' }) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const [form] = Form.useForm();
-  const [filtersOpen, setFiltersOpen] = useState(() => ['source_id', 'created_after', 'created_before'].some(key => params.has(key)));
-  const [search, setSearch] = useState(params.get('name') ?? '');
-  const filtered = ['name', 'source_id', 'created_after', 'created_before'].some(key => !!params.get(key));
-  const filterKey = JSON.stringify(Object.fromEntries(['name', 'source_id', 'created_after', 'created_before'].map((key) => [key, params.get(key) ?? ''])));
-  useEffect(() => { const values = JSON.parse(filterKey); form.setFieldsValue(values); setSearch(values.name); }, [form, filterKey]);
   const rawOffset = Number(params.get('offset') ?? 0);
   const offset = Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
-  const sourceId = params.get('source_id') || undefined;
-  const query: AssetFilters = { media_type: kind, offset, limit: 20, name: params.get('name') || undefined, ...(sourceId ? { source_id: sourceId, source_scene: 'shot_image' } : {}) };
-  for (const field of ['created_after', 'created_before'] as const) { const value = params.get(field); if (value) query[field] = !Number.isNaN(new Date(value).getTime()) ? new Date(value).toISOString() : value; }
+  const query: AssetFilters = { media_type: kind, offset, limit: 20 };
   const { data, error, loading, refresh } = useRemotePage(query, mediaLibrary.list);
   const selected = params.get('asset');
-  function selectAsset(id?: string) { const next = new URLSearchParams(params); if (id) next.set('asset', id); else next.delete('asset'); setParams(next); }
-  return <section className="studio-page generation-page" aria-labelledby="media-library-title">
-    <PageHeader id="media-library-title" title="资产库" description="收藏每一次生成的画面，预览、整理，再用到作品中。" actions={<Button onClick={() => navigate(`/tasks/${kind}`)}>查看生成任务</Button>} />
-    <Tabs activeKey={kind} onChange={(value) => navigate(`/media-library/${value}`)} items={[{ key: 'image', label: '图片资产' }, { key: 'video', label: '视频资产' }]} />
-    <div className="library-search-bar"><Input.Search value={search} onChange={event => setSearch(event.target.value)} aria-label="搜索资产名称" placeholder={`搜索${kind === 'image' ? '图片' : '视频'}名称`} allowClear maxLength={255} onSearch={name => { const next = new URLSearchParams(params); if (name.trim()) next.set('name', name.trim()); else next.delete('name'); next.delete('offset'); setParams(next); }}/>{filtered && <Button onClick={() => setParams({})}>清除筛选</Button>}</div>
-    <FilterPanel open={filtersOpen} onOpenChange={setFiltersOpen} hint="来源与入库时间">
-    <Form form={form} layout="vertical" className="generation-filters asset-filters" initialValues={JSON.parse(filterKey)} onFinish={(values) => { const next = new URLSearchParams(); for (const field of ['name', 'source_id', 'created_after', 'created_before']) if (values[field]?.trim()) next.set(field, values[field].trim()); setParams(next); }}>
-      <Form.Item name="name" hidden><Input /></Form.Item>
-      {kind === 'image' && <Form.Item name="source_id" label="来源分镜编号" rules={[{ validator: (_, value?: string) => !value || isServerId(value.trim()) ? Promise.resolve() : Promise.reject(new Error('请输入有效的分镜编号')) }]}><Input placeholder="输入分镜编号（选填）" /></Form.Item>}
-      <Form.Item name="created_after" label="入库时间起"><Input type="datetime-local" /></Form.Item>
-      <Form.Item name="created_before" label="入库时间止"><Input type="datetime-local" /></Form.Item>
-      <div className="generation-filter-actions"><Button type="primary" htmlType="submit">筛选</Button><Button onClick={() => { form.setFieldsValue({ name: undefined, source_id: undefined, created_after: undefined, created_before: undefined }); setParams({}); }}>重置</Button></div>
-    </Form></FilterPanel>
-    <ListToolbar count={data ? `共 ${data.total} 个${kind === 'image' ? '图片' : '视频'}资产` : '已保存资产'} hint={kind === 'image' ? '点击图片预览大图' : '点击画面查看详情'} actions={<Button onClick={refresh} loading={loading}>刷新</Button>} />
-    {error && <Alert type="error" showIcon message={error} action={<Button onClick={refresh}>重新加载</Button>} />}
-    {loading && !data ? <div className="asset-library-skeleton" role="status" aria-label="正在加载资产">{[0, 1, 2].map(item => <Skeleton key={item} title paragraph={{ rows: 3 }}/>)}</div> : data?.items.length ? <div className="asset-library-grid" aria-busy={loading}>
-      {data.items.map((asset) => <article key={asset.asset_id} className="asset-library-item">
-        {kind === 'image' && asset.url ? <PreviewImage triggerClassName="asset-library-preview" src={asset.url} alt={asset.name}/> : <button type="button" className="asset-library-preview" onClick={() => selectAsset(asset.asset_id)} aria-label={`查看${asset.name}`}><span className="asset-library-placeholder"><Icon name={kind === 'video' ? 'film' : 'scene'} size={32}/>{kind === 'video' ? '预览视频' : '查看图片详情'}</span></button>}
-        <div className="asset-library-caption"><h2>{asset.name}</h2><p>{dateLabel(asset.created_at)}</p><div><span>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : kind === 'video' ? '视频资产' : '图片资产'}</span><Button onClick={() => selectAsset(asset.asset_id)}>查看详情</Button></div></div>
-      </article>)}
-    </div> : <div className="generation-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? '暂时无法加载资产' : filtered ? '没有找到匹配的资产' : '还没有作品，先完成一次生成'} />{!error && <Button type={filtered ? 'default' : 'primary'} onClick={() => filtered ? setParams({}) : navigate(`/tasks/${kind}`)}>{filtered ? '清除筛选' : `前往${kind === 'image' ? '图片' : '视频'}生成`}</Button>}</div>}
-    <Pagination className="generation-pagination" current={Math.floor(offset / 20) + 1} pageSize={20} total={data?.total ?? 0} showSizeChanger={false} hideOnSinglePage onChange={(page) => { const next = new URLSearchParams(params); next.set('offset', String((page - 1) * 20)); setParams(next); }} />
-    {selected && <AssetDetail key={selected} id={selected} onClose={() => selectAsset()} onChanged={refresh} />}
+  function selectAsset(id?: string) {
+    const next = new URLSearchParams(params);
+    if (id) next.set('asset', id); else next.delete('asset');
+    setParams(next);
+  }
+  return <section className="studio-page generation-page media-gallery-page" aria-labelledby="media-library-title">
+    <PageHeader id="media-library-title" title="资产库" />
+    <Tabs activeKey={kind} onChange={value => navigate(`/media-library/${value}`)}
+      items={[{ key: 'image', label: '图片资产' }, { key: 'video', label: '视频资产' }]} />
+    <ListToolbar count={data ? `共 ${data.total} 个${kind === 'image' ? '图片' : '视频'}资产` : '已保存资产'}
+      hint="点击画面预览与整理" actions={null} />
+    {error && <Alert type="error" showIcon message={error}
+      action={<Button onClick={refresh} loading={loading}>重新加载</Button>} />}
+    {loading && !data ? <div className="media-gallery-grid media-gallery-loading" role="status" aria-label="正在加载资产">
+      {[0, 1, 2, 3].map(item => <Skeleton.Node key={item} active />)}
+    </div> : data?.items.length ? <div className="media-gallery-grid" aria-busy={loading}>
+      {data.items.map(asset => <MediaCard key={asset.asset_id} asset={asset} onSelect={selectAsset}/>)}
+    </div> : <div className="generation-empty">
+      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description={error ? '暂时无法加载资产' : '还没有资产，完成图片或视频生成后会显示在这里'} />
+    </div>}
+    <Pagination className="generation-pagination" current={Math.floor(offset / 20) + 1} pageSize={20}
+      total={data?.total ?? 0} showSizeChanger={false} hideOnSinglePage onChange={page => {
+        const next = new URLSearchParams(params);
+        next.set('offset', String((page - 1) * 20)); setParams(next);
+      }} />
+    {selected && <Suspense fallback={<p role="status" className="generation-hint">正在加载资产…</p>}>
+      <AssetDetail key={selected} id={selected} onClose={() => selectAsset()} onChanged={refresh} />
+    </Suspense>}
   </section>;
 }

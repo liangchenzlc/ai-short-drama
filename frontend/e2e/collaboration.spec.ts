@@ -10,7 +10,7 @@ const project = { id: '10', name: '协作项目', synopsis: '共享故事', styl
 for (const width of [1440, 390]) test(`collaboration choices are readable and show the selected recipient at ${width}px`, async ({ page }, info) => {
   await accountFixture(page, true);
   await page.setViewportSize({ width, height: 900 });
-  await page.goto('/projects/10');
+  await page.goto('/projects/10?section=collaboration');
   await page.getByRole('button', { name: '邀请协作者' }).click();
   await page.getByLabel('搜索人名、账号名、账号 ID 或邮箱').fill('同名创作者');
   await page.getByRole('button', { name: '搜索账号', exact: true }).click();
@@ -19,11 +19,10 @@ for (const width of [1440, 390]) test(`collaboration choices are readable and sh
   await expect(person).toHaveAttribute('aria-pressed', 'true');
   const unselectedBackground = await page.locator('.collaboration-search-result[aria-pressed=false]').evaluate(node => getComputedStyle(node).backgroundColor);
   await expect.poll(() => person.evaluate(node => getComputedStyle(node).backgroundColor)).not.toBe(unselectedBackground);
-  await page.locator('.project-collaboration').scrollIntoViewIfNeeded();
+  await page.getByRole('dialog', { name: '邀请协作者', exact: true }).scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await person.evaluate(button => button.focus({ preventScroll: true }));
-  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
-  await expect.poll(() => page.locator('.detail-header').evaluate(node => node.getBoundingClientRect().top)).toBe(0);
+  await expect(person).toBeFocused();
   await page.screenshot({ path: info.outputPath('collaboration.png'), fullPage: true, animations: 'disabled' });
 });
 
@@ -168,7 +167,7 @@ test('version conflict preserves draft and requires reviewing the current versio
 
 test('same-name recipients require choosing a unique account before inviting', async ({ page }) => {
   const state = await accountFixture(page, true);
-  await page.goto('/projects/10');
+  await page.goto('/projects/10?section=collaboration');
   await page.getByRole('button', { name: '邀请协作者' }).click();
   await page.getByLabel('搜索人名、账号名、账号 ID 或邮箱').fill('同名创作者');
   await page.getByRole('button', { name: '搜索账号', exact: true }).click();

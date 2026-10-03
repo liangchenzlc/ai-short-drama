@@ -25,10 +25,12 @@ def get_project_service(session: Session = Depends(get_session)):
     return ProjectService(session)
 
 
-def get_episode_service(session: Session = Depends(get_session)):
+def get_episode_service(request: Request, session: Session = Depends(get_session)):
     from short_drama.service.episode_service import EpisodeService
 
-    return EpisodeService(session)
+    return EpisodeService(
+        session, StorageService(request.app.state.storage, request.app.state.settings)
+    )
 
 
 def get_episode_writing_service(session: Session = Depends(get_session)):

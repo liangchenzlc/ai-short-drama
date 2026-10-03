@@ -9,12 +9,13 @@ interface ProjectDto {
 }
 interface EpisodeDto {
   row_version?: string;
+  cover_url?: string | null;
   id: string; project_id: string; position: number; title: string; synopsis: string;
   aspect: '16:9' | '9:16'; style: string; episode_number?: number;
 }
 interface Page<T> { items: T[]; total: number; offset: number; limit: number }
 export interface RemoteProject extends WebProject { rowVersion?: string; ownerUserId?: string; capabilities?: Record<string, boolean>; synopsis: string; style: string; episodeCount: number }
-export interface RemoteEpisode extends Episode { rowVersion?: string; projectId: string; position: number; aspect: '16:9' | '9:16'; style: string; number?: number }
+export interface RemoteEpisode extends Episode { rowVersion?: string; coverUrl?: string | null; projectId: string; position: number; aspect: '16:9' | '9:16'; style: string; number?: number }
 export interface ProjectFields { row_version?: string; name: string; aspect: '16:9' | '9:16'; synopsis: string; style: string }
 export interface EpisodeFields { row_version?: string; title: string; synopsis: string; aspect?: '16:9' | '9:16'; style?: string }
 const project = (dto: ProjectDto): RemoteProject => ({
@@ -24,6 +25,7 @@ const project = (dto: ProjectDto): RemoteProject => ({
 });
 const episode = (dto: EpisodeDto): RemoteEpisode => ({
   rowVersion: dto.row_version,
+  coverUrl: dto.cover_url,
   id: dto.id, projectId: dto.project_id, position: dto.position, title: dto.title,
   synopsis: dto.synopsis, aspect: dto.aspect, style: dto.style, number: dto.episode_number,
 });

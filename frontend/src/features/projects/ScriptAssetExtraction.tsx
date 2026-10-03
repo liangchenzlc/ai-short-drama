@@ -1,5 +1,5 @@
 import { confirmAction } from '../../components/ui/confirm';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import { Alert, Button, Checkbox, Empty, Input, Select, Spin, Tabs } from 'antd';
 import { Popover } from 'antd';
 import { Icon } from '../../components/ui/Icon';
@@ -16,6 +16,10 @@ import { defaultAdoption, extractionApplyRequest, scriptAssetsRequest, Extractio
 import { savedConfigId } from '../ai-config/config-selection';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import { dateLabel, generationError, taskLabel } from '../generations/presentation';
+import { agentArtifactsApi } from '../../api/modules/agent-artifacts';
+import type { AgentArtifactDetail } from '../../api/types/agent-artifacts';
+import { artifactVersion } from '../agents/agent-artifact-presentation';
+import { useAuth } from '../auth/AuthSession';
 
 const labels: Record<AssetKind, string> = { character: '角色', scene: '场景', prop: '道具' };
 const importanceLabels = { core: '推动剧情', continuity: '维持连续性' } as const;
@@ -23,11 +27,18 @@ const allKinds = Object.keys(labels) as AssetKind[];
 const active = (task: GenerationSummary) => task.status === 'queued' || task.status === 'running';
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly, modelId, onModelChange, onApplied, onConfirmScript, registerBarrier }: {
+export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly, modelId, onModelChange, onApplied, onConfirmScript, registerBarrier, externalReview, embedded = false }: {
   projectId: string; episodeId: string; session: WritingSession; readOnly: boolean; modelId: string;
   onModelChange: (id: string) => void; onApplied: () => void; onConfirmScript: () => void;
   registerBarrier: (barrier: NavigationBarrier | null) => void;
+  externalReview?: { artifact: AgentArtifactDetail; nonce: number } | null;
+  embedded?: boolean;
 }) {
+  const auth = useAuth();
+  const alive = useRef(true);
+  const currentScope = useRef({ key: '', readOnly, artifactId: externalReview?.artifact.id, nonce: externalReview?.nonce });
+  currentScope.current = { key: `${projectId}:${episodeId}:${auth.user?.id ?? 'anonymous'}`, readOnly, artifactId: externalReview?.artifact.id, nonce: externalReview?.nonce };
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const writing = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const api = useMemo(() => assetExtractionApi(projectId, episodeId), [projectId, episodeId]);
   const [open, setOpen] = useState(false);
@@ -49,6 +60,18 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
   const [error, setError] = useState('');
   const [historyError, setHistoryError] = useState('');
   const actionLock = useRef(false);
+  useEffect(() => {
+    const generationId = externalReview?.artifact.generation_task_id;
+    if (!generationId) return;
+    const controller = new AbortController(); setLoading(true); setError('');
+    generations.detail(generationId, controller.signal).then(task => {
+      if (controller.signal.aborted) return;
+      setTasks(old => [task, ...old.filter(item => item.generation_id !== generationId)]);
+      setActiveId(generationId); setResult(null); setDrafts({}); setEditing(null); setPhase('result'); setOpen(true);
+    }).catch(cause => { if (!controller.signal.aborted) { setError(errorMessage(cause)); setOpen(true); } })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [externalReview?.nonce]);
   const task = tasks.find(item => item.generation_id === activeId);
   const dirty = !!result?.items.some(item => !item.applied && drafts[item.candidate_id] && !same(item.draft, drafts[item.candidate_id]));
   const invalid = !!result?.items.some(item => !item.applied && (() => {
@@ -132,7 +155,7 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
     return () => registerBarrier(null);
   }, [registerBarrier]);
 
-  const close = () => { void run(async () => { await saveDrafts(); setOpen(false); }); };
+  const close = () => { void run(async () => { await saveDrafts(); setOpen(false); if (embedded) setPhase('settings'); }); };
   async function generate() {
     if (!canExtract || !kinds.length || pending) return;
     await run(async () => {
@@ -146,7 +169,7 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
       const key = await requestAttempt(scope, body, attemptStorage());
       try {
         const receipt = await generations.generateText(body, key);
-        clearAttempt(scope, attemptStorage()); setActiveId(receipt.generation_id); setResult(null); setDrafts({}); setPhase('result');
+        clearAttempt(scope, attemptStorage()); setActiveId(receipt.generation_id); setResult(null); setDrafts({}); setPhase('result'); setOpen(true);
         await refreshTasks();
       } catch (cause) { throw new ExtractionReviewError(generationError(cause)); }
     });
@@ -154,7 +177,13 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
 
   async function adopt() {
     if (readOnly || stale) return;
+    const intent = currentScope.current;
+    const artifact = externalReview?.artifact;
+    const checkAgentScope = () => {
+      if (artifact && (!alive.current || currentScope.current.key !== intent.key || currentScope.current.readOnly || currentScope.current.artifactId !== intent.artifactId || currentScope.current.nonce !== intent.nonce)) throw new ExtractionReviewError('当前创作范围已变化，本次未采用。请重新核对素材候选。');
+    };
     await run(async () => {
+      checkAgentScope();
       const saved = await saveDrafts();
       if (!saved) return;
       if (result && !same(result.items.map(item => item.matches), saved.items.map(item => item.matches))) {
@@ -166,8 +195,13 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
       const body = extractionApplyRequest(saved, selected, choices, latest.contentVersion);
       const scope = `script-assets-apply:${saved.generation_id}`;
       const key = await requestAttempt(scope, body, attemptStorage());
-      const receipt = await api.apply(saved.generation_id, body, key);
+      checkAgentScope();
+      const receipt = artifact?.generation_task_id === saved.generation_id ? (await agentArtifactsApi(projectId, episodeId).adopt(artifact.id, {
+        row_version: artifactVersion(artifact.row_version), content_version: artifactVersion(latest.contentVersion), native_review: { ...body },
+      })).apply_receipt as { created: number; reused: number; already_applied: boolean } : await api.apply(saved.generation_id, body, key);
+      if (artifact && (!alive.current || currentScope.current.key !== intent.key || currentScope.current.artifactId !== intent.artifactId || currentScope.current.nonce !== intent.nonce)) return;
       clearAttempt(scope, attemptStorage()); onApplied();
+      if (artifact?.generation_task_id === saved.generation_id) window.dispatchEvent(new Event('agent-artifacts-updated'));
       setMessage(receipt.already_applied ? '这批素材已加入本集素材库。' : `已加入本集素材库：新增 ${receipt.created} 项，复用 ${receipt.reused} 项。`);
       acceptResult(await api.get(saved.generation_id), false); setEditing(null);
     });
@@ -203,10 +237,11 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
   const chosen = result?.items.filter(item => !item.applied && selected.has(item.candidate_id)) ?? [];
   const selectItem = (id: string, checked: boolean) => setSelected(previous => { const next = new Set(previous); if (checked) next.add(id); else next.delete(id); return next; });
   const buttonLabel = pending ? '素材提取中' : tasks.some(item => item.status === 'succeeded') ? '查看提取结果' : 'AI 提取素材';
+  const Frame = embedded && phase === 'settings' ? ExtractionInlineFrame : Dialog;
 
   return <>
-    <Button onClick={() => { setOpen(true); setPhase(activeId ? 'result' : 'settings'); }}>{buttonLabel}</Button>
-    {open && <Dialog title={phase === 'settings' ? '从剧本提取素材' : phase === 'history' ? '素材提取记录' : '素材提取结果'} className={`asset-extraction-dialog${phase === 'settings' ? ' is-settings' : ''}`} canClose={!busy} onClose={close}>
+    {!embedded && <Button onClick={() => { setOpen(true); setPhase(activeId ? 'result' : 'settings'); }}>{buttonLabel}</Button>}
+    {(open || embedded && phase === 'settings') && <Frame title={phase === 'settings' ? '从剧本提取素材' : phase === 'history' ? '素材提取记录' : '素材提取结果'} className={`asset-extraction-dialog${phase === 'settings' ? ' is-settings' : ''}`} canClose={!busy} onClose={close}>
       <div className="extraction-body">
         {error && <Alert type="error" showIcon message={error} action={phase === 'result' && task?.status === 'succeeded' ? <Button disabled={busy} onClick={() => void reloadResult()}>重新载入结果</Button> : undefined}/>}
         {message && <Alert type="success" showIcon message={message}/>}
@@ -259,11 +294,15 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
         </>}
       </div>
       <footer className="extraction-footer">
-        <div>{phase === 'result' && result ? <span>已选 <strong>{chosen.length}</strong> 项{dirty ? ' · 有未保存修改' : ''}</span> : <span>仅加入本集素材库</span>}<Button type="link" disabled={busy} onClick={() => setPhase(phase === 'history' ? activeId ? 'result' : 'settings' : 'history')}>{phase === 'history' ? '返回' : '提取记录'}</Button>{phase === 'result' && !readOnly && <Button type="link" disabled={busy || pending} onClick={() => setPhase('settings')}>重新提取</Button>}</div>
-        <div>{phase === 'result' && dirty && <Button disabled={busy || invalid || readOnly} onClick={() => void run(async () => { await saveDrafts(); setMessage('候选修改已保存。'); })}>保存候选</Button>}<Button disabled={busy} onClick={close}>{phase === 'settings' ? '取消' : pending ? '后台处理' : '稍后处理'}</Button>{phase === 'settings' && <Button type="primary" loading={busy} disabled={!canExtract || !kinds.length || pending} onClick={() => void generate()}>AI 提取素材</Button>}{phase === 'result' && result && <Button type="primary" loading={busy} disabled={readOnly || stale || !chosen.length || invalid || chosen.some(item => !choices[item.candidate_id])} onClick={() => void adopt()}>加入本集素材库（{chosen.length}）</Button>}</div>
+        <div>{phase === 'result' && result ? <span>已选 <strong>{chosen.length}</strong> 项{dirty ? ' · 有未保存修改' : ''}</span> : <span>仅加入本集素材库</span>}<Button type="link" disabled={busy} onClick={() => { setOpen(true); setPhase(phase === 'history' ? activeId ? 'result' : 'settings' : 'history'); }}>{phase === 'history' ? '返回' : '提取记录'}</Button>{phase === 'result' && !readOnly && <Button type="link" disabled={busy || pending} onClick={() => setPhase('settings')}>重新提取</Button>}</div>
+        <div>{phase === 'result' && dirty && <Button disabled={busy || invalid || readOnly} onClick={() => void run(async () => { await saveDrafts(); setMessage('候选修改已保存。'); })}>保存候选</Button>}{(!embedded || phase !== 'settings') && <Button disabled={busy} onClick={close}>{phase === 'settings' ? '取消' : pending ? '后台处理' : '稍后处理'}</Button>}{phase === 'settings' && <Button type="primary" loading={busy} disabled={!canExtract || !kinds.length || pending} onClick={() => void generate()}>AI 提取素材</Button>}{phase === 'result' && result && <Button type="primary" loading={busy} disabled={readOnly || stale || !chosen.length || invalid || chosen.some(item => !choices[item.candidate_id])} onClick={() => void adopt()}>加入本集素材库（{chosen.length}）</Button>}</div>
       </footer>
-    </Dialog>}
+    </Frame>}
   </>;
+}
+
+function ExtractionInlineFrame({ title, children }: ComponentProps<typeof Dialog>) {
+  return <section aria-label={title}><h3 className="creation-inline-heading">{title}</h3>{children}</section>;
 }
 
 function ExtractionText({ text }: { text: string }) {

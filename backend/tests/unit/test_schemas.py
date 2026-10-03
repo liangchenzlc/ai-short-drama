@@ -198,6 +198,8 @@ def test_read_schema_covers_exact_domain_columns_except_secret(class_name):
     if class_name == "ProjectRead":
         expected.remove("archived_at")
         expected.add("capabilities")
+    if class_name == "EpisodeRead":
+        expected.add("cover_url")  # Derived display URL; never a persisted media identity.
     if class_name == "GlobalAssetRead":
         expected.discard("user_id")
     if class_name == "MediaFileRead":

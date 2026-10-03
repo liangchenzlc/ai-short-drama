@@ -1,6 +1,6 @@
 import { confirmAction } from '../../components/ui/confirm';
 import { PreviewImage } from '../../components/ui/ImagePreview';
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type FormEvent, type ReactNode } from 'react';
 import { Alert, Button, Checkbox, Input, Pagination, Segmented, Skeleton, Upload } from 'antd';
 import { ApiError, errorMessage } from '../../api/http';
 import { http } from '../../api/http';
@@ -16,6 +16,8 @@ import { ReferenceImages } from '../generations/ReferenceImages';
 import { AssetImageGeneration } from './AssetImageGeneration';
 import { BatchLauncher, useBatchSelection } from '../generations/BatchGeneration';
 import { CharacterVoicePanel } from '../projects/NativeVoicePanel';
+import { CreationSlot, useEpisodeCreation } from '../projects/EpisodeCreationWorkspace';
+import type { NavigationBarrier } from '../projects/writing-navigation';
 
 const labels: Record<AssetKind, string> = { character: '角色', scene: '场景', prop: '道具' };
 const blank = (kind: AssetKind): AssetDraft => ({ kind, name: '', label: '', description: '', prompt: '', tags: [], scene_time: '' });
@@ -29,7 +31,7 @@ async function loadAllLibrary(scope: AssetScope, kind: AssetKind, signal?: Abort
 }
 
 export function AssetLibraryPanel({
-  scope, title, readOnly = false, importFrom, shareTo, legacyDownload, initialKind = 'character', onKindChange, toolbar, refreshToken = 0,
+  scope, title, readOnly = false, importFrom, shareTo, legacyDownload, initialKind = 'character', onKindChange, toolbar, refreshToken = 0, registerBarrier,
 }: {
   scope: AssetScope;
   title: string;
@@ -41,8 +43,11 @@ export function AssetLibraryPanel({
   onKindChange?: (kind: AssetKind) => void;
   toolbar?: ReactNode;
   refreshToken?: number;
+  registerBarrier?: (barrier: NavigationBarrier | null) => void;
 }) {
   const auth = useAuth();
+  const inEpisode = useEpisodeCreation();
+  const DetailFrame = inEpisode ? EpisodeAssetDetail : Dialog;
   const copiesOnImport = auth.enabled && scope.kind === 'project' && importFrom?.kind === 'global';
   const importLibrary = importFrom?.kind === 'project' ? '项目' : auth.enabled ? '个人' : '全局';
   const [kind, setKind] = useState<AssetKind>(initialKind);
@@ -77,6 +82,36 @@ export function AssetLibraryPanel({
   const createAttemptScope = `asset-create:${scopeKey(scope)}:${kind}`;
   const createDirty = Object.values(fields(draft)).some((value) => Array.isArray(value) ? value.length > 0 : !!value);
   const selectedDirty = !!selected && !!selectedSaved && JSON.stringify(fields(selected)) !== JSON.stringify(fields(selectedSaved));
+  const savingSelected = useRef<Promise<LibraryAssetRead | null> | null>(null);
+  const switchingSelected = useRef(false);
+  const selectedTrigger = useRef<{ node: HTMLElement | null; id: string } | null>(null);
+  const assetEntries = useRef(new Map<string, HTMLButtonElement>());
+  const selectedId = useRef(selected?.id);
+  selectedId.current = selected?.id;
+  useLayoutEffect(() => {
+    if (!inEpisode || selected || !selectedTrigger.current) return;
+    const trigger = selectedTrigger.current;
+    const target = trigger.node?.isConnected ? trigger.node : assetEntries.current.get(trigger.id);
+    if (!target && loading) return;
+    target?.focus();
+    selectedTrigger.current = null;
+  }, [inEpisode, selected, items, loading]);
+  const editorBarrier = useRef({ dirty: false, flush: async () => false });
+  editorBarrier.current = {
+    dirty: selectedDirty || creating && createDirty || busy || generationSubmitting,
+    flush: async () => {
+      if (creating && createDirty || generationSubmitting) {
+        setNotice('请先完成当前素材的创建或图片操作。'); return false;
+      }
+      if (savingSelected.current) return !!await savingSelected.current;
+      if (busy) return false;
+      return !selectedDirty || !!await saveBeforeGenerate();
+    },
+  };
+  useEffect(() => {
+    registerBarrier?.({ hasUnsettled: () => editorBarrier.current.dirty, flush: () => editorBarrier.current.flush() });
+    return () => registerBarrier?.(null);
+  }, [registerBarrier]);
   const imagePresentation = selected ? assetImagePresentation(selected.media_id, selected.image, candidates) : null;
 
   const loadCandidates = useCallback(async (append = false, reset = false) => {
@@ -121,7 +156,16 @@ export function AssetLibraryPanel({
     clearAttempt(createAttemptScope, attemptStorage()); setCreating(false); setDraft(blank(kind));
   }
 
-  function openSelected(item: LibraryAssetRead) { setSelected(item); setSelectedSaved(item); setNotice(''); setCandidates([]); setCandidateTotal(0); setCandidateOffset(0); }
+  async function openSelected(item: LibraryAssetRead) {
+    if (busy || generationSubmitting || savingSelected.current || operationRef.current || switchingSelected.current) return;
+    switchingSelected.current = true;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    try {
+      if (selectedDirty && !await confirmAction('切换素材会放弃当前未保存的修改。确定继续？')) return;
+      selectedTrigger.current = { node: trigger, id: item.id };
+      setSelected(item); setSelectedSaved(item); setNotice(''); setCandidates([]); setCandidateTotal(0); setCandidateOffset(0);
+    } finally { switchingSelected.current = false; }
+  }
   async function closeSelected() {
     if (selectedDirty && !await confirmAction('放弃尚未保存的素材修改？')) return;
     setSelected(null); setSelectedSaved(null);
@@ -140,18 +184,26 @@ export function AssetLibraryPanel({
     finally { setBusy(false); }
   }
 
-  async function save(confirmShared = false): Promise<LibraryAssetRead | null> {
+  function save(confirmShared = false): Promise<LibraryAssetRead | null> {
+    if (savingSelected.current) return savingSelected.current;
+    const pending = saveSelected(confirmShared);
+    savingSelected.current = pending;
+    void pending.finally(() => { if (savingSelected.current === pending) savingSelected.current = null; });
+    return pending;
+  }
+  async function saveSelected(confirmShared = false): Promise<LibraryAssetRead | null> {
     if (!selected || busy) return null;
     setBusy(true); setNotice('');
     try {
       const next = await assetLibraries.update(selected.id, assetPatch({ row_version: selected.row_version, ...fields(selected) }, confirmShared));
       const merged = { ...selected, ...next };
-      setSelected(merged); setSelectedSaved(merged); refresh(); setNotice('素材文字已保存。');
+      if (selectedId.current === selected.id) { setSelected(merged); setSelectedSaved(merged); setNotice('素材文字已保存。'); }
+      refresh();
       return merged;
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'shared_asset_confirmation_required' && !confirmShared
         && await confirmAction('此素材被多处引用，保存会同步影响所有引用。确定继续？')) {
-        setBusy(false); return save(true);
+        setBusy(false); return await saveSelected(true);
       }
       setNotice(errorMessage(cause)); return null;
     } finally { setBusy(false); }
@@ -303,14 +355,14 @@ export function AssetLibraryPanel({
     }
   }
   return <section className="overview-card remote-asset-library" aria-label={title}>
-    <div className="overview-heading"><div><h2>{title}</h2><p>保持人物与画面一致，准备好本集要用的素材。</p></div><div>{toolbar}{importFrom && !readOnly && <Button disabled={busy} onClick={() => void openImports()}>从{importLibrary}库{copiesOnImport ? '复制' : '添加'}</Button>}{!readOnly && <Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={busy} onClick={() => { setNotice(''); setCreating(true); }}>新建{labels[kind]}</Button>}</div></div>
+    <div className="overview-heading"><div><h2>{title}</h2></div><div>{toolbar}{importFrom && !readOnly && <Button disabled={busy} onClick={() => void openImports()}>从{importLibrary}库{copiesOnImport ? '复制' : '添加'}</Button>}{!readOnly && <Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={busy} onClick={() => { setNotice(''); setCreating(true); }}>新建{labels[kind]}</Button>}</div></div>
     <div className="resource-toolbar"><Segmented aria-label="素材类别" value={kind} onChange={changeKind} options={(Object.keys(labels) as AssetKind[]).map((value) => ({ value, label: labels[value] }))}/><span className="asset-library-count" aria-live="polite">{loading ? '正在载入…' : `共 ${total} 个${labels[kind]}`}</span><Input.Search value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); }} aria-label="搜索素材" placeholder={`搜索${labels[kind]}名称或描述`} allowClear/></div>
     {!readOnly && <BatchLauncher scope={{ library: scope.kind, ...(scope.kind !== 'global' ? { project_id: scope.projectId } : {}), ...(scope.kind === 'episode' ? { episode_id: scope.episodeId } : {}), asset_kind: kind, search: query.trim() }} selection={batchSelection} loadedIds={items.map(item => item.id)} disabled={busy || loading || creating || !!selected}/>}
     {notice && <Alert type="info" showIcon message={notice}/>} {error && <Alert type="error" showIcon message={error} action={<Button onClick={refresh}>重试</Button>}/>}
     {loading ? <Skeleton title paragraph={{ rows: 3 }}/> : items.length ? <div className="asset-grid">{items.map((item) => <article className="asset-card library-resource-card" key={item.id}>
       {batchSelection.enabled && !readOnly && <Checkbox className="batch-item-select" aria-label={`批量选择 ${item.name}`} checked={batchSelection.ids.includes(item.id)} onChange={event => batchSelection.toggle(item.id, event.target.checked)}>批量选择</Checkbox>}
       <>{item.image?.url ? <PreviewImage triggerClassName="resource-image" src={item.image.url} alt={item.name}/> : <button type="button" className="resource-image" aria-label={`查看 ${item.name} 的详情`} onClick={() => openSelected(item)}><span><Icon name={item.kind === 'character' ? 'person' : item.kind} size={28}/>暂无图片</span></button>}</>
-      <div className="asset-card-content"><h3><button type="button" className="asset-name-button" onClick={() => openSelected(item)}>{item.name}</button></h3><p>{item.description || item.prompt || '补充外观或特征，方便后续创作。'}</p><div className="resource-meta"><span className={`status-badge ${item.state === 'confirmed' ? 'is-success' : 'is-pending'}`}>{item.state === 'confirmed' ? '已确认' : '待确认'}</span><small>{item.reference_count} 处引用</small></div></div>
+      <div className="asset-card-content"><h3><button type="button" className="asset-name-button" ref={node => { if (node) assetEntries.current.set(item.id, node); else assetEntries.current.delete(item.id); }} disabled={busy || generationSubmitting} onClick={() => openSelected(item)}>{item.name}</button></h3><p>{item.description || item.prompt || '补充外观或特征，方便后续创作。'}</p><div className="resource-meta"><span className={`status-badge ${item.state === 'confirmed' ? 'is-success' : 'is-pending'}`}>{item.state === 'confirmed' ? '已确认' : '待确认'}</span><small>{item.reference_count} 处引用</small></div></div>
       <div className="resource-card-actions"><Button type="link" onClick={() => openSelected(item)}>{readOnly ? '查看详情' : '编辑素材'}</Button>{shareTo && !readOnly && <Button type="link" disabled={busy} onClick={() => void share(item)}>共享到项目</Button>}{!readOnly && <Button type="link" danger disabled={busy} onClick={() => void remove(item)}>移除</Button>}</div>
     </article>)}</div> : !error && <div className="studio-empty"><h3>{query ? `没有找到匹配的${labels[kind]}` : `添加${labels[kind]}素材`}</h3><p>{query ? '试试其他关键词，或清空搜索。' : '添加文字描述和参考图，后续分镜可以直接关联使用。'}</p>{query ? <Button onClick={() => { setQuery(''); setOffset(0); }}>清空搜索</Button> : !readOnly && <Button onClick={() => { setNotice(''); setCreating(true); }}>新建{labels[kind]}</Button>}</div>}
     <Pagination current={Math.floor(offset / 20) + 1} pageSize={20} total={total} hideOnSinglePage showSizeChanger={false} onChange={(page) => setOffset((page - 1) * 20)}/>
@@ -318,7 +370,7 @@ export function AssetLibraryPanel({
 
     {creating && <Dialog title={`新建${labels[kind]}`} className="asset-editor-drawer asset-create-drawer" canClose={!busy} onClose={closeCreating}><form onSubmit={create}><div className="asset-create-body"><p className="episode-help">先保存文字信息，再上传参考图或生成图片。</p><AssetFields className="asset-editor-fields" value={draft} disabled={busy} onChange={setDraft}/>{notice && <Alert type="error" showIcon message={notice}/>}</div><div className="asset-editor-drawer-footer"><span role="status">{createDirty ? '尚未创建' : '名称必填，其他信息可稍后补充'}</span><Button disabled={busy} onClick={closeCreating}>取消</Button><Button type="primary" htmlType="submit" loading={busy} disabled={!draft.name.trim()}>创建{labels[kind]}</Button></div></form></Dialog>}
     {showImport && <Dialog title={`从${importLibrary}素材库${copiesOnImport ? '复制' : '添加'}`} className="asset-import-dialog" canClose={!busy} onClose={closeImports}><div className="asset-import-search"><Input.Search aria-label="搜索可添加素材" placeholder="搜索名称或描述" value={importQuery} allowClear onChange={event => setImportQuery(event.target.value)}/></div><div className="asset-import-body">{notice && <Alert type={importNoticeType} message={notice}/>} {importLoading ? <Skeleton paragraph={{ rows: 3 }}/> : imports.filter(item => !importQuery.trim() || (item.name + item.description).toLocaleLowerCase().includes(importQuery.trim().toLocaleLowerCase())).map((item) => <div className="resource-import-row" key={item.id}><div><strong>{item.name}</strong><p>{item.description}</p></div><Button disabled={busy} onClick={() => void link(item.id)}>{copiesOnImport ? '复制到项目' : '添加到本库'}</Button></div>)}{!importLoading && !notice && !imports.length && <p>此分类暂无可添加的素材，可以先在当前库新建。</p>}{!importLoading && !!imports.length && !imports.some(item => !importQuery.trim() || (item.name + item.description).toLocaleLowerCase().includes(importQuery.trim().toLocaleLowerCase())) && <p className="episode-help">没有找到匹配素材，请换个关键词。</p>}</div><div className="production-dialog-footer"><span>{copiesOnImport ? '素材与媒体创建独立副本，后续修改分别保存。' : auth.enabled ? '同一项目内引用同一素材，修改会同步。' : '添加后共享同一素材，修改会同步。'}</span><Button disabled={busy} onClick={closeImports}>关闭</Button></div></Dialog>}
-    {selected && <Dialog title={`${readOnly ? '查看' : '编辑'} ${selected.name}`} className="asset-editor-drawer" canClose={!busy && !generationSubmitting} onClose={closeSelected}>
+    {selected && <DetailFrame title={`${readOnly ? '查看' : '编辑'} ${selected.name}`} className="asset-editor-drawer" canClose={!busy && !generationSubmitting} onClose={closeSelected}>
       <div className="asset-editor-drawer-body">
         <div className="asset-editor-meta" aria-label="素材状态">
           <span>{labels[selected.kind]}</span>
@@ -351,17 +403,17 @@ export function AssetLibraryPanel({
           </div>
           <ReferenceImages kind="asset" ownerId={selected.id} version={selected.row_version} disabled={readOnly || busy || generationSubmitting} beforeChange={saveBeforeGenerate} onBusyChange={setGenerationSubmitting} onChanged={async () => {
             const remote = await assetLibraries.detail(selected.id);
-            setSelected(current => current ? { ...current, ...remote } : current);
-            setSelectedSaved(current => current ? { ...current, ...remote } : current); refresh();
+            setSelected(current => current?.id === remote.id ? { ...current, ...remote } : current);
+            setSelectedSaved(current => current?.id === remote.id ? { ...current, ...remote } : current); refresh();
           }}/>
-          <AssetImageGeneration
+          <CreationSlot stage="assets"><AssetImageGeneration
             asset={selected}
             scope={scope}
             readOnly={readOnly}
             onSaveBeforeGenerate={saveBeforeGenerate}
             onCandidatesChanged={() => void loadCandidates(false)}
             onSubmissionBusyChange={setGenerationSubmitting}
-          />
+          /></CreationSlot>
           {selected.kind === 'character' && scope.kind !== 'global' && <CharacterVoicePanel key={`${scope.projectId}:${selected.id}`} projectId={scope.projectId} characterId={selected.id} disabled={readOnly || busy || generationSubmitting}/>}
           {!readOnly && <div className="asset-editor-media-actions">
             <Upload disabled={busy || generationSubmitting} accept="image/png,image/jpeg,image/webp" showUploadList={false} beforeUpload={upload}><Button loading={busy}>上传图片</Button></Upload>
@@ -386,8 +438,15 @@ export function AssetLibraryPanel({
         <span role="status">{busy ? '正在保存…' : generationSubmitting ? '正在提交图片操作…' : selectedDirty ? '有未保存的修改' : '所有修改已保存'}</span><Button disabled={busy || generationSubmitting} onClick={closeSelected}>{selectedDirty ? '取消' : '关闭'}</Button>
         {!readOnly && <Button type="primary" loading={busy || generationSubmitting} disabled={!selectedDirty || !selected.name.trim() || generationSubmitting} onClick={() => void save()}>保存修改</Button>}
       </div>
-    </Dialog>}
+    </DetailFrame>}
     {showImages && selected && <ImagePicker busy={busy} projectId={scope.kind === 'global' ? undefined : scope.projectId} onClose={() => setShowImages(false)} onSelect={addMedia}/>}
+  </section>;
+}
+
+function EpisodeAssetDetail({ title, onClose, canClose, children }: ComponentProps<typeof Dialog>) {
+  return <section className="episode-asset-detail" aria-label={title}>
+    <header><h3>{title}</h3><Button disabled={!canClose} onClick={onClose}>返回素材列表</Button></header>
+    {children}
   </section>;
 }
 

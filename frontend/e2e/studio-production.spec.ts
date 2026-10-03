@@ -15,8 +15,8 @@ test('production routes render with deferred editor bundles and compact controls
     if (url.pathname.endsWith('.js')) assets.push(url.pathname);
   });
   await page.goto('/projects');
-  await expect(page.locator('.web-project-row')).toHaveCount(4);
-  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeEnabled();
+  await expect(page.locator('.project-tile')).toHaveCount(4);
+  await expect(page.getByRole('button', { name: '刷新', exact: true })).toHaveCount(0);
   expect(assets.filter(url => /timeline-|data-table-|drawers-/.test(url))).toEqual([]);
   const firstRouteAssets = [...assets];
   const firstRouteTiming = await page.evaluate(() => ({
@@ -31,9 +31,9 @@ test('production routes render with deferred editor bundles and compact controls
     color: getComputedStyle(node).color,
     background: getComputedStyle(node).backgroundColor,
   })));
-  let configControls: { height: number; tag: string }[] = [];
+  let configControls: { height: number; tag: string; label: string; className: string; fontSize: string; padding: string }[] = [];
   const nativePrimaryContrast: { state: string; ratio: number }[] = [];
-  const directory = '.impeccable/review/production';
+  const directory = '.runtime/review/production';
   mkdirSync(directory, { recursive: true });
   writeFileSync(`${directory}/performance.json`, JSON.stringify({ firstRouteAssets, controls, firstRouteTiming }, null, 2));
   expect(controls.every(control => control.height >= 28 && control.height <= 38)).toBe(true);
@@ -42,15 +42,24 @@ test('production routes render with deferred editor bundles and compact controls
   await expect(page.getByRole('dialog', { name: '新建项目', exact: true }).getByLabel('项目名称')).toBeFocused();
   await page.keyboard.press('Escape');
 
-  for (const route of ['/ai', '/assets/character', '/tasks/image', '/media-library/image', `${root}/storyboard`, `${root}/assembly`]) {
+  for (const route of ['/ai_config', '/assets/character', '/tasks/image', '/media-library/image', `${root}/storyboard`, `${root}/assembly`]) {
     await page.goto(route);
     await expect(page.locator('h1'), `Production route: ${route}`).toBeVisible();
-    if (route === '/ai') {
+    if (route === '/ai_config') {
       await page.getByRole('button', { name: '添加文本模型' }).click();
       const config = page.getByRole('dialog', { name: /添加|新建/ });
       await expect(config).toBeVisible();
-      configControls = await config.locator('input:not([type="checkbox"]):not(.ant-select-selection-search-input), .ant-select-selector').evaluateAll(nodes => nodes.filter(node => node.getBoundingClientRect().height > 0).map(node => ({ height: node.getBoundingClientRect().height, tag: node.tagName })));
-      expect(configControls.every(control => control.height >= 28 && control.height <= 38)).toBe(true);
+      configControls = await config.locator('input:not([type="checkbox"]), select, .ant-select-selector').evaluateAll(nodes => nodes.filter(node => node.getBoundingClientRect().height > 0
+        && !(node.tagName === 'INPUT' && node.closest('.ant-select'))).map(node => ({
+        height: node.getBoundingClientRect().height,
+        tag: node.tagName,
+        label: node.closest('label')?.firstChild?.textContent?.trim() || node.getAttribute('id') || '',
+        className: node.className,
+        fontSize: getComputedStyle(node).fontSize,
+        padding: getComputedStyle(node).padding,
+      })));
+      writeFileSync(`${directory}/config-controls.json`, JSON.stringify(configControls, null, 2));
+      expect(configControls.filter(control => control.height < 28 || control.height > 38)).toEqual([]);
       const nativePrimary = config.locator('.studio-primary');
       for (const state of ['rest', 'hover']) {
         if (state === 'hover') await nativePrimary.hover();

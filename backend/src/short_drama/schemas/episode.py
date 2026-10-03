@@ -31,6 +31,7 @@ class EpisodeUpdate(InputModel):
 
 
 class EpisodeRead(ReadModel):
+    cover_url: str | None = None
     row_version: Identifier = 1
     id: Identifier
     project_id: Identifier

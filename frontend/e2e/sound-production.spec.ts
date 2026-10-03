@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { writeFileSync } from 'node:fs';
 test('reviewed dialogue, lost speech receipt, explicit adoption and SRT/music edits', async ({ page }) => {
   const sound = '/api/v1/projects/1/episodes/2/sound';
   let state: any = { row_version: 1, timeline_hash: 'a'.repeat(64), duration_ms: 3000, needs_review: true, stale_lines: [], uploads: [], media: {}, voice_defaults: { row_version: 0, voices: {} }, document: { dialogue: [{ id: 'line1', character: '甲', text: '你好，世界。', voice: 'voice1', config_id: '77', start_ms: 500, media_id: null, adopted_hash: null }], subtitles: [], music: null, original_volume: 1, dialogue_volume: 1, burn_subtitles: false, font_size: 24 } };
@@ -48,7 +49,19 @@ test('reviewed dialogue, lost speech receipt, explicit adoption and SRT/music ed
   expect(saved[1].document.original_volume).toBe(0.5); expect(saved[1].reviewed).toBe(false);
   await page.screenshot({ path: '.runtime/sound-desktop.png', animations: 'disabled' });
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(async () => { const box = await page.getByRole('dialog').boundingBox(); return box ? box.x >= -1 && box.width <= 390 : false; }).toBe(true);
+  await expect.poll(async () => {
+    const box = await page.getByRole('dialog', { name: '配音、字幕和配乐', exact: true }).evaluate(node => ({
+      rect: node.getBoundingClientRect().toJSON(),
+      wrapperMaxWidth: getComputedStyle(node.closest('.ant-drawer-content-wrapper')!).maxWidth,
+      viewportWidth: innerWidth,
+      visualViewportWidth: visualViewport?.width,
+      documentWidth: document.documentElement.clientWidth,
+      devicePixelRatio,
+    }));
+    writeFileSync('.runtime/sound-mobile-geometry.json', JSON.stringify(box, null, 2));
+    const viewportWidth = box.visualViewportWidth ?? box.viewportWidth;
+    return box.rect.x >= -1 && box.rect.width <= viewportWidth && box.rect.right <= viewportWidth;
+  }).toBe(true);
   await page.screenshot({ path: '.runtime/sound-mobile.png', animations: 'disabled' });
   await page.getByRole('checkbox', { name: '已核对当前剪辑的声音与字幕时间' }).check();
   await page.getByRole('button', { name: 'Close', exact: true }).click();

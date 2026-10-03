@@ -6,12 +6,12 @@
 
 ## 公共规则
 
-- ID、BIGINT 版本输出为十进制字符串，前端不得转为 `Number`。时间输出 UTC ISO 8601。
+- ID 输出为十进制字符串，前端不得转为 `Number`。版本类型以各 schema 为准：原工作流多为字符串，Agent 的行版本、审核版本及成果来源版本为整数。时间输出 UTC ISO 8601。
 - JSON 输入拒绝未声明字段。省略、`null` 和空字符串按各模型定义处理，不能互换。
 - 分页一般为 `{items,total,offset,limit}`，`offset>=0`，HTTP `limit` 为 1–100，默认 20；分镜列表默认 100，并额外返回集合版本。
 - 错误格式为 `{error:{code,message,fields?,details?}}`。字段错误为 `{field,message}`；业务 details 仅包含允许的版本或引用信息，不回显任意请求、凭据或供应商异常。
 - 404 表示不存在或嵌套归属错误；409 为版本/业务冲突；422 为参数/内容校验；413 为上传超限；503 为依赖不可用。
-- `Idempotency-Key` 长度 1–128，生成、新任务重试、素材/分镜新建、素材提取采用必填。同键同请求返回原结果，同键异参 409。项目/分集创建不提供该保障。
+- `Idempotency-Key` 通常长度 1–128，生成、新任务重试、素材/分镜新建、素材提取采用必填；Agent 消息必填且长度 1–64，创建 Agent 会话可选且最长 64。同键同请求返回原结果，同键异参 409。项目/分集创建不提供该保障。
 - 读取内容不创建空白稿，不自动生成或采用。未保存内容应先成功保存，再提交依赖它的操作。
 
 ## 账号与协作
@@ -41,6 +41,38 @@
 
 新提交、重试、恢复与取消遵守 [协作权限矩阵](../plans/2026-10-02-project-collaboration.md)。API 不接受客户端提供的 owner、scope_user_id、initiated_by 或操作人字段。
 
+## Agent 创作与共享候选
+
+Agent 默认开启；运行须完成七表迁移、保持账号认证并启动独立 Agent Worker，执行可通过 `AGENT_ENABLED=false` 显式关闭。实现与验收状态见[实施契约](../plans/2026-10-02-agent-mode-implementation.md)，配置和故障处理见[部署说明](../agent-deployment.md)。所选配置的真实文本、图片与视频验收已完成，详见[验收记录](../agent-verification.md)；以下接口与本地协议测试仍不能证明其他供应商配置的远端兼容性。
+
+私有入口以 [Agent 路由](../../backend/src/short_drama/api/v1/agent.py)、[会话 schema](../../backend/src/short_drama/schemas/agent.py) 和[运行 schema](../../backend/src/short_drama/schemas/agent_runtime.py) 为准。会话、消息、运行、审核与事件仅对拥有者且仍有当前项目访问权的账号开放，项目成员身份不能读取别人的对话或模型配置。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/agent/status` | `enabled/schema_ready` 状态；不调用模型 |
+| GET / POST | `/agent/conversations` | 按项目/分集分页读取本人会话；创建支持可选 Idempotency-Key |
+| GET / PATCH | `/agent/conversations/{conversation_id}` | 本人会话详情；携带 row_version 改名或归档，活动运行须先停止 |
+| GET | `/agent/models` | 本人协作文本模型与版本绑定的能力状态 |
+| POST | `/agent/models/{model_id}/verify` | 显式验证当前 row_version，最多两次可能计费的文本请求 |
+| GET / POST | `/agent/conversations/{conversation_id}/messages` | 分页消息；发送必带 Idempotency-Key，返回消息、运行与事件 cursor |
+| GET | `/agent/conversations/{conversation_id}/runs`、`/agent/runs/{run_id}` | 本人运行历史与当前状态 |
+| POST | `/agent/runs/{run_id}/stop` | 停止新增决策与提交；已受理原生媒体仍可归档 |
+| POST | `/agent/runs/{run_id}/reviews/{tool_call_id}` | 按 review_version/review_hash 明确批准或拒绝当前计划 |
+| GET | `/agent/conversations/{conversation_id}/events` | SSE，支持 cursor/Last-Event-ID 增量回放；15 秒心跳与 access-ended |
+| POST | `/agent/runs/{run_id}/continue` | 按 artifact_id/artifact_row_version 继续指定运行，独立于采用 |
+
+消息 `mode=discuss` 不授权创作任务；`mode=generate` 可携带明确单项 `task`，没有单项时先进入计划审核。决策模型使用 text 配置，与任务里的图片/视频执行模型分开。媒体计划冻结参数与参考图；参考图改变需要新计划审核或新的明确单项授权。镜头没有已采用且不过期的图片时，不能冻结视频任务（`video_reference_required`），应先生成并采用图片，再提出视频任务。同一对话仅有一个活动运行，不自动排队付费消息。未知发送结果应以同一请求和幂等键明确核对，不能自动创建新请求；供应商受理未知的模型段不会自动重发。运行 DTO 不暴露 SDK 私有历史或原始模型回复。
+
+共享成果以 [Agent artifact 路由](../../backend/src/short_drama/api/v1/agent_artifacts.py) 与 [artifact schema](../../backend/src/short_drama/schemas/agent_artifacts.py) 为准，受项目访问权约束，独立于私有会话 API。七表 schema 就绪时，即使执行开关关闭，成员仍可读取和采用已有成果；schema 不可用时返回 `agent_schema_unavailable`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `E/agent-artifacts` | 按 kind/status 筛选、分页共享候选 |
+| GET | `E/agent-artifacts/{artifact_id}` | 共享正文/patch/差异与来源快照 |
+| POST | `E/agent-artifacts/{artifact_id}/adopt` | 按候选与当前作品版本明确采用，返回稳定采用回执 |
+
+采用携带整数 `row_version/content_version` 以及适用的 `storyboard_version/target_row_version`；共享媒体影响需要明确确认。提取与分镜候选通过 `native_review` 提交原流程的完整逐项选项或追加/替换审核；媒体省略该对象，由后端从冻结成果推导并校验原生采用契约。来源过期或版本冲突不能被确认选项绕过。共享 DTO 不包含私有会话/Run/Tool 来源、工具参数、模型密钥或原始供应商响应；共享采用不会自动唤醒任何人的付费运行。
+
 ## 项目与分集
 
 | 方法 | 路径 | 说明 |
@@ -52,6 +84,8 @@
 | GET / PATCH / DELETE | `E` | 分集详情含 `episode_number`；修改、删除（204） |
 
 项目按最近打开时间及 ID 倒序；分集 position 由服务端在项目锁内分配。分集省略画幅/风格时继承项目，显式空风格表示清空；创建后独立修改。客户端不能指定归属、排序、审计字段或已移除的 `target_ms`。
+
+分集列表与详情新增只读 `cover_url: string | null`：取 position 最小的未归档镜头当前采用图片的签名 URL，无镜头、未采用图片或媒体不可用时返回 null。列表批量读取封面，不逐集加载分镜。该值仅用于展示，过期后重新读取，不持久化至分集表。
 
 存在关联内容时删除返回 409，不隐式级联删除；归档分镜仍保留数据库引用。创建不自动添加示例内容，也不触发 AI。
 

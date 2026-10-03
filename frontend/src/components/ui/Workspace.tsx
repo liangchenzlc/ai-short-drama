@@ -23,16 +23,3 @@ export function ListToolbar({ count, hint, actions }: {
     <div className="list-toolbar-actions">{actions}</div>
   </div>;
 }
-
-export function FilterPanel({ open, onOpenChange, hint, children }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  hint: string;
-  children: ReactNode;
-}) {
-  return <details className="generation-filter-panel" open={open}
-    onToggle={event => onOpenChange(event.currentTarget.open)}>
-    <summary>更多筛选<span>{hint}</span></summary>
-    {children}
-  </details>;
-}

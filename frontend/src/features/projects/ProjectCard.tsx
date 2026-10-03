@@ -1,11 +1,13 @@
+﻿import { Link } from 'react-router-dom';
 import type { RemoteProject } from '../../api/modules/projects';
+import { projectPath } from '../../app/paths';
 import { Icon } from '../../components/ui/Icon';
 
-export function ProjectCard({ project, onOpen, disabled }: { project: RemoteProject; onOpen: (id: string) => void; disabled: boolean }) {
+export function ProjectCard({ project }: { project: RemoteProject }) {
   const date = new Date(project.lastOpenedAt);
-  return <button className="web-project-row" disabled={disabled} onClick={() => onOpen(project.projectId)} aria-label={`打开项目 ${project.name}`}>
-    <span className="project-slate"><Icon name="film" size={32} /><span>{project.aspect}</span></span>
-    <span className="project-row-copy"><strong>{project.name}</strong><span className="project-row-synopsis">{project.synopsis || '故事尚未开始，打开项目填写梗概。'}</span><span className="project-row-meta"><span>{project.episodeCount} 集</span><span>{project.style || '未设置风格'}</span></span></span>
-    <span className="project-row-tail"><time>{Number.isNaN(date.getTime()) ? '尚未打开' : date.toLocaleDateString('zh-CN', {month: '2-digit', day: '2-digit'})}</time><span className="project-row-enter"><span>进入创作</span><Icon name="arrow" size={16} /></span></span>
-  </button>;
+  return <Link className="project-tile" to={projectPath(project.projectId)} aria-label={`打开项目 ${project.name}`}>
+    <div className="project-tile-media"><Icon name="film" size={32} /><span>{project.aspect}</span></div>
+    <div className="project-tile-copy"><h3>{project.name}</h3><p>{project.synopsis || '尚未填写故事梗概'}</p><div className="project-tile-meta"><span>{project.episodeCount} 集</span><span>{project.style || '未设置风格'}</span></div></div>
+    <div className="project-tile-footer"><time dateTime={Number.isNaN(date.getTime()) ? undefined : date.toISOString()}>{Number.isNaN(date.getTime()) ? '尚未打开' : date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</time><Icon name="arrow" size={16} /></div>
+  </Link>;
 }

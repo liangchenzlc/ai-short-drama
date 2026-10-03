@@ -40,12 +40,13 @@ test('selection spans pages; preflight excludes blocked items and lost receipt r
   expect(bodies[0].accepted_ids).toEqual(['1']);
   expect(bodies[0]).toEqual(bodies[1]);
   expect(keys[0]).toBeTruthy(); expect(keys[0]).toBe(keys[1]);
-  await expect.poll(async () => (await page.getByRole('dialog').boundingBox())?.x).toBe(560);
-  await page.screenshot({ path: '.runtime/batch-progress-desktop.png', fullPage: true, animations: 'disabled' });
+  await expect.poll(async () => Math.round((await page.getByRole('dialog').boundingBox())!.x)).toBe(560);
+  await page.screenshot({ path: info.outputPath('batch-progress-desktop.png'), fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await expect.poll(async () => { const box = await page.getByRole('dialog').boundingBox(); return box ? box.x >= -1 && box.width <= 390 : false; }).toBe(true);
+  await expect.poll(async () => (await page.getByRole('dialog').boundingBox())!.x).toBeGreaterThanOrEqual(-1);
+  await expect.poll(async () => Math.round((await page.getByRole('dialog').boundingBox())!.width)).toBeLessThanOrEqual(390);
   const refresh = await page.getByRole('button', { name: '刷新进度' }).boundingBox();
   expect(refresh!.x + refresh!.width).toBeLessThanOrEqual(390);
-  await page.screenshot({ path: '.runtime/batch-progress-mobile.png', fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: info.outputPath('batch-progress-mobile.png'), fullPage: true, animations: 'disabled' });
 });

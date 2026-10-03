@@ -1,0 +1,112 @@
+.media-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.media-gallery-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  text-align: left;
+}
+
+.media-gallery-card::after {
+  content: '';
+  position: absolute;
+  inset: 45% 0 0;
+  background: linear-gradient(transparent, rgb(7 10 17 / 88%));
+  pointer-events: none;
+}
+
+.media-gallery-card > img,
+.media-gallery-card > video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-gallery-name {
+  position: absolute;
+  inset-inline: 14px;
+  bottom: 13px;
+  z-index: 1;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.media-gallery-placeholder {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: var(--sub);
+}
+
+.media-gallery-card:hover,
+.media-gallery-card:focus-visible {
+  border-color: var(--accent);
+}
+
+.media-gallery-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.media-gallery-loading .ant-skeleton,
+.media-gallery-loading .ant-skeleton-node {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .media-gallery-card {
+    transition: transform 180ms var(--ease-out), border-color 160ms;
+  }
+
+  .media-gallery-card > img,
+  .media-gallery-card > video {
+    transition: transform 240ms var(--ease-out);
+  }
+
+  .media-gallery-card:hover {
+    transform: scale(1.025);
+  }
+
+  .media-gallery-card:hover > img,
+  .media-gallery-card:hover > video {
+    transform: scale(1.035);
+  }
+
+  .media-gallery-card:active {
+    transform: scale(.99);
+  }
+}
+
+@media (max-width: 1024px) {
+  .media-gallery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 767px) {
+  .media-gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .media-gallery-name { inset-inline: 10px; bottom: 10px; }
+}
+
+@media (max-width: 360px) {
+  .media-gallery-grid { grid-template-columns: minmax(0, 1fr); }
+}

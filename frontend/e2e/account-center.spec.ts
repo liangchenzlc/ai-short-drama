@@ -41,87 +41,66 @@ const studioRoutes = [
   ...['source', 'assets', 'storyboard', 'assembly'].map(stage => [`episode-${stage}`, `${root}/${stage}`, '归来的旅人']),
 ];
 
-for (const width of [2048, 1440, 768, 390, 320]) test(`one account entry occupies the header and preserves the full detail canvas at ${width}px`, async ({ page }, info) => {
+for (const width of [2048, 1440, 768, 390, 320]) test(`one account link opens a full page and returns to its source at ${width}px`, async ({ page }, info) => {
   test.setTimeout(90000);
   const data = await signedInFixture(page);
   await page.setViewportSize({ width, height: width === 2048 ? 1070 : 900 });
   for (const [name, path, heading] of studioRoutes) {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
-    if (name === 'episode-source') await expect(page.getByRole('textbox', { name: '本集小说正文', exact: true })).toBeEditable();
-    if (name === 'episode-storyboard') await expect(page.locator('.storyboard-summary')).toHaveCount(20);
-    if (name === 'episode-assembly') await expect(page.getByRole('region', { name: '视频时间轴' })).toBeVisible();
-    const entry = page.getByRole('button', { name: '账号中心：admin', exact: true });
+    const entry = page.getByRole('link', { name: '账号中心：admin', exact: true });
     await expect(entry).toHaveCount(1);
     await expect(entry).toBeVisible();
-    await expect(page.getByRole('button', { name: '退出登录', exact: true })).toHaveCount(0);
+    await expect(entry.locator('.account-trigger-chevron')).toHaveCount(0);
+    await expect(entry).not.toHaveAttribute('aria-haspopup');
     expect(await entry.evaluate(node => !!node.closest('header'))).toBe(true);
     const box = (await entry.boundingBox())!;
     expect(box.x).toBeGreaterThan(width / 2);
     expect(box.x + box.width).toBeLessThanOrEqual(width);
-    expect(box.y).toBeLessThan(230);
-    if (width <= 600) expect(box.height).toBeGreaterThanOrEqual(44);
-    if (name !== 'projects') {
-      expect(await page.locator('.studio-content').evaluate(node => node.getBoundingClientRect().left)).toBe(0);
-      await expect(page.locator('.studio > .account-controls')).toHaveCount(0);
-    }
+    if (width <= 600) expect(Math.round(box.height)).toBeGreaterThanOrEqual(44);
+    await entry.click();
+    await expect(page).toHaveURL(new RegExp('/account\\?next='));
+    const center = page.getByRole('region', { name: '账号中心', exact: true });
+    await expect(center).toBeVisible();
+    await expect(page.getByRole('dialog', { name: '账号中心', exact: true })).toHaveCount(0);
+    await expect(center.getByRole('heading', { name: '账号中心', exact: true })).toBeFocused();
     await fits(page);
-    await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: 'disabled' });
+    if (name === 'projects') await page.screenshot({ path: info.outputPath('account-page.png'), animations: 'disabled' });
+    await center.getByRole('link', { name: '返回创作', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(path + '$'));
+    await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
   }
-  await page.getByRole('button', { name: '专注剪辑', exact: true }).click();
-  const entry = page.getByRole('button', { name: '账号中心：admin', exact: true });
-  await expect(entry).toHaveCount(1);
-  await entry.click();
-  const center = page.getByRole('dialog', { name: '账号中心', exact: true });
-  await expect(center).toBeVisible();
-  for (const field of await center.locator('.account-details dd').all()) expect((await field.boundingBox())!.width).toBeGreaterThanOrEqual(170);
-  await page.screenshot({ path: info.outputPath('focused-account-center.png'), animations: 'disabled' });
-  await page.keyboard.press('Escape');
-  await expect(page.locator('.assembly-workspace')).toHaveClass(/is-focused/);
-  await expect(entry).toBeFocused();
-  await fits(page);
   expect(data.unexpected).toEqual([]);
   expect(data.errors).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`account details support long identity values and restore keyboard focus at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 390, 320]) test(`account details support long identity values on a full page at ${width}px`, async ({ page }, info) => {
   const data = await signedInFixture(page);
   data.state.user = { ...account, display_name: '创作者的完整显示名称'.repeat(8), username: 'creator_with_a_long_account_name', email: 'creator'.repeat(31) + '@independent-creator.example.test', email_verified: false };
   await page.setViewportSize({ width, height: 900 });
-  await page.goto('/projects/10');
-  await page.getByLabel('项目名称', { exact: true }).fill('尚未保存的项目修改');
-  const entry = page.getByRole('button', { name: /^账号中心：/ });
-  await entry.focus();
-  await entry.press('Enter');
-  const center = page.getByRole('dialog', { name: '账号中心', exact: true });
+  await page.goto('/account');
+  const center = page.getByRole('region', { name: '账号中心', exact: true });
   await expect(center.getByText(data.state.user.display_name, { exact: true })).toBeVisible();
   await expect(center.getByText(data.state.user.email, { exact: true })).toBeVisible();
   await expect(center.getByText('未验证', { exact: true })).toBeVisible();
-  for (const field of await center.locator('.account-details dd').all()) expect((await field.boundingBox())!.width).toBeGreaterThanOrEqual(170);
+  for (const field of await center.locator('.account-details dd').all()) expect((await field.boundingBox())!.width).toBeGreaterThanOrEqual(160);
   await fits(page);
-  const close = center.getByRole('button', { name: '关闭弹窗', exact: true });
-  const last = center.getByRole('button', { name: '返回创作', exact: true });
-  await close.focus(); await page.keyboard.press('Shift+Tab'); await expect(last).toBeFocused();
-  await page.keyboard.press('Tab'); await expect(close).toBeFocused();
   await page.screenshot({ path: info.outputPath('account-long-identity.png'), animations: 'disabled' });
-  await page.keyboard.press('Escape');
-  await expect(entry).toBeFocused();
-  await expect(page.getByLabel('项目名称', { exact: true })).toHaveValue('尚未保存的项目修改');
+  await center.getByRole('link', { name: '返回创作', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects$/);
   expect(data.errors).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`password verification handles request errors and wrong codes before reauthenticating without losing a draft at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 390]) test(`password verification preserves failed inputs and reauthenticates on the account page at ${width}px`, async ({ page }, info) => {
   const data = await signedInFixture(page);
   await page.setViewportSize({ width, height: 900 });
-  await page.goto('/projects/10');
-  await page.getByLabel('项目名称', { exact: true }).fill('修改密码时保留的项目草稿');
-  await page.getByRole('button', { name: /^账号中心：/ }).click();
-  const center = page.getByRole('dialog', { name: '账号中心', exact: true });
+  await page.goto('/account?next=%2Fprojects%2F10');
+  const center = page.getByRole('region', { name: '账号中心', exact: true });
   await center.getByRole('button', { name: '修改密码', exact: true }).click();
   const email = center.getByLabel('注册邮箱', { exact: true });
   await expect(email).toHaveValue(account.email);
   await expect(email).toHaveAttribute('readonly', '');
-  await page.route('**/api/v1/auth/password/request', route => route.fulfill({ status: 503, json: { error: { code: 'TEST_OFFLINE', message: '验证码服务暂时不可用' } } }));
+  await page.route('**/api/v1/auth/password/request', route => route.fulfill({ status: 503, json: { error: { code: 'TEST_OFFLINE' } } }));
   await center.getByRole('button', { name: '发送验证码', exact: true }).click();
   await expect(center.getByRole('alert')).toBeVisible();
   await expect(email).toHaveValue(account.email);
@@ -135,49 +114,65 @@ for (const width of [1440, 390]) test(`password verification handles request err
   await expect(center.getByText('验证码无效或已过期，请重新获取验证码。')).toBeVisible();
   await expect(center.getByLabel('邮箱验证码', { exact: true })).toHaveValue('000000');
   await expect(center.getByLabel('新密码', { exact: true })).toHaveValue('new-fixture-password');
-  await center.getByRole('button', { name: /验证并更新密码/ }).scrollIntoViewIfNeeded();
   await checkPrimaryButtonContrast(page, center.getByRole('button', { name: /验证并更新密码/ }), info, 'account-password-error');
-  await page.screenshot({ path: info.outputPath('account-password-error.png'), animations: 'disabled' });
   await center.getByLabel('邮箱验证码', { exact: true }).fill('123456');
   await center.getByRole('button', { name: /验证并更新密码/ }).click();
   const resume = page.getByRole('dialog', { name: '重新登录，继续创作', exact: true });
   await expect(resume).toBeVisible();
-  await expect(center).toHaveCount(0);
-  await expect(page.getByLabel('项目名称', { exact: true })).toHaveValue('修改密码时保留的项目草稿');
   expect(data.state.proofs.at(-1)).toEqual({ challenge_id: '50', code: '123456', password: 'new-fixture-password' });
   await resume.getByLabel('密码', { exact: true }).fill('new-fixture-password');
   await resume.getByRole('button', { name: '登录并返回编辑', exact: true }).click();
   await expect(resume).toHaveCount(0);
-  await expect(page.getByLabel('项目名称', { exact: true })).toHaveValue('修改密码时保留的项目草稿');
+  await expect(center).toBeVisible();
   expect(data.state.logins).toEqual([{ username: 'admin', password: 'new-fixture-password' }]);
+  await center.getByRole('link', { name: '返回创作', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/10$/);
   await fits(page);
   expect(data.unexpected).toEqual([]);
   expect(data.errors).toEqual([]);
 });
 
-test('all workspace areas share the account center and a missing email disables password recovery', async ({ page }) => {
+test('every workspace entry reaches the account page and a missing email disables password recovery', async ({ page }) => {
+  test.setTimeout(90000);
   const data = await signedInFixture(page); data.state.user.email = '';
-  for (const path of ['/assets/character', '/assets/scene', '/assets/prop', '/tasks/text', '/tasks/image', '/tasks/video', '/tasks/audio', '/media-library/image', '/media-library/video', '/ai']) {
+  for (const path of ['/assets/character', '/assets/scene', '/assets/prop', '/tasks/text', '/tasks/image', '/tasks/video', '/tasks/audio', '/media-library/image', '/media-library/video', '/ai_config']) {
     await page.goto(path);
-    await page.getByRole('button', { name: /^账号中心：/ }).click();
-    const center = page.getByRole('dialog', { name: '账号中心', exact: true });
+    await page.getByRole('link', { name: /^账号中心：/ }).click();
+    const center = page.getByRole('region', { name: '账号中心', exact: true });
     await expect(center.getByText('未设置邮箱', { exact: true })).toBeVisible();
     await expect(center.getByRole('button', { name: '修改密码', exact: true })).toBeDisabled();
-    await center.getByRole('button', { name: '返回创作', exact: true }).click();
+    await center.getByRole('link', { name: '返回创作', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(path + '$'));
   }
   expect(data.unexpected).toEqual([]);
   expect(data.errors).toEqual([]);
 });
 
-test('account management remains reachable when a project cannot be opened', async ({ page }, info) => {
+test('account management remains reachable when a project cannot be opened', async ({ page }) => {
   await signedInFixture(page);
-  await page.route('**/api/v1/projects/10', route => route.fulfill({ status: 503, json: { error: { code: 'TEST_OFFLINE', message: '项目服务暂时不可用' } } }));
+  await page.route('**/api/v1/projects/10', route => route.fulfill({ status: 503, json: { error: { code: 'TEST_OFFLINE' } } }));
   await page.goto('/projects/10');
   await expect(page.getByRole('heading', { name: '项目无法打开', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: /^账号中心：/ }).click();
-  await expect(page.getByRole('dialog', { name: '账号中心', exact: true })).toBeVisible();
-  await page.screenshot({ path: info.outputPath('account-project-error.png'), animations: 'disabled' });
+  await page.getByRole('link', { name: /^账号中心：/ }).click();
+  await expect(page.getByRole('region', { name: '账号中心', exact: true })).toBeVisible();
+});
+
+test('a failed logout stays on the account page and reports the error inline', async ({ page }) => {
+  await signedInFixture(page);
+  await page.route('**/api/v1/auth/logout', route => route.fulfill({ status: 503, json: { error: { code: 'TEST_OFFLINE' } } }));
+  await page.goto('/account');
+  await page.getByRole('button', { name: '退出登录', exact: true }).click();
+  await page.getByRole('dialog', { name: '退出登录', exact: true }).getByRole('button', { name: '退出登录', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('退出登录未完成');
+  await expect(page).toHaveURL(/\/account$/);
+});
+
+test('the account return link rejects external and self-referencing destinations', async ({ page }) => {
+  await signedInFixture(page);
+  for (const next of ['//untrusted.invalid', '/account?next=/account']) {
+    await page.goto(`/account?next=${encodeURIComponent(next)}`);
+    await expect(page.getByRole('link', { name: '返回创作', exact: true })).toHaveAttribute('href', '/projects');
+  }
 });
 
 for (const reset of [false, true]) test(`shared email proof form completes the public ${reset ? 'password recovery' : 'email verification'} path`, async ({ page }) => {

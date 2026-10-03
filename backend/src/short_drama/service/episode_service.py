@@ -1,14 +1,16 @@
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import Conflict, NotFound
 from short_drama.dao.episode_dao import EpisodeDAO
-from short_drama.domain import Episode, Project
+from short_drama.domain import Episode, MediaFile, Project
 from short_drama.schemas import EpisodeCreate, EpisodeRead, EpisodeUpdate
 from short_drama.schemas.base import parse_identifier
 from short_drama.schemas.episode import EpisodeDetail
 from short_drama.schemas.project_creation import EpisodeCreateRequest, EpisodePatchRequest
 
 from .base import BaseService, Page
+from .storage_service import StorageService
 
 
 class EpisodeService(BaseService):
@@ -18,6 +20,17 @@ class EpisodeService(BaseService):
     read_schema = EpisodeRead
     parent_model = Project
     parent_field = "project_id"
+
+    def __init__(self, session: Session, storage: StorageService | None = None) -> None:
+        super().__init__(session)
+        self.episodes = EpisodeDAO(session)
+        self.storage = storage
+
+    def _read_with_cover(self, episode: Episode, media: MediaFile | None = None) -> EpisodeRead:
+        result = self._read(episode)
+        if media is not None and self.storage is not None:
+            result.cover_url = self.storage.download_url(media.storage_locator)
+        return result
 
     def create_for_project(self, project_id, payload):
         project_id = parse_identifier(project_id)
@@ -50,15 +63,20 @@ class EpisodeService(BaseService):
                     Episode.position <= episode.position,
                 )
             )
-            return EpisodeDetail(**self._read(episode).model_dump(), episode_number=number)
+            media = self.episodes.covers([episode.id]).get(episode.id)
+            return EpisodeDetail(
+                **self._read_with_cover(episode, media).model_dump(), episode_number=number
+            )
 
     def list_for_project(self, project_id, offset=0, limit=20):
         self.dao.validate_pagination(offset, limit)
         with self._transaction():
             self._require(Project, project_id, for_update=False)
             filters = {"project_id": parse_identifier(project_id)}
+            rows = self.dao.list(offset, limit, filters)
+            covers = self.episodes.covers([row.id for row in rows])
             return Page(
-                items=[self._read(row) for row in self.dao.list(offset, limit, filters)],
+                items=[self._read_with_cover(row, covers.get(row.id)) for row in rows],
                 total=self.dao.count(filters),
                 offset=offset,
                 limit=limit,

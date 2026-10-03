@@ -2,12 +2,13 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Input, Pagination, Select, Skeleton } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { Dialog } from '../../components/ui/Dialog';
-import { projectPath, episodePath } from '../../app/paths';
+import { projectPath } from '../../app/paths';
 import { ProjectList } from '../../features/projects/ProjectList';
 import { projectsApi, projectError, type RemoteProject } from '../../api/modules/projects';
 import { isCancelled } from '../../api/http';
 import { Icon } from '../../components/ui/Icon';
 import { PageHeader } from '../../components/ui/Workspace';
+import '../../features/projects/projects.css';
 
 export function ProjectsPage() {
   const navigate = useNavigate();
@@ -53,11 +54,11 @@ export function ProjectsPage() {
     finally { setBusy(false); }
   }
   return <section className="projects-home">
-    <PageHeader title="项目管理" description="管理你的故事、分集与创作素材。" actions={<><Button icon={<Icon name="refresh" size={15}/>} onClick={() => setRevision((v) => v + 1)} disabled={loading}>刷新</Button><Button type="primary" icon={<Icon name="plus" size={16} />} onClick={() => { setName(''); setError(''); setCreating(true); }}>新建项目</Button></>} />
+    <PageHeader title="项目管理" description="管理你的故事、分集与创作素材。" actions={<Button type="primary" icon={<Icon name="plus" size={16} />} onClick={() => { setName(''); setError(''); setCreating(true); }}>新建项目</Button>} />
     <div className="project-search-bar"><Input.Search className="project-search" value={search} onChange={(event) => setSearch(event.target.value)} aria-label="搜索项目名称" placeholder="搜索项目名称" maxLength={120} allowClear onSearch={(value) => { setQuery(value.trim()); setOffset(0); }} /><span className="project-search-hint">找到故事，接着创作</span></div>
     {loadError ? <Alert type="error" showIcon message={loadError} action={<Button onClick={() => setRevision((v) => v + 1)}>重试</Button>} />
       : loading ? <div className="project-skeleton" role="status" aria-label="正在加载项目">{[0, 1, 2].map(item => <Skeleton key={item} title paragraph={{ rows: 2 }} />)}</div>
-      : <><ProjectList recent={projects} total={total} filtered={!!query} disabled={busy} onCreate={() => { setName(''); setError(''); setCreating(true); }} onClear={() => { setSearch(''); setQuery(''); setOffset(0); }} onOpen={(id) => navigate(projectPath(id))} onContinue={(id, item) => navigate(episodePath(id, item.id))} />
+      : <><ProjectList recent={projects} total={total} filtered={!!query} onCreate={() => { setName(''); setError(''); setCreating(true); }} onClear={() => { setSearch(''); setQuery(''); setOffset(0); }} />
         <Pagination current={offset / 20 + 1} pageSize={20} total={total} hideOnSinglePage showSizeChanger={false} onChange={(page) => setOffset((page - 1) * 20)} /></>}
     {creating && <Dialog title="新建项目" className="project-create-dialog" canClose={!busy} onClose={() => setCreating(false)}>
       <form className="project-form project-create-form" onSubmit={create}>

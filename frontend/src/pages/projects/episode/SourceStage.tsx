@@ -1,6 +1,7 @@
 import { confirmAction } from '../../../components/ui/confirm';
 import { useRef, useState } from 'react';
 import { Alert, Button, Tabs } from 'antd';
+import { CreationSlot } from '../../../features/projects/EpisodeCreationWorkspace';
 import { EpisodeModelSelect } from '../../../features/projects/EpisodeModelSelect';
 import { EpisodeVisualSettings } from '../../../features/projects/EpisodeVisualSettings';
 import type { EpisodeWorkflow } from '../../../features/projects/episode-workflow';
@@ -30,12 +31,13 @@ export function SourceStage({ value, writing, readOnly, onChange, projectId, epi
     } catch (cause) { setError(cause instanceof Error ? cause.message : '文件读取失败，请重新选择。'); }
     finally { setImporting(false); if (input.current) input.current.value = ''; }
   }
+  const generation = <NovelScriptGeneration projectId={projectId} episodeId={episodeId} contentVersion={writing.contentVersion} modelId={value.models.script} novel={writing.novel} disabled={readOnly || importing} session={writingSession} onEditScript={() => onTab('script')}
+    settings={<EpisodeVisualSettings projectId={projectId} episodeId={episodeId} value={value} disabled={readOnly} onChange={onChange}/>}
+    modelSelector={<EpisodeModelSelect kind="text" label="剧本生成模型" value={value.models.script} disabled={readOnly} onChange={id => onChange({ ...value, models: { ...value.models, script: id } })}/>} />;
   return <>
-    <div className="episode-stage-heading"><div><h2>小说改编</h2><p>从原文到定稿，在同一个工作区完成。</p></div></div>
+    <div className="episode-stage-heading"><div><h2>小说改编</h2></div></div>
     <div className="writing-layout creation-workspace">
-      <NovelScriptGeneration projectId={projectId} episodeId={episodeId} contentVersion={writing.contentVersion} modelId={value.models.script} novel={writing.novel} disabled={readOnly || importing} session={writingSession} onEditScript={() => onTab('script')}
-        settings={<EpisodeVisualSettings projectId={projectId} episodeId={episodeId} value={value} disabled={readOnly} onChange={onChange}/>}
-        modelSelector={<EpisodeModelSelect kind="text" label="剧本生成模型" value={value.models.script} disabled={readOnly} onChange={id => onChange({ ...value, models: { ...value.models, script: id } })}/>} />
+      <CreationSlot stage="source">{generation}</CreationSlot>
       <div className="writing-paper creation-editor">
         <Tabs activeKey={tab} onChange={onTab} items={[
           { key: 'novel', label: '本集小说', children: <>

@@ -1,5 +1,5 @@
 import { confirmAction } from '../../components/ui/confirm';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Checkbox, Drawer, Input, InputNumber, Select, Spin, Tabs } from 'antd';
 import { errorMessage } from '../../api/http';
 import { soundApi, type AudioCandidate, type Dialogue, type Extraction, type SoundDocument, type SoundState } from '../../api/modules/sound';
@@ -7,12 +7,14 @@ import { generations } from '../../api/modules/generations';
 import { ConfigSelect } from '../generations/ConfigSelect';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import type { NavigationBarrier } from './writing-navigation';
+import { useEpisodeCreation } from './EpisodeCreationWorkspace';
 import '../../app/sound.css';
 
 const newLine = (): Dialogue => ({ id: crypto.randomUUID(), character: '旁白', text: '', voice: '', config_id: null, start_ms: 0, media_id: null, adopted_hash: null });
 export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled, flushVideo, onSaved, registerBarrier }: {
   projectId: string; episodeId: string; disabled: boolean; readOnly?: boolean; flushVideo: () => Promise<boolean>; onSaved: () => Promise<unknown>; registerBarrier: (barrier: NavigationBarrier | null) => void;
 }) {
+  const inline = useEpisodeCreation();
   const api = useMemo(() => soundApi(projectId, episodeId), [projectId, episodeId]);
   const [enabled, setEnabled] = useState(false), [open, setOpen] = useState(false);
   const [state, setState] = useState<SoundState | null>(null), [doc, setDoc] = useState<SoundDocument | null>(null);
@@ -22,6 +24,14 @@ export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled
   const [textConfig, setTextConfig] = useState<string>(), [extractId, setExtractId] = useState(''), [extraction, setExtraction] = useState<Extraction | null>(null);
   const [voiceCharacter, setVoiceCharacter] = useState(''), [voiceName, setVoiceName] = useState('');
   const lock = useRef(false), mounted = useRef(true);
+  const entry = useRef<HTMLButtonElement | null>(null);
+  const restoreFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (inline && !open && restoreFocus.current) {
+      entry.current?.focus();
+      restoreFocus.current = false;
+    }
+  }, [inline, open]);
   const dirty = !!doc && (JSON.stringify(doc) !== JSON.stringify(state?.document) || reviewed !== !state?.needs_review);
   const live = useRef({ dirty, busy, save: async () => false });
   const scope = `sound:${projectId}:${episodeId}`;
@@ -65,7 +75,7 @@ export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled
     let saved = false; await action(async () => { saved = !!await saveDocument(); }); return saved;
   } };
   async function begin() { await action(async () => { if (!await flushVideo()) return; replace(await api.get()); setOpen(true); try { setExtractId(sessionStorage.getItem(`${scope}:extraction`) ?? ''); } catch { /* history remains in task center */ } }); }
-  async function close() { if (!busy && (!dirty || await confirmAction('声音草稿尚未保存，确定放弃本次修改？'))) { setOpen(false); if (state) replace(state); } }
+  async function close() { if (!busy && (!dirty || await confirmAction('声音草稿尚未保存，确定放弃本次修改？'))) { restoreFocus.current = true; setOpen(false); if (state) replace(state); } }
   function backup() { const url = URL.createObjectURL(new Blob([JSON.stringify({ ...state, document: doc }, null, 2)], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = 'sound-draft.json'; a.click(); URL.revokeObjectURL(url); }
   async function generate() {
     if (!line || !line.voice.trim() || !line.text.trim()) { setNotice('请填写台词和音色。'); return; }
@@ -80,8 +90,9 @@ export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled
   }
   const active = candidates.some(c => ['queued', 'running'].includes(c.status) || c.can_resume || ['acceptance_unknown', 'provider_acceptance_unknown', 'provider_unknown', 'message_delivery_unknown'].includes(c.error?.code ?? ''));
   if (!enabled) return null;
-  return <><Button disabled={disabled || busy} onClick={() => void begin()}>声音、字幕和配乐</Button>
-    <Drawer open={open} width={960} title={state?.mode === 'native' ? '原声、字幕和配乐' : '配音、字幕和配乐'} onClose={close} maskClosable={false} closable={!busy} keyboard={!busy} destroyOnHidden rootClassName="sound-drawer" footer={<div className="sound-actions"><Button onClick={backup}>下载草稿</Button><Checkbox disabled={disabled || busy} checked={reviewed} onChange={e => setReviewed(e.target.checked)}>已核对当前剪辑的声音与字幕时间</Checkbox><Button type="primary" disabled={disabled || !doc} loading={busy} onClick={() => void action(async () => { await saveDocument(); })}>保存声音草稿</Button></div>}>
+  const title = state?.mode === 'native' ? '原声、字幕和配乐' : '配音、字幕和配乐';
+  const actions = <div className="sound-actions"><Button onClick={backup}>下载草稿</Button><Checkbox disabled={disabled || busy} checked={reviewed} onChange={e => setReviewed(e.target.checked)}>已核对当前剪辑的声音与字幕时间</Checkbox><Button type="primary" disabled={disabled || !doc} loading={busy} onClick={() => void action(async () => { await saveDocument(); })}>保存声音草稿</Button></div>;
+  const content = <>
       <p>时间均为成片中的绝对毫秒。修改视频后需重新核对；保存后通过“合成预览”检查混音与字幕。</p>
       {notice && <Alert type="error" showIcon message={notice} action={<Button disabled={busy} onClick={async () => { if (!dirty || await confirmAction('重新载入将替换本页声音编辑，是否继续？')) void action(async () => replace(await api.get())); }}>重新载入</Button>}/>}
       {state?.needs_review && <Alert type="warning" showIcon message="声音或剪辑有变化，导出前请核对时间并勾选确认。"/>}
@@ -127,5 +138,13 @@ export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled
           <label>原视频声音音量<InputNumber min={0} max={2} step={0.05} value={doc.original_volume} onChange={v => edit({ ...doc, original_volume: v ?? 0 })}/></label>{state.mode !== 'native' && <label>配音音量<InputNumber min={0} max={2} step={0.05} value={doc.dialogue_volume} onChange={v => edit({ ...doc, dialogue_volume: v ?? 0 })}/></label>}<p>0 为静音，1 为原始音量。片段原有静音设置仍然生效。</p>
         </div> },
       ].filter(item => state.mode !== 'native' || item.key !== 'dialogue')}/></fieldset>}
-    </Drawer></>;
+    </>;
+  return <>
+    {(!inline || !open) && <Button ref={entry} disabled={disabled} loading={busy} onClick={() => void begin()}>声音、字幕和配乐</Button>}
+    {!open && notice && <Alert type="error" showIcon message={notice}/>}
+    {inline ? open && <section className="sound-inline" aria-label={title}>
+      <header><h3>{title}</h3><Button disabled={busy} onClick={() => void close()}>收起声音编辑</Button></header>
+      {content}{actions}
+    </section> : <Drawer open={open} width={960} title={title} onClose={close} maskClosable={false} closable={!busy} keyboard={!busy} destroyOnHidden rootClassName="sound-drawer" footer={actions}>{content}</Drawer>}
+  </>;
 }

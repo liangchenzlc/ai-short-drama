@@ -13,6 +13,7 @@
 | 分镜制作 | AI 拆镜、原文依据、时长、编辑、排序、素材关联、归档 | 宫格图片尚无切格制作流程 |
 | 分镜图片 | 关联素材参考图、异步生成、候选预览、采用、过期提示 | 可用参数取决于模型适配能力 |
 | 分镜视频 | 单图或宫格作为全能参考图、系统与用户提示词、候选播放与采用、来源过期提示 | 当前接入 ModelHub Mini 全能参考；不含批量制作，模型效果需实际联调 |
+| Agent 创作 | 私有持续对话、计划审核、文本/媒体候选与明确采用 | 默认开启，启动需账号认证、显式迁移和独立 Worker；模型能力需明确验证，真实兼容性需单独验收 |
 | 通用生成 | 文本/图片/视频任务、取消、按条件恢复或重试、媒体资产库 | 模型可用参数取决于适配能力 |
 | 成片 | 大播放器、单视频时间轴、拖动排序、分割与裁剪、撤销重做、合成预览和 MP4 导出 | 配音、字幕、转场和多轨剪辑尚未实现 |
 
@@ -30,7 +31,7 @@
 
 准备 Python、uv、Node.js 20.19+ 或 22.12+，以及 MySQL、RabbitMQ 和 MinIO。按[开发与运行指南](docs/development.md)配置环境、初始化数据库、启动 API/调度器/Worker 和前端。
 
-**新库只需执行完整建表文件：[schema.mysql8.sql](docs/数据库模型/schema.mysql8.sql)。** 文件包含全部 43 张表，按外键依赖排序，仅含 `CREATE TABLE`，无需再执行历史增量脚本。已有数据的数据库使用[迁移指南](docs/数据库模型/migrations/README.md)，账号启用前完成[明确归属迁移](docs/collaboration-deployment.md)，应用不会自动迁移。
+**新库只需执行完整建表文件：[schema.mysql8.sql](docs/数据库模型/schema.mysql8.sql)。** 文件包含全部 50 张表，按外键依赖排序，仅含 `CREATE TABLE`，无需再执行历史增量脚本。已有数据的数据库使用[迁移指南](docs/数据库模型/migrations/README.md)，账号启用前完成[明确归属迁移](docs/collaboration-deployment.md)，应用不会自动迁移。
 
 ## 文档导航
 
@@ -40,6 +41,7 @@
 | [系统架构](docs/architecture.md) | 分层、事务、任务状态、数据保存和扩展边界 |
 | [用户与协作设计](docs/plans/2026-10-02-project-collaboration.md) | 数据归属、权限矩阵、协作规则与三项 Goal 的验证框架 |
 | [账号与协作部署](docs/collaboration-deployment.md) | 邮件配置、历史归属迁移、上线与回滚 |
+| [Agent 模式部署](docs/agent-deployment.md) | 七表迁移、独立 Worker、流式代理、只读诊断与关闭 |
 | [接口约定](docs/api/README.md) | 当前 HTTP 路由、版本与幂等契约 |
 | [数据库设计](docs/数据库模型/MySQL8数据表设计.md) | 完整数据模型、约束及初始化说明 |
 | [后端开发入口](backend/README.md) | 代码目录与测试入口 |

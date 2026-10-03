@@ -2,8 +2,6 @@
 .generation-page .studio-page-head h1 { margin-bottom: 8px; }
 .generation-page .studio-page-head p { max-width: 65ch; }
 .generation-page .ant-tabs { margin-top: 20px; }
-.generation-filter-panel > summary { padding: 12px 0 8px; cursor: pointer; color: var(--ink); }
-.generation-filter-panel > summary > span { margin-left: 12px; font-size: 12px; color: var(--sub); }
 .generation-filters { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(190px, 1.5fr) minmax(160px, 1fr); gap: 0 16px; padding: 20px 0 4px; border-bottom: 1px solid var(--hair); }
 .generation-filters .ant-form-item { margin-bottom: 16px; min-width: 0; }
 .generation-config-select .ant-select { width: 100%; }
@@ -57,18 +55,6 @@
 .generation-result-asset img, .generation-media-placeholder { width: 100%; aspect-ratio: 16/10; object-fit: contain; background: var(--surface-muted); display: flex; align-items: center; justify-content: center; border-radius: 7px; }
 .generation-result-asset > span:not(.generation-media-placeholder) { display: block; margin-top: 9px; overflow-wrap: anywhere; }
 .generation-result-asset small { display: block; color: var(--accent); margin-top: 4px; }
-.asset-filters { grid-template-columns: repeat(2, minmax(190px, 1fr)); }
-.asset-filters .generation-filter-actions { padding-top: 0; margin-bottom: 16px; }
-.asset-library-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 22px; }
-.asset-library-item { min-width: 0; }
-.asset-library-preview { position: relative; width: 100%; aspect-ratio: 16/10; padding: 0; display: block; background: var(--pale); border: 0; border-radius: 8px; overflow: hidden; }
-.asset-library-preview img { position: absolute; width: 100%; height: 100%; inset: 0; z-index: 1; object-fit: contain; background: var(--pale); }
-.asset-library-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--sub); font-size: 13px; }
-.asset-library-caption { padding-top: 12px; }
-.asset-library-caption h2 { font-size: 14px; margin: 0; overflow-wrap: anywhere; }
-.asset-library-caption p { font-size: 12px; color: var(--sub); margin: 7px 0 11px; }
-.asset-library-caption > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.asset-library-caption > div > span { font-size: 12px; color: var(--sub); }
 .asset-detail-preview { background: var(--surface-muted); border-radius: 8px; min-height: 200px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .asset-detail-preview img, .asset-detail-preview video { display: block; max-height: 440px; max-width: 100%; object-fit: contain; }
 .asset-preview-unavailable { padding: 36px 24px; text-align: center; color: var(--sub); }
@@ -76,22 +62,23 @@
 .asset-rename label { display: block; margin-bottom: 8px; }
 .asset-rename > div { display: flex; gap: 10px; }
 .generation-page input, .generation-page textarea, .generation-drawer input, .generation-drawer textarea { caret-color: var(--accent); }
-@media (max-width: 1100px) { .asset-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
   .generation-page .studio-page-head { align-items: flex-start; flex-direction: column; gap: 12px; }
-  .generation-filters, .asset-filters { grid-template-columns: 1fr 1fr; }
+  .generation-filters{ grid-template-columns: 1fr 1fr; }
   .generation-filter-actions { padding-top: 0; align-items: center; margin-bottom: 16px; }
   .generation-list-toolbar p span { display: block; margin: 4px 0 0; }
   .generation-drawer .ant-drawer-body { padding: 20px; }
   .generation-detail-toolbar { align-items: flex-start; }
   .generation-detail-toolbar > button { flex-shrink: 0; }
-  .asset-library-grid { gap: 24px 14px; }
-  .asset-library-caption > div { align-items: flex-start; flex-direction: column; }
 }
 @media (max-width: 480px) {
-  .generation-filters, .asset-filters, .generation-form-grid, .generation-facts { grid-template-columns: 1fr; }
+  .generation-filters, .generation-form-grid, .generation-facts { grid-template-columns: 1fr; }
   .generation-facts { gap: 14px; }
-  .asset-library-grid { grid-template-columns: 1fr; }
   .generation-result-assets { gap: 12px; }
   .generation-page .ant-table-thead > tr > th, .generation-page .ant-table-tbody > tr > td { padding: 12px 8px; }
 }
+
+
+.asset-library-preview { position: relative; width: 100%; aspect-ratio: 16/10; padding: 0; display: block; background: var(--pale); border: 0; border-radius: 8px; overflow: hidden; }
+
+.asset-library-preview img { position: absolute; width: 100%; height: 100%; inset: 0; z-index: 1; object-fit: contain; background: var(--pale); }

@@ -1,3 +1,4 @@
+import { CreationSlot } from '../../../features/projects/EpisodeCreationWorkspace';
 import { confirmAction } from '../../../components/ui/confirm';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Alert, Button, Checkbox, Input, InputNumber, Segmented, Select, Spin } from 'antd';
@@ -56,7 +57,7 @@ async function loadAllAssets(projectId: string, episodeId: string, signal: Abort
 
 export function StoryboardStage({
   value, readOnly, onChange, projectId, episodeId, scriptId, confirmed,
-  writingSession, registerBarrier,
+  writingSession, registerBarrier, refreshToken = 0,
 }: {
   value: EpisodeWorkflow;
   readOnly: boolean;
@@ -68,6 +69,7 @@ export function StoryboardStage({
   confirmed: boolean;
   writingSession: WritingSession;
   registerBarrier: (barrier: NavigationBarrier | null) => void;
+  refreshToken?: number;
 }) {
   const api = storyboardApi(projectId, episodeId);
   const batchSelection = useBatchSelection(`${projectId}:${episodeId}`);
@@ -220,7 +222,7 @@ export function StoryboardStage({
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [projectId, episodeId, storyboardRevision]);
+  }, [projectId, episodeId, storyboardRevision, refreshToken]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -447,11 +449,11 @@ export function StoryboardStage({
 
   return <div className="storyboard-workspace">
     <NativeSoundMode projectId={projectId} disabled={readOnly || busy || loading || dirty.current.size > 0 || saving.current.size > 0} onChanged={() => setStoryboardRevision(revision => revision + 1)}/>
-    <div className="episode-stage-heading storyboard-heading"><div><h2>分镜制作</h2><p>先编排镜头，再生成分镜图与视频。修改自动保存。</p></div><Button disabled={readOnly || busy || loading || !!loadError || !page} onClick={() => void add()}>新增分镜</Button></div>
+    <div className="episode-stage-heading storyboard-heading"><div><h2>分镜制作</h2></div><Button disabled={readOnly || busy || loading || !!loadError || !page} onClick={() => void add()}>新增分镜</Button></div>
     {message && <Alert type={message.includes('其他窗口') ? 'warning' : 'info'} showIcon message={message}/>}
     {loadError && <Alert type="error" showIcon message={`分镜列表加载失败：${loadError}`} action={<Button loading={loading} onClick={() => setStoryboardRevision(revision => revision + 1)}>重新加载分镜列表</Button>}/>}
     <div className="creation-workspace storyboard-columns">
-      <aside className="writing-assistant storyboard-tools" aria-label="分镜生成设置">
+      <CreationSlot stage="storyboard"><aside className="writing-assistant storyboard-tools" aria-label="分镜生成设置">
         <div className="storyboard-tool-row">
           <label className="writing-control"><span>文本模型</span><EpisodeModelSelect kind="text" label="分镜模型" value={value.models.storyboardText} disabled={readOnly || busy} onChange={id => onChange({ ...value, models: { ...value.models, storyboardText: id } })}/></label>
           <label className="writing-control"><span>分镜生图模型</span><EpisodeModelSelect kind="image" label="分镜生图模型" value={value.models.storyboardImage} disabled={readOnly || busy || lockedShots.size > 0} onResolvedChange={onResolvedImageModel} onChange={id => onChange({ ...value, models: { ...value.models, storyboardImage: id } })}/></label>
@@ -469,7 +471,7 @@ export function StoryboardStage({
         </details>
         {!confirmed && <p className="episode-help">请先在小说改编中确认当前剧本。</p>}
         {shouldPollStoryboardTasks(tasks) && <p role="status" className="episode-help">分镜正在生成，完成后从生成记录中预览采用。</p>}
-      </aside>
+      </aside></CreationSlot>
       <section className="creation-editor storyboard-editor" aria-label="分镜创作区域">
         <div className="storyboard-editor-heading"><h3>本集分镜</h3><span>{page ? `共 ${page.total} 镜` : loading ? '正在载入' : '尚未加载'}</span></div>
         {!readOnly && <BatchLauncher scope={{ library: 'episode', project_id: projectId, episode_id: episodeId }} selection={batchSelection} loadedIds={page?.items.map(shot => shot.id) ?? []} disabled={busy || loading || !!loadError || lockedShots.size > 0} beforePreflight={flushAll}/>}
@@ -491,13 +493,13 @@ export function StoryboardStage({
                 <Input.TextArea aria-label={`分镜 ${shot.position} 脚本`} autoSize={{ minRows: 3, maxRows: 5 }} value={shot.script} disabled={readOnly || lockedShots.has(shot.id)} onChange={event => updateLocal(shot.id, { script: event.target.value })}/>
               </div>
               <ShotAssetPicker assets={assets} assetIds={shot.asset_ids} disabled={readOnly || busy || lockedShots.has(shot.id)} onChange={asset_ids => updateLocal(shot.id, { asset_ids })}/>
-                <Segmented aria-label="分镜媒体类型" value={mediaTab} disabled={lockedShots.has(shot.id)} options={[{ label: '分镜图', value: 'image' }, { label: '分镜视频', value: 'video' }]} onChange={next => leaveDialogue(() => setMediaTab(String(next)))}/>
+              <CreationSlot stage="storyboard"><h3 className="creation-inline-heading">分镜 {shot.position} 的图片与视频</h3><Segmented aria-label="分镜媒体类型" value={mediaTab} disabled={lockedShots.has(shot.id)} options={[{ label: '分镜图', value: 'image' }, { label: '分镜视频', value: 'video' }]} onChange={next => leaveDialogue(() => setMediaTab(String(next)))}/>
               {mediaTab === 'video' && <NativeDialoguePanel key={shot.id} revision={storyboardRevision} registerBarrier={registerDialogueBarrier} projectId={projectId} episodeId={episodeId} shotId={shot.id} disabled={readOnly || busy || lockedShots.has(shot.id)} prepare={() => saveShot(shot.id)} onChanged={() => setStoryboardRevision(revision => revision + 1)}/>}
               {mediaTab === 'video' ? <ShotVideoCandidates key={shot.id} shot={shot} disabled={readOnly || busy || lockedShots.has(shot.id)} model={value.models.video} onModelChange={id => onChange({ ...value, models: { ...value.models, video: id } })} onEdit={patch => updateLocal(shot.id, patch)} prepareShot={() => prepareShot(shot.id, 'adoption')} onChanged={() => setStoryboardRevision(revision => revision + 1)}/> : <ShotImageCandidates shot={shot} disabled={readOnly || busy || lockedShots.has(shot.id)} modelId={imageModelId} capabilities={imageCapabilities} capabilitiesLoading={capabilitiesLoading} onRefreshCapabilities={refreshCapabilities} episodeAspect={value.aspect} prepareShot={purpose => prepareShot(shot.id, purpose)} onChanged={() => setStoryboardRevision(revision => revision + 1)} settings={<>
                 <label>图片清晰度<Select aria-label="图片清晰度" value={shot.image_settings.resolution} disabled={readOnly || lockedShots.has(shot.id)} options={['1K', '2K', '4K'].map(value => ({ value, label: value }))} onChange={resolution => updateLocal(shot.id, { image_settings: { ...shot.image_settings, resolution } })}/></label>
                 <label>图片比例<Select aria-label="图片比例" value={shot.image_settings.aspect} disabled={readOnly || lockedShots.has(shot.id)} options={['inherit', '16:9', '9:16', '1:1', '4:3', '3:4'].map(value => ({ value, label: value === 'inherit' ? '跟随本集画幅' : value }))} onChange={aspect => updateLocal(shot.id, { image_settings: { ...shot.image_settings, aspect } })}/></label>
                 <label>图片布局<Select aria-label="图片布局" value={shot.image_settings.layout} disabled={readOnly || lockedShots.has(shot.id)} options={Object.entries({ single: '单图', four: '四宫格', five: '五宫格', nine: '九宫格' }).map(([value, label]) => ({ value, label }))} onChange={layout => updateLocal(shot.id, { image_settings: { ...shot.image_settings, layout } })}/></label>
-              </>}/>}
+              </>}/>}</CreationSlot>
             </div>}
           </article>)}
           <LazyLoadMore hasMore={!!page && page.items.length < page.total} loading={loading || moreLoading} error={moreError} onLoad={() => void loadMoreShots()}/>

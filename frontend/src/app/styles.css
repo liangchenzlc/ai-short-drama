@@ -154,8 +154,7 @@ details p {
   background: var(--accent-fill);
   color: var(--accent);
 }
-.project-form h3,
-.recent-projects h3 {
+.project-form h3{
   margin: 0 0 14px;
   font-size: 19px;
 }
@@ -207,9 +206,6 @@ details p {
   align-items: center;
   gap: 16px;
   overflow-wrap: anywhere;
-}
-.recent-projects {
-  margin-top: 30px;
 }
 .skip-link {
   position: fixed;

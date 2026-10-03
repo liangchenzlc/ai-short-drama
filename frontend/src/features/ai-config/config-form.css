@@ -1,0 +1,8 @@
+.config-form-toggles { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; }
+.config-form-toggles .form-check { display: inline-flex; gap: 8px; align-items: center; margin: 0; }
+.config-form-toggles input { accent-color: var(--accent-fill); }
+.config-default-hint { margin: -4px 0 0; color: var(--sub); font-size: 12px; line-height: 1.7; }
+.config-form-toggles label:has(input:disabled) { color: var(--disabled-ink); }
+@media (max-width: 600px) {
+  .config-form-toggles .form-check { min-height: 44px; }
+}

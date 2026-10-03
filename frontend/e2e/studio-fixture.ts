@@ -49,6 +49,8 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     const reply = (data: any, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) });
     const paged = (items: any[]) => { const offset = Number(query.get('offset') || 0); const limit = Number(query.get('limit') || 20); return { items: items.slice(offset, offset + limit), total: items.length, offset, limit }; };
     if (path === '/auth/capabilities') return reply({ enabled: false });
+    if (path === '/agent/status') return reply({ enabled: false, schema_ready: false });
+    if (path === `${root}/agent-artifacts`) return reply(paged([]));
     if (path === '/native-voice/capabilities' || path === '/ai/generation-batches/capabilities') return reply({ enabled: ui });
     if (path === '/projects') {
       if (controls.delayProjects) await new Promise(resolve => setTimeout(resolve, controls.delayProjects));
@@ -73,7 +75,7 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     if (ui && path === '/ai-model-configs/77') return reply(model('text'));
     if (ui && path === '/media-library/items') return reply(paged(media.map(m => query.get('media_type') === 'video' ? { ...m, media_type: 'video', url: null, duration_ms: 3000 } : m)));
     if (ui && /^\/media-library\/items\/\d+$/.test(path)) return reply(media.find(m => m.asset_id === path.split('/').pop()) || media[0]);
-    if (ui && path === '/ai/generations' && !query.get('source_scene')) return reply(paged(['succeeded', 'running', 'failed', 'cancelled'].filter(s => !query.get('status') || query.get('status') === s).map((status, i) => ({ ...task(String(8001 + i), 'generic'), service_type: query.get('service_type') || 'text', status, config: { id: '77', name: '本地验收模型', model_key: 'fixture', provider: '测试替身' }, display_context: { project: '雨夜来信', episode: '第 1 集：归来的旅人', subject: ['剧本改编', '画面生成', '参考图参数需核对', '测试任务'][i], scope: '通用任务' }, error: status === 'failed' ? { code: 'FIXTURE', message: '输入参数需要核对，请打开详情。' } : null }))));
+    if (ui && path === '/ai/generations' && !query.get('source_scene')) return reply(paged(['succeeded', 'running', 'failed', 'cancelled'].filter(s => !query.get('status') || query.get('status') === s).map((status, i) => ({ ...task(String(8001 + i), 'generic'), service_type: query.get('service_type') || 'text', status, config: { id: '77', name: '本地验收模型', model_key: 'fixture', provider: '测试替身' }, display_context: { project: '雨夜来信', episode: '第 1 集：归来的旅人', subject: ['剧本改编', '画面生成', '参考图参数需核对', '测试任务'][i], scope: '通用任务' }, error: status === 'failed' ? { code: 'FIXTURE', message: '输入参数需要核对，请核对输入参数。' } : null }))));
     if (path === '/projects/10' || path === '/projects/10/open') return reply(project);
     if (path === '/projects/10/episodes') return reply(paged([episode]));
     if (path === root) { if (method === 'PATCH') Object.assign(episode, body); return reply(episode); }

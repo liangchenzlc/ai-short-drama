@@ -6,7 +6,8 @@ import { ProjectDetailHeader } from '../../features/projects/ProjectDetailHeader
 import { ProjectOverview } from '../../features/projects/ProjectOverview';
 import { EpisodePage } from './EpisodePage';
 import type { ProjectSession } from '../../types/projects';
-import { episodePath, projectPath } from '../../app/paths';
+import { projectPath } from '../../app/paths';
+import '../../features/projects/projects.css';
 
 export function ProjectRoute() {
   const { projectId = '', episodeId } = useParams();
@@ -43,6 +44,6 @@ function RemoteProjectRoute({ projectId, episodeId }: { projectId: string; episo
   if (episodeId && episode) return <EpisodePage session={session} episode={episode} number={episode.number ?? 1} ready onBack={() => navigate(projectPath(projectId))} />;
   return <section className="projects-home">
     <ProjectDetailHeader session={session} canClose onBack={() => navigate('/projects')} onClose={() => navigate('/projects')} />
-    <ProjectOverview session={session} project={project} onProjectUpdated={setProject} onDeleted={() => navigate('/projects', { replace: true })} onOpenEpisode={(item) => navigate(episodePath(projectId, item.id))} />
+    <ProjectOverview session={session} project={project} onProjectUpdated={setProject} onDeleted={() => navigate('/projects', { replace: true })} />
   </section>;
 }

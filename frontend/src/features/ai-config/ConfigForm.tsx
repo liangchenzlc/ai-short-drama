@@ -1,23 +1,26 @@
 import { confirmAction } from '../../components/ui/confirm';
-﻿import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Dialog } from '../../components/ui/Dialog';
 import { ApiError, errorMessage } from '../../api/http';
 import { emptyConfig, serviceLabels, type AiConfig, type ConfigDraft, type ServiceType } from './config-model';
 import { applyPreset, providerPresets } from './provider-presets';
 import { ModelIdentifierField } from './ModelIdentifierField';
+import './config-form.css';
 
 export function ConfigForm({ existing, serviceType, onClose, onSave, onReload }: {
   existing: AiConfig | null;
   serviceType: ServiceType;
   onClose: () => void;
-  onSave: (draft: ConfigDraft) => Promise<void>;
+  onSave: (draft: ConfigDraft, makeDefault: boolean) => Promise<void>;
   onReload: () => Promise<void>;
 }) {
   const [form, setForm] = useState<ConfigDraft>(existing
     ? { ...existing, apiKey: '', clearApiKey: false } : { ...emptyConfig, serviceType });
+  const [makeDefault, setMakeDefault] = useState(existing?.isDefault ?? false);
   const [initial] = useState(() => JSON.stringify(form));
   async function requestClose() {
-    if (pending || (JSON.stringify(form) !== initial && !await confirmAction('关闭会放弃尚未保存的配置修改，确定关闭？'))) return;
+    if (pending || ((JSON.stringify(form) !== initial || makeDefault !== (existing?.isDefault ?? false))
+      && !await confirmAction('关闭会放弃尚未保存的配置修改，确定关闭？'))) return;
     onClose();
   }
   const [error, setError] = useState('');
@@ -32,7 +35,7 @@ export function ConfigForm({ existing, serviceType, onClose, onSave, onReload }:
       setError('请填写名称、提供商和模型标识。'); return;
     }
     setPending(true); setError(''); setFields([]);
-    try { await onSave(form); }
+    try { await onSave(form, form.enabled && makeDefault); }
     catch (cause) {
       setError(errorMessage(cause));
       if (cause instanceof ApiError) {
@@ -63,7 +66,15 @@ export function ConfigForm({ existing, serviceType, onClose, onSave, onReload }:
         <label>API 密钥<input type="password" value={form.apiKey} disabled={form.clearApiKey} onChange={(e) => change({ apiKey: e.target.value })} autoComplete="new-password" placeholder={existing?.hasApiKey ? '已保存密钥；留空保留原密钥' : '选填，输入后保存到服务端'} /></label>
         {existing?.hasApiKey && <label className="form-check"><input type="checkbox" checked={form.clearApiKey} onChange={(e) => change({ clearApiKey: e.target.checked, apiKey: '' })} />清除已保存的密钥</label>}
         <ModelIdentifierField form={form} existing={existing} disabled={pending} onChange={(modelKey) => change({ modelKey })} />
-        <label className="form-check"><input type="checkbox" checked={form.enabled} onChange={(e) => change({ enabled: e.target.checked })} />启用此配置</label>
+        <div className="config-form-toggles">
+          <label className="form-check"><input type="checkbox" checked={form.enabled} onChange={(e) => {
+            change({ enabled: e.target.checked });
+            setMakeDefault(e.target.checked && !!existing?.isDefault);
+          }} />启用此配置</label>
+          <label className="form-check"><input type="checkbox" checked={form.enabled && makeDefault}
+            disabled={!form.enabled || existing?.isDefault} onChange={e => setMakeDefault(e.target.checked)} />设为默认配置</label>
+        </div>
+        {existing?.isDefault && form.enabled ? <p className="config-default-hint">当前为默认配置；可在其他配置中设置新的默认配置。</p> : null}
       </fieldset>
       {error && <div role="alert" className="form-error"><p>{error}</p>{fields.map((field) => <p key={field}>{field}</p>)}</div>}
       {conflict && <div className="config-conflict"><p>重新加载会替换当前填写内容，请先保留需要的修改。</p><button type="button" onClick={reload} disabled={pending}>重新加载最新配置</button></div>}

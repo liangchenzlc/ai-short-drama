@@ -44,7 +44,7 @@ export interface GenerationSummary extends GenerationReceipt {
   created_at: string;
   updated_at?: string | null;
   next_action?: 'submit' | 'poll' | 'save' | null;
-  source?: GenerationSource | null;
+  source?: (GenerationSource & { project_id?: string; episode_id?: string }) | null;
   error?: SafeTaskError | null;
   can_cancel: boolean;
   can_retry: boolean;

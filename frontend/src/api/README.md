@@ -37,6 +37,8 @@ Key仅在当前表单内使用：编辑留空省略字段、明确清除发送nu
 
 临时签名URL只用于显示/下载，不作为持久化身份。过期后重新读取媒体详情。上传走FormData字段file，不手工固定multipart boundary；候选上传与确认采用是两次独立操作。
 
+分集列表及详情的 `cover_url` 是首个未归档镜头当前采用图片的临时展示地址，无图片时为 null。前端映射为 `coverUrl`，不写回分集设置；图片加载失败后重新读取分集详情，仍不可用时显示默认封面。
+
 ## 环境
 
 `.env.local`仅放公开设置：VITE_API_BASE_URL默认`/api/v1`并会进入浏览器，API_PROXY_TARGET仅供开发代理。生产同域先代理`/api/`再配置SPA fallback；跨域需要服务端额外配置CORS。资源base与深链部署限制见[运行指南](../../../docs/development.md#部署与维护)。

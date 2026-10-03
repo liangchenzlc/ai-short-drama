@@ -4,7 +4,7 @@ import { StudioProvider } from './StudioProvider';
 import { Dialog } from './Dialog';
 import { Icon } from './Icon';
 
-type ConfirmationOptions = { title?: string; confirmText?: string; cancelText?: string; danger?: boolean };
+type ConfirmationOptions = { title?: string; confirmText?: string; cancelText?: string; danger?: boolean; className?: string };
 let open = false;
 
 /** Async, focus-trapped confirmation. Repeated clicks cannot submit a second action. */
@@ -29,7 +29,7 @@ export function confirmAction(message: string, options: ConfirmationOptions = {}
     };
     root.render(<StudioProvider>
       <Dialog title={options.title ?? (discard ? '未保存的修改' : remove ? '确认移除' : '确认操作')}
-        className="studio-confirm-dialog" onClose={() => finish(false)}>
+        className={`studio-confirm-dialog${options.className ? ` ${options.className}` : ''}`} onClose={() => finish(false)}>
         <div className={`studio-confirm-content${danger ? ' is-danger' : ''}`}>
           <span className="studio-confirm-icon"><Icon name="warning" size={22}/></span>
           <p>{message}</p>

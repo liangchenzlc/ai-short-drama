@@ -65,6 +65,7 @@ function mount(context, overrides = {}) {
     '../../../api/modules/ai-model-configs': { aiModelConfigs: configs },
     '../../../features/ai-config/config-events': { AI_CONFIGS_CHANGED: 'configs-changed' },
     '../../../features/projects/EpisodeModelSelect': { EpisodeModelSelect: 'EpisodeModelSelect' },
+    '../../../features/projects/EpisodeCreationWorkspace': { CreationSlot: 'CreationSlot' },
     '../../../features/projects/workflow-contract': contract,
     '../../../features/projects/storyboard-session': session,
     '../../../features/projects/shot-image-workflow': workflow,

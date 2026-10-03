@@ -1,0 +1,8 @@
+.ai-config-page .config-table th:first-child { width: 21%; }
+.ai-config-page .config-table th:nth-child(2) { width: 19%; }
+.ai-config-page .config-table th:nth-child(3) { width: 25%; }
+.ai-config-page .config-table th:nth-child(4),
+.ai-config-page .config-table th:nth-child(5) { width: 10%; }
+.ai-config-page .config-table th:last-child { width: 15%; }
+.ai-config-page .config-table td[data-label="服务地址"] .config-secondary { margin-top: 0; }
+.ai-config-page .config-table td[data-label="操作"] { padding-inline: 12px; }

@@ -2,12 +2,14 @@ import { test, expect, type Page } from '@playwright/test';
 
 import { fixture, root, image } from './studio-fixture';
 
-test('project actions stay inside the episode item', async ({ page }) => {
+test('episode card exposes editing and deletion only in its more menu', async ({ page }) => {
   const state = await fixture(page); await page.goto('/projects/10');
-  const item = page.locator('.episode-item');
-  await expect(item.getByRole('button', { name: '编辑分集' })).toBeVisible();
-  const outer = await item.boundingBox(); const action = await item.getByRole('button', { name: '删除', exact: true }).boundingBox();
-  expect(action!.y + action!.height).toBeLessThanOrEqual(outer!.y + outer!.height);
+  const item = page.locator('.episode-media-card');
+  await expect(item.getByRole('link')).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: '编辑分集' })).toHaveCount(0);
+  await item.getByRole('button', { name: '第 1 集更多操作' }).click();
+  await expect(page.getByRole('menuitem', { name: '编辑分集' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: '删除分集' })).toBeVisible();
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
 
@@ -34,7 +36,7 @@ test('merged writing imports TXT, collapses navigation and adopts a historical s
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
 
-test('asset drawers persist input images and expose prompts only on click', async ({ page }, info) => {
+test('asset editors persist reference images and expose prompts only on click', async ({ page }, info) => {
   const state = await fixture(page); await page.goto(`${root}/assets`);
   await page.getByRole('button', { name: '新建角色', exact: true }).first().click();
   await expect(page.locator('.asset-create-drawer')).toBeVisible();
@@ -46,7 +48,7 @@ test('asset drawers persist input images and expose prompts only on click', asyn
   await page.locator('.generation-reference-images input[type=file]').setInputFiles({ name: 'reference.png', mimeType: 'image/png', buffer: Buffer.from(image.split(',')[1], 'base64') });
   await expect(page.locator('.reference-image-strip figure')).toHaveCount(1);
   await page.screenshot({ path: info.outputPath('asset-drawer-desktop.png'), fullPage: true });
-  await page.getByRole('button', { name: '关闭弹窗', exact: true }).click();
+  await page.getByRole('button', { name: '返回素材列表', exact: true }).click();
   await page.getByRole('button', { name: '编辑素材', exact: true }).first().click();
   await expect(page.locator('.reference-image-strip figure')).toHaveCount(1);
   await page.locator('.asset-generation-history summary').click();
@@ -55,9 +57,10 @@ test('asset drawers persist input images and expose prompts only on click', asyn
   await page.screenshot({ path: info.outputPath('asset-task-detail.png'), animations: 'disabled' });
   await expect(page.getByText('DO_NOT_RENDER')).toHaveCount(0);
   await page.goto(`${root}/assets`);
-  await page.getByRole('button', { name: '查看提取结果' }).click();
+  await page.getByRole('button', { name: '提取记录', exact: true }).click();
+  await page.getByRole('button', { name: '查看', exact: true }).click();
   await page.screenshot({ path: info.outputPath('extraction-result.png'), animations: 'disabled' });
-  await page.getByRole('button', { name: '提取记录' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '提取记录', exact: true }).click();
   await page.screenshot({ path: info.outputPath('extraction-history.png'), animations: 'disabled' });
   await page.getByRole('button', { name: '查看', exact: true }).click();
   await expect(page.getByText('原文依据', { exact: false })).toHaveCount(0);

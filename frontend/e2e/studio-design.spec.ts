@@ -15,7 +15,7 @@ const pages = [
   ['tasks-audio', '/tasks/audio', '任务管理'],
   ['media-images', '/media-library/image', '资产库'],
   ['media-videos', '/media-library/video', '资产库'],
-  ['ai-config', '/ai', 'AI 配置'],
+  ['ai-config', '/ai_config', 'AI 配置'],
   ['writing', `${root}/source`, '归来的旅人'],
   ['episode-assets', `${root}/assets`, '归来的旅人'],
   ['storyboard', `${root}/storyboard`, '归来的旅人'],
@@ -48,7 +48,7 @@ for (const width of [1024, 1440, 1920]) test(`all routes use the dark workspace 
   for (const [name, url, heading] of pages) {
     await page.goto(url);
     await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
-    if (name === 'projects') await expect(page.locator('.web-project-row')).toHaveCount(4);
+    if (name === 'projects') await expect(page.locator('.project-tile')).toHaveCount(4);
     if (name === 'storyboard') await expect(page.locator('.storyboard-summary')).toHaveCount(20);
     if (name === 'assembly') await expect(page.getByRole('region', { name: '视频时间轴' })).toBeVisible();
     await capture(page, info, name);
@@ -58,7 +58,9 @@ for (const width of [1024, 1440, 1920]) test(`all routes use the dark workspace 
       const modelColumn = await page.locator('.generation-task-cell').first().boundingBox();
       expect(modelColumn!.width).toBeGreaterThan(180);
       await page.locator('.ant-table-content').evaluate(node => { node.scrollLeft = node.scrollWidth; });
-      await expect(page.getByRole('button', { name: '详情', exact: true }).first()).toBeInViewport();
+      await expect(name === 'tasks-image' || name === 'tasks-video'
+        ? page.getByRole('link', { name: '查看作品', exact: true }).first()
+        : page.getByRole('button', { name: '查看结果', exact: true }).first()).toBeInViewport();
       await capture(page, info, `${name}-scroll-actions`);
     }
   }
@@ -83,7 +85,7 @@ test('dialogs, drawers and nested confirmations retain input and restore keyboar
   await project.getByRole('button', { name: '取消', exact: true }).click();
   await expect(create).toBeFocused();
 
-  await page.goto('/ai');
+  await page.goto('/ai_config');
   await page.getByRole('button', { name: '添加文本模型' }).click();
   const config = page.getByRole('dialog', { name: /添加|新建/ });
   await config.getByRole('textbox', { name: '配置名称' }).fill('未保存的配置');
@@ -139,13 +141,14 @@ test('dialogs, drawers and nested confirmations retain input and restore keyboar
   await capture(page, info, 'batch-progress');
 
   await page.goto('/media-library/image');
-  await page.locator('.asset-library-preview').first().click();
+  await page.locator('.media-gallery-card').first().click();
+  await expect(page.getByRole('dialog', { name: '资产详情', exact: true })).toBeVisible();
+  await capture(page, info, 'media-detail');
+  await page.locator('.asset-detail-preview').getByRole('button', { name: /^预览/ }).click();
   await expect(page.locator('.image-preview-dialog')).toBeVisible();
   await capture(page, info, 'image-preview');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: '查看详情' }).first().click();
   await expect(page.getByText('资产详情', { exact: true })).toBeVisible();
-  await capture(page, info, 'media-detail');
   expect(state.unexpected).toEqual([]);
   expect(state.errors).toEqual([]);
 });
@@ -161,7 +164,7 @@ test('production editor overlays and compact desktop layout remain usable', asyn
   await page.getByRole('button', { name: '编辑素材', exact: true }).first().click();
   await expect(page.getByRole('heading', { name: '图片与生成', exact: true })).toBeVisible();
   await capture(page, info, 'asset-edit');
-  await page.getByRole('button', { name: '关闭弹窗', exact: true }).click();
+  await page.getByRole('button', { name: '返回素材列表', exact: true }).click();
 
   await page.goto(`${root}/storyboard`);
   await page.locator('.storyboard-summary').first().click();
@@ -255,27 +258,27 @@ test('loading, empty, search and error states provide a clear next action', asyn
   await page.goto('/projects');
   await expect(page.getByRole('status', { name: '正在加载项目' })).toBeVisible();
   await capture(page, info, 'projects-loading');
-  await expect(page.locator('.web-project-row')).toHaveCount(4);
+  await expect(page.locator('.project-tile')).toHaveCount(4);
   state.controls.delayProjects = 0;
   state.controls.emptyProjects = true;
   await page.goto('/projects');
   await expect(page.getByRole('heading', { name: '开始你的第一部短剧' })).toBeVisible();
   await capture(page, info, 'projects-empty');
   state.controls.emptyProjects = false;
-  await page.getByRole('button', { name: '刷新', exact: true }).click();
-  await expect(page.locator('.web-project-row')).toHaveCount(4);
+  await page.reload();
+  await expect(page.locator('.project-tile')).toHaveCount(4);
   await page.getByRole('searchbox', { name: '搜索项目名称' }).fill('不存在的测试项目');
   await expect(page.getByRole('heading', { name: '没有找到项目' })).toBeVisible();
   await capture(page, info, 'projects-no-results');
   await page.getByRole('button', { name: '清除搜索', exact: true }).click();
-  await expect(page.locator('.web-project-row')).toHaveCount(4);
+  await expect(page.locator('.project-tile')).toHaveCount(4);
   state.controls.errorProjects = true;
-  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await page.reload();
   await expect(page.getByRole('button', { name: '重试', exact: true })).toBeVisible();
   await capture(page, info, 'projects-error');
   state.controls.errorProjects = false;
   await page.getByRole('button', { name: '重试', exact: true }).click();
-  await expect(page.locator('.web-project-row')).toHaveCount(4);
+  await expect(page.locator('.project-tile')).toHaveCount(4);
   expect(state.unexpected).toEqual([]);
   expect(state.errors).toEqual([]);
 });

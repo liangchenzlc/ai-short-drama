@@ -9,7 +9,7 @@ export const episodeStages: { id: StageId; label: string; description: string }[
 ];
 
 // Older drafts still have a separate video review stage.
-export function visibleEpisodeStage(id: StageId): StageId {
+export function visibleEpisodeStage(id: StageId): Exclude<StageId, 'script' | 'video'> {
   return id === "video" ? "storyboard" : id === "script" ? "source" : id;
 }
 

@@ -1,0 +1,38 @@
+.account-trigger { text-decoration: none; border-radius: var(--radius-control); }
+.account-trigger:focus-visible, .account-return:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.account-center-page { max-width: 1100px; margin-inline: auto; }
+.account-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.account-page-heading h1 { margin: 0; font-size: var(--text-page); letter-spacing: -.025em; }
+.account-return {
+  display: inline-flex; align-items: center; min-height: var(--control-height);
+  padding: 6px 12px; border: 1px solid var(--border-control); border-radius: var(--radius-control);
+  color: var(--ink); background: var(--surface-raised); text-decoration: none; white-space: nowrap;
+}
+.account-return:hover { color: var(--ink); border-color: var(--border-hover); background: var(--surface-hover); }
+.account-return[aria-disabled=true] { opacity: .5; cursor: not-allowed; }
+.account-page-profile {
+  display: flex; align-items: center; gap: 16px; margin-block: 32px;
+  padding-bottom: 28px; border-bottom: 1px solid var(--hair);
+}
+.account-page-profile strong { min-width: 0; font-size: 21px; line-height: 1.5; overflow-wrap: anywhere; }
+.account-page-sections { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; }
+.account-center-page .account-section { min-width: 0; margin: 0; }
+.account-center-page .account-section h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+.account-center-page .account-details > div { grid-template-columns: 72px minmax(0, 1fr); }
+.account-page-footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--hair); }
+.account-page-error { margin-top: 24px; }
+@media (max-width: 900px) {
+  .account-page-sections { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+}
+@media (max-width: 600px) {
+  .account-page-heading { align-items: flex-start; }
+  .account-page-heading h1 { font-size: 23px; }
+  .account-return, .account-center-page .ant-btn { min-height: 44px; }
+  .account-page-profile { margin-block: 24px; padding-bottom: 24px; }
+  .account-center-page .account-details > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .account-security-entry { flex-wrap: wrap; }
+  .account-security-entry > div { flex-basis: 100%; }
+}
