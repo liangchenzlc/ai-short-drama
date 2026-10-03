@@ -528,7 +528,7 @@ DETAIL_ENDPOINTS = [
 
 
 def _normalize(value: Any) -> Any:
-    """比较业务响应时忽略各隔离库的创建和登录时间，保留其他字段。"""
+    """比较业务响应时忽略跨隔离运行变化的五类时间字段，保留其他字段。"""
     volatile = {"created_at", "updated_at", "finished_at", "expires_at", "last_opened_at"}
     if isinstance(value, dict):
         return {key: _normalize(item) for key, item in value.items() if key not in volatile}
