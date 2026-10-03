@@ -43,6 +43,44 @@ async function agentFixture(page: Page, enabled = true) {
   return { ...state, mutations, conversations };
 }
 
+for (const width of [1440, 390]) {
+  test(`creation modes stay inside the AI creation region at ${width}px`, async ({ page }, info) => {
+    const state = await agentFixture(page);
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(`${root}/source`);
+    if (width === 390) await page.getByRole('tab', { name: 'AI 创作', exact: true }).click();
+    const panel = page.getByRole('region', { name: 'AI 创作区域', exact: true });
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.creation-mode-toolbar .agent-mode-switch')).toBeVisible();
+    await expect(page.locator('.episode-top .agent-mode-switch')).toHaveCount(0);
+    await expect(panel.getByRole('radio', { name: '提示词创作', exact: true })).toBeChecked();
+    await page.screenshot({ path: info.outputPath(`source-mode-position-${width}.png`), fullPage: true, animations: 'disabled' });
+    await panel.getByText('Agent 创作', { exact: true }).first().click();
+    await expect(page).toHaveURL(url => url.searchParams.get('conversation') === '301');
+    await expect(panel.getByRole('radio', { name: 'Agent 创作', exact: true })).toBeChecked();
+    await expect(panel.getByRole('heading', { name: '从本集作品开始' })).toBeVisible();
+    expect(state.mutations).toHaveLength(1);
+    expect(state.errors).toEqual([]);
+    expect(state.unexpected).toEqual([]);
+  });
+
+  test(`direct assembly Agent links expose only the assembly workspace at ${width}px`, async ({ page }, info) => {
+    const state = await agentFixture(page);
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(`${root}/assembly?mode=agent`);
+    await expect(page.getByRole('region', { name: '视频时间轴', exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'AI 创作区域', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'AI 创作', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('radio', { name: 'Agent 创作', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('complementary', { name: 'Agent 创作对话', exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(url => url.pathname.endsWith('/assembly') && !url.searchParams.has('conversation'));
+    expect(state.mutations).toEqual([]);
+    await page.screenshot({ path: info.outputPath(`assembly-no-ai-${width}.png`), fullPage: true, animations: 'disabled' });
+    expect(state.errors).toEqual([]);
+    expect(state.unexpected).toEqual([]);
+  });
+}
+
 test('episode Agent entry keeps manual drafts, private conversations and stage navigation', async ({ page }, info) => {
   const state = await agentFixture(page);
   await page.goto(`${root}/source`);
@@ -67,8 +105,14 @@ test('episode Agent entry keeps manual drafts, private conversations and stage n
   await expect(page.getByRole('heading', { name: '从本集作品开始' })).toBeVisible();
   await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /小说改编/ }).click();
   await page.getByText('提示词创作', { exact: true }).click();
+  await expect(page).toHaveURL(url => !url.searchParams.has('mode'));
+  await expect(page.getByRole('radio', { name: '提示词创作', exact: true })).toBeChecked();
+  await expect(page.getByRole('complementary', { name: '提示词 AI 创作', exact: true })).toBeVisible();
   await expect(page.getByPlaceholder('例如：突出主角冲突，保留关键对白，结尾设置悬念。')).toHaveValue('保留车站对白');
   await page.getByText('Agent 创作', { exact: true }).first().click();
+  await expect(page).toHaveURL(url => url.searchParams.get('mode') === 'agent');
+  await expect(page.getByRole('radio', { name: 'Agent 创作', exact: true })).toBeChecked();
+  await expect(page.locator('.agent-conversation-toolbar .ant-select-selection-item')).toHaveText('雨夜结尾');
   await page.getByRole('button', { name: '对话操作' }).click();
   await page.getByRole('menuitem', { name: '归档对话' }).click();
   await expect(page.getByRole('heading', { name: '这段对话已归档' })).toBeVisible();
@@ -99,11 +143,17 @@ test('episode Agent entry keeps manual drafts, private conversations and stage n
     await page.screenshot({ path: info.outputPath(`agent-${width}.png`), fullPage: true });
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('textbox', { name: '创作要求', exact: true }).fill('回到小说阶段继续整理这段对话草稿');
+  const mutationsBeforeAssembly = state.mutations.length;
   await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /成片合成与导出/ }).click();
-  await expect(page).toHaveURL(url => url.pathname.endsWith('/assembly') && url.searchParams.get('conversation') === '303');
-  await expect(page.getByRole('complementary', { name: 'Agent 创作对话' })).toBeVisible();
+  await expect(page).toHaveURL(url => url.pathname.endsWith('/assembly') && !url.searchParams.has('conversation'));
+  await expect(page.getByRole('region', { name: '视频时间轴', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'AI 创作区域', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('complementary', { name: 'Agent 创作对话' })).toHaveCount(0);
+  expect(state.mutations).toHaveLength(mutationsBeforeAssembly);
   await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /小说改编/ }).click();
   await expect(page).toHaveURL(url => url.pathname.endsWith('/source') && url.searchParams.get('conversation') === '301');
+  await expect(page.getByRole('textbox', { name: '创作要求', exact: true })).toHaveValue('回到小说阶段继续整理这段对话草稿');
   expect(state.requests.filter(request => request.path === '/ai/generations/text' || request.path === '/ai/generations/image')).toHaveLength(0);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
@@ -251,8 +301,10 @@ for (const destination of ['prompt', 'assembly'] as const) {
     } else {
       await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /成片合成与导出/ }).click();
       await expect(page).toHaveURL(url => url.pathname.endsWith('/assembly') && !url.searchParams.has('conversation'));
-      await expect(page.getByRole('complementary', { name: 'Agent 创作对话' })).toBeVisible();
+      await expect(page.getByRole('region', { name: '视频时间轴', exact: true })).toBeVisible();
+      await expect(page.getByRole('complementary', { name: 'Agent 创作对话' })).toHaveCount(0);
     }
+    const destinationUrl = page.url();
     const response = page.waitForResponse(result => result.url().endsWith('/api/v1/agent/conversations') && result.request().method() === 'POST');
     release.resolve(); await response;
     await expect(page.locator('.agent-conversation-toolbar button[aria-label="新建对话"]')).toBeEnabled();
@@ -261,9 +313,43 @@ for (const destination of ['prompt', 'assembly'] as const) {
       await expect(page).toHaveURL(url => url.pathname.endsWith('/source') && !url.searchParams.has('mode') && url.searchParams.get('conversation') === '301');
       await expect(page.getByRole('radio', { name: '提示词创作' })).toBeChecked();
       await expect(page.getByRole('textbox', { name: '本集小说正文' })).toBeVisible();
-    } else await expect(page).toHaveURL(url => url.pathname.endsWith('/assembly') && url.searchParams.get('mode') === 'agent' && url.searchParams.get('conversation') === '303');
-    expect(state.conversations).toHaveLength(destination === 'prompt' ? 2 : 3);
-    expect(state.mutations).toHaveLength(destination === 'prompt' ? 1 : 2);
+    } else {
+      await expect(page).toHaveURL(destinationUrl);
+      await expect(page.getByRole('region', { name: 'AI 创作区域', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('tab', { name: 'AI 创作', exact: true })).toHaveCount(0);
+      await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /小说改编/ }).click();
+      await expect(page).toHaveURL(url => url.pathname.endsWith('/source') && url.searchParams.get('conversation') === '301');
+      await expect(page.locator('.agent-conversation-toolbar .ant-select-selection-item')).toHaveText('原有对话');
+    }
+    expect(state.conversations).toHaveLength(2);
+    expect(state.mutations).toHaveLength(1);
     expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
   });
 }
+
+test('late automatic creation stays out of assembly and is restored to its original stage', async ({ page }) => {
+  const state = await agentFixture(page);
+  const started = deferred(); const release = deferred();
+  await page.route('**/api/v1/agent/conversations', async route => {
+    if (route.request().method() === 'POST') { started.resolve(); await release.promise; }
+    await route.fallback();
+  });
+  await page.goto(`${root}/source?mode=agent`);
+  await started.promise;
+  await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /成片合成与导出/ }).click();
+  await expect(page.getByRole('region', { name: '视频时间轴', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'AI 创作区域', exact: true })).toHaveCount(0);
+  const assemblyUrl = page.url();
+  const response = page.waitForResponse(result => result.url().endsWith('/api/v1/agent/conversations') && result.request().method() === 'POST');
+  release.resolve(); await response;
+  await expect(page.locator('.agent-conversation-toolbar button[aria-label="新建对话"]')).toBeEnabled();
+  await expect(page).toHaveURL(assemblyUrl);
+  expect(state.mutations).toHaveLength(1);
+  expect(state.mutations[0].body.title).toBe('小说改编：归来的旅人');
+  await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /小说改编/ }).click();
+  await expect(page).toHaveURL(url => url.pathname.endsWith('/source') && url.searchParams.get('conversation') === '301');
+  await expect(page.locator('.agent-conversation-toolbar .ant-select-selection-item')).toHaveText('小说改编：归来的旅人');
+  expect(state.mutations).toHaveLength(1);
+  expect(state.errors).toEqual([]);
+  expect(state.unexpected).toEqual([]);
+});

@@ -1,4 +1,8 @@
-.prompt-creation-panel { min-width: 0; border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); }
+.episode-creation-panel { min-width: 0; border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); }
+.creation-mode-toolbar { display: flex; justify-content: flex-start; padding: 16px 18px; border-bottom: 1px solid var(--hair); }
+.creation-mode-toolbar .agent-mode-switch { max-width: 100%; }
+.episode-creation-panel .agent-conversation-panel { border: 0; border-radius: 0; background: transparent; }
+.prompt-creation-panel { min-width: 0; }
 .prompt-creation-panel[hidden], .creation-slot[hidden] { display: none; }
 .creation-panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px; border-bottom: 1px solid var(--hair); }
 .creation-panel-heading h2 { margin: 0; color: var(--ink); font-size: 17px; font-weight: 600; }
@@ -24,16 +28,16 @@
 .episode-asset-detail .asset-editor-drawer-footer { padding: 14px 0; flex-wrap: wrap; }
 .web-episode .writing-layout.creation-workspace, .web-episode .storyboard-columns { display: block; }
 .web-episode .storyboard-expanded { grid-template-columns: minmax(0, 1fr); }
-.web-episode .agent-episode-layout.is-wide { grid-template-columns: minmax(480px, 1fr) 20px var(--agent-panel-width); }
+.web-episode .agent-episode-layout.is-agent.is-wide { grid-template-columns: minmax(480px, 1fr) 20px var(--agent-panel-width); }
 .web-episode .agent-conversation-pane { max-height: calc(100dvh - 108px); overflow-y: auto; scrollbar-gutter: stable; }
-.web-episode:has(.assembly-workspace.is-focused) .agent-episode-layout { display: block; }
-.web-episode:has(.assembly-workspace.is-focused) .agent-conversation-pane,
-.web-episode:has(.assembly-workspace.is-focused) .agent-panel-resize,
-.web-episode:has(.assembly-workspace.is-focused) .agent-workspace-tabs { display: none; }
 @media (max-width: 1024px) {
   .web-episode .agent-conversation-pane { max-height: none; overflow: visible; }
 }
 @media (max-width: 767px) {
-  .creation-panel-content, .creation-panel-heading { padding: 14px; }
+  .creation-panel-content, .creation-panel-heading, .creation-mode-toolbar { padding: 14px; }
+  .creation-mode-toolbar .agent-mode-switch { width: 100%; min-height: var(--control-height-touch); }
+  .creation-mode-toolbar .ant-segmented-group { display: flex; }
+  .creation-mode-toolbar .ant-segmented-item { flex: 1; text-align: center; }
+  .creation-mode-toolbar .ant-segmented-item-label { min-height: 36px; line-height: 36px; }
   .creation-slot .storyboard-tool-actions .ant-btn { min-height: var(--control-height-touch); }
 }

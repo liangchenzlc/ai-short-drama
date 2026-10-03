@@ -1,4 +1,3 @@
-.web-episode .agent-mode-switch { flex: 0 0 auto; }
 .agent-episode-layout { min-width: 0; }
 .agent-episode-layout.is-agent.is-wide { display: grid; grid-template-columns: minmax(560px, 1fr) 20px var(--agent-panel-width); align-items: start; }
 .agent-work-pane, .agent-conversation-pane { min-width: 0; }
@@ -44,18 +43,9 @@
   .storyboard-tool-actions { grid-column: auto; padding-top: 0; }
 }
 @media (max-width: 760px) {
-  .web-episode .agent-mode-switch { width: 100%; }
-  .web-episode .agent-mode-switch .ant-segmented-group { display: flex; }
-  .web-episode .agent-mode-switch .ant-segmented-item { flex: 1; text-align: center; }
   .agent-conversation-panel { min-height: 460px; }
   .agent-conversation-empty { padding-block: 42px 30px; }
   .agent-workspace-tabs button { min-height: var(--control-height-touch); }
-}
-@media (max-width: 680px) {
-  .web-episode.has-creation-mode-controls { --episode-header-height: 164px; }
-  .web-episode.has-creation-mode-controls .episode-top { height: var(--episode-header-height); grid-template-rows: 44px 48px 44px; }
-  .web-episode.has-creation-mode-controls .episode-top > .agent-mode-switch{ grid-column: 1 / -1; grid-row: 3; min-height: var(--control-height-touch); }
-  .web-episode.has-creation-mode-controls .agent-mode-switch .ant-segmented-item-label { min-height: 36px; line-height: 36px; }
 }
 .agent-runtime { display: flex; flex-direction: column; min-width: 0; }
 .agent-runtime-status { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 10px 0; color: var(--sub); font-size: 12px; }

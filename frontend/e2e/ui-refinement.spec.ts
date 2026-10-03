@@ -37,7 +37,7 @@ test.describe('touch workspace', () => {
         offenders: [...document.querySelectorAll('body *')].filter(node => { const box = node.getBoundingClientRect(); return box.width > 0 && (box.right > innerWidth + 1 || box.left < -1) && getComputedStyle(node).position !== 'fixed'; }).slice(0, 12).map(node => ({ tag: node.tagName, class: node.className, width: node.getBoundingClientRect().width })) }));
       if (layout.scrollWidth > width + 1) overflow.push(layout);
       await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: 'disabled' });
-      if (name.startsWith('episode-')) {
+      if (name.startsWith('episode-') && name !== 'episode-assembly') {
         await page.getByRole('tab', { name: 'AI 创作', exact: true }).click();
         await expect(page.getByRole('complementary', { name: '提示词 AI 创作', exact: true })).toBeVisible();
         await fits(page);

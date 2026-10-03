@@ -11,19 +11,20 @@ export function useEpisodeCreation() {
   return useContext(CreationContext) !== null;
 }
 
-export function EpisodeCreationWorkspace({ stage, mode, agentPanel, workRequest, children }: {
-  stage: CreationStage; mode: CreationMode; agentPanel: ReactNode; workRequest: number; children: ReactNode;
+export function EpisodeCreationWorkspace({ stage, mode, modeControl, agentPanel, workRequest, children }: {
+  stage: CreationStage; mode: CreationMode; modeControl: ReactNode; agentPanel: ReactNode; workRequest: number; children: ReactNode;
 }) {
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
   const workspace = useMemo(() => ({ target, stage }), [target, stage]);
   return <CreationContext.Provider value={workspace}>
-    <AgentEpisodeLayout enabled workRequest={workRequest} panel={<>
+    <AgentEpisodeLayout enabled={stage !== 'assembly'} workRequest={workRequest} panel={<section className="episode-creation-panel" aria-label="AI 创作区域">
+      <div className="creation-mode-toolbar">{modeControl}</div>
       <aside className="prompt-creation-panel" aria-label="提示词 AI 创作" hidden={mode !== 'prompt'}>
         <header className="creation-panel-heading"><h2>AI 创作</h2><span>模型与生成设置</span></header>
         <div ref={setTarget} className="creation-panel-content" />
       </aside>
       <div hidden={mode !== 'agent'}>{agentPanel}</div>
-    </>}>{children}</AgentEpisodeLayout>
+    </section>}>{children}</AgentEpisodeLayout>
   </CreationContext.Provider>;
 }
 

@@ -170,12 +170,11 @@ test('Agent sending stops when the inline material draft cannot be saved', async
 });
 
 for (const width of [1440, 390]) {
-  test(`sound editing stays in the creation rail and saves before leaving at ${width}px`, async ({ page }) => {
+  test(`sound editing stays in the assembly workspace and saves before leaving at ${width}px`, async ({ page }, info) => {
     const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
     await page.setViewportSize({ width, height: 1000 });
     await page.goto(`${root}/assembly`);
-    if (width < 1025) await page.getByRole('tab', { name: 'AI 创作', exact: true }).click();
-    const rail = page.getByRole('complementary', { name: '提示词 AI 创作' });
+    const rail = page.locator('.assembly-workspace');
     await rail.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
     const sound = rail.getByRole('region', { name: '原声、字幕和配乐' });
     await expect(sound).toBeVisible();
@@ -183,6 +182,7 @@ for (const width of [1440, 390]) {
     await sound.getByRole('tab', { name: '配乐与混音' }).click();
     await sound.getByLabel('原视频声音音量', { exact: true }).fill('0.65');
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`assembly-sound-expanded-${width}.png`), fullPage: true, animations: 'disabled' });
     await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /小说改编/ }).click();
     await expect(page).toHaveURL(url => url.pathname.endsWith('/source'));
     const saves = data.requests.filter(request => request.path === `${root}/sound` && request.method === 'PUT');
@@ -200,7 +200,7 @@ test('sound version conflicts preserve the inline draft and block navigation', a
     await route.fulfill({ status: 409, json: { error: { code: 'VERSION_CONFLICT', message: '声音版本已更新，请保留本地草稿。' } } });
   });
   await page.goto(`${root}/assembly`);
-  const rail = page.getByRole('complementary', { name: '提示词 AI 创作' });
+  const rail = page.locator('.assembly-workspace');
   await rail.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
   const sound = rail.getByRole('region', { name: '原声、字幕和配乐' });
   await sound.getByRole('tab', { name: '配乐与混音' }).click();
@@ -247,7 +247,7 @@ test('closing a saved inline material restores focus after its card reloads', as
 test('collapsing inline sound editing restores keyboard focus to its entry', async ({ page }) => {
   const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   await page.goto(`${root}/assembly`);
-  const rail = page.getByRole('complementary', { name: '提示词 AI 创作' });
+  const rail = page.locator('.assembly-workspace');
   const entry = rail.getByRole('button', { name: '声音、字幕和配乐', exact: true });
   await entry.focus();
   await page.keyboard.press('Enter');
