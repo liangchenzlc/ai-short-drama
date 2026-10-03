@@ -11,6 +11,8 @@ from short_drama.utils.snowflake import next_id
 
 from .base import BaseService, Page, utcnow
 
+_UNSET = object()
+
 
 class ProjectService(BaseService):
     model = Project
@@ -18,16 +20,17 @@ class ProjectService(BaseService):
     update_schema = ProjectUpdate
     read_schema = ProjectRead
 
-    def _read(self, entity):
+    def _read(self, entity, *, opened=_UNSET):
         dto = super()._read(entity)
         actor = self.session.info.get("actor")
         if actor:
-            opened = self.session.scalar(
-                select(UserProjectState.last_opened_at).where(
-                    UserProjectState.user_id == actor.user_id,
-                    UserProjectState.project_id == entity.id,
+            if opened is _UNSET:
+                opened = self.session.scalar(
+                    select(UserProjectState.last_opened_at).where(
+                        UserProjectState.user_id == actor.user_id,
+                        UserProjectState.project_id == entity.id,
+                    )
                 )
-            )
             dto = dto.model_copy(
                 update={
                     "last_opened_at": opened,
@@ -71,12 +74,14 @@ class ProjectService(BaseService):
             return self._read(project)
 
     def list_projects(self, offset=0, limit=20, query=""):
-        with self._transaction():
+        with self._transaction(read_only=True):
             rows, total = ProjectDAO(self.session).list_with_episode_counts(offset, limit, query)
             return Page(
                 items=[
-                    ProjectSummary(**self._read(row).model_dump(), episode_count=count)
-                    for row, count in rows
+                    ProjectSummary(
+                        **self._read(row, opened=opened).model_dump(), episode_count=count
+                    )
+                    for row, count, opened in rows
                 ],
                 total=total,
                 offset=offset,

@@ -365,8 +365,8 @@ def test_two_speakers_frozen_video_inputs_voice_change_pauses_waiting_batch(
     assert draft["subtitles"][-1]["end_ms"] == 4000 and draft["reviewed"] is False
     original_scope = sound._scope
 
-    def split_scope(*args):
-        episode, assembly, document, video = original_scope(*args)
+    def split_scope(*args, for_update=True):
+        episode, assembly, document, video = original_scope(*args, for_update=for_update)
         clip = {**video["clips"][0], "trim_in_ms": 0, "trim_out_ms": 33}
         return episode, assembly, document, {**video, "clips": [clip] * 3}
 

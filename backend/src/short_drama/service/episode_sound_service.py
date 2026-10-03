@@ -39,16 +39,16 @@ class EpisodeSoundService(BaseService):
         self.settings, self.storage = settings, storage
         self.assembly = EpisodeAssemblyService(session, settings, storage)
 
-    def _scope(self, project_id, episode_id):
+    def _scope(self, project_id, episode_id, *, for_update=True):
         if not getattr(self.settings, "audio_production_enabled", False):
             raise NotFound("声音制作功能尚未启用")
-        episode, assembly = self.assembly._scope(project_id, episode_id)
-        sound = self.session.get(EpisodeSound, assembly.id, with_for_update=True)
+        episode, assembly = self.assembly._scope(project_id, episode_id, for_update=for_update)
+        sound = self.session.get(EpisodeSound, assembly.id, with_for_update=for_update)
         video = self.assembly._video_snapshot(assembly, self.assembly._clips(assembly))
         return episode, assembly, sound, video
 
-    def _media(self, mid):
-        media = self._validate_media(int(mid), "audio")
+    def _media(self, mid, *, for_update=True):
+        media = self._validate_media(int(mid), "audio", for_update=for_update)
         if not media.duration_ms or not media.storage_locator.startswith("minio://"):
             raise WorkflowError("audio_unavailable", "音频尚未验证或无法读取", 422)
         return media
@@ -60,7 +60,7 @@ class EpisodeSoundService(BaseService):
             self.session.add(row)
         return row
 
-    def _read(self, episode, assembly, sound, video):
+    def _read(self, episode, assembly, sound, video, *, for_update=True):
         document = deepcopy(sound.document) if sound else SoundDocument().model_dump(mode="json")
         from .native_voice_service import project_mode
 
@@ -73,10 +73,10 @@ class EpisodeSoundService(BaseService):
         for mid in {line["media_id"] for line in document["dialogue"] if line.get("media_id")} | (
             {document["music"]["media_id"]} if document["music"] else set()
         ):
-            row = self._media(mid)
+            row = self._media(mid, for_update=for_update)
             reference = self.session.get(SoundMediaReference, (assembly.id, int(mid)))
             preview = (
-                self._media(reference.proxy_media_id)
+                self._media(reference.proxy_media_id, for_update=for_update)
                 if reference and reference.proxy_media_id
                 else row
             )
@@ -100,7 +100,7 @@ class EpisodeSoundService(BaseService):
                     "name": row.original_name,
                     "duration_ms": row.duration_ms,
                     "url": StorageService(self.storage, self.settings).download_url(
-                        self._media(ref.proxy_media_id).storage_locator
+                        self._media(ref.proxy_media_id, for_update=for_update).storage_locator
                     ),
                 }
                 for ref, row in self.session.execute(
@@ -126,12 +126,14 @@ class EpisodeSoundService(BaseService):
         }
 
     def get(self, project_id, episode_id):
-        with self._transaction():
-            return self._read(*self._scope(project_id, episode_id))
+        with self._transaction(read_only=True):
+            return self._read(
+                *self._scope(project_id, episode_id, for_update=False), for_update=False
+            )
 
     def native_subtitles(self, project_id, episode_id):
-        with self._transaction():
-            episode, _, _, video = self._scope(project_id, episode_id)
+        with self._transaction(read_only=True):
+            episode, _, _, video = self._scope(project_id, episode_id, for_update=False)
             from .native_voice_service import project_mode
 
             if project_mode(self.session, episode.project_id, self.settings) != "native":
@@ -515,7 +517,7 @@ class EpisodeSoundService(BaseService):
                     pass
             raise
 
-    def snapshot(self, assembly, video):
+    def snapshot(self, assembly, video, *, for_update=True):
         sound = self.session.get(EpisodeSound, assembly.id)
         if sound is None:
             return None
@@ -535,7 +537,7 @@ class EpisodeSoundService(BaseService):
             ids.add(document["music"]["media_id"])
         entries = []
         for mid in sorted(ids):
-            media = self._media(mid)
+            media = self._media(mid, for_update=for_update)
             entries.append(
                 {
                     "media_id": str(mid),

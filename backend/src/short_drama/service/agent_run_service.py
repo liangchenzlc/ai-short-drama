@@ -47,14 +47,17 @@ from short_drama.service.agent_model_service import AgentModelService, model_sna
 from short_drama.service.base import Page, utcnow
 from short_drama.utils.snowflake import next_id
 
+_UNSET = object()
 
-def read_run(session, run):
-    tool = session.scalar(
-        select(AgentToolCall)
-        .where(AgentToolCall.run_id == run.id, AgentToolCall.status == "waiting_review")
-        .order_by(AgentToolCall.id)
-        .limit(1)
-    )
+
+def read_run(session, run, *, tool=_UNSET):
+    if tool is _UNSET:
+        tool = session.scalar(
+            select(AgentToolCall)
+            .where(AgentToolCall.run_id == run.id, AgentToolCall.status == "waiting_review")
+            .order_by(AgentToolCall.id)
+            .limit(1)
+        )
     review = None
     if tool is not None:
         payload = tool.review_payload
@@ -270,7 +273,7 @@ class AgentRunService(AgentConversationService):
 
     def list_messages(self, identifier, offset=0, limit=50):
         self.dao.validate_pagination(offset, limit)
-        with self._transaction():
+        with self._transaction(read_only=True):
             conversation = self._conversation(identifier)
             query = select(AgentMessage).where(AgentMessage.conversation_id == conversation.id)
             rows = self.session.scalars(
@@ -290,7 +293,7 @@ class AgentRunService(AgentConversationService):
 
     def list_runs(self, identifier, offset=0, limit=20):
         self.dao.validate_pagination(offset, limit)
-        with self._transaction():
+        with self._transaction(read_only=True):
             conversation = self._conversation(identifier)
             rows = self.session.scalars(
                 select(AgentRun)
@@ -302,15 +305,32 @@ class AgentRunService(AgentConversationService):
             total = self.session.scalar(
                 select(func.count(AgentRun.id)).where(AgentRun.conversation_id == conversation.id)
             )
+            reviews = {}
+            if rows:
+                first = (
+                    select(func.min(AgentToolCall.id).label("id"))
+                    .where(
+                        AgentToolCall.run_id.in_([row.id for row in rows]),
+                        AgentToolCall.status == "waiting_review",
+                    )
+                    .group_by(AgentToolCall.run_id)
+                    .subquery()
+                )
+                reviews = {
+                    tool.run_id: tool
+                    for tool in self.session.scalars(
+                        select(AgentToolCall).join(first, AgentToolCall.id == first.c.id)
+                    )
+                }
             return Page(
-                items=[read_run(self.session, row) for row in rows],
+                items=[read_run(self.session, row, tool=reviews.get(row.id)) for row in rows],
                 total=total,
                 offset=offset,
                 limit=limit,
             )
 
     def get_run(self, identifier):
-        with self._transaction():
+        with self._transaction(read_only=True):
             _, run = self._run(identifier)
             return read_run(self.session, run)
 

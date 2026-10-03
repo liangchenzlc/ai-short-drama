@@ -15,7 +15,19 @@ pytestmark = pytest.mark.integration
 
 def test_project_episode_crud_pagination_ownership_and_references(mysql_engine, db_session):
     async def run():
-        app = create_app(Settings(_env_file=None))
+        url = mysql_engine.url
+        app = create_app(
+            Settings(
+                _env_file=None,
+                db_host=url.host,
+                db_port=url.port or 3306,
+                db_user=url.username,
+                db_password=url.password or "",
+                db_name=url.database,
+                auth_enabled=False,
+                agent_enabled=False,
+            )
+        )
         factory = session_factory(mysql_engine)
 
         def test_session():
@@ -23,9 +35,10 @@ def test_project_episode_crud_pagination_ownership_and_references(mysql_engine, 
                 yield session
 
         app.dependency_overrides[get_session] = test_session
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app), base_url="http://test"
-        ) as client:
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client,
+        ):
             root = "/api/v1/projects"
             first = await client.post(root, json={"name": "story%one", "aspect": "16:9"})
             second = await client.post(root, json={"name": "other", "aspect": "9:16"})

@@ -29,21 +29,23 @@ def candidate_key(item):
 class AssetExtractionService(BaseService):
     model = AsyncTask
 
-    def _load(self, project_id, episode_id, generation_id):
+    def _load(self, project_id, episode_id, generation_id, *, for_update=True):
         project_id, episode_id, generation_id = map(
             parse_identifier, (project_id, episode_id, generation_id)
         )
-        task = self._require(AsyncTask, generation_id)
+        task = self._require(AsyncTask, generation_id, for_update=for_update)
         library = AssetLibraryService(self.session)
-        episode = library._lock_scope("episode", episode_id, project_id)
-        record = self.session.scalar(
+        episode = library._validate_scope("episode", episode_id, project_id, for_update=for_update)
+        statement = (
             select(AIGenerationRecord)
             .where(AIGenerationRecord.task_id == generation_id)
             .order_by(AIGenerationRecord.call_no.desc())
             .limit(1)
-            .with_for_update()
             .execution_options(populate_existing=True)
         )
+        if for_update:
+            statement = statement.with_for_update()
+        record = self.session.scalar(statement)
         source = (record.request_data.get("source") or {}) if record else {}
         if (
             source.get("scene") != "script_assets"
@@ -56,14 +58,16 @@ class AssetExtractionService(BaseService):
             raise WorkflowError("result_not_ready", "素材提取结果尚不可用")
         return library, episode, record, result
 
-    def _stale(self, episode, record):
+    def _stale(self, episode, record, *, for_update=True):
         script_id = int(record.request_data["source"]["script_id"])
-        script = self.session.scalar(
+        statement = (
             select(EpisodeScript)
             .where(EpisodeScript.id == script_id, EpisodeScript.episode_id == episode.id)
-            .with_for_update()
             .execution_options(populate_existing=True)
         )
+        if for_update:
+            statement = statement.with_for_update()
+        script = self.session.scalar(statement)
         return (
             script is None
             or episode.editing_script_id != script_id
@@ -109,13 +113,13 @@ class AssetExtractionService(BaseService):
             )
         return matches
 
-    def _view(self, library, episode, record, result):
+    def _view(self, library, episode, record, result, *, for_update=True):
         available = self._available(library, episode)
         return {
             "generation_id": str(record.task_id),
             "result_version": result["result_version"],
             "content_version": str(episode.content_version),
-            "stale": self._stale(episode, record),
+            "stale": self._stale(episode, record, for_update=for_update),
             "kinds": record.request_data["source_snapshot"]["extraction"]["kinds"],
             "items": [
                 {
@@ -150,8 +154,11 @@ class AssetExtractionService(BaseService):
             )
 
     def get(self, project_id, episode_id, generation_id):
-        with self._transaction():
-            return self._view(*self._load(project_id, episode_id, generation_id))
+        with self._transaction(read_only=True):
+            return self._view(
+                *self._load(project_id, episode_id, generation_id, for_update=False),
+                for_update=False,
+            )
 
     def patch(self, project_id, episode_id, generation_id, payload):
         parsed = ExtractionPatch.model_validate(payload)

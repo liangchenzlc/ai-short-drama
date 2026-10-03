@@ -11,6 +11,7 @@ from test_identity_collaboration import CopyStorage
 from short_drama.core.config import Settings
 from short_drama.db.readiness import assert_identity_ready
 from short_drama.domain import (
+    AGENT_TABLES,
     AIModelConfig,
     Asset,
     Base,
@@ -144,8 +145,9 @@ def original_schema(engine):
                     connection.execute(text(f"ALTER TABLE `{name}` DROP INDEX `{index['name']}`"))
             for column in columns:
                 connection.execute(text(f"ALTER TABLE `{name}` DROP COLUMN `{column}`"))
+        # Agent依赖账号表；还原账号功能出现前的库时，先按外键顺序移除它们。
         for table in reversed(Base.metadata.sorted_tables):
-            if table.name in migration.IDENTITY:
+            if table.name in migration.IDENTITY | AGENT_TABLES:
                 connection.execute(text(f"DROP TABLE `{table.name}`"))
         # The old global uniqueness must be replaced during finalize.
         connection.execute(

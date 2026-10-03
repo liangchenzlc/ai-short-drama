@@ -5,6 +5,7 @@ import { ConfigProvider } from 'antd';
 import '@ant-design/v5-patch-for-react-19';
 import { studioTheme } from '../src/app/theme';
 import { CharacterVoicePanel, NativeDialoguePanel } from '../src/features/projects/NativeVoicePanel';
+import { ConfigCatalogProvider } from '../src/features/ai-config/ConfigCatalogProvider';
 import type { NavigationBarrier } from '../src/features/projects/writing-navigation';
 import '../src/app/styles.css';
 import '../src/app/studio.css';
@@ -19,4 +20,4 @@ function Fixture() {
     <NativeDialoguePanel projectId="1" episodeId="2" shotId="4" disabled={false} revision={revision} registerBarrier={register} prepare={async () => true} onChanged={() => setRevision(r => r + 1)}/>
   </main>;
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode><ConfigProvider theme={studioTheme} button={{ autoInsertSpace: false }}><MemoryRouter><Fixture/></MemoryRouter></ConfigProvider></React.StrictMode>);
+createRoot(document.getElementById('root')!).render(<React.StrictMode><ConfigProvider theme={studioTheme} button={{ autoInsertSpace: false }}><MemoryRouter><ConfigCatalogProvider><Fixture/></ConfigCatalogProvider></MemoryRouter></ConfigProvider></React.StrictMode>);

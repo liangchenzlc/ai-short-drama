@@ -34,22 +34,22 @@ class EpisodeWritingService(BaseService):
         super().__init__(session)
         self.dao = EpisodeWritingDAO(session)
 
-    def _scope(self, project_id, episode_id, version=None):
+    def _scope(self, project_id, episode_id, version=None, *, for_update=True):
         episode = self.dao.scoped_episode(
-            parse_identifier(project_id), parse_identifier(episode_id)
+            parse_identifier(project_id), parse_identifier(episode_id), for_update=for_update
         )
         if version is not None and episode.content_version != version:
             raise Conflict("Content changed elsewhere; reload before saving")
         return episode
 
-    def _view(self, episode):
-        novel = self.dao.novel(episode.id)
+    def _view(self, episode, *, for_update=True):
+        novel = self.dao.novel(episode.id, for_update=for_update)
         script = (
-            self.dao.script(episode.id, episode.editing_script_id)
+            self.dao.script(episode.id, episode.editing_script_id, for_update=for_update)
             if episode.editing_script_id
             else None
         )
-        confirmed = self.dao.confirmed(episode.id)
+        confirmed = self.dao.confirmed(episode.id, for_update=for_update)
         return WritingRead(
             episode_id=episode.id,
             content_version=episode.content_version,
@@ -59,12 +59,14 @@ class EpisodeWritingService(BaseService):
         ).model_dump(mode="json")
 
     def get(self, project_id, episode_id):
-        with self._transaction():
-            return self._view(self._scope(project_id, episode_id))
+        with self._transaction(read_only=True):
+            return self._view(
+                self._scope(project_id, episode_id, for_update=False), for_update=False
+            )
 
     def candidates(self, project_id, episode_id, offset=0, limit=20, script_id=None):
-        with self._transaction():
-            episode = self._scope(project_id, episode_id)
+        with self._transaction(read_only=True):
+            episode = self._scope(project_id, episode_id, for_update=False)
             statement = (
                 select(EpisodeScript, AsyncTask.id)
                 .outerjoin(NovelScriptRecord, NovelScriptRecord.script_id == EpisodeScript.id)

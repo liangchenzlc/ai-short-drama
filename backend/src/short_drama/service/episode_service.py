@@ -53,7 +53,7 @@ class EpisodeService(BaseService):
         return episode
 
     def get_for_project(self, project_id, episode_id):
-        with self._transaction():
+        with self._transaction(read_only=True):
             episode = self._scoped_episode(project_id, episode_id)
             number = self.session.scalar(
                 select(func.count())
@@ -70,7 +70,7 @@ class EpisodeService(BaseService):
 
     def list_for_project(self, project_id, offset=0, limit=20):
         self.dao.validate_pagination(offset, limit)
-        with self._transaction():
+        with self._transaction(read_only=True):
             self._require(Project, project_id, for_update=False)
             filters = {"project_id": parse_identifier(project_id)}
             rows = self.dao.list(offset, limit, filters)

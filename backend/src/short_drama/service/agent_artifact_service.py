@@ -25,6 +25,8 @@ from short_drama.service.asset_service import AssetService
 from short_drama.service.base import BaseService, utcnow
 from short_drama.service.shot_script_service import ShotScriptService
 
+_UNSET = object()
+
 
 class AgentArtifactService(BaseService):
     def __init__(self, session, settings=None, storage=None):
@@ -33,35 +35,41 @@ class AgentArtifactService(BaseService):
 
     model = AgentArtifact
 
-    def _scope(self, project_id, episode_id):
+    def _scope(self, project_id, episode_id, *, for_update=True):
         project_id, episode_id = parse_identifier(project_id), parse_identifier(episode_id)
-        project = self.session.scalar(
+        statement = (
             select(Project)
             .where(Project.id == project_id)
-            .with_for_update()
             .execution_options(populate_existing=True)
         )
+        if for_update:
+            statement = statement.with_for_update()
+        project = self.session.scalar(statement)
         if project is None or project.archived_at is not None:
             raise NotFound("Project does not exist")
-        require_project(self.session, project_id)
-        return EpisodeWritingDAO(self.session).scoped_episode(project_id, episode_id)
+        require_project(self.session, project_id, lock=for_update)
+        return EpisodeWritingDAO(self.session).scoped_episode(
+            project_id, episode_id, for_update=for_update
+        )
 
-    def _artifact(self, episode, artifact_id):
-        artifact = self.session.scalar(
+    def _artifact(self, episode, artifact_id, *, for_update=True):
+        statement = (
             select(AgentArtifact)
             .where(
                 AgentArtifact.id == parse_identifier(artifact_id),
                 AgentArtifact.project_id == episode.project_id,
                 AgentArtifact.episode_id == episode.id,
             )
-            .with_for_update()
             .execution_options(populate_existing=True)
         )
+        if for_update:
+            statement = statement.with_for_update()
+        artifact = self.session.scalar(statement)
         if artifact is None:
             raise NotFound("Artifact does not exist in this episode")
         return artifact
 
-    def _view(self, artifact, *, detail=True):
+    def _view(self, artifact, *, detail=True, script=_UNSET):
         # An explicit allowlist protects shared reads even if private-origin records
         # are extended. No query joins messages, conversations, runs or tool calls.
         source = {
@@ -69,16 +77,17 @@ class AgentArtifactService(BaseService):
             for key, value in artifact.source_snapshot.items()
             if key in ArtifactSource.model_fields
         }
-        script = (
-            self.session.scalar(
-                select(EpisodeScript).where(
-                    EpisodeScript.id == artifact.script_id,
-                    EpisodeScript.episode_id == artifact.episode_id,
+        if script is _UNSET:
+            script = (
+                self.session.scalar(
+                    select(EpisodeScript).where(
+                        EpisodeScript.id == artifact.script_id,
+                        EpisodeScript.episode_id == artifact.episode_id,
+                    )
                 )
+                if artifact.script_id
+                else None
             )
-            if artifact.script_id
-            else None
-        )
         content = script.content if script else artifact.source_content
         values = {
             key: getattr(artifact, key)
@@ -101,8 +110,8 @@ class AgentArtifactService(BaseService):
 
     def list(self, project_id, episode_id, offset=0, limit=20, *, kind=None, status=None):
         self.dao.validate_pagination(offset, limit)
-        with self._transaction():
-            episode = self._scope(project_id, episode_id)
+        with self._transaction(read_only=True):
+            episode = self._scope(project_id, episode_id, for_update=False)
             conditions = [
                 AgentArtifact.project_id == episode.project_id,
                 AgentArtifact.episode_id == episode.id,
@@ -121,17 +130,32 @@ class AgentArtifactService(BaseService):
             total = self.session.scalar(
                 select(func.count()).select_from(AgentArtifact).where(*conditions)
             )
+            script_ids = {row.script_id for row in rows if row.script_id}
+            scripts = (
+                {
+                    script.id: script
+                    for script in self.session.scalars(
+                        select(EpisodeScript).where(
+                            EpisodeScript.id.in_(script_ids), EpisodeScript.episode_id == episode.id
+                        )
+                    )
+                }
+                if script_ids
+                else {}
+            )
             return {
-                "items": [self._view(row, detail=False) for row in rows],
+                "items": [
+                    self._view(row, detail=False, script=scripts.get(row.script_id)) for row in rows
+                ],
                 "total": total,
                 "offset": offset,
                 "limit": limit,
             }
 
     def get(self, project_id, episode_id, artifact_id):
-        with self._transaction():
-            episode = self._scope(project_id, episode_id)
-            return self._view(self._artifact(episode, artifact_id))
+        with self._transaction(read_only=True):
+            episode = self._scope(project_id, episode_id, for_update=False)
+            return self._view(self._artifact(episode, artifact_id, for_update=False))
 
     def _require_source(self, episode, artifact, values):
         source = artifact.source_snapshot

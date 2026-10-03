@@ -62,7 +62,7 @@ class GenerationReferenceService(AssetImageService):
         }
 
     def list_references(self, identifier):
-        with self._transaction():
+        with self._transaction(read_only=True):
             owner, _ = self._owner(parse_identifier(identifier))
             return self._read_references(owner)
 

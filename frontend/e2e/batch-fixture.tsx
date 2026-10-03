@@ -5,6 +5,7 @@ import { Checkbox, ConfigProvider } from 'antd';
 import { studioTheme } from '../src/app/theme';
 import '@ant-design/v5-patch-for-react-19';
 import { BatchLauncher, useBatchSelection } from '../src/features/generations/BatchGeneration';
+import { ConfigCatalogProvider } from '../src/features/ai-config/ConfigCatalogProvider';
 import '../src/app/styles.css';
 import '../src/app/studio.css';
 import '../src/app/web.css';
@@ -21,4 +22,4 @@ function Fixture() {
     {ids.map(id => <p key={id}><Checkbox checked={selection.ids.includes(id)} onChange={event => selection.toggle(id, event.target.checked)}>镜头 {id}</Checkbox></p>)}
   </main>;
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode><ConfigProvider theme={studioTheme} button={{ autoInsertSpace: false }}><MemoryRouter><Fixture/></MemoryRouter></ConfigProvider></React.StrictMode>);
+createRoot(document.getElementById('root')!).render(<React.StrictMode><ConfigProvider theme={studioTheme} button={{ autoInsertSpace: false }}><MemoryRouter><ConfigCatalogProvider><Fixture/></ConfigCatalogProvider></MemoryRouter></ConfigProvider></React.StrictMode>);

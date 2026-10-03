@@ -61,7 +61,7 @@ class MediaAssetService(BaseService):
     def list(self, offset=0, limit=20, filters=None):
         if not 1 <= limit <= 100 or offset < 0:
             raise BusinessError("Invalid pagination")
-        with self._transaction():
+        with self._transaction(read_only=True):
             rows, total = self.dao.history(filters or {}, offset, limit)
             return {
                 "items": [self._dto(*row) for row in rows],
@@ -71,7 +71,7 @@ class MediaAssetService(BaseService):
             }
 
     def detail(self, identifier):
-        with self._transaction():
+        with self._transaction(read_only=True):
             return self._dto(self._require(MediaAsset, identifier, for_update=False))
 
     get = detail

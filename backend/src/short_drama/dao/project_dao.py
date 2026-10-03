@@ -36,7 +36,7 @@ class ProjectDAO(BaseDAO):
                 .scalar_subquery()
             )
         rows = self.session.execute(
-            select(Project, episode_count)
+            select(Project, episode_count, opened)
             .where(*conditions)
             .order_by(opened.desc(), Project.id.desc())
             .offset(offset)

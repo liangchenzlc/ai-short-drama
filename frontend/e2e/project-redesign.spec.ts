@@ -30,10 +30,10 @@ for (const width of [1440, 390]) test(`project and episode cards retain fixed me
   await expect(cards).toHaveCount(2);
   const landscape = await cards.first().boundingBox();
   const portrait = await cards.last().boundingBox();
-  expect(landscape?.width).toBe(240);
-  expect(landscape?.height).toBe(180);
-  expect(portrait?.width).toBe(180);
-  expect(portrait?.height).toBe(364);
+  expect(landscape?.width).toBeCloseTo(240, 2);
+  expect(landscape?.height).toBeCloseTo(180, 2);
+  expect(portrait?.width).toBeCloseTo(180, 2);
+  expect(portrait?.height).toBeCloseTo(364, 2);
   await expect(cards.first().locator('img')).toHaveAttribute('src', image);
   await expect(cards.last().getByText('暂无封面')).toBeVisible();
   await expect(page.getByRole('button', { name: '刷新', exact: true })).toHaveCount(0);

@@ -149,6 +149,8 @@ npm run build
 
 Node 测试覆盖纯逻辑、保存会话、请求契约和部分组件源码约定，不是浏览器端到端测试。生产构建不能证明真实模型可用或桌面/移动端交互已验收。
 
+项目与分集读取的测量方法、修改前后数据、隔离 MySQL 管理入口及前端生产预览性能脚本见[性能测量说明](performance.md)。
+
 真实 MySQL 验证：
 
 ```powershell
@@ -213,7 +215,7 @@ RabbitMQ 消费确认超时需要覆盖单次 Worker 调用时长。较长文本
 - 非 loopback 地址访问使用 HTTPS；生成请求依赖安全上下文中的 Web Crypto（crypto.subtle/randomUUID）。localhost/127.0.0.1 是本地开发例外，普通局域网 HTTP 不满足该前提。
 - API、调度器与 Worker 交给进程管理器或容器管理，分配唯一雪花节点，保留可检索日志和异常退出告警。
 - 静态站点先将 `/api/` 代理到后端，再对页面路径使用 `index.html` fallback；Vite 开发代理不会进入构建产物。
-- **部署前核对 Vite `base`。** 当前配置为 `./`，而路由采用 BrowserRouter；深层链接刷新可能将资源解析到错误目录。部署到域名根目录时应设为 `/`，子路径部署需同时协调资源 base、路由 basename 和代理路径，再验证直接打开分集 URL。这是当前部署限制，不是已通过的验收项。
+- **部署前核对 Vite `base`。** 当前配置为 `/`，路由采用 BrowserRouter，适用于域名根目录部署。子路径部署需同时协调资源 base、路由 basename 和代理路径，并验证直接打开分集 URL。
 - 账号与多用户隔离默认启用；部署前完成[账号迁移](collaboration-deployment.md)、邮件与安全 Cookie 配置。Agent 额外部署与关闭步骤见 [Agent 部署](agent-deployment.md)。
 - 备份 MySQL、MinIO 对象和加密主密钥，验证恢复流程；不能只备份数据库中的临时媒体 URL。
 - 不按名称批量删除验收数据。若存在旧 `.runtime/*manifest*` 清单，先核实具体 ID、对象与引用，再按清单精确处理；仓库历史验收记录不能证明这些对象仍存在。

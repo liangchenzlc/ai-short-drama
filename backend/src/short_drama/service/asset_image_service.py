@@ -145,7 +145,7 @@ class AssetImageService(BaseService):
     def list(self, asset_id, offset=0, limit=20):
         asset_id = parse_identifier(asset_id)
         self.candidates.validate_pagination(offset, limit)
-        with self._transaction():
+        with self._transaction(read_only=True):
             asset = self.assets.get(asset_id)
             if asset is None:
                 raise NotFound("Asset does not exist")

@@ -53,13 +53,15 @@ class EpisodeStoryboardDAO(BaseDAO):
     def __init__(self, session):
         super().__init__(session, ShotScript)
 
-    def scoped_episode(self, project_id: int, episode_id: int) -> Episode:
-        episode = self.session.scalar(
+    def scoped_episode(self, project_id: int, episode_id: int, *, for_update=True) -> Episode:
+        statement = (
             select(Episode)
             .where(Episode.id == episode_id, Episode.project_id == project_id)
-            .with_for_update()
             .execution_options(populate_existing=True)
         )
+        if for_update:
+            statement = statement.with_for_update()
+        episode = self.session.scalar(statement)
         if episode is None:
             raise WorkflowError("not_found", "分集不存在或不属于当前项目", 404)
         return episode

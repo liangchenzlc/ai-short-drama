@@ -1,6 +1,6 @@
 ﻿import { useLayoutEffect } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useMatch, useParams } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Skeleton } from 'antd';
 import { RouteBoundary } from '../components/ui/RouteBoundary';
 import { Sidebar, type MainPage } from '../components/layout/Sidebar';
@@ -12,12 +12,15 @@ import { AuthGate, useAuth } from '../features/auth/AuthSession';
 import { AccountControls } from '../features/auth/AccountControls';
 import { LoginPage, RegisterPage, EmailProofPage, InvitationPage } from '../features/auth/AccountPages';
 import { ModelPreferencesProvider } from '../features/auth/ModelPreferences';
+import { ConfigCatalogProvider } from '../features/ai-config/ConfigCatalogProvider';
+import { preloadable } from '../components/ui/preloadable';
 import { accountPath, aiConfigPath } from './paths';
 
 const AssetsPage = lazy(() => import('../pages/assets/AssetsPage').then(module => ({ default: module.AssetsPage })));
 const AiConfigPage = lazy(() => import('../pages/ai-config/AiConfigPage').then(module => ({ default: module.AiConfigPage })));
 const AccountCenterPage = lazy(() => import('../features/auth/AccountCenter').then(module => ({ default: module.AccountCenterPage })));
-const ProjectRoute = lazy(() => import('../pages/projects/ProjectRoute').then(module => ({ default: module.ProjectRoute })));
+const loadProjectRoute = () => import('../pages/projects/ProjectRoute');
+const ProjectRoute = preloadable(() => loadProjectRoute().then(module => ({ default: module.ProjectRoute })));
 const TasksPage = lazy(() => import('../pages/tasks/TasksPage').then(module => ({ default: module.TasksPage })));
 const MediaLibraryPage = lazy(() => import('../pages/media-library/MediaLibraryPage').then(module => ({ default: module.MediaLibraryPage })));
 
@@ -58,7 +61,21 @@ function StudioLayout() {
 function ProjectLayout() { return <div className="studio-projects"><Outlet /></div>; }
 export function App() {
   const auth = useAuth();
-  return <AiConfigSessionProvider key={auth.user?.id ?? 'anonymous'}><ModelPreferencesProvider><Routes>
+  const location = useLocation();
+  const episode = useMatch('/projects/:projectId/episodes/:episodeId/:stage?');
+  const project = useMatch('/projects/:projectId');
+  const episodeId = episode?.params.episodeId;
+  const stage = episode?.params.stage;
+  const projectId = project?.params.projectId;
+  const section = new URLSearchParams(location.search).get('section') ?? undefined;
+  useEffect(() => {
+    if (!episodeId && !projectId) return;
+    // Load the requested view's code during authentication; AuthGate still owns data access.
+    void Promise.all([ProjectRoute.preload(), loadProjectRoute().then(module => module.preloadProjectView(episodeId, stage, section))]).catch(() => {
+      // RouteBoundary presents a failed optional preload when the route is rendered.
+    });
+  }, [episodeId, stage, projectId, section]);
+  return <AiConfigSessionProvider key={auth.user?.id ?? 'anonymous'}><ModelPreferencesProvider><ConfigCatalogProvider><Routes>
     <Route path="login" element={<LoginPage />} />
     <Route path="register" element={<RegisterPage />} />
     <Route path="verify-email" element={<EmailProofPage />} />
@@ -84,6 +101,6 @@ export function App() {
       </Route>
     <Route path="*" element={<NotFoundPage />} />
     </Route>
-  </Routes></ModelPreferencesProvider></AiConfigSessionProvider>;
+  </Routes></ConfigCatalogProvider></ModelPreferencesProvider></AiConfigSessionProvider>;
 }
 

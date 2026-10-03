@@ -41,17 +41,21 @@ class BaseService:
         self.dao = BaseDAO(session, self.model)
 
     @contextmanager
-    def _transaction(self):
+    def _transaction(self, *, read_only=False):
         if self.session.in_transaction():
             raise BusinessError("Service operation requires its own transaction")
         try:
-            mutex = self._global_order_lock() if self.global_ordered else nullcontext()
+            mutex = (
+                self._global_order_lock()
+                if self.global_ordered and not read_only
+                else nullcontext()
+            )
             with mutex, self.session.begin():
                 project_id = self.session.info.get("request_project")
                 if project_id:
                     from short_drama.db.access import require_project
 
-                    require_project(self.session, project_id)
+                    require_project(self.session, project_id, lock=not read_only)
                 yield
         except IntegrityError:
             raise Conflict("Operation conflicts with an existing or referenced record") from None
@@ -139,10 +143,10 @@ class BaseService:
             raise BusinessError("Selected model is unavailable for this operation")
         return model
 
-    def _validate_media(self, identifier, kind):
+    def _validate_media(self, identifier, kind, *, for_update=True):
         if identifier is None:
             return None
-        media = self._require(MediaFile, identifier)
+        media = self._require(MediaFile, identifier, for_update=for_update)
         is_image = media.format_code == "demo:image" or media.format_code.startswith("image/")
         if (kind == "image" and not is_image) or (
             kind in {"video", "audio"} and not media.format_code.startswith(f"{kind}/")
@@ -188,12 +192,12 @@ class BaseService:
 
     def get(self, identifier):
         identifier = parse_identifier(identifier)
-        with self._transaction():
+        with self._transaction(read_only=True):
             return self._read(self._require(self.model, identifier, for_update=False))
 
     def list(self, offset=0, limit=20, filters=None):
         self.dao.validate_pagination(offset, limit)
-        with self._transaction():
+        with self._transaction(read_only=True):
             return Page(
                 items=[self._read(row) for row in self.dao.list(offset, limit, filters)],
                 total=self.dao.count(filters),

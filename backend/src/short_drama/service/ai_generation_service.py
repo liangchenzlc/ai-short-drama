@@ -15,7 +15,15 @@ from short_drama.core.exceptions import (
 )
 from short_drama.dao.ai_generation_record_dao import AIGenerationRecordDAO
 from short_drama.dao.async_task_dao import AsyncTaskDAO
-from short_drama.domain import AIModelConfig, AsyncTask, Episode, MediaAsset, ShotScript
+from short_drama.domain import (
+    AIGenerationRecord,
+    AIModelConfig,
+    AsyncTask,
+    Episode,
+    MediaAsset,
+    Project,
+    ShotScript,
+)
 from short_drama.schemas.ai_generation import GENERATION_SCHEMAS, GenerationRetry
 from short_drama.schemas.base import parse_identifier
 from short_drama.schemas.storyboard_result import parse_storyboard_result
@@ -278,10 +286,11 @@ class AIGenerationService(BaseService):
             self._validate_media(identifier, "audio")
         return payload
 
-    def _summary(self, task, record=None):
+    def _summary(self, task, record=None, *, records=None, owner_ids=None, display_context=None):
         from .generation_presentation import generation_display_context
 
-        records = self.record_dao.for_task(task.id, include_text=False)
+        if records is None:
+            records = self.record_dao.for_task(task.id, include_text=False)
         record = record or records[0]
         latest = records[-1]
         config = record.config_snapshot
@@ -289,14 +298,14 @@ class AIGenerationService(BaseService):
         own_task = actor is None or task.initiated_by == actor.user_id
         owner_can_cancel = False
         if actor and task.project_id:
-            from short_drama.domain import Project
-
-            owner_can_cancel = (
-                self.session.scalar(
+            owner_id = (
+                owner_ids.get(task.project_id)
+                if owner_ids is not None
+                else self.session.scalar(
                     select(Project.owner_user_id).where(Project.id == task.project_id)
                 )
-                == actor.user_id
             )
+            owner_can_cancel = owner_id == actor.user_id
         can_resume = own_task and bool(resume_action(task, latest))
         error = safe_error(task.error)
         if can_resume and error and error["code"] == "invalid_structured_output":
@@ -311,7 +320,8 @@ class AIGenerationService(BaseService):
                 **{k: config.get(k) for k in ("name", "model_key", "provider")},
             },
             "source": record.request_data.get("source"),
-            "display_context": record.request_data.get("display_context")
+            "display_context": display_context
+            or record.request_data.get("display_context")
             or generation_display_context(self.session, record.request_data),
             "created_at": task.created_at,
             "updated_at": task.updated_at,
@@ -490,21 +500,70 @@ class AIGenerationService(BaseService):
     def list(self, offset=0, limit=20, filters=None):
         if not 1 <= limit <= 100 or offset < 0:
             raise BusinessError("Invalid pagination")
-        with self._transaction():
+        with self._transaction(read_only=True):
             rows, total = self.dao.history(filters or {}, offset, limit)
+            records = self.record_dao.for_tasks([task.id for task, _record in rows])
+            actor = self.session.info.get("actor")
+            project_ids = {task.project_id for task, _record in rows if task.project_id}
+            owners = (
+                dict(
+                    self.session.execute(
+                        select(Project.id, Project.owner_user_id).where(Project.id.in_(project_ids))
+                    ).all()
+                )
+                if actor and project_ids
+                else {}
+            )
+            # Resume decisions need full text only for a failed task's latest successful call.
+            text_ids = [
+                records[task.id][-1].id
+                for task, _record in rows
+                if task.status == "failed"
+                and records[task.id][-1].status == "succeeded"
+                and (actor is None or task.initiated_by == actor.user_id)
+            ]
+            if text_ids:
+                self.session.scalars(
+                    select(AIGenerationRecord).where(AIGenerationRecord.id.in_(text_ids))
+                ).all()
+            from .generation_presentation import generation_display_contexts
+
+            historical = [
+                (task.id, record.request_data)
+                for task, record in rows
+                if not record.request_data.get("display_context")
+            ]
+            contexts = dict(
+                zip(
+                    [identifier for identifier, _request in historical],
+                    generation_display_contexts(
+                        self.session, [request for _id, request in historical]
+                    ),
+                    strict=True,
+                )
+            )
             return {
-                "items": [self._summary(task, record) for task, record in rows],
+                "items": [
+                    self._summary(
+                        task,
+                        record,
+                        records=records[task.id],
+                        owner_ids=owners,
+                        display_context=contexts.get(task.id),
+                    )
+                    for task, record in rows
+                ],
                 "total": total,
                 "offset": offset,
                 "limit": limit,
             }
 
     def detail(self, identifier):
-        with self._transaction():
+        with self._transaction(read_only=True):
             task = self._require(AsyncTask, identifier, for_update=False)
             records = self.record_dao.for_task(task.id)
             latest = records[-1]
-            output = self._summary(task, latest)
+            output = self._summary(task, latest, records=records)
             output.update(
                 input=records[0].request_data.get("input"),
                 # Adoption and previews use the frozen business request, not

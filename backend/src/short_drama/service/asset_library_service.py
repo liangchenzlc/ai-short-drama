@@ -125,7 +125,7 @@ class AssetLibraryService(BaseService):
     ):
         self.library.scopes[kind][0]  # validate before opening a transaction
         self.assets.validate_pagination(offset, limit)
-        with self._transaction():
+        with self._transaction(read_only=True):
             self._validate_scope(kind, parent_id, project_id, for_update=False)
             rows, total = self.library.links(
                 kind, parent_id, asset_kind=asset_kind, query=q, offset=offset, limit=limit
@@ -283,7 +283,7 @@ class AssetLibraryService(BaseService):
 
     def get(self, asset_id):
         asset_id = parse_identifier(asset_id)
-        with self._transaction():
+        with self._transaction(read_only=True):
             asset = self.assets.get(asset_id)
             if asset is None:
                 raise NotFound("Asset does not exist")

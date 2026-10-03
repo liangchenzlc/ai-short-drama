@@ -1,15 +1,24 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { Suspense, useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Input, Pagination, Select, Skeleton, Tooltip } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import type { ProjectSession } from '../../types/projects';
 import { Dialog } from '../../components/ui/Dialog';
 import { projectsApi, projectError, type ProjectFields, type RemoteProject, type RemoteEpisode } from '../../api/modules/projects';
-import { ProjectCollaboration } from './ProjectCollaboration';
-import { ProjectResourceLibrary } from './ProjectResourceLibrary';
 import { ApiError } from '../../api/http';
 import { useAuth } from '../auth/AuthSession';
 import { Icon, type IconName } from '../../components/ui/Icon';
 import { EpisodeCard } from './EpisodeCard';
+import { preloadable } from '../../components/ui/preloadable';
+
+const loadProjectCollaboration = () => import('./ProjectCollaboration');
+const loadProjectResourceLibrary = () => import('./ProjectResourceLibrary');
+const ProjectCollaboration = preloadable(() => loadProjectCollaboration().then(module => ({ default: module.ProjectCollaboration })));
+const ProjectResourceLibrary = preloadable(() => loadProjectResourceLibrary().then(module => ({ default: module.ProjectResourceLibrary })));
+
+export async function preloadProjectSection(section?: string): Promise<void> {
+  if (section === 'resources') await ProjectResourceLibrary.preload();
+  else if (section === 'collaboration') await ProjectCollaboration.preload();
+}
 
 const aspects = [{ value: '16:9', label: '横屏 16:9' }, { value: '9:16', label: '竖屏 9:16' }];
 const sections: { key: string; label: string; icon: IconName }[] = [
@@ -45,6 +54,7 @@ export function ProjectOverview({ session, project, onProjectUpdated, onDeleted 
   const [error, setError] = useState('');
   const dirty = details.name !== project.name || details.synopsis !== project.synopsis || details.style !== project.style || details.aspect !== project.aspect;
   useEffect(() => {
+    if (section !== 'overview') return;
     const controller = new AbortController();
     setLoading(true); setLoadError('');
     void projectsApi.listEpisodes(project.projectId, offset, 20, controller.signal).then((page) => {
@@ -54,7 +64,7 @@ export function ProjectOverview({ session, project, onProjectUpdated, onDeleted 
     }).catch((cause) => { if (!controller.signal.aborted) setLoadError(projectError(cause)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [project.projectId, offset, revision]);
+  }, [project.projectId, section, offset, revision]);
   function changeDetails(patch: Partial<ProjectFields>) { setDetails((v) => ({ ...v, ...patch })); setSaved(false); }
   async function saveProject(event: FormEvent) {
     event.preventDefault();
@@ -119,8 +129,10 @@ export function ProjectOverview({ session, project, onProjectUpdated, onDeleted 
       </> : <div className="studio-empty"><h3>从第一集开始</h3><p>填写分集标题，即可进入小说、剧本和分镜创作。</p><Button type="primary" disabled={saving || busy} onClick={() => editEpisode('new')}>添加第一集</Button></div>}
     </section>
     </div>
-    {section === 'resources' ? <div className="project-section"><ProjectResourceLibrary projectId={session.projectId} /></div> : null}
-    {section === 'collaboration' ? <div className="project-section"><ProjectCollaboration projectId={session.projectId} canManage={project.capabilities?.manage_members ?? false} /></div> : null}
+    <Suspense fallback={<div className="project-section" role="status"><Skeleton active paragraph={{ rows: 3 }} /></div>}>
+      {section === 'resources' ? <div className="project-section"><ProjectResourceLibrary projectId={session.projectId} /></div> : null}
+      {section === 'collaboration' ? <div className="project-section"><ProjectCollaboration projectId={session.projectId} canManage={project.capabilities?.manage_members ?? false} /></div> : null}
+    </Suspense>
     </div>
     {latestProject && <Dialog title="核对最新项目设置" onClose={() => setLatestProject(null)}><p>当前输入仍保留。核对以下服务端内容后，可以继续编辑并重新保存。</p><dl><dt>名称</dt><dd>{latestProject.name}</dd><dt>故事梗概</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{latestProject.synopsis || '尚未填写'}</dd><dt>画幅 / 风格</dt><dd>{latestProject.aspect} / {latestProject.style || '未设置'}</dd></dl><Button onClick={() => { onProjectUpdated(latestProject); setLatestProject(null); setConflict(false); setSaveError('请手动合并后重新保存。'); }}>保留输入，基于最新版本继续编辑</Button></Dialog>}
     {editing && <Dialog title={editing === 'new' ? '新增一集' : '编辑分集'} canClose={!busy} onClose={() => setEditing(null)}><form className="studio-form" onSubmit={saveEpisode}>

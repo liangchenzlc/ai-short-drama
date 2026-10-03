@@ -19,44 +19,52 @@ class EpisodeWritingDAO(BaseDAO):
     def __init__(self, session):
         super().__init__(session, Episode)
 
-    def scoped_episode(self, project_id, episode_id):
+    def scoped_episode(self, project_id, episode_id, *, for_update=True):
         # All document writers share this mutex, including first insert/confirmation.
-        row = self.session.scalar(
+        statement = (
             select(Episode)
             .where(Episode.id == episode_id, Episode.project_id == project_id)
-            .with_for_update()
             .execution_options(populate_existing=True)
         )
+        if for_update:
+            statement = statement.with_for_update()
+        row = self.session.scalar(statement)
         if row is None:
             raise NotFound("Episode does not exist in this project")
         return row
 
-    def novel(self, episode_id):
-        return self.session.scalar(
+    def novel(self, episode_id, *, for_update=True):
+        statement = (
             select(EpisodeNovel)
             .where(EpisodeNovel.episode_id == episode_id)
-            .with_for_update()
             .execution_options(populate_existing=True)
         )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
 
-    def script(self, episode_id, script_id):
-        row = self.session.scalar(
+    def script(self, episode_id, script_id, *, for_update=True):
+        statement = (
             select(EpisodeScript)
             .where(EpisodeScript.id == script_id, EpisodeScript.episode_id == episode_id)
-            .with_for_update()
             .execution_options(populate_existing=True)
         )
+        if for_update:
+            statement = statement.with_for_update()
+        row = self.session.scalar(statement)
         if row is None:
             raise NotFound("Script does not exist in this episode")
         return row
 
-    def confirmed(self, episode_id):
-        return self.session.scalar(
+    def confirmed(self, episode_id, *, for_update=True):
+        statement = (
             select(EpisodeScript)
             .where(EpisodeScript.episode_id == episode_id, EpisodeScript.state == "confirmed")
-            .with_for_update()
             .execution_options(populate_existing=True)
         )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
 
     def next_position(self, episode_id):
         maximum = (

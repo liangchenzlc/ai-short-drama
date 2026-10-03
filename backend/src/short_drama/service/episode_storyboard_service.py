@@ -69,9 +69,11 @@ class EpisodeStoryboardService(BaseService):
         self.settings = settings
         self.storage = storage
 
-    def lock_episode(self, project_id, episode_id, expected_storyboard_version=None):
+    def lock_episode(
+        self, project_id, episode_id, expected_storyboard_version=None, *, for_update=True
+    ):
         episode = self.dao.scoped_episode(
-            parse_identifier(project_id), parse_identifier(episode_id)
+            parse_identifier(project_id), parse_identifier(episode_id), for_update=for_update
         )
         if expected_storyboard_version is not None:
             require_storyboard_version(episode, parse_identifier(expected_storyboard_version))
@@ -148,8 +150,8 @@ class EpisodeStoryboardService(BaseService):
         return normalize_shot_context(**values), compute_shot_context_hash(**values)
 
     def get_shot_context(self, project_id, episode_id, shot_id):
-        with self._transaction():
-            episode = self.lock_episode(project_id, episode_id)
+        with self._transaction(read_only=True):
+            episode = self.lock_episode(project_id, episode_id, for_update=False)
             shot = self.dao.scoped_shot(episode.id, parse_identifier(shot_id), for_update=False)
             context, digest = self._context(episode, shot)
             return {"context": context, "context_hash": digest}
@@ -174,7 +176,16 @@ class EpisodeStoryboardService(BaseService):
             "is_stale": image.context_hash is None or image.context_hash != current_hash,
         }
 
-    def _shot(self, episode, shot, *, assets=None, image_row=_UNSET, video_row=_UNSET):
+    def _shot(
+        self,
+        episode,
+        shot,
+        *,
+        assets=None,
+        image_row=_UNSET,
+        video_row=_UNSET,
+        native_speech=_UNSET,
+    ):
         from short_drama.ai.business_prompts import video_default_prompt
         from short_drama.ai.prompts.registry import shot_video_system_prompt
 
@@ -189,6 +200,8 @@ class EpisodeStoryboardService(BaseService):
         image = self._image(episode, shot, digest, image_row)
         prompt = getattr(shot, "video_prompt", "") or ""
         video_settings = getattr(shot, "video_settings", None) or DEFAULT_VIDEO_SETTINGS
+        if native_speech is _UNSET:
+            native_speech = native_context(self.session, shot, settings=self.settings)
         video_hash = video_context_hash(
             digest,
             image["media_id"] if image else None,
@@ -196,6 +209,7 @@ class EpisodeStoryboardService(BaseService):
             video_settings,
             session=self.session,
             shot=shot,
+            native_speech=native_speech,
         )
         result = self.dao.video_rows([shot.id]).get(shot.id) if video_row is _UNSET else video_row
         video = None
@@ -230,7 +244,7 @@ class EpisodeStoryboardService(BaseService):
             video_system_prompt=shot_video_system_prompt(),
             video_settings=video_settings,
             video_context_hash=video_hash,
-            native_speech=native_context(self.session, shot, settings=self.settings),
+            native_speech=native_speech,
             video=video,
             deleted_at=shot.deleted_at,
         ).model_dump(mode="json")
@@ -239,11 +253,14 @@ class EpisodeStoryboardService(BaseService):
         self.dao.validate_pagination(offset, limit)
         if type(include_archived) is not bool:
             raise BusinessError("include_archived must be boolean")
-        with self._transaction():
-            episode = self.lock_episode(project_id, episode_id)
+        with self._transaction(read_only=True):
+            episode = self.lock_episode(project_id, episode_id, for_update=False)
             rows, total = self.dao.list_rows(episode.id, include_archived, offset, limit)
             assets_by_shot, images_by_shot = self.dao.list_details([row.id for row in rows])
             videos_by_shot = self.dao.video_rows([row.id for row in rows])
+            from .native_voice_service import native_contexts
+
+            speech_by_shot = native_contexts(self.session, episode, rows, settings=self.settings)
             return {
                 "episode_id": str(episode.id),
                 "storyboard_version": str(episode.storyboard_version),
@@ -254,6 +271,7 @@ class EpisodeStoryboardService(BaseService):
                         assets=assets_by_shot[row.id],
                         image_row=images_by_shot.get(row.id),
                         video_row=videos_by_shot.get(row.id),
+                        native_speech=speech_by_shot[row.id],
                     )
                     for row in rows
                 ],
@@ -263,8 +281,8 @@ class EpisodeStoryboardService(BaseService):
             }
 
     def get(self, project_id, episode_id, shot_id):
-        with self._transaction():
-            episode = self.lock_episode(project_id, episode_id)
+        with self._transaction(read_only=True):
+            episode = self.lock_episode(project_id, episode_id, for_update=False)
             shot = self.dao.scoped_shot(episode.id, parse_identifier(shot_id), for_update=False)
             return {
                 "shot": self._shot(episode, shot),

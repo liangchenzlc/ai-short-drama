@@ -5,8 +5,11 @@ authorization predicate would recurse. Unscoped sessions are reserved for worker
 authentication and migration tools, never accepted from an HTTP payload.
 """
 
+from functools import lru_cache
+
 from sqlalchemy import and_, event, false, inspect, or_, select
-from sqlalchemy.orm import Session, with_loader_criteria
+from sqlalchemy.orm import Mapper, Session, with_loader_criteria
+from sqlalchemy.orm.interfaces import ORMOption
 
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import AGENT_PRIVATE_TABLES, AGENT_TABLES, Base
@@ -102,6 +105,18 @@ def condition(table, user_id):
     return false()
 
 
+@lru_cache(maxsize=128)
+def _scope_options(user_id: int, mappers: tuple[Mapper, ...]) -> tuple[ORMOption, ...]:
+    # Reuse immutable SQL expressions, never membership or query results. The
+    # database still checks current ownership, membership and archive state.
+    return tuple(
+        with_loader_criteria(
+            mapper.class_, condition(mapper.local_table, user_id), include_aliases=True
+        )
+        for mapper in mappers
+    )
+
+
 @event.listens_for(Session, "do_orm_execute")
 def restrict_queries(state):
     actor = state.session.info.get("actor")
@@ -140,16 +155,9 @@ def restrict_queries(state):
                 "guarded_bulk_write", "Ownership and references require checked writes", 403
             )
     if state.is_select or state.is_update or state.is_delete:
-        statement = state.statement
-        for mapper in Base.registry.mappers:
-            statement = statement.options(
-                with_loader_criteria(
-                    mapper.class_,
-                    condition(mapper.local_table, actor.user_id),
-                    include_aliases=True,
-                )
-            )
-        state.statement = statement
+        state.statement = state.statement.options(
+            *_scope_options(actor.user_id, tuple(Base.registry.mappers))
+        )
 
 
 def require_project(session, project_id, *, owner=False, lock=True):
@@ -168,15 +176,12 @@ def require_project(session, project_id, *, owner=False, lock=True):
     ):
         raise NotFound("Project does not exist")
     if project.owner_user_id != actor.user_id:
-        member = session.scalar(
-            select(ProjectMember)
-            .where(
-                ProjectMember.project_id == project.id,
-                ProjectMember.user_id == actor.user_id,
-                ProjectMember.status == "active",
-            )
-            .with_for_update()
+        membership = select(ProjectMember).where(
+            ProjectMember.project_id == project.id,
+            ProjectMember.user_id == actor.user_id,
+            ProjectMember.status == "active",
         )
+        member = session.scalar(membership.with_for_update() if lock else membership)
         if not member:
             raise NotFound("Project does not exist")
         if owner:

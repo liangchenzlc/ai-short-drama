@@ -34,13 +34,22 @@ def project_mode(session, project_id, settings=None):
     return row.mode if row else "legacy"
 
 
-def native_context(session, shot, *, strict=False, settings=None):
+def native_context(session, shot, *, strict=False, settings=None, _lookups=None):
     if not getattr(settings or Settings(), "native_video_enabled", False):
         return None
-    episode = session.get(Episode, shot.episode_id)
-    if project_mode(session, episode.project_id, settings) != "native":
+    episode = _lookups["episode"] if _lookups is not None else session.get(Episode, shot.episode_id)
+    mode = (
+        _lookups["mode"]
+        if _lookups is not None
+        else project_mode(session, episode.project_id, settings)
+    )
+    if mode != "native":
         return None
-    row = session.get(ShotDialogue, shot.id)
+    row = (
+        _lookups["dialogues"].get(shot.id)
+        if _lookups is not None
+        else session.get(ShotDialogue, shot.id)
+    )
     doc = row.document if row else {"reviewed": False, "lines": []}
     result = {
         "mode": "native",
@@ -54,14 +63,34 @@ def native_context(session, shot, *, strict=False, settings=None):
             "native_dialogue_review", "请先保存并确认分镜对白；无对白镜头也需确认", 422
         )
     for cid in dict.fromkeys(line["character_id"] for line in doc["lines"]):
-        asset = session.get(Asset, int(cid))
-        binding = session.get(CharacterVoice, (episode.project_id, int(cid)))
-        linked = session.scalar(
-            select(ShotAsset.id).where(ShotAsset.shot_id == shot.id, ShotAsset.asset_id == int(cid))
+        asset = (
+            _lookups["assets"].get(int(cid))
+            if _lookups is not None
+            else session.get(Asset, int(cid))
+        )
+        binding = (
+            _lookups["bindings"].get(int(cid))
+            if _lookups is not None
+            else session.get(CharacterVoice, (episode.project_id, int(cid)))
+        )
+        linked = (
+            (shot.id, int(cid)) in _lookups["linked"]
+            if _lookups is not None
+            else session.scalar(
+                select(ShotAsset.id).where(
+                    ShotAsset.shot_id == shot.id, ShotAsset.asset_id == int(cid)
+                )
+            )
         )
         if strict and (asset is None or asset.kind != "character" or not linked):
             raise WorkflowError("native_character_scope", "说话角色必须关联到当前分镜", 422)
-        media = session.get(MediaFile, binding.media_id) if binding else None
+        media = (
+            _lookups["media"].get(binding.media_id)
+            if binding and _lookups is not None
+            else session.get(MediaFile, binding.media_id)
+            if binding
+            else None
+        )
         if strict and (
             media is None
             or not media.duration_ms
@@ -85,6 +114,69 @@ def native_context(session, shot, *, strict=False, settings=None):
             }
         )
     return result
+
+
+def native_contexts(session, episode, shots, *, settings=None):
+    """Prefetch this page's native metadata; single-shot validation/serialization is shared."""
+    shots = list(shots)
+    contexts = {shot.id: None for shot in shots}
+    if not shots:
+        return contexts
+    settings = settings or Settings()
+    if not getattr(settings, "native_video_enabled", False):
+        return contexts
+    mode = project_mode(session, episode.project_id, settings)
+    if mode != "native":
+        return contexts
+    shot_ids = [shot.id for shot in shots]
+    dialogues = {
+        row.shot_id: row
+        for row in session.scalars(select(ShotDialogue).where(ShotDialogue.shot_id.in_(shot_ids)))
+    }
+    character_ids = {
+        int(line["character_id"]) for row in dialogues.values() for line in row.document["lines"]
+    }
+    assets, bindings, linked, media = {}, {}, set(), {}
+    if character_ids:
+        assets = {
+            row.id: row for row in session.scalars(select(Asset).where(Asset.id.in_(character_ids)))
+        }
+        bindings = {
+            row.asset_id: row
+            for row in session.scalars(
+                select(CharacterVoice).where(
+                    CharacterVoice.project_id == episode.project_id,
+                    CharacterVoice.asset_id.in_(character_ids),
+                )
+            )
+        }
+        linked = set(
+            self_row
+            for self_row in session.execute(
+                select(ShotAsset.shot_id, ShotAsset.asset_id).where(
+                    ShotAsset.shot_id.in_(shot_ids), ShotAsset.asset_id.in_(character_ids)
+                )
+            ).all()
+        )
+        media_ids = {row.media_id for row in bindings.values()}
+        if media_ids:
+            media = {
+                row.id: row
+                for row in session.scalars(select(MediaFile).where(MediaFile.id.in_(media_ids)))
+            }
+    lookups = {
+        "episode": episode,
+        "mode": mode,
+        "dialogues": dialogues,
+        "assets": assets,
+        "bindings": bindings,
+        "linked": linked,
+        "media": media,
+    }
+    return {
+        shot.id: native_context(session, shot, settings=settings, _lookups=lookups)
+        for shot in shots
+    }
 
 
 def native_prompt(context):
@@ -114,14 +206,14 @@ class NativeVoiceService(BaseService):
         super().__init__(session)
         self.settings, self.storage = settings, storage
 
-    def _project(self, pid):
+    def _project(self, pid, *, for_update=True):
         if not self.settings.native_video_enabled or not self.settings.audio_production_enabled:
             raise NotFound("角色声音与原生有声视频功能尚未启用")
-        return self._require(Project, pid)
+        return self._require(Project, pid, for_update=for_update)
 
-    def _character(self, pid, cid):
-        self._project(pid)
-        asset = self._require(Asset, cid)
+    def _character(self, pid, cid, *, for_update=True):
+        self._project(pid, for_update=for_update)
+        asset = self._require(Asset, cid, for_update=for_update)
         linked = self.session.scalar(
             select(ProjectAsset.id).where(
                 ProjectAsset.project_id == int(pid), ProjectAsset.asset_id == int(cid)
@@ -142,8 +234,8 @@ class NativeVoiceService(BaseService):
         return {"mode": row.mode if row else "legacy", "row_version": row.row_version if row else 0}
 
     def mode(self, pid):
-        with self._transaction():
-            self._project(pid)
+        with self._transaction(read_only=True):
+            self._project(pid, for_update=False)
             return self._mode(pid)
 
     def set_mode(self, pid, payload):
@@ -249,8 +341,8 @@ class NativeVoiceService(BaseService):
         }
 
     def voices(self, pid, cid):
-        with self._transaction():
-            self._character(pid, cid)
+        with self._transaction(read_only=True):
+            self._character(pid, cid, for_update=False)
             return self._voices(pid, cid)
 
     def adopt(self, pid, cid, payload):
@@ -276,10 +368,10 @@ class NativeVoiceService(BaseService):
             self.session.flush()
             return self._voices(pid, cid)
 
-    def _shot(self, pid, eid, sid):
-        self._project(pid)
-        episode = self._require(Episode, eid)
-        shot = self._require(ShotScript, sid)
+    def _shot(self, pid, eid, sid, *, for_update=True):
+        self._project(pid, for_update=for_update)
+        episode = self._require(Episode, eid, for_update=for_update)
+        shot = self._require(ShotScript, sid, for_update=for_update)
         if episode.project_id != int(pid) or shot.episode_id != episode.id or shot.deleted_at:
             raise NotFound("分镜不属于当前项目分集")
         return shot
@@ -314,8 +406,8 @@ class NativeVoiceService(BaseService):
         )
 
     def dialogue(self, pid, eid, sid):
-        with self._transaction():
-            return self._dialogue(self._shot(pid, eid, sid))
+        with self._transaction(read_only=True):
+            return self._dialogue(self._shot(pid, eid, sid, for_update=False))
 
     def save_dialogue(self, pid, eid, sid, payload):
         data = NativeDialogueEdit.model_validate(payload)

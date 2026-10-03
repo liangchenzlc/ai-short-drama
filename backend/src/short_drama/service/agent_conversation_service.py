@@ -16,6 +16,7 @@ from short_drama.service.base import BaseService, Page, utcnow
 from short_drama.utils.snowflake import next_id
 
 ACTIVE_RUN_STATES = ("queued", "running", "waiting_generation", "waiting_review")
+_UNSET = object()
 
 
 class AgentConversationService(BaseService):
@@ -31,8 +32,8 @@ class AgentConversationService(BaseService):
             raise WorkflowError("agent_disabled", "Agent 模式尚未启用", 503)
         return actor
 
-    def _episode(self, project_id, episode_id):
-        require_project(self.session, project_id)
+    def _episode(self, project_id, episode_id, *, lock=True):
+        require_project(self.session, project_id, lock=lock)
         row = self.session.scalar(
             select(Episode).where(Episode.id == episode_id, Episode.project_id == project_id)
         )
@@ -62,13 +63,14 @@ class AgentConversationService(BaseService):
             raise NotFound("Conversation does not exist")
         return row
 
-    def _read_conversation(self, row):
-        last_status = self.session.scalar(
-            select(AgentRun.status)
-            .where(AgentRun.conversation_id == row.id)
-            .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
-            .limit(1)
-        )
+    def _read_conversation(self, row, *, last_status=_UNSET):
+        if last_status is _UNSET:
+            last_status = self.session.scalar(
+                select(AgentRun.status)
+                .where(AgentRun.conversation_id == row.id)
+                .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
+                .limit(1)
+            )
         return ConversationRead(
             id=row.id,
             project_id=row.project_id,
@@ -133,8 +135,8 @@ class AgentConversationService(BaseService):
         actor = self._actor()
         self.dao.validate_pagination(offset, limit)
         project_id, episode_id = parse_identifier(project_id), parse_identifier(episode_id)
-        with self._transaction():
-            self._episode(project_id, episode_id)
+        with self._transaction(read_only=True):
+            self._episode(project_id, episode_id, lock=False)
             conditions = [
                 AgentConversation.owner_user_id == actor.user_id,
                 AgentConversation.project_id == project_id,
@@ -149,8 +151,31 @@ class AgentConversationService(BaseService):
                 .offset(offset)
                 .limit(limit)
             ).all()
+            statuses = {}
+            if rows:
+                latest = (
+                    select(
+                        AgentRun.conversation_id,
+                        AgentRun.status,
+                        func.row_number()
+                        .over(
+                            partition_by=AgentRun.conversation_id,
+                            order_by=(AgentRun.created_at.desc(), AgentRun.id.desc()),
+                        )
+                        .label("rank"),
+                    )
+                    .where(AgentRun.conversation_id.in_([row.id for row in rows]))
+                    .subquery()
+                )
+                statuses = dict(
+                    self.session.execute(
+                        select(latest.c.conversation_id, latest.c.status).where(latest.c.rank == 1)
+                    ).all()
+                )
             return Page(
-                items=[self._read_conversation(row) for row in rows],
+                items=[
+                    self._read_conversation(row, last_status=statuses.get(row.id)) for row in rows
+                ],
                 total=self.session.scalar(
                     select(func.count(AgentConversation.id)).where(*conditions)
                 ),
@@ -159,7 +184,7 @@ class AgentConversationService(BaseService):
             )
 
     def get_conversation(self, identifier):
-        with self._transaction():
+        with self._transaction(read_only=True):
             return self._read_conversation(self._conversation(identifier))
 
     def patch_conversation(self, identifier, payload):

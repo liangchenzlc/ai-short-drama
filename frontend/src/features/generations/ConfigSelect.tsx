@@ -1,10 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Alert, Button, Select } from 'antd';
-import { aiModelConfigs } from '../../api/modules/ai-model-configs';
-import type { AiConfig } from '../ai-config/config-model';
 import type { GenerationKind } from '../../api/types/generations';
-import { generationError } from './presentation';
-import { AI_CONFIGS_CHANGED } from '../ai-config/config-events';
+import { useConfigCatalog } from '../ai-config/ConfigCatalogProvider';
 import { resolveConfigSelection } from '../ai-config/config-selection';
 import { useModelPreferences } from '../auth/ModelPreferences';
 
@@ -15,39 +12,7 @@ export function ConfigSelect({ kind, value, onChange, onResolvedChange, allowDef
   const remember = preferences.enabled && allowDefault && autoDefault;
   const key = preferenceKey ?? `model:${kind}:${label}`;
   const waiting = remember && !preferences.ready;
-  const [items, setItems] = useState<AiConfig[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    const refresh = () => setRevision((n) => n + 1);
-    window.addEventListener(AI_CONFIGS_CHANGED, refresh);
-    window.addEventListener('focus', refresh);
-    return () => {
-      window.removeEventListener(AI_CONFIGS_CHANGED, refresh);
-      window.removeEventListener('focus', refresh);
-    };
-  }, []);
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true); setError(''); setItems([]);
-    async function load() {
-      const result: AiConfig[] = [];
-      try {
-        let offset = 0;
-        do {
-          const page = await aiModelConfigs.list(kind, offset, 100, controller.signal);
-          if (controller.signal.aborted) return;
-          result.push(...page.items); offset += page.items.length;
-          if (!page.items.length || offset >= page.total) break;
-        } while (!controller.signal.aborted);
-        setItems(result);
-      } catch (cause) { if (!controller.signal.aborted) setError(generationError(cause)); }
-      finally { if (!controller.signal.aborted) setLoading(false); }
-    }
-    void load();
-    return () => controller.abort();
-  }, [kind, revision]);
+  const { items, loading, error, refresh } = useConfigCatalog(kind);
   const selected = resolveConfigSelection(items, kind, value ?? (remember ? preferences.values[key] : undefined), allowDefault && autoDefault);
   const usableSelected = selected && items.some((item) => item.id === selected && item.enabled && item.serviceType === kind) ? selected : undefined;
   useEffect(() => { if (!loading && !waiting) onResolvedChange?.(usableSelected); }, [loading, waiting, onResolvedChange, usableSelected]);
@@ -56,7 +21,7 @@ export function ConfigSelect({ kind, value, onChange, onResolvedChange, allowDef
       placeholder={!allowDefault ? '全部模型配置' : autoDefault ? '请选择模型配置' : '沿用原任务配置'}
       options={items.map((item) => ({ value: item.id, label: `${item.name} · ${item.modelKey}${item.isDefault ? '（默认）' : ''}${!item.enabled ? '（停用）' : ''}`, disabled: allowDefault && !item.enabled }))}
       notFoundContent={loading ? '加载中…' : '暂无配置，请先前往 AI 配置添加'} />
-    {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={() => setRevision((n) => n + 1)}>重试</Button>} />}
+    {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={refresh}>重试</Button>} />}
     {remember && preferences.error && <Alert type="warning" message={`模型偏好未同步：${preferences.error}`} />}
     {allowDefault && autoDefault && !loading && !error && !selected && <Alert type="warning" showIcon message="尚未设置此类型的默认模型，请先选择一个已启用的模型。" />}
   </div>;

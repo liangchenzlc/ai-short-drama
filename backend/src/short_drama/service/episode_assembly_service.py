@@ -45,13 +45,12 @@ class EpisodeAssemblyService(BaseService):
         self.settings, self.storage = settings, storage
         self.storyboard = EpisodeStoryboardService(session, settings, storage)
 
-    def _scope(self, project_id, episode_id, required=True):
-        episode = self.storyboard.lock_episode(project_id, episode_id)
-        assembly = self.session.scalar(
-            select(EpisodeAssembly)
-            .where(EpisodeAssembly.episode_id == episode.id)
-            .with_for_update()
-        )
+    def _scope(self, project_id, episode_id, required=True, *, for_update=True):
+        episode = self.storyboard.lock_episode(project_id, episode_id, for_update=for_update)
+        statement = select(EpisodeAssembly).where(EpisodeAssembly.episode_id == episode.id)
+        if for_update:
+            statement = statement.with_for_update()
+        assembly = self.session.scalar(statement)
         if required and assembly is None:
             raise NotFound("尚未创建成片草稿")
         return episode, assembly
@@ -81,6 +80,9 @@ class EpisodeAssemblyService(BaseService):
         ids = [s.id for s in shots]
         assets, images = self.storyboard.dao.list_details(ids)
         videos = self.storyboard.dao.video_rows(ids)
+        from .native_voice_service import native_contexts
+
+        native = native_contexts(self.session, episode, shots, settings=self.settings)
         result = {}
         for shot in shots:
             _, context = self.storyboard._context(episode, shot, assets[shot.id])
@@ -92,6 +94,7 @@ class EpisodeAssemblyService(BaseService):
                 shot.video_settings or DEFAULT_VIDEO_SETTINGS,
                 session=self.session,
                 shot=shot,
+                native_speech=native[shot.id],
             )
             video = videos.get(shot.id)
             result[shot.id] = {
@@ -148,13 +151,13 @@ class EpisodeAssemblyService(BaseService):
         assembly.row_version += 1
         assembly.updated_at = utcnow()
 
-    def _snapshot(self, assembly, clips):
+    def _snapshot(self, assembly, clips, *, for_update=True):
         snapshot = self._video_snapshot(assembly, clips)
         if getattr(self.settings, "audio_production_enabled", False):
             from .episode_sound_service import EpisodeSoundService
 
             sound = EpisodeSoundService(self.session, self.settings, self.storage).snapshot(
-                assembly, snapshot
+                assembly, snapshot, for_update=for_update
             )
             if sound is not None:
                 snapshot = {**snapshot, "version": 3, "sound": sound}
@@ -270,7 +273,7 @@ class EpisodeAssemblyService(BaseService):
             "timeline": timeline,
         }
 
-    def _read(self, episode, assembly, sources=None):
+    def _read(self, episode, assembly, sources=None, *, for_update=True):
         sources = sources if sources is not None else self._sources(episode)
         source_hash = self._source_hash(sources, episode)
         if assembly is None:
@@ -360,7 +363,7 @@ class EpisodeAssemblyService(BaseService):
                     {"shot_id": str(sid), "position": source["position"], "kind": "added"}
                 )
         active_clips = [c for c in clips if not c.removed]
-        context_hash = digest(self._snapshot(assembly, active_clips))
+        context_hash = digest(self._snapshot(assembly, active_clips, for_update=for_update))
         library = {}
         for item in values:
             library.setdefault(
@@ -426,9 +429,9 @@ class EpisodeAssemblyService(BaseService):
         }
 
     def get(self, project_id, episode_id):
-        with self._transaction():
-            episode, assembly = self._scope(project_id, episode_id, False)
-            return self._read(episode, assembly)
+        with self._transaction(read_only=True):
+            episode, assembly = self._scope(project_id, episode_id, False, for_update=False)
+            return self._read(episode, assembly, for_update=False)
 
     def _new_job(self, assembly, kind, snapshot, key, request_hash=None, retry_of=None):
         now = utcnow()
@@ -697,9 +700,9 @@ class EpisodeAssemblyService(BaseService):
             return self._job_read(self._new_job(assembly, kind, snapshot, key, request_hash))
 
     def jobs(self, project_id, episode_id, offset=0, limit=20):
-        with self._transaction():
-            _, assembly = self._scope(project_id, episode_id)
-            context = digest(self._snapshot(assembly, self._clips(assembly)))
+        with self._transaction(read_only=True):
+            _, assembly = self._scope(project_id, episode_id, for_update=False)
+            context = digest(self._snapshot(assembly, self._clips(assembly), for_update=False))
             jobs = self.session.scalars(
                 select(EpisodeRenderJob)
                 .where(
@@ -713,15 +716,15 @@ class EpisodeAssemblyService(BaseService):
             return {"items": items[:limit], "has_more": len(items) > limit, "offset": offset}
 
     def job_action(self, project_id, episode_id, job_id, action, payload=None, key=None):
-        with self._transaction():
-            episode, assembly = self._scope(project_id, episode_id)
-            job = self.session.scalar(
-                select(EpisodeRenderJob)
-                .where(
-                    EpisodeRenderJob.id == int(job_id), EpisodeRenderJob.assembly_id == assembly.id
-                )
-                .with_for_update()
+        read_only = action == "get"
+        with self._transaction(read_only=read_only):
+            episode, assembly = self._scope(project_id, episode_id, for_update=not read_only)
+            statement = select(EpisodeRenderJob).where(
+                EpisodeRenderJob.id == int(job_id), EpisodeRenderJob.assembly_id == assembly.id
             )
+            if not read_only:
+                statement = statement.with_for_update()
+            job = self.session.scalar(statement)
             if not job:
                 raise NotFound("导出任务不存在")
             actor = self.session.info.get("actor")
@@ -770,4 +773,7 @@ class EpisodeAssemblyService(BaseService):
                     raise WorkflowError("assembly_job_state", "任务尚未成功完成", 409)
                 assembly.current_media_id = job.output_media_id
                 self._touch(assembly)
-            return self._job_read(job, digest(self._snapshot(assembly, self._clips(assembly))))
+            return self._job_read(
+                job,
+                digest(self._snapshot(assembly, self._clips(assembly), for_update=not read_only)),
+            )
