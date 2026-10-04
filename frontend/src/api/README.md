@@ -37,6 +37,10 @@ Key仅在当前表单内使用：编辑留空省略字段、明确清除发送nu
 
 临时签名URL只用于显示/下载，不作为持久化身份。过期后重新读取媒体详情。上传走FormData字段file，不手工固定multipart boundary；候选上传与确认采用是两次独立操作。
 
+全部候选、生成任务及过程历史仅本人可见，项目权限不授予他人候选访问权。已采用作品通过共享业务 DTO 获取；成片使用 `assembly.current_work` 与 `/assembly/current/download`，音色使用 `current_voice`。协作者无需读取作者私有导出任务或音色记录，亦不能依赖它们恢复播放地址。
+
+Agent 上下文使用 `modules/agents.ts`：附件上传/引用带幂等键，先恢复 `pending=true` 附件再允许发送；无法确认上传或引用结果时沿用原请求核对。发送冻结 `attachment_ids`、Skill 的 `id/content_version` 和 `video_audio`，未知发送结果重试复用完整请求体与原键。消息 `references` 返回附件与 Skill 的展示投影，临时 URL 每次读取重签。自定义 Skill 的 ID、内容版本及行版本为十进制字符串，详见 [Agent 上下文 API](../../../docs/api/agent.md)。
+
 分集列表及详情的 `cover_url` 是首个未归档镜头当前采用图片的临时展示地址，无图片时为 null。前端映射为 `coverUrl`，不写回分集设置；图片加载失败后重新读取分集详情，仍不可用时显示默认封面。
 
 ## 环境

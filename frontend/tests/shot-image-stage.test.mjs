@@ -65,7 +65,10 @@ function mount(context, overrides = {}) {
     '../../../api/modules/ai-model-configs': { aiModelConfigs: configs },
     '../../../features/ai-config/config-events': { AI_CONFIGS_CHANGED: 'configs-changed' },
     '../../../features/projects/EpisodeModelSelect': { EpisodeModelSelect: 'EpisodeModelSelect' },
-    '../../../features/projects/EpisodeCreationWorkspace': { CreationSlot: 'CreationSlot' },
+    '../../../features/projects/EpisodeCreationWorkspace': { CreationSlot: 'CreationSlot', useEpisodeCreationControls: () => ({ mode: 'prompt' }) },
+    '../../../features/projects/StoryboardShotCard': { StoryboardShotCard: 'StoryboardShotCard' },
+    '../../../features/projects/storyboard-layout.css': {},
+    '../../../features/projects/workflow-refinement.css': {},
     '../../../features/projects/workflow-contract': contract,
     '../../../features/projects/storyboard-session': session,
     '../../../features/projects/shot-image-workflow': workflow,
@@ -74,6 +77,7 @@ function mount(context, overrides = {}) {
     '../../../features/generations/presentation': { taskLabel: () => '' },
     '../../../features/projects/StoryboardResultPreview': { StoryboardResultPreview: 'StoryboardResultPreview' },
     '../../../components/ui/Dialog': { Dialog: 'Dialog' },
+    '../../../components/ui/Icon': { Icon: 'Icon' },
     '../../../components/ui/confirm': { confirmAction: async () => true },
     '../../../components/ui/LazyLoadMore': { LazyLoadMore: 'LazyLoadMore' },
     '../../../features/projects/ShotAssetPicker': { ShotAssetPicker: 'ShotAssetPicker' },
@@ -86,11 +90,11 @@ function mount(context, overrides = {}) {
     props = { ...props, ...patch }; cursor = 0; effects = []; layouts = [];
     tree = StoryboardStage(props);
     for (const callback of [...layouts, ...effects]) callback();
-    // Open only the first visible shot, as a user now does before editing.
+    // Select the first visible card before editing in the information panel.
     if (!nodes('ShotImageCandidates').length) {
-      const row = nodes('button').find(button => button.className === 'storyboard-summary');
+      const row = nodes('StoryboardShotCard')[0];
       if (row && !row.disabled) {
-        row.onClick(); cursor = 0; effects = []; layouts = [];
+        row.onSelect(); cursor = 0; effects = []; layouts = [];
         tree = StoryboardStage(props);
         for (const callback of [...layouts, ...effects]) callback();
       }
@@ -105,7 +109,7 @@ function mount(context, overrides = {}) {
   const unmount = () => { for (const slot of slots) slot?.cleanup?.(); };
   context.after(unmount);
   render();
-  return { api, configs, capabilityCalls, window, render, nodes, unmount, get barrier() { return barrier; }, get props() { return props; } };
+  return { api, configs, capabilityCalls, window, render, nodes, unmount, get scriptInput() { return nodes('TextArea').find(input => input['aria-label'] === '分镜 1 脚本'); }, get barrier() { return barrier; }, get props() { return props; } };
 }
 
 test('adoption survives focus and model refresh while generation preparation is invalidated', async context => {
@@ -137,10 +141,10 @@ test('stage holds a synchronous per-shot lock through submission and blocks edit
   const preparation = original.prepareShot();
   assert.equal(await original.prepareShot(), null);
   await flush(); setup.render();
-  assert.equal(setup.nodes('TextArea')[1].disabled, true);
+  assert.equal(setup.scriptInput.disabled, true);
   assert.equal(setup.nodes('ShotImageCandidates').length, 1);
   assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, true);
-  setup.nodes('TextArea')[1].onChange({ target: { value: 'blocked edit' } });
+  setup.scriptInput.onChange({ target: { value: 'blocked edit' } });
   for (const button of setup.nodes('Button').filter(button => ['上移', '下移', '归档'].includes(button.children))) {
     if (button.disabled) await button.onClick();
   }
@@ -148,9 +152,9 @@ test('stage holds a synchronous per-shot lock through submission and blocks edit
   pending.resolve({ shot: shot(), storyboard_version: '1' });
   const prepared = await preparation;
   assert.equal(prepared.shot.script, 'original');
-  setup.render(); assert.equal(setup.nodes('TextArea')[1].disabled, true);
+  setup.render(); assert.equal(setup.scriptInput.disabled, true);
   prepared.release(); prepared.release(); setup.render();
-  assert.equal(setup.nodes('TextArea')[1].disabled, false);
+  assert.equal(setup.scriptInput.disabled, false);
   assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
 });
 
@@ -168,7 +172,7 @@ test('late saves cannot overwrite another episode or continue preparation', asyn
   const pending = deferred(); let reads = 0;
   const setup = mount(context, { update: async () => pending.promise, shot: async () => { reads++; return { shot: shot(), storyboard_version: '1' }; } });
   await flush(); setup.render();
-  setup.nodes('TextArea')[1].onChange({ target: { value: 'old draft' } });
+  setup.scriptInput.onChange({ target: { value: 'old draft' } });
   const preparation = setup.nodes('ShotImageCandidates')[0].prepareShot();
   setup.api.shots = async () => page([{ ...shot(), script: 'new episode' }], '2');
   setup.render({ episodeId: '2' }); await flush(); setup.render();
@@ -204,7 +208,7 @@ test('save completes before single-shot read and read errors retain the saved dr
     shot: async () => { calls.push({ kind: 'read' }); throw new Error('read offline'); },
   });
   await flush(); setup.render();
-  setup.nodes('TextArea')[1].onChange({ target: { value: 'draft to save' } });
+  setup.scriptInput.onChange({ target: { value: 'draft to save' } });
   const preparation = setup.nodes('ShotImageCandidates')[0].prepareShot();
   await flush();
   assert.deepEqual(calls.map(call => call.kind), ['save']);
@@ -213,8 +217,8 @@ test('save completes before single-shot read and read errors retain the saved dr
   assert.equal(await preparation, null);
   setup.render();
   assert.deepEqual(calls.map(call => call.kind), ['save', 'read']);
-  assert.equal(setup.nodes('TextArea')[1].value, 'draft to save');
-  assert.equal(setup.nodes('TextArea')[1].disabled, false);
+  assert.equal(setup.scriptInput.value, 'draft to save');
+  assert.equal(setup.scriptInput.disabled, false);
   assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
   assert.ok(setup.nodes('Alert').some(alert => alert.message === 'read offline'));
 });
@@ -223,13 +227,13 @@ test('failed saves keep dirty drafts through refresh and never read the shot', a
   let reads = 0;
   const setup = mount(context, { update: async () => { throw new Error('save conflict'); }, shot: async () => { reads++; throw new Error('must not read'); } });
   await flush(); setup.render();
-  setup.nodes('TextArea')[1].onChange({ target: { value: 'unsaved draft' } });
+  setup.scriptInput.onChange({ target: { value: 'unsaved draft' } });
   assert.equal(await setup.nodes('ShotImageCandidates')[0].prepareShot(), null);
   setup.render();
   assert.equal(setup.barrier.hasUnsettled(), true);
   setup.nodes('ShotImageCandidates')[0].onChanged(); setup.render(); await flush(); setup.render();
-  assert.equal(setup.nodes('TextArea')[1].value, 'unsaved draft');
-  assert.equal(setup.nodes('TextArea')[1].disabled, false);
+  assert.equal(setup.scriptInput.value, 'unsaved draft');
+  assert.equal(setup.scriptInput.disabled, false);
   assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
   assert.equal(reads, 0);
 });
@@ -249,7 +253,7 @@ for (const purpose of ['generation', 'adoption']) for (const invalidation of ['r
     assert.equal(await preparation, null);
     if (invalidation !== 'unmount') {
       await flush(); setup.render();
-      assert.equal(setup.nodes('TextArea')[1].value, 'original');
+      assert.equal(setup.scriptInput.value, 'original');
     }
   });
 }
@@ -294,9 +298,9 @@ test('navigation waits for release and stale release cannot unlock a new context
   setup.render({ episodeId: '2' }); await flush(); setup.render();
   const next = await setup.nodes('ShotImageCandidates')[0].prepareShot();
   original.release(); setup.render();
-  assert.equal(setup.nodes('TextArea')[1].disabled, true);
+  assert.equal(setup.scriptInput.disabled, true);
   next.release(); setup.render();
   assert.equal(await setup.barrier.flush(), true);
-  assert.equal(setup.nodes('TextArea')[1].disabled, false);
+  assert.equal(setup.scriptInput.disabled, false);
   assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
 });

@@ -42,8 +42,10 @@ from short_drama.schemas.agent_runtime import (
     RunRead,
 )
 from short_drama.schemas.base import parse_identifier
+from short_drama.service.agent_attachment_service import freeze_attachments
 from short_drama.service.agent_conversation_service import AgentConversationService
 from short_drama.service.agent_model_service import AgentModelService, model_snapshot
+from short_drama.service.agent_skill_service import freeze_skills
 from short_drama.service.base import Page, utcnow
 from short_drama.utils.snowflake import next_id
 
@@ -90,6 +92,41 @@ def read_run(session, run, *, tool=_UNSET):
 
 
 class AgentRunService(AgentConversationService):
+    def __init__(self, session, settings, storage=None):
+        super().__init__(session, settings)
+        self._storage = storage
+
+    @property
+    def storage(self):
+        from short_drama.service.storage_service import StorageService
+        from short_drama.storage.minio import MinioStorage
+
+        if not isinstance(self._storage, StorageService):
+            self._storage = StorageService(
+                self._storage or MinioStorage(self.settings), self.settings
+            )
+        return self._storage
+
+    def _message_read(self, row):
+        from short_drama.domain import MediaFile
+
+        references = deepcopy(row.references)
+        for reference in references:
+            if reference.get("type") == "attachment" and reference.get("media_id"):
+                media = self.session.get(MediaFile, parse_identifier(reference["media_id"]))
+                reference["url"] = (
+                    self.storage.download_url(media.storage_locator) if media else None
+                )
+        return MessageRead(
+            id=row.id,
+            seq=row.seq,
+            role=row.role,
+            content=row.content,
+            references=references,
+            artifacts=row.artifacts,
+            created_at=row.created_at,
+        )
+
     def _run(self, identifier, *, lock=False):
         identifier = parse_identifier(identifier)
         parent = self.session.scalar(
@@ -141,7 +178,7 @@ class AgentRunService(AgentConversationService):
                     .execution_options(populate_existing=True)
                 )
                 return MessageAccepted(
-                    message=MessageRead.model_validate(existing),
+                    message=self._message_read(existing),
                     run=read_run(self.session, run),
                     cursor=conversation.next_event_seq - 1,
                 )
@@ -157,6 +194,21 @@ class AgentRunService(AgentConversationService):
             actor = self._actor()
             model = AgentModelService(self.session, self.settings).select_model(
                 values.model_config_id
+            )
+            snapshot = model_snapshot(model)
+            references, attachments, attachment_rows = freeze_attachments(
+                self.session, conversation, values.attachment_ids, snapshot, values.video_audio
+            )
+            selected_skills = freeze_skills(self.session, actor.user_id, values.skills)
+            references.extend(
+                {
+                    "type": "skill",
+                    "id": skill["id"],
+                    "name": skill["name"],
+                    "content_version": skill["content_version"],
+                    "builtin": skill["builtin"],
+                }
+                for skill in selected_skills
             )
             task = values.task
             narrowed = discussion_only(values.content)
@@ -189,7 +241,21 @@ class AgentRunService(AgentConversationService):
                 .with_for_update()
                 .execution_options(populate_existing=True)
             ).all()
-            context = [{"role": item.role, "content": item.content} for item in reversed(recent)]
+            context = [
+                {
+                    "role": item.role,
+                    "content": item.content,
+                    "references": [
+                        {
+                            key: value
+                            for key, value in reference.items()
+                            if key not in {"url", "storage_locator"}
+                        }
+                        for reference in item.references
+                    ],
+                }
+                for item in reversed(recent)
+            ]
             now = utcnow()
             message = AgentMessage(
                 id=next_id(),
@@ -197,7 +263,7 @@ class AgentRunService(AgentConversationService):
                 seq=conversation.next_message_seq,
                 role="user",
                 content=values.content,
-                references=[],
+                references=references,
                 artifacts=[],
                 idempotency_key=key,
                 request_hash=request_hash,
@@ -206,6 +272,9 @@ class AgentRunService(AgentConversationService):
             conversation.next_message_seq += 1
             self.session.add(message)
             self.session.flush()
+            for attachment in attachment_rows:
+                if attachment.attached_message_id is None:
+                    attachment.attached_message_id = message.id
             images = sum(
                 step["count"] for step in authorization["steps"] if step["kind"] == "image"
             )
@@ -229,10 +298,18 @@ class AgentRunService(AgentConversationService):
                         "project_id": str(conversation.project_id),
                         "episode_id": str(conversation.episode_id),
                     },
-                    "user_prompt": values.content,
+                    "user_prompt": {
+                        "codec": "agent.attachments",
+                        "content": values.content,
+                        "attachments": attachments,
+                        "video_audio": values.video_audio,
+                    }
+                    if attachments
+                    else values.content,
                     "conversation_context": context,
+                    "selected_skills": selected_skills,
                 },
-                config_snapshot=model_snapshot(model),
+                config_snapshot=snapshot,
                 budget=budget_limits(images=images, videos=videos),
                 usage=initial_usage(),
                 message_status="pending",
@@ -254,6 +331,7 @@ class AgentRunService(AgentConversationService):
                     "seq": message.seq,
                     "role": "user",
                     "content": message.content,
+                    "references": references,
                 },
                 run_id=run.id,
             )
@@ -266,7 +344,7 @@ class AgentRunService(AgentConversationService):
             )
             self.session.flush()
             return MessageAccepted(
-                message=MessageRead.model_validate(message),
+                message=self._message_read(message),
                 run=read_run(self.session, run),
                 cursor=conversation.next_event_seq - 1,
             )
@@ -285,7 +363,7 @@ class AgentRunService(AgentConversationService):
                 )
             )
             return Page(
-                items=[MessageRead.model_validate(row) for row in reversed(rows)],
+                items=[self._message_read(row) for row in reversed(rows)],
                 total=total,
                 offset=offset,
                 limit=limit,

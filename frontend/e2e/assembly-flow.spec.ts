@@ -75,6 +75,33 @@ async function captureLayouts(page: Page, name: string) {
   await page.setViewportSize({ width: 1440, height: 1000 });
 }
 
+test('shared adopted work plays and refreshes without the collaborator private render history', async ({ page }) => {
+  const data = await fixture(page);
+  data.state.assembly.current_media_id = '9901';
+  const current = { media_id: '9901', url: `${source.url}?current=1`, width: 640, height: 360, duration_ms: 3000, is_stale: false };
+  Object.assign(data.state, { current_work: current });
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await expect(page.getByRole('button', { name: '成片回看', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '成片回看', exact: true }).click();
+  const playback = page.getByRole('region', { name: '实际成片播放', exact: true });
+  await expect(playback).toHaveAttribute('data-playback-state', 'ready');
+  await expect(playback).toContainText('当前采用成片');
+  await expect(playback.getByRole('link', { name: '下载 MP4', exact: true })).toHaveAttribute('href', `/api/v1${root}/current/download`);
+  const video = playback.locator('video');
+  await video.evaluate(async node => { node.muted = true; await node.play(); });
+  await expect(playback).toHaveAttribute('data-playback-state', 'playing');
+  await video.evaluate(node => node.pause());
+  current.url = `${source.url}?current=2`;
+  const reads = data.calls.filter(call => call.path === root && call.method === 'GET').length;
+  await playback.getByRole('button', { name: '刷新成片地址', exact: true }).click();
+  await expect.poll(() => data.calls.filter(call => call.path === root && call.method === 'GET').length).toBe(reads + 1);
+  await expect(video).toHaveAttribute('src', current.url);
+  await expect(playback).toHaveAttribute('data-playback-state', 'ready');
+  expect(data.state.jobs).toEqual([]);
+  expect(data.calls.filter(call => call.path.includes('/exports/') || call.method === 'POST')).toEqual([]);
+  expect(data.errors).toEqual([]);
+});
+
 test('failed initial load retries the GET and restores the editor', async ({ page }) => {
   const data = await fixture(page); data.controls.online = false;
   await page.goto('/e2e/assembly-flow-fixture.html');

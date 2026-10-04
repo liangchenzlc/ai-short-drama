@@ -215,7 +215,7 @@ def seed(session):
     return project, episode, model, conversation, message, run, tool, artifact
 
 
-def test_private_history_shared_artifacts_and_audit_boundary(db_session):
+def test_private_history_artifacts_and_audit_boundary(db_session):
     *_, conversation, _message, _run, _tool, artifact = seed(db_session)
     with db_session.begin():
         audit = db_session.scalars(
@@ -230,11 +230,11 @@ def test_private_history_shared_artifacts_and_audit_boundary(db_session):
         assert db_session.scalars(select(AgentTurn)).all() == []
         assert db_session.scalars(select(AgentToolCall)).all() == []
         assert db_session.scalars(select(AgentEvent)).all() == []
-        assert db_session.scalars(select(AgentArtifact)).all() == [artifact]
+        assert db_session.scalars(select(AgentArtifact)).all() == []
     with pytest.raises(NotFound), db_session.begin():
         conversation.title = "Another member cannot alter private state"
         db_session.flush()
-    with pytest.raises(WorkflowError, match="Create a new candidate"), db_session.begin():
+    with pytest.raises(NotFound), db_session.begin():
         artifact.source_content = "Cannot rewrite immutable shared provenance"
         db_session.flush()
 

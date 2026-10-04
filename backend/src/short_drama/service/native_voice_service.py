@@ -20,10 +20,16 @@ from short_drama.domain import (
     ShotScript,
 )
 from short_drama.domain.native_voice import CharacterVoice, ProjectSoundMode, ShotDialogue
-from short_drama.schemas.native_voice import NativeDialogueEdit, SoundModeEdit, VoiceAdopt
+from short_drama.schemas.native_voice import (
+    NativeDialogueEdit,
+    NativeVoiceRead,
+    SoundModeEdit,
+    VoiceAdopt,
+)
 
 from .base import BaseService, utcnow
 from .episode_assembly_service import digest
+from .publication import public_voice_context, publish
 from .storage_service import StorageService
 
 
@@ -334,11 +340,27 @@ class NativeVoiceService(BaseService):
                     ),
                 }
             )
-        return {
-            "row_version": binding.row_version if binding else 0,
-            "record_id": str(binding.record_id) if binding else None,
-            "candidates": candidates,
-        }
+        current_media = self.session.get(MediaFile, binding.media_id) if binding else None
+        own_record = self.session.get(AIGenerationRecord, binding.record_id) if binding else None
+        return NativeVoiceRead.model_validate(
+            {
+                "row_version": binding.row_version if binding else 0,
+                "record_id": str(binding.record_id) if own_record else None,
+                "current_voice": {
+                    "media_id": str(current_media.id),
+                    "url": StorageService(self.storage, self.settings).download_url(
+                        current_media.storage_locator
+                    )
+                    if self.storage
+                    else None,
+                    "duration_ms": current_media.duration_ms,
+                    "row_version": binding.row_version,
+                }
+                if current_media
+                else None,
+                "candidates": candidates,
+            }
+        ).model_dump(mode="json")
 
     def voices(self, pid, cid):
         with self._transaction(read_only=True):
@@ -364,6 +386,7 @@ class NativeVoiceService(BaseService):
                 row = CharacterVoice(project_id=int(pid), asset_id=int(cid), row_version=0)
                 self.session.add(row)
             row.record_id, row.media_id = int(data.record_id), int(candidate["media_id"])
+            publish(self._require(MediaFile, row.media_id))
             row.row_version += 1
             self.session.flush()
             return self._voices(pid, cid)
@@ -379,7 +402,7 @@ class NativeVoiceService(BaseService):
     def _dialogue(self, shot):
         episode = self.session.get(Episode, shot.episode_id)
         row = self.session.get(ShotDialogue, shot.id)
-        context = native_context(self.session, shot, settings=self.settings)
+        context = public_voice_context(native_context(self.session, shot, settings=self.settings))
         characters = list(
             self.session.scalars(
                 select(Asset)

@@ -7,7 +7,14 @@ from tempfile import TemporaryDirectory
 from sqlalchemy import select
 
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
-from short_drama.domain import AIGenerationRecord, AsyncTask, MediaAsset, MediaFile, ShotScript
+from short_drama.domain import (
+    AIGenerationRecord,
+    AIModelConfig,
+    AsyncTask,
+    MediaAsset,
+    MediaFile,
+    ShotScript,
+)
 from short_drama.domain.episode_sound import EpisodeSound, ProjectVoiceDefaults, SoundMediaReference
 from short_drama.schemas.episode_sound import SoundAdopt, SoundDocument, SoundEdit
 from short_drama.service.base import BaseService, utcnow
@@ -16,6 +23,7 @@ from short_drama.service.storage_service import StorageService
 from short_drama.utils.snowflake import next_id
 
 from .audio_media import MAX_AUDIO_BYTES, audio_proxy, inspect_audio
+from .publication import publish
 from .video_render import checksum
 
 
@@ -69,6 +77,24 @@ class EpisodeSoundService(BaseService):
             document["dialogue"] = []
         document.setdefault("native_ducking", [])
         voices = self.session.get(ProjectVoiceDefaults, episode.project_id)
+        stale_lines = [
+            line["id"]
+            for line in document["dialogue"]
+            if line.get("media_id") and line.get("adopted_hash") != line_hash(line)
+        ]
+        actor = self.session.info.get("actor")
+        if actor:
+            config_ids = {
+                int(line["config_id"]) for line in document["dialogue"] if line.get("config_id")
+            }
+            visible_configs = set(
+                self.session.scalars(
+                    select(AIModelConfig.id).where(AIModelConfig.id.in_(config_ids))
+                )
+            )
+            for line in document["dialogue"]:
+                if line.get("config_id") and int(line["config_id"]) not in visible_configs:
+                    line["config_id"] = None
         media = {}
         for mid in {line["media_id"] for line in document["dialogue"] if line.get("media_id")} | (
             {document["music"]["media_id"]} if document["music"] else set()
@@ -109,16 +135,13 @@ class EpisodeSoundService(BaseService):
                     .where(
                         SoundMediaReference.assembly_id == assembly.id,
                         SoundMediaReference.proxy_media_id.is_not(None),
+                        *([MediaFile.created_by == actor.user_id] if actor else []),
                     )
                     .order_by(MediaFile.id.desc())
                     .limit(100)
                 ).all()
             ],
-            "stale_lines": [
-                line["id"]
-                for line in document["dialogue"]
-                if line.get("media_id") and line.get("adopted_hash") != line_hash(line)
-            ],
+            "stale_lines": stale_lines,
             "voice_defaults": {
                 "row_version": voices.row_version if voices else 0,
                 "voices": voices.voices if voices else {},
@@ -145,19 +168,11 @@ class EpisodeSoundService(BaseService):
                 frames = (clip["trim_out_ms"] * 30 + 500) // 1000 - (
                     clip["trim_in_ms"] * 30 + 500
                 ) // 1000
-                record = (
-                    self.session.scalar(
-                        select(AIGenerationRecord)
-                        .join(MediaAsset, MediaAsset.record_id == AIGenerationRecord.id)
-                        .where(MediaAsset.media_id == int(clip["media_id"]))
-                    )
-                    if clip["media_id"]
-                    else None
+                media = (
+                    self.session.get(MediaFile, int(clip["media_id"])) if clip["media_id"] else None
                 )
                 native = (
-                    (record.request_data.get("source_snapshot") or {}).get("native_speech")
-                    if record
-                    else None
+                    (media.video_metadata or {}).get("adopted_native_speech") if media else None
                 )
                 lines = (native or {}).get("lines", []) if not clip["muted"] else []
                 for i, line in enumerate(lines):
@@ -198,6 +213,21 @@ class EpisodeSoundService(BaseService):
             old = {line["id"]: line for line in (sound.document["dialogue"] if sound else [])}
             for line in document["dialogue"]:
                 previous = old.get(line["id"], {})
+                if self.session.info.get("actor"):
+                    if line["config_id"]:
+                        self._validate_model(int(line["config_id"]), "audio")
+                    elif (
+                        previous.get("config_id")
+                        and self.session.scalar(
+                            select(AIModelConfig.id).where(
+                                AIModelConfig.id == int(previous["config_id"])
+                            )
+                        )
+                        is None
+                    ):
+                        # A shared page omits the private model ID. Preserve it
+                        # internally when saving unrelated sound or timing edits.
+                        line["config_id"] = previous["config_id"]
                 if line["media_id"] and (line["media_id"], line["adopted_hash"]) != (
                     previous.get("media_id"),
                     previous.get("adopted_hash"),
@@ -215,6 +245,10 @@ class EpisodeSoundService(BaseService):
                 m = self._media(mid)
                 if document["music"]["trim_out_ms"] > m.duration_ms:
                     raise WorkflowError("audio_timing", "配乐裁剪超出音频实际时长", 422)
+                publish(m)
+                reference = self.session.get(SoundMediaReference, (assembly.id, int(mid)))
+                if reference.proxy_media_id:
+                    publish(self._media(reference.proxy_media_id))
             if sound is None:
                 sound = EpisodeSound(assembly_id=assembly.id, row_version=0, document={})
                 self.session.add(sound)
@@ -436,7 +470,8 @@ class EpisodeSoundService(BaseService):
                 or record.request_data["source_snapshot"]["line_hash"] != line_hash(line)
             ):
                 raise Conflict("候选与当前台词、模型或音色不一致，请核对后重新生成")
-            self._media(data.media_id)
+            publish(self._media(data.media_id))
+            self.session.flush()
             if line.get("media_id") == str(data.media_id) and line.get("adopted_hash") == line_hash(
                 line
             ):

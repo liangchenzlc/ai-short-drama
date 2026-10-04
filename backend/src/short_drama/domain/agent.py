@@ -1,8 +1,8 @@
-"""Private Agent execution records and project-shared candidate references.
+"""Private Agent execution records and candidate references.
 
 Conversation ownership is deliberately separate from ResourceScope: membership
 alone must not expose another member's messages, model turns, or tool arguments.
-Artifacts are shared project data and never require reading their private origin.
+Artifacts stay with their creator; only adopted business work is shared.
 """
 
 from datetime import datetime
@@ -31,7 +31,7 @@ AGENT_PRIVATE_TABLES = frozenset(
         "agent_events",
     }
 )
-AGENT_TABLES = AGENT_PRIVATE_TABLES | {"agent_artifacts"}
+AGENT_TABLES = AGENT_PRIVATE_TABLES | {"agent_artifacts", "agent_attachments", "agent_skills"}
 
 
 def _id():

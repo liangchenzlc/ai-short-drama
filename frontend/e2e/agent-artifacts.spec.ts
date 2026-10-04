@@ -8,7 +8,7 @@ const artifact = (kind = 'novel_proposal', id = '901'): any => ({
   script_id: kind === 'script_candidate' ? '41' : null, parent_script_id: '40', generation_task_id: null, media_asset_id: null, media_id: null, target_asset_id: null, target_shot_id: null,
   created_by: '1', created_at: time, updated_at: time, applied_by: null, applied_at: null, apply_receipt: null, content: '雨夜中，她看见了信的主人。', patch: null, diff: [],
 });
-async function artifactFixture(page: Page, enabled = false, schema = true) {
+async function artifactFixture(page: Page, enabled = true, schema = true) {
   const base = await fixture(page, true);
   const items: any[] = [artifact()]; const calls: { path: string; method: string; body: any }[] = [];
   let needShared = false; let failSource = false; let continueFailures = 0;
@@ -20,9 +20,10 @@ async function artifactFixture(page: Page, enabled = false, schema = true) {
     if (path === '/agent/status') return reply({ enabled, schema_ready: schema });
     if (path === '/agent/models') return reply({ items: [{ id: '71', name: '创作协作模型', model_key: 'fixture', row_version: 1, protocol: 'chat', verified: true, tool_calling: true, tool_result_continuation: true, streaming: 'verified', preferred: true }], preferred_id: '71' });
     const conversation = { id: '301', project_id: '10', episode_id: '20', title: '本人的创作对话', row_version: 1, archived: false, last_run_status: run.status, created_at: time, updated_at: time };
-    if (path === '/agent/conversations') return reply({ items: [conversation], total: 1, offset: 0, limit: 20 });
+    if (path === '/agent/conversations') return method === 'POST' ? reply(conversation, 201) : reply({ items: [conversation], total: 1, offset: 0, limit: 20 });
     if (path === '/agent/conversations/301') return reply(conversation);
-    if (path.endsWith('/messages')) return reply({ items: [{ id: '501', seq: 1, role: 'user', content: '私密创作讨论', references: [], artifacts: [], created_at: time }], total: 1, offset: 0, limit: 50 });
+    if (path.endsWith('/messages')) return reply({ items: [{ id: '501', seq: 1, role: 'user', content: '私密创作讨论', references: [], artifacts: [{ artifact_id: '901' }], created_at: time }], total: 1, offset: 0, limit: 50 });
+    if (path.endsWith('/attachments') && method === 'GET') return reply({ items: [], total: 0, offset: 0, limit: 50 });
     if (path.endsWith('/runs')) return reply({ items: [run], total: 1, offset: 0, limit: 1 });
     if (path.endsWith('/events')) return route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': heartbeat\n\n' });
     if (path === '/agent/runs/801/continue') {
@@ -55,16 +56,15 @@ async function artifactFixture(page: Page, enabled = false, schema = true) {
   });
   return { ...base, items, calls, run, shared: () => { needShared = true; }, stale: () => { failSource = true; }, failContinue: () => { continueFailures = 1; }, gateAdopt: () => { adoptGate = deferred(); adoptStarted = deferred(); return { started: adoptStarted.promise, release: adoptGate.resolve }; } };
 }
-const openShelf = async (page: Page, id = '901') => {
-  await page.getByRole('button', { name: /创作候选/ }).click();
-  await page.locator(`[data-artifact-id="${id}"]`).getByRole('button', { name: '核对候选' }).click();
+const openShelf = async (page: Page) => {
+  await page.locator('.agent-message-results').getByRole('button', { name: '核对候选', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '核对创作候选' })).toBeVisible();
 };
 const adoptCalls = (state: Awaited<ReturnType<typeof artifactFixture>>) => state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/adopt'));
 
-test('shared candidates stay available in prompt mode while Agent is disabled', async ({ page }) => {
+test('private candidates open from their author conversation and adoption stays explicit', async ({ page }) => {
   const state = await artifactFixture(page);
-  await page.goto(`${root}/source`); await openShelf(page);
+  await page.goto(`${root}/source?mode=agent&conversation=301`); await openShelf(page);
   expect(state.calls.filter(call => call.method === 'POST')).toEqual([]);
   await expect(page.getByText('采用会替换本集小说正文，原候选和来源快照保留。')).toBeVisible();
   await page.getByRole('button', { name: '确认采用', exact: true }).click();
@@ -77,17 +77,28 @@ test('shared candidates stay available in prompt mode while Agent is disabled', 
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('unmigrated deployments never request the shared artifact API', async ({ page }) => {
+test('unmigrated deployments never request the artifact API', async ({ page }) => {
   const state = await artifactFixture(page, false, false); await page.goto(`${root}/source`);
   await expect(page.getByRole('textbox', { name: '本集小说正文' })).toBeVisible();
   await expect(page.getByRole('button', { name: /创作候选/ })).toHaveCount(0);
   expect(state.calls.filter(call => call.path.includes('/agent-artifacts'))).toEqual([]);
 });
 
+test('prompt writing and materials expose no creation candidate shelf', async ({ page }) => {
+  const state = await artifactFixture(page, false);
+  for (const stage of ['source', 'assets']) {
+    await page.goto(`${root}/${stage}`);
+    await expect(page.getByRole('button', { name: /创作候选/ })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: '我的创作候选', exact: true })).toHaveCount(0);
+  }
+  expect(state.calls.filter(call => call.path.includes('/agent-artifacts'))).toEqual([]);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
 for (const delayedRead of ['versions', 'target'] as const) test(`leaving the episode during ${delayedRead} read prevents a new adoption request`, async ({ page }) => {
   const state = await artifactFixture(page);
   Object.assign(state.items[0], { kind: 'asset_patch', content: null, target_asset_id: '501', patch: { description: '浅色风衣' } });
-  await page.goto(`${root}/source`); await openShelf(page);
+  await page.goto(`${root}/source?mode=agent&conversation=301`); await openShelf(page);
   const started = deferred(); const gate = deferred();
   const endpoint = delayedRead === 'target' ? '**/api/v1/assets/501' : `**/api/v1${root}/shots?*`;
   await page.route(endpoint, async route => { started.resolve(); await gate.promise; await route.fallback(); });
@@ -101,13 +112,14 @@ for (const delayedRead of ['versions', 'target'] as const) test(`leaving the epi
   expect(adoptCalls(state)).toEqual([]); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('shared access loss invalidates an earlier detail response', async ({ page }) => {
+test('private candidate access loss invalidates an earlier detail response', async ({ page }) => {
   const state = await artifactFixture(page);
-  await page.goto(`${root}/source`); await page.getByRole('button', { name: /创作候选/ }).click();
+  await page.goto(`${root}/source?mode=agent&conversation=301`);
+  await expect(page.locator('.agent-message-results')).toBeVisible();
   const started = deferred(); const gate = deferred();
   await page.route(`**/api/v1${root}/agent-artifacts/901`, async route => { started.resolve(); await gate.promise; await route.fallback(); });
-  await page.locator('[data-artifact-id="901"]').getByRole('button', { name: '核对候选' }).click(); await started.promise;
-  await page.route(`**/api/v1${root}/agent-artifacts?*`, route => route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN' } }) }));
+  await page.locator('.agent-message-results').getByRole('button', { name: '核对候选', exact: true }).click(); await started.promise;
+  await page.route(`**/api/v1${root}/agent-artifacts/901`, route => route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN' } }) }));
   await page.evaluate(() => window.dispatchEvent(new Event('agent-artifacts-updated')));
   await expect(page.getByRole('dialog', { name: '核对创作候选' })).toHaveCount(0);
   const response = page.waitForResponse(result => result.url().endsWith('/agent-artifacts/901'));
@@ -117,13 +129,13 @@ test('shared access loss invalidates an earlier detail response', async ({ page 
   expect(adoptCalls(state)).toEqual([]); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('a late adoption receipt cannot restore shared access or continue the private run', async ({ page }) => {
+test('a late adoption receipt cannot restore candidate access or continue the private run', async ({ page }) => {
   const state = await artifactFixture(page, true); const gate = state.gateAdopt();
   await page.goto(`${root}/source?mode=agent&conversation=301`);
   await page.getByRole('button', { name: '核对候选 1', exact: true }).click();
   await page.getByRole('button', { name: '采用并继续', exact: true }).click();
   await page.getByRole('dialog', { name: '确认采用候选' }).getByRole('button', { name: '采用并继续', exact: true }).click(); await gate.started;
-  await page.route(`**/api/v1${root}/agent-artifacts?*`, route => route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN' } }) }));
+  await page.route(`**/api/v1${root}/agent-artifacts/901`, route => route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN' } }) }));
   await page.evaluate(() => window.dispatchEvent(new Event('agent-artifacts-updated')));
   await expect(page.getByRole('dialog', { name: '核对创作候选' })).toHaveCount(0);
   const response = page.waitForResponse(result => result.request().method() === 'POST' && result.url().endsWith('/adopt'));
@@ -134,19 +146,25 @@ test('a late adoption receipt cannot restore shared access or continue the priva
   expect(adoptCalls(state)).toHaveLength(1); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('leaving an Agent extraction review during draft save prevents shared adoption', async ({ page }) => {
+test('leaving an Agent extraction review during draft save prevents adoption', async ({ page }) => {
   const state = await artifactFixture(page); Object.assign(state.items[0], { kind: 'extraction_candidate', content: null, generation_task_id: '88001' });
-  await page.goto(`${root}/source`); await openShelf(page); await page.getByRole('button', { name: '打开素材审核', exact: true }).click();
+  await page.goto(`${root}/source?mode=agent&conversation=301`); await openShelf(page); await page.getByRole('button', { name: '打开素材审核', exact: true }).click();
+  await expect(page).toHaveURL(url => url.searchParams.get('conversation_assets') === '301');
   await expect(page.getByRole('button', { name: '加入本集素材库（1）', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '编辑', exact: true }).click();
   await page.getByRole('textbox', { name: '素材描述', exact: true }).fill('穿着浅色风衣，手握旧信。');
+  await expect(page.getByRole('button', { name: '保存候选', exact: true })).toBeVisible();
   const started = deferred(); const gate = deferred();
   await page.route(`**/api/v1${root}/asset-extraction-results/88001`, async route => { if (route.request().method() === 'PATCH') { started.resolve(); await gate.promise; } await route.fallback(); });
   await page.getByRole('button', { name: '加入本集素材库（1）', exact: true }).click(); await started.promise;
-  await page.evaluate(() => { window.history.pushState(null, '', '/projects/10'); window.dispatchEvent(new PopStateEvent('popstate')); });
+  // Trigger the real route handler while the modal is open, as a browser navigation would.
+  await page.getByRole('button', { name: '返回项目详情', exact: true }).evaluate(button => (button as HTMLButtonElement).click());
+  await page.getByRole('dialog', { name: '未保存的修改', exact: true }).getByRole('button', { name: '放弃修改', exact: true }).click();
   await expect(page).toHaveURL(url => url.pathname === '/projects/10');
   const response = page.waitForResponse(result => result.request().method() === 'PATCH' && result.url().endsWith('/asset-extraction-results/88001'));
   gate.resolve(); await response;
+  expect(state.calls.filter(call => call.path === '/agent/conversations' && call.method === 'POST')).toHaveLength(1);
+  expect(state.calls.filter(call => call.path === '/agent/conversations' && call.method === 'GET').length).toBeLessThan(6);
   expect(adoptCalls(state)).toEqual([]); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -170,7 +188,7 @@ test('a failed explicit continuation keeps adoption and only retries the specifi
 test('patch comparison and shared impact confirmation preserve the original version tokens', async ({ page }, info) => {
   const state = await artifactFixture(page); state.shared();
   Object.assign(state.items[0], { kind: 'asset_patch', content: null, target_asset_id: '501', patch: { description: '穿着浅色风衣。' }, diff: [{ field: 'description', before: '黑发，穿着深色风衣。', after: '穿着浅色风衣。' }], source_snapshot: { ...state.items[0].source_snapshot, target_kind: 'asset', target_id: '501', target_row_version: 1 } });
-  await page.goto(`${root}/source`); await openShelf(page);
+  await page.goto(`${root}/source?mode=agent&conversation=301`); await openShelf(page);
   await expect(page.getByRole('region', { name: '候选修改比较' })).toBeVisible();
   await expect(page.getByText('当前来源', { exact: true })).toBeVisible(); await expect(page.getByText('建议修改', { exact: true })).toBeVisible();
   await page.screenshot({ path: info.outputPath('artifact-diff-1440.png') });
@@ -187,14 +205,14 @@ test('patch comparison and shared impact confirmation preserve the original vers
 
 test('stale source and failed save keep candidates without overwriting the work', async ({ page }) => {
   const state = await artifactFixture(page); state.writing.content_version = '2';
-  await page.goto(`${root}/source`); await openShelf(page);
+  await page.goto(`${root}/source?mode=agent&conversation=301`); await openShelf(page);
   await expect(page.getByText(/正文已变化，这份候选基于旧版本/)).toBeVisible();
   await expect(page.getByRole('button', { name: '确认采用', exact: true })).toBeDisabled(); expect(adoptCalls(state)).toEqual([]);
   await page.getByRole('dialog', { name: '核对创作候选' }).getByRole('button', { name: '关闭', exact: true }).click();
   state.items[0].source_snapshot.content_version = 2;
   await page.getByRole('textbox', { name: '本集小说正文' }).fill('尚未保存的正文');
   await page.route(`**/api/v1${root}/novel`, route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'SAVE_UNAVAILABLE' } }) }));
-  await page.locator('[data-artifact-id="901"]').getByRole('button', { name: '核对候选' }).click();
+  await page.locator('.agent-message-results').getByRole('button', { name: '核对候选', exact: true }).click();
   await page.getByRole('button', { name: '确认采用', exact: true }).click();
   await page.getByRole('dialog', { name: '确认采用候选' }).getByRole('button', { name: '确认采用', exact: true }).click();
   await expect(page.getByText('当前作品尚未保存成功，本次未采用。请处理保存提示后重试。')).toBeVisible(); expect(adoptCalls(state)).toEqual([]);
@@ -203,7 +221,7 @@ test('stale source and failed save keep candidates without overwriting the work'
 
 test('storyboard adoption reuses preview and sends the complete native review', async ({ page }) => {
   const state = await artifactFixture(page); Object.assign(state.items[0], { kind: 'storyboard_candidate', content: null, generation_task_id: '8001' });
-  await page.goto(`${root}/source`); await openShelf(page);
+  await page.goto(`${root}/source?mode=agent&conversation=301`); await openShelf(page);
   await expect(page.getByRole('heading', { name: '分镜预览（共 55 镜）' })).toBeVisible();
   await page.getByRole('button', { name: '追加到现有分镜', exact: true }).click(); await page.getByRole('button', { name: '确认继续', exact: true }).click();
   await expect(page.getByText('已采用到作品。')).toBeVisible();
@@ -214,7 +232,7 @@ test('storyboard adoption reuses preview and sends the complete native review', 
 
 test('extraction adoption keeps the existing item-by-item review and supplies native choices', async ({ page }) => {
   const state = await artifactFixture(page); Object.assign(state.items[0], { kind: 'extraction_candidate', content: null, generation_task_id: '88001' });
-  await page.goto(`${root}/source`); await openShelf(page); await page.getByRole('button', { name: '打开素材审核', exact: true }).click();
+  await page.goto(`${root}/source?mode=agent&conversation=301`); await openShelf(page); await page.getByRole('button', { name: '打开素材审核', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '素材提取结果' })).toBeVisible();
   await expect(page.getByRole('button', { name: '加入本集素材库（1）', exact: true })).toBeEnabled();
   expect(adoptCalls(state)).toEqual([]);
@@ -232,7 +250,7 @@ for (const kind of ['image_candidate', 'video_candidate']) test(`${kind} preview
   const poster = 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#242b3e"/></svg>').toString('base64');
   await page.route('**/api/v1/media-library/items/7001', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ asset_id: '7001', generation_id: '92001', media_id: '9901', media_type: isVideo ? 'video' : 'image', name: '雨夜车站', url: isVideo ? 'data:video/mp4;base64,AAAA' : poster, row_version: '1' }) }));
   await page.route('**/api/v1/ai/generations/92001', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ generation_id: '92001', status: 'succeeded', source: { scene: isVideo ? 'shot_video' : 'shot_image', shot_id: '101', layout: 'four' }, parameters: { aspect: '16:9', resolution: isVideo ? '720p' : '2K', ...(isVideo ? { duration_ms: 5000 } : {}), secret: 'DO_NOT_RENDER' }, result: { assets: [], text: null, partial: false } }) }));
-  await page.goto(`${root}/source`); await openShelf(page);
+  await page.goto(`${root}/source?mode=agent&conversation=301`); await openShelf(page);
   await expect(page.getByText(isVideo ? '清晰度 720p · 画幅 16:9 · 时长 5 秒' : '清晰度 2K · 画幅 16:9 · 布局 四宫格')).toBeVisible();
   await expect(page.getByText('DO_NOT_RENDER')).toHaveCount(0); expect(adoptCalls(state)).toEqual([]);
   if (isVideo) await expect(page.locator('.agent-artifact-media video')).toHaveAttribute('controls', '');

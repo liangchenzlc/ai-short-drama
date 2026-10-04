@@ -161,15 +161,16 @@ test('production editor overlays and compact desktop layout remain usable', asyn
   await page.getByRole('button', { name: '新建角色', exact: true }).first().click();
   await capture(page, info, 'asset-create');
   await page.getByRole('button', { name: '取消', exact: true }).click();
-  await page.getByRole('button', { name: '编辑素材', exact: true }).first().click();
+  await page.getByRole('button', { name: '林晚', exact: true }).click();
   await expect(page.getByRole('heading', { name: '图片与生成', exact: true })).toBeVisible();
   await capture(page, info, 'asset-edit');
   await page.getByRole('button', { name: '返回素材列表', exact: true }).click();
 
   await page.goto(`${root}/storyboard`);
   await page.locator('.storyboard-summary').first().click();
+  await page.getByRole('tab', { name: '分镜图', exact: true }).click();
   await capture(page, info, 'storyboard-image');
-  await page.getByText('分镜视频', { exact: true }).click();
+  await page.getByRole('tab', { name: '分镜视频', exact: true }).click();
   await expect(page.locator('.shot-video-workspace')).toBeVisible();
   await capture(page, info, 'storyboard-video');
   await page.getByRole('button', { name: /对白|声音表演/ }).click();
@@ -183,11 +184,11 @@ test('production editor overlays and compact desktop layout remain usable', asyn
   await capture(page, info, 'assembly-focus');
   await page.getByRole('button', { name: '退出专注剪辑', exact: true }).click();
   await page.getByRole('button', { name: /声音|配音.*字幕/ }).click();
-  await expect(page.locator('.sound-drawer .ant-drawer-body')).toBeVisible();
+  await expect(page.getByRole('region', { name: '原声、字幕和配乐', exact: true })).toBeVisible();
   await capture(page, info, 'sound-subtitles');
   await page.getByRole('tab', { name: /配乐/ }).click();
   await capture(page, info, 'sound-music');
-  await page.locator('.sound-drawer .ant-drawer-close').click();
+  await page.getByRole('button', { name: '收起声音编辑', exact: true }).click();
   await page.getByRole('button', { name: '导出记录', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '导出记录', exact: true })).toBeVisible();
   await capture(page, info, 'export-history');

@@ -10,7 +10,13 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic_ai import DeferredToolRequests, DeferredToolResults
-from pydantic_ai.messages import ImageUrl, ModelRequest, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import (
+    BinaryContent,
+    ImageUrl,
+    ModelRequest,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.tools import ToolDefinition
 
 from short_drama.agent.model_gateway import (
@@ -70,6 +76,140 @@ def gateway():
     return AgentModelGateway(
         SimpleNamespace(generation_allowed_hosts=["127.0.0.1"], generation_max_response_bytes=65536)
     )
+
+
+@pytest.mark.parametrize("protocol", ["chat", "responses"])
+def test_inline_image_payload_is_protected_and_replays_without_live_io(
+    provider, protocol, monkeypatch
+):
+    base, state = provider
+    state["responses"] = [(200, response(protocol, text="Image understood"))]
+    config = {**snapshot(base, protocol), "model_key": "gpt-4o"}
+    inputs = {
+        "instructions": "Review the image",
+        "user_prompt": [
+            "What is shown?",
+            BinaryContent(data=b"managed-image-bytes", media_type="image/jpeg"),
+        ],
+    }
+    saved = {}
+
+    async def save_request(value):
+        saved["request"] = value
+
+    async def save_response(value):
+        saved["response"] = value
+
+    boundary = gateway()
+    result = asyncio.run(
+        boundary.run_segment(
+            config, "", **inputs, on_request=save_request, on_response=save_response
+        )
+    )
+    body = state["calls"][0][2]
+    encoded = base64.b64encode(b"managed-image-bytes").decode()
+    assert f"data:image/jpeg;base64,{encoded}" in json.dumps(body)
+    assert saved["request"]["body"] == body
+    loaded = deserialize_history(result.history)
+    content = next(
+        part.content
+        for message in loaded
+        for part in message.parts
+        if part.part_kind == "user-prompt"
+    )
+    assert any(
+        isinstance(item, BinaryContent) and item.data == b"managed-image-bytes" for item in content
+    )
+
+    def forbidden(*_, **__):
+        raise AssertionError("Archived inline input must not resolve DNS or send live requests")
+
+    monkeypatch.setattr(socket, "getaddrinfo", forbidden)
+    monkeypatch.setattr(boundary.transport, "request", forbidden)
+    replay = asyncio.run(
+        boundary.replay_segment(
+            config, "", **inputs, request_payload=saved["request"], raw_response=saved["response"]
+        )
+    )
+    assert replay.output == result.output and replay.requests == 0
+    assert len(state["calls"]) == 1
+
+
+@pytest.mark.parametrize("protocol", ["chat", "responses"])
+def test_inline_binary_history_survives_deferred_tool_continuation(provider, protocol):
+    base, state = provider
+    state["responses"] = [
+        (200, response(protocol, calls=[("read-1", "read_episode", {})])),
+        (200, response(protocol, text="Ready")),
+    ]
+    config = {**snapshot(base, protocol), "model_key": "gpt-4o"}
+    boundary = gateway()
+    first = asyncio.run(
+        boundary.run_segment(
+            config,
+            "",
+            instructions="Review",
+            tools=[tool()],
+            user_prompt=["Image", BinaryContent(data=b"image-data", media_type="image/png")],
+        )
+    )
+    second = asyncio.run(
+        boundary.run_segment(
+            config,
+            "",
+            instructions="Review",
+            tools=[tool()],
+            history=first.history,
+            deferred_results=DeferredToolResults(calls={"read-1": {"title": "Episode"}}),
+        )
+    )
+    assert second.output == "Ready"
+    assert "data:image/png;base64," in json.dumps(state["calls"][1][2])
+
+
+def test_inline_audio_uses_chat_input_audio_payload(provider):
+    base, state = provider
+    state["responses"] = [(200, response("chat", text="Audio understood"))]
+    config = {**snapshot(base, "chat"), "model_key": "gpt-4o-audio-preview"}
+    result = asyncio.run(
+        gateway().run_segment(
+            config,
+            "",
+            instructions="Review the sound",
+            user_prompt=["Listen", BinaryContent(data=b"managed-audio", media_type="audio/mpeg")],
+        )
+    )
+    contents = [
+        part
+        for message in state["calls"][0][2]["messages"]
+        if isinstance(message.get("content"), list)
+        for part in message["content"]
+    ]
+    audio = next(part["input_audio"] for part in contents if part["type"] == "input_audio")
+    assert audio == {"data": base64.b64encode(b"managed-audio").decode(), "format": "mp3"}
+    assert result.output == "Audio understood"
+
+
+@pytest.mark.parametrize(
+    ("protocol", "mime", "model"),
+    [
+        ("responses", "audio/mpeg", "gpt-4o-audio-preview"),
+        ("chat", "image/jpeg", "text-only"),
+        ("chat", "video/mp4", "gpt-4o"),
+    ],
+)
+def test_unsupported_inline_modality_is_rejected_before_network(provider, protocol, mime, model):
+    base, state = provider
+    with pytest.raises(AgentGatewayError, match="unsupported_agent_input_modality"):
+        asyncio.run(
+            gateway().run_segment(
+                {**snapshot(base, protocol), "model_key": model},
+                "",
+                instructions="Review",
+                user_prompt=[BinaryContent(data=b"file", media_type=mime)],
+            )
+        )
+    assert state["calls"] == []
 
 
 def snapshot(base, protocol):

@@ -30,6 +30,7 @@ async function runtimeFixture(page: Page, verified = true, history = 0) {
     if (path === '/models') return reply({ items: models, preferred_id: '71' });
     if (path === '/models/71/verify') { Object.assign(models[0], { verified: true, tool_calling: true, tool_result_continuation: true }); return reply(models[0]); }
     if (path === '/conversations') return reply({ items: conversations, total: 2, offset: 0, limit: 20 });
+    if (/^\/conversations\/\d+\/attachments$/.test(path) && method === 'GET') return reply({ items: [], total: 0, offset: 0, limit: 50 });
     const conversationId = path.split('/')[2];
     if (/^\/conversations\/\d+$/.test(path)) return reply(conversations.find(item => item.id === conversationId));
     if (path.endsWith('/events')) {
@@ -67,6 +68,14 @@ async function selectOption(page: Page, name: string, label: string | RegExp) {
   await page.getByRole('combobox', { name, exact: true }).press('ArrowDown');
   await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: label }).first().click();
 }
+async function chooseGeneration(page: Page) {
+  await page.getByRole('button', { name: '选择发送用途', exact: true }).click();
+  await page.getByRole('menuitem', { name: '生成作品', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Agent 模型与执行设置', exact: true })).toBeVisible();
+}
+async function finishModelSettings(page: Page) {
+  await page.getByRole('dialog', { name: 'Agent 模型与执行设置', exact: true }).getByRole('button', { name: '完成', exact: true }).click();
+}
 async function mediaModels(page: Page) {
   await page.route('**/api/v1/ai-model-configs/*/capabilities', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ known: true, reference_images: true, parameters: ['aspect', 'resolution', 'count'], video_input: { reference_images: true, first_frame: false, duration_seconds: [3, 5, 10], resolutions: ['480p', '720p', '1080p'] } }) }));
   await page.route('**/api/v1/ai-model-configs/77', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: '77', name: '图片生成模型', service_type: 'image', model_key: 'fixture-image', provider: 'fixture', enabled: 1, is_deleted: 0, is_default: 1, row_version: '1', has_api_key: true }) }));
@@ -82,11 +91,11 @@ test('a specified asset image task confirms concrete settings and keeps the coll
   state.referenceState['asset/501'] = [{ media_id: '991', name: '角色参考', url: '' }];
   await page.goto(`${root}/source?mode=agent&conversation=301`);
   const composer = page.getByRole('textbox', { name: '创作要求' }); await expect(composer).toBeVisible();
-  await page.locator('.agent-composer-top .ant-segmented-item-label').filter({ hasText: '生成作品' }).click();
+  await chooseGeneration(page);
   await selectOption(page, '生成方式', '指定图片任务');
   await selectOption(page, '媒体创作对象', '角色：林晚');
   await selectOption(page, '媒体清晰度', /^4K$/); await selectOption(page, '媒体画幅', /^9:16$/);
-  await page.getByRole('spinbutton', { name: '媒体候选数量' }).fill('2'); await composer.fill('保持人物黑发与深色风衣，生成雨夜中的角色肖像。');
+  await page.getByRole('spinbutton', { name: '媒体候选数量' }).fill('2'); await finishModelSettings(page); await composer.fill('保持人物黑发与深色风衣，生成雨夜中的角色肖像。');
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
   expect(state.calls.filter(call => call.method === 'POST')).toEqual([]);
   await page.getByRole('button', { name: '发送', exact: true }).click();
@@ -109,9 +118,9 @@ test('a specified shot image task includes linked and saved references without e
   const state = await runtimeFixture(page); await mediaModels(page);
   state.referenceState['shot/101'] = [{ media_id: '9901', name: '重复的已采用图', url: '' }, { media_id: '991', name: '运镜参考', url: '' }];
   await page.goto(`${root}/source?mode=agent&conversation=301`); const composer = page.getByRole('textbox', { name: '创作要求' }); await expect(composer).toBeVisible();
-  await page.locator('.agent-composer-top .ant-segmented-item-label').filter({ hasText: '生成作品' }).click(); await selectOption(page, '生成方式', '指定图片任务');
+  await chooseGeneration(page); await selectOption(page, '生成方式', '指定图片任务');
   await selectOption(page, '生成对象类型', '分镜画面'); await selectOption(page, '媒体创作对象', /^第 1 镜头 ·/);
-  await selectOption(page, '图片布局', /^四宫格$/); await composer.fill('用四个画面表现旅人走进站台。');
+  await selectOption(page, '图片布局', /^四宫格$/); await finishModelSettings(page); await composer.fill('用四个画面表现旅人走进站台。');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   const confirmation = page.getByRole('dialog', { name: '确认生成任务' }); await expect(confirmation).toContainText('第 1 镜头'); await expect(confirmation).toContainText('布局 四宫格 · 参考图片 2 张');
   await confirmation.getByRole('button', { name: '确认并生成' }).click(); await expect(composer).toHaveValue('');
@@ -123,11 +132,12 @@ test('a specified shot image task includes linked and saved references without e
 test('a specified video task offers 480p and five seconds with explicit authorization', async ({ page }, info) => {
   const state = await runtimeFixture(page); await mediaModels(page);
   await page.goto(`${root}/source?mode=agent&conversation=301`); const composer = page.getByRole('textbox', { name: '创作要求' }); await expect(composer).toBeVisible();
-  await page.locator('.agent-composer-top .ant-segmented-item-label').filter({ hasText: '生成作品' }).click(); await selectOption(page, '生成方式', '指定视频任务');
+  await chooseGeneration(page); await selectOption(page, '生成方式', '指定视频任务');
   await selectOption(page, '媒体创作对象', /^第 1 镜头 ·/);
   await expect(page.getByRole('spinbutton', { name: '视频时长（秒）' })).toHaveValue('3');
   await expect(page.locator('.agent-media-task').getByText('沿用目标（720p）', { exact: true })).toBeVisible();
   await selectOption(page, '媒体清晰度', /^480p$/); await page.getByRole('spinbutton', { name: '视频时长（秒）' }).fill('5');
+  await finishModelSettings(page);
   await composer.fill('保持旅人外貌与雨夜站台，镜头缓慢向前推进。');
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
   await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0);
@@ -149,8 +159,8 @@ test('a specified video task offers 480p and five seconds with explicit authoriz
 test('a video reference that becomes stale during preparation keeps the draft and makes no paid request', async ({ page }) => {
   const state = await runtimeFixture(page); await mediaModels(page);
   await page.goto(`${root}/source?mode=agent&conversation=301`); const composer = page.getByRole('textbox', { name: '创作要求' }); await expect(composer).toBeVisible();
-  await page.locator('.agent-composer-top .ant-segmented-item-label').filter({ hasText: '生成作品' }).click(); await selectOption(page, '生成方式', '指定视频任务');
-  await selectOption(page, '媒体创作对象', /^第 1 镜头 ·/); await composer.fill('保持人物外貌，镜头缓慢推进。');
+  await chooseGeneration(page); await selectOption(page, '生成方式', '指定视频任务');
+  await selectOption(page, '媒体创作对象', /^第 1 镜头 ·/); await finishModelSettings(page); await composer.fill('保持人物外貌，镜头缓慢推进。');
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
   state.shots[0].image.is_stale = true;
   await page.getByRole('button', { name: '发送', exact: true }).click();
@@ -167,19 +177,21 @@ test('explicit capability verification, IME, plan approval and stop stay user in
   await composer.fill('把结尾改成悬念，先给我制作计划。');
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeDisabled();
   expect(state.calls.filter(call => call.method === 'POST')).toEqual([]);
-  await page.locator('.agent-model-settings summary').click();
+  await page.getByRole('button', { name: '选择模型', exact: true }).click();
   await page.getByRole('button', { name: '校验能力', exact: true }).click();
   await expect(page.getByText(/最多会向这个文本模型发送 2 次请求/)).toBeVisible();
   expect(state.calls.filter(call => call.path.endsWith('/verify'))).toEqual([]);
   await page.getByRole('button', { name: '开始校验' }).click();
-  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
+  await expect(page.getByRole('dialog', { name: 'Agent 模型与执行设置', exact: true }).getByRole('button', { name: '校验能力', exact: true })).toBeEnabled();
   expect(state.calls.filter(call => call.path.endsWith('/verify'))).toHaveLength(1);
-  await page.locator('.agent-model-settings summary').click();
+  await finishModelSettings(page);
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
   await composer.dispatchEvent('compositionstart'); await composer.press('Enter');
   expect(state.calls.filter(call => call.path.endsWith('/messages') && call.method === 'POST')).toEqual([]);
   await composer.dispatchEvent('compositionend');
-  await page.locator('.agent-composer-top .ant-segmented-item-label').filter({ hasText: '生成作品' }).click();
-  await expect(page.getByRole('radio', { name: '生成作品' })).toBeChecked();
+  await page.getByRole('button', { name: '选择发送用途', exact: true }).click();
+  await page.getByRole('menuitem', { name: '生成作品', exact: true }).click();
+  await finishModelSettings(page);
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(composer).toHaveValue('');
   const send = state.calls.find(call => call.path.endsWith('/messages') && call.method === 'POST')!;
@@ -245,6 +257,7 @@ test('late send preserves another conversation and its draft', async ({ page }) 
   const state = await runtimeFixture(page); const gate = state.gatePost();
   await page.goto(`${root}/source?mode=agent&conversation=302`);
   const composer = page.getByRole('textbox', { name: '创作要求' }); await expect(composer).toBeVisible(); await composer.fill('B 的草稿');
+  await page.getByRole('button', { name: '对话记录', exact: true }).click();
   await page.locator('.agent-conversation-toolbar .ant-select-selection-item').click();
   await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: '主线讨论' }).click();
   await expect(composer).toHaveValue(''); await composer.fill('A 的讨论要求');
@@ -254,6 +267,7 @@ test('late send preserves another conversation and its draft', async ({ page }) 
   gate.release(); await response;
   await expect(page).toHaveURL(url => url.searchParams.get('conversation') === '302');
   await expect(composer).toHaveValue('B 的草稿');
+  await page.getByRole('button', { name: '对话记录', exact: true }).click();
   await expect(page.locator('.agent-conversation-toolbar .ant-select-selection-item')).toHaveText('备选方向');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
@@ -288,7 +302,7 @@ test('an uncertain send only retries explicitly with the original body and idemp
   await composer.fill('继续编辑的草稿');
   await page.getByRole('button', { name: '核对发送状态', exact: true }).click();
   const sends = () => state.calls.filter(call => call.path.endsWith('/messages') && call.method === 'POST');
-  expect(sends()).toHaveLength(1); await expect(page.locator('.agent-send-row button')).toBeDisabled();
+  expect(sends()).toHaveLength(1); await expect(page.getByRole('button', { name: '发送', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: '使用原请求重试', exact: true }).click();
   await expect(page.getByRole('button', { name: '使用原请求重试', exact: true })).toHaveCount(0);
   expect(sends()).toHaveLength(2); expect(sends()[1].body).toEqual(sends()[0].body); expect(sends()[1].key).toBe(sends()[0].key);

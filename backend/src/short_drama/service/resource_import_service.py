@@ -226,6 +226,7 @@ def process_import(factory, storage, settings):
 def _complete_import(session, job, snapshot, copied):
     now = utcnow()
     for mid, locator, values in copied.values():
+        values = {**values, "published_at": now}
         session.add(
             MediaFile(
                 id=mid,

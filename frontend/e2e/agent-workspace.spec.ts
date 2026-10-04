@@ -4,6 +4,7 @@ import { fixture, root } from './studio-fixture';
 async function agentFixture(page: Page, enabled = true) {
   const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   const conversations: any[] = [];
+  const messages: any[] = [];
   const mutations: { method: string; body: any; key?: string }[] = [];
   await page.route('**/api/v1/agent/**', async route => {
     const request = route.request();
@@ -13,7 +14,8 @@ async function agentFixture(page: Page, enabled = true) {
     const reply = (data: any, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) });
     if (path === '/status') return reply({ enabled, schema_ready: enabled });
     if (path === '/models') return reply({ items: [], preferred_id: null });
-    if (/^\/conversations\/\d+\/messages$/.test(path) && method === 'GET') return reply({ items: [], total: 0, offset: 0, limit: 50 });
+    if (/^\/conversations\/\d+\/messages$/.test(path) && method === 'GET') return reply({ items: messages, total: messages.length, offset: 0, limit: 50 });
+    if (/^\/conversations\/\d+\/attachments$/.test(path) && method === 'GET') return reply({ items: [], total: 0, offset: 0, limit: 50 });
     if (/^\/conversations\/\d+\/runs$/.test(path)) {
       const item = conversations.find(conversation => path === `/conversations/${conversation.id}/runs`);
       const items = item?.last_run_status ? [{ id: String(400 + Number(item.id)), conversation_id: item.id, status: item.last_run_status, phase: 'finished', row_version: 1, mode: 'discuss', model_config_id: '1', model_name: '文本模型', error: null, usage: {}, budget: {}, review: null, created_at: item.created_at, updated_at: item.updated_at, finished_at: item.updated_at }] : [];
@@ -40,7 +42,20 @@ async function agentFixture(page: Page, enabled = true) {
     state.unexpected.push(`${method} agent${path}`);
     return reply({ error: { code: 'UNEXPECTED' } }, 501);
   });
-  return { ...state, mutations, conversations };
+  return { ...state, mutations, conversations, messages };
+}
+
+async function openConversationHistory(page: Page) {
+  const dialog = page.getByRole('dialog', { name: '对话记录', exact: true });
+  if (!await dialog.isVisible()) await page.getByRole('button', { name: '对话记录', exact: true }).click();
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+async function expectConversationTitle(page: Page, title: string) {
+  const history = await openConversationHistory(page);
+  await expect(history.locator('.ant-select-selection-item')).toHaveText(title);
+  await page.keyboard.press('Escape');
+  await expect(history).toHaveCount(0);
 }
 
 for (const width of [1440, 390]) {
@@ -94,11 +109,12 @@ test('episode Agent entry keeps manual drafts, private conversations and stage n
   expect(state.mutations[0].body).toEqual({ project_id: '10', episode_id: '20', title: '小说改编：归来的旅人' });
   expect(state.mutations[0].key).toBeTruthy();
 
+  await openConversationHistory(page);
   await page.getByRole('button', { name: '对话操作' }).click();
   await page.getByRole('menuitem', { name: '重命名' }).click();
   await page.getByLabel('对话名称').fill('雨夜结尾');
   await page.getByRole('button', { name: '保存名称' }).click();
-  await expect(page.locator('.agent-conversation-toolbar .ant-select-selection-item')).toHaveText('雨夜结尾');
+  await expectConversationTitle(page, '雨夜结尾');
   await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /素材准备/ }).click();
   await expect(page).toHaveURL(url => url.pathname.endsWith('/assets') && url.searchParams.get('conversation') === '302');
   expect(state.mutations).toHaveLength(3); // one auto creation per stage plus the explicit rename
@@ -112,14 +128,18 @@ test('episode Agent entry keeps manual drafts, private conversations and stage n
   await page.getByText('Agent 创作', { exact: true }).first().click();
   await expect(page).toHaveURL(url => url.searchParams.get('mode') === 'agent');
   await expect(page.getByRole('radio', { name: 'Agent 创作', exact: true })).toBeChecked();
-  await expect(page.locator('.agent-conversation-toolbar .ant-select-selection-item')).toHaveText('雨夜结尾');
+  await expectConversationTitle(page, '雨夜结尾');
+  await openConversationHistory(page);
   await page.getByRole('button', { name: '对话操作' }).click();
   await page.getByRole('menuitem', { name: '归档对话' }).click();
+  await expect(page.getByRole('menuitem', { name: '归档对话', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: '对话记录', exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '这段对话已归档' })).toBeVisible();
   await page.getByRole('button', { name: '恢复对话', exact: true }).click();
   await expect(page.getByRole('heading', { name: '从本集作品开始' })).toBeVisible();
   await page.reload();
-  await expect(page.locator('.agent-conversation-toolbar .ant-select-selection-item')).toHaveText('雨夜结尾');
+  await expectConversationTitle(page, '雨夜结尾');
   await page.screenshot({ path: info.outputPath('agent-source-1440.png'), fullPage: true });
   for (const width of [1280, 1920]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -188,8 +208,10 @@ test('automatic conversation creation failure does not retry until an explicit a
   await page.goto(`${root}/source?mode=agent`);
   await expect(page.getByRole('alert').filter({ hasText: '新对话请求已保留' })).toBeVisible();
   await page.getByRole('button', { name: '核对最新状态', exact: true }).click();
+  await openConversationHistory(page);
   await expect(page.locator('.agent-conversation-toolbar .ant-select')).not.toHaveClass(/ant-select-loading/);
   expect(keys).toHaveLength(1);
+  await openConversationHistory(page);
   await page.locator('.agent-conversation-toolbar').getByRole('button', { name: '新建对话', exact: true }).click();
   await expect(page).toHaveURL(url => url.searchParams.get('conversation') === '301');
   expect(keys).toHaveLength(2);
@@ -213,13 +235,14 @@ test('an automatic conversation failure only blocks the stage that failed', asyn
   await expect(page.getByRole('alert').filter({ hasText: '新对话请求已保留' })).toBeVisible();
   await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /素材准备/ }).click();
   await expect(page).toHaveURL(url => url.pathname.endsWith('/assets') && url.searchParams.get('conversation') === '301');
-  await expect(page.locator('.agent-conversation-toolbar .ant-select-selection-item')).toHaveText('素材准备：归来的旅人');
+  await expectConversationTitle(page, '素材准备：归来的旅人');
   expect(keys).toHaveLength(2);
   expect(keys[1]).not.toBe(keys[0]);
   expect(state.mutations).toHaveLength(1);
   await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /小说改编/ }).click();
   await expect(page.getByRole('alert').filter({ hasText: '新对话请求已保留' })).toBeVisible();
   expect(keys).toHaveLength(2);
+  await openConversationHistory(page);
   await page.locator('.agent-conversation-toolbar').getByRole('button', { name: '新建对话', exact: true }).click();
   await expect(page).toHaveURL(url => url.pathname.endsWith('/source') && url.searchParams.get('conversation') === '302');
   expect(keys).toHaveLength(3);
@@ -243,13 +266,16 @@ for (const mutation of ['rename', 'create'] as const) {
       await route.fallback();
     });
     await page.goto(`${root}/source?mode=agent&conversation=302`);
+    await openConversationHistory(page);
     const selectedTitle = page.locator('.agent-conversation-toolbar .ant-select-selection-item');
     await expect(selectedTitle).toHaveText('场景探索');
     await selectedTitle.click();
     await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: '剧情讨论' }).click();
+    await openConversationHistory(page);
     await expect(selectedTitle).toHaveText('剧情讨论');
     if (mutation === 'rename') {
-      await page.getByRole('button', { name: '对话操作' }).click();
+      await openConversationHistory(page);
+  await page.getByRole('button', { name: '对话操作' }).click();
       await page.getByRole('menuitem', { name: '重命名' }).click();
       await page.getByLabel('对话名称').fill('迟到的剧情改写');
       await page.getByRole('button', { name: '保存名称' }).click();
@@ -258,7 +284,7 @@ for (const mutation of ['rename', 'create'] as const) {
     await page.goBack();
     await expect(page).toHaveURL(url => url.searchParams.get('conversation') === '302');
     await expect(selectedTitle).toHaveText('场景探索');
-    await expect(page.locator('.agent-conversation-state')).toHaveText('运行失败');
+    await expect(page.locator('.agent-run-failed')).toContainText('这次运行未完成');
     // Record every visible selection during completion, including brief stale flashes.
     await page.evaluate(() => {
       const toolbar = document.querySelector('.agent-conversation-toolbar')!;
@@ -272,7 +298,7 @@ for (const mutation of ['rename', 'create'] as const) {
     await expect(page.getByRole('button', { name: '对话操作' })).toBeEnabled();
     await expect(page).toHaveURL(url => url.searchParams.get('conversation') === '302');
     await expect(selectedTitle).toHaveText('场景探索');
-    await expect(page.locator('.agent-conversation-state')).toHaveText('运行失败');
+    await expect(page.locator('.agent-run-failed')).toContainText('这次运行未完成');
     expect(await page.evaluate(() => [...new Set((window as any).__agentSelectionHistory)])).toEqual(['场景探索']);
     await expect(page.locator('.agent-inline-notice')).toHaveCount(0);
     expect(state.mutations).toHaveLength(1);
@@ -291,9 +317,12 @@ for (const destination of ['prompt', 'assembly'] as const) {
       await route.fallback();
     });
     await page.goto(`${root}/source?mode=agent&conversation=301`);
+    await openConversationHistory(page);
     await expect(page.locator('.agent-conversation-toolbar .ant-select-selection-item')).toHaveText('原有对话');
     await page.getByRole('button', { name: '新建对话', exact: true }).click();
     await started.promise;
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: '对话记录', exact: true })).toHaveCount(0);
     if (destination === 'prompt') {
       await page.getByText('提示词创作', { exact: true }).click();
       await expect(page).toHaveURL(url => !url.searchParams.has('mode') && url.searchParams.get('conversation') === '301');
@@ -307,7 +336,6 @@ for (const destination of ['prompt', 'assembly'] as const) {
     const destinationUrl = page.url();
     const response = page.waitForResponse(result => result.url().endsWith('/api/v1/agent/conversations') && result.request().method() === 'POST');
     release.resolve(); await response;
-    await expect(page.locator('.agent-conversation-toolbar button[aria-label="新建对话"]')).toBeEnabled();
     if (destination === 'prompt') await expect(page.getByRole('complementary', { name: 'Agent 创作对话' })).not.toBeVisible();
     if (destination === 'prompt') {
       await expect(page).toHaveURL(url => url.pathname.endsWith('/source') && !url.searchParams.has('mode') && url.searchParams.get('conversation') === '301');
@@ -319,7 +347,7 @@ for (const destination of ['prompt', 'assembly'] as const) {
       await expect(page.getByRole('tab', { name: 'AI 创作', exact: true })).toHaveCount(0);
       await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /小说改编/ }).click();
       await expect(page).toHaveURL(url => url.pathname.endsWith('/source') && url.searchParams.get('conversation') === '301');
-      await expect(page.locator('.agent-conversation-toolbar .ant-select-selection-item')).toHaveText('原有对话');
+      await expectConversationTitle(page, '原有对话');
     }
     expect(state.conversations).toHaveLength(2);
     expect(state.mutations).toHaveLength(1);
@@ -342,13 +370,12 @@ test('late automatic creation stays out of assembly and is restored to its origi
   const assemblyUrl = page.url();
   const response = page.waitForResponse(result => result.url().endsWith('/api/v1/agent/conversations') && result.request().method() === 'POST');
   release.resolve(); await response;
-  await expect(page.locator('.agent-conversation-toolbar button[aria-label="新建对话"]')).toBeEnabled();
   await expect(page).toHaveURL(assemblyUrl);
   expect(state.mutations).toHaveLength(1);
   expect(state.mutations[0].body.title).toBe('小说改编：归来的旅人');
   await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /小说改编/ }).click();
   await expect(page).toHaveURL(url => url.pathname.endsWith('/source') && url.searchParams.get('conversation') === '301');
-  await expect(page.locator('.agent-conversation-toolbar .ant-select-selection-item')).toHaveText('小说改编：归来的旅人');
+  await expectConversationTitle(page, '小说改编：归来的旅人');
   expect(state.mutations).toHaveLength(1);
   expect(state.errors).toEqual([]);
   expect(state.unexpected).toEqual([]);
@@ -388,19 +415,49 @@ test('collapsing prompt creation widens the editor and keeps drafts and keyboard
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
+test('automatic creation waits for private detail before initializing the input context and preserves its first draft', async ({ page }) => {
+  const state = await agentFixture(page);
+  const started = deferred(); const gate = deferred();
+  let attachmentReads = 0;
+  await page.route('**/api/v1/agent/conversations/301/attachments?*', async route => { attachmentReads++; await route.fallback(); });
+  await page.route('**/api/v1/agent/conversations/301', async route => { started.resolve(); await gate.promise; await route.fallback(); });
+  await page.goto(`${root}/source?mode=agent`);
+  await started.promise;
+  const draft = page.getByRole('textbox', { name: '创作要求', exact: true });
+  try {
+    await expect(page).toHaveURL(url => url.searchParams.get('conversation') === '301');
+    await expect(draft).toHaveCount(0);
+    expect(attachmentReads).toBe(0);
+  } finally { gate.resolve(); }
+  await expect(draft).toBeEditable();
+  await draft.fill('详情载入后写下的第一份草稿');
+  await expect(draft).toHaveValue('详情载入后写下的第一份草稿');
+  await expect.poll(() => attachmentReads).toBe(1);
+  await page.getByRole('button', { name: '收起 AI 创作区域', exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await page.getByRole('tab', { name: 'AI 创作', exact: true }).click();
+  await expect(draft).toHaveValue('详情载入后写下的第一份草稿');
+  expect(attachmentReads).toBe(1);
+  expect(state.mutations).toHaveLength(1);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
 test('collapsed Agent creation preserves drafts across responsive views and stays absent in assembly', async ({ page }) => {
   const state = await agentFixture(page);
+  state.messages.push(...Array.from({ length: 16 }, (_, index) => ({ id: String(2001 + index), seq: index + 1, role: 'assistant', content: `站台故事讨论 ${index + 1}。${'保留人物动机与情绪的连续性。'.repeat(12)}`, references: [], artifacts: [], created_at: '2026-10-03T00:00:00Z' })));
   await page.goto(`${root}/source?mode=agent`);
   await expect(page).toHaveURL(url => url.searchParams.get('conversation') === '301');
   const draft = page.getByRole('textbox', { name: '创作要求', exact: true });
   await expect(draft).toBeVisible();
   await draft.fill('保留这段尚未发送的 Agent 草稿');
+  await expect(draft).toHaveValue('保留这段尚未发送的 Agent 草稿');
   const initialUrl = page.url();
   await page.setViewportSize({ width: 1440, height: 800 });
   for (const scrollTop of [70, 270]) {
-    await page.locator('#agent-conversation-pane').evaluate((pane, position) => { pane.scrollTop = position; }, scrollTop);
+    await page.locator('.agent-transcript').evaluate((transcript, position) => { transcript.scrollTop = position; }, scrollTop);
     await expect.poll(async () => page.getByRole('radio', { name: 'Agent 创作', exact: true }).evaluate((input, position) => {
       const pane = document.getElementById('agent-conversation-pane')!;
+      const transcript = document.querySelector('.agent-transcript')!;
       const toolbar = input.closest('.creation-mode-toolbar')!;
       const label = input.closest('label')!;
       const paneRect = pane.getBoundingClientRect();
@@ -410,7 +467,7 @@ test('collapsed Agent creation preserves drafts across responsive views and stay
       const collapse = document.querySelector<HTMLButtonElement>('button[aria-controls="agent-conversation-pane"]')!;
       const collapseRect = collapse.getBoundingClientRect();
       const collapseHit = document.elementFromPoint(collapseRect.x + collapseRect.width / 2, collapseRect.y + collapseRect.height / 2);
-      return pane.scrollTop > position - 5 && toolbarRect.top >= paneRect.top && toolbarRect.top < paneRect.top + 5
+      return transcript.scrollTop > position - 5 && toolbarRect.top >= paneRect.top && toolbarRect.top < paneRect.top + 5
         && collapseRect.top >= toolbarRect.top && collapseRect.bottom <= toolbarRect.bottom
         && label.contains(modeHit) && collapse.contains(collapseHit);
     }, scrollTop)).toBe(true);

@@ -62,7 +62,13 @@ def prepared(workspace, kind="image", count=1):
     if kind in {"extract", "storyboard"}:
         with factory.begin() as session:
             script = EpisodeScript(
-                id=next_id(), episode_id=e, position=1, state="confirmed", content=SCRIPT
+                id=next_id(),
+                episode_id=e,
+                position=1,
+                state="confirmed",
+                content=SCRIPT,
+                created_by=1,
+                published_at=utcnow(),
             )
             session.add(script)
             session.flush()
@@ -105,6 +111,8 @@ def prepared(workspace, kind="image", count=1):
                     storage_locator=f"minio://{cfg.minio_image_bucket}/frame.png",
                     width=16,
                     height=9,
+                    created_by=1,
+                    published_at=utcnow(),
                 )
                 session.add(media)
                 session.flush()

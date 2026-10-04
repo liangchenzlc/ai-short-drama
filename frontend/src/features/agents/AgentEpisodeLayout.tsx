@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { Icon } from '../../components/ui/Icon';
 
-export function AgentEpisodeLayout({ enabled, children, panel, workRequest = 0 }: { enabled: boolean; children: ReactNode; panel: ReactNode; workRequest?: number }) {
+export function AgentEpisodeLayout({ enabled, children, panel, workRequest = 0, panelRequest = 0 }: { enabled: boolean; children: ReactNode; panel: ReactNode; workRequest?: number; panelRequest?: number }) {
   const frame = useRef<HTMLDivElement>(null);
   const drag = useRef<{ pointer: number; x: number; width: number } | null>(null);
   const [frameWidth, setFrameWidth] = useState(0);
@@ -9,6 +9,11 @@ export function AgentEpisodeLayout({ enabled, children, panel, workRequest = 0 }
   const [collapsed, setCollapsed] = useState(false);
   const [view, setView] = useState<'work' | 'conversation'>('work');
   useEffect(() => { if (workRequest) setView('work'); }, [workRequest]);
+  useEffect(() => {
+    if (!panelRequest) return;
+    setCollapsed(false);
+    setView('conversation');
+  }, [panelRequest]);
   useEffect(() => {
     const element = frame.current;
     if (!element) return;

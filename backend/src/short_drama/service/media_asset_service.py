@@ -14,6 +14,7 @@ from short_drama.domain import (
 from short_drama.schemas.media_asset import MediaAssetApply, MediaAssetRename
 
 from .base import BaseService, utcnow
+from .publication import public_voice_context
 from .shot_image_service import ShotImageService
 from .shot_video_service import ShotVideoService
 from .storage_service import StorageService
@@ -208,6 +209,11 @@ class MediaAssetService(BaseService):
         ShotVideoService(self.session)._write_confirmed(
             values, shot, existing=current, historical=True
         )
+        if captured.get("native_speech") is not None:
+            media.video_metadata = {
+                **(media.video_metadata or {}),
+                "adopted_native_speech": public_voice_context(captured["native_speech"]),
+            }
         self.session.flush()
         return response()
 

@@ -60,9 +60,9 @@ backfill 拒绝活动生成或渲染任务。它在事务内分配项目/配置/
 
 ## 新数据库
 
-执行完整 [schema.mysql8.sql](数据库模型/schema.mysql8.sql) 创建 50 张表，不再执行历史增量 SQL。配置身份、邮件和存储后直接启动，第一位注册者只拥有自己新建的数据。
+执行完整 [schema.mysql8.sql](数据库模型/schema.mysql8.sql) 创建 52 张表，不再执行历史增量 SQL。配置身份、邮件和存储后直接启动，第一位注册者只拥有自己新建的数据。
 
-Agent 模式默认开启，在账号迁移之外还需要新增七表、独立 Worker 与显式能力验证；已有库迁移前须显式设置 `AGENT_ENABLED=false`。新库完整 SQL 已包含 Agent 表；启动和回退见 [Agent 部署](agent-deployment.md)。
+Agent 模式默认开启，在账号迁移之外还需要九张 Agent 表、独立 Worker 与显式能力验证；已有库迁移前须显式设置 `AGENT_ENABLED=false`。新库完整 SQL 已包含 Agent 表；启动和回退见 [Agent 部署](agent-deployment.md)。
 
 ## 验证命令与上线验收
 
@@ -81,7 +81,7 @@ uv run pytest tests/integration/test_identity_collaboration.py -m storage_integr
 
 前端在 `frontend/` 执行 `npm.cmd test`、`npm.cmd run build` 和 `npm.cmd run test:e2e -- e2e/collaboration.spec.ts e2e/workspace.spec.ts`。没有 Playwright 自带浏览器时可指定 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`。外部 Vite 服务器已运行时设置 `PLAYWRIGHT_EXTERNAL_SERVER=1`。
 
-上线验收仍需两位真实用户：完成实际收信与注册，接受一次新的邀请证明；分别配置不同密钥，生成项目候选并明确采用；模拟同字段并发保存的 409；移除协作者后确认不能访问或新提交，已有产出保留。浏览器未保存输入和已签发媒体链接的五分钟窗口也需要检查。
+上线验收仍需两位真实用户：完成实际收信与注册，接受一次新的邀请证明；分别配置不同密钥，生成项目候选，验证彼此无法读取候选和生成历史，再明确采用并核对共享作品；模拟同字段并发保存的 409；移除协作者后确认不能访问或新提交，已有产出保留。浏览器未保存输入和已签发媒体链接的五分钟窗口也需要检查。
 
 邮件服务和模型供应商替身测试不能证明实际收信、反向代理日志脱敏或生产密钥调用成功。这些属于环境验收；本次开发没有发送真实邮件、调用付费模型或迁移原业务库。
 

@@ -57,6 +57,7 @@ async function safetyFixture(page: Page) {
       status: 200, contentType: 'text/event-stream', body: ': heartbeat\n\n',
     });
     if (path === '/agent/conversations/301/runs') return reply({ items: [], total: 0, offset: 0, limit: 1 });
+    if (path === '/agent/conversations/301/attachments' && method === 'GET') return reply({ items: [], total: 0, offset: 0, limit: 50 });
     if (path === '/agent/conversations/301/messages') {
       if (method === 'POST') {
         state.sends.push(body);
@@ -151,20 +152,41 @@ test('a pending material save locks object switching until its response has been
   expect(data.errors).toEqual([]);
 });
 
-test('Agent sending stops when the inline material draft cannot be saved', async ({ page }) => {
+test('returning to Agent preserves its draft and stays in editing when material saving conflicts', async ({ page }) => {
   const data = await safetyFixture(page);
-  data.state.conflicts = true;
-  const detail = await openFirstAsset(page, true);
-  await detail.getByLabel('名称', { exact: true }).fill('Agent 请求前的素材草稿');
+  await page.goto(`${root}/assets?mode=agent&conversation=301&conversation_stage=assets&conversation_assets=301`);
   const composer = page.getByRole('textbox', { name: '创作要求', exact: true });
   await expect(composer).toBeVisible();
-  await composer.fill('依据最新角色名称，讨论本集素材安排。');
-  await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(page.locator('.agent-runtime-error')).toContainText('当前作品尚未保存成功');
-  await expect(composer).toHaveValue('依据最新角色名称，讨论本集素材安排。');
+  const message = '依据最新角色名称，讨论本集素材安排。';
+  await composer.fill(message);
+  data.state.conflicts = true;
+  await page.getByRole('button', { name: '林晚', exact: true }).click();
+  const detail = page.locator('.episode-asset-detail');
+  await expect(detail).toBeVisible();
+  await detail.getByLabel('名称', { exact: true }).fill('Agent 请求前的素材草稿');
+  await expect(composer).toBeHidden();
+  await detail.getByRole('button', { name: '返回素材列表', exact: true }).click();
+  let confirmation = page.getByRole('dialog', { name: '未保存的修改', exact: true });
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('Agent 请求前的素材草稿');
+  await detail.getByRole('button', { name: '返回素材列表', exact: true }).click();
+  await confirmation.getByRole('button', { name: '保存并返回', exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(detail).toBeVisible();
   await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('Agent 请求前的素材草稿');
   expect(data.state.updates).toHaveLength(1);
   expect(data.state.sends).toEqual([]);
+  await expect(composer).toBeHidden();
+  data.state.conflicts = false;
+  await detail.getByRole('button', { name: '返回素材列表', exact: true }).click();
+  await confirmation.getByRole('button', { name: '保存并返回', exact: true }).click();
+  await expect(detail).toHaveCount(0);
+  await expect(composer).toBeVisible();
+  await expect(composer).toHaveValue(message);
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect.poll(() => data.state.sends.length).toBe(1);
+  expect(data.state.updates).toHaveLength(2);
+  expect(data.state.assets[0].name).toBe('Agent 请求前的素材草稿');
   expect(data.errors).toEqual([]);
   expect(data.unexpected).toEqual([]);
 });

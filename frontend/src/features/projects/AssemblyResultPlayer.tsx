@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Button } from 'antd';
-import type { RenderJob } from '../../api/modules/assembly';
+import type { AssemblyCurrentWork, RenderJob } from '../../api/modules/assembly';
 import { FPS } from './assembly-editing';
 
 type Phase = 'loading' | 'ready' | 'playing' | 'buffering' | 'error' | 'refreshing' | 'restoring';
 type Playback = { time: number; volume: number; muted: boolean; rate: number };
 
-export function AssemblyResultPlayer({ job, aspect, stale, videoRef, refresh, onResult, onFrame, onPlaying, download }: {
-  job: RenderJob; aspect: string; stale: boolean; videoRef: RefObject<HTMLVideoElement | null>;
-  refresh: (signal?: AbortSignal) => Promise<RenderJob>; onResult: (job: RenderJob) => void;
+export function AssemblyResultPlayer<T extends RenderJob | AssemblyCurrentWork>({ job, aspect, stale, videoRef, refresh, onResult, onFrame, onPlaying, download }: {
+  job: T; aspect: string; stale: boolean; videoRef: RefObject<HTMLVideoElement | null>;
+  refresh: (signal?: AbortSignal) => Promise<T>; onResult: (job: T) => void;
   onFrame: (frame: number) => void; onPlaying: (value: boolean) => void; download: string;
 }) {
   const initial = job.url ? 'loading' : 'error';
@@ -66,7 +66,7 @@ export function AssemblyResultPlayer({ job, aspect, stale, videoRef, refresh, on
     try {
       const fresh = await refresh(controller.signal);
       if (!mounted.current || revision !== attempt.current || controller.signal.aborted) return;
-      if (fresh.id !== job.id || fresh.media_id !== job.media_id || fresh.status !== 'succeeded' || !fresh.url) {
+      if (fresh.media_id !== job.media_id || 'id' in job && (!('id' in fresh) || fresh.id !== job.id) || 'status' in fresh && fresh.status !== 'succeeded' || !fresh.url) {
         fail('原成片暂不可用，无法恢复播放。请核对任务结果，或尝试下载 MP4。'); return;
       }
       onResult(fresh); transition('restoring');
@@ -108,7 +108,7 @@ export function AssemblyResultPlayer({ job, aspect, stale, videoRef, refresh, on
       {waiting && !error && <div className="assembly-player-message" role="status">{busy ? '正在恢复播放位置…' : '正在加载成片…'}</div>}
       {error && <div className="assembly-player-message" role="alert"><p>{error}</p><Button aria-label="刷新成片并重试" loading={busy} onClick={() => { void retry(); }}>刷新成片并重试</Button></div>}
     </div>
-    <div className="assembly-result-caption"><span>{job.kind === 'preview' ? '已合成预览' : '实际导出成片'}{stale ? ' · 草稿已有修改，此处显示导出时的版本' : ' · 当前保存版本'}</span>
+    <div className="assembly-result-caption"><span>{'kind' in job ? job.kind === 'preview' ? '已合成预览' : '实际导出成片' : '当前采用成片'}{stale ? ' · 草稿已有修改，此处显示导出时的版本' : ' · 当前保存版本'}</span>
       <Button type="link" loading={busy} onClick={() => { void retry(); }}>刷新成片地址</Button><a href={download}>下载 MP4</a></div>
   </section>;
 }

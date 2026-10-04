@@ -51,6 +51,7 @@ class MediaFileUpdate(InputModel):
 
 
 class MediaFileRead(ReadModel):
+    published_at: datetime | None = None
     video_metadata: dict | None = None
     id: Identifier
     format_code: Annotated[

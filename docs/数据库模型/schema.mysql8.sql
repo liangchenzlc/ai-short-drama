@@ -1,4 +1,4 @@
--- Canonical MySQL 8 schema: 50 tables.
+-- Canonical MySQL 8 schema: 52 tables.
 -- Generated from short_drama.domain by backend/scripts/export_schema.py.
 -- Initialize an empty database; upgrade existing databases with versioned migrations.
 -- Collaboration upgrades require explicit historical ownership backfill and finalize.
@@ -23,6 +23,28 @@ CREATE TABLE `users` (
   CONSTRAINT ck_users_status CHECK (status IN ('active','disabled')),
   UNIQUE KEY `uk_users_email` (email),
   UNIQUE KEY `uk_users_username` (username)
+) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE `agent_skills` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `owner_user_id` BIGINT UNSIGNED NOT NULL,
+  `name` VARCHAR(120) NOT NULL,
+  `filename` VARCHAR(255) NOT NULL,
+  `instructions` MEDIUMTEXT NOT NULL,
+  `content_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `checksum_sha256` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `enabled` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `deleted_at` DATETIME(6) NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_agent_skill_content CHECK (CHAR_LENGTH(TRIM(instructions)) > 0 AND OCTET_LENGTH(instructions) <= 65536),
+  CONSTRAINT ck_agent_skill_enabled CHECK (enabled IN (0,1)),
+  CONSTRAINT ck_agent_skill_time CHECK (updated_at >= created_at),
+  CONSTRAINT ck_agent_skill_versions CHECK (row_version > 0 AND content_version > 0),
+  CONSTRAINT fk_agent_skill_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  KEY `idx_agent_skill_owner` (`owner_user_id`, `deleted_at`, `id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `ai_model_configs` (
@@ -208,6 +230,7 @@ CREATE TABLE `generation_batches` (
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `media_files` (
+  `published_at` DATETIME(6) NULL COMMENT '明确采用或附加为项目作品的时间；私有输出为空',
   `video_metadata` JSON NULL COMMENT 'ffprobe实际视频信息与探测版本，非请求参数',
   `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的记录标识',
   `format_code` VARCHAR(127) COLLATE utf8mb4_0900_bin NOT NULL COMMENT '直接保存规范 MIME，例如 image/png、video/mp4；演示资源可用 demo:image',
@@ -503,6 +526,7 @@ CREATE TABLE `episode_scripts` (
   `position` INT UNSIGNED NOT NULL COMMENT '同一分集内剧本排序',
   `content` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '剧本正文',
   `state` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'unconfirmed' COMMENT '未确认 / 已确认',
+  `published_at` DATETIME(6) NULL COMMENT '明确采用为项目作品的时间；候选为空',
   `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
   `updated_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '最近修改时间；正常写入非空，历史未知可显式NULL',
   `created_by` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '创建人；预留用户ID，暂不设外键',
@@ -599,12 +623,14 @@ CREATE TABLE `asset_image_candidates` (
   `id` BIGINT UNSIGNED NOT NULL,
   `asset_id` BIGINT UNSIGNED NOT NULL,
   `media_id` BIGINT UNSIGNED NOT NULL,
+  `created_by` BIGINT UNSIGNED NULL COMMENT '候选创建人；无法证明的历史归属保持为空',
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`),
   CONSTRAINT fk_asset_image_candidates_asset FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_asset_image_candidates_media FOREIGN KEY (media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_asset_image_candidates_media` (asset_id, media_id),
+  UNIQUE KEY `uk_asset_image_candidates_media` (created_by, asset_id, media_id),
   KEY `idx_asset_image_candidates_media` (`media_id`),
+  KEY `idx_asset_image_candidates_owner` (`created_by`, `asset_id`, `created_at`, `id`),
   KEY `idx_asset_image_candidates_time` (`asset_id`, `created_at`, `id`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COMMENT='素材参考图片候选' COLLATE utf8mb4_0900_ai_ci;
 
@@ -958,6 +984,36 @@ CREATE TABLE `sound_media_references` (
   CONSTRAINT fk_sound_refs_media FOREIGN KEY (media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_sound_refs_proxy FOREIGN KEY (proxy_media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE `agent_attachments` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `owner_user_id` BIGINT UNSIGNED NOT NULL,
+  `conversation_id` BIGINT UNSIGNED NOT NULL,
+  `attached_message_id` BIGINT UNSIGNED NULL,
+  `kind` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `mime_type` VARCHAR(127) NOT NULL,
+  `media_id` BIGINT UNSIGNED NULL,
+  `text_content` MEDIUMTEXT NULL,
+  `checksum_sha256` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `byte_size` BIGINT UNSIGNED NOT NULL,
+  `input_metadata` JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  `create_key` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `create_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `deleted_at` DATETIME(6) NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_agent_attachment_content CHECK ((kind = 'text' AND text_content IS NOT NULL AND media_id IS NULL) OR (kind <> 'text' AND media_id IS NOT NULL)),
+  CONSTRAINT ck_agent_attachment_create_pair CHECK ((create_key IS NULL) = (create_hash IS NULL)),
+  CONSTRAINT ck_agent_attachment_kind CHECK (kind IN ('text','image','video','audio')),
+  CONSTRAINT ck_agent_attachment_metadata CHECK (JSON_TYPE(input_metadata) = 'OBJECT'),
+  CONSTRAINT fk_agent_attachment_conversation FOREIGN KEY (conversation_id) REFERENCES agent_conversations (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_agent_attachment_media FOREIGN KEY (media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_agent_attachment_message FOREIGN KEY (attached_message_id) REFERENCES agent_messages (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_agent_attachment_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_agent_attachment_create` (conversation_id, create_key),
+  KEY `idx_agent_attachment_conversation` (`conversation_id`, `id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `agent_runs` (
   `id` BIGINT UNSIGNED NOT NULL,

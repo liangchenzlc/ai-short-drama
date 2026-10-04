@@ -342,6 +342,7 @@ def agent_rows(session, size):
                 episode_id=episode_id,
                 position=index + 1,
                 content=f"Script {index}",
+                created_by=1,
                 created_at=now,
                 updated_at=now,
             )
@@ -462,6 +463,7 @@ def test_native_storyboard_reuses_shared_voice_sample_and_preserves_strict_valid
                 project_id=project_id,
                 format_code="audio/wav",
                 storage_locator="minio://voice/sample.wav",
+                published_at=utcnow(),
                 duration_ms=3100,
                 byte_size=100,
                 checksum_sha256="1" * 64,
@@ -518,8 +520,10 @@ def test_native_storyboard_reuses_shared_voice_sample_and_preserves_strict_valid
         with session.begin():
             for row in page["items"]:
                 shot = session.get(ShotScript, int(row["id"]))
-                assert row["native_speech"] == native_context(
-                    session, shot, strict=True, settings=cfg
+                from short_drama.service.publication import public_voice_context
+
+                assert row["native_speech"] == public_voice_context(
+                    native_context(session, shot, strict=True, settings=cfg)
                 )
                 assert row["native_speech"]["voices"][0]["version"] == 2
                 assert row["video_context_hash"] == video_context_hash(
@@ -583,9 +587,10 @@ def test_task_list_uses_latest_call_for_resume_and_retains_owner_permissions():
         with select_queries(session) as statements:
             page = AIGenerationService(session, settings).list(limit=20)
         assert len(statements) <= 5
+        assert len(page["items"]) == 19
         for row in page["items"]:
             index = int(row["generation_id"]) - 100
             assert row["config"]["name"] == "call-1"
-            assert row["can_cancel"] is (index == 0)
+            assert row["can_cancel"] is False
             assert row["can_resume"] is bool(index % 2)
             assert row["can_retry"] is False

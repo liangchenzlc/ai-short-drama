@@ -21,6 +21,8 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
   const [selected, setSelected] = useState('');
   const [frame, setFrame] = useState(0), [playing, setPlaying] = useState(false);
   const [notice, setNotice] = useState('');
+  const [showCurrentWork, setShowCurrentWork] = useState(false);
+  const currentWork = showCurrentWork && !result ? editor.value?.current_work : null;
   const player = useRef<AssemblyPlayerHandle>(null), resultVideo = useRef<HTMLVideoElement>(null);
   // The media bin follows storyboard order, independently of edits on the track.
   const sources = useMemo(() => [...(editor.value?.sources ?? [...new Map(clips.map(c => [c.shot_id, c])).values()])]
@@ -30,10 +32,10 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
   const total = entries.at(-1)?.end ?? 0;
   const selectedEntry = entries.find(e => e.clip.id === selection?.id);
   const splitEnabled = !!selectedEntry && frame > selectedEntry.start && frame < selectedEntry.end;
-  const locked = disabled || !!result;
+  const locked = disabled || !!result || !!currentWork;
   const renderedClips = useMemo(() => result ? renderedTimeline(result, sources) : [], [result, sources]);
   const hiddenClips = clips.filter(c => isIncludedVideo(c) && clipFrames(c) === 0);
-  useEffect(() => { setFrame(0); setPlaying(false); }, [result?.id]);
+  useEffect(() => { setFrame(0); setPlaying(false); }, [result?.id, currentWork?.media_id]);
   function update(next: AssemblyClip[]) {
     if (locked || next === clips) return;
     player.current?.pause(); setNotice('');
@@ -60,9 +62,9 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
     update(next); setSelected(next.slice(index).find(isIncludedVideo)?.id ?? next.find(isIncludedVideo)?.id ?? '');
   }
   function seek(at: number) {
-    const end = result ? buildTimeline(renderedClips).at(-1)?.end ?? toFrame(result.duration_ms ?? 0) : total;
+    const end = currentWork ? toFrame(currentWork.duration_ms ?? 0) : result ? buildTimeline(renderedClips).at(-1)?.end ?? toFrame(result.duration_ms ?? 0) : total;
     const next = Math.max(0, Math.min(at, end));
-    if (result && resultVideo.current) {
+    if ((result || currentWork) && resultVideo.current) {
       const video = resultVideo.current;
       video.pause(); video.currentTime = Number.isFinite(video.duration) ? Math.min(next / FPS, video.duration) : next / FPS; setFrame(next);
     }
@@ -100,13 +102,16 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
       </aside>
       <div className="assembly-monitor" id={`${layoutId}-monitor`}>
         <div className="assembly-monitor-heading"><div className="assembly-mode-switch">
-          <Button type={!result ? 'primary' : 'text'} onClick={() => { onResult(null); setFrame(0); setPlaying(false); }}>剪辑预览</Button>
-          <Button type={result?.kind === 'export' ? 'primary' : 'text'} disabled={!recent.length} onClick={() => { player.current?.pause(); onResult(recent[0]); setFrame(0); }}>成片回看</Button>
+          <Button type={!result && !currentWork ? 'primary' : 'text'} onClick={() => { onResult(null); setShowCurrentWork(false); setFrame(0); setPlaying(false); }}>剪辑预览</Button>
+          <Button type={result?.kind === 'export' || currentWork ? 'primary' : 'text'} disabled={!recent.length && !editor.value?.current_work} onClick={() => { player.current?.pause(); if (editor.value?.current_work) { onResult(null); setShowCurrentWork(true); } else onResult(recent[0]); setFrame(0); }}>成片回看</Button>
         </div><Button disabled={disabled || !total || clips.some(c => isIncludedVideo(c) && c.issue)} loading={previewBusy} onClick={onPreview}>合成预览</Button></div>
         {result ? <AssemblyResultPlayer key={result.id} job={result} aspect={result.aspect ?? editor.value?.assembly?.aspect ?? '16:9'}
           stale={result.is_stale || result.context_hash !== editor.value?.context_hash || editor.status !== 'saved'}
           videoRef={resultVideo} refresh={signal => editor.api.job(result.id, signal)} onResult={onResult} onFrame={setFrame} onPlaying={setPlaying} download={editor.api.download(result.id)}/>
-          : <AssemblyPlayer ref={player} clips={clips} aspect={editor.value?.assembly?.aspect ?? '16:9'} onFrame={at => { setFrame(at); if (playing) { const entry = locateFrame(entries, at); if (entry) setSelected(entry.clip.id); } }} onPlaying={setPlaying} onRefresh={editor.refreshMedia}/>}
+          : currentWork ? <AssemblyResultPlayer key={currentWork.media_id} job={currentWork} aspect={editor.value?.assembly?.aspect ?? '16:9'} stale={currentWork.is_stale || editor.status !== 'saved'} videoRef={resultVideo}
+            refresh={async signal => { const fresh = (await editor.api.get(signal)).current_work; if (!fresh) throw new Error('当前采用成片暂不可用。'); return fresh; }}
+            onResult={work => { const latest = editor.latest(); if (latest) editor.replace({ ...latest, current_work: work }); }} onFrame={setFrame} onPlaying={setPlaying} download={editor.api.downloadCurrent()}/>
+            : <AssemblyPlayer ref={player} clips={clips} aspect={editor.value?.assembly?.aspect ?? '16:9'} onFrame={at => { setFrame(at); if (playing) { const entry = locateFrame(entries, at); if (entry) setSelected(entry.clip.id); } }} onPlaying={setPlaying} onRefresh={editor.refreshMedia}/>}
       </div>
     </div>
     {layout.desktop && <AssemblyResizeHandle label="调整播放器高度" controls={`${layoutId}-monitor`} value={layout.playerHeight} min={200} max={layout.playerMax} onChange={playerHeight => layout.update({ playerHeight })}/>}
@@ -118,16 +123,16 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
       <Button disabled={locked || !selection || clips.indexOf(selection) >= clips.length - 1} onClick={() => selection && update(moveClip(clips, selection.id, clips.indexOf(selection) + 1))}>后移</Button>
       <Button disabled={locked || !selection} aria-pressed={selection?.muted ?? false} onClick={() => selection && update(clips.map(c => c.id === selection.id ? { ...c, muted: !c.muted } : c))}>{selection?.muted ? '恢复原声' : '片段静音'}</Button>
       <Button disabled={locked || !selection || (!selection.trim_in_ms && selection.trim_out_ms == null)} onClick={() => selection && update(clips.map(c => c.id === selection.id ? { ...c, trim_in_ms: 0, trim_out_ms: null } : c))}>恢复完整</Button>
-      <label className="assembly-jump">定位 <InputNumber aria-label="定位时间（秒）" min={0} max={(result?.duration_ms ?? total / FPS * 1000) / 1000} step={1 / FPS} precision={3} value={frame / FPS} onChange={v => { if (v !== null) seek(Math.round(v * FPS)); }}/> 秒</label>
+      <label className="assembly-jump">定位 <InputNumber aria-label="定位时间（秒）" min={0} max={(currentWork?.duration_ms ?? result?.duration_ms ?? total / FPS * 1000) / 1000} step={1 / FPS} precision={3} value={frame / FPS} onChange={v => { if (v !== null) seek(Math.round(v * FPS)); }}/> 秒</label>
     </div>
     {notice && <p role="alert" className="assembly-edit-notice">{notice}</p>}
-    {!result && hiddenClips.length > 0 && <div className="assembly-edit-notice" aria-label="无法显示在时间轴的片段">
+    {!result && !currentWork && hiddenClips.length > 0 && <div className="assembly-edit-notice" aria-label="无法显示在时间轴的片段">
       {hiddenClips.map(c => <p key={c.id} className="assembly-inline-actions">镜头 {c.shot_position} · {c.issue ? issues[c.issue] : '片段不足一帧'}，无法显示在时间轴。
         <Button size="small" disabled={locked} aria-label={`移除镜头 ${c.shot_position} 的问题片段`} onClick={() => remove(c.id)}>移除片段</Button></p>)}
     </div>}
-    <AssemblyTimeline id={`${layoutId}-track`} height={layout.desktop ? layout.layout.trackHeight : 152} clips={result ? renderedClips : clips} selected={result ? locateFrame(buildTimeline(renderedClips), frame)?.clip.id ?? '' : selection?.id ?? ''}
+    {!currentWork && <AssemblyTimeline id={`${layoutId}-track`} height={layout.desktop ? layout.layout.trackHeight : 152} clips={result ? renderedClips : clips} selected={result ? locateFrame(buildTimeline(renderedClips), frame)?.clip.id ?? '' : selection?.id ?? ''}
       frame={frame} playing={playing} disabled={locked} onSelect={select} onSeek={seek} onChange={update}
-      onPause={() => { player.current?.pause(); resultVideo.current?.pause(); }} onAdd={add}/>
-    {layout.desktop && <AssemblyResizeHandle label="调整轨道高度" controls={`${layoutId}-track`} value={layout.layout.trackHeight} min={152} max={360} onChange={trackHeight => layout.update({ trackHeight })}/>}
+      onPause={() => { player.current?.pause(); resultVideo.current?.pause(); }} onAdd={add}/>}
+    {layout.desktop && !currentWork && <AssemblyResizeHandle label="调整轨道高度" controls={`${layoutId}-track`} value={layout.layout.trackHeight} min={152} max={360} onChange={trackHeight => layout.update({ trackHeight })}/>}
   </div>;
 }

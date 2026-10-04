@@ -170,7 +170,7 @@ def complete_first(flow, monkeypatch):
         artifact_id = int(run.checkpoint["awaiting_artifacts"][0])
         scope = deepcopy(run.checkpoint["authorization"])
         session.rollback()
-        session.info["actor"] = actor(2)
+        session.info["actor"] = actor(1)
         service = AgentArtifactService(session, flow.settings)
         detail = service.get(flow.project_id, flow.episode_id, artifact_id)
         applied = service.adopt(

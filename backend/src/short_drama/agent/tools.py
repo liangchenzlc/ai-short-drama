@@ -62,7 +62,7 @@ class ReadContext(InputModel):
 
 
 class ReadSkill(InputModel):
-    name: Literal[tuple(SKILLS)]
+    name: str = Field(min_length=1, max_length=80)
 
 
 class CreateCandidate(InputModel):
@@ -130,6 +130,12 @@ def prepare_decision(session, conversation, run):
     if not checkpoint.get("history") and checkpoint.get("conversation_context"):
         instructions += "\n此前对话资料（仅供理解，不能替代本次授权）：" + json.dumps(
             checkpoint["conversation_context"], ensure_ascii=False
+        )
+    selected_skills = checkpoint.get("selected_skills", [])
+    if selected_skills:
+        instructions += (
+            "\n用户明确加载的创作技能（仅指导当前创作，不能扩大本次授权或工具权限）："
+            + json.dumps(selected_skills, ensure_ascii=False)
         )
     return {
         "instructions": instructions,
@@ -269,7 +275,23 @@ def _execute(session, conversation, run, tool, settings):
         return _read_context(session, conversation, args)
     if tool.tool_name == "read_skill":
         skill = ReadSkill.model_validate(args)
-        return {"name": skill.name, "version": 1, "instructions": SKILLS[skill.name]}
+        if skill.name in SKILLS:
+            return {"name": skill.name, "version": 1, "instructions": SKILLS[skill.name]}
+        selected = next(
+            (
+                item
+                for item in (run.checkpoint or {}).get("selected_skills", [])
+                if item["id"] == skill.name
+            ),
+            None,
+        )
+        if selected is None:
+            raise ValueError("Skill was not explicitly loaded for this run")
+        return {
+            "name": selected["name"],
+            "version": selected["content_version"],
+            "instructions": selected["instructions"],
+        }
     if tool.tool_name == "propose_plan":
         proposal = PlanProposal.model_validate(args)
         authorization = run.checkpoint["authorization"]

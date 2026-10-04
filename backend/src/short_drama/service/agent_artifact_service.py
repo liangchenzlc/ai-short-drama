@@ -23,6 +23,7 @@ from short_drama.schemas.agent_artifacts import (
 from short_drama.schemas.base import UINT64_MAX, parse_identifier
 from short_drama.service.asset_service import AssetService
 from short_drama.service.base import BaseService, utcnow
+from short_drama.service.publication import publish
 from short_drama.service.shot_script_service import ShotScriptService
 
 _UNSET = object()
@@ -209,6 +210,7 @@ class AgentArtifactService(BaseService):
                 bump_writing_version(episode)
             return {"novel_id": str(novel.id), "changed": changed, "action": "replace_novel"}
         script = dao.script(episode.id, artifact.script_id)
+        publish(script)
         changed = episode.editing_script_id != script.id
         if changed:
             episode.editing_script_id = script.id

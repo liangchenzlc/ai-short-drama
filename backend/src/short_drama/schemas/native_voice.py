@@ -2,7 +2,21 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .base import Identifier, InputModel
+from .base import Identifier, InputModel, ReadModel
+
+
+class AdoptedVoiceRead(ReadModel):
+    media_id: Identifier
+    url: str | None = None
+    duration_ms: int | None = None
+    row_version: int
+
+
+class NativeVoiceRead(ReadModel):
+    row_version: int
+    record_id: Identifier | None = None
+    current_voice: AdoptedVoiceRead | None = None
+    candidates: list[dict]
 
 
 class VoiceDesignSource(InputModel):

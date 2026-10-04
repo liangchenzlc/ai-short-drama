@@ -236,11 +236,10 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
   const selectable = rows.filter(item => !item.applied);
   const chosen = result?.items.filter(item => !item.applied && selected.has(item.candidate_id)) ?? [];
   const selectItem = (id: string, checked: boolean) => setSelected(previous => { const next = new Set(previous); if (checked) next.add(id); else next.delete(id); return next; });
-  const buttonLabel = pending ? '素材提取中' : tasks.some(item => item.status === 'succeeded') ? '查看提取结果' : 'AI 提取素材';
   const Frame = embedded && phase === 'settings' ? ExtractionInlineFrame : Dialog;
 
   return <>
-    {!embedded && <Button onClick={() => { setOpen(true); setPhase(activeId ? 'result' : 'settings'); }}>{buttonLabel}</Button>}
+    {!embedded && <Button onClick={() => { setOpen(true); setPhase(activeId ? 'result' : 'settings'); }}>从剧本提取素材</Button>}
     {(open || embedded && phase === 'settings') && <Frame title={phase === 'settings' ? '从剧本提取素材' : phase === 'history' ? '素材提取记录' : '素材提取结果'} className={`asset-extraction-dialog${phase === 'settings' ? ' is-settings' : ''}`} canClose={!busy} onClose={close}>
       <div className="extraction-body">
         {error && <Alert type="error" showIcon message={error} action={phase === 'result' && task?.status === 'succeeded' ? <Button disabled={busy} onClick={() => void reloadResult()}>重新载入结果</Button> : undefined}/>}

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
+from short_drama.agent.input_capabilities import input_capabilities
 from short_drama.agent.model_gateway import AgentGatewayError, AgentModelGateway
 from short_drama.ai import select_adapter
 from short_drama.core.crypto import KeyCipher
@@ -16,6 +17,7 @@ from short_drama.core.exceptions import BusinessError, Conflict, NotFound, Workf
 from short_drama.core.identity import require_actor
 from short_drama.domain import AIModelConfig, UserModelPreference
 from short_drama.domain.collaboration import User, UserSession
+from short_drama.schemas.agent_context import ModelInputsPatch
 from short_drama.schemas.agent_runtime import AgentModelRead, AgentModelsRead, ModelVerify
 from short_drama.schemas.base import parse_identifier
 from short_drama.service.base import BaseService, utcnow
@@ -68,6 +70,7 @@ def read_model(row, preferred_id=None):
         streaming=evidence.get("streaming", "not_tested"),
         verified=verified,
         preferred=row.id == preferred_id,
+        input_capabilities=input_capabilities(model_snapshot(row)),
     )
 
 
@@ -154,6 +157,32 @@ class AgentModelService(BaseService):
                 items=items,
                 preferred_id=preferred if any(row.id == preferred for row in rows) else None,
             )
+
+    def patch_inputs(self, identifier, payload):
+        values = self._payload(ModelInputsPatch, payload)
+        with self._transaction():
+            row = self.available(identifier, lock=True)
+            if row.row_version != values["row_version"]:
+                raise Conflict("模型配置已更新，请重新载入")
+            if values["audio"] and read_model(row).protocol != "openai_chat.v1":
+                raise WorkflowError(
+                    "agent_audio_input_unsupported", "Responses 协议不支持音频输入", 422
+                )
+            cache = deepcopy(row.capability_cache or {})
+            evidence = capability_evidence(row)
+            row.row_version += 1
+            if evidence:
+                cache["agent"] = {**evidence, "row_version": row.row_version}
+            cache["agent_inputs"] = {
+                "image": values["image"],
+                "audio": values["audio"],
+                "row_version": row.row_version,
+                "model_key": row.model_key,
+                "base_url": row.base_url,
+                "credential_identity": hashlib.sha256((row.apikey or "").encode()).hexdigest(),
+            }
+            row.capability_cache = cache
+            return read_model(row, self.preferred_id())
 
     def _probe_identity(self, actor, *, require_session=False):
         if not self.settings.agent_enabled:

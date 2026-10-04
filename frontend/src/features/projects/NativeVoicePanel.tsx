@@ -50,6 +50,10 @@ export function CharacterVoicePanel({ projectId, characterId, disabled }: { proj
   if (!enabled) return null;
   return <section className="native-voice" aria-label="角色声音"><h3>角色声音</h3><Button disabled={busy || disabled} onClick={() => void action(async () => { await refresh(); })}>刷新声音候选</Button><p>按声音描述设计音色，试听采用后，所有相关分镜复用这份样音。样音内容不会作为分镜台词。</p>
     {error && <Alert type="error" showIcon message={error}/>}
+    {state?.current_voice && <section aria-label="当前采用音色"><strong>当前角色音色</strong>
+      {state.current_voice.url ? <audio aria-label="试听当前角色音色" controls preload="none" src={state.current_voice.url}/> : <p>音色地址暂不可用，请刷新后重试。</p>}
+      {state.current_voice.duration_ms != null && <p>样音 {(state.current_voice.duration_ms / 1000).toFixed(2)} 秒</p>}
+    </section>}
     <fieldset disabled={disabled || busy}><ConfigSelect kind="audio" label="百炼音色设计模型" value={config} onChange={setConfig} onResolvedChange={setConfig} disabled={disabled || busy}/>
       <label>声音描述<Input.TextArea aria-label="声音描述" maxLength={500} value={description} onChange={e => setDescription(e.target.value)} placeholder="例如：青年男性，中低音，略带沙哑，语速平稳"/></label>
       <label>试音文本<Input.TextArea aria-label="试音文本" maxLength={200} value={preview} onChange={e => setPreview(e.target.value)}/></label><p>15～200 字符；建议简短自然，生成后须为 3～7.5 秒才可用于视频参考。</p>

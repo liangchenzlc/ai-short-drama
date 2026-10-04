@@ -2,7 +2,17 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from .base import Identifier, InputModel
+from .base import Identifier, InputModel, ReadModel
+
+
+class AssemblyWorkRead(ReadModel):
+    media_id: Identifier
+    url: str | None = None
+    width: int | None = None
+    height: int | None = None
+    duration_ms: int | None = None
+    is_stale: bool
+
 
 ClipKey = Annotated[
     str,

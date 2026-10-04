@@ -30,6 +30,7 @@ from short_drama.schemas.episode_storyboard import (
 from short_drama.service.storage_service import StorageService
 
 from .base import BaseService, utcnow
+from .publication import public_voice_context
 from .shot_context import compute_shot_context_hash, normalize_shot_context
 from .shot_video_context import DEFAULT_VIDEO_SETTINGS, video_context_hash
 
@@ -215,6 +216,7 @@ class EpisodeStoryboardService(BaseService):
         video = None
         if result:
             current, media, asset_id = result
+            actor = self.session.info.get("actor")
             video = {
                 "media_id": str(media.id),
                 "media_asset_id": str(asset_id) if asset_id else None,
@@ -225,7 +227,9 @@ class EpisodeStoryboardService(BaseService):
                 else None,
                 "resolution": current.resolution,
                 "duration_ms": media.duration_ms or current.duration,
-                "first_frame_media_id": current.first_frame_media_id,
+                "first_frame_media_id": current.first_frame_media_id
+                if actor is None or media.created_by == actor.user_id
+                else None,
                 "is_stale": current.context_hash != video_hash,
             }
         return StoryboardShotRead(
@@ -244,7 +248,7 @@ class EpisodeStoryboardService(BaseService):
             video_system_prompt=shot_video_system_prompt(),
             video_settings=video_settings,
             video_context_hash=video_hash,
-            native_speech=native_speech,
+            native_speech=public_voice_context(native_speech),
             video=video,
             deleted_at=shot.deleted_at,
         ).model_dump(mode="json")

@@ -39,6 +39,10 @@ export interface UpdateAgentConversation {
 export interface AgentModel {
   id: string; name: string; model_key: string; row_version: number; protocol: string | null;
   tool_calling: boolean; tool_result_continuation: boolean; streaming: 'verified' | 'not_tested'; verified: boolean; preferred: boolean;
+  input_capabilities?: {
+    text: true; image: boolean; audio: boolean; video: 'sampled_frames' | 'unsupported';
+    evidence: 'declared' | 'model_family' | 'text_only';
+  };
 }
 export interface AgentModelPage { items: AgentModel[]; preferred_id: string | null }
 export type AgentMessageMode = 'discuss' | 'generate';
@@ -65,7 +69,22 @@ export interface AgentRun {
 }
 export interface AgentRunPage { items: AgentRun[]; total: number; offset: number; limit: number }
 export interface AgentTaskSpec { kind: 'image' | 'video'; target_id: string; instructions: string; model_config_id: string; count: number; parameters: Record<string, unknown> }
-export interface AgentSendInput { content: string; mode: AgentMessageMode; model_config_id?: string; task?: AgentTaskSpec }
+export interface AgentSendInput {
+  content: string; mode: AgentMessageMode; model_config_id?: string; task?: AgentTaskSpec;
+  attachment_ids?: string[]; skills?: { id: string; content_version: string }[];
+  video_audio?: 'include' | 'visual_only';
+}
+export interface AgentAttachment {
+  id: string; kind: 'text' | 'image' | 'video' | 'audio'; name: string;
+  mime_type: string; byte_size: number; media_id: string | null; url: string | null;
+  text_preview: string | null; checksum_sha256: string; pending: boolean;
+  metadata: { has_audio?: boolean; source_type?: string; source_id?: string; [key: string]: unknown };
+}
+export interface AgentSkill {
+  id: string; name: string; filename: string | null; builtin: boolean;
+  content_version: string; row_version: string | null; enabled: boolean;
+  instructions: string; checksum_sha256: string;
+}
 export interface AgentSendResult { message: AgentMessage; run: AgentRun; cursor: number }
 export interface AgentEvent {
   seq: number; event_type: string; run_id: string | null; payload: Record<string, unknown>; created_at: string;

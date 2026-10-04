@@ -21,6 +21,9 @@ from .collaboration import ResourceScope
 
 class MediaFile(ResourceScope, Base):
     __tablename__ = "media_files"
+    published_at: Mapped[datetime | None] = mapped_column(
+        DATETIME(fsp=6), nullable=True, comment="明确采用或附加为项目作品的时间；私有输出为空"
+    )
 
     video_metadata: Mapped[dict | None] = mapped_column(
         JSON(none_as_null=True), nullable=True, comment="ffprobe实际视频信息与探测版本，非请求参数"

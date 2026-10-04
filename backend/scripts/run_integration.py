@@ -11,9 +11,12 @@ import sys
 from short_drama.core.config import Settings
 
 environment = os.environ.copy()
-environment["TEST_DATABASE_URL"] = (
-    Settings().database_url.set(database="short_drama_test").render_as_string(hide_password=False)
-)
+if not environment.get("TEST_DATABASE_URL"):
+    environment["TEST_DATABASE_URL"] = (
+        Settings()
+        .database_url.set(database="short_drama_test")
+        .render_as_string(hide_password=False)
+    )
 raise SystemExit(
     subprocess.call(
         [sys.executable, "-m", "pytest", *(sys.argv[1:] or ["tests/integration", "-q"])],

@@ -31,6 +31,7 @@ from pydantic_ai.exceptions import (
     UsageLimitExceeded,
 )
 from pydantic_ai.messages import (
+    BinaryContent,
     ModelMessage,
     ModelMessagesTypeAdapter,
     ModelResponse,
@@ -45,17 +46,57 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets.external import ExternalToolset
 from pydantic_ai.usage import UsageLimits
 
+from short_drama.agent.input_capabilities import input_capabilities
 from short_drama.ai.adapters import endpoint, select_adapter
 from short_drama.ai.transport import SafeTransport
 from short_drama.ai.types import GenerationError
 
 FRAMEWORK_VERSION = version("pydantic-ai-slim")
 HISTORY_CODEC_VERSION = 1
-MAX_HISTORY_BYTES = 512 * 1024
-MAX_REQUEST_BYTES = 512 * 1024
+MAX_HISTORY_BYTES = 8 * 1024**2
+MAX_REQUEST_BYTES = 8 * 1024**2
 MAX_TOOLS = 32
 _DEFERRED_ADAPTER = TypeAdapter(DeferredToolRequests)
 _RESULTS_ADAPTER = TypeAdapter(DeferredToolResults)
+_BINARY_ADAPTER = TypeAdapter(BinaryContent)
+
+
+def _prompt_content(value, snapshot):
+    """Only inline managed bytes are accepted; SDK URL objects remain forbidden."""
+    if value is None or isinstance(value, str):
+        return value
+    if not isinstance(value, list) or not value or len(value) > 80:
+        raise AgentGatewayError("unsupported_agent_history_content")
+    capability = input_capabilities(snapshot)
+    parts = []
+    total = 0
+    for item in value:
+        if isinstance(item, str):
+            total += len(item.encode("utf-8"))
+            parts.append(item)
+            continue
+        if isinstance(item, dict):
+            if item.keys() - {"kind", "data", "media_type", "identifier", "vendor_metadata"}:
+                raise AgentGatewayError("unsupported_agent_history_content")
+            try:
+                item = _BINARY_ADAPTER.validate_python(item)
+            except ValidationError:
+                raise AgentGatewayError("unsupported_agent_history_content") from None
+        if not isinstance(item, BinaryContent):
+            raise AgentGatewayError("unsupported_agent_history_content")
+        if item.media_type in {"image/jpeg", "image/png", "image/webp"}:
+            supported = capability["image"]
+        elif item.media_type in {"audio/wav", "audio/mpeg"}:
+            supported = capability["audio"]
+        else:
+            supported = False
+        if not supported or not item.data:
+            raise AgentGatewayError("unsupported_agent_input_modality")
+        total += len(item.data)
+        parts.append(item)
+    if total > 4 * 1024**2 + 262144:
+        raise AgentGatewayError("agent_request_too_large")
+    return parts
 
 
 class AgentGatewayError(GenerationError):
@@ -539,7 +580,7 @@ class AgentModelGateway:
             or not isinstance(snapshot.get("base_url"), str)
             or not isinstance(instructions, str)
             or not instructions.strip()
-            or (user_prompt is not None and not isinstance(user_prompt, str))
+            or (user_prompt is not None and not isinstance(user_prompt, (str, list)))
             or type(max_output_tokens) is not int
             or not 1 <= max_output_tokens <= 8192
             or type(max_tool_calls) is not int
@@ -552,9 +593,10 @@ class AgentModelGateway:
         ):
             raise AgentGatewayError("invalid_agent_segment")
         secret = _credential(credential)
+        user_prompt = _prompt_content(user_prompt, snapshot)
         messages = deserialize_history(history)
-        # This is a text decision boundary. SDK multimodal URL downloads use a
-        # separate client and would bypass both the protected POST and offline replay.
+        # Inline bytes are durable protocol data. URL downloads would bypass the
+        # protected POST and offline replay and therefore remain forbidden.
         permitted_parts = {
             "system-prompt",
             "user-prompt",
@@ -566,10 +608,10 @@ class AgentModelGateway:
         }
         for message in messages:
             for part in message.parts:
-                if part.part_kind not in permitted_parts or (
-                    part.part_kind == "user-prompt" and not isinstance(part.content, str)
-                ):
+                if part.part_kind not in permitted_parts:
                     raise AgentGatewayError("unsupported_agent_history_content")
+                if part.part_kind == "user-prompt":
+                    _prompt_content(part.content, snapshot)
                 if part.part_kind == "tool-return":
                     _json_value(part.content)
         if not messages and user_prompt is None:

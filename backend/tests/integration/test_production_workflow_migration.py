@@ -185,6 +185,8 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
         connection.commit()
 
         connection.exec_driver_sql("DROP TABLE asset_image_candidates")
+        connection.exec_driver_sql("ALTER TABLE episode_scripts DROP COLUMN published_at")
+        connection.exec_driver_sql("ALTER TABLE media_files DROP COLUMN published_at")
         connection.exec_driver_sql(
             "ALTER TABLE shot_videos DROP FOREIGN KEY fk_shot_videos_first_frame, "
             "DROP INDEX idx_shot_videos_first_frame, DROP COLUMN first_frame_media_id, "
@@ -263,6 +265,7 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
             "2026-09-22-storyboard-prompts",
             "2026-09-24-generation-references",
             "2026-09-28-shot-video",
+            "2026-10-03-private-candidates",
         ):
             for path in sorted((MIGRATIONS.parent / directory).glob("*.sql")):
                 for statement in mysql_statements(path):

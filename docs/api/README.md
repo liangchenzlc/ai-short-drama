@@ -41,9 +41,9 @@
 
 新提交、重试、恢复与取消遵守 [协作权限矩阵](../plans/2026-10-02-project-collaboration.md)。API 不接受客户端提供的 owner、scope_user_id、initiated_by 或操作人字段。
 
-## Agent 创作与共享候选
+## Agent 创作与私有候选
 
-Agent 默认开启；运行须完成七表迁移、保持账号认证并启动独立 Agent Worker，执行可通过 `AGENT_ENABLED=false` 显式关闭。实现与验收状态见[实施契约](../plans/2026-10-02-agent-mode-implementation.md)，配置和故障处理见[部署说明](../agent-deployment.md)。所选配置的真实文本、图片与视频验收已完成，详见[验收记录](../agent-verification.md)；以下接口与本地协议测试仍不能证明其他供应商配置的远端兼容性。
+Agent 默认开启；运行须完成九表迁移、保持账号认证并启动独立 Agent Worker，执行可通过 `AGENT_ENABLED=false` 显式关闭。附件、个人 Skill、模型输入能力及限制见 [Agent 上下文 API](agent.md)，配置和故障处理见[部署说明](../agent-deployment.md)。既有所选配置的真实文本、图片与视频证据见[验收记录](../agent-verification.md)；本次本地协议测试仍不能证明其他供应商或新增多模态配置的远端兼容性。
 
 私有入口以 [Agent 路由](../../backend/src/short_drama/api/v1/agent.py)、[会话 schema](../../backend/src/short_drama/schemas/agent.py) 和[运行 schema](../../backend/src/short_drama/schemas/agent_runtime.py) 为准。会话、消息、运行、审核与事件仅对拥有者且仍有当前项目访问权的账号开放，项目成员身份不能读取别人的对话或模型配置。
 
@@ -63,15 +63,17 @@ Agent 默认开启；运行须完成七表迁移、保持账号认证并启动�
 
 消息 `mode=discuss` 不授权创作任务；`mode=generate` 可携带明确单项 `task`，没有单项时先进入计划审核。决策模型使用 text 配置，与任务里的图片/视频执行模型分开。媒体计划冻结参数与参考图；参考图改变需要新计划审核或新的明确单项授权。镜头没有已采用且不过期的图片时，不能冻结视频任务（`video_reference_required`），应先生成并采用图片，再提出视频任务。同一对话仅有一个活动运行，不自动排队付费消息。未知发送结果应以同一请求和幂等键明确核对，不能自动创建新请求；供应商受理未知的模型段不会自动重发。运行 DTO 不暴露 SDK 私有历史或原始模型回复。
 
-共享成果以 [Agent artifact 路由](../../backend/src/short_drama/api/v1/agent_artifacts.py) 与 [artifact schema](../../backend/src/short_drama/schemas/agent_artifacts.py) 为准，受项目访问权约束，独立于私有会话 API。七表 schema 就绪时，即使执行开关关闭，成员仍可读取和采用已有成果；schema 不可用时返回 `agent_schema_unavailable`。
+本人候选以 [Agent artifact 路由](../../backend/src/short_drama/api/v1/agent_artifacts.py) 与 [artifact schema](../../backend/src/short_drama/schemas/agent_artifacts.py) 为准，同时校验作者及项目访问权，独立于私有会话 API。九表 schema 就绪时，即使执行开关关闭，作者仍可读取和采用本人已有候选；schema 不可用时返回 `agent_schema_unavailable`。项目主人与成员均不能读取或采用他人的候选，只有明确采用的作品进入共享业务内容。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `E/agent-artifacts` | 按 kind/status 筛选、分页共享候选 |
-| GET | `E/agent-artifacts/{artifact_id}` | 共享正文/patch/差异与来源快照 |
+| GET | `E/agent-artifacts` | 按 kind/status 筛选、分页本人候选 |
+| GET | `E/agent-artifacts/{artifact_id}` | 本人候选正文/patch/差异与来源快照 |
 | POST | `E/agent-artifacts/{artifact_id}/adopt` | 按候选与当前作品版本明确采用，返回稳定采用回执 |
 
-采用携带整数 `row_version/content_version` 以及适用的 `storyboard_version/target_row_version`；共享媒体影响需要明确确认。提取与分镜候选通过 `native_review` 提交原流程的完整逐项选项或追加/替换审核；媒体省略该对象，由后端从冻结成果推导并校验原生采用契约。来源过期或版本冲突不能被确认选项绕过。共享 DTO 不包含私有会话/Run/Tool 来源、工具参数、模型密钥或原始供应商响应；共享采用不会自动唤醒任何人的付费运行。
+采用携带整数 `row_version/content_version` 以及适用的 `storyboard_version/target_row_version`；共享媒体影响需要明确确认。提取与分镜候选通过 `native_review` 提交原流程的完整逐项选项或追加/替换审核；媒体省略该对象，由后端从冻结成果推导并校验原生采用契约。来源过期或版本冲突不能被确认选项绕过。作品 DTO 不包含他人的候选、任务或生成记录关联；采用不会自动唤醒任何人的付费运行。
+
+上述私有规则同样适用于小说改编、素材提取、分镜、图像、视频、音频、批量生成、任务中心、媒体资产库及成片历史。列表总数、详情、下载、恢复/重试和采用均按发起人或作者校验。已采用音色通过 `current_voice` 读取（含 `media_id/url/duration_ms/row_version`），已采用成片通过 `assembly.current_work` 及 `/assembly/current/download` 读取；分享作品不公开同一次生成的其他输出或模型配置。
 
 ## 项目与分集
 
@@ -170,7 +172,7 @@ OpenAI Images 接入的 `gpt-image-*` 模型（包括网关别名）支持参考
 
 ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 是可为空的补充要求（≤4000字符），reference_media_ids 可传额外输入参考图，并与素材已保存参考图合并去重（合计最多 16 张）。名称及描述/prompt 的已保存内容由服务端读取，版本冲突返回 `asset_version_conflict`，缺少必要内容返回 `asset_content_required`。参数省略时沿用模型默认；不隐式继承入口项目风格。
 
-任务和媒体库列表都支持 `source_scene=asset_image&source_id=<素材ID>`。同一共享素材跨库使用相同历史，复制素材的新 ID 不继承原任务。任务详情提供 source_snapshot 与 effective_prompt；幂等重放先返回既有任务，不因素材后来编辑而重新生成。
+任务和媒体库列表都支持 `source_scene=asset_image&source_id=<素材ID>`。本人在同一素材的各库入口读取相同历史，复制素材的新 ID 不继承原任务。任务详情提供 source_snapshot 与 effective_prompt；幂等重放先返回既有任务，不因素材后来编辑而重新生成。
 
 图片归档后自动进入 `/assets/{asset_id}/image-candidates`，不会自动确认素材。候选可选 `generation` 对象包含 generation_id、record_id、source_asset_id、source_row_version、source_content_hash、is_stale、stale_reason。旧来源原因包括 content_changed、source_mismatch、snapshot_missing；上传、通用生成或无法关联生成记录的旧候选返回 null。
 

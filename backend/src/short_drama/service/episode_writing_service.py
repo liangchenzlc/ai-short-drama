@@ -20,6 +20,7 @@ from short_drama.schemas.episode_writing import (
 )
 
 from .base import BaseService, utcnow
+from .publication import publish
 
 
 class EmptyScript(BusinessError):
@@ -73,6 +74,9 @@ class EpisodeWritingService(BaseService):
                 .outerjoin(AsyncTask, AsyncTask.id == NovelScriptRecord.batch_id)
                 .where(EpisodeScript.episode_id == episode.id)
             )
+            actor = self.session.info.get("actor")
+            if actor and script_id is None:
+                statement = statement.where(EpisodeScript.created_by == actor.user_id)
             if script_id is not None:
                 statement = statement.where(EpisodeScript.id == parse_identifier(script_id))
             total = self.session.scalar(select(func.count()).select_from(statement.subquery()))
@@ -104,7 +108,7 @@ class EpisodeWritingService(BaseService):
 
     def _create_document(self, model, episode_id, content, **extra):
         now = utcnow()
-        return BaseDAO(self.session, model).create(
+        document = BaseDAO(self.session, model).create(
             {
                 "episode_id": episode_id,
                 "content": content,
@@ -115,6 +119,7 @@ class EpisodeWritingService(BaseService):
                 **extra,
             }
         )
+        return publish(document) if model is EpisodeScript else document
 
     def _changed(self, episode):
         bump_writing_version(episode)
@@ -165,6 +170,7 @@ class EpisodeWritingService(BaseService):
         with self._transaction():
             episode = self._scope(project_id, episode_id, data["content_version"])
             target = self.dao.script(episode.id, data["script_id"])
+            publish(target)
             if episode.editing_script_id != target.id:
                 episode.editing_script_id = target.id
                 self._changed(episode)

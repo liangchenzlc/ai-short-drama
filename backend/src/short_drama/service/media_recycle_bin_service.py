@@ -1,7 +1,14 @@
 from sqlalchemy import select
 
 from short_drama.core.exceptions import BusinessError, Conflict
-from short_drama.domain import AIModelConfig, MediaRecycleBin, ShotImage, ShotScript, ShotVideo
+from short_drama.domain import (
+    AIModelConfig,
+    MediaFile,
+    MediaRecycleBin,
+    ShotImage,
+    ShotScript,
+    ShotVideo,
+)
 from short_drama.schemas import MediaRecycleBinCreate, MediaRecycleBinRead
 
 from .base import BaseService
@@ -13,6 +20,19 @@ class MediaRecycleBinService(BaseService):
     read_schema = MediaRecycleBinRead
     parent_model = ShotScript
     parent_field = "shot_id"
+
+    def _read(self, entity):
+        result = super()._read(entity)
+        actor = self.session.info.get("actor")
+        if (
+            actor
+            and self.session.scalar(
+                select(MediaFile.created_by).where(MediaFile.id == entity.media_id)
+            )
+            != actor.user_id
+        ):
+            result = result.model_copy(update={"model_id": None, "prompt": ""})
+        return result
 
     def _validate_create(self, values):
         kind = "video" if values.get("duration") is not None else "image"

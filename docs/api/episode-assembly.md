@@ -16,8 +16,11 @@
 | POST /exports/{id}/retry | 根据原快照创建新任务，返回 202 |
 | POST /exports/{id}/apply | 设为本集当前成片 |
 | GET /exports/{id}/download | 以附件方式流式下载 MP4 |
+| GET /current/download | 流式下载本集明确采用的当前成片，无需访问作者私有任务 |
 
 GET 返回活动 `clips` 和按分镜去重的 `sources` 素材列表。删除轨道片段不会删除素材；空轨道仍保留素材列表。任务返回只读 `timeline`（片段、来源、入出点、静音），用于准确标识旧成片对应的编辑版本。
+
+导出任务、预览及历史仅对发起人开放。GET 聚合响应另含 `current_work: null | {media_id,url,width,height,duration_ms,is_stale}`，项目成员可播放和下载明确采用的成片；该投影不包含作者的任务 ID、快照或生成参数。临时地址失效后重新 GET 聚合响应，刷新只更新当前作品和任务进度，不能覆盖本地剪辑草稿。
 
 PATCH 请求包含 `row_version`、可选 `request_id`、`resolution`（720p/1080p）和完整 `clips`。每个片段提交 `id`、`included`、`muted`、`trim_in_ms`、`trim_out_ms`，数组顺序就是导出顺序。`trim_out_ms=null` 表示原片结尾。新片段使用小写 UUID，并附 `source_clip_id` 引用本集已有片段；服务端复制来源媒体。客户端不能提交媒体 ID 或存储地址替换视频。一次提交也可以继续引用本次此前声明的新片段。
 

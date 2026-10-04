@@ -25,13 +25,15 @@ def agent_schema_sql():
             str(CreateIndex(index).compile(dialect=dialect())).strip() + ";"
             for index in sorted(table.indexes, key=lambda value: value.name)
         )
-    return (
-        "-- Additive Agent schema: seven new tables, no existing-table alterations.\n"
-        "-- Generated from short_drama.domain.agent; select the intended database first.\n"
+    source = (
+        f"-- Additive Agent schema: {len(AGENT_TABLES)} tables, no existing-table alterations.\n"
+        "-- Generated from short_drama.domain.agent and agent_context; "
+        "select the intended database first.\n"
         "-- Use scripts/agent_migration.py --apply for safe table-level reentry.\n\n"
         + "\n\n".join(statements)
         + "\n"
     )
+    return "\n".join(line.rstrip() for line in source.splitlines()) + "\n"
 
 
 def apply(engine):
@@ -77,7 +79,7 @@ def main():
                 return 1
         else:
             path.write_text(source, encoding="utf-8", newline="\n")
-        print("Agent migration SQL matches seven current models.")
+        print(f"Agent migration SQL matches {len(AGENT_TABLES)} current models.")
         return 0
     from short_drama.core.config import Settings
     from short_drama.db.session import build_engine

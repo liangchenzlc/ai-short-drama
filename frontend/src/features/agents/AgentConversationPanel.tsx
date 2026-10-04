@@ -5,9 +5,10 @@ import { ApiError, errorMessage } from '../../api/http';
 import type { AgentConversation } from '../../api/types/agents';
 import { Icon } from '../../components/ui/Icon';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
-import { agentRunLabel, isAgentRunActive, type CreationMode } from './agent-navigation';
+import { isAgentRunActive, type CreationMode } from './agent-navigation';
 import type { useAgentAvailability } from './useAgentAvailability';
 import { AgentConversationRuntime } from './AgentConversationRuntime';
+import { Dialog } from '../../components/ui/Dialog';
 
 export function AgentConversationPanel({ projectId, episodeId, episodeTitle, selectedId, mode, stage, enabled, readOnly, availability, beforeSend, onSelect, onConversation, onOpenArtifact }: {
   projectId: string; episodeId: string; episodeTitle: string; selectedId?: string; enabled: boolean; readOnly: boolean;
@@ -32,6 +33,7 @@ export function AgentConversationPanel({ projectId, episodeId, episodeTitle, sel
   const [actionError, setActionError] = useState('');
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [notice, setNotice] = useState('');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -112,7 +114,7 @@ export function AgentConversationPanel({ projectId, episodeId, episodeTitle, sel
       if (stage) stageCreationErrors.current.delete(stage);
       if (stage && (automatic || isCurrentSelection(intent))) stageConversations.current.set(stage, item.id);
       refreshList();
-      if (isCurrentSelection(intent)) { setSelected(item); setNotice('新对话已创建。'); selectionCallback.current(item.id); }
+      if (isCurrentSelection(intent)) { setLoadingDetail(true); setHistoryOpen(false); selectionCallback.current(item.id); }
     } catch (cause) {
       const message = `${errorMessage(cause)} 新对话请求已保留，重试会核对同一次创建。`;
       if (stage && (automatic || !intent.id)) stageCreationErrors.current.set(stage, message);
@@ -146,13 +148,14 @@ export function AgentConversationPanel({ projectId, episodeId, episodeTitle, sel
   if (selected && !options.some(item => item.id === selected.id)) options.unshift(selected);
 
   return <aside className="agent-conversation-panel" aria-label="Agent 创作对话">
-    <header className="agent-panel-heading"><div><h2>Agent 创作</h2><p>围绕本集内容，逐步完善作品。</p></div><Button type="text" aria-label="刷新对话" icon={<Icon name="refresh" size={16}/>} disabled={busy} loading={loading} onClick={() => { availability.refresh(); refresh(); }}/></header>
+    <header className="agent-panel-heading"><h2>对话</h2><Button type="text" aria-label="对话记录" title="对话记录" icon={<Icon name="tasks" size={16}/>} disabled={!availability.available || busy} onClick={() => setHistoryOpen(true)}/></header>
     {!availability.available ? <div className="agent-panel-unavailable" role="status">
       {availability.loading ? <Skeleton active title paragraph={{ rows: 3 }}/> : <><h3>{availability.reason}</h3><p>{availability.error || '你可以继续在提示词模式中创作。'}</p><Button onClick={availability.refresh}>重新检查</Button></>}
     </div> : <>
+      {historyOpen && <Dialog title="对话记录" className="agent-history-dialog" onClose={() => setHistoryOpen(false)}>
       <div className="agent-conversation-toolbar">
         <Select aria-label="当前对话" value={selected?.id ?? selectedId} showSearch optionFilterProp="label" loading={loading}
-          placeholder="选择本集对话" disabled={busy} onChange={id => { setNotice(''); onSelect(id); }}
+          placeholder="选择本集对话" disabled={busy} onChange={id => { setNotice(''); setHistoryOpen(false); onSelect(id); }}
           options={options.map(item => ({ value: item.id, label: `${item.title}${item.archived ? '（已归档）' : ''}` }))}
           notFoundContent={loading ? '正在载入…' : '还没有本集对话'}/>
         <Button aria-label="新建对话" title="新建对话" icon={<Icon name="plus" size={16}/>} loading={busy && !selected} disabled={readOnly || busy} onClick={() => void create()}/>
@@ -170,20 +173,20 @@ export function AgentConversationPanel({ projectId, episodeId, episodeTitle, sel
         <div><Button htmlType="submit" type="primary" loading={busy} disabled={!title.trim()}>保存名称</Button><Button disabled={busy} onClick={() => setRenaming(false)}>取消</Button></div>
       </form>}
       {error && <Alert type="error" showIcon message="对话列表暂时无法载入" description={error} action={<Button size="small" onClick={refresh}>重试</Button>}/>}
+      <Button type="link" disabled={busy} loading={loading} onClick={() => { availability.refresh(); refresh(); }}>刷新对话记录</Button>
+      </Dialog>}
       {actionError && <Alert type="error" showIcon message={actionError} action={<Button size="small" onClick={refresh} disabled={busy}>核对最新状态</Button>}/>}
       {notice && <p className="agent-inline-notice" role="status">{notice}</p>}
       <div className="agent-conversation-content">
         {loadingDetail ? <Skeleton active title paragraph={{ rows: 4 }}/> : detailError ? <Alert type="warning" showIcon message={detailError} action={<Button size="small" onClick={refresh}>重新载入</Button>}/>
           : selected ? <>
-            <div className="agent-conversation-context"><span>当前分集</span><strong>{episodeTitle}</strong><span className="agent-conversation-state">{selected.archived ? '已归档' : agentRunLabel(selected.last_run_status)}</span></div>
             {selected.archived ? <div className="agent-conversation-empty"><Icon name="film" size={28}/><h3>这段对话已归档</h3><p>恢复对话后可继续使用；已有候选和作品不受影响。</p><Button disabled={readOnly || busy} loading={busy} onClick={() => void update({ archived: false })}>恢复对话</Button></div> :
               <AgentConversationRuntime key={selected.id} conversation={selected} draft={drafts[selected.id] ?? ''} readOnly={readOnly}
                 beforeSend={beforeSend} navigationIntent={() => selection.current} onOpenArtifact={onOpenArtifact}
                 onDraft={value => setDrafts(old => ({ ...old, [selected.id]: value }))}
                 onRun={run => setSelected(old => old?.id === selected.id && old.last_run_status !== (run?.status ?? null) ? { ...old, last_run_status: run?.status ?? null } : old)}/>}
-          </> : <div className="agent-conversation-empty"><Icon name="film" size={28}/><h3>{items.length ? '选择一段对话继续' : '给本集留一段创作对话'}</h3><p>对话仅你可见；写入项目的候选与作品按项目权限共享。</p><Button type="primary" loading={busy} disabled={readOnly || busy || loading} onClick={() => void create()}>新建对话</Button></div>}
+          </> : <div className="agent-conversation-empty"><h3>从本集作品开始</h3><p>说说想调整的故事、角色或镜头。对话与候选仅你可见，采用后的作品与项目成员共享。</p><Button type="primary" loading={busy} disabled={readOnly || busy || loading} onClick={() => void create()}>新建对话</Button></div>}
       </div>
-      <footer className="agent-panel-footnote">生成候选、采用内容与确认定稿是不同操作。</footer>
     </>}
   </aside>;
 }

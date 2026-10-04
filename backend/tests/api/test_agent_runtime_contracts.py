@@ -40,6 +40,16 @@ def client(monkeypatch):
         ({"content": "Write it"}, {"Idempotency-Key": "bad key"}),
         ({"content": "   "}, {"Idempotency-Key": "valid"}),
         ({"content": "Write it", "owner_user_id": "2"}, {"Idempotency-Key": "valid"}),
+        ({"content": "Review", "attachment_ids": ["1", "1"]}, {"Idempotency-Key": "valid"}),
+        (
+            {"content": "Review", "attachment_ids": [str(i) for i in range(1, 18)]},
+            {"Idempotency-Key": "valid"},
+        ),
+        (
+            {"content": "Review", "skills": [{"id": "script.v1", "content_version": "1"}] * 2},
+            {"Idempotency-Key": "valid"},
+        ),
+        ({"content": "Review", "video_audio": "ignore"}, {"Idempotency-Key": "valid"}),
         (
             {"content": "Discuss", "task": {"kind": "novel", "instructions": "Write"}},
             {"Idempotency-Key": "valid"},
@@ -108,6 +118,39 @@ def test_model_probe_requires_version_and_forbids_caller_supplied_snapshot(clien
         client.post(path, json={"row_version": 1, "base_url": "https://other.test"}).status_code
         == 422
     )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"row_version": 1, "image": True, "audio": False, "owner_user_id": "2"},
+        {"row_version": 0, "image": True, "audio": False},
+    ],
+)
+def test_model_input_declaration_rejects_invalid_versions_and_authority(client, body):
+    assert client.patch("/api/v1/agent/models/1/inputs", json=body).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"row_version": "1"},
+        {"row_version": "1", "instructions": "a\x00b"},
+        {"row_version": "1", "enabled": None},
+        {"row_version": "1", "instructions": "Valid", "owner_user_id": "2"},
+    ],
+)
+def test_skill_management_rejects_empty_or_unauthorized_changes(client, body):
+    assert client.patch("/api/v1/agent/skills/1", json=body).status_code == 422
+
+
+def test_attachment_upload_requires_idempotency_key_before_io(client):
+    response = client.post(
+        "/api/v1/agent/conversations/1/attachments/uploads",
+        files={"file": ("notes.md", b"Notes", "text/markdown")},
+    )
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize("cursor", ["-1", str(2**64)])

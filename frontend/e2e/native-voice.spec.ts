@@ -1,5 +1,36 @@
 import { test, expect } from '@playwright/test';
 
+test('shared adopted character voice remains playable when the collaborator has no private candidates', async ({ page }) => {
+  const current = { media_id: '90', url: '/.runtime/timeline-fixture.mp4?voice=1', duration_ms: 4000, row_version: 2 };
+  let reads = 0;
+  const unexpected: string[] = [], errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/api/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    const reply = (json: unknown) => route.fulfill({ json });
+    if (path.endsWith('/native-voice/capabilities')) return reply({ enabled: true });
+    if (path.endsWith('/ai-model-configs')) return reply({ items: [], total: 0 });
+    if (path.endsWith('/voice')) { reads++; return reply({ row_version: 2, record_id: '9', candidates: [], current_voice: current }); }
+    if (path.endsWith('/dialogue')) return reply({ row_version: 1, mode: 'native', document: { reviewed: true, lines: [] }, characters: [], voices: [] });
+    unexpected.push(path); return route.fulfill({ status: 501, json: {} });
+  });
+  await page.goto('/e2e/native-voice-fixture.html');
+  const voice = page.getByRole('region', { name: '当前采用音色', exact: true });
+  await expect(voice).toBeVisible();
+  await expect(page.getByText('还没有音色候选。填写描述，生成后试听选择。', { exact: true })).toBeVisible();
+  const audio = voice.locator('audio');
+  await audio.evaluate(async node => { node.muted = true; await node.play(); });
+  await expect.poll(() => audio.evaluate(node => !node.paused && node.readyState >= 2)).toBe(true);
+  await audio.evaluate(node => node.pause());
+  const before = reads;
+  current.url = '/.runtime/timeline-fixture.mp4?voice=2';
+  await page.getByRole('button', { name: '刷新声音候选', exact: true }).click();
+  await expect.poll(() => reads).toBe(before + 1);
+  await expect(audio).toHaveAttribute('src', current.url);
+  await expect(page.getByRole('button', { name: '设为角色音色', exact: true })).toHaveCount(0);
+  expect(unexpected).toEqual([]); expect(errors).toEqual([]);
+});
+
 test('character sample design replay, explicit binding and reviewed two-speaker dialogue', async ({ page }, info) => {
   const keys: string[] = [], requests: any[] = [], adopted: any[] = [], saved: any[] = [];
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));

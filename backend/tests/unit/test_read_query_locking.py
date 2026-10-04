@@ -18,7 +18,7 @@ from test_episode_writing import setup
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict
 from short_drama.db import access as _access  # noqa: F401
-from short_drama.domain import MediaFile
+from short_drama.domain import EpisodeRenderJob, EpisodeScript, MediaFile
 from short_drama.domain.episode_sound import EpisodeSound
 from short_drama.schemas.episode_sound import SoundDocument
 from short_drama.service.base import utcnow
@@ -52,6 +52,8 @@ def test_writing_and_episode_reads_avoid_write_locks_but_save_keeps_version_mute
             p, e, {"script_id": None, "content": "script", "content_version": "1"}
         )
         confirmed = writing.confirm(p, e, saved["script"]["id"], {"content_version": "2"})
+        with session.begin():
+            session.get(EpisodeScript, int(saved["script"]["id"])).created_by = 1
         actor_scope(session, p)
         with capture_sql(session) as reads:
             assert writing.get(p, e) == confirmed
@@ -81,6 +83,8 @@ def test_assembly_sound_and_job_reads_avoid_locks_but_edit_keeps_assembly_mutex(
         with session.begin():
             for media in session.scalars(select(MediaFile)):
                 media.scope_user_id, media.project_id = None, int(f.project)
+                media.created_by, media.published_at = 1, utcnow()
+            session.get(EpisodeRenderJob, int(job["id"])).initiated_by = 1
             if with_audio:
                 session.add(
                     MediaFile(
@@ -90,6 +94,8 @@ def test_assembly_sound_and_job_reads_avoid_locks_but_edit_keeps_assembly_mutex(
                         storage_locator=f"minio://{settings.minio_audio_bucket}/music.wav",
                         duration_ms=1000,
                         original_name="music.wav",
+                        created_by=1,
+                        published_at=utcnow(),
                     )
                 )
                 session.add(

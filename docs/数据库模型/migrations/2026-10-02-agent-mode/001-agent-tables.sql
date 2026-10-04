@@ -1,6 +1,29 @@
--- Additive Agent schema: seven new tables, no existing-table alterations.
--- Generated from short_drama.domain.agent; select the intended database first.
+-- Additive Agent schema: 9 tables, no existing-table alterations.
+-- Generated from short_drama.domain.agent and agent_context; select the intended database first.
 -- Use scripts/agent_migration.py --apply for safe table-level reentry.
+
+CREATE TABLE agent_skills (
+	id BIGINT UNSIGNED NOT NULL,
+	owner_user_id BIGINT UNSIGNED NOT NULL,
+	name VARCHAR(120) NOT NULL,
+	filename VARCHAR(255) NOT NULL,
+	instructions MEDIUMTEXT NOT NULL,
+	content_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
+	checksum_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	row_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
+	enabled BIGINT UNSIGNED NOT NULL DEFAULT 1,
+	deleted_at DATETIME(6),
+	created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+	updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+	PRIMARY KEY (id),
+	CONSTRAINT fk_agent_skill_owner FOREIGN KEY(owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT ck_agent_skill_enabled CHECK (enabled IN (0,1)),
+	CONSTRAINT ck_agent_skill_versions CHECK (row_version > 0 AND content_version > 0),
+	CONSTRAINT ck_agent_skill_content CHECK (CHAR_LENGTH(TRIM(instructions)) > 0 AND OCTET_LENGTH(instructions) <= 65536),
+	CONSTRAINT ck_agent_skill_time CHECK (updated_at >= created_at)
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_agent_skill_owner ON agent_skills (owner_user_id, deleted_at, id);
 
 CREATE TABLE agent_conversations (
 	id BIGINT UNSIGNED NOT NULL,
@@ -59,6 +82,37 @@ CREATE TABLE agent_messages (
 	CONSTRAINT ck_agent_messages_request_pair CHECK ((idempotency_key IS NULL) = (request_hash IS NULL)),
 	CONSTRAINT ck_agent_messages_request_hash CHECK (idempotency_key IS NULL OR (role = 'user' AND CHAR_LENGTH(idempotency_key) = 64 AND CHAR_LENGTH(request_hash) = 64))
 )ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE agent_attachments (
+	id BIGINT UNSIGNED NOT NULL,
+	owner_user_id BIGINT UNSIGNED NOT NULL,
+	conversation_id BIGINT UNSIGNED NOT NULL,
+	attached_message_id BIGINT UNSIGNED,
+	kind VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL,
+	name VARCHAR(255) NOT NULL,
+	mime_type VARCHAR(127) NOT NULL,
+	media_id BIGINT UNSIGNED,
+	text_content MEDIUMTEXT,
+	checksum_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	byte_size BIGINT UNSIGNED NOT NULL,
+	input_metadata JSON NOT NULL DEFAULT (JSON_OBJECT()),
+	create_key CHAR(64) CHARACTER SET ascii COLLATE ascii_bin,
+	create_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin,
+	deleted_at DATETIME(6),
+	created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+	PRIMARY KEY (id),
+	CONSTRAINT fk_agent_attachment_owner FOREIGN KEY(owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_agent_attachment_conversation FOREIGN KEY(conversation_id) REFERENCES agent_conversations (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_agent_attachment_message FOREIGN KEY(attached_message_id) REFERENCES agent_messages (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_agent_attachment_media FOREIGN KEY(media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT uk_agent_attachment_create UNIQUE (conversation_id, create_key),
+	CONSTRAINT ck_agent_attachment_kind CHECK (kind IN ('text','image','video','audio')),
+	CONSTRAINT ck_agent_attachment_content CHECK ((kind = 'text' AND text_content IS NOT NULL AND media_id IS NULL) OR (kind <> 'text' AND media_id IS NOT NULL)),
+	CONSTRAINT ck_agent_attachment_metadata CHECK (JSON_TYPE(input_metadata) = 'OBJECT'),
+	CONSTRAINT ck_agent_attachment_create_pair CHECK ((create_key IS NULL) = (create_hash IS NULL))
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_agent_attachment_conversation ON agent_attachments (conversation_id, id);
 
 CREATE TABLE agent_runs (
 	id BIGINT UNSIGNED NOT NULL,

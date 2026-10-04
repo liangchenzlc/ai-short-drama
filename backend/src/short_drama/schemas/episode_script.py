@@ -22,6 +22,7 @@ class EpisodeScriptUpdate(InputModel):
 
 
 class EpisodeScriptRead(ReadModel):
+    published_at: datetime | None = None
     id: Identifier
     episode_id: Identifier
     position: PositiveUInt32

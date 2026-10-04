@@ -704,7 +704,9 @@ class AgentRuntime:
             raise RuntimeError("Agent action interrupted; database recovery required") from None
 
     async def _decision(self, claim):
+        from short_drama.agent.input_media import materialize_prompt
         from short_drama.agent.model_gateway import serialize_segment_result
+        from short_drama.core.exceptions import BusinessError
 
         cipher = claim.snapshot.get("credential_cipher")
         key = self.settings.encryption_key
@@ -712,6 +714,16 @@ class AgentRuntime:
             KeyCipher(key.get_secret_value() if key else None).decrypt(cipher) if cipher else ""
         )
         values = thaw_input(claim.inputs)
+        if isinstance(values.get("user_prompt"), dict):
+            if claim.raw is not None:
+                raise AgentGatewayError("invalid_agent_checkpoint")
+            try:
+                values["user_prompt"] = await asyncio.to_thread(
+                    materialize_prompt, values["user_prompt"], self.settings
+                )
+            except BusinessError as error:
+                raise AgentGatewayError(error.code) from None
+            claim.inputs["kwargs"]["user_prompt"] = _json_copy(values["user_prompt"])
         if claim.raw is not None:
             result = await self.gateway.replay_segment(
                 claim.snapshot,

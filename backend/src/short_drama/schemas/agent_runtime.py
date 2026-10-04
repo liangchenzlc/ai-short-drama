@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator, model_validator
 
 from short_drama.schemas.agent import AgentRunStatus
+from short_drama.schemas.agent_context import ModelInputCapabilities, SkillSelection
 from short_drama.schemas.base import Identifier, InputModel, PositiveUInt64, ReadModel
 
 TaskKind = Literal[
@@ -48,6 +49,9 @@ class MessageCreate(InputModel):
     mode: Literal["discuss", "generate"] = "discuss"
     model_config_id: Identifier | None = None
     task: TaskSpec | None = None
+    attachment_ids: Annotated[list[Identifier], Field(max_length=16)] = Field(default_factory=list)
+    skills: Annotated[list[SkillSelection], Field(max_length=8)] = Field(default_factory=list)
+    video_audio: Literal["include", "visual_only"] = "include"
 
     @field_validator("content")
     @classmethod
@@ -60,6 +64,10 @@ class MessageCreate(InputModel):
     def task_requires_generation(self):
         if self.task is not None and self.mode != "generate":
             raise ValueError("Discussion does not authorize a creative task")
+        if len(set(self.attachment_ids)) != len(self.attachment_ids):
+            raise ValueError("Attachments must be unique")
+        if len({item.id for item in self.skills}) != len(self.skills):
+            raise ValueError("Skills must be unique")
         return self
 
 
@@ -139,6 +147,7 @@ class AgentModelRead(ReadModel):
     streaming: Literal["verified", "not_tested"]
     verified: bool
     preferred: bool = False
+    input_capabilities: ModelInputCapabilities = Field(default_factory=ModelInputCapabilities)
 
 
 class AgentModelsRead(ReadModel):

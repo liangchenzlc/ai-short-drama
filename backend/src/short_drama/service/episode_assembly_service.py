@@ -20,6 +20,7 @@ from short_drama.schemas.episode_assembly import (
     AssemblyEdit,
     AssemblyExport,
     AssemblyVersion,
+    AssemblyWorkRead,
 )
 from short_drama.service.base import BaseService, utcnow
 from short_drama.service.episode_storyboard_service import (
@@ -426,7 +427,35 @@ class EpisodeAssemblyService(BaseService):
             "context_hash": context_hash,
             "changes": list({(c["shot_id"], c["kind"]): c for c in changes}.values()),
             "jobs": [self._job_read(j, context_hash) for j in jobs],
+            "current_work": self._current_work(assembly, context_hash),
         }
+
+    def _current_work(self, assembly, context_hash):
+        media = (
+            self.session.get(MediaFile, assembly.current_media_id)
+            if assembly.current_media_id
+            else None
+        )
+        if media is None:
+            return None
+        return AssemblyWorkRead.model_validate(
+            {
+                "media_id": str(media.id),
+                "url": self._url(media),
+                "width": media.width,
+                "height": media.height,
+                "duration_ms": media.duration_ms,
+                "is_stale": (media.video_metadata or {}).get("publication_context_hash")
+                != context_hash,
+            }
+        ).model_dump(mode="json")
+
+    def current_media(self, project_id, episode_id):
+        with self._transaction(read_only=True):
+            _, assembly = self._scope(project_id, episode_id, for_update=False)
+            if not assembly.current_media_id:
+                raise NotFound("尚未采用成片")
+            return self._require(MediaFile, assembly.current_media_id, for_update=False)
 
     def get(self, project_id, episode_id):
         with self._transaction(read_only=True):
@@ -772,6 +801,13 @@ class EpisodeAssemblyService(BaseService):
                 if job.kind != "export" or job.status != "succeeded" or not job.output_media_id:
                     raise WorkflowError("assembly_job_state", "任务尚未成功完成", 409)
                 assembly.current_media_id = job.output_media_id
+                from .publication import publish
+
+                media = publish(self._require(MediaFile, job.output_media_id))
+                media.video_metadata = {
+                    **(media.video_metadata or {}),
+                    "publication_context_hash": job.context_hash,
+                }
                 self._touch(assembly)
             return self._job_read(
                 job,

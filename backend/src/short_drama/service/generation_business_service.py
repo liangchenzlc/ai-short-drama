@@ -91,6 +91,8 @@ class GenerationBusinessService(BaseService):
             if maximum >= 2**32 - 1:
                 raise WorkflowError("position_exhausted", "剧本排序空间已用尽")
             now = utcnow()
+            task = self.session.get(AsyncTask, task_id)
+            creator = task.initiated_by if task else None
             # This creates a candidate, not the current editing document.
             script = BaseDAO(self.session, EpisodeScript).create(
                 {
@@ -100,6 +102,8 @@ class GenerationBusinessService(BaseService):
                     "state": "unconfirmed",
                     "created_at": now,
                     "updated_at": now,
+                    "created_by": creator,
+                    "updated_by": creator,
                 }
             )
             BaseDAO(self.session, NovelScriptRecord).create(
@@ -109,6 +113,7 @@ class GenerationBusinessService(BaseService):
                     "batch_id": task_id,
                     "model_id": record.config_id,
                     "created_at": now,
+                    "created_by": creator,
                 }
             )
             result = {"kind": "novel_script", "schema_version": 1, "script_id": str(script.id)}
@@ -234,6 +239,7 @@ class GenerationBusinessService(BaseService):
                     "batch_id": task.id,
                     "model_id": record.config_id,
                     "created_at": now,
+                    "created_by": task.initiated_by,
                 }
             )
         storyboard.advance_storyboard_version(episode)

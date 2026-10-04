@@ -178,7 +178,9 @@ class GenerationArchive:
                 raise ValueError("Existing archive object does not match output")
         return meta
 
-    def _link_asset_candidate(self, session, request: dict, media_id: int) -> str | None:
+    def _link_asset_candidate(
+        self, session, request: dict, media_id: int, created_by: int | None
+    ) -> str | None:
         source = request.get("source") or {}
         if source.get("scene") != "asset_image":
             return None
@@ -186,9 +188,13 @@ class GenerationArchive:
         if asset is None:
             return "source_missing"
         candidates = AssetImageCandidateDAO(session)
-        candidate = candidates.get_for_asset(asset.id, media_id, for_update=True)
+        candidate = candidates.get_for_asset(
+            asset.id, media_id, for_update=True, created_by=created_by
+        )
         if candidate is None:
-            candidates.create({"asset_id": asset.id, "media_id": media_id})
+            candidates.create(
+                {"asset_id": asset.id, "media_id": media_id, "created_by": created_by}
+            )
         return "linked"
 
     def save_one(self, task, record, entry, version, token):
@@ -205,7 +211,7 @@ class GenerationArchive:
                 if existing.id != int(entry["asset_id"]):
                     raise ValueError("Output identity conflict")
                 candidate_status = self._link_asset_candidate(
-                    session, current_record.request_data, existing.media_id
+                    session, current_record.request_data, existing.media_id, task.initiated_by
                 )
                 data = dict(current_record.response_data or {})
                 manifest = [dict(item) for item in data.get("media_manifest", [])]
@@ -298,7 +304,7 @@ class GenerationArchive:
             elif asset.media_id != media.id:
                 raise ValueError("Output media identity conflict")
             candidate_status = self._link_asset_candidate(
-                session, current_record.request_data, media.id
+                session, current_record.request_data, media.id, task.initiated_by
             )
             data = dict(current_record.response_data or {})
             manifest = [dict(item) for item in data.get("media_manifest", [])]

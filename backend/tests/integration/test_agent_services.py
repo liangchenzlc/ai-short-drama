@@ -699,7 +699,7 @@ def adopted_workflow(workspace, *, pending_read=False):
         before_scope = deepcopy(run.checkpoint["authorization"])
         old_args = deepcopy(session.get(AgentToolCall, tool_ids[1]).arguments)
     with factory() as session:
-        session.info["actor"] = actor(2)
+        session.info["actor"] = actor(1)
         adopted = AgentArtifactService(session).adopt(
             project_id, episode_id, artifact_id, {"row_version": 1, "content_version": 2}
         )

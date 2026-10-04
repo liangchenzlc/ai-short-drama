@@ -51,7 +51,7 @@ uv run python -c "import base64,secrets; print(base64.b64encode(secrets.token_by
 
 ## 初始化与升级数据库
 
-新库先创建并选定空数据库，按[数据库说明](数据库模型/MySQL8数据表设计.md)执行 [schema.mysql8.sql](数据库模型/schema.mysql8.sql)。该文件仅有当前 50 张表的完整 `CREATE TABLE`，不要再拼接增量迁移，也不要对已有表重复执行。
+新库先创建并选定空数据库，按[数据库说明](数据库模型/MySQL8数据表设计.md)执行 [schema.mysql8.sql](数据库模型/schema.mysql8.sql)。该文件仅有当前 52 张表的完整 `CREATE TABLE`，不要再拼接增量迁移，也不要对已有表重复执行。
 
 旧库按[迁移索引](数据库模型/migrations/README.md)核验基线，备份后执行所缺批次及各自验证脚本。应用不执行自动建表或迁移；只替换代码不能替代数据库升级。
 
@@ -192,7 +192,7 @@ uv run python scripts/check_generation_infra.py
 uv run python scripts/check_minio.py
 ```
 
-`check_generation_infra.py` 按当前 Settings 对原生、成片和 Agent 队列做 passive 查询，显示消费者数量，并只读检查 Agent 七表 readiness、聚合执行状态、unknown 与过期活动租约；不会创建队列或调用模型。详细处理见 [Agent 排障](agent-deployment.md#只读观测与故障处理)。
+`check_generation_infra.py` 按当前 Settings 对原生、成片和 Agent 队列做 passive 查询，显示消费者数量，并只读检查 Agent 九表 readiness、聚合执行状态、unknown 与过期活动租约；不会创建队列或调用模型。详细处理见 [Agent 排障](agent-deployment.md#只读观测与故障处理)。
 
 已成功生成且有持久化媒体记录的 `save` 消息，若投递后超过一个执行租约周期仍无人接手，调度器会增加消息版本并仅重投保存动作；旧版本消息失效，归档按输出标识幂等保存，不重新调用模型。超过归档预算则转为可恢复的保存超时。`submit/poll` 的已投递消息不使用此规则，避免重复付费生成。
 

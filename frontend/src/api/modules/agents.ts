@@ -1,11 +1,41 @@
 import { http } from '../http';
 import type { AgentAvailability, AgentConversation, AgentConversationPage, CreateAgentConversation, UpdateAgentConversation,
-  AgentModel, AgentModelPage, AgentMessagePage, AgentRun, AgentRunPage, AgentSendInput, AgentSendResult, AgentReview } from '../types/agents';
+  AgentModel, AgentModelPage, AgentMessagePage, AgentRun, AgentRunPage, AgentSendInput, AgentSendResult, AgentReview, AgentAttachment, AgentSkill } from '../types/agents';
+import type { Page } from '../types/generations';
 
 const root = '/agent';
 const conversationPath = (id: string) => `${root}/conversations/${encodeURIComponent(id)}`;
 
 export const agentsApi = {
+  async attachments(id: string, offset = 0, signal?: AbortSignal) {
+    return (await http.get<Page<AgentAttachment>>(`${conversationPath(id)}/attachments`, { params: { offset, limit: 50, pending: true }, signal })).data;
+  },
+  async uploadAttachment(id: string, file: File, key: string) {
+    const body = new FormData(); body.append('file', file);
+    return (await http.post<AgentAttachment>(`${conversationPath(id)}/attachments/uploads`, body, { headers: { 'Idempotency-Key': key }, timeout: 120_000 })).data;
+  },
+  async referenceAttachment(id: string, source_type: 'media' | 'asset', source_id: string, key: string) {
+    return (await http.post<AgentAttachment>(`${conversationPath(id)}/attachments/references`, { source_type, source_id }, { headers: { 'Idempotency-Key': key } })).data;
+  },
+  async removeAttachment(id: string, attachmentId: string) {
+    await http.delete(`${conversationPath(id)}/attachments/${encodeURIComponent(attachmentId)}`);
+  },
+  async skills(offset = 0, signal?: AbortSignal) {
+    return (await http.get<Page<AgentSkill>>(`${root}/skills`, { params: { offset, limit: 50 }, signal })).data;
+  },
+  async uploadSkill(file: File) {
+    const body = new FormData(); body.append('file', file);
+    return (await http.post<AgentSkill>(`${root}/skills/uploads`, body)).data;
+  },
+  async updateSkill(id: string, body: { row_version: string; name?: string; instructions?: string; enabled?: boolean }) {
+    return (await http.patch<AgentSkill>(`${root}/skills/${encodeURIComponent(id)}`, body)).data;
+  },
+  async deleteSkill(id: string, row_version: string) {
+    await http.delete(`${root}/skills/${encodeURIComponent(id)}`, { data: { row_version } });
+  },
+  async updateModelInputs(id: string, body: { row_version: number; image: boolean; audio: boolean }) {
+    return (await http.patch<AgentModel>(`${root}/models/${encodeURIComponent(id)}/inputs`, body)).data;
+  },
   async models(signal?: AbortSignal) { return (await http.get<AgentModelPage>(`${root}/models`, { signal })).data; },
   async verifyModel(id: string, row_version: number) {
     return (await http.post<AgentModel>(`${root}/models/${encodeURIComponent(id)}/verify`, { row_version }, { timeout: 120_000 })).data;

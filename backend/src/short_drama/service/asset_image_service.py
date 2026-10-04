@@ -23,6 +23,7 @@ from short_drama.schemas.base import parse_identifier
 
 from .asset_library_service import AssetLibraryService
 from .base import BaseService, utcnow
+from .publication import publish
 from .storage_service import StorageService
 
 MAX_UPLOAD_BYTES = 20 * 1024**2
@@ -206,8 +207,10 @@ class AssetImageService(BaseService):
             raise NotFound("Media does not exist")
         if existing is not None:
             return existing, media, False
-        shareable = self._generated_image(media_id) is not None or self._shared_uploaded_image(
-            asset_id, media_id
+        shareable = (
+            media.published_at is not None
+            or self._generated_image(media_id) is not None
+            or self._shared_uploaded_image(asset_id, media_id)
         )
         if not media.format_code.startswith("image/") or not shareable:
             raise WorkflowError(
@@ -383,6 +386,7 @@ class AssetImageService(BaseService):
                 "row_version": asset.row_version + 1,
             },
         )
+        publish(media)
         return asset, media
 
 

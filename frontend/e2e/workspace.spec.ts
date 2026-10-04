@@ -42,14 +42,14 @@ test('asset editors persist reference images and expose prompts only on click', 
   await expect(page.locator('.asset-create-drawer')).toBeVisible();
   const bounds = await page.locator('.asset-create-drawer').boundingBox(); expect(bounds!.width).toBeCloseTo(720, 0);
   await page.getByRole('button', { name: '取消', exact: true }).click();
-  await page.getByRole('button', { name: '编辑素材', exact: true }).first().click();
+  await page.getByRole('button', { name: '林晚', exact: true }).click();
   await expect(page.getByRole('heading', { name: '图片与生成', exact: true })).toBeVisible();
   await expect(page.getByText('本次补充要求', { exact: true })).toHaveCount(0);
   await page.locator('.generation-reference-images input[type=file]').setInputFiles({ name: 'reference.png', mimeType: 'image/png', buffer: Buffer.from(image.split(',')[1], 'base64') });
   await expect(page.locator('.reference-image-strip figure')).toHaveCount(1);
   await page.screenshot({ path: info.outputPath('asset-drawer-desktop.png'), fullPage: true });
   await page.getByRole('button', { name: '返回素材列表', exact: true }).click();
-  await page.getByRole('button', { name: '编辑素材', exact: true }).first().click();
+  await page.getByRole('button', { name: '林晚', exact: true }).click();
   await expect(page.locator('.reference-image-strip figure')).toHaveCount(1);
   await page.locator('.asset-generation-history summary').click();
   await page.getByRole('link', { name: '查看任务详情' }).first().click();
@@ -57,8 +57,7 @@ test('asset editors persist reference images and expose prompts only on click', 
   await page.screenshot({ path: info.outputPath('asset-task-detail.png'), animations: 'disabled' });
   await expect(page.getByText('DO_NOT_RENDER')).toHaveCount(0);
   await page.goto(`${root}/assets`);
-  await page.getByRole('button', { name: '提取记录', exact: true }).click();
-  await page.getByRole('button', { name: '查看', exact: true }).click();
+  await page.getByRole('button', { name: '从剧本提取素材', exact: true }).click();
   await page.screenshot({ path: info.outputPath('extraction-result.png'), animations: 'disabled' });
   await page.getByRole('dialog').getByRole('button', { name: '提取记录', exact: true }).click();
   await page.screenshot({ path: info.outputPath('extraction-history.png'), animations: 'disabled' });
@@ -84,6 +83,7 @@ test('storyboard and history load pages on scroll and image history stays in a d
   await page.locator('.storyboard-summary').first().click();
   await expect(page.locator('.shot-image-candidates')).toHaveCount(1);
   await expect(page.getByRole('combobox', { name: '关联角色', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: '分镜图', exact: true }).click();
   await page.locator('.generation-reference-images input[type=file]').setInputFiles({ name: 'reference.png', mimeType: 'image/png', buffer: Buffer.from(image.split(',')[1], 'base64') });
   await expect(page.locator('.reference-image-strip figure')).toHaveCount(1);
   await page.screenshot({ path: info.outputPath('storyboard-desktop.png'), fullPage: true });
@@ -92,7 +92,7 @@ test('storyboard and history load pages on scroll and image history stays in a d
   await expect(page.getByRole('dialog', { name: '分镜图片生成记录' })).toBeVisible();
   await page.screenshot({ path: info.outputPath('shot-image-history.png'), animations: 'disabled' });
   await page.getByRole('button', { name: '关闭弹窗', exact: true }).click();
-  await page.getByRole('button', { name: '生成记录', exact: true }).first().click();
+  await page.getByRole('button', { name: '历史记录', exact: true }).click();
   await page.screenshot({ path: info.outputPath('storyboard-history.png'), animations: 'disabled' });
   await page.getByRole('button', { name: '查看分镜' }).first().click();
   await expect(page.locator('.compact-shot-list > li')).toHaveCount(20);
@@ -116,7 +116,7 @@ test('compact desktop workspaces and drawers fit the viewport', async ({ page },
       await expect(page.locator('.storyboard-summary')).toHaveCount(40);
       await page.evaluate(() => window.scrollTo(0, 0));
     }
-    if (stage === 'assets') await page.getByRole('button', { name: '编辑素材', exact: true }).first().click();
+    if (stage === 'assets') await page.getByRole('button', { name: '林晚', exact: true }).click();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     await page.screenshot({ path: info.outputPath(`${stage}-compact-desktop.png`), fullPage: true });
   }

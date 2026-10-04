@@ -1,16 +1,17 @@
 import { confirmAction } from '../../components/ui/confirm';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Button, Input, Skeleton } from 'antd';
+import { Alert, Button, Input, Skeleton, Tooltip } from 'antd';
 import { Dialog } from '../../components/ui/Dialog';
 import { Icon } from '../../components/ui/Icon';
 import { storyboardApi, type ScriptCandidate, type ScriptDetail } from '../../api/modules/storyboard';
 import { generations } from '../../api/modules/generations';
-import type { GenerationSummary } from '../../api/types/generations';
+import type { GenerationReceipt, GenerationSummary } from '../../api/types/generations';
 import { errorMessage } from '../../api/http';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import { taskLabel } from '../generations/presentation';
 import { novelScriptRequest } from './workflow-contract';
 import type { WritingSession } from './writing-session';
+import './workflow-refinement.css';
 
 async function loadAllScripts(api: ReturnType<typeof storyboardApi>, signal: AbortSignal) {
   const items: ScriptCandidate[] = [];
@@ -61,11 +62,15 @@ export function NovelScriptGeneration({
   const [preview, setPreview] = useState<ScriptDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submittedTask, setSubmittedTask] = useState<GenerationReceipt | null>(null);
+  const submissionLock = useRef(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'error' | 'success' | 'info'>('error');
   const [scriptRevision, setScriptRevision] = useState(0);
   const [taskRevision, setTaskRevision] = useState(0);
   const completed = useRef(new Set<string>());
+  const pending = tasks.some(task => task.status === 'queued' || task.status === 'running') || !!submittedTask && (submittedTask.status === 'queued' || submittedTask.status === 'running');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -82,6 +87,7 @@ export function NovelScriptGeneration({
     loadAllTasks(projectId, episodeId, controller.signal).then((next) => {
       if (controller.signal.aborted) return;
       setTasks(next);
+      setSubmittedTask(current => current && !next.some(task => task.generation_id === current.generation_id) ? current : null);
       const succeeded = next.filter((task) => task.status === 'succeeded' && !completed.current.has(task.generation_id));
       if (succeeded.length) {
         for (const task of succeeded) completed.current.add(task.generation_id);
@@ -92,14 +98,15 @@ export function NovelScriptGeneration({
   }, [projectId, episodeId, taskRevision]);
 
   useEffect(() => {
-    if (!tasks.some((task) => task.status === 'queued' || task.status === 'running')) return;
+    if (!pending) return;
     const timer = setTimeout(() => setTaskRevision((revision) => revision + 1), 3000);
     return () => clearTimeout(timer);
-  }, [tasks]);
+  }, [pending, tasks, submittedTask]);
 
   async function generate() {
-    if (busy || disabled || !novel.trim()) return;
-    setBusy(true); setMessage(''); setMessageType('error');
+    if (submissionLock.current || busy || pending || disabled || !novel.trim()) return;
+    submissionLock.current = true;
+    setSubmitting(true); setMessage(''); setMessageType('error');
     try {
       if (!await session.flush()) { setMessage('请先完成小说保存，再发起生成。'); return; }
       const latest = session.getSnapshot();
@@ -109,12 +116,13 @@ export function NovelScriptGeneration({
       };
       const scope = `novel-script:${projectId}:${episodeId}`;
       const idempotencyKey = await requestAttempt(scope, body, attemptStorage());
-      await generations.generateText(body, idempotencyKey);
+      const receipt = await generations.generateText(body, idempotencyKey);
+      setSubmittedTask(receipt);
       clearAttempt(scope, attemptStorage());
       setMessageType('success'); setMessage('已开始生成。你可以继续编辑，完成后可在生成记录中预览采用。');
       setTaskRevision((revision) => revision + 1);
     } catch (cause) { setMessageType('error'); setMessage(errorMessage(cause)); }
-    finally { setBusy(false); }
+    finally { submissionLock.current = false; setSubmitting(false); }
   }
 
   async function show(item: ScriptCandidate) {
@@ -140,12 +148,11 @@ export function NovelScriptGeneration({
       <p>将原文转为适合短剧的场景与对白，生成后由你选择采用。</p>
       <label className="writing-control"><span>剧本生成模型</span>{modelSelector}</label>
       {settings}
-      <label className="writing-control"><span>改编要求 <small>选填</small></span><Input.TextArea rows={4} maxLength={4000} value={instructions} disabled={disabled || busy} onChange={(event) => setInstructions(event.target.value)} placeholder="例如：突出主角冲突，保留关键对白，结尾设置悬念。"/></label>
-      <Button block type="primary" loading={busy} disabled={disabled || !novel.trim()} onClick={() => void generate()}>生成剧本</Button>
-      <Button block onClick={() => setHistoryOpen(true)}>生成记录</Button>
+      <label className="writing-control"><span>改编要求 <small>选填</small></span><Input.TextArea rows={4} maxLength={4000} value={instructions} disabled={disabled || busy || submitting} onChange={(event) => setInstructions(event.target.value)} placeholder="例如：突出主角冲突，保留关键对白，结尾设置悬念。"/></label>
+      <div className="script-generation-actions"><Button type="primary" aria-label="生成剧本" aria-busy={submitting || pending} loading={submitting || pending} disabled={disabled || busy || pending || !novel.trim()} onClick={() => void generate()}>生成剧本</Button><Tooltip title="生成记录"><Button aria-label="生成记录" icon={<Icon name="tasks" size={18}/>} onClick={() => setHistoryOpen(true)}/></Tooltip></div>
       <p className="writing-assistant-hint">{novel.trim() ? '使用所选模型生成，可能产生模型服务费用。' : '先写入小说原文，再开始生成。'}</p>
       {message && <Alert type={messageType} showIcon message={message}/>}
-      {tasks.some(task => task.status === 'running' || task.status === 'queued') && <p role="status">任务处理中，完成后自动更新候选。</p>}
+      {pending && <p role="status">任务处理中，完成后可在生成记录中预览采用。</p>}
     </aside>
     {historyOpen && <Dialog title="剧本生成记录" className="script-preview-dialog" canClose={!busy} onClose={() => setHistoryOpen(false)}><section className="writing-candidates" aria-label="候选剧本">
       <header><div><h3>候选剧本 <span>{items.length}</span></h3><p>预览、比较，选中适合本集的一稿继续编辑。</p></div><Button disabled={busy || loading} onClick={() => { setTaskRevision(revision => revision + 1); setScriptRevision(revision => revision + 1); }}>刷新结果</Button></header>

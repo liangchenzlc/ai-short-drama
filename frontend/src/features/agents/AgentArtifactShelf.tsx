@@ -17,11 +17,12 @@ import { StoryboardResultPreview } from '../projects/StoryboardResultPreview';
 import { reviewParameterLabels } from './agent-events';
 import { artifactEffect, artifactFieldLabels, artifactKindLabels, artifactStatusLabels, artifactTarget, artifactVersion, diffValue, nativeArtifact } from './agent-artifact-presentation';
 
-export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly, writingSession, beforeAdopt, onApplied, request, canContinue, onContinue, onOpenExtraction }: {
+export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly, writingSession, beforeAdopt, onApplied, request, canContinue, onContinue, onOpenExtraction, dialogOnly = false }: {
   projectId: string; episodeId: string; schemaReady: boolean; readOnly: boolean; writingSession: WritingSession;
   beforeAdopt: () => Promise<boolean>; onApplied: () => Promise<boolean>;
   request: AgentArtifactOpenRequest | null; canContinue: (conversationId?: string) => boolean;
   onContinue: () => void; onOpenExtraction: (artifact: AgentArtifactDetail) => void;
+  dialogOnly?: boolean;
 }) {
   const api = useMemo(() => agentArtifactsApi(projectId, episodeId), [projectId, episodeId]);
   const shots = useMemo(() => storyboardApi(projectId, episodeId), [projectId, episodeId]);
@@ -53,6 +54,7 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
     setItems([]); setTotal(0); setDetail(null); setDetailId(null); setContext(null); setMedia(null); setGeneration(null); setDetailLoading(false); setMessage('');
   }
   useEffect(() => {
+    if (dialogOnly) return;
     if (!schemaReady || accessEndedRef.current) { setItems([]); setTotal(0); return; }
     const controller = new AbortController(); setLoading(true); setError('');
     api.list({ offset, kind, status }, controller.signal).then(page => {
@@ -62,7 +64,7 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
       setError(errorMessage(cause));
     } }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [api, schemaReady, offset, kind, status, revision]);
+  }, [api, schemaReady, offset, kind, status, revision, dialogOnly]);
   useEffect(() => {
     const refresh = () => { if (!accessEndedRef.current) { setOffset(0); setRevision(value => value + 1); } };
     window.addEventListener('agent-artifacts-updated', refresh);
@@ -85,9 +87,12 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
       setDetailError(cause instanceof ApiError ? errorMessage(cause) : cause instanceof Error ? cause.message : '候选暂时无法载入。');
     } } finally { if (alive.current && intent === sequence.current) setDetailLoading(false); }
   }
+  useEffect(() => {
+    if (detailId && !accessEndedRef.current) void loadDetail(detailId);
+  }, [detailId, revision, api]);
   function show(id: string, privateContext: AgentArtifactOpenRequest | null = null) {
     if (!schemaReady || accessEndedRef.current || lock.current) return;
-    setOpen(true); setDetailId(id); setDetail(null); setContext(privateContext); setMessage(''); void loadDetail(id);
+    setOpen(true); setDetailId(id); setDetail(null); setContext(privateContext); setMessage(''); setRevision(value => value + 1);
   }
   useEffect(() => { if (request && schemaReady) show(request.id, request); }, [request?.nonce, schemaReady]);
   function close() { if (lock.current) return; sequence.current++; setDetailId(null); setDetail(null); setContext(null); setDetailLoading(false); }
@@ -121,7 +126,10 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
     if (lock.current || readOnly || !schemaReady || accessEndedRef.current) return;
     lock.current = true; setBusy(true); setDetailError(''); setMessage('');
     try { await action(); }
-    catch (cause) { if (alive.current) setDetailError(cause instanceof ApiError ? errorMessage(cause) : cause instanceof Error ? cause.message : '操作未完成，请核对候选状态。'); }
+    catch (cause) { if (alive.current) {
+      if (cause instanceof ApiError && (cause.status === 401 || cause.status === 403)) endAccess();
+      setDetailError(cause instanceof ApiError ? errorMessage(cause) : cause instanceof Error ? cause.message : '操作未完成，请核对候选状态。');
+    } }
     finally { lock.current = false; if (alive.current) setBusy(false); }
   }
   async function prepare() {
@@ -183,14 +191,15 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
   const mediaLabels = generation ? reviewParameterLabels({ ...generation.parameters, layout: generation.source?.scene === 'shot_image' ? generation.source.layout : undefined }) : [];
   if (!schemaReady) return null;
   return <>
-    <section className="agent-artifact-shelf" aria-label="共享创作候选">
-      <button className="agent-artifact-toggle" type="button" aria-expanded={open} aria-controls="agent-artifact-list" onClick={() => setOpen(value => !value)}><strong>创作候选{total > 0 ? `（${total}）` : ''}</strong><span>项目共享 · {open ? '收起' : '展开'}</span></button>
+    {dialogOnly && accessEnded && <Alert type="warning" message="候选暂不可访问，请核对当前项目权限。"/>}
+    {!dialogOnly && <section className="agent-artifact-shelf" aria-label="我的创作候选">
+      <button className="agent-artifact-toggle" type="button" aria-expanded={open} aria-controls="agent-artifact-list" onClick={() => setOpen(value => !value)}><strong>创作候选{total > 0 ? `（${total}）` : ''}</strong><span>仅你可见 · {open ? '收起' : '展开'}</span></button>
       {open && <div id="agent-artifact-list"><div className="agent-artifact-filters"><Select aria-label="候选类型" value={kind} allowClear placeholder="全部类型" disabled={busy} options={Object.entries(artifactKindLabels).map(([value, label]) => ({ value, label }))} onChange={value => { setKind(value); setOffset(0); }}/><Select aria-label="候选状态" value={status} allowClear placeholder="全部状态" disabled={busy} options={Object.entries(artifactStatusLabels).map(([value, label]) => ({ value, label }))} onChange={value => { setStatus(value); setOffset(0); }}/><Button loading={loading} disabled={busy} onClick={() => refresh(true)}>刷新候选</Button></div>
-        <p className="agent-artifact-help">项目成员可查看和采用候选。采用作品不会自动继续任何对话。</p>
+        <p className="agent-artifact-help">候选仅你可见，采用后的作品与项目成员共享。</p>
         {error && <Alert type="error" message={error}/>} {loading && !items.length ? <Skeleton active paragraph={{ rows: 2 }}/> : items.length ? <div className="agent-artifact-rows">{items.map(item => <article key={item.id} data-artifact-id={item.id}><div><h3>{artifactKindLabels[item.kind]} <span className={`artifact-status is-${item.status}`}>{artifactStatusLabels[item.status]}</span></h3><p>{item.preview || artifactTarget(item)}</p><span>{item.source_snapshot.model_name || '创作模型'} · {new Date(item.created_at).toLocaleString('zh-CN')}</span></div><Button onClick={() => show(item.id)}>核对候选</Button></article>)}</div> : !error && <p className="agent-artifact-help">生成的候选会保留在这里，核对后再采用。</p>}
         {items.length < total && <Button loading={loading} onClick={() => setOffset(items.length)}>更多候选（{items.length}/{total}）</Button>}
       </div>}
-    </section>
+    </section>}
     {detailId && <Dialog title="核对创作候选" className="agent-artifact-dialog" canClose={!busy} onClose={close}><div className="agent-artifact-detail">
       {detailError && <Alert type="error" showIcon message={detailError}/>} {message && <Alert type={detail?.status === 'applied' ? 'success' : 'info'} showIcon message={message}/>}
       {detailLoading && <Skeleton active paragraph={{ rows: 4 }}/>} {detail && <>

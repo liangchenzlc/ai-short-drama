@@ -9,6 +9,7 @@ from short_drama.schemas.base import parse_identifier
 
 from .asset_image_service import AssetImageService
 from .base import utcnow
+from .publication import publish
 
 
 class GenerationReferenceService(AssetImageService):
@@ -115,6 +116,7 @@ class GenerationReferenceService(AssetImageService):
                 }
             )
             owner.reference_media_ids = [*ids, str(media.id)]
+            publish(media)
             self._advance(owner, episode)
             return self._read_references(owner), True
 

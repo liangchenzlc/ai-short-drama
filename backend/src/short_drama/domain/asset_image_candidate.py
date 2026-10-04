@@ -13,14 +13,20 @@ class AssetImageCandidate(Base):
     id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True, autoincrement=False)
     asset_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), nullable=False)
     media_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), nullable=False)
+    created_by: Mapped[int | None] = mapped_column(
+        BIGINT(unsigned=True), nullable=True, comment="候选创建人；无法证明的历史归属保持为空"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
     )
 
     __table_args__ = (
-        UniqueConstraint("asset_id", "media_id", name="uk_asset_image_candidates_media"),
+        UniqueConstraint(
+            "created_by", "asset_id", "media_id", name="uk_asset_image_candidates_media"
+        ),
         Index("idx_asset_image_candidates_time", "asset_id", "created_at", "id"),
         Index("idx_asset_image_candidates_media", "media_id"),
+        Index("idx_asset_image_candidates_owner", "created_by", "asset_id", "created_at", "id"),
         ForeignKeyConstraint(
             ["asset_id"],
             ["assets.id"],

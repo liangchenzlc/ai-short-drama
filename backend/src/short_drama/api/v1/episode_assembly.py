@@ -35,6 +35,22 @@ def get(project_id: ScopedId, episode_id: ScopedId, svc: Service):
     return svc.get(project_id, episode_id)
 
 
+@router.get("/current/download")
+def download_current(project_id: ScopedId, episode_id: ScopedId, svc: Service):
+    media = svc.current_media(project_id, episode_id)
+    storage = StorageService(svc.storage, svc.settings)
+
+    def chunks():
+        with storage.open(media.storage_locator) as response:
+            yield from response.stream(1024 * 1024)
+
+    return StreamingResponse(
+        chunks(),
+        media_type="video/mp4",
+        headers={"Content-Disposition": f'attachment; filename="episode-{episode_id}.mp4"'},
+    )
+
+
 @router.post("/initialize")
 def initialize(project_id: ScopedId, episode_id: ScopedId, svc: Service):
     return svc.initialize(project_id, episode_id)

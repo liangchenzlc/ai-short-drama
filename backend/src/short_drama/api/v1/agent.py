@@ -4,7 +4,7 @@ import asyncio
 import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, File, Header, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -16,6 +16,14 @@ from short_drama.schemas.agent import (
     ConversationCreate,
     ConversationPatch,
     ConversationRead,
+)
+from short_drama.schemas.agent_context import (
+    AttachmentRead,
+    AttachmentReference,
+    ModelInputsPatch,
+    SkillDelete,
+    SkillPatch,
+    SkillRead,
 )
 from short_drama.schemas.agent_runtime import (
     AgentModelRead,
@@ -30,9 +38,11 @@ from short_drama.schemas.agent_runtime import (
 )
 from short_drama.schemas.base import Identifier
 from short_drama.schemas.common import PageResponse
+from short_drama.service.agent_attachment_service import AgentAttachmentService
 from short_drama.service.agent_conversation_service import AgentConversationService
 from short_drama.service.agent_model_service import AgentModelService
 from short_drama.service.agent_run_service import AgentRunService
+from short_drama.service.agent_skill_service import AgentSkillService
 
 router = APIRouter(prefix="/agent", tags=["Agent creation"])
 
@@ -45,15 +55,29 @@ Conversations = Annotated[AgentConversationService, Depends(service)]
 
 
 def run_service(request: Request, session: Session = Depends(get_session)):
-    return AgentRunService(session, request.app.state.settings)
+    return AgentRunService(
+        session, request.app.state.settings, getattr(request.app.state, "storage", None)
+    )
 
 
 def model_service(request: Request, session: Session = Depends(get_session)):
     return AgentModelService(session, request.app.state.settings)
 
 
+def attachment_service(request: Request, session: Session = Depends(get_session)):
+    return AgentAttachmentService(
+        session, request.app.state.settings, getattr(request.app.state, "storage", None)
+    )
+
+
+def skill_service(request: Request, session: Session = Depends(get_session)):
+    return AgentSkillService(session, request.app.state.settings)
+
+
 Runs = Annotated[AgentRunService, Depends(run_service)]
 Models = Annotated[AgentModelService, Depends(model_service)]
+Attachments = Annotated[AgentAttachmentService, Depends(attachment_service)]
+Skills = Annotated[AgentSkillService, Depends(skill_service)]
 
 
 @router.get("/status", response_model=AgentStatus)
@@ -105,6 +129,88 @@ def list_models(service: Models):
 @router.post("/models/{model_id}/verify", response_model=AgentModelRead)
 def verify_model(model_id: Identifier, payload: ModelVerify, service: Models):
     return service.verify(model_id, payload)
+
+
+@router.patch("/models/{model_id}/inputs", response_model=AgentModelRead)
+def patch_model_inputs(model_id: Identifier, payload: ModelInputsPatch, service: Models):
+    return service.patch_inputs(model_id, payload)
+
+
+@router.get("/skills", response_model=PageResponse[SkillRead])
+def list_skills(
+    service: Skills,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+):
+    return service.list(offset, limit)
+
+
+@router.post("/skills/uploads", response_model=SkillRead, status_code=201)
+def upload_skill(service: Skills, file: Annotated[UploadFile, File()]):
+    return service.upload(file.file, file.filename or "")
+
+
+@router.get("/skills/{skill_id}", response_model=SkillRead)
+def get_skill(skill_id: str, service: Skills):
+    return service.detail(skill_id)
+
+
+@router.patch("/skills/{skill_id}", response_model=SkillRead)
+def patch_skill(skill_id: Identifier, payload: SkillPatch, service: Skills):
+    return service.patch(skill_id, payload)
+
+
+@router.delete("/skills/{skill_id}", status_code=204)
+def delete_skill(skill_id: Identifier, payload: SkillDelete, service: Skills):
+    service.delete(skill_id, payload)
+    return Response(status_code=204)
+
+
+@router.get(
+    "/conversations/{conversation_id}/attachments", response_model=PageResponse[AttachmentRead]
+)
+def list_attachments(
+    conversation_id: Identifier,
+    service: Attachments,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    pending: bool | None = None,
+):
+    return service.list(conversation_id, offset, limit, pending)
+
+
+@router.post(
+    "/conversations/{conversation_id}/attachments/uploads",
+    response_model=AttachmentRead,
+    status_code=201,
+)
+def upload_attachment(
+    conversation_id: Identifier,
+    service: Attachments,
+    file: Annotated[UploadFile, File()],
+    idempotency_key: Annotated[str, Header(min_length=1, max_length=64)],
+):
+    return service.upload(conversation_id, file.file, file.filename or "", idempotency_key)
+
+
+@router.post(
+    "/conversations/{conversation_id}/attachments/references",
+    response_model=AttachmentRead,
+    status_code=201,
+)
+def reference_attachment(
+    conversation_id: Identifier,
+    payload: AttachmentReference,
+    service: Attachments,
+    idempotency_key: Annotated[str, Header(min_length=1, max_length=64)],
+):
+    return service.reference(conversation_id, payload, idempotency_key)
+
+
+@router.delete("/conversations/{conversation_id}/attachments/{attachment_id}", status_code=204)
+def delete_attachment(conversation_id: Identifier, attachment_id: Identifier, service: Attachments):
+    service.delete(conversation_id, attachment_id)
+    return Response(status_code=204)
 
 
 @router.post(
@@ -178,9 +284,9 @@ async def conversation_events(
     def read(after):
         with factory() as session:
             session.info["actor"] = actor
-            return AgentRunService(session, settings).events(
-                conversation_id, after, verify_session=True
-            )
+            return AgentRunService(
+                session, settings, getattr(request.app.state, "storage", None)
+            ).events(conversation_id, after, verify_session=True)
 
     initial = await run_in_threadpool(read, cursor)
 

@@ -1,5 +1,4 @@
 import { useAuth } from '../../../features/auth/AuthSession';
-import { CreationSlot } from '../../../features/projects/EpisodeCreationWorkspace';
 import { AssetLibraryPanel } from '../../../features/assets/AssetLibraryPanel';
 import type { EpisodeWorkflow } from '../../../features/projects/episode-workflow';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -27,5 +26,5 @@ export function AssetsStage({ value, readOnly, projectId, episodeId, onChange, w
     const link = document.createElement('a'); link.href = url; link.download = `legacy-episode-${episodeId}-assets.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   return <AssetLibraryPanel scope={{ kind: 'episode', projectId, episodeId }} importFrom={{ kind: 'project', projectId }} shareTo={{ kind: 'project', projectId }} title="本集角色、场景与道具" readOnly={readOnly} legacyDownload={auth.enabled ? undefined : downloadLegacy} refreshToken={revision + refreshToken} registerBarrier={registerLibrary}
-    toolbar={<CreationSlot stage="assets"><ScriptAssetExtraction embedded projectId={projectId} episodeId={episodeId} session={writingSession} readOnly={readOnly} modelId={value.models.analysis} onModelChange={id => onChange({ ...value, models: { ...value.models, analysis: id } })} onApplied={() => setRevision(n => n + 1)} onConfirmScript={onConfirmScript} registerBarrier={registerExtraction} externalReview={externalReview}/></CreationSlot>}/>;
+    toolbar={<ScriptAssetExtraction projectId={projectId} episodeId={episodeId} session={writingSession} readOnly={readOnly} modelId={value.models.analysis} onModelChange={id => onChange({ ...value, models: { ...value.models, analysis: id } })} onApplied={() => setRevision(n => n + 1)} onConfirmScript={onConfirmScript} registerBarrier={registerExtraction} externalReview={externalReview}/>}/>;
 }

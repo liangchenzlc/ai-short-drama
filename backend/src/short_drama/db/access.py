@@ -49,7 +49,43 @@ def condition(table, user_id):
     if name in {"agent_turns", "agent_tool_calls"}:
         return c.run_id.in_(allowed_ids("agent_runs", user_id))
     if name == "agent_artifacts":
-        return c.project_id.in_(project_ids(user_id))
+        return and_(c.created_by == user_id, c.project_id.in_(project_ids(user_id)))
+    if name == "agent_skills":
+        return c.owner_user_id == user_id
+    if name == "agent_attachments":
+        return and_(
+            c.owner_user_id == user_id,
+            c.conversation_id.in_(allowed_ids("agent_conversations", user_id)),
+        )
+    if name in {"async_tasks", "generation_batches"}:
+        return and_(
+            c.initiated_by == user_id,
+            or_(c.scope_user_id == user_id, c.project_id.in_(project_ids(user_id))),
+        )
+    if name == "episode_render_jobs":
+        return and_(
+            c.initiated_by == user_id,
+            c.assembly_id.in_(allowed_ids("episode_assemblies", user_id)),
+        )
+    if name == "episode_scripts":
+        return and_(
+            or_(c.created_by == user_id, c.published_at.is_not(None)),
+            c.episode_id.in_(allowed_ids("episodes", user_id)),
+        )
+    if name in {"novel_script_records", "script_shot_records"}:
+        return and_(
+            c.created_by == user_id, c.script_id.in_(allowed_ids("episode_scripts", user_id))
+        )
+    if name == "asset_image_candidates":
+        return and_(c.created_by == user_id, c.asset_id.in_(allowed_ids("assets", user_id)))
+    if name == "media_files":
+        return or_(
+            c.scope_user_id == user_id,
+            and_(
+                or_(c.created_by == user_id, c.published_at.is_not(None)),
+                c.project_id.in_(project_ids(user_id)),
+            ),
+        )
     if name == "projects":
         members = Base.metadata.tables["project_members"].alias("project_access_members")
         return and_(
@@ -81,7 +117,29 @@ def condition(table, user_id):
         return c.user_id == user_id
     if name == "audit_events":
         return or_(
-            c.project_id.in_(project_ids(user_id)),
+            and_(
+                c.project_id.in_(project_ids(user_id)),
+                or_(
+                    c.actor_user_id == user_id,
+                    c.object_type.not_in(
+                        [
+                            "async_tasks",
+                            "ai_generation_records",
+                            "generation_batches",
+                            "generation_batch_items",
+                            "agent_artifacts",
+                            "asset_image_candidates",
+                            "media_assets",
+                            "episode_render_jobs",
+                            "episode_scripts",
+                            "media_files",
+                            "novel_script_records",
+                            "script_shot_records",
+                        ]
+                    ),
+                    c.action.in_(["publish", "work_update"]),
+                ),
+            ),
             and_(c.project_id.is_(None), c.actor_user_id == user_id),
         )
     if name in {"email_outbox", "auth_rate_limits"}:
@@ -147,6 +205,8 @@ def restrict_queries(state):
             "output_media_id",
             "current_media_id",
             "proxy_media_id",
+            "created_by",
+            "published_at",
         }
         if any(
             getattr(column, "key", column) in protected for column in state.statement._values or {}
@@ -192,6 +252,13 @@ def scope_of(session, entity):
     """Resolve the actual ownership path, independent of the caller's entry point."""
     table = inspect(type(entity)).local_table
     name = table.name
+    if name == "agent_skills":
+        return (entity.owner_user_id, None)
+    if name == "agent_attachments":
+        return (
+            None,
+            _agent_parent(session, "agent_conversations", entity.conversation_id).project_id,
+        )
     if name in AGENT_PRIVATE_TABLES:
         conversation = _agent_conversation(session, entity)
         return (None, conversation.project_id)
@@ -318,6 +385,8 @@ def _guard_agent_write(session, entity, actor, new):
         if not new and any(inspect(entity).attrs[field].history.has_changes() for field in frozen):
             raise WorkflowError("agent_record_immutable", "Append a new Agent record", 403)
     elif name == "agent_artifacts":
+        if not new and entity.created_by != actor.user_id:
+            raise NotFound("Resource does not exist")
         require_project(session, entity.project_id)
         episode = _agent_parent(session, "episodes", entity.episode_id)
         if episode.project_id != entity.project_id:
@@ -472,6 +541,24 @@ def guard_writes(session, _context, _instances):
         }:
             continue
         new = entity in session.new
+        if actor and name in {"agent_skills", "agent_attachments"}:
+            if entity.owner_user_id != actor.user_id:
+                raise NotFound("Resource does not exist")
+            if name == "agent_attachments":
+                conversation = _agent_parent(session, "agent_conversations", entity.conversation_id)
+                if conversation.owner_user_id != actor.user_id:
+                    raise NotFound("Resource does not exist")
+                if entity.attached_message_id:
+                    message = _agent_parent(session, "agent_messages", entity.attached_message_id)
+                    if message.conversation_id != entity.conversation_id:
+                        raise NotFound("Attachment message is outside this conversation")
+            if not new and any(
+                field in table.c and inspect(entity).attrs[field].history.has_changes()
+                for field in ("owner_user_id", "conversation_id")
+            ):
+                raise WorkflowError(
+                    "ownership_immutable", "Resource ownership cannot be changed", 403
+                )
         if actor and name in AGENT_TABLES:
             _guard_agent_write(session, entity, actor, new)
         if new:
@@ -489,6 +576,30 @@ def guard_writes(session, _context, _instances):
                 entity.initiated_by = user_id
         if not actor:
             continue
+        if not new and name in {
+            "async_tasks",
+            "generation_batches",
+            "generation_batch_items",
+            "episode_render_jobs",
+            "ai_generation_records",
+            "media_assets",
+            "novel_script_records",
+            "script_shot_records",
+            "asset_image_candidates",
+            "episode_scripts",
+            "media_files",
+            "agent_artifacts",
+        }:
+            # Session.get may return an object already in the identity map. Verify
+            # the stored ownership before accepting writes to private resources.
+            if session.scalar(select(type(entity).id).where(type(entity).id == entity.id)) is None:
+                raise NotFound("Resource does not exist")
+        if name in {"episode_scripts", "media_files"} and not new:
+            publication = inspect(entity).attrs.published_at.history
+            if publication.has_changes() and publication.deleted and publication.deleted[0]:
+                raise WorkflowError(
+                    "publication_immutable", "Published works cannot be unpublished", 403
+                )
         entity_scope = scope_of(session, entity)
         if entity_scope[1] and not (new and name == "projects"):
             require_project(session, entity_scope[1])
@@ -497,7 +608,7 @@ def guard_writes(session, _context, _instances):
         if name == "projects" and entity in session.deleted:
             require_project(session, entity.id, owner=True)
         # Ownership is immutable through normal edits.
-        for field in ("owner_user_id", "scope_user_id", "project_id", "initiated_by"):
+        for field in ("owner_user_id", "scope_user_id", "project_id", "initiated_by", "created_by"):
             if not new and field in table.c and inspect(entity).attrs[field].history.has_changes():
                 raise WorkflowError(
                     "ownership_immutable", "Resource ownership cannot be changed", 403
@@ -522,7 +633,10 @@ def guard_writes(session, _context, _instances):
             )
             if target is None:
                 target = session.scalar(select(model).where(model.id == identifier))
-            if target is None or scope_of(session, target) != entity_scope:
+            allowed_scopes = {entity_scope}
+            if name == "agent_attachments" and field == "media_id":
+                allowed_scopes.add((actor.user_id, None))
+            if target is None or scope_of(session, target) not in allowed_scopes:
                 raise NotFound("Reference is outside this resource scope")
         if hasattr(entity, "reference_media_ids"):
             from short_drama.domain import MediaFile
@@ -537,8 +651,15 @@ def guard_writes(session, _context, _instances):
             entity.updated_by = actor.user_id
         # A project audit is shared. Private chat/object identifiers belong only
         # in the conversation's own event log, never in this public timeline.
-        if name in AGENT_PRIVATE_TABLES:
+        if name in AGENT_PRIVATE_TABLES or name in {"agent_attachments", "agent_skills"}:
             continue
+        action = "create" if new else "delete" if entity in session.deleted else "update"
+        if name in {"episode_scripts", "media_files"} and entity.published_at is not None:
+            action = (
+                "publish"
+                if inspect(entity).attrs.published_at.history.has_changes()
+                else "work_update"
+            )
         session.info.setdefault("pending_audit", []).append(
             AuditEvent(
                 id=next_id(),
@@ -546,7 +667,7 @@ def guard_writes(session, _context, _instances):
                 project_id=entity_scope[1],
                 object_type=name,
                 object_id=str(getattr(entity, "id", getattr(entity, "project_id", ""))),
-                action="create" if new else "delete" if entity in session.deleted else "update",
+                action=action,
                 request_id=actor.request_id,
                 created_at=utcnow(),
             )

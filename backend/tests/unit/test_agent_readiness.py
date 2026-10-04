@@ -6,7 +6,7 @@ from short_drama.db import readiness
 from short_drama.domain import AGENT_TABLES, Base
 
 
-def test_prompt_schema_check_excludes_only_the_seven_agent_tables(monkeypatch):
+def test_prompt_schema_check_excludes_all_agent_tables(monkeypatch):
     class Inspector:
         def get_table_names(self):
             return sorted(set(Base.metadata.tables) - AGENT_TABLES)
@@ -21,6 +21,7 @@ def test_prompt_schema_check_excludes_only_the_seven_agent_tables(monkeypatch):
         "status": "absent",
         "gaps": sorted(AGENT_TABLES),
     }
+    assert {"agent_attachments", "agent_skills"} <= AGENT_TABLES
 
 
 def test_agent_disabled_does_not_connect_and_enabled_requires_accounts():

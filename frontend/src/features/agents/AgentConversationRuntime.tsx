@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Alert, Button, Segmented, Select, Skeleton } from 'antd';
+import { Alert, Button, Checkbox, Dropdown, Select, Skeleton, Tooltip } from 'antd';
 import { agentsApi } from '../../api/modules/agents';
 import { ApiError, errorMessage } from '../../api/http';
 import type { AgentConversation, AgentMessageMode, AgentModel, AgentRun, AgentSendInput } from '../../api/types/agents';
@@ -9,6 +9,10 @@ import { agentTaskLabels, modelCanCollaborate, reviewParameterLabels, reviewTarg
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import { useAgentRuntime } from './useAgentRuntime';
 import { AgentMediaTaskComposer, AgentMediaTaskError, type AgentMediaTaskController } from './AgentMediaTaskComposer';
+import { AgentContextComposer, type AgentContextController } from './AgentContextComposer';
+import { AgentMessageBubble } from './AgentMessageBubble';
+import { Dialog } from '../../components/ui/Dialog';
+import { Icon } from '../../components/ui/Icon';
 
 export interface AgentNavigationIntent { id?: string; mode: CreationMode; generation: number }
 interface PendingSend { body: AgentSendInput; key: string; draft: string; intent: AgentNavigationIntent }
@@ -28,7 +32,11 @@ export function AgentConversationRuntime({ conversation, draft, onDraft, readOnl
   const [taskKind, setTaskKind] = useState<'auto' | 'image' | 'video'>('auto');
   const [taskBlockReason, setTaskBlockReason] = useState('');
   const mediaTask = useRef<AgentMediaTaskController>(null);
-  const [busy, setBusy] = useState<'send' | 'save' | 'verify' | 'review' | 'stop' | ''>('');
+  const inputContext = useRef<AgentContextController>(null);
+  const [contextBusy, setContextBusy] = useState(false);
+  const [contextBlockReason, setContextBlockReason] = useState('');
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
+  const [busy, setBusy] = useState<'send' | 'save' | 'verify' | 'inputs' | 'review' | 'stop' | ''>('');
   const [actionError, setActionError] = useState('');
   const [uncertain, setUncertain] = useState<PendingSend | null>(null);
   const [newContent, setNewContent] = useState(false);
@@ -80,15 +88,27 @@ export function AgentConversationRuntime({ conversation, draft, onDraft, readOnl
     } catch (cause) { if (matches(intent)) setActionError(`${errorMessage(cause)} 可以重新载入模型状态，核对校验结果。`); }
     finally { locked.current = false; if (alive.current) setBusy(''); }
   }
+  async function declareInputs(input: { image: boolean; audio: boolean }) {
+    if (locked.current || readOnly || activeRun || runtime.accessEnded || !model) return;
+    const config = model;
+    locked.current = true; setBusy('inputs'); setActionError('');
+    try {
+      const result = await agentsApi.updateModelInputs(config.id, { row_version: config.row_version, ...input });
+      if (alive.current) setModels(previous => previous.map(item => item.id === result.id ? result : item));
+    } catch (cause) { if (alive.current) setActionError(errorMessage(cause)); }
+    finally { locked.current = false; if (alive.current) setBusy(''); }
+  }
   async function send(retry?: PendingSend) {
-    if (locked.current || readOnly || activeRun || !ready || (!retry && (!current.current.draft.trim() || uncertain))) return;
+    if (locked.current || contextBusy || (!retry && contextBlockReason) || readOnly || activeRun || !ready || (!retry && (!current.current.draft.trim() || uncertain))) return;
     const intent = current.current.navigationIntent();
     if (intent.mode !== 'agent' || intent.id !== conversation.id) return;
     const submitted = retry?.draft ?? current.current.draft;
-    let body: AgentSendInput = retry?.body ?? { content: submitted.trim(), mode: operation, model_config_id: modelId };
+    let body: AgentSendInput;
     locked.current = true; setBusy('save'); setActionError('');
     const scope = `agent-send:${conversation.id}`; const storage = attemptStorage();
     try {
+      if (!retry && !inputContext.current) throw new Error('正在恢复消息上下文，请稍后发送。');
+      body = retry?.body ?? { content: submitted.trim(), mode: operation, model_config_id: modelId, ...inputContext.current!.snapshot() };
       if (!await current.current.beforeSend()) {
         if (matches(intent)) setActionError('当前作品尚未保存成功。对话草稿已保留，请处理保存提示后再发送。');
         return;
@@ -108,7 +128,10 @@ export function AgentConversationRuntime({ conversation, draft, onDraft, readOnl
         const result = await agentsApi.send(conversation.id, body, key);
         if (!alive.current) return;
         clearAttempt(scope, storage); setUncertain(null); runtime.accept(result);
-        if (matches(intent) && current.current.draft === submitted) current.current.onDraft('');
+        if (matches(intent)) {
+          inputContext.current?.sent(body.attachment_ids ?? []);
+          if (current.current.draft === submitted) current.current.onDraft('');
+        }
       } catch (cause) {
         if (!alive.current) return;
         if (!(cause instanceof ApiError) || !cause.status || cause.status >= 500) setUncertain(pending);
@@ -133,12 +156,12 @@ export function AgentConversationRuntime({ conversation, draft, onDraft, readOnl
   const outputTokens = finiteNumber(runtime.run?.usage.output_tokens);
   const maxCalls = finiteNumber(runtime.run?.budget.decision_calls);
   return <div className="agent-runtime">
-    <div className="agent-runtime-status">
+    {(activeRun || awaitingArtifacts.length > 0 || runtime.connection !== 'live' && runtime.connection !== 'connecting') && <div className="agent-runtime-status">
       <span role="status">{awaitingArtifacts.length ? '等待采用候选' : runtime.run ? agentRunLabel(runtime.run.status) : '可以开始对话'}</span>
       <span className="agent-connection-state">{runtime.connection === 'live' ? '实时连接' : runtime.connection === 'connecting' ? '正在连接…' : runtime.connection === 'reconnecting' ? '正在恢复连接…' : '连接已中断'}</span>
       {activeRun && <Button size="small" disabled={readOnly || !!busy} loading={busy === 'stop'} onClick={() => void control('stop')}>停止运行</Button>}
       <Button size="small" type="text" disabled={!!busy} onClick={() => { void runtime.reload(); runtime.reconnect(); }}>核对状态</Button>
-    </div>
+    </div>}
     {(runtime.error || actionError) && <Alert className="agent-runtime-error" type="error" showIcon message={actionError || runtime.error} />}
     <div ref={transcript} className="agent-transcript" aria-label="创作消息" tabIndex={0} onScroll={event => {
       const node = event.currentTarget; pinned.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
@@ -149,10 +172,7 @@ export function AgentConversationRuntime({ conversation, draft, onDraft, readOnl
         void runtime.older();
       }}>载入更早消息</Button>}
       {runtime.loading ? <Skeleton active title={false} paragraph={{ rows: 5 }}/> : runtime.messages.length ? runtime.messages.map(message =>
-        <article className={`agent-message is-${message.role}`} key={message.id} data-message-id={message.id}>
-          <div className="agent-message-author">{message.role === 'user' ? '你' : 'Agent'}</div><p>{message.content}</p>
-          {!!message.artifacts.length && <div className="agent-message-results"><span className="agent-message-result-note">生成结果已保留为候选，请核对后采用。</span>{message.artifacts.filter(item => typeof item.artifact_id === 'string' && /^\d+$/.test(item.artifact_id)).map(item => <Button key={String(item.artifact_id)} size="small" onClick={() => onOpenArtifact(String(item.artifact_id))}>核对候选</Button>)}</div>}
-        </article>) : <div className="agent-runtime-empty"><h3>{runtime.accessEnded ? '对话暂不可访问' : '从本集作品开始'}</h3><p>{runtime.accessEnded ? '消息已从当前界面移除。恢复访问后，可通过“核对状态”重新连接。' : '先讨论创作方向，或说明希望生成的内容。生成前会展示计划，由你决定是否继续。'}</p></div>}
+        <AgentMessageBubble key={message.id} message={message} onOpenArtifact={onOpenArtifact}/>) : <div className="agent-runtime-empty"><h3>{runtime.accessEnded ? '对话暂不可访问' : '从本集作品开始'}</h3><p>{runtime.accessEnded ? '消息已从当前界面移除。恢复访问后可重新连接。' : '讨论故事方向，或描述想生成的内容。候选准备好后由你核对采用。'}</p></div>}
       {runtime.run?.status === 'running' && runtime.delta && <article className="agent-message is-assistant is-streaming"><div className="agent-message-author">Agent 正在回复</div><p>{runtime.delta}</p></article>}
       {pendingReview && <section className="agent-plan" aria-label="待确认创作计划">
         <h3>{pendingReview.title || '确认创作计划'}</h3><p>{pendingReview.summary}</p>
@@ -166,30 +186,42 @@ export function AgentConversationRuntime({ conversation, draft, onDraft, readOnl
       {runtime.run?.status === 'failed' && <p className="agent-run-failed" role="status">这次运行未完成，已有消息和候选仍保留。核对内容后，可以发起新的对话请求。</p>}
     </div>
     {newContent && <Button className="agent-new-content" size="small" onClick={() => { if (transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight; pinned.current = true; setNewContent(false); }}>查看最新消息</Button>}
-    <form className="agent-composer" onSubmit={event => { event.preventDefault(); void send(); }}>
-      <div className="agent-composer-top"><Segmented aria-label="对话用途" value={operation} size="small" disabled={!!busy || activeRun}
-        options={[{ value: 'discuss', label: '讨论' }, { value: 'generate', label: '生成作品' }]} onChange={value => setOperation(value as AgentMessageMode)}/></div>
-      <details className="agent-model-settings"><summary>{model ? `协作模型：${model.name}` : '选择协作模型'}{model && !modelCanCollaborate(model) ? '（需校验能力）' : ''}</summary>
+    <div className="agent-composer">
+      <Dialog open={modelSettingsOpen} title="Agent 模型与执行设置" className="agent-context-dialog" canClose={!busy} onClose={() => setModelSettingsOpen(false)}><div className="agent-context-dialog-body">
+      <section className="agent-model-settings" aria-label="协作模型设置">
+        <label htmlFor="agent-collaboration-model">协作模型</label>
         <div className="agent-model-picker"><Select aria-label="Agent 协作模型" value={modelId} loading={modelsLoading} disabled={!!busy || activeRun}
+          id="agent-collaboration-model"
           placeholder="选择文本模型" options={models.map(item => ({ value: item.id, label: item.name }))} onChange={setModelId}/>
           <Button size="small" disabled={readOnly || !!busy || activeRun || runtime.accessEnded || !model} loading={busy === 'verify'} onClick={() => void verify()}>校验能力</Button></div>
         <p>校验最多 2 次文本调用，可能收费。{modelCanCollaborate(model) ? `已通过协作校验；${model?.streaming === 'verified' ? '实时输出已验证。' : '实时输出未单独校验。'}` : '须通过工具协作与继续对话校验后才能发送。'}</p>
         {modelsError && <Alert type="error" message={modelsError}/>}<Button type="link" size="small" loading={modelsLoading} disabled={!!busy} onClick={() => void loadModels()}>重新载入模型状态</Button>
         {!modelsLoading && !models.length && <p>请先在 AI 配置中添加可用的文本模型。</p>}
-      </details>
+        {model && <div className="agent-model-inputs"><p>模型输入能力：{model.input_capabilities?.evidence === 'model_family' ? '依据模型系列声明' : model.input_capabilities?.evidence === 'declared' ? '由你声明兼容能力' : '目前仅文字'}。声明能力不会发起模型请求。</p>
+          <Checkbox disabled={readOnly || !!busy || activeRun} checked={!!model.input_capabilities?.image} onChange={event => void declareInputs({ image: event.target.checked, audio: !!model.input_capabilities?.audio })}>模型支持图片与视频采样帧</Checkbox>
+          <Checkbox disabled={readOnly || !!busy || activeRun || model.protocol === 'openai_responses.v1'} checked={!!model.input_capabilities?.audio} onChange={event => void declareInputs({ image: !!model.input_capabilities?.image, audio: event.target.checked })}>模型支持音频输入（Chat 协议）</Checkbox>
+        </div>}
+      </section>
       {operation === 'generate' && <div className="agent-task-kind"><label>生成方式<Select aria-label="生成方式" value={taskKind} disabled={readOnly || runtime.accessEnded || !!busy || activeRun}
         options={[{ value: 'auto', label: '由对话制定计划' }, { value: 'image', label: '指定图片任务' }, { value: 'video', label: '指定视频任务' }]} onChange={value => { setTaskKind(value); setTaskBlockReason(''); }}/></label>
         {taskKind !== 'auto' && <AgentMediaTaskComposer key={taskKind} ref={mediaTask} conversation={conversation} kind={taskKind} disabled={readOnly || runtime.accessEnded || !!busy || activeRun} onBlockReason={setTaskBlockReason}/>}</div>}
-      <label htmlFor={`agent-message-${conversation.id}`} className="sr-only">创作要求</label>
+      <Button type="primary" disabled={!!busy} onClick={() => setModelSettingsOpen(false)}>完成</Button></div></Dialog>
+      <AgentContextComposer ref={inputContext} conversation={conversation} model={model} disabled={readOnly || runtime.accessEnded || !!busy || activeRun || !!uncertain} onBusy={setContextBusy} onBlockReason={setContextBlockReason}
+        input={<><label htmlFor={`agent-message-${conversation.id}`} className="sr-only">创作要求</label>
       <textarea id={`agent-message-${conversation.id}`} rows={3} value={draft} maxLength={operation === 'generate' && taskKind !== 'auto' ? 4000 : 32000} disabled={readOnly} aria-describedby="agent-send-help" placeholder={operation === 'generate' && taskKind !== 'auto' ? '描述这项图片或视频任务的生成要求…' : '说说你想调整的故事、角色或镜头…'}
         onChange={event => onDraft(event.target.value)} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
-        onKeyDown={event => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !composing.current && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); void send(); } }}/>
+        onKeyDown={event => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !composing.current && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); void send(); } }}/></>}
+        modelControl={<Tooltip title={model ? `当前模型：${model.name}` : '选择模型'}><Button type="text" aria-label="选择模型" disabled={!!busy || contextBusy || activeRun} icon={<Icon name="settings" size={18}/>} onClick={() => setModelSettingsOpen(true)}>模型</Button></Tooltip>}
+        sendControl={<div className="agent-send-group"><Button type="primary" aria-label="发送" loading={busy === 'send' || busy === 'save'} disabled={readOnly || !!busy || contextBusy || !!contextBlockReason || activeRun || !ready || !draft.trim() || !!uncertain || operation === 'generate' && taskKind !== 'auto' && (!!taskBlockReason || draft.trim().length > 4000)} onClick={() => void send()}>发送</Button>
+          <Dropdown trigger={['click']} disabled={readOnly || !!busy || activeRun || !!uncertain} menu={{ selectable: true, selectedKeys: [operation], items: [{ key: 'discuss', label: '讨论方向' }, { key: 'generate', label: '生成作品' }], onClick: ({ key }) => { setOperation(key as AgentMessageMode); if (key === 'generate') setModelSettingsOpen(true); } }}>
+            <Button type="primary" aria-label="选择发送用途" disabled={readOnly || !!busy || activeRun || !!uncertain} icon={<Icon name="more" size={16}/>}/>
+          </Dropdown></div>}/>
       {uncertain && <div className="agent-send-uncertain" role="status"><p>发送结果尚未确认，草稿已保留。先核对消息与运行状态，避免重复请求。</p>
         <Button size="small" disabled={!!busy} onClick={() => void runtime.reload()}>核对发送状态</Button>
         <Button size="small" disabled={readOnly || !!busy || activeRun || !ready} onClick={() => void send(uncertain)}>使用原请求重试</Button></div>}
       <div className="agent-send-row"><span id="agent-send-help">{busy === 'save' ? '正在保存并核对作品…' : activeRun ? '本段对话正在运行，草稿可继续编辑。' : operation === 'discuss' ? 'Enter 换行，Ctrl / ⌘ + Enter 发送。' : taskKind === 'auto' ? '先生成计划，批准后制作候选。' : '发送前确认对象与费用；生成要求最多 4000 字。'}</span>
-        <Button type="primary" htmlType="submit" loading={busy === 'send' || busy === 'save'} disabled={readOnly || !!busy || activeRun || !ready || !draft.trim() || !!uncertain || operation === 'generate' && taskKind !== 'auto' && (!!taskBlockReason || draft.trim().length > 4000)}>发送</Button></div>
+      </div>
       {(calls !== null || outputTokens !== null || maxCalls !== null) && <p className="agent-usage">{calls !== null ? `已调用 ${calls} 次` : ''}{outputTokens !== null ? ` · 输出 ${outputTokens} token` : ''}{maxCalls !== null ? ` · 最多 ${maxCalls} 次文本协作` : ''}</p>}
-    </form>
+    </div>
   </div>;
 }

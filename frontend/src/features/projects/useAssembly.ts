@@ -26,7 +26,7 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
     else if (state.current.value?.assembly?.id === next.assembly?.id && state.current.value) {
       // Render progress is independent of unsaved clip edits; never hide a finished
       // or failed export just because a draft save is paused.
-      replace({ ...state.current.value, jobs: next.jobs });
+      replace({ ...state.current.value, jobs: next.jobs, current_work: next.current_work });
     }
     return next;
   }
@@ -106,7 +106,7 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
       return match ? { ...c, url: match.url, poster: match.poster, filmstrip: match.filmstrip } : c;
     });
     replace({ ...state.current.value, clips: hydrate(state.current.value.clips ?? []),
-      sources: hydrate(state.current.value.sources ?? []), jobs: fresh.jobs });
+      sources: hydrate(state.current.value.sources ?? []), jobs: fresh.jobs, current_work: fresh.current_work });
     past.current = past.current.map(hydrate); future.current = future.current.map(hydrate);
   }
   useEffect(() => {

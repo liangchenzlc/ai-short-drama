@@ -6,18 +6,21 @@ export function Dialog({
   title,
   onClose,
   canClose = true,
+  open = true,
   className,
   children,
 }: {
   title: string;
   onClose: () => void;
   canClose?: boolean;
+  open?: boolean;
   className?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
+    if (!open) return;
     const dialog = ref.current;
     const returnFocus = document.activeElement;
     dialog?.showModal();
@@ -28,7 +31,7 @@ export function Dialog({
       dialog?.close();
       if (returnFocus instanceof HTMLElement && returnFocus.isConnected) returnFocus.focus({ preventScroll: true });
     };
-  }, []);
+  }, [open]);
   return (
     <dialog
       ref={ref}

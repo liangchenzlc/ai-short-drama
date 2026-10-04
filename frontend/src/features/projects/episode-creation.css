@@ -1,6 +1,10 @@
 .episode-creation-panel { min-width: 0; border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); }
 .creation-mode-toolbar { display: flex; justify-content: flex-start; padding: 16px 18px; border-bottom: 1px solid var(--hair); }
 .creation-mode-toolbar .agent-mode-switch { max-width: 100%; }
+.creation-mode-toolbar[hidden], .creation-editor-target[hidden], .episode-editor-slot[hidden] { display: none; }
+.creation-editor-target { padding: 16px; min-width: 0; }
+.creation-editor-target .episode-asset-detail { margin: 0; padding: 0; border: 0; }
+.creation-editor-target .creation-slot { display: contents; }
 .episode-creation-panel .agent-conversation-panel { border: 0; border-radius: 0; background: transparent; }
 .prompt-creation-panel { min-width: 0; }
 .prompt-creation-panel[hidden], .creation-slot[hidden] { display: none; }

@@ -44,6 +44,9 @@ class EpisodeScript(Base):
         server_default=text("'unconfirmed'"),
         comment="未确认 / 已确认",
     )
+    published_at: Mapped[datetime | None] = mapped_column(
+        DATETIME(fsp=6), nullable=True, comment="明确采用为项目作品的时间；候选为空"
+    )
     created_at: Mapped[datetime | None] = mapped_column(
         DATETIME(fsp=6),
         nullable=True,

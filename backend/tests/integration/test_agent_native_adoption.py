@@ -12,7 +12,7 @@ from test_agent_native_tasks import Provider, admit, drain, executor, prepared
 
 from short_drama.agent.native_tasks import collect_native_results
 from short_drama.ai import GenerationResult
-from short_drama.core.exceptions import WorkflowError
+from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import (
     AgentArtifact,
     AIGenerationRecord,
@@ -65,6 +65,11 @@ def complete(workspace, kind):
         identifier = session.scalar(select(AgentArtifact.id))
         session.rollback()
         session.info["actor"] = actor(2)
+        with pytest.raises(NotFound):
+            AgentArtifactService(session, flow.settings).get(
+                flow.project_id, flow.episode_id, identifier
+            )
+        session.info["actor"] = actor(1)
         detail = AgentArtifactService(session, flow.settings).get(
             flow.project_id, flow.episode_id, identifier
         )
@@ -73,14 +78,14 @@ def complete(workspace, kind):
 
 def adopt(flow, identifier, body):
     with flow.factory() as session:
-        session.info["actor"] = actor(2)
+        session.info["actor"] = actor(1)
         return AgentArtifactService(session, flow.settings).adopt(
             flow.project_id, flow.episode_id, identifier, body
         )
 
 
 @pytest.mark.parametrize("kind", ["extract", "storyboard"])
-def test_native_text_requires_review_then_applies_and_replays_across_members(workspace, kind):
+def test_native_text_requires_owner_review_then_applies_and_replays(workspace, kind):
     flow, identifier, detail = complete(workspace, kind)
     body = adopt_body(detail)
     with pytest.raises(WorkflowError) as missing:
@@ -106,7 +111,7 @@ def test_native_text_requires_review_then_applies_and_replays_across_members(wor
         }
     )
     applied = adopt(flow, identifier, body)
-    assert applied["status"] == "applied" and applied["applied_by"] == "2"
+    assert applied["status"] == "applied" and applied["applied_by"] == "1"
     assert adopt(flow, identifier, body)["apply_receipt"] == applied["apply_receipt"]
     with flow.factory() as session:
         if kind == "extract":
@@ -119,7 +124,7 @@ def test_native_text_requires_review_then_applies_and_replays_across_members(wor
 
 
 @pytest.mark.parametrize("kind", ["image", "video"])
-def test_shared_media_uses_frozen_source_and_is_adoptable_by_another_member(workspace, kind):
+def test_private_media_uses_frozen_source_and_owner_adoption_shares_work(workspace, kind):
     flow, identifier, detail = complete(workspace, kind)
     body = {**adopt_body(detail), "confirm_shared": True}
     with pytest.raises(WorkflowError) as unconfirmed:

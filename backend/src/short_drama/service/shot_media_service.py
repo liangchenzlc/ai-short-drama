@@ -5,9 +5,10 @@ from sqlalchemy import select
 from short_drama.core.exceptions import BusinessError, Conflict
 from short_drama.dao.base import BaseDAO
 from short_drama.dao.episode_storyboard_dao import advance_shot_version, advance_storyboard_version
-from short_drama.domain import AIModelConfig, Episode, MediaRecycleBin, ShotScript
+from short_drama.domain import AIModelConfig, Episode, MediaFile, MediaRecycleBin, ShotScript
 
 from .base import BaseService, utcnow
+from .publication import publish
 
 
 def recycle_snapshot(session, entity, reason):
@@ -46,14 +47,36 @@ class ShotMediaService(BaseService):
     parent_field = "shot_id"
     media_kind = None
 
+    def _read(self, entity):
+        result = super()._read(entity)
+        actor = self.session.info.get("actor")
+        if actor:
+            owner = self.session.scalar(
+                select(MediaFile.created_by).where(MediaFile.id == entity.media_id)
+            )
+            if owner != actor.user_id:
+                result = result.model_copy(
+                    update={
+                        "model_id": None,
+                        "prompt": "",
+                        **(
+                            {"first_frame_media_id": None}
+                            if hasattr(entity, "first_frame_media_id")
+                            else {}
+                        ),
+                    }
+                )
+        return result
+
     def _check_values(self, values, shot, historical=False, previous=None):
         if values["episode_id"] != shot.episode_id:
             raise BusinessError("Media and shot must belong to the same episode")
-        self._validate_media(values["media_id"], self.media_kind)
+        media = self._validate_media(values["media_id"], self.media_kind)
+        publish(media)
         model_id = values.get("model_id")
         if model_id is not None:
             if historical:
-                # The project-shared generation record proves this historical
+                # The stored media association retains this historical model
                 # reference. Read only its type, never another member's private
                 # configuration/credentials; new selection still requires ownership.
                 table = AIModelConfig.__table__
@@ -68,6 +91,7 @@ class ShotMediaService(BaseService):
                     raise BusinessError("Model type does not match media")
             else:
                 self._validate_model(model_id, self.media_kind)
+        return media
 
     def _remove_recycle(self, shot_id, media_id):
         entry = self.session.scalar(

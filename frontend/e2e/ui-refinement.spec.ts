@@ -124,7 +124,7 @@ test.describe('touch workspace', () => {
   });
 });
 
-test('batch selection leaves room for asset descriptions and stays with its storyboard row', async ({ page }) => {
+test('batch selection leaves room for asset descriptions and stays with its storyboard card', async ({ page }) => {
   const state = await fixture(page, true);
   await page.goto('/projects/10?section=resources');
   const library = page.locator('.project-section .remote-asset-library');
@@ -141,6 +141,7 @@ test('batch selection leaves room for asset descriptions and stays with its stor
   await expect(library.getByText('已选 1 项', { exact: true })).toBeVisible();
   await page.goto(`${root}/storyboard`);
   await expect(page.locator('.storyboard-summary')).toHaveCount(20);
+  await page.getByRole('button', { name: '批量操作', exact: true }).click();
   const row = page.locator('.storyboard-item').first();
   const checkbox = row.getByRole('checkbox', { name: '批量选择分镜 1', exact: true });
   await checkbox.check();
@@ -150,7 +151,10 @@ test('batch selection leaves room for asset descriptions and stays with its stor
   expect(rowBounds!.height).toBeLessThan(summaryBounds!.height + 4);
   await row.locator('.storyboard-summary').click();
   await expect(checkbox).toBeChecked();
-  await expect(page.locator('.storyboard-expanded')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '分镜 1 脚本', exact: true })).toBeVisible();
+  await expect(page.locator('.storyboard-expanded')).toHaveCount(0);
+  const selectedBounds = await row.boundingBox();
+  expect(selectedBounds!.height).toBeCloseTo(rowBounds!.height, 0);
   expect(state.unexpected).toEqual([]);
   expect(state.errors).toEqual([]);
 });

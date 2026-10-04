@@ -11,11 +11,13 @@ class AssetImageCandidateDAO(BaseDAO):
     def __init__(self, session):
         super().__init__(session, AssetImageCandidate)
 
-    def get_for_asset(self, asset_id, media_id, *, for_update=False):
+    def get_for_asset(self, asset_id, media_id, *, for_update=False, created_by=None):
         statement = select(AssetImageCandidate).where(
             AssetImageCandidate.asset_id == asset_id,
             AssetImageCandidate.media_id == media_id,
         )
+        if created_by is not None:
+            statement = statement.where(AssetImageCandidate.created_by == created_by)
         if for_update:
             statement = statement.with_for_update().execution_options(populate_existing=True)
         return self.session.scalar(statement)

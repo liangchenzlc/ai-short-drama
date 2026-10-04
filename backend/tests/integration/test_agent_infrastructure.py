@@ -97,7 +97,7 @@ def test_native_worker_archives_in_real_minio_then_shares_and_adopts(workspace):
             media = session.get(MediaFile, artifact.media_id)
             identifier, locator, byte_size = artifact.id, media.storage_locator, media.byte_size
             session.rollback()
-            session.info["actor"] = actor(2)
+            session.info["actor"] = actor(1)
             svc = AgentArtifactService(session, flow.settings, storage)
             detail = svc.get(flow.project_id, flow.episode_id, identifier)
             source = detail["source_snapshot"]

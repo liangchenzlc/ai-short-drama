@@ -9,6 +9,7 @@ from .agent import (
     AgentToolCall,
     AgentTurn,
 )
+from .agent_context import AgentAttachment, AgentSkill
 from .ai_generation_record import AIGenerationRecord
 from .ai_model_config import AIModelConfig
 from .asset import Asset
@@ -110,4 +111,6 @@ __all__ += [
     "AgentToolCall",
     "AgentEvent",
     "AgentArtifact",
+    "AgentAttachment",
+    "AgentSkill",
 ]

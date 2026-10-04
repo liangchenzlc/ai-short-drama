@@ -397,10 +397,12 @@ def test_model_credentials_task_controls_scoped_history_and_revoked_workers(iden
     )
     ta, tb = generation(owner, ca, p["id"]), generation(bob, cb, p["id"])
     assert ta["generation_id"] != tb["generation_id"]
-    assert bob.get(f"/api/v1/ai/generations/{ta['generation_id']}").json()["can_cancel"] is False
-    assert owner.get(f"/api/v1/ai/generations/{tb['generation_id']}").json()["can_cancel"] is True
-    assert bob.post(f"/api/v1/ai/generations/{ta['generation_id']}/cancel").status_code == 403
-    assert owner.get("/api/v1/ai/generations", params={"project_id": p["id"]}).json()["total"] == 2
+    assert bob.get(f"/api/v1/ai/generations/{ta['generation_id']}").status_code == 404
+    assert owner.get(f"/api/v1/ai/generations/{tb['generation_id']}").status_code == 404
+    assert bob.post(f"/api/v1/ai/generations/{ta['generation_id']}/cancel").status_code == 404
+    for endpoint in ("", "/records"):
+        assert bob.get(f"/api/v1/ai/generations/{ta['generation_id']}{endpoint}").status_code == 404
+    assert owner.get("/api/v1/ai/generations", params={"project_id": p["id"]}).json()["total"] == 1
     assert (
         owner.get("/api/v1/ai/generations", params={"resource_scope": "personal"}).json()["total"]
         == 0
@@ -426,7 +428,7 @@ def test_model_credentials_task_controls_scoped_history_and_revoked_workers(iden
             is None
         )
     assert bob.get(f"/api/v1/ai/generations/{tb['generation_id']}").status_code == 404
-    assert owner.get(f"/api/v1/ai/generations/{tb['generation_id']}").status_code == 200
+    assert owner.get(f"/api/v1/ai/generations/{tb['generation_id']}").status_code == 404
 
 
 def test_import_independent_physical_copy_idempotency_and_adoption_scope(identity_app):

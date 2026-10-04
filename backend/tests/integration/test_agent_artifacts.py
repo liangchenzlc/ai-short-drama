@@ -182,9 +182,7 @@ def test_script_creation_changes_no_editor_pointer_confirmation_or_version(works
         assert session.get(EpisodeScript, int(detail["script_id"])).state == "unconfirmed"
         assert session.scalar(select(func.count(AgentArtifact.id))) == 1
     with factory() as session:
-        adopted = artifact_service(session, 2).adopt(
-            p, e, result["artifact_id"], adopt_body(detail)
-        )
+        adopted = artifact_service(session).adopt(p, e, result["artifact_id"], adopt_body(detail))
     assert adopted["apply_receipt"]["action"] == "select_script"
     with factory.begin() as session:
         episode = session.get(Episode, e)
@@ -195,39 +193,33 @@ def test_script_creation_changes_no_editor_pointer_confirmation_or_version(works
         assert session.get(EpisodeScript, int(original["script"]["id"])).state == "confirmed"
 
 
-def test_shared_novel_read_adopt_and_replay_never_read_private_origin(workspace):
+def test_private_novel_adoption_shares_work_without_sharing_candidate_origin(workspace):
     factory, p, e, _ = workspace
     writing(factory, p, e)
     run_id, tool_id, args = prepared(factory, p, e, content="New novel")
     result = create(factory, run_id, tool_id, args)
-    statements = []
-
-    def capture(_conn, _cursor, statement, *_args):
-        statements.append(statement.lower())
-
-    engine = factory.kw["bind"]
-    event.listen(engine, "before_cursor_execute", capture)
-    try:
-        with factory() as session:
-            svc = artifact_service(session, 2)
-            listing = svc.list(p, e)
-            detail = svc.get(p, e, result["artifact_id"])
-            adopted = svc.adopt(p, e, result["artifact_id"], adopt_body(detail))
-        with factory() as session:
-            session.info["actor"] = actor(2)
-            EpisodeWritingService(session).save_novel(
-                p, e, {"content_version": 3, "content": "Later edit"}
-            )
-        with factory() as session:
-            replay = artifact_service(session, 2).adopt(
-                p, e, result["artifact_id"], adopt_body(detail)
-            )
-    finally:
-        event.remove(engine, "before_cursor_execute", capture)
+    detail = details(factory, p, e, result["artifact_id"])
+    with factory() as session:
+        svc = artifact_service(session, 2)
+        assert svc.list(p, e)["items"] == []
+        with pytest.raises(NotFound):
+            svc.get(p, e, result["artifact_id"])
+        with pytest.raises(NotFound):
+            svc.adopt(p, e, result["artifact_id"], adopt_body(detail))
+    with factory() as session:
+        adopted = artifact_service(session).adopt(p, e, result["artifact_id"], adopt_body(detail))
+    with factory() as session:
+        session.info["actor"] = actor(2)
+        public = EpisodeWritingService(session).get(p, e)
+        assert public["novel"]["content"] == "New novel"
+        EpisodeWritingService(session).save_novel(
+            p, e, {"content_version": 3, "content": "Later edit"}
+        )
+    with factory() as session:
+        replay = artifact_service(session).adopt(p, e, result["artifact_id"], adopt_body(detail))
     assert replay["apply_receipt"] == adopted["apply_receipt"]
     assert replay["row_version"] == adopted["row_version"] == 2
-    assert listing["items"][0]["preview"] == "New novel"
-    public = json.dumps([listing, detail, adopted])
+    public = json.dumps(public)
     for forbidden in (
         "PRIVATE",
         "conversation_id",
@@ -237,14 +229,6 @@ def test_shared_novel_read_adopt_and_replay_never_read_private_origin(workspace)
         "instructions",
     ):
         assert forbidden not in public
-    for table in (
-        "agent_conversations",
-        "agent_messages",
-        "agent_runs",
-        "agent_turns",
-        "agent_tool_calls",
-    ):
-        assert not any(table in stmt for stmt in statements)
     with factory.begin() as session:
         assert (
             session.scalar(select(EpisodeNovel.content).where(EpisodeNovel.episode_id == e))
@@ -292,7 +276,7 @@ def test_workflow_candidate_waits_for_explicit_adopt_and_continue(workspace):
         assert session.get(AgentToolCall, tool_id).status == "succeeded"
     detail = details(factory, p, e, artifact_id)
     with factory() as session:
-        artifact_service(session, 2).adopt(p, e, artifact_id, adopt_body(detail))
+        artifact_service(session).adopt(p, e, artifact_id, adopt_body(detail))
     with factory.begin() as session:
         assert lock_run(session, run_id)[2].status == "waiting_review"
 
@@ -313,7 +297,7 @@ def test_concurrent_duplicate_adoption_has_one_version_change_and_one_receipt(wo
             )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        first, second = list(pool.map(apply, [1, 2]))
+        first, second = list(pool.map(apply, [1, 1]))
     assert first["apply_receipt"] == second["apply_receipt"]
     assert first["applied_by"] == second["applied_by"]
     with factory.begin() as session:
@@ -414,6 +398,7 @@ def linked_asset(factory, p, e, *, linked=True):
             project_id=p,
             format_code="image/png",
             storage_locator="mock:asset:" + str(next_id()),
+            published_at=utcnow(),
         )
         session.add(media)
         session.flush()
@@ -451,10 +436,10 @@ def test_asset_patch_shared_confirmation_diff_and_atomic_receipt(workspace):
     assert detail["diff"][0] == {"field": "name", "before": "Hero", "after": "New hero"}
     with factory() as session:
         with pytest.raises(WorkflowError) as shared:
-            artifact_service(session, 2).adopt(p, e, result["artifact_id"], adopt_body(detail))
+            artifact_service(session).adopt(p, e, result["artifact_id"], adopt_body(detail))
         assert shared.value.code == "shared_asset_confirmation_required"
         assert shared.value.details["reference_count"] >= 2
-        adopted = artifact_service(session, 2).adopt(
+        adopted = artifact_service(session).adopt(
             p, e, result["artifact_id"], {**adopt_body(detail), "confirm_shared": True}
         )
     assert adopted["apply_receipt"]["target_row_version"] == 2
@@ -499,9 +484,7 @@ def test_shot_patch_preserves_excerpt_and_bumps_shot_and_storyboard(workspace):
     result = create(factory, run_id, tool_id, args)
     detail = details(factory, p, e, result["artifact_id"])
     with factory() as session:
-        adopted = artifact_service(session, 2).adopt(
-            p, e, result["artifact_id"], adopt_body(detail)
-        )
+        adopted = artifact_service(session).adopt(p, e, result["artifact_id"], adopt_body(detail))
     assert adopted["apply_receipt"]["target_row_version"] == 2
     assert adopted["apply_receipt"]["storyboard_version"] == 3
     with factory.begin() as session:
@@ -574,7 +557,7 @@ def test_invalid_shot_patch_has_no_shared_effect(workspace, patch):
         assert session.get(ShotScript, shot.id).row_version == 1
 
 
-def test_feature_disabled_shared_api_still_reads_adopts_and_enforces_membership(workspace):
+def test_feature_disabled_api_keeps_candidates_private_and_enforces_membership(workspace):
     factory, p, e, member_id = workspace
     run_id, tool_id, args = prepared(factory, p, e)
     result = create(factory, run_id, tool_id, args)
@@ -605,21 +588,26 @@ def test_feature_disabled_shared_api_still_reads_adopts_and_enforces_membership(
     path = f"/api/v1/projects/{p}/episodes/{e}/agent-artifacts"
     listed = client.get(path)
     assert listed.status_code == 200, listed.text
+    assert listed.json()["items"] == []
     detail = client.get(path + "/" + result["artifact_id"])
-    assert detail.status_code == 200, detail.text
-    assert type(detail.json()["row_version"]) is int
-    assert type(detail.json()["source_snapshot"]["content_version"]) is int
+    assert detail.status_code == 404, detail.text
+    own_detail = details(factory, p, e, result["artifact_id"])
     adopted = client.post(
-        path + "/" + result["artifact_id"] + "/adopt", json=adopt_body(detail.json())
+        path + "/" + result["artifact_id"] + "/adopt", json=adopt_body(own_detail)
     )
-    assert adopted.status_code == 200, adopted.text
-    assert adopted.json()["applied_by"] == "2"
+    assert adopted.status_code == 404, adopted.text
+    with factory() as session:
+        session.info["actor"] = actor(1)
+        adopted = AgentArtifactService(session, cfg).adopt(
+            p, e, result["artifact_id"], adopt_body(own_detail)
+        )
+    assert adopted["applied_by"] == "1"
     with factory.begin() as session:
         session.get(ProjectMember, member_id).status = "removed"
     assert client.get(path).status_code == 404
     assert (
         client.post(
-            path + "/" + result["artifact_id"] + "/adopt", json=adopt_body(detail.json())
+            path + "/" + result["artifact_id"] + "/adopt", json=adopt_body(own_detail)
         ).status_code
         == 404
     )
