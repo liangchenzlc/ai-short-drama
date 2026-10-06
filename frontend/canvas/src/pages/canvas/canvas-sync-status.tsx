@@ -9,7 +9,7 @@ import { canvasExternalRevisionVersion, subscribeCanvasExternalRevision, useCanv
 import { canvasSyncProgressKey, useSyncProgressStore } from "@/stores/use-sync-progress-store";
 import { isHostedWorkspaceMode, workspaceCapabilities } from "@/services/workspace-mode";
 
-export function CanvasSyncStatus({ projectId, onLoadLatest, onOpenVersions, personalSaveError = "", personalSavePending = false }: { projectId: string; onLoadLatest: () => Promise<void>; onOpenVersions?: () => void; personalSaveError?: string; personalSavePending?: boolean }) {
+export function CanvasSyncStatus({ projectId, onLoadLatest, onOpenVersions, personalSaveError = "", personalSavePending = false, navigationSaveError = "", navigationSavePending = false }: { projectId: string; onLoadLatest: () => Promise<void>; onOpenVersions?: () => void; personalSaveError?: string; personalSavePending?: boolean; navigationSaveError?: string; navigationSavePending?: boolean }) {
     const { message } = App.useApp();
     const progress = useSyncProgressStore((state) => state.syncingProjects[canvasSyncProgressKey(projectId)]);
     const hosted = isHostedWorkspaceMode();
@@ -24,11 +24,11 @@ export function CanvasSyncStatus({ projectId, onLoadLatest, onOpenVersions, pers
     const [adopting, setAdopting] = useState(false);
     const phase = progress?.phase ?? (hosted ? "done" : undefined);
     const conflict = phase === "conflict";
-    const failed = Boolean(personalSaveError) || phase === "error" || conflict || (!phase && !personalSavePending);
-    const saving = personalSavePending || phase === "pending" || phase === "saving" || phase === "uploading";
-    const statusError = personalSaveError || operationError || (failed ? progress?.message : "");
+    const failed = Boolean(personalSaveError || navigationSaveError) || phase === "error" || conflict || (!phase && !personalSavePending && !navigationSavePending);
+    const saving = navigationSavePending || personalSavePending || phase === "pending" || phase === "saving" || phase === "uploading";
+    const statusError = (conflict ? progress?.message : "") || navigationSaveError || personalSaveError || operationError || (failed ? progress?.message : "");
     useEffect(() => { if (statusError) setStatusOpen(true); }, [statusError]);
-    const label = personalSaveError ? "个人设置未保存" : personalSavePending ? "正在保存" : localOnly ? "已保存在本地" : conflict ? "版本冲突 · 未同步" : !phase ? "尚未同步" : failed ? "云端未保存" : saving ? "正在保存" : "已保存";
+    const label = navigationSavePending ? "正在保存" : personalSaveError ? "个人设置未保存" : personalSavePending ? "正在保存" : navigationSaveError ? conflict ? "版本冲突 · 未同步" : "离开画布未完成" : localOnly ? "已保存在本地" : conflict ? "版本冲突 · 未同步" : !phase ? "尚未同步" : failed ? "云端未保存" : saving ? "正在保存" : "已保存";
     const run = async (operation: () => Promise<unknown>) => {
         setBusy(true);
         setOperationError("");
@@ -70,7 +70,7 @@ export function CanvasSyncStatus({ projectId, onLoadLatest, onOpenVersions, pers
                 content={
                     <div className="max-w-80 space-y-3" data-canvas-no-zoom>
                         <p role={statusError ? "alert" : "status"} className="text-sm">
-                            {statusError || (personalSavePending ? "正在保存个人设置" : localOnly ? "画布已保存在本机。" : progress?.message || (phase === "done" ? "画布已保存到服务器" : "尚未确认服务端保存，请保留本地内容"))}
+                            {statusError || (navigationSavePending ? "正在保存画布与模型偏好，完成后离开画布" : personalSavePending ? "正在保存个人设置" : localOnly ? "画布已保存在本机。" : progress?.message || (phase === "done" ? "画布已保存到服务器" : "尚未确认服务端保存，请保留本地内容"))}
                         </p>
                         {!localOnly && conflict ? <p className="text-xs text-muted-foreground">此画布的自动提交已暂停。加载最新版前会保留本地草稿，可下载后从画布列表导入为副本。</p> : null}
                         <div className="flex flex-wrap gap-2">

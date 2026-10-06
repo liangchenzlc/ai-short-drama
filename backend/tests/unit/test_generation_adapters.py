@@ -337,6 +337,105 @@ def test_modelhub_capabilities_and_exact_host():
     assert not capabilities({**snap, "model_key": "unknown"})["video_input"]["first_frame"]
 
 
+@pytest.mark.parametrize("scene", ["canvas_node", "canvas_model_test"])
+@pytest.mark.parametrize("generate_audio", [False, True])
+def test_modelhub_canvas_frozen_credentials_execute_submit_and_poll(
+    gateway, provider, scene, generate_audio
+):
+    import base64
+
+    from short_drama.ai.adapters import select_adapter, validate_request
+    from short_drama.ai.canvas_credentials import decode_canvas_credentials
+    from short_drama.core.crypto import KeyCipher
+    from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
+    from short_drama.service.canvas_credential_freeze import (
+        freeze_canvas_credentials,
+        freeze_model_credentials,
+    )
+    from short_drama.service.canvas_generation_inputs import generation_payload
+    from short_drama.service.canvas_generation_parameters import frozen_canvas_parameters
+
+    base, state, calls = provider
+    snap = snapshot("https://api.modelhub.cc", "video", "seedance-2.0-mini")
+    snap["runtime_profile"] = None
+    adapter = select_adapter(snap)
+    assert adapter == "modelhub_video.v1"
+    snap["base_url"] = base
+    source = CanvasRuntimeTaskCreate.model_validate(
+        {
+            "projectId": "canvas-source",
+            "type": "canvas_video",
+            "operation": "text_to_video",
+            "prompt": "原版画布视频提示词",
+            "logicalModelId": "17",
+            "input": {
+                "mode": "video",
+                "prompt": "原版画布视频提示词",
+                "config": {
+                    "size": "16:9",
+                    "videoSeconds": "5",
+                    "vquality": "480",
+                    "videoGenerateAudio": generate_audio,
+                },
+                "metadata": {
+                    "nodeId": "target",
+                    "sourceNodeId": "source",
+                    "clientOperationId": "modelhub-canvas-operation",
+                },
+            },
+        }
+    )
+    payload = generation_payload(source, 2, adapter)
+    payload["source"] = {"scene": scene}
+    payload["canvas_request"] = source.model_dump(mode="json", by_alias=True)
+    payload["canvas_parameters"] = frozen_canvas_parameters(source, adapter)
+    before = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    validated = validate_request(snap, payload, adapter)
+    assert validated["adapter"] == adapter
+    assert validated["resolved_parameters"]["generate_audio"] is generate_audio
+    record = SimpleNamespace(
+        adapter=adapter, config_snapshot=snap, request_data=payload, credential_cipher="old"
+    )
+    cipher = KeyCipher(base64.b64encode(b"m" * 32).decode())
+    freeze = freeze_model_credentials if scene == "canvas_model_test" else freeze_canvas_credentials
+    freeze(
+        record,
+        {"apiKey": "synthetic-modelhub-key", "headers": {"X-Private": "synthetic-modelhub-header"}},
+        cipher,
+    )
+    assert json.dumps(record.request_data, ensure_ascii=False, sort_keys=True) == before
+    assert record.config_snapshot["canvas_auth_scene"] == scene
+    assert "model_auth_version" not in record.config_snapshot
+    assert "synthetic-modelhub" not in record.credential_cipher
+    credential = decode_canvas_credentials(
+        record.config_snapshot, record.request_data, cipher.decrypt(record.credential_cipher)
+    )
+    state["body"] = {"task_id": "canvas-video-1", "status": "submitted"}
+    submitted = gateway.submit(record.config_snapshot, record.request_data, credential, adapter)
+    assert submitted.status == "submitted" and submitted.provider_task_id == "canvas-video-1"
+    method, path, headers, body = calls[0]
+    assert (method, path) == ("POST", "/v1/videos/generations")
+    assert headers["Authorization"] == "Bearer synthetic-modelhub-key"
+    assert headers["X-Private"] == "synthetic-modelhub-header"
+    assert body == {
+        "model": "seedance-2.0-mini",
+        "prompt": source.prompt,
+        "duration": 5,
+        "resolution": "480p",
+        "ratio": "16:9",
+        "functionMode": "omni_reference",
+        "generate_audio": generate_audio,
+    }
+    state["body"] = {"status": "completed", "result": {"url": "https://cdn.example/video.mp4"}}
+    completed = gateway.poll(record.config_snapshot, "canvas-video-1", credential, adapter)
+    assert completed.status == "succeeded"
+    assert completed.outputs == [{"url": "https://cdn.example/video.mp4", "media_type": "video"}]
+    assert calls[1][:2] == ("GET", "/v1/videos/tasks/canvas-video-1")
+    assert calls[1][2]["Authorization"] == "Bearer synthetic-modelhub-key"
+    assert calls[1][2]["X-Private"] == "synthetic-modelhub-header"
+    assert len(calls) == 2
+
+
 @pytest.mark.parametrize(
     "params",
     [

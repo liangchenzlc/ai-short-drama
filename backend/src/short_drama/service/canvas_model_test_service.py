@@ -3,11 +3,13 @@
 import hashlib
 import json
 from copy import deepcopy
+from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
 
 from short_drama.ai import GenerationError, select_adapter
 from short_drama.ai.adapters import ADAPTER_TYPES
+from short_drama.ai.model_identity import model_credential_identity
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import (
     ConfigurationError,
@@ -67,16 +69,7 @@ class CanvasModelTestService(BaseService):
                 raise WorkflowError(
                     "canvas_model_test_address_changed", "宿主模型地址已改变，请重新读取配置", 409
                 )
-            public = channel.model_dump(mode="json", by_alias=True, exclude_none=True)
-            public["baseUrl"] = config.base_url
-            try:
-                previous = {
-                    "apiKey": self.catalog.configs._key_cipher().decrypt(config.apikey)
-                    if config.apikey
-                    else ""
-                }
-            except ValueError:
-                raise ConfigurationError("本人模型凭据无法解密") from None
+            return self._saved_host_test_locked(config)
         elif channel.source_key == "beefapi":
             catalog = self.catalog.catalog_dao.catalog(self.catalog.actor_id)
             stored = next(
@@ -97,24 +90,13 @@ class CanvasModelTestService(BaseService):
             previous = self.catalog._beefapi_credentials_locked(channel.base_url)
             public = stored
         else:
-            catalog = self.catalog.catalog_dao.catalog(self.catalog.actor_id)
-            stored = next(
-                (
-                    item
-                    for item in (catalog.channels_json if catalog else [])
-                    if item["id"] == channel.source_key
-                ),
-                None,
-            )
-            if channel.credential_ref and (
-                stored is None or channel.credential_ref != f"host:{channel.source_key}"
-            ):
-                raise NotFound("本人渠道凭据不存在")
+            if channel.credential_ref:
+                raise WorkflowError(
+                    "canvas_model_legacy_credential_reference",
+                    "旧渠道凭据引用已停用，请使用宿主 AI 配置中的模型身份",
+                    409,
+                )
             previous = {}
-            if stored and normalize_base_url(stored["baseUrl"]) == normalize_base_url(
-                channel.base_url
-            ):
-                previous = self.catalog._credentials(catalog).get(channel.source_key, {})
             public = None
         sanitized, secret = self.catalog._channel(channel, previous)
         if public is not None:
@@ -138,7 +120,7 @@ class CanvasModelTestService(BaseService):
             key: getattr(config, key)
             for key in ("base_url", "model_key", "service_type", "capability_cache")
         }
-        snapshot["credential_identity"] = hashlib.sha256((config.apikey or "").encode()).hexdigest()
+        snapshot["credential_identity"] = model_credential_identity(config)
         try:
             adapter = select_adapter(snapshot)
         except GenerationError as error:
@@ -148,6 +130,86 @@ class CanvasModelTestService(BaseService):
                 "canvas_generation_protocol_unsupported", "渠道协议与模型能力不一致", 422
             )
         return config, adapter, secret
+
+    def _saved_host_test_locked(self, saved):
+        """宿主测试冻结已保存配置，不采用浏览器声明的协议、能力或密钥。"""
+        from .model_runtime_config import (
+            PROTOCOL_ADAPTERS,
+            decrypt_runtime_credentials,
+            refresh_runtime_model,
+        )
+
+        binding = self.catalog.catalog_dao.binding(saved.id)
+        channel_key = binding.channel_key if binding else f"host-{saved.id}"
+        derived = SimpleNamespace(
+            **{
+                key: deepcopy(getattr(saved, key))
+                for key in (
+                    "base_url",
+                    "model_key",
+                    "service_type",
+                    "capability_cache",
+                    "runtime_profile",
+                    "apikey",
+                    "runtime_credentials_cipher",
+                )
+            }
+        )
+        try:
+            refresh_runtime_model(derived, channel_key)
+        except GenerationError as error:
+            raise GenerationRequestError(error.code) from None
+        snapshot = {
+            key: getattr(derived, key)
+            for key in ("base_url", "model_key", "service_type", "capability_cache")
+        }
+        snapshot["credential_identity"] = model_credential_identity(saved)
+        try:
+            adapter = select_adapter(snapshot)
+        except GenerationError as error:
+            raise GenerationRequestError(error.code) from None
+        runtime = saved.runtime_profile or {}
+        protocol = runtime.get("protocol") or next(
+            (key for key, value in PROTOCOL_ADAPTERS.items() if value == adapter), None
+        )
+        if protocol is None:
+            raise WorkflowError(
+                "canvas_generation_protocol_unsupported", "该模型测试协议尚未接通", 422
+            )
+        secret = self.catalog.runtime_credentials_locked(saved.id, adapter)
+        if secret is None:
+            try:
+                cipher = self.catalog.configs._key_cipher()
+                secret = {
+                    "apiKey": cipher.decrypt(saved.apikey) if saved.apikey else "",
+                    **decrypt_runtime_credentials(saved, cipher),
+                }
+            except ValueError:
+                raise ConfigurationError("本人模型凭据无法解密") from None
+        profile = {
+            "model": saved.model_key,
+            "displayName": saved.name,
+            "capability": saved.service_type,
+            "protocol": protocol,
+        }
+        for public, key in (
+            ("capabilityConfig", "capability_config"),
+            ("defaultOptions", "default_options"),
+            ("logicalCapabilitySpec", "logical_capability_spec"),
+            ("logicalCapabilityProfiles", "logical_capability_profiles"),
+            ("videoCapabilitiesVersion", "video_capabilities_version"),
+        ):
+            if runtime.get(key) is not None:
+                profile[public] = deepcopy(runtime[key])
+        channel = {
+            "id": channel_key,
+            "baseUrl": saved.base_url,
+            "enabled": True,
+            "apiFormat": runtime.get("api_format", "openai"),
+        }
+        test = self.catalog._update_model(channel, profile, secret, None)
+        self.session.flush()
+        return test, adapter, secret
 
     def create(self, payload: CanvasModelTestCreate, key: str) -> tuple[dict, bool]:
         payload = CanvasModelTestCreate.model_validate(payload.model_dump())

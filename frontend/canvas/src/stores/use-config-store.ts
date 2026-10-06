@@ -359,11 +359,14 @@ export type ModelChannel = {
     models: string[];
     // 仅平台目录使用：将已保存的旧 SKU 选择重定向到当前模型家族。
     modelAliases?: Record<string, string>;
+    /** 宿主逻辑模型的历史 channel::model 标识，仅用于读取旧偏好和节点。 */
+    selectionAliases?: string[];
     scope?: "system" | "user";
     enabled?: boolean;
     pinned?: boolean;
     presetVersion?: number;
     credentialRef?: string;
+    credentialSource?: "manual" | "beefapi";
     hasApiKey?: boolean;
     hasSecretKey?: boolean;
     concurrencyLimit?: number;
@@ -384,6 +387,8 @@ export type ModelChannel = {
 };
 
 export type AiConfig = {
+    /** 宿主目录保留失效的显式选择，等待用户重新选择。 */
+    hostModelDirectory?: boolean;
     channelMode: "remote";
     baseUrl: string;
     apiKey: string;
@@ -587,7 +592,7 @@ export function filterModelsByCapability(models: string[], capability?: ModelCap
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
     // 选项目录只从当前有效渠道重建，不能信任旧快照里残留的 config.models。
     // 这样旧版本内置模型、未绑定渠道的裸模型不会再次进入创作端。
-    const models = modelOptionsFromChannels(config.channels);
+    const models = modelOptionsFromChannels(config.hostModelDirectory ? config.channels.filter(channel => channel.enabled !== false) : config.channels);
     if (!capability) return models;
     return filterModelsByCapability(models, capability, config.channels);
 }
@@ -600,16 +605,17 @@ export function configuredModelMatchesCapability(config: AiConfig, model: string
 
 export const MANAGED_BEEFAPI_CREDENTIAL_REF = "beefapi-enterprise";
 
-export function isBuiltinBeefAPIChannel(channel: Pick<ModelChannel, "id" | "pinned">) {
-    return channel.id === "beefapi" && channel.pinned === true;
+export function isBuiltinBeefAPIChannel(channel: Pick<ModelChannel, "id" | "pinned" | "scope" | "credentialSource">) {
+    return (channel.id === "beefapi" && channel.pinned === true)
+        || (channel.scope === "system" && channel.id.startsWith("host-") && channel.credentialSource === "beefapi");
 }
 
-export function channelHasManagedBeefAPICredential(channel: Pick<ModelChannel, "id" | "pinned" | "credentialRef" | "hasApiKey">) {
+export function channelHasManagedBeefAPICredential(channel: Pick<ModelChannel, "id" | "pinned" | "scope" | "credentialSource" | "credentialRef" | "hasApiKey">) {
     if (!isBuiltinBeefAPIChannel(channel)) return false;
     return channel.credentialRef === MANAGED_BEEFAPI_CREDENTIAL_REF || channel.hasApiKey === true;
 }
 
-export function channelHasGenerationCredential(channel: Pick<ModelChannel, "id" | "pinned" | "credentialRef" | "hasApiKey" | "apiKey">) {
+export function channelHasGenerationCredential(channel: Pick<ModelChannel, "id" | "pinned" | "scope" | "credentialSource" | "credentialRef" | "hasApiKey" | "apiKey">) {
     return (channel.credentialRef?.startsWith("host:") && channel.hasApiKey === true)
         || channelHasManagedBeefAPICredential(channel) || Boolean(channel.apiKey?.trim());
 }
@@ -619,8 +625,9 @@ function isAiConfigReady(config: AiConfig, model: string) {
         const key = config.runningHub.apiKey;
         return Boolean(config.runningHub.enabled && config.runningHub.baseUrl.trim() && key.trim() && config.runningHub.workflowId.trim());
     }
+    if (config.hostModelDirectory && !configuredModelMatchesCapability(config, model)) return false;
     const channel = resolveModelChannel(config, model);
-    return Boolean(model.trim() && channel.baseUrl.trim() && channelHasGenerationCredential(channel));
+    return Boolean(model.trim() && channel.enabled !== false && channel.baseUrl.trim() && channelHasGenerationCredential(channel));
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -720,12 +727,12 @@ export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefine
     const hasPersistedChannels = Array.isArray(persistedConfig.channels);
     if (!hasPersistedChannels) config.channels = [];
     const channels = normalizeChannels(config, !hasPersistedChannels).map(enrichBeefApiMediaChannel);
-    const models = modelOptionsFromChannels(channels);
+    const models = modelOptionsFromChannels(config.hostModelDirectory ? channels.filter(channel => channel.enabled !== false) : channels);
     const imageModels = filterModelsByCapability(models, "image", channels);
     const videoModels = filterModelsByCapability(models, "video", channels);
     const textModels = filterModelsByCapability(models, "text", channels);
     const audioModels = filterModelsByCapability(models, "audio", channels);
-    const model = normalizeSelectedModel(config.model || config.imageModel || config.textModel, channels, models);
+    const model = normalizeSelectedModel(config.model || config.imageModel || config.textModel, channels, models, config.hostModelDirectory);
     return {
         config: {
             ...config,
@@ -734,13 +741,13 @@ export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefine
             channels,
             models,
             model,
-            imageModel: normalizeSelectedModel(config.imageModel || model, channels, imageModels),
-            videoModel: normalizeSelectedModel(config.videoModel, channels, videoModels),
-            textModel: normalizeSelectedModel(config.textModel || model, channels, textModels),
-            audioModel: normalizeSelectedModel(config.audioModel || defaultConfig.audioModel, channels, audioModels),
+            imageModel: normalizeSelectedModel(config.hostModelDirectory ? config.imageModel : config.imageModel || model, channels, imageModels, config.hostModelDirectory),
+            videoModel: normalizeSelectedModel(config.videoModel, channels, videoModels, config.hostModelDirectory),
+            textModel: normalizeSelectedModel(config.hostModelDirectory ? config.textModel : config.textModel || model, channels, textModels, config.hostModelDirectory),
+            audioModel: normalizeSelectedModel(config.audioModel || defaultConfig.audioModel, channels, audioModels, config.hostModelDirectory),
             // 助手模型允许为空（跟随默认文本模型），因此这里只保证类型，
             // 协议与渠道有效性由 `lib/assistant-model` 在读取时裁决。
-            assistantModel: typeof config.assistantModel === "string" ? config.assistantModel.trim() : "",
+            assistantModel: typeof config.assistantModel === "string" ? normalizeModelOptionValue(config.assistantModel, channels) || config.assistantModel.trim() : "",
             audioVoice: config.audioVoice || defaultConfig.audioVoice,
             audioFormat: config.audioFormat || defaultConfig.audioFormat,
             audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
@@ -866,9 +873,10 @@ function enrichBeefApiMediaChannel(channel: ModelChannel): ModelChannel {
     return { ...channel, models, modelProfiles: Array.from(existing.values()) };
 }
 
-function normalizeSelectedModel(value: string, channels: ModelChannel[], options: string[]) {
+function normalizeSelectedModel(value: string, channels: ModelChannel[], options: string[], preserveUnavailable = false) {
     const model = normalizeModelOptionValue(value, channels);
-    return model && options.includes(model) ? model : options[0] || "";
+    if (model && options.includes(model)) return model;
+    return preserveUnavailable ? value?.trim() || "" : options[0] || "";
 }
 
 export function useEffectiveConfig() {
@@ -904,8 +912,11 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         pinned: channel?.pinned === true,
         presetVersion: channel?.presetVersion,
         credentialRef: channel?.credentialRef,
+        credentialSource: channel?.credentialSource,
         hasApiKey: channel?.hasApiKey,
         hasSecretKey: channel?.hasSecretKey,
+        selectionAliases: channel?.selectionAliases ? [...channel.selectionAliases] : undefined,
+        concurrencyLimit: channel?.concurrencyLimit,
         modelProfiles: channel?.modelProfiles?.map((item) => ({ ...item, protocol: normalizeModelProtocol(item.protocol) })),
     };
 }
@@ -973,6 +984,9 @@ export function normalizeModelOptionValue(value: unknown, channels: ModelChannel
     if (!normalizeRawModelName(model)) return "";
     const decoded = decodeChannelModel(model);
     if (decoded) {
+        const host = channels.find(item => item.scope === "system" && item.id.startsWith("host-") &&
+            (item.id === decoded.channelId || item.selectionAliases?.includes(model)));
+        if (host) return host.enabled === false || !host.models[0] ? "" : encodeChannelModel(host.id, host.models[0]);
         const channel = channels.find((item) => item.id === decoded.channelId);
         const resolved = channel?.modelAliases?.[decoded.model] || decoded.model;
         return channel && channel.models.includes(resolved) ? encodeChannelModel(channel.id, resolved) : "";
@@ -983,6 +997,11 @@ export function normalizeModelOptionValue(value: unknown, channels: ModelChannel
 }
 
 export function resolveModelChannel(config: AiConfig, value: string) {
+    if (config.hostModelDirectory) {
+        const selected = normalizeModelOptionValue(value, config.channels);
+        const identifier = decodeChannelModel(selected)?.channelId;
+        return config.channels.find(channel => channel.id === identifier) || createModelChannel({ id: "unavailable", name: "模型不可用", enabled: false, models: [] });
+    }
     const decoded = decodeChannelModel(value);
     const model = decoded?.model || value;
     const matched = decoded ? config.channels.find((channel) => channel.id === decoded.channelId) : config.channels.find((channel) => channel.models.includes(model));
@@ -991,7 +1010,8 @@ export function resolveModelChannel(config: AiConfig, value: string) {
 
 export function logicalModelIDForConfig(config: AiConfig) {
     const channel = resolveModelChannel(config, config.model);
-    return channel.modelProfiles?.find((item) => item.model === modelOptionName(config.model))?.logicalModelId || "";
+    const model = config.hostModelDirectory ? normalizeModelOptionValue(config.model, config.channels) : config.model;
+    return channel.modelProfiles?.find((item) => item.model === modelOptionName(model))?.logicalModelId || "";
 }
 
 export function channelConnectionSignature(channel: ModelChannel) {
@@ -1000,7 +1020,8 @@ export function channelConnectionSignature(channel: ModelChannel) {
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
     const channel = resolveModelChannel(config, value);
-    const model = modelOptionName(value || config.model);
+    const selected = value || config.model;
+    const model = modelOptionName(config.hostModelDirectory ? normalizeModelOptionValue(selected, config.channels) || selected : selected);
     const modelProfile = channel.modelProfiles?.find((item) => item.model === model);
     const modelProtocol = normalizeModelProtocol(modelProfile?.protocol);
     const interfaceType = modelProtocol

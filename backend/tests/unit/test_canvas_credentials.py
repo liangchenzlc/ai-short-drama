@@ -91,7 +91,15 @@ def test_envelope_marker_cannot_escape_canvas_scope(changes):
 
 
 @pytest.mark.parametrize(
-    "scene,adapter", [("standard", "openai_chat.v1"), ("canvas_node", "unknown.v1")]
+    "scene,adapter",
+    [
+        ("standard", "openai_chat.v1"),
+        ("standard", "modelhub_video.v1"),
+        ("canvas_node", "unknown.v1"),
+        ("canvas_node", "dashscope_speech.v1"),
+        ("canvas_node", "dashscope_voice_design.v1"),
+        ("canvas_model_test", "plugin.video.v1"),
+    ],
 )
 def test_freeze_rejects_unimplemented_protocol_or_standard_scope_without_mutating_record(
     scene, adapter

@@ -1,10 +1,71 @@
 # BeefTV 画布迁移实施记录
 
+**2026-10-06 最新范围：画布子包只保留无限画布编辑器，模型配置、项目和资产统一使用宿主管理，不再显示 BeefTV 首页、整站管理和外部 Agent 页面。** 本轮已物理删除 77 个整站/导航/品牌源文件，修复 8081 与 API 来源配置不一致导致 CSRF 403 被误当撤权的问题；详见[整站清理与故障记录](2026-10-06-canvas-only-cleanup.md)。源 settings/assets 页和画布库级历史验证保留作证据，不再作为需保留的产品范围。宿主项目/资产语义与画布级导入恢复入口仍须继续对齐。
+
 完整目标以 [一比一迁移方案](2026-10-05-beeftv-infinite-canvas-migration.md) 为准。本记录用于跨阶段接续，不将某个阶段的完成视为完整迁移完成。
 
-**2026-10-06 暂停接续入口：[迁移接续文档](2026-10-06-beeftv-resume-handoff.md)。** 当前 goal 为 `paused`；详细记录了最新证据、未完成功能、未部署代码和下次先执行的原 UI 文字图片验收。本记录早期数量及行为描述是当时的历史基线，以最新切片与接续快照为准，不据旧段落重复实施。
+## 2026-10-06：纯画布入口、物理移除整站与 CSRF 误撤权修复
+
+按用户最新截图反馈，删除首页/项目库/资产/设置/外部 Agent/独立创作/任务整站页面及导航和品牌，共 77 个固定源文件；旧路径转宿主，只留下具体编辑器。没有必须保留首页的依赖。Provider、主题与几何包装、共享状态/分页、图内资源选择和生成/助手/草稿模块仍有编辑器调用，详见[清理记录及依赖证据](2026-10-06-canvas-only-cleanup.md)。额外 44 个辅助源码批量清理被自动审批拒绝，认为静态依赖证据不足，未执行该可选整理。
+
+画布实际未归档，读取正常；用户 8081 与本机 API 的 8080 Origin 配置不一致使 viewport 写入返回 403，旧适配器误冻结整图。已只改本机 PUBLIC_ORIGIN 为 8081 并重启，前端只把当前服务明确的 `404 not_found` 判为失去访问，不解除 CSRF/权限，不清用户草稿。返回/设置导航共用保存保护，保存期间有新输入则留页；删除末张画布成功后回宿主项目列表。
+
+本轮最终专项验证：画布 Node **218**，统一生产预览 E2E **2**，真实 Python/随机 MySQL 浏览器 **1**（无跳过、无模型调用）通过；真实测试含 CSRF 403 保留访问与恢复保存、拖拽刷新、跨窗 409、返回及 **14** 个旧深链。宿主目标为明确 HTML 导航边界，不称宿主业务页渲染验收。统一构建通过，独立与合并画布 **874** 文件 SHA-256 完全一致；来源检查 **832 / 168 适配 / 77 删除**，Ruff、文档链接、diff-check 通过。两次临时库均已清理。失败及修正方法见清理记录，旧整站依赖的浏览器 harness 已移出当前验收口径。
+
+本轮未改表结构、未执行业务 DDL、未进行真实供应商验收或提交推送。前端/API/调度器和六类 Worker 已恢复。完整迁移仍未完成，宿主项目/资产语义与画布级导入/恢复入口需继续推进，不重新引入源管理页面。
+
+**2026-10-06 接续入口：[迁移接续文档](2026-10-06-beeftv-resume-handoff.md)。** 此前完整迁移 goal 的系统状态仍为 `paused`，本轮定向实施模型统一。早期数量、行为及未部署描述是当时基线，以后续最新切片为准，不据旧段落重复实施。
 
 2026-10-06 按用户调整，独立画布包从 `canvas-frontend/` 移至 `frontend/canvas/`，保留独立依赖、锁文件和 HTML，并由宿主统一安装、启动、构建与预览。本记录此前出现的 `canvas-frontend/.runtime/...` 是当时实际执行的历史路径，保留原文；当前脚本和维护入口均使用 `frontend/canvas/`。共同声明依赖的版本按宿主对齐后，需要重新对照视觉与行为，此前旧依赖版本的验证不自动覆盖本次变化。
+
+## 2026-10-06 宿主统一模型配置切片
+
+本节记录用户后续授权“开始修改，统一模型配置入口，补充必要的字段，以及修复更改后可能导致的 bug”。本轮只实施模型管理；项目、资产管理和其余整站入口收敛仍未实施，不能将本切片当作完整画布迁移完成。未主动提交或推送代码。
+
+### 已实施行为
+
+- `/ai_config` 是唯一模型管理入口，旧 `/canvas-app/settings?section=channels` 转宿主；缺模型引导、命令面板及编辑器设置入口统一跳转。跨 HTML 前等待偏好 ACK 与作品远端保存，409 或失败保留草稿，使用源顶栏状态和 popover 显示反馈。
+- 宿主模型表单补齐 `runtime_profile`（API 格式、协议、参考资源根、能力、默认参数、逻辑规格、视频能力版本、并发元数据）、第二密钥和自定义 headers，并提供独立模型测试与 BeefAPI 连接/钱包入口。读取只返回秘密存在标记。第二密钥仅安全保存，未接通签名协议仍拒绝执行；并发元数据保存不代表新增调度器已交付。
+- 标准配置没有 profile 时保持原协议解析；画布只读宿主模型、完整 profile 和可信企业来源，偏好 PUT 不再含 channels，旧 channels 写入（包括空数组或 null）明确拒绝。旧绑定、默认、节点及重试通过 stable ID/服务器 alias 恢复，明确失效的选择不随机换供应商。
+- 普通旧 catalog 不再覆盖、删除或恢复宿主配置，也不能通过发现/模型测试引用其旧密钥。企业同步保留本人名称、启停与删除决定；地址、模型身份、协议和授权仍由服务端维护。
+- 修复 headers 更改后的缓存与能力证据身份、显式清空损坏扩展信封、profile 清空后迁移重入恢复旧值、脱敏 headers 读取类型、当前应用 Settings 丢失导致解密失败、模型测试修改原配置缓存等边界。历史任务仍用原冻结凭据和配置，首次提交继续检查当前启停/删除许可。
+- 源助手的企业白名单和已有企业视频物化按服务端可信来源恢复，不按可伪造的名称或地址判断。独立 `frontend/canvas/` 结构和依赖保持不变。
+- 用户明确授权后，普通模式自定义请求头也接入主动模型发现；只在点击时发送当前地址的 API Key/headers，同地址可保留已存凭据，换地址不复用旧引用或遮罩值，显式 null/空数组清除。第二密钥不用于探测。
+- 修复画布实际跳转没有 `from=canvas` 时宿主缺少返回按钮的问题，直接验证安全 `return_to`；修复 Python 可选 profile 字段为 null 时表单显示“null”而不能再次保存的问题，同步 DTO 和表单空值转换。
+- 合并旧请求头遮罩值后再次校验总量，超限返回 `422 model_runtime_credentials_invalid`，保留原信封；修复已有 ModelHub 画布视频被新鉴权范围误拒绝，未开放原不支持的音频/插件分支。
+- Agent 的模型读取、能力验证、实际执行、回放与输入能力使用保存的 profile 和加密扩展凭据；未知协议明确拒绝、不按旧地址回退。扩展 headers 经原 SafeTransport 发送，公开回复、流式输出与候选正文脱敏，私人协议历史不改。
+
+合同见[统一模型 API](../api/model-runtime.md)，部署见[统一模型迁移](../数据库模型/migrations/2026-10-06-host-model-runtime/README.md)。
+
+### 真实业务库执行
+
+2026-10-06 19:15（Asia/Shanghai）在现有 `short_drama` 执行以下 DDL；执行前备份了四张模型/偏好相关表的 schema 与未解密记录，文件位于忽略的 `backend/.runtime/migration-backups/2026-10-06-host-model-runtime-before.json.gz`，不提交。
+
+```sql
+ALTER TABLE ai_model_configs ADD COLUMN runtime_profile JSON;
+ALTER TABLE ai_model_configs ADD COLUMN runtime_credentials_cipher MEDIUMTEXT;
+ALTER TABLE canvas_channel_models ADD COLUMN runtime_migrated_at DATETIME(3);
+```
+
+三列均可空。ORM、完整 93 表 SQL、旧画布 009 与本轮增量 SQL 已同步。迁移返回 `ready`，缺失/不兼容字段为空；`migrated=0, already_migrated=0, retired=0, api_key_difference_ids=[]`。当前业务库原有 4 条标准模型，旧绑定、catalog 和 workspace 偏好均为 0 条，因此没有真实旧目录回填。备份对比确认全部既有字段与记录数量保持一致；全表 `schema_gaps(include_agent=True)=[]`。旧目录有数据的回填、事务回滚、重入和 alias 由随机临时 MySQL 用例验证，不冒充本业务库已含旧数据。
+
+### 最终验证与服务恢复
+
+- 最新完整后端 `tests/unit tests/api`：**1711 passed**，无跳过，334.17 秒；仅 1 条既有 Starlette 弃用警告。全量 Ruff 检查与格式检查通过（579 文件）。`uv` 不可用，实际使用现有 `.venv/Scripts/python.exe`；缓存和 TEMP 位于 D 盘。
+- 宿主 Node **205 passed**、画布 Node **210 passed**；宿主模型配置 Playwright **18 passed**、画布 host-canvas Chrome **2 passed**。这些浏览器测试使用 API 夹具，单独列明，不替代后续真实 Python 联调。typecheck、固定源 source-check 通过（832 文件 / 97 适配）。
+- 最新统一 `npm run build` 退出 0，生成 `dist/index.html`、`dist/canvas-app/` 与 `canvas/dist/`；最终日志为 `frontend/.runtime/host-model-build-verified.log`，只有既有大 chunk 提示。并行构建曾报 esbuild `The service was stopped: write UNKNOWN`，同期 Windows 分页文件扩大至约 34 GB、C 盘约 245 MB；串行重跑时临时暂停已确认空闲的 6 类 Worker，使用 D 盘缓存/TEMP、`NODE_OPTIONS=--max-old-space-size=3072`、`GOMAXPROCS=1`、`GOMEMLIMIT=384MiB`、`GOGC=20` 后通过，随后恢复 Worker。没有修改生产构建配置或依赖来绕过验证。
+- 真实随机 MySQL：迁移 **7 passed**、BeefAPI 目录 **8 passed**、连接 **17 passed**；恢复后模型测试 **10 passed**，Agent/标准生成服务与执行器 **78 passed**。目录/视频用例 **52 passed**；文字图片、通用生成和音视频媒体 **28 passed / 0 skipped**，实际启用 MinIO，保留 wire、SSE、冻结凭据、权限、字节哈希和安全重试断言。
+- 更新后的宿主模型配置与 BeefAPI 真实 Python/MySQL/Chrome 联调 **4 passed / 0 skipped**，55.20 秒，覆盖 `[False]` 与启用模型测试的 `[True]`。CRUD、跨 context 恢复、409 保稿、删除后 404、企业取消/重连/钱包/断开、模型测试幂等与任务详情均通过；最终 `page_errors=[]`、`failed_routes=[]`。仅精确标记已断言的 URL/method/status 为预期错误。证据位于 `backend/.runtime/host-model-browser-complete-retry-*`。一次并行运行中高级区域点击卡住未在独立复测重现，根因未证实，未修改超时或放宽断言。
+- 旧测试 fixture 原先通过 workspace PUT 写 channels，已改宿主 POST/PATCH 与 preferences-only PUT；原功能断言保留。宿主删除原本保留 enabled，只软删并清默认，浏览器断言按既有标准合同校准。真实 null 编辑问题和 ModelHub 鉴权问题均先复现，再验证修复。
+- 完整 SQL 与 ORM 校验通过：93 张表；本轮增量导出校验通过。Docker 恢复后重查三列为 `ready`、`schema_gaps(include_agent=True)=[]`，四张备份表的原字段及数量全部一致。
+
+此前基础设施故障为 Docker 日志明确的 `write ... Docker/log/vm/init.log: There is not enough space on the disk`，随后 MySQL `(2003, WinError 10061)`、Desktop CLI 挂起。用户释放 C 盘后，重启处于错误状态的 Docker Desktop，原 MySQL/RabbitMQ/MinIO 容器恢复 healthy。API、scheduler、text/image/video/audio/render/agent 共 8 个原角色已恢复；API 健康入口 200，六类任务队列有真实消费者。Celery 远程控制原本关闭，不能以 inspect ping 无应答判为 Worker 故障。源 BeefTV 8080 和宿主/画布 8081/8082 保留。
+
+随机测试库和临时 grants 按各批审计清理；原 19:22 中断留下的随机库通过创建时间、93 张测试表和测试夹具账号核实后清理，同批三个空 MinIO 测试桶核实时间与命名后删除。最新无残留随机测试库、grants 或测试桶。最终三个 HTML 入口齐全，独立/合并画布各 954 个文件全部 SHA-256 一致，维护文档 57 个本地链接均存在；API 健康 200，六类队列各 1 个消费者，均无待执行或执行中消息。C 盘最终约 242 MB，Windows 分页文件约 34 GB，未修改系统分页设置；以后遇到基础设施或构建异常先核对空间和虚拟内存，不重置数据卷、不重新执行已完成 DDL。
+
+自动审批最初因凭据目的地缺少明确授权阻止普通模式 headers 探测。用户后续明确回复“允许主动探测”，现已按点击触发、同地址引用、换地址隔离实现并验证，该确认项已关闭。
+
+未调用真实收费模型或真实企业账号；所有供应商为本机 HTTP/Gateway 替身。Claude、Gemini、RunningHub、签名协议及原未接通分支未新增执行支持；并发字段仅保存元数据。项目、资产及其余 BeefTV 整站入口收敛、完整 M0–M5 验收仍按接续文档实施，本轮未将完整迁移 goal 标为完成，未提交或推送。
 
 ## 基线
 

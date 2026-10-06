@@ -1,4 +1,4 @@
-"""原模型服务向导通过真实本人 HTTP 和 MySQL 完成 CRUD；不调用供应商。"""
+"""宿主模型配置通过真实本人 HTTP 和 MySQL 完成 CRUD；生成仅使用本机替身。"""
 
 import json
 import os
@@ -127,7 +127,7 @@ def controlled_model_test_runtime(identity_app, settings, enabled, monkeypatch):
 
 
 @pytest.mark.parametrize("run_model_test", [False, True])
-def test_original_model_settings_persist_redact_isolate_and_keep_conflict_draft(
+def test_host_model_settings_persist_redact_isolate_and_keep_conflict_draft(
     identity_app, run_model_test, monkeypatch
 ):
     node = shutil.which("node")
@@ -178,19 +178,19 @@ def test_original_model_settings_persist_redact_isolate_and_keep_conflict_draft(
                 process.communicate(timeout=10)
         assert process.returncode == 0, f"Model settings browser failed: {errors}\n{output}"
         result = json.loads(output)
-        assert result["source_service_created"] and result["logical_id_acknowledged"]
-        assert result["source_builtin_available"]
+        assert result["host_model_created"] and result["logical_id_acknowledged"]
+        assert result["official_entry_available"]
         assert result["default_choice_saved"] and result["fresh_browser_restored"]
         assert result["credentials_redacted"] and result["browser_cache_has_no_secrets"]
-        assert result["source_service_updated"] and result["source_service_deleted"]
+        assert result["host_model_updated"] and result["host_model_deleted"]
         assert result["account_catalog_isolated"] and result["conflict_kept_draft"]
         assert result["zero_generation_submissions"] is not run_model_test
         assert result["canvas_task_submissions"] == 0 and not result["page_errors"]
         if run_model_test:
-            assert result["source_model_test_completed"]
-            assert result["source_model_test_failure_displayed"]
+            assert result["model_test_completed"]
+            assert result["model_test_failure_displayed"]
             assert result["uncertain_model_test_ack_replayed"]
-            assert result["source_task_center_showed_actual_result"]
+            assert result["task_center_showed_actual_result"]
             assert result["private_model_tests_hidden"]
             assert result["model_test_submissions"] == evidence["admissions"] == 3
             assert len(evidence["calls"]) == 2
@@ -198,11 +198,26 @@ def test_original_model_settings_persist_redact_isolate_and_keep_conflict_draft(
             assert not evidence["worker_errors"]
     with identity_app[1]() as session:
         catalog = session.scalar(select(CanvasModelCatalog))
-        assert catalog.channels_json == []
-        assert catalog.credentials_cipher is None
-        binding = session.scalar(select(CanvasChannelModel))
-        model = session.get(AIModelConfig, binding.model_config_id)
-        assert model.is_deleted and not model.enabled
+        if catalog is not None:
+            assert catalog.channels_json == []
+            assert catalog.credentials_cipher is None
+        model_id = int(result["saved_model_id"])
+        model = session.get(AIModelConfig, model_id)
+        assert model.owner_user_id == int(actor["id"])
+        assert model.is_deleted == 1 and model.is_default == 0
+        assert model.enabled == 1
+        assert model.runtime_profile["protocol"] == "chat-completion"
+        assert model.runtime_profile["default_options"] == {"temperature": 0}
+        assert model.apikey and model.runtime_credentials_cipher
+        assert "synthetic-browser-api-key" not in model.apikey
+        assert "synthetic-browser-secret-key" not in model.runtime_credentials_cipher
+        assert "synthetic-browser-header-key" not in model.runtime_credentials_cipher
+        assert (
+            session.scalar(
+                select(CanvasChannelModel).where(CanvasChannelModel.model_config_id == model_id)
+            )
+            is None
+        )
         assert session.scalar(select(func.count()).select_from(CanvasTaskBinding)) == 0
         if run_model_test:
             tasks = list(session.scalars(select(AsyncTask).order_by(AsyncTask.id)))

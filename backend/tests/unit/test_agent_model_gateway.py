@@ -22,11 +22,13 @@ from pydantic_ai.tools import ToolDefinition
 from short_drama.agent.model_gateway import (
     AgentGatewayError,
     AgentModelGateway,
+    _TextRedactor,
     deserialize_history,
     serialize_deferred_requests,
     serialize_history,
     serialize_segment_result,
 )
+from short_drama.ai.canvas_credentials import CanvasCredentials
 
 
 @pytest.fixture
@@ -367,6 +369,158 @@ def sse_response(protocol, *, text=None, calls=None, with_usage=True, terminal=T
         ).encode()
         for index, item in enumerate(events)
     )
+
+
+@pytest.mark.parametrize("protocol", ["chat", "responses"])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("api_key", ["test-secret", ""])
+def test_saved_profile_and_headers_drive_protected_agent_calls_and_redaction(
+    provider, protocol, stream, api_key
+):
+    base, state = provider
+    text = "test-secret and header-secret remain private."
+    reply = (
+        (
+            200,
+            sse_response(protocol, text="test-|secret and header-|secret remain private."),
+            "text/event-stream",
+        )
+        if stream
+        else (200, response(protocol, text=text))
+    )
+    state["responses"] = [reply]
+    config = {
+        **snapshot(base, "responses" if protocol == "chat" else "chat"),
+        "runtime_profile": {
+            "version": 1,
+            "api_format": "openai",
+            "protocol": "chat-completion" if protocol == "chat" else "openai-response",
+        },
+    }
+    credentials = CanvasCredentials(
+        apiKey=api_key, headers=[{"name": "X-Account", "value": "header-secret"}]
+    )
+    requests, deltas = [], []
+
+    async def save_request(value):
+        requests.append(value)
+
+    async def delta(value):
+        deltas.append(value)
+
+    result = asyncio.run(
+        gateway().run_segment(
+            config,
+            credentials,
+            instructions="Answer safely.",
+            user_prompt="Hello.",
+            stream=stream,
+            on_request=save_request,
+            on_text_delta=delta if stream else None,
+        )
+    )
+    path, headers, body = state["calls"][0]
+    assert path == ("/v1/chat/completions" if protocol == "chat" else "/v1/responses")
+    lowered = {name.lower(): value for name, value in headers.items()}
+    assert lowered["x-account"] == "header-secret"
+    assert lowered.get("authorization") == ("Bearer test-secret" if api_key else None)
+    assert "header-secret" not in json.dumps(requests)
+    assert "header-secret" not in json.dumps(body)
+    assert result.output == (
+        "[redacted] and [redacted] remain private."
+        if api_key
+        else "test-secret and [redacted] remain private."
+    )
+    assert text in json.dumps(result.history)
+    if stream:
+        assert "".join(deltas) == result.output
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        {"version": 1, "api_format": "openai", "protocol": "plugin/unknown"},
+        {"version": 1, "api_format": "openai", "protocol": "openai-image"},
+        {"version": 1, "api_format": "claude", "protocol": "chat-completion"},
+        {"version": 2, "api_format": "openai", "protocol": "chat-completion"},
+    ],
+)
+def test_unsupported_saved_agent_profile_never_falls_back_to_legacy_url(provider, profile):
+    base, state = provider
+    with pytest.raises(AgentGatewayError, match="unsupported_agent_protocol"):
+        asyncio.run(
+            gateway().run_segment(
+                {**snapshot(base, "chat"), "runtime_profile": profile},
+                "",
+                instructions="Answer.",
+                user_prompt="Hello.",
+            )
+        )
+    assert state["calls"] == []
+
+
+@pytest.mark.parametrize("protocol", ["chat", "responses"])
+def test_saved_headers_are_used_by_both_agent_capability_probe_segments(provider, protocol):
+    base, state = provider
+    state["responses"] = [
+        (
+            200,
+            response(
+                protocol, calls=[("probe_1", "verify_agent_echo", {"value": "agent-capability-v1"})]
+            ),
+        ),
+        (200, response(protocol, text="AGENT_CAPABILITY_OK")),
+    ]
+    config = {
+        **snapshot(base, "responses" if protocol == "chat" else "chat"),
+        "runtime_profile": {
+            "version": 1,
+            "api_format": "openai",
+            "protocol": "chat-completion" if protocol == "chat" else "openai-response",
+        },
+    }
+    evidence = asyncio.run(
+        gateway().validate_capability(
+            config,
+            CanvasCredentials(
+                apiKey="", headers=[{"name": "X-Account", "value": "private-account"}]
+            ),
+            conversation_id="saved-profile-probe",
+            stream=False,
+        )
+    )
+    assert evidence.tool_calling and evidence.tool_result_continuation
+    assert evidence.protocol == ("openai_chat.v1" if protocol == "chat" else "openai_responses.v1")
+    assert len(state["calls"]) == evidence.requests == 2
+    assert all(
+        {name.lower(): value for name, value in headers.items()}["x-account"] == "private-account"
+        for _, headers, _ in state["calls"]
+    )
+
+
+def test_multiple_secret_redactor_handles_overlapping_values_and_split_deltas():
+    redactor = _TextRedactor(["account", "account-long", "different-account"])
+    deltas = [
+        redactor.add(text)
+        for text in ("prefix account", "-lo", "ng and different-", "account suffix")
+    ]
+    deltas.append(redactor.add("", final=True))
+    assert "".join(deltas) == "prefix [redacted] and [redacted] suffix"
+
+
+def test_saved_utf8_header_uses_protected_transport_header_bytes(provider):
+    base, state = provider
+    state["responses"] = [(200, response("chat", text="Ready"))]
+    asyncio.run(
+        gateway().run_segment(
+            snapshot(base, "chat"),
+            CanvasCredentials(apiKey="", headers=[{"name": "X-Account", "value": "中文账户"}]),
+            instructions="Answer.",
+            user_prompt="Hello.",
+        )
+    )
+    headers = {name.lower(): value for name, value in state["calls"][0][1].items()}
+    assert headers["x-account"].encode("latin-1").decode("utf-8") == "中文账户"
 
 
 @pytest.mark.parametrize("protocol", ["chat", "responses"])

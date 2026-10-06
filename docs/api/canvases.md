@@ -1,8 +1,10 @@
 # 无限画布接口
 
-当前已接通双模式项目、画布文档、历史、个人状态、加密渠道目录与独立模型测试、资源上传下载、私人素材、绘图基础、本人项目文件夹及生成任务准入/基本回填。完整媒体加工、生成参数与协议、绘图工具、导演、助手和插件执行仍在迁移中，不能把本文列出的接口视为完整 BeefTV 功能验收。进度见[实施记录](../plans/2026-10-05-beeftv-implementation-log.md)。
+当前已接通双模式项目、画布文档、历史、个人状态、宿主统一模型配置与独立模型测试、资源上传下载、私人素材、绘图基础、本人项目文件夹及生成任务准入/基本回填。完整媒体加工、生成参数与协议、绘图工具、导演、助手和插件执行仍在迁移中，不能把本文列出的接口视为完整 BeefTV 功能验收。进度见[实施记录](../plans/2026-10-05-beeftv-implementation-log.md)。
 
 统一前缀 `/api/v1`。认证、Origin、CSRF、项目成员检查沿用现有中间件。`X-Canvas-Actor` 是画布打开时的账号 ID，仅用于校验当前会话是否发生切换，不能授予身份或权限；不匹配返回 `409 canvas_actor_changed`，不撤销其他窗口刚登录的有效会话。
+
+独立画布 HTML 只渲染 `/canvas-app/canvas/{source_key}` 编辑器；整站首页、画布库、项目、资产、设置和外部 Agent 页面源码已移除，旧管理 URL 转宿主。编辑器退出回 `/projects`，模型配置进入 `/ai_config` 并携带安全画布返回地址；正常导航先等偏好和作品保存回执，409 保留草稿。当前 Python 将画布不存在、归档和无访问权限隐藏为 `404 not_found`；CSRF 或其他写规则 403 不表示整张画布撤权。自定义前端端口须与后端 `PUBLIC_ORIGIN` 一致，不能停用 CSRF 修复来源不匹配。
 
 创建项目接受 `workspace_mode: standard | infinite_canvas`，默认 `standard`。无限画布创建必须提供 `Idempotency-Key`；在同一事务中创建项目、主画布和回执。列表与详情新增 `workspace_mode`、`primary_canvas_id`、`canvas_count`。模式创建后固定，PATCH 不接受该字段。
 
@@ -194,7 +196,7 @@ OpenAI 图片编辑支持已保存的同项目 `mask`，准入和实际执行均
 不接受未保存 URL、Blob 或浏览器内嵌图片。标准模式 `TextInput.messages[].content` 继续为字符串，
 不能通过标准接口提交任意多模态 JSON。
 
-准入从本人已保存渠道 profile 的 `capabilityConfig.text` 冻结 `canvas_text_capability`，
+准入从本人宿主配置的 `runtime_profile.capability_config.text` 冻结 `canvas_text_capability`，
 不采用本次请求声明的视觉能力，也不按模型名猜测。没有配置时沿用源文字默认最大图片数 0；
 图片数、单图字节和提示词长度检查保存的 `references.maxImages/maxImageBytes/promptMaxChars`。
 当前画布非视频 DTO 最多 16 张图片，这个阶段限制尚未代表源全部可配置范围。
@@ -213,8 +215,8 @@ PNG、JPEG、WebP、GIF 为本片接通的 MIME；其他图片、文字视频/�
 结果绑定；普通画布文字节点按源等待终态回填，未新增逐字展示。
 不会把 reasoning 加入作品。同键图片顺序或内容变化返回 409，读取/重放不提交新生成。
 
-已有绑定模型在新任务准入、选择 adapter 前，按服务器保存的渠道/profile 刷新派生能力缓存。
-缓存变化只推进执行配置版本，不修改目录正文、凭据或个人偏好；相同缓存完全无操作。
+新任务准入、选择 adapter 前，按服务器保存的宿主 `runtime_profile` 刷新派生能力缓存。
+缓存变化只推进执行配置版本，不修改配置正文、凭据或个人偏好；相同缓存完全无操作。
 旧任务继续使用原冻结配置，同键重放直接返回原任务；旧版本画布任务的完成回写不能覆盖新配置缓存。
 未绑定的标准配置、停用/已删除模型与不支持的协议继续遵循原权限和拒绝行为。
 
@@ -238,15 +240,15 @@ Seedance 预上传顺序为创建上传、PUT 原字节、完成确认，再提�
 
 ## 本人模型选择与偏好
 
-`GET /canvas-runtime/workspace/model-config` 返回 `{models,channels,preferences,row_version}`。`models` 为本人宿主 AIModelConfig 的安全投影；已绑定渠道的配置不再重复投影为宿主渠道。`channels` 保留源自定义渠道与模型 profile，执行模型的 `logicalModelId` 由服务器分配。宿主渠道使用 `host-<config_id>` 和 `host:<config_id>`，自定义渠道使用自己的稳定 `id` 和 `host:<channel_id>`。两类引用均不携带密钥。
+模型创建、编辑、默认、启停和删除统一使用宿主 `/ai_config` 与 `/ai-model-configs`。新增字段、脱敏、凭据更新语义及迁移见[统一模型配置](model-runtime.md)。旧 `/canvas-app/settings` 深链转宿主；在画布内进入配置前等待偏好和作品保存，失败或 409 保留草稿并阻止离开。
 
-`PUT /canvas-runtime/workspace/model-config` 接受 `{expected_row_version,preferences,channels?}`，返回与 GET 一致的完整回执。省略 `channels` 只保存偏好，空数组清空自定义目录。源 camelCase 字段保留；自定义渠道不可伪造 `host-`、system 或 pinned。每个选中的模型须有明确 capability profile；未选中的额外 profile 可以保留，但不创建执行配置。伪造的 `logicalModelId` 不被采用，删除后重加复用稳定身份。
+`GET /canvas-runtime/workspace/model-config` 返回 `{models,channels,preferences,row_version}`。`models` 包含本人未删除的宿主 AIModelConfig，包括已迁移的旧绑定配置；附完整运行 profile、默认状态、扩展凭据存在标记、可信 `credential_source` 与 `selection_aliases`。`channels` 为兼容空数组，不再提供另一套可编辑目录。前端将配置投影为只读 `host-<config_id>`，`logicalModelId` 始终为稳定配置 ID；该投影的 system 标记不代表全局共享或管理员模型。
 
-官方 `beefapi` 是固定的 `scope=user/pinned=true` 服务端渠道，未连接也返回空目录。外部保存只能改变其 `enabled/headers`；地址、模型、profile 和执行身份均取服务端当前目录。省略该渠道或清空自定义数组不会删除它。托管 API Key 只由本人连接密文读取；转录等源目录非生成项保留空能力，不创建可执行配置。源同账号目录合并、换账号替换，手工渠道保留。
+`PUT /canvas-runtime/workspace/model-config` 只接受 `{expected_row_version,preferences}`，返回与 GET 一致的回执。带 `channels` 的旧请求明确拒绝，包括空数组；不能通过偏好接口创建、清空或覆盖模型。源 camelCase 偏好保留，409 停止自动覆盖并保留草稿。
 
-渠道公开字段保存在本人 `canvas_model_catalogs.channels_json`，API Key、Secret Key 和全部 header 值保存在独立加密信封；响应返回空值、`hasApiKey/hasSecretKey` 和 `credentialRef`。空秘密值保持旧凭据；明确清除使用 `clearCredentials: ["apiKey","secretKey","headers"]` 中的目标字段。偏好、目录与 backing 配置在同一用户锁和版本事务保存。原版“保存并返回”等待服务端回执，409 保留当前草稿并停止自动覆盖；旧 ACK 只补上与原保存快照仍匹配的服务端身份和脱敏标记，不能覆盖保存期间的新输入。
+旧 `channel::model` 由服务器别名恢复到原配置 ID，节点、重试及个人默认不按同名模型猜测。无法恢复、停用或删除的明确选择提示不可用，不自动更换供应商。企业目录同步只更新托管配置，不覆盖普通旧绑定模型；托管模型的名称、启停、删除由本人管理，地址、身份、profile 与企业凭据由服务端维护。
 
-每个 key 最多 16 KiB，目录请求及合并旧秘密后的保存快照最多 2 MiB。Header 按源规则最多 32 项、名称 128 字节、值 4096 字节、合计 16 KiB，禁止认证覆盖、Cookie、hop-by-hop、代理身份及 `x-canvas-*` 等保留字段。渠道必须使用没有 userinfo、查询、fragment、空白或非法端口的 HTTP(S) 地址；空地址可以作为未执行草稿保存。执行仅消费服务端冻结的加密凭据，在内存中按源自定义 headers 后 Bearer 的顺序传入受限 transport；同源媒体下载可带鉴权，跨源下载不带凭据。签名协议及未实现操作继续明确拒绝。
+API Key 保存在宿主原加密字段；Secret Key 和全部 header 值在服务端第二信封加密，只返回存在标记。执行仅消费服务端冻结凭据，在内存中传入受限 transport；同源媒体下载可带鉴权，跨源下载不带凭据。签名协议及未实现操作继续明确拒绝。个人画布默认与标准业务 `context_key` 偏好分开保存。
 
 ## BeefAPI 企业连接
 
@@ -277,7 +279,7 @@ Seedance 预上传顺序为创建上传、PUT 原字节、完成确认，再提�
 
 ## 独立模型测试
 
-`M=/canvas-runtime/model-tests`。原设置页的模型测试不要求项目、画布或节点，不生成虚构的作品与 binding。
+`M=/canvas-runtime/model-tests`。宿主配置页面复用独立模型测试，不要求项目、画布或节点，不生成虚构的作品与 binding。
 
 | 方法 | 路径 | 合同 |
 | --- | --- | --- |
@@ -285,7 +287,7 @@ Seedance 预上传顺序为创建上传、PUT 原字节、完成确认，再提�
 | GET | `M/{id}` | `{id,status,result?,error?,errorCode?,canCancel}`；成功结果必须来自实际执行与归档 |
 | POST | `M/{id}/cancel` | 本人安全取消；终态继续可读取 |
 
-`channel` 为原 ModelChannel draft，可测试尚未保存的渠道。草稿凭据只经加密 test-only AIModelConfig/执行记录冻结供真实执行器使用；测试配置从普通模型列表和默认选择排除。仅服务端标记的本人 personal 测试可执行这种配置，并核对冻结版本与凭据身份；普通停用配置继续拒绝提交。宿主只读投影仅能读取本人的确切模型、key 和实际同地址，跨账号或换地址拒绝。
+`channel` 保留原 ModelChannel draft 合同。宿主对已保存模型发起测试，引用本人的确切配置、同地址与保存凭据；旧 draft 合同仍由服务端安全校验。草稿凭据只经加密 test-only AIModelConfig/执行记录冻结供执行器使用；测试配置从普通模型列表和默认选择排除。仅服务端标记的本人 personal 测试可执行这种配置，并核对冻结版本与凭据身份；普通停用配置继续拒绝提交。跨账号或换地址拒绝复用保存凭据。
 
 同操作键异正文、异秘密返回 409。本人 `/tasks` 列表、详情、日志、取消和许可的恢复包含这些测试，省略 `projectId`，`clientContext.source=model-connection-test`；结果媒体使用真实 `resource:<id>` 和受鉴权文件地址。其他账号无法读取测试或下载媒体，测试不会发布到共享画布。原设置按钮停止观察不等于取消已受理任务。完整 RunningHub、签名/多模态协议、所有参考与高级操作、完整日志及真实收费供应商仍待后续验收。
 

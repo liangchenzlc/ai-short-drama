@@ -47,8 +47,10 @@ from pydantic_ai.toolsets.external import ExternalToolset
 from pydantic_ai.usage import UsageLimits
 
 from short_drama.ai.adapters import endpoint, select_adapter
+from short_drama.ai.canvas_credentials import CanvasCredentials
 from short_drama.ai.transport import SafeTransport
 from short_drama.ai.types import GenerationError
+from short_drama.schemas.model_runtime_profile import ModelRuntimeProfile
 
 FRAMEWORK_VERSION = version("pydantic-ai-slim")
 HISTORY_CODEC_VERSION = 1
@@ -60,6 +62,29 @@ _RESULTS_ADAPTER = TypeAdapter(DeferredToolResults)
 _BINARY_ADAPTER = TypeAdapter(BinaryContent)
 
 
+def select_agent_protocol(snapshot):
+    profile = snapshot.get("runtime_profile")
+    if profile is None:
+        protocol = select_adapter(snapshot)
+    else:
+        try:
+            profile = ModelRuntimeProfile.model_validate(profile)
+        except (ValidationError, TypeError):
+            raise AgentGatewayError("unsupported_agent_protocol") from None
+        protocol = {
+            "chat-completion": "openai_chat.v1",
+            "openai-response": "openai_responses.v1",
+        }.get(profile.protocol)
+        if profile.api_format != "openai":
+            raise AgentGatewayError("unsupported_agent_protocol")
+    if snapshot.get("service_type") != "text" or protocol not in {
+        "openai_chat.v1",
+        "openai_responses.v1",
+    }:
+        raise AgentGatewayError("unsupported_agent_protocol")
+    return protocol
+
+
 def _prompt_content(value, snapshot):
     """Only inline managed bytes are accepted; SDK URL objects remain forbidden."""
     if value is None or isinstance(value, str):
@@ -67,7 +92,7 @@ def _prompt_content(value, snapshot):
     if not isinstance(value, list) or not value or len(value) > 80:
         raise AgentGatewayError("unsupported_agent_history_content")
     try:
-        protocol = select_adapter(snapshot)
+        protocol = select_agent_protocol(snapshot)
     except (GenerationError, KeyError, TypeError):
         raise AgentGatewayError("unsupported_agent_protocol") from None
     parts = []
@@ -198,6 +223,25 @@ def _credential(value):
     ):
         raise AgentGatewayError("invalid_credential")
     return secret
+
+
+def _credentials(value):
+    if not isinstance(value, CanvasCredentials):
+        secret = _credential(value)
+        return secret, {}, [secret] if secret else []
+    try:
+        value = CanvasCredentials.model_validate(value.model_dump())
+    except (ValueError, ValidationError):
+        raise AgentGatewayError("invalid_credential") from None
+    secret = _credential(value.api_key)
+    headers = {}
+    secrets = [secret] if secret else []
+    for item in value.headers:
+        raw = item.value.get_secret_value()
+        headers[item.name.lower()] = raw if raw.isascii() else raw.encode("utf-8")
+        if raw:
+            secrets.append(raw)
+    return secret, headers, sorted(set(secrets), key=len, reverse=True)
 
 
 @dataclass(frozen=True, repr=False)
@@ -362,25 +406,31 @@ class _CapturedStream(httpx2.AsyncByteStream):
 
 
 class _TextRedactor:
-    def __init__(self, secret):
-        self.secret = secret
+    def __init__(self, secrets):
+        self.secrets = tuple(sorted(set(filter(None, secrets)), key=len, reverse=True))
         self.pending = ""
 
     def add(self, text, *, final=False):
         self.pending += text
-        if not self.secret:
+        if not self.secrets:
             ready, self.pending = self.pending, ""
             return ready
-        self.pending = self.pending.replace(self.secret, "[redacted]")
-        keep = 0
-        if not final:
-            for size in range(min(len(self.pending), len(self.secret) - 1), 0, -1):
-                if self.pending.endswith(self.secret[:size]):
-                    keep = size
-                    break
-        ready = self.pending[:-keep] if keep else self.pending
-        self.pending = self.pending[-keep:] if keep else ""
-        return ready
+        ready, index = [], 0
+        while index < len(self.pending):
+            remaining = self.pending[index:]
+            if not final and any(secret.startswith(remaining) for secret in self.secrets):
+                break
+            matched = next(
+                (secret for secret in self.secrets if remaining.startswith(secret)), None
+            )
+            if matched:
+                ready.append("[redacted]")
+                index += len(matched)
+            else:
+                ready.append(self.pending[index])
+                index += 1
+        self.pending = self.pending[index:]
+        return "".join(ready)
 
 
 class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
@@ -393,6 +443,7 @@ class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
         url,
         protocol,
         secret,
+        credential_headers,
         deadline,
         max_response_bytes,
         on_request,
@@ -401,6 +452,7 @@ class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
         self.safe = safe
         self.url = url
         self.secret = secret
+        self.credential_headers = credential_headers
         self.deadline = deadline
         self.max_response_bytes = max_response_bytes
         self.protocol = protocol
@@ -472,6 +524,7 @@ class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
         }
         if not self.secret:
             headers.pop("authorization", None)
+        headers.update(self.credential_headers)
         self.attempts += 1
         envelope = {
             "codec": "agent.request",
@@ -627,7 +680,7 @@ class AgentModelGateway:
             or (on_text_delta is not None and not stream)
         ):
             raise AgentGatewayError("invalid_agent_segment")
-        secret = _credential(credential)
+        secret, credential_headers, secrets = _credentials(credential)
         user_prompt = _prompt_content(user_prompt, snapshot)
         messages = deserialize_history(history)
         # Inline bytes are durable protocol data. URL downloads would bypass the
@@ -663,13 +716,13 @@ class AgentModelGateway:
             for tool_result in deferred_results.calls.values():
                 _json_value(tool_result)
         try:
-            protocol = select_adapter(snapshot)
-            if protocol not in {"openai_chat.v1", "openai_responses.v1"}:
-                raise AgentGatewayError("unsupported_agent_protocol")
+            protocol = select_agent_protocol(snapshot)
             url = endpoint(snapshot["base_url"], "/responses", protocol)
             if protocol == "openai_chat.v1":
                 url = endpoint(snapshot["base_url"], "/chat/completions", protocol)
             base_url = endpoint(snapshot["base_url"], "", protocol).rstrip("/") + "/"
+        except AgentGatewayError:
+            raise
         except (GenerationError, KeyError, TypeError):
             raise AgentGatewayError("invalid_agent_configuration") from None
         bridge = _ProtectedHTTPTransport(
@@ -677,12 +730,13 @@ class AgentModelGateway:
             url=url,
             protocol=protocol,
             secret=secret,
+            credential_headers=credential_headers,
             deadline=time.monotonic() + timeout_seconds,
             max_response_bytes=getattr(self.settings, "generation_max_response_bytes", 8 * 1024**2),
             on_request=on_request,
             on_response=on_response,
         )
-        redactor = _TextRedactor(secret)
+        redactor = _TextRedactor(secrets)
 
         async def text_events(context, events):
             async for event in events:
@@ -777,7 +831,7 @@ class AgentModelGateway:
             else:
                 if not isinstance(result.output, str) or not result.output.strip():
                     raise AgentGatewayError("empty_agent_response", accepted_unknown=True)
-                output = result.output.replace(secret, "[redacted]") if secret else result.output
+                output = _TextRedactor(secrets).add(result.output, final=True)
             final_visible = redactor.add("", final=True)
             if final_visible:
                 await bridge.checkpoint(

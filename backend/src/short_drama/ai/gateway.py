@@ -73,7 +73,7 @@ def _safe_value(value, secret):
 def _authentication(snapshot, credential, headers):
     if isinstance(credential, CanvasCredentials):
         return canvas_authentication(snapshot, credential, headers)
-    if "canvas_auth_version" in snapshot:
+    if "canvas_auth_version" in snapshot or "model_auth_version" in snapshot:
         raise GenerationError("invalid_credential")
     secret = _credential(credential)
     headers = dict(headers)

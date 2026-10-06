@@ -3,6 +3,7 @@ import { AutoComplete, Input } from 'antd';
 import { aiModelConfigs } from '../../api/modules/ai-model-configs';
 import { errorMessage, isCancelled } from '../../api/http';
 import type { AiConfig, ConfigDraft } from './config-model';
+import { usesRuntimeModelDiscovery } from './config-form-model';
 
 export function ModelIdentifierField({ form, existing, disabled, onChange }: {
   form: ConfigDraft;
@@ -21,7 +22,7 @@ export function ModelIdentifierField({ form, existing, disabled, onChange }: {
   const popupVisible = open && options.length > 0 && !disabled && !loading;
   const active = useRef<AbortController | null>(null);
   // Used only in memory to discard replies for credentials/addresses that changed mid-flight.
-  const signature = JSON.stringify([form.baseUrl, form.apiKey, form.clearApiKey, existing?.id]);
+  const signature = JSON.stringify([form.baseUrl, form.apiKey, form.clearApiKey, form.secretKey, form.clearSecretKey, form.headers, form.headersChanged, form.runtime.apiFormat, form.runtime.protocol, form.runtime.enabled, existing?.id]);
   const latest = useRef(signature);
   latest.current = signature;
   useEffect(() => {
@@ -38,7 +39,7 @@ export function ModelIdentifierField({ form, existing, disabled, onChange }: {
     const requestedSignature = signature;
     setLoading(true); setFailed(false); setFeedback(''); setModels([]); setOpen(false); setSearch('');
     try {
-      const result = await aiModelConfigs.discoverModels({
+      const result = usesRuntimeModelDiscovery(form) ? await aiModelConfigs.discoverRuntimeModels(form, existing, controller.signal) : await aiModelConfigs.discoverModels({
         base_url: form.baseUrl.trim(),
         ...(existing ? { config_id: existing.id } : {}),
         ...(form.clearApiKey ? { apikey: null } : form.apiKey ? { apikey: form.apiKey } : {}),
@@ -89,7 +90,7 @@ export function ModelIdentifierField({ form, existing, disabled, onChange }: {
     <p id="model-discovery-feedback" className={failed ? 'form-error' : 'model-discovery-hint'} role={failed ? 'alert' : 'status'}>
       {search && models.length > 0 && !options.length && !failed
         ? '没有匹配的模型，可以保留当前输入作为自定义模型标识。'
-        : feedback || '使用当前服务地址和密钥获取列表；不支持探测的服务可手动填写。'}
+        : feedback || '点击获取模型时，使用当前服务地址、API 密钥和请求头读取列表；不支持探测的服务可手动填写。'}
     </p>
   </div>;
 }

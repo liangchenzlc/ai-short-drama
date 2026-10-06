@@ -25,6 +25,11 @@ export function reconcileHostModelConfigAck(submitted: AiConfig, current: AiConf
         if (key === "channels") continue;
         if (equal(current[key], submitted[key])) Object.assign(next, { [key]: durable[key] });
     }
+    if (durable.hostModelDirectory) {
+        next.hostModelDirectory = true;
+        next.channels = durable.channels;
+        return next;
+    }
     const managed = durable.channels.filter(channel => channel.id === "beefapi").map(channel => {
         const previous = submitted.channels.find(item => item.id === channel.id);
         const draft = current.channels.find(item => item.id === channel.id);

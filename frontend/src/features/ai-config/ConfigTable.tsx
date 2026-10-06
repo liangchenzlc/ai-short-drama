@@ -3,9 +3,10 @@ import { Icon } from '../../components/ui/Icon';
 import { serviceLabels, type AiConfig, type ServiceType } from './config-model';
 import './config-table.css';
 
-export function ConfigTable({ items, serviceType, busyId, onEdit, onDelete, onDefault }: {
+export function ConfigTable({ items, serviceType, busyId, onEdit, onDelete, onDefault, onTest }: {
   items: AiConfig[]; serviceType: ServiceType; busyId: string | null;
   onEdit: (item: AiConfig) => void; onDelete: (item: AiConfig) => void; onDefault: (item: AiConfig) => void;
+  onTest: (item: AiConfig) => void;
 }) {
   if (!items.length) return <div className="studio-empty"><h2>还没有{serviceLabels[serviceType]}</h2><p>添加一个模型配置，就能在创作时使用。</p></div>;
   return <div className="config-table-wrap"><table className="config-table">
@@ -18,9 +19,10 @@ export function ConfigTable({ items, serviceType, busyId, onEdit, onDelete, onDe
       <td data-label="状态"><span className={`status-badge ${item.enabled ? 'is-success' : 'is-neutral'}`}>{item.enabled ? '已启用' : '已停用'}</span></td>
       <td data-label="密钥">{item.hasApiKey ? '已配置' : '未配置'}</td>
       <td data-label="操作"><div className="config-actions"><Button disabled={!!busyId} onClick={() => onEdit(item)}>编辑</Button><Dropdown trigger={['click']} menu={{ items: [
+        { key: 'test', label: '测试模型', disabled: !item.enabled },
         { key: 'default', label: item.isDefault ? '已是默认模型' : '设为默认', disabled: item.isDefault || !item.enabled },
         { key: 'delete', label: '删除配置', danger: true },
-      ], onClick: ({ key }) => key === 'default' ? onDefault(item) : onDelete(item) }}><Button disabled={!!busyId} aria-label={`更多操作：${item.name}`} icon={<Icon name="more" size={18}/>} /></Dropdown></div>{busyId === item.id && <span role="status">处理中…</span>}</td>
+      ], onClick: ({ key }) => key === 'default' ? onDefault(item) : key === 'test' ? onTest(item) : onDelete(item) }}><Button disabled={!!busyId} aria-label={`更多操作：${item.name}`} icon={<Icon name="more" size={18}/>} /></Dropdown></div>{busyId === item.id && <span role="status">处理中…</span>}</td>
     </tr>)}</tbody>
   </table></div>;
 }

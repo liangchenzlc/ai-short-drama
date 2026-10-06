@@ -108,21 +108,100 @@ def test_model_test_unsupported_protocol_rolls_back_all_rows(identity_app):
             assert session.scalar(select(func.count()).select_from(model)) == 0
 
 
-def test_model_test_reads_saved_channel_key_without_reexposing_it(identity_app):
+def test_legacy_credential_references_are_rejected_by_discovery_and_model_test_http(identity_app):
+    client, _ = account(identity_app, "model_test_legacy_reference")
+    body = request()
+    body["channel"].update(id="old-channel", apiKey="", credentialRef="host:old-channel")
+    tested = create(client, body)
+    assert tested.status_code == 409, tested.text
+    assert tested.json()["error"]["code"] == "canvas_model_legacy_credential_reference"
+    discovered = client.post(
+        "/api/v1/canvas-runtime/ai/models",
+        json={
+            "baseUrl": body["channel"]["baseUrl"],
+            "channelId": "old-channel",
+            "credentialRef": "host:old-channel",
+        },
+    )
+    assert discovered.status_code == 409, discovered.text
+    assert discovered.json()["error"]["code"] == "canvas_model_legacy_credential_reference"
+    with identity_app[1]() as session:
+        for model in (AsyncTask, AIGenerationRecord, AIModelConfig):
+            assert session.scalar(select(func.count()).select_from(model)) == 0
+
+
+def test_model_test_reads_saved_host_key_headers_and_ignores_forged_draft(identity_app):
     client, _ = account(identity_app, "model_test_saved")
     body = request()
-    saved = client.put(
-        "/api/v1/canvas-runtime/workspace/model-config",
-        json={"expected_row_version": "0", "preferences": {}, "channels": [body["channel"]]},
+    saved = client.post(
+        "/api/v1/ai-model-configs",
+        json={
+            "service_type": "text",
+            "name": "已保存模型",
+            "provider": "fixture",
+            "model_key": body["model"],
+            "base_url": body["channel"]["baseUrl"],
+            "apikey": "synthetic-model-test-key",
+            "headers": [{"name": "X-Saved", "value": "saved-private-header"}],
+            "runtime_profile": {
+                "version": 1,
+                "api_format": "openai",
+                "protocol": "chat-completion",
+            },
+        },
     )
-    assert saved.status_code == 200, saved.text
-    body["channel"] = saved.json()["channels"][0]
+    assert saved.status_code == 201, saved.text
+    identifier = saved.json()["id"]
+    projection_response = client.get("/api/v1/canvas-runtime/workspace/model-config")
+    assert projection_response.status_code == 200, projection_response.text
+    projection = projection_response.json()
+    assert projection["channels"] == []
+    assert projection["models"][0]["has_api_key"]
+    body["channel"].update(
+        id=f"host-{identifier}",
+        baseUrl=f"/api/v1/canvas-runtime/ai/models/{identifier}",
+        apiKey="forged-draft-key",
+        credentialRef=f"host:{identifier}",
+        headers=[{"name": "X-Saved", "value": "forged-draft-header"}],
+    )
+    body["channel"]["modelProfiles"][0]["protocol"] = "plugin/forged"
     accepted = create(client, body)
     assert accepted.status_code == 202, accepted.text
+    with identity_app[1]() as session:
+        record = session.scalar(
+            select(AIGenerationRecord).where(
+                AIGenerationRecord.task_id == int(accepted.json()["id"])
+            )
+        )
+        original = session.get(AIModelConfig, int(identifier))
+        assert original.enabled and not original.is_deleted
+        assert original.row_version == int(saved.json()["row_version"])
+        assert original.capability_cache is None
+        assert record.config_id != original.id and record.adapter == "openai_chat.v1"
+        shadow = session.get(AIModelConfig, record.config_id)
+        assert not shadow.enabled and shadow.is_deleted
+        decoded = decode_canvas_credentials(
+            record.config_snapshot,
+            record.request_data,
+            KeyCipher(identity_app[2].encryption_key.get_secret_value()).decrypt(
+                record.credential_cipher
+            ),
+        )
+        assert decoded.api_key.get_secret_value() == "synthetic-model-test-key"
+        assert {item.name: item.value.get_secret_value() for item in decoded.headers} == {
+            "X-Saved": "saved-private-header"
+        }
+        assert "forged-draft" not in json.dumps(record.config_snapshot)
+    visible = client.get("/api/v1/ai-model-configs")
+    assert visible.status_code == 200, visible.text
+    assert [item["id"] for item in visible.json()["items"]] == [identifier]
+    after = client.get("/api/v1/canvas-runtime/workspace/model-config")
+    assert after.status_code == 200, after.text
+    assert after.json() == projection
     altered = deepcopy(body)
     altered["channel"]["baseUrl"] = "https://different.example/v1"
     altered["clientOperationId"] = uuid4().hex
-    assert create(client, altered).status_code == 422
+    assert create(client, altered).status_code == 409
 
 
 def test_host_model_test_accepts_exact_readonly_projection_and_rejects_other_users(identity_app):

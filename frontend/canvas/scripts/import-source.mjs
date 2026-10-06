@@ -157,6 +157,11 @@ function sourceBytes(source, bytes) {
     return bytes;
 }
 if (shouldWrite) {
+    const adaptationsPath = resolve(packageRoot, "source-adaptations.json");
+    const adaptations = existsSync(adaptationsPath) ? JSON.parse(readFileSync(adaptationsPath, "utf8")) : {};
+    for (const name of Object.keys(files)) {
+        if (adaptations[name]?.action === "removed") throw new Error("目标文件已按画布边界物理删除，拒绝重新导入整站源码：" + name);
+    }
     for (const [name, metadata] of Object.entries(files)) {
         const destination = resolve(packageRoot, name);
         if (!within(packageRoot, destination)) throw new Error("输出路径越界：" + name);

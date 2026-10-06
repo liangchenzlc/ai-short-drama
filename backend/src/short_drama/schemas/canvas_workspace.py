@@ -8,6 +8,7 @@ from pydantic import Field, JsonValue, model_validator
 from .base import Identifier, InputModel, NonnegativeVersion
 from .canvas import validate_document_json
 from .canvas_model_catalog import CanvasModelChannelInput, validate_channels
+from .model_runtime_profile import ModelRuntimeHeaderRead, ModelRuntimeProfile
 
 PREFERENCE_FIELDS = frozenset(
     """model imageModel videoModel textModel audioModel assistantModel audioVoice audioFormat
@@ -49,6 +50,12 @@ class CanvasModelRead(InputModel):
     service_type: Literal["text", "image", "video", "audio"]
     enabled: bool
     has_api_key: bool
+    runtime_profile: ModelRuntimeProfile | None = None
+    credential_source: Literal["manual", "beefapi"] = "manual"
+    has_secret_key: bool = False
+    headers: list[ModelRuntimeHeaderRead] = Field(default_factory=list)
+    selection_aliases: list[str] = Field(default_factory=list)
+    is_default: bool = False
 
 
 class CanvasWorkspaceModelsRead(CanvasWorkspacePreferencesRead):

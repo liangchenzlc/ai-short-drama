@@ -1,6 +1,5 @@
-"""旧本人目录的派生运行缓存升级；不读取真实凭据或调用供应商。"""
+"""迁入宿主真值的运行缓存刷新；不读取真实凭据或调用供应商。"""
 
-import hashlib
 from contextlib import contextmanager
 from copy import deepcopy
 from types import SimpleNamespace
@@ -8,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from short_drama.ai.adapters import capability_fingerprint, select_adapter
+from short_drama.ai.model_identity import model_credential_identity
 from short_drama.ai.types import GenerationResult
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import AIGenerationRecord, AIModelConfig
@@ -17,6 +17,7 @@ from short_drama.service.canvas_model_catalog_service import (
     protocol_adapter,
 )
 from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.model_runtime_config import legacy_runtime_profile
 
 
 def runtime_catalog(*, managed=False, protocol="openai-videos", mode="video", cache=None):
@@ -53,6 +54,7 @@ def runtime_catalog(*, managed=False, protocol="openai-videos", mode="video", ca
         updated_at=utcnow(),
         updated_by=3,
         capability_cache=deepcopy(cache),
+        runtime_profile=legacy_runtime_profile(channel, profile),
     )
     binding = SimpleNamespace(
         user_id=3, channel_key=channel["id"], model_key=model, model_config_id=config.id
@@ -74,7 +76,7 @@ def snapshot(config):
         "base_url": config.base_url,
         "model_key": config.model_key,
         "service_type": config.service_type,
-        "credential_identity": hashlib.sha256(config.apikey.encode()).hexdigest(),
+        "credential_identity": model_credential_identity(config),
         "capability_cache": deepcopy(config.capability_cache),
         "row_version": str(config.row_version),
     }
@@ -85,7 +87,7 @@ def snapshot(config):
     [(False, "openai-videos"), (False, "newapi-channel-2"), (True, "volcengine-ark-video")],
 )
 @pytest.mark.parametrize("old_cache", ["none", "valid_old_ark", "expired_fingerprint"])
-def test_old_saved_catalog_refreshes_exact_current_protocol_without_resave(
+def test_migrated_host_profile_refreshes_exact_current_protocol_without_resave(
     managed, protocol, old_cache
 ):
     service, config, channel, profile, _, stored = runtime_catalog(
@@ -126,7 +128,7 @@ def test_refresh_deepcopies_saved_text_capability_and_never_guesses_model_vision
     assert config.capability_cache["canvas_text_capability"] == expected
     profile["capabilityConfig"]["text"]["references"]["maxImages"] = 12
     assert config.capability_cache["canvas_text_capability"] == expected
-    profile["capabilityConfig"] = {}
+    config.runtime_profile["capability_config"] = {}
     config.model_key = profile["model"] = "gpt-6-image-capable-name"
     service.catalog_dao.binding(17).model_key = config.model_key
     service.catalog_dao.catalog(3).channels_json[0]["models"] = [config.model_key]
@@ -136,7 +138,7 @@ def test_refresh_deepcopies_saved_text_capability_and_never_guesses_model_vision
 
 def test_unbound_standard_model_is_not_changed_or_activated():
     service, config, _, _, _, _ = runtime_catalog(cache={"adapter": "old-standard"})
-    config.enabled = 0
+    config.runtime_profile = None
     service.catalog_dao.binding = lambda identifier: None
     original = deepcopy(vars(config))
     service.refresh_runtime_model_locked(config)
@@ -150,11 +152,8 @@ def test_unbound_standard_model_is_not_changed_or_activated():
         "other_binding_author",
         "disabled_config",
         "deleted_config",
-        "disabled_channel",
-        "removed_model",
-        "missing_profile",
-        "different_model",
         "different_capability",
+        "unsupported_format",
         "unknown_protocol",
     ],
 )
@@ -168,22 +167,31 @@ def test_refresh_cannot_revive_or_rebind_unavailable_saved_models(invalid):
         config.enabled = 0
     elif invalid == "deleted_config":
         config.is_deleted = 1
-    elif invalid == "disabled_channel":
-        channel["enabled"] = False
-    elif invalid == "removed_model":
-        channel["models"] = []
-    elif invalid == "missing_profile":
-        channel["modelProfiles"] = []
-    elif invalid == "different_model":
-        config.model_key = "forged-model"
     elif invalid == "different_capability":
-        profile["capability"] = "image"
+        config.service_type = "image"
+    elif invalid == "unsupported_format":
+        config.runtime_profile["api_format"] = "claude"
     else:
-        profile["protocol"] = "plugin/not-implemented"
+        config.runtime_profile["protocol"] = "plugin/not-implemented"
     original = deepcopy(vars(config))
     with pytest.raises((NotFound, WorkflowError)):
         service.refresh_runtime_model_locked(config)
     assert vars(config) == original
+
+
+@pytest.mark.parametrize("legacy_change", ["disabled_channel", "removed_model", "missing_profile"])
+def test_cutover_legacy_catalog_no_longer_controls_host_runtime(legacy_change):
+    service, config, channel, _, _, _ = runtime_catalog()
+    if legacy_change == "disabled_channel":
+        channel["enabled"] = False
+    elif legacy_change == "removed_model":
+        channel["models"] = []
+    else:
+        channel["modelProfiles"] = []
+    config.model_key = "host-edited-model"
+    assert service.refresh_runtime_model_locked(config) is True
+    assert config.model_key == "host-edited-model"
+    assert select_adapter(snapshot(config)) == "canvas_openai_videos.v1"
 
 
 @pytest.mark.parametrize("scene", ["canvas_node", "canvas_model_test", "shot_video"])
@@ -236,3 +244,46 @@ def test_old_result_cannot_replace_upgraded_canvas_cache_but_standard_policy_is_
     assert call.config_snapshot == frozen
     assert call.provider_task_id == "original-provider-task" and call.status == "sent"
     assert session.get(AIModelConfig, config.id) is config
+
+
+def test_old_standard_result_cannot_reintroduce_cache_after_header_account_change(monkeypatch):
+    _, config, _, _, _, _ = runtime_catalog(cache={"adapter": "canvas_openai_videos.v1"})
+    config.runtime_credentials_cipher = "old-header-account-envelope"
+    frozen = snapshot(config)
+    config.runtime_credentials_cipher = "new-header-account-envelope"
+    call = SimpleNamespace(
+        id=27,
+        config_id=config.id,
+        config_snapshot=deepcopy(frozen),
+        request_data={"source": {"scene": "shot_video"}},
+        response_data={},
+        provider_task_id=None,
+    )
+    task = SimpleNamespace(id=37, service_type="video", started_at=utcnow())
+    session = SimpleNamespace(
+        get=lambda model, identifier: call if model is AIGenerationRecord else config
+    )
+
+    @contextmanager
+    def begin():
+        yield session
+
+    monkeypatch.setattr(
+        "short_drama.service.generation_execution_service.owned_task", lambda *args: task
+    )
+    monkeypatch.setattr(
+        "short_drama.service.generation_execution_service.schedule", lambda *args: None
+    )
+    worker = object.__new__(GenerationExecutionService)
+    worker.factory = SimpleNamespace(begin=begin)
+    worker.settings = SimpleNamespace(generation_poll_seconds=3)
+    before = deepcopy(config.capability_cache)
+    worker._store_result(
+        task,
+        call,
+        1,
+        "lease",
+        GenerationResult("submitted", "ark_video.v1", provider_task_id="original-provider-task"),
+    )
+    assert config.capability_cache == before
+    assert call.config_snapshot == frozen and call.status == "sent"

@@ -21,6 +21,17 @@ const fieldLabels: Record<string, string> = {
   title: '分集标题', synopsis: '梗概', aspect: '画幅', style: '风格',
 };
 const discoveryMessages: Record<string, string> = {
+  canvas_model_catalog_auth: '模型服务认证失败，请检查 API 密钥及请求头。',
+  canvas_model_catalog_unsupported: '服务未提供模型列表接口，可以手动填写模型标识。',
+  canvas_model_catalog_format: '该协议不支持读取模型目录，请手动填写模型标识。',
+  canvas_model_catalog_rate_limit: '模型服务请求过于频繁或额度不足，请稍后重试。',
+  canvas_model_catalog_unavailable: '无法连接模型服务，请检查服务地址或稍后重试。',
+  canvas_model_catalog_timeout: '获取模型列表超时，请稍后重试；也可以手动填写。',
+  canvas_model_catalog_redirect: '模型服务返回了跳转，请填写最终服务地址后重试。',
+  canvas_model_catalog_address: '该服务地址无法用于探测，请使用有效的公开 HTTP(S) 地址。内网服务需由管理员配置。',
+  canvas_model_catalog_credential: '请填写有效的 API 密钥及请求头后获取模型。',
+  canvas_model_catalog_invalid_response: '服务返回的内容不是有效模型列表，可以手动填写模型标识。',
+  canvas_model_catalog_too_large: '模型列表响应过大，请手动填写模型标识。',
   model_discovery_auth: '模型服务认证失败，请检查 API 密钥及其权限。',
   model_discovery_unsupported: '此地址未提供兼容的模型列表接口，可以手动填写模型标识。',
   model_discovery_rate_limit: '模型服务请求过于频繁，请稍后重试。',

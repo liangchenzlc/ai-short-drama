@@ -1,19 +1,31 @@
 """Private decision models and explicit, version-bound tool protocol probes."""
 
 import asyncio
-import hashlib
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from short_drama.agent.input_capabilities import input_capabilities
-from short_drama.agent.model_gateway import AgentGatewayError, AgentModelGateway
-from short_drama.ai import select_adapter
+from short_drama.agent.model_gateway import (
+    AgentGatewayError,
+    AgentModelGateway,
+    select_agent_protocol,
+)
+from short_drama.ai.canvas_credentials import CanvasCredentials
+from short_drama.ai.model_identity import model_credential_identity
 from short_drama.core.crypto import KeyCipher
-from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
+from short_drama.core.exceptions import (
+    BusinessError,
+    ConfigurationError,
+    Conflict,
+    NotFound,
+    WorkflowError,
+)
 from short_drama.core.identity import require_actor
 from short_drama.domain import AIModelConfig, UserModelPreference
 from short_drama.domain.collaboration import User, UserSession
@@ -21,6 +33,7 @@ from short_drama.schemas.agent_context import ModelInputsPatch
 from short_drama.schemas.agent_runtime import AgentModelRead, AgentModelsRead, ModelVerify
 from short_drama.schemas.base import parse_identifier
 from short_drama.service.base import BaseService, utcnow
+from short_drama.service.model_runtime_config import decrypt_runtime_credentials
 
 
 def model_snapshot(row):
@@ -34,16 +47,38 @@ def model_snapshot(row):
         "base_url": row.base_url,
         "capability_cache": deepcopy(row.capability_cache),
         "credential_cipher": row.apikey,
-        "credential_identity": hashlib.sha256((row.apikey or "").encode()).hexdigest(),
+        "credential_identity": model_credential_identity(row),
+        "runtime_profile": deepcopy(getattr(row, "runtime_profile", None)),
+        "runtime_credentials_cipher": getattr(row, "runtime_credentials_cipher", None),
     }
+
+
+def model_credentials(snapshot, key):
+    encrypted = snapshot.get("credential_cipher")
+    extension = snapshot.get("runtime_credentials_cipher")
+    if not encrypted and not extension:
+        return ""
+    try:
+        cipher = KeyCipher(key.get_secret_value() if hasattr(key, "get_secret_value") else key)
+        credential = cipher.decrypt(encrypted) if encrypted else ""
+        if not extension:
+            return credential
+        values = decrypt_runtime_credentials(
+            SimpleNamespace(runtime_credentials_cipher=extension), cipher
+        )
+        return CanvasCredentials(
+            apiKey=credential,
+            headers=[{"name": name, "value": value} for name, value in values["headers"].items()],
+        )
+    except (ValueError, ValidationError, ConfigurationError):
+        raise AgentGatewayError("agent_credential_unavailable") from None
 
 
 def capability_evidence(row):
     evidence = (row.capability_cache or {}).get("agent") or {}
     valid = (
         evidence.get("row_version") == row.row_version
-        and evidence.get("credential_identity")
-        == hashlib.sha256((row.apikey or "").encode()).hexdigest()
+        and evidence.get("credential_identity") == model_credential_identity(row)
         and evidence.get("model_key") == row.model_key
         and evidence.get("base_url") == row.base_url
     )
@@ -53,12 +88,12 @@ def capability_evidence(row):
 def read_model(row, preferred_id=None):
     evidence = capability_evidence(row)
     try:
-        protocol = select_adapter(model_snapshot(row))
-        if protocol not in {"openai_chat.v1", "openai_responses.v1"}:
-            protocol = None
+        protocol = select_agent_protocol(model_snapshot(row))
     except Exception:
         protocol = None
-    verified = bool(evidence.get("tool_calling") and evidence.get("tool_result_continuation"))
+    verified = bool(
+        protocol and evidence.get("tool_calling") and evidence.get("tool_result_continuation")
+    )
     return AgentModelRead(
         id=row.id,
         name=row.name,
@@ -174,7 +209,7 @@ class AgentModelService(BaseService):
                 "row_version": row.row_version,
                 "model_key": row.model_key,
                 "base_url": row.base_url,
-                "credential_identity": hashlib.sha256((row.apikey or "").encode()).hexdigest(),
+                "credential_identity": model_credential_identity(row),
             }
             row.capability_cache = cache
             return read_model(row, self.preferred_id())
@@ -213,6 +248,8 @@ class AgentModelService(BaseService):
                 for field in ("row_version", "model_key", "base_url", "provider", "service_type")
             )
             and row.apikey == snapshot["credential_cipher"]
+            and model_credential_identity(row) == snapshot["credential_identity"]
+            and getattr(row, "runtime_profile", None) == snapshot.get("runtime_profile")
             and row.enabled == 1
             and not row.is_deleted
         )
@@ -274,13 +311,8 @@ class AgentModelService(BaseService):
 
         key = self.settings.encryption_key
         try:
-            credential = (
-                KeyCipher(key.get_secret_value() if key else None).decrypt(
-                    snapshot["credential_cipher"]
-                )
-                if snapshot["credential_cipher"]
-                else ""
-            )
+            select_agent_protocol(snapshot)
+            credential = model_credentials(snapshot, key)
             evidence = asyncio.run(
                 self.gateway.validate_capability(
                     snapshot, credential, conversation_id=f"probe-{token}", on_request=admit
@@ -342,5 +374,9 @@ class AgentModelService(BaseService):
         if changed:
             raise Conflict("Model configuration changed during checking")
         if failure:
-            raise WorkflowError(failure, "模型能力校验失败；请检查配置后手动重试", 502)
+            raise WorkflowError(
+                failure,
+                "模型能力校验失败；请检查配置后手动重试",
+                422 if failure == "unsupported_agent_protocol" else 502,
+            )
         return response

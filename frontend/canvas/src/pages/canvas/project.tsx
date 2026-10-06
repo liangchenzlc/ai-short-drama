@@ -5,7 +5,7 @@ import { resolveCanvasRightPanel, useCanvasAssistant, useCanvasAssistantDockable
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { hostCanvasAccess } from "@/services/host-canvas-access";
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { appHref } from "@/lib/app-routing";
 import { isLocalWorkspaceMode } from "@/services/workspace-mode";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
@@ -13,6 +13,8 @@ import { uploadMediaFile } from "@/services/file-storage";
 import { createCanvasGenerationLiveProjectAdapter, registerCanvasGenerationLiveProject } from "@/services/canvas-generation-consumer";
 import { getActiveUserScope, scopedLocalStorage } from "@/lib/user-scope";
 import { assertUserScope, captureUserScope, userScopeMatches, type CapturedUserScope } from "@/lib/user-scope-guard";
+import { navigateToHostProjects, navigateToSettings, registerSettingsNavigationGuard } from "@/lib/settings-navigation";
+import { flushModelConfig, getModelConfigPersistenceState } from "@/services/model-config-repository";
 import { findWorkspaceAssetIdByStorageKey } from "@/lib/canvas/director/director-library-persist";
 import { resourceFileUrl, resourceIdFromStorageKey, syncResourceToArkPrivateAsset } from "@/services/api/resources";
 import { uploadImage } from "@/services/image-storage";
@@ -99,7 +101,7 @@ import { CanvasRefreshShell } from "./canvas-refresh-shell";
 import type { CanvasImageEmotionPayload } from "@/components/canvas/canvas-node-emotion-panel";
 import { CanvasEmotionWorkspace } from "@/components/canvas/canvas-emotion-workspace";
 import { removeCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
-import { persistCanvasTimeline, refreshLocalCanvasProjectIfChanged, syncLocalCanvasProjectToBackend, prepareInitialCanvasDrawingWrite } from "@/services/local-workspace-repository";
+import { hasUnconfirmedCanvasEdits, persistCanvasTimeline, refreshLocalCanvasProjectIfChanged, syncLocalCanvasProjectToBackend, prepareInitialCanvasDrawingWrite } from "@/services/local-workspace-repository";
 import { prepareCanvasDrawingCopies } from "@/services/canvas-drawing-copy-preparation";
 import { syncLocalCanvasSnapshot } from "@/services/local-workspace-sync";
 import { useCanvasConnectionController } from "./use-canvas-connection-controller";
@@ -287,6 +289,7 @@ function InfiniteCanvasPage() {
     const [canvasTool, setCanvasTool] = useState<CanvasToolMode>("box-select");
     const [mediaPerformanceMode, setMediaPerformanceMode] = useState<CanvasMediaPerformanceMode>(readCanvasMediaPerformanceMode);
     const [projectLoaded, setProjectLoaded] = useState(false);
+    const [settingsNavigation, setSettingsNavigation] = useState({ projectId: "", pending: false, error: "" });
     const workspaceMode: CanvasWorkspaceMode = "professional";
     const {
         clearConfirmOpen,
@@ -647,6 +650,36 @@ function InfiniteCanvasPage() {
             } : node));
         }, 260);
     }, [focusFixtureOnNarrowViewport, nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
+
+    useEffect(() => registerSettingsNavigationGuard(async () => {
+        const expected = captureUserScope();
+        setSettingsNavigation({ projectId, pending: true, error: "" });
+        try {
+            if (accessError || !projectLoaded || readOnly) {
+                await flushCanvasStorePersistence();
+                assertUserScope(expected);
+                return true;
+            }
+            const input = { nodes: nodesRef.current, connections: connectionsRef.current, chatSessions: chatSessionsRef.current, activeChatId: activeChatIdRef.current, viewport: viewportRef.current };
+            await flushModelConfig();
+            assertUserScope(expected);
+            const persistence = getModelConfigPersistenceState();
+            if (persistence.dirty || persistence.status === "error") throw new Error(persistence.error || "模型偏好尚未保存，请处理后再离开画布");
+            const saved = await saveCanvasProject({ requireRemote: true });
+            assertUserScope(expected);
+            if (!saved) throw new Error("画布尚未保存，当前草稿已保留，请处理保存问题后再离开画布");
+            const latest = getModelConfigPersistenceState();
+            const changed = input.nodes !== nodesRef.current || input.connections !== connectionsRef.current || input.chatSessions !== chatSessionsRef.current || input.activeChatId !== activeChatIdRef.current || input.viewport !== viewportRef.current;
+            if (changed || latest.dirty || latest.status === "error" || hasUnconfirmedCanvasEdits(projectId)) {
+                await flushCanvasStorePersistence();
+                assertUserScope(expected);
+                throw new Error("保存期间内容再次变化，当前草稿已保留，请等待保存完成后重试离开画布");
+            }
+            return true;
+        } finally {
+            setSettingsNavigation(current => current.projectId === projectId ? { ...current, pending: false } : current);
+        }
+    }, error => setSettingsNavigation({ projectId, pending: false, error: error instanceof Error ? error.message : "保存失败，当前画布草稿已保留" })), [accessError, projectId, projectLoaded, readOnly, saveCanvasProject]);
 
     const duplicateCurrentProject = useCallback(async () => {
         if (!currentProject) return;
@@ -2485,7 +2518,8 @@ function InfiniteCanvasPage() {
             <main className="flex h-full flex-col items-center justify-center gap-4">
                 <p role="alert">{accessError || loadError}</p>
                 <Button onClick={accessError ? () => window.location.reload() : retryLoad}>重新加载</Button>
-                <Link to="/canvas">返回画布库</Link>
+                {settingsNavigation.projectId === projectId && settingsNavigation.error ? <p role="alert">{settingsNavigation.error}</p> : null}
+                <Button loading={settingsNavigation.projectId === projectId && settingsNavigation.pending} onClick={() => void navigateToHostProjects()}>返回工作台</Button>
             </main>
         );
     if (!projectLoaded) return <CanvasRefreshShell />;
@@ -2527,7 +2561,7 @@ function InfiniteCanvasPage() {
                                         setScriptEditorNodeId(null);
                                     }
                                 }}
-                                syncStatus={<CanvasSyncStatus projectId={projectId} personalSaveError={personalSaveError} personalSavePending={personalSavePending} onLoadLatest={reloadLatestCanvasProject} onOpenVersions={openVersions} />}
+                                syncStatus={<CanvasSyncStatus projectId={projectId} personalSaveError={personalSaveError} personalSavePending={personalSavePending} navigationSaveError={settingsNavigation.projectId === projectId ? settingsNavigation.error : ""} navigationSavePending={settingsNavigation.projectId === projectId && settingsNavigation.pending} onLoadLatest={reloadLatestCanvasProject} onOpenVersions={openVersions} />}
                                 readOnly={readOnly}
                                 onDuplicateProject={duplicateCurrentProject}
                                 versionsOpen={versions.open}
@@ -2724,7 +2758,7 @@ function InfiniteCanvasPage() {
 
                                 {focusMode ? (
                                     <CanvasFocusModeBar
-                                        syncStatus={<CanvasSyncStatus projectId={projectId} personalSaveError={personalSaveError} personalSavePending={personalSavePending} onLoadLatest={reloadLatestCanvasProject} onOpenVersions={openVersions} />}
+                                        syncStatus={<CanvasSyncStatus projectId={projectId} personalSaveError={personalSaveError} personalSavePending={personalSavePending} navigationSaveError={settingsNavigation.projectId === projectId ? settingsNavigation.error : ""} navigationSavePending={settingsNavigation.projectId === projectId && settingsNavigation.pending} onLoadLatest={reloadLatestCanvasProject} onOpenVersions={openVersions} />}
                                         versionsOpen={versions.open}
                                         onToggleVersions={toggleVersions}
                                         dockRevealed={focusDockRevealed}
@@ -3339,7 +3373,7 @@ function InfiniteCanvasPage() {
                         references={assistantMentionReferences}
                         onLocateNodes={locateAssistantNodes}
                         onRunProposal={runAssistantProposal}
-                        onOpenModelSettings={() => navigate("/settings?section=channels")}
+                        onOpenModelSettings={() => { void navigateToSettings({ continueCreation: true }); }}
                     />
                 ) : null}
                 <CanvasVersionHistory history={versions} />

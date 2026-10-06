@@ -1,4 +1,4 @@
-"""原企业连接按钮通过真实浏览器、本机企业 HTTP、Python scheduler 和 MySQL。"""
+"""宿主企业连接经真实浏览器、Python scheduler 与 MySQL；企业请求使用本机替身。"""
 
 import json
 import os
@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.ai import GenerationGateway
-from short_drama.domain import AsyncTask, CanvasTaskBinding
+from short_drama.domain import AIModelConfig, AsyncTask, CanvasTaskBinding
 from short_drama.domain.canvas_beefapi_connection import CanvasBeefAPIConnection
 from short_drama.domain.canvas_model_catalog import CanvasModelCatalog
 from short_drama.service.canvas_beefapi_service import tick_beefapi_connections
@@ -27,7 +27,7 @@ pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
         os.environ.get("RUN_CANVAS_BROWSER_INTEGRATION") != "1",
-        reason="Enable source enterprise authorization browser/Python/MySQL verification",
+        reason="Enable host enterprise authorization browser/Python/MySQL verification",
     ),
 ]
 
@@ -209,7 +209,7 @@ def enterprise_scheduler(factory, settings, model_test):
 
 
 @pytest.mark.parametrize("run_model_test", [False, True])
-def test_source_enterprise_popup_authorization_wallet_cancel_disconnect_and_isolation(
+def test_host_enterprise_popup_authorization_wallet_cancel_disconnect_and_isolation(
     identity_app, run_model_test
 ):
     node = shutil.which("node")
@@ -267,24 +267,24 @@ def test_source_enterprise_popup_authorization_wallet_cancel_disconnect_and_isol
             assert all(
                 result[key]
                 for key in (
-                    "builtin_available",
+                    "official_entry_available",
                     "pending_authorization_opened",
                     "popup_opener_isolated",
-                    "source_cancel_completed",
-                    "real_enterprise_approval",
+                    "cancel_completed",
+                    "controlled_enterprise_approval",
                     "scheduler_connected",
                     "managed_catalog_saved",
                     "fresh_browser_connected",
                     "wallet_actually_opened",
                     "other_account_isolated",
                     "secrets_not_exposed",
-                    "source_disconnect_completed",
+                    "disconnect_completed",
                 )
             )
             assert not result["page_errors"] and not result["failed_routes"]
-            assert result["source_managed_header_saved"] is run_model_test
-            assert result["source_managed_model_test_completed"] is run_model_test
-            assert result["source_tasks_showed_managed_result"] is run_model_test
+            assert result["managed_header_saved"] is run_model_test
+            assert result["managed_model_test_completed"] is run_model_test
+            assert result["task_center_showed_managed_result"] is run_model_test
             assert result["managed_model_test_private"] is run_model_test
             assert result["model_test_submissions"] == int(run_model_test)
             assert not errors
@@ -306,6 +306,14 @@ def test_source_enterprise_popup_authorization_wallet_cancel_disconnect_and_isol
         catalog = session.scalar(select(CanvasModelCatalog))
         managed = next(item for item in catalog.channels_json if item["id"] == "beefapi")
         assert managed["models"] == [] and not managed["hasApiKey"]
+        model = session.get(AIModelConfig, int(result["saved_model_id"]))
+        assert model.owner_user_id == int(actor["id"])
+        assert model.is_deleted and not model.enabled
+        assert model.runtime_profile["protocol"] == "chat-completion"
+        assert model.apikey and "synthetic-managed-browser-api-key" not in model.apikey
+        if run_model_test:
+            assert model.runtime_credentials_cipher
+            assert "synthetic-managed-browser-header" not in model.runtime_credentials_cipher
         tasks = list(session.scalars(select(AsyncTask)))
         assert len(tasks) == int(run_model_test)
         assert all(

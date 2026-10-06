@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { beefAPITestOrigin } from './src/features/ai-config/config-form-model';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const canvasPreview: Plugin = {
@@ -30,6 +31,8 @@ const canvasPreview: Plugin = {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, root, '');
+  const testOrigin = mode === 'test' && env.CANVAS_BEEFAPI_TEST_ORIGIN
+    ? beefAPITestOrigin(mode, env.CANVAS_BEEFAPI_TEST_ORIGIN) : '';
   const canvasPort = Number(env.CANVAS_DEV_PORT || 8082);
   if (!Number.isInteger(canvasPort) || canvasPort < 1 || canvasPort > 65535) {
     throw new Error('CANVAS_DEV_PORT 必须为 1–65535 的整数。');
@@ -37,6 +40,7 @@ export default defineConfig(({ mode }) => {
   const apiProxy = { '/api': { target: env.API_PROXY_TARGET || 'http://127.0.0.1:8000', changeOrigin: true } };
   return {
     plugins: [react(), canvasPreview],
+    define: { __HOST_BEEFAPI_TEST_ORIGIN__: JSON.stringify(testOrigin) },
     base: '/',
     server: { port: 8080, strictPort: true, watch: { ignored: ['**/.runtime/**', '**/canvas/**'] }, proxy: {
       '/canvas-app': { target: `http://127.0.0.1:${canvasPort}`, changeOrigin: true, ws: true },

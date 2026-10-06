@@ -20,6 +20,7 @@ CREATE TABLE canvas_channel_models (
 	channel_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL, 
 	model_key VARCHAR(255) COLLATE utf8mb4_0900_bin NOT NULL, 
 	model_config_id BIGINT UNSIGNED NOT NULL, 
+	runtime_migrated_at DATETIME(3),
 	id BIGINT UNSIGNED NOT NULL, 
 	created_at DATETIME(6) NOT NULL, 
 	updated_at DATETIME(6) NOT NULL, 

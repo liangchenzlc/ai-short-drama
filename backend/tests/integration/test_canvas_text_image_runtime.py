@@ -172,38 +172,49 @@ def text_image_runtime(resource_app):
 
 
 def save_channel(runtime, client, *, capability=None, protocol="chat-completion"):
-    current = client.get(WORKSPACE).json()
     capability_config = {"version": 1}
     if capability != {}:
         capability_config["text"] = deepcopy(CAPABILITY if capability is None else capability)
-    channel = {
-        "id": "chat-image-provider",
-        "name": "真实图片文字协议验证",
-        "baseUrl": runtime.origin + "/v1",
-        "apiKey": KEY,
-        "apiFormat": "openai",
-        "enabled": True,
-        "headers": [{"name": HEADER, "value": HEADER_VALUE}],
-        "models": ["gpt-4o-mini"],
-        "modelProfiles": [
-            {
-                "model": "gpt-4o-mini",
-                "capability": "text",
+    saved = client.post(
+        "/api/v1/ai-model-configs",
+        json={
+            "name": "真实图片文字协议验证",
+            "service_type": "text",
+            "provider": "受控图片文字供应商",
+            "model_key": "gpt-4o-mini",
+            "base_url": runtime.origin + "/v1",
+            "apikey": KEY,
+            "headers": [{"name": HEADER, "value": HEADER_VALUE}],
+            "runtime_profile": {
+                "version": 1,
+                "api_format": "openai",
                 "protocol": protocol,
-                "capabilityConfig": capability_config,
-            }
-        ],
-    }
+                "capability_config": capability_config,
+            },
+        },
+    )
+    assert saved.status_code == 201, saved.text
+    model = saved.json()
+    current_response = client.get(WORKSPACE)
+    assert current_response.status_code == 200, current_response.text
+    current = current_response.json()
+    selection = f"host-{model['id']}::{model['model_key']}"
     response = client.put(
         WORKSPACE,
         json={
             "expected_row_version": current["row_version"],
-            "preferences": current["preferences"],
-            "channels": [channel],
+            "preferences": {
+                **current["preferences"],
+                "model": selection,
+                "textModel": selection,
+            },
         },
     )
     assert response.status_code == 200, response.text
-    return next(item for item in response.json()["channels"] if item["id"] == channel["id"])
+    assert response.json()["channels"] == []
+    assert any(item["id"] == model["id"] for item in response.json()["models"])
+    # 原 UI harness 仍使用源选择形状，身份来自真实宿主记录，不写回渠道目录。
+    return {"id": f"host-{model['id']}", "modelProfiles": [{"logicalModelId": model["id"]}]}
 
 
 def saved_image(client, source_key, color):
@@ -402,20 +413,22 @@ def test_queued_chat_images_keep_saved_capability_credentials_and_wire_after_cat
     client, _, _, _, request, contents = text_seed(runtime)
     request["input"]["textOptions"]["stream"] = True
     task = admit(client, request)
-    current = client.get(WORKSPACE).json()
-    channel = next(item for item in current["channels"] if item["id"] == "chat-image-provider")
-    channel["apiKey"] = "changed-chat-image-placeholder-key"
-    channel["headers"] = [{"name": HEADER, "value": "changed-chat-image-placeholder-header"}]
-    channel["modelProfiles"][0]["capabilityConfig"]["text"] = {
+    model_path = "/api/v1/ai-model-configs/" + request["logicalModelId"]
+    current_response = client.get(model_path)
+    assert current_response.status_code == 200, current_response.text
+    current = current_response.json()
+    profile = deepcopy(current["runtime_profile"])
+    profile["capability_config"]["text"] = {
         "references": {"maxImages": 0, "maxImageBytes": 0, "promptMaxChars": 1},
         "streaming": False,
     }
-    response = client.put(
-        WORKSPACE,
+    response = client.patch(
+        model_path,
         json={
-            "expected_row_version": current["row_version"],
-            "preferences": current["preferences"],
-            "channels": current["channels"],
+            "row_version": current["row_version"],
+            "apikey": "changed-chat-image-placeholder-key",
+            "headers": [{"name": HEADER, "value": "changed-chat-image-placeholder-header"}],
+            "runtime_profile": profile,
         },
     )
     assert response.status_code == 200, response.text

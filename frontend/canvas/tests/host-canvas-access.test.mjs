@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCanvasAccessRegistry, canvasRequestIdentity, canvasRequestCanRevoke } from "../src/services/host-canvas-access.ts";
+import { createCanvasAccessRegistry, canvasRequestIdentity, canvasRequestCanRevoke, canvasRequestFailureRevokes } from "../src/services/host-canvas-access.ts";
 
 test("已确认恢复只解除同一账号和会话中该画布的归档冻结", () => {
     const access = createCanvasAccessRegistry();
@@ -51,4 +51,35 @@ test("历史条目和媒体的 404 不被当作整张画布撤权", () => {
     assert.equal(canvasRequestIdentity("/ops/canvas.document.commit", { params: { canvasId: "a" } }), "a");
     assert.equal(canvasRequestIdentity("/canvas-projects/a/history/missing"), undefined);
     assert.equal(canvasRequestIdentity("/resources/missing"), undefined);
+});
+
+test("视口保存的 CSRF 403 不会冻结已成功读取的画布，真实撤权 404 仍冻结", () => {
+    const access = createCanvasAccessRegistry();
+    const scope = { userScope: "111", epoch: 1 };
+    const id = "canvas";
+    const url = `/canvas-projects/${id}/viewport`;
+    const reject = failure => {
+        if (canvasRequestFailureRevokes("put", url, failure)) access.deny(scope, id);
+    };
+    reject({ status: 403, code: "csrf_failed" });
+    access.assert(scope, id);
+    assert.equal(access.reason(scope, id), "");
+    reject({ status: 404, code: "not_found" });
+    assert.throws(() => access.assert(scope, id), /权限/);
+});
+
+test("只有当前服务的画布不存在状态可冻结整图，其他写入校验失败仍由请求反馈", () => {
+    for (const code of ["csrf_failed", "email_verification_required", "project_owner_required", "ownership_immutable", "HTTP_403"]) {
+        assert.equal(canvasRequestFailureRevokes("post", "/ops/canvas.document.commit", { status: 403, code }), false);
+    }
+    assert.equal(canvasRequestFailureRevokes("get", "/canvas-projects/canvas", { status: 404, code: "not_found" }), true);
+    assert.equal(canvasRequestFailureRevokes("get", "/canvas-projects/canvas", { status: 404, code: "HTTP_404" }), false);
+    assert.equal(canvasRequestFailureRevokes("put", "/canvas-projects/new", { status: 404, code: "not_found" }), false);
+    assert.equal(canvasRequestFailureRevokes("get", "/canvas-projects/canvas", { status: 401, code: "authentication_required" }), false);
+    assert.equal(canvasRequestFailureRevokes("get", "/canvas-projects/canvas", { status: 503, code: "unavailable" }), false);
+    for (const url of ["/canvas-projects/canvas/history/missing", "/resources/missing"]) {
+        for (const status of [403, 404]) {
+            assert.equal(Boolean(canvasRequestIdentity(url)) && canvasRequestFailureRevokes("get", url, { status, code: "not_found" }), false);
+        }
+    }
 });

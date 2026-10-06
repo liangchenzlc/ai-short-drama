@@ -25,7 +25,7 @@ from short_drama.agent.state import (
     safe_error,
     wait_locked,
 )
-from short_drama.core.crypto import KeyCipher
+from short_drama.ai.model_identity import model_credential_identity
 from short_drama.domain import AIModelConfig, Episode, Project
 from short_drama.domain.agent import (
     AgentConversation,
@@ -145,8 +145,7 @@ def model_unchanged(session, run):
         and model.row_version == snapshot.get("row_version")
         and model.model_key == snapshot.get("model_key")
         and model.base_url == snapshot.get("base_url")
-        and hashlib.sha256((model.apikey or "").encode()).hexdigest()
-        == snapshot.get("credential_identity")
+        and model_credential_identity(model) == snapshot.get("credential_identity")
     )
 
 
@@ -774,12 +773,10 @@ class AgentRuntime:
         from short_drama.agent.input_media import materialize_prompt
         from short_drama.agent.model_gateway import serialize_segment_result
         from short_drama.core.exceptions import BusinessError
+        from short_drama.service.agent_model_service import model_credentials
 
-        cipher = claim.snapshot.get("credential_cipher")
         key = self.settings.encryption_key
-        credential = (
-            KeyCipher(key.get_secret_value() if key else None).decrypt(cipher) if cipher else ""
-        )
+        credential = model_credentials(claim.snapshot, key)
         values = thaw_input(claim.inputs)
         if isinstance(values.get("user_prompt"), dict):
             if claim.raw is not None:

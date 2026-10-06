@@ -1,6 +1,5 @@
 """Execute one versioned action. Every external call occurs outside a DB transaction."""
 
-import hashlib
 import logging
 import threading
 import uuid
@@ -16,6 +15,7 @@ from short_drama.ai.canvas_image_references import (
     is_canvas_image_request,
     uses_canvas_inline_images,
 )
+from short_drama.ai.model_identity import model_credential_identity
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
 from short_drama.dao.task_runtime_dao import (
@@ -225,7 +225,7 @@ class GenerationExecutionService:
                     and config.is_deleted == 1
                     and config.enabled == 0
                     and str(config.row_version) == call.config_snapshot.get("row_version")
-                    and hashlib.sha256((config.apikey or "").encode()).hexdigest()
+                    and model_credential_identity(config)
                     == call.config_snapshot.get("credential_identity")
                 )
                 if config is None or (
@@ -347,7 +347,7 @@ class GenerationExecutionService:
                             "service_type",
                         )
                     }
-                    identity = hashlib.sha256((config.apikey or "").encode()).hexdigest()
+                    identity = model_credential_identity(config)
                     captured_identity = call.config_snapshot.get("credential_identity")
                     current_canvas_version = (call.request_data.get("source") or {}).get(
                         "scene"

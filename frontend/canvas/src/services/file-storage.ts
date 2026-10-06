@@ -7,7 +7,7 @@ import { resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, Resource
 import { apiBaseURL } from "@/services/api/request";
 import { uploadImage, type UploadedImage } from "@/services/image-storage";
 import { createChannelTransport } from "@/services/api/channel-transport";
-import { useConfigStore } from "@/stores/use-config-store";
+import { isBuiltinBeefAPIChannel, useConfigStore } from "@/stores/use-config-store";
 import { cacheResourceObjectUrl, getCachedResourceBlob, getCachedResourceObjectUrl, primeResourceBlobCache } from "@/services/resource-blob-cache";
 import { cleanupLocalMedia, deleteLocalMedia, getLocalMediaBlob, resolveLocalMediaUrl, saveLocalMedia, setLocalMediaBlob } from "@/services/local-media-repository";
 import { usesBrowserLocalResourceStore } from "@/services/workspace-resource-storage";
@@ -193,8 +193,9 @@ async function materializeExternalMedia(url: string) {
     const pending = (async () => {
         const expected = captureUserScope();
         const config = useConfigStore.getState().config;
-        const channel =
-            config.channels.find((item) => {
+        const channel = config.hostModelDirectory
+            ? config.channels.find((item) => item.enabled !== false && isBuiltinBeefAPIChannel(item))
+            : config.channels.find((item) => {
                 try {
                     return new URL(item.baseUrl).hostname === new URL(url).hostname;
                 } catch {

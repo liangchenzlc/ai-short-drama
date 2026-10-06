@@ -50,6 +50,8 @@ CREATE TABLE `agent_skills` (
 CREATE TABLE `ai_model_configs` (
   `owner_user_id` BIGINT UNSIGNED NOT NULL,
   `capability_cache` JSON NULL,
+  `runtime_profile` JSON NULL,
+  `runtime_credentials_cipher` MEDIUMTEXT NULL,
   `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的记录标识',
   `service_type` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL COMMENT '文本 / 生图 / 生视频',
   `name` VARCHAR(120) NOT NULL COMMENT '配置显示名',
@@ -311,6 +313,7 @@ CREATE TABLE `canvas_channel_models` (
   `channel_key` VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
   `model_key` VARCHAR(255) COLLATE utf8mb4_0900_bin NOT NULL,
   `model_config_id` BIGINT UNSIGNED NOT NULL,
+  `runtime_migrated_at` DATETIME(3) NULL,
   `id` BIGINT UNSIGNED NOT NULL,
   `created_at` DATETIME(6) NOT NULL,
   `updated_at` DATETIME(6) NOT NULL,

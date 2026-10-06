@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 // Execute the imported BeefTV request builder and host profile adapter. External
 // storage/HTTP are controlled here; this verifies source DTOs, not a provider.
 const stubs = {
-    "@/services/file-storage": "export const getMediaBlob = async () => null;",
-    "@/services/image-storage": "export const getImageBlob = async () => null;",
+    "@/services/file-storage": "export const getMediaBlob = async () => null; export const resolveMediaUrl = async () => '';",
+    "@/services/image-storage": "export const getImageBlob = async () => null; export const resolveImageUrl = async () => ''; export const uploadImage = async () => { throw new Error('unexpected upload'); };",
+    "@/lib/canvas/canvas-generation-task-sync": "export const imageMetadata = () => { throw new Error('unexpected task sync'); };",
+    "@/lib/canvas/canvas-file-upload": "export const interruptFileUpload = () => { throw new Error('unexpected file upload'); };",
     "@/services/api/resources": "export const resourceIdFromStorageKey = key => /^resource:([1-9]\\d*)$/.exec(key || '')?.[1]; export const resourceStorageKey = id => 'resource:' + id; export const ownedResourceIdFromMediaRef = media => resourceIdFromStorageKey(media.storageKey); export const getResource = async () => { throw new Error('unexpected resource lookup'); }; export const uploadResourceFile = async () => { throw new Error('unexpected upload'); };",
     "@/services/api/task-center": "export const createGenerationTask = async () => { throw new Error('unexpected HTTP'); }; export const waitForGenerationTask = createGenerationTask;",
     "@/services/api/image": "export const buildBackendToolRequests = () => [];",
@@ -15,7 +17,7 @@ const stubs = {
     "@/stores/use-user-store": "export const useUserStore = Object.assign(() => undefined, { getState: () => ({ user: null }) });",
 };
 const bundled = await build({
-    stdin: { contents: 'export * from "./src/services/api/generation-task.ts"; export * from "./src/services/host-model-config.ts";', resolveDir: fileURLToPath(new URL("..", import.meta.url)) },
+    stdin: { contents: 'export * from "./src/services/api/generation-task.ts"; export * from "./src/services/host-model-config.ts"; export { buildGenerationConfig } from "./src/lib/canvas/canvas-project-generation.ts"; export { useConfigStore } from "./src/stores/use-config-store.ts";', resolveDir: fileURLToPath(new URL("..", import.meta.url)) },
     tsconfig: fileURLToPath(new URL("../tsconfig.json", import.meta.url)),
     bundle: true, write: false, format: "esm", platform: "node", target: "node22",
     plugins: [{ name: "external-boundaries", setup(builder) {
@@ -23,7 +25,21 @@ const bundled = await build({
         builder.onLoad({ filter: /.*/, namespace: "controlled" }, args => ({ contents: stubs[args.path], loader: "js" }));
     } }],
 });
-const { runBackendGenerationTask, sourceModelConfig, parseBackendGenerationResult } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+const { runBackendGenerationTask, sourceModelConfig, parseBackendGenerationResult, buildGenerationConfig, logicalModelIDForConfig, useConfigStore } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+
+test("旧节点metadata.model经宿主alias恢复，未知同名和能力不匹配选择保留不可用", () => {
+    const value = sourceModelConfig({ row_version: "1", preferences: {}, models: [{ id: "9007199254740999", name: "文本", model_key: "current-model", provider: "fixture", service_type: "text", enabled: true, has_api_key: true, is_default: true, selection_aliases: ["old::legacy-model"] }] });
+    const known = buildGenerationConfig(value, { id: "old-node", type: "text", metadata: { model: "old::legacy-model" } }, "text");
+    assert.equal(known.model, "host-9007199254740999::current-model");
+    for (const [mode, stored] of [["text", "deleted::current-model"], ["image", "old::legacy-model"]]) {
+        const unknown = buildGenerationConfig(value, { id: "old-node", type: mode, metadata: { model: stored } }, mode);
+        assert.equal(unknown.model, stored);
+        assert.equal(logicalModelIDForConfig(unknown), mode === "image" ? "9007199254740999" : "");
+        if (mode === "text") assert.equal(useConfigStore.getState().isAiConfigReady(unknown, unknown.model), false);
+    }
+    const empty = sourceModelConfig({ row_version: "1", preferences: {}, models: [] });
+    assert.equal(buildGenerationConfig(empty, undefined, "text").model, "");
+});
 
 test("真实源请求构造器从宿主模型读取十进制logicalModelId并发送四类安全camel输入", async () => {
     for (const mode of ["text", "image", "video", "audio"]) {

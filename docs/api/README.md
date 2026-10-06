@@ -117,13 +117,15 @@ Agent 默认开启；运行须完成九表迁移、保持账号认证并启动�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET / POST | `/ai-model-configs` | 类型 `text/image/video` 分页；创建返回 201 |
+| GET / POST | `/ai-model-configs` | 类型 `text/image/video/audio` 分页；创建返回 201 |
 | GET / PATCH / DELETE | `/ai-model-configs/{config_id}` | PATCH 需 body.row_version；DELETE 需 query.row_version，204 |
 | PUT | `/ai-model-configs/{config_id}/default` | `{row_version}`，设置同类默认 |
 | POST | `/ai-model-configs/discover-models` | 用地址/密钥读取模型目录，不保存、不生成 |
 | GET | `/ai-model-configs/{config_id}/capabilities` | 本地协议适配能力；不保证真实供应商或账户可用 |
 
 创建字段为 `service_type/name/provider/model_key/base_url/apikey/enabled`，每条配置一个模型。新建不自动成为默认；类型不可改，删除为软删除。`enabled/is_default/is_deleted` 使用 0/1。API Key 写入后加密，读取仅有 `has_api_key`；编辑时省略保留、null 清除、新值替换。
+
+标准模式与画布统一使用此管理入口。可选 `runtime_profile` 保存协议、能力和默认参数，`secret_key/headers` 保存加密扩展鉴权；读取仅返回 `has_secret_key`、header 名称/存在标记与只读凭据来源。画布模型偏好不再写渠道目录。完整字段、旧选择兼容与任务冻结规则见[统一模型运行配置](model-runtime.md)。
 
 模型探测请求 `{base_url,apikey?,config_id?}`。编辑时省略 apikey 可在地址一致时复用已存密钥；显式 null 表示无密钥，变更带密钥配置的地址需提供新密钥。返回 `{items:[{id}],truncated}`，仍允许手动输入模型名称；目录不推断文本/图片/视频能力。私网网关需配置精确主机白名单。
 

@@ -19,17 +19,22 @@ class CanvasWorkspaceDAO:
             query = query.with_for_update().execution_options(populate_existing=True)
         return self.session.scalar(query)
 
-    def models(self) -> list[dict]:
+    def models(self, config_service) -> list[dict]:
         from short_drama.domain import CanvasChannelModel
 
         records = self.session.scalars(
             select(AIModelConfig)
             .where(
                 AIModelConfig.is_deleted == 0,
-                AIModelConfig.id.not_in(select(CanvasChannelModel.model_config_id)),
             )
             .order_by(AIModelConfig.id)
         )
+        bindings = {
+            value.model_config_id: value
+            for value in self.session.scalars(select(CanvasChannelModel))
+        }
+        from short_drama.service.model_runtime_config import model_runtime_public
+
         return [
             {
                 "id": str(value.id),
@@ -39,6 +44,17 @@ class CanvasWorkspaceDAO:
                 "service_type": value.service_type,
                 "enabled": bool(value.enabled),
                 "has_api_key": bool(value.apikey),
+                "is_default": bool(value.is_default),
+                "selection_aliases": [
+                    f"{bindings[value.id].channel_key}::{bindings[value.id].model_key}"
+                ]
+                if value.id in bindings
+                else [],
+                **model_runtime_public(
+                    value,
+                    config_service._key_cipher() if value.runtime_credentials_cipher else None,
+                    bindings.get(value.id),
+                ),
             }
             for value in records
         ]

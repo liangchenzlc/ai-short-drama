@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from copy import deepcopy
 
 from sqlalchemy.orm import Session
 
 from short_drama.ai import GenerationError, select_adapter
+from short_drama.ai.model_identity import model_credential_identity
 from short_drama.core.exceptions import Conflict, GenerationRequestError, NotFound, WorkflowError
 from short_drama.dao.canvas_generation_dao import CanvasGenerationDAO
 from short_drama.dao.canvas_model_test_dao import CanvasModelTestDAO
@@ -112,9 +112,7 @@ class CanvasGenerationService(BaseService):
                         "base_url": config.base_url,
                         "model_key": config.model_key,
                         "capability_cache": config.capability_cache,
-                        "credential_identity": hashlib.sha256(
-                            (config.apikey or "").encode()
-                        ).hexdigest(),
+                        "credential_identity": model_credential_identity(config),
                     }
                 )
             except GenerationError as error:

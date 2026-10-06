@@ -184,6 +184,8 @@ def test_every_update_rejects_system_fields_and_null_for_nonnullable_columns(cla
         with pytest.raises(ValidationError):
             schema(**(initial | {field: 1}))
     for field in schema.model_fields:
+        if class_name == "AIModelConfigUpdate" and field in {"secret_key", "headers"}:
+            continue  # Virtual secret inputs are encrypted into runtime_credentials_cipher.
         if not model.__table__.c[field].nullable:
             with pytest.raises(ValidationError):
                 schema(**(initial | {field: None}))
@@ -207,7 +209,8 @@ def test_read_schema_covers_exact_domain_columns_except_secret(class_name):
     if class_name == "AIModelConfigRead":
         expected.remove("apikey")
         expected.remove("capability_cache")
-        expected.add("has_api_key")
+        expected.remove("runtime_credentials_cipher")
+        expected.update({"has_api_key", "has_secret_key", "headers", "credential_source"})
     if class_name == "AssetRead":
         expected -= {
             "scope_user_id",

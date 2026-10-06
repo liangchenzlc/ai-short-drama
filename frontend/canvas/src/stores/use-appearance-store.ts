@@ -5,22 +5,22 @@ import { applySkinTheme, DEFAULT_CLASSIC_SKIN, normalizeSkinDefinition } from "@
 
 export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
     schemaVersion: 7,
-    brandName: "BeefTV",
-    brandSlug: "beeftv",
-    authHeroTitle: "让一个故事，\n从文字走向银幕。",
+    brandName: "无限画布",
+    brandSlug: "infinite-canvas",
+    authHeroTitle: "",
     authHeroDescription: "",
-    logoUrl: "/beef-logo.png",
-    darkLogoUrl: "/beef-logo.png",
+    logoUrl: "/favicon.svg",
+    darkLogoUrl: "/favicon.svg",
     logoFrameEnabled: false,
-    authVideoUrl: "https://boss-shjd.biliapi.net/updream/aniforge/video/video_bbcb00bd-650d-4249-9346-5cd21fd2484c_m1hc-u0-1pu13x-3v1s.mp4",
-    authVideoPosterUrl: "https://i0.hdslb.com/bfs/aitool/aniforge/image/02933f26-5f1b-49ff-a811-b7f95ee5e5b8_m1hc-u0-sau.jpg",
+    authVideoUrl: "",
+    authVideoPosterUrl: "",
     authVideoAutoplay: true,
     skinId: "classic",
     activeSkin: DEFAULT_CLASSIC_SKIN,
-    seoTitle: "BeefTV",
-    seoDescription: "BeefTV，本地优先的开源 AI 视频创作工作台。",
+    seoTitle: "无限画布 · 短剧工作台",
+    seoDescription: "短剧工作台的无限画布创作空间。",
     seoKeywords: "",
-    footerCopyright: `© ${new Date().getFullYear()} BeefTV. Open source video studio.`,
+    footerCopyright: "",
     icpFilingEnabled: false,
     icpFilingNumber: "",
     logoConfigured: false,
@@ -154,11 +154,6 @@ function setMeta(targetDocument: Document, attribute: "name" | "property", key: 
 
 export function appearanceLogoURL(appearance: PublicAppearance, theme: "light" | "dark") {
     return theme === "dark" ? appearance.darkLogoUrl || appearance.logoUrl : appearance.logoUrl || appearance.darkLogoUrl;
-}
-
-export function brandStudioLabel(appearance: PublicAppearance) {
-    if (appearance.brandName === DEFAULT_PUBLIC_APPEARANCE.brandName && appearance.brandSlug === DEFAULT_PUBLIC_APPEARANCE.brandSlug) return "BEEF CREATIVE STUDIO";
-    return appearance.brandSlug.replace(/-+/g, " ").toLocaleUpperCase();
 }
 
 function normalizeBrandSlug(value: unknown) {

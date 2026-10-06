@@ -12,6 +12,7 @@ from sqlalchemy.dialects.mysql import (
     BIGINT,
     DATETIME,
     JSON,
+    MEDIUMTEXT,
     TEXT,
     TINYINT,
     VARCHAR,
@@ -30,6 +31,8 @@ class AIModelConfig(Base):
         nullable=False,
     )
     capability_cache: Mapped[dict | None] = mapped_column(JSON(), nullable=True)
+    runtime_profile: Mapped[dict | None] = mapped_column(JSON(), nullable=True)
+    runtime_credentials_cipher: Mapped[str | None] = mapped_column(MEDIUMTEXT(), nullable=True)
 
     id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True),

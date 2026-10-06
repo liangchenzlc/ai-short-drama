@@ -7,8 +7,10 @@ import json
 from sqlalchemy import select
 
 from short_drama.ai import GenerationError, validate_request
+from short_drama.ai.model_identity import model_credential_identity
 from short_drama.core.exceptions import (
     BusinessError,
+    ConfigurationError,
     Conflict,
     GenerationRequestError,
     WorkflowError,
@@ -370,6 +372,12 @@ class AIGenerationService(BaseService):
         return None
 
     def _insert(self, kind, payload, key, digest, config, retry_of_id=None):
+        if getattr(config, "runtime_profile", None) is not None:
+            from .canvas_model_catalog_service import CanvasModelCatalogService
+
+            catalog = CanvasModelCatalogService(self.session, settings=self.settings)
+            if catalog.refresh_runtime_model_locked(config):
+                self.session.flush()
         from short_drama.db.access import require_project, scope_of, scoped_key, set_scope
 
         key = scoped_key(self.session, key)
@@ -416,7 +424,7 @@ class AIGenerationService(BaseService):
             for k in ("base_url", "model_key", "provider", "service_type", "name")
         }
         snapshot.update(
-            credential_identity=hashlib.sha256((config.apikey or "").encode()).hexdigest(),
+            credential_identity=model_credential_identity(config),
             capability_cache=copy.deepcopy(config.capability_cache),
             row_version=str(config.row_version),
             budget_seconds=getattr(
@@ -480,6 +488,30 @@ class AIGenerationService(BaseService):
                 updated_at=now,
             )
         )
+        if getattr(config, "runtime_profile", None) is not None or getattr(
+            config, "runtime_credentials_cipher", None
+        ):
+            from .canvas_credential_freeze import freeze_model_credentials
+            from .canvas_model_catalog_service import CanvasModelCatalogService
+
+            catalog = CanvasModelCatalogService(self.session, settings=self.settings)
+            secrets = catalog.runtime_credentials_locked(config.id, record.adapter)
+            if secrets is None:
+                try:
+                    key_value = (
+                        catalog.configs._key_cipher().decrypt(config.apikey)
+                        if config.apikey
+                        else ""
+                    )
+                except ValueError:
+                    raise ConfigurationError("模型凭据无法解密") from None
+                from .model_runtime_config import decrypt_runtime_credentials
+
+                secrets = {
+                    "apiKey": key_value,
+                    **decrypt_runtime_credentials(config, catalog.configs._key_cipher()),
+                }
+            freeze_model_credentials(record, secrets, catalog.configs._key_cipher())
         return self._summary(task, record), True
 
     def create(self, kind, payload, idempotency_key):

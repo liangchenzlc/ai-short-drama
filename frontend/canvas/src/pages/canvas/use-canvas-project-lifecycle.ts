@@ -217,7 +217,7 @@ export function useCanvasProjectLifecycle({
                 historyRestore?.resolve();
             }
             if (!loadedProject) {
-                if (!cachedProject) navigate("/canvas", { replace: true });
+                if (!cachedProject) setLoadError("画布暂时无法读取，请重新加载或返回工作台。");
                 return;
             }
             const project = useCanvasStore.getState().projects.find((p) => p.id === projectId) || loadedProject;
@@ -419,7 +419,8 @@ export function useCanvasProjectLifecycle({
                 .catch(() => message.warning("项目已删除，但部分本地绘图缓存清理失败"));
         }
         cleanupAssetImages();
-        navigate(nextCanvas ? `/canvas/${nextCanvas.id}` : "/canvas");
+        if (nextCanvas) navigate(`/canvas/${nextCanvas.id}`);
+        else window.location.assign("/projects");
     }, [cleanupAssetImages, localMode, message, navigate, nodesRef, projectId]);
 
     const renameCurrentProject = useCallback((title: string) => {

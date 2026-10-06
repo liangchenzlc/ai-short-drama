@@ -88,7 +88,7 @@ export function localWorkspaceConfig(config: AiConfig): AiConfig {
     return normalizeConfigSnapshot({
         config: {
             ...config,
-            channels: config.channels.filter((channel) => (channel.id.startsWith("host-") && channel.credentialRef === `host:${channel.id.slice(5)}`) || (channel.scope !== "system" && !isSystemProxyBaseUrl(channel.baseUrl))),
+            channels: config.channels.filter((channel) => (channel.id.startsWith("host-") && channel.credentialRef === `host:${channel.id.slice(5)}`) || (!config.hostModelDirectory && channel.scope !== "system" && !isSystemProxyBaseUrl(channel.baseUrl))),
             runningHub: { ...defaultConfig.runningHub },
         },
     }).config;

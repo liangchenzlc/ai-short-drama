@@ -1,12 +1,12 @@
 """Immutable candidate creation inside the coordinator's locked tool transaction."""
 
+import re
 from copy import deepcopy
 
 from sqlalchemy import select
 
 from short_drama.agent.authorization import check_source, scoped_task
 from short_drama.agent.state import append_event, wait_locked
-from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.base import BaseDAO
 from short_drama.dao.episode_writing_dao import EpisodeWritingDAO
@@ -26,7 +26,11 @@ from short_drama.service.base import utcnow
 def public_content(value, secret):
     """Redact only shared values; never rewrite protocol/field names or private intent."""
     if isinstance(value, str):
-        return value.replace(secret, "[redacted]") if secret else value
+        secrets = [secret] if isinstance(secret, str) else secret
+        pattern = "|".join(
+            re.escape(item) for item in sorted(set(filter(None, secrets)), key=len, reverse=True)
+        )
+        return re.sub(pattern, "[redacted]", value) if pattern else value
     if isinstance(value, list):
         return [public_content(item, secret) for item in value]
     if isinstance(value, dict):
@@ -35,13 +39,15 @@ def public_content(value, secret):
 
 
 def candidate_secret(run, settings):
-    cipher = run.config_snapshot.get("credential_cipher")
-    if not cipher:
-        return ""
-    key = settings.encryption_key
-    return KeyCipher(key.get_secret_value() if hasattr(key, "get_secret_value") else key).decrypt(
-        cipher
-    )
+    from short_drama.ai.canvas_credentials import CanvasCredentials
+    from short_drama.service.agent_model_service import model_credentials
+
+    credential = model_credentials(run.config_snapshot, getattr(settings, "encryption_key", None))
+    if not isinstance(credential, CanvasCredentials):
+        return credential
+    return [credential.api_key.get_secret_value()] + [
+        header.value.get_secret_value() for header in credential.headers
+    ]
 
 
 def source_snapshot(step, run, now):

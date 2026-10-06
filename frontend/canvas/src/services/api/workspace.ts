@@ -40,7 +40,7 @@ export type LocalModelConfigPayload = {
 };
 
 export async function saveLocalModelConfig(config: AiConfig, expectedRevision: string) {
-    const { modelPreferences, customModelChannels, sourceModelConfig } = await import("@/services/host-model-config");
-    const result = await http.put<import("@/services/host-model-config").HostModelConfig>("/workspace/model-config", { preferences: modelPreferences(config), channels: customModelChannels(config), expected_row_version: expectedRevision });
+    const { modelPreferences, sourceModelConfig } = await import("@/services/host-model-config");
+    const result = await http.put<import("@/services/host-model-config").HostModelConfig>("/workspace/model-config", { preferences: modelPreferences(config), expected_row_version: expectedRevision });
     return { saved: true, revision: result.row_version, config: sourceModelConfig(result) };
 }

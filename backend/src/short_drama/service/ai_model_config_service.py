@@ -1,24 +1,38 @@
 """Encrypted model settings with optimistic versions and atomic default switching."""
 
-import hashlib
+from copy import deepcopy
 from datetime import datetime
+from types import SimpleNamespace
 
 from pydantic import SecretStr
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from short_drama.ai.model_identity import model_credential_identity
 from short_drama.core.config import Settings
 from short_drama.core.crypto import KeyCipher
-from short_drama.core.exceptions import BusinessError, ConfigurationError, Conflict, NotFound
-from short_drama.domain import AIModelConfig
+from short_drama.core.exceptions import (
+    BusinessError,
+    ConfigurationError,
+    Conflict,
+    NotFound,
+    WorkflowError,
+)
+from short_drama.domain import AIModelConfig, CanvasChannelModel
 from short_drama.schemas.ai_model_config import (
     AIModelConfigCreate,
     AIModelConfigRead,
     AIModelConfigUpdate,
 )
 from short_drama.schemas.base import parse_identifier
+from short_drama.schemas.model_runtime_profile import ModelRuntimeProfile
 
 from .base import BaseService, utcnow
+from .model_runtime_config import (
+    decrypt_runtime_credentials,
+    encrypt_runtime_credentials,
+    model_runtime_public,
+)
 
 
 class _RetryDefault(Exception):
@@ -54,7 +68,57 @@ class AIModelConfigService(BaseService):
         return envelope
 
     def _read(self, entity):
-        return super()._read(entity).model_copy(update={"has_api_key": bool(entity.apikey)})
+        binding = self.session.scalar(
+            select(CanvasChannelModel).where(CanvasChannelModel.model_config_id == entity.id)
+        )
+        cipher = self._key_cipher() if entity.runtime_credentials_cipher else None
+        public = model_runtime_public(entity, cipher, binding)
+        public.pop("runtime_profile")
+        return self.read_schema.model_validate(
+            {**super()._read(entity).model_dump(), "has_api_key": bool(entity.apikey), **public}
+        )
+
+    def _runtime_values(self, values, entity=None):
+        if "runtime_profile" in values and values["runtime_profile"] is not None:
+            values["runtime_profile"] = ModelRuntimeProfile.model_validate(
+                values["runtime_profile"]
+            ).model_dump(mode="json", exclude_none=True)
+        secret_present = "secret_key" in values
+        headers_present = "headers" in values
+        secret = values.pop("secret_key", None)
+        headers = values.pop("headers", None)
+        if not secret_present and not headers_present:
+            return values
+        if secret_present and (secret is None or not secret.get_secret_value()) and headers == []:
+            if entity is not None and entity.runtime_credentials_cipher is not None:
+                values["runtime_credentials_cipher"] = None
+            return values
+        previous = (
+            decrypt_runtime_credentials(entity, self._key_cipher())
+            if entity is not None and entity.runtime_credentials_cipher
+            else {"secretKey": "", "headers": {}}
+        )
+        updated = deepcopy(previous)
+        if secret_present:
+            updated["secretKey"] = secret.get_secret_value() if secret is not None else ""
+        if headers_present and headers is not None:
+            old = {name.lower(): value for name, value in previous["headers"].items()}
+            updated["headers"] = {}
+            for item in headers:
+                value = item["value"].get_secret_value()
+                updated["headers"][item["name"]] = value or old.get(item["name"].lower(), "")
+        if updated != previous:
+            try:
+                values["runtime_credentials_cipher"] = encrypt_runtime_credentials(
+                    updated["secretKey"], updated["headers"], self._key_cipher()
+                )
+            except ValueError:
+                raise WorkflowError(
+                    "model_runtime_credentials_invalid",
+                    "合并后的模型请求头不符合限制：最多 32 项、每项 4 KiB、总计 16 KiB",
+                    422,
+                ) from None
+        return values
 
     def _active(self, identifier):
         entity = self._get_locked(identifier)
@@ -64,6 +128,7 @@ class AIModelConfigService(BaseService):
 
     def create(self, payload):
         values = self._payload(self.create_schema, payload)
+        values = self._runtime_values(values)
         if "apikey" in values:
             values["apikey"] = self._encrypt_key(values["apikey"])
         with self._transaction():
@@ -99,7 +164,9 @@ class AIModelConfigService(BaseService):
                 raise ConfigurationError("Stored API key cannot be decrypted") from None
 
     def capabilities(self, identifier):
-        from short_drama.ai import capabilities
+        from short_drama.ai import GenerationError, capabilities
+
+        from .model_runtime_config import refresh_runtime_model
 
         with self._transaction():
             entity = self._require(self.model, identifier, for_update=False)
@@ -109,9 +176,24 @@ class AIModelConfigService(BaseService):
                 key: getattr(entity, key)
                 for key in ("base_url", "model_key", "service_type", "capability_cache")
             }
-            snapshot["credential_identity"] = hashlib.sha256(
-                (entity.apikey or "").encode()
-            ).hexdigest()
+            snapshot["credential_identity"] = model_credential_identity(entity)
+            if entity.runtime_profile is not None:
+                binding = self.session.scalar(
+                    select(CanvasChannelModel).where(
+                        CanvasChannelModel.model_config_id == entity.id
+                    )
+                )
+                derived = SimpleNamespace(
+                    **snapshot,
+                    runtime_profile=deepcopy(entity.runtime_profile),
+                    apikey=entity.apikey,
+                    runtime_credentials_cipher=entity.runtime_credentials_cipher,
+                )
+                try:
+                    refresh_runtime_model(derived, binding.channel_key if binding else "")
+                except GenerationError:
+                    return capabilities({})
+                snapshot["capability_cache"] = derived.capability_cache
             return capabilities(snapshot)
 
     def _versioned_update(self, entity, values, expected_version):
@@ -145,6 +227,21 @@ class AIModelConfigService(BaseService):
             entity = self._active(identifier)
             if entity.row_version != expected:
                 raise Conflict("Model configuration version is stale")
+            binding = self.session.scalar(
+                select(CanvasChannelModel).where(CanvasChannelModel.model_config_id == entity.id)
+            )
+            if binding is not None and binding.channel_key == "beefapi":
+                for key in ("base_url", "model_key", "runtime_profile"):
+                    proposed = values.get(key)
+                    if key == "runtime_profile" and proposed is not None:
+                        proposed = ModelRuntimeProfile.model_validate(proposed).model_dump(
+                            mode="json", exclude_none=True
+                        )
+                    if key in values and proposed != getattr(entity, key):
+                        raise BusinessError("BeefAPI 模型连接与协议由企业授权目录维护")
+                if any(key in values for key in ("apikey", "secret_key")):
+                    raise BusinessError("BeefAPI 凭据由企业授权维护")
+            values = self._runtime_values(values, entity)
             if "apikey" in values:
                 secret = values.pop("apikey")
                 plaintext = secret.get_secret_value() if secret else ""
@@ -165,6 +262,17 @@ class AIModelConfigService(BaseService):
                         values["apikey"] = self._encrypt_key(secret)
             if values.get("enabled") == 0:
                 values["is_default"] = 0
+            if any(
+                key in values and values[key] != getattr(entity, key)
+                for key in (
+                    "runtime_profile",
+                    "base_url",
+                    "model_key",
+                    "apikey",
+                    "runtime_credentials_cipher",
+                )
+            ):
+                values["capability_cache"] = None
             return self._read(self._versioned_update(entity, values, expected))
 
     def delete(self, identifier, row_version):

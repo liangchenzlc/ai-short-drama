@@ -1,4 +1,4 @@
-"""真实浏览器、认证 HTTP 和隔离 MySQL；不拦截 API，不调用模型供应商。"""
+"""真实画布浏览器、认证 HTTP 和隔离 MySQL；宿主页仅验证导航边界。"""
 
 import json
 import os
@@ -132,6 +132,13 @@ def test_canvas_browser_saves_to_python_and_preserves_cross_window_conflicts(ide
         result = json.loads(output)
         assert result["graph_saved"] and result["appearance_restored"]
         assert result["other_window_conflict_preserved"]
+        assert result["valid_canvas_opened_without_revocation"]
+        assert result["csrf_failure_preserved_access"]
+        assert result["valid_save_recovered_after_csrf_failure"]
+        assert result["returned_to_host_projects"]
+        assert result["host_page_rendering"] == "navigation_boundary_only"
+        assert len(result["old_site_redirects"]) == 14
+        assert not result["source_site_modules_loaded"]
         # The report lists real 404s for the still-unmigrated runtime modules. It is
         # intentionally not interpreted as their functional acceptance.
         assert not result["page_errors"]

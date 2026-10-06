@@ -14,11 +14,15 @@ const initial = {
     viewport: { x: 0, y: 0, k: 1 }, backgroundMode: "dots", showImageInfo: false,
 };
 
-async function installApi(page) {
+async function installApi(page, options = {}) {
     let document = structuredClone(initial);
     const commits = [];
     const viewportWrites = [];
     const preferenceWrites = [];
+    const modelWrites = [];
+    let modelPreferences = {};
+    let holdCommits = Boolean(options.holdCommits);
+    const commitWaiters = [];
     const preferences = () => ({ appearance: document.appearance ?? null, backgroundMode: document.backgroundMode, showImageInfo: document.showImageInfo });
     let accessible = true;
     const unimplemented = new Set();
@@ -33,7 +37,19 @@ async function installApi(page) {
         }
         let body;
         if (path === "/auth/me") body = { user: { id: "111", username: "canvas-test", display_name: "画布测试", email: "canvas@example.test" } };
-        else if (path === "/canvas-runtime/workspace/model-config") body = { row_version: "0", preferences: {}, models: [] };
+        else if (path === "/canvas-runtime/workspace/model-config") {
+            if (request.method() === "PUT") {
+                const input = request.postDataJSON();
+                assert.equal("channels" in input, false);
+                modelWrites.push(input);
+                if (options.rejectModelPreferences) {
+                    await route.fulfill({ status: 409, json: { error: { code: "canvas_model_config_conflict", message: "Model preferences changed" } } });
+                    return;
+                }
+                modelPreferences = input.preferences;
+            }
+            body = { row_version: String(modelWrites.length), preferences: modelPreferences, models: options.models || [] };
+        }
         else if (path === "/canvas-runtime/canvas-projects/parity-canvas/events") {
             await route.fulfill({ status: 200, contentType: "text/event-stream", body: ": connected\n\n" });
             return;
@@ -57,6 +73,11 @@ async function installApi(page) {
         }
         else if (path.endsWith("/commits")) {
             const input = request.postDataJSON();
+            if (holdCommits) await new Promise(resolve => commitWaiters.push(resolve));
+            if (options.rejectCommits) {
+                await route.fulfill({ status: 409, json: { error: { code: "canvas_revision_conflict", message: "画布已变化，当前草稿已保留", details: { current_version: "2" } } } });
+                return;
+            }
             assert.equal(request.headers()["x-canvas-actor"], "111");
             assert.equal(request.headers()["x-csrf-token"], "browser-fixture");
             assert.ok(request.headers()["idempotency-key"]);
@@ -71,7 +92,8 @@ async function installApi(page) {
         }
         await route.fulfill({ json: body });
     });
-    return { commits, viewportWrites, preferenceWrites, unimplemented, document: () => document, revoke: () => { accessible = false; } };
+    return { commits, viewportWrites, preferenceWrites, modelWrites, unimplemented, document: () => document, revoke: () => { accessible = false; },
+        waitingCommits: () => commitWaiters.length, releaseCommits: () => { holdCommits = false; for (const release of commitWaiters.splice(0)) release(); } };
 }
 
 test("原版编辑器拖拽保存、视口和外观独立恢复，撤权后停止编辑", { timeout: 90000 }, async () => {
@@ -90,7 +112,7 @@ test("原版编辑器拖拽保存、视口和外观独立恢复，撤权后停�
         page = await context.newPage();
         page.on("pageerror", error => diagnostics.errors.push(error.stack ?? error.message));
         const api = await installApi(page);
-        await page.goto(new URL("/canvas-app/canvas/parity-canvas", browserBaseUrl).href);
+        await page.goto(new URL("/canvas-app/canvas/parity-canvas", browserBaseUrl).href, { waitUntil: "domcontentloaded", timeout: 60000 });
         const node = page.locator('[data-node-id="text-one"]');
         await node.waitFor({ state: "visible", timeout: 60000 });
         await page.locator(".canvas-main-toolbar").waitFor({ state: "visible" });
@@ -149,6 +171,10 @@ test("原版编辑器拖拽保存、视口和外观独立恢复，撤权后停�
         await page.getByRole("alert").filter({ hasText: "访问权限已变化" }).waitFor({ state: "visible", timeout: 15000 });
         assert.equal(await node.isVisible(), false);
         assert.equal(api.commits.length, commitsBeforeRevoke);
+        await page.route("**/projects", route => route.fulfill({ contentType: "text/html; charset=utf-8", body: "<main>宿主项目列表</main>" }));
+        await page.getByRole("button", { name: "返回工作台", exact: true }).click();
+        await page.waitForURL(new URL("/projects", browserBaseUrl).href);
+        await page.getByText("宿主项目列表").waitFor({ state: "visible" });
         diagnostics.unimplemented = [...api.unimplemented];
         assert.deepEqual(diagnostics.errors, []);
     } catch (error) {
@@ -157,6 +183,110 @@ test("原版编辑器拖拽保存、视口和外观独立恢复，撤权后停�
             diagnostics.body = await page.locator("body").innerText().catch(() => "");
         }
         throw new Error(`${error.message}\n${JSON.stringify(diagnostics)}`, { cause: error });
+    } finally {
+        await browser?.close();
+        await server?.close();
+    }
+});
+
+test("设置与工作台导航等待画布保存，409保留草稿", { timeout: 180000 }, async () => {
+    const baseUrl = process.env.CANVAS_BROWSER_BASE_URL || "http://127.0.0.1:4182";
+    const server = process.env.CANVAS_BROWSER_BASE_URL ? undefined : await createServer({ server: { host: "127.0.0.1", port: 4182, strictPort: true }, logLevel: "error" });
+    await server?.listen();
+    let browser;
+    try {
+        browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
+        const direct = await browser.newPage();
+        await installApi(direct);
+        await direct.route("**/ai_config*", route => route.fulfill({ contentType: "text/html; charset=utf-8", body: "<main>宿主模型配置</main>" }));
+        for (const [suffix, expected] of [["?section=channels", "/ai_config"], ["?return_to=https%3A%2F%2Fevil.test", "/ai_config"], ["?return_to=%2Fcanvas-app%2Fcanvas%2Fparity-canvas", "/ai_config?return_to=%2Fcanvas-app%2Fcanvas%2Fparity-canvas"]]) {
+            await direct.goto(new URL(`/canvas-app/settings${suffix}`, baseUrl).href, { waitUntil: "domcontentloaded", timeout: 60000 });
+            await direct.waitForURL(new URL(expected, baseUrl).href, { timeout: 60000 });
+            await direct.getByText("宿主模型配置").waitFor({ state: "visible" });
+        }
+        await direct.close();
+
+        for (const [destination, rejectCommits, editDuringSave] of [["模型配置", false], ["模型配置", true], ["返回工作台", false], ["返回工作台", true], ["返回工作台", false, true]]) {
+            const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+            await context.addCookies([{ name: "sd_csrf", value: "browser-fixture", url: baseUrl }]);
+            const page = await context.newPage();
+            const errors = [];
+            page.on("pageerror", error => errors.push(error.stack ?? error.message));
+            const api = await installApi(page, { holdCommits: true, rejectCommits });
+            await page.route("**/ai_config*", route => route.fulfill({ contentType: "text/html; charset=utf-8", body: "<main>宿主模型配置</main>" }));
+            await page.route("**/projects", route => route.fulfill({ contentType: "text/html; charset=utf-8", body: "<main>宿主项目列表</main>" }));
+            await page.goto(new URL("/canvas-app/canvas/parity-canvas", baseUrl).href, { waitUntil: "domcontentloaded", timeout: 60000 });
+            const node = page.locator('[data-node-id="text-one"]');
+            await node.waitFor({ state: "visible", timeout: 60000 });
+            const before = await node.boundingBox();
+            await page.mouse.move(before.x + 20, before.y + 8);
+            await page.mouse.down();
+            await page.mouse.move(before.x + 130, before.y + 68, { steps: 12 });
+            await page.mouse.up();
+            for (let attempt = 0; api.waitingCommits() === 0 && attempt < 100; attempt++) await new Promise(resolve => setTimeout(resolve, 50));
+            assert.equal(api.waitingCommits(), 1);
+            await page.getByRole("button", { name: "打开画布菜单", exact: true }).click();
+            await page.getByRole("menuitem", { name: destination, exact: true }).click();
+            assert.equal(new URL(page.url()).pathname, "/canvas-app/canvas/parity-canvas");
+            await page.getByRole("button", { name: "画布保存状态：正在保存", exact: true }).waitFor({ state: "visible" });
+            if (editDuringSave) {
+                await page.getByRole("button", { name: "编辑节点名称：文字节点", exact: true }).click();
+                const title = page.getByRole("textbox", { name: "节点名称", exact: true });
+                await title.fill("保存期间的新节点名称");
+                await title.press("Enter");
+                await page.getByRole("button", { name: "编辑节点名称：保存期间的新节点名称", exact: true }).waitFor({ state: "visible" });
+            }
+            api.releaseCommits();
+            if (editDuringSave) {
+                await page.getByRole("alert").filter({ hasText: "保存期间内容再次变化" }).waitFor({ state: "visible" }).catch(async error => {
+                    throw new Error(`${error.message}\n${JSON.stringify({ url: page.url(), commits: api.commits, body: await page.locator("body").innerText() })}`, { cause: error });
+                });
+                assert.equal(new URL(page.url()).pathname, "/canvas-app/canvas/parity-canvas");
+                assert.equal(await page.getByRole("button", { name: "编辑节点名称：保存期间的新节点名称", exact: true }).isVisible(), true);
+            } else if (rejectCommits) {
+                await page.getByRole("button", { name: "画布保存状态：版本冲突 · 未同步", exact: true }).waitFor({ state: "visible" });
+                await page.getByRole("alert").waitFor({ state: "visible" });
+                await page.getByText("此画布的自动提交已暂停。加载最新版前会保留本地草稿，可下载后从画布列表导入为副本。", { exact: true }).waitFor({ state: "visible" });
+                assert.equal(new URL(page.url()).pathname, "/canvas-app/canvas/parity-canvas");
+                const draft = await node.boundingBox();
+                assert.ok(draft.x > before.x + 80);
+                assert.equal(api.commits.length, 0);
+            } else {
+                await page.waitForURL(new URL(destination === "模型配置" ? "/ai_config?return_to=%2Fcanvas-app%2Fcanvas%2Fparity-canvas" : "/projects", baseUrl).href);
+                assert.ok(api.commits.length > 0);
+                assert.ok(api.document().nodes[0].position.x > initial.nodes[0].position.x);
+                await page.getByText(destination === "模型配置" ? "宿主模型配置" : "宿主项目列表").waitFor({ state: "visible" });
+            }
+            assert.deepEqual(errors, []);
+            await context.close();
+        }
+
+        const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+        await context.addCookies([{ name: "sd_csrf", value: "browser-fixture", url: baseUrl }]);
+        const page = await context.newPage();
+        const models = [
+            { id: "91", name: "第一文本模型", model_key: "first", provider: "fixture", service_type: "text", enabled: true, has_api_key: true, is_default: true },
+            { id: "92", name: "第二文本模型", model_key: "second", provider: "fixture", service_type: "text", enabled: true, has_api_key: true },
+        ];
+        const api = await installApi(page, { models, rejectModelPreferences: true });
+        await page.goto(new URL("/canvas-app/canvas/parity-canvas", baseUrl).href, { waitUntil: "domcontentloaded", timeout: 60000 });
+        await page.locator('[data-node-id="text-one"]').waitFor({ state: "visible", timeout: 60000 });
+        if (!await page.locator(".canvas-assistant-model").isVisible()) await page.keyboard.press("Control+j");
+        await page.locator(".canvas-assistant-model .ant-select-selector").click();
+        const preferencesFailed = page.waitForResponse(response => response.url().endsWith("/workspace/model-config") && response.status() === 409);
+        await page.locator(".ant-select-item-option-content").filter({ hasText: /^第二文本模型$/ }).click();
+        await preferencesFailed;
+        await page.keyboard.press("Escape");
+        await page.getByRole("button", { name: "打开画布菜单", exact: true }).click();
+        await page.getByRole("menuitem", { name: "模型配置", exact: true }).click();
+        await page.getByRole("button", { name: "画布保存状态：离开画布未完成", exact: true }).waitFor({ state: "visible" });
+        await page.getByRole("alert").filter({ hasText: "数据已被修改，请重新加载最新内容后再操作。" }).waitFor({ state: "visible" });
+        assert.equal(new URL(page.url()).pathname, "/canvas-app/canvas/parity-canvas");
+        assert.equal(api.modelWrites.length, 1);
+        assert.equal(api.modelWrites[0].preferences.assistantModel, "host-92::second");
+        assert.equal(api.commits.length, 0);
+        assert.equal(await page.locator(".canvas-assistant-model").innerText(), "第二文本模型");
+        await context.close();
     } finally {
         await browser?.close();
         await server?.close();

@@ -1,12 +1,12 @@
 """Input declarations are hints; actual requests reveal model compatibility."""
 
-from short_drama.ai.adapters import select_adapter
+from short_drama.agent.model_gateway import select_agent_protocol
 from short_drama.ai.types import GenerationError
 
 
 def input_capabilities(snapshot):
     try:
-        protocol = select_adapter(snapshot)
+        protocol = select_agent_protocol(snapshot)
     except (GenerationError, KeyError, TypeError):
         return {
             "text": True,

@@ -30,6 +30,7 @@ from tests.integration.test_identity_collaboration import identity_app as identi
 
 pytestmark = pytest.mark.integration
 TASKS = "/api/v1/canvas-runtime/tasks"
+WORKSPACE = "/api/v1/canvas-runtime/workspace/model-config"
 
 
 def seed(identity_app, username, *, client=None, user=None, project=None, kind="text"):
@@ -74,6 +75,12 @@ def seed(identity_app, username, *, client=None, user=None, project=None, kind="
         "video": "doubao-seedance-1-0-pro-250528",
         "audio": "gpt-4o-mini-tts",
     }
+    protocols = {
+        "text": "chat-completion",
+        "image": "openai-image",
+        "video": "volcengine-ark-video",
+        "audio": "openai-audio",
+    }
     model = client.post(
         "/api/v1/ai-model-configs",
         json={
@@ -84,16 +91,43 @@ def seed(identity_app, username, *, client=None, user=None, project=None, kind="
             "base_url": "https://ark.cn-beijing.volces.com/api/v3"
             if kind == "video"
             else "https://api.openai.com/v1",
+            "apikey": "canvas-generation-runtime-placeholder-key",
+            "headers": [
+                {
+                    "name": "X-Generation-Runtime-Fixture",
+                    "value": "canvas-runtime-placeholder-header",
+                }
+            ],
+            "runtime_profile": {"version": 1, "api_format": "openai", "protocol": protocols[kind]},
         },
     )
     assert model.status_code == 201, model.text
+    saved_model = model.json()
+    current = client.get(WORKSPACE)
+    assert current.status_code == 200, current.text
+    workspace = current.json()
+    selection = f"host-{saved_model['id']}::{saved_model['model_key']}"
+    selected = client.put(
+        WORKSPACE,
+        json={
+            "expected_row_version": workspace["row_version"],
+            "preferences": {
+                **workspace["preferences"],
+                "model": selection,
+                f"{kind}Model": selection,
+            },
+        },
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["channels"] == []
+    assert any(item["id"] == saved_model["id"] for item in selected.json()["models"])
     request = {
         "projectId": document["id"],
         "type": "canvas_" + kind,
         "operation": "text_to_video" if kind == "video" else kind,
         "prompt": "生成源提示词",
-        "model": model.json()["model_key"],
-        "logicalModelId": model.json()["id"],
+        "model": saved_model["model_key"],
+        "logicalModelId": saved_model["id"],
         "input": {
             "mode": kind,
             "prompt": "生成源提示词",

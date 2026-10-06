@@ -1,6 +1,6 @@
-"""托管 BeefAPI 目录的真实 MySQL 原子保存、身份与源默认规则。"""
+"""托管 BeefAPI 内部目录与宿主统一模型的真实 MySQL 身份、同步和默认规则。"""
 
-from copy import deepcopy
+import json
 
 import pytest
 from sqlalchemy import select
@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 from test_canvas_model_catalog import CIPHER, channel, save
 from test_canvas_workspace import actor
 
-from short_drama.core.exceptions import WorkflowError
+from short_drama.core.exceptions import BusinessError, Conflict, WorkflowError
 from short_drama.dao.canvas_workspace_dao import CanvasWorkspaceDAO
 from short_drama.domain import AIModelConfig, CanvasModelCatalog
 from short_drama.schemas.canvas_workspace import CanvasWorkspacePreferencesRequest
+from short_drama.service.ai_model_config_service import AIModelConfigService
 from short_drama.service.canvas_model_catalog_service import CanvasModelCatalogService
 from short_drama.service.canvas_workspace_service import CanvasWorkspaceService
 
@@ -34,7 +35,23 @@ def apply(session, models, *, account_changed=False, authorization_id="99"):
             account_changed=account_changed,
             authorization_id=authorization_id,
         )
-    return CanvasWorkspaceService(session, cipher=CIPHER).read_models()
+    return with_internal_channels(session)
+
+
+def with_internal_channels(session):
+    result = CanvasWorkspaceService(session, cipher=CIPHER).read_models()
+    assert result["channels"] == [], "公开模型目录只能由宿主提供"
+    with session.begin():
+        result["channels"] = CanvasModelCatalogService(session, cipher=CIPHER).read_locked()
+    return result
+
+
+def save_preferences(session, result, values):
+    return CanvasWorkspaceService(session, cipher=CIPHER).save_preferences(
+        CanvasWorkspacePreferencesRequest(
+            expected_row_version=result["row_version"], preferences=values
+        )
+    )
 
 
 def managed(result):
@@ -43,15 +60,20 @@ def managed(result):
 
 def test_builtin_is_public_server_owned_and_other_accounts_have_no_private_models(db_session):
     db_session.info["actor"] = actor()
-    empty = CanvasWorkspaceService(db_session).read_models()
+    empty = with_internal_channels(db_session)
     item = managed(empty)
     assert item["pinned"] and item["baseUrl"] == "https://enterprise.beefapi.com"
     assert item["models"] == [] and not item["hasApiKey"]
     initial = apply(db_session, [{"id": "gpt-6-astra", "modelType": "text"}])
     assert managed(initial)["hasApiKey"]
+    public = next(item for item in initial["models"] if item["credential_source"] == "beefapi")
+    assert public["has_api_key"] and public["id"].isdecimal()
+    assert public["selection_aliases"] == ["beefapi::gpt-6-astra"]
+    assert CREDENTIAL["apiKey"] not in json.dumps(initial)
     with Session(db_session.get_bind()) as other:
         other.info["actor"] = actor(999)
-        assert managed(CanvasWorkspaceService(other).read_models()) == item
+        assert managed(with_internal_channels(other)) == item
+        assert CanvasWorkspaceService(other, cipher=CIPHER).read_models()["models"] == []
         with other.begin():
             assert list(other.scalars(select(CanvasModelCatalog))) == []
 
@@ -64,7 +86,7 @@ def test_catalog_initializes_astra_once_and_refresh_keeps_user_selection(db_sess
     assert initial["preferences"]["assistantModel"] == "beefapi::gpt-6-astra"
     assert "_assistantAuthorizationId" not in managed(initial)
     identifier = managed(initial)["modelProfiles"][0]["logicalModelId"]
-    changed = save(db_session, [], initial["row_version"], {"assistantModel": "beefapi::other"})
+    changed = save_preferences(db_session, initial, {"assistantModel": "beefapi::other"})
     refreshed = apply(db_session, [{"id": "gpt-6-astra", "modelType": "text"}])
     assert refreshed["preferences"]["assistantModel"] == "beefapi::other"
     assert managed(refreshed)["modelProfiles"][0]["logicalModelId"] == identifier
@@ -95,7 +117,7 @@ def test_fresh_missing_astra_cannot_initialize_from_stale_merged_catalog(db_sess
 
 def test_same_account_merges_and_changed_account_replaces_while_custom_channels_survive(db_session):
     original = save(db_session, [channel()])
-    custom = original["channels"][0]
+    custom = original["models"][0]
     initial = apply(db_session, [{"id": "old", "modelType": "image"}], authorization_id=None)
     old_id = managed(initial)["modelProfiles"][0]["logicalModelId"]
     merged = apply(db_session, [{"id": "new", "modelType": "text"}], authorization_id=None)
@@ -107,7 +129,7 @@ def test_same_account_merges_and_changed_account_replaces_while_custom_channels_
         authorization_id=None,
     )
     assert managed(replaced)["models"] == ["new"]
-    assert next(item for item in replaced["channels"] if item["id"] == custom["id"]) == custom
+    assert next(item for item in replaced["models"] if item["id"] == custom["id"]) == custom
     with db_session.begin():
         old = db_session.get(AIModelConfig, int(old_id))
         assert old.is_deleted and not old.enabled
@@ -117,31 +139,41 @@ def test_public_save_cannot_replace_managed_profile_origin_or_identity_and_cas_c
     db_session,
 ):
     initial = apply(db_session, [{"id": "gpt-6-astra", "modelType": "text"}])
-    forged = deepcopy(managed(initial))
-    forged.update(baseUrl="https://evil.example", models=["fake"], enabled=False)
-    forged["modelProfiles"] = [
-        {
-            "model": "fake",
-            "capability": "video",
-            "protocol": "volcengine-ark-video",
-            "logicalModelId": "999",
-        }
-    ]
-    result = save(db_session, [forged], initial["row_version"], initial["preferences"])
-    item = managed(result)
-    assert item["models"] == managed(initial)["models"]
-    assert item["modelProfiles"] == managed(initial)["modelProfiles"]
-    assert item["baseUrl"] == CREDENTIAL["baseUrl"] and not item["enabled"]
-    with pytest.raises(WorkflowError) as caught:
-        save(db_session, [], initial["row_version"])
-    assert caught.value.status_code == 409
-    with db_session.begin():
-        identifier = item["modelProfiles"][0]["logicalModelId"]
-        assert not db_session.get(AIModelConfig, int(identifier)).enabled
+    identifier = managed(initial)["modelProfiles"][0]["logicalModelId"]
+    service = AIModelConfigService(db_session, cipher=CIPHER)
+    current = service.get(identifier)
+    for forged in (
+        {"base_url": "https://evil.example"},
+        {"model_key": "fake"},
+        {"runtime_profile": None},
+        {"apikey": "forged"},
+        {"secret_key": "forged"},
+    ):
+        with pytest.raises(BusinessError):
+            service.update(identifier, {"row_version": current.row_version, **forged})
+    with pytest.raises(WorkflowError, match="模型配置已统一"):
+        CanvasWorkspaceService(db_session, cipher=CIPHER).save_preferences(
+            CanvasWorkspacePreferencesRequest(
+                expected_row_version=initial["row_version"], preferences={}, channels=[]
+            )
+        )
+    updated = service.update(
+        identifier, {"row_version": current.row_version, "name": "本人名称", "enabled": 0}
+    )
+    with pytest.raises(Conflict):
+        service.update(identifier, {"row_version": current.row_version, "enabled": 1})
+    apply(db_session, [{"id": "gpt-6-astra", "modelType": "text"}])
+    refreshed = service.get(identifier)
+    assert refreshed.name == "本人名称" and not refreshed.enabled
+    assert refreshed.model_key == current.model_key and refreshed.base_url == current.base_url
+    assert refreshed.row_version >= updated.row_version
+    service.delete(identifier, refreshed.row_version)
+    result = apply(db_session, [{"id": "gpt-6-astra", "modelType": "text"}])
+    assert not any(item["id"] == identifier for item in result["models"])
 
 
 def test_clear_disables_only_managed_configs_and_keeps_empty_builtin(db_session):
-    save(db_session, [channel()])
+    custom = save(db_session, [channel()])["models"][0]
     initial = apply(
         db_session,
         [{"id": "whisper", "modelType": "audio"}, {"id": "gpt-6-astra", "modelType": "text"}],
@@ -153,11 +185,11 @@ def test_clear_disables_only_managed_configs_and_keeps_empty_builtin(db_session)
     with db_session.begin():
         CanvasWorkspaceDAO(db_session).lock_user(1)
         CanvasModelCatalogService(db_session, cipher=CIPHER).clear_beefapi_locked()
-    result = CanvasWorkspaceService(db_session, cipher=CIPHER).read_models()
+    result = with_internal_channels(db_session)
     empty = managed(result)
     assert empty["models"] == empty["modelProfiles"] == []
     assert empty["pinned"] and not empty["hasApiKey"] and "credentialRef" not in empty
-    assert any(item["id"] == "custom-provider" for item in result["channels"])
+    assert next(item for item in result["models"] if item["id"] == custom["id"]) == custom
     with db_session.begin():
         assert db_session.get(AIModelConfig, int(identifier)).is_deleted
         assert not db_session.get(AIModelConfig, int(identifier)).enabled
@@ -165,45 +197,54 @@ def test_clear_disables_only_managed_configs_and_keeps_empty_builtin(db_session)
 
 def test_absent_managed_catalog_cannot_be_forged_by_a_custom_save(db_session):
     db_session.info["actor"] = actor()
-    empty = managed(CanvasWorkspaceService(db_session).read_models())
+    empty = managed(with_internal_channels(db_session))
     empty.update(baseUrl="https://evil.example", models=["forged"])
     empty["modelProfiles"] = [
         {"model": "forged", "capability": "image", "protocol": "openai-image"}
     ]
-    result = CanvasWorkspaceService(db_session, cipher=CIPHER).save_preferences(
-        CanvasWorkspacePreferencesRequest(
-            expected_row_version="0", preferences={}, channels=[empty]
+    with pytest.raises(WorkflowError, match="模型配置已统一"):
+        CanvasWorkspaceService(db_session, cipher=CIPHER).save_preferences(
+            CanvasWorkspacePreferencesRequest(
+                expected_row_version="0", preferences={}, channels=[empty]
+            )
         )
-    )
+    result = with_internal_channels(db_session)
     assert managed(result)["models"] == [] and managed(result)["modelProfiles"] == []
     assert managed(result)["baseUrl"] == CREDENTIAL["baseUrl"]
 
 
 def test_managed_headers_save_redaction_case_reuse_and_disconnect_retention(db_session):
     initial = apply(db_session, [{"id": "gpt-6-astra", "modelType": "text"}])
-    item = managed(initial)
-    item["headers"] = [{"name": "X-Provider-Key", "value": "managed-private-header"}]
-    updated = save(db_session, [item], initial["row_version"], initial["preferences"])
-    assert managed(updated)["headers"] == [{"name": "X-Provider-Key", "value": ""}]
-    with db_session.begin():
-        row = db_session.scalar(select(CanvasModelCatalog))
-        assert "managed-private-header" not in str(row.channels_json)
-        assert "managed-private-header" not in row.credentials_cipher
-        credentials = CanvasModelCatalogService(db_session, cipher=CIPHER)._credentials(row)
-        assert credentials["beefapi"]["headers"]["X-Provider-Key"] == "managed-private-header"
-        assert credentials["beefapi"]["apiKey"] == ""
-    replay = managed(updated)
-    replay["headers"][0]["name"] = "x-provider-key"
-    retained = save(db_session, [replay], updated["row_version"], updated["preferences"])
-    assert retained["row_version"] == updated["row_version"], (
-        "case-normalized redacted header is a no-op"
+    identifier = managed(initial)["modelProfiles"][0]["logicalModelId"]
+    service = AIModelConfigService(db_session, cipher=CIPHER)
+    current = service.get(identifier)
+    updated = service.update(
+        identifier,
+        {
+            "row_version": current.row_version,
+            "headers": [{"name": "X-Provider-Key", "value": "managed-private-header"}],
+        },
     )
+    assert updated.headers[0].has_value
+    assert "managed-private-header" not in updated.model_dump_json()
+    with db_session.begin():
+        config = db_session.get(AIModelConfig, int(identifier))
+        ciphertext = config.runtime_credentials_cipher
+        assert "managed-private-header" not in ciphertext
+        assert json.loads(CIPHER.decrypt(ciphertext))["headers"] == {
+            "X-Provider-Key": "managed-private-header"
+        }
+    retained = service.update(
+        identifier,
+        {"row_version": updated.row_version, "headers": [{"name": "x-provider-key", "value": ""}]},
+    )
+    assert retained.row_version == updated.row_version, "case-normalized redacted header is a no-op"
+    apply(db_session, [{"id": "gpt-6-astra", "modelType": "text"}])
     with db_session.begin():
         CanvasWorkspaceDAO(db_session).lock_user(1)
         CanvasModelCatalogService(db_session, cipher=CIPHER).clear_beefapi_locked()
     disconnected = CanvasWorkspaceService(db_session, cipher=CIPHER).read_models()
-    assert managed(disconnected)["headers"] == [{"name": "X-Provider-Key", "value": ""}]
+    assert not any(item["credential_source"] == "beefapi" for item in disconnected["models"])
     with db_session.begin():
-        row = db_session.scalar(select(CanvasModelCatalog))
-        stored = CanvasModelCatalogService(db_session, cipher=CIPHER)._credentials(row)
-        assert stored["beefapi"]["headers"]["X-Provider-Key"] == "managed-private-header"
+        config = db_session.get(AIModelConfig, int(identifier))
+        assert config.runtime_credentials_cipher == ciphertext

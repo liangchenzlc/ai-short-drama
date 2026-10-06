@@ -1,7 +1,7 @@
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import { http as hostHttp, ApiError as HostApiError } from "@host/api/http";
 import { createHostCanvasContract } from "@/services/host-canvas-contract";
-import { canvasRequestCanRevoke, canvasRequestIdentity, hostCanvasAccess } from "@/services/host-canvas-access";
+import { canvasRequestFailureRevokes, canvasRequestIdentity, hostCanvasAccess } from "@/services/host-canvas-access";
 import { hostCanvasErrorMessage } from "@/services/host-canvas-errors";
 import { observeCanvasResourceAliases } from "@/services/host-resource-identities";
 import { captureUserScope, UserScopeAbandonedError } from "@/lib/user-scope-guard";
@@ -168,7 +168,7 @@ async function send<T>(method: string, url: string, data?: unknown, config?: Htt
         assertUserScope(expectedScope);
         return result as T;
     } catch (error) {
-        if (canvasId && canvasRequestCanRevoke(method, url) && error instanceof HostApiError && (error.status === 403 || error.status === 404)) {
+        if (canvasId && error instanceof HostApiError && canvasRequestFailureRevokes(method, url, error)) {
             hostCanvasAccess.deny(expectedScope, canvasId);
         }
         throw unwrapTransportError(error);

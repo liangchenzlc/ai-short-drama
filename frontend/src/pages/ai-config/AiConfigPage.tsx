@@ -9,10 +9,16 @@ import { configTabs, useAiConfigSession } from '../../features/ai-config/AiConfi
 import { ConfigForm } from '../../features/ai-config/ConfigForm';
 import { ConfigTable } from '../../features/ai-config/ConfigTable';
 import { serviceLabels, type AiConfig, type ConfigDraft, type ServiceType } from '../../features/ai-config/config-model';
+import { useSearchParams } from 'react-router-dom';
+import { safeCanvasReturn } from '../../features/ai-config/config-form-model';
+import { BeefAPIConnection } from '../../features/ai-config/BeefAPIConnection';
+import { ModelConfigTest } from '../../features/ai-config/ModelConfigTest';
 
 const PAGE_SIZE = 20;
 export function AiConfigPage() {
   const { tab, setTab } = useAiConfigSession();
+  const [params] = useSearchParams();
+  const returnTo = safeCanvasReturn(params.get('return_to'));
   const [items, setItems] = useState<AiConfig[]>([]);
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
@@ -25,6 +31,7 @@ export function AiConfigPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [formRevision, setFormRevision] = useState(0);
   const [editing, setEditing] = useState<AiConfig | null>(null);
+  const [testing, setTesting] = useState<AiConfig | null>(null);
   const [deleting, setDeleting] = useState<AiConfig | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [deleteConflict, setDeleteConflict] = useState(false);
@@ -97,7 +104,8 @@ export function AiConfigPage() {
   }
 
   return <section className="studio-page ai-config-page" aria-labelledby="ai-title">
-    <PageHeader id="ai-title" title="AI 配置" actions={<Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={!!busyId} onClick={() => { setEditing(null); setFormOpen(true); }}>添加{serviceLabels[tab]}</Button>} />
+    <PageHeader id="ai-title" title="AI 配置" actions={<>{returnTo && <Button disabled={!!busyId || formOpen || !!testing} onClick={() => window.location.assign(returnTo)}>返回画布</Button>}<Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={!!busyId} onClick={() => { setEditing(null); setFormOpen(true); }}>添加{serviceLabels[tab]}</Button></>} />
+    <BeefAPIConnection onChanged={reloadList}/>
     <div className="studio-tabs" role="tablist" aria-label="AI 模型类别">
       {configTabs.map((kind, index) => <button key={kind} id={`model-tab-${kind}`} role="tab" aria-selected={tab === kind}
         aria-controls={`model-panel-${kind}`} tabIndex={tab === kind ? 0 : -1} className={tab === kind ? 'active' : ''}
@@ -117,7 +125,7 @@ export function AiConfigPage() {
         {loading ? <div className="studio-empty" role="status" aria-live="polite"><Skeleton title paragraph={{ rows: 3 }}/></div>
           : listError ? <div className="studio-empty" role="alert"><p>{listError}</p><button onClick={reloadList}>重新加载</button></div>
           : <><ConfigTable items={items} serviceType={kind} busyId={busyId} onEdit={edit} onDefault={setDefault}
-            onDelete={(item) => { setDeleting(item); setDeleteError(''); setDeleteConflict(false); }} />
+            onDelete={(item) => { setDeleting(item); setDeleteError(''); setDeleteConflict(false); }} onTest={setTesting} />
             <nav className="config-pagination" aria-label="配置分页">
               <span>共 {total} 条 · 第 {Math.floor(offset / PAGE_SIZE) + 1} / {Math.max(1, Math.ceil(total / PAGE_SIZE))} 页</span>
               <button disabled={offset === 0 || !!busyId} onClick={() => { setLoading(true); setOffset((value) => Math.max(0, value - PAGE_SIZE)); }}>上一页</button>
@@ -140,5 +148,6 @@ export function AiConfigPage() {
           : <button className="danger-button" onClick={remove} disabled={!!busyId}>{busyId ? '删除中…' : '确认删除'}</button>}
       </div>
     </Dialog>}
+    {testing && <ModelConfigTest config={testing} onClose={() => setTesting(null)}/>}
   </section>;
 }

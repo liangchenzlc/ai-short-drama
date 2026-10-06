@@ -129,6 +129,8 @@ Agent 默认开启，旧库显式执行[Agent 迁移](migrations/2026-10-02-agen
 
 `ai_model_configs` 每行属于一个账号，对应一种服务的一个具体模型。`service_type` 为 `text/image/video/audio`，`provider/model_key/base_url` 标识调用配置，`apikey` 仅存加密信封，解密主密钥在数据库之外。`capability_cache` 是内部协议与能力缓存。项目成员只能使用本人的配置；项目生成成果可以共享。
 
+`runtime_profile JSON NULL` 是宿主统一管理的可信调用协议、能力与默认参数；`runtime_credentials_cipher MEDIUMTEXT NULL` 加密保存 Secret Key 和 headers，API Key 仍只有原 `apikey` 真值源。普通画布目录不再回写模型；旧 `canvas_channel_models` 保留稳定模型 ID 与选择别名，`runtime_migrated_at DATETIME(3) NULL` 标记已迁移，防止清空高级配置后重入恢复旧目录。旧库必须执行[统一模型运行配置迁移](migrations/2026-10-06-host-model-runtime/README.md)，不改历史任务冻结快照，首次回填推进模型版本并清理派生缓存。
+
 `enabled` 控制新操作可用性，`is_deleted` 保留历史引用，`is_default` 标识该服务默认项。默认配置必须启用且未删除，`(owner_user_id, default_service_type)` 的唯一约束保证每个账号每种服务最多一个未删除默认项。配置编辑、删除及默认切换使用 `row_version`；历史调用使用独立快照，不把当前配置误当作调用时配置。
 
 ### 媒体与素材（6 张）

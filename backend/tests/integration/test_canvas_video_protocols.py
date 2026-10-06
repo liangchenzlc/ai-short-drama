@@ -1,7 +1,6 @@
 """三类固定源视频合同经真实 HTTP、隔离 MySQL、执行器及 MinIO 验证。"""
 
 import base64
-import gc
 import hashlib
 import json
 import os
@@ -30,7 +29,6 @@ from short_drama.ai.canvas_video_adapters import (
     OPENAI_VIDEOS,
 )
 from short_drama.core.crypto import KeyCipher
-from short_drama.dao.canvas_model_catalog_dao import CanvasModelCatalogDAO
 from short_drama.dao.task_runtime_dao import finish
 from short_drama.domain import (
     AIGenerationRecord,
@@ -40,13 +38,12 @@ from short_drama.domain import (
     MediaFile,
 )
 from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-from short_drama.schemas.canvas_workspace import CanvasWorkspacePreferencesRequest
 from short_drama.service.ai_generation_service import AIGenerationService
+from short_drama.service.ai_model_config_service import AIModelConfigService
 from short_drama.service.base import utcnow
 from short_drama.service.canvas_beefapi_service import tick_beefapi_connections
 from short_drama.service.canvas_generation_service import CanvasGenerationService
 from short_drama.service.canvas_model_catalog_service import CanvasModelCatalogService
-from short_drama.service.canvas_workspace_service import CanvasWorkspaceService
 from short_drama.service.generation_execution_service import GenerationExecutionService
 from tests.integration.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.test_canvas_generation_media_runtime import playable_fixture
@@ -290,51 +287,55 @@ def protocol_seed(runtime, adapter):
         assert response.status_code == 200 and response.json()["state"] == "pending"
         assert tick_beefapi_connections(runtime.app[1], runtime.app[2]) == 1
         assert client.get(CONNECTION).json()["state"] == "connected"
-    current = client.get(WORKSPACE).json()
-    channels = current["channels"]
     if adapter == BEEFAPI_SEEDANCE:
-        channel = next(item for item in channels if item["id"] == "beefapi")
-        channel["headers"] = [{"name": HEADER_NAME, "value": HEADER_VALUE}]
         model = "seedance-2.5"
+        selected = next(
+            item
+            for item in client.get(WORKSPACE).json()["models"]
+            if item["credential_source"] == "beefapi" and item["model_key"] == model
+        )
+        selected = client.get("/api/v1/ai-model-configs/" + selected["id"]).json()
+        saved = client.patch(
+            "/api/v1/ai-model-configs/" + selected["id"],
+            json={
+                "row_version": selected["row_version"],
+                "headers": [{"name": HEADER_NAME, "value": HEADER_VALUE}],
+            },
+        )
+        assert saved.status_code == 200, saved.text
     else:
         model, protocol = (
             ("sora", "openai-videos")
             if adapter == OPENAI_VIDEOS
             else ("custom-video", "newapi-channel-2")
         )
-        channels.append(
-            {
-                "id": "protocol-provider",
-                "name": "受控视频协议渠道",
-                "baseUrl": runtime.state["origin"] + "/v1",
-                "apiKey": KEY,
+        saved = client.post(
+            "/api/v1/ai-model-configs",
+            json={
+                "name": "受控视频协议模型",
+                "model_key": model,
+                "service_type": "video",
+                "provider": "受控供应商",
+                "base_url": runtime.state["origin"] + "/v1",
+                "apikey": KEY,
                 "headers": [{"name": HEADER_NAME, "value": HEADER_VALUE}],
-                "apiFormat": "openai",
-                "models": [model],
-                "modelProfiles": [{"model": model, "capability": "video", "protocol": protocol}],
-            }
+                "runtime_profile": {"version": 1, "api_format": "openai", "protocol": protocol},
+            },
         )
-    saved = client.put(
-        WORKSPACE,
-        json={
-            "expected_row_version": current["row_version"],
-            "preferences": current["preferences"],
-            "channels": channels,
-        },
-    )
-    assert saved.status_code == 200, saved.text
-    channel_key = "beefapi" if adapter == BEEFAPI_SEEDANCE else "protocol-provider"
-    channel = next(item for item in saved.json()["channels"] if item["id"] == channel_key)
-    profile = next(item for item in channel["modelProfiles"] if item["model"] == model)
-    request["logicalModelId"], request["model"] = profile["logicalModelId"], model
+        assert saved.status_code == 201, saved.text
+    request["logicalModelId"], request["model"] = saved.json()["id"], model
     request["input"]["config"] = {
         "size": "16:9",
         "videoSeconds": "5",
         "vquality": "720p",
         "videoGenerateAudio": "true",
     }
-    with runtime.app[1]() as session:
+    with runtime.app[1].begin() as session:
+        session.info["actor"] = actor(int(user["id"]))
         config = session.get(AIModelConfig, int(request["logicalModelId"]))
+        CanvasModelCatalogService(session, settings=runtime.app[2]).refresh_runtime_model_locked(
+            config
+        )
         assert config.capability_cache["adapter"] == adapter
     return client, user, project, path, request
 
@@ -471,75 +472,51 @@ def test_disabled_saved_model_replays_original_task_without_refresh_or_reactivat
 
 
 @pytest.mark.parametrize("adapter", [OPENAI_VIDEOS, NEWAPI_VIDEO_GENERATIONS, BEEFAPI_SEEDANCE])
-def test_catalog_save_and_admission_lock_in_the_same_order_and_freeze_one_snapshot(
+def test_host_header_update_and_admission_freeze_one_current_snapshot(
     video_runtime, adapter, monkeypatch
 ):
     runtime = video_runtime
     client, user, _, _, request = protocol_seed(runtime, adapter)
-    current = client.get(WORKSPACE).json()
-    channel_key = "beefapi" if adapter == BEEFAPI_SEEDANCE else "protocol-provider"
-    changed = deepcopy(current["channels"])
-    edited = next(item for item in changed if item["id"] == channel_key)
-    edited["headers"] = [{"name": HEADER_NAME, "value": HEADER_VALUE + "-new"}]
     identifier = int(request["logicalModelId"])
     with runtime.app[1].begin() as session:
         config = session.get(AIModelConfig, identifier)
         config.capability_cache = None
         initial_version = config.row_version
 
-    save_has_catalog = threading.Event()
-    admission_requests_catalog = threading.Event()
+    save_has_model = threading.Event()
+    admission_requests_model = threading.Event()
     lock_order = []
-    original_catalog = CanvasModelCatalogDAO.catalog
-    original_models = CanvasModelCatalogDAO.models
+    original_active = AIModelConfigService._active
     original_config = AIGenerationService._config
-    original_refresh = CanvasModelCatalogService.refresh_runtime_model_locked
 
-    def catalog(dao, user_id, *, lock=False):
-        operation = dao.session.info.get("runtime_test_operation")
-        if operation == "admit" and lock:
-            admission_requests_catalog.set()
-        result = original_catalog(dao, user_id, lock=lock)
-        if operation == "save" and lock:
-            save_has_catalog.set()
-        if operation == "admit" and lock:
-            lock_order.append("admit_catalog")
-        return result
-
-    def models(dao, identifiers, *, lock=False):
-        if dao.session.info.get("runtime_test_operation") == "save" and lock:
-            assert admission_requests_catalog.wait(10), "Admission never attempted catalog lock"
-        result = original_models(dao, identifiers, lock=lock)
-        if dao.session.info.get("runtime_test_operation") == "save" and lock:
-            lock_order.append("save_models")
+    def active(service, identifier):
+        result = original_active(service, identifier)
+        if service.session.info.get("runtime_test_operation") == "save":
+            lock_order.append("save_model")
+            save_has_model.set()
+            assert admission_requests_model.wait(10), "Admission never attempted the model lock"
         return result
 
     def model(service, kind, identifier):
+        if service.session.info.get("runtime_test_operation") == "admit":
+            admission_requests_model.set()
         result = original_config(service, kind, identifier)
         if service.session.info.get("runtime_test_operation") == "admit":
             lock_order.append("admit_model")
         return result
 
-    def refresh(service, config):
-        result = original_refresh(service, config)
-        # Catalog is a weak identity-map entry; credentials must use a current read.
-        gc.collect()
-        return result
-
-    monkeypatch.setattr(CanvasModelCatalogDAO, "catalog", catalog)
-    monkeypatch.setattr(CanvasModelCatalogDAO, "models", models)
+    monkeypatch.setattr(AIModelConfigService, "_active", active)
     monkeypatch.setattr(AIGenerationService, "_config", model)
-    monkeypatch.setattr(CanvasModelCatalogService, "refresh_runtime_model_locked", refresh)
 
-    def save_catalog():
+    def save_model():
         with runtime.app[1]() as session:
             session.info.update(actor=actor(int(user["id"])), runtime_test_operation="save")
-            return CanvasWorkspaceService(session, settings=runtime.app[2]).save_preferences(
-                CanvasWorkspacePreferencesRequest(
-                    expected_row_version=current["row_version"],
-                    preferences=current["preferences"],
-                    channels=changed,
-                )
+            return AIModelConfigService(session, settings=runtime.app[2]).update(
+                identifier,
+                {
+                    "row_version": str(initial_version),
+                    "headers": [{"name": HEADER_NAME, "value": HEADER_VALUE + "-new"}],
+                },
             )
 
     def admit_task():
@@ -550,21 +527,20 @@ def test_catalog_save_and_admission_lock_in_the_same_order_and_freeze_one_snapsh
             )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        saving = executor.submit(save_catalog)
-        assert save_has_catalog.wait(10), "Save never acquired catalog lock"
+        saving = executor.submit(save_model)
+        assert save_has_model.wait(10), "Save never acquired the model lock"
         admitting = executor.submit(admit_task)
         saved = saving.result(timeout=20)
         task, created = admitting.result(timeout=20)
     assert created
-    assert lock_order.index("save_models") < lock_order.index("admit_catalog")
-    assert lock_order.index("admit_catalog") < lock_order.index("admit_model")
-    assert saved["row_version"] == str(int(current["row_version"]) + 1)
+    assert lock_order.index("save_model") < lock_order.index("admit_model")
+    assert saved.row_version == initial_version + 1
     with runtime.app[1]() as session:
         config = session.get(AIModelConfig, identifier)
         call = session.scalar(
             select(AIGenerationRecord).where(AIGenerationRecord.task_id == int(task["id"]))
         )
-        assert config.row_version == initial_version + 1
+        assert config.row_version == initial_version + 2
         assert config.capability_cache["adapter"] == call.adapter == adapter
         assert call.config_snapshot["row_version"] == str(config.row_version)
         credentials = decode_canvas_credentials(
@@ -917,8 +893,8 @@ def test_original_video_ui_preserves_https_decision_refresh_bind_and_unknown(
     current = client.get(WORKSPACE).json()
     preferences = {
         **current["preferences"],
-        "model": "protocol-provider::" + request["model"],
-        "videoModel": "protocol-provider::" + request["model"],
+        "model": f"host-{request['logicalModelId']}::{request['model']}",
+        "videoModel": f"host-{request['logicalModelId']}::{request['model']}",
         "size": "16:9",
         "videoSeconds": "5",
         "vquality": "720p",

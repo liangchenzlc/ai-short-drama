@@ -17,7 +17,7 @@ export function FullScreenLoader({ label = "正在恢复工作区", detail = "�
             aria-label={`${label}，${detail}`}
             className={cn("full-screen-loader", className)}
         >
-            <span className="beeftv-loading-logo" aria-hidden="true" />
+            <span className="canvas-loading-indicator" aria-hidden="true" />
         </div>
     );
 }
@@ -33,7 +33,7 @@ export function WorkspaceRouteLoader({ label = "正在打开页面" }: { label?:
     return (
         <section data-workspace-route-loader className={cn("workspace-route-loader", visible && "is-visible")} role="status" aria-live="polite" aria-label={label}>
             <div className="workspace-route-loader-content">
-                <span className="beeftv-loading-logo is-compact" aria-hidden="true" />
+                <span className="canvas-loading-indicator is-compact" aria-hidden="true" />
                 <span>{label}</span>
             </div>
         </section>

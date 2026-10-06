@@ -28,7 +28,11 @@ CANVAS_AUTH_ADAPTERS = frozenset(
         "ark_video.v1",
         "dashscope_images.v1",
         "dashscope_video.v1",
+        "modelhub_video.v1",
     }
+)
+MODEL_AUTH_ADAPTERS = CANVAS_AUTH_ADAPTERS | frozenset(
+    {"dashscope_speech.v1", "modelhub_video.v1", "dashscope_voice_design.v1"}
 )
 
 
@@ -65,13 +69,29 @@ def canvas_auth_enabled(snapshot: dict) -> bool:
     )
 
 
+def model_auth_enabled(snapshot: dict) -> bool:
+    return (
+        type(snapshot.get("model_auth_version")) is int
+        and snapshot.get("model_auth_version") == 1
+        and snapshot.get("model_auth_scope") == "generation"
+        and snapshot.get("model_auth_kind") == snapshot.get("service_type")
+        and snapshot.get("model_auth_kind") in {"text", "image", "video", "audio"}
+        and isinstance(snapshot.get("model_auth_scene"), str)
+        and snapshot.get("model_auth_scene") not in CANVAS_AUTH_SCENES
+    )
+
+
 def decode_canvas_credentials(
     snapshot: dict, request: dict, plaintext: str
 ) -> str | CanvasCredentials:
-    if "canvas_auth_version" not in snapshot:
+    if "canvas_auth_version" not in snapshot and "model_auth_version" not in snapshot:
         return plaintext
     scene = (request.get("source") or {}).get("scene")
-    if not canvas_auth_enabled(snapshot) or snapshot.get("canvas_auth_scene") != scene:
+    valid_canvas = canvas_auth_enabled(snapshot) and snapshot.get("canvas_auth_scene") == scene
+    valid_model = model_auth_enabled(snapshot) and snapshot.get("model_auth_scene") == (scene or "")
+    if "canvas_auth_version" in snapshot and "model_auth_version" in snapshot:
+        raise GenerationError("invalid_credential")
+    if not valid_canvas and not valid_model:
         raise GenerationError("invalid_credential")
     try:
         return CanvasCredentials.model_validate(json.loads(plaintext))
@@ -80,7 +100,9 @@ def decode_canvas_credentials(
 
 
 def canvas_authentication(snapshot: dict, credential, headers: dict) -> tuple[str, dict, list[str]]:
-    if not isinstance(credential, CanvasCredentials) or not canvas_auth_enabled(snapshot):
+    if not isinstance(credential, CanvasCredentials) or not (
+        canvas_auth_enabled(snapshot) or model_auth_enabled(snapshot)
+    ):
         raise GenerationError("invalid_credential")
     try:
         value = CanvasCredentials.model_validate(credential.model_dump())

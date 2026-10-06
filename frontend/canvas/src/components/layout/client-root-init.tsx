@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
 import { App } from "antd";
 
-import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
 import { navigateToSettings } from "@/lib/settings-navigation";
 import { initializeClientDiagnostics, setDiagnosticUserScope } from "@/services/diagnostics/client-diagnostics";
 import { fetchPluginRuntimeState, setUserPluginEnabled } from "@/services/api/plugins";
@@ -16,7 +15,6 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { confirmDesktopUpdateStartup } from "@/services/desktop-update-startup";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
-    const config = useConfigStore((state) => state.config);
     const userId = useUserStore((state) => state.user?.id || "");
     const storageMode = useUserStore((state) => state.storageMode);
     const user = useUserStore((state) => state.user);
@@ -25,7 +23,6 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const localMode = isLocalWorkspaceMode() || storageMode === "local" || user?.username === "local";
     const { message } = App.useApp();
     const handledConfigParams = useRef(false);
-    const updateConfig = useConfigStore((state) => state.updateConfig);
     const setRuntimeStatuses = usePluginStore((state) => state.setRuntimeStatuses);
     const setPluginStates = usePluginStore((state) => state.setPluginStates);
     const pluginStoreHydrated = usePluginStore((state) => state.hydrated);
@@ -133,25 +130,10 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         searchParams.delete("apiKey");
         searchParams.delete("apikey");
         window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
-        const firstChannel = config.channels[0];
-        updateConfig(
-            "channels",
-            firstChannel
-                ? config.channels.map((channel, index) =>
-                      index === 0
-                          ? {
-                                ...channel,
-                                ...(baseUrl ? { baseUrl } : {}),
-                            }
-                          : channel,
-                  )
-                : [createModelChannel({ id: "default", name: "默认渠道", baseUrl: baseUrl || undefined })],
-        );
-        if (baseUrl) updateConfig("baseUrl", baseUrl);
-        navigateToSettings({ section: "channels" });
+        void navigateToSettings({ section: "channels" });
         if (ignoredApiKey) message.warning("出于安全考虑，链接中的 API Key 已忽略，请在配置中手动填写");
-        else message.success("已导入本地直连地址");
-    }, [config.channels, message, updateConfig]);
+        else message.info("请在工作台模型配置中维护服务地址");
+    }, [message]);
 
     return <>{children}</>;
 }

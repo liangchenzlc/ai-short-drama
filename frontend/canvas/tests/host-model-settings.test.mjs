@@ -9,12 +9,13 @@ const sessionImports = new Map([...readFileSync(sessionFile, "utf8").matchAll(/i
 const stubs = {
     "@/stores/use-user-store": "export const useUserStore = Object.assign(() => undefined, { getState: () => ({ user: null }) }); export const defaultFeatureAvailability = {};",
     "@/services/api/workspace": "export const getLocalModelConfig = async () => { throw new Error('unexpected read'); }; export const saveLocalModelConfig = getLocalModelConfig;",
+    "@/services/host-session": "export const getAuthenticatedCanvasBootstrap = async () => { throw new Error('unexpected bootstrap'); };",
     "@/services/api/generation-task": "export const prepareBackendGenerationTask = options => globalThis.modelTestBoundary.prepare(options); export const runBackendGenerationTask = () => { throw new Error('canvas task must not be submitted'); };",
-    "@/services/api/request": "export class ApiError extends Error { constructor(message, options = {}) { super(message); Object.assign(this, options); } } export const http = { post: (...args) => globalThis.modelTestBoundary.post(...args), get: (...args) => globalThis.modelTestBoundary.get(...args) };",
+    "@/services/api/request": "export class ApiError extends Error { constructor(message, options = {}) { super(message); Object.assign(this, options); } } export const http = { post: (...args) => globalThis.modelTestBoundary.post(...args), put: (...args) => globalThis.modelTestBoundary.put(...args), get: (...args) => globalThis.modelTestBoundary.get(...args) };",
     "@/lib/user-scope-guard": "export const captureUserScope = () => ({...globalThis.modelTestBoundary.scope}); export const assertUserScope = expected => { const live = captureUserScope(); if (live.userScope !== expected.userScope || live.epoch !== expected.epoch) throw new Error('账号已切换'); };",
 };
 const bundled = await build({
-    stdin: { contents: 'export * from "./src/services/host-model-config.ts"; export * from "./src/services/host-model-config-ack.ts"; export * from "./src/services/model-config-repository.ts"; export * from "./src/services/host-model-test.ts"; export * from "./src/lib/user-session.ts"; export * from "./src/lib/model-connection-test.ts"; export * from "./src/stores/use-model-connection-tests.ts"; export { setActiveUserScope } from "./src/lib/user-scope.ts"; export { ApiError } from "@/services/api/request";', resolveDir: fileURLToPath(new URL("..", import.meta.url)) },
+    stdin: { contents: 'export * from "./src/services/host-model-config.ts"; export * from "./src/services/host-model-config-ack.ts"; export * from "./src/services/model-config-repository.ts"; export * from "./src/services/host-model-test.ts"; export * from "./src/lib/user-session.ts"; export * from "./src/lib/model-connection-test.ts"; export * from "./src/stores/use-model-connection-tests.ts"; export * from "./src/lib/assistant-model.ts"; export { saveLocalModelConfig } from "./src/services/api/workspace.ts"; export { defaultConfig, normalizeConfigSnapshot, normalizeModelOptionValue, resolveModelChannel, logicalModelIDForConfig, resolveModelRequestConfig, isBuiltinBeefAPIChannel, useConfigStore } from "./src/stores/use-config-store.ts"; export { setActiveUserScope } from "./src/lib/user-scope.ts"; export { ApiError } from "@/services/api/request";', resolveDir: fileURLToPath(new URL("..", import.meta.url)) },
     tsconfig: fileURLToPath(new URL("../tsconfig.json", import.meta.url)), bundle: true, write: false, format: "esm", platform: "node", target: "node22",
     plugins: [{ name: "external-boundaries", setup(builder) {
         builder.onResolve({ filter: /^@\// }, args => {
@@ -25,47 +26,96 @@ const bundled = await build({
         builder.onLoad({ filter: /.*/, namespace: "session-boundary" }, args => ({ contents: sessionImports.get(args.path).map(name => `export const ${name} = {};`).join("\n"), loader: "js" }));
     } }],
 });
-const { sourceModelConfig, customModelChannels, localWorkspaceConfig, reconcileHostModelConfigAck, createModelConfigRepository, runHostModelTest, testChannelModelConnection, useModelConnectionTests, currentModelConnectionReceipt, setActiveUserScope, ApiError } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+const { sourceModelConfig, modelPreferences, defaultConfig, normalizeConfigSnapshot, normalizeModelOptionValue, resolveModelChannel, logicalModelIDForConfig, resolveModelRequestConfig, isBuiltinBeefAPIChannel, assistantModelOptions, saveLocalModelConfig, useConfigStore, localWorkspaceConfig, reconcileHostModelConfigAck, createModelConfigRepository, runHostModelTest, testChannelModelConnection, useModelConnectionTests, currentModelConnectionReceipt, setActiveUserScope, ApiError } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
 const channel = (id = "personal") => ({ id, name: "个人服务", baseUrl: "https://provider.example/v1", apiKey: "draft-key", secretKey: "draft-secret", apiFormat: "openai", enabled: true, models: ["model"], modelProfiles: [{ model: "model", capability: "text", protocol: "chat-completion" }] });
-const config = () => sourceModelConfig({ row_version: "1", preferences: { textModel: "personal::model", model: "personal::model" }, models: [], channels: [channel()] });
+const config = () => normalizeConfigSnapshot({ config: { ...defaultConfig, textModel: "personal::model", model: "personal::model", channels: [channel()] } }).config;
 const defer = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-const builtin = () => ({ id: "beefapi", name: "BeefAPI", baseUrl: "https://enterprise.beefapi.com", apiKey: "", apiFormat: "openai", enabled: false, pinned: true, models: [], modelProfiles: [], presetVersion: 1, headers: [] });
+const hostModel = (fields = {}) => ({ id: "9007199254740999", name: "宿主文本", model_key: "current-model", provider: "openai", service_type: "text", enabled: true, has_api_key: true, is_default: true,
+    selection_aliases: ["personal::old-model"], ...fields });
 
-test("未编辑的空builtin不作为自定义渠道提交，普通个人渠道仍完整保存", () => {
-    const value = sourceModelConfig({ row_version: "1", preferences: {}, models: [], channels: [channel(), builtin()] });
-    assert.deepEqual(customModelChannels(value).map(item => item.id), ["personal"]);
+test("宿主目录唯一投影，恢复旧默认与节点alias并保留协议能力和逻辑ID", () => {
+    const runtime = { version: 1, api_format: "claude", protocol: "claude-api", reference_asset_origin: "https://reference.example", concurrency_limit: 3,
+        capability_config: { text: { streaming: false, thinking: true } }, default_options: { thinking: true }, logical_capability_spec: { options: {} }, logical_capability_profiles: [{ options: {} }], video_capabilities_version: "fixture-v1" };
+    const value = sourceModelConfig({ row_version: "1", preferences: { textModel: "personal::old-model", model: "personal::old-model", assistantModel: "personal::old-model" }, models: [hostModel({ runtime_profile: runtime, has_secret_key: true, headers: [{ name: "X-Private", has_value: true }] })], channels: [channel()] });
+    const canonical = "host-9007199254740999::current-model";
+    assert.equal(value.channels.length, 1);
+    assert.equal(value.textModel, canonical);
+    assert.equal(value.assistantModel, canonical);
+    assert.equal(normalizeModelOptionValue("personal::old-model", value.channels), canonical);
+    assert.equal(normalizeModelOptionValue("host-9007199254740999::renamed-model", value.channels), canonical);
+    assert.equal(value.channels[0].modelProfiles[0].logicalModelId, "9007199254740999");
+    assert.deepEqual(value.channels[0].modelProfiles[0].capabilityConfig, runtime.capability_config);
+    assert.deepEqual(value.channels[0].modelProfiles[0].defaultOptions, runtime.default_options);
+    assert.deepEqual(value.channels[0].modelProfiles[0].logicalCapabilityProfiles, runtime.logical_capability_profiles);
+    assert.equal(value.channels[0].concurrencyLimit, 3);
+    assert.equal(value.channels[0].referenceAssetOrigin, runtime.reference_asset_origin);
+    assert.equal(resolveModelRequestConfig(value, canonical).interfaceType, "claude-api");
+    assert.equal(resolveModelRequestConfig(value, "personal::old-model").interfaceType, "claude-api");
+    assert.equal(logicalModelIDForConfig({ ...value, model: "personal::old-model" }), "9007199254740999");
+    assert.equal(value.channels[0].apiKey, "");
+    assert.deepEqual(value.channels[0].headers, [{ name: "X-Private", value: "" }]);
 });
 
-test("managed只回写源允许的enabled与headers，身份和目录沿用服务端可信投影", () => {
-    const value = sourceModelConfig({ row_version: "1", preferences: {}, models: [], channels: [builtin()] });
-    const managed = value.channels.find(item => item.id === "beefapi");
-    Object.assign(managed, { enabled: true, headers: [{ name: "X-Personal", value: "private" }], baseUrl: "https://changed.example", models: ["forged-model"] });
-    const [saved] = customModelChannels(value);
-    assert.equal(saved.enabled, true);
-    assert.deepEqual(saved.headers, [{ name: "X-Personal", value: "private" }]);
-    assert.equal(saved.baseUrl, "https://enterprise.beefapi.com");
-    assert.deepEqual(saved.models, []);
-    assert.equal(saved.pinned, true);
+test("未知旧渠道即使模型同名也不解析到首个宿主模型或取得逻辑ID", () => {
+    const value = sourceModelConfig({ row_version: "1", preferences: { model: "deleted::current-model" }, models: [hostModel()] });
+    assert.equal(resolveModelChannel(value, value.model).enabled, false);
+    assert.equal(logicalModelIDForConfig(value), "");
+    assert.equal(resolveModelRequestConfig(value, value.model).credentialRef, undefined);
+    assert.equal(useConfigStore.getState().isAiConfigReady(value, value.model), false);
 });
 
-test("ACK补回server builtin目录与逻辑ID，但保留提交期间的enabled和headers输入", () => {
-    const submitted = sourceModelConfig({ row_version: "1", preferences: {}, models: [], channels: [builtin()] });
+test("可信宿主企业凭据来源保留源助手白名单，名称和地址不能伪装内置目录", () => {
+    const models = [hostModel({ model_key: "gpt-6-astra", credential_source: "beefapi" }), hostModel({ id: "22", model_key: "other-text", credential_source: "beefapi" }), hostModel({ id: "23", model_key: "manual-text", name: "BeefAPI", credential_source: "manual" })];
+    const value = sourceModelConfig({ row_version: "1", preferences: {}, models });
+    assert.equal(value.channels[0].credentialSource, "beefapi");
+    assert.equal(isBuiltinBeefAPIChannel(value.channels[0]), true);
+    assert.equal(isBuiltinBeefAPIChannel(value.channels[2]), false);
+    assert.equal(isBuiltinBeefAPIChannel({ id: "personal", scope: "user", name: "BeefAPI", baseUrl: "https://enterprise.beefapi.com", credentialSource: "beefapi" }), false);
+    assert.deepEqual(assistantModelOptions(value), ["host-9007199254740999::gpt-6-astra", "host-23::manual-text"]);
+});
+
+test("真实工作区PUT仅传个人偏好与版本，源渠道及密钥不会进入HTTP正文", async () => {
+    const value = sourceModelConfig({ row_version: "7", preferences: {}, models: [hostModel()] });
+    value.channels.push(channel());
+    const requests = [];
+    boundary({ put: async (...args) => { requests.push(args); return { row_version: "8", preferences: args[1].preferences, models: [hostModel()] }; } });
+    const acknowledged = await saveLocalModelConfig(value, "7");
+    assert.equal(requests[0][0], "/workspace/model-config");
+    assert.deepEqual(Object.keys(requests[0][1]).sort(), ["expected_row_version", "preferences"]);
+    assert.equal(requests[0][1].expected_row_version, "7");
+    assert.equal(JSON.stringify(requests[0][1]).includes("draft-key"), false);
+    assert.equal(acknowledged.revision, "8");
+    assert.deepEqual(acknowledged.config.channels.map(item => item.id), ["host-9007199254740999"]);
+});
+
+test("无法解析、禁用及空目录的显式选择保留且不能就绪，不随机采用其他模型", () => {
+    for (const models of [[hostModel()], [hostModel({ enabled: false })], []]) {
+        const value = sourceModelConfig({ row_version: "1", preferences: { textModel: "deleted::model", model: "deleted::model", assistantModel: "deleted::model" }, models });
+        assert.equal(value.textModel, "deleted::model");
+        assert.equal(value.model, "deleted::model");
+        assert.equal(value.assistantModel, "deleted::model");
+        assert.equal(useConfigStore.getState().isAiConfigReady(value, value.model), false);
+    }
+    const noDefault = sourceModelConfig({ row_version: "1", preferences: {}, models: [hostModel({ is_default: false })] });
+    assert.equal(noDefault.textModel, "");
+    const withDefault = sourceModelConfig({ row_version: "1", preferences: {}, models: [hostModel()] });
+    assert.equal(withDefault.textModel, "host-9007199254740999::current-model");
+});
+
+test("画布仅保存个人偏好，ACK采用宿主只读目录且保留保存期间的新偏好", () => {
+    const submitted = sourceModelConfig({ row_version: "1", preferences: {}, models: [hostModel()] });
     const current = structuredClone(submitted);
-    current.channels[0].headers = [{ name: "X-Later", value: "draft" }];
-    current.channels[0].enabled = true;
-    current.channels[0].models = ["local-only"];
-    const durable = structuredClone(submitted);
-    durable.channels[0].models = ["server-model"];
-    durable.channels[0].modelProfiles = [{ model: "server-model", capability: "text", logicalModelId: "9007199254740999" }];
+    current.audioSpeed = "1.5";
+    current.channels.push(channel());
+    const durable = sourceModelConfig({ row_version: "2", preferences: {}, models: [hostModel({ model_key: "renamed-model" })] });
     const acknowledged = reconcileHostModelConfigAck(submitted, current, durable);
-    assert.deepEqual(acknowledged.channels[0].models, ["server-model"]);
-    assert.equal(acknowledged.channels[0].modelProfiles[0].logicalModelId, "9007199254740999");
-    assert.equal(acknowledged.channels[0].enabled, true);
-    assert.deepEqual(acknowledged.channels[0].headers, [{ name: "X-Later", value: "draft" }]);
-    const empty = { ...submitted, channels: [] };
-    assert.deepEqual(reconcileHostModelConfigAck(empty, empty, durable).channels, durable.channels);
+    assert.deepEqual(acknowledged.channels, durable.channels);
+    assert.equal(acknowledged.audioSpeed, "1.5");
+    const preferences = modelPreferences(acknowledged);
+    assert.equal(preferences.audioSpeed, "1.5");
+    for (const key of ["channels", "apiKey", "apiFormat", "runningHub", "hostModelDirectory"]) assert.equal(key in preferences, false);
 });
 
 test("宿主模型经真实工作区恢复保留选择与逻辑ID，同时剔除源旧系统代理", () => {
@@ -76,7 +126,7 @@ test("宿主模型经真实工作区恢复保留选择与逻辑ID，同时剔除
     assert.equal(restored.textModel, `host-${id}::gpt-fixture`);
     assert.equal(restored.channels[0].modelProfiles[0].logicalModelId, id);
     assert.equal(restored.channels[0].scope, "system");
-    assert.deepEqual(restored.channels.map(item => item.id), [`host-${id}`, "personal"]);
+    assert.deepEqual(restored.channels.map(item => item.id), [`host-${id}`]);
 });
 
 test("保存ACK采用真实逻辑ID与脱敏结果", () => {

@@ -84,8 +84,10 @@ def purge_recycled_canvas(
 
 
 @router.get("/canvas-runtime/workspace/model-config", response_model=CanvasWorkspaceModelsRead)
-def workspace_model_config(service: Canvases):
-    return CanvasWorkspaceService(service.session).read_models()
+def workspace_model_config(request: Request, service: Canvases):
+    return CanvasWorkspaceService(
+        service.session, settings=request.app.state.settings
+    ).read_models()
 
 
 @router.put("/canvas-runtime/workspace/model-config", response_model=CanvasWorkspaceModelsRead)

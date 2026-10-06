@@ -1,36 +1,23 @@
 import { lazy, Suspense, useEffect } from "react";
-import { createBrowserRouter, Outlet, useLocation } from "react-router";
+import { createBrowserRouter } from "react-router";
 import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
-import { FullScreenLoader, WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
+import { FullScreenLoader } from "@/components/ui/aceternity/full-screen-loader";
 import UserLayout from "@/layouts/user-layout";
+import { settingsPath } from "@/lib/settings-navigation";
 
 const CanvasProjectPage = lazy(() => import("@/pages/canvas/project"));
-const CanvasLibraryPage = lazy(() => import("@/pages/canvas"));
-const AssetsPage = lazy(() => import("@/pages/assets"));
-const SettingsPage = lazy(() => import("@/pages/settings"));
-const TasksPage = lazy(() => import("@/pages/tasks"));
-
-function HostProjectList() {
-    useEffect(() => { window.location.replace("/projects"); }, []);
-    return <CanvasRefreshShell />;
-}
-
-function CanvasLayout() {
-    const { pathname } = useLocation();
-    const fallback = pathname.startsWith("/canvas/") ? <CanvasRefreshShell /> : <FullScreenLoader label="正在打开创作空间" detail="准备当前页面" />;
-    return <UserLayout><Suspense fallback={fallback}><Outlet /></Suspense></UserLayout>;
+function HostPage({ to }: { to: string }) {
+    useEffect(() => { window.location.replace(to); }, [to]);
+    return <FullScreenLoader label="正在返回工作台" detail="打开当前工作台页面" />;
 }
 
 export const router = createBrowserRouter([
     {
-        element: <CanvasLayout />,
-        children: [
-            { path: "/canvas", element: <CanvasLibraryPage /> },
-            { path: "/canvas/:id", element: <CanvasProjectPage /> },
-            { path: "/assets", element: <Suspense fallback={<WorkspaceRouteLoader />}><AssetsPage /></Suspense> },
-            { path: "/settings", element: <Suspense fallback={<WorkspaceRouteLoader />}><SettingsPage /></Suspense> },
-            { path: "/tasks", element: <Suspense fallback={<WorkspaceRouteLoader />}><TasksPage /></Suspense> },
-            { path: "*", element: <HostProjectList /> },
-        ],
+        path: "/canvas/:id",
+        element: <UserLayout><Suspense fallback={<CanvasRefreshShell />}><CanvasProjectPage /></Suspense></UserLayout>,
     },
+    { path: "/settings", element: <HostPage to={settingsPath()} /> },
+    { path: "/assets/*", element: <HostPage to="/assets" /> },
+    { path: "/tasks/*", element: <HostPage to="/tasks" /> },
+    { path: "*", element: <HostPage to="/projects" /> },
 ], { basename: import.meta.env.BASE_URL });

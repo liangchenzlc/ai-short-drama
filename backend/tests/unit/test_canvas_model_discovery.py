@@ -108,6 +108,22 @@ def test_other_actor_credential_ref_is_rejected_before_http(server):
     assert calls == []
 
 
+def test_explicit_null_key_never_restores_saved_key_or_calls_upstream(server):
+    base, calls, _ = server
+    catalog = Catalog({"apiKey": "saved-private-key", "headers": {"X-Private": "saved-value"}})
+    payload = CanvasChannelModelsRequest(
+        baseUrl=base, apiKey=None, channelId="host-17", credentialRef="host:17"
+    )
+    with pytest.raises(WorkflowError) as caught:
+        service(catalog).discover(payload)
+    assert caught.value.code == "canvas_model_catalog_credential"
+    assert calls == []
+    assert catalog.credentials == {
+        "apiKey": "saved-private-key",
+        "headers": {"X-Private": "saved-value"},
+    }
+
+
 def test_private_destination_is_blocked_even_when_generation_allowlist_would_allow_it(server):
     base, calls, _ = server
     with pytest.raises(WorkflowError) as caught:

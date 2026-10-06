@@ -3,6 +3,25 @@
 .config-form-toggles input { accent-color: var(--accent-fill); }
 .config-default-hint { margin: -4px 0 0; color: var(--sub); font-size: 12px; line-height: 1.7; }
 .config-form-toggles label:has(input:disabled) { color: var(--disabled-ink); }
+.config-advanced { border-block-start: 1px solid var(--line); padding-block: 12px; min-width: 0; }
+.config-advanced summary { cursor: pointer; color: var(--ink); font-weight: 500; padding-block: 4px; }
+.config-advanced summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.config-advanced-body { display: grid; gap: 14px; padding-block-start: 12px; }
+.config-advanced-body fieldset { display: grid; gap: 14px; padding: 0; border: 0; min-width: 0; }
+.config-field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.config-json-editor { font-family: var(--font-mono, monospace); min-height: 96px; resize: vertical; tab-size: 2; }
+.config-header-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.config-header-row button { margin-block-end: 1px; }
+.config-connection { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding-block: 16px; border-block-end: 1px solid var(--line); }
+.config-connection-info { display: grid; gap: 6px; min-width: 0; }
+.config-connection-info p { margin: 0; overflow-wrap: anywhere; }
+.config-connection-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.config-test-output { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.config-test-media { display: block; max-width: 100%; max-height: 320px; object-fit: contain; }
 @media (max-width: 600px) {
   .config-form-toggles .form-check { min-height: 44px; }
+  .config-field-pair { grid-template-columns: minmax(0, 1fr); }
+  .config-header-row { grid-template-columns: minmax(0, 1fr); }
+  .config-header-row button { justify-self: start; }
+  .config-json-editor, .config-header-row input { font-size: 16px; }
 }

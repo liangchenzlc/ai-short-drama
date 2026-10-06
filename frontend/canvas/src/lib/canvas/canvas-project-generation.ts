@@ -449,7 +449,7 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
     // 只有独立 Config 节点读取工作流元数据；普通图片/视频/音频节点始终按基础模型生成。
     const workflowProvider = mode !== "text" && node?.type === CanvasNodeType.Config && resolveCanvasWorkflowProvider(node.metadata) === "runninghub" ? "runninghub" : "model";
     const defaultModel = mode === "image" ? config.imageModel : mode === "video" ? config.videoModel : mode === "audio" ? config.audioModel : config.textModel;
-    const fallbackModel = mode === "image" ? defaultConfig.imageModel : mode === "video" ? defaultConfig.videoModel : mode === "audio" ? defaultConfig.audioModel : defaultConfig.textModel;
+    const fallbackModel = config.hostModelDirectory ? "" : mode === "image" ? defaultConfig.imageModel : mode === "video" ? defaultConfig.videoModel : mode === "audio" ? defaultConfig.audioModel : defaultConfig.textModel;
     const storedModel = resolveCanvasGenerationModel(config, node?.metadata?.model, mode);
     const preferredModel = storedModel || resolveCanvasGenerationModel(config, defaultModel, mode) || fallbackModel;
     // 先合并节点上的实时选择，再做兼容性匹配。否则路由只看到全局默认值，节点改过的时长、分辨率或布尔能力无法参与分流。
@@ -552,8 +552,8 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
 export function resolveCanvasGenerationModel(config: AiConfig, model: string | undefined, mode: CanvasNodeGenerationMode): string {
     if (!model) return "";
     const normalized = normalizeModelOptionValue(model, config.channels);
-    if (!normalized) return "";
-    return configuredModelMatchesCapability(config, normalized, mode) ? normalized : "";
+    if (!normalized) return config.hostModelDirectory ? model.trim() : "";
+    return configuredModelMatchesCapability(config, normalized, mode) ? normalized : config.hostModelDirectory ? model.trim() : "";
 }
 
 function applyWorkflowParameterValues(fields: WorkflowFieldMapping[] | undefined, values: Record<string, unknown>) {

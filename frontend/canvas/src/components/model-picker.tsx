@@ -5,7 +5,7 @@ import { AppPopover as Popover } from "@/components/ui/product/app-popover";
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { compatibleModelInGroup, configuredModelDisplayName, groupModelsByDisplayName, modelCompatibilityError, resolveCompatibleModel, type ModelRequirements } from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
-import { modelDisplayName, modelIcon, PUBLIC_MODEL_CATALOG_ID, resolveModelChannel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { modelDisplayName, modelIcon, normalizeModelOptionValue, PUBLIC_MODEL_CATALOG_ID, resolveModelChannel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { ModelLogo } from "@/components/model-logo";
 
@@ -66,13 +66,16 @@ export function ModelPicker({
         return channelGroups;
     }, [config, options]);
     const storedCurrent = value?.trim() || "";
+    const restoredCurrent = config.hostModelDirectory ? normalizeModelOptionValue(storedCurrent, config.channels) || storedCurrent : storedCurrent;
     // 参数档位会在选中模型后由调用方归一到其能力配置，不能因为旧模型留下的参数而禁止切换。
     const selectionRequirements = requirements ? { ...requirements, videoSeconds: undefined, imageSize: undefined, options: undefined } : undefined;
-    const resolvedCurrent = resolveCompatibleModel(config, storedCurrent, selectionRequirements) || storedCurrent;
+    const resolvedCurrent = resolveCompatibleModel(config, restoredCurrent, selectionRequirements) || restoredCurrent;
     // 旧画布可能保存过已下架或前端历史内置模型；它们不能重新进入当前可选目录。
     const current = options.includes(resolvedCurrent) ? resolvedCurrent : "";
     const creationVariant = variant === "creation";
-    const triggerLabel = current
+    const unavailable = config.hostModelDirectory && storedCurrent && !current;
+    const triggerLabel = unavailable ? "已选模型不可用"
+        : current
         ? (creationVariant ? pickerModelDisplayName(config, current, showConfiguredModelName) : pickerModelOptionLabel(config, current, showConfiguredModelName))
         : placeholder;
 

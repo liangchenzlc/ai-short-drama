@@ -169,10 +169,10 @@ def test_token_is_durable_before_complete_and_only_catalog_success_connects(db_s
         with pytest.raises(WorkflowError, match="其他地址"):
             target.credentials_locked("https://attacker.example")
     models = CanvasWorkspaceService(db_session, cipher=CIPHER).read_models()
-    managed = next(channel for channel in models["channels"] if channel["id"] == "beefapi")
-    assert managed["credentialRef"] == "beefapi-enterprise"
-    assert managed["apiKey"] == "" and managed["hasApiKey"]
-    assert managed["modelProfiles"][0]["logicalModelId"].isdecimal()
+    assert models["channels"] == []
+    managed = next(item for item in models["models"] if item["credential_source"] == "beefapi")
+    assert managed["has_api_key"] and "apiKey" not in managed
+    assert managed["id"].isdecimal() and managed["selection_aliases"] == ["beefapi::gpt-6-astra"]
 
 
 @pytest.mark.parametrize(

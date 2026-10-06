@@ -1,10 +1,11 @@
 """原版渠道目录原子保存；执行配置由服务端绑定，不信任客户端 logicalModelId。"""
 
-import hashlib
 import json
 from copy import deepcopy
 
 from short_drama.ai.adapters import capability_fingerprint
+from short_drama.ai.model_identity import model_credential_identity
+from short_drama.ai.types import GenerationError
 from short_drama.core.exceptions import ConfigurationError, NotFound, WorkflowError
 from short_drama.dao.canvas_model_catalog_dao import CanvasModelCatalogDAO
 from short_drama.domain import AIModelConfig, CanvasChannelModel, CanvasModelCatalog
@@ -13,23 +14,13 @@ from short_drama.utils.snowflake import next_id
 
 from .ai_model_config_service import AIModelConfigService
 from .base import BaseService, utcnow
-
-PROTOCOL_ADAPTERS = {
-    "chat-completion": "openai_chat.v1",
-    "openai-response": "openai_responses.v1",
-    "openai-image": "openai_images.v1",
-    "volcengine-ark-image": "ark_images.v1",
-    "qwen-image": "dashscope_images.v1",
-    "dashscope-qwen-image": "dashscope_images.v1",
-    "openai-audio": "openai_speech.v1",
-    "volcengine-ark-video": "ark_video.v1",
-    "qwen-video": "dashscope_video.v1",
-    "dashscope-wan-video": "dashscope_video.v1",
-    "newapi": "canvas_openai_videos.v1",
-    "openai-video": "canvas_openai_videos.v1",
-    "openai-videos": "canvas_openai_videos.v1",
-    "newapi-channel-2": "canvas_newapi_video_generations.v1",
-}
+from .model_runtime_config import (
+    PROTOCOL_ADAPTERS,
+    decrypt_runtime_credentials,
+    encrypt_runtime_credentials,
+    legacy_runtime_profile,
+    refresh_runtime_model,
+)
 
 
 def protocol_adapter(channel: dict, profile: dict) -> str | None:
@@ -46,7 +37,7 @@ def model_capability_cache(config: AIModelConfig, channel: dict, profile: dict) 
     adapter = protocol_adapter(channel, profile)
     if not adapter or not config.base_url:
         return None
-    identity = hashlib.sha256((config.apikey or "").encode()).hexdigest()
+    identity = model_credential_identity(config)
     snapshot = {
         "base_url": config.base_url,
         "model_key": config.model_key,
@@ -125,7 +116,7 @@ class CanvasModelCatalogService(BaseService):
                 if config is None:
                     raise ConfigurationError("画布模型目录的执行配置缺失")
                 profile["logicalModelId"] = str(identifier)
-        return channels
+        return [item for item in channels if item["id"] == "beefapi"]
 
     def _credentials(self, catalog: CanvasModelCatalog | None) -> dict:
         if catalog is None or catalog.credentials_cipher is None:
@@ -149,7 +140,9 @@ class CanvasModelCatalogService(BaseService):
             if credential_ref and not credential_ref.startswith("host:"):
                 raise NotFound("本人渠道凭据不存在")
             referenced = credential_ref.removeprefix("host:") if credential_ref else None
-            key = channel_id or referenced
+            key = channel_id or (
+                f"host-{referenced}" if referenced and referenced.isdecimal() else referenced
+            )
             if not key:
                 return None
             if key.startswith("host-"):
@@ -161,30 +154,31 @@ class CanvasModelCatalogService(BaseService):
                     raise NotFound("本人模型配置不存在")
                 if normalize_base_url(config.base_url) != normalize_base_url(base_url):
                     raise ModelDiscoveryError("key_address_changed", 400)
+                binding = self.catalog_dao.binding(config.id)
+                if binding is not None and binding.channel_key == "beefapi":
+                    credential = self._beefapi_credentials_locked(config.base_url)
+                    credential["headers"] = decrypt_runtime_credentials(
+                        config, self.configs._key_cipher()
+                    )["headers"]
+                    return credential
                 try:
                     return {
                         "apiKey": self.configs._key_cipher().decrypt(config.apikey)
                         if config.apikey
                         else "",
-                        "headers": {},
+                        "headers": decrypt_runtime_credentials(config, self.configs._key_cipher())[
+                            "headers"
+                        ],
                     }
                 except ValueError:
                     raise ConfigurationError("本人模型凭据无法解密") from None
-            if referenced and referenced != key:
-                raise NotFound("本人渠道凭据不存在")
-            catalog = self.catalog_dao.catalog(self.actor_id)
-            channel = next(
-                (item for item in (catalog.channels_json if catalog else []) if item["id"] == key),
-                None,
-            )
-            if channel is None:
-                if credential_ref:
-                    raise NotFound("本人渠道凭据不存在")
-                return None
-            if normalize_base_url(channel["baseUrl"]) != normalize_base_url(base_url):
-                raise ModelDiscoveryError("key_address_changed", 400)
-            secret = self._credentials(catalog).get(key, {})
-            return {"apiKey": secret.get("apiKey", ""), "headers": secret.get("headers", {})}
+            if credential_ref:
+                raise WorkflowError(
+                    "canvas_model_legacy_credential_reference",
+                    "旧渠道凭据引用已停用，请使用宿主 AI 配置中的模型身份",
+                    409,
+                )
+            return None
 
     @staticmethod
     def _secret(channel, field, previous):
@@ -224,6 +218,9 @@ class CanvasModelCatalogService(BaseService):
         return public, secrets
 
     def _update_model(self, channel, profile, secret, config):
+        existing = config is not None
+        if existing and channel["id"] != "beefapi":
+            return config
         changed = False
         values = {
             "name": profile.get("displayName") or profile["model"][:120],
@@ -254,6 +251,10 @@ class CanvasModelCatalogService(BaseService):
             if config.owner_user_id != self.actor_id:
                 raise NotFound("本人渠道执行配置不存在")
             old_service_type = config.service_type
+            if channel["id"] == "beefapi":
+                values["name"] = config.name
+                values["enabled"] = config.enabled
+                values["is_deleted"] = config.is_deleted
             changed = any(getattr(config, key) != value for key, value in values.items())
             for key, value in values.items():
                 setattr(config, key, value)
@@ -270,6 +271,19 @@ class CanvasModelCatalogService(BaseService):
 
             config.apikey = self.configs._encrypt_key(SecretStr(secret["apiKey"]))
             changed = True
+        runtime = legacy_runtime_profile(channel, profile)
+        changed = changed or config.runtime_profile != runtime
+        config.runtime_profile = runtime
+        if not existing:
+            extended = encrypt_runtime_credentials(
+                secret.get("secretKey", ""),
+                secret.get("headers", {}),
+                self.configs._key_cipher()
+                if secret.get("secretKey") or secret.get("headers")
+                else None,
+            )
+            changed = changed or config.runtime_credentials_cipher != extended
+            config.runtime_credentials_cipher = extended
         cache = model_capability_cache(config, channel, profile)
         changed = changed or config.capability_cache != cache
         config.capability_cache = cache
@@ -335,11 +349,6 @@ class CanvasModelCatalogService(BaseService):
                     config = configs.get(binding.model_config_id) if binding else None
                     if config is None:
                         raise ConfigurationError("本人 BeefAPI 执行配置缺失")
-                    if bool(config.enabled) != public["enabled"]:
-                        config.enabled = int(public["enabled"])
-                        config.is_default = 0
-                        config.row_version += 1
-                        config.updated_at, config.updated_by = utcnow(), self.actor_id
                     profile["logicalModelId"] = str(config.id)
                     active.add(key)
                     continue
@@ -356,6 +365,7 @@ class CanvasModelCatalogService(BaseService):
                         channel_key=key[0],
                         model_key=key[1],
                         model_config_id=config.id,
+                        runtime_migrated_at=utcnow(),
                         created_at=utcnow(),
                         updated_at=utcnow(),
                         created_by=self.actor_id,
@@ -374,7 +384,7 @@ class CanvasModelCatalogService(BaseService):
         if merged_size > MAX_CATALOG_BYTES:
             raise WorkflowError("canvas_model_catalog_too_large", "保存后的模型目录超过 2 MiB", 422)
         for key, binding in bound.items():
-            if key not in active:
+            if binding.channel_key == "beefapi" and key not in active:
                 config = configs.get(binding.model_config_id)
                 if config is not None and not config.is_deleted:
                     config.is_deleted, config.enabled, config.is_default = 1, 0, 0
@@ -543,100 +553,75 @@ class CanvasModelCatalogService(BaseService):
             self._advance_workspace_locked()
 
     def refresh_runtime_model_locked(self, config: AIModelConfig) -> bool:
-        """新准入刷新本人绑定的派生缓存；历史任务仍使用原冻结快照。"""
+        """新准入只读取宿主真值；旧目录不能复活用户清除的运行配置。"""
         binding = self.catalog_dao.binding(config.id)
-        if binding is None:
-            return False
         if (
             config.owner_user_id != self.actor_id
-            or binding.user_id != self.actor_id
             or config.is_deleted
             or not config.enabled
-            or config.model_key != binding.model_key
+            or binding is not None
+            and binding.user_id != self.actor_id
         ):
-            raise NotFound("本人渠道模型不可用")
-        catalog = self.catalog_dao.catalog(self.actor_id, lock=True)
-        channel = next(
-            (
-                item
-                for item in (catalog.channels_json if catalog else [])
-                if item["id"] == binding.channel_key
-            ),
-            None,
-        )
-        profile = next(
-            (
-                item
-                for item in (channel["modelProfiles"] if channel else [])
-                if item["model"] == binding.model_key
-            ),
-            None,
-        )
-        if (
-            not channel
-            or not channel["enabled"]
-            or binding.model_key not in channel["models"]
-            or not profile
-            or profile.get("capability") != config.service_type
-        ):
-            raise NotFound("本人渠道模型不可用")
-        cache = model_capability_cache(config, channel, profile)
-        if cache is None:
-            raise WorkflowError(
-                "canvas_generation_protocol_unsupported",
-                "该渠道协议尚未接通，未发送供应商请求",
-                422,
-            )
-        if config.capability_cache == cache:
-            return False
-        config.capability_cache = cache
-        config.row_version += 1
-        config.updated_at, config.updated_by = utcnow(), self.actor_id
-        return True
+            raise NotFound("本人模型不可用")
+        if getattr(config, "runtime_profile", None) is not None:
+            try:
+                channel_key = (
+                    binding.channel_key
+                    if binding
+                    else (config.capability_cache or {}).get("canvas_channel_key", "")
+                )
+                changed = refresh_runtime_model(config, channel_key)
+            except GenerationError:
+                raise WorkflowError(
+                    "canvas_generation_protocol_unsupported",
+                    "该模型协议尚未接通，未发送供应商请求",
+                    422,
+                ) from None
+            if changed:
+                config.row_version += 1
+                config.updated_at, config.updated_by = utcnow(), self.actor_id
+            return changed
+        return False
 
     def require_protocol_locked(self, model_id: int, adapter: str) -> None:
         binding = self.catalog_dao.binding(model_id)
-        if binding is None:
+        config = self.catalog_dao.models([model_id], lock=True).get(model_id)
+        if config is not None and getattr(config, "runtime_profile", None) is not None:
+            from .model_runtime_config import runtime_protocol_adapter
+
+            if (
+                runtime_protocol_adapter(
+                    config.runtime_profile,
+                    binding.channel_key
+                    if binding
+                    else (config.capability_cache or {}).get("canvas_channel_key", ""),
+                    config.model_key,
+                    config.service_type,
+                )
+                != adapter
+            ):
+                raise WorkflowError(
+                    "canvas_generation_protocol_unsupported", "模型协议与执行适配器不一致", 422
+                )
             return
-        catalog = self.catalog_dao.catalog(self.actor_id, lock=True)
-        channel = next(
-            (
-                item
-                for item in (catalog.channels_json if catalog else [])
-                if item["id"] == binding.channel_key
-            ),
-            None,
-        )
-        profile = next(
-            (
-                item
-                for item in (channel["modelProfiles"] if channel else [])
-                if item["model"] == binding.model_key
-            ),
-            None,
-        )
-        if not channel or not profile or not channel["enabled"]:
-            raise NotFound("本人渠道模型不可用")
-        if protocol_adapter(channel, profile) != adapter:
-            raise WorkflowError(
-                "canvas_generation_protocol_unsupported",
-                "该渠道协议尚未接通，未发送供应商请求",
-                422,
-            )
 
     def runtime_credentials_locked(self, model_id: int, adapter: str) -> dict | None:
         """仅在已授权准入事务中读取本人渠道执行凭据，不能作为 HTTP 输出。"""
         self.require_protocol_locked(model_id, adapter)
         binding = self.catalog_dao.binding(model_id)
-        if binding is None:
-            return None
-        catalog = self.catalog_dao.catalog(self.actor_id, lock=True)
-        if binding.channel_key == "beefapi":
-            config = self.catalog_dao.models([model_id]).get(model_id)
-            if config is None:
-                raise NotFound("本人 BeefAPI 执行配置不存在")
-            return self._beefapi_credentials_locked(config.base_url, catalog=catalog)
-        secrets = self._credentials(catalog).get(binding.channel_key)
-        if secrets is None:
-            raise ConfigurationError("本人画布渠道凭据缺失")
-        return deepcopy(secrets)
+        config = self.catalog_dao.models([model_id], lock=True).get(model_id)
+        if config is not None:
+            cipher = self.configs._key_cipher()
+            extended = decrypt_runtime_credentials(config, cipher)
+            if binding is not None and binding.channel_key == "beefapi":
+                credential = self._beefapi_credentials_locked(config.base_url)
+                credential["headers"] = extended["headers"]
+                return credential
+            try:
+                key = cipher.decrypt(config.apikey) if config.apikey else ""
+            except ValueError:
+                raise ConfigurationError("模型凭据无法解密，请检查配置") from None
+            return {"apiKey": key, **extended}
+        if binding is not None:
+            raise NotFound("本人模型执行配置不存在")
+        return None

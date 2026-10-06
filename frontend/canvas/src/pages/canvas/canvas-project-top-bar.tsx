@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Link } from "react-router";
 import { Check, ChevronDown, ChevronUp, Clapperboard, CloudUpload, Columns2, CopyPlus, Focus, FolderKanban, Gauge, History, Home, LayoutGrid, MoreHorizontal, Pencil, Plus, Redo2, Save, Search, Sparkles, Trash2, Undo2, Upload, Workflow, X } from "lucide-react";
 import { Button, Dropdown, Tooltip } from "antd";
 
-import { BrandLogoFrame } from "@/components/brand/brand-logo";
+import { navigateToHostProjects, navigateToSettings } from "@/lib/settings-navigation";
 import { canvasDockStyle } from "@/lib/canvas/canvas-aceternity-style";
 import type { CanvasContextSummary } from "@/lib/canvas/canvas-context-summary";
 import type { CanvasShortDramaProgress } from "@/lib/canvas/canvas-short-drama";
@@ -141,6 +140,15 @@ export function CanvasTopBar({
         return () => window.cancelAnimationFrame(frame);
     }, [renameCanvas?.id]);
 
+    useEffect(() => {
+        if (!isTitleEditing) return;
+        const close = (event: PointerEvent) => {
+            if (!titleRef.current?.contains(event.target as Node)) onFinishTitleEditing();
+        };
+        document.addEventListener("pointerdown", close, true);
+        return () => document.removeEventListener("pointerdown", close, true);
+    }, [isTitleEditing, onFinishTitleEditing]);
+
     if (libtvReadonlyChrome) {
         return (
             <div className="canvas-libtv-readonly-bar" data-canvas-no-zoom>
@@ -154,20 +162,11 @@ export function CanvasTopBar({
                     <button type="button" className="canvas-libtv-readonly-copy" onClick={() => void onDuplicateProject?.()}>
                         <CopyPlus className="size-4" />复制项目
                     </button>
-                    <Link to="/canvas" className="canvas-libtv-readonly-close" aria-label="关闭只读画布"><X className="size-5" /></Link>
+                    <button type="button" onClick={() => void navigateToHostProjects()} className="canvas-libtv-readonly-close" aria-label="关闭只读画布"><X className="size-5" /></button>
                 </div>
             </div>
         );
     }
-
-    useEffect(() => {
-        if (!isTitleEditing) return;
-        const close = (event: PointerEvent) => {
-            if (!titleRef.current?.contains(event.target as Node)) onFinishTitleEditing();
-        };
-        document.addEventListener("pointerdown", close, true);
-        return () => document.removeEventListener("pointerdown", close, true);
-    }, [isTitleEditing, onFinishTitleEditing]);
 
     return (
         <>
@@ -181,10 +180,9 @@ export function CanvasTopBar({
                             overlayClassName="canvas-project-primary-menu"
                             menu={{
                                 items: [
-                                    { key: "home", label: <Link to="/">回到主页</Link> },
-                                    { key: "projects", label: <Link to="/canvas">全部项目</Link> },
+                                    { key: "projects", label: "返回工作台", onClick: () => void navigateToHostProjects() },
+                                    { key: "settings", label: "模型配置", onClick: () => void navigateToSettings() },
                                     { type: "divider" },
-                                    { key: "new", label: <Link to="/canvas?mode=new">创建新项目</Link> },
                                     { key: "delete", label: "删除项目", onClick: onDeleteProject },
                                 ],
                             }}
@@ -193,7 +191,7 @@ export function CanvasTopBar({
                                 {libtvChrome ? (
                                     <span className="canvas-topbar-libtv-brand-mark" aria-hidden="true" />
                                 ) : (
-                                    <BrandLogoFrame className="canvas-topbar-brand-mark" logoClassName="canvas-topbar-brand-mark-image" alt="" fallback={<span className="canvas-topbar-brand-mark-fallback" aria-hidden="true">B</span>} />
+                                    <LayoutGrid className="size-5" aria-hidden="true" />
                                 )}
                                 <ChevronDown className="size-2.5 opacity-55" aria-hidden="true" />
                             </button>
@@ -235,10 +233,10 @@ export function CanvasTopBar({
                         )}
                         {projectContext && !isTitleEditing ? (
                             <div className="canvas-topbar-project-context mt-0.5 flex w-full min-w-0 items-center gap-1.5 overflow-hidden text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>
-                                <Link to={`/projects/${projectContext.projectId}/overview`} className="inline-flex min-w-0 items-center gap-1 hover:underline" title={`返回项目：${projectContext.projectName}`}>
+                                <button type="button" onClick={() => void navigateToHostProjects()} className="inline-flex min-w-0 items-center gap-1 hover:underline" title={`返回工作台：${projectContext.projectName}`}>
                                     <FolderKanban className="size-3 shrink-0" />
                                     <span className="max-w-[120px] truncate">{projectContext.projectName}</span>
-                                </Link>
+                                </button>
                                 <span aria-hidden>·</span>
                                 <button type="button" className="min-w-0 truncate hover:underline" onClick={onOpenSearch} title="搜索并定位章节或镜头">
                                     {projectContext.chapterLabel || `${projectContext.nodeCount} 个节点`}

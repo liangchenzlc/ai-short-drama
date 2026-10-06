@@ -42,12 +42,18 @@ class CanvasWorkspaceService(BaseService):
     def _read_models_locked(self, state):
         return {
             **self._preferences(state),
-            "models": self.workspace_dao.models(),
-            "channels": self.catalog.read_locked(),
+            "models": self.workspace_dao.models(self.catalog.configs),
+            "channels": [],
         }
 
     def save_preferences(self, payload: CanvasWorkspacePreferencesRequest) -> dict:
-        payload = CanvasWorkspacePreferencesRequest.model_validate(payload.model_dump())
+        payload = CanvasWorkspacePreferencesRequest.model_validate(
+            payload.model_dump(exclude_unset=True)
+        )
+        if "channels" in payload.model_fields_set:
+            raise WorkflowError(
+                "canvas_model_catalog_read_only", "模型配置已统一，请在宿主 AI 配置中维护", 409
+            )
         with self._transaction():
             if self.workspace_dao.lock_user(self.actor_id) is None:
                 raise NotFound("Account does not exist")
@@ -60,13 +66,8 @@ class CanvasWorkspaceService(BaseService):
                     409,
                     {"current_version": str(current)},
                 )
-            catalog_changed = (
-                self.catalog.save_locked(payload.channels)
-                if payload.channels is not None
-                else False
-            )
             if state:
-                if state.preferences_json != payload.preferences or catalog_changed:
+                if state.preferences_json != payload.preferences:
                     state.preferences_json = deepcopy(payload.preferences)
                     state.row_version += 1
                     state.updated_at = utcnow()

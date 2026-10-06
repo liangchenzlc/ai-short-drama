@@ -66,9 +66,12 @@ class CanvasModelDiscoveryService:
             self.catalog.discovery_credentials(payload.channel_id, payload.credential_ref, base)
             or {}
         )
-        key = (payload.api_key.get_secret_value() if payload.api_key else "").strip() or saved.get(
-            "apiKey", ""
-        ).strip()
+        if "api_key" in payload.model_fields_set and payload.api_key is None:
+            key = ""
+        else:
+            key = (
+                payload.api_key.get_secret_value() if payload.api_key else ""
+            ).strip() or saved.get("apiKey", "").strip()
         if not key or len(key) > 16384 or any(ord(char) < 33 or ord(char) > 126 for char in key):
             raise catalog_error("credential", 422)
         old_headers = {name.lower(): value for name, value in saved.get("headers", {}).items()}

@@ -34,6 +34,12 @@ export function canvasRequestCanRevoke(method: string, url: string) {
     return !(method === "put" && /^\/canvas-projects\/[^/]+$/.test(url));
 }
 
+/** The Python permission boundary hides missing/archived/unauthorized canvases as 404. */
+export function canvasRequestFailureRevokes(method: string, url: string, failure: { status?: number; code?: string }) {
+    // CSRF, email verification and write-rule 403s do not revoke the readable canvas.
+    return canvasRequestCanRevoke(method, url) && failure.status === 404 && failure.code === "not_found";
+}
+
 /** Only failures of the canvas itself revoke access; a missing history/media item does not. */
 export function canvasRequestIdentity(url: string, data?: unknown) {
     if (url === "/ops/canvas.document.commit") {
