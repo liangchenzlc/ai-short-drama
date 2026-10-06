@@ -57,7 +57,7 @@
 .identity-form-embedded > .ant-btn-primary:not(:disabled):hover,
 .identity-form-embedded > .ant-btn-primary:not(:disabled):focus-visible { color: var(--on-accent); background: var(--accent-hover); }
 .email-proof-form > .ant-btn-primary:not(:disabled):active,
-.identity-form-embedded > .ant-btn-primary:not(:disabled):active { color: var(--on-accent); background: var(--accent-fill); }
+.identity-form-embedded > .ant-btn-primary:not(:disabled):active { color: var(--on-accent); background: var(--accent-active); }
 .project-collaboration { margin: 0; }
 .collaboration-heading, .collaboration-person { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .collaboration-heading { flex-wrap: wrap; margin-bottom: 16px; }

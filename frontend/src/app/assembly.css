@@ -65,7 +65,7 @@
 .assembly-filmstrip-cell { position: absolute; top: 0; bottom: 0; overflow: hidden; }
 .assembly-filmstrip-cell .assembly-sprite { position: absolute; top: 0; height: 100%; max-width: none; object-fit: fill; }
 .assembly-track-clip.is-selected::after { content: ''; position: absolute; inset: 0; border: 3px solid var(--accent-border); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 45%); border-radius: 3px; pointer-events: none; z-index: 2; }
-.assembly-track-clip.is-selected .assembly-track-label { background: var(--accent-fill); }
+.assembly-track-clip.is-selected .assembly-track-label { background: var(--accent-fill); color: var(--on-accent); }
 .assembly-track-selected { font-weight: 600; }
 .assembly-insert-marker { position: absolute; top: 34px; bottom: 10px; width: 3px; background: var(--surface-raised); pointer-events: none; z-index: 3; }
 .assembly-timeline-feedback { min-height: 24px; margin: 8px 0 0; color: var(--sub); font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; }
@@ -73,7 +73,8 @@
 .assembly-track-time { margin-top: 6px; font-variant-numeric: tabular-nums; }
 .assembly-timeline .timeline-editor-action-left-stretch, .assembly-timeline .timeline-editor-action-right-stretch { background: var(--accent-fill); width: 8px; border-radius: 2px; opacity: .6; }
 .assembly-timeline .timeline-editor-action:has(.is-selected) .timeline-editor-action-left-stretch, .assembly-timeline .timeline-editor-action:has(.is-selected) .timeline-editor-action-right-stretch { opacity: 1; }
-.assembly-timeline .timeline-editor-cursor { border-color: var(--hair); }
+.assembly-timeline .timeline-editor-cursor { border-color: var(--accent); }
+.assembly-timeline .timeline-editor-cursor-top path { fill: var(--accent); }
 .assembly-timeline .timeline-editor-edit-area .ReactVirtualized__Grid::-webkit-scrollbar { height: 8px; }
 .assembly-timeline .timeline-editor-edit-area .ReactVirtualized__Grid::-webkit-scrollbar-thumb { background: var(--surface-muted); }
 .assembly-timeline-help { font-size: 12px; line-height: 1.6; color: var(--sub); margin: 10px 0 0; }

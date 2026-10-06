@@ -322,7 +322,7 @@ input, textarea { caret-color: var(--accent); }
 .web-episode .episode-sidebar nav button { min-height: 68px; padding: 12px; gap: 12px; align-items: center; font-size: 14px; }
 .web-episode .episode-sidebar nav button > span:first-child { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; background: var(--pale); border-radius: 8px; color: var(--sub); font-size: 12px; }
 .web-episode .episode-sidebar nav button.active { background: var(--pale); }
-.web-episode .episode-sidebar nav button.active > span:first-child { background: var(--accent); color: var(--on-accent); }
+.web-episode .episode-sidebar nav button.active > span:first-child { background: var(--accent-fill); color: var(--on-accent); }
 .web-episode .episode-sidebar nav button .episode-stage-name { text-align: left; font-weight: 600; font-size: 14px; color: inherit; }
 .web-episode .episode-stage-name small { display: block; font-size: 11px; font-weight: 400; color: var(--sub); margin-top: 4px; }
 .web-episode .episode-content { max-width: 1500px; width: 100%; margin-inline: auto; padding: 30px; }
@@ -825,7 +825,7 @@ html:has(.asset-editor-drawer[open]), body:has(.asset-editor-drawer[open]) { ove
 .image-magnifier-lens { position: absolute; z-index: 2; overflow: hidden; border-radius: 50%; outline: 2px solid var(--surface); background: var(--surface-muted); box-shadow: 0 8px 28px rgb(0 0 0 / 45%); pointer-events: none; }
 .image-preview-dialog .image-magnifier-detail { position: absolute; display: block; max-width: none; max-height: none; margin: 0; object-fit: fill; }
 .image-magnifier-crosshair { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; transform: translate(-50%, -50%); }
-.image-magnifier-crosshair::before, .image-magnifier-crosshair::after { content: ''; position: absolute; background: var(--on-accent); box-shadow: 0 1px 2px rgb(0 0 0 / 45%); }
+.image-magnifier-crosshair::before, .image-magnifier-crosshair::after { content: ''; position: absolute; background: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 45%); }
 .image-magnifier-crosshair::before { width: 12px; height: 1px; top: 6px; left: 0; }
 .image-magnifier-crosshair::after { width: 1px; height: 12px; top: 0; left: 6px; }
 .image-magnifier-badge { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); padding: 2px 7px; border-radius: 6px; background: var(--canvas); color: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; }

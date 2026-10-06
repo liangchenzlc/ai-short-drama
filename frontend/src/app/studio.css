@@ -171,6 +171,10 @@ select {
   background: var(--accent-hover) !important;
   border-color: var(--accent-hover) !important;
 }
+.studio-primary:active:not(:disabled) {
+  background: var(--accent-active) !important;
+  border-color: var(--accent-active) !important;
+}
 .studio-toolbar {
   display: flex;
   align-items: center;
@@ -468,8 +472,8 @@ select {
   gap: 10px;
 }
 .studio-projects .project-actions .primary-button {
-  background: var(--blue);
-  border-color: var(--blue);
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
   color: var(--on-accent);
   font-weight: 600;
 }
@@ -534,8 +538,8 @@ select {
   color-scheme: dark;
 }
 .studio-detail .studio-projects .primary-button {
-  background: var(--blue);
-  border-color: var(--blue);
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
   color: var(--on-accent);
 }
 .studio .notice {
@@ -943,7 +947,7 @@ select {
   border: 0;
   border-radius: 6px;
   color: var(--on-accent);
-  background: var(--accent);
+  background: var(--accent-fill);
   cursor: pointer;
   font: inherit;
 }
@@ -2448,9 +2452,9 @@ select {
   font-size: 13px;
 }
 .episode-video-actions .episode-primary-action {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
-  border-color: var(--accent);
+  border-color: var(--accent-fill);
 }
 .episode-video-actions button:disabled,
 .episode-video-output button:disabled {
@@ -2956,7 +2960,7 @@ select {
   place-items: center;
   gap: 12px;
   padding: 32px;
-  background: rgba(8, 15, 27, 0.82);
+  background: rgb(8 8 8 / 82%);
 }
 
 .image-lightbox img {

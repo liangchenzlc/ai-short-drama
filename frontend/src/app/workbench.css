@@ -1,7 +1,7 @@
 /* Desktop creation workspace. Shared color roles live in tokens.css. */
 body, .studio { background: var(--canvas); color: var(--ink); }
 body { line-height: 1.6; }
-::selection { background: var(--accent-border); color: var(--ink); }
+::selection { background: var(--pale); color: var(--ink); }
 * { scrollbar-width: thin; scrollbar-color: var(--border-hover) transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--border-control); border: 2px solid var(--canvas); border-radius: 8px; }
@@ -94,6 +94,7 @@ p { color: var(--sub); font-size: 13px; line-height: 1.75; }
 .studio-toolbar { margin-block: 16px; gap: 10px; }
 .studio-primary, .primary-button { background: var(--accent-fill); color: var(--on-accent); border-color: transparent; }
 .studio-primary:hover:not(:disabled), .primary-button:hover:not(:disabled) { background: var(--accent-hover); color: var(--on-accent); }
+.studio-primary:active:not(:disabled), .primary-button:active:not(:disabled) { background: var(--accent-active); color: var(--on-accent); }
 .studio-empty { padding: 56px 24px; border: 1px dashed var(--border-control); background: var(--surface); border-radius: 12px; }
 .studio-empty h3 { font-size: 20px; margin-bottom: 10px; }
 .studio-empty p { margin-bottom: 22px; }
@@ -170,8 +171,7 @@ p { color: var(--sub); font-size: 13px; line-height: 1.75; }
 /* Materials and candidates share the same media well and selection language. */
 .asset-grid { gap: 14px; }
 .asset-cover { background: var(--pale); color: var(--accent); }
-.asset-cover-scene { background: #203039; color: #94c1d4; }
-.asset-cover-prop { background: #302b21; color: var(--warning); }
+.asset-cover-scene, .asset-cover-prop { background: var(--surface-muted); color: var(--accent); }
 .library-resource-card, .asset-card { border: 1px solid var(--hair); background: var(--surface); border-radius: 12px; }
 .library-resource-card:hover { border-color: var(--border-hover); }
 .global-assets-page .remote-asset-library { padding: 0; border: 0; background: transparent; }
@@ -192,7 +192,7 @@ p { color: var(--sub); font-size: 13px; line-height: 1.75; }
 .image-candidate, .shot-video-candidate { border-color: var(--hair); border-radius: 9px; }
 .asset-candidate-preview, .shot-current-preview, .asset-current-image .asset-image-frame { background: var(--canvas); }
 .asset-generation-history, .asset-current-image { border-color: var(--hair); }
-.image-preview-stage { background: #080a0f; }
+.image-preview-stage { background: var(--media-canvas); }
 .image-preview-trigger:hover:not(:disabled){ background: var(--surface-hover); }
 .reference-image-strip figure, .reference-thumbnail-list img, .frame-picker img { background: var(--canvas); border-color: var(--hair); }
 .media-picker-item.is-selected { outline-color: var(--accent); background: var(--pale); }
@@ -284,7 +284,7 @@ p { color: var(--sub); font-size: 13px; line-height: 1.75; }
 .assembly-source-image { background: var(--canvas); }
 .assembly-source-image small { background: var(--canvas); color: var(--ink); border-radius: 4px; }
 .assembly-monitor { background: var(--surface); border: 1px solid var(--hair); border-radius: 10px; padding: 12px; }
-.assembly-screen, .assembly-result-dialog video { background: #05070b; border-radius: 8px; }
+.assembly-screen, .assembly-result-dialog video { background: var(--media-canvas); border-radius: 8px; }
 .assembly-player-controls { padding-top: 12px; gap: 7px; }
 .assembly-resize-handle { height: 18px; }
 .assembly-resize-handle > span { background: var(--border-control); }
@@ -312,7 +312,7 @@ p { color: var(--sub); font-size: 13px; line-height: 1.75; }
   background: var(--surface-raised); color: var(--ink); border: 1px solid var(--border-control);
   border-radius: 12px; box-shadow: var(--shadow-overlay); max-height: calc(100dvh - 40px);
 }
-.ui-dialog::backdrop { background: rgb(2 4 10 / 72%); }
+.ui-dialog::backdrop { background: rgb(0 0 0 / 72%); }
 .ui-dialog > header { padding: 17px 22px; border-color: var(--hair); background: inherit; gap: 16px; }
 .ui-dialog > header h2 { margin: 0; font-size: 16px; font-weight: 600; }
 .ui-dialog > header h2 { min-width: 0; overflow-wrap: anywhere; }
