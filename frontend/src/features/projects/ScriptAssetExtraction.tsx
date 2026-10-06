@@ -12,7 +12,7 @@ import { Dialog } from '../../components/ui/Dialog';
 import { EpisodeModelSelect } from './EpisodeModelSelect';
 import type { WritingSession } from './writing-session';
 import type { NavigationBarrier } from './writing-navigation';
-import { defaultAdoption, extractionApplyRequest, scriptAssetsRequest, ExtractionReviewError } from './asset-extraction-contract';
+import { defaultAdoption, extractionApplyRequest, scriptAssetsRequest, ExtractionReviewError, missingExtractionTaskIds, extractionDraftError } from './asset-extraction-contract';
 import { savedConfigId } from '../ai-config/config-selection';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import { dateLabel, generationError, taskLabel } from '../generations/presentation';
@@ -59,6 +59,11 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [historyError, setHistoryError] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyOffset, setHistoryOffset] = useState(0);
+  const historySequence = useRef(0);
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
   const actionLock = useRef(false);
   useEffect(() => {
     const generationId = externalReview?.artifact.generation_task_id;
@@ -74,22 +79,29 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
   }, [externalReview?.nonce]);
   const task = tasks.find(item => item.generation_id === activeId);
   const dirty = !!result?.items.some(item => !item.applied && drafts[item.candidate_id] && !same(item.draft, drafts[item.candidate_id]));
-  const invalid = !!result?.items.some(item => !item.applied && (() => {
-    const draft = drafts[item.candidate_id] ?? item.draft;
-    return !draft.name.trim() || !draft.description.trim() || !draft.prompt.trim();
-  })());
+  const invalid = !!result?.items.some(item => !item.applied && !!extractionDraftError(drafts[item.candidate_id] ?? item.draft));
   const canExtract = writing.loaded && writing.confirmed && !!writing.script.trim() && !readOnly;
   const stale = !!result && (result.stale || !writing.confirmed);
   const pending = tasks.some(active);
 
   const refreshTasks = useCallback(async (signal?: AbortSignal) => {
+    const requestNo = ++historySequence.current;
+    const expectedScope = currentScope.current.key;
+    setHistoryLoading(true);
     try {
       const page = await generations.list({ service_type: 'text', project_id: projectId, episode_id: episodeId, source_scene: 'script_assets', offset: 0, limit: 20 }, signal);
-      if (signal?.aborted) return;
-      setTasks(previous => [...page.items, ...previous.filter(item => !page.items.some(next => next.generation_id === item.generation_id))]);
-      setTotal(page.total); setHistoryError('');
+      const missing = missingExtractionTaskIds(tasksRef.current, page.items);
+      const details = await Promise.allSettled(missing.map(id => generations.detail(id, signal)));
+      if (signal?.aborted || !alive.current || requestNo !== historySequence.current || currentScope.current.key !== expectedScope) return;
+      const resolved = details.flatMap(detail => detail.status === 'fulfilled'
+        && detail.value.source?.scene === 'script_assets' && detail.value.source.project_id === projectId && detail.value.source.episode_id === episodeId ? [detail.value] : []);
+      const incoming = [...page.items, ...resolved];
+      setTasks(previous => [...incoming, ...previous.filter(item => !incoming.some(next => next.generation_id === item.generation_id))]);
+      setTotal(page.total); setHistoryOffset(previous => Math.max(previous, page.items.length));
+      setHistoryError(resolved.length < missing.length ? '部分活动提取任务暂时无法核对，已保留上次状态。请重试查询。' : '');
       setActiveId(current => current ?? page.items[0]?.generation_id ?? null);
-    } catch (cause) { if (!signal?.aborted) setHistoryError(errorMessage(cause)); }
+    } catch (cause) { if (!signal?.aborted && alive.current && requestNo === historySequence.current && currentScope.current.key === expectedScope) setHistoryError(errorMessage(cause)); }
+    finally { if (!signal?.aborted && alive.current && requestNo === historySequence.current && currentScope.current.key === expectedScope) setHistoryLoading(false); }
   }, [projectId, episodeId]);
 
   useEffect(() => {
@@ -222,14 +234,24 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
 
   async function moreHistory() {
     await run(async () => {
-      const page = await generations.list({ service_type: 'text', project_id: projectId, episode_id: episodeId, source_scene: 'script_assets', offset: tasks.length, limit: 20 });
+      const expectedScope = currentScope.current.key;
+      const page = await generations.list({ service_type: 'text', project_id: projectId, episode_id: episodeId, source_scene: 'script_assets', offset: historyOffset, limit: 20 });
+      if (!alive.current || currentScope.current.key !== expectedScope) return;
       setTasks(previous => [...previous, ...page.items.filter(item => !previous.some(old => old.generation_id === item.generation_id))]); setTotal(page.total);
+      setHistoryOffset(previous => previous + page.items.length);
     });
   }
 
   function editDraft(item: ExtractionCandidate, patch: Partial<AssetDraft>) {
     setDrafts(previous => ({ ...previous, [item.candidate_id]: { ...(previous[item.candidate_id] ?? item.draft), ...patch } }));
     if (patch.name !== undefined || patch.kind !== undefined || patch.scene_time !== undefined) setChoices(previous => ({ ...previous, [item.candidate_id]: '' }));
+  }
+
+  async function discardItemDraft(item: ExtractionCandidate) {
+    if (!await confirmAction(`放弃“${item.draft.name}”本页尚未保存的候选修改？其他候选草稿仍会保留。`)) return;
+    setDrafts(previous => ({ ...previous, [item.candidate_id]: item.draft }));
+    setChoices(previous => ({ ...previous, [item.candidate_id]: previous[item.candidate_id] || defaultAdoption(item) }));
+    setTab(item.draft.kind);
   }
 
   const rows = result?.items.filter(item => (drafts[item.candidate_id] ?? item.draft).kind === tab) ?? [];
@@ -255,9 +277,10 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
         </div>}
         {phase === 'history' && <>
           {historyError && <Alert type="error" message={historyError} action={<Button onClick={() => void refreshTasks()}>重试</Button>}/>}
-          {!tasks.length && !historyError && <Empty description="暂无提取记录"/>}
+          {historyLoading && !tasks.length && <div role="status"><Spin/><p>正在读取提取记录…</p></div>}
+          {!historyLoading && !tasks.length && !historyError && <Empty description="暂无提取记录"/>}
           {tasks.map(item => <div className="extraction-history-row" key={item.generation_id}><div><strong>{dateLabel(item.created_at)}</strong><p>{item.config?.name ?? '文本模型'} · {taskLabel(item)}</p></div><Button disabled={busy} onClick={() => void showTask(item.generation_id)}>查看</Button></div>)}
-          {tasks.length < total && <Button disabled={busy} onClick={() => void moreHistory()}>加载更多记录</Button>}
+          {historyOffset < total && <Button disabled={busy || historyLoading} onClick={() => void moreHistory()}>加载更多记录</Button>}
         </>}
         {phase === 'result' && <>
           {loading && <div className="extraction-wait" role="status"><Spin/><p>正在载入提取结果…</p></div>}
@@ -271,6 +294,7 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
             {rows.map(item => {
               const draft = drafts[item.candidate_id] ?? item.draft;
               const disabled = busy || readOnly || !!item.applied;
+              const draftError = !item.applied ? extractionDraftError(draft) : '';
               return <article className="extraction-candidate" key={item.candidate_id}>
                 <header><Checkbox aria-label={`选择 ${draft.name}`} disabled={disabled || stale} checked={selected.has(item.candidate_id) && !item.applied} onChange={event => selectItem(item.candidate_id, event.target.checked)}/><h3>{draft.name}</h3><Popover trigger="click" title="图片生成提示词" content={<div className="extraction-prompt-popover"><Input.TextArea aria-label="图片生成提示词" value={draft.prompt} readOnly={disabled} maxLength={8000} autoSize={{ minRows: 4, maxRows: 12 }} onChange={event => editDraft(item, { prompt: event.target.value })}/></div>}><Button type="text" size="small" aria-label={`查看 ${draft.name} 的图片生成提示词`} icon={<Icon name="film" size={18}/>}/></Popover>{item.applied ? <span className="status-badge is-success">已加入本集</span> : <Button type="text" disabled={disabled} onClick={() => setEditing(editing === item.candidate_id ? null : item.candidate_id)}>{editing === item.candidate_id ? '收起编辑' : '编辑'}</Button>}</header>
                 {item.original.story_function && <section className="extraction-story-function" aria-label="剧情作用">
@@ -286,6 +310,8 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
                   <label>标签<Select aria-label="素材标签" mode="tags" value={draft.tags} disabled={disabled} maxCount={20} onChange={tags => editDraft(item, { tags })}/></label>
                 </div> : <div className="extraction-copy"><div><h4>描述</h4><ExtractionText text={draft.description}/></div></div>}
                 {item.original.aliases.length > 0 && <p className="episode-help">别名：{item.original.aliases.join('、')}</p>}
+                {draftError && <Alert type="error" showIcon message={draftError}/>}
+                {!disabled && !same(draft, item.draft) && <Button type="link" onClick={() => void discardItemDraft(item)}>放弃此项修改</Button>}
                 {!item.applied && <div className="extraction-adoption"><label>采用方式<Select aria-label={`${draft.name}的采用方式`} disabled={disabled || dirty} value={choices[item.candidate_id] || undefined} placeholder={dirty ? '保存候选后核对匹配' : '请选择新建或复用'} options={[{ value: 'create', label: item.matches.length || item.duplicate_candidates?.length ? '明确另建素材' : '新建本集素材' }, ...item.matches.map(match => ({ value: match.asset_id, label: `复用${match.scope === 'episode' ? '本集' : '项目'}素材：${match.name}` }))]} onChange={value => setChoices(previous => ({ ...previous, [item.candidate_id]: value }))}/></label>{choices[item.candidate_id] && choices[item.candidate_id] !== 'create' && <p>沿用已有素材的描述、提示词与图片，提取文字保留在本次记录中。</p>}{item.matches.length > 0 && <p>{item.matches.length > 1 || !item.matches[0].exact ? '发现疑似重复素材，请核对后选择。' : '发现同名素材，可复用或明确另建。'}</p>}{!!item.duplicate_candidates?.length && <p>本次结果还有同名候选，请只选择需要的项，或修改名称后明确另建。</p>}</div>}
               </article>;
             })}

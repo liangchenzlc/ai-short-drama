@@ -4,9 +4,13 @@ import test from 'node:test';
 import ts from 'typescript';
 const source=readFileSync(new URL('../src/features/projects/writing-navigation.ts',import.meta.url),'utf8');
 const compiled=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
-const {installWritingNavigationGuard}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const {installWritingNavigationGuard,hasUnsettledWriting}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+test('pending recovery stays a discard risk when checking the latest text fails or changes its basis', () => {
+  assert.equal(hasUnsettledWriting({ loaded: true, dirty: false, busy: false, status: 'saved', recoverable: true }), true);
+  assert.equal(hasUnsettledWriting({ loaded: true, dirty: false, busy: false, status: 'saved', recoveryBlocked: true }), true);
+});
 function setup(override = {}) {
   let index=2, rendered=2, dirty=true, confirmations=0,replacements=0;const listeners=new Map(),waiting=deferred();
   const emit=(type,event)=>{for(const {fn} of [...(listeners.get(type)??[])].sort((a,b)=>Number(b.capture)-Number(a.capture))){fn(event);if(event.stopped)break;}};

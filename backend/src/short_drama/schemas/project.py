@@ -13,6 +13,7 @@ from .base import (
 
 
 class ProjectCreate(InputModel):
+    workspace_mode: Literal["standard", "infinite_canvas"] = "standard"
     name: Annotated[str, Field(max_length=120), AfterValidator(nonblank)]
     synopsis: MediumText = ""
     style: Annotated[str, Field(max_length=255)] = ""
@@ -29,6 +30,9 @@ class ProjectUpdate(InputModel):
 
 
 class ProjectRead(ReadModel):
+    workspace_mode: Literal["standard", "infinite_canvas"] = "standard"
+    primary_canvas_id: Identifier | None = None
+    canvas_count: int = 0
     owner_user_id: Identifier | None = None
     row_version: Identifier = 1
     capabilities: dict[str, bool] = Field(default_factory=dict)

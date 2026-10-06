@@ -12,17 +12,21 @@ import test_agent_conversations as conversation_tests
 from fastapi.testclient import TestClient
 from sqlalchemy import event, func, select
 from test_agent_conversations import actor
-from test_agent_services import send, settings, setup
+from test_agent_services import runs, send, settings, setup
 
 from short_drama.agent.artifacts import create_candidate_locked
 from short_drama.agent.authorization import digest, freeze_task
 from short_drama.agent.runtime import lock_run
+from short_drama.agent.state import append_late_artifact_message
 from short_drama.agent.tools import CreateCandidate, execute_tools
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.core.identity import token_hash
 from short_drama.domain import (
     AgentArtifact,
+    AgentEvent,
+    AgentMessage,
+    AgentRun,
     AgentToolCall,
     AgentTurn,
     Asset,
@@ -193,6 +197,204 @@ def test_script_creation_changes_no_editor_pointer_confirmation_or_version(works
         assert session.get(EpisodeScript, int(original["script"]["id"])).state == "confirmed"
 
 
+def test_unadopted_agent_script_cannot_bypass_artifact_adoption(workspace):
+    factory, p, e, _ = workspace
+    run_id, tool_id, args = prepared(factory, p, e, kind="script", content="Agent draft")
+    result = create(factory, run_id, tool_id, args)
+    detail = details(factory, p, e, result["artifact_id"])
+    with factory() as session:
+        session.info["actor"] = actor(1)
+        service = EpisodeWritingService(session)
+        assert service.candidates(p, e)["items"] == []
+        with pytest.raises(WorkflowError) as rejected:
+            service.select_script(p, e, {"script_id": detail["script_id"], "content_version": "1"})
+        assert rejected.value.code == "agent_artifact_adoption_required"
+        assert service.get(p, e)["editing_script"] is None
+        assert service.get(p, e)["content_version"] == "1"
+    assert details(factory, p, e, result["artifact_id"])["status"] == "ready"
+    with factory() as session:
+        adopted = artifact_service(session).adopt(p, e, result["artifact_id"], adopt_body(detail))
+        assert adopted["apply_receipt"]["action"] == "select_script"
+        service = EpisodeWritingService(session)
+        assert [item["id"] for item in service.candidates(p, e)["items"]] == [detail["script_id"]]
+        current = service.get(p, e)
+        selected = service.select_script(
+            p, e, {"script_id": detail["script_id"], "content_version": current["content_version"]}
+        )
+        assert selected["content_version"] == current["content_version"]
+
+
+def test_other_member_cannot_adopt_legacy_published_agent_script_through_editor(workspace):
+    factory, p, e, _ = workspace
+    run_id, tool_id, args = prepared(factory, p, e, kind="script", content="Legacy agent draft")
+    result = create(factory, run_id, tool_id, args)
+    detail = details(factory, p, e, result["artifact_id"])
+    with factory.begin() as system:
+        script = system.get(EpisodeScript, int(detail["script_id"]))
+        script.published_at = utcnow()
+        system.get(Episode, e).editing_script_id = script.id
+    with factory() as session:
+        service = artifact_service(session, 2)
+        assert service.list(p, e)["items"] == []
+        with pytest.raises(NotFound):
+            service.get(p, e, result["artifact_id"])
+        writing_service = EpisodeWritingService(session)
+        before = writing_service.get(p, e)
+        assert before["editing_script"]["content"] == "Legacy agent draft"
+        assert writing_service.candidates(p, e)["items"] == []
+        payload = {"script_id": detail["script_id"], "content_version": before["content_version"]}
+        for operation in ("select", "save", "confirm"):
+            with pytest.raises(WorkflowError) as blocked:
+                if operation == "select":
+                    writing_service.select_script(p, e, payload)
+                elif operation == "save":
+                    writing_service.save_script(p, e, {**payload, "content": "Unauthorized edit"})
+                else:
+                    writing_service.confirm(
+                        p, e, detail["script_id"], {"content_version": before["content_version"]}
+                    )
+            assert blocked.value.code == "agent_artifact_adoption_required"
+            assert writing_service.get(p, e) == before
+        with pytest.raises(NotFound):
+            service.get(p, e, result["artifact_id"])
+    assert details(factory, p, e, result["artifact_id"]) == detail
+
+
+@pytest.mark.parametrize("mode", ["single", "workflow"])
+def test_stopping_after_candidate_creation_keeps_only_this_runs_candidates_reachable(
+    workspace, mode
+):
+    factory, p, e, _ = workspace
+    foreign_run, foreign_tool, foreign_args = prepared(factory, p, e, kind="script")
+    foreign = create(factory, foreign_run, foreign_tool, foreign_args)
+    run_id, tool_id, args = prepared(factory, p, e, kind="script", mode=mode)
+    result = create(factory, run_id, tool_id, args)
+    with factory() as session:
+        stopped = runs(session).stop(run_id)
+        repeated = runs(session).stop(run_id)
+        assert repeated.row_version == stopped.row_version and repeated.status == "cancelled"
+        run = session.get(AgentRun, run_id)
+        assert run.next_run_at is None and run.message_status == "idle"
+        messages = session.scalars(
+            select(AgentMessage)
+            .where(
+                AgentMessage.conversation_id == run.conversation_id,
+                func.json_length(AgentMessage.artifacts) > 0,
+            )
+            .order_by(AgentMessage.seq)
+        ).all()
+        assert len(messages) == 1
+        assert messages[0].artifacts == [
+            {"artifact_id": result["artifact_id"], "kind": "script_candidate"}
+        ]
+        assert messages[0].role == "assistant"
+        assert (
+            session.scalar(
+                select(func.count(AgentMessage.id)).where(
+                    AgentMessage.conversation_id == run.conversation_id,
+                    func.json_length(AgentMessage.artifacts) > 0,
+                )
+            )
+            == 1
+        )
+        candidate_events = session.scalars(
+            select(AgentEvent).where(
+                AgentEvent.run_id == run.id,
+                AgentEvent.event_type == "message.created",
+                func.json_length(AgentEvent.payload, "$.artifacts") > 0,
+            )
+        ).all()
+        assert len(candidate_events) == 1
+        assert candidate_events[0].payload["id"] == str(messages[0].id)
+        assert candidate_events[0].payload["artifacts"] == messages[0].artifacts
+        assert foreign["artifact_id"] not in json.dumps(messages[0].artifacts)
+        assert (
+            session.scalar(
+                select(func.count(AgentEvent.id)).where(
+                    AgentEvent.run_id == run.id, AgentEvent.event_type == "run.finished"
+                )
+            )
+            == 1
+        )
+    assert details(factory, p, e, result["artifact_id"])["status"] == "ready"
+
+
+def test_late_message_deduplication_sees_cancellation_after_an_older_read_snapshot(workspace):
+    factory, p, e, _ = workspace
+    run_id, tool_id, args = prepared(factory, p, e, kind="script")
+    result = create(factory, run_id, tool_id, args)
+    with factory() as collector:
+        collector.scalar(select(AgentMessage.id).limit(1))
+        with factory() as stopper:
+            runs(stopper).stop(run_id)
+        _, conversation, run = lock_run(collector, run_id)
+        conversation_id = conversation.id
+        assert run.status == "cancelled"
+        append_late_artifact_message(collector, conversation, run, {result["artifact_id"]})
+        collector.commit()
+    with factory() as session:
+        messages = session.scalars(
+            select(AgentMessage).where(
+                AgentMessage.conversation_id == conversation_id,
+                func.json_length(AgentMessage.artifacts) > 0,
+            )
+        ).all()
+        assert len(messages) == 1
+        assert messages[0].artifacts == [
+            {"artifact_id": result["artifact_id"], "kind": "script_candidate"}
+        ]
+        assert messages[0].role == "assistant"
+        assert (
+            session.scalar(
+                select(func.count(AgentMessage.id)).where(
+                    AgentMessage.conversation_id == conversation_id,
+                    func.json_length(AgentMessage.artifacts) > 0,
+                )
+            )
+            == 1
+        )
+        candidate_events = session.scalars(
+            select(AgentEvent).where(
+                AgentEvent.run_id == run_id,
+                AgentEvent.event_type == "message.created",
+                func.json_length(AgentEvent.payload, "$.artifacts") > 0,
+            )
+        ).all()
+        assert len(candidate_events) == 1
+        assert candidate_events[0].payload["id"] == str(messages[0].id)
+        assert candidate_events[0].payload["artifacts"] == messages[0].artifacts
+        persisted_run = session.get(AgentRun, run_id)
+        assert persisted_run.status == "cancelled" and persisted_run.next_run_at is None
+
+
+def test_agent_script_original_snapshot_survives_adoption_and_edit(workspace):
+    factory, p, e, _ = workspace
+    run_id, tool_id, args = prepared(factory, p, e, kind="script", content="Original agent draft")
+    result = create(factory, run_id, tool_id, args)
+    detail = details(factory, p, e, result["artifact_id"])
+    assert detail["content_origin"] == "snapshot"
+    with factory() as session:
+        adopted = artifact_service(session).adopt(p, e, result["artifact_id"], adopt_body(detail))
+        current = EpisodeWritingService(session).get(p, e)
+        EpisodeWritingService(session).save_script(
+            p,
+            e,
+            {
+                "script_id": detail["script_id"],
+                "content_version": current["content_version"],
+                "content": "Edited working script",
+            },
+        )
+    original = details(factory, p, e, result["artifact_id"])
+    assert original["content"] == "Original agent draft"
+    assert original["apply_receipt"] == adopted["apply_receipt"]
+    with factory.begin() as session:
+        session.get(AgentArtifact, int(result["artifact_id"])).source_content = None
+    legacy = details(factory, p, e, result["artifact_id"])
+    assert legacy["content_origin"] == "current_script_legacy"
+    assert legacy["content"] == "Edited working script"
+
+
 def test_private_novel_adoption_shares_work_without_sharing_candidate_origin(workspace):
     factory, p, e, _ = workspace
     writing(factory, p, e)
@@ -218,7 +420,7 @@ def test_private_novel_adoption_shares_work_without_sharing_candidate_origin(wor
     with factory() as session:
         replay = artifact_service(session).adopt(p, e, result["artifact_id"], adopt_body(detail))
     assert replay["apply_receipt"] == adopted["apply_receipt"]
-    assert replay["row_version"] == adopted["row_version"] == 2
+    assert replay["row_version"] == adopted["row_version"] == "2"
     public = json.dumps(public)
     for forbidden in (
         "PRIVATE",
@@ -442,7 +644,7 @@ def test_asset_patch_shared_confirmation_diff_and_atomic_receipt(workspace):
         adopted = artifact_service(session).adopt(
             p, e, result["artifact_id"], {**adopt_body(detail), "confirm_shared": True}
         )
-    assert adopted["apply_receipt"]["target_row_version"] == 2
+    assert adopted["apply_receipt"]["target_row_version"] == "2"
     with factory.begin() as session:
         asset = session.get(Asset, asset_id)
         assert asset.name == "New hero" and asset.tags == ["brave"] and asset.state == "unconfirmed"
@@ -485,8 +687,8 @@ def test_shot_patch_preserves_excerpt_and_bumps_shot_and_storyboard(workspace):
     detail = details(factory, p, e, result["artifact_id"])
     with factory() as session:
         adopted = artifact_service(session).adopt(p, e, result["artifact_id"], adopt_body(detail))
-    assert adopted["apply_receipt"]["target_row_version"] == 2
-    assert adopted["apply_receipt"]["storyboard_version"] == 3
+    assert adopted["apply_receipt"]["target_row_version"] == "2"
+    assert adopted["apply_receipt"]["storyboard_version"] == "3"
     with factory.begin() as session:
         target = session.get(ShotScript, shot.id)
         assert target.source_excerpt == "Original immutable excerpt"

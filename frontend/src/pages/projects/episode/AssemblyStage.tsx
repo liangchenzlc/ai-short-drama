@@ -5,8 +5,10 @@ import { Alert, Button, Checkbox, Progress, Select, Spin } from 'antd';
 import { Dialog } from '../../../components/ui/Dialog';
 import { Icon } from '../../../components/ui/Icon';
 import { AccountControls } from '../../../features/auth/AccountControls';
-import type { RenderJob } from '../../../api/modules/assembly';
-import { errorMessage } from '../../../api/http';
+import { renderBody, type RenderJob } from '../../../api/modules/assembly';
+import { creationScope, CreationRecoveryError } from '../../../features/projects/creation-recovery';
+import { beginRenderAttempt, definiteRenderRejection, discardDamagedRenderAttempt, finishRenderAttempt, readRenderAttempt, readRenderRecoveryRecord, type RenderAttempt } from '../../../features/projects/render-recovery';
+import { ApiError, errorMessage } from '../../../api/http';
 import { clipFrames, FPS, isIncludedVideo, timecode } from '../../../features/projects/assembly-editing';
 import { AssemblyWorkbench } from '../../../features/projects/AssemblyWorkbench';
 import { useAssembly } from '../../../features/projects/useAssembly';
@@ -54,9 +56,45 @@ export function AssemblyStage({ projectId, episodeId, readOnly, registerBarrier,
       workspace.current?.querySelector<HTMLButtonElement>('.assembly-focus-toggle')?.focus({ preventScroll: true });
     });
   }
-  const previewKey = useRef<{ body: string; key: string } | null>(null);
-  const request = useRef<{ body: string; key: string } | null>(null);
-  const retryKeys = useRef(new Map<string, string>());
+  const renderScope = useRef(creationScope(`assembly:${projectId}:${episodeId}:render`)).current;
+  const [pendingRender, setPendingRender] = useState<RenderAttempt | null>(null);
+  const [damagedRender, setDamagedRender] = useState<string | null>(null);
+  const [renderRecoveryError, setRenderRecoveryError] = useState('');
+  const loadRenderRecovery = useCallback(() => {
+    try {
+      const record = readRenderRecoveryRecord(renderScope);
+      setPendingRender(record.attempt); setDamagedRender(record.damaged);
+      setRenderRecoveryError(record.damaged !== null ? '本机合成请求记录损坏，已阻止新请求，完整原文仍保留。' : '');
+    } catch (cause) {
+      setPendingRender(null); setDamagedRender(null);
+      setRenderRecoveryError(cause instanceof Error ? cause.message : '无法读取本机合成请求恢复记录。');
+    }
+  }, [renderScope]);
+  useEffect(loadRenderRecovery, [loadRenderRecovery]);
+  async function submitRender(operation: Omit<RenderAttempt, 'format' | 'key'>) {
+    const attempt = beginRenderAttempt(renderScope, operation);
+    setPendingRender(attempt);
+    let job: RenderJob;
+    try { job = await api.submitRender(attempt.kind, attempt.body, attempt.key, attempt.job_id); }
+    catch (cause) {
+      if (cause instanceof ApiError && definiteRenderRejection(cause.code, cause.status)) {
+        finishRenderAttempt(renderScope, attempt); setPendingRender(null);
+      }
+      throw cause;
+    }
+    finishRenderAttempt(renderScope, attempt); setPendingRender(null);
+    return job;
+  }
+  async function reconcileRender() {
+    const attempt = readRenderAttempt(renderScope);
+    if (!attempt) { setPendingRender(null); return; }
+    const job = await submitRender(attempt);
+    if (attempt.kind === 'preview') {
+      if (job.status === 'succeeded') setResult(job);
+      else if (['queued', 'running'].includes(job.status)) { setPreviewStatus(job); setPreviewJob(job.id); }
+    }
+    await editor.load();
+  }
   const clips = value?.clips ?? [];
   const included = clips.filter(isIncludedVideo);
   const total = included.reduce((sum, c) => sum + clipFrames(c), 0) / FPS * 1000;
@@ -68,7 +106,7 @@ export function AssemblyStage({ projectId, episodeId, readOnly, registerBarrier,
   const preparation = value?.jobs?.find(j => j.kind === 'probe' && j.status === 'failed');
   const current = value?.jobs?.find(j => j.media_id && j.media_id === value?.assembly?.current_media_id);
   const displayedHistory = history?.map(job => value?.jobs?.find(latest => latest.id === job.id) ?? job);
-  const disabled = readOnly || busy || previewBusy;
+  const disabled = readOnly || busy || previewBusy || !!editor.recoveredDraft || editor.recoveryBlocked || !!renderRecoveryError;
   const preparedAssembly = useRef<string | null>(null);
   const needsThumbnails = (value?.sources ?? []).some(c => c.url && !c.filmstrip && c.issue !== 'invalid');
   useEffect(() => {
@@ -84,7 +122,7 @@ export function AssemblyStage({ projectId, episodeId, readOnly, registerBarrier,
     if (mutation.current) return;
     mutation.current = true;
     setBusy(true); setNotice('');
-    try { await work(); } catch (cause) { setNotice(errorMessage(cause)); } finally { mutation.current = false; setBusy(false); }
+    try { await work(); } catch (cause) { if (cause instanceof CreationRecoveryError) loadRenderRecovery(); setNotice(cause instanceof CreationRecoveryError ? cause.message : errorMessage(cause)); } finally { mutation.current = false; setBusy(false); }
   }
   async function flushRenderDraft() {
     if (!await editor.flush()) return false;
@@ -104,16 +142,13 @@ export function AssemblyStage({ projectId, episodeId, readOnly, registerBarrier,
       if (!await flushRenderDraft()) return;
       const latest = editor.latest()!;
       if (latest.clips?.some(c => isIncludedVideo(c) && c.is_stale) && !await confirmAction('部分片段使用旧分镜视频，是否按当前轨道合成预览？')) return;
-      const fingerprint = JSON.stringify([latest.assembly?.row_version, latest.source_hash]);
-      if (previewKey.current?.body !== fingerprint) previewKey.current = { body: fingerprint, key: crypto.randomUUID() };
-      const job = await api.preview(latest, true, previewKey.current.key);
-      previewKey.current = null;
+      const job = await submitRender({ kind: 'preview', body: renderBody(latest, true) });
       setPreviewError(''); setPreviewStatus(job);
       if (job.status === 'succeeded') { completedPreviews.current.add(job.id); setResult(job); }
       else if (['failed', 'cancelled'].includes(job.status)) setNotice(job.error?.message ?? '合成预览已取消，可以重新生成。');
       else setPreviewJob(job.id);
       await editor.load();
-    } catch (cause) { setNotice(errorMessage(cause)); }
+    } catch (cause) { if (cause instanceof CreationRecoveryError) loadRenderRecovery(); setNotice(cause instanceof CreationRecoveryError ? cause.message : errorMessage(cause)); }
     finally { mutation.current = false; setPreviewBusy(false); }
   }
   const restoredPreview = value?.jobs?.find(j => j.kind === 'preview' && ['queued', 'running'].includes(j.status) && !j.cancel_requested)?.id;
@@ -154,21 +189,42 @@ export function AssemblyStage({ projectId, episodeId, readOnly, registerBarrier,
   async function submitExport() {
     if (!await flushRenderDraft()) return;
     const latest = editor.latest()!;
-    const body = JSON.stringify([latest.assembly?.row_version, latest.source_hash, acknowledge]);
-    if (request.current?.body !== body) request.current = { body, key: crypto.randomUUID() };
-    await api.export(latest, acknowledge, request.current.key);
-    request.current = null; setExportOpen(false); await editor.load();
+    await submitRender({ kind: 'export', body: renderBody(latest, acknowledge) });
+    setExportOpen(false); await editor.load();
   }
   async function openHistory() {
     const page = await api.history(); setHistory(page.items); setMoreHistory(page.has_more);
   }
   async function retry(job: RenderJob) {
-    const key = retryKeys.current.get(job.id) ?? crypto.randomUUID(); retryKeys.current.set(job.id, key);
-    await api.retry(job.id, key); retryKeys.current.delete(job.id); await editor.load(); if (history) await openHistory();
+    await submitRender({ kind: 'retry', body: {}, job_id: job.id });
+    await editor.load(); if (history) await openHistory();
   }
   function backup() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(editor.latest(), null, 2)], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = `assembly-${episodeId}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function backupRecovery() {
+    try {
+      const content = editor.exportRecovered();
+      if (!content) return;
+      const url = URL.createObjectURL(new Blob([content], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url; link.download = `assembly-${episodeId}-recovery.json`; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (cause) { setNotice(cause instanceof Error ? cause.message : '无法下载剪辑恢复记录。'); }
+  }
+  function backupRenderRecovery() {
+    if (damagedRender === null) return;
+    try {
+      const url = URL.createObjectURL(new Blob([damagedRender], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url; link.download = `assembly-${episodeId}-render-recovery.json`; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (cause) { setNotice(cause instanceof Error ? cause.message : '无法下载合成请求恢复记录。'); }
+  }
+  async function discardRenderRecovery() {
+    const raw = damagedRender;
+    if (raw === null || !await confirmAction('请先到任务中心核对，并检查导出和预览记录。清除后将失去原请求编号的核对依据；若后台已受理，再发起合成可能重复制作。确认已核对并清除这条损坏的本机记录？', { title: '清除损坏的合成请求记录', confirmText: '已核对，清除记录', danger: true })) return;
+    discardDamagedRenderAttempt(renderScope, raw);
+    loadRenderRecovery();
   }
 
   return <div ref={workspace} className={`assembly-workspace${focused ? ' is-focused' : ''}`} onKeyDown={event => {
@@ -181,6 +237,14 @@ export function AssemblyStage({ projectId, episodeId, readOnly, registerBarrier,
     <header className="assembly-heading"><div><h2>成片合成与导出</h2></div><div className="assembly-heading-actions"><span role="status" className={`assembly-save is-${editor.status}`}>{({ loading: '正在载入', saved: '成片草稿已保存', saving: '正在保存', unsaved: '等待保存', error: '保存已暂停' })[editor.status]}</span>{value?.assembly && <><Button className="assembly-focus-toggle" aria-pressed={focused} title={focused ? '退出专注剪辑（Esc）' : '收起创作流程，扩大剪辑空间'} onClick={() => setFocusMode(!focused)}>{focused ? '退出专注剪辑' : '专注剪辑'}</Button><Button onClick={() => void action(openHistory)}>导出记录</Button></>}{focused && <AccountControls />}</div></header>
     {value?.assembly && <div className="assembly-sound-controls"><SoundPanel key={`${projectId}:${episodeId}`} projectId={projectId} episodeId={episodeId} disabled={disabled} readOnly={readOnly} flushVideo={editor.flush} onSaved={editor.load} registerBarrier={registerSound}/></div>}
     {notice && <Alert type="error" showIcon message={notice} closable onClose={() => setNotice('')}/>}
+    {renderRecoveryError && <Alert type="warning" showIcon message="合成请求恢复记录无法读取" description={<>
+      <p>{renderRecoveryError} 请先到任务中心核对，并检查导出和预览记录。清除后将失去原请求编号的核对依据；若后台已受理，再发起合成可能重复制作。</p>
+      <div className="assembly-inline-actions"><Button disabled={busy || previewBusy || damagedRender === null} onClick={backupRenderRecovery}>下载完整合成请求记录</Button>{damagedRender !== null && <Button danger disabled={busy || previewBusy} onClick={() => void action(discardRenderRecovery)}>清除损坏的本机记录</Button>}<Button disabled={busy || previewBusy} onClick={loadRenderRecovery}>重新读取恢复记录</Button></div>
+    </>}/>}
+    {pendingRender && <Alert type="warning" showIcon message="上次合成请求尚未核对" description="将使用原参数和原请求编号核对受理结果，避免重复制作。当前编辑仍保留。" action={<Button loading={busy} disabled={disabled} onClick={() => void action(reconcileRender)}>核对原合成请求</Button>}/>}
+    {editor.connectionError && <Alert type="warning" showIcon message="成片进度暂时无法同步" description={`${editor.connectionError} 当前显示上次同步的进度，编辑草稿仍保留。${editor.lastSyncedAt ? `最近同步：${new Date(editor.lastSyncedAt).toLocaleTimeString('zh-CN')}` : ''}`} action={<Button loading={busy} disabled={disabled} onClick={() => void action(async () => { await editor.load(); })}>重新连接</Button>}/>}
+    {editor.recoveryError && <Alert type="warning" showIcon message={editor.recoveryError} action={<div className="assembly-inline-actions"><Button onClick={editor.recoveryBlocked ? backupRecovery : backup}>{editor.recoveryBlocked ? '下载完整恢复稿' : '下载草稿'}</Button>{editor.recoveryBlocked && <Button disabled={busy} onClick={() => void action(async () => { if (await confirmAction('确定放弃无法读取的剪辑恢复记录，保留当前服务端版本？')) editor.discardRecovered(); })}>放弃恢复稿</Button>}</div>}/>}
+    {editor.recoveredDraft && <Alert type="warning" showIcon message="发现本机未保存的剪辑恢复稿" description={`恢复稿基准版本 ${editor.recoveredDraft.base_version}，当前服务端版本 ${value?.assembly?.row_version}。恢复将重新读取最新版本，并核对片段媒体；无效来源仍需处理。`} action={<div className="assembly-inline-actions"><Button disabled={readOnly || busy || previewBusy} onClick={() => void action(async () => { if (await confirmAction('确认以重新读取的服务端版本为基础保留剪辑恢复稿？请核对片段顺序和裁剪范围后保存。')) await editor.restoreRecovered(); })}>核对并恢复剪辑</Button><Button disabled={busy} onClick={() => void action(async () => { if (await confirmAction('放弃本机剪辑恢复稿，保留当前服务端版本？')) editor.discardRecovered(); })}>放弃恢复稿</Button></div>}/>}
     {editor.error && <Alert type="error" showIcon message={editor.error} description={value ? '当前编辑保留在本页。版本冲突时，请先下载草稿，再载入服务端版本。' : '成片工作台未能载入，请检查连接后重新加载。'} action={<div className="assembly-inline-actions">{value && <Button onClick={backup}>下载草稿</Button>}<Button disabled={disabled} onClick={() => void action(async () => { await editor.retrySave(); })}>{value ? '重试保存' : '重新加载'}</Button>{value && <Button disabled={disabled} onClick={async () => { if (await confirmAction('载入将替换本页编辑，是否继续？')) void action(editor.reload); }}>重新载入</Button>}</div>}/>}
     {!value && editor.status === 'loading' && <div className="assembly-empty"><Spin/><p>正在载入成片工作台…</p></div>}
     {value && !value.assembly && <div className="assembly-empty"><div className="assembly-empty-frame"><Icon name="film" size={40}/></div><h3>让分镜成为一部作品</h3><p>先在分镜制作中生成并采用视频，再创建成片草稿。只有已采用的视频会参与合成；你可以继续追加镜头。</p><Button type="primary" disabled={disabled || !value.source_count} loading={busy} onClick={() => void action(async () => { editor.replace(await api.initialize()); })}>创建成片草稿{value.source_count ? `（${value.source_count} 个视频）` : ''}</Button><Button type="link" onClick={onStoryboard}>{value.source_count ? '返回分镜制作' : '去生成并采用分镜视频'}</Button></div>}
@@ -201,7 +265,7 @@ export function AssemblyStage({ projectId, episodeId, readOnly, registerBarrier,
     </Dialog>}
     {exportOpen && <Dialog title="导出本集成片" className="assembly-operation-dialog" canClose={!busy} onClose={() => setExportOpen(false)}>
       <div className="assembly-dialog-body"><p>{included.length} 个片段，约 {timecode(total)}。导出 {value?.assembly?.resolution} MP4，保留 {value?.assembly?.aspect} 画幅。</p><p>合成在后台进行，完成后可预览、下载或设为当前成片。</p>{stale && <Checkbox checked={acknowledge} onChange={e => setAcknowledge(e.target.checked)}>部分片段对应旧分镜，已核对并继续使用这些视频</Checkbox>}</div>
-      <div className="assembly-dialog-actions"><Button onClick={() => setExportOpen(false)} disabled={busy}>返回编辑</Button><Button type="primary" loading={busy} disabled={!!blocked.length || (stale && !acknowledge)} onClick={() => void action(submitExport)}>开始合成</Button></div>
+      <div className="assembly-dialog-actions"><Button onClick={() => setExportOpen(false)} disabled={busy}>返回编辑</Button><Button type="primary" loading={busy} disabled={disabled || !!blocked.length || (stale && !acknowledge)} onClick={() => void action(submitExport)}>开始合成</Button></div>
     </Dialog>}
     {history && <Dialog title="导出记录" className="assembly-operation-dialog assembly-history-dialog" onClose={() => setHistory(null)}>
       <div className="assembly-dialog-body">{!history.length && <p>还没有导出记录。完成镜头编排后，点击“导出成片”。</p>}<div className="assembly-history">{displayedHistory?.map(job => <article key={job.id}><div><strong>{stages[job.stage] ?? job.status}</strong><time>{new Date(job.created_at.endsWith('Z') ? job.created_at : `${job.created_at}Z`).toLocaleString('zh-CN')}</time><span>{job.is_stale ? '与当前草稿不同' : '当前草稿版本'}{job.media_id === value?.assembly?.current_media_id ? ' · 当前成片' : ''}</span>{job.error && <p role="alert">{job.error.message}</p>}</div><div className="assembly-inline-actions">{job.status === 'succeeded' && <><Button onClick={() => { setResult(job); setHistory(null); }}>播放</Button><a href={api.download(job.id)}>下载</a><Button disabled={disabled || job.media_id === value?.assembly?.current_media_id} onClick={() => void action(async () => { if (!await flushRenderDraft()) return; setApplying({ ...job, is_stale: editor.latest()?.context_hash !== job.context_hash }); })}>设为当前成片</Button></>}{['failed', 'cancelled'].includes(job.status) && <Button disabled={disabled || job.can_retry === false || !!active} onClick={() => void action(() => retry(job))}>重试</Button>}{['queued', 'running'].includes(job.status) && <><span>{job.progress}%</span><Button disabled={disabled || job.can_cancel === false || job.cancel_requested} onClick={() => void action(async () => { await api.cancel(job.id); await openHistory(); await editor.load(); })}>取消</Button></>}</div></article>)}</div></div>

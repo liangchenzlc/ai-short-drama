@@ -21,21 +21,23 @@ function job(id: string, kind = 'export', status = 'running') {
 async function fixture(page: Page, soundEnabled = false) {
   const state = { assembly: { id: '111', row_version: '1', aspect: '16:9', resolution: '720p', current_media_id: null as string | null },
     source_hash: hash, context_hash: hash, clips: [{ ...source }], sources: [{ ...source }], changes: [], jobs: [] as ReturnType<typeof job>[] };
-  const sound = { mode: 'native', row_version: 1, timeline_hash: hash, duration_ms: 3000, needs_review: false, stale_lines: [],
+  const sound = { mode: 'native', row_version: '1', timeline_hash: hash, duration_ms: 3000, needs_review: false, stale_lines: [],
     document: { dialogue: [], subtitles: [] as { start_ms: number; end_ms: number; text: string }[], native_ducking: [], music: null, original_volume: 1, dialogue_volume: 1, burn_subtitles: true, font_size: 24 },
-    media: {}, uploads: [], voice_defaults: { row_version: 1, voices: {} } };
-  const controls = { online: true, previewFailures: 0, previewFinish: true, saveFails: false };
-  const calls: { path: string; method: string; body: any }[] = [];
+    media: {}, uploads: [], voice_defaults: { row_version: '1', voices: {} } };
+  const controls = { online: true, previewFailures: 0, previewFinish: true, saveFails: false, capabilityFailures: 0, abortAcceptedRender: false, rejectRender: false };
+  const receipts = new Map<string, ReturnType<typeof job>>();
+  const calls: { path: string; method: string; body: any; key: string | undefined }[] = [];
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/v1/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname.slice('/api/v1'.length), method = request.method();
     const body = request.postData() ? request.postDataJSON() : null;
-    calls.push({ path, method, body });
+    const key = request.headers()['idempotency-key'];
+    calls.push({ path, method, body, key });
     const reply = (json: any, status = 200) => route.fulfill({ json, status });
-    if (path === `${soundRoot}/capabilities`) return reply({ enabled: soundEnabled });
+    if (path === `${soundRoot}/capabilities`) return controls.capabilityFailures-- > 0 ? reply({ error: { code: 'unavailable', message: '声音读取失败' } }, 503) : reply({ enabled: soundEnabled });
     if (path === soundRoot) {
-      if (method === 'PUT') { sound.document = body.document; sound.row_version++; state.assembly.row_version = String(Number(state.assembly.row_version) + 1); }
+      if (method === 'PUT') { sound.document = body.document; sound.row_version = String(BigInt(sound.row_version) + 1n); state.assembly.row_version = String(Number(state.assembly.row_version) + 1); }
       return reply(sound);
     }
     if (path === root) {
@@ -49,9 +51,13 @@ async function fixture(page: Page, soundEnabled = false) {
       return reply(state);
     }
     if (path === `${root}/exports` && method === 'GET') return reply({ items: state.jobs.filter(j => j.kind === 'export'), has_more: false });
-    if ((path === `${root}/exports` || path === `${root}/previews`) && method === 'POST') {
-      const created = job(path.endsWith('previews') ? '201' : '301', path.endsWith('previews') ? 'preview' : 'export');
-      state.jobs.unshift(created); return reply(created, 202);
+    if ((path === `${root}/exports` || path === `${root}/previews` || path === `${root}/exports/301/retry`) && method === 'POST') {
+      if (key && receipts.has(key)) return reply(receipts.get(key), 202);
+      if (controls.rejectRender) return reply({ error: { code: 'assembly_not_ready', message: '请先核对裁剪范围' } }, 422);
+      const created = job(path.endsWith('previews') ? '201' : path.endsWith('retry') ? '401' : '301', path.endsWith('previews') ? 'preview' : 'export');
+      state.jobs.unshift(created); if (key) receipts.set(key, created);
+      if (controls.abortAcceptedRender) { controls.abortAcceptedRender = false; Object.assign(created, job(created.id, created.kind, 'succeeded')); return route.abort('failed'); }
+      return reply(created, 202);
     }
     if (path === `${root}/exports/201`) {
       if (controls.previewFailures-- > 0) return reply({ error: { code: 'unavailable', message: '测试暂时断线' } }, 503);
@@ -67,7 +73,7 @@ async function fixture(page: Page, soundEnabled = false) {
 }
 
 async function captureLayouts(page: Page, name: string) {
-  for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 1024, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`${name}-${viewport.width}.png`), fullPage: true });
@@ -101,6 +107,256 @@ test('shared adopted work plays and refreshes without the collaborator private r
   expect(data.calls.filter(call => call.path.includes('/exports/') || call.method === 'POST')).toEqual([]);
   expect(data.errors).toEqual([]);
 });
+
+test('lost export response survives refresh and checks the same receipt without a second job', async ({ page }) => {
+  const data = await fixture(page); data.controls.abortAcceptedRender = true;
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await page.getByRole('button', { name: '导出成片', exact: true }).click();
+  await page.getByRole('button', { name: '开始合成', exact: true }).click();
+  await expect(page.getByText('上次合成请求尚未核对', { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: '核对原合成请求', exact: true }).click();
+  await expect(page.getByText('上次合成请求尚未核对', { exact: true })).toBeHidden();
+  const requests = data.calls.filter(c => c.path === `${root}/exports` && c.method === 'POST');
+  expect(requests).toHaveLength(2); expect(requests[0].key).toBeTruthy(); expect(requests[1].key).toBe(requests[0].key);
+  expect(requests[1].body).toEqual(requests[0].body); expect(data.state.jobs).toHaveLength(1);
+  expect(data.errors).toEqual([]);
+});
+
+test('damaged render recovery downloads its raw record and only clears after explicit confirmation', async ({ page }) => {
+  const data = await fixture(page);
+  const scope = 'creation-recovery:user:anonymous:assembly:10:20:render';
+  const otherScope = 'creation-recovery:user:anonymous:assembly:10:99:render';
+  const raw = '  {damaged-render\n原请求核对依据';
+  await page.addInitScript(({ scope, otherScope, raw }) => { localStorage.setItem(scope, raw); localStorage.setItem(otherScope, 'other record'); }, { scope, otherScope, raw });
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await expect(page.getByText('合成请求恢复记录无法读取', { exact: true })).toBeVisible();
+  const explanation = page.getByRole('alert').filter({ hasText: '合成请求恢复记录无法读取' }).locator('.ant-alert-description p');
+  await expect(explanation).toBeVisible();
+  expect(await explanation.evaluate(element => element.clientWidth)).toBeGreaterThan(160);
+  expect(await explanation.evaluate(element => element.clientHeight)).toBeLessThan(400);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('damaged-render-alert.png'), fullPage: true });
+  await expect(page.getByRole('button', { name: '导出成片', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '合成预览', exact: true })).toBeDisabled();
+  expect(data.calls.filter(call => call.method === 'POST')).toHaveLength(0);
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: '下载完整合成请求记录', exact: true }).click();
+  const file = await download; expect(file.suggestedFilename()).toBe('assembly-20-render-recovery.json');
+  const stream = await file.createReadStream(); const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  expect(Buffer.concat(chunks).toString('utf8')).toBe(raw);
+  await page.getByRole('button', { name: '清除损坏的本机记录', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: '清除损坏的合成请求记录', exact: true });
+  await expect(confirmation).toContainText('失去原请求编号的核对依据');
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('damaged-render-confirmation.png'), fullPage: true });
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click();
+  expect(await page.evaluate(key => localStorage.getItem(key), scope)).toBe(raw);
+  await expect(page.getByRole('button', { name: '导出成片', exact: true })).toBeDisabled();
+  expect(data.calls.filter(call => call.method === 'POST')).toHaveLength(0);
+  await page.getByRole('button', { name: '清除损坏的本机记录', exact: true }).click();
+  await confirmation.getByRole('button', { name: '已核对，清除记录', exact: true }).click();
+  expect(await page.evaluate(key => localStorage.getItem(key), scope)).toBeNull();
+  expect(await page.evaluate(key => localStorage.getItem(key), otherScope)).toBe('other record');
+  expect(data.calls.filter(call => call.method === 'POST')).toHaveLength(0);
+  await expect(page.getByRole('button', { name: '导出成片', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '导出成片', exact: true }).click();
+  await page.getByRole('dialog', { name: '导出本集成片', exact: true }).getByRole('button', { name: '开始合成', exact: true }).click();
+  await expect.poll(() => data.calls.filter(call => call.path === `${root}/exports` && call.method === 'POST').length).toBe(1);
+  expect(data.state.jobs).toHaveLength(1);
+  expect(data.errors).toEqual([]);
+});
+
+test('valid unknown render recovery only reconciles the original key and has no damaged-record clear action', async ({ page }) => {
+  const data = await fixture(page); const scope = 'creation-recovery:user:anonymous:assembly:10:20:render';
+  const original = { format: 1, kind: 'preview', key: 'original-unknown-key', body: { row_version: '1', source_hash: hash, acknowledge_stale_source: true } };
+  await page.addInitScript(({ scope, original }) => localStorage.setItem(scope, JSON.stringify(original)), { scope, original });
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await expect(page.getByText('上次合成请求尚未核对', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '清除损坏的本机记录', exact: true })).toHaveCount(0);
+  expect(data.calls.filter(call => call.method === 'POST')).toHaveLength(0);
+  await page.getByRole('button', { name: '核对原合成请求', exact: true }).click();
+  await expect(page.getByText('上次合成请求尚未核对', { exact: true })).toBeHidden();
+  const requests = data.calls.filter(call => call.path === `${root}/previews` && call.method === 'POST');
+  expect(requests).toHaveLength(1); expect(requests[0].key).toBe(original.key); expect(requests[0].body).toEqual(original.body);
+  expect(data.state.jobs).toHaveLength(1); expect(data.errors).toEqual([]);
+});
+
+test('a definite render rejection permits a corrected request with a new key', async ({ page }) => {
+  const data = await fixture(page); data.controls.rejectRender = true;
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await page.getByRole('button', { name: '导出成片', exact: true }).click();
+  await page.getByRole('button', { name: '开始合成', exact: true }).click();
+  await expect(page.getByText('请补齐已勾选的视频、等待检测完成，并检查裁剪范围。', { exact: true })).toBeVisible();
+  await expect(page.getByText('上次合成请求尚未核对', { exact: true })).toBeHidden();
+  data.controls.rejectRender = false;
+  await page.getByRole('button', { name: '开始合成', exact: true }).click();
+  await expect.poll(() => data.state.jobs.length).toBe(1);
+  const requests = data.calls.filter(c => c.path === `${root}/exports` && c.method === 'POST');
+  expect(requests).toHaveLength(2); expect(requests[1].key).not.toBe(requests[0].key);
+  expect(data.errors).toEqual([]);
+});
+
+for (const kind of ['preview', 'retry'] as const) {
+  test(`lost ${kind} response checks the original request after refresh`, async ({ page }) => {
+    const data = await fixture(page); data.controls.abortAcceptedRender = true;
+    if (kind === 'retry') data.state.jobs = [job('301', 'export', 'failed')];
+    await page.goto('/e2e/assembly-flow-fixture.html');
+    await page.getByRole('button', { name: kind === 'preview' ? '合成预览' : '重试这次导出', exact: true }).click();
+    await expect(page.getByText('上次合成请求尚未核对', { exact: true })).toBeVisible();
+    await page.reload();
+    await page.getByRole('button', { name: '核对原合成请求', exact: true }).click();
+    await expect(page.getByText('上次合成请求尚未核对', { exact: true })).toBeHidden();
+    const path = kind === 'preview' ? `${root}/previews` : `${root}/exports/301/retry`;
+    const requests = data.calls.filter(c => c.path === path && c.method === 'POST');
+    expect(requests).toHaveLength(2); expect(requests[0].key).toBeTruthy();
+    expect(requests[1].key).toBe(requests[0].key); expect(requests[1].body).toEqual(requests[0].body);
+    expect(data.state.jobs).toHaveLength(kind === 'preview' ? 1 : 2);
+    expect(data.errors).toEqual([]);
+  });
+}
+
+test('failed sound capability read exposes retry and keeps the existing sound entry', async ({ page }) => {
+  const data = await fixture(page, true); data.controls.capabilityFailures = 100;
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await expect(page.getByText('声音功能读取失败', { exact: true })).toBeVisible();
+  data.controls.capabilityFailures = 0;
+  await page.getByRole('button', { name: '重新读取声音功能', exact: true }).click();
+  await expect(page.getByRole('button', { name: '声音、字幕和配乐', exact: true })).toBeVisible();
+  expect(data.errors).toEqual([]);
+});
+
+test('assembly polling failure reports stale progress and reconnects without clearing edits', async ({ page }) => {
+  await page.clock.install();
+  const data = await fixture(page);
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await expect(page.getByRole('button', { name: '片段静音', exact: true })).toBeVisible();
+  data.controls.online = false;
+  await page.clock.fastForward(4000);
+  await expect(page.getByText('成片进度暂时无法同步', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '片段静音', exact: true }).click();
+  data.controls.online = true;
+  await page.getByRole('button', { name: '重新连接', exact: true }).click();
+  await expect(page.getByText('成片进度暂时无法同步', { exact: true })).toBeHidden();
+  await expect(page.getByRole('button', { name: '恢复原声', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  expect(data.errors).toEqual([]);
+});
+
+test('assembly polling slows when idle and stays frequent for an active render', async ({ page }) => {
+  await page.clock.install();
+  const data = await fixture(page);
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await expect(page.getByRole('button', { name: '片段静音', exact: true })).toBeVisible();
+  const reads = () => data.calls.filter(c => c.path === root && c.method === 'GET').length;
+  const initial = reads();
+  await page.clock.runFor(4000);
+  await expect.poll(reads).toBe(initial + 1);
+  await page.clock.runFor(4000);
+  expect(reads()).toBe(initial + 1);
+  data.state.jobs = [job('301')];
+  await page.clock.runFor(11000);
+  await expect.poll(reads).toBe(initial + 2);
+  await page.clock.runFor(4000);
+  await expect.poll(reads).toBe(initial + 3);
+  expect(data.errors).toEqual([]);
+});
+
+test('audio address refresh keeps unsaved subtitle text and music edits', async ({ page }) => {
+  const data = await fixture(page, true);
+  const music = { media_id: '901', start_ms: 0, trim_in_ms: 0, trim_out_ms: 2000, volume: 0.2, loop: false, fade_in_ms: 0, fade_out_ms: 0, ducking: false };
+  Object.assign(data.sound, { media: { '901': { url: '/expired-audio.wav', duration_ms: 2000 } }, document: { ...data.sound.document, music, subtitles: [{ start_ms: 0, end_ms: 1000, text: '服务端字幕' }] } });
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await page.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
+  await page.getByRole('tab', { name: /字幕/ }).click();
+  await page.locator('.sound-subtitle textarea').fill('尚未保存的字幕');
+  await page.getByRole('tab', { name: '配乐与混音', exact: true }).click();
+  await page.getByLabel('配乐音量', { exact: true }).fill('0.35');
+  await page.locator('.sound-fields audio').dispatchEvent('error');
+  Object.assign(data.sound.media, { '901': { url: '/refreshed-audio.wav', duration_ms: 2000 } });
+  await page.getByRole('button', { name: '刷新试听地址', exact: true }).click();
+  await expect(page.locator('.sound-fields audio')).toHaveAttribute('src', '/refreshed-audio.wav');
+  await page.getByRole('tab', { name: /字幕/ }).click();
+  await expect(page.locator('.sound-subtitle textarea')).toHaveValue('尚未保存的字幕');
+  await page.getByRole('tab', { name: '配乐与混音', exact: true }).click();
+  await expect(page.getByLabel('配乐音量', { exact: true })).toHaveValue('0.35');
+  expect(data.calls.filter(c => c.path === soundRoot && c.method === 'PUT')).toHaveLength(0);
+  expect(data.errors).toEqual([]);
+});
+
+test('unsaved clip edits survive refresh and require explicit recovery', async ({ page }) => {
+  await page.clock.install(); const data = await fixture(page);
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await page.getByRole('button', { name: '片段静音', exact: true }).click();
+  await page.reload();
+  await expect(page.getByText('发现本机未保存的剪辑恢复稿', { exact: true })).toBeVisible();
+  expect(data.calls.filter(c => c.method === 'PATCH')).toHaveLength(0);
+  await page.getByRole('button', { name: '核对并恢复剪辑', exact: true }).click();
+  await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确认继续', exact: true }).click();
+  await expect(page.getByRole('button', { name: '恢复原声', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.clock.fastForward(650);
+  await expect.poll(() => data.calls.filter(c => c.method === 'PATCH').length).toBe(1);
+  expect(data.calls.find(c => c.method === 'PATCH')!.body.clips[0].muted).toBe(true);
+  expect(data.errors).toEqual([]);
+});
+
+test('retrying a failed initial assembly read still offers the saved recovery draft', async ({ page }) => {
+  await page.clock.install(); const data = await fixture(page);
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await page.getByRole('button', { name: '片段静音', exact: true }).click();
+  data.controls.online = false;
+  await page.reload();
+  await expect(page.getByRole('alert')).toContainText('成片工作台未能载入');
+  data.controls.online = true;
+  await page.getByRole('button', { name: '重新加载', exact: true }).click();
+  await expect(page.getByText('发现本机未保存的剪辑恢复稿', { exact: true })).toBeVisible();
+  expect(data.calls.filter(c => c.method === 'PATCH')).toHaveLength(0);
+  expect(await page.evaluate(() => localStorage.getItem('creation-recovery:user:anonymous:assembly:10:20:draft'))).toContain('"muted":true');
+  expect(data.errors).toEqual([]);
+});
+
+test('unsaved sound edits survive refresh without automatic save or adoption', async ({ page }) => {
+  const data = await fixture(page, true);
+  data.sound.document.subtitles = [{ start_ms: 0, end_ms: 1000, text: '原字幕' }];
+  await page.goto('/e2e/assembly-flow-fixture.html');
+  await page.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
+  await page.getByRole('tab', { name: /字幕/ }).click();
+  await page.locator('.sound-subtitle textarea').fill('恢复字幕');
+  await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some(key => key.includes('sound:10:20:draft')))).toBe(true);
+  await page.reload();
+  await page.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
+  await expect(page.getByText('发现本机未保存的声音恢复稿', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '核对并恢复声音', exact: true }).click();
+  await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确认继续', exact: true }).click();
+  await page.getByRole('tab', { name: /字幕/ }).click();
+  await expect(page.locator('.sound-subtitle textarea')).toHaveValue('恢复字幕');
+  expect(data.calls.filter(c => c.path === soundRoot && c.method === 'PUT')).toHaveLength(0);
+  expect(data.errors).toEqual([]);
+});
+
+for (const kind of ['assembly', 'sound'] as const) {
+  test(`corrupt ${kind} recovery stays available until explicit discard`, async ({ page }) => {
+    const data = await fixture(page, true);
+    const scope = `creation-recovery:user:anonymous:${kind}:10:20:draft`;
+    await page.addInitScript(({ key }) => localStorage.setItem(key, '{damaged-record'), { key: scope });
+    await page.goto('/e2e/assembly-flow-fixture.html');
+    if (kind === 'sound') await page.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
+    await expect(page.getByText(`${kind === 'assembly' ? '剪辑' : '声音'}恢复记录无法读取，请下载完整恢复记录核对，明确放弃后才能继续编辑。`, { exact: true })).toBeVisible();
+    expect(await page.evaluate(key => localStorage.getItem(key), scope)).toBe('{damaged-record');
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: '下载完整恢复稿', exact: true }).click();
+    expect((await download).suggestedFilename()).toContain('recovery');
+    if (kind === 'assembly') await expect(page.getByRole('button', { name: '片段静音', exact: true })).toBeDisabled();
+    else await expect(page.getByRole('button', { name: '保存声音草稿', exact: true })).toBeDisabled();
+    expect(data.calls.filter(c => ['PUT', 'PATCH', 'POST'].includes(c.method))).toHaveLength(0);
+    await page.getByRole('button', { name: '放弃恢复稿', exact: true }).click();
+    await page.getByRole('dialog', { name: '未保存的修改', exact: true }).getByRole('button', { name: '放弃修改', exact: true }).click();
+    expect(await page.evaluate(key => localStorage.getItem(key), scope)).toBeNull();
+    if (kind === 'assembly') await expect(page.getByRole('button', { name: '片段静音', exact: true })).toBeEnabled();
+    else await expect(page.getByRole('button', { name: '保存声音草稿', exact: true })).toBeEnabled();
+    expect(data.errors).toEqual([]);
+  });
+}
 
 test('failed initial load retries the GET and restores the editor', async ({ page }) => {
   const data = await fixture(page); data.controls.online = false;

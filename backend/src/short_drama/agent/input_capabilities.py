@@ -1,4 +1,4 @@
-"""Declared input support is distinct from the paid tool-protocol verification."""
+"""Input declarations are hints; actual requests reveal model compatibility."""
 
 from short_drama.ai.adapters import select_adapter
 from short_drama.ai.types import GenerationError
@@ -27,10 +27,9 @@ def input_capabilities(snapshot):
             "declared",
         )
     else:
-        name = snapshot.get("model_key", "").lower()
-        image = name.startswith(("gpt-4o", "gpt-4.1", "gpt-5", "gpt-6", "qwen-vl"))
-        audio = protocol == "openai_chat.v1" and name.startswith("gpt-4o-audio")
-        evidence = "model_family" if image or audio else "text_only"
+        image = True
+        audio = protocol == "openai_chat.v1"
+        evidence = "runtime"
     return {
         "text": True,
         "image": image,

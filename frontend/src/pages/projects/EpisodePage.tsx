@@ -1,5 +1,5 @@
 import { confirmAction } from '../../components/ui/confirm';
-import { useEffect, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Alert, Button, Segmented, Spin, Tooltip } from 'antd';
 import { lazy, Suspense } from 'react';
 import { preloadable } from '../../components/ui/preloadable';
@@ -30,7 +30,8 @@ import { AccountControls } from '../../features/auth/AccountControls';
 import { accountStorage, workflowStorage } from '../../features/auth/account-storage';
 import { EpisodeCreationWorkspace } from '../../features/projects/EpisodeCreationWorkspace';
 import { useAgentAvailability } from '../../features/agents/useAgentAvailability';
-import { changeCreationMode, creationMode, stageConversation, selectStageConversation, withEpisodeView, withStageConversation } from '../../features/agents/agent-navigation';
+import { changeCreationMode, creationMode, withEpisodeView, withStageConversation } from '../../features/agents/agent-navigation';
+import { conversationScopeKey, episodeConversationScope, scopeConversation, selectScopeConversation, type AgentSubject } from '../../features/agents/agent-scope';
 import type { AgentConversation } from '../../api/types/agents';
 import type { AgentArtifactDetail, AgentArtifactOpenRequest } from '../../api/types/agent-artifacts';
 import '../../features/agents/agents.css';
@@ -84,22 +85,65 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
   const [writingTab, setWritingTab] = useState(stage === 'script' ? 'script' : 'novel');
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
-  const conversationId = stageConversation(location.search, step);
+  const agentNavigationEpoch = useRef(0);
+  const agentNavigationIntent = useCallback(() => agentNavigationEpoch.current, []);
+  useEffect(() => {
+    const invalidate = () => { agentNavigationEpoch.current++; };
+    window.addEventListener('popstate', invalidate, true);
+    return () => window.removeEventListener('popstate', invalidate, true);
+  }, []);
+  const [subjects, setSubjects] = useState<Record<string, AgentSubject | null>>(() => {
+    const parameters = new URLSearchParams(location.search);
+    return Object.fromEntries(['assets', 'storyboard'].map(stage => { const id = parameters.get(`agent_subject_${stage}`); return [stage, id && /^\d+$/.test(id) ? { type: stage === 'assets' ? 'asset' : 'shot', id, label: '' } : null]; }));
+  });
+  const [subjectLabels, setSubjectLabels] = useState<Record<string, string>>({});
+  const scopedSubjects = useMemo(() => {
+    const parameters = new URLSearchParams(location.search);
+    return Object.fromEntries(['assets', 'storyboard'].map(stage => {
+      const id = parameters.get(`agent_subject_${stage}`);
+      const previous = subjects[stage];
+      const type = stage === 'assets' ? 'asset' : 'shot';
+      return [stage, id && /^\d+$/.test(id) ? { type, id, label: subjectLabels[`${type}:${id}`] ?? (previous?.id === id ? previous.label : '') } as AgentSubject : null];
+    })) as Record<string, AgentSubject | null>;
+  }, [location.search, subjects, subjectLabels]);
+  const subject = scopedSubjects[step] ?? null;
+  const subjectsRef = useRef(scopedSubjects); subjectsRef.current = scopedSubjects;
+  const scope = useMemo(() => episodeConversationScope(step === 'assets' || step === 'storyboard' ? step : 'source', episode.id, subject), [step, episode.id, subject]);
+  const conversationId = scopeConversation(location.search, scope);
+  const selectSubject = useCallback((next: AgentSubject | null) => {
+    const previousSubject = subjectsRef.current[step];
+    if (previousSubject?.id === next?.id && previousSubject?.label === next?.label) return;
+    if (next?.label) setSubjectLabels(previous => previous[`${next.type}:${next.id}`] === next.label ? previous : { ...previous, [`${next.type}:${next.id}`]: next.label });
+    if (previousSubject?.id !== next?.id) agentNavigationEpoch.current++;
+    setSubjects(previous => previous[step]?.id === next?.id && previous[step]?.label === next?.label ? previous : { ...previous, [step]: next });
+    if (previousSubject?.id === next?.id) return;
+    setParameters(previous => {
+      const parameters = new URLSearchParams(previous);
+      if (next) parameters.set(`agent_subject_${step}`, next.id); else parameters.delete(`agent_subject_${step}`);
+      const nextScope = episodeConversationScope(step === 'assets' || step === 'storyboard' ? step : 'source', episode.id, next);
+      const remembered = parameters.get(`conversation_${conversationScopeKey(nextScope)}`);
+      if (remembered) { parameters.set('conversation', remembered); parameters.set(`conversation_${step}`, remembered); }
+      else parameters.delete('conversation');
+      return parameters;
+    }, { replace: true });
+  }, [step, episode.id, setParameters]);
   useEffect(() => {
     if (stage !== step) navigate(withEpisodeView(episodePath(session.projectId, episode.id, step), location.search), { replace: true });
   }, [stage, step, session.projectId, episode.id, navigate, location.search]);
   const latest = useRef(value);
   const [localError, setLocalError] = useState('');
   const readOnly = session.mode === 'read';
-  const writingReadOnly = readOnly || !writing.loaded || writing.status === 'loading';
+  const writingReadOnly = readOnly || !writing.loaded || writing.status === 'loading' || !!writing.recoverable || !!writing.recoveryBlocked;
   const writingLabel = { loading: '正在载入服务端内容…', saved: '正文已保存', unsaved: '有未保存的修改', saving: '正在保存…', error: '保存已暂停', conflict: '版本冲突，保存已暂停' }[writing.status];
   const current = episodeStages.findIndex((stage) => stage.id === step);
   function goToStep(next: StageId) {
+    agentNavigationEpoch.current++;
     if (next === 'script') setWritingTab('script');
     navigate(withStageConversation(episodePath(session.projectId, episode.id, visibleEpisodeStage(next)), location.search, step, visibleEpisodeStage(next)));
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
   function switchMode(next: 'prompt' | 'agent') {
+    agentNavigationEpoch.current++;
     setParameters(changeCreationMode(location.search, next));
   }
   async function saveBeforeAgentSend() {
@@ -108,7 +152,7 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
     return !barrier.hasUnsettled() || await barrier.flush();
   }
   function openArtifact(id: string, runId?: string, privateConversationId?: string) {
-    setArtifactRequest({ accountId: auth.user?.id ?? 'anonymous', value: { id, runId, conversationId: privateConversationId, nonce: ++artifactNonce.current } });
+    setArtifactRequest({ accountId: auth.user?.id ?? 'anonymous', value: { id, runId, conversationId: privateConversationId, scope, nonce: ++artifactNonce.current } });
   }
   async function artifactApplied() {
     if (hasUnsettledWriting(writing.session.getSnapshot()) || getStoryboardBarrier().hasUnsettled()) return false;
@@ -129,6 +173,15 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
     const link = document.createElement('a'); link.href = url; link.download = `episode-${episode.id}-draft.txt`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  function exportRecovery() {
+    try {
+      const content = writing.session.exportRecovered();
+      if (!content) return;
+      const url = URL.createObjectURL(new Blob([content], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url; link.download = `episode-${episode.id}-recovery.json`; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { setLocalError('无法下载本机恢复记录，请检查浏览器存储权限后重试。'); }
+  }
   async function reloadWriting() {
     if (hasUnsettledWriting(writing) && !await confirmAction('载入服务端版本会替换当前草稿，尚未核实的保存结果也将以服务端为准。请先下载草稿备份。确定继续？')) return;
     void writing.session.load();
@@ -143,8 +196,9 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
     <div className={`episode-layout${collapsed ? ' is-collapsed' : ''}`}>
       <aside className="episode-sidebar"><div className="episode-sidebar-inner"><div className="episode-nav-heading"><p className="episode-nav-title">创作流程</p><Button type="text" aria-label={collapsed ? '展开创作流程' : '收起创作流程'} aria-expanded={!collapsed} icon={<Icon name={collapsed ? 'arrow' : 'back'} size={18}/>} onClick={() => setCollapsed(!collapsed)}/></div><StageNav active={step} onSelect={goToStep}/><div className="episode-context-summary"><strong>{value.aspect} 画幅</strong><span>{value.style || '未设置视觉风格'}</span><p>正文自动保存。生成后先预览，再选择采用。</p></div></div></aside>
       <div className="episode-content">
-        <EpisodeCreationWorkspace stage={step} mode={mode} modeControl={<Tooltip title={availability.reason || undefined}><Segmented className="agent-mode-switch" aria-label="创作模式" value={mode} options={[{ value: 'prompt', label: '提示词创作' }, { value: 'agent', label: 'Agent 创作', disabled: !availability.available && mode !== 'agent' }]} onChange={next => switchMode(next as 'prompt' | 'agent')}/></Tooltip>} workRequest={artifactRequest?.accountId === (auth.user?.id ?? 'anonymous') ? artifactRequest.value.nonce : 0} agentPanel={agentOpened ? <Suspense fallback={<div role="status" className="studio-empty">正在载入 Agent 创作…</div>}><AgentConversationPanel key={auth.user?.id ?? 'anonymous'} projectId={session.projectId} episodeId={episode.id} episodeTitle={episode.title} selectedId={conversationId} mode={mode} stage={step} enabled={hasCreation && mode === 'agent'} readOnly={readOnly} availability={availability} beforeSend={saveBeforeAgentSend} onSelect={id => setParameters(selectStageConversation(location.search, step, id))} onConversation={setAgentConversation} onOpenArtifact={openArtifact}/></Suspense> : null}>
+        <EpisodeCreationWorkspace stage={step} mode={mode} subject={subject} onSubject={selectSubject} modeControl={<Tooltip title={availability.reason || undefined}><Segmented className="agent-mode-switch" aria-label="创作模式" value={mode} options={[{ value: 'prompt', label: '提示词创作' }, { value: 'agent', label: 'Agent 创作', disabled: !availability.available && mode !== 'agent' }]} onChange={next => switchMode(next as 'prompt' | 'agent')}/></Tooltip>} workRequest={artifactRequest?.accountId === (auth.user?.id ?? 'anonymous') ? artifactRequest.value.nonce : 0} agentPanel={agentOpened ? <Suspense fallback={<div role="status" className="studio-empty">正在载入 Agent 创作…</div>}><AgentConversationPanel key={auth.user?.id ?? 'anonymous'} projectId={session.projectId} episodeId={episode.id} episodeTitle={episode.title} accountId={auth.user?.id ?? 'anonymous'} navigationIntent={agentNavigationIntent} navigationVersion={agentNavigationEpoch.current} subject={subject} selectedId={conversationId} mode={mode} stage={step} enabled={hasCreation && mode === 'agent'} readOnly={readOnly} availability={availability} beforeSend={saveBeforeAgentSend} onSelect={id => { agentNavigationEpoch.current++; setParameters(selectScopeConversation(location.search, scope, id)); }} onConversation={setAgentConversation} onOpenArtifact={openArtifact}/></Suspense> : null}>
         {localError && <Alert type="error" showIcon message={localError}/>}
+        {(writing.recoverable || writing.recoveryBlocked) && <Alert type="warning" showIcon message={writing.recoveryBlocked ? '本机正文恢复记录无法读取' : '发现本机未保存的正文恢复稿'} description={writing.recoveryBlocked ? '请先下载完整恢复记录核对。明确放弃前不会覆盖记录或提交正文。' : writing.recoveryChanged ? '基准版本已变化，请对照当前正文；恢复前会重新读取最新版本。' : '恢复稿不会自动提交，可先下载完整内容核对再恢复。'} action={<div><Button disabled={writing.busy} onClick={exportRecovery}>下载完整恢复稿</Button>{!writing.recoveryBlocked && <Button disabled={readOnly || writing.busy} onClick={async () => { const draft = writing.session.getRecoveredDraft(); if (!draft) return; if (await confirmAction(`小说恢复稿（前 500 字）：\n${draft.novel.slice(0, 500)}\n\n剧本恢复稿（前 500 字）：\n${draft.script.slice(0, 500)}\n\n${writing.recoveryChanged ? '确认以最新服务端版本为基础保留恢复稿并继续编辑？' : '恢复到编辑器，核对后再保存？'}`)) await writing.session.restoreRecovered(!!writing.recoveryChanged); }}>核对并恢复正文</Button>}<Button disabled={writing.busy} onClick={async () => { if (await confirmAction('确定放弃本机正文恢复稿，保留当前服务端版本？')) { try { writing.session.discardRecovered(); } catch { setLocalError('无法清除本机正文恢复记录，请检查浏览器存储权限。'); } } }}>放弃恢复稿</Button></div>}/>}
 
         {writing.message && <Alert type={writing.status === 'conflict' ? 'warning' : 'error'} showIcon message={writing.message} action={<div><Button disabled={writing.busy} onClick={exportDraft}>下载当前草稿</Button>{writing.status !== 'conflict' && <Button disabled={writing.busy} onClick={() => void writing.session.retry()}>重试</Button>}<Button disabled={writing.busy} onClick={reloadWriting}>载入服务端版本</Button></div>}/>}
         {(legacy.novel || legacy.script) && <p className="episode-help">发现浏览器旧稿，不会自动上传。<Button type="link" onClick={() => setShowLegacy(true)}>预览与导入</Button></p>}

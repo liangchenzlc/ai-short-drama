@@ -207,6 +207,25 @@
 .agent-skill-editor > div { display: flex; gap: 8px; }
 .agent-model-inputs { display: grid; gap: 8px; padding-block: 12px; border-top: 1px solid var(--hair); }
 .agent-history-dialog .agent-rename-form { margin-top: 12px; }
+.agent-panel-heading > div { min-width: 0; }
+.agent-panel-heading h2 { overflow-wrap: anywhere; }
+.agent-panel-scope { display: block; margin-top: 5px; color: var(--sub); font-size: 11px; }
+.agent-history-dialog { width: min(640px, calc(100vw - 32px)); }
+.agent-history-body { padding: 20px 22px; max-height: 65dvh; overflow-y: auto; overscroll-behavior: contain; }
+.agent-history-description { margin: 0 0 16px; color: var(--sub); font-size: 12px; line-height: 1.7; }
+.agent-history-controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-block: 12px; }
+.agent-history-list article { display: flex; align-items: flex-start; gap: 8px; border-top: 1px solid var(--hair); }
+.agent-history-list article.is-current { background: var(--surface-muted); }
+.agent-history-entry { flex: 1; min-width: 0; padding: 14px 10px; border: 0; background: transparent; text-align: left; color: var(--ink); cursor: pointer; border-radius: var(--radius-control); }
+.agent-history-entry strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
+.agent-history-entry p { margin: 6px 0; color: var(--sub); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.agent-history-entry > span { color: var(--sub); font-size: 11px; }
+.agent-history-entry:hover { background: var(--surface-raised); }
+.agent-history-entry:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+.agent-history-list article > .ant-btn { flex: 0 0 auto; margin-top: 10px; }
+.agent-history-rename { display: grid; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--hair); color: var(--sub); font-size: 12px; }
+.agent-history-rename > div { display: flex; gap: 8px; }
+.agent-history-footer { display: flex; justify-content: space-between; gap: 12px; padding: 16px 22px 20px; border-top: 1px solid var(--hair); }
 @media (max-width: 767px) {
   .agent-runtime { height: max(500px, calc(100dvh - 210px)); }
   .agent-context-dialog-body { padding: 14px; }
@@ -214,4 +233,8 @@
   .agent-asset-options audio { max-width: 100%; }
   .agent-skill-heading { flex-wrap: wrap; }
   .agent-input-tools .ant-btn { min-height: var(--control-height-touch); }
+  .agent-history-body { padding: 16px; }
+  .agent-history-body .ant-input-search .ant-input-affix-wrapper, .agent-history-body .ant-input-search-button { height: var(--control-height-touch); }
+  .agent-history-footer { padding: 14px 16px 18px; }
+  .agent-history-entry, .agent-history-footer .ant-btn { min-height: var(--control-height-touch); }
 }

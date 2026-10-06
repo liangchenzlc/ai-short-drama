@@ -84,6 +84,7 @@ const workflowMessages: Record<string, string> = {
   script_too_long: '剧本超过素材提取长度限制，请拆分分集或调整服务端提取限额。',
   script_empty: '请先填写并确认当前剧本。',
   writing_version_conflict: '小说或剧本版本已变化。草稿已保留，请重新加载后手动合并。',
+  agent_artifact_adoption_required: '此剧本是尚未采用的 Agent 候选，请在原会话的创作候选中核对并采用。',
   shot_version_conflict: '分镜已被其他窗口修改。输入已保留，请重新加载后合并。',
   storyboard_version_conflict: '分镜列表顺序已变化，请刷新列表后重试。',
   asset_version_conflict: '素材已被其他页面修改，请刷新素材后重试。',

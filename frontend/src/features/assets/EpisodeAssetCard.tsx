@@ -4,7 +4,7 @@ import { PreviewImage } from '../../components/ui/ImagePreview';
 import { Icon } from '../../components/ui/Icon';
 import type { LibraryAssetRead } from '../../api/modules/assets';
 
-export function EpisodeAssetCard({ asset, selected, disabled, readOnly, canShare, batchEnabled, batchChecked, entryRef, onOpen, onShare, onRemove, onBatchChange }: {
+export function EpisodeAssetCard({ asset, selected, disabled, readOnly, canShare, batchEnabled, batchChecked, entryRef, onOpen, onEdit, onShare, onRemove, onBatchChange }: {
   asset: LibraryAssetRead;
   selected: boolean;
   disabled: boolean;
@@ -14,6 +14,7 @@ export function EpisodeAssetCard({ asset, selected, disabled, readOnly, canShare
   batchChecked: boolean;
   entryRef: RefCallback<HTMLButtonElement>;
   onOpen: () => void;
+  onEdit: () => void;
   onShare: () => void;
   onRemove: () => void;
   onBatchChange: (checked: boolean) => void;
@@ -26,7 +27,7 @@ export function EpisodeAssetCard({ asset, selected, disabled, readOnly, canShare
       <p>{asset.description || asset.prompt || '补充外观或特征，方便后续创作。'}</p>
       <div className="resource-meta"><span className={`status-badge ${asset.state === 'confirmed' ? 'is-success' : 'is-pending'}`}>{asset.state === 'confirmed' ? '已确认' : '待确认'}</span><small>{asset.reference_count} 处引用</small></div>
     </div>
-    {!readOnly && <Dropdown trigger={['click']} menu={{ items: [...(canShare ? [{ key: 'share', label: '共享到项目' }] : []), { key: 'remove', label: '从本集删除', danger: true }], onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); if (key === 'share') onShare(); else onRemove(); } }}>
+    {!readOnly && <Dropdown trigger={['click']} menu={{ items: [{ key: 'edit', label: '编辑素材' }, ...(canShare ? [{ key: 'share', label: '共享到项目' }] : []), { key: 'remove', label: '从本集删除', danger: true }], onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); if (key === 'edit') onEdit(); else if (key === 'share') onShare(); else onRemove(); } }}>
       <Button className="episode-asset-more" type="text" aria-label={`${asset.name}更多操作`} disabled={disabled} icon={<Icon name="more" size={18}/>} onClick={event => event.stopPropagation()}/>
     </Dropdown>}
   </article>;

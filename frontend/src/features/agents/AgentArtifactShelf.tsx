@@ -24,7 +24,6 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
   onContinue: () => void; onOpenExtraction: (artifact: AgentArtifactDetail) => void;
   dialogOnly?: boolean;
 }) {
-  const api = useMemo(() => agentArtifactsApi(projectId, episodeId), [projectId, episodeId]);
   const shots = useMemo(() => storyboardApi(projectId, episodeId), [projectId, episodeId]);
   const [items, setItems] = useState<AgentArtifact[]>([]);
   const [total, setTotal] = useState(0);
@@ -36,6 +35,7 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AgentArtifactDetail | null>(null);
   const [context, setContext] = useState<AgentArtifactOpenRequest | null>(null);
+  const api = useMemo(() => agentArtifactsApi(projectId, episodeId, context?.scope), [projectId, episodeId, context?.scope]);
   const [media, setMedia] = useState<MediaAsset | null>(null);
   const [generation, setGeneration] = useState<GenerationDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -110,7 +110,7 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
     try {
       if (!await current.current.beforeAdopt()) { setDetailError('候选已采用，但当前作品尚未保存成功。请先处理保存提示，再核对并继续。'); return; }
       if (!alive.current || accessEndedRef.current || !current.current.canContinue(context.conversationId)) { if (alive.current && !accessEndedRef.current) setMessage('候选已采用。返回原对话后，可以核对并继续流程。'); return; }
-      await agentsApi.continue(context.runId, artifact.id, artifactVersion(artifact.row_version));
+      await agentsApi.continue(context.runId, artifact.id, artifactVersion(artifact.row_version), context.scope);
       if (alive.current && !accessEndedRef.current) { setMessage('候选已采用，当前对话已继续。'); current.current.onContinue(); }
     } catch (cause) { if (alive.current && !accessEndedRef.current) setDetailError(`候选已采用，流程尚未确认继续。${errorMessage(cause)} 请核对运行状态后重试继续；无需再次采用。`); }
   }
@@ -204,10 +204,10 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
       {detailError && <Alert type="error" showIcon message={detailError}/>} {message && <Alert type={detail?.status === 'applied' ? 'success' : 'info'} showIcon message={message}/>}
       {detailLoading && <Skeleton active paragraph={{ rows: 4 }}/>} {detail && <>
         <div className="agent-artifact-detail-heading"><h3>{artifactKindLabels[detail.kind]}</h3><span className={`artifact-status is-${detail.status}`}>{artifactStatusLabels[detail.status]}</span></div>
-        <p>{artifactEffect(detail.kind)}</p><p className="agent-artifact-help">{artifactTarget(detail)} · {detail.source_snapshot.model_name || '创作模型'} · {new Date(detail.created_at).toLocaleString('zh-CN')}</p>
+        <p>{artifactEffect(detail.kind)}{detail.content_origin === 'current_script_legacy' && ' 这份历史候选展示的是当前剧本正文，原始生成稿无法确认。'}</p><p className="agent-artifact-help">{artifactTarget(detail)} · {detail.source_snapshot.model_name || '创作模型'} · {new Date(detail.created_at).toLocaleString('zh-CN')}</p>
         <details className="agent-artifact-source"><summary>生成来源快照</summary><p>正文版本 {detail.source_snapshot.content_version} · 分镜版本 {detail.source_snapshot.storyboard_version}{detail.source_snapshot.target_row_version ? ` · 对象版本 ${detail.source_snapshot.target_row_version}` : ''}</p></details>
         {textStale && <Alert type="warning" message="正文已变化，这份候选基于旧版本。请保留候选并重新生成，当前作品不会被覆盖。"/>}
-        {detail.content && <pre className="agent-artifact-text">{detail.content}</pre>}
+        {detail.content && <pre className="agent-artifact-text" aria-label={detail.content_origin === 'snapshot' ? '原始生成候选正文' : '候选正文'}>{detail.content}</pre>}
         {!!detail.diff.length && <div className="agent-artifact-diff" role="region" aria-label="候选修改比较">{detail.diff.filter(item => artifactFieldLabels[item.field]).map(item => <section key={item.field}><h4>{artifactFieldLabels[item.field]}</h4><div><p><span>当前来源</span>{diffValue(item.field, item.before)}</p><p><span>建议修改</span>{diffValue(item.field, item.after)}</p></div></section>)}</div>}
         {detail.kind === 'storyboard_candidate' && detail.generation_task_id && <StoryboardResultPreview projectId={projectId} episodeId={episodeId} generationId={detail.generation_task_id} busy={busy} disabled={readOnly || detail.status !== 'ready'} onApply={mode => void adoptStoryboard(mode)}/>}
         {media && <div className="agent-artifact-media">{media.url ? media.media_type === 'video' ? <video controls preload="metadata" src={media.url} aria-label="候选视频预览"/> : <PreviewImage src={media.url} alt="候选图片"/> : <p>预览链接不可用，请重新核对候选。</p>}{!!mediaLabels.length && <p>{mediaLabels.join(' · ')}</p>}</div>}

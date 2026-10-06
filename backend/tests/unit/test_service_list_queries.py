@@ -356,7 +356,7 @@ def agent_rows(session, size):
                 result_index=1,
                 kind="script_candidate",
                 script_id=400 + index,
-                source_content="Fallback",
+                source_content=f"Original Script {index}",
                 created_by=1,
                 source_snapshot={
                     "episode_id": str(episode_id),
@@ -389,7 +389,7 @@ def test_agent_conversation_and_shared_artifact_lists_batch_details(size):
         with select_queries(session) as statements:
             page = AgentArtifactService(session).list(project_id, episode_id)
         assert [row["preview"] for row in page["items"]] == [
-            f"Script {index}" for index in reversed(range(size))
+            f"Original Script {index}" for index in reversed(range(size))
         ]
         assert len(statements) <= 6
 

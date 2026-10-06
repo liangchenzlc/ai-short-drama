@@ -29,6 +29,7 @@ AI 短剧工作台支持账号协作、小说与剧本、素材、分镜、异�
 | `frontend/src/features` | 业务组件、编辑会话、保存与生成状态 |
 | `frontend/src/api` | 统一 HTTP 客户端、请求模块和 DTO |
 | `frontend/tests`、`frontend/e2e` | Node 测试与 Playwright 浏览器测试 |
+| `frontend/canvas` | 独立画布子包、HTML 入口、依赖锁与源交互实现 |
 | `backend/src/short_drama/api`、`schemas` | FastAPI 路由、依赖注入及 Pydantic 契约 |
 | `backend/src/short_drama/service`、`dao`、`domain` | 业务事务、数据访问及 SQLAlchemy ORM |
 | `backend/src/short_drama/ai`、`agent`、`tasks` | 模型协议与提示词、Agent 执行及异步任务 |
@@ -36,7 +37,7 @@ AI 短剧工作台支持账号协作、小说与剧本、素材、分镜、异�
 | `backend/scripts`、`backend/tests` | 运维与迁移脚本、分层测试 |
 | `docs`、`docker`、`compose.yaml` | 维护文档、数据库 SQL 及本机基础设施 |
 
-技术栈：React 19、TypeScript strict、Vite 7、Ant Design、Axios、React Router；Python 3.12+、FastAPI、Pydantic 2、SQLAlchemy 2；MySQL 8.0.21+、RabbitMQ、Celery、MinIO。Node.js 需要 20.19+ 或 22.12+。
+技术栈：React 19、TypeScript strict、Vite 7、Ant Design、Axios、React Router；Python 3.12+、FastAPI、Pydantic 2、SQLAlchemy 2；MySQL 8.0.21+、RabbitMQ、Celery、MinIO。两套前端统一运行推荐 Node.js 22.18+ 的 22.x 或 24.x LTS；画布测试使用 Node 类型剥离，nanoid 6 不支持 Node 20。
 
 ## 开发与启动
 
@@ -49,10 +50,11 @@ AI 短剧工作台支持账号协作、小说与剧本、素材、分镜、异�
 | `backend/` | `uv run uvicorn short_drama.main:app --host 127.0.0.1 --port 8000` | 启动 API |
 | `backend/` | `.\scripts\start_generation.ps1 -Role scheduler` | 启动 Publisher 与 Recovery |
 | `backend/` | `.\scripts\start_generation.ps1 -Role text` | 启动文本 Worker；其他角色见下文 |
-| `frontend/` | `npm ci` | 按 `package-lock.json` 安装依赖 |
-| `frontend/` | `npm run dev` | 启动前端，默认端口 8080 |
+| `frontend/` | `npm run install:all` | 分别按宿主与 `canvas/` 的锁文件安装依赖 |
+| `frontend/` | `npm run dev` | 一个进程启动标准工作台 8080 与画布 8082 |
 
 - 仅在配置文件不存在时从 `.env.example` 创建本机配置，保留已有 `.env`。前端代理使用 `.env.local` 的 `API_PROXY_TARGET`，默认后端为 `http://127.0.0.1:8000`。
+- `npm run dev:standard`、`npm run dev:canvas` 可单独启动；统一 `dev` 退出时关闭自己创建的两台 Vite 服务器。统一 `build` 分别检查和构建两包，再将画布静态产物复制至 `frontend/dist/canvas-app/`；`preview` 使用该统一产物，并支持画布独立 HTML 回退。
 - 只启动 API 不会执行生成任务；按使用范围启动 `text`、`image`、`video`、`render`、`agent`，启用音频时增加 `audio` Worker。启动脚本依赖现有 `.venv`，支持 `-DryRun`。
 - 每个并行运行的后端进程必须使用不同的 `SNOWFLAKE_WORKER_ID`；启动脚本为各角色分配节点。不同开发环境共用 RabbitMQ 时使用不同 `GENERATION_QUEUE_NAMESPACE`，所有相关进程的配置须一致。
 - 账号认证和 Agent 默认开启；Agent 依赖认证、显式数据库迁移和独立 Worker。未完成 Agent 升级的环境按部署文档显式设置 `AGENT_ENABLED=false`，不要为绕过检查而修改默认值。
@@ -70,7 +72,8 @@ AI 短剧工作台支持账号协作、小说与剧本、素材、分镜、异�
 | `backend/` | `uv run python scripts/run_integration.py` | 使用随机临时数据库执行 MySQL 集成测试 |
 | `frontend/` | `npm test` | Node 内置测试运行器 |
 | `frontend/` | `npm run typecheck` | 快速 TypeScript 类型检查 |
-| `frontend/` | `npm run build` | 包含类型检查的生产构建 |
+| `frontend/` | `npm run build` | 两包类型检查与生产构建，组合为 `dist/` |
+| `frontend/canvas/` | `npm test`、`npm run test:e2e`、`npm run source:check` | 画布合同、浏览器与源哈希检查 |
 | `frontend/` | `npm run test:e2e` | Playwright 浏览器测试，可追加具体测试路径 |
 
 - `build` 已包含类型检查，成功后无需重复执行 `typecheck`。浏览器测试使用独立端口 4175、API 测试替身和 Chromium；首次准备浏览器可执行 `npx playwright install chromium`，或设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`。
@@ -101,7 +104,7 @@ AI 短剧工作台支持账号协作、小说与剧本、素材、分镜、异�
 
 - AI 输出先保存为候选，由用户明确采用；生成成功不能直接替换正文、素材、分镜或当前媒体。采用时保留版本、上下文及共享影响检查。
 - 生成提交遵守 `Idempotency-Key`：同一不确定请求复用原键，内容变化或明确新建任务才使用新键。恢复与重试遵循 `can_resume`、`can_retry` 等服务端许可，`unknown` 不能自动重新提交。
-- Agent 对话、全部创作候选及生成历史仅本人可见，只有明确采用后的作品按项目权限共享。讨论、单项执行、多步骤计划批准和候选采用是不同操作，保留现有授权范围与来源版本校验；项目权限不能代替候选作者校验。
+- Agent 对话、全部创作候选及生成历史仅本人可见，只有明确采用后的作品按项目权限共享。统一消息由 Agent 判断问答、单项执行或多步骤计划；明确单项媒体任务在参数唯一确定时直接执行，多步骤/批量仍需计划批准，候选另行采用。会话按阶段、稳定对象和任务范围隔离，模型选择不要求能力验证；保留授权范围与来源版本校验，项目权限不能代替候选作者校验。
 - 持久化稳定媒体定位值及元数据，临时签名 URL 只用于展示和下载；过期后重新读取，不将签名 URL 或 Blob URL 作为持久化身份。
 - 密钥只放环境或服务端加密存储，不写入日志、测试快照、浏览器存储或 `VITE_*` 配置；不覆盖已有加密主密钥，不在对话中读取或输出 `.env` 的实际内容。
 
@@ -119,3 +122,10 @@ AI 短剧工作台支持账号协作、小说与剧本、素材、分镜、异�
 - [ ] 无调试残留、无敏感信息、无未声明的新依赖
 - [ ] 改动文件与任务范围一致，未顺手重构无关代码
 - [ ] 用户能从总结中知道：改了什么、怎么验证的、还有什么没验证
+
+## 无限画布迁移的专用边界
+
+- 用户明确要求布局、交互、操作和功能一比一保留 BeefTV 固定版本；实施依据为 [2026-10-05 迁移方案](docs/plans/2026-10-05-beeftv-infinite-canvas-migration.md)，进度见[实施记录](docs/plans/2026-10-05-beeftv-implementation-log.md)。标准模式不改变。
+- `frontend/canvas/` 作为独立子包保留自己的 `package.json`、锁文件、HTML、React root、Provider、CSS、字体、组件和交互实现；宿主统一安装、启动、构建与预览入口。按用户 2026-10-06 的调整，共同声明但版本不同的直接依赖采用宿主依赖版本，源独有依赖继续独立锁定，并处理其兼容依赖；不为画布升级或替换标准前端依赖。依赖对齐后的视觉和行为仍需对照，不能沿用旧版本验收结果作为本次证明。数据库与服务边界接入当前 Python/MySQL/MinIO，源 HTTP 请求复用宿主客户端。
+- 无限画布生成回填与助手图操作以源既有直接应用/提议确认为准，不插入标准模式的候选采用步骤。这是用户一比一要求的限定例外；私人参数、任务、凭据、生成历史及对话仍按本人隔离，已进入共享图的作品按项目权限共享。
+- 只有全部布局、操作、媒体、生成、助手与真实运行对照通过后才能声明完整迁移。阶段完成、哈希检查、构建或 API 夹具测试不等于一比一验收；源已禁用的入口保持源状态。

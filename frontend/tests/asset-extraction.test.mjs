@@ -6,7 +6,7 @@ import ts from 'typescript';
 const source = readFileSync(new URL('../src/features/projects/asset-extraction-contract.ts', import.meta.url), 'utf8');
 const reviewSource = readFileSync(new URL('../src/features/projects/ScriptAssetExtraction.tsx', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const { scriptAssetsRequest, defaultAdoption, extractionApplyRequest } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const { scriptAssetsRequest, defaultAdoption, extractionApplyRequest, missingExtractionTaskIds, extractionDraftError } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const item = (id, matches = [], applied = null) => ({ candidate_id: id, draft: { name: id }, matches, applied });
 const match = (id, exact = true) => ({ asset_id: id, row_version: '9', exact });
 const result = items => ({ result_version: '3', content_version: '8', stale: false, items });
@@ -50,4 +50,20 @@ test('explicit duplicate creation is acknowledged but stale and unresolved resul
   assert.throws(() => extractionApplyRequest({ ...data, stale: true }, new Set(['a']), { a: '91' }, '8'));
   assert.throws(() => extractionApplyRequest(data, new Set(['a']), { a: '92' }, '8'));
   assert.throws(() => extractionApplyRequest(data, new Set(), {}, '8'));
+});
+
+test('extraction reconciles known active tasks that fall outside the latest history page', () => {
+  const previous = [{ generation_id: 'old', status: 'running' }, { generation_id: 'failed', status: 'failed' }, { generation_id: 'visible', status: 'queued' }];
+  const incoming = [{ generation_id: 'visible', status: 'succeeded' }, ...Array.from({ length: 20 }, (_, i) => ({ generation_id: String(i), status: 'succeeded' }))];
+  assert.deepEqual(missingExtractionTaskIds(previous, incoming), ['old']);
+  assert.deepEqual(missingExtractionTaskIds([], incoming), []);
+});
+
+test('each extraction draft identifies missing required text without changing its content', () => {
+  const draft = { name: '林晚', description: '黑发', prompt: '人物肖像' };
+  assert.equal(extractionDraftError(draft), '');
+  for (const field of ['name', 'description', 'prompt']) {
+    assert.ok(extractionDraftError({ ...draft, [field]: '  ' }).length);
+  }
+  assert.deepEqual(draft, { name: '林晚', description: '黑发', prompt: '人物肖像' });
 });

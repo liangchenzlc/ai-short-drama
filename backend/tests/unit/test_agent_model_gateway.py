@@ -84,7 +84,7 @@ def test_inline_image_payload_is_protected_and_replays_without_live_io(
 ):
     base, state = provider
     state["responses"] = [(200, response(protocol, text="Image understood"))]
-    config = {**snapshot(base, protocol), "model_key": "gpt-4o"}
+    config = {**snapshot(base, protocol), "model_key": "custom-vision-model"}
     inputs = {
         "instructions": "Review the image",
         "user_prompt": [
@@ -194,7 +194,6 @@ def test_inline_audio_uses_chat_input_audio_payload(provider):
     ("protocol", "mime", "model"),
     [
         ("responses", "audio/mpeg", "gpt-4o-audio-preview"),
-        ("chat", "image/jpeg", "text-only"),
         ("chat", "video/mp4", "gpt-4o"),
     ],
 )

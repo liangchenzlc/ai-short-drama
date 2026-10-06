@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from types import SimpleNamespace
 
-from sqlalchemy import JSON, DateTime, Integer, MetaData, String, create_engine, event, text
+from sqlalchemy import JSON, DateTime, Float, Integer, MetaData, String, create_engine, event, text
 from sqlalchemy.orm import Session
 
 from short_drama.domain import AIModelConfig, Base
@@ -10,10 +10,13 @@ from short_drama.domain import AIModelConfig, Base
 
 def generation_session():
     """Local behavior fixture; MySQL constraint/concurrency tests stay integration tests."""
+    from short_drama.db import access  # noqa: F401
+
     engine = create_engine("sqlite://")
 
     def sqlite_functions(db, _):
         db.create_function("CHAR_LENGTH", 1, len)
+        db.create_function("OCTET_LENGTH", 1, lambda value: len(value.encode("utf-8")))
         db.create_function("JSON_ARRAY", 0, lambda: "[]")
         db.create_function(
             "JSON_TYPE",
@@ -34,7 +37,9 @@ def generation_session():
         table = original.to_metadata(metadata)
         for column in table.columns:
             kind = column.type.python_type
-            column.type = {int: Integer, str: String, datetime: DateTime, dict: JSON}[kind]()
+            column.type = {int: Integer, float: Float, str: String, datetime: DateTime, dict: JSON}[
+                kind
+            ]()
             if column.server_default is not None and column.computed is None:
                 if "CURRENT_TIMESTAMP" in str(column.server_default.arg):
                     column.server_default.arg = text("CURRENT_TIMESTAMP")

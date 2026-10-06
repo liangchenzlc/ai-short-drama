@@ -83,6 +83,17 @@ class AgentConversation(Base):
     owner_user_id: Mapped[int] = _number()
     project_id: Mapped[int] = _number()
     episode_id: Mapped[int] = _number()
+    stage: Mapped[str | None] = mapped_column(
+        VARCHAR(16, collation="utf8mb4_0900_bin"), nullable=True
+    )
+    subject_type: Mapped[str | None] = mapped_column(
+        VARCHAR(16, collation="utf8mb4_0900_bin"), nullable=True
+    )
+    subject_id: Mapped[int | None] = _number(nullable=True)
+    task_type: Mapped[str | None] = mapped_column(
+        VARCHAR(16, collation="utf8mb4_0900_bin"), nullable=True
+    )
+    scope_version: Mapped[int] = _number(0)
     title: Mapped[str] = mapped_column(VARCHAR(120), server_default=text("'新对话'"))
     status: Mapped[str] = mapped_column(
         VARCHAR(16, collation="utf8mb4_0900_bin"), server_default=text("'active'")
@@ -111,6 +122,36 @@ class AgentConversation(Base):
             "id",
         ),
         Index("idx_agent_conversations_project", "project_id", "owner_user_id", "id"),
+        Index(
+            "idx_agent_conversations_scope",
+            "owner_user_id",
+            "episode_id",
+            "scope_version",
+            "stage",
+            "subject_type",
+            "subject_id",
+            "task_type",
+            "status",
+            "updated_at",
+            "id",
+        ),
+        CheckConstraint(
+            "(scope_version = 0 AND stage IS NULL AND subject_type IS NULL "
+            "AND subject_id IS NULL AND task_type IS NULL) OR "
+            "(scope_version = 1 AND stage IS NOT NULL AND subject_type IS NOT NULL "
+            "AND subject_id IS NOT NULL AND subject_id > 0 AND task_type IS NOT NULL AND ("
+            "(stage = 'source' AND subject_type = 'episode' AND subject_id = episode_id "
+            "AND task_type = 'writing') OR "
+            "(stage = 'assets' AND subject_type = 'episode' AND subject_id = episode_id "
+            "AND task_type IN ('extraction','batch')) OR "
+            "(stage = 'assets' AND subject_type = 'asset' "
+            "AND task_type IN ('creation','image')) OR "
+            "(stage = 'storyboard' AND subject_type = 'episode' AND subject_id = episode_id "
+            "AND task_type IN ('planning','batch')) OR "
+            "(stage = 'storyboard' AND subject_type = 'shot' "
+            "AND task_type IN ('creation','image','video'))))",
+            name="ck_agent_conversations_scope",
+        ),
         CheckConstraint("status IN ('active','archived')", name="ck_agent_conversations_status"),
         CheckConstraint(
             "row_version > 0 AND next_message_seq > 0 AND next_event_seq > 0",
@@ -236,7 +277,7 @@ class AgentRun(Base):
         _fk(["initiated_by"], "users", name="fk_agent_runs_initiator"),
         _fk(["model_config_id"], "ai_model_configs", name="fk_agent_runs_model"),
         UniqueConstraint("trigger_message_id", name="uk_agent_runs_trigger"),
-        UniqueConstraint("active_conversation_id", name="uk_agent_runs_active_conversation"),
+        Index("idx_agent_runs_active", "active_conversation_id"),
         UniqueConstraint("id", "conversation_id", name="uk_agent_runs_parent"),
         Index("idx_agent_runs_schedule", "message_status", "next_run_at", "id"),
         Index("idx_agent_runs_lease", "lease_until", "status", "id"),

@@ -3,6 +3,7 @@ import type { WebProject } from '../../types/projects';
 import type { Episode } from '../../features/projects/project-detail-model';
 
 interface ProjectDto {
+  workspace_mode?: WorkspaceMode; primary_canvas_id?: string | null; canvas_count?: number;
   row_version?: string; owner_user_id?: string; capabilities?: Record<string, boolean>;
   id: string; name: string; synopsis: string; aspect: '16:9' | '9:16'; style: string;
   last_opened_at: string | null; created_at: string | null; episode_count?: number;
@@ -14,11 +15,14 @@ interface EpisodeDto {
   aspect: '16:9' | '9:16'; style: string; episode_number?: number;
 }
 interface Page<T> { items: T[]; total: number; offset: number; limit: number }
-export interface RemoteProject extends WebProject { rowVersion?: string; ownerUserId?: string; capabilities?: Record<string, boolean>; synopsis: string; style: string; episodeCount: number }
+export type WorkspaceMode = 'standard' | 'infinite_canvas';
+export interface RemoteProject extends WebProject { workspaceMode: WorkspaceMode; primaryCanvasId: string | null; canvasCount: number; rowVersion?: string; ownerUserId?: string; capabilities?: Record<string, boolean>; synopsis: string; style: string; episodeCount: number }
 export interface RemoteEpisode extends Episode { rowVersion?: string; coverUrl?: string | null; projectId: string; position: number; aspect: '16:9' | '9:16'; style: string; number?: number }
 export interface ProjectFields { row_version?: string; name: string; aspect: '16:9' | '9:16'; synopsis: string; style: string }
+export interface ProjectCreateFields extends ProjectFields { workspace_mode?: WorkspaceMode }
 export interface EpisodeFields { row_version?: string; title: string; synopsis: string; aspect?: '16:9' | '9:16'; style?: string }
 const project = (dto: ProjectDto): RemoteProject => ({
+  workspaceMode: dto.workspace_mode ?? 'standard', primaryCanvasId: dto.primary_canvas_id ?? null, canvasCount: dto.canvas_count ?? 0,
   rowVersion: dto.row_version, ownerUserId: dto.owner_user_id, capabilities: dto.capabilities,
   projectId: dto.id, name: dto.name, aspect: dto.aspect, style: dto.style, synopsis: dto.synopsis,
   lastOpenedAt: dto.last_opened_at ?? dto.created_at ?? '', episodeCount: dto.episode_count ?? 0,
@@ -39,7 +43,12 @@ export const projectsApi = {
   async get(id: string, signal?: AbortSignal) {
     return project((await http.get<ProjectDto>(`${root}/${encodeURIComponent(id)}`, { signal })).data);
   },
-  async create(body: ProjectFields) { return project((await http.post<ProjectDto>(root, body)).data); },
+  async create(body: ProjectCreateFields, idempotencyKey?: string) {
+    return project((await http.post<ProjectDto>(root, body, idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined)).data);
+  },
+  async canvas(id: string, canvasId: string, signal?: AbortSignal) {
+    return (await http.get<{ id: string; project_id: string; source_key: string }>(`${root}/${encodeURIComponent(id)}/canvases/${encodeURIComponent(canvasId)}`, { signal })).data;
+  },
   async update(id: string, body: Partial<ProjectFields>) {
     return project((await http.patch<ProjectDto>(`${root}/${id}`, body)).data);
   },

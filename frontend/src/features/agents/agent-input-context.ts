@@ -1,16 +1,7 @@
-import type { AgentAttachment, AgentModel } from '../../api/types/agents';
+import type { AgentAttachment } from '../../api/types/agents';
 
-export function attachmentInputIssue(attachments: AgentAttachment[], model?: AgentModel, videoAudio: 'include' | 'visual_only' = 'include'): string {
+export function attachmentInputIssue(attachments: AgentAttachment[]): string {
   if (attachments.length > 16) return '一次消息最多添加 16 项附件。';
-  const capabilities = model?.input_capabilities;
-  for (const attachment of attachments) {
-    if (attachment.kind === 'image' && !capabilities?.image) return '当前模型不支持图片理解，请选择支持视觉输入的模型。';
-    if (attachment.kind === 'audio' && !capabilities?.audio) return '当前模型不支持音频理解，请选择支持音频输入的模型。';
-    if (attachment.kind === 'video') {
-      if (capabilities?.video !== 'sampled_frames') return '当前模型不支持视频画面理解，请选择支持视觉输入的模型。';
-      if (attachment.metadata.has_audio && videoAudio === 'include' && !capabilities.audio) return '视频含有声音，当前模型不支持音频理解。请换模型，或明确选择只理解画面。';
-    }
-  }
   return '';
 }
 

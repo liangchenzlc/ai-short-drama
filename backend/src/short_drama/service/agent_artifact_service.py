@@ -1,4 +1,4 @@
-"""Shared artifact reads and atomic adoption without access to private conversations."""
+"""Private artifact reads, scoped origin filtering and explicit atomic adoption."""
 
 from sqlalchemy import func, select
 
@@ -9,11 +9,15 @@ from short_drama.dao.episode_writing_dao import EpisodeWritingDAO, bump_writing_
 from short_drama.db.access import require_project
 from short_drama.domain import (
     AgentArtifact,
+    AgentConversation,
+    AgentRun,
+    AgentToolCall,
     EpisodeNovel,
     EpisodeScript,
     Project,
     ShotScript,
 )
+from short_drama.schemas.agent import ConversationScope
 from short_drama.schemas.agent_artifacts import (
     ArtifactAdopt,
     ArtifactRead,
@@ -36,6 +40,25 @@ class AgentArtifactService(BaseService):
 
     model = AgentArtifact
 
+    def _conversation_scope_condition(self, expected_scope):
+        scope = ConversationScope.model_validate(
+            expected_scope.model_dump()
+            if isinstance(expected_scope, ConversationScope)
+            else expected_scope
+        )
+        conditions = [AgentConversation.scope_version == 1]
+        for name in ("stage", "subject_type", "subject_id", "task_type"):
+            value = getattr(scope, name)
+            if value is not None:
+                conditions.append(getattr(AgentConversation, name) == value)
+        tool_ids = (
+            select(AgentToolCall.id)
+            .join(AgentRun, AgentRun.id == AgentToolCall.run_id)
+            .join(AgentConversation, AgentConversation.id == AgentRun.conversation_id)
+            .where(*conditions)
+        )
+        return AgentArtifact.tool_call_id.in_(tool_ids)
+
     def _scope(self, project_id, episode_id, *, for_update=True):
         project_id, episode_id = parse_identifier(project_id), parse_identifier(episode_id)
         statement = (
@@ -53,7 +76,7 @@ class AgentArtifactService(BaseService):
             project_id, episode_id, for_update=for_update
         )
 
-    def _artifact(self, episode, artifact_id, *, for_update=True):
+    def _artifact(self, episode, artifact_id, *, for_update=True, expected_scope=None):
         statement = (
             select(AgentArtifact)
             .where(
@@ -63,6 +86,8 @@ class AgentArtifactService(BaseService):
             )
             .execution_options(populate_existing=True)
         )
+        if expected_scope is not None:
+            statement = statement.where(self._conversation_scope_condition(expected_scope))
         if for_update:
             statement = statement.with_for_update()
         artifact = self.session.scalar(statement)
@@ -89,17 +114,26 @@ class AgentArtifactService(BaseService):
                 if artifact.script_id
                 else None
             )
-        content = script.content if script else artifact.source_content
+        content = artifact.source_content
+        content_origin = "snapshot" if content is not None else None
+        if artifact.kind == "script_candidate" and content is None and script is not None:
+            content, content_origin = script.content, "current_script_legacy"
         values = {
             key: getattr(artifact, key)
             for key in ArtifactSummary.model_fields
             if key not in {"source_snapshot", "preview"}
         }
         values.update(source_snapshot=source, preview=(content or "")[:200])
+        if values["apply_receipt"] is not None:
+            values["apply_receipt"] = {
+                key: str(value) if key.endswith("_version") and value is not None else value
+                for key, value in values["apply_receipt"].items()
+            }
         if not detail:
             return ArtifactSummary.model_validate(values).model_dump(mode="json")
         values.update(
             content=content,
+            content_origin=content_origin,
             patch=artifact.proposed_patch,
             diff=[
                 {key: item[key] for key in ("field", "before", "after")}
@@ -109,7 +143,17 @@ class AgentArtifactService(BaseService):
         )
         return ArtifactRead.model_validate(values).model_dump(mode="json")
 
-    def list(self, project_id, episode_id, offset=0, limit=20, *, kind=None, status=None):
+    def list(
+        self,
+        project_id,
+        episode_id,
+        offset=0,
+        limit=20,
+        *,
+        kind=None,
+        status=None,
+        expected_scope=None,
+    ):
         self.dao.validate_pagination(offset, limit)
         with self._transaction(read_only=True):
             episode = self._scope(project_id, episode_id, for_update=False)
@@ -121,6 +165,8 @@ class AgentArtifactService(BaseService):
                 conditions.append(AgentArtifact.kind == kind)
             if status is not None:
                 conditions.append(AgentArtifact.status == status)
+            if expected_scope is not None:
+                conditions.append(self._conversation_scope_condition(expected_scope))
             rows = self.session.scalars(
                 select(AgentArtifact)
                 .where(*conditions)
@@ -153,10 +199,14 @@ class AgentArtifactService(BaseService):
                 "limit": limit,
             }
 
-    def get(self, project_id, episode_id, artifact_id):
+    def get(self, project_id, episode_id, artifact_id, *, expected_scope=None):
         with self._transaction(read_only=True):
             episode = self._scope(project_id, episode_id, for_update=False)
-            return self._view(self._artifact(episode, artifact_id, for_update=False))
+            return self._view(
+                self._artifact(
+                    episode, artifact_id, for_update=False, expected_scope=expected_scope
+                )
+            )
 
     def _require_source(self, episode, artifact, values):
         source = artifact.source_snapshot
@@ -253,11 +303,11 @@ class AgentArtifactService(BaseService):
             "action": "apply_patch",
         }
 
-    def adopt(self, project_id, episode_id, artifact_id, payload):
+    def adopt(self, project_id, episode_id, artifact_id, payload, *, expected_scope=None):
         values = self._payload(ArtifactAdopt, payload)
         with self._transaction():
             episode = self._scope(project_id, episode_id)
-            artifact = self._artifact(episode, artifact_id)
+            artifact = self._artifact(episode, artifact_id, expected_scope=expected_scope)
             # A committed receipt is stable even after later manual edits. It must
             # win before optimistic/source checks to make duplicate delivery safe.
             if artifact.status == "applied":

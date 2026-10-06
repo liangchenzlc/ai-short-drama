@@ -9,7 +9,6 @@ from pathlib import PurePath
 
 from sqlalchemy import func, select
 
-from short_drama.agent.input_capabilities import input_capabilities
 from short_drama.agent.input_media import MAX_INPUT_BYTES, inspect_attachment
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.domain import Asset, MediaFile
@@ -55,7 +54,6 @@ def attachment_read(row, storage, media=None):
 
 
 def freeze_attachments(session, conversation, identifiers, snapshot, video_audio):
-    capability = input_capabilities(snapshot)
     references, frozen, rows = [], [], []
     for identifier in identifiers:
         row = session.scalar(
@@ -71,21 +69,6 @@ def freeze_attachments(session, conversation, identifiers, snapshot, video_audio
         )
         if row is None:
             raise NotFound("Attachment does not exist")
-        if row.kind in {"image", "video"} and not capability["image"]:
-            raise WorkflowError(
-                "agent_image_input_unsupported", "所选模型不支持图片或视频画面", 422
-            )
-        needs_audio = row.kind == "audio" or (
-            row.kind == "video"
-            and row.input_metadata.get("has_audio", True)
-            and video_audio == "include"
-        )
-        if needs_audio and not capability["audio"]:
-            raise WorkflowError(
-                "agent_audio_input_unsupported",
-                "所选模型不支持音频理解；视频可明确选择仅分析画面，音频附件需更换模型",
-                422,
-            )
         media = session.get(MediaFile, row.media_id) if row.media_id else None
         if row.media_id and media is None:
             raise NotFound("Attachment media is no longer accessible")

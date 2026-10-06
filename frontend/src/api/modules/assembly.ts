@@ -32,6 +32,8 @@ export interface AssemblyCurrentWork {
 }
 export const editBody = (value: AssemblyState) => ({ row_version: value.assembly!.row_version, resolution: value.assembly!.resolution,
   clips: (value.clips ?? []).map(({ id, source_clip_id, included, muted, trim_in_ms, trim_out_ms }) => ({ id, source_clip_id, included, muted, trim_in_ms, trim_out_ms })) });
+export interface RenderBody { row_version: string; source_hash: string; acknowledge_stale_source: boolean }
+export const renderBody = (value: AssemblyState, acknowledge: boolean): RenderBody => ({ row_version: value.assembly!.row_version, source_hash: value.source_hash, acknowledge_stale_source: acknowledge });
 export function assemblyApi(projectId: string, episodeId: string) {
   const root = `/projects/${encodeURIComponent(projectId)}/episodes/${encodeURIComponent(episodeId)}/assembly`;
   let saveRequest: { fingerprint: string; request_id: string } | null = null;
@@ -52,6 +54,7 @@ export function assemblyApi(projectId: string, episodeId: string) {
     history: async (offset = 0) => (await http.get<{ items: RenderJob[]; has_more: boolean }>(`${root}/exports`, { params: { offset, limit: 20 } })).data,
     cancel: async (id: string) => (await http.post<RenderJob>(`${root}/exports/${id}/cancel`)).data,
     retry: async (id: string, key: string) => (await http.post<RenderJob>(`${root}/exports/${id}/retry`, {}, { headers: { 'Idempotency-Key': key } })).data,
+    submitRender: async (kind: 'export' | 'preview' | 'retry', body: RenderBody | Record<string, never>, key: string, job_id?: string) => (await http.post<RenderJob>(kind === 'retry' ? `${root}/exports/${job_id}/retry` : `${root}/${kind === 'preview' ? 'previews' : 'exports'}`, body, { headers: { 'Idempotency-Key': key } })).data,
     apply: async (id: string, value: AssemblyState, acknowledge: boolean) => (await http.post<RenderJob>(`${root}/exports/${id}/apply`, { row_version: value.assembly!.row_version, context_hash: value.context_hash, acknowledge_stale_source: acknowledge })).data,
     download: (id: string) => `${http.defaults.baseURL}${root}/exports/${id}/download`,
     downloadCurrent: () => `${http.defaults.baseURL}${root}/current/download`,

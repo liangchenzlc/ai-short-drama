@@ -23,7 +23,15 @@ def test_disabled_agent_status_and_mutation_without_agent_schema():
         assert status.status_code == 200
         assert status.json() == {"enabled": False, "schema_ready": False}
         response = client.post(
-            "/api/v1/agent/conversations", json={"project_id": "1", "episode_id": "2"}
+            "/api/v1/agent/conversations",
+            json={
+                "project_id": "1",
+                "episode_id": "2",
+                "stage": "source",
+                "subject_type": "episode",
+                "subject_id": "2",
+                "task_type": "writing",
+            },
         )
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "agent_disabled"

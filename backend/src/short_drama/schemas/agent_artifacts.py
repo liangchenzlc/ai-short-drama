@@ -1,4 +1,4 @@
-"""Project-shared candidates; these contracts never expose private Agent origins."""
+"""Author-private candidates; adopted works are shared through the native workflow."""
 
 from datetime import datetime
 from typing import Any, Literal
@@ -10,7 +10,6 @@ from short_drama.schemas.base import (
     Identifier,
     InputModel,
     MediumText,
-    PositiveUInt64,
     ReadModel,
 )
 
@@ -30,12 +29,12 @@ ArtifactStatus = Literal["ready", "applied", "rejected", "archived"]
 
 class ArtifactSource(ReadModel):
     episode_id: Identifier
-    content_version: PositiveUInt64
-    storyboard_version: PositiveUInt64
-    episode_row_version: PositiveUInt64
+    content_version: Identifier
+    storyboard_version: Identifier
+    episode_row_version: Identifier
     target_kind: Literal["episode", "asset", "shot"] = "episode"
     target_id: Identifier | None = None
-    target_row_version: PositiveUInt64 | None = None
+    target_row_version: Identifier | None = None
     model_name: str | None = None
     generated_at: datetime | None = None
 
@@ -52,7 +51,7 @@ class ArtifactSummary(ReadModel):
     episode_id: Identifier
     kind: ArtifactKind
     status: ArtifactStatus
-    row_version: PositiveUInt64
+    row_version: Identifier
     preview: str
     source_snapshot: ArtifactSource
     script_id: Identifier | None
@@ -72,15 +71,16 @@ class ArtifactSummary(ReadModel):
 
 class ArtifactRead(ArtifactSummary):
     content: str | None
+    content_origin: Literal["snapshot", "current_script_legacy"] | None = None
     patch: dict | None
     diff: list[PatchDifference]
 
 
 class ArtifactAdopt(InputModel):
-    row_version: PositiveUInt64
-    content_version: PositiveUInt64
-    storyboard_version: PositiveUInt64 | None = None
-    target_row_version: PositiveUInt64 | None = None
+    row_version: Identifier
+    content_version: Identifier
+    storyboard_version: Identifier | None = None
+    target_row_version: Identifier | None = None
     confirm_shared: bool = False
     native_review: dict | None = None
 

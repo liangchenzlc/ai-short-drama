@@ -165,7 +165,7 @@ def pending_review(factory, conversation_id, run_id):
         return tool.id, tool.review_hash
 
 
-def test_send_is_private_idempotent_and_single_active_without_private_dto_leak(workspace):
+def test_send_is_private_idempotent_and_queues_without_private_dto_leak(workspace):
     factory, project_id, episode_id, _ = workspace
     conversation_id, model_id = setup(factory, project_id, episode_id)
     first = send(factory, conversation_id, model_id)
@@ -173,9 +173,8 @@ def test_send_is_private_idempotent_and_single_active_without_private_dto_leak(w
     assert replay.message.id == first.message.id and replay.run.id == first.run.id
     with pytest.raises(Conflict):
         send(factory, conversation_id, model_id, content="Different content")
-    with pytest.raises(WorkflowError) as active:
-        send(factory, conversation_id, model_id, key="message-2")
-    assert active.value.code == "agent_run_active"
+    queued = send(factory, conversation_id, model_id, key="message-2")
+    assert queued.run.status == "queued" and queued.run.queue_position == 1
     with factory() as session:
         other = runs(session, 2)
         with pytest.raises(NotFound):
@@ -190,15 +189,15 @@ def test_send_is_private_idempotent_and_single_active_without_private_dto_leak(w
         assert "PRIVATE" not in display and "credential_cipher" not in display
         assert "checkpoint" not in display and "arguments" not in display
         assert str(tool_id) in display and review_hash in display
-        assert session.scalar(select(func.count(AgentMessage.id))) == 1
-        assert session.scalar(select(func.count(AgentRun.id))) == 1
+        assert session.scalar(select(func.count(AgentMessage.id))) == 2
+        assert session.scalar(select(func.count(AgentRun.id))) == 2
 
 
 @pytest.mark.parametrize(
     "content,task,expected,needs_plan",
     [
         ("先讨论，暂时不要生成", {"kind": "novel", "instructions": "Write it."}, "discuss", False),
-        ("Generate a novel and then a storyboard.", None, "discuss", True),
+        ("Generate a novel and then a storyboard.", None, "auto", True),
         ("Generate this novel.", {"kind": "novel", "instructions": "Write it."}, "single", False),
     ],
 )
@@ -266,7 +265,7 @@ def test_plan_approval_is_bound_to_version_hash_and_stop_prevents_late_approval(
         svc.stop(next_run.run.id)
         with pytest.raises(Conflict):
             svc.review(next_run.run.id, next_tool, {**decision, "review_hash": next_hash})
-        assert svc.get_run(next_run.run.id).mode == "discuss"
+        assert svc.get_run(next_run.run.id).mode == "auto"
 
 
 def test_changed_source_invalidates_review_without_expanding_authorization(workspace):
@@ -289,7 +288,7 @@ def test_changed_source_invalidates_review_without_expanding_authorization(works
             )
         assert changed.value.code == "agent_source_changed"
         unchanged = runs(session).get_run(accepted.run.id)
-        assert unchanged.status == "waiting_review" and unchanged.mode == "discuss"
+        assert unchanged.status == "waiting_review" and unchanged.mode == "auto"
 
 
 def test_model_capability_is_explicit_version_bound_and_failed_probe_invalidates_cache(workspace):
@@ -311,9 +310,8 @@ def test_model_capability_is_explicit_version_bound_and_failed_probe_invalidates
         session.info["actor"] = actor(1)
         svc = AgentModelService(session, cfg, gateway=Probe())
         assert not svc.list_models().items[0].verified and calls == []
-        with pytest.raises(WorkflowError) as unverified:
-            svc.select_model(model_id)
-        assert unverified.value.code == "agent_model_unverified"
+        assert svc.select_model(model_id).id == model_id
+        assert calls == []
         session.rollback()
         verified = svc.verify(model_id, {"row_version": 1})
         assert verified.verified and verified.streaming == "verified" and calls == [1]
@@ -475,9 +473,9 @@ def test_concurrent_messages_use_current_state_after_serializing_on_scope(
         assert results[0].message.id == results[1].message.id
         assert results[0].run.id == results[1].run.id
     else:
-        assert sum(value == "agent_run_active" for value in results) == 1
+        assert len({result.run.id for result in results}) == 2
     with factory() as session:
-        assert session.scalar(select(func.count(AgentRun.id))) == 1
+        assert session.scalar(select(func.count(AgentRun.id))) == (1 if same_key else 2)
 
 
 @pytest.mark.parametrize("revocation", ["logout", "membership"])
@@ -521,7 +519,7 @@ def test_open_sse_rechecks_session_and_membership_before_emitting_more_private_e
 
     async def exercise():
         response = await conversation_events(
-            str(conversation_id), request, cursor=0, last_event_id=None
+            str(conversation_id), request, scope=None, cursor=0, last_event_id=None
         )
         assert response.headers["cache-control"] == "no-store"
         iterator = response.body_iterator
@@ -555,6 +553,11 @@ def test_open_sse_rechecks_session_and_membership_before_emitting_more_private_e
 def test_authenticated_message_api_preserves_private_scope_and_idempotency(workspace):
     factory, project_id, episode_id, _ = workspace
     conversation_id, model_id = setup(factory, project_id, episode_id)
+    with factory.begin() as session:
+        conversation = session.get(AgentConversation, conversation_id)
+        conversation.stage, conversation.subject_type = "source", "episode"
+        conversation.subject_id, conversation.task_type = episode_id, "writing"
+        conversation.scope_version = 1
     cfg = settings()
     app = create_app(cfg)
     app.state.session_factory, app.state.agent_schema_ready = factory, True

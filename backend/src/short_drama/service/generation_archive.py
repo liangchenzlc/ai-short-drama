@@ -8,6 +8,8 @@ from io import BytesIO
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 
+from short_drama.ai import GenerationError
+from short_drama.ai.canvas_credentials import decode_canvas_credentials
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import NotFound
 from short_drama.dao.asset_image_candidate_dao import AssetImageCandidateDAO
@@ -124,6 +126,11 @@ class GenerationArchive:
             with self.factory() as session:
                 record = session.get(AIGenerationRecord, record_id)
                 native = (record.request_data.get("source_snapshot") or {}).get("native_speech")
+                canvas_video = "canvas_request" in record.request_data
+            if canvas_video:
+                from .canvas_resource_io import probe_resource
+
+                meta.update(probe_resource(BytesIO(data), "video", self.settings))
             if native is not None:
                 from .native_video_media import inspect_native_video
 
@@ -197,9 +204,9 @@ class GenerationArchive:
             )
         return "linked"
 
-    def save_one(self, task, record, entry, version, token):
+    def save_one(self, task, record, entry, version, token, *, ownership_check=owned_task):
         with self.factory.begin() as session:
-            owned_task(session, task.id, version, token)
+            ownership_check(session, task.id, version, token)
             current_record = session.get(AIGenerationRecord, record.id)
             existing = session.scalar(
                 select(MediaAsset).where(
@@ -231,7 +238,26 @@ class GenerationArchive:
             if not entry.get("source_cipher"):
                 return False
             url = self._cipher().decrypt(entry["source_cipher"])
-            data, _mime = self.gateway.download_media(url, MAX_MEDIA_BYTES[task.service_type])
+            options = {}
+            if "canvas_auth_version" in record.config_snapshot:
+                plaintext = self._cipher().decrypt(record.credential_cipher)
+                options = {
+                    "snapshot": record.config_snapshot,
+                    "credential": decode_canvas_credentials(
+                        record.config_snapshot, record.request_data, plaintext
+                    ),
+                }
+            try:
+                data, _mime = self.gateway.download_media(
+                    url, MAX_MEDIA_BYTES[task.service_type], **options
+                )
+            except GenerationError as error:
+                from .canvas_video_admission import VIDEO_ADAPTERS
+                from .canvas_video_policy import CanvasVideoDownloadError
+
+                if record.adapter in VIDEO_ADAPTERS:
+                    raise CanvasVideoDownloadError(error) from None
+                raise
             entry = {**entry, **self._store(task.id, record.id, entry, data)}
         location = ObjectLocation.parse(
             entry["locator"],
@@ -245,7 +271,7 @@ class GenerationArchive:
         if stored.size != entry["byte_size"]:
             raise ValueError("Stored media size changed")
         with self.factory.begin() as session:
-            owned_task(session, task.id, version, token)
+            ownership_check(session, task.id, version, token)
             current_record = session.get(AIGenerationRecord, record.id)
             asset = session.scalar(
                 select(MediaAsset).where(

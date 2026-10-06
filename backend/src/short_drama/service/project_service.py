@@ -20,7 +20,7 @@ class ProjectService(BaseService):
     update_schema = ProjectUpdate
     read_schema = ProjectRead
 
-    def _read(self, entity, *, opened=_UNSET):
+    def _read(self, entity, *, opened=_UNSET, canvas_summary=_UNSET):
         dto = super()._read(entity)
         actor = self.session.info.get("actor")
         if actor:
@@ -42,6 +42,12 @@ class ProjectService(BaseService):
                     },
                 }
             )
+        if dto.workspace_mode == "infinite_canvas":
+            if canvas_summary is _UNSET:
+                from short_drama.dao.canvas_dao import CanvasDAO
+
+                canvas_summary = CanvasDAO(self.session).summaries([entity.id]).get(entity.id, {})
+            dto = dto.model_copy(update=canvas_summary)
         return dto
 
     def delete(self, identifier):
@@ -56,9 +62,20 @@ class ProjectService(BaseService):
             entity.row_version += 1
             self.session.flush()
 
-    def create_project(self, payload):
+    def create_project(self, payload, *, idempotency_key=None):
         values = self._payload(ProjectCreateRequest, payload)
         with self._transaction():
+            canvas_service = None
+            if values.get("workspace_mode") == "infinite_canvas":
+                from short_drama.service.canvas_service import CanvasService
+
+                canvas_service = CanvasService(self.session)
+                normalized = ProjectCreateRequest.model_validate(values).model_dump(mode="json")
+                digest, receipt = canvas_service.begin_write(
+                    idempotency_key, "project.create", normalized
+                )
+                if receipt:
+                    return ProjectRead.model_validate(receipt.result_json)
             values = self._creation_audit(values)
             values["last_opened_at"] = values["created_at"]
             project = self.dao.create(values)
@@ -66,6 +83,17 @@ class ProjectService(BaseService):
             from short_drama.domain.native_voice import ProjectSoundMode
 
             settings = Settings()
+            if canvas_service:
+                canvas = canvas_service.initialize_project(project)
+                result = self._read(project)
+                canvas_service.record_write(
+                    key=idempotency_key,
+                    operation="project.create",
+                    digest=digest,
+                    canvas=canvas,
+                    result=result.model_dump(mode="json"),
+                )
+                return result
             if settings.native_video_enabled and settings.audio_production_enabled:
                 self.session.add(
                     ProjectSoundMode(project_id=project.id, mode="native", row_version=1)
@@ -76,10 +104,18 @@ class ProjectService(BaseService):
     def list_projects(self, offset=0, limit=20, query=""):
         with self._transaction(read_only=True):
             rows, total = ProjectDAO(self.session).list_with_episode_counts(offset, limit, query)
+            from short_drama.dao.canvas_dao import CanvasDAO
+
+            summaries = CanvasDAO(self.session).summaries(
+                [row.id for row, _, _ in rows if row.workspace_mode == "infinite_canvas"]
+            )
             return Page(
                 items=[
                     ProjectSummary(
-                        **self._read(row, opened=opened).model_dump(), episode_count=count
+                        **self._read(
+                            row, opened=opened, canvas_summary=summaries.get(row.id, {})
+                        ).model_dump(),
+                        episode_count=count,
                     )
                     for row, count, opened in rows
                 ],

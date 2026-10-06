@@ -21,6 +21,7 @@ from short_drama.agent.state import (
     finish_locked,
     initial_usage,
     mark_scheduled,
+    run_artifact_references,
     safe_error,
     wait_locked,
 )
@@ -108,7 +109,25 @@ def may_decide(session, project, conversation, run):
         episode is not None
         and episode.project_id == project.id
         and isinstance(authorization, dict)
-        and authorization.get("mode") in {"discuss", "single", "workflow"}
+        and authorization.get("mode") in {"auto", "discuss", "single", "workflow"}
+    )
+
+
+def preceding_execution(session, run):
+    """Conversation lock serializes execution; review waits allow supplementary chat."""
+    blockers = AgentRun.status.in_(("running", "waiting_generation"))
+    if run.status == "queued":
+        blockers = blockers | ((AgentRun.status == "queued") & (AgentRun.id < run.id))
+    return session.scalar(
+        select(AgentRun.id)
+        .where(
+            AgentRun.conversation_id == run.conversation_id,
+            AgentRun.id != run.id,
+            blockers,
+        )
+        .order_by(AgentRun.id)
+        .limit(1)
+        .with_for_update()
     )
 
 
@@ -268,6 +287,8 @@ class AgentRuntimeStore:
                     or run.next_run_at > now
                 ):
                     continue
+                if preceding_execution(session, run) is not None:
+                    continue
                 run.message_status = "publishing"
                 run.lease_token, run.lease_until = (
                     uuid4().hex,
@@ -316,6 +337,18 @@ class AgentRuntimeStore:
                 return None
             if run.cancel_requested or not may_decide(session, project, conversation, run):
                 finish_locked(session, conversation, run, "cancelled", {"code": "access_revoked"})
+                return None
+            if preceding_execution(session, run) is not None:
+                run.message_status = "pending"
+                run.lease_token = run.lease_until = None
+                return None
+            from short_drama.core.exceptions import BusinessError
+            from short_drama.service.agent_conversation_service import validate_conversation_subject
+
+            try:
+                validate_conversation_subject(session, conversation, lock=True)
+            except BusinessError as error:
+                finish_locked(session, conversation, run, "failed", {"code": error.code})
                 return None
             run.status = "running"
             run.started_at = run.started_at or now
@@ -394,6 +427,13 @@ class AgentRuntimeStore:
                 or turn.status != "prepared"
             ):
                 raise AgentGatewayError("agent_admission_denied")
+            from short_drama.core.exceptions import BusinessError
+            from short_drama.service.agent_conversation_service import validate_conversation_subject
+
+            try:
+                validate_conversation_subject(session, conversation, lock=True)
+            except BusinessError as error:
+                raise AgentGatewayError(error.code) from None
             budget = checked_budget(run)
             usage = {**initial_usage(), **(run.usage or {})}
             amount = claim.inputs["kwargs"]["max_output_tokens"]
@@ -538,6 +578,23 @@ class AgentRuntimeStore:
             response["applied"] = True
             turn.response = response
             if normalized["output_kind"] == "text":
+                authorization = checkpoint.get("authorization") or {}
+                if authorization.get("mode") in {"single", "workflow"} and any(
+                    step["id"] not in authorization.get("consumed_steps", [])
+                    for step in authorization.get("steps", [])
+                ):
+                    finish_locked(
+                        session,
+                        conversation,
+                        run,
+                        "failed",
+                        {
+                            "code": "agent_plan_not_completed"
+                            if authorization.get("mode") == "workflow"
+                            else "agent_task_not_executed",
+                        },
+                    )
+                    return False
                 message = AgentMessage(
                     id=next_id(),
                     conversation_id=conversation.id,
@@ -545,7 +602,7 @@ class AgentRuntimeStore:
                     role="assistant",
                     content=normalized["output"],
                     references=[],
-                    artifacts=[],
+                    artifacts=run_artifact_references(session, conversation, run),
                     created_at=utcnow(),
                 )
                 conversation.next_message_seq += 1
@@ -560,6 +617,7 @@ class AgentRuntimeStore:
                         "seq": message.seq,
                         "role": "assistant",
                         "content": message.content,
+                        "artifacts": message.artifacts,
                     },
                     run_id=run.id,
                 )
@@ -642,7 +700,16 @@ class AgentRuntimeStore:
                     utcnow(),
                     utcnow(),
                 )
-            finish_locked(session, conversation, run, "failed", safe_error(error.code))
+            finish_locked(
+                session,
+                conversation,
+                run,
+                "failed",
+                {
+                    **safe_error(error.code),
+                    "accepted_unknown": error.accepted_unknown,
+                },
+            )
 
 
 class _DeltaBuffer:

@@ -18,7 +18,8 @@ async function safetyFixture(page: Page) {
   });
   const assets = [asset('501', '林晚'), asset('504', '沈川')];
   const conversation = {
-    id: '301', project_id: '10', episode_id: '20', title: '素材准备：归来的旅人', row_version: 1,
+    id: '301', project_id: '10', episode_id: '20', title: '角色：林晚', row_version: '1',
+    stage: 'assets', subject_type: 'asset', subject_id: '501', task_type: 'creation', scope_version: 1,
     archived: false, last_run_status: null, created_at: time, updated_at: time,
   };
   const state = {
@@ -52,7 +53,9 @@ async function safetyFixture(page: Page) {
         streaming: 'verified', preferred: true }], preferred_id: '71',
     });
     if (path === '/agent/conversations') return reply({ items: [conversation], total: 1, offset: 0, limit: 20 });
+    if (path === '/agent/conversations/resolve') return reply(conversation);
     if (path === '/agent/conversations/301') return reply(conversation);
+    if (path === '/agent/conversations/301/state') return reply({ conversation_id: '301', cursor: 0, resume_cursor: 0, active_run: null, queued_runs: [] });
     if (path === '/agent/conversations/301/events') return route.fulfill({
       status: 200, contentType: 'text/event-stream', body: ': heartbeat\n\n',
     });
@@ -107,7 +110,7 @@ test('a material version conflict keeps the draft when leaving is cancelled', as
   const confirmation = page.getByRole('dialog', { name: '未保存的修改', exact: true });
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`${root}/assets$`));
+  await expect(page).toHaveURL(url => url.pathname === `${root}/assets` && url.searchParams.get('agent_subject_assets') === '501');
   await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('发生冲突仍保留的草稿');
   expect(data.state.updates).toHaveLength(1);
   expect(data.state.assets[0].name).toBe('林晚');
@@ -154,13 +157,14 @@ test('a pending material save locks object switching until its response has been
 
 test('returning to Agent preserves its draft and stays in editing when material saving conflicts', async ({ page }) => {
   const data = await safetyFixture(page);
-  await page.goto(`${root}/assets?mode=agent&conversation=301&conversation_stage=assets&conversation_assets=301`);
+  await page.goto(`${root}/assets?mode=agent&agent_subject_assets=501`);
   const composer = page.getByRole('textbox', { name: '创作要求', exact: true });
   await expect(composer).toBeVisible();
   const message = '依据最新角色名称，讨论本集素材安排。';
   await composer.fill(message);
   data.state.conflicts = true;
-  await page.getByRole('button', { name: '林晚', exact: true }).click();
+  await page.getByRole('button', { name: '林晚更多操作', exact: true }).click();
+  await page.getByRole('menuitem', { name: '编辑素材', exact: true }).click();
   const detail = page.locator('.episode-asset-detail');
   await expect(detail).toBeVisible();
   await detail.getByLabel('名称', { exact: true }).fill('Agent 请求前的素材草稿');
@@ -178,6 +182,12 @@ test('returning to Agent preserves its draft and stays in editing when material 
   expect(data.state.sends).toEqual([]);
   await expect(composer).toBeHidden();
   data.state.conflicts = false;
+  await detail.getByRole('button', { name: '核对最新版本', exact: true }).click();
+  const review = page.getByRole('dialog', { name: '核对素材版本', exact: true });
+  await expect(review).toBeVisible();
+  await review.getByRole('button', { name: '已核对，保留草稿继续编辑', exact: true }).click();
+  await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('Agent 请求前的素材草稿');
+  expect(data.state.sends).toEqual([]);
   await detail.getByRole('button', { name: '返回素材列表', exact: true }).click();
   await confirmation.getByRole('button', { name: '保存并返回', exact: true }).click();
   await expect(detail).toHaveCount(0);

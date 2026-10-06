@@ -5,7 +5,10 @@ type Status = 'loading' | 'saved' | 'unsaved' | 'saving' | 'error' | 'conflict';
 export interface WritingSnapshot {
   loaded: boolean; status: Status; novel: string; script: string; scriptId: string | null;
   contentVersion: string; confirmed: boolean; dirty: boolean; busy: boolean; message: string;
+  recoverable?: boolean; recoveryChanged?: boolean; recoveryBlocked?: boolean;
 }
+export interface WritingDraft { base_version: string; novel: string; script: string; script_id: string | null }
+export interface WritingRecovery { read: () => WritingDraft | null; save: (draft: WritingDraft) => void; clear: () => void; export?: () => string | null }
 type Attempt = { before: WritingResponse; field: Field; content: string };
 const sameRecord = (a: WritingResponse['novel'], b: WritingResponse['novel']) => a?.id === b?.id && a?.content === b?.content;
 const sameWriting = (a: WritingResponse, b: WritingResponse) => a.content_version === b.content_version
@@ -22,7 +25,10 @@ export class WritingSession {
   private operation: Promise<boolean> | null = null;
   private disposed = false;
   private uncertain: Attempt | null = null;
-  constructor(private readonly api: WritingTransport) {}
+  private recovered: WritingDraft | null = null;
+  private recoveryBlocked = false;
+  private persisted = '';
+  constructor(private readonly api: WritingTransport, private readonly recovery?: WritingRecovery) {}
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish(patch: Partial<WritingSnapshot> = {}) {
@@ -33,6 +39,19 @@ export class WritingSession {
     this.snapshot.contentVersion = this.server?.content_version ?? '0';
     this.snapshot.confirmed = !!this.server?.editing_script && this.server.editing_script.state === 'confirmed'
       && this.server.confirmed_script_id === this.server.editing_script.id && this.snapshot.script === this.server.editing_script.content;
+    this.snapshot.recoverable = this.recovered !== null;
+    this.snapshot.recoveryBlocked = this.recoveryBlocked;
+    this.snapshot.recoveryChanged = !!this.recovered && (this.recovered.base_version !== this.server?.content_version || this.recovered.script_id !== this.server?.editing_script?.id && !(this.recovered.script_id === null && !this.server?.editing_script));
+    if (this.recovery && this.server && this.snapshot.loaded && !this.recovered && !this.recoveryBlocked) {
+      try {
+        const draft: WritingDraft = { base_version: this.server.content_version, novel: this.snapshot.novel, script: this.snapshot.script, script_id: this.server.editing_script?.id ?? null };
+        const fingerprint = this.snapshot.dirty ? JSON.stringify(draft) : '';
+        if (fingerprint !== this.persisted) {
+          if (fingerprint) this.recovery.save(draft); else this.recovery.clear();
+          this.persisted = fingerprint;
+        }
+      } catch { this.snapshot.message = '本机草稿恢复记录无法保存，请下载当前草稿备份。服务端保存仍会按原规则执行。'; }
+    }
     this.listeners.forEach(listener => listener());
   }
   async load(): Promise<boolean> {
@@ -41,13 +60,19 @@ export class WritingSession {
     try {
       const data = await this.api.get();
       if (this.disposed) return false;
+      if (!this.snapshot.loaded && this.recovery) {
+        try {
+          this.recovered = this.recovery.read();
+          if (this.recovered && this.recovered.novel === (data.novel?.content ?? '') && this.recovered.script === (data.editing_script?.content ?? '')) { this.recovery.clear(); this.recovered = null; }
+        } catch { this.recoveryBlocked = true; }
+      } else if (this.snapshot.loaded && this.recovery) { this.recovery.clear(); this.recovered = null; this.recoveryBlocked = false; this.persisted = ''; }
       this.server = data; this.uncertain = null;
-      this.publish({ loaded: true, novel: data.novel?.content ?? '', script: data.editing_script?.content ?? '', status: 'saved', busy: false });
+      this.publish({ loaded: true, novel: data.novel?.content ?? '', script: data.editing_script?.content ?? '', status: this.recoveryBlocked ? 'error' : 'saved', busy: false, message: this.recoveryBlocked ? '本机正文恢复记录无法读取，服务端正文仍可查看。请下载恢复记录核对，明确放弃后才能继续编辑。' : '' });
       return true;
     } catch { this.publish({ status: 'error', busy: false, message: '内容加载失败，请重试。草稿不会自动提交。' }); return false; }
   }
   edit(field: Field, content: string) {
-    if (!this.server || this.disposed || this.snapshot.status === 'loading') return;
+    if (!this.server || this.disposed || this.snapshot.status === 'loading' || this.recovered || this.recoveryBlocked) return;
     this.publish({ [field]: content });
     if (this.snapshot.status === 'error' || this.snapshot.status === 'conflict') return;
     this.publish({ status: this.snapshot.busy ? 'saving' : this.snapshot.dirty ? 'unsaved' : 'saved' });
@@ -85,7 +110,7 @@ export class WritingSession {
     clearTimeout(this.timer);
     if (this.operation) return this.operation.then(ok => ok ? this.flush() : false);
     if (this.running) return this.running;
-    if (this.disposed || !this.server || this.snapshot.busy || ['error', 'conflict', 'loading'].includes(this.snapshot.status)) return Promise.resolve(false);
+    if (this.disposed || !this.server || this.recovered || this.recoveryBlocked || this.snapshot.busy || ['error', 'conflict', 'loading'].includes(this.snapshot.status)) return Promise.resolve(false);
     this.running = this.drain().finally(() => { this.running = null; this.publish({ busy: false }); });
     return this.running;
   }
@@ -119,7 +144,7 @@ export class WritingSession {
     this.publish({ status: 'saved' }); return true;
   }
   async retry() {
-    if (this.disposed || this.snapshot.status === 'conflict' || this.snapshot.busy) return false;
+    if (this.disposed || this.snapshot.status === 'conflict' || this.snapshot.busy || this.recoveryBlocked) return false;
     if (!this.server) return this.load();
     this.publish({ busy: true });
     try {
@@ -133,6 +158,25 @@ export class WritingSession {
     return this.flush();
   }
   confirm() { return this.startAction('confirm'); }
+  getRecoveredDraft() { return this.recovered; }
+  exportRecovered() { return this.recovery?.export?.() ?? (this.recovered ? JSON.stringify(this.recovered, null, 2) : null); }
+  discardRecovered() { this.recovery?.clear(); this.recovered = null; this.recoveryBlocked = false; this.persisted = ''; this.publish({ status: this.snapshot.dirty ? 'unsaved' : 'saved', message: '' }); }
+  async restoreRecovered(rebase = false) {
+    if (!this.recovered || this.disposed || this.snapshot.busy || this.running) return false;
+    const draft = this.recovered;
+    this.publish({ busy: true });
+    try {
+      const latest = await this.api.get();
+      if (this.disposed) return false;
+      this.server = latest;
+      const changed = latest.content_version !== draft.base_version || (latest.editing_script?.id ?? null) !== draft.script_id;
+      if (changed && !rebase) { this.publish({ novel: latest.novel?.content ?? '', script: latest.editing_script?.content ?? '', message: '恢复稿的基准版本已变化，请对照当前正文并明确决定是否保留恢复稿。' }); return false; }
+      this.recovered = null; this.persisted = '';
+      this.publish({ novel: draft.novel, script: draft.script, status: 'unsaved', message: '' });
+      return true;
+    } catch { this.publish({ message: '恢复前读取最新正文失败，恢复稿仍保留，请重试。' }); return false; }
+    finally { this.publish({ busy: false }); }
+  }
   select(id: string) { return this.startAction('select', id); }
   private startAction(kind: 'confirm' | 'select', id?: string) {
     if (this.operation) return this.operation;

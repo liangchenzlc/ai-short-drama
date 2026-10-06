@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from short_drama.api.dependencies import get_session
 from short_drama.schemas.asset_extraction import ExtractionApply, ExtractionPatch
 from short_drama.schemas.base import Identifier
+from short_drama.schemas.episode_storyboard import StoryboardResultPage
 from short_drama.schemas.storyboard_apply import StoryboardApplied, StoryboardApply
 from short_drama.service.asset_extraction_service import AssetExtractionService
 from short_drama.service.generation_business_service import GenerationBusinessService
@@ -63,7 +64,7 @@ def apply_extraction_result(
     )
 
 
-@router.get("/storyboard-results/{generation_id}/shots")
+@router.get("/storyboard-results/{generation_id}/shots", response_model=StoryboardResultPage)
 def storyboard_result_page(
     project_id: Identifier,
     episode_id: Identifier,

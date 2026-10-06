@@ -4,7 +4,7 @@ from copy import deepcopy
 
 from sqlalchemy import select
 
-from short_drama.agent.authorization import check_source
+from short_drama.agent.authorization import check_source, scoped_task
 from short_drama.agent.state import append_event, wait_locked
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import NotFound, WorkflowError
@@ -107,6 +107,26 @@ def create_candidate_locked(session, conversation, run, tool, args, *, settings)
     step = next((s for s in authorization.get("steps", []) if s["id"] == args.step_id), None)
     if step is None:
         raise WorkflowError("agent_step_not_authorized", "Task step is not authorized", 409)
+    from short_drama.agent.tools import _pending_parent
+    from short_drama.service.agent_conversation_service import validate_conversation_subject
+
+    if _pending_parent(session, run) is not None:
+        raise WorkflowError("agent_review_required", "请先审核或修订当前计划", 409)
+    validate_conversation_subject(session, conversation, lock=True)
+    scoped_task(
+        conversation,
+        {
+            key: step[key]
+            for key in (
+                "kind",
+                "target_id",
+                "instructions",
+                "model_config_id",
+                "count",
+                "parameters",
+            )
+        },
+    )
     pending = [
         item
         for item in authorization.get("steps", [])
@@ -151,6 +171,7 @@ def create_candidate_locked(session, conversation, run, tool, args, *, settings)
         if step["kind"] == "novel":
             values["source_content"] = content
         else:
+            values["source_content"] = content
             script = BaseDAO(session, EpisodeScript).create(
                 {
                     "episode_id": episode.id,

@@ -1,5 +1,6 @@
 """Small, provider-independent generation boundary; never retain raw responses."""
 
+import math
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -14,6 +15,7 @@ class GenerationError(Exception):
         retryable=False,
         protocol_mismatch=False,
         http_status=None,
+        retry_after=None,
     ):
         self.code = code
         self.accepted_unknown = accepted_unknown
@@ -21,6 +23,11 @@ class GenerationError(Exception):
         self.protocol_mismatch = protocol_mismatch
         self.http_status = (
             http_status if type(http_status) is int and 100 <= http_status <= 599 else None
+        )
+        self.retry_after = (
+            retry_after
+            if type(retry_after) in {int, float} and math.isfinite(retry_after) and retry_after > 0
+            else None
         )
         # Caller-controlled URLs, credentials, upstream messages and bodies are never included.
         super().__init__(f"Generation request failed: {code}")

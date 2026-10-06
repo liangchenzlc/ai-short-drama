@@ -12,16 +12,25 @@ from sqlalchemy.orm import Mapper, Session, with_loader_criteria
 from sqlalchemy.orm.interfaces import ORMOption
 
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.domain import AGENT_PRIVATE_TABLES, AGENT_TABLES, Base
+from short_drama.domain import (
+    AGENT_PRIVATE_TABLES,
+    AGENT_TABLES,
+    CANVAS_PRIVATE_TABLES,
+    CANVAS_TABLES,
+    AIModelConfig,
+    Base,
+)
 from short_drama.domain.collaboration import AuditEvent, ResourceScope
 from short_drama.utils.snowflake import next_id
 
+from .canvas_recycle_access import CanvasRecycleScope, recycle_scope
 
-def project_ids(user_id):
+
+def project_ids(user_id, *, include_archived=False):
     projects = Base.metadata.tables["projects"].alias("allowed_projects")
     members = Base.metadata.tables["project_members"].alias("allowed_members")
     return select(projects.c.id).where(
-        projects.c.archived_at.is_(None),
+        True if include_archived else projects.c.archived_at.is_(None),
         or_(
             projects.c.owner_user_id == user_id,
             projects.c.id.in_(
@@ -41,6 +50,49 @@ def allowed_ids(name, user_id):
 def condition(table, user_id):
     name = table.original.name if hasattr(table, "original") else table.name
     c = table.c
+    if name in {
+        "canvas_workspace_user_states",
+        "canvas_model_catalogs",
+        "canvas_channel_models",
+        "canvas_beefapi_connections",
+        "canvas_library_folders",
+        "canvas_project_folders",
+        "canvas_project_folder_items",
+        "canvas_resource_deletions",
+        "canvas_creation_attempts",
+        "canvas_creation_resources",
+    }:
+        return c.user_id == user_id
+    if name == "canvas_library_assets":
+        return and_(
+            c.user_id == user_id,
+            or_(c.project_id.is_(None), c.project_id.in_(project_ids(user_id))),
+        )
+    if name in {"canvas_library_asset_references", "canvas_library_folder_items"}:
+        return c.library_asset_id.in_(allowed_ids("canvas_library_assets", user_id))
+    if name in {"canvas_resource_chunks", "canvas_resource_copy_sources"}:
+        return c.upload_id.in_(allowed_ids("canvas_resource_uploads", user_id))
+    if name == "canvas_resource_uploads":
+        return and_(
+            c.user_id == user_id,
+            or_(c.scope_user_id == user_id, c.project_id.in_(project_ids(user_id))),
+        )
+    if name == "canvas_task_bindings":
+        return and_(c.initiated_by == user_id, c.project_id.in_(project_ids(user_id)))
+    if name in {"canvas_task_media_references", "canvas_task_text_deltas", "canvas_results"}:
+        return and_(
+            c.task_binding_id.in_(allowed_ids("canvas_task_bindings", user_id)),
+            c.created_by == user_id,
+            c.project_id.in_(project_ids(user_id)),
+        )
+    if name in CANVAS_PRIVATE_TABLES:
+        owner = c.actor_user_id if name == "canvas_write_receipts" else c.user_id
+        return and_(
+            owner == user_id,
+            c.project_id.in_(
+                project_ids(user_id, include_archived=name == "canvas_write_receipts")
+            ),
+        )
     # Private execution data never inherits the ordinary shared-project predicate.
     if name == "agent_conversations":
         return and_(c.owner_user_id == user_id, c.project_id.in_(project_ids(user_id)))
@@ -78,7 +130,7 @@ def condition(table, user_id):
         )
     if name == "asset_image_candidates":
         return and_(c.created_by == user_id, c.asset_id.in_(allowed_ids("assets", user_id)))
-    if name == "media_files":
+    if name in {"media_files", "canvas_binary_resources"}:
         return or_(
             c.scope_user_id == user_id,
             and_(
@@ -123,6 +175,7 @@ def condition(table, user_id):
                     c.actor_user_id == user_id,
                     c.object_type.not_in(
                         [
+                            *CANVAS_PRIVATE_TABLES,
                             "async_tasks",
                             "ai_generation_records",
                             "generation_batches",
@@ -133,6 +186,7 @@ def condition(table, user_id):
                             "episode_render_jobs",
                             "episode_scripts",
                             "media_files",
+                            "canvas_binary_resources",
                             "novel_script_records",
                             "script_shot_records",
                         ]
@@ -163,13 +217,62 @@ def condition(table, user_id):
     return false()
 
 
+def _recycle_condition(table, user_id: int, scope: CanvasRecycleScope | None):
+    ordinary = condition(table, user_id)
+    if scope is None:
+        return ordinary
+    allowed = project_ids(user_id, include_archived=True)
+    if table.name == "projects":
+        archived = and_(
+            table.c.id == scope.project_id,
+            table.c.id.in_(allowed),
+            table.c.workspace_mode == "infinite_canvas",
+        )
+    elif table.name == "project_canvases":
+        archived = and_(
+            table.c.project_id == scope.project_id,
+            table.c.id == scope.canvas_id,
+            table.c.project_id.in_(allowed),
+        )
+    elif table.name == "project_members":
+        archived = and_(table.c.project_id == scope.project_id, table.c.project_id.in_(allowed))
+    elif scope.include_document and table.name in {
+        "canvas_nodes",
+        "canvas_edges",
+        "canvas_director_scenes",
+        "canvas_timelines",
+        "canvas_user_states",
+        "canvas_node_user_states",
+    }:
+        archived = and_(
+            table.c.project_id == scope.project_id,
+            table.c.canvas_id == scope.canvas_id,
+            table.c.project_id.in_(allowed),
+            table.c.user_id == user_id if table.name in CANVAS_PRIVATE_TABLES else True,
+        )
+    elif scope.resource_id is not None and table.name in {"media_files", "canvas_binary_resources"}:
+        archived = and_(
+            table.c.id == scope.resource_id,
+            table.c.project_id == scope.project_id,
+            table.c.project_id.in_(allowed),
+            or_(table.c.created_by == user_id, table.c.published_at.is_not(None)),
+        )
+    else:
+        return ordinary
+    return or_(ordinary, archived)
+
+
 @lru_cache(maxsize=128)
-def _scope_options(user_id: int, mappers: tuple[Mapper, ...]) -> tuple[ORMOption, ...]:
+def _scope_options(
+    user_id: int, mappers: tuple[Mapper, ...], restore: CanvasRecycleScope | None = None
+) -> tuple[ORMOption, ...]:
     # Reuse immutable SQL expressions, never membership or query results. The
     # database still checks current ownership, membership and archive state.
     return tuple(
         with_loader_criteria(
-            mapper.class_, condition(mapper.local_table, user_id), include_aliases=True
+            mapper.class_,
+            _recycle_condition(mapper.local_table, user_id, restore),
+            include_aliases=True,
         )
         for mapper in mappers
     )
@@ -183,6 +286,12 @@ def restrict_queries(state):
     if not state.is_orm_statement:
         raise WorkflowError(
             "unscoped_query_forbidden", "Use scoped ORM queries for account data", 403
+        )
+    if (state.is_update or state.is_delete) and any(
+        mapper.local_table.name in CANVAS_TABLES for mapper in state.all_mappers
+    ):
+        raise WorkflowError(
+            "guarded_canvas_bulk_write", "Canvas records require checked entity writes", 403
         )
     if (state.is_update or state.is_delete) and any(
         mapper.local_table.name in AGENT_TABLES for mapper in state.all_mappers
@@ -216,7 +325,9 @@ def restrict_queries(state):
             )
     if state.is_select or state.is_update or state.is_delete:
         state.statement = state.statement.options(
-            *_scope_options(actor.user_id, tuple(Base.registry.mappers))
+            *_scope_options(
+                actor.user_id, tuple(Base.registry.mappers), recycle_scope(state.session)
+            )
         )
 
 
@@ -252,6 +363,21 @@ def scope_of(session, entity):
     """Resolve the actual ownership path, independent of the caller's entry point."""
     table = inspect(type(entity)).local_table
     name = table.name
+    if name in {"canvas_resource_chunks", "canvas_resource_copy_sources"}:
+        return scope_of(session, _canvas_upload_parent(session, entity.upload_id))
+    if name in {"canvas_library_asset_references", "canvas_library_folder_items"}:
+        return scope_of(session, _canvas_library_parent(session, entity.library_asset_id))
+    if name in {
+        "canvas_library_folders",
+        "canvas_project_folders",
+        "canvas_project_folder_items",
+        "canvas_resource_deletions",
+        "canvas_creation_attempts",
+        "canvas_creation_resources",
+    }:
+        return (entity.user_id, None)
+    if name == "canvas_library_assets":
+        return (None, entity.project_id) if entity.project_id else (entity.user_id, None)
     if name == "agent_skills":
         return (entity.owner_user_id, None)
     if name == "agent_attachments":
@@ -268,7 +394,13 @@ def scope_of(session, entity):
         return (entity.scope_user_id, entity.project_id)
     if name == "ai_model_configs":
         return (entity.owner_user_id, None)
-    if name == "global_assets":
+    if name in {
+        "global_assets",
+        "canvas_workspace_user_states",
+        "canvas_model_catalogs",
+        "canvas_channel_models",
+        "canvas_beefapi_connections",
+    }:
         return (entity.user_id, None)
     if "project_id" in table.c and entity.project_id:
         return (None, entity.project_id)
@@ -347,6 +479,11 @@ def _guard_agent_write(session, entity, actor, new):
             "owner_user_id",
             "project_id",
             "episode_id",
+            "stage",
+            "subject_type",
+            "subject_id",
+            "task_type",
+            "scope_version",
             "conversation_id",
             "run_id",
             "turn_id",
@@ -507,6 +644,199 @@ def scoped_key(session, raw):
     return hashlib.sha256(f"{actor.user_id}:{raw}".encode()).hexdigest()
 
 
+def _canvas_library_parent(session, identifier):
+    from short_drama.domain import CanvasLibraryAsset
+
+    parent = next(
+        (x for x in session.new if isinstance(x, CanvasLibraryAsset) and x.id == identifier), None
+    )
+    if parent is None:
+        parent = session.scalar(
+            select(CanvasLibraryAsset).where(CanvasLibraryAsset.id == identifier)
+        )
+    if parent is None:
+        raise NotFound("Canvas library asset does not exist")
+    return parent
+
+
+def _canvas_upload_parent(session, identifier):
+    from short_drama.domain import CanvasResourceUpload
+
+    parent = next(
+        (x for x in session.new if isinstance(x, CanvasResourceUpload) and x.id == identifier),
+        None,
+    )
+    if parent is None:
+        parent = session.scalar(
+            select(CanvasResourceUpload).where(CanvasResourceUpload.id == identifier)
+        )
+    if parent is None:
+        raise NotFound("Canvas upload does not exist")
+    return parent
+
+
+def _guard_canvas_write(session, entity, actor, new):
+    from short_drama.domain import Project, ProjectCanvas
+
+    name = inspect(type(entity)).local_table.name
+    if name in {"canvas_task_bindings", "canvas_task_media_references", "canvas_results"}:
+        from .canvas_generation_access import guard_canvas_generation
+
+        guard_canvas_generation(session, entity, actor, new)
+        return
+    if name in {"canvas_project_folders", "canvas_project_folder_items"}:
+        from .canvas_folder_access import guard_canvas_folder
+
+        guard_canvas_folder(session, entity, actor, new)
+        return
+    if name in {"canvas_creation_attempts", "canvas_creation_resources"}:
+        from .canvas_creation_access import guard_canvas_creation
+
+        guard_canvas_creation(session, entity, actor, new)
+        return
+    if name in {"canvas_library_asset_references", "canvas_library_folder_items"}:
+        _canvas_library_parent(session, entity.library_asset_id)
+        if not new and inspect(entity).attrs.library_asset_id.history.has_changes():
+            raise WorkflowError("ownership_immutable", "Library ownership is fixed", 403)
+        if name == "canvas_library_folder_items" and entity not in session.deleted:
+            from short_drama.domain import CanvasLibraryFolder
+
+            folder = session.scalar(
+                select(CanvasLibraryFolder).where(CanvasLibraryFolder.id == entity.folder_id)
+            )
+            if folder is None or folder.user_id != actor.user_id:
+                raise NotFound("Canvas library folder does not exist")
+        return
+    if name in {"canvas_resource_chunks", "canvas_resource_copy_sources"}:
+        parent = _canvas_upload_parent(session, entity.upload_id)
+        if not new and inspect(entity).attrs.upload_id.history.has_changes():
+            raise WorkflowError("ownership_immutable", "Upload ownership is fixed", 403)
+        if name == "canvas_resource_copy_sources":
+            if parent.mode != "copy":
+                raise NotFound("Copy provenance requires a copy upload")
+            if parent.status == "ready" and (
+                entity.source_media_id is not None
+                or entity.source_binary_id is not None
+                or entity.released_at is None
+            ):
+                raise WorkflowError("ownership_immutable", "Completed copy source is released", 403)
+            if not new and any(
+                inspect(entity).attrs[field].history.has_changes()
+                for field in ("original_resource_id", "snapshot_json", "created_at")
+            ):
+                raise WorkflowError("ownership_immutable", "Copy provenance is fixed", 403)
+            from short_drama.domain import CanvasBinaryResource, MediaFile
+
+            for field, model in (
+                ("source_media_id", MediaFile),
+                ("source_binary_id", CanvasBinaryResource),
+            ):
+                identifier = getattr(entity, field)
+                if identifier is not None and (
+                    identifier != entity.original_resource_id
+                    or session.scalar(select(model.id).where(model.id == identifier)) is None
+                ):
+                    raise NotFound("Copy source does not exist")
+        return
+    if name in CANVAS_PRIVATE_TABLES:
+        field = "actor_user_id" if name == "canvas_write_receipts" else "user_id"
+        if getattr(entity, field) != actor.user_id:
+            raise NotFound("Canvas state does not exist")
+        if not new:
+            if name == "canvas_write_receipts" and (
+                entity in session.deleted or session.is_modified(entity, include_collections=False)
+            ):
+                raise WorkflowError("canvas_receipt_immutable", "写入回执不能改写或删除", 403)
+            if inspect(entity).attrs[field].history.has_changes():
+                raise WorkflowError("ownership_immutable", "Canvas state ownership is fixed", 403)
+            # The service may have waited for a project lock after an earlier
+            # REPEATABLE READ snapshot. Recheck the current owned row, not that
+            # snapshot, or a just-created personal state becomes a false 404.
+            if (
+                session.scalar(
+                    select(type(entity).id).where(type(entity).id == entity.id).with_for_update()
+                )
+                is None
+            ):
+                raise NotFound("Canvas state does not exist")
+    if name == "canvas_resource_deletions" and not new:
+        raise WorkflowError("canvas_deletion_immutable", "Deletion receipts are immutable", 403)
+    if (
+        name in {"canvas_drawing_versions", "canvas_revision_drawing_references"}
+        and not new
+        and entity not in session.deleted
+        and session.is_modified(entity, include_collections=False)
+    ):
+        raise WorkflowError(
+            "canvas_drawing_version_immutable", "已保存绘图和历史绑定不能原地改写", 403
+        )
+    if name in {
+        "canvas_workspace_user_states",
+        "canvas_model_catalogs",
+        "canvas_channel_models",
+        "canvas_beefapi_connections",
+        "canvas_library_folders",
+        "canvas_resource_deletions",
+    }:
+        if name == "canvas_channel_models":
+            config = next(
+                (
+                    item
+                    for item in session.new
+                    if isinstance(item, AIModelConfig) and item.id == entity.model_config_id
+                ),
+                None,
+            )
+            if config is None:
+                config = session.scalar(
+                    select(AIModelConfig).where(AIModelConfig.id == entity.model_config_id)
+                )
+            if config is None or config.owner_user_id != actor.user_id:
+                raise NotFound("本人渠道执行配置不存在")
+            if not new and any(
+                inspect(entity).attrs[field].history.has_changes()
+                for field in ("channel_key", "model_key", "model_config_id")
+            ):
+                raise WorkflowError("ownership_immutable", "渠道模型身份不可修改", 403)
+        return
+    if name == "canvas_library_assets" and entity.project_id is None:
+        return
+    if name in {"canvas_binary_resources", "canvas_resource_uploads"} and entity.project_id is None:
+        if entity.scope_user_id != actor.user_id:
+            raise NotFound("Canvas resource does not exist")
+        return
+    project = next(
+        (x for x in session.new if isinstance(x, Project) and x.id == entity.project_id), None
+    )
+    if project is None:
+        project = session.scalar(select(Project).where(Project.id == entity.project_id))
+    if project is None or project.workspace_mode != "infinite_canvas":
+        raise NotFound("Infinite canvas project does not exist")
+    canvas_id = getattr(entity, "canvas_id", None) or getattr(entity, "primary_canvas_id", None)
+    if canvas_id:
+        canvas = next(
+            (x for x in session.new if isinstance(x, ProjectCanvas) and x.id == canvas_id), None
+        )
+        if canvas is None:
+            canvas = session.scalar(select(ProjectCanvas).where(ProjectCanvas.id == canvas_id))
+        if canvas is None or canvas.project_id != entity.project_id:
+            raise NotFound("Canvas is outside this project")
+    if not new:
+        for field in (
+            "canvas_id",
+            "source_key",
+            "workspace_key",
+            "node_key",
+            "edge_key",
+            "revision_id",
+        ):
+            if (
+                field in inspect(type(entity)).local_table.c
+                and inspect(entity).attrs[field].history.has_changes()
+            ):
+                raise WorkflowError("ownership_immutable", "Canvas record identity is fixed", 403)
+
+
 @event.listens_for(Session, "before_flush")
 def guard_writes(session, _context, _instances):
     from short_drama.service.base import utcnow
@@ -561,6 +891,8 @@ def guard_writes(session, _context, _instances):
                 )
         if actor and name in AGENT_TABLES:
             _guard_agent_write(session, entity, actor, new)
+        if actor and name in CANVAS_TABLES:
+            _guard_canvas_write(session, entity, actor, new)
         if new:
             if name in {"projects", "ai_model_configs"}:
                 entity.owner_user_id = user_id
@@ -589,12 +921,13 @@ def guard_writes(session, _context, _instances):
             "episode_scripts",
             "media_files",
             "agent_artifacts",
+            "canvas_binary_resources",
         }:
             # Session.get may return an object already in the identity map. Verify
             # the stored ownership before accepting writes to private resources.
             if session.scalar(select(type(entity).id).where(type(entity).id == entity.id)) is None:
                 raise NotFound("Resource does not exist")
-        if name in {"episode_scripts", "media_files"} and not new:
+        if name in {"episode_scripts", "media_files", "canvas_binary_resources"} and not new:
             publication = inspect(entity).attrs.published_at.history
             if publication.has_changes() and publication.deleted and publication.deleted[0]:
                 raise WorkflowError(
@@ -602,7 +935,20 @@ def guard_writes(session, _context, _instances):
                 )
         entity_scope = scope_of(session, entity)
         if entity_scope[1] and not (new and name == "projects"):
-            require_project(session, entity_scope[1])
+            recycle = recycle_scope(session)
+            disposal = (
+                new
+                and name == "canvas_write_receipts"
+                and recycle is not None
+                and recycle.disposal_receipt
+                and entity.project_id == recycle.project_id
+                and entity.canvas_id == recycle.canvas_id
+                and entity.operation_kind == "canvas.recycle.purge"
+            )
+            # Only this new private acknowledgement may be written after its
+            # parent was archived. Scoped parent reads above still check membership.
+            if not disposal:
+                require_project(session, entity_scope[1])
         elif not entity_scope[1] and entity_scope[0] != actor.user_id:
             raise NotFound("Resource does not exist")
         if name == "projects" and entity in session.deleted:
@@ -621,6 +967,7 @@ def guard_writes(session, _context, _instances):
             ("current_media_id", "media_files"),
             ("proxy_media_id", "media_files"),
             ("asset_id", "assets"),
+            ("binary_id", "canvas_binary_resources"),
         ]:
             if field not in table.c or not getattr(entity, field, None):
                 continue
@@ -636,8 +983,38 @@ def guard_writes(session, _context, _instances):
             allowed_scopes = {entity_scope}
             if name == "agent_attachments" and field == "media_id":
                 allowed_scopes.add((actor.user_id, None))
+            if name == "canvas_user_media_references" and field == "media_id":
+                allowed_scopes.add((actor.user_id, None))
+            if name == "canvas_user_binary_references" and field == "binary_id":
+                allowed_scopes.add((actor.user_id, None))
+            if name == "canvas_library_asset_references":
+                allowed_scopes.add((actor.user_id, None))
+                if target is not None and scope_of(session, target) not in allowed_scopes:
+                    from short_drama.dao.canvas_resource_dao import CanvasResourceDAO
+                    from short_drama.service.canvas_document import media_references
+
+                    parent = _canvas_library_parent(session, entity.library_asset_id)
+                    original_ids = {value for _, value in media_references(parent.payload_json)}
+                    if entity in session.deleted:
+                        for previous in inspect(parent).attrs.payload_json.history.deleted:
+                            original_ids.update(value for _, value in media_references(previous))
+                    ancestors = CanvasResourceDAO(session).copy_ancestors({identifier})
+                    if ancestors.get(identifier, set()).intersection(original_ids):
+                        # Only an owned, completed, provenance-verified copy may cross
+                        # the private asset's project boundary. Ordinary refs stay scoped.
+                        allowed_scopes.add(scope_of(session, target))
             if target is None or scope_of(session, target) not in allowed_scopes:
                 raise NotFound("Reference is outside this resource scope")
+            if (
+                name
+                in {
+                    "canvas_media_references",
+                    "canvas_revision_media_references",
+                    "canvas_binary_references",
+                }
+                and target.published_at is None
+            ):
+                raise NotFound("Shared canvas media must be published project work")
         if hasattr(entity, "reference_media_ids"):
             from short_drama.domain import MediaFile
 
@@ -651,10 +1028,16 @@ def guard_writes(session, _context, _instances):
             entity.updated_by = actor.user_id
         # A project audit is shared. Private chat/object identifiers belong only
         # in the conversation's own event log, never in this public timeline.
-        if name in AGENT_PRIVATE_TABLES or name in {"agent_attachments", "agent_skills"}:
+        if name in AGENT_PRIVATE_TABLES | CANVAS_PRIVATE_TABLES or name in {
+            "agent_attachments",
+            "agent_skills",
+        }:
             continue
         action = "create" if new else "delete" if entity in session.deleted else "update"
-        if name in {"episode_scripts", "media_files"} and entity.published_at is not None:
+        if (
+            name in {"episode_scripts", "media_files", "canvas_binary_resources"}
+            and entity.published_at is not None
+        ):
             action = (
                 "publish"
                 if inspect(entity).attrs.published_at.history.has_changes()

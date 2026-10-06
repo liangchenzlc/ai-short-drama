@@ -143,6 +143,8 @@ def inspect_agent_schema(connection):
             index["name"]: (tuple(index["column_names"]), bool(index["unique"]))
             for index in inspector.get_indexes(name)
         }
+        if name == "agent_runs" and "uk_agent_runs_active_conversation" in indexes:
+            gaps.append("agent_runs.uk_agent_runs_active_conversation:legacy_unique_index")
         required_indexes = {
             index.name: (tuple(column.name for column in index.columns), bool(index.unique))
             for index in expected.indexes

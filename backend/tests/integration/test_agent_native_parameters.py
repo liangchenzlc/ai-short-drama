@@ -8,8 +8,8 @@ import pytest
 import test_agent_conversations as conversation_tests
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
-from test_agent_conversations import actor
-from test_agent_services import send, settings, setup
+from test_agent_conversations import actor, service
+from test_agent_services import add_model, send, settings, setup
 
 from short_drama.agent.authorization import freeze_task
 from short_drama.agent.tools import _read_context
@@ -118,7 +118,7 @@ def shot(factory, project_id, episode_id, *, reference=False):
 
 def native_scope(workspace, kind):
     factory, project_id, episode_id, _ = workspace
-    conversation_id, decision_id = setup(factory, project_id, episode_id)
+    decision_id = add_model(factory)
     payload = {"kind": kind, "instructions": "Generate this approved candidate"}
     if kind in {"extract", "storyboard"}:
         with factory.begin() as session:
@@ -142,7 +142,26 @@ def native_scope(workspace, kind):
         payload.update(model_config_id=str(model_id), target_id=str(target_id))
         if kind == "image":
             payload["parameters"] = {"target_kind": "asset"}
-    return conversation_id, decision_id, payload
+    subject_type = (
+        "episode" if kind in {"extract", "storyboard"} else ("asset" if kind == "image" else "shot")
+    )
+    with factory() as session:
+        conversation = service(session).create_conversation(
+            {
+                "project_id": project_id,
+                "episode_id": episode_id,
+                "stage": "assets" if kind in {"extract", "image"} else "storyboard",
+                "subject_type": subject_type,
+                "subject_id": episode_id if subject_type == "episode" else payload["target_id"],
+                "task_type": {
+                    "extract": "extraction",
+                    "storyboard": "planning",
+                    "image": "image",
+                    "video": "video",
+                }[kind],
+            }
+        )
+    return int(conversation.id), decision_id, payload
 
 
 def message_client(factory):

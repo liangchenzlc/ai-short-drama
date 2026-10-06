@@ -19,6 +19,10 @@ export function summarizeShotReferences(assetIds: readonly string[], assets: rea
   return { linkedCount: new Set(assetIds).size, referenceMediaIds: [...referenceMediaIds], unreadyAssetIds, missingAssetIds };
 }
 
+export function summarizeImageReferenceCount(assetMediaIds: readonly string[], manualMediaIds: readonly string[]) {
+  return { assetCount: new Set(assetMediaIds).size, manualCount: new Set(manualMediaIds).size, totalCount: new Set([...assetMediaIds, ...manualMediaIds]).size };
+}
+
 export function shotPreparationChanged(local: ShotRead, remote: ShotRead): boolean {
   return local.id !== remote.id || local.row_version !== remote.row_version || local.context_hash !== remote.context_hash
     || !!remote.deleted_at || (local.image?.media_id ?? null) !== (remote.image?.media_id ?? null)
@@ -51,6 +55,7 @@ export function imageGenerationBlockReason(modelId: string | undefined, capabili
   if (!modelId) return '请先选择一个已启用的分镜生图模型。';
   if (loading) return '正在核对模型能力…';
   if (!capabilities?.known) return '模型能力尚未确认，请刷新能力或更换模型。';
+  if (referenceCount > 16) return `素材图片与手动参考图去重后共 ${referenceCount} 张，最多允许 16 张。请减少参考图后再生成。`;
   if (referenceCount && !capabilities.reference_images) return '当前模型接入方式暂不支持参考图，请更换已支持参考图的模型配置；不会自动丢弃关联图片。';
   return '';
 }

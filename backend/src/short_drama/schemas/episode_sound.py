@@ -4,7 +4,7 @@ from typing import Annotated
 
 from pydantic import Field, model_validator
 
-from .base import Identifier, InputModel
+from .base import Identifier, InputModel, NonnegativeVersion
 
 Milliseconds = Annotated[int, Field(strict=True, ge=0, le=3600000)]
 
@@ -73,7 +73,7 @@ class SoundDocument(InputModel):
 
 
 class SoundEdit(InputModel):
-    row_version: int = Field(ge=0, strict=True)
+    row_version: NonnegativeVersion
     timeline_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     request_id: str = Field(min_length=1, max_length=128)
     document: SoundDocument
@@ -81,13 +81,13 @@ class SoundEdit(InputModel):
 
 
 class SoundAdopt(InputModel):
-    row_version: int = Field(ge=1, strict=True)
+    row_version: Identifier
     line_id: str
     media_id: Identifier
 
 
 class VoiceDefaultsEdit(InputModel):
-    row_version: int = Field(ge=0, strict=True)
+    row_version: NonnegativeVersion
     voices: dict[str, str] = Field(max_length=300)
 
     @model_validator(mode="after")

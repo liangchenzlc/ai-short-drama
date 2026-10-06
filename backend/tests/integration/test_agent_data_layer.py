@@ -301,13 +301,13 @@ def test_revoked_member_loses_all_private_layers_and_shared_outputs(db_session):
             assert db_session.scalars(select(model_type)).all() == []
 
 
-def test_active_run_uniqueness_and_message_immutability(db_session):
+def test_queued_runs_keep_unique_message_triggers_and_message_immutability(db_session):
     _, _, model, _conversation, message, run, tool, _artifact = seed(db_session)
     with db_session.begin():
         db_session.add(
             AgentMessage(id=16, conversation_id=10, seq=2, role="user", content="Second goal")
         )
-    with pytest.raises(IntegrityError), db_session.begin():
+    with db_session.begin():
         db_session.add(
             AgentRun(
                 id=17,
@@ -318,8 +318,10 @@ def test_active_run_uniqueness_and_message_immutability(db_session):
             )
         )
         db_session.flush()
+        assert db_session.get(AgentRun, 17).status == run.status == "queued"
     with db_session.begin():
         run.status, run.finished_at, run.updated_at = "cancelled", utcnow(), utcnow()
+    with pytest.raises(IntegrityError), db_session.begin():
         db_session.add(
             AgentRun(
                 id=18,
@@ -329,6 +331,7 @@ def test_active_run_uniqueness_and_message_immutability(db_session):
                 model_config_id=model.id,
             )
         )
+        db_session.flush()
     with pytest.raises(WorkflowError, match="Append a new Agent record"), db_session.begin():
         message.content = "Changed past request"
         db_session.flush()

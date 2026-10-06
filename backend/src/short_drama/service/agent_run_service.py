@@ -32,6 +32,7 @@ from short_drama.domain.agent import (
 )
 from short_drama.domain.collaboration import User, UserSession
 from short_drama.schemas.agent_runtime import (
+    ConversationRuntimeState,
     EventRead,
     MessageAccepted,
     MessageCreate,
@@ -43,7 +44,10 @@ from short_drama.schemas.agent_runtime import (
 )
 from short_drama.schemas.base import parse_identifier
 from short_drama.service.agent_attachment_service import freeze_attachments
-from short_drama.service.agent_conversation_service import AgentConversationService
+from short_drama.service.agent_conversation_service import (
+    AgentConversationService,
+    conversation_scope,
+)
 from short_drama.service.agent_model_service import AgentModelService, model_snapshot
 from short_drama.service.agent_skill_service import freeze_skills
 from short_drama.service.base import Page, utcnow
@@ -52,7 +56,21 @@ from short_drama.utils.snowflake import next_id
 _UNSET = object()
 
 
-def read_run(session, run, *, tool=_UNSET):
+def read_run(session, run, *, tool=_UNSET, queue_position=None):
+    if queue_position is None:
+        queue_position = 0
+        if run.status == "queued":
+            queue_position = (
+                session.scalar(
+                    select(func.count(AgentRun.id)).where(
+                        AgentRun.conversation_id == run.conversation_id,
+                        AgentRun.id != run.id,
+                        AgentRun.status.in_(("running", "waiting_generation"))
+                        | ((AgentRun.status == "queued") & (AgentRun.id < run.id)),
+                    )
+                )
+                or 0
+            )
     if tool is _UNSET:
         tool = session.scalar(
             select(AgentToolCall)
@@ -88,6 +106,8 @@ def read_run(session, run, *, tool=_UNSET):
         created_at=run.created_at,
         updated_at=run.updated_at,
         finished_at=run.finished_at,
+        queue_position=queue_position,
+        waiting_reason="等待前序任务" if queue_position else None,
     )
 
 
@@ -159,6 +179,7 @@ class AgentRunService(AgentConversationService):
         key = hashlib.sha256(idempotency_key.encode()).hexdigest()
         with self._transaction():
             conversation = self._conversation(identifier, lock=True)
+            self.check_expected_scope(conversation, values.expected_scope, validate_subject=True)
             existing = self.session.scalar(
                 select(AgentMessage)
                 .where(
@@ -184,13 +205,15 @@ class AgentRunService(AgentConversationService):
                 )
             if conversation.status != "active":
                 raise WorkflowError("agent_conversation_archived", "请先恢复这段对话", 409)
-            if self.session.scalar(
-                select(AgentRun.id)
-                .where(AgentRun.conversation_id == conversation.id, AgentRun.status.in_(ACTIVE))
-                .limit(1)
+            preceding = self.session.scalars(
+                select(AgentRun)
+                .where(
+                    AgentRun.conversation_id == conversation.id,
+                    AgentRun.status.in_(ACTIVE),
+                )
+                .order_by(AgentRun.id)
                 .with_for_update()
-            ):
-                raise WorkflowError("agent_run_active", "请先停止或完成当前任务", 409)
+            ).all()
             actor = self._actor()
             model = AgentModelService(self.session, self.settings).select_model(
                 values.model_config_id
@@ -213,13 +236,24 @@ class AgentRunService(AgentConversationService):
             task = values.task
             narrowed = discussion_only(values.content)
             authorization = {
-                "mode": "discuss",
+                "mode": "discuss"
+                if values.mode == "discuss"
+                or narrowed
+                or (values.mode == "auto" and conversation.scope_version != 1)
+                else "auto",
                 "steps": [],
                 "consumed_steps": [],
                 "requires_plan": values.mode == "generate" and task is None and not narrowed,
                 "user_constraints": values.content,
             }
-            if values.mode == "generate" and task is not None and not narrowed:
+            if (
+                values.mode != "discuss"
+                and task is not None
+                and not narrowed
+                and (
+                    task.count == 1 or values.mode == "generate" and conversation.scope_version == 0
+                )
+            ):
                 authorization.update(
                     mode="single",
                     steps=[
@@ -297,7 +331,17 @@ class AgentRunService(AgentConversationService):
                     "scope": {
                         "project_id": str(conversation.project_id),
                         "episode_id": str(conversation.episode_id),
+                        **(conversation_scope(conversation) or {}),
                     },
+                    "supplement_run_id": next(
+                        (
+                            str(previous.id)
+                            for previous in reversed(preceding)
+                            if previous.status == "waiting_review"
+                            and not (previous.checkpoint or {}).get("awaiting_artifacts")
+                        ),
+                        None,
+                    ),
                     "user_prompt": {
                         "codec": "agent.attachments",
                         "content": values.content,
@@ -308,6 +352,7 @@ class AgentRunService(AgentConversationService):
                     else values.content,
                     "conversation_context": context,
                     "selected_skills": selected_skills,
+                    "requested_task": task.model_dump(mode="json") if task else None,
                 },
                 config_snapshot=snapshot,
                 budget=budget_limits(images=images, videos=videos),
@@ -345,14 +390,20 @@ class AgentRunService(AgentConversationService):
             self.session.flush()
             return MessageAccepted(
                 message=self._message_read(message),
-                run=read_run(self.session, run),
+                run=read_run(
+                    self.session,
+                    run,
+                    queue_position=sum(
+                        previous.status != "waiting_review" for previous in preceding
+                    ),
+                ),
                 cursor=conversation.next_event_seq - 1,
             )
 
-    def list_messages(self, identifier, offset=0, limit=50):
+    def list_messages(self, identifier, offset=0, limit=50, *, expected_scope=None):
         self.dao.validate_pagination(offset, limit)
         with self._transaction(read_only=True):
-            conversation = self._conversation(identifier)
+            conversation = self._conversation(identifier, expected_scope=expected_scope)
             query = select(AgentMessage).where(AgentMessage.conversation_id == conversation.id)
             rows = self.session.scalars(
                 query.order_by(AgentMessage.seq.desc()).offset(offset).limit(limit)
@@ -369,10 +420,10 @@ class AgentRunService(AgentConversationService):
                 limit=limit,
             )
 
-    def list_runs(self, identifier, offset=0, limit=20):
+    def list_runs(self, identifier, offset=0, limit=20, *, expected_scope=None):
         self.dao.validate_pagination(offset, limit)
         with self._transaction(read_only=True):
-            conversation = self._conversation(identifier)
+            conversation = self._conversation(identifier, expected_scope=expected_scope)
             rows = self.session.scalars(
                 select(AgentRun)
                 .where(AgentRun.conversation_id == conversation.id)
@@ -411,6 +462,47 @@ class AgentRunService(AgentConversationService):
         with self._transaction(read_only=True):
             _, run = self._run(identifier)
             return read_run(self.session, run)
+
+    def runtime_state(self, identifier, expected_scope=None):
+        with self._transaction(read_only=True):
+            conversation = self._conversation(identifier, expected_scope=expected_scope)
+            rows = self.session.scalars(
+                select(AgentRun)
+                .where(
+                    AgentRun.conversation_id == conversation.id,
+                    AgentRun.status.in_(ACTIVE),
+                )
+                .order_by(AgentRun.id)
+            ).all()
+            running = next(
+                (row for row in rows if row.status in {"running", "waiting_generation"}), None
+            )
+            active = running or next(
+                (row for row in reversed(rows) if row.status == "waiting_review"), None
+            )
+            queued = [row for row in rows if row.status == "queued"]
+            snapshot_cursor = conversation.next_event_seq - 1
+            resume_cursor = snapshot_cursor
+            if rows:
+                first_event = self.session.scalar(
+                    select(func.min(AgentEvent.seq)).where(
+                        AgentEvent.conversation_id == conversation.id,
+                        AgentEvent.run_id.in_([row.id for row in rows]),
+                        AgentEvent.seq <= snapshot_cursor,
+                    )
+                )
+                if first_event is not None:
+                    resume_cursor = first_event - 1
+            return ConversationRuntimeState(
+                conversation_id=conversation.id,
+                cursor=snapshot_cursor,
+                resume_cursor=resume_cursor,
+                active_run=read_run(self.session, active) if active else None,
+                queued_runs=[
+                    read_run(self.session, row, queue_position=index + (1 if running else 0))
+                    for index, row in enumerate(queued)
+                ],
+            )
 
     def stop(self, identifier):
         with self._transaction():
@@ -459,6 +551,19 @@ class AgentRunService(AgentConversationService):
                 or tool.status != "waiting_review"
             ):
                 raise Conflict("This plan is no longer awaiting review")
+            supplementary = self.session.scalars(
+                select(AgentRun)
+                .where(
+                    AgentRun.conversation_id == conversation.id,
+                    AgentRun.id != run.id,
+                    AgentRun.status.in_(("queued", "running")),
+                )
+                .with_for_update()
+            ).all()
+            if supplementary:
+                raise WorkflowError(
+                    "agent_review_busy", "正在处理补充消息，请等回复后再审核计划", 409
+                )
             if values.decision == "approved":
                 for step in tool.review_payload["steps"]:
                     check_source(self.session, step)
@@ -504,6 +609,11 @@ class AgentRunService(AgentConversationService):
                     "steps": [public_step(step) for step in tool.review_payload["steps"]],
                 }
             else:
+                checkpoint = deepcopy(run.checkpoint)
+                checkpoint["authorization"].update(
+                    mode="discuss", steps=[], consumed_steps=[], requires_plan=False
+                )
+                run.checkpoint = checkpoint
                 tool.status, tool.result = (
                     "rejected",
                     {"decision": "rejected", "instruction": "Do not execute this plan."},
@@ -525,7 +635,7 @@ class AgentRunService(AgentConversationService):
             self.session.flush()
             return read_run(self.session, run)
 
-    def events(self, identifier, cursor=0, *, verify_session=False):
+    def events(self, identifier, cursor=0, *, verify_session=False, expected_scope=None):
         with self._transaction():
             actor = self._actor()
             if verify_session:
@@ -541,7 +651,7 @@ class AgentRunService(AgentConversationService):
                     or login.expires_at <= utcnow()
                 ):
                     raise WorkflowError("authentication_required", "Please sign in", 401)
-            conversation = self._conversation(identifier)
+            conversation = self._conversation(identifier, expected_scope=expected_scope)
             rows = self.session.scalars(
                 select(AgentEvent)
                 .where(AgentEvent.conversation_id == conversation.id, AgentEvent.seq > cursor)
@@ -671,6 +781,7 @@ class AgentRunService(AgentConversationService):
             run.checkpoint = checkpoint
             # Finish remaining non-creative calls through the normal coordinator;
             # otherwise all deferred results are ready for the next model segment.
+            run.status = "queued"
             mark_scheduled(run, phase="tools" if needs_tools else "model")
             append_event(
                 self.session,

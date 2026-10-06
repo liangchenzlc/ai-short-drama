@@ -69,3 +69,5 @@
   .project-detail-panel .overview-card { padding: 18px 16px; }
 }
 @media (max-width: 540px) { .project-card-grid { grid-template-columns: minmax(0, 1fr); } }
+.project-mode-field { margin: 0; padding: 0; border: 0; min-width: 0; }
+.project-mode-field legend { margin-bottom: 8px; font-size: inherit; }

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request
 from sqlalchemy.orm import Session
 
 from short_drama.api.dependencies import get_session
+from short_drama.api.v1.agent import ExpectedScope
 from short_drama.core.exceptions import WorkflowError
 from short_drama.schemas.agent_artifacts import (
     ArtifactAdopt,
@@ -38,19 +39,26 @@ def list_artifacts(
     project_id: ScopedId,
     episode_id: ScopedId,
     service: Artifacts,
+    scope: ExpectedScope,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     kind: ArtifactKind | None = None,
     status: ArtifactStatus | None = None,
 ):
-    return service.list(project_id, episode_id, offset, limit, kind=kind, status=status)
+    return service.list(
+        project_id, episode_id, offset, limit, kind=kind, status=status, expected_scope=scope
+    )
 
 
 @router.get("/{artifact_id}", response_model=ArtifactRead)
 def get_artifact(
-    project_id: ScopedId, episode_id: ScopedId, artifact_id: ScopedId, service: Artifacts
+    project_id: ScopedId,
+    episode_id: ScopedId,
+    artifact_id: ScopedId,
+    service: Artifacts,
+    scope: ExpectedScope,
 ):
-    return service.get(project_id, episode_id, artifact_id)
+    return service.get(project_id, episode_id, artifact_id, expected_scope=scope)
 
 
 @router.post("/{artifact_id}/adopt", response_model=ArtifactRead)
@@ -60,5 +68,6 @@ def adopt_artifact(
     artifact_id: ScopedId,
     payload: ArtifactAdopt,
     service: Artifacts,
+    scope: ExpectedScope,
 ):
-    return service.adopt(project_id, episode_id, artifact_id, payload)
+    return service.adopt(project_id, episode_id, artifact_id, payload, expected_scope=scope)

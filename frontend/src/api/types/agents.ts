@@ -5,16 +5,29 @@ export interface AgentAvailability {
 
 export type AgentRunStatus = 'queued' | 'running' | 'waiting_generation' | 'waiting_review' | 'succeeded' | 'failed' | 'cancelled';
 
+export interface ConversationScope {
+  stage: 'source' | 'assets' | 'storyboard';
+  subject_type: 'episode' | 'asset' | 'shot';
+  subject_id: string;
+  task_type: 'writing' | 'extraction' | 'planning' | 'batch' | 'creation' | 'image' | 'video';
+}
+
 export interface AgentConversation {
   id: string;
   project_id: string;
   episode_id: string;
   title: string;
-  row_version: number;
+  row_version: string;
   archived: boolean;
   created_at: string;
   updated_at: string;
   last_run_status: AgentRunStatus | null;
+  stage: ConversationScope['stage'] | null;
+  subject_type: ConversationScope['subject_type'] | null;
+  subject_id: string | null;
+  task_type: ConversationScope['task_type'] | null;
+  scope_version: number;
+  last_message_preview?: string | null;
 }
 
 export interface AgentConversationPage {
@@ -24,28 +37,28 @@ export interface AgentConversationPage {
   limit: number;
 }
 
-export interface CreateAgentConversation {
+export interface CreateAgentConversation extends ConversationScope {
   project_id: string;
   episode_id: string;
   title?: string;
 }
 
 export interface UpdateAgentConversation {
-  row_version: number;
+  row_version: string;
   title?: string;
   archived?: boolean;
 }
 
 export interface AgentModel {
-  id: string; name: string; model_key: string; row_version: number; protocol: string | null;
+  id: string; name: string; model_key: string; row_version: string; protocol: string | null;
   tool_calling: boolean; tool_result_continuation: boolean; streaming: 'verified' | 'not_tested'; verified: boolean; preferred: boolean;
   input_capabilities?: {
     text: true; image: boolean; audio: boolean; video: 'sampled_frames' | 'unsupported';
-    evidence: 'declared' | 'model_family' | 'text_only';
+    evidence: 'declared' | 'model_family' | 'text_only' | 'runtime';
   };
 }
 export interface AgentModelPage { items: AgentModel[]; preferred_id: string | null }
-export type AgentMessageMode = 'discuss' | 'generate';
+export type AgentMessageMode = 'auto' | 'discuss' | 'generate';
 export interface AgentMessage {
   id: string; seq: number; role: string; content: string;
   references: Record<string, unknown>[]; artifacts: Record<string, unknown>[]; created_at: string;
@@ -57,20 +70,26 @@ export interface AgentReviewStep {
   model_config_id: string | null; model_name: string | null; source: Record<string, unknown>; parameters: Record<string, unknown>;
 }
 export interface AgentReview {
-  tool_call_id: string; review_version: number; review_hash: string;
+  tool_call_id: string; review_version: string; review_hash: string;
   title: string; summary: string; steps: AgentReviewStep[];
 }
 export interface AgentRun {
-  id: string; conversation_id: string; status: AgentRunStatus; phase: string; row_version: number;
-  mode: 'discuss' | 'single' | 'workflow'; model_config_id: string; model_name: string; error: { code: string } | null;
+  id: string; conversation_id: string; status: AgentRunStatus; phase: string; row_version: string;
+  mode: 'auto' | 'discuss' | 'single' | 'workflow'; model_config_id: string; model_name: string; error: { code: string; message?: string } | null;
   usage: Record<string, unknown>; budget: Record<string, unknown>; review: AgentReview | null;
   awaiting_artifact_ids: string[];
   created_at: string; updated_at: string; finished_at: string | null;
+  queue_position: number;
+  waiting_reason: string | null;
+}
+export interface ConversationRuntimeState {
+  conversation_id: string; cursor: number; resume_cursor: number; active_run: AgentRun | null; queued_runs: AgentRun[];
 }
 export interface AgentRunPage { items: AgentRun[]; total: number; offset: number; limit: number }
 export interface AgentTaskSpec { kind: 'image' | 'video'; target_id: string; instructions: string; model_config_id: string; count: number; parameters: Record<string, unknown> }
 export interface AgentSendInput {
-  content: string; mode: AgentMessageMode; model_config_id?: string; task?: AgentTaskSpec;
+  content: string; mode?: AgentMessageMode; model_config_id?: string; task?: AgentTaskSpec;
+  expected_scope?: ConversationScope;
   attachment_ids?: string[]; skills?: { id: string; content_version: string }[];
   video_audio?: 'include' | 'visual_only';
 }

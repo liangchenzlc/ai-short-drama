@@ -44,6 +44,9 @@ class Project(Base):
         VARCHAR(255), nullable=False, server_default=text("''"), comment="新分集默认风格"
     )
     aspect: Mapped[str] = mapped_column(VARCHAR(8), nullable=False, comment="新分集默认画幅")
+    workspace_mode: Mapped[str] = mapped_column(
+        VARCHAR(16), nullable=False, server_default=text("'standard'")
+    )
     last_opened_at: Mapped[datetime | None] = mapped_column(
         DATETIME(fsp=6), nullable=True, server_default=text("NULL"), comment="最近打开时间"
     )
@@ -80,6 +83,9 @@ class Project(Base):
         ),
         CheckConstraint("CHAR_LENGTH(TRIM(`name`)) > 0", name="ck_projects_name"),
         CheckConstraint("`aspect` IN ('16:9', '9:16')", name="ck_projects_aspect"),
+        CheckConstraint(
+            "workspace_mode IN ('standard','infinite_canvas')", name="ck_projects_workspace_mode"
+        ),
         {
             "mysql_engine": "InnoDB",
             "mysql_row_format": "DYNAMIC",

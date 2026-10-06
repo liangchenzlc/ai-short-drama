@@ -1,8 +1,8 @@
 """Atomic editor operations; no model requests or browser workflow persistence."""
 
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 
-from short_drama.core.exceptions import BusinessError, Conflict
+from short_drama.core.exceptions import BusinessError, Conflict, WorkflowError
 from short_drama.dao.base import BaseDAO
 from short_drama.dao.episode_writing_dao import EpisodeWritingDAO, bump_writing_version
 from short_drama.domain import AsyncTask, Episode, EpisodeNovel, EpisodeScript, NovelScriptRecord
@@ -34,6 +34,39 @@ class EpisodeWritingService(BaseService):
     def __init__(self, session):
         super().__init__(session)
         self.dao = EpisodeWritingDAO(session)
+        self._has_agent_artifacts: bool | None = None
+
+    def _unadopted_agent_script(self, script_id):
+        # Prompt-only installations can legitimately lack Agent tables. Detect
+        # the table on the transaction's connection; disabling execution must
+        # not disable adoption protection when existing candidates are present.
+        from short_drama.domain.agent import AgentArtifact
+
+        if self._has_agent_artifacts is None:
+            self._has_agent_artifacts = inspect(self.session.connection()).has_table(
+                AgentArtifact.__tablename__
+            )
+        if not self._has_agent_artifacts:
+            return None
+        # This provenance predicate must see other authors' artifacts without
+        # loading their private data. The enclosing EpisodeScript ORM query
+        # still enforces actor/project visibility.
+        artifacts = AgentArtifact.__table__.alias("agent_script_provenance")
+        return (
+            select(artifacts.c.id)
+            .where(artifacts.c.script_id == script_id, artifacts.c.status != "applied")
+            .exists()
+        )
+
+    def _requires_agent_adoption(self, script_id: int) -> bool:
+        unadopted = self._unadopted_agent_script(EpisodeScript.id)
+        if unadopted is None:
+            return False
+        return bool(
+            self.session.scalar(
+                select(unadopted).select_from(EpisodeScript).where(EpisodeScript.id == script_id)
+            )
+        )
 
     def _scope(self, project_id, episode_id, version=None, *, for_update=True):
         episode = self.dao.scoped_episode(
@@ -75,6 +108,10 @@ class EpisodeWritingService(BaseService):
                 .where(EpisodeScript.episode_id == episode.id)
             )
             actor = self.session.info.get("actor")
+            if script_id is None:
+                unadopted = self._unadopted_agent_script(EpisodeScript.id)
+                if unadopted is not None:
+                    statement = statement.where(~unadopted)
             if actor and script_id is None:
                 statement = statement.where(EpisodeScript.created_by == actor.user_id)
             if script_id is not None:
@@ -147,6 +184,13 @@ class EpisodeWritingService(BaseService):
             script = self.dao.script(episode.id, data["script_id"]) if data["script_id"] else None
             if episode.editing_script_id != data["script_id"]:
                 raise Conflict("The current editing script has changed")
+            if script is not None:
+                if self._requires_agent_adoption(script.id):
+                    raise WorkflowError(
+                        "agent_artifact_adoption_required",
+                        "此剧本是尚未采用的 Agent 候选，请在原会话的创作候选中核对并采用。",
+                        422,
+                    )
             if script is None:
                 script = self._create_document(
                     EpisodeScript,
@@ -170,6 +214,12 @@ class EpisodeWritingService(BaseService):
         with self._transaction():
             episode = self._scope(project_id, episode_id, data["content_version"])
             target = self.dao.script(episode.id, data["script_id"])
+            if self._requires_agent_adoption(target.id):
+                raise WorkflowError(
+                    "agent_artifact_adoption_required",
+                    "此剧本是尚未采用的 Agent 候选，请在原会话的创作候选中核对并采用。",
+                    422,
+                )
             publish(target)
             if episode.editing_script_id != target.id:
                 episode.editing_script_id = target.id
@@ -183,6 +233,12 @@ class EpisodeWritingService(BaseService):
             target = self.dao.script(episode.id, parse_identifier(script_id))
             if episode.editing_script_id != target.id:
                 raise Conflict("Only the current editing script can be confirmed")
+            if self._requires_agent_adoption(target.id):
+                raise WorkflowError(
+                    "agent_artifact_adoption_required",
+                    "此剧本是尚未采用的 Agent 候选，请在原会话的创作候选中核对并采用。",
+                    422,
+                )
             if not target.content.strip():
                 raise EmptyScript("请先填写剧本正文再确认")
             if target.state != "confirmed":

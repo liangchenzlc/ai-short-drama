@@ -6,12 +6,12 @@
 
 ## 公共规则
 
-- ID 输出为十进制字符串，前端不得转为 `Number`。版本类型以各 schema 为准：原工作流多为字符串，Agent 的行版本、审核版本及成果来源版本为整数。时间输出 UTC ISO 8601。
+- 数据库 ID、行版本、正文版本、分镜集合版本及 Agent 审核/成果来源版本输出为十进制字符串，前端不得转为 `Number`。版本输入兼容正整数与十进制字符串；声音未建稿的版本允许 `"0"`。布尔值、浮点数、负数和超出 unsigned BIGINT 的值均拒绝。事件 seq/cursor、scope_version、分页、媒体时长仍为普通数值。时间输出 UTC ISO 8601。
 - JSON 输入拒绝未声明字段。省略、`null` 和空字符串按各模型定义处理，不能互换。
 - 分页一般为 `{items,total,offset,limit}`，`offset>=0`，HTTP `limit` 为 1–100，默认 20；分镜列表默认 100，并额外返回集合版本。
 - 错误格式为 `{error:{code,message,fields?,details?}}`。字段错误为 `{field,message}`；业务 details 仅包含允许的版本或引用信息，不回显任意请求、凭据或供应商异常。
 - 404 表示不存在或嵌套归属错误；409 为版本/业务冲突；422 为参数/内容校验；413 为上传超限；503 为依赖不可用。
-- `Idempotency-Key` 通常长度 1–128，生成、新任务重试、素材/分镜新建、素材提取采用必填；Agent 消息必填且长度 1–64，创建 Agent 会话可选且最长 64。同键同请求返回原结果，同键异参 409。项目/分集创建不提供该保障。
+- `Idempotency-Key` 通常长度 1–128，生成、新任务重试、素材/分镜新建、素材提取采用必填；Agent 消息必填且长度 1–64，创建 Agent 会话可选且最长 64。同键同请求返回原结果，同键异参 409。标准模式项目/分集创建不提供该保障；无限画布模式项目创建要求该键并原子创建主画布。
 - 读取内容不创建空白稿，不自动生成或采用。未保存内容应先成功保存，再提交依赖它的操作。
 
 ## 账号与协作
@@ -50,18 +50,20 @@ Agent 默认开启；运行须完成九表迁移、保持账号认证并启动�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/agent/status` | `enabled/schema_ready` 状态；不调用模型 |
-| GET / POST | `/agent/conversations` | 按项目/分集分页读取本人会话；创建支持可选 Idempotency-Key |
+| GET / POST | `/agent/conversations` | 按项目/分集/阶段/对象/任务分页读取本人会话；创建支持可选 Idempotency-Key |
+| POST | `/agent/conversations/resolve` | 按稳定 scope 返回最近未归档会话，没有才创建 |
 | GET / PATCH | `/agent/conversations/{conversation_id}` | 本人会话详情；携带 row_version 改名或归档，活动运行须先停止 |
-| GET | `/agent/models` | 本人协作文本模型与版本绑定的能力状态 |
-| POST | `/agent/models/{model_id}/verify` | 显式验证当前 row_version，最多两次可能计费的文本请求 |
+| GET | `/agent/models` | 本人已启用文本模型，不以 verified 限制选择或发送 |
+| POST | `/agent/models/{model_id}/verify` | 旧客户端兼容接口，当前创作界面不要求验证；显式调用可能计费 |
 | GET / POST | `/agent/conversations/{conversation_id}/messages` | 分页消息；发送必带 Idempotency-Key，返回消息、运行与事件 cursor |
 | GET | `/agent/conversations/{conversation_id}/runs`、`/agent/runs/{run_id}` | 本人运行历史与当前状态 |
+| GET | `/agent/conversations/{conversation_id}/state` | 当前执行/待审核运行、持久化队列及事件 cursor |
 | POST | `/agent/runs/{run_id}/stop` | 停止新增决策与提交；已受理原生媒体仍可归档 |
 | POST | `/agent/runs/{run_id}/reviews/{tool_call_id}` | 按 review_version/review_hash 明确批准或拒绝当前计划 |
 | GET | `/agent/conversations/{conversation_id}/events` | SSE，支持 cursor/Last-Event-ID 增量回放；15 秒心跳与 access-ended |
 | POST | `/agent/runs/{run_id}/continue` | 按 artifact_id/artifact_row_version 继续指定运行，独立于采用 |
 
-消息 `mode=discuss` 不授权创作任务；`mode=generate` 可携带明确单项 `task`，没有单项时先进入计划审核。决策模型使用 text 配置，与任务里的图片/视频执行模型分开。媒体计划冻结参数与参考图；参考图改变需要新计划审核或新的明确单项授权。镜头没有已采用且不过期的图片时，不能冻结视频任务（`video_reference_required`），应先生成并采用图片，再提出视频任务。同一对话仅有一个活动运行，不自动排队付费消息。未知发送结果应以同一请求和幂等键明确核对，不能自动创建新请求；供应商受理未知的模型段不会自动重发。运行 DTO 不暴露 SDK 私有历史或原始模型回复。
+新消息默认 `mode=auto`，由 Agent 判断答复、读取、单项制作或多步骤计划，前端无讨论/生成选择。单项图片/视频在对象、模型、参数和来源唯一确定时直接执行；多步骤/批量须审核。旧 `discuss` 仍不授权制作，旧 `generate/task` 保留明确授权兼容。决策使用 text 模型，媒体使用本人确定的对应模型。参数与参考图冻结；镜头缺少有效已采用图片时返回 `video_reference_required`。同一会话串行执行，补充消息持久化排队，待审核补充只能只读或修订计划；旧批准失效。scope、工具与队列细节见 [Agent API](agent.md)。未知发送沿用原请求和幂等键核对，供应商受理不明的模型段不自动重发。运行 DTO 不暴露 SDK 私有历史或原始模型回复。
 
 本人候选以 [Agent artifact 路由](../../backend/src/short_drama/api/v1/agent_artifacts.py) 与 [artifact schema](../../backend/src/short_drama/schemas/agent_artifacts.py) 为准，同时校验作者及项目访问权，独立于私有会话 API。九表 schema 就绪时，即使执行开关关闭，作者仍可读取和采用本人已有候选；schema 不可用时返回 `agent_schema_unavailable`。项目主人与成员均不能读取或采用他人的候选，只有明确采用的作品进入共享业务内容。
 
@@ -71,7 +73,9 @@ Agent 默认开启；运行须完成九表迁移、保持账号认证并启动�
 | GET | `E/agent-artifacts/{artifact_id}` | 本人候选正文/patch/差异与来源快照 |
 | POST | `E/agent-artifacts/{artifact_id}/adopt` | 按候选与当前作品版本明确采用，返回稳定采用回执 |
 
-采用携带整数 `row_version/content_version` 以及适用的 `storyboard_version/target_row_version`；共享媒体影响需要明确确认。提取与分镜候选通过 `native_review` 提交原流程的完整逐项选项或追加/替换审核；媒体省略该对象，由后端从冻结成果推导并校验原生采用契约。来源过期或版本冲突不能被确认选项绕过。作品 DTO 不包含他人的候选、任务或生成记录关联；采用不会自动唤醒任何人的付费运行。
+采用携带十进制字符串 `row_version/content_version` 以及适用的 `storyboard_version/target_row_version`，继续运行同样使用字符串 `artifact_row_version`；共享媒体影响需要明确确认。提取与分镜候选通过 `native_review` 提交原流程的完整逐项选项或追加/替换审核；媒体省略该对象，由后端从冻结成果推导并校验原生采用契约。来源过期或版本冲突不能被确认选项绕过。作品 DTO 不包含他人的候选、任务或生成记录关联；采用不会自动唤醒任何人的付费运行。
+
+候选详情 `content_origin` 为 `snapshot`（冻结的原稿）、`current_script_legacy`（历史记录无原稿快照，只能读取当前剧本）或 null。新剧本候选保存原始正文快照，后续采用和编辑不会改变该快照；历史 fallback 不能作为原生成稿证据。停止时已生成但尚未展示的候选在取消事务内补消息引用，已受理媒体的延迟结果归档后也在原会话追加候选消息；相同候选不重复展示。运行保持停止终态，不能自动继续或采用。
 
 上述私有规则同样适用于小说改编、素材提取、分镜、图像、视频、音频、批量生成、任务中心、媒体资产库及成片历史。列表总数、详情、下载、恢复/重试和采用均按发起人或作者校验。已采用音色通过 `current_voice` 读取（含 `media_id/url/duration_ms/row_version`），已采用成片通过 `assembly.current_work` 及 `/assembly/current/download` 读取；分享作品不公开同一次生成的其他输出或模型配置。
 
@@ -106,6 +110,8 @@ Agent 默认开启；运行须完成九表迁移、保持账号认证并启动�
 正文保留空白与换行，最大 1 MiB UTF-8，允许空字符串但不接受 null。空白剧本不能确认。小说、剧本和选择共用 `content_version`，过期返回 409 `writing_version_conflict`；无变化保存不推进版本。
 
 后台新增剧本候选不改变编辑指针和正文版本。切换候选不会自动确认；编辑已确认剧本会取消该稿确认；确认另一稿在同一事务取消旧稿确认。小说编辑不改变剧本内容或确认状态。
+
+普通 `E/scripts` 列表排除尚未采用、已拒绝或已归档的 Agent 剧本候选；已明确采用的稿仍可正常读取和选择。普通选择、保存和确认不能替代 Agent 采用回执，命中未采用稿返回 422 `agent_artifact_adoption_required`，旧编辑指针亦按此规则处理。必须在本人候选入口核对并明确采用，不静默补旧回执。
 
 ## 模型配置
 
@@ -314,7 +320,7 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 - `POST` 同路径：multipart `file` 上传，`If-Match` 为所属素材/分镜当前 row_version。支持 PNG/JPEG/WebP、20 MiB、4000 万像素，最多 16 张；重复内容去重，不创建候选或自动采用。
 - `DELETE /generation-references/{kind}/{owner_id}/{media_id}`：同样需要 `If-Match`；仅解除关联，保留历史生成所需文件。
 - 参考图变化推进所属行版本，分镜同时推进集合版本及上下文摘要；旧版本返回 409 `reference_version_conflict`。保存图会与关联素材的确认图合并用于生成，不支持参考图的模型明确报错。
-- `GET E/storyboard-results/{generation_id}/shots?offset=0&limit=20`：分页返回 `{generation_id,items:[{position,script}],total,offset,limit,applied}`，只读取本集成功分镜任务。采用仍是整批操作，不限当前加载的页。
+- `GET E/storyboard-results/{generation_id}/shots?offset=0&limit=20`：分页返回 `{generation_id,items,total,total_duration_ms,offset,limit,applied}`，只读取本人、本集成功分镜任务。每项包含 `{position,title,script,duration_ms,asset_ids,assets,source_excerpt,story_beat}`；`assets` 为 `{id,kind,name,available,snapshot_missing}`，名称和类别来自生成时冻结的素材快照，`available` 表示当前仍属于本集，旧快照缺失时明确标记而不冒充当前名称。`total_duration_ms` 为整批计划时长，与分页无关。`applied` 为 `null` 或 `{mode,shot_ids,applied_at,storyboard_version}`，数据库 ID/版本均为十进制字符串。采用仍是整批操作，不限当前加载的页；预览不执行采用或自动生成。
 - `POST E/shots/{shot_id}/move`：`{storyboard_version,direction}`，direction 为 -1 或 1。服务端交换相邻活动镜头，返回新集合版本，客户端无需加载整集排序 ID。
 
 旧数据库须先执行 [参考图增量迁移](../数据库模型/migrations/2026-09-24-generation-references/README.md)。
@@ -344,3 +350,7 @@ ID、版本及 hash 必须替换为实际读取值。服务端从保存内容装
 # 成片功能补充
 
 [成片合成与导出 API](episode-assembly.md)：草稿、同步、检测、导出、取消、重试、下载与当前成片。
+
+## 无限画布项目
+
+创建项目增加默认 standard 的 workspace_mode，无限画布使用独立前端与画布资源合同。[无限画布接口](canvases.md)记录当前已接通的持久化、历史、账号保护和模型偏好能力；完整创作功能的迁移进度另见[实施记录](../plans/2026-10-05-beeftv-implementation-log.md)。

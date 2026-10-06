@@ -6,6 +6,8 @@ import socket
 import time
 from builtins import TimeoutError as SocketTimeout
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import urllib3
@@ -17,6 +19,28 @@ from .types import GenerationError
 @dataclass
 class MultipartBody:
     fields: list[tuple[str, str | tuple[str, bytes, str]]]
+
+
+@dataclass
+class RawBody:
+    data: bytes
+    content_type: str
+
+
+def response_retry_after(headers: dict) -> float | None:
+    value = next((value for key, value in headers.items() if key.lower() == "retry-after"), "")
+    if not isinstance(value, str) or len(value) > 128:
+        return None
+    value = value.strip()
+    try:
+        if value.isdecimal():
+            seconds = int(value)
+            return seconds if 0 < seconds <= 2**63 - 1 else None
+        at = parsedate_to_datetime(value)
+        seconds = (at - datetime.now(UTC)).total_seconds()
+        return seconds if seconds > 0 else None
+    except (ValueError, TypeError, OverflowError):
+        return None
 
 
 def validated_url(value, *, query=False):
@@ -67,6 +91,7 @@ class SafeTransport:
         on_headers=None,
         on_chunk=None,
         on_send=None,
+        read_error_body=False,
     ):
         url = validated_url(url, query=query)
         parts = urlsplit(url)
@@ -95,6 +120,8 @@ class SafeTransport:
         multipart = isinstance(body, MultipartBody)
         if multipart:
             encoded, content_type = urllib3.encode_multipart_formdata(body.fields)
+        elif isinstance(body, RawBody):
+            encoded, content_type = body.data, body.content_type
         else:
             encoded = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
         # HTTP names are case-insensitive; SDKs provide lowercase names. A plain
@@ -112,7 +139,9 @@ class SafeTransport:
             request_headers["Content-Type"] = content_type
         path = urlunsplit(("", "", parts.path, parts.query, ""))
         # Even connection errors do not cause an implicit second POST. GET may try other pinned IPs.
-        candidates = addresses[:1] if method == "POST" else addresses[:4]
+        candidates = (
+            addresses[:1] if method == "POST" or isinstance(body, RawBody) else addresses[:4]
+        )
         last_error = None
         for address in candidates:
             remaining = deadline - time.monotonic()
@@ -158,11 +187,16 @@ class SafeTransport:
                 response_headers = dict(response.headers)
                 if on_headers is not None:
                     on_headers(response.status, response_headers)
-                # Error bodies carry no useful trusted data; do not read or reflect them.
-                if response.status < 200 or response.status >= 300:
+                # Agent may classify bounded 4xx details internally; other callers
+                # continue to discard untrusted error bodies entirely.
+                error_body = read_error_body and 400 <= response.status < 500
+                if (response.status < 200 or response.status >= 300) and not error_body:
                     return response.status, response_headers, b""
+                response_limit = min(max_bytes, 65536) if error_body else max_bytes
                 content_length = response.headers.get("Content-Length")
-                if content_length and int(content_length) > max_bytes:
+                if content_length and int(content_length) > response_limit:
+                    if error_body:
+                        return response.status, response_headers, b""
                     raise GenerationError("response_too_large", accepted_unknown=method == "POST")
                 data = bytearray()
                 while True:
@@ -171,12 +205,14 @@ class SafeTransport:
                             "timeout", accepted_unknown=method == "POST", retryable=method != "POST"
                         )
                     chunk = response.read1(
-                        min(65536, max_bytes + 1 - len(data)), decode_content=True
+                        min(65536, response_limit + 1 - len(data)), decode_content=True
                     )
                     if not chunk:
                         break
                     data.extend(chunk)
-                    if len(data) > max_bytes:
+                    if len(data) > response_limit:
+                        if error_body:
+                            return response.status, response_headers, b""
                         raise GenerationError(
                             "response_too_large", accepted_unknown=method == "POST"
                         )
@@ -207,7 +243,7 @@ class SafeTransport:
                 pool.close()
         raise last_error from None
 
-    def download_media(self, url, max_bytes, *, deadline=None):
+    def download_media(self, url, max_bytes, *, deadline=None, canvas_video=False):
         if not isinstance(max_bytes, int) or not 0 < max_bytes <= 1024**3:
             raise GenerationError("invalid_media_limit")
         download_deadline = time.monotonic() + getattr(
@@ -234,7 +270,14 @@ class SafeTransport:
                 current = target
                 continue
             if status != 200:
-                raise GenerationError("download_failed", retryable=status == 429 or status >= 500)
+                raise GenerationError(
+                    "download_failed",
+                    retryable=status in {404, 408, 409, 425, 429} or status >= 500
+                    if canvas_video
+                    else status == 429 or status >= 500,
+                    http_status=status if canvas_video else None,
+                    retry_after=response_retry_after(headers) if canvas_video else None,
+                )
             mime = next(
                 (v for k, v in headers.items() if k.lower() == "content-type"),
                 "application/octet-stream",

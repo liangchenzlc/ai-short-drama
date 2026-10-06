@@ -46,7 +46,6 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets.external import ExternalToolset
 from pydantic_ai.usage import UsageLimits
 
-from short_drama.agent.input_capabilities import input_capabilities
 from short_drama.ai.adapters import endpoint, select_adapter
 from short_drama.ai.transport import SafeTransport
 from short_drama.ai.types import GenerationError
@@ -67,7 +66,10 @@ def _prompt_content(value, snapshot):
         return value
     if not isinstance(value, list) or not value or len(value) > 80:
         raise AgentGatewayError("unsupported_agent_history_content")
-    capability = input_capabilities(snapshot)
+    try:
+        protocol = select_adapter(snapshot)
+    except (GenerationError, KeyError, TypeError):
+        raise AgentGatewayError("unsupported_agent_protocol") from None
     parts = []
     total = 0
     for item in value:
@@ -85,9 +87,9 @@ def _prompt_content(value, snapshot):
         if not isinstance(item, BinaryContent):
             raise AgentGatewayError("unsupported_agent_history_content")
         if item.media_type in {"image/jpeg", "image/png", "image/webp"}:
-            supported = capability["image"]
+            supported = True
         elif item.media_type in {"audio/wav", "audio/mpeg"}:
-            supported = capability["audio"]
+            supported = protocol == "openai_chat.v1"
         else:
             supported = False
         if not supported or not item.data:
@@ -106,6 +108,30 @@ class AgentGatewayError(GenerationError):
         self.requests = requests
         self.completed_segments = ()
         super().__init__(code, accepted_unknown=accepted_unknown, http_status=http_status)
+
+
+def provider_failure_code(status, content):
+    if status in {401, 403}:
+        return "agent_provider_authentication"
+    if status == 429:
+        return "agent_provider_rate_limited"
+    if status >= 500 or status == 408:
+        return "agent_provider_unknown"
+    try:
+        payload = json.loads(content[:65536])
+        error = payload.get("error", {}) if isinstance(payload, dict) else {}
+        details = " ".join(str(error.get(key, "")) for key in ("code", "type", "message")).lower()
+    except (ValueError, TypeError, AttributeError):
+        details = ""
+    unsupported = any(word in details for word in ("not support", "unsupported", "not allowed"))
+    if unsupported:
+        if any(word in details for word in ("tool", "function_call")):
+            return "agent_tools_unsupported"
+        if any(word in details for word in ("audio", "input_audio")):
+            return "agent_audio_input_unsupported"
+        if any(word in details for word in ("image", "vision")):
+            return "agent_image_input_unsupported"
+    return "agent_provider_rejected"
 
 
 def _json_value(value):
@@ -412,6 +438,13 @@ class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
                 "agent_provider_redirect", requests=self.requests, http_status=status
             )
             raise self.last_error
+        if status >= 400:
+            self.last_error = AgentGatewayError(
+                provider_failure_code(status, content),
+                requests=self.requests,
+                accepted_unknown=status >= 500 or status == 408,
+                http_status=status,
+            )
 
     async def handle_async_request(self, request):
         if request.method != "POST" or str(request.url) != self.url or self.attempts:
@@ -496,6 +529,7 @@ class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
                         on_headers=lambda status, values: emit("headers", (status, values)),
                         on_chunk=lambda chunk: emit("chunk", chunk),
                         on_send=before_send,
+                        read_error_body=True,
                     )
                     await self.save_response(status, response_headers, content)
                     await self.queue.put(("done", None))
@@ -528,6 +562,7 @@ class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
                 max_bytes=self.max_response_bytes,
                 deadline=self.deadline,
                 on_send=before_send,
+                read_error_body=True,
             )
         except GenerationError as error:
             self.last_error = error
@@ -770,7 +805,9 @@ class AgentModelGateway:
         except (ModelHTTPError, APIStatusError) as error:
             status = error.status_code
             raise AgentGatewayError(
-                "agent_provider_rejected" if status < 500 else "agent_provider_unknown",
+                getattr(bridge.last_error, "code", "agent_provider_rejected")
+                if status < 500
+                else "agent_provider_unknown",
                 requests=bridge.requests,
                 accepted_unknown=status >= 500 or status == 408,
                 http_status=status,

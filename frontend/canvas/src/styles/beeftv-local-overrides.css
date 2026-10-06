@@ -1,0 +1,37 @@
+/* Use the supplied left-side Beef lockup consistently in the workspace. */
+body .app-user-workspace .app-workspace-brand-mark {
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+body .app-user-workspace .app-workspace-brand-mark img {
+    width: 34px !important;
+    height: 26px !important;
+    object-fit: contain !important;
+    object-position: center !important;
+}
+
+/* 对齐源 AntD 6 的按钮图标布局，保留 SVG 居中与图标字体的基线。 */
+.ant-btn .ant-btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ant-btn .ant-btn-icon .anticon {
+    vertical-align: middle;
+}
+
+.ant-btn .ant-btn-icon .anticon::before {
+    content: "\00a0";
+    display: inline-block;
+    width: 0;
+}
+
+/* 源数量输入按边框内高度居中，避免 AntD 5 的内层输入多出 2px。 */
+.canvas-node-composer .ant-input-number .ant-input-number-input-wrap,
+.canvas-node-composer .ant-input-number .ant-input-number-input {
+    height: 100%;
+}

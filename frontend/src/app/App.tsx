@@ -45,9 +45,10 @@ function StudioLayout() {
   const episode = useMatch('/projects/:projectId/episodes/:episodeId/:stage?');
   const project = useMatch('/projects/:projectId');
   const asset = useMatch('/assets/:kind');
+  const canvas = useMatch('/projects/:projectId/canvases/:canvasId');
   const page: MainPage = asset ? 'assets' : pathname.startsWith('/tasks') ? 'tasks' : pathname.startsWith('/media-library') ? 'media-library' : pathname === aiConfigPath ? 'ai' : pathname === accountPath ? 'account' : 'projects';
   const pageLabels: Record<MainPage, string> = { projects: '项目管理', assets: '素材库', tasks: '任务管理', 'media-library': '资产库', ai: 'AI 配置', account: '账号中心' };
-  const detail = !!(episode || project);
+  const detail = !!(episode || project || canvas);
   useLayoutEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [pathname]);
   return <div className={detail ? `studio studio-detail studio-${episode ? 'episode' : 'detail'}` : 'studio'}>
     <a className="skip-link" href="#main">跳到主内容</a>
@@ -87,6 +88,7 @@ export function App() {
       <Route path="projects" element={<ProjectLayout />}>
         <Route index element={<ProjectsPage />} />
         <Route path=":projectId" element={<ProjectRoute />} />
+        <Route path=":projectId/canvases/:canvasId" element={<ProjectRoute />} />
         <Route path=":projectId/episodes/:episodeId/:stage?" element={<ProjectRoute />} />
       </Route>
       <Route path="assets" element={<Navigate to="/assets/character" replace />} />

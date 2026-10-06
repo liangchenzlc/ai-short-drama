@@ -6,6 +6,7 @@ import { ProjectDetailHeader } from '../../features/projects/ProjectDetailHeader
 import type { ProjectSession } from '../../types/projects';
 import { projectPath } from '../../app/paths';
 import { preloadable } from '../../components/ui/preloadable';
+import { CanvasLaunch } from '../../features/projects/CanvasLaunch';
 import '../../features/projects/projects.css';
 
 const loadProjectOverview = () => import('../../features/projects/ProjectOverview');
@@ -22,10 +23,10 @@ export async function preloadProjectView(episodeId?: string, stage?: string, sec
 }
 
 export function ProjectRoute() {
-  const { projectId = '', episodeId } = useParams();
-  return <RemoteProjectRoute key={`${projectId}:${episodeId ?? ''}`} projectId={projectId} episodeId={episodeId} />;
+  const { projectId = '', episodeId, canvasId } = useParams();
+  return <RemoteProjectRoute key={`${projectId}:${episodeId ?? canvasId ?? ''}`} projectId={projectId} episodeId={episodeId} canvasId={canvasId} />;
 }
-function RemoteProjectRoute({ projectId, episodeId }: { projectId: string; episodeId?: string }) {
+function RemoteProjectRoute({ projectId, episodeId, canvasId }: { projectId: string; episodeId?: string; canvasId?: string }) {
   const navigate = useNavigate();
   const [project, setProject] = useState<RemoteProject | null>(null);
   const [episode, setEpisode] = useState<RemoteEpisode | null>(null);
@@ -53,6 +54,8 @@ function RemoteProjectRoute({ projectId, episodeId }: { projectId: string; episo
   if (loading) return <section className="projects-home"><ProjectDetailHeader session={null} canClose onBack={() => navigate('/projects')} onClose={() => navigate('/projects')} /><div className="studio-empty" role="status"><Spin /> 正在打开项目…</div></section>;
   if (error || !project) return <section className="projects-home"><ProjectDetailHeader session={null} canClose fallbackTitle="项目无法打开" onBack={() => navigate('/projects')} onClose={() => navigate('/projects')} /><Alert type="error" showIcon message={error || '项目不存在。'} action={<Button onClick={() => setRevision((v) => v + 1)}>重试</Button>} /></section>;
   const session: ProjectSession = { projectId, projectSessionId: projectId, mode: 'write', project };
+  if (project.workspaceMode === 'infinite_canvas') return <CanvasLaunch projectId={projectId} canvasId={canvasId ?? project.primaryCanvasId} />;
+  if (canvasId) return <Alert type="error" showIcon message="此项目使用标准模式。" />;
   if (episodeId && episode) return <Suspense fallback={<div className="studio-empty" role="status"><Spin /> 正在载入分集工作区…</div>}><EpisodePage session={session} episode={episode} number={episode.number ?? 1} ready onBack={() => navigate(projectPath(projectId))} /></Suspense>;
   return <section className="projects-home">
     <ProjectDetailHeader session={session} canClose onBack={() => navigate('/projects')} onClose={() => navigate('/projects')} />

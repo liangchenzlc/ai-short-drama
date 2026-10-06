@@ -10,6 +10,7 @@ from short_drama.agent.runtime import lock_run, may_decide
 from short_drama.agent.state import (
     TERMINAL,
     append_event,
+    append_late_artifact_message,
     finish_locked,
     mark_scheduled,
     wait_locked,
@@ -294,6 +295,9 @@ def _payload(session, conversation, run, step, quantity):
 
 def admit_native_locked(session, conversation, run, tool, step, *, settings):
     """Caller holds Project -> Conversation/Run -> Tool, and must retain this transaction."""
+    from short_drama.service.agent_conversation_service import validate_conversation_subject
+
+    validate_conversation_subject(session, conversation, lock=True)
     project = session.scalar(
         select(Project)
         .where(Project.id == conversation.project_id)
@@ -541,8 +545,14 @@ def collect_native_results(factory, settings, limit=100):
                     )
                 else:
                     mark_scheduled(run, phase="tools")
-            elif run.status not in TERMINAL:
-                finish_locked(session, conversation, run, "cancelled", {"code": "access_revoked"})
+            else:
+                if run.status not in TERMINAL:
+                    finish_locked(
+                        session, conversation, run, "cancelled", {"code": "access_revoked"}
+                    )
+                if artifacts:
+                    session.flush()
+                    append_late_artifact_message(session, conversation, run, set(artifacts))
             session.flush()
             collected += 1
     return collected

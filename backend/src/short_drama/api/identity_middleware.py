@@ -88,7 +88,7 @@ def install_identity(app, settings):
                         (r"/generation-references/asset/(\d+)", Asset),
                         (r"/generation-references/shot/(\d+)", ShotScript),
                     ]:
-                        match = re.search(expression, path)
+                        match = re.search(r"^/api/v1" + expression + r"(?:/|$)", path)
                         if match:
                             candidate = (model, int(match.group(1)))
                             break

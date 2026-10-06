@@ -100,6 +100,42 @@ class StoryboardGeneratedShot(InputModel):
         return value
 
 
+class StoryboardResultAsset(ReadModel):
+    id: Identifier
+    kind: Literal["character", "prop", "scene"] | None
+    name: str
+    available: bool
+    snapshot_missing: bool
+
+
+class StoryboardResultShot(ReadModel):
+    position: int = Field(ge=1)
+    title: str
+    script: str
+    duration_ms: int = Field(ge=1000, le=10000)
+    source_excerpt: str
+    story_beat: str
+    asset_ids: list[Identifier]
+    assets: list[StoryboardResultAsset]
+
+
+class StoryboardResultAdoption(ReadModel):
+    mode: Literal["append", "replace"]
+    shot_ids: list[Identifier] = Field(default_factory=list)
+    applied_at: datetime | None = None
+    storyboard_version: Identifier | None = None
+
+
+class StoryboardResultPage(ReadModel):
+    generation_id: Identifier
+    items: list[StoryboardResultShot]
+    total: int = Field(ge=0)
+    total_duration_ms: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
+    applied: StoryboardResultAdoption | None
+
+
 class ShotImageRead(ReadModel):
     media_id: Identifier
     media_asset_id: Identifier | None = None

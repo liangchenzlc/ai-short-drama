@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Response, status
+from fastapi import APIRouter, Depends, Header, Path, Query, Response, status
 
 from short_drama.api.dependencies import get_episode_service, get_project_service
 from short_drama.schemas.base import Identifier
@@ -89,7 +89,10 @@ def delete_episode(project_id: ProjectId, episode_id: EpisodeId, service: Episod
 def create_project(
     payload: ProjectCreateRequest,
     service: Annotated[ProjectService, Depends(get_project_service)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=128)] = None,
 ):
+    if payload.workspace_mode == "infinite_canvas":
+        return service.create_project(payload, idempotency_key=idempotency_key)
     return service.create_project(payload)
 
 

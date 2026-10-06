@@ -175,7 +175,17 @@ def test_storyboard_history_pages_only_requested_shots_and_checks_episode_scope(
         service = GenerationBusinessService(session)
         page = service.storyboard_result_page(project_id, episode_id, task["generation_id"], 20, 20)
         assert page["total"] == 55 and len(page["items"]) == 20
-        assert page["items"][0] == {"position": 21, "script": "shot 20"}
+        assert page["items"][0] == {
+            "position": 21,
+            "title": "",
+            "script": "shot 20",
+            "duration_ms": 3000,
+            "source_excerpt": "hidden",
+            "story_beat": "",
+            "asset_ids": [],
+            "assets": [],
+        }
+        assert page["total_duration_ms"] == 55 * 3000 and page["applied"] is None
         assert (
             len(
                 service.storyboard_result_page(

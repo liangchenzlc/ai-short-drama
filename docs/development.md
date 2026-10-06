@@ -7,7 +7,7 @@
 | 依赖 | 要求 |
 | --- | --- |
 | Python | 3.12+，依赖由 `backend/uv.lock` 固定 |
-| Node.js | 20.19+ 或 22.12+，依赖由 `frontend/package-lock.json` 固定 |
+| Node.js | 两套前端统一运行推荐 22.18+ 的 22.x 或 24.x LTS；依赖分别由 `frontend/package-lock.json` 和 `frontend/canvas/package-lock.json` 固定 |
 | MySQL | 8.0.21+，InnoDB、utf8mb4、严格模式、UTC |
 | RabbitMQ | 可访问的 AMQP 服务；5672 默认明文，TLS 端口按部署配置 |
 | MinIO | 预先准备图片和视频两个 bucket，应用不会自动创建 |
@@ -119,11 +119,13 @@ Windows 可选用 `scripts/start_generation.ps1 -Role api|scheduler|text|image|v
 
 ```powershell
 # frontend/
-npm ci
+npm run install:all
 npm run dev
 ```
 
-地址 `http://127.0.0.1:8080`。端口被占用时退出，不自动换端口。开发服务器将 `/api` 转发至 `http://127.0.0.1:8000`。
+地址 `http://127.0.0.1:8080`。`install:all` 分别按两包锁文件安装，`dev` 在一个 Node 进程内启动宿主 8080 和独立画布子包 8082，并将 `/canvas-app/` 代理到画布。退出时关闭本次创建的两台 Vite 服务器；端口被占用时退出，不自动换端口。开发服务器将 `/api` 转发至 `http://127.0.0.1:8000`。`npm run dev:standard`、`npm run dev:canvas` 可分别运行，画布也保留 `frontend/canvas/` 下的独立 `npm ci`、`npm run dev`。
+
+统一 `dev` 可传 `--port`、`--host`、`--mode`、`--open`、`--force`、`--strictPort`，`CANVAS_DEV_PORT` 控制画布端口。两包分别保留依赖目录、锁文件、HTML 和 React root；共同声明但版本不同的直接依赖采用宿主版本，画布独有依赖继续单独锁定。画布测试依赖 Node 类型剥离，nanoid 6 不支持 Node 20。
 
 如需调整，复制 `frontend/.env.example` 为 `.env.local`，设置 `API_PROXY_TARGET` 后重启 Vite。`VITE_API_BASE_URL` 默认 `/api/v1`，会进入浏览器产物，只能放公开配置。
 
@@ -144,6 +146,8 @@ npm test
 npm run typecheck
 npm run build
 ```
+
+`build` 包含两包类型检查与生产构建，将独立画布 `frontend/canvas/dist/` 复制到 `frontend/dist/canvas-app/`。`npm run preview` 只启动宿主预览进程，从统一 `dist/` 提供 `/canvas-app/index.html` 和标准 `/index.html` 的各自回退，API 使用当前代理配置。画布独立构建、测试与来源检查可在 `frontend/canvas/` 运行；从宿主目录等效执行 `npm --prefix canvas test`、`npm --prefix canvas run test:e2e`、`npm --prefix canvas run source:check`。宿主 `npm test`、`test:e2e` 保持标准测试范围。
 
 另可执行 `npx playwright install chromium` 后 `npm run test:e2e`，使用无付费调用的 API 测试替身验证桌面与窄屏；可用环境变量 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 指定已安装的 Chromium。端口 4175 必须可用。
 
@@ -172,6 +176,7 @@ uv run python scripts/run_integration.py tests/integration/test_production_workf
 | `TEST_PRODUCTION_INFRA=1` | `tests/integration/test_production_generation.py` | 随机库、队列及 MinIO 测试对象，模型上游为测试替身 |
 | `RUN_AGENT_INFRA_INTEGRATION=1` | `tests/integration/test_agent_infrastructure.py` | 随机 MySQL 库、专属 RabbitMQ namespace 和本测试写入的 MinIO 对象；模型为内存 PNG 替身 |
 | `RUN_AGENT_INFRA_INTEGRATION=1` | `tests/integration/test_agent_worker_infrastructure.py` | 随机 MySQL 库和专属 RabbitMQ namespace，实际 Celery Agent 消费入口；模型边界为内存替身 |
+| `RUN_AGENT_INFRA_INTEGRATION=1` | `tests/integration/test_agent_browser_infrastructure.py` | Chromium 实际输入/发送，经独立 Vite 代理、Uvicorn API、Publisher 和 RabbitMQ Celery Agent，在随机 MySQL 库生成私有候选并核对页面差异；模型为本地 HTTP 替身 |
 
 Agent 基础设施定向验证在已配置的隔离 RabbitMQ/MinIO 环境运行，并需要创建测试数据库的权限：
 
@@ -182,6 +187,16 @@ Remove-Item Env:RUN_AGENT_INFRA_INTEGRATION
 ```
 
 前两项验证实际 Agent 发布/路由/取消息，以及原生 worker 图片归档、共享采用与预签名访问。额外 Worker 用例在专属队列启动 Celery 线程 Worker，通过实际 `execute_agent` 入口落库 Turn/回复；模型边界为内存替身。三项都不访问真实模型，不修改业务库或运行中的服务。隔离消费证据不等于生产部署或供应商兼容性。
+
+浏览器链路用例另需先在 `frontend/` 执行 `npm ci`，并安装 Chromium，或设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 指向已有浏览器。在 `backend/` 执行以下命令（独立测试服务器可设置 `TEST_DATABASE_URL` 后直接运行同一路径的 pytest）：
+
+```powershell
+$env:RUN_AGENT_INFRA_INTEGRATION = '1'
+uv run python scripts/run_integration.py tests/integration/test_agent_browser_infrastructure.py -q
+Remove-Item Env:RUN_AGENT_INFRA_INTEGRATION
+```
+
+该用例使用随机队列命名空间与独立本机端口，不拦截页面/API 请求；只注入隔离数据库工厂和本地模型 HTTP 边界。它验证未预验证模型直接发送、作用域随请求传入、真实队列消费、SSE 回复和候选差异显示，确认作品未被自动采用；不会调用付费模型，不代表供应商兼容性或创作质量验收。
 
 隔离基础设施测试不等于真实供应商验收。真实模型联调应记录配置、输入、张数/时长、费用预算和结果；不要用付费调用作为默认单元测试。
 
@@ -214,7 +229,7 @@ RabbitMQ 消费确认超时需要覆盖单次 Worker 调用时长。较长文本
 
 - 非 loopback 地址访问使用 HTTPS；生成请求依赖安全上下文中的 Web Crypto（crypto.subtle/randomUUID）。localhost/127.0.0.1 是本地开发例外，普通局域网 HTTP 不满足该前提。
 - API、调度器与 Worker 交给进程管理器或容器管理，分配唯一雪花节点，保留可检索日志和异常退出告警。
-- 静态站点先将 `/api/` 代理到后端，再对页面路径使用 `index.html` fallback；Vite 开发代理不会进入构建产物。
+- 部署统一 `frontend/dist/`。静态站点先将 `/api/` 代理到后端，对 `/canvas-app/*` 页面使用 `/canvas-app/index.html` fallback，其余标准页面使用 `/index.html` fallback；实际静态文件优先，避免 Worker、wasm、字体和脚本请求误返回 HTML。Vite 开发与预览代理不会进入静态构建产物。
 - **部署前核对 Vite `base`。** 当前配置为 `/`，路由采用 BrowserRouter，适用于域名根目录部署。子路径部署需同时协调资源 base、路由 basename 和代理路径，并验证直接打开分集 URL。
 - 账号与多用户隔离默认启用；部署前完成[账号迁移](collaboration-deployment.md)、邮件与安全 Cookie 配置。Agent 额外部署与关闭步骤见 [Agent 部署](agent-deployment.md)。
 - 备份 MySQL、MinIO 对象和加密主密钥，验证恢复流程；不能只备份数据库中的临时媒体 URL。

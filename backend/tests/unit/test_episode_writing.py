@@ -2,7 +2,7 @@ import pytest
 from generation_fixtures import generation_session
 from sqlalchemy import func, select
 
-from short_drama.core.exceptions import Conflict, NotFound
+from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.domain import EpisodeNovel, EpisodeScript
 from short_drama.service.episode_service import EpisodeService
 from short_drama.service.episode_writing_service import EpisodeWritingService
@@ -116,6 +116,119 @@ def test_selection_preserves_candidates_and_confirmation_is_explicit():
         result = service.confirm(p, e, second.id, {"content_version": selected["content_version"]})
         assert result["confirmed_script_id"] == str(second.id)
         assert EpisodeScriptService(session).get(first_id).state == "unconfirmed"
+
+
+def test_agent_script_selection_requires_adoption_and_preserves_editor():
+    from short_drama.domain import AgentArtifact
+    from short_drama.service.base import utcnow
+    from short_drama.service.episode_script_service import EpisodeScriptService
+
+    with generation_session() as session:
+        p, e, service = setup(session)
+        script = EpisodeScriptService(session).create(
+            {"episode_id": e, "position": 1, "content": "Private agent draft"}
+        )
+        with session.begin():
+            session.add(
+                AgentArtifact(
+                    id=101,
+                    project_id=p,
+                    episode_id=e,
+                    tool_call_id=102,
+                    result_index=1,
+                    kind="script_candidate",
+                    script_id=script.id,
+                    status="ready",
+                    created_by=1,
+                    created_at=utcnow(),
+                    updated_at=utcnow(),
+                )
+            )
+        before = service.get(p, e)
+        assert service.candidates(p, e)["items"] == []
+        with pytest.raises(WorkflowError) as blocked:
+            service.select_script(
+                p, e, {"script_id": str(script.id), "content_version": before["content_version"]}
+            )
+        assert blocked.value.code == "agent_artifact_adoption_required"
+        assert service.get(p, e) == before
+        with session.begin():
+            artifact = session.get(AgentArtifact, 101)
+            artifact.status, artifact.applied_by = "applied", 1
+            artifact.applied_at, artifact.apply_receipt = utcnow(), {"action": "select_script"}
+        assert service.candidates(p, e)["items"][0]["id"] == str(script.id)
+        assert service.select_script(
+            p, e, {"script_id": str(script.id), "content_version": before["content_version"]}
+        )["editing_script"]["id"] == str(script.id)
+
+
+def test_prompt_only_schema_without_agent_table_keeps_script_workflow():
+    from short_drama.domain import AgentArtifact
+
+    with generation_session() as session:
+        p, e, _ = setup(session)
+        AgentArtifact.__table__.drop(session.get_bind())
+        service = EpisodeWritingService(session)
+        saved = service.save_script(
+            p, e, {"script_id": None, "content": "Regular draft", "content_version": "1"}
+        )
+        assert service.candidates(p, e)["items"][0]["id"] == saved["script"]["id"]
+        assert (
+            service.select_script(
+                p,
+                e,
+                {"script_id": saved["script"]["id"], "content_version": saved["content_version"]},
+            )["editing_script"]["content"]
+            == "Regular draft"
+        )
+
+
+@pytest.mark.parametrize("operation", ["save", "confirm"])
+def test_legacy_editing_pointer_cannot_publish_an_unadopted_agent_script(operation):
+    from short_drama.domain import AgentArtifact, Episode
+    from short_drama.service.base import utcnow
+    from short_drama.service.episode_script_service import EpisodeScriptService
+
+    with generation_session() as session:
+        p, e, service = setup(session)
+        script = EpisodeScriptService(session).create(
+            {"episode_id": e, "position": 1, "content": "Unadopted original"}
+        )
+        with session.begin():
+            session.get(Episode, e).editing_script_id = script.id
+            session.add(
+                AgentArtifact(
+                    id=101,
+                    project_id=p,
+                    episode_id=e,
+                    tool_call_id=102,
+                    result_index=1,
+                    kind="script_candidate",
+                    script_id=script.id,
+                    status="ready",
+                    created_by=1,
+                    created_at=utcnow(),
+                    updated_at=utcnow(),
+                )
+            )
+        before = service.get(p, e)
+        with pytest.raises(WorkflowError) as blocked:
+            if operation == "save":
+                service.save_script(
+                    p,
+                    e,
+                    {
+                        "script_id": str(script.id),
+                        "content": "Changed",
+                        "content_version": before["content_version"],
+                    },
+                )
+            else:
+                service.confirm(
+                    p, e, str(script.id), {"content_version": before["content_version"]}
+                )
+        assert blocked.value.code == "agent_artifact_adoption_required"
+        assert service.get(p, e) == before
 
 
 def test_scopes_and_input_validation():

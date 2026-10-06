@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     encryption_key: SecretStr | None = None
     snowflake_worker_id: int = Field(default=1, ge=0, le=1023)
     model_discovery_allowed_hosts: list[str] = Field(default_factory=list)
+    canvas_beefapi_test_origin: str = ""
     minio_endpoint: str | None = None
     minio_access_key: SecretStr | None = None
     minio_secret_key: SecretStr | None = None
@@ -119,6 +120,20 @@ class Settings(BaseSettings):
         if endpoint.port is not None and not 1 <= endpoint.port <= 65535:
             raise ValueError("Invalid MinIO port")
         return value
+
+    @field_validator("canvas_beefapi_test_origin")
+    @classmethod
+    def loopback_beefapi_test_origin(cls, value):
+        from short_drama.ai.canvas_beefapi_client import CanvasBeefAPIError, canonical_origin
+
+        if not value:
+            return ""
+        try:
+            return canonical_origin(value)
+        except CanvasBeefAPIError:
+            raise ValueError(
+                "CANVAS_BEEFAPI_TEST_ORIGIN must be an explicit loopback origin"
+            ) from None
 
     @model_validator(mode="after")
     def agent_requires_identity(self):

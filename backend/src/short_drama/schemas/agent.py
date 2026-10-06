@@ -11,12 +11,56 @@ AgentRunStatus = Literal[
     "queued", "running", "waiting_generation", "waiting_review", "succeeded", "failed", "cancelled"
 ]
 Title = Annotated[str, Field(min_length=1, max_length=120)]
+ConversationStage = Literal["source", "assets", "storyboard"]
+ConversationSubject = Literal["episode", "asset", "shot"]
+ConversationTask = Literal[
+    "writing", "extraction", "planning", "batch", "creation", "image", "video"
+]
+SCOPE_TASKS = {
+    ("source", "episode"): {"writing"},
+    ("assets", "episode"): {"extraction", "batch"},
+    ("assets", "asset"): {"creation", "image"},
+    ("storyboard", "episode"): {"planning", "batch"},
+    ("storyboard", "shot"): {"creation", "image", "video"},
+}
+
+
+class ConversationScope(InputModel):
+    stage: ConversationStage
+    subject_type: ConversationSubject
+    subject_id: Identifier
+    task_type: ConversationTask | None = None
+
+    @model_validator(mode="after")
+    def valid_combination(self):
+        tasks = SCOPE_TASKS.get((self.stage, self.subject_type))
+        if tasks is None or self.task_type is not None and self.task_type not in tasks:
+            raise ValueError("Conversation stage, subject and task do not match")
+        return self
 
 
 class ConversationCreate(InputModel):
     project_id: Identifier
     episode_id: Identifier
     title: Title = "新对话"
+    stage: ConversationStage | None = None
+    subject_type: ConversationSubject | None = None
+    subject_id: Identifier | None = None
+    task_type: ConversationTask | None = None
+
+    @model_validator(mode="after")
+    def complete_scope(self):
+        values = (self.stage, self.subject_type, self.subject_id, self.task_type)
+        if all(value is None for value in values):
+            return self
+        if any(value is None for value in values):
+            raise ValueError("Supply the complete conversation scope")
+        ConversationScope.model_validate(
+            self.model_dump(include={"stage", "subject_type", "subject_id", "task_type"})
+        )
+        if self.subject_type == "episode" and self.subject_id != self.episode_id:
+            raise ValueError("Episode subject must match this episode")
+        return self
 
     @field_validator("title")
     @classmethod
@@ -28,7 +72,7 @@ class ConversationCreate(InputModel):
 
 
 class ConversationPatch(InputModel):
-    row_version: Annotated[int, Field(strict=True, ge=1, le=2**64 - 1)]
+    row_version: Identifier
     title: Title | None = None
     archived: bool | None = None
 
@@ -52,11 +96,17 @@ class ConversationRead(ReadModel):
     project_id: Identifier
     episode_id: Identifier
     title: str
-    row_version: int
+    row_version: Identifier
     archived: bool
     created_at: datetime
     updated_at: datetime
     last_run_status: AgentRunStatus | None = None
+    last_message_preview: str = ""
+    stage: ConversationStage | None = None
+    subject_type: ConversationSubject | None = None
+    subject_id: Identifier | None = None
+    task_type: ConversationTask | None = None
+    scope_version: Literal[0, 1] = 0
 
 
 class AgentStatus(ReadModel):

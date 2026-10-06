@@ -9,20 +9,20 @@ const { attachmentInputIssue, attachmentFileIssue } = await import(`data:text/ja
 const attachment = (kind, metadata = {}) => ({ kind, metadata });
 const model = (image = false, audio = false) => ({ input_capabilities: { text: true, image, audio, video: image ? 'sampled_frames' : 'unsupported' } });
 
-test('text references work with text models while visual and audio inputs require declared support', () => {
+test('unknown or previously text-only models do not prevent sending visual or audio references', () => {
   assert.equal(attachmentInputIssue([attachment('text')], model()), '');
-  assert.match(attachmentInputIssue([attachment('image')], model()), /不支持图片/);
+  assert.equal(attachmentInputIssue([attachment('image')], model()), '');
   assert.equal(attachmentInputIssue([attachment('image')], model(true)), '');
-  assert.match(attachmentInputIssue([attachment('audio')], model(true)), /不支持音频/);
+  assert.equal(attachmentInputIssue([attachment('audio')], model(true)), '');
   assert.equal(attachmentInputIssue([attachment('audio')], model(true, true)), '');
-  assert.match(attachmentInputIssue([attachment('image')]), /不支持图片/);
+  assert.equal(attachmentInputIssue([attachment('image')]), '');
 });
 
-test('video audio is never silently omitted and an explicit visual-only choice still needs frame support', () => {
+test('video references retain the explicit audio choice and are checked by the actual runtime', () => {
   const video = attachment('video', { has_audio: true });
-  assert.match(attachmentInputIssue([video], model(true)), /视频含有声音/);
+  assert.equal(attachmentInputIssue([video], model(true)), '');
   assert.equal(attachmentInputIssue([video], model(true), 'visual_only'), '');
-  assert.match(attachmentInputIssue([video], model(), 'visual_only'), /不支持视频画面/);
+  assert.equal(attachmentInputIssue([video], model(), 'visual_only'), '');
   assert.equal(attachmentInputIssue([video], model(true, true)), '');
   assert.equal(attachmentInputIssue([attachment('video')], model(true)), '');
 });

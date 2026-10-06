@@ -19,10 +19,9 @@ export function artifactEffect(kind: AgentArtifactKind) {
     : kind === 'storyboard_candidate' ? '先核对完整分镜，再选择追加或替换。'
     : '采用会替换指定对象的当前媒体，历史候选保留。';
 }
-export function artifactVersion(value: string | number) {
-  const version = Number(value);
-  if (!Number.isSafeInteger(version) || version <= 0) throw new Error('当前作品版本无法核对，请重新载入后再采用。');
-  return version;
+export function artifactVersion(value: string) {
+  if (typeof value !== 'string' || !/^[1-9]\d{0,19}$/.test(value) || BigInt(value) > 18446744073709551615n) throw new Error('当前作品版本无法核对，请重新载入后再采用。');
+  return value;
 }
 export function diffValue(field: string, value: unknown) {
   if (field === 'duration_ms' && typeof value === 'number') return `${value / 1000} 秒`;

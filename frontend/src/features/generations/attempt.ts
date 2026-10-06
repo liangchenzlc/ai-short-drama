@@ -10,6 +10,9 @@ export function setAttemptAccount(accountId: string | null) {
     else window.sessionStorage.removeItem('short-drama:account');
   } catch { /* Account isolation also works when browser storage is unavailable. */ }
 }
+export function getAttemptAccount(): string | null {
+  return currentAccount ?? null;
+}
 function attemptSlot(scope: string) {
   let account = currentAccount ?? '';
   if (currentAccount === undefined) {

@@ -16,6 +16,16 @@ uv run python scripts/agent_migration.py --precheck
 
 已有七表的旧库需要补私有候选迁移及附件/Skill 两表，执行顺序与回填见[本次迁移说明](数据库模型/migrations/2026-10-03-private-candidates/README.md)。新库不执行旧库 ALTER；Agent `--apply` 可补缺表，不能代替私有候选列和历史发布状态的回填。附件格式、输入能力和 Skill 版本规则见[Agent API](api/agent.md)。
 
+已有九表库还须执行[会话范围增量迁移](数据库模型/migrations/2026-10-04-agent-creation-scope/README.md)：
+
+```powershell
+uv run python scripts/agent_scope_migration.py --precheck
+uv run python scripts/agent_scope_migration.py --apply
+uv run python scripts/agent_migration.py --precheck
+```
+
+本增量增加会话 stage、subject_type、subject_id、task_type、scope_version 及索引/约束，并将 Run 的活动会话唯一索引替换为普通索引以支持排队；实际执行仍由项目/会话锁和串行调度保障。保留旧记录为未分类只读，不推测对象归属。完整新库 SQL 已含这些定义，不重复执行 ALTER。
+
 完整新库 [schema.mysql8.sql](数据库模型/schema.mysql8.sql) 已含 52 张表，包括 Agent 九表，直接做 precheck 即可。应用启动不会自动迁移。MySQL DDL 会隐式提交；迁移可按已完成的表重入，不会修改已有表、归属或业务内容，也不会修复不兼容的既有 Agent 表定义。遇到 `partial` 应核对 precheck 缺口与对应 DDL，保留原数据后处理，不能仅凭同名表存在判定就绪。
 
 | 设置 | 作用 |
@@ -48,9 +58,9 @@ Agent 队列始终是 `<GENERATION_QUEUE_NAMESPACE>.tasks.agent`，默认也保�
 
 ## 模型与流式代理
 
-用户在个人模型设置中明确发起“验证 Agent 工具能力”。一次验证最多产生两次可能计费的文本模型请求；读取配置、打开页面和普通健康检查不会发起验证。证据绑定当前配置版本，修改地址、模型或凭据后必须重新验证。Agent 文本工具协议与原生图片/视频供应商兼容性需分别验收；自动测试、成功构建或 capability cache 不能替代真实模型结果。
+当前创作界面无手动能力验证和输入能力声明入口，选择模型不调用供应商，未验证配置也能发送。兼容旧 `/verify` 接口，但验证证据不再是准入条件。未知能力在用户实际任务中尝试；协议/能力不匹配写入中文对话反馈，认证、限流和受理不明分别反馈，不自动更换模型或丢附件。Agent 文本工具协议与原生图片/视频供应商兼容性需分别验收；自动测试、成功构建或 capability cache 不能替代真实模型结果。
 
-本次实施已完成所选配置的真实文本、图片和视频联调，[验收记录](agent-verification.md)保留累计次数、采用与存储证据、实际视频元数据和环境范围。真实验证在隔离库进行，生产个人配置仍按上述流程显式校验后启用。
+既有特定配置的真实文本、图片和视频证据见[验收记录](agent-verification.md)，该历史记录不能证明当前新增配置或本次范围/队列改动已完成真实供应商验收。
 
 对 Agent SSE 路由关闭代理缓冲、响应缓存和包含请求/响应正文的日志。后端返回 `Cache-Control: no-store`、`X-Accel-Buffering: no`，每 15 秒发送 heartbeat；代理读取空闲超时应大于 15 秒，并允许长连接。验证刷新/重连能按事件序号补读，登出、成员移除或账户停用后不再显示新的私有事件。候选、生成历史、对话及模型配置仅本人可见，项目成员只共享明确采用的作品。附件与 Skill 归属个人，项目访问权撤销后不能继续读取该项目的私有对话资料。
 
@@ -66,7 +76,7 @@ uv run python scripts/check_generation_infra.py
 | --- | --- |
 | Agent 一直排队 | 检查 scheduler、Agent 队列消费者、namespace 与雪花节点；再检查 Run 聚合和租约 |
 | `waiting_generation` 不结束 | 检查对应原生 Worker、scheduler、任务保存状态与 MinIO；已受理任务可能仍在运行 |
-| `waiting_review` | 等待对话拥有者批准当前版本的具体计划；继续对话不会自动批准 |
+| `waiting_review` | 等待本人批准当前具体计划；可补充问答或修订，修订后旧批准失效，补充不自动批准 |
 | `agent_acceptance_unknown` / unknown Turn | 保留记录，结合供应商结果人工核对；不得将 sent/unknown 改回 prepared、删除记录、整体重放 broker 消息或自动重发 |
 | 媒体失败需要再生成 | 通过新的明确付费任务或审核计划重试；Agent 管理任务不能用原生通用重试绕过授权和额度 |
 | 采用返回版本冲突 | 保留当前作品，重新读取候选与版本核对；不得自动覆盖或唤醒其他 Run |

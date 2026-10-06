@@ -31,6 +31,9 @@ function mount(context, overrides = {}) {
   let tree;
   let barrier;
   const window = Object.assign(new EventTarget(), { confirm: () => true });
+  const controls = overrides.creationControls ?? { mode: 'prompt' };
+  const scrolls = [];
+  const document = { getElementById: id => ({ scrollIntoView: () => scrolls.push(id), focus() {} }) };
   const api = {
     shots: async () => page([shot(), { ...shot('12'), position: 2 }]),
     shot: async id => ({ shot: shot(id), storyboard_version: '1' }),
@@ -57,24 +60,25 @@ function mount(context, overrides = {}) {
   const jsx = (type, props) => ({ type, props });
   const { StoryboardStage } = compile('pages/projects/episode/StoryboardStage.tsx', {
     react, 'react/jsx-runtime': { jsx, jsxs: jsx },
-    antd: { Alert: 'Alert', Button: 'Button', Checkbox: 'Checkbox', Input: { TextArea: 'TextArea' }, InputNumber: 'InputNumber', Segmented: 'Segmented', Select: 'Select', Spin: 'Spin' },
+    antd: { Alert: 'Alert', Button: 'Button', Dropdown: 'Dropdown', Checkbox: 'Checkbox', Input: { TextArea: 'TextArea' }, InputNumber: 'InputNumber', Segmented: 'Segmented', Select: 'Select', Spin: 'Spin' },
     '../../../api/http': { ApiError: class extends Error {}, errorMessage: cause => cause.message },
     '../../../api/modules/storyboard': { storyboardApi: () => api },
-    '../../../api/modules/assets': { assetLibraries: { list: async () => ({ items: [], total: 0 }) } },
-    '../../../api/modules/generations': { generations: { list: async () => ({ items: [], total: 0 }) } },
+    '../../../api/modules/assets': { assetLibraries: { list: overrides.listAssets ?? (async () => ({ items: [], total: 0 })) } },
+    '../../../api/modules/generations': { generations: { list: overrides.listTasks ?? (async () => ({ items: [], total: 0 })) } },
     '../../../api/modules/ai-model-configs': { aiModelConfigs: configs },
     '../../../features/ai-config/config-events': { AI_CONFIGS_CHANGED: 'configs-changed' },
     '../../../features/projects/EpisodeModelSelect': { EpisodeModelSelect: 'EpisodeModelSelect' },
-    '../../../features/projects/EpisodeCreationWorkspace': { CreationSlot: 'CreationSlot', useEpisodeCreationControls: () => ({ mode: 'prompt' }) },
+    '../../../features/projects/EpisodeCreationWorkspace': { CreationSlot: 'CreationSlot', useEpisodeCreationControls: () => controls },
     '../../../features/projects/StoryboardShotCard': { StoryboardShotCard: 'StoryboardShotCard' },
     '../../../features/projects/storyboard-layout.css': {},
     '../../../features/projects/workflow-refinement.css': {},
     '../../../features/projects/workflow-contract': contract,
     '../../../features/projects/storyboard-session': session,
     '../../../features/projects/shot-image-workflow': workflow,
-    '../../../features/generations/attempt': {},
+    '../../../features/generations/attempt': { attemptStorage: () => null, requestAttempt: async () => 'same-attempt', clearAttempt() {} },
     '../../../features/generations/BatchGeneration': { BatchLauncher: 'BatchLauncher', useBatchSelection: () => ({ enabled: false, ids: [], setIds() {}, toggle() {} }) },
     '../../../features/generations/presentation': { taskLabel: () => '' },
+    '../../../features/generations/TaskDetail': { TaskDetail: 'TaskDetail' },
     '../../../features/projects/StoryboardResultPreview': { StoryboardResultPreview: 'StoryboardResultPreview' },
     '../../../components/ui/Dialog': { Dialog: 'Dialog' },
     '../../../components/ui/Icon': { Icon: 'Icon' },
@@ -84,14 +88,14 @@ function mount(context, overrides = {}) {
     '../../../features/projects/ShotImageCandidates': { ShotImageCandidates: 'ShotImageCandidates' },
     '../../../features/projects/ShotVideoCandidates': { ShotVideoCandidates: 'ShotVideoCandidates' },
     '../../../features/projects/NativeVoicePanel': { NativeDialoguePanel: 'NativeDialoguePanel', NativeSoundMode: 'NativeSoundMode' },
-  }, { window });
+  }, { window, document });
   let props = { value: { aspect: '16:9', models: { storyboardText: '', storyboardImage: '' } }, readOnly: false, projectId: '1', episodeId: '1', scriptId: null, confirmed: false, writingSession: {}, registerBarrier: next => { barrier = next; }, onChange: next => { props.value = next; } };
   const render = patch => {
     props = { ...props, ...patch }; cursor = 0; effects = []; layouts = [];
     tree = StoryboardStage(props);
     for (const callback of [...layouts, ...effects]) callback();
     // Select the first visible card before editing in the information panel.
-    if (!nodes('ShotImageCandidates').length) {
+    if (overrides.autoSelect !== false && !nodes('ShotImageCandidates').length) {
       const row = nodes('StoryboardShotCard')[0];
       if (row && !row.disabled) {
         row.onSelect(); cursor = 0; effects = []; layouts = [];
@@ -109,8 +113,279 @@ function mount(context, overrides = {}) {
   const unmount = () => { for (const slot of slots) slot?.cleanup?.(); };
   context.after(unmount);
   render();
-  return { api, configs, capabilityCalls, window, render, nodes, unmount, get scriptInput() { return nodes('TextArea').find(input => input['aria-label'] === '分镜 1 脚本'); }, get barrier() { return barrier; }, get props() { return props; } };
+  return { api, configs, capabilityCalls, window, scrolls, render, nodes, unmount, get scriptInput() { return nodes('TextArea').find(input => /^分镜 \d+ 脚本$/.test(input['aria-label'] ?? '')); }, get barrier() { return barrier; }, get props() { return props; } };
 }
+
+test('restored off-page shot is editable without changing the list pagination offset', async context => {
+  const rows = Array.from({ length: 80 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
+  const offsets = []; const saves = [];
+  const controls = { mode: 'prompt', subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { controls.subject = next; } };
+  const setup = mount(context, {
+    autoSelect: false, creationControls: controls,
+    shots: async (_signal, _archived, offset = 0) => { offsets.push(offset); return { ...page(rows.slice(offset, offset + 20)), total: 80, offset, limit: 20 }; },
+    shot: async id => ({ shot: rows.find(row => row.id === id), storyboard_version: '1' }),
+    update: async (id, body) => { saves.push({ id, body }); return { shot: { ...rows.find(row => row.id === id), ...body, row_version: '2' }, storyboard_version: '2' }; },
+  });
+  await flush(); setup.render(); await flush(); setup.render();
+  assert.equal(setup.scriptInput['aria-label'], '分镜 50 脚本');
+  assert.equal(setup.nodes('StoryboardShotCard').length, 20);
+  setup.nodes('LazyLoadMore').find(node => node.hasMore).onLoad(); await flush(); setup.render();
+  assert.deepEqual(offsets, [0, 20]);
+  setup.scriptInput.onChange({ target: { value: 'off-page draft' } });
+  assert.equal(await setup.barrier.flush(), true); setup.render();
+  assert.equal(saves[0].id, '150'); assert.equal(saves[0].body.script, 'off-page draft');
+  assert.equal(setup.scriptInput.value, 'off-page draft');
+});
+
+test('off-page autosave accepts its receipt before the initial list is ready', async context => {
+  const list = deferred(); const saves = []; let listReads = 0;
+  const visible = Array.from({ length: 20 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
+  const restored = { ...shot('150'), position: 50 };
+  let serverShot = restored;
+  const controls = { mode: 'prompt', subject: { type: 'shot', id: restored.id, label: '' }, selectSubject: next => { controls.subject = next; } };
+  const setup = mount(context, {
+    autoSelect: false, creationControls: controls,
+    shots: async () => ++listReads === 1 ? list.promise : { ...page(visible), storyboard_version: String(saves.length + 1), total: 80, limit: 20 },
+    shot: async () => ({ shot: serverShot, storyboard_version: String(saves.length + 1) }),
+    update: async (id, body) => {
+      saves.push({ id, body });
+      const version = String(saves.length + 1);
+      serverShot = { ...serverShot, ...body, row_version: version, context_hash: `saved-${version}` };
+      return { shot: serverShot, storyboard_version: version };
+    },
+  });
+  await flush(); setup.render(); await flush(); setup.render();
+  assert.equal(setup.nodes('StoryboardShotCard').length, 0);
+  assert.equal(setup.scriptInput.disabled, false);
+  setup.scriptInput.onChange({ target: { value: 'saved while the list is pending' } });
+  assert.equal(setup.barrier.hasUnsettled(), true);
+  await new Promise(resolve => setTimeout(resolve, 1100)); await flush(); setup.render();
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].body.row_version, '1');
+  assert.equal(setup.nodes('ShotImageCandidates')[0].shot.row_version, '2');
+  assert.equal(setup.nodes('ShotImageCandidates')[0].shot.context_hash, 'saved-2');
+  assert.equal(setup.scriptInput.value, 'saved while the list is pending');
+  assert.equal(setup.barrier.hasUnsettled(), false);
+  await flush(); setup.render();
+  assert.equal(listReads, 2);
+  setup.scriptInput.onChange({ target: { value: 'next edit uses the accepted version' } });
+  assert.equal(await setup.barrier.flush(), true); setup.render();
+  assert.equal(saves[1].body.row_version, '2');
+  assert.equal(setup.nodes('ShotImageCandidates')[0].shot.row_version, '3');
+  assert.equal(setup.nodes('ShotImageCandidates')[0].shot.context_hash, 'saved-3');
+  assert.equal(setup.barrier.hasUnsettled(), false);
+  list.resolve({ ...page(visible), total: 80, limit: 20 });
+  await flush(); setup.render();
+  assert.equal(setup.scriptInput.value, 'next edit uses the accepted version');
+});
+
+test('late restored detail cannot overwrite a newer selected shot', async context => {
+  const responses = new Map([['150', deferred()], ['151', deferred()]]);
+  const controls = { mode: 'prompt', subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { controls.subject = next; } };
+  const setup = mount(context, { autoSelect: false, creationControls: controls, shot: id => responses.get(id).promise });
+  await flush(); setup.render();
+  controls.subject = { type: 'shot', id: '151', label: '' }; setup.render(); setup.render();
+  responses.get('151').resolve({ shot: { ...shot('151'), position: 51 }, storyboard_version: '1' });
+  await flush(); setup.render();
+  responses.get('150').resolve({ shot: { ...shot('150'), position: 50 }, storyboard_version: '1' });
+  await flush(); setup.render();
+  assert.equal(setup.scriptInput['aria-label'], '分镜 51 脚本');
+  assert.equal(controls.subject.id, '151');
+});
+
+test('late adjacent pagination merges its list without replacing a newer selected shot', async context => {
+  const nextPage = deferred();
+  const rows = Array.from({ length: 80 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
+  const controls = { mode: 'prompt', subject: { type: 'shot', id: '120', label: '' }, selectSubject: next => { controls.subject = next; } };
+  const setup = mount(context, { autoSelect: false, creationControls: controls,
+    shots: async (_signal, _archived, offset = 0) => offset === 0 ? { ...page(rows.slice(0, 20)), total: 80 } : nextPage.promise,
+    shot: async id => ({ shot: rows.find(row => row.id === id), storyboard_version: '1' }),
+  });
+  await flush(); setup.render(); await flush(); setup.render();
+  setup.nodes('Button').find(node => node['aria-label'] === '下一个分镜').onClick();
+  await flush(); setup.render();
+  controls.subject = { type: 'shot', id: '150', label: '' };
+  setup.render(); setup.render(); await flush(); setup.render();
+  assert.equal(setup.scriptInput['aria-label'], '分镜 50 脚本');
+  nextPage.resolve({ ...page(rows.slice(20, 40)), total: 80, offset: 20 });
+  await flush(); setup.render();
+  assert.equal(setup.nodes('StoryboardShotCard').length, 40);
+  assert.equal(controls.subject.id, '150');
+  assert.equal(setup.scriptInput['aria-label'], '分镜 50 脚本');
+});
+
+test('off-page dirty drafts survive refresh and joining a later loaded page', async context => {
+  const rows = Array.from({ length: 80 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
+  const controls = { mode: 'prompt', subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { controls.subject = next; } };
+  const setup = mount(context, { autoSelect: false, creationControls: controls,
+    shots: async (_signal, _archived, offset = 0) => ({ ...page(rows.slice(offset, offset + 20)), total: 80, offset, limit: 20 }),
+    shot: async id => ({ shot: rows.find(row => row.id === id), storyboard_version: '1' }),
+  });
+  await flush(); setup.render(); await flush(); setup.render();
+  setup.scriptInput.onChange({ target: { value: 'retained off-page draft' } }); setup.render();
+  setup.nodes('ShotImageCandidates')[0].onChanged(); setup.render(); await flush(); setup.render();
+  for (let count = 0; count < 2; count++) { setup.nodes('LazyLoadMore').find(node => node.hasMore).onLoad(); await flush(); setup.render(); }
+  assert.equal(setup.nodes('StoryboardShotCard').length, 60);
+  assert.equal(setup.scriptInput.value, 'retained off-page draft');
+  assert.equal(setup.barrier.hasUnsettled(), true);
+});
+
+test('Agent artifact refresh checks archived detail before clearing its loaded scope', async context => {
+  const controls = { mode: 'prompt', subject: { type: 'shot', id: '11', label: '分镜 01' }, selectSubject: next => { controls.subject = next; } };
+  const setup = mount(context, { autoSelect: false, creationControls: controls, shot: async () => ({ shot: { ...shot(), deleted_at: '2026-10-04T00:00:00Z' }, storyboard_version: '2' }) });
+  await flush(); setup.render();
+  assert.equal(controls.subject.id, '11');
+  setup.render({ refreshToken: 1 }); await flush(); setup.render();
+  assert.equal(controls.subject, null);
+});
+
+test('only archived shot detail clears an unavailable Agent scope', async context => {
+  const selections = [];
+  const controls = { mode: 'prompt', subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { selections.push(next); controls.subject = next; } };
+  const setup = mount(context, { autoSelect: false, creationControls: controls, shot: async () => ({ shot: { ...shot('150'), deleted_at: '2026-10-04T00:00:00Z' }, storyboard_version: '2' }) });
+  await flush(); setup.render(); await flush(); setup.render();
+  assert.equal(selections.includes(null), true); assert.equal(controls.subject, null);
+  assert.equal(setup.scriptInput, undefined);
+});
+
+test('detail read failure retains its scope and offers an explicit retry', async context => {
+  let reads = 0;
+  const controls = { mode: 'prompt', subject: { type: 'shot', id: '150', label: '' } };
+  const setup = mount(context, { autoSelect: false, creationControls: controls, shot: async () => { reads++; if (reads === 1) throw new Error('detail offline'); return { shot: { ...shot('150'), position: 50 }, storyboard_version: '1' }; } });
+  await flush(); setup.render(); await flush(); setup.render();
+  assert.equal(controls.subject.id, '150');
+  const alert = setup.nodes('Alert').find(node => node.message.includes('detail offline'));
+  assert.ok(alert); alert.action.props.onClick(); setup.render(); await flush(); setup.render();
+  assert.equal(setup.scriptInput['aria-label'], '分镜 50 脚本');
+});
+
+test('creating a shot selects its returned ID before it is loaded into the list', async context => {
+  const controls = { mode: 'prompt', subject: null, selectSubject: next => { controls.subject = next; } };
+  const rows = Array.from({ length: 20 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
+  const setup = mount(context, { autoSelect: false, creationControls: controls, create: async () => ({ shot: { ...shot('181'), position: 81 }, storyboard_version: '2' }), shot: async () => ({ shot: { ...shot('181'), position: 81 }, storyboard_version: '2' }), shots: async () => ({ ...page(rows), total: 80 }) });
+  await flush(); setup.render();
+  setup.nodes('Button').find(node => node.children === '新增分镜').onClick(); await flush(); setup.render();
+  assert.equal(controls.subject.id, '181');
+  assert.equal(setup.scriptInput['aria-label'], '分镜 81 脚本');
+});
+
+for (const mode of ['replace', 'append']) test(`${mode} adoption updates its scope correctly`, async context => {
+  const controls = { mode: 'prompt', subject: { type: 'shot', id: '11', label: '分镜 01' }, selectSubject: next => { controls.subject = next; } };
+  const setup = mount(context, {
+    autoSelect: false, creationControls: controls,
+    listTasks: async () => ({ items: [{ generation_id: '8001', status: 'succeeded', created_at: '2026-10-04T00:00:00Z' }], total: 1 }),
+    apply: async () => ({ shot_ids: ['31'], storyboard_version: '2' }),
+  });
+  await flush(); setup.render({ writingSession: { getSnapshot: () => ({ contentVersion: '1' }) } });
+  setup.nodes('Button').find(node => node.children === '历史记录').onClick(); setup.render(); await flush(); setup.render();
+  setup.nodes('Button').find(node => node.children === '查看分镜').onClick(); setup.render();
+  setup.nodes('StoryboardResultPreview')[0].onApply(mode); await flush(); setup.render();
+  assert.equal(controls.subject?.id ?? null, mode === 'replace' ? null : '11');
+});
+
+test('asset failure does not hide loaded shots and retry restores only the asset dependency', async context => {
+  let failAssets = true; let shotReads = 0;
+  const setup = mount(context, { shots: async () => { shotReads++; return page([shot()]); }, listAssets: async () => { if (failAssets) throw new Error('assets offline'); return { items: [], total: 0 }; } });
+  await flush(); setup.render();
+  assert.equal(setup.nodes('StoryboardShotCard').length, 1);
+  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, true);
+  setup.scriptInput.onChange({ target: { value: 'keep this draft' } }); setup.render();
+  failAssets = false;
+  setup.nodes('Alert').find(node => node.message.includes('assets offline')).action.props.onClick();
+  setup.render(); await flush(); setup.render();
+  assert.equal(shotReads, 1); assert.equal(setup.scriptInput.value, 'keep this draft');
+  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
+});
+
+test('storyboard history distinguishes loading, failed initial read, and successful empty result', async context => {
+  const response = deferred(); let failed = true;
+  const setup = mount(context, { listTasks: async () => { await response.promise; if (failed) throw new Error('history offline'); return { items: [], total: 0 }; } });
+  await flush(); setup.render();
+  setup.nodes('Button').find(node => node.children === '历史记录').onClick(); setup.render();
+  assert.ok(setup.nodes('p').some(node => node.role === 'status' && node.children === '正在加载分镜生成记录…'));
+  assert.equal(setup.nodes('p').some(node => node.children === '暂无分镜生成记录，确认剧本后开始生成。'), false);
+  response.resolve(); await flush(); setup.render();
+  const alert = setup.nodes('Alert').find(node => node.message.includes('history offline'));
+  assert.ok(alert);
+  assert.equal(setup.nodes('p').some(node => node.children === '暂无分镜生成记录，确认剧本后开始生成。'), false);
+  failed = false; alert.action.props.onClick(); setup.render(); await flush(); setup.render();
+  assert.equal(setup.nodes('p').some(node => node.children === '暂无分镜生成记录，确认剧本后开始生成。'), true);
+});
+
+test('failed history refresh keeps previously loaded records', async context => {
+  let fail = false;
+  const setup = mount(context, { listTasks: async () => { if (fail) throw new Error('history refresh offline'); return { items: [{ generation_id: '8001', status: 'succeeded', created_at: '2026-10-04T00:00:00Z' }], total: 1 }; } });
+  await flush(); setup.render();
+  fail = true; setup.nodes('Button').find(node => node.children === '历史记录').onClick(); setup.render(); await flush(); setup.render();
+  assert.equal(setup.nodes('Button').filter(node => node.children === '查看分镜').length, 1);
+  assert.ok(setup.nodes('Alert').some(node => node.message.includes('history refresh offline')));
+});
+
+test('shot menu saves drafts before moving and archives the current scope explicitly', async context => {
+  const calls = [];
+  const controls = { mode: 'prompt', subject: { type: 'shot', id: '11', label: '分镜 01' }, selectSubject: next => { controls.subject = next; } };
+  const setup = mount(context, { autoSelect: false, creationControls: controls,
+    update: async (id, body) => { calls.push({ kind: 'save', body }); return { shot: { ...shot(id), ...body, row_version: '2' }, storyboard_version: '2' }; },
+    move: async (id, version, direction) => { calls.push({ kind: 'move', id, version, direction }); return { storyboard_version: '3' }; },
+    remove: async (id, version) => calls.push({ kind: 'archive', id, version }),
+  });
+  await flush(); setup.render();
+  setup.scriptInput.onChange({ target: { value: 'save before moving' } });
+  const menu = setup.nodes('Dropdown')[0].menu;
+  assert.equal(menu.items.find(item => item.key === 'up').disabled, true);
+  await menu.onClick({ key: 'down' }); setup.render(); await flush(); setup.render();
+  assert.deepEqual(calls.map(call => call.kind), ['save', 'move']);
+  assert.equal(calls[1].version, '2'); assert.equal(calls[1].direction, 1);
+  await setup.nodes('Dropdown')[0].menu.onClick({ key: 'archive' }); await flush(); setup.render();
+  assert.equal(calls.at(-1).kind, 'archive'); assert.equal(controls.subject, null);
+});
+
+test('pending menu mutation disables editing and rejects an older change handler', async context => {
+  const response = deferred(); let saves = 0;
+  const setup = mount(context, {
+    move: async () => response.promise,
+    update: async (id, body) => { saves++; return { shot: { ...shot(id), ...body, row_version: '2' }, storyboard_version: '2' }; },
+  });
+  await flush(); setup.render();
+  const previousInput = setup.scriptInput;
+  const moving = setup.nodes('Dropdown')[0].menu.onClick({ key: 'down' });
+  await flush(); setup.render();
+  assert.equal(setup.scriptInput.disabled, true);
+  assert.equal(setup.nodes('InputNumber').find(node => node['aria-label'] === '分镜 1 时长').disabled, true);
+  previousInput.onChange({ target: { value: 'must not create a draft during the move' } });
+  setup.render();
+  assert.equal(setup.scriptInput.value, 'original');
+  response.resolve({ storyboard_version: '2' }); await moving;
+  setup.render(); await flush(); setup.render();
+  assert.equal(setup.scriptInput.value, 'original');
+  assert.equal(setup.barrier.hasUnsettled(), false);
+  assert.equal(saves, 0);
+});
+
+test('failed save blocks menu mutation and preserves the editing draft', async context => {
+  let moves = 0;
+  const setup = mount(context, { update: async () => { throw new Error('save conflict'); }, move: async () => moves++ });
+  await flush(); setup.render();
+  setup.scriptInput.onChange({ target: { value: 'draft for recovery' } });
+  await setup.nodes('Dropdown')[0].menu.onClick({ key: 'down' }); setup.render();
+  assert.equal(moves, 0); assert.equal(setup.scriptInput.value, 'draft for recovery');
+  assert.equal(setup.barrier.hasUnsettled(), true);
+  setup.render({ readOnly: true });
+  assert.equal(setup.nodes('Dropdown').length, 0);
+});
+
+test('Agent shot information provides one dialogue editor and keeps an unsettled dialogue open', async context => {
+  const controls = { mode: 'agent', subject: { type: 'shot', id: '11', label: '分镜 01' } };
+  const setup = mount(context, { autoSelect: false, creationControls: controls });
+  await flush(); setup.render();
+  setup.nodes('Button').find(node => node.children === '镜头信息').onClick(); setup.render();
+  const dialogue = setup.nodes('NativeDialoguePanel');
+  assert.equal(dialogue.length, 1);
+  dialogue[0].registerBarrier({ hasUnsettled: () => true, flush: async () => false });
+  await setup.nodes('Button').find(node => node['aria-label'] === '完成').onClick(); setup.render();
+  assert.equal(setup.nodes('Dialog').some(node => node.title === '分镜 01 · 镜头信息'), true);
+  assert.ok(setup.nodes('Alert').some(node => node.message.includes('对白尚未保存')));
+});
 
 test('adoption survives focus and model refresh while generation preparation is invalidated', async context => {
   const pending = deferred();

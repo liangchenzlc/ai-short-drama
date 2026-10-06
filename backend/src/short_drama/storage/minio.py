@@ -112,9 +112,15 @@ class MinioStorage:
         )
 
     @contextmanager
-    def open(self, bucket: str, key: str) -> Iterator[BaseHTTPResponse]:
+    def open(
+        self, bucket: str, key: str, *, offset: int = 0, length: int = 0
+    ) -> Iterator[BaseHTTPResponse]:
         with self._errors():
-            response = self.client.get_object(bucket, key)
+            response = (
+                self.client.get_object(bucket, key, offset=offset, length=length)
+                if offset or length
+                else self.client.get_object(bucket, key)
+            )
         try:
             with self._errors():
                 yield response

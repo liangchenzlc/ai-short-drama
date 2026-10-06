@@ -19,6 +19,54 @@ function transport() {
     async select() { throw new Error('unused'); },
   };
 }
+test('crash recovery offers exact draft without automatically posting it', async () => {
+  const api = transport(); let stored = null;
+  const persistence = { read: () => stored, save: value => { stored = structuredClone(value); }, clear: () => { stored = null; } };
+  const original = new WritingSession(api, persistence); await original.load();
+  original.edit('novel', '崩溃前小说'); original.edit('script', '崩溃前剧本'); original.dispose();
+  const restored = new WritingSession(api, persistence); await restored.load();
+  assert.equal(restored.getSnapshot().recoverable, true); assert.equal(api.writes.length, 0);
+  assert.equal(await restored.flush(), false);
+  assert.equal(await restored.restoreRecovered(), true);
+  assert.equal(restored.getSnapshot().novel, '崩溃前小说'); assert.equal(restored.getSnapshot().script, '崩溃前剧本');
+  await restored.flush(); assert.equal(stored, null); restored.dispose();
+});
+test('recovered draft cannot silently replace a newer server version', async () => {
+  const api = transport(); const old = { base_version: '1', novel: '本机稿', script: '', script_id: null };
+  const persistence = { read: () => old, save() {}, clear() {} };
+  api.server = { ...api.server, content_version: '2', novel: record('11', '其他窗口修改') };
+  const session = new WritingSession(api, persistence); await session.load();
+  assert.equal(session.getSnapshot().recoveryChanged, true);
+  assert.equal(await session.restoreRecovered(), false); assert.equal(api.writes.length, 0);
+  assert.equal(session.getSnapshot().novel, '其他窗口修改');
+  assert.equal(await session.restoreRecovered(true), true);
+  assert.equal(session.getSnapshot().novel, '本机稿'); assert.equal(session.getSnapshot().contentVersion, '2'); session.dispose();
+});
+test('corrupt recovery keeps server content readable and blocks edits until explicit discard', async () => {
+  const api = transport(); api.server = { ...api.server, novel: record('11', '服务端正文') };
+  let corrupt = true;
+  const recovery = { read: () => { if (corrupt) throw new Error('corrupt'); return null; }, save() { throw new Error('must not overwrite'); }, clear: () => { corrupt = false; } };
+  const session = new WritingSession(api, recovery);
+  await session.load();
+  assert.equal(session.getSnapshot().loaded, true);
+  assert.equal(session.getSnapshot().recoveryBlocked, true);
+  assert.equal(session.getSnapshot().novel, '服务端正文');
+  session.edit('novel', '不能覆盖恢复记录'); assert.equal(await session.flush(), false);
+  assert.equal(session.getSnapshot().novel, '服务端正文'); assert.equal(corrupt, true);
+  session.discardRecovered(); assert.equal(session.getSnapshot().recoveryBlocked, false);
+  session.edit('novel', '明确弃稿后编辑'); assert.equal(session.getSnapshot().novel, '明确弃稿后编辑');
+  session.dispose();
+});
+test('recovery is locked while fresh version is being checked', async () => {
+  const api = transport(); const wait = deferred();
+  const draft = { base_version: '1', novel: '完整恢复稿', script: '', script_id: null };
+  const session = new WritingSession(api, { read: () => draft, save() {}, clear() {} });
+  await session.load(); api.get = async () => { await wait.promise; return structuredClone(api.server); };
+  const restoring = session.restoreRecovered();
+  assert.equal(session.getSnapshot().busy, true); assert.equal(await session.restoreRecovered(), false);
+  wait.resolve(); assert.equal(await restoring, true); assert.equal(session.getSnapshot().busy, false);
+  assert.equal(api.writes.length, 0); session.dispose();
+});
 test('empty GET stays empty; serial novel/script saves share freshest string version and null script ID', async () => {
   const api=transport();const q=new WritingSession(api);await q.load();
   assert.equal(q.getSnapshot().scriptId,null);assert.equal(api.writes.length,0);

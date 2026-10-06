@@ -114,7 +114,7 @@ class EpisodeSoundService(BaseService):
             }
         return {
             "mode": mode,
-            "row_version": sound.row_version if sound else 0,
+            "row_version": str(sound.row_version if sound else 0),
             "timeline_hash": digest(video),
             "duration_ms": sound_duration(video),
             "needs_review": bool(sound and sound.reviewed_timeline_hash != digest(video)),
@@ -143,7 +143,7 @@ class EpisodeSoundService(BaseService):
             ],
             "stale_lines": stale_lines,
             "voice_defaults": {
-                "row_version": voices.row_version if voices else 0,
+                "row_version": str(voices.row_version if voices else 0),
                 "voices": voices.voices if voices else {},
             },
         }
@@ -275,7 +275,7 @@ class EpisodeSoundService(BaseService):
                 self.session.add(row)
             row.row_version += 1
             row.voices = data.voices
-            return {"row_version": row.row_version, "voices": row.voices}
+            return {"row_version": str(row.row_version), "voices": row.voices}
 
     def prepare_speech(self, payload):
         source = payload["source"]

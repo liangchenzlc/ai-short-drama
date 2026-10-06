@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const source = readFileSync(new URL('../src/features/projects/shot-image-workflow.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const { summarizeShotReferences, shotPreparationChanged, prepareShotOperation, imageGenerationBlockReason } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const { summarizeShotReferences, summarizeImageReferenceCount, shotPreparationChanged, prepareShotOperation, imageGenerationBlockReason } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const shot = () => ({ id: '11', row_version: '9', context_hash: 'a'.repeat(64), script: 'scene', deleted_at: null, image: null, image_settings: { layout: 'single', aspect: 'inherit', resolution: '2K' } });
 
 test('references only include confirmed images and deduplicate media', () => {
@@ -51,6 +51,14 @@ test('unsupported or unknown capabilities never silently drop references', () =>
   assert.ok(imageGenerationBlockReason('1', { ...known, known: false }, 0, false));
   assert.ok(imageGenerationBlockReason(undefined, known, 0, false));
   assert.ok(imageGenerationBlockReason('1', known, 0, true));
+});
+
+test('combined asset and manual references deduplicate media and enforce sixteen images', () => {
+  const count = summarizeImageReferenceCount(['90', '90', '91'], ['91', '92']);
+  assert.deepEqual(count, { assetCount: 2, manualCount: 2, totalCount: 3 });
+  const known = { known: true, reference_images: true };
+  assert.equal(imageGenerationBlockReason('1', known, 16, false), '');
+  assert.match(imageGenerationBlockReason('1', known, 17, false), /17.*16/);
 });
 
 test('prepared operation can be invalidated before the network mutation', async () => {

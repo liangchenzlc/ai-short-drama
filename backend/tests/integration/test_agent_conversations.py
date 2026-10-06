@@ -199,12 +199,20 @@ def test_authenticated_api_creation_and_private_access(workspace):
     owner, member = client(1), client(2)
     assert TestClient(app).get("/api/v1/agent/status").status_code == 401
     assert owner.get("/api/v1/agent/status").json() == {"enabled": True, "schema_ready": True}
-    body = {"project_id": str(project_id), "episode_id": str(episode_id), "title": "Private"}
+    body = {
+        "project_id": str(project_id),
+        "episode_id": str(episode_id),
+        "title": "Private",
+        "stage": "source",
+        "subject_type": "episode",
+        "subject_id": str(episode_id),
+        "task_type": "writing",
+    }
     created = owner.post(
         "/api/v1/agent/conversations", json=body, headers={"Idempotency-Key": "api-create"}
     )
     assert created.status_code == 201, created.text
-    assert created.json()["row_version"] == 1
+    assert created.json()["row_version"] == "1"
     identifier = created.json()["id"]
     repeated = owner.post(
         "/api/v1/agent/conversations", json=body, headers={"Idempotency-Key": "api-create"}
@@ -221,7 +229,7 @@ def test_authenticated_api_creation_and_private_access(workspace):
         owner.patch(
             f"/api/v1/agent/conversations/{identifier}", json={"row_version": 1, "title": "Updated"}
         ).json()["row_version"]
-        == 2
+        == "2"
     )
     stale = owner.patch(
         f"/api/v1/agent/conversations/{identifier}", json={"row_version": 1, "title": "Stale"}

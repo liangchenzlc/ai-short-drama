@@ -8,7 +8,9 @@ export interface ShotImage { media_id: string; media_asset_id: string | null; ur
 export interface ShotVideo { media_id: string; media_asset_id: string | null; url: string | null; resolution: string; duration_ms: number; first_frame_media_id: string | null; is_stale: boolean }
 export interface ShotRead extends WorkflowShot { position: number; script: string; duration_ms: number; source_excerpt: string; asset_ids: string[]; image: ShotImage | null; deleted_at: string | null; video_prompt: string; video_default_prompt: string; video_system_prompt: string; video_settings: { resolution: '480p' | '720p' | '1080p'; duration_ms?: number | null }; video_context_hash: string; video: ShotVideo | null; native_speech?: { mode: 'native'; reviewed: boolean; voices: { character_id: string; media_id: string | null; duration_ms: number | null }[] } | null }
 export interface StoryboardPage { episode_id: string; storyboard_version: string; items: ShotRead[]; total: number; offset: number; limit: number }
-export interface StoryboardResultPage extends Page<{ position: number; script: string }> { generation_id: string; applied: { mode: 'append' | 'replace' } | null }
+export interface StoryboardResultAsset { id: string; kind: 'character' | 'prop' | 'scene' | null; name: string; available: boolean; snapshot_missing: boolean }
+export interface StoryboardResultShot { position: number; title: string; script: string; duration_ms: number; source_excerpt: string; story_beat: string; asset_ids: string[]; assets: StoryboardResultAsset[] }
+export interface StoryboardResultPage extends Page<StoryboardResultShot> { generation_id: string; total_duration_ms: number; applied: { mode: 'append' | 'replace'; shot_ids: string[]; applied_at: string | null; storyboard_version: string | null } | null }
 export interface ShotMutation { shot: ShotRead; storyboard_version: string }
 export interface StoryboardApplyResult { generation_id: string; mode: 'append' | 'replace'; shot_ids: string[]; storyboard_version: string; already_applied: boolean }
 

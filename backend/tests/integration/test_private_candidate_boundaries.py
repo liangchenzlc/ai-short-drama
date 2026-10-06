@@ -237,7 +237,7 @@ def test_adopted_dialogue_audio_is_shared_without_private_model_or_candidate(wor
         service = EpisodeSoundService(owner, settings, storage)
         adopted = service.adopt(project_id, episode_id, adoption)
         assert adopted["document"]["dialogue"][0]["media_id"] == str(media_id)
-        assert service.adopt(project_id, episode_id, adoption)["row_version"] == 2
+        assert service.adopt(project_id, episode_id, adoption)["row_version"] == "2"
     with factory.begin() as system:
         assert system.get(MediaFile, media_id).published_at is not None
     with factory() as member:

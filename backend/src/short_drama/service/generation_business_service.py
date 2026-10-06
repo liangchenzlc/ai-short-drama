@@ -10,6 +10,7 @@ from short_drama.domain import (
     AIGenerationRecord,
     AsyncTask,
     Episode,
+    EpisodeAsset,
     EpisodeNovel,
     EpisodeScript,
     NovelScriptRecord,
@@ -17,6 +18,7 @@ from short_drama.domain import (
 )
 from short_drama.schemas.asset_extraction import parse_extraction_result
 from short_drama.schemas.base import parse_identifier
+from short_drama.schemas.episode_storyboard import StoryboardResultPage
 from short_drama.schemas.storyboard_apply import StoryboardApply
 from short_drama.schemas.storyboard_result import parse_storyboard_result
 
@@ -147,17 +149,50 @@ class GenerationBusinessService(BaseService):
             if task.status != "succeeded" or result.get("kind") != "script_shots":
                 raise WorkflowError("result_not_ready", "分镜结果尚不可用")
             shots = result.get("shots", [])
-            return {
-                "generation_id": str(generation_id),
-                "total": len(shots),
-                "offset": offset,
-                "limit": limit,
-                "applied": result.get("applied"),
-                "items": [
-                    {"position": index + 1, "script": shot["script"]}
-                    for index, shot in enumerate(shots[offset : offset + limit], offset)
-                ],
+            snapshot_assets = {
+                str(asset["id"]): asset
+                for asset in (record.request_data.get("source_snapshot") or {}).get("assets", [])
             }
+            current_asset_ids = set(
+                self.session.scalars(
+                    select(EpisodeAsset.asset_id).where(EpisodeAsset.episode_id == episode_id)
+                )
+            )
+            items = []
+            for index, shot in enumerate(shots[offset : offset + limit], offset):
+                asset_ids = list(map(str, shot.get("asset_ids", [])))
+                items.append(
+                    {
+                        "position": index + 1,
+                        "title": shot.get("title", ""),
+                        "script": shot["script"],
+                        "duration_ms": shot.get("duration_ms", 3000),
+                        "source_excerpt": shot.get("source_excerpt", ""),
+                        "story_beat": shot.get("story_beat", ""),
+                        "asset_ids": asset_ids,
+                        "assets": [
+                            {
+                                "id": identifier,
+                                "kind": snapshot_assets.get(identifier, {}).get("kind"),
+                                "name": snapshot_assets.get(identifier, {}).get("name", ""),
+                                "available": int(identifier) in current_asset_ids,
+                                "snapshot_missing": identifier not in snapshot_assets,
+                            }
+                            for identifier in asset_ids
+                        ],
+                    }
+                )
+            return StoryboardResultPage.model_validate(
+                {
+                    "generation_id": str(generation_id),
+                    "total": len(shots),
+                    "total_duration_ms": sum(shot.get("duration_ms", 3000) for shot in shots),
+                    "offset": offset,
+                    "limit": limit,
+                    "applied": result.get("applied"),
+                    "items": items,
+                }
+            ).model_dump(mode="json")
 
     def apply_storyboard(self, project_id, episode_id, generation_id, payload):
         with self._transaction():

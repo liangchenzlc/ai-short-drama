@@ -121,26 +121,35 @@ def test_input_declaration_is_version_bound_and_responses_cannot_claim_audio():
         "evidence": "declared",
     }
     snapshot["row_version"] = 2
-    assert input_capabilities(snapshot)["evidence"] == "text_only"
+    assert input_capabilities(snapshot)["evidence"] == "runtime"
 
 
 @pytest.mark.parametrize(
-    ("kind", "video_audio", "code"),
+    ("kind", "video_audio"),
     [
-        ("image", "include", "agent_image_input_unsupported"),
-        ("audio", "include", "agent_audio_input_unsupported"),
-        ("video", "include", "agent_audio_input_unsupported"),
+        ("image", "include"),
+        ("audio", "include"),
+        ("video", "include"),
     ],
 )
-def test_freezing_rejects_unsupported_media_before_accepting_a_run(kind, video_audio, code):
-    attachment = SimpleNamespace(kind=kind, input_metadata={"has_audio": True})
+def test_freezing_preserves_media_without_guessing_model_capability(kind, video_audio):
+    attachment = SimpleNamespace(
+        id=1,
+        kind=kind,
+        name="input",
+        mime_type="application/octet-stream",
+        media_id=None,
+        input_metadata={"has_audio": True},
+        text_content=None,
+        checksum_sha256="checksum",
+    )
     session = SimpleNamespace(scalar=lambda *_: attachment)
     snapshot = config(model="gpt-4o" if kind == "video" else "text-only")
-    with pytest.raises(WorkflowError) as caught:
-        freeze_attachments(
-            session, SimpleNamespace(id=1, owner_user_id=1), [1], snapshot, video_audio
-        )
-    assert caught.value.code == code
+    references, frozen, rows = freeze_attachments(
+        session, SimpleNamespace(id=1, owner_user_id=1), [1], snapshot, video_audio
+    )
+    assert references[0]["kind"] == frozen[0]["kind"] == kind
+    assert rows == [attachment]
 
 
 def test_inline_image_is_normalized_and_file_checksum_is_verified():

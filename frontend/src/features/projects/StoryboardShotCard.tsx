@@ -17,7 +17,7 @@ export function StoryboardShotCard({ shot, selected, disabled, batch, checked, o
   const imageState = shot.image?.is_stale ? '需核对' : shot.image ? '已采用' : '待生成';
   const videoState = shot.video?.is_stale ? '需核对' : shot.video ? '已采用' : '待生成';
   const position = String(shot.position).padStart(2, '0');
-  return <article className={`storyboard-item storyboard-shot-card${selected ? ' is-selected' : ''}`}>
+  return <article id={`storyboard-shot-${shot.id}`} className={`storyboard-item storyboard-shot-card${selected ? ' is-selected' : ''}`}>
     {batch && <Checkbox className="batch-item-select" aria-label={`批量选择分镜 ${shot.position}`} checked={checked} disabled={disabled} onChange={event => onCheck(event.target.checked)}/>}
     <button type="button" className="storyboard-summary" aria-label={`选择分镜 ${position}`} aria-describedby={descriptionId} aria-pressed={selected} disabled={disabled} onClick={onSelect}>
       <span className="storyboard-card-media">

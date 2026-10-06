@@ -48,7 +48,7 @@ test('asset image generation resolves the enabled default model into its request
   assert.equal(imageSelect.value, '{configId}');
   assert.equal(imageSelect.onChange, '{setConfigId}');
   assert.equal(imageSelect.onResolvedChange, '{setConfigId}');
-  assert.equal(imageSelect.disabled, '{submitting}');
+  assert.equal(imageSelect.disabled, '{submitting || disabled}');
 });
 test('novel and storyboard generation payloads use saved server versions without client messages', () => {
   assert.deepEqual(workflow.novelScriptRequest('12', '34', '56', '突出对白'), {
@@ -84,7 +84,9 @@ test('storyboard review keeps timing controls and loads compact result pages', (
   assert.match(stage, /duration_ms:\s*shot\.duration_ms/);
   assert.match(preview, /resultShots/);
   assert.match(preview, /LazyLoadMore/);
-  assert.doesNotMatch(preview, /story_beat|source_excerpt/);
+  assert.match(preview, /story_beat/);
+  assert.match(preview, /source_excerpt/);
+  assert.match(preview, /total_duration_ms/);
 });
 
 test('saved shot image payload carries all concurrency and settings inputs', () => {

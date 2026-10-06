@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from short_drama.schemas.base import Identifier, InputModel, PositiveUInt64, ReadModel
+from short_drama.schemas.base import Identifier, InputModel, ReadModel
 
 
 class SkillSelection(InputModel):
@@ -72,7 +72,7 @@ class AttachmentRead(ReadModel):
 
 
 class ModelInputsPatch(InputModel):
-    row_version: PositiveUInt64
+    row_version: Identifier
     image: bool
     audio: bool
 
@@ -82,4 +82,4 @@ class ModelInputCapabilities(ReadModel):
     image: bool = False
     audio: bool = False
     video: Literal["sampled_frames", "unsupported"] = "unsupported"
-    evidence: Literal["declared", "model_family", "text_only"] = "text_only"
+    evidence: Literal["declared", "model_family", "text_only", "runtime"] = "runtime"

@@ -124,6 +124,8 @@ def db_session(mysql_engine):
                 # MySQL checks RESTRICT per row, including rows deleted in this statement.
                 # Break only the nullable retry chain inside this disposable test database.
                 connection.execute(table.update().values(retry_of_id=None))
+            if table.name == "canvas_nodes":
+                connection.execute(table.update().values(parent_node_key=None))
             connection.execute(table.delete())
 
 

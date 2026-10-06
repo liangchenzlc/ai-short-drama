@@ -30,6 +30,11 @@ CREATE TABLE agent_conversations (
 	owner_user_id BIGINT UNSIGNED NOT NULL,
 	project_id BIGINT UNSIGNED NOT NULL,
 	episode_id BIGINT UNSIGNED NOT NULL,
+	stage VARCHAR(16) COLLATE utf8mb4_0900_bin,
+	subject_type VARCHAR(16) COLLATE utf8mb4_0900_bin,
+	subject_id BIGINT UNSIGNED,
+	task_type VARCHAR(16) COLLATE utf8mb4_0900_bin,
+	scope_version BIGINT UNSIGNED NOT NULL DEFAULT 0,
 	title VARCHAR(120) NOT NULL DEFAULT '新对话',
 	status VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'active',
 	row_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
@@ -45,6 +50,7 @@ CREATE TABLE agent_conversations (
 	CONSTRAINT fk_agent_conversations_project FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
 	CONSTRAINT fk_agent_conversations_episode FOREIGN KEY(episode_id) REFERENCES episodes (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
 	CONSTRAINT uk_agent_conversation_create UNIQUE (owner_user_id, create_key),
+	CONSTRAINT ck_agent_conversations_scope CHECK ((scope_version = 0 AND stage IS NULL AND subject_type IS NULL AND subject_id IS NULL AND task_type IS NULL) OR (scope_version = 1 AND stage IS NOT NULL AND subject_type IS NOT NULL AND subject_id IS NOT NULL AND subject_id > 0 AND task_type IS NOT NULL AND ((stage = 'source' AND subject_type = 'episode' AND subject_id = episode_id AND task_type = 'writing') OR (stage = 'assets' AND subject_type = 'episode' AND subject_id = episode_id AND task_type IN ('extraction','batch')) OR (stage = 'assets' AND subject_type = 'asset' AND task_type IN ('creation','image')) OR (stage = 'storyboard' AND subject_type = 'episode' AND subject_id = episode_id AND task_type IN ('planning','batch')) OR (stage = 'storyboard' AND subject_type = 'shot' AND task_type IN ('creation','image','video'))))),
 	CONSTRAINT ck_agent_conversations_status CHECK (status IN ('active','archived')),
 	CONSTRAINT ck_agent_conversations_numbers CHECK (row_version > 0 AND next_message_seq > 0 AND next_event_seq > 0),
 	CONSTRAINT ck_agent_conversations_requirements CHECK (JSON_TYPE(fixed_requirements) = 'OBJECT'),
@@ -57,6 +63,8 @@ CREATE TABLE agent_conversations (
 CREATE INDEX idx_agent_conversations_owner_episode ON agent_conversations (owner_user_id, episode_id, updated_at, id);
 
 CREATE INDEX idx_agent_conversations_project ON agent_conversations (project_id, owner_user_id, id);
+
+CREATE INDEX idx_agent_conversations_scope ON agent_conversations (owner_user_id, episode_id, scope_version, stage, subject_type, subject_id, task_type, status, updated_at, id);
 
 CREATE TABLE agent_messages (
 	id BIGINT UNSIGNED NOT NULL,
@@ -146,7 +154,6 @@ CREATE TABLE agent_runs (
 	CONSTRAINT fk_agent_runs_initiator FOREIGN KEY(initiated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
 	CONSTRAINT fk_agent_runs_model FOREIGN KEY(model_config_id) REFERENCES ai_model_configs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
 	CONSTRAINT uk_agent_runs_trigger UNIQUE (trigger_message_id),
-	CONSTRAINT uk_agent_runs_active_conversation UNIQUE (active_conversation_id),
 	CONSTRAINT uk_agent_runs_parent UNIQUE (id, conversation_id),
 	CONSTRAINT ck_agent_runs_status CHECK (status IN ('queued','running','waiting_generation','waiting_review','succeeded','failed','cancelled')),
 	CONSTRAINT ck_agent_runs_phase CHECK (phase IN ('model','tools','wait')),
@@ -159,6 +166,8 @@ CREATE TABLE agent_runs (
 	CONSTRAINT ck_agent_runs_terminal_time CHECK ((status IN ('succeeded','failed','cancelled')) = (finished_at IS NOT NULL)),
 	CONSTRAINT ck_agent_runs_time CHECK (updated_at >= created_at AND (started_at IS NULL OR started_at >= created_at) AND (finished_at IS NULL OR finished_at >= created_at) AND (started_at IS NULL OR finished_at IS NULL OR finished_at >= started_at))
 )ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_agent_runs_active ON agent_runs (active_conversation_id);
 
 CREATE INDEX idx_agent_runs_history ON agent_runs (conversation_id, created_at, id);
 

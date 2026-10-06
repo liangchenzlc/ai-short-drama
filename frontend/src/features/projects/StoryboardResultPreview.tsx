@@ -26,10 +26,15 @@ export function StoryboardResultPreview({ projectId, episodeId, generationId, bu
   }
   useEffect(() => { void load(); }, []);
   return <section className="storyboard-result-preview">
-    <header className="storyboard-result-heading"><h3>分镜预览{page ? `（共 ${page.total} 镜）` : ''}</h3></header>
+    <header className="storyboard-result-heading"><h3>分镜预览{page ? `（共 ${page.total} 镜）` : ''}</h3>{page && <p>整批计划时长 {page.total_duration_ms / 1000} 秒，采用会包含全部 {page.total} 个镜头。</p>}</header>
     {page?.applied && <Alert type="success" message={`已${page.applied.mode === 'append' ? '追加' : '替换'}到当前分镜`}/>}
     {loading && !page && <Skeleton active paragraph={{ rows: 5 }}/>}
-    <div className="lazy-scroll storyboard-result-scroll"><ol className="compact-shot-list">{page?.items.map(shot => <li key={shot.position}><strong>分镜 {String(shot.position).padStart(2, '0')}</strong><p>{shot.script}</p></li>)}</ol>
+    <div className="lazy-scroll storyboard-result-scroll"><ol className="compact-shot-list">{page?.items.map(shot => <li key={shot.position}>
+      <strong>分镜 {String(shot.position).padStart(2, '0')}{shot.title ? ` · ${shot.title}` : ''}</strong>
+      <p>计划时长 {shot.duration_ms / 1000} 秒</p><p>{shot.script}</p>
+      <p>关联素材：{shot.assets.length ? shot.assets.map(asset => `${asset.kind ? { character: '角色', prop: '道具', scene: '场景' }[asset.kind] + ' · ' : ''}${asset.name || '素材 ' + asset.id}${asset.snapshot_missing ? '（生成记录未保存名称）' : ''}${asset.available ? '' : '（已脱离本集，需重新核对）'}`).join('；') : '无'}</p>
+      <p>来源摘录：{shot.source_excerpt || '未提供'}</p><p>情节节点：{shot.story_beat || '未提供'}</p>
+    </li>)}</ol>
       <LazyLoadMore hasMore={!page || page.items.length < page.total} loading={loading} error={failure} onLoad={() => void load(!!page)}/>
     </div>
     {error && <Alert type="error" message={error}/>}

@@ -116,7 +116,7 @@ def test_assembly_sound_and_job_reads_avoid_locks_but_edit_keeps_assembly_mutex(
             assert assembly.get(f.project, f.episode)["clips"] == state["clips"]
             assert assembly.jobs(f.project, f.episode)["items"][0]["id"] == job["id"]
             assert assembly.job_action(f.project, f.episode, job["id"], "get")["id"] == job["id"]
-            assert sound.get(f.project, f.episode)["row_version"] == int(with_audio)
+            assert sound.get(f.project, f.episode)["row_version"] == str(int(with_audio))
         assert reads and all("FOR UPDATE" not in sql for sql in reads)
         payload = body(state)
         payload["clips"][0]["muted"] = True

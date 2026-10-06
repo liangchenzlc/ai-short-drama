@@ -6,7 +6,7 @@ export interface NavigationBarrier { hasUnsettled(): boolean; flush(): Promise<b
 // An uncertain save can have committed even when the current draft equals our stale
 // acknowledged snapshot. Errors therefore remain a discard risk until reconciled.
 export function hasUnsettledWriting(state: WritingSnapshot) {
-  return state.loaded && (state.dirty || state.busy || state.status === 'conflict' || state.status === 'error');
+  return state.loaded && (state.dirty || state.busy || state.recoverable || state.recoveryBlocked || state.status === 'conflict' || state.status === 'error');
 }
 
 /** Guard BrowserRouter's navigator and capture POP before its history listener.

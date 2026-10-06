@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useSt
 import { createPortal } from 'react-dom';
 import { AgentEpisodeLayout } from '../agents/AgentEpisodeLayout';
 import type { CreationMode } from '../agents/agent-navigation';
+import type { AgentSubject } from '../agents/agent-scope';
 import './episode-creation.css';
 
 type CreationStage = 'source' | 'assets' | 'storyboard' | 'assembly';
@@ -12,6 +13,8 @@ const CreationContext = createContext<{
   mode: CreationMode;
   revealPanel: () => void;
   setEditor: (stage: CreationStage, active: boolean) => void;
+  subject: AgentSubject | null;
+  selectSubject: (subject: AgentSubject | null) => void;
 } | null>(null);
 
 export function useEpisodeCreation() {
@@ -20,11 +23,12 @@ export function useEpisodeCreation() {
 
 export function useEpisodeCreationControls() {
   const workspace = useContext(CreationContext);
-  return { mode: workspace?.mode ?? 'prompt', revealPanel: workspace?.revealPanel };
+  return { mode: workspace?.mode ?? 'prompt', revealPanel: workspace?.revealPanel, subject: workspace?.subject ?? null, selectSubject: workspace?.selectSubject };
 }
 
-export function EpisodeCreationWorkspace({ stage, mode, modeControl, agentPanel, workRequest, children }: {
+export function EpisodeCreationWorkspace({ stage, mode, modeControl, agentPanel, workRequest, children, subject, onSubject }: {
   stage: CreationStage; mode: CreationMode; modeControl: ReactNode; agentPanel: ReactNode; workRequest: number; children: ReactNode;
+  subject: AgentSubject | null; onSubject: (subject: AgentSubject | null) => void;
 }) {
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
   const [editorTarget, setEditorTarget] = useState<HTMLDivElement | null>(null);
@@ -42,7 +46,7 @@ export function EpisodeCreationWorkspace({ stage, mode, modeControl, agentPanel,
     }
   }, []);
   const editing = editorStage === stage;
-  const workspace = useMemo(() => ({ target, editorTarget, stage, mode, setEditor, revealPanel }), [target, editorTarget, stage, mode, setEditor, revealPanel]);
+  const workspace = useMemo(() => ({ target, editorTarget, stage, mode, setEditor, revealPanel, subject, selectSubject: onSubject }), [target, editorTarget, stage, mode, setEditor, revealPanel, subject, onSubject]);
   return <CreationContext.Provider value={workspace}>
     <AgentEpisodeLayout enabled={stage !== 'assembly'} workRequest={workRequest + editorDismissRequest} panelRequest={panelRequest} panel={<section className={`episode-creation-panel${stage === 'storyboard' && mode === 'prompt' ? ' is-storyboard-prompt' : ''}`} aria-label="AI 创作区域">
       <div className="creation-mode-toolbar" hidden={editing}>{modeControl}</div>

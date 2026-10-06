@@ -1,7 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from short_drama.core.exceptions import Conflict, NotFound
+from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.episode_dao import EpisodeDAO
 from short_drama.domain import Episode, MediaFile, Project
 from short_drama.schemas import EpisodeCreate, EpisodeRead, EpisodeUpdate
@@ -37,6 +37,10 @@ class EpisodeService(BaseService):
         values = self._payload(EpisodeCreateRequest, payload)
         with self._transaction():
             project = self._require(Project, project_id)
+            if project.workspace_mode != "standard":
+                raise WorkflowError(
+                    "standard_mode_required", "Episodes belong to standard-mode projects", 409
+                )
             position = EpisodeDAO(self.session).last_position_for_update(project_id) + 1
             if position > 2**32 - 1:
                 raise Conflict("Episode ordering space exhausted")
@@ -88,8 +92,6 @@ class EpisodeService(BaseService):
         with self._transaction():
             episode = self._scoped_episode(project_id, episode_id, for_update=True)
             if self.session.info.get("actor") and version != episode.row_version:
-                from short_drama.core.exceptions import WorkflowError
-
                 raise WorkflowError(
                     "episode_version_conflict",
                     "Episode settings changed; reload and merge your edits",

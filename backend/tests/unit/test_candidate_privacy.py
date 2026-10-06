@@ -11,6 +11,7 @@ from test_episode_writing import setup
 
 import short_drama.db.access  # noqa: F401
 from short_drama.core.exceptions import NotFound, WorkflowError
+from short_drama.core.identity import ActorContext
 from short_drama.domain import (
     AgentArtifact,
     AIGenerationRecord,
@@ -199,8 +200,108 @@ def test_three_members_only_see_own_execution_and_candidates_after_publication()
                 assert list(session.scalars(select(AuditEvent.id))) == (
                     [] if offset is None else [900 + offset]
                 )
-            assert [row["id"] for row in writing.candidates(project_id, episode_id)["items"]] == (
-                [] if offset is None else [str(500 + offset)]
+            # These scripts are unadopted Agent candidates. Their creators read
+            # them through the private artifact entry, never ordinary selection.
+            assert writing.candidates(project_id, episode_id)["items"] == []
+
+
+@pytest.mark.parametrize("user_id", [1, 2])
+@pytest.mark.parametrize("status", ["ready", "rejected", "archived"])
+@pytest.mark.parametrize("operation", ["select", "save", "confirm"])
+def test_published_agent_script_still_requires_adoption_for_every_member(
+    user_id, status, operation
+):
+    with generation_session() as session:
+        project_id, episode_id, writing = seed(session)
+        with session.begin():
+            session.get(EpisodeScript, 500).published_at = utcnow()
+            session.get(Episode, episode_id).editing_script_id = 500
+            session.get(AgentArtifact, 800).status = status
+        session.info["actor"] = ActorContext(
+            user_id,
+            f"member{user_id}",
+            f"member{user_id}@example.test",
+            True,
+            user_id,
+            "hash",
+            "test",
+        )
+        with session.begin():
+            private_artifact = session.scalar(
+                select(AgentArtifact.id).where(AgentArtifact.id == 800)
+            )
+            assert private_artifact == (800 if user_id == 1 else None)
+        before = writing.get(project_id, episode_id)
+        payload = {"script_id": "500", "content_version": before["content_version"]}
+        with pytest.raises(WorkflowError) as blocked:
+            if operation == "select":
+                writing.select_script(project_id, episode_id, payload)
+            elif operation == "save":
+                writing.save_script(project_id, episode_id, {**payload, "content": "Changed"})
+            else:
+                writing.confirm(
+                    project_id, episode_id, "500", {"content_version": before["content_version"]}
+                )
+        assert blocked.value.code == "agent_artifact_adoption_required"
+        assert writing.get(project_id, episode_id) == before
+        with session.begin():
+            assert session.scalar(select(AgentArtifact.id).where(AgentArtifact.id == 800)) == (
+                800 if user_id == 1 else None
+            )
+
+
+@pytest.mark.parametrize("operation", ["select", "save", "confirm"])
+def test_adopted_agent_script_keeps_shared_editor_operations_without_private_artifact(operation):
+    with generation_session() as session:
+        project_id, episode_id, writing = seed(session)
+        with session.begin():
+            session.get(EpisodeScript, 500).published_at = utcnow()
+            session.get(Episode, episode_id).editing_script_id = 500
+            artifact = session.get(AgentArtifact, 800)
+            artifact.status, artifact.applied_by = "applied", 1
+            artifact.applied_at, artifact.apply_receipt = utcnow(), {"action": "select_script"}
+        session.info["actor"] = ActorContext(
+            2, "member2", "member2@example.test", True, 2, "hash", "test"
+        )
+        before = writing.get(project_id, episode_id)
+        payload = {"script_id": "500", "content_version": before["content_version"]}
+        if operation == "select":
+            assert writing.select_script(project_id, episode_id, payload) == before
+        elif operation == "save":
+            assert (
+                writing.save_script(project_id, episode_id, {**payload, "content": "Shared edit"})[
+                    "script"
+                ]["content"]
+                == "Shared edit"
+            )
+        else:
+            assert (
+                writing.confirm(
+                    project_id, episode_id, "500", {"content_version": before["content_version"]}
+                )["confirmed_script_id"]
+                == "500"
+            )
+        with session.begin():
+            assert session.scalar(select(AgentArtifact.id).where(AgentArtifact.id == 800)) is None
+
+
+@pytest.mark.parametrize("visibility", ["private", "revoked_member"])
+def test_agent_adoption_provenance_does_not_expose_inaccessible_scripts(visibility):
+    with generation_session() as session:
+        project_id, episode_id, writing = seed(session)
+        if visibility == "revoked_member":
+            with session.begin():
+                session.get(EpisodeScript, 500).published_at = utcnow()
+                session.get(ProjectMember, 12).status = "removed"
+        session.info["actor"] = ActorContext(
+            2, "member2", "member2@example.test", True, 2, "hash", "test"
+        )
+        with session.begin():
+            assert writing._requires_agent_adoption(500) is False
+            assert session.scalar(select(AgentArtifact.id).where(AgentArtifact.id == 800)) is None
+        with pytest.raises(NotFound):
+            writing.select_script(
+                project_id, episode_id, {"script_id": "500", "content_version": "1"}
             )
 
 

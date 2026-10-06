@@ -27,7 +27,7 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
   const media = [0, 1, 2, 3].map((_, i) => ({ asset_id: String(7001 + i), generation_id: '8001', media_id: String(9901 + i), name: ['雨夜站台', '旅人侧影', '旧信细节', '远去的列车'][i], media_type: 'image', row_version: '1', url: poster, width: 1920, height: 1080, created_at: time, source: null }));
   const clips = [0, 1, 2].map((_, i) => ({ id: String(1001 + i), source_clip_id: String(1001 + i), shot_id: String(101 + i), media_id: String(9101 + i), position: i + 1, shot_position: i + 1, included: true, muted: false, trim_in_ms: 0, trim_out_ms: 3000, duration_ms: 3000, script: shots[i].script, url: null, poster, is_stale: false, archived: false, issue: null }));
   const assembly = { assembly: { id: '111', row_version: '1', aspect: '16:9', resolution: '1080p', current_media_id: null }, source_hash: 'a'.repeat(64), context_hash: 'a'.repeat(64), source_count: 3, clips, sources: clips, changes: [], jobs: [] };
-  const sound = { mode: 'native', row_version: 1, timeline_hash: 'a'.repeat(64), duration_ms: 9000, needs_review: false, stale_lines: [], document: { dialogue: [], subtitles: [{ start_ms: 0, end_ms: 2800, text: '这封信，终于送到了。' }], native_ducking: [], music: null, original_volume: 1, dialogue_volume: 1, burn_subtitles: true, font_size: 24 }, media: {}, uploads: [], voice_defaults: { row_version: 1, voices: {} } };
+  const sound = { mode: 'native', row_version: '1', timeline_hash: 'a'.repeat(64), duration_ms: 9000, needs_review: false, stale_lines: [], document: { dialogue: [], subtitles: [{ start_ms: 0, end_ms: 2800, text: '这封信，终于送到了。' }], native_ducking: [], music: null, original_volume: 1, dialogue_volume: 1, burn_subtitles: true, font_size: 24 }, media: {}, uploads: [], voice_defaults: { row_version: '1', voices: {} } };
   const batch = { id: '6001', scene: 'shot_image', config_id: '77', scope: { scene: 'shot_image', scope: { library: 'episode', project_id: '10', episode_id: '20' }, config_id: '77', mode: 'missing', count: 1 }, status: 'completed', counts: { succeeded: 3 }, total: 3, created_at: time };
   if (ui) {
     Object.assign(asset, { state: 'confirmed', media_id: '9901', image: { media_id: '9901', url: poster } });
@@ -80,11 +80,11 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     if (path === '/projects/10/episodes') return reply(paged([episode]));
     if (path === root) { if (method === 'PATCH') Object.assign(episode, body); return reply(episode); }
     if (path === `${root}/writing`) return reply(writing);
-    if (path === `${root}/novel`) { writing.novel.content = body.content; writing.content_version = String(Number(writing.content_version) + 1); return reply({ content_version: writing.content_version, novel: writing.novel }); }
-    if (path === `${root}/script`) { writing.editing_script.content = body.content; writing.editing_script.state = 'unconfirmed'; writing.confirmed_script_id = null; writing.content_version = String(Number(writing.content_version) + 1); return reply({ content_version: writing.content_version, script: writing.editing_script }); }
+    if (path === `${root}/novel`) { writing.novel.content = body.content; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, novel: writing.novel }); }
+    if (path === `${root}/script`) { writing.editing_script.content = body.content; writing.editing_script.state = 'unconfirmed'; writing.confirmed_script_id = null; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, script: writing.editing_script }); }
     if (path === `${root}/scripts`) return reply(paged([candidate]));
     if (path === `${root}/scripts/41`) return reply(candidate);
-    if (path === `${root}/editing-script`) { writing.editing_script = { ...writing.editing_script, id: '41', content: candidate.content, state: 'unconfirmed' }; writing.confirmed_script_id = null; writing.content_version = String(Number(writing.content_version) + 1); return reply(writing); }
+    if (path === `${root}/editing-script`) { writing.editing_script = { ...writing.editing_script, id: '41', content: candidate.content, state: 'unconfirmed' }; writing.confirmed_script_id = null; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply(writing); }
     if (/\/scripts\/\d+\/confirm$/.test(path)) { writing.editing_script.state = 'confirmed'; writing.confirmed_script_id = writing.editing_script.id; return reply(writing); }
     if (path === '/ai-model-configs') return reply(paged([{ id: '77', name: '测试替身模型', model_key: 'fixture', service_type: query.get('service_type'), provider: 'fixture', enabled: 1, is_default: 1, is_deleted: 0, row_version: '1', has_api_key: true }]));
     if (path.endsWith('/capabilities')) return reply({ known: true, reference_images: true, parameters: ['aspect', 'resolution', 'count'] });
@@ -113,7 +113,7 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
       if (method === 'PATCH') { Object.assign(shot, body, { row_version: String(Number(shot.row_version) + 1) }); storyboardVersion = String(Number(storyboardVersion) + 1); }
       return reply({ shot, storyboard_version: storyboardVersion });
     }
-    if (path.includes('/storyboard-results/') && path.endsWith('/shots')) return reply({ ...paged(Array.from({ length: 55 }, (_, index) => ({ position: index + 1, script: `历史分镜 ${index + 1}：列车驶过雨夜。` }))), generation_id: '8001', applied: null });
+    if (path.includes('/storyboard-results/') && path.endsWith('/shots')) return reply({ ...paged(Array.from({ length: 55 }, (_, index) => ({ position: index + 1, title: `站台镜头 ${index + 1}`, script: `历史分镜 ${index + 1}：列车驶过雨夜。`, duration_ms: 3000, asset_ids: ['501'], assets: [{ id: '501', kind: 'character', name: '林晚', available: true, snapshot_missing: false }], source_excerpt: '林晚走进车站，抬头寻找站台。', story_beat: '寻找信件主人' }))), generation_id: '8001', total_duration_ms: 165000, applied: null });
     if (path.endsWith('/apply')) { storyboardVersion = String(Number(storyboardVersion) + 1); return reply({ generation_id: '8001', mode: body.mode, storyboard_version: storyboardVersion, shot_ids: [], already_applied: false }); }
     if (path === '/ai/generations') {
       const scene = query.get('source_scene');

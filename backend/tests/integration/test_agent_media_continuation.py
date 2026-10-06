@@ -212,7 +212,7 @@ def test_media_adoption_continues_only_its_run_then_admits_next_approved_image(
         assert authorization["approved_plan"] == frozen["approved_plan"]
         assert authorization["steps"][1]["parameters"] == frozen["steps"][1]["parameters"]
         assert (
-            authorization["steps"][1]["source"]["target_row_version"]
+            str(authorization["steps"][1]["source"]["target_row_version"])
             == applied["apply_receipt"]["target_row_version"]
         )
         assert run.usage["images"] == 1 and run.budget["images"] == 2

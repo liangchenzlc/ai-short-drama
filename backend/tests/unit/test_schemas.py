@@ -197,7 +197,7 @@ def test_read_schema_covers_exact_domain_columns_except_secret(class_name):
     expected = set(model.__table__.columns.keys())
     if class_name == "ProjectRead":
         expected.remove("archived_at")
-        expected.add("capabilities")
+        expected.update({"capabilities", "primary_canvas_id", "canvas_count"})
     if class_name == "EpisodeRead":
         expected.add("cover_url")  # Derived display URL; never a persisted media identity.
     if class_name == "GlobalAssetRead":

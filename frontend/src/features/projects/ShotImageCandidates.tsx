@@ -11,11 +11,11 @@ import { attemptStorage, clearAttempt, requestAttempt } from '../generations/att
 import { taskLabel } from '../generations/presentation';
 import { Dialog } from '../../components/ui/Dialog';
 import { ReferenceImages } from '../generations/ReferenceImages';
-import type { ReferenceImage } from '../../api/modules/generation-references';
+import { generationReferences, type ReferenceImage } from '../../api/modules/generation-references';
 import { TaskDetail } from '../generations/TaskDetail';
 import { ImagePreview, PreviewImage } from '../../components/ui/ImagePreview';
 import { shotImageApplyRequest, shotImageRequest } from './workflow-contract';
-import { imageGenerationBlockReason, summarizeShotReferences, type ImageCapabilities, type PreparedShot } from './shot-image-workflow';
+import { imageGenerationBlockReason, summarizeImageReferenceCount, summarizeShotReferences, type ImageCapabilities, type PreparedShot } from './shot-image-workflow';
 import { useShotImageGeneration } from './useShotImageGeneration';
 import { pendingShotAttempt, startShotAttempt, finishShotAttempt } from './shot-image-attempt';
 
@@ -26,7 +26,7 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
 }) {
   const expanded = true;
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [uploaded, setUploaded] = useState<ReferenceImage[]>([]);
+  const [uploaded, setUploaded] = useState<ReferenceImage[] | null>(null);
   const [referenceBusy, setReferenceBusy] = useState(false);
   const history = useShotImageGeneration({ shotId: shot.id, enabled: historyOpen });
   const [count, setCount] = useState(1);
@@ -58,8 +58,10 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
   }, [expanded, referenceKey, shot.context_hash, referencesRevision]);
 
   const references = summarizeShotReferences(shot.asset_ids, assets);
-  const blockReason = imageGenerationBlockReason(modelId, capabilities, new Set([...references.referenceMediaIds, ...uploaded.map(item => item.media_id)]).size, capabilitiesLoading)
+  const referenceCount = summarizeImageReferenceCount(references.referenceMediaIds, (uploaded ?? []).map(item => item.media_id));
+  const blockReason = imageGenerationBlockReason(modelId, capabilities, referenceCount.totalCount, capabilitiesLoading)
     || (referencesLoading ? '正在核对参考素材…' : referencesError)
+    || (uploaded === null ? '正在核对手动参考图…' : '')
     || (references.missingAssetIds.length ? '关联素材尚未加载完整，请刷新核对。' : '');
 
   async function generate() {
@@ -71,11 +73,15 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
       prepared = await prepareShot();
       if (!prepared || !alive.current || !prepared.isCurrent()) return;
       const current = prepared.shot;
-      const latestAssets = await Promise.all(current.asset_ids.map((id) => assetLibraries.detail(id)));
+      const [latestAssets, latestManual] = await Promise.all([
+        Promise.all(current.asset_ids.map((id) => assetLibraries.detail(id))),
+        generationReferences('shot', current.id).list(),
+      ]);
       if (!alive.current || !prepared.isCurrent()) return;
       setAssets(latestAssets);
+      setUploaded(latestManual.items);
       const latest = summarizeShotReferences(current.asset_ids, latestAssets);
-      const reason = imageGenerationBlockReason(modelId, capabilities, new Set([...latest.referenceMediaIds, ...uploaded.map(item => item.media_id)]).size, capabilitiesLoading);
+      const reason = imageGenerationBlockReason(modelId, capabilities, summarizeImageReferenceCount(latest.referenceMediaIds, latestManual.items.map(item => item.media_id)).totalCount, capabilitiesLoading);
       if (reason) { setMessage(reason); return; }
       if (latest.referenceMediaIds.join(',') !== references.referenceMediaIds.join(',')) {
         setMessage('参考图片已变化，请核对后重新点击生成。'); return;
@@ -164,6 +170,7 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
         const prepared = await prepareShot();
         return prepared ? { row_version: prepared.shot.row_version, release: prepared.release } : null;
       }} onChanged={() => onChanged()}/>
+      <p className="episode-help">已确认素材图 {referenceCount.assetCount} 张，手动参考图 {referenceCount.manualCount} 张；去重合计 {referenceCount.totalCount}/16 张。{references.unreadyAssetIds.length > 0 ? `另有 ${references.unreadyAssetIds.length} 项素材尚未确认图片，仅使用文字设定。` : ''}</p>
       <div className="shot-generation-toolbar">
         {settings}
         <label>图片数量<InputNumber aria-label="图片数量" disabled={disabled || busy} min={1} max={4} precision={0} value={count} onChange={next => setCount(next ?? 1)}/></label>
@@ -183,7 +190,7 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, cap
         <Button disabled={disabled || busy || shot.image?.media_id === asset.media_id} onClick={() => void apply(asset)}>{shot.image?.media_id === asset.media_id ? '当前采用' : '确认采用'}</Button>
       </article>)}</div>}
       {history.hasMoreCandidates && <Button onClick={() => void history.loadMoreCandidates()}>加载更多候选</Button>}
-      {!history.loading && !history.candidates.length && <p className="episode-help">生成的图片会作为候选保留，预览后再确认采用。</p>}
+      {!history.loading && !history.error && !history.candidates.length && <p className="episode-help">生成的图片会作为候选保留，预览后再确认采用。</p>}
       <details className="shot-task-records"><summary>任务记录 <span>{history.tasks.length} 条</span></summary>      {history.tasks.length > 0 && <div className="writing-task-history"><h4>任务记录</h4>{history.tasks.map((task) => <div className="resource-import-row" key={task.generation_id}><span>{taskLabel(task)} · {task.generation_id}{task.error ? ` · ${task.error.message}` : ''}</span><Button onClick={() => { setHistoryOpen(false); setTaskId(task.generation_id); }}>查看任务</Button></div>)}</div>}
       {history.hasMoreTasks && <Button onClick={() => void history.loadMoreTasks()}>加载更多记录</Button>}
 </details>

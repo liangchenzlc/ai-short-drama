@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Header, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from short_drama.api.dependencies import get_session
@@ -16,6 +17,10 @@ from short_drama.schemas.agent import (
     ConversationCreate,
     ConversationPatch,
     ConversationRead,
+    ConversationScope,
+    ConversationStage,
+    ConversationSubject,
+    ConversationTask,
 )
 from short_drama.schemas.agent_context import (
     AttachmentRead,
@@ -28,6 +33,7 @@ from short_drama.schemas.agent_context import (
 from short_drama.schemas.agent_runtime import (
     AgentModelRead,
     AgentModelsRead,
+    ConversationRuntimeState,
     MessageAccepted,
     MessageCreate,
     MessageRead,
@@ -52,6 +58,27 @@ def service(request: Request, session: Session = Depends(get_session)):
 
 
 Conversations = Annotated[AgentConversationService, Depends(service)]
+
+
+def expected_scope_query(
+    stage: ConversationStage | None = None,
+    subject_type: ConversationSubject | None = None,
+    subject_id: Identifier | None = None,
+    task_type: ConversationTask | None = None,
+):
+    if all(value is None for value in (stage, subject_type, subject_id, task_type)):
+        return None
+    if any(value is None for value in (stage, subject_type, subject_id)):
+        raise WorkflowError("agent_scope_required", "请提供完整的流程和创作对象范围", 422)
+    try:
+        return ConversationScope(
+            stage=stage, subject_type=subject_type, subject_id=subject_id, task_type=task_type
+        )
+    except ValidationError:
+        raise WorkflowError("invalid_agent_scope", "流程、创作对象和任务类型不匹配", 422) from None
+
+
+ExpectedScope = Annotated[ConversationScope | None, Depends(expected_scope_query)]
 
 
 def run_service(request: Request, session: Session = Depends(get_session)):
@@ -93,31 +120,48 @@ def list_conversations(
     service: Conversations,
     project_id: Identifier,
     episode_id: Identifier,
+    scope: ExpectedScope,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     include_archived: bool = False,
+    query: Annotated[str | None, Query(max_length=120)] = None,
 ):
-    return service.list_conversations(project_id, episode_id, offset, limit, include_archived)
+    return service.list_conversations(
+        project_id, episode_id, offset, limit, include_archived, scope=scope, search=query
+    )
 
 
 @router.post("/conversations", response_model=ConversationRead, status_code=201)
 def create_conversation(
     payload: ConversationCreate,
     service: Conversations,
-    idempotency_key: Annotated[str | None, Header(max_length=64)] = None,
+    idempotency_key: Annotated[
+        str | None, Header(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_:-]+$")
+    ] = None,
 ):
+    if payload.stage is None:
+        raise WorkflowError("agent_scope_required", "新建对话需要完整的流程和创作对象范围", 422)
     return service.create_conversation(payload, idempotency_key)
 
 
+@router.post("/conversations/resolve", response_model=ConversationRead)
+def resolve_conversation(payload: ConversationCreate, service: Conversations):
+    return service.resolve_conversation(payload)
+
+
 @router.get("/conversations/{conversation_id}", response_model=ConversationRead)
-def get_conversation(conversation_id: Identifier, service: Conversations):
-    return service.get_conversation(conversation_id)
+def get_conversation(conversation_id: Identifier, service: Conversations, scope: ExpectedScope):
+    return service.get_conversation(conversation_id, expected_scope=scope)
 
 
 @router.patch("/conversations/{conversation_id}", response_model=ConversationRead)
 def patch_conversation(
-    conversation_id: Identifier, payload: ConversationPatch, service: Conversations
+    conversation_id: Identifier,
+    payload: ConversationPatch,
+    service: Conversations,
+    scope: ExpectedScope,
 ):
+    service.require_writable_conversation(conversation_id, expected_scope=scope)
     return service.patch_conversation(conversation_id, payload)
 
 
@@ -172,10 +216,13 @@ def delete_skill(skill_id: Identifier, payload: SkillDelete, service: Skills):
 def list_attachments(
     conversation_id: Identifier,
     service: Attachments,
+    scope: ExpectedScope,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     pending: bool | None = None,
 ):
+    if scope is not None:
+        service.get_conversation(conversation_id, expected_scope=scope)
     return service.list(conversation_id, offset, limit, pending)
 
 
@@ -187,9 +234,13 @@ def list_attachments(
 def upload_attachment(
     conversation_id: Identifier,
     service: Attachments,
+    scope: ExpectedScope,
     file: Annotated[UploadFile, File()],
-    idempotency_key: Annotated[str, Header(min_length=1, max_length=64)],
+    idempotency_key: Annotated[
+        str, Header(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_:-]+$")
+    ],
 ):
+    service.require_writable_conversation(conversation_id, expected_scope=scope)
     return service.upload(conversation_id, file.file, file.filename or "", idempotency_key)
 
 
@@ -202,13 +253,23 @@ def reference_attachment(
     conversation_id: Identifier,
     payload: AttachmentReference,
     service: Attachments,
-    idempotency_key: Annotated[str, Header(min_length=1, max_length=64)],
+    scope: ExpectedScope,
+    idempotency_key: Annotated[
+        str, Header(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_:-]+$")
+    ],
 ):
+    service.require_writable_conversation(conversation_id, expected_scope=scope)
     return service.reference(conversation_id, payload, idempotency_key)
 
 
 @router.delete("/conversations/{conversation_id}/attachments/{attachment_id}", status_code=204)
-def delete_attachment(conversation_id: Identifier, attachment_id: Identifier, service: Attachments):
+def delete_attachment(
+    conversation_id: Identifier,
+    attachment_id: Identifier,
+    service: Attachments,
+    scope: ExpectedScope,
+):
+    service.require_writable_conversation(conversation_id, expected_scope=scope)
     service.delete(conversation_id, attachment_id)
     return Response(status_code=204)
 
@@ -220,8 +281,11 @@ def send_message(
     conversation_id: Identifier,
     payload: MessageCreate,
     service: Runs,
-    idempotency_key: Annotated[str, Header(min_length=1, max_length=64)],
+    idempotency_key: Annotated[
+        str, Header(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_:-]+$")
+    ],
 ):
+    service.require_writable_conversation(conversation_id, expected_scope=payload.expected_scope)
     return service.send_message(conversation_id, payload, idempotency_key)
 
 
@@ -229,36 +293,61 @@ def send_message(
 def list_messages(
     conversation_id: Identifier,
     service: Runs,
+    scope: ExpectedScope,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ):
-    return service.list_messages(conversation_id, offset, limit)
+    return service.list_messages(conversation_id, offset, limit, expected_scope=scope)
+
+
+@router.get("/conversations/{conversation_id}/state", response_model=ConversationRuntimeState)
+def runtime_state(conversation_id: Identifier, service: Runs, scope: ExpectedScope):
+    return service.runtime_state(conversation_id, expected_scope=scope)
 
 
 @router.get("/conversations/{conversation_id}/runs", response_model=PageResponse[RunRead])
 def list_runs(
     conversation_id: Identifier,
     service: Runs,
+    scope: ExpectedScope,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
-    return service.list_runs(conversation_id, offset, limit)
+    return service.list_runs(conversation_id, offset, limit, expected_scope=scope)
+
+
+def check_run_scope(
+    service: AgentRunService, run_id: str, scope: ConversationScope | None, *, writable=False
+):
+    if scope is not None or writable:
+        run = service.get_run(run_id)
+        if writable:
+            service.require_writable_conversation(run.conversation_id, expected_scope=scope)
+        else:
+            service.get_conversation(run.conversation_id, expected_scope=scope)
 
 
 @router.get("/runs/{run_id}", response_model=RunRead)
-def get_run(run_id: Identifier, service: Runs):
+def get_run(run_id: Identifier, service: Runs, scope: ExpectedScope):
+    check_run_scope(service, run_id, scope)
     return service.get_run(run_id)
 
 
 @router.post("/runs/{run_id}/stop", response_model=RunRead)
-def stop_run(run_id: Identifier, service: Runs):
+def stop_run(run_id: Identifier, service: Runs, scope: ExpectedScope):
+    check_run_scope(service, run_id, scope)
     return service.stop(run_id)
 
 
 @router.post("/runs/{run_id}/reviews/{tool_call_id}", response_model=RunRead)
 def review_plan(
-    run_id: Identifier, tool_call_id: Identifier, payload: ReviewDecision, service: Runs
+    run_id: Identifier,
+    tool_call_id: Identifier,
+    payload: ReviewDecision,
+    service: Runs,
+    scope: ExpectedScope,
 ):
+    check_run_scope(service, run_id, scope, writable=True)
     return service.review(run_id, tool_call_id, payload)
 
 
@@ -266,6 +355,7 @@ def review_plan(
 async def conversation_events(
     conversation_id: Identifier,
     request: Request,
+    scope: ExpectedScope,
     cursor: Annotated[int, Query(ge=0, le=2**64 - 1)] = 0,
     last_event_id: Annotated[str | None, Header(max_length=20)] = None,
 ):
@@ -286,7 +376,7 @@ async def conversation_events(
             session.info["actor"] = actor
             return AgentRunService(
                 session, settings, getattr(request.app.state, "storage", None)
-            ).events(conversation_id, after, verify_session=True)
+            ).events(conversation_id, after, verify_session=True, expected_scope=scope)
 
     initial = await run_in_threadpool(read, cursor)
 
@@ -315,5 +405,6 @@ async def conversation_events(
 
 
 @router.post("/runs/{run_id}/continue", response_model=RunRead)
-def continue_run(run_id: Identifier, payload: RunContinue, service: Runs):
+def continue_run(run_id: Identifier, payload: RunContinue, service: Runs, scope: ExpectedScope):
+    check_run_scope(service, run_id, scope, writable=True)
     return service.continue_after_adoption(run_id, payload)

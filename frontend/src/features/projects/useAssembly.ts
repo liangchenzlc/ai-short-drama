@@ -2,12 +2,40 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { assemblyApi, type AssemblyClip, type AssemblyState } from '../../api/modules/assembly';
 import { errorMessage } from '../../api/http';
 import type { NavigationBarrier } from './writing-navigation';
+import { creationScope, readRecovery, readRecoveryText, saveRecovery, clearRecovery, type StoredDraft } from './creation-recovery';
+import { assemblyDraft, restoreAssemblyDraft, validAssemblyDraft, type AssemblyDraftDocument } from './assembly-recovery';
 
 export function useAssembly(projectId: string, episodeId: string, registerBarrier: (barrier: NavigationBarrier | null) => void) {
   const api = useMemo(() => assemblyApi(projectId, episodeId), [projectId, episodeId]);
+  const recoveryScope = useMemo(() => creationScope(`assembly:${projectId}:${episodeId}:draft`), [projectId, episodeId]);
+  const [recoveredDraft, setRecoveredDraft] = useState<StoredDraft<AssemblyDraftDocument> | null>(null);
+  const [recoveryError, setRecoveryError] = useState('');
+  const [recoveryBlocked, setRecoveryBlocked] = useState(false);
+  const recoveryPending = useRef(false);
+  function offerRecovery(next: AssemblyState) {
+    try {
+      const draft = readRecovery(recoveryScope, validAssemblyDraft);
+      if (draft && next.assembly && JSON.stringify(draft.document) !== JSON.stringify(assemblyDraft(next).document)) {
+        recoveryPending.current = true; setRecoveredDraft(draft);
+      } else if (draft) clearRecovery(recoveryScope);
+    } catch {
+      recoveryPending.current = true; setRecoveryBlocked(true);
+      setRecoveryError('剪辑恢复记录无法读取，请下载完整恢复记录核对，明确放弃后才能继续编辑。');
+    }
+  }
+  function persistDraft() {
+    if (!state.current.value?.assembly || recoveryPending.current) return;
+    try {
+      if (state.current.saved !== state.current.revision) saveRecovery(recoveryScope, assemblyDraft(state.current.value));
+      else clearRecovery(recoveryScope);
+      setRecoveryError('');
+    } catch { setRecoveryError('本机剪辑恢复记录无法保存，请下载草稿备份。'); }
+  }
   const [value, setValue] = useState<AssemblyState | null>(null);
   const [status, setStatus] = useState<'loading' | 'saved' | 'unsaved' | 'saving' | 'error'>('loading');
   const [error, setError] = useState('');
+  const [connectionError, setConnectionError] = useState('');
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const past = useRef<AssemblyClip[][]>([]);
   const future = useRef<AssemblyClip[][]>([]);
   const state = useRef({ value: null as AssemblyState | null, revision: 0, saved: 0, paused: false, mounted: true });
@@ -22,6 +50,7 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
     const before = state.current.value;
     const next = await api.get();
     if (!state.current.mounted || request !== latestLoad.current) return next;
+    setConnectionError(''); setLastSyncedAt(Date.now());
     if (state.current.value === before && state.current.revision === revision && state.current.saved === revision && !pending.current) replace(next);
     else if (state.current.value?.assembly?.id === next.assembly?.id && state.current.value) {
       // Render progress is independent of unsaved clip edits; never hide a finished
@@ -35,6 +64,7 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
     if (pending.current) return pending.current;
     if (!state.current.value) return Promise.resolve(false);
     if (state.current.paused) return Promise.resolve(false);
+    if (recoveryPending.current) return Promise.resolve(false);
     const run = async () => {
       while (state.current.saved !== state.current.revision) {
         const revision = state.current.revision;
@@ -45,6 +75,7 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
           state.current.saved = revision;
           const latest = state.current.value!;
           replace(revision === state.current.revision ? saved : { ...latest, assembly: { ...latest.assembly!, row_version: saved.assembly!.row_version } });
+          persistDraft();
         } catch (cause) {
           state.current.paused = true;
           if (state.current.mounted) { setError(errorMessage(cause)); setStatus('error'); }
@@ -59,7 +90,7 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
   }
   const flushRef = useRef(flush); flushRef.current = flush;
   function edit(transform: (value: AssemblyState) => AssemblyState, record = true) {
-    if (!state.current.value?.assembly) return;
+    if (!state.current.value?.assembly || recoveryPending.current) return;
     const before = state.current.value;
     const next = transform(before);
     if (next === before) return;
@@ -67,12 +98,14 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
       past.current = [...past.current.slice(-99), before.clips ?? []]; future.current = [];
     }
     replace(next); state.current.revision++;
+    persistDraft();
     setStatus(state.current.paused ? 'error' : 'unsaved');
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void flushRef.current(), 650);
   }
   async function reload() {
     if (pending.current) await pending.current;
+    const initialLoad = !state.current.value;
     if (!state.current.value && state.current.mounted) setStatus('loading');
     try {
       const next = await api.get();
@@ -80,6 +113,8 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
       state.current.saved = state.current.revision; state.current.paused = false;
       past.current = []; future.current = [];
       replace(next); setError(''); setStatus('saved');
+      if (initialLoad) offerRecovery(next);
+      else { recoveryPending.current = false; setRecoveredDraft(null); setRecoveryBlocked(false); persistDraft(); }
     } catch (cause) {
       if (state.current.mounted) { setError(errorMessage(cause)); setStatus('error'); }
       throw cause;
@@ -112,18 +147,40 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
   useEffect(() => {
     state.current.mounted = true;
     let cancelled = false;
-    const initial = async () => { try { const next = await api.get(); if (!cancelled) { replace(next); setStatus('saved'); } } catch (cause) { if (!cancelled) { setError(errorMessage(cause)); setStatus('error'); } } };
+    const initial = async () => { try { const next = await api.get(); if (!cancelled) {
+      replace(next); setStatus('saved'); setLastSyncedAt(Date.now());
+      offerRecovery(next);
+    } } catch (cause) { if (!cancelled) { setError(errorMessage(cause)); setStatus('error'); } } };
     void initial();
-    register.current({ hasUnsettled: () => state.current.revision !== state.current.saved || !!pending.current, flush: () => flushRef.current() });
-    let polling = false;
-    const interval = setInterval(() => {
-      if (polling || !state.current.value) return;
-      polling = true;
-      void load().catch(() => {}).finally(() => { polling = false; });
-    }, 4000);
-    return () => { cancelled = true; state.current.mounted = false; clearInterval(interval); if (timer.current) clearTimeout(timer.current); register.current(null); };
+    register.current({ hasUnsettled: () => state.current.revision !== state.current.saved || !!pending.current || recoveryPending.current, flush: () => flushRef.current() });
+    let failures = 0;
+    let pollTimer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      if (cancelled) return;
+      if (state.current.value) {
+        try { await load(); failures = 0; }
+        catch (cause) { failures++; if (!cancelled) setConnectionError(errorMessage(cause)); }
+      }
+      if (cancelled) return;
+      const active = state.current.value?.jobs?.some(job => ['queued', 'running'].includes(job.status));
+      const interval = document.hidden ? 30000 : active ? 4000 : 15000;
+      const delay = failures ? Math.max(interval, Math.min(30000, 4000 * 2 ** Math.min(failures, 3))) : interval;
+      pollTimer = setTimeout(() => void poll(), delay);
+    };
+    pollTimer = setTimeout(() => void poll(), 4000);
+    return () => { cancelled = true; state.current.mounted = false; clearTimeout(pollTimer); if (timer.current) clearTimeout(timer.current); register.current(null); };
   }, [api]); // project/episode remount owns this editing session
-  return { api, value, status, error, edit, flush, load, replace, reload, undo, redo, refreshMedia,
+  return { api, value, status, error, connectionError, lastSyncedAt, recoveredDraft, recoveryError, recoveryBlocked, edit, flush, load, replace, reload, undo, redo, refreshMedia,
+    exportRecovered: () => readRecoveryText(recoveryScope),
+    discardRecovered: () => { clearRecovery(recoveryScope); recoveryPending.current = false; setRecoveredDraft(null); setRecoveryBlocked(false); setRecoveryError(''); },
+    restoreRecovered: async () => {
+      if (!recoveredDraft || !state.current.value?.assembly) return;
+      const fresh = await api.get();
+      if (!state.current.mounted) return;
+      if (fresh.assembly?.id !== recoveredDraft.document.assembly_id) throw new Error('恢复稿属于另一份成片草稿，请先下载恢复稿核对。');
+      replace(fresh); recoveryPending.current = false; state.current.paused = false; setRecoveredDraft(null);
+      edit(current => restoreAssemblyDraft(current, recoveredDraft));
+    },
     canUndo: past.current.length > 0, canRedo: future.current.length > 0,
     clearHistory: () => { past.current = []; future.current = []; }, latest: () => state.current.value,
     retrySave: async () => {

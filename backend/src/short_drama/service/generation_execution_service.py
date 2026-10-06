@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import threading
+import uuid
 from contextlib import contextmanager
 from copy import deepcopy
 
@@ -10,6 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from short_drama.ai import GenerationError, capability_fingerprint, select_adapter
+from short_drama.ai.canvas_credentials import decode_canvas_credentials
+from short_drama.ai.canvas_image_references import (
+    is_canvas_image_request,
+    uses_canvas_inline_images,
+)
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
 from short_drama.dao.task_runtime_dao import (
@@ -88,10 +94,17 @@ class GenerationExecutionService:
         if not record.credential_cipher:
             return ""
         key = self.settings.encryption_key
-        return KeyCipher(key.get_secret_value() if key else None).decrypt(record.credential_cipher)
+        plaintext = KeyCipher(key.get_secret_value() if key else None).decrypt(
+            record.credential_cipher
+        )
+        return decode_canvas_credentials(record.config_snapshot, record.request_data, plaintext)
 
     def _input(self, record):
         request = deepcopy(record.request_data)
+        from .canvas_video_admission import VIDEO_ADAPTERS
+
+        if record.adapter in VIDEO_ADAPTERS:
+            return request
         data = request.setdefault("input", {})
         storage = StorageService(self.storage, self.settings)
         with self.factory() as session:
@@ -103,7 +116,19 @@ class GenerationExecutionService:
                 return storage.download_url(media.storage_locator)
 
             if data.get("reference_media_ids"):
-                data["reference_urls"] = [media_url(value) for value in data["reference_media_ids"]]
+                adapter = record.adapter or select_adapter(record.config_snapshot)
+                if uses_canvas_inline_images(record.config_snapshot, request, adapter) or (
+                    adapter == "openai_images.v1"
+                    and is_canvas_image_request(record.config_snapshot, request)
+                ):
+                    data["reference_urls"] = [
+                        f"https://reference.invalid/{index}"
+                        for index, _ in enumerate(data["reference_media_ids"])
+                    ]
+                else:
+                    data["reference_urls"] = [
+                        media_url(value) for value in data["reference_media_ids"]
+                    ]
             if data.get("audio_reference_media_ids"):
                 data["audio_reference_urls"] = [
                     f"https://reference.invalid/audio/{i}"
@@ -118,6 +143,19 @@ class GenerationExecutionService:
         now = utcnow()
         budget = record.config_snapshot.get("budget_seconds", 180)
         elapsed = (now - task.started_at).total_seconds()
+        from .canvas_video_admission import VIDEO_ADAPTERS
+
+        if task.next_action == "poll" and record.adapter in VIDEO_ADAPTERS and elapsed >= budget:
+            with self.factory.begin() as session:
+                current = owned_task(session, task.id, version, token)
+                call = session.get(AIGenerationRecord, record.id)
+                call.error = {
+                    "code": "generation_timeout",
+                    "message": "等待生成结果超时，已停止自动查询",
+                }
+                call.updated_at = utcnow()
+                finish(current, "failed", call.error)
+            return
         if task.next_action == "submit":
             if record.status != "prepared":
                 with self.factory.begin() as session:
@@ -178,7 +216,21 @@ class GenerationExecutionService:
                     .with_for_update()
                     .execution_options(populate_existing=True)
                 )
-                if config is None or not config.enabled or config.is_deleted:
+                frozen_model_test = bool(
+                    config is not None
+                    and call.config_snapshot.get("canvas_model_test") is True
+                    and (call.request_data.get("source") or {}).get("scene") == "canvas_model_test"
+                    and current.project_id is None
+                    and current.scope_user_id == current.initiated_by == config.owner_user_id
+                    and config.is_deleted == 1
+                    and config.enabled == 0
+                    and str(config.row_version) == call.config_snapshot.get("row_version")
+                    and hashlib.sha256((config.apikey or "").encode()).hexdigest()
+                    == call.config_snapshot.get("credential_identity")
+                )
+                if config is None or (
+                    not frozen_model_test and (not config.enabled or config.is_deleted)
+                ):
                     finish(
                         current,
                         "failed",
@@ -206,15 +258,38 @@ class GenerationExecutionService:
         snapshot = {**record.config_snapshot, "budget_seconds": max(1, int(budget - elapsed))}
         if task.next_action == "submit":
             options = {}
+            from .canvas_video_admission import VIDEO_ADAPTERS
+
+            if adapter in VIDEO_ADAPTERS:
+                from .canvas_video_references import StoredCanvasVideoReferences
+
+                snapshot["submission_key"] = str(
+                    uuid.uuid5(uuid.NAMESPACE_OID, f"{task.id}:{record.id}")
+                )
+                options["canvas_reference_loader"] = StoredCanvasVideoReferences(
+                    self.factory, self.storage, self.settings, request
+                )
             voices = (request.get("source_snapshot", {}).get("native_speech") or {}).get("voices")
             if voices:
                 options["audio_reference_loader"] = StoredAudioReferences(
                     self.factory, self.storage, self.settings, voices
                 )
             media_ids = request.get("input", {}).get("reference_media_ids")
-            if adapter in {"openai_images.v1", "modelhub_video.v1"} and media_ids:
+            if media_ids and (
+                adapter in {"openai_images.v1", "modelhub_video.v1"}
+                or uses_canvas_inline_images(snapshot, request, adapter)
+            ):
                 options["reference_loader"] = StoredImageReferences(
                     self.factory, self.storage, self.settings, media_ids
+                )
+            mask_id = (request.get("canvas_parameters") or {}).get("mask_media_id")
+            if (
+                mask_id
+                and adapter == "openai_images.v1"
+                and is_canvas_image_request(snapshot, request)
+            ):
+                options["mask_reference_loader"] = StoredImageReferences(
+                    self.factory, self.storage, self.settings, [mask_id]
                 )
             if adapter in {"ark_video.v1", "dashscope_video.v1", "modelhub_video.v1"}:
                 frames = [
@@ -226,7 +301,26 @@ class GenerationExecutionService:
                     options["reference_loader"] = StoredImageReferences(
                         self.factory, self.storage, self.settings, frames
                     )
-            result = self.gateway.submit(snapshot, request, credential, adapter=adapter, **options)
+            writer = None
+            canvas_input = request.get("canvas_request", {}).get("input", {})
+            if task.service_type == "text" and canvas_input.get("textOptions", {}).get(
+                "stream", True
+            ):
+                if "canvas_request" in request:
+                    from .canvas_text_stream import CanvasTextStreamWriter
+
+                    writer = CanvasTextStreamWriter(self.factory, task, record, version, token)
+                    options["on_text_delta"] = writer.append
+            try:
+                result = self.gateway.submit(
+                    snapshot, request, credential, adapter=adapter, **options
+                )
+            except GenerationError:
+                if writer is not None:
+                    writer.flush()
+                raise
+            if writer is not None:
+                writer.flush()
         else:
             snapshot["budget_seconds"] = min(60, budget)
             result = self.gateway.poll(snapshot, record.provider_task_id, credential, adapter)
@@ -255,9 +349,17 @@ class GenerationExecutionService:
                     }
                     identity = hashlib.sha256((config.apikey or "").encode()).hexdigest()
                     captured_identity = call.config_snapshot.get("credential_identity")
-                    if captured_identity and capability_fingerprint(
-                        current_snapshot, identity
-                    ) == capability_fingerprint(call.config_snapshot, captured_identity):
+                    current_canvas_version = (call.request_data.get("source") or {}).get(
+                        "scene"
+                    ) not in {"canvas_node", "canvas_model_test"} or str(config.row_version) == str(
+                        call.config_snapshot.get("row_version")
+                    )
+                    if (
+                        current_canvas_version
+                        and captured_identity
+                        and capability_fingerprint(current_snapshot, identity)
+                        == capability_fingerprint(call.config_snapshot, captured_identity)
+                    ):
                         config.capability_cache = {
                             **(config.capability_cache or {}),
                             "adapter": result.adapter,
@@ -271,6 +373,11 @@ class GenerationExecutionService:
                 "finish_reason": result.finish_reason,
                 **({"voice": result.voice} if result.voice else {}),
             }
+            from .canvas_video_admission import VIDEO_ADAPTERS
+            from .canvas_video_policy import POLL_SECONDS, reset_poll_state
+
+            if call.adapter in VIDEO_ADAPTERS:
+                reset_poll_state(data)
             if result.status == "submitted":
                 if not call.provider_task_id:
                     call.status = "unknown"
@@ -291,7 +398,18 @@ class GenerationExecutionService:
                         }
                         finish(current, "failed", call.error)
                     else:
-                        schedule(current, "poll", self.settings.generation_poll_seconds)
+                        delay = (
+                            POLL_SECONDS
+                            if call.adapter in VIDEO_ADAPTERS
+                            else self.settings.generation_poll_seconds
+                        )
+                        if call.adapter in VIDEO_ADAPTERS:
+                            remaining = (
+                                call.config_snapshot.get("budget_seconds", 180)
+                                - (now - current.started_at).total_seconds()
+                            )
+                            delay = min(delay, max(0, remaining))
+                        schedule(current, "poll", delay)
             elif result.status == "failed":
                 call.status = "failed"
                 call.finished_at = now
@@ -335,6 +453,10 @@ class GenerationExecutionService:
                     # Keep the current execution lease until inline staging finishes.
                     # A crash now recovers as save from the persisted manifest.
             call.response_data = data
+            if "canvas_request" in call.request_data:
+                from .canvas_text_stream import finalize_canvas_text
+
+                finalize_canvas_text(session, current)
         if manifest is not None:
             self.archive.stage_inline(
                 task,
@@ -363,14 +485,29 @@ class GenerationExecutionService:
                 expired = (now - current.started_at).total_seconds() >= call.config_snapshot.get(
                     "budget_seconds", 180
                 )
-                if expired:
+                from .canvas_video_admission import VIDEO_ADAPTERS
+                from .canvas_video_policy import poll_retry_delay
+
+                delay = 15
+                if call.adapter in VIDEO_ADAPTERS:
+                    data = deepcopy(call.response_data or {})
+                    delay = poll_retry_delay(error, data)
+                    call.response_data = data
+                if expired or delay is None:
                     finish(current, "failed", safe_error)
                 else:
                     current.error = safe_error
-                    schedule(current, "poll", 15)
+                    if call.adapter in VIDEO_ADAPTERS:
+                        remaining = (
+                            call.config_snapshot.get("budget_seconds", 180)
+                            - (now - current.started_at).total_seconds()
+                        )
+                        delay = min(delay, max(0, remaining))
+                    schedule(current, "poll", delay)
             elif error.accepted_unknown:
                 call.status = "unknown"
                 finish(current, "failed", safe_error)
+
             elif (
                 error.protocol_mismatch
                 and not call.config_snapshot.get("agent_managed")
@@ -413,6 +550,7 @@ class GenerationExecutionService:
             return
         data = record.response_data or {}
         transient = False
+        save_delay = 30
         request_source = (record.request_data.get("source") or {}).get("scene")
         for entry in data.get("media_manifest", []):
             if entry.get("saved") and not (
@@ -433,7 +571,7 @@ class GenerationExecutionService:
                 self.archive.save_one(task, record, entry, version, token)
             except LeaseLost:
                 raise
-            except Exception:
+            except Exception as error:
                 transient = True
                 with self.factory.begin() as session:
                     owned_task(session, task.id, version, token)
@@ -441,9 +579,23 @@ class GenerationExecutionService:
                     response = deepcopy(call.response_data or {})
                     for item in response.get("media_manifest", []):
                         if item["output_index"] == entry["output_index"]:
+                            from .canvas_video_policy import CanvasVideoDownloadError, retry_delay
+
+                            if isinstance(error, CanvasVideoDownloadError):
+                                attempts = int(item.get("canvas_video_download_failures", 0)) + 1
+                                item["canvas_video_download_failures"] = attempts
+                                delay = retry_delay(error)
+                                if delay is None or attempts >= 3:
+                                    transient = False
+                                else:
+                                    save_delay = max(save_delay, delay)
                             item["save_error"] = {
-                                "code": "archive_failed",
-                                "message": "媒体保存失败，等待重试",
+                                "code": "download_failed"
+                                if isinstance(error, CanvasVideoDownloadError)
+                                else "archive_failed",
+                                "message": "生成结果下载失败，保留原任务等待取回"
+                                if isinstance(error, CanvasVideoDownloadError)
+                                else "媒体保存失败，等待重试",
                             }
                     call.response_data = response
                     call.updated_at = utcnow()
@@ -471,14 +623,25 @@ class GenerationExecutionService:
                 ),
             ):
                 current.error = {"code": "archive_retrying", "message": "模型已生成，正在重试保存"}
-                schedule(current, "save", 30)
+                schedule(current, "save", save_delay)
             else:
+                download_failed = any(
+                    not item.get("saved")
+                    and (item.get("save_error") or {}).get("code") == "download_failed"
+                    for item in entries
+                )
                 finish(
                     current,
                     "failed",
                     {
-                        "code": "partial_result" if saved else "archive_failed",
-                        "message": "结果未全部保存，已有资产仍可使用",
+                        "code": "download_failed"
+                        if download_failed
+                        else "partial_result"
+                        if saved
+                        else "archive_failed",
+                        "message": "生成结果下载失败，请取回原任务结果，不要重新提交"
+                        if download_failed
+                        else "结果未全部保存，已有资产仍可使用",
                     },
                 )
 

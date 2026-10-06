@@ -24,6 +24,14 @@ def parse_identifier(value: object) -> int:
     return value
 
 
+def parse_version(value: object) -> int:
+    if isinstance(value, str) and re.fullmatch(r"[0-9]+", value):
+        value = int(value)
+    if type(value) is not int or not 0 <= value <= UINT64_MAX:
+        raise ValueError("version must be an unsigned 64-bit decimal integer")
+    return value
+
+
 def nonblank(value: str) -> str:
     if not value.strip():
         raise ValueError("must contain non-whitespace characters")
@@ -39,6 +47,11 @@ def mediumtext(value: str) -> str:
 Identifier = Annotated[
     int,
     BeforeValidator(parse_identifier),
+    PlainSerializer(str, return_type=str, when_used="json"),
+]
+NonnegativeVersion = Annotated[
+    int,
+    BeforeValidator(parse_version),
     PlainSerializer(str, return_type=str, when_used="json"),
 ]
 UInt64 = Annotated[int, Field(strict=True, ge=0, le=UINT64_MAX)]

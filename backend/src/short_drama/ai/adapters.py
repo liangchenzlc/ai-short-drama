@@ -6,10 +6,28 @@ import json
 import re
 from urllib.parse import quote, urlsplit, urlunsplit
 
+from pydantic import ValidationError
+
+from short_drama.schemas.canvas_generation_parameters import (
+    CANVAS_PARAMETERS,
+    CanvasAudioParameters,
+    CanvasImageParameters,
+    CanvasVideoParameters,
+)
+
+from .canvas_text_adapters import canvas_text_messages, is_canvas_text_request
+from .canvas_video_adapters import (
+    VIDEO_ADAPTERS,
+    build_canvas_video_submission,
+    canvas_video_poll_endpoint,
+    canvas_video_resolved_parameters,
+    parse_canvas_video_result,
+)
 from .transport import validated_url
 from .types import GenerationError, GenerationResult
 
 ADAPTER_TYPES = {
+    **dict.fromkeys(VIDEO_ADAPTERS, "video"),
     "dashscope_voice_design.v1": "audio",
     "dashscope_speech.v1": "audio",
     "openai_speech.v1": "audio",
@@ -236,10 +254,129 @@ def _input(request, allowed):
     return value
 
 
+def _canvas_image_submission(model, prompt, refs, count, parameters, adapter):
+    """固定源声明式图片插件的请求；标准模式继续使用 _size。"""
+    body = {"model": model}
+    raw = parameters.size
+    if parameters.mask_media_id and (adapter != "openai_images.v1" or not refs):
+        _unsupported()
+    if parameters.transparent_background and adapter != "openai_images.v1":
+        _unsupported()
+    if adapter == "openai_images.v1":
+        if refs and (not _openai_image_references(model) or len(refs) > 16):
+            _unsupported()
+        if model.startswith("dall-e-3") and count != 1:
+            _unsupported()
+        sizes = {
+            "1:1": "1024x1024",
+            "3:2": "1536x1024",
+            "2:3": "1024x1536",
+            "4:3": "1360x1024",
+            "3:4": "1024x1360",
+            "16:9": "1824x1024",
+            "9:16": "1024x1824",
+            "21:9": "2352x1008",
+        }
+        body.update(prompt=prompt, n=count, output_format="png")
+        if raw != "auto":
+            body["size"] = sizes.get(raw or "1:1", raw)
+        if parameters.quality != "auto":
+            body["quality"] = {"1k": "low", "2k": "medium", "4k": "high"}.get(
+                parameters.quality, parameters.quality
+            )
+        if parameters.transparent_background:
+            body["background"] = "transparent"
+        if refs:
+            body["image"] = refs
+        if parameters.mask_media_id:
+            body["mask"] = "https://reference.invalid/mask"
+        suffix = "/images/edits" if refs else "/images/generations"
+    elif adapter == "ark_images.v1":
+        if count != 1:
+            _unsupported()
+        sizes = {
+            "auto": "2k",
+            "1:1": "2048x2048",
+            "4:3": "2304x1728",
+            "3:4": "1728x2304",
+            "16:9": "2560x1440",
+            "9:16": "1440x2560",
+            "3:2": "2496x1664",
+            "2:3": "1664x2496",
+            "21:9": "3024x1296",
+        }
+        body.update(prompt=prompt, response_format="b64_json", watermark=False)
+        if raw:
+            body["size"] = sizes.get(raw, raw)
+        if refs:
+            body["image"] = refs[0] if len(refs) == 1 else refs
+        suffix = "/images/generations"
+    elif adapter == "dashscope_images.v1":
+        native_params = {"n": count, "watermark": False}
+        if model.startswith(("qwen-image", "wan2.6", "wan2.7")):
+            sizes = {
+                "1:1": "1024*1024",
+                "3:4": "960*1280",
+                "4:3": "1280*960",
+                "2:3": "1024*1536",
+                "3:2": "1536*1024",
+                "9:16": "864*1536",
+                "16:9": "1536*864",
+            }
+            for size in (
+                "1024x1024",
+                "1024x1536",
+                "1536x1024",
+                "1024x1280",
+                "1280x1024",
+                "960x1280",
+                "1280x960",
+            ):
+                sizes[size] = size.replace("x", "*")
+            if raw in sizes:
+                native_params["size"] = sizes[raw]
+            native_params.update(prompt_extend=True, enable_thinking=False)
+            body["input"] = {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{"image": ref} for ref in refs] + [{"text": prompt}],
+                    }
+                ]
+            }
+            suffix = "/services/aigc/image-generation/generation"
+        else:
+            body["input"] = {"prompt": prompt}
+            if raw:
+                native_params["size"] = raw
+            if refs:
+                body["input"]["ref_img" if len(refs) == 1 else "ref_images"] = (
+                    refs[0] if len(refs) == 1 else refs
+                )
+            suffix = "/services/aigc/text2image/image-synthesis"
+        body["parameters"] = native_params
+        return suffix, {"X-DashScope-Async": "enable"}, body
+    else:
+        _unsupported()
+    return suffix, {}, body
+
+
 def build_submission(snapshot, request, adapter):
+    if adapter in VIDEO_ADAPTERS:
+        return build_canvas_video_submission(snapshot, request, adapter)
     kind = ADAPTER_TYPES.get(adapter)
     if kind != snapshot.get("service_type"):
         raise GenerationError("unsupported_protocol")
+    canvas_parameters = None
+    if request.get("canvas_parameters") is not None:
+        if (request.get("source") or {}).get("scene") not in {"canvas_node", "canvas_model_test"}:
+            _unsupported()
+        try:
+            canvas_parameters = CANVAS_PARAMETERS.validate_python(request["canvas_parameters"])
+        except ValidationError:
+            raise GenerationError("unsupported_parameters") from None
+        if canvas_parameters.mode != kind:
+            _unsupported()
     params = {k: v for k, v in request.get("parameters", {}).items() if v is not None}
     supported = {
         "audio": {"voice"},
@@ -288,6 +425,8 @@ def build_submission(snapshot, request, adapter):
         if not isinstance(params.get("voice"), str) or not params["voice"].strip():
             _unsupported()
         if adapter == "dashscope_speech.v1":
+            if canvas_parameters is not None:
+                _unsupported()
             if model not in {
                 "cosyvoice-v3.5-flash",
                 "cosyvoice-v3.5-plus",
@@ -308,9 +447,21 @@ def build_submission(snapshot, request, adapter):
                 body,
             )
         body.update(input=value["text"], voice=params["voice"], response_format="wav")
+        if isinstance(canvas_parameters, CanvasAudioParameters):
+            body.update(response_format=canvas_parameters.format, speed=canvas_parameters.speed)
+            if canvas_parameters.instructions:
+                if not model.startswith("gpt-4o-mini-tts"):
+                    _unsupported()
+                body["instructions"] = canvas_parameters.instructions
         return endpoint(snapshot["base_url"], "/audio/speech", adapter), headers, body
     if kind == "text":
-        value = _input(request, {"messages"})
+        canvas_references = is_canvas_text_request(snapshot, request)
+        value = _input(
+            request,
+            {"messages", "reference_media_ids", "reference_urls"}
+            if canvas_references
+            else {"messages"},
+        )
         messages = value.get("messages")
         if not isinstance(messages, list) or not messages:
             _unsupported()
@@ -323,9 +474,26 @@ def build_submission(snapshot, request, adapter):
             ):
                 _unsupported()
         responses = adapter == "openai_responses.v1"
+        if canvas_references:
+            messages = canvas_text_messages(snapshot, request, adapter, messages)
         body["input" if responses else "messages"] = messages
         # The worker collects SSE internally; the browser still uses task polling.
         body["stream"] = True
+        if (request.get("source") or {}).get("scene") in {"canvas_node", "canvas_model_test"}:
+            options = (request.get("canvas_request") or {}).get("input", {}).get("textOptions", {})
+            if (
+                not isinstance(options, dict)
+                or options.keys() - {"stream", "thinking"}
+                or type(options.get("stream", True)) is not bool
+                or options.get("thinking", False) is not False
+            ):
+                _unsupported()
+            body["stream"] = options.get("stream", True)
+            capability = snapshot.get("canvas_text_capability")
+            if isinstance(capability, dict) and capability.get("streaming") is False:
+                body["stream"] = False
+            if adapter == "openai_chat.v1" and body["stream"]:
+                body["stream_options"] = {"include_usage": True}
         if "temperature" in params:
             body["temperature"] = params["temperature"]
         if "max_output_tokens" in params:
@@ -346,6 +514,13 @@ def build_submission(snapshot, request, adapter):
         count = params.get("count", 1)
         if type(count) is not int or not 1 <= count <= 4:
             _unsupported()
+        if isinstance(canvas_parameters, CanvasImageParameters):
+            if params.keys() - {"count"}:
+                _unsupported()
+            suffix, headers, body = _canvas_image_submission(
+                model, prompt, refs, count, canvas_parameters, adapter
+            )
+            return endpoint(snapshot["base_url"], suffix, adapter), headers, body
         if adapter == "openai_images.v1":
             if refs and (not _openai_image_references(model) or len(refs) > 16):
                 _unsupported()
@@ -404,6 +579,13 @@ def build_submission(snapshot, request, adapter):
                 headers["X-DashScope-Async"] = "enable"
                 suffix = "/services/aigc/text2image/image-synthesis"
     else:
+        if isinstance(canvas_parameters, CanvasVideoParameters):
+            if canvas_parameters.generate_audio is not None:
+                if adapter not in {"ark_video.v1", "modelhub_video.v1"}:
+                    _unsupported()
+                params["generate_audio"] = canvas_parameters.generate_audio
+            if canvas_parameters.watermark is not None and adapter != "ark_video.v1":
+                _unsupported()
         value = _input(
             request,
             {
@@ -430,7 +612,11 @@ def build_submission(snapshot, request, adapter):
         ):
             _unsupported()
         if "generate_audio" in params and (
-            adapter != "modelhub_video.v1" or type(params["generate_audio"]) is not bool
+            (
+                adapter != "modelhub_video.v1"
+                and not isinstance(canvas_parameters, CanvasVideoParameters)
+            )
+            or type(params["generate_audio"]) is not bool
         ):
             raise GenerationError("native_audio_unsupported")
         for ref in audio_refs:
@@ -505,6 +691,11 @@ def build_submission(snapshot, request, adapter):
                 native_params["ratio"] = params["aspect"]
             if "resolution" in params:
                 native_params["resolution"] = params["resolution"].lower()
+            if isinstance(canvas_parameters, CanvasVideoParameters):
+                if canvas_parameters.generate_audio is not None:
+                    native_params["generate_audio"] = canvas_parameters.generate_audio
+                if canvas_parameters.watermark is not None:
+                    native_params["watermark"] = canvas_parameters.watermark
             body.update(native_params)
             suffix = "/contents/generations/tasks"
         else:
@@ -554,6 +745,8 @@ def build_submission(snapshot, request, adapter):
 
 
 def poll_endpoint(snapshot, task_id, adapter):
+    if adapter in VIDEO_ADAPTERS:
+        return canvas_video_poll_endpoint(snapshot, task_id, adapter)
     if not isinstance(task_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,512}", task_id):
         raise GenerationError("invalid_provider_task")
     encoded = quote(task_id, safe="")
@@ -571,6 +764,9 @@ def poll_endpoint(snapshot, task_id, adapter):
 
 
 def parse_result(body, adapter, *, submitted, task_id=None):
+    if adapter in VIDEO_ADAPTERS:
+        return parse_canvas_video_result(body, adapter, submitted=submitted, task_id=task_id)
+
     def invalid():
         raise GenerationError(
             "invalid_response", accepted_unknown=submitted, retryable=not submitted
@@ -764,6 +960,7 @@ def resolved_parameters(body):
             "input",
             "content",
             "image",
+            "mask",
         }
     }
 
@@ -786,6 +983,8 @@ def validate_request(snapshot, request_data, adapter=None):
         if inputs.get(f"{name}_frame_media_id") and not inputs.get(f"{name}_frame_url"):
             inputs[f"{name}_frame_url"] = f"https://reference.invalid/{name}"
     _, _, body = build_submission(snapshot, request, adapter)
+    if adapter in VIDEO_ADAPTERS:
+        return {"adapter": adapter, "resolved_parameters": canvas_video_resolved_parameters(body)}
     return {"adapter": adapter, "resolved_parameters": resolved_parameters(body)}
 
 

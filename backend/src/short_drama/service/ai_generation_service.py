@@ -44,6 +44,8 @@ ERROR_MESSAGES = {
     "reference_storage_unavailable": "暂时无法读取参考图片，请检查对象存储服务后重试。",
     "reference_images_too_large": "参考图片超过上传大小限制，请压缩图片或减少参考图片数量。",
     "invalid_reference_image": "参考图片损坏或格式不受支持，请使用 PNG、JPEG 或 WebP 图片。",
+    "invalid_mask_image": "蒙版必须为带透明编辑区域的有效 PNG 图片，请重新绘制蒙版。",
+    "mask_dimensions_mismatch": "蒙版与源图片的像素尺寸不同，请重新打开源图片绘制蒙版。",
     "timeout": "等待模型响应超时，任务已失败；生成请求未自动重发，请核对服务商调用记录。",
     "generation_timeout": "生成任务超过等待时限，任务已失败；已停止自动查询和生成。",
     "upstream_unavailable": (
@@ -55,6 +57,7 @@ ERROR_MESSAGES = {
     "message_delivery_unknown": "Message delivery needs verification.",
     "acceptance_unknown": "Model acceptance needs verification.",
     "archive_failed": "Generated results could not be saved.",
+    "download_failed": "生成结果下载失败，请取回原任务结果，不要重新提交。",
     "archive_timeout": "The result saving window expired.",
     "business_save_failed": "结果已保存，业务入库失败，可恢复本地保存。",
     "invalid_structured_output": "模型返回的结构不正确，原文已保留。请调整要求后重新生成。",
@@ -82,6 +85,17 @@ def safe_error(error):
 
 
 def can_retry(task, record):
+    from short_drama.ai.canvas_video_adapters import VIDEO_ADAPTERS
+
+    if (
+        getattr(task, "service_type", None) == "video"
+        and getattr(record, "adapter", None) in VIDEO_ADAPTERS
+        and ((getattr(record, "request_data", None) or {}).get("source") or {}).get("scene")
+        == "canvas_node"
+        and record.status == "succeeded"
+        and record.provider_task_id
+    ):
+        return False
     return (
         task.status in {"failed", "cancelled"}
         and record.status not in {"sent", "unknown"}
@@ -381,9 +395,15 @@ class AIGenerationService(BaseService):
             references = list(inputs.get("reference_media_ids", [])) + list(
                 inputs.get("audio_reference_media_ids", [])
             )
+            if source.get("scene") == "canvas_node":
+                references += list(inputs.get("video_reference_media_ids", []))
             references += [
                 inputs[k] for k in ("first_frame_media_id", "last_frame_media_id") if inputs.get(k)
             ]
+            if source.get("scene") == "canvas_node":
+                parameters = payload.get("canvas_parameters") or {}
+                if parameters.get("mode") == "image" and parameters.get("mask_media_id"):
+                    references.append(parameters["mask_media_id"])
             for identifier in references:
                 media = self._require(MediaFile, identifier, for_update=False)
                 if scope_of(self.session, media) != scope:
@@ -408,6 +428,16 @@ class AIGenerationService(BaseService):
                 self.settings, "generation_archive_budget_seconds", 86400
             ),
         )
+        if (payload.get("source") or {}).get("scene") in {"canvas_node", "canvas_model_test"}:
+            capability = config.capability_cache or {}
+            for field in (
+                "canvas_channel_key",
+                "canvas_video_capability",
+                "canvas_video_variants",
+                "canvas_text_capability",
+            ):
+                if field in capability:
+                    snapshot[field] = copy.deepcopy(capability[field])
         try:
             validated = validate_request(
                 snapshot,

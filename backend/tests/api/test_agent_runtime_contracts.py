@@ -51,7 +51,11 @@ def client(monkeypatch):
         ),
         ({"content": "Review", "video_audio": "ignore"}, {"Idempotency-Key": "valid"}),
         (
-            {"content": "Discuss", "task": {"kind": "novel", "instructions": "Write"}},
+            {
+                "content": "Discuss",
+                "mode": "discuss",
+                "task": {"kind": "novel", "instructions": "Write"},
+            },
             {"Idempotency-Key": "valid"},
         ),
         (

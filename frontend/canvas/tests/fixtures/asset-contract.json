@@ -1,0 +1,1164 @@
+{
+  "source_commit": "4ca2a65a7780a8dfcaaa86c33679f84fb04e055c",
+  "common": {
+    "id": "contract-resource",
+    "title": "原版合同",
+    "coverUrl": "",
+    "tags": [],
+    "createdAt": "2026-10-05T00:00:00Z",
+    "updatedAt": "2026-10-05T00:00:00Z"
+  },
+  "cases": [
+    {
+      "name": "文本保留空正文",
+      "input": {
+        "kind": "text",
+        "data": {
+          "content": ""
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "content": ""
+      }
+    },
+    {
+      "name": "角色保留定义及嵌套结构",
+      "input": {
+        "kind": "entity",
+        "data": {
+          "definition": {
+            "name": "主角",
+            "traits": [
+              "勇敢"
+            ],
+            "voice": {
+              "enabled": false
+            }
+          }
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "definition": {
+          "name": "主角",
+          "traits": [
+            "勇敢"
+          ],
+          "voice": {
+            "enabled": false
+          }
+        }
+      }
+    },
+    {
+      "name": "image 完整稳定资源",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "dataUrl": "",
+        "storageKey": "resource:9223372036854776001",
+        "width": 37,
+        "height": 19,
+        "bytes": 87,
+        "mimeType": "image/png"
+      }
+    },
+    {
+      "name": "video 完整稳定资源",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "height": 0,
+          "bytes": 0,
+          "mimeType": "video/mp4"
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "url": "",
+        "storageKey": "resource:9223372036854776002",
+        "width": 0,
+        "height": 0,
+        "bytes": 0,
+        "mimeType": "video/mp4"
+      }
+    },
+    {
+      "name": "audio 完整稳定资源",
+      "input": {
+        "kind": "audio",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776003",
+          "bytes": 0,
+          "mimeType": "audio/wav"
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "url": "",
+        "storageKey": "resource:9223372036854776003",
+        "bytes": 0,
+        "mimeType": "audio/wav"
+      }
+    },
+    {
+      "name": "model 完整稳定资源",
+      "input": {
+        "kind": "model",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776004",
+          "bytes": 16,
+          "mimeType": "model/gltf-binary",
+          "fileName": "actor.glb"
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "url": "",
+        "storageKey": "resource:9223372036854776004",
+        "bytes": 16,
+        "mimeType": "model/gltf-binary",
+        "fileName": "actor.glb"
+      }
+    },
+    {
+      "name": "图片可使用有限的小数尺寸",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37.5,
+          "height": 19.25,
+          "bytes": 87,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "dataUrl": "",
+        "storageKey": "resource:9223372036854776001",
+        "width": 37.5,
+        "height": 19.25,
+        "bytes": 87,
+        "mimeType": "image/png"
+      }
+    },
+    {
+      "name": "视频可保留时长和音轨",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "height": 0,
+          "bytes": 0,
+          "mimeType": "video/mp4",
+          "durationMs": 1000.5,
+          "hasAudio": false
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "url": "",
+        "storageKey": "resource:9223372036854776002",
+        "width": 0,
+        "height": 0,
+        "bytes": 0,
+        "mimeType": "video/mp4",
+        "durationMs": 1000.5,
+        "hasAudio": false
+      }
+    },
+    {
+      "name": "音频零时长",
+      "input": {
+        "kind": "audio",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776003",
+          "bytes": 0,
+          "mimeType": "audio/wav",
+          "durationMs": 0
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "url": "",
+        "storageKey": "resource:9223372036854776003",
+        "bytes": 0,
+        "mimeType": "audio/wav",
+        "durationMs": 0
+      }
+    },
+    {
+      "name": "image 允许诚实未知 MIME",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "application/octet-stream"
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "dataUrl": "",
+        "storageKey": "resource:9223372036854776001",
+        "width": 37,
+        "height": 19,
+        "bytes": 87,
+        "mimeType": "application/octet-stream"
+      }
+    },
+    {
+      "name": "video 允许诚实未知 MIME",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "height": 0,
+          "bytes": 0,
+          "mimeType": "application/octet-stream"
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "url": "",
+        "storageKey": "resource:9223372036854776002",
+        "width": 0,
+        "height": 0,
+        "bytes": 0,
+        "mimeType": "application/octet-stream"
+      }
+    },
+    {
+      "name": "audio 允许诚实未知 MIME",
+      "input": {
+        "kind": "audio",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776003",
+          "bytes": 0,
+          "mimeType": "application/octet-stream"
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "url": "",
+        "storageKey": "resource:9223372036854776003",
+        "bytes": 0,
+        "mimeType": "application/octet-stream"
+      }
+    },
+    {
+      "name": "具体 MIME 统一小写和空格",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "  IMAGE/PNG  "
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "dataUrl": "",
+        "storageKey": "resource:9223372036854776001",
+        "width": 37,
+        "height": 19,
+        "bytes": 87,
+        "mimeType": "image/png"
+      }
+    },
+    {
+      "name": "模型文件名去首尾空格",
+      "input": {
+        "kind": "model",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776004",
+          "bytes": 16,
+          "mimeType": "model/gltf-binary",
+          "fileName": " actor.glb "
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "url": "",
+        "storageKey": "resource:9223372036854776004",
+        "bytes": 16,
+        "mimeType": "model/gltf-binary",
+        "fileName": "actor.glb"
+      }
+    },
+    {
+      "name": "未知 data 字段与源解析器一样忽略",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png",
+          "futureField": "ignored"
+        }
+      },
+      "valid": true,
+      "expected_data": {
+        "dataUrl": "",
+        "storageKey": "resource:9223372036854776001",
+        "width": 37,
+        "height": 19,
+        "bytes": 87,
+        "mimeType": "image/png"
+      }
+    },
+    {
+      "name": "image 缺少 dataUrl",
+      "input": {
+        "kind": "image",
+        "data": {
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "image 缺少 width",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "image 缺少 height",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "bytes": 87,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "image 缺少 bytes",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "image 缺少 mimeType",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "video 缺少 url",
+      "input": {
+        "kind": "video",
+        "data": {
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "height": 0,
+          "bytes": 0,
+          "mimeType": "video/mp4"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "video 缺少 width",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "height": 0,
+          "bytes": 0,
+          "mimeType": "video/mp4"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "video 缺少 height",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "bytes": 0,
+          "mimeType": "video/mp4"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "video 缺少 bytes",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "height": 0,
+          "mimeType": "video/mp4"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "video 缺少 mimeType",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "height": 0,
+          "bytes": 0
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "audio 缺少 url",
+      "input": {
+        "kind": "audio",
+        "data": {
+          "storageKey": "resource:9223372036854776003",
+          "bytes": 0,
+          "mimeType": "audio/wav"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "audio 缺少 bytes",
+      "input": {
+        "kind": "audio",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776003",
+          "mimeType": "audio/wav"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "audio 缺少 mimeType",
+      "input": {
+        "kind": "audio",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776003",
+          "bytes": 0
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "model 缺少 url",
+      "input": {
+        "kind": "model",
+        "data": {
+          "storageKey": "resource:9223372036854776004",
+          "bytes": 16,
+          "mimeType": "model/gltf-binary",
+          "fileName": "actor.glb"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "model 缺少 bytes",
+      "input": {
+        "kind": "model",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776004",
+          "mimeType": "model/gltf-binary",
+          "fileName": "actor.glb"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "model 缺少 mimeType",
+      "input": {
+        "kind": "model",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776004",
+          "bytes": 16,
+          "fileName": "actor.glb"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "model 缺少 fileName",
+      "input": {
+        "kind": "model",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776004",
+          "bytes": 16,
+          "mimeType": "model/gltf-binary"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "图片零宽度",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 0,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "图片负高度",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": -1,
+          "bytes": 87,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "数字字符串",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": "37",
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "布尔尺寸",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": true,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "负字节数",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": -1,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "字节数字符串",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": "87",
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "空 MIME",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": ""
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "通配 MIME",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/*"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "错误媒体 MIME",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "audio/wav"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "附带参数 MIME",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png; charset=utf-8"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "null 图片地址",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": null,
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "数字图片地址",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": 9,
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "视频负时长",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "height": 0,
+          "bytes": 0,
+          "mimeType": "video/mp4",
+          "durationMs": -1
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "视频 null 时长",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "height": 0,
+          "bytes": 0,
+          "mimeType": "video/mp4",
+          "durationMs": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "视频字符串音轨",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "height": 0,
+          "bytes": 0,
+          "mimeType": "video/mp4",
+          "hasAudio": "false"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "视频 null 音轨",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "height": 0,
+          "bytes": 0,
+          "mimeType": "video/mp4",
+          "hasAudio": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "视频布尔时长",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": 0,
+          "height": 0,
+          "bytes": 0,
+          "mimeType": "video/mp4",
+          "durationMs": false
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "视频負宽度",
+      "input": {
+        "kind": "video",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776002",
+          "width": -1,
+          "height": 0,
+          "bytes": 0,
+          "mimeType": "video/mp4"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "音频字符串时长",
+      "input": {
+        "kind": "audio",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776003",
+          "bytes": 0,
+          "mimeType": "audio/wav",
+          "durationMs": "100"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "音频错误 MIME",
+      "input": {
+        "kind": "audio",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776003",
+          "bytes": 0,
+          "mimeType": "video/mp4"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "模型空文件名",
+      "input": {
+        "kind": "model",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776004",
+          "bytes": 16,
+          "mimeType": "model/gltf-binary",
+          "fileName": " "
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "模型通配 MIME",
+      "input": {
+        "kind": "model",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776004",
+          "bytes": 16,
+          "mimeType": "model/*",
+          "fileName": "actor.glb"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "模型 null 文件名",
+      "input": {
+        "kind": "model",
+        "data": {
+          "url": "",
+          "storageKey": "resource:9223372036854776004",
+          "bytes": 16,
+          "mimeType": "model/gltf-binary",
+          "fileName": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "文本必须有正文",
+      "input": {
+        "kind": "text",
+        "data": {}
+      },
+      "valid": false
+    },
+    {
+      "name": "文本不能是数值",
+      "input": {
+        "kind": "text",
+        "data": {
+          "content": 123
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "角色定义不能是数组",
+      "input": {
+        "kind": "entity",
+        "data": {
+          "definition": []
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "角色定义不能是 null",
+      "input": {
+        "kind": "entity",
+        "data": {
+          "definition": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "可选来源不能是数值",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        },
+        "source": 1
+      },
+      "valid": false
+    },
+    {
+      "name": "可选说明不能是 null",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        },
+        "note": null
+      },
+      "valid": false
+    },
+    {
+      "name": "可选版本不能是数组",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        },
+        "primaryVersionId": []
+      },
+      "valid": false
+    },
+    {
+      "name": "可选外部素材 ID 不能是数值",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        },
+        "arkAssetId": 5
+      },
+      "valid": false
+    },
+    {
+      "name": "肖像认证不能是字符串",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        },
+        "portraitCertified": "true"
+      },
+      "valid": false
+    },
+    {
+      "name": "肖像认证不能是 null",
+      "input": {
+        "kind": "image",
+        "data": {
+          "dataUrl": "",
+          "storageKey": "resource:9223372036854776001",
+          "width": 37,
+          "height": 19,
+          "bytes": 87,
+          "mimeType": "image/png"
+        },
+        "portraitCertified": null
+      },
+      "valid": false
+    },
+    {
+      "name": "ID 不能为空白",
+      "input": {
+        "kind": "text",
+        "data": {
+          "content": "保留"
+        },
+        "id": "   "
+      },
+      "valid": false
+    },
+    {
+      "name": "未知分类不能降级为默认",
+      "input": {
+        "kind": "text",
+        "data": {
+          "content": "保留"
+        },
+        "category": "unexpected"
+      },
+      "valid": false
+    },
+    {
+      "name": "空分类不作为已填写分类",
+      "input": {
+        "kind": "text",
+        "data": {
+          "content": "保留"
+        },
+        "category": ""
+      },
+      "valid": false
+    },
+    {
+      "name": "标签必须为字符串数组",
+      "input": {
+        "kind": "text",
+        "data": {
+          "content": "保留"
+        },
+        "tags": [
+          "正常",
+          1
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "素材 metadata 不能是数组",
+      "input": {
+        "kind": "text",
+        "data": {
+          "content": "保留"
+        },
+        "metadata": []
+      },
+      "valid": false
+    },
+    {
+      "name": "素材 metadata 不能是 null",
+      "input": {
+        "kind": "text",
+        "data": {
+          "content": "保留"
+        },
+        "metadata": null
+      },
+      "valid": false
+    },
+    {
+      "name": "历史分类可规范化",
+      "input": {
+        "kind": "text",
+        "data": {
+          "content": "保留"
+        },
+        "category": " WARDROBE "
+      },
+      "valid": true,
+      "expected_data": {
+        "content": "保留"
+      },
+      "expected_fields": {
+        "category": "prop"
+      }
+    },
+    {
+      "name": "可选 ID 去空格与标记保留",
+      "input": {
+        "kind": "text",
+        "data": {
+          "content": "保留"
+        },
+        "id": " item ",
+        "primaryVersionId": " version ",
+        "arkAssetId": " ark ",
+        "portraitCertified": false,
+        "source": "",
+        "note": ""
+      },
+      "valid": true,
+      "expected_data": {
+        "content": "保留"
+      },
+      "expected_fields": {
+        "id": "item",
+        "primaryVersionId": "version",
+        "arkAssetId": "ark",
+        "portraitCertified": false,
+        "source": "",
+        "note": ""
+      }
+    }
+  ]
+}

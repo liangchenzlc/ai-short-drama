@@ -26,7 +26,7 @@ def test_all_tables_and_columns_match_authoritative_sql():
             name: declaration.split(" COMMENT ")[0].rstrip(",")
             for name, declaration in re.findall(
                 r"^  `?(\w+)`? ((?:BIGINT|INT|TINYINT|VARCHAR|CHAR|DATETIME|JSON|"
-                r"MEDIUMTEXT|TEXT)\b.*)$",
+                r"MEDIUMTEXT|TEXT|DOUBLE)\b.*)$",
                 body,
                 re.M,
             )
@@ -75,14 +75,35 @@ def test_constraints_indexes_and_mysql_compilation_match_sql():
         assert actual_names == expected_names, name
         for constraint in table.constraints:
             if isinstance(constraint, ForeignKeyConstraint):
-                assert constraint.ondelete == constraint.onupdate == "RESTRICT"
+                cascading_parents = {
+                    "canvas_revision_user_states": "canvas_revisions",
+                    "canvas_revision_media_references": "canvas_revisions",
+                    "canvas_user_media_references": "canvas_revisions",
+                    "canvas_binary_references": "canvas_revisions",
+                    "canvas_user_binary_references": "canvas_revisions",
+                    "canvas_resource_chunks": "canvas_resource_uploads",
+                    "canvas_resource_copy_sources": "canvas_resource_uploads",
+                    "canvas_library_asset_references": "canvas_library_assets",
+                    "canvas_drawing_media_references": "canvas_drawing_versions",
+                    "canvas_revision_drawing_references": "canvas_revisions",
+                    "canvas_project_folder_items": "project_canvases",
+                }
+                parent_owned = cascading_parents.get(name) == constraint.referred_table.name or (
+                    name == "canvas_library_folder_items"
+                    and constraint.referred_table.name
+                    in {"canvas_library_folders", "canvas_library_assets"}
+                )
+                expected_delete = "CASCADE" if parent_owned else "RESTRICT"
+                assert constraint.ondelete == expected_delete, (name, constraint.name)
+                assert constraint.onupdate == "RESTRICT"
                 assert all(element.column is not None for element in constraint.elements)
                 source = "`, `".join(element.parent.name for element in constraint.elements)
                 target = "`, `".join(element.column.name for element in constraint.elements)
                 table_name = constraint.elements[0].column.table.name
                 expected_fk = (
                     f"CONSTRAINT `{constraint.name}` FOREIGN KEY (`{source}`) "
-                    f"REFERENCES `{table_name}` (`{target}`)"
+                    f"REFERENCES `{table_name}` (`{target}`) "
+                    f"ON DELETE {expected_delete} ON UPDATE RESTRICT"
                 )
                 assert normalized(expected_fk) in normalized(body)
             elif isinstance(constraint, CheckConstraint):
@@ -160,7 +181,18 @@ def test_generation_constraints_and_columns_match_incremental_sql():
                 else:
                     assert " ".join(str(constraint.sqltext).split()) in normalized
             if isinstance(constraint, ForeignKeyConstraint):
-                assert constraint.ondelete == constraint.onupdate == "RESTRICT"
+                revision_owned = (
+                    name
+                    in {
+                        "canvas_revision_user_states",
+                        "canvas_revision_media_references",
+                        "canvas_user_media_references",
+                    }
+                    and constraint.referred_table.name == "canvas_revisions"
+                )
+                expected_delete = "CASCADE" if revision_owned else "RESTRICT"
+                assert constraint.ondelete == expected_delete
+                assert constraint.onupdate == "RESTRICT"
 
 
 def test_full_schema_is_create_only_and_ordered_by_foreign_keys():

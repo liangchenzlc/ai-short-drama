@@ -6,9 +6,9 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from short_drama.schemas.agent import AgentRunStatus
+from short_drama.schemas.agent import AgentRunStatus, ConversationScope
 from short_drama.schemas.agent_context import ModelInputCapabilities, SkillSelection
-from short_drama.schemas.base import Identifier, InputModel, PositiveUInt64, ReadModel
+from short_drama.schemas.base import Identifier, InputModel, ReadModel
 
 TaskKind = Literal[
     "novel", "script", "extract", "storyboard", "asset_patch", "shot_patch", "image", "video"
@@ -46,7 +46,8 @@ class TaskSpec(InputModel):
 
 class MessageCreate(InputModel):
     content: Annotated[str, Field(min_length=1, max_length=32000)]
-    mode: Literal["discuss", "generate"] = "discuss"
+    mode: Literal["auto", "discuss", "generate"] = "auto"
+    expected_scope: ConversationScope | None = None
     model_config_id: Identifier | None = None
     task: TaskSpec | None = None
     attachment_ids: Annotated[list[Identifier], Field(max_length=16)] = Field(default_factory=list)
@@ -62,7 +63,7 @@ class MessageCreate(InputModel):
 
     @model_validator(mode="after")
     def task_requires_generation(self):
-        if self.task is not None and self.mode != "generate":
+        if self.task is not None and self.mode == "discuss":
             raise ValueError("Discussion does not authorize a creative task")
         if len(set(self.attachment_ids)) != len(self.attachment_ids):
             raise ValueError("Attachments must be unique")
@@ -89,7 +90,7 @@ class PlanProposal(InputModel):
 
 class PlanReviewRead(ReadModel):
     tool_call_id: Identifier
-    review_version: int
+    review_version: Identifier
     review_hash: str
     title: str
     summary: str
@@ -101,8 +102,8 @@ class RunRead(ReadModel):
     conversation_id: Identifier
     status: AgentRunStatus
     phase: Literal["model", "tools", "wait"]
-    row_version: int
-    mode: Literal["discuss", "single", "workflow"]
+    row_version: Identifier
+    mode: Literal["auto", "discuss", "single", "workflow"]
     model_config_id: Identifier
     model_name: str
     error: dict | None
@@ -113,6 +114,16 @@ class RunRead(ReadModel):
     created_at: datetime
     updated_at: datetime
     finished_at: datetime | None
+    queue_position: int = 0
+    waiting_reason: str | None = None
+
+
+class ConversationRuntimeState(ReadModel):
+    conversation_id: Identifier
+    cursor: int
+    resume_cursor: int = 0
+    active_run: RunRead | None
+    queued_runs: list[RunRead]
 
 
 class MessageAccepted(ReadModel):
@@ -122,25 +133,25 @@ class MessageAccepted(ReadModel):
 
 
 class ReviewDecision(InputModel):
-    review_version: PositiveUInt64
+    review_version: Identifier
     review_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     decision: Literal["approved", "rejected"]
 
 
 class RunContinue(InputModel):
     artifact_id: Identifier
-    artifact_row_version: PositiveUInt64
+    artifact_row_version: Identifier
 
 
 class ModelVerify(InputModel):
-    row_version: PositiveUInt64
+    row_version: Identifier
 
 
 class AgentModelRead(ReadModel):
     id: Identifier
     name: str
     model_key: str
-    row_version: int
+    row_version: Identifier
     protocol: str | None
     tool_calling: bool
     tool_result_continuation: bool

@@ -4,23 +4,28 @@ React 19 + TypeScript + Vite + Ant Design 网页工作台。项目、正文、�
 
 ## 运行与检查
 
-Node.js 20.19+ 或 22.12+，在本目录执行：
+两套前端统一运行推荐 Node.js 22.18+ 的 22.x 或 24.x LTS，在本目录执行：
 
 ```powershell
-npm ci
+npm run install:all
 npm run dev
 ```
 
-开发地址 `http://127.0.0.1:8080`，API 默认代理至 `http://127.0.0.1:8000`。修改代理时使用 `.env.local`，参照 [.env.example](.env.example)，禁止在 VITE 变量放凭据。
+开发地址 `http://127.0.0.1:8080`。`dev` 在一个 Node 进程内创建标准工作台和画布两台独立 Vite 服务器，画布默认监听 8082，通过宿主 `/canvas-app/` 同源访问；退出时关闭这两台服务器。可用 `CANVAS_DEV_PORT` 调整画布端口；`dev` 接受 `--port`、`--host`、`--mode`、`--open`、`--force`、`--strictPort`。API 默认代理至 `http://127.0.0.1:8000`。修改代理时使用 `.env.local`，参照 [.env.example](.env.example)，禁止在 VITE 变量放凭据。只运行一个包时使用 `npm run dev:standard` 或 `npm run dev:canvas`。
 
 ```powershell
 npm test
 npm run typecheck
 npm run build
+npm run test:frontends
 npm run preview
 ```
 
-`build` 包含类型检查，产物为 `dist/`；当前Vite preview会继承开发配置的API代理；静态dist文件本身不含代理能力，正式部署仍需配置反向代理。Node 测试覆盖保存队列、导航、版本冲突、模型选择、生成契约和部分 UI 源码约定。另有 Playwright 浏览器测试，拦截全部 API 并拒绝外部请求，不调用真实模型。
+`install:all` 分别使用宿主和画布子包的 `package-lock.json` 执行 `npm ci`；两包继续保留各自的依赖目录和 HTML 入口。共同声明但版本不同的直接依赖使用宿主版本，画布独有依赖继续单独锁定，详见[画布说明](canvas/README.md)。
+
+`build` 依次完成两包类型检查和生产构建，再将独立画布产物复制到 `dist/canvas-app/`；画布自己的 `canvas/dist/` 仍可单独构建。`preview` 只启动宿主 Vite preview，使用统一 `dist/`，对画布页面回退到 `/canvas-app/index.html`，对标准页面回退到 `/index.html`，API 沿用代理配置，不需要额外画布 preview 进程。静态文件本身不含 API 代理能力，正式部署仍需配置反向代理和两套 HTML 回退。
+
+`npm test` 和 `npm run test:e2e` 保持标准工作台的测试范围；画布检查可从本目录运行 `npm run test:canvas`、`npm run test:e2e:canvas`、`npm run source:check`，也可在 `canvas/` 独立执行。`test:frontends` 需要先完成统一构建，使用临时端口验证双服务启动/退出、端口占用时清理、独立 HTML 与深链接、资源和 API 代理。Node 测试覆盖保存队列、导航、版本冲突、模型选择、生成契约和部分 UI 源码约定。浏览器 API 夹具测试不调用真实模型。
 
 ```powershell
 npx playwright install chromium
@@ -56,6 +61,7 @@ npm run test:e2e
 - `src/features/generations`：通用生成、任务详情、轮询与幂等请求标识。
 - `src/features/media-library`：媒体详情与图片选择器。
 - `src/api`：DTO、请求封装和统一错误；见[前端API约定](src/api/README.md)。
+- `canvas/`：独立无限画布子包，保留 BeefTV 页面、交互、Provider、样式、字体、媒体工具及来源记录，通过 `@host` 引用宿主 HTTP 客户端；独立依赖、HTML 和测试仍由本包管理。
 
 `episode-workflow.ts`仍承担旧浏览器快照读取/校验与模型偏好兼容。保留的旧媒体、宫格、video类型不是当前页面能力；对应演示生成组件已经移除。不要绕过服务端重新启用本地生成结果。
 

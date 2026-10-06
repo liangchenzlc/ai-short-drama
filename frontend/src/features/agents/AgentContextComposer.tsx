@@ -2,11 +2,11 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type Reac
 import { Alert, Button, Checkbox, Dropdown, Tag, Tooltip } from 'antd';
 import { agentsApi } from '../../api/modules/agents';
 import { ApiError, errorMessage } from '../../api/http';
-import type { AgentAttachment, AgentConversation, AgentModel, AgentSendInput, AgentSkill } from '../../api/types/agents';
+import type { AgentAttachment, AgentConversation, AgentSendInput, AgentSkill, ConversationScope } from '../../api/types/agents';
 import { Icon } from '../../components/ui/Icon';
 import { PreviewImage } from '../../components/ui/ImagePreview';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
-import { attachmentAccept, attachmentFileIssue, attachmentInputIssue } from './agent-input-context';
+import { attachmentAccept, attachmentFileIssue } from './agent-input-context';
 import { AgentAssetPicker } from './AgentAssetPicker';
 import { AgentSkillPicker } from './AgentSkillPicker';
 
@@ -19,10 +19,12 @@ interface PendingUpload { file: File; key: string; scope: string; kind: AgentAtt
 interface PendingReference { type: 'media' | 'asset'; id: string; key: string; scope: string }
 
 export const AgentContextComposer = forwardRef<AgentContextController, {
-  conversation: AgentConversation; model?: AgentModel; disabled: boolean;
+  conversation: AgentConversation; scope: ConversationScope; disabled: boolean;
+  initialSkills: { id: string; content_version: string }[];
+  onSkills: (skills: { id: string; content_version: string }[]) => void;
   onBusy: (busy: boolean) => void; onBlockReason: (reason: string) => void;
   input: ReactNode; modelControl: ReactNode; sendControl: ReactNode;
-}>(function AgentContextComposer({ conversation, model, disabled, onBusy, onBlockReason, input, modelControl, sendControl }, ref) {
+}>(function AgentContextComposer({ conversation, scope, initialSkills, onSkills, disabled, onBusy, onBlockReason, input, modelControl, sendControl }, ref) {
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [skills, setSkills] = useState<AgentSkill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +37,7 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   const [showAssets, setShowAssets] = useState(false);
   const [showSkills, setShowSkills] = useState(false);
   const [videoAudio, setVideoAudio] = useState<'include' | 'visual_only'>('include');
+  const [skillsLoading, setSkillsLoading] = useState(initialSkills.length > 0);
   const upload = useRef<HTMLInputElement>(null);
   const uploadKind = useRef<AgentAttachment['kind']>('image');
   const lock = useRef(false);
@@ -42,16 +45,37 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setLoadError('');
-    agentsApi.attachments(conversation.id, 0, controller.signal).then(page => {
+    agentsApi.attachments(conversation.id, 0, controller.signal, scope).then(page => {
       if (!controller.signal.aborted) setAttachments(page.items.filter(item => item.pending));
     }).catch(cause => { if (!controller.signal.aborted) setLoadError(errorMessage(cause)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [conversation.id, revision]);
-  const issue = pendingUpload || pendingReference ? '附件添加结果尚未确认，请使用原请求核对后再发送。' : attachmentInputIssue(attachments, model, videoAudio);
+  useEffect(() => {
+    if (!initialSkills.length) return;
+    const controller = new AbortController();
+    (async () => {
+      const all: AgentSkill[] = []; let total = 1;
+      while (all.length < total) {
+        const page = await agentsApi.skills(all.length, controller.signal);
+        all.push(...page.items); total = page.total; if (!page.items.length) break;
+      }
+      if (controller.signal.aborted) return;
+      const restored = initialSkills.flatMap(reference => all.filter(skill => skill.id === reference.id && skill.content_version === reference.content_version && skill.enabled));
+      setSkills(restored);
+      onSkills(restored.map(({ id, content_version }) => ({ id, content_version })));
+      if (restored.length !== initialSkills.length) setError('部分 Skill 已更新、停用或删除，请重新选择；原消息仍使用提交时的版本。');
+    })().catch(cause => { if (!controller.signal.aborted) setError(errorMessage(cause)); })
+      .finally(() => { if (!controller.signal.aborted) setSkillsLoading(false); });
+    return () => controller.abort();
+  }, [conversation.id]);
+  function changeSkills(next: AgentSkill[]) {
+    setSkills(next); onSkills(next.map(({ id, content_version }) => ({ id, content_version })));
+  }
+  const issue = pendingUpload || pendingReference ? '附件添加结果尚未确认，请使用原请求核对后再发送。' : '';
   const blockReason = loading ? '正在恢复本次消息附件…' : loadError ? '附件恢复失败，请重新载入后再发送。' : issue;
   useEffect(() => { onBlockReason(blockReason); }, [blockReason, onBlockReason]);
-  useEffect(() => { onBusy(busy || loading); return () => onBusy(false); }, [busy, loading, onBusy]);
+  useEffect(() => { onBusy(busy || loading || skillsLoading); return () => onBusy(false); }, [busy, loading, skillsLoading, onBusy]);
   useImperativeHandle(ref, () => ({
     snapshot: () => {
       if (blockReason || busy) throw new Error(blockReason || '附件正在处理，请稍后发送。');
@@ -79,16 +103,16 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
       const fileIssue = attachmentFileIssue(file, kind);
       if (fileIssue) throw new Error(fileIssue);
       const fingerprint = retry ? '' : Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())), byte => byte.toString(16).padStart(2, '0')).join('');
-      const scope = retry?.scope ?? `agent-upload:${conversation.id}:${fingerprint}`;
-      const key = retry?.key ?? await requestAttempt(scope, { filename: file.name, checksum: fingerprint, size: file.size }, attemptStorage());
-      const pending = { file, key, scope, kind };
+      const attemptScope = retry?.scope ?? `agent-upload:${conversation.id}:${fingerprint}`;
+      const key = retry?.key ?? await requestAttempt(attemptScope, { filename: file.name, checksum: fingerprint, size: file.size }, attemptStorage());
+      const pending = { file, key, scope: attemptScope, kind };
       try {
-        const item = await agentsApi.uploadAttachment(conversation.id, file, key);
-        clearAttempt(scope, attemptStorage());
+        const item = await agentsApi.uploadAttachment(conversation.id, file, key, scope);
+        clearAttempt(attemptScope, attemptStorage());
         if (alive.current) { setPendingUpload(null); add(item); }
       } catch (cause) {
         if (cause instanceof ApiError && cause.status && cause.status < 500) {
-          clearAttempt(scope, attemptStorage()); if (alive.current) setPendingUpload(null);
+          clearAttempt(attemptScope, attemptStorage()); if (alive.current) setPendingUpload(null);
         } else if (alive.current) setPendingUpload(pending);
         throw cause;
       }
@@ -96,16 +120,16 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   }
   async function reference(type: 'media' | 'asset', id: string, retry?: PendingReference) {
     await perform(async () => {
-      const scope = retry?.scope ?? `agent-reference:${conversation.id}:${type}:${id}`;
-      const key = retry?.key ?? await requestAttempt(scope, { source_type: type, source_id: id }, attemptStorage());
+      const attemptScope = retry?.scope ?? `agent-reference:${conversation.id}:${type}:${id}`;
+      const key = retry?.key ?? await requestAttempt(attemptScope, { source_type: type, source_id: id }, attemptStorage());
       try {
-        const item = await agentsApi.referenceAttachment(conversation.id, type, id, key);
-        clearAttempt(scope, attemptStorage()); add(item);
+        const item = await agentsApi.referenceAttachment(conversation.id, type, id, key, scope);
+        clearAttempt(attemptScope, attemptStorage()); add(item);
         if (alive.current) { setPendingReference(null); setShowAssets(false); }
       } catch (cause) {
         if (cause instanceof ApiError && cause.status && cause.status < 500) {
-          clearAttempt(scope, attemptStorage()); if (alive.current) setPendingReference(null);
-        } else if (alive.current) { setPendingReference({ type, id, key, scope }); setShowAssets(false); }
+          clearAttempt(attemptScope, attemptStorage()); if (alive.current) setPendingReference(null);
+        } else if (alive.current) { setPendingReference({ type, id, key, scope: attemptScope }); setShowAssets(false); }
         throw cause;
       }
     });
@@ -119,11 +143,11 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
           : item.kind === 'video' && item.url ? <video src={item.url} controls preload="metadata" aria-label={`${item.name}预览`}/> : null}
       <span title={item.name}>{item.name}</span>
       <Button type="text" size="small" aria-label={`移除附件${item.name}`} icon={<Icon name="close" size={14}/>} disabled={contextDisabled} onClick={() => void perform(async () => {
-        await agentsApi.removeAttachment(conversation.id, item.id);
+        await agentsApi.removeAttachment(conversation.id, item.id, scope);
         if (alive.current) setAttachments(previous => previous.filter(old => old.id !== item.id));
       })}/>
     </article>)}</div>}
-    {skills.length > 0 && <div className="agent-loaded-skills" aria-label="已加载技能">{skills.map(skill => <Tag key={skill.id} closable={!contextDisabled} onClose={() => setSkills(previous => previous.filter(item => item.id !== skill.id))}>{skill.name} v{skill.content_version}</Tag>)}</div>}
+    {skills.length > 0 && <div className="agent-loaded-skills" aria-label="已加载技能">{skills.map(skill => <Tag key={skill.id} closable={!contextDisabled} onClose={() => changeSkills(skills.filter(item => item.id !== skill.id))}>{skill.name} v{skill.content_version}</Tag>)}</div>}
     {attachments.some(item => item.kind === 'video' && item.metadata.has_audio) && <Checkbox checked={videoAudio === 'visual_only'} disabled={contextDisabled} onChange={event => setVideoAudio(event.target.checked ? 'visual_only' : 'include')}>视频只理解画面（忽略声音）</Checkbox>}
     {loading && <span className="sr-only" role="status">正在恢复本次消息附件…</span>}
     {input}
@@ -150,6 +174,6 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
     {pendingUpload && <Button size="small" disabled={contextDisabled} onClick={() => void uploadFile(pendingUpload.file, pendingUpload)}>使用原请求核对上传</Button>}
     {pendingReference && <Button size="small" disabled={contextDisabled} onClick={() => void reference(pendingReference.type, pendingReference.id, pendingReference)}>使用原请求核对资产引用</Button>}
     {showAssets && <AgentAssetPicker projectId={conversation.project_id} disabled={contextDisabled} onClose={() => setShowAssets(false)} onSelect={reference}/>}
-    {showSkills && <AgentSkillPicker selected={skills} disabled={contextDisabled} onChange={setSkills} onClose={() => setShowSkills(false)}/>}
+    {showSkills && <AgentSkillPicker selected={skills} disabled={contextDisabled} onChange={changeSkills} onClose={() => setShowSkills(false)}/>}
   </>;
 });

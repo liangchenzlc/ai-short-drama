@@ -14,12 +14,16 @@ export function useAssetImageGeneration(
   onSaveBeforeGenerate: () => Promise<LibraryAssetRead | null>,
   onCandidatesChanged: () => void,
   onSubmissionBusyChange: (busy: boolean) => void,
+  onVersionConflict?: (cause: unknown) => void,
 ) {
   const [tasks, setTasks] = useState<GenerationSummary[]>([]);
   const [details, setDetails] = useState<Record<string, GenerationDetail>>({});
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyOffset, setHistoryOffset] = useState(0);
   const [refreshError, setRefreshError] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [actionTaskId, setActionTaskId] = useState<string>();
@@ -53,6 +57,7 @@ export function useAssetImageGeneration(
 
   const refresh = useCallback(async (signal?: AbortSignal): Promise<GenerationSummary[] | undefined> => {
     const requestNo = ++sequence.current;
+    setHistoryLoading(true);
     try {
       const [latest, queued, running] = await Promise.all([
         generations.list({ service_type: 'image', source_scene: 'asset_image', source_id: asset.id, offset: 0, limit: PAGE_SIZE }, signal),
@@ -79,19 +84,23 @@ export function useAssetImageGeneration(
       });
       setHistoryTotal(latest.total);
       setHistoryOffset((current) => Math.max(current, latest.items.length));
-      setRefreshError('');
+      setRefreshError(resolved.length < missingIds.length ? '部分活动生成任务无法核对，已保留上次状态。请重试读取记录。' : '');
+      setHistoryLoaded(true);
       return incoming;
     } catch (cause) {
-      if (!signal?.aborted && !isCancelled(cause) && assetIdRef.current === asset.id) {
-        setRefreshError('暂时无法刷新，已保留上次状态。');
+      if (!signal?.aborted && !isCancelled(cause) && alive.current && requestNo === sequence.current && assetIdRef.current === asset.id) {
+        setRefreshError(`读取生成记录失败：${errorMessage(cause)}${tasksRef.current.length ? '已保留上次记录。' : ''}`);
       }
       return undefined;
+    } finally {
+      if (!signal?.aborted && alive.current && requestNo === sequence.current && assetIdRef.current === asset.id) setHistoryLoading(false);
     }
   }, [asset.id, fetchActive]);
 
   const loadMore = useCallback(async () => {
     if (loadMoreRef.current || historyOffset >= historyTotal) return;
     loadMoreRef.current = true;
+    setLoadingMore(true);
     const expectedAssetId = asset.id;
     try {
       const page = await generations.list({
@@ -110,6 +119,7 @@ export function useAssetImageGeneration(
       if (assetIdRef.current === expectedAssetId) setRefreshError(errorMessage(cause));
     } finally {
       loadMoreRef.current = false;
+      if (alive.current && assetIdRef.current === expectedAssetId) setLoadingMore(false);
     }
   }, [asset.id, historyOffset, historyTotal]);
 
@@ -140,6 +150,7 @@ export function useAssetImageGeneration(
     setHistoryOffset(0);
     setHistoryTotal(0);
     setRefreshError('');
+    setHistoryLoaded(false); setHistoryLoading(true); setLoadingMore(false);
     setSubmitError('');
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -192,7 +203,7 @@ export function useAssetImageGeneration(
       }
       return receipt;
     } catch (cause) {
-      if (alive.current && assetIdRef.current === expectedAssetId) setSubmitError(errorMessage(cause));
+      if (alive.current && assetIdRef.current === expectedAssetId) { setSubmitError(errorMessage(cause)); onVersionConflict?.(cause); }
       return null;
     } finally {
       submittingRef.current = false;
@@ -228,7 +239,7 @@ export function useAssetImageGeneration(
   }
 
   return {
-    tasks, details, hasMore: historyOffset < historyTotal, refreshError, submitError, submitting,
+    tasks, details, hasMore: historyOffset < historyTotal, refreshError, historyLoading, historyLoaded, loadingMore, submitError, submitting,
     actionTaskId, submit, perform, load: refresh, loadMore, loadDetail,
   };
 }

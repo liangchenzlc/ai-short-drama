@@ -102,8 +102,6 @@ class AgentModelService(BaseService):
         row = self.session.scalar(stmt)
         if row is None:
             raise NotFound("Decision model does not exist")
-        if read_model(row).protocol is None:
-            raise WorkflowError("unsupported_agent_protocol", "此配置的协议暂不支持 Agent", 422)
         return row
 
     def preferred_id(self):
@@ -133,10 +131,7 @@ class AgentModelService(BaseService):
             )
         if identifier is None:
             raise WorkflowError("agent_model_required", "请先配置用于 Agent 决策的文本模型", 422)
-        row = self.available(identifier, lock=True)
-        if not read_model(row).verified:
-            raise WorkflowError("agent_model_unverified", "请先校验模型的工具调用能力", 422)
-        return row
+        return self.available(identifier, lock=True)
 
     def list_models(self):
         actor = self._actor()

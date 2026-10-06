@@ -1,7 +1,7 @@
 import { confirmAction } from '../../components/ui/confirm';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Alert, Button, Input, InputNumber, Select, Tag } from 'antd';
+import { Alert, Button, Input, InputNumber, Select, Spin, Tag } from 'antd';
 import type { LibraryAssetRead, AssetScope } from '../../api/modules/assets';
 import type { GenerationSummary, ImageGenerationRequest } from '../../api/types/generations';
 import { ConfigSelect } from '../generations/ConfigSelect';
@@ -13,40 +13,43 @@ const aspectOptions = ['16:9', '9:16', '1:1', '4:3', '3:4'].map((value) => ({ va
 const active = (task: GenerationSummary) => task.status === 'queued' || task.status === 'running';
 
 export function AssetImageGeneration({
-  asset, scope, readOnly, onSaveBeforeGenerate, onCandidatesChanged, onSubmissionBusyChange,
+  asset, scope, readOnly, disabled = false, onSaveBeforeGenerate, onCandidatesChanged, onSubmissionBusyChange, onVersionConflict,
 }: {
   asset: LibraryAssetRead;
   scope?: AssetScope;
   readOnly: boolean;
+  disabled?: boolean;
   onSaveBeforeGenerate: () => Promise<LibraryAssetRead | null>;
   onCandidatesChanged: () => void;
   onSubmissionBusyChange: (busy: boolean) => void;
+  onVersionConflict?: (cause: unknown) => void;
 }) {
   const [configId, setConfigId] = useState<string>();
   const [count, setCount] = useState(1);
   const [aspect, setAspect] = useState<ImageGenerationRequest['parameters']['aspect']>();
   const [resolution, setResolution] = useState('');
-  const { tasks, hasMore, refreshError, submitError, submitting, actionTaskId, submit, perform, load, loadMore } =
-    useAssetImageGeneration(asset, onSaveBeforeGenerate, onCandidatesChanged, onSubmissionBusyChange);
+  const { tasks, hasMore, refreshError, historyLoading, historyLoaded, loadingMore, submitError, submitting, actionTaskId, submit, perform, load, loadMore } =
+    useAssetImageGeneration(asset, onSaveBeforeGenerate, onCandidatesChanged, onSubmissionBusyChange, onVersionConflict);
   const blockReason = assetImageGenerationBlockReason(asset, configId);
 
   return <div className="asset-image-generation">
     {!readOnly && <div className="asset-image-generation-form">
-      <label>生图模型<ConfigSelect kind="image" value={configId} onChange={setConfigId} onResolvedChange={setConfigId} disabled={submitting} label="生图模型"/></label>
-      <label>候选数量<InputNumber min={1} max={4} value={count} disabled={submitting} onChange={(value) => setCount(value ?? 1)}/></label>
-      <label>画面比例<Select allowClear value={aspect} options={aspectOptions} disabled={submitting} placeholder="模型默认" onChange={setAspect}/></label>
-      <label>分辨率<Input allowClear value={resolution} disabled={submitting} placeholder="模型默认，如 1024x1024" onChange={(event) => setResolution(event.target.value)}/></label>
+      <label>生图模型<ConfigSelect kind="image" value={configId} onChange={setConfigId} onResolvedChange={setConfigId} disabled={submitting || disabled} label="生图模型"/></label>
+      <label>候选数量<InputNumber min={1} max={4} value={count} disabled={submitting || disabled} onChange={(value) => setCount(value ?? 1)}/></label>
+      <label>画面比例<Select allowClear value={aspect} options={aspectOptions} disabled={submitting || disabled} placeholder="模型默认" onChange={setAspect}/></label>
+      <label>分辨率<Input allowClear value={resolution} disabled={submitting || disabled} placeholder="模型默认，如 1024x1024" onChange={(event) => setResolution(event.target.value)}/></label>
       <div className="asset-generation-submit">
-        <Button type="primary" loading={submitting} disabled={submitting || !!blockReason} onClick={() => void submit({ configId, supplement: '', count, aspect, resolution, scope })}>保存并生成图片</Button>
+        <Button type="primary" loading={submitting} disabled={disabled || submitting || !!blockReason} onClick={() => void submit({ configId, supplement: '', count, aspect, resolution, scope })}>保存并生成图片</Button>
         <span>{blockReason ?? '生成任务不会自动采用图片；请在候选区明确确认。'}</span>
       </div>
     </div>}
-    {(submitError || refreshError) && <Alert type="warning" showIcon message={submitError || refreshError}/>}
-    <details className="asset-generation-history"><summary>生成记录 <span>{tasks.length ? `${tasks.length} 条${tasks.some(active) ? '，有任务处理中' : ''}` : '暂无记录'}</span></summary><div className="asset-generation-history-heading">
+    {(submitError || refreshError) && <Alert type="warning" showIcon message={submitError || refreshError} action={refreshError ? <Button loading={historyLoading} onClick={() => void load()}>重试读取生成记录</Button> : undefined}/>}
+    <details className="asset-generation-history"><summary>生成记录 <span>{!historyLoaded ? historyLoading ? '正在读取…' : '读取失败' : tasks.length ? `${tasks.length} 条${tasks.some(active) ? '，有任务处理中' : ''}` : '暂无记录'}</span></summary><div className="asset-generation-history-heading">
       <h4>生成记录</h4>
-      <Button size="small" disabled={submitting} onClick={() => void load()}>刷新</Button>
+      <Button size="small" loading={historyLoading} disabled={submitting} onClick={() => void load()}>刷新</Button>
     </div>
-    {!tasks.length ? <p className="asset-generation-empty">暂无生成记录。</p> : <div className="asset-generation-tasks">
+    {historyLoading && !historyLoaded && <div role="status"><Spin/><p>正在读取生成记录…</p></div>}
+    {!tasks.length ? historyLoaded && !refreshError && <p className="asset-generation-empty">暂无生成记录。</p> : <div className="asset-generation-tasks">
       {tasks.map((task) => {
         return <article key={task.generation_id} className="asset-generation-task">
           <div><Tag className={'generation-status status-' + task.status}>{taskLabel(task)}</Tag><span>{dateLabel(task.created_at)}</span><small>任务 {task.generation_id}</small></div>
@@ -61,6 +64,6 @@ export function AssetImageGeneration({
         </article>;
       })}
     </div>}
-    {hasMore && <Button disabled={submitting || !!actionTaskId} onClick={() => void loadMore()}>加载更多生成记录</Button>}</details>
+    {hasMore && <Button loading={loadingMore} disabled={historyLoading || submitting || !!actionTaskId} onClick={() => void loadMore()}>加载更多生成记录</Button>}</details>
   </div>;
 }

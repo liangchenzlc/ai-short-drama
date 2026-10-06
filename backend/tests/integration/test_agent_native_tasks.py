@@ -27,6 +27,8 @@ from short_drama.ai import GenerationError, GenerationResult
 from short_drama.core.exceptions import BusinessError, WorkflowError
 from short_drama.domain import (
     AgentArtifact,
+    AgentEvent,
+    AgentMessage,
     AgentRun,
     AgentToolCall,
     AgentTurn,
@@ -475,6 +477,40 @@ def test_accepted_native_poll_and_save_survive_parent_cancellation_without_new_s
         assert run.status == "cancelled" and tool.status == "cancelled"
         assert tool.result["settled"] and len(tool.result["artifact_ids"]) == 1
         assert session.scalar(select(func.count(AgentArtifact.id))) == 1
+        messages = session.scalars(
+            select(AgentMessage)
+            .where(
+                AgentMessage.conversation_id == run.conversation_id,
+                func.json_length(AgentMessage.artifacts) > 0,
+            )
+            .order_by(AgentMessage.seq)
+        ).all()
+        assert len(messages) == 1
+        assert messages[0].artifacts == [
+            {"artifact_id": tool.result["artifact_ids"][0], "kind": "video_candidate"}
+        ]
+        assert messages[0].role == "assistant"
+        assert (
+            session.scalar(
+                select(func.count(AgentMessage.id)).where(
+                    AgentMessage.conversation_id == run.conversation_id,
+                    func.json_length(AgentMessage.artifacts) > 0,
+                )
+            )
+            == 1
+        )
+        candidate_events = session.scalars(
+            select(AgentEvent).where(
+                AgentEvent.run_id == run.id,
+                AgentEvent.event_type == "message.created",
+                func.json_length(AgentEvent.payload, "$.artifacts") > 0,
+            )
+        ).all()
+        assert len(candidate_events) == 1
+        assert candidate_events[0].payload["id"] == str(messages[0].id)
+        assert candidate_events[0].payload["artifacts"] == messages[0].artifacts
+        assert run.next_run_at is None and run.message_status == "idle"
+        assert "不会自动继续" in messages[0].content
     assert len(provider.posts) == 1 and provider.polls == 1
 
 

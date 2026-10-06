@@ -8,6 +8,7 @@ from .base import Identifier, InputModel
 
 
 class ProjectCreateRequest(InputModel):
+    workspace_mode: Literal["standard", "infinite_canvas"] = "standard"
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
     aspect: Literal["16:9", "9:16"]
     synopsis: Annotated[str, Field(max_length=2000)] = ""

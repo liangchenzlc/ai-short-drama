@@ -33,8 +33,62 @@ def discussion_only(content):
     )
 
 
-def freeze_task(session, conversation, payload, *, step_id, owner_user_id):
+def scoped_task(conversation, payload):
+    """Bind creative effects to the immutable conversation, never model-picked scope."""
     spec = TaskSpec.model_validate(payload)
+    if getattr(conversation, "scope_version", 0) != 1:
+        return spec
+    subject = conversation.subject_type
+    allowed = {
+        ("source", "episode"): {"novel", "script"},
+        ("assets", "episode"): {"extract"},
+        ("assets", "asset"): {"asset_patch", "image"},
+        ("storyboard", "episode"): {"storyboard"},
+        ("storyboard", "shot"): {"shot_patch", "image", "video"},
+    }.get((conversation.stage, subject), set())
+    if conversation.task_type == "batch" and subject == "episode":
+        allowed = (
+            {"asset_patch", "image"}
+            if conversation.stage == "assets"
+            else {"shot_patch", "image", "video"}
+        )
+    if conversation.task_type in {"image", "video"}:
+        allowed &= {conversation.task_type}
+    if spec.kind not in allowed:
+        raise WorkflowError(
+            "agent_scope_mismatch", "该任务不属于当前流程会话，请打开对应对象的会话", 409
+        )
+    if subject != "episode" or spec.kind in {"novel", "script", "extract", "storyboard"}:
+        if spec.target_id is not None and spec.target_id != conversation.subject_id:
+            raise WorkflowError("agent_scope_mismatch", "该任务对象不属于当前会话", 409)
+        spec = spec.model_copy(
+            update={
+                "target_id": conversation.subject_id,
+                "parameters": {**spec.parameters, "target_kind": subject}
+                if spec.kind in {"image", "video"}
+                else spec.parameters,
+            }
+        )
+    if (
+        conversation.stage == "assets"
+        and spec.kind == "image"
+        and (spec.parameters.get("target_kind") != "asset")
+    ):
+        raise WorkflowError("agent_scope_mismatch", "素材会话只能生成本集素材图片", 409)
+    if (
+        conversation.stage == "storyboard"
+        and spec.kind == "image"
+        and (spec.parameters.get("target_kind") == "asset")
+    ):
+        raise WorkflowError("agent_scope_mismatch", "分镜会话只能生成本集镜头图片", 409)
+    return spec
+
+
+def freeze_task(session, conversation, payload, *, step_id, owner_user_id):
+    from short_drama.service.agent_conversation_service import validate_conversation_subject
+
+    validate_conversation_subject(session, conversation, lock=True)
+    spec = scoped_task(conversation, payload)
     episode = session.scalar(
         select(Episode)
         .where(Episode.id == conversation.episode_id)

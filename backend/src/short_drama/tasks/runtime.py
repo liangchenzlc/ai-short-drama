@@ -3,6 +3,8 @@
 import logging
 import time
 
+from sqlalchemy import inspect
+
 from short_drama.core.config import Settings
 from short_drama.core.logging import configure_logging
 from short_drama.db.session import build_engine, session_factory
@@ -26,6 +28,9 @@ def main():
     assert_agent_ready(engine, settings)
     with engine.connect() as connection:
         agent_schema_available = inspect_agent_schema(connection)["status"] == "ready"
+        canvas_cleanup_available = inspect(connection).has_table("canvas_resource_deletions")
+        canvas_text_available = inspect(connection).has_table("canvas_task_text_deltas")
+        canvas_beefapi_available = inspect(connection).has_table("canvas_beefapi_connections")
     factory = session_factory(engine)
     publisher = Publisher(factory, settings)
     renders = RenderPublisher(factory, settings)
@@ -40,8 +45,28 @@ def main():
     log = logging.getLogger(__name__)
     next_cleanup = 0
     next_agent_poll = 0
+    next_canvas_cleanup = 0
     try:
         while True:
+            if canvas_beefapi_available:
+                from short_drama.service.canvas_beefapi_service import tick_beefapi_connections
+
+                try:
+                    tick_beefapi_connections(factory, settings)
+                except Exception as error:
+                    log.warning(
+                        "Canvas BeefAPI recovery unavailable: error=%s", type(error).__name__
+                    )
+            if canvas_cleanup_available and time.monotonic() >= next_canvas_cleanup:
+                from short_drama.service.canvas_resource_cleanup import cleanup_canvas_resources
+
+                try:
+                    cleanup_canvas_resources(factory, storage, settings, apply=True)
+                except Exception as error:
+                    log.warning(
+                        "Canvas resource cleanup unavailable: error=%s", type(error).__name__
+                    )
+                next_canvas_cleanup = time.monotonic() + 10
             try:
                 from short_drama.tasks.email import deliver_one
 
@@ -67,6 +92,18 @@ def main():
 
                     cleanup_imports(factory, storage, settings)
                     cleanup_render_scratch(settings)
+                    if canvas_text_available:
+                        from short_drama.service.canvas_text_stream import cleanup_canvas_text
+
+                        cleanup_canvas_text(factory)
+                    if canvas_cleanup_available:
+                        from short_drama.service.canvas_creation_cleanup import (
+                            cleanup_canvas_creations,
+                        )
+                        from short_drama.service.canvas_upload_cleanup import cleanup_canvas_uploads
+
+                        cleanup_canvas_uploads(factory, storage, settings, apply=True)
+                        cleanup_canvas_creations(factory, storage, settings, apply=True)
                     next_cleanup = time.monotonic() + 3600
                 for _ in range(100):
                     if not publisher.tick():
