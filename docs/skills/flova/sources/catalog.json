@@ -1,0 +1,522 @@
+{
+  "schema_version": 1,
+  "source_url": "https://www.flova.tv/zh-CN/skill/",
+  "captured_at": "2026-10-05T06:53:18.101Z",
+  "scope": "前一轮列出的 20 项公开 Skill；公开简介、元数据和登录前预览",
+  "content_scope": "public_catalog_and_skill_preview",
+  "counts": {
+    "skills": 20,
+    "flova_attributed": 9,
+    "creator_attributed": 11,
+    "public_previews": 20,
+    "full_skills_downloaded": 0
+  },
+  "full_content_status": "20 项完整正文均要求登录，尚未获取",
+  "license_status": "尚未核实各 Skill 的独立许可证；保留页面署名与来源",
+  "skills": [
+    {
+      "name": "故事驱动型视频",
+      "author": "@Flova",
+      "models": [
+        "Seedance 2.5"
+      ],
+      "description": "专为具有完整故事线的视频而设计。核心亮点：- 由 Seedance 2.5（分辨率 480p）（目前最强大的视频模型）驱动 — 省略关键帧步骤，直接从元素图像生成最终镜头。- 循序渐进的人机协作 — 在每个关键阶段进行确认，以保持完全掌控。",
+      "categories": [
+        "全部",
+        "剧情短片"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:00.708Z",
+      "preview_text": "流程规划:\n\n完整视频的阶段逻辑与依赖关系：\n\n编写 Final_Video_Spec.md（标题、类型、宽高比、时长、视觉风格、语言）→ text_editor。\n\n生成故事板（关键元素、镜头列表、音频层）→ storyboard_designer。故事板准备就绪后，扫描当前上下文，查找用户提供或之前生成的、与故事板条目匹配的任何资产（例如元素图像、背景音乐）。对于每个匹配...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-08-27 16:18",
+      "reference_file": "01-故事驱动型视频.md",
+      "chinese_summary": "围绕完整故事线制作视频，以成片规格和故事板组织后续生成，并在关键阶段由用户确认。",
+      "chinese_reference_points": [
+        "先使用 text_editor 编写 Final_Video_Spec.md，记录标题、类型、画幅、时长、视觉风格与语言。",
+        "使用 storyboard_designer 生成包含关键元素、镜头列表和音频层的故事板。",
+        "故事板就绪后，检查上下文中已有的元素图像、背景音乐等素材是否可以复用。"
+      ]
+    },
+    {
+      "name": "剧本生视频（需上传剧本）",
+      "author": "@Flova",
+      "models": [
+        "Seedance 2.5"
+      ],
+      "description": "分析上传的剧本 (图片/PDF/文本），通过学习其电影语法——提取脚本、镜头结构、视觉语言和节奏——围绕您的主题生成全新的视频。使用 Nano Banana + Seedance 2.5（分辨率 480p） 生成视觉素材。",
+      "categories": [
+        "全部",
+        "剧情短片"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:01.416Z",
+      "preview_text": "流程规划:\n\n完整视频的阶段逻辑和依赖关系：\n\n一句话总结剧本上传的剧本文件（图片/PDF/文本）。 → resource_prepare_and_analyze。\n\n编写 Final_Video_Spec.md（标题、类型、画幅、时长、视觉风格、语言、模型偏好） → text_editor。\n\n生成与第1步相符的故事板（关键元素、镜头列表、音频层） → **storyb...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-08-27 16:19",
+      "reference_file": "02-剧本生视频（需上传剧本）.md",
+      "chinese_summary": "从上传的图片、PDF 或文本剧本出发，分析其叙事与镜头语言，再组织视频创作。",
+      "chinese_reference_points": [
+        "先使用 resource_prepare_and_analyze 分析剧本文件，形成一句话总结。",
+        "通过 text_editor 记录成片规格，包括画幅、时长、风格、语言及模型偏好。",
+        "生成与剧本分析结果相符的故事板；后续工具名与步骤在公开预览中被截断。"
+      ]
+    },
+    {
+      "name": "商品宣传短片",
+      "author": "@Flova",
+      "models": [
+        "Flova Nano Pro",
+        "Seedance 2.5"
+      ],
+      "description": "快速创建AI商业广告短片，为您的产品呈现专业级的视觉效果和创意故事。使用模型 Nano Banana + Seedance 2.5（分辨率 480p）。",
+      "categories": [
+        "全部",
+        "商业广告"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:02.078Z",
+      "preview_text": "流程规划:\n\n阶段逻辑与依赖关系：\n\n编写 Final_Video_Spec.md（标题、类型、比例、时长、视觉风格、语言、模型偏好）→ text_editor。\n\n生成故事板（关键元素、镜头列表、音频层）→ storyboard_designer。\n\n为所有元素生成图像 → media_generator。\n\n为每个镜头生成最终视频；参考该镜头的参考元素（第...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-09-14 21:21",
+      "reference_file": "03-商品宣传短片.md",
+      "chinese_summary": "围绕产品信息制作商业广告短片，将创意故事、元素图像和镜头视频组织在同一流程中。",
+      "chinese_reference_points": [
+        "先记录成片规格，再设计关键元素、镜头列表和音频层。",
+        "通过 media_generator 为元素生成图像。",
+        "为各镜头生成最终视频，并参考对应元素；具体后续规则没有完整公开。"
+      ]
+    },
+    {
+      "name": "CINEDANCE 电影级视频导演",
+      "author": "@139****2580",
+      "models": [
+        "Seedance 2.5"
+      ],
+      "description": "本 Skill 基于 Higgsfield Studio 在《Hell Grind》中发布的原始 Skill，由 @AI STUDIO 洋子 翻译及适配。适用于叙事短片、预告片、MV 等高制作标准视频项目；内置空间调度锁定、光学镜头精确控制、物理连戏规则及对话时间轴管理；默认使用 Seedance 2.5。",
+      "categories": [
+        "剧情短片"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:02.758Z",
+      "preview_text": "流程规划:\n\n全流程阶段与依赖关系\n\n锁定全局参数 — 通过 text_editor 建立 Final_Video_Spec.md，记录：片名、类型、画幅比例、总时长意图、视觉风格、输出语言、模型选择（Seedance 2.5 或 Seedance 2.0）。此步骤是所有后续阶段的参数锚点。\n\n分析参考素材（如有） — 若用户上传了角色参考图、场景参考图、音频或剧本文档，...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-09-15 17:25",
+      "reference_file": "04-CINEDANCE 电影级视频导演.md",
+      "chinese_summary": "面向叙事短片、预告片和音乐视频的导演流程，强调空间调度、镜头控制、连戏与对白时间轴。",
+      "chinese_reference_points": [
+        "先建立 Final_Video_Spec.md，锁定片名、类型、画幅、时长意图、风格、语言及模型。",
+        "将全局规格作为所有后续阶段的参数锚点。",
+        "如用户提供角色图、场景图、音频或剧本文档，则进入参考素材分析；详细规则在预览后半段被截断。"
+      ]
+    },
+    {
+      "name": "电影级角色表演",
+      "author": "@139****2580",
+      "models": [
+        "Seedance 2.0",
+        "Seed-Audio 1.0"
+      ],
+      "description": "本 Skill 基于 Higgsfield Studio 在《Hell Grind》中发布的原始 Skill，由 @AI STUDIO 洋子 翻译及适配。适用于需要高质量角色表演的任务；内置完整的 AI 表演系统、指导提示词。",
+      "categories": [
+        "剧情短片"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:03.740Z",
+      "preview_text": "流程规划:\n\n适用范围与执行方式\n\n将本技能用于以角色冲突、对白、反应和身体行为为叙事核心的剧情短片或叙事视频；若用户只需风景、产品或无人物的氛围片，不强行套用角色表演流程。\n\n在进入生产前，先通过 text_editor 建立或更新 Final_Video_Spec.md，锁定成片类型、目标时长、画幅、视觉风格、输出语言、是否有同步对白/独立旁白，以及视频模型为 Seedance 2.0...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-09-15 17:29",
+      "reference_file": "05-电影级角色表演.md",
+      "chinese_summary": "用于以角色冲突、对白、反应和身体行为为核心的剧情视频，重点参考角色表演的适用范围与生产前确认。",
+      "chinese_reference_points": [
+        "按叙事需求选择是否使用角色表演流程；无人物的风景、产品或氛围片无需强行套用。",
+        "生产前建立或更新成片规格，确认类型、目标时长、画幅、风格和输出语言。",
+        "明确是否有同步对白或独立旁白，再进入生产。"
+      ]
+    },
+    {
+      "name": "Lira 图像提示词优化技能",
+      "author": "@139****2580",
+      "models": [],
+      "description": "本 Skill 基于 Higgsfield Studio 在《Hell Grind》中发布的原始 Skill，由 @AI STUDIO 洋子 翻译及适配。专注于 Lira 方法论的 AI 图像提示词优化技能。适用于需要单独进行影院级图像生成、角色表/场景底图生成、帧编辑等任务，不依赖完整视频流水线的场景。",
+      "categories": [
+        "工具增强",
+        "剧情短片"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:04.447Z",
+      "preview_text": "流程规划:\n\n任务逻辑：\n\n理解用户的图像生成或编辑需求（角色表、场景、道具、帧编辑等），确认目标模型与画幅参数 → text_editor（如需记录多图任务简报）。\n\n调用 media_generator 完成图像生成或编辑；提示词撰写遵循 Lira 方法论（见提示词撰写区）。\n\n生成结果交用户审阅；根据反馈进行精准编辑迭代，每次只改一处。\n\n交互原则： 单张图像...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-09-15 17:27",
+      "reference_file": "06-Lira 图像提示词优化技能.md",
+      "chinese_summary": "用于角色设定图、场景底图、道具和帧编辑等图像任务，围绕用户反馈逐步优化生成提示词。",
+      "chinese_reference_points": [
+        "理解图像生成或编辑需求，并确认目标模型与画幅。",
+        "使用 media_generator 生成或编辑图像；公开预览提到 Lira 方法论，但没有展示其完整规则。",
+        "提交结果供用户审阅，按反馈精准迭代，每次只修改一处。"
+      ]
+    },
+    {
+      "name": "声音先行视频创作",
+      "author": "@Flova",
+      "models": [
+        "Seedance 2.5"
+      ],
+      "description": "用Seed-Audio1.0先制作并锁定声音轴，再以音频时间戳驱动故事板、关键帧和 Seedance 2.0 镜头生成。",
+      "categories": [
+        "剧情短片",
+        "短剧/微短剧"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:05.062Z",
+      "preview_text": "流程规划:\n\n声音先行的完整视频流程：\n\n通过 text_editor 建立 Final_Video_Spec.md，锁定题材、总时长、画幅、视觉风格、成片语言、对白语言，以及是否需要跨段保持角色音色。\n\n先使用 storyboard_designer 制作初版故事板：定义 key_element、固定 shot 数量与顺序、每个 shot 的预期时长、audio_layer，...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-08-08 22:26",
+      "reference_file": "07-声音先行视频创作.md",
+      "chinese_summary": "先锁定声音时间轴，再以音频时间戳驱动故事板、关键帧和镜头生成。",
+      "chinese_reference_points": [
+        "建立成片规格，确认题材、总时长、画幅、风格、成片语言和对白语言。",
+        "确认是否需要跨片段保持角色音色。",
+        "制作初版故事板，固定关键元素、镜头数量与顺序、每镜预期时长和音频层。"
+      ]
+    },
+    {
+      "name": "视频拉片复刻",
+      "author": "@Flova",
+      "models": [
+        "Flova Nano Pro",
+        "Seedance 2.5"
+      ],
+      "description": "通过学习上传视频的电影语法（提取其脚本、镜头结构、视觉语言和节奏），围绕您自己的主题生成全新视频。使用模型 Nano Banana + Seedance 2.5（分辨率 480p）。",
+      "categories": [
+        "工具增强"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:06.278Z",
+      "preview_text": "流程规划:\n\n完整视频的阶段逻辑和依赖关系：\n\n详尽分析上传的视频。提取关键参考帧（标志性的构图、取景、时刻），并直接将其用作关键帧（key-frame）→ resource_prepare_and_analyze。\n\n编写 Final_Video_Spec.md（标题、类型、比例、时长、视觉风格、语言、模型偏好）→ text_editor。\n\n生成故事板（key_ele...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-09-01 23:15",
+      "reference_file": "08-视频拉片复刻.md",
+      "chinese_summary": "分析参考视频的脚本、镜头结构、视觉语言和节奏，围绕自己的主题制作新视频。",
+      "chinese_reference_points": [
+        "使用 resource_prepare_and_analyze 详尽分析参考视频。",
+        "提取标志性构图、取景和时刻对应的参考帧，作为关键帧参考。",
+        "建立成片规格后生成故事板；后续结构字段在预览中被截断。"
+      ]
+    },
+    {
+      "name": "剧本杀故事视频",
+      "author": "@Flova",
+      "models": [
+        "Seedance 2.5"
+      ],
+      "description": "适用于篇幅很长、包含跨章节伏笔与反转的剧本杀剧本；先确认生成范围并审核重构概览剧本，再制作忠于主线的完整长视频或分章节视频。",
+      "categories": [
+        "全部",
+        "短剧/微短剧"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:06.953Z",
+      "preview_text": "流程规划:\n\n先确认范围，再重构剧本（不可调换的强制前置流程）\n\n收到剧本杀剧本文档后，先以文本让用户在以下范围中明确选择；在用户确认前，不得分析后续制作方案、创建故事板或生成任何媒体：\n\n完整长视频： 用一个长视频讲清整个故事的起因、发展、关键反转与结局；允许压缩次要情节，但不得损害主线因果。\n\n按章节制作： 一章一支视频；优先保证本章的剧情完整、人物动机和细节，...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-08-27 16:26",
+      "reference_file": "09-剧本杀故事视频.md",
+      "chinese_summary": "用于包含跨章节伏笔和反转的长剧本杀故事，先确定制作范围，再重构剧本和推进生成。",
+      "chinese_reference_points": [
+        "先请用户明确选择完整长视频或按章节制作。",
+        "范围确认前，不分析后续制作方案、不创建故事板、不生成媒体。",
+        "完整长视频允许压缩次要情节，但应保留主线因果；章节视频优先保证本章剧情、人物动机与细节。"
+      ]
+    },
+    {
+      "name": "根据剧本制作多集短剧",
+      "author": "@Flova",
+      "models": [],
+      "description": "多集短剧制作，支持上传剧本及角色/场景图，可从任意一集或角色建立阶段开始，连续制作多集内容",
+      "categories": [
+        "短剧/微短剧",
+        "剧情短片"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:07.851Z",
+      "preview_text": "流程规划:\n\n本项目用于有完整剧本的多集短剧制作。用户通常会带着大量上下文进入对话，可能包含完整剧本、角色形象图、场景图（即关键参考元素）等。制作不一定从第一集开始，用户可能从任意一集、任意镜头切入，或者从角色/场景建立阶段切入。\n\n两种切入模式\n\n下面两种模式描述的是项目最初如何切入，不是固定工作流。项目启动后，用户随时可能提出当下任务（例如「直接做某个镜头」）；接到任务后，按依赖关系补齐尚未就绪的前...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-09-14 21:26",
+      "reference_file": "10-根据剧本制作多集短剧.md",
+      "chinese_summary": "用于已有完整剧本的多集短剧，可从任意一集、任意镜头或角色与场景建立阶段切入。",
+      "chinese_reference_points": [
+        "接收完整剧本、角色图、场景图等已有上下文。",
+        "制作入口不必固定为第一集，也不必固定为完整流程起点。",
+        "接到当下任务后按依赖补齐未就绪的前置内容；两种切入模式的完整定义尚未取得。"
+      ]
+    },
+    {
+      "name": "3D国漫古装精品短剧",
+      "author": "@Flova",
+      "models": [
+        "Seedance 2.5"
+      ],
+      "description": "适用于将剧本拆解为3D古风风格短剧视频的全流程制作场景。画面风格统一锁定为3D质感，以Seedance 2.0为核心视频生成模型，配合GPT Image 2.5 Flare生成角色与场景设定图。",
+      "categories": [
+        "短剧/微短剧",
+        "全部"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:08.430Z",
+      "preview_text": "流程规划:\n\n启动协议用户触发本Skill时，首先判断用户属于以下哪种场景，并据此选择对应路径：\n\n从零开始（0→1）： 用户只有创意构思或粗略大纲，尚无完整剧本。先与用户深入沟通，帮助其梳理故事框架、人物关系、核心冲突；在用户确认框架后，协助将构思发展为可拍摄的短剧剧本。每一步修改须向用户展示并确认，不得擅自定稿。\n\n半成品（需补充资产）： 用户已有剧本或部分素材（剧本/分镜...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-09-14 21:29",
+      "reference_file": "11-3D国漫古装精品短剧.md",
+      "chinese_summary": "制作统一的 3D 古风短剧，先判断已有材料与创作阶段，再选择从创意到剧本或补充资产的路径。",
+      "chinese_reference_points": [
+        "启动时先区分从零开始与已有剧本或部分素材的情况。",
+        "从零开始时先沟通故事框架、人物关系与核心冲突，确认后发展为可拍摄剧本。",
+        "每一步修改均应展示并获得用户确认；半成品路径的具体规则在预览中被截断。"
+      ]
+    },
+    {
+      "name": "AI 短剧一站式生成",
+      "author": "@Aplus影像",
+      "models": [],
+      "description": "适用于将剧本文本工业化拆解为短剧视频的全流程制作场景。支持从剧本分析、角色/场景元素设定、分镜设计、视频生成到时间线合成的完整链路；以 Seedance 2.5（分辨率 480p） 为核心视频生成模型，配合 GPT Image 2 生成角色与场景设定图。",
+      "categories": [
+        "短剧/微短剧"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:09.475Z",
+      "preview_text": "流程规划:\n\n启动协议\n\n用户触发本 Skill 时，按顺序确认以下信息后再推进：\n\n当前所处阶段（从零开始，还是已有部分产出？）\n\n已有素材（请用户上传或粘贴现有剧本 / 分镜 / 设定图）\n\n输出语言偏好（分镜脚本通常中文；提示词通常英文，但中文同样可行）\n\n全流程阶段与依赖关系\n\n读取并分析用户上传的剧本文件，提取角色、场景、关键道具，识别剧本类型 → **resour...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-09-14 21:25",
+      "reference_file": "12-AI 短剧一站式生成.md",
+      "chinese_summary": "将剧本分析、角色与场景设定、分镜、视频生成和时间线合成串成短剧生产流程。",
+      "chinese_reference_points": [
+        "启动时依次确认当前阶段、已有素材和输出语言偏好。",
+        "接收用户已有的剧本、分镜及设定图。",
+        "读取剧本，提取角色、场景和关键道具并识别剧本类型；后续细节需完整原文确认。"
+      ]
+    },
+    {
+      "name": "海报觉醒",
+      "author": "@みお",
+      "models": [
+        "MiniMax H3"
+      ],
+      "description": "将用户上传的静态海报图片生成为动态海报视频；使用 MiniMax H3，适用于需要把平面海报快速转化为动态视频宣传物料的场景。",
+      "categories": [
+        "平面设计",
+        "商业广告"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:09.990Z",
+      "preview_text": "流程规划:\n\n前置校验（强制）：\n\n用户必须上传至少一张海报图片才能启动本 Skill。若用户未上传海报，直接通过 reply_to_user 提示\"请先上传一张海报图片\"，不要继续后续步骤。 工作流程：\n\n分析海报 → 调用 resource_prepare_and_analyze：提取海报的宽高比、视觉主体、构图、风格色调、文字版式、动效潜力等信息；同时判定海报类型（人...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-08-11 19:43",
+      "reference_file": "13-海报觉醒.md",
+      "chinese_summary": "把静态海报制作成动态宣传视频，重点参考输入素材校验和海报分析流程。",
+      "chinese_reference_points": [
+        "至少需要一张用户上传的海报图片。",
+        "缺少海报时通过 reply_to_user 提示上传并停止后续步骤。",
+        "分析海报的宽高比、主体、构图、风格色调、文字版式与动效潜力。"
+      ]
+    },
+    {
+      "name": "视觉美学视频",
+      "author": "@Flova",
+      "models": [
+        "MJ"
+      ],
+      "description": "基于 Midjourney 美学风格（sref code）制作的视觉短片流程。使用模型 Midjourney V7 +Seedance 2.5（分辨率 480p）",
+      "categories": [
+        "全部",
+        "平面设计"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:11.567Z",
+      "preview_text": "流程规划:\n\n完整视频的阶段逻辑与依赖关系：\n\n编写 Final_Video_Spec.md（标题、类型、比例、时长、视觉风格、语言、模型偏好）→ text_editor。\n\n生成故事板 (shot_list, audio_layers) → storyboard_designer。\n\n每个镜头生成一张关键帧图像 → media_generator。\n\n为每个...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-08-27 16:24",
+      "reference_file": "14-视觉美学视频.md",
+      "chinese_summary": "使用 Midjourney 风格参考制作视觉短片，通过逐镜关键帧组织画面美学。",
+      "chinese_reference_points": [
+        "先记录成片规格与模型偏好。",
+        "使用 storyboard_designer 组织镜头列表和音频层。",
+        "通过 media_generator 为每个镜头生成一张关键帧图像；后续视频规则在预览中被截断。"
+      ]
+    },
+    {
+      "name": "韦斯·安德森风格短片",
+      "author": "@Seast Zhu",
+      "models": [],
+      "description": "适用：1–5分钟短片 · 视觉/声音语法基于安德森通用语言，提供涵盖全局参数设计、多模态输入分析、视觉规格转化、元素及分镜设计、视频/旁白/音效/BGM高一致性生成与自动合成的完整重置方案。",
+      "categories": [
+        "大师美学"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:12.412Z",
+      "preview_text": "流程规划:\n\n沟通规则（全局）\n\n禁止在对话中提及内部步骤编号。所有面向用户的表述使用功能性描述：\n\n第一步：收集用户创作信息\n\nA. 创作素材（任意组合）\n\n故事 idea / 完整剧本 / 参考素材（图片/视频）\n\nB. 基本参数\n\n片名\n\n目标时长：1 / 2 / 3 / 5 分钟\n\n画幅：16:9（默认）/ 交给Flova自行判断 / 自定义\n\n9:16...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-08-10 15:38",
+      "reference_file": "15-韦斯·安德森风格短片.md",
+      "chinese_summary": "参考韦斯·安德森式的视觉与声音语言制作短片，先收集创意素材和成片基本参数。",
+      "chinese_reference_points": [
+        "面向用户使用功能性描述，避免暴露内部步骤编号。",
+        "接收故事构思、完整剧本及图片或视频参考素材的任意组合。",
+        "确认片名、目标时长和画幅；预览列出 1、2、3、5 分钟，默认画幅为 16:9，也可交由 Flova 判断或自定义。"
+      ]
+    },
+    {
+      "name": "宣言式概念短片",
+      "author": "@野菩萨WildPusa",
+      "models": [],
+      "description": "「宣言短片」编译器：把任何议题编译成一支 1:30、以英文旁白为骨、 画面零文字、21:9 的概念影像。本技能管全链路：需求解读 → 一句话策略 → Manifesto 文本（VO）→ 关键帧 → 视频 → 旁白 → 节拍画面映射 → 音乐 → 波形分析 → 剪辑合成。 当用户要把一个观点 / 品牌议题做成宣言式短片，或者只要产物是一支以思辨旁白驱动的概念短片，就触发。",
+      "categories": [
+        "商业广告",
+        "全部"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:13.060Z",
+      "preview_text": "流程规划:\n\n两条硬规则：\n\n文本命名化：每句文案是一个新定义或本体命名，可引用可复述。禁平铺直叙与修饰旁白。\n\n画面符号化：每帧是独立强符号，隐喻密度高，脱离上下文单帧即该命题的视觉代名词。禁匿名空镜。 工作方法：本体切入先于执行。递归类比，框架先行且自洽，先立后破，从矛盾建论点。 不可违反的硬约束（最高优先级）：\n\n画幅 21:9，1080p；禁 16:9 及其它。每一次关键帧、视频、...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-09-14 21:26",
+      "reference_file": "16-宣言式概念短片.md",
+      "chinese_summary": "将观点或品牌议题制作成以英文旁白驱动的概念短片，强调可引用的宣言文案与强符号画面。",
+      "chinese_reference_points": [
+        "文案围绕可引用、可复述的新定义或命题展开，避免平铺直叙。",
+        "画面采用独立、密度较高的视觉符号，避免匿名空镜。",
+        "公开预览明确锁定 21:9、1080p，并禁止其他画幅；后续执行约束未完整取得。"
+      ]
+    },
+    {
+      "name": "一图成片：顶级执行导演 Skill",
+      "author": "@渊静",
+      "models": [],
+      "description": "本 Skill 是专为追求院线级视觉冲击力、极致美学表现力和情绪节奏控场而设计的闭环工作流。它深度融合了“视觉基因解构”、“高密度分镜成表”与“视听高潮提示词引擎”，旨在将用户上传的静态美学素材转化为目不暇接、调动情绪的专业短片。",
+      "categories": [
+        "平面设计"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:13.601Z",
+      "preview_text": "流程规划:\n\n前置检查： 必须存在用户上传图片，否则立即终止并提示用户上传参考图。\n\n阶段序列（严格顺序执行，禁止跨越）：\n\n视觉基因解构：分析上传图片，提取美学信号，输出结构化解构结果，供后续阶段使用。- multimodal_analyze_tool；并注册一个资产 - media_generator。\n\n创意方向确认：基于解构结果提供 3 个一句话剧情方向（如 CG...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-08-27 16:21",
+      "reference_file": "17-一图成片：顶级执行导演 Skill.md",
+      "chinese_summary": "从一张静态参考图出发，先分析其视觉特征，再确认创意方向并组织分镜与视听设计。",
+      "chinese_reference_points": [
+        "必须有用户上传的图片，否则停止并提示提供参考图。",
+        "通过 multimodal_analyze_tool 分析图像美学信号，再通过 media_generator 注册资产。",
+        "基于分析结果提出三个一句话剧情方向供确认；后续阶段在预览中被截断。"
+      ]
+    },
+    {
+      "name": "一镜到底·万物演化",
+      "author": "@Neo",
+      "models": [
+        "Seedance 2.5"
+      ],
+      "description": "适用于以“一镜到底”方式呈现某一主题演化变迁的视频，适合科普类视频；用 Seedance 2.5 生成单段长视频，通过主体与背景的渐进蜕变营造连续时空穿越感。无上传图片时走 TextToVideo，有图片时走 MultiModalToVideo 全能参考。",
+      "categories": [
+        "全部",
+        "热门玩法"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:16.746Z",
+      "preview_text": "流程规划:\n\nAgent 灵活性原则Agent 在流程的任何阶段，都可以根据当前上下文主动向用户提问，让用户参与创意决策。典型场景包括但不限于：\n\n开场方式：根据主题推断出合适的蓄力形式后，主动向用户提议并询问偏好，而非默默自行决定。\n\n是否有参考图片：在锁定主题阶段就主动询问用户是否有参考图片可上传，以便尽早确定走路径 A（TextToVideo）还是路径 B（Multi...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-08-27 16:22",
+      "reference_file": "18-一镜到底·万物演化.md",
+      "chinese_summary": "以一个连续镜头表现主题的演化变迁，可根据是否有参考图片选择文本或多模态生成路径。",
+      "chinese_reference_points": [
+        "Agent 可在任意阶段根据上下文邀请用户参与创意决策。",
+        "确定开场方式时先提出建议并询问用户偏好。",
+        "尽早确认是否有参考图片，以决定文本生视频或多模态参考路径。"
+      ]
+    },
+    {
+      "name": "品牌 Logo 创意应用",
+      "author": "@ZoLab",
+      "models": [
+        "Kling 3.0 Omni",
+        "Flova Image 2"
+      ],
+      "description": "用户上传品牌Logo后，自动生成6张超写实Logo场景应用图，并可将每张图制作为3-5秒动态视频。使用GPT Image 2生成图像，Kling 3.0 Omni生成视频，默认竖屏9:16。适用于品牌Logo创意展示、社交媒体营销素材等场景。",
+      "categories": [
+        "商业广告",
+        "平面设计"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:17.390Z",
+      "preview_text": "流程规划:\n\n整体流程与依赖：\n\n分析Logo — 用户上传品牌Logo后，调用 resource_prepare_and_analyze 提取Logo的形状、颜色、文字、风格等关键视觉特征，输出结构化描述供后续步骤使用。\n\n建立全局规格 — 通过 text_editor 建立 Final_Video_Spec.md，锁定比例（默认9:16）、分辨率、创意风格方向...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-09-14 21:25",
+      "reference_file": "19-品牌 Logo 创意应用.md",
+      "chinese_summary": "从品牌标志生成场景应用图与短动态视频，默认采用竖屏 9:16。",
+      "chinese_reference_points": [
+        "使用 resource_prepare_and_analyze 提取标志的形状、颜色、文字与风格。",
+        "输出结构化视觉描述供后续步骤使用。",
+        "通过 text_editor 建立成片规格，锁定画幅、分辨率与创意风格方向。"
+      ]
+    },
+    {
+      "name": "美剧风格短片",
+      "author": "@liyichao0215",
+      "models": [],
+      "description": "制作美剧风格的真人短剧情。通过真实角色、关系冲突、自然表演和电影化镜头，生成具有美剧叙事感的青春、家庭、职场、悬疑或浪漫剧情片段。",
+      "categories": [
+        "剧情短片",
+        "短剧/微短剧"
+      ],
+      "source_url": "https://flova.tv/zh-CN/skill/",
+      "captured_at": "2026-10-05T06:53:18.087Z",
+      "preview_text": "流程规划:\n\n创作入口\n\n用本 Skill 制作具有美剧叙事感的真人短剧情。默认方向是当代美国青春群像：人物关系有历史和利益牵连，表演自然，场景、服装和道具能说明阶层与生活状态。用户明确指定家庭剧、职场剧、悬疑剧、成人浪漫喜剧或其他美国剧集类型时，服从该类型，不强行改成校园恋爱。\n\n\"美剧风格\"指叙事、表演、摄影、空间和语言方式，不限定角色族裔、肤色或统一的脸型。角色要有演员级镜头表现力，也要保留可辨认的...",
+      "login_required": true,
+      "full_skill_downloaded": false,
+      "content_scope": "public_catalog_and_skill_preview",
+      "source_updated_at": "2026-10-04 18:10",
+      "reference_file": "20-美剧风格短片.md",
+      "chinese_summary": "制作具有美剧叙事感的真人短剧情，通过人物关系、自然表演、摄影和生活空间体现风格。",
+      "chinese_reference_points": [
+        "默认方向是当代美国青春群像，人物关系、场景、服装与道具共同呈现生活背景。",
+        "用户指定家庭、职场、悬疑或成人浪漫喜剧等类型时，应服从指定类型。",
+        "美剧风格指叙事、表演、摄影、空间与语言方式，不限定角色族裔、肤色或统一脸型。"
+      ]
+    }
+  ]
+}
