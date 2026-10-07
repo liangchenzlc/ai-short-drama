@@ -3,7 +3,7 @@ import { Alert, Button, Select, Skeleton, Tooltip } from 'antd';
 import { agentsApi } from '../../api/modules/agents';
 import { ApiError, errorMessage } from '../../api/http';
 import type { AgentConversation, AgentModel, AgentRun, AgentSendInput, ConversationScope } from '../../api/types/agents';
-import { agentRunLabel, isAgentRunActive, type CreationMode } from './agent-navigation';
+import { agentRunLabel, isAgentRunActive } from './agent-navigation';
 import { agentTaskLabels, reviewParameterLabels, reviewTargetLabel } from './agent-events';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import { useAgentRuntime } from './useAgentRuntime';
@@ -14,13 +14,14 @@ import { Icon } from '../../components/ui/Icon';
 import { clearAgentPendingSend, readAgentDraft, readAgentPendingSend, saveAgentDraft, saveAgentPendingSend, type AgentPendingSend } from './agent-draft';
 import { workflowStorage } from '../auth/account-storage';
 
-export interface AgentNavigationIntent { id?: string; mode: CreationMode; generation: number; navigation: number }
+export interface AgentNavigationIntent { id?: string; generation: number; navigation: number }
 const finiteNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 
-export function AgentConversationRuntime({ conversation, scope, accountId, readOnly, beforeSend, navigationIntent, onRun, onOpenArtifact }: {
-  conversation: AgentConversation; scope: ConversationScope; accountId: string; readOnly: boolean;
+export function AgentConversationRuntime({ conversation, scope, accountId, readOnly, historyOnly = false, beforeSend, navigationIntent, onRun, onOpenArtifact }: {
+  conversation: AgentConversation; scope?: ConversationScope; accountId: string; readOnly: boolean;
   beforeSend: () => Promise<boolean>; navigationIntent: () => AgentNavigationIntent; onRun: (run: AgentRun | null) => void;
   onOpenArtifact: (id: string, runId?: string, conversationId?: string) => void;
+  historyOnly?: boolean;
 }) {
   const runtime = useAgentRuntime(conversation.id, scope);
   const [restored] = useState(() => readAgentDraft(accountId, conversation.id, workflowStorage()));
@@ -55,9 +56,10 @@ export function AgentConversationRuntime({ conversation, scope, accountId, readO
   const awaitingArtifacts = runtime.run?.awaiting_artifact_ids ?? [];
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
+    if (historyOnly) return;
     setDraftError(saveAgentDraft(accountId, conversation.id, { version: 1, text: draft, modelId, skills: skillRefs }, workflowStorage())
       ? '' : '浏览器未能保存对话草稿，请在离开前复制当前输入。');
-  }, [accountId, conversation.id, draft, modelId, skillRefs]);
+  }, [accountId, conversation.id, draft, modelId, skillRefs, historyOnly]);
   useEffect(() => { if (!runtime.loading) current.current.onRun(runtime.run); }, [runtime.run, runtime.loading]);
   useLayoutEffect(() => {
     const node = transcript.current; if (!node) return;
@@ -75,15 +77,15 @@ export function AgentConversationRuntime({ conversation, scope, accountId, readO
     } catch (cause) { if (alive.current && !signal?.aborted) setModelsError(errorMessage(cause)); }
     finally { if (alive.current && !signal?.aborted) setModelsLoading(false); }
   }
-  useEffect(() => { const controller = new AbortController(); void loadModels(controller.signal); return () => controller.abort(); }, []);
+  useEffect(() => { if (historyOnly) return; const controller = new AbortController(); void loadModels(controller.signal); return () => controller.abort(); }, [historyOnly]);
   function matches(intent: AgentNavigationIntent) {
     const now = current.current.navigationIntent();
-    return alive.current && !current.current.readOnly && !current.current.accessEnded && now.id === intent.id && now.mode === intent.mode && now.generation === intent.generation && now.navigation === intent.navigation;
+    return alive.current && !current.current.readOnly && !current.current.accessEnded && now.id === intent.id && now.generation === intent.generation && now.navigation === intent.navigation;
   }
   async function send(retry?: AgentPendingSend) {
-    if (locked.current || contextBusy || (!retry && contextBlockReason) || readOnly || runtime.accessEnded || restoredSend.error || (!retry && (!ready || !current.current.draft.trim() || uncertain))) return;
+    if (historyOnly || locked.current || contextBusy || (!retry && contextBlockReason) || readOnly || runtime.accessEnded || restoredSend.error || (!retry && (!ready || !current.current.draft.trim() || uncertain))) return;
     const intent = current.current.navigationIntent();
-    if (intent.mode !== 'agent' || intent.id !== conversation.id) return;
+    if (intent.id !== conversation.id) return;
     const submitted = retry?.draft ?? current.current.draft;
     let body: AgentSendInput;
     locked.current = true; setBusy('save'); setActionError('');
@@ -133,9 +135,10 @@ export function AgentConversationRuntime({ conversation, scope, accountId, readO
     if (locked.current || readOnly || runtime.accessEnded || !runtime.run) return;
     const run = runtime.run; const review = run.review;
     const intent = current.current.navigationIntent();
-    if (intent.mode !== 'agent') return;
     locked.current = true; setBusy(action === 'stop' ? 'stop' : 'review'); setActionError('');
     try {
+      if (action === 'approved' && !await current.current.beforeSend()) { setActionError('当前作品尚未保存成功，请处理保存提示后再批准计划。'); return; }
+      if (!matches(intent)) return;
       const result = action === 'stop' ? await agentsApi.stop(run.id, scope) : review ? await agentsApi.review(run.id, review, action, scope) : null;
       if (alive.current && result) { runtime.setRun(result); void runtime.reload(); }
     } catch (cause) { if (matches(intent)) { setActionError(errorMessage(cause)); void runtime.reload(); } }
@@ -177,7 +180,7 @@ export function AgentConversationRuntime({ conversation, scope, accountId, readO
       {runtime.run?.status === 'failed' && <p className="agent-run-failed" role="status">{runtime.run.error?.message || '这次运行未完成，已有消息和候选仍保留。请核对模型、输入或原任务后继续。'}</p>}
     </div>
     {newContent && <Button className="agent-new-content" size="small" onClick={() => { if (transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight; pinned.current = true; setNewContent(false); }}>查看最新消息</Button>}
-    <div className="agent-composer">
+    {!historyOnly && <div className="agent-composer">
       <Dialog open={modelSettingsOpen} title="选择 Agent 模型" className="agent-context-dialog" canClose={!busy} onClose={() => setModelSettingsOpen(false)}><div className="agent-context-dialog-body">
         <section className="agent-model-settings" aria-label="协作模型设置"><label htmlFor="agent-collaboration-model">协作模型</label>
           <div className="agent-model-picker"><Select aria-label="Agent 协作模型" id="agent-collaboration-model" value={modelId} loading={modelsLoading} disabled={!!busy} placeholder="选择文本模型" options={models.map(item => ({ value: item.id, label: item.name }))} onChange={setModelId}/></div>
@@ -198,6 +201,6 @@ export function AgentConversationRuntime({ conversation, scope, accountId, readO
         <Button size="small" disabled={readOnly || runtime.accessEnded || !!busy || contextBusy} onClick={() => void send(uncertain)}>使用原请求重试</Button></div>}
       <div className="agent-send-row"><span id="agent-send-help">{busy === 'save' ? '正在保存并核对作品…' : activeRun ? '可以发送补充要求，Agent 会按当前进度处理。' : 'Enter 换行，Ctrl / ⌘ + Enter 发送。'}</span></div>
       {(calls !== null || outputTokens !== null || maxCalls !== null) && <p className="agent-usage">{calls !== null ? `已调用 ${calls} 次` : ''}{outputTokens !== null ? ` · 输出 ${outputTokens} token` : ''}{maxCalls !== null ? ` · 最多 ${maxCalls} 次文本协作` : ''}</p>}
-    </div>
+    </div>}
   </div>;
 }

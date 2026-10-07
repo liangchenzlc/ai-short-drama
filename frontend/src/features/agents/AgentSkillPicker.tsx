@@ -3,11 +3,11 @@ import { Alert, Button, Checkbox, Input, Segmented, Skeleton } from 'antd';
 import { Dialog } from '../../components/ui/Dialog';
 import { confirmAction } from '../../components/ui/confirm';
 import { agentsApi } from '../../api/modules/agents';
-import { errorMessage } from '../../api/http';
+import { ApiError, errorMessage } from '../../api/http';
 import type { AgentSkill } from '../../api/types/agents';
 
-export function AgentSkillPicker({ selected, disabled, onChange, onClose }: {
-  selected: AgentSkill[]; disabled: boolean; onChange: (skills: AgentSkill[]) => void; onClose: () => void;
+export function AgentSkillPicker({ selected, disabled, onChange, onClose, dialogClassName }: {
+  selected: AgentSkill[]; disabled: boolean; dialogClassName?: string; onChange: (skills: AgentSkill[]) => void; onClose: () => void;
 }) {
   const [items, setItems] = useState<AgentSkill[]>([]);
   const [tab, setTab] = useState<'builtin' | 'personal'>('builtin');
@@ -54,15 +54,15 @@ export function AgentSkillPicker({ selected, disabled, onChange, onClose }: {
     return !dirty || await confirmAction('技能修改尚未保存，放弃本次编辑？', { title: '未保存的 Skill', confirmText: '放弃编辑' });
   }
   async function close() { if (!busy && await discardEditor()) onClose(); }
-  return <Dialog title="加载 Skill" className="agent-context-dialog" canClose={!busy} onClose={() => void close()}>
+  return <Dialog title="加载 Skill" className={["agent-context-dialog", dialogClassName].filter(Boolean).join(" ")} canClose={!busy} onClose={() => void close()}>
     <div className="agent-context-dialog-body">
       <div className="agent-skill-heading"><Segmented aria-label="技能来源" value={tab} disabled={busy} options={[{ value: 'builtin', label: '内置技能' }, { value: 'personal', label: '我的技能' }]} onChange={value => setTab(value as typeof tab)}/><span>已加载 {selected.length} / 8</span></div>
       {tab === 'personal' && <><Button aria-label="上传 Skill" disabled={disabled || busy} loading={busy} onClick={() => upload.current?.click()}>上传 Skill</Button><input hidden ref={upload} type="file" accept=".md,text/markdown" aria-label="上传 Skill 文件" onChange={event => {
         const file = event.currentTarget.files?.[0]; event.currentTarget.value = '';
         if (file) void mutate(async () => {
           if (!await discardEditor()) return;
-          if (file.size > 64 * 1024) throw new Error('Skill 文件不能超过 64 KiB。');
-          if (!file.name.toLowerCase().endsWith('.md')) throw new Error('请选择 UTF-8 编码的 Markdown 文件。');
+          if (file.size > 64 * 1024) throw new ApiError('Skill 文件不能超过 64 KiB。', 'assistant_skill_invalid');
+          if (!file.name.toLowerCase().endsWith('.md')) throw new ApiError('请选择 UTF-8 编码的 Markdown 文件。', 'assistant_skill_invalid');
           const next = await agentsApi.uploadSkill(file);
           if (alive.current) { setItems(previous => [next, ...previous.filter(item => item.id !== next.id)]); setEditing(null); }
         });

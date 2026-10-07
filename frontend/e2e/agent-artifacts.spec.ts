@@ -192,7 +192,7 @@ test('leaving an Agent extraction review during draft save prevents adoption', a
   await expect(page).toHaveURL(url => url.pathname === '/projects/10');
   const response = page.waitForResponse(result => result.request().method() === 'PATCH' && result.url().endsWith('/asset-extraction-results/88001'));
   gate.resolve(); await response;
-  expect(state.calls.filter(call => call.path === '/agent/conversations/resolve' && call.method === 'POST').length).toBeGreaterThanOrEqual(1);
+  expect(state.calls.filter(call => call.path === '/agent/conversations/resolve' && call.method === 'POST')).toEqual([]);
   expect(state.calls.filter(call => call.path === '/agent/conversations' && call.method === 'GET').length).toBeLessThan(6);
   expect(adoptCalls(state)).toEqual([]); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });

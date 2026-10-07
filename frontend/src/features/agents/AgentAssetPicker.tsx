@@ -8,8 +8,8 @@ import { errorMessage } from '../../api/http';
 import type { MediaAsset } from '../../api/types/generations';
 
 type Kind = 'asset' | 'image' | 'video' | 'audio';
-export function AgentAssetPicker({ projectId, disabled, onSelect, onClose }: {
-  projectId: string; disabled: boolean;
+export function AgentAssetPicker({ projectId, disabled, onSelect, onClose, dialogClassName }: {
+  projectId: string; disabled: boolean; dialogClassName?: string;
   onSelect: (type: 'media' | 'asset', id: string) => Promise<void>; onClose: () => void;
 }) {
   const [kind, setKind] = useState<Kind>('asset');
@@ -33,7 +33,7 @@ export function AgentAssetPicker({ projectId, disabled, onSelect, onClose }: {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [projectId, kind, search, offset, revision]);
-  return <Dialog title="添加资产上下文" className="agent-context-dialog" canClose={!disabled} onClose={onClose}>
+  return <Dialog title="添加资产上下文" className={["agent-context-dialog", dialogClassName].filter(Boolean).join(" ")} canClose={!disabled} onClose={onClose}>
     <div className="agent-context-dialog-body">
       <Segmented aria-label="资产类型" value={kind} disabled={disabled}
         options={[{ value: 'asset', label: '项目素材' }, { value: 'image', label: '图片' }, { value: 'video', label: '视频' }, { value: 'audio', label: '音频' }]}

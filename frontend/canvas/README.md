@@ -51,6 +51,14 @@
 
 最终锁文件已通过正常 `npm ci` 和 `npm ls --all`，没有使用 `--force` 或 `--legacy-peer-deps`。`tests/model-logo-integrity.test.mjs` 核对 321 项、649 个原始文件与许可；`e2e/dependency-compat.test.mjs` 使用真实组件和浏览器验证长对话滚动、Sender 输入/两种发送、页脚菜单/采用回填、全部 321 项 Logo 列表及 Nano Banana 按需加载。可分别执行 `node --test tests/model-logo-integrity.test.mjs`、`node --test e2e/dependency-compat.test.mjs`；后者可设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`。这些验证使用受控优化供应商替身，不代表真实模型或完整原版视觉验收。
 
+## 共用 AI 创作助手
+
+标准分集与画布统一使用 `frontend/src/features/ai-assistant/CreativeAssistantPanel.tsx`，直接抽取原画布助手的面板、消息气泡、Markdown 和输入区样式。画布的 `creative-assistant-sidebar.tsx` 仅管理停靠、拖宽和窄屏抽屉；不再保留另一套助手 UI 或 `/canvas-runtime/assistant/*` 请求链路。
+
+对话按本人和项目归属，切换同项目画布不会拆分对话。自动作品上下文可移除，节点通过 `@` 显式引用；发送前必须完成模型偏好和画布远端保存，使用服务端确认的十进制版本。409 或准备期间变更会保留消息与作品草稿。附件、资产引用和个人 Skill 复用宿主功能。新 `/api/v1/assistant` 仅聊天与建议，禁止创作工具、改图、付费生成提议和助手回合撤销；节点自身生成和手动撤销保持原流程。旧 Agent 深链转为只读历史入口，已有任务与候选仍按原许可处理。
+
+接口与协议限制见[助手 API](../../docs/api/assistant.md)，本次助手进度只更新[交接文档第 6.5 节](../../docs/plans/2026-10-06-beeftv-resume-handoff.md#65-m5画布助手工作流与最终验收)，不能据此宣称 M5 或完整画布迁移完成。共享代码使用宿主的 BigInt 版本保护，画布 TypeScript 编译目标与宿主对齐为 ES2022。
+
 ## 验证与来源
 
 - `npm test`：覆盖版本、路径、首次请求重试、HTTP 适配、启动顺序、个人视口/外观串行与冲突、撤权会话隔离、上传范围捕获及幂等身份合同；实际数量以当前执行结果为准。

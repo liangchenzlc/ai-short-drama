@@ -19,7 +19,7 @@ export function useAgentAvailability() {
     return () => controller.abort();
   }, [revision]);
   const available = !loading && !!status?.enabled && !!status?.schema_ready;
-  const reason = loading ? '正在检查 Agent 创作状态…' : error ? '暂时无法检查 Agent 创作状态'
-    : !status?.enabled ? 'Agent 创作暂未启用' : !status.schema_ready ? 'Agent 创作正在准备，请稍后重试' : '';
+  const reason = loading ? '正在检查 AI 创作服务…' : error ? '暂时无法检查 AI 创作服务'
+    : !status?.enabled ? 'AI 创作服务暂未启用' : !status.schema_ready ? 'AI 创作服务正在准备，请稍后重试' : '';
   return { status, loading, error, available, reason, refresh: () => setRevision(value => value + 1) };
 }

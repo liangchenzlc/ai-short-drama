@@ -45,6 +45,14 @@ const discoveryMessages: Record<string, string> = {
   model_discovery_too_large: '模型列表响应过大，请手动填写模型标识。',
 };
 const workflowMessages: Record<string, string> = {
+  assistant_context_changed: '作品版本已变化，消息草稿已保留，请重新读取后发送。',
+  assistant_node_media_unavailable: '引用的节点媒体尚未完整保存，请核对媒体与上传状态后发送。',
+  unsupported_assistant_protocol: '此模型协议尚不支持 AI 创作助手，请选择已接通的文本模型。',
+  assistant_legacy_readonly: '旧对话仅供查看，请新建项目助手对话继续聊天。',
+  assistant_api_required: '项目对话需要通过 AI 创作助手入口访问。',
+  assistant_scope_invalid: '对话或引用不属于当前项目，请核对项目和账号。',
+  assistant_tools_forbidden: 'AI 创作助手提供对话建议，请使用作品原有入口进行制作。',
+  agent_context_too_large: '引用资料超过助手限额，请减少媒体或附件后重试；媒体与附件合计最多 16 项。',
   authentication_required: '登录已失效，请重新登录后继续。',
   login_failed: '账号名或密码不正确，请核对后重试。',
   email_verification_required: '请先验证注册邮箱，再登录或接受项目邀请。',

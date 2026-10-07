@@ -8,6 +8,7 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
   const requests: { path: string; method: string; query: URLSearchParams; body: any }[] = [];
   const unexpected: string[] = [];
   const errors: string[] = [];
+  const modelPreferences = new Map<string, string>();
   const project = { id: '10', name: '雨夜来信', synopsis: '一封迟到的信改变了两个人的命运。', style: '电影质感', aspect: '16:9', episode_count: 1 };
   const episode = { id: '20', project_id: '10', position: 1, episode_number: 1, title: '归来的旅人', synopsis: '林晚走进雨夜。', style: '电影质感', aspect: '16:9' };
   const writing = { episode_id: '20', content_version: '1', novel: { id: '30', content: '雨夜，林晚拿着一封旧信走入车站。', updated_at: time }, editing_script: { id: '40', content: '林晚走进车站，抬头寻找站台。', state: 'confirmed', updated_at: time }, confirmed_script_id: '40' as string | null };
@@ -49,6 +50,10 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     const reply = (data: any, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) });
     const paged = (items: any[]) => { const offset = Number(query.get('offset') || 0); const limit = Number(query.get('limit') || 20); return { items: items.slice(offset, offset + limit), total: items.length, offset, limit }; };
     if (path === '/auth/capabilities') return reply({ enabled: false });
+    if (path === '/users/me/model-preferences') {
+      if (method === 'PUT') { if (body.config_id) modelPreferences.set(body.context_key, body.config_id); else modelPreferences.delete(body.context_key); }
+      return reply({ items: [...modelPreferences].map(([context_key, config_id]) => ({ context_key, config_id })) });
+    }
     if (path === '/agent/status') return reply({ enabled: false, schema_ready: false });
     if (path === `${root}/agent-artifacts`) return reply(paged([]));
     if (path === '/native-voice/capabilities' || path === '/ai/generation-batches/capabilities') return reply({ enabled: ui });

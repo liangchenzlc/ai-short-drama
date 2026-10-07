@@ -1,6 +1,6 @@
 import type { AgentConversation, ConversationScope } from '../../api/types/agents';
 
-export interface AgentSubject { type: 'asset' | 'shot'; id: string; label: string }
+export interface AgentSubject { type: 'asset' | 'shot'; id: string; label: string; revision?: string }
 
 export function episodeConversationScope(stage: ConversationScope['stage'], episodeId: string, subject?: AgentSubject | null): ConversationScope {
   const scoped = stage === 'assets' && subject?.type === 'asset' || stage === 'storyboard' && subject?.type === 'shot';

@@ -14,17 +14,20 @@ type ContextSnapshot = Pick<AgentSendInput, 'attachment_ids' | 'skills' | 'video
 export interface AgentContextController {
   snapshot: () => ContextSnapshot;
   sent: (ids: string[]) => void;
+  reference: (type: 'media' | 'asset', id: string) => Promise<boolean>;
 }
 interface PendingUpload { file: File; key: string; scope: string; kind: AgentAttachment['kind'] }
 interface PendingReference { type: 'media' | 'asset'; id: string; key: string; scope: string }
 
 export const AgentContextComposer = forwardRef<AgentContextController, {
-  conversation: AgentConversation; scope: ConversationScope; disabled: boolean;
+  conversation: Pick<AgentConversation, 'id' | 'project_id'>; scope?: ConversationScope; disabled: boolean;
+  attachmentApi?: Pick<typeof agentsApi, 'attachments' | 'uploadAttachment' | 'referenceAttachment' | 'removeAttachment'>;
+  dialogClassName?: string;
   initialSkills: { id: string; content_version: string }[];
   onSkills: (skills: { id: string; content_version: string }[]) => void;
   onBusy: (busy: boolean) => void; onBlockReason: (reason: string) => void;
   input: ReactNode; modelControl: ReactNode; sendControl: ReactNode;
-}>(function AgentContextComposer({ conversation, scope, initialSkills, onSkills, disabled, onBusy, onBlockReason, input, modelControl, sendControl }, ref) {
+}>(function AgentContextComposer({ conversation, scope, initialSkills, onSkills, disabled, onBusy, onBlockReason, input, modelControl, sendControl, attachmentApi = agentsApi, dialogClassName }, ref) {
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [skills, setSkills] = useState<AgentSkill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,12 +48,12 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setLoadError('');
-    agentsApi.attachments(conversation.id, 0, controller.signal, scope).then(page => {
+    attachmentApi.attachments(conversation.id, 0, controller.signal, scope).then(page => {
       if (!controller.signal.aborted) setAttachments(page.items.filter(item => item.pending));
     }).catch(cause => { if (!controller.signal.aborted) setLoadError(errorMessage(cause)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [conversation.id, revision]);
+  }, [conversation.id, revision, attachmentApi]);
   useEffect(() => {
     if (!initialSkills.length) return;
     const controller = new AbortController();
@@ -78,19 +81,20 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   useEffect(() => { onBusy(busy || loading || skillsLoading); return () => onBusy(false); }, [busy, loading, skillsLoading, onBusy]);
   useImperativeHandle(ref, () => ({
     snapshot: () => {
-      if (blockReason || busy) throw new Error(blockReason || '附件正在处理，请稍后发送。');
+      if (blockReason || busy) throw new ApiError(blockReason || '附件正在处理，请稍后发送。', 'assistant_input_busy');
       return {
       ...(attachments.length ? { attachment_ids: attachments.map(item => item.id), video_audio: videoAudio } : {}),
       ...(skills.length ? { skills: skills.map(item => ({ id: item.id, content_version: item.content_version })) } : {}),
       };
     },
     sent: ids => setAttachments(previous => previous.filter(item => !ids.includes(item.id))),
-  }), [attachments, skills, videoAudio, blockReason, busy]);
+    reference,
+  }), [attachments, skills, videoAudio, blockReason, busy, loading, loadError, disabled, scope, attachmentApi]);
   async function perform(operation: () => Promise<void>) {
-    if (lock.current || disabled || loading || loadError) return;
+    if (lock.current || disabled || loading || loadError) return false;
     lock.current = true; setBusy(true); setError('');
-    try { await operation(); }
-    catch (cause) { if (alive.current) setError(errorMessage(cause)); }
+    try { await operation(); return true; }
+    catch (cause) { if (alive.current) setError(errorMessage(cause)); return false; }
     finally { lock.current = false; if (alive.current) setBusy(false); }
   }
   function add(item: AgentAttachment) {
@@ -98,16 +102,16 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   }
   async function uploadFile(file: File, retry?: PendingUpload) {
     await perform(async () => {
-      if (!retry && attachments.length >= 16) throw new Error('一次消息最多添加 16 项附件。');
+      if (!retry && attachments.length >= 16) throw new ApiError('一次消息最多添加 16 项附件。', 'assistant_attachment_limit');
       const kind = retry?.kind ?? uploadKind.current;
       const fileIssue = attachmentFileIssue(file, kind);
-      if (fileIssue) throw new Error(fileIssue);
+      if (fileIssue) throw new ApiError(fileIssue, 'assistant_attachment_invalid');
       const fingerprint = retry ? '' : Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())), byte => byte.toString(16).padStart(2, '0')).join('');
       const attemptScope = retry?.scope ?? `agent-upload:${conversation.id}:${fingerprint}`;
       const key = retry?.key ?? await requestAttempt(attemptScope, { filename: file.name, checksum: fingerprint, size: file.size }, attemptStorage());
       const pending = { file, key, scope: attemptScope, kind };
       try {
-        const item = await agentsApi.uploadAttachment(conversation.id, file, key, scope);
+        const item = await attachmentApi.uploadAttachment(conversation.id, file, key, scope);
         clearAttempt(attemptScope, attemptStorage());
         if (alive.current) { setPendingUpload(null); add(item); }
       } catch (cause) {
@@ -119,11 +123,13 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
     });
   }
   async function reference(type: 'media' | 'asset', id: string, retry?: PendingReference) {
-    await perform(async () => {
+    return perform(async () => {
+      if (!retry && attachments.length >= 16) throw new ApiError('一次消息最多添加 16 项附件。', 'assistant_attachment_limit');
+      if (!retry && (pendingUpload || pendingReference)) throw new ApiError('附件添加结果尚未确认，请先使用原请求核对。', 'assistant_attachment_pending');
       const attemptScope = retry?.scope ?? `agent-reference:${conversation.id}:${type}:${id}`;
       const key = retry?.key ?? await requestAttempt(attemptScope, { source_type: type, source_id: id }, attemptStorage());
       try {
-        const item = await agentsApi.referenceAttachment(conversation.id, type, id, key, scope);
+        const item = await attachmentApi.referenceAttachment(conversation.id, type, id, key, scope);
         clearAttempt(attemptScope, attemptStorage()); add(item);
         if (alive.current) { setPendingReference(null); setShowAssets(false); }
       } catch (cause) {
@@ -143,7 +149,7 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
           : item.kind === 'video' && item.url ? <video src={item.url} controls preload="metadata" aria-label={`${item.name}预览`}/> : null}
       <span title={item.name}>{item.name}</span>
       <Button type="text" size="small" aria-label={`移除附件${item.name}`} icon={<Icon name="close" size={14}/>} disabled={contextDisabled} onClick={() => void perform(async () => {
-        await agentsApi.removeAttachment(conversation.id, item.id, scope);
+        await attachmentApi.removeAttachment(conversation.id, item.id, scope);
         if (alive.current) setAttachments(previous => previous.filter(old => old.id !== item.id));
       })}/>
     </article>)}</div>}
@@ -173,7 +179,7 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
     {loadError && <Button type="link" size="small" disabled={contextDisabled || loading} onClick={() => setRevision(value => value + 1)}>重新载入附件</Button>}
     {pendingUpload && <Button size="small" disabled={contextDisabled} onClick={() => void uploadFile(pendingUpload.file, pendingUpload)}>使用原请求核对上传</Button>}
     {pendingReference && <Button size="small" disabled={contextDisabled} onClick={() => void reference(pendingReference.type, pendingReference.id, pendingReference)}>使用原请求核对资产引用</Button>}
-    {showAssets && <AgentAssetPicker projectId={conversation.project_id} disabled={contextDisabled} onClose={() => setShowAssets(false)} onSelect={reference}/>}
-    {showSkills && <AgentSkillPicker selected={skills} disabled={contextDisabled} onChange={changeSkills} onClose={() => setShowSkills(false)}/>}
+    {showAssets && <AgentAssetPicker projectId={conversation.project_id} dialogClassName={dialogClassName} disabled={contextDisabled} onClose={() => setShowAssets(false)} onSelect={async (type, id) => { await reference(type, id); }}/>}
+    {showSkills && <AgentSkillPicker dialogClassName={dialogClassName} selected={skills} disabled={contextDisabled} onChange={changeSkills} onClose={() => setShowSkills(false)}/>}
   </>;
 });

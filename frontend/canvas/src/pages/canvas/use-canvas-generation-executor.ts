@@ -5,9 +5,7 @@ import { App } from "antd";
 
 import { buildNodeGenerationContext, hydrateNodeGenerationContext } from "@/components/canvas/canvas-node-generation";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
-import { isGenerationCanceled } from "@/lib/canvas/canvas-project-generation";
-import { buildConfirmedGenerationConfig } from "./canvas-assistant-proposal-execution";
-import type { ConfirmedGenerationInputs } from "./canvas-assistant-proposal-snapshot";
+import { buildGenerationConfig, isGenerationCanceled } from "@/lib/canvas/canvas-project-generation";
 import { canvasGenerationPromptMetadata, canvasGenerationRequestFingerprint, runCanvasGenerationSubmissionOnce } from "@/lib/canvas/canvas-generation-submission";
 import { isGenerationTaskCapacityError } from "@/lib/canvas/canvas-generation-batch";
 import { buildPortraitTexturePrompt } from "@/lib/canvas/canvas-portrait-texture";
@@ -56,8 +54,6 @@ const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
 
 export type CanvasNodeGenerationOptions = {
-    confirmedModelKey?: string;
-    confirmedInputs?: ConfirmedGenerationInputs;
     /** 一次确认的稳定身份。重复提交必须复用，服务端据此回读原任务。 */
     clientOperationId?: string;
     controller?: AbortController;
@@ -112,11 +108,11 @@ export function useCanvasGenerationExecutor({
                 submissionLocksRef.current,
                 nodeId,
                 async () => {
-                    const inputNodes = options?.confirmedInputs?.nodes ?? nodesRef.current;
-                    const inputConnections = options?.confirmedInputs?.connections ?? connectionsRef.current;
-                    const inputConfig = options?.confirmedInputs?.config ?? effectiveConfig;
-                    const inputAssets = options?.confirmedInputs?.assets ?? assets;
-                    const inputSkills = options?.confirmedInputs?.skills ?? addedSkills;
+                    const inputNodes = nodesRef.current;
+                    const inputConnections = connectionsRef.current;
+                    const inputConfig = effectiveConfig;
+                    const inputAssets = assets;
+                    const inputSkills = addedSkills;
                     const sourceNode = inputNodes.find((node) => node.id === nodeId);
                     if (isCanvasNodeGenerating(nodesRef.current.find((node) => node.id === nodeId))) {
                         message.info("该节点的生成任务仍在进行中，请等待完成后再生成");
@@ -126,9 +122,9 @@ export function useCanvasGenerationExecutor({
                         message.info("合并成片节点不直接重新生成，请重新选择源视频合并");
                         return;
                     }
-                    let generationConfig: ReturnType<typeof buildConfirmedGenerationConfig>;
+                    let generationConfig: ReturnType<typeof buildGenerationConfig>;
                     try {
-                        generationConfig = buildConfirmedGenerationConfig(inputConfig, sourceNode, mode, undefined, options?.confirmedModelKey);
+                        generationConfig = buildGenerationConfig(inputConfig, sourceNode, mode, undefined);
                     } catch (error) {
                         message.error(generationErrorMessage(error));
                         return;
@@ -182,13 +178,13 @@ export function useCanvasGenerationExecutor({
                             promptOnly,
                         );
                         const requirements = generationModelRequirements(mode, baseContext, sourceNode, generationConfig, true);
-                        generationConfig = buildConfirmedGenerationConfig(inputConfig, sourceNode, mode, requirements, options?.confirmedModelKey);
+                        generationConfig = buildGenerationConfig(inputConfig, sourceNode, mode, requirements);
                         const compatibilityError = usesWorkflowProvider ? "" : modelCompatibilityError(generationConfig, generationConfig.model, requirements);
                         if (compatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${compatibilityError}`);
                         const referenceLimits = usesWorkflowProvider ? undefined : modelGroupReferenceLimits(inputConfig, generationConfig.model, mode, requirements);
                         rawGenerationContext = await hydrateNodeGenerationContext(baseContext, projectId, domainProjectId, mode, mode === "video" && Boolean(referenceLimits?.maxAudios), !promptOnly, referenceLimits);
                         const hydratedRequirements = generationModelRequirements(mode, rawGenerationContext, sourceNode, generationConfig);
-                        generationConfig = buildConfirmedGenerationConfig(inputConfig, sourceNode, mode, hydratedRequirements, options?.confirmedModelKey);
+                        generationConfig = buildGenerationConfig(inputConfig, sourceNode, mode, hydratedRequirements);
                         const hydratedCompatibilityError = usesWorkflowProvider ? "" : modelCompatibilityError(generationConfig, generationConfig.model, hydratedRequirements);
                         if (hydratedCompatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${hydratedCompatibilityError}`);
                     } catch (error) {

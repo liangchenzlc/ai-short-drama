@@ -53,7 +53,7 @@ uv run python scripts/export_schema.py --check
 
 | 表 | 职责与读取范围 |
 | --- | --- |
-| `agent_conversations` | 按流程、稳定对象 ID 和任务归类隔离的分集私有会话；固定创作要求及消息/事件序号；本人且仍有项目权限才能读取 |
+| `agent_conversations` | 新 AI 创作助手按账号与项目隔离多段纯对话；旧分集对象会话保留原范围与历史；本人且仍有项目权限才能读取 |
 | `agent_messages` | 追加的用户与助手消息、引用和幂等键；继承会话私有范围 |
 | `agent_runs` | 私有任务状态、检查点、预算、使用量和租约；会话内制作执行串行，补充消息持久化排队 |
 | `agent_turns` | 每次决策调用的私有请求、响应、状态与使用量；继承 Run 范围 |
@@ -65,7 +65,9 @@ uv run python scripts/export_schema.py --check
 
 Run 的触发消息、Tool 的 Turn 和 Event 的 Run 使用复合外键保证父链一致。候选的剧本与镜头引用必须属于同一分集，素材必须关联该分集，任务与媒体必须属于同一项目且互相匹配；由服务和 ORM 守卫校验跨表范围。私有会话记录不进入项目共享审计。
 
-会话范围由 `owner_user_id/project_id/episode_id/stage/subject_type/subject_id/task_type` 标识，不能由标题、人物名称或镜头序号推断。新记录 `scope_version=1`，创建后不可编辑；旧记录 `scope_version=0` 且四个范围字段为 NULL，不混入新对象的历史。素材必须关联本集，镜头必须是本集未删除对象；列表、总数、搜索和候选入口使用同一范围。旧库执行[会话对象范围增量](migrations/2026-10-04-agent-creation-scope/README.md)。
+新 AI 创作助手记录 `scope_version=2`，范围由 `owner_user_id/project_id` 标识，`episode_id/stage/subject_type/subject_id/task_type` 全部为 NULL；一个账号在一个项目可有多段对话，跨分集、阶段和同项目画布共用。当前已保存作品只作为每轮可移除的资料，来源、版本、截取信息及明确引用媒体冻结在私人消息引用与运行 checkpoint，不构成会话范围。助手只有对话、分析、建议，没有生成、提取、改图、候选和采用工具。
+
+旧记录 `scope_version=1` 仍由 `owner_user_id/project_id/episode_id/stage/subject_type/subject_id/task_type` 标识；更早记录 `scope_version=0` 保留非空分集及四个 NULL 对象字段。标题、人物名称和镜头序号不能推断范围；旧记录不合并、不自动转为新项目对话。旧会话历史只读，已有运行、审核及候选继续按原对象归属、本人权限与来源版本处理。旧库依次执行所缺的[会话对象范围增量](migrations/2026-10-04-agent-creation-scope/README.md)与[项目助手增量](migrations/2026-10-06-project-assistant/README.md)。
 
 Agent 默认开启，旧库显式执行[Agent 迁移](migrations/2026-10-02-agent-mode/README.md)与[附件/Skill 增量](migrations/20261003_agent_context.sql)；未升级环境显式设置 `AGENT_ENABLED=false`。基础账户 readiness 在功能关闭时忽略 Agent 表，启用时校验完整字段、索引、外键、CHECK 表达式与启用状态。候选 API 只供本人，采用后通过业务作品接口共享结果。
 
@@ -231,7 +233,7 @@ canvas_library_assets / canvas_library_asset_references 保存私人的源素材
 
 canvas_project_folders / canvas_project_folder_items 是本人项目文件夹及画布归属，与素材分类分开。`(user_id,source_key)` 和 `(user_id,canvas_id)` 分别唯一；归属以 `(user_id,folder_key)` 复合外键固定到同一作者文件夹，不透明键最多 80 字符。封面使用 media_files/canvas_binary_resources 二选一外键，墓碑禁止继续保留封面引用。文件夹不物理删除，防止旧客户端 PUT 复活；画布真正删除时可级联清除其私人归属，但文件夹删除不级联删除作品。共享文档与共享历史不含 folderId，只有本人投影携带。撤权后的分类清理不授予作品读取/修改权限。
 
-增量升级和预检见[无限画布迁移](migrations/2026-10-05-infinite-canvas/README.md)，已接通的行为见[画布 API](../api/canvases.md)。当前已有上传来源资源的删除保护和回收；完整媒体加工、尚未迁入业务的引用及助手功能仍需后续实体与服务迁移。
+增量升级和预检见[无限画布迁移](migrations/2026-10-05-infinite-canvas/README.md)，已接通的行为见[画布 API](../api/canvases.md)。当前已有上传来源资源的删除保护和回收；其他画布功能进度以实施记录为准。按用户最新边界，标准与画布共用[项目 AI 创作助手](../api/assistant.md)，原源助手的自动改图/生成能力不进入新纯对话助手；私人对话与明确节点媒体引用按项目助手权限冻结，不新增一套画布聊天表。
 
 canvas_creation_attempts / canvas_creation_resources 保存本人首次完整创建的固定请求与资源准备进度。attempt 的 `(user_id,idempotency_key)`、`(user_id,source_key)` 唯一；resource 的目标 ID 与定位值唯一，通过 `(attempt_id,user_id)` 复合外键固定作者。复制期间通过来源媒体/二进制外键防删除，复制完成释放外键并固定来源快照；最终建图、文件与回执同一事务提交。准备过程不创建可见半成品项目。过期清理复用复制锁，先持久标记需重新复制再删除字节，保留请求与目标身份；ready/attached 不进入清理。
 

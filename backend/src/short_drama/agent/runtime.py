@@ -103,8 +103,18 @@ def may_decide(session, project, conversation, run):
         is None
     ):
         return False
-    episode = session.scalar(select(Episode).where(Episode.id == conversation.episode_id))
     authorization = (run.checkpoint or {}).get("authorization")
+    if conversation.scope_version == 2:
+        from short_drama.agent.assistant_chat import validate_assistant_chat
+
+        try:
+            validate_assistant_chat(conversation, run)
+        except AgentGatewayError:
+            return False
+        return True
+    if (run.checkpoint or {}).get("purpose") == "assistant_chat":
+        return False
+    episode = session.scalar(select(Episode).where(Episode.id == conversation.episode_id))
     return (
         episode is not None
         and episode.project_id == project.id
@@ -151,7 +161,14 @@ def model_unchanged(session, run):
 
 def checked_budget(run):
     authorization = (run.checkpoint or {}).get("authorization") or {}
-    mode = "workflow" if authorization.get("approved_plan") else "discuss"
+    assistant = (run.checkpoint or {}).get("purpose") == "assistant_chat"
+    mode = (
+        "assistant"
+        if assistant
+        else "workflow"
+        if authorization.get("approved_plan")
+        else "discuss"
+    )
     maximum = budget_limits(mode)
     budget = run.budget or {}
     if set(budget) != set(maximum):
@@ -160,7 +177,12 @@ def checked_budget(run):
         if (
             type(value) is not int
             or value < 0
-            or (key not in {"images", "videos"} and (value == 0 or value > maximum[key]))
+            or (
+                key
+                not in ({"images", "videos", "tool_calls"} if assistant else {"images", "videos"})
+                and (value == 0 or value > maximum[key])
+            )
+            or (assistant and key in {"images", "videos", "tool_calls"} and value != 0)
         ):
             raise AgentGatewayError("invalid_agent_budget")
     return budget
@@ -195,6 +217,10 @@ def _json_copy(value):
 def freeze_input(values, run):
     values = dict(values)
     values["tools"] = [asdict(tool) for tool in values.get("tools", ())]
+    if (run.checkpoint or {}).get("purpose") == "assistant_chat" and (
+        values["tools"] or values.get("deferred_results") or values.get("max_tool_calls", 0) != 0
+    ):
+        raise AgentGatewayError("assistant_tools_forbidden")
     values.setdefault("stream", True)
     budget = checked_budget(run)
     usage = {**initial_usage(), **(run.usage or {})}
@@ -334,6 +360,14 @@ class AgentRuntimeStore:
                 or run.next_run_at > now
             ):
                 return None
+            from short_drama.agent.assistant_chat import is_assistant_chat, validate_assistant_chat
+
+            if is_assistant_chat(conversation, run):
+                try:
+                    validate_assistant_chat(conversation, run)
+                except AgentGatewayError as error:
+                    finish_locked(session, conversation, run, "failed", {"code": error.code})
+                    return None
             if run.cancel_requested or not may_decide(session, project, conversation, run):
                 finish_locked(session, conversation, run, "cancelled", {"code": "access_revoked"})
                 return None
@@ -391,6 +425,17 @@ class AgentRuntimeStore:
                 session.add(turn)
                 session.flush()
             raw = (turn.response or {}).get("raw")
+            if is_assistant_chat(conversation, run):
+                inputs = turn.request_messages[0].get("kwargs", {})
+                if (
+                    inputs.get("tools")
+                    or inputs.get("deferred_results")
+                    or inputs.get("max_tool_calls") != 0
+                ):
+                    finish_locked(
+                        session, conversation, run, "failed", {"code": "assistant_tools_forbidden"}
+                    )
+                    return None
             if turn.status != "prepared" and raw is None:
                 turn.status, turn.error, turn.updated_at = (
                     "unknown",
@@ -544,6 +589,16 @@ class AgentRuntimeStore:
                 turn_usage.update({"settled": True, "output_tokens": tokens})
             turn_usage["provider_usage"] = reported
             run.usage, turn.usage, run.updated_at = usage, turn_usage, utcnow()
+            from short_drama.agent.assistant_chat import is_assistant_chat, validate_assistant_chat
+
+            if is_assistant_chat(conversation, run):
+                try:
+                    validate_assistant_chat(conversation, run)
+                    if normalized["output_kind"] != "text":
+                        raise AgentGatewayError("assistant_tools_forbidden")
+                except AgentGatewayError as error:
+                    finish_locked(session, conversation, run, "failed", {"code": error.code})
+                    return False
             active = (
                 run.status not in TERMINAL
                 and run.message_version == claim.version

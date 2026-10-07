@@ -42,7 +42,7 @@ export default defineConfig(({ mode }) => {
             "import.meta.env.VITE_APP_VERSION": JSON.stringify(appVersion),
         },
         resolve: {
-            dedupe: ["axios", "react", "react-dom"],
+            dedupe: ["axios", "react", "react-dom", "antd"],
             alias: {
                 "@": resolve(root, "src"),
                 "@host": resolve(root, "../src"),

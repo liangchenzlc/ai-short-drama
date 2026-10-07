@@ -601,7 +601,7 @@ CREATE TABLE `agent_conversations` (
   `id` BIGINT UNSIGNED NOT NULL,
   `owner_user_id` BIGINT UNSIGNED NOT NULL,
   `project_id` BIGINT UNSIGNED NOT NULL,
-  `episode_id` BIGINT UNSIGNED NOT NULL,
+  `episode_id` BIGINT UNSIGNED NULL,
   `stage` VARCHAR(16) COLLATE utf8mb4_0900_bin NULL,
   `subject_type` VARCHAR(16) COLLATE utf8mb4_0900_bin NULL,
   `subject_id` BIGINT UNSIGNED NULL,
@@ -622,7 +622,7 @@ CREATE TABLE `agent_conversations` (
   CONSTRAINT ck_agent_conversations_create_pair CHECK ((create_key IS NULL) = (create_hash IS NULL)),
   CONSTRAINT ck_agent_conversations_numbers CHECK (row_version > 0 AND next_message_seq > 0 AND next_event_seq > 0),
   CONSTRAINT ck_agent_conversations_requirements CHECK (JSON_TYPE(fixed_requirements) = 'OBJECT'),
-  CONSTRAINT ck_agent_conversations_scope CHECK ((scope_version = 0 AND stage IS NULL AND subject_type IS NULL AND subject_id IS NULL AND task_type IS NULL) OR (scope_version = 1 AND stage IS NOT NULL AND subject_type IS NOT NULL AND subject_id IS NOT NULL AND subject_id > 0 AND task_type IS NOT NULL AND ((stage = 'source' AND subject_type = 'episode' AND subject_id = episode_id AND task_type = 'writing') OR (stage = 'assets' AND subject_type = 'episode' AND subject_id = episode_id AND task_type IN ('extraction','batch')) OR (stage = 'assets' AND subject_type = 'asset' AND task_type IN ('creation','image')) OR (stage = 'storyboard' AND subject_type = 'episode' AND subject_id = episode_id AND task_type IN ('planning','batch')) OR (stage = 'storyboard' AND subject_type = 'shot' AND task_type IN ('creation','image','video'))))),
+  CONSTRAINT ck_agent_conversations_scope CHECK ((scope_version = 2 AND episode_id IS NULL AND stage IS NULL AND subject_type IS NULL AND subject_id IS NULL AND task_type IS NULL) OR (scope_version = 0 AND episode_id IS NOT NULL AND stage IS NULL AND subject_type IS NULL AND subject_id IS NULL AND task_type IS NULL) OR (scope_version = 1 AND episode_id IS NOT NULL AND stage IS NOT NULL AND subject_type IS NOT NULL AND subject_id IS NOT NULL AND subject_id > 0 AND task_type IS NOT NULL AND ((stage = 'source' AND subject_type = 'episode' AND subject_id = episode_id AND task_type = 'writing') OR (stage = 'assets' AND subject_type = 'episode' AND subject_id = episode_id AND task_type IN ('extraction','batch')) OR (stage = 'assets' AND subject_type = 'asset' AND task_type IN ('creation','image')) OR (stage = 'storyboard' AND subject_type = 'episode' AND subject_id = episode_id AND task_type IN ('planning','batch')) OR (stage = 'storyboard' AND subject_type = 'shot' AND task_type IN ('creation','image','video'))))),
   CONSTRAINT ck_agent_conversations_status CHECK (status IN ('active','archived')),
   CONSTRAINT ck_agent_conversations_time CHECK (updated_at >= created_at),
   CONSTRAINT ck_agent_conversations_title CHECK (CHAR_LENGTH(TRIM(title)) > 0),
@@ -632,6 +632,7 @@ CREATE TABLE `agent_conversations` (
   UNIQUE KEY `uk_agent_conversation_create` (owner_user_id, create_key),
   KEY `idx_agent_conversations_owner_episode` (`owner_user_id`, `episode_id`, `updated_at`, `id`),
   KEY `idx_agent_conversations_project` (`project_id`, `owner_user_id`, `id`),
+  KEY `idx_agent_conversations_project_chat` (`owner_user_id`, `project_id`, `scope_version`, `status`, `updated_at`, `id`),
   KEY `idx_agent_conversations_scope` (`owner_user_id`, `episode_id`, `scope_version`, `stage`, `subject_type`, `subject_id`, `task_type`, `status`, `updated_at`, `id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 

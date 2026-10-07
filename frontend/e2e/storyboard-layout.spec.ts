@@ -80,21 +80,21 @@ test('batch selection is explicit and stays selected when a card opens', async (
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
 
-test('Agent preserves each scoped draft while shot information retains conflicts in its dialog', async ({ page }) => {
+test('project assistant retains its draft while inline shot conflicts block navigation', async ({ page }) => {
   const state = await layoutFixture(page);
   page.on('console', message => { if (message.text().includes('Encountered two children with the same key')) state.errors.push(message.text()); });
-  const conversation = { id: '301', project_id: '10', episode_id: '20', title: '分镜讨论', stage: 'storyboard', subject_type: 'episode', subject_id: '20', task_type: 'planning', scope_version: 1, archived: false, row_version: '1', last_run_status: null, created_at: '2026-10-03T00:00:00Z', updated_at: '2026-10-03T00:00:00Z' };
+  await page.route('**/api/v1/auth/capabilities', route => route.fulfill({ json: { enabled: true } }));
+  await page.route('**/api/v1/auth/me', route => route.fulfill({ json: { user: { id: '9007199254740993', username: 'creator', display_name: '创作者', email: 'creator@example.test', email_verified: true } } }));
+  const conversation = { id: '301', project_id: '10', episode_id: null, title: '项目对话', stage: null, subject_type: null, subject_id: null, task_type: null, scope_version: 2, archived: false, row_version: '1', last_run_status: null, created_at: '2026-10-06T00:00:00Z', updated_at: '2026-10-06T00:00:00Z' };
   const conversations = [conversation];
-  await page.route('**/api/v1/agent/**', async route => {
-    const path = new URL(route.request().url()).pathname.slice('/api/v1/agent'.length);
+  await page.route(/\/api\/v1\/(agent|assistant)\//, async route => {
+    const path = new URL(route.request().url()).pathname.replace(/^\/api\/v1\/(agent|assistant)/, '');
     if (path === '/status') return route.fulfill({ json: { enabled: true, schema_ready: true } });
     if (path === '/models') return route.fulfill({ json: { items: [], preferred_id: null } });
     if (path === '/skills') return route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 50 } });
     if (path === '/conversations/resolve') {
-      const scope = route.request().postDataJSON();
-      let item = conversations.find(item => ['stage', 'subject_type', 'subject_id', 'task_type'].every(key => item[key as keyof typeof item] === scope[key]));
-      if (!item) { item = { ...conversation, ...scope, id: '302' }; conversations.push(item); }
-      return route.fulfill({ json: item });
+      expect(route.request().postDataJSON()).toEqual({ project_id: '10' });
+      return route.fulfill({ json: conversation });
     }
     if (path === '/conversations') return route.fulfill({ json: { items: conversations, total: conversations.length, offset: 0, limit: 20 } });
     if (/^\/conversations\/\d+$/.test(path)) return route.fulfill({ json: conversations.find(item => item.id === path.split('/').pop()) });
@@ -108,29 +108,28 @@ test('Agent preserves each scoped draft while shot information retains conflicts
     if (route.request().method() === 'PATCH' && conflict) return route.fulfill({ status: 409, json: { error: { code: 'version_conflict' } } });
     return route.fallback();
   });
-  await page.goto(`${root}/storyboard?mode=agent&conversation=301&conversation_stage=storyboard&conversation_storyboard=301`);
-  const composer = page.getByRole('textbox', { name: '创作要求', exact: true });
+  await page.goto(`${root}/storyboard?assistant=open&conversation=301`);
+  const composer = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await expect(composer).toBeVisible();
-  await composer.fill('保留这段 Agent 草稿');
+  await composer.fill('保留这段项目对话草稿');
   await page.locator('.storyboard-summary').first().click();
-  await expect(composer).toBeVisible();
-  await expect(composer).toHaveValue('');
-  await composer.fill('保留当前镜头 Agent 草稿');
-  await page.getByRole('button', { name: '镜头信息', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '分镜 01 · 镜头信息', exact: true });
-  await dialog.getByRole('textbox', { name: '分镜 1 脚本', exact: true }).fill('发生冲突仍保留的镜头草稿');
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('textbox')).toHaveCount(1);
-  await expect(dialog.getByRole('textbox')).toHaveValue('发生冲突仍保留的镜头草稿');
-  await expect(dialog.getByText(/你的输入仍保留/)).toBeVisible();
+  await expect(composer).toBeHidden();
+  const script = page.getByRole('textbox', { name: '分镜 1 脚本', exact: true });
+  await script.fill('发生冲突仍保留的镜头草稿');
+  const stages = page.getByRole('navigation', { name: '分集制作流程' });
+  await stages.getByRole('button', { name: /素材准备/ }).click();
+  const confirmation = page.getByRole('dialog', { name: '未保存的修改', exact: true });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(script).toHaveValue('发生冲突仍保留的镜头草稿');
+  await expect(page.getByText(/你的输入仍保留/)).toBeVisible();
+  await page.getByRole('button', { name: 'AI 创作助手', exact: true }).click();
+  await expect(composer).toHaveValue('保留这段项目对话草稿');
   conflict = false;
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(composer).toBeVisible();
-  await expect(composer).toHaveValue('保留当前镜头 Agent 草稿');
-  await page.getByRole('button', { name: '返回本集分镜规划对话', exact: true }).click();
-  await expect(composer).toHaveValue('保留这段 Agent 草稿');
+  await stages.getByRole('button', { name: /素材准备/ }).click();
+  await expect(page).toHaveURL(url => url.pathname.endsWith('/assets') && url.searchParams.get('conversation') === '301');
+  await expect(composer).toHaveValue('保留这段项目对话草稿');
+  expect(conversations).toHaveLength(1);
   expect(state.shots[0].script).toBe('发生冲突仍保留的镜头草稿');
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });

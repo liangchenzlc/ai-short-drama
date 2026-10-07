@@ -50,6 +50,7 @@ export function AssetLibraryPanel({
   const auth = useAuth();
   const inEpisode = useEpisodeCreation();
   const creation = useEpisodeCreationControls();
+  const dismissedSubject = useRef<string | null>(null);
   const DetailFrame = inEpisode ? EpisodeAssetDetail : Dialog;
   const copiesOnImport = auth.enabled && scope.kind === 'project' && importFrom?.kind === 'global';
   const importLibrary = importFrom?.kind === 'project' ? '项目' : auth.enabled ? '个人' : '全局';
@@ -59,11 +60,11 @@ export function AssetLibraryPanel({
   const [offset, setOffset] = useState(0);
   const { items, total, loading, error, refresh } = useAssetLibrary(scope, kind, query, offset);
   useEffect(() => {
-    if (scope.kind !== 'episode' || creation.subject?.type !== 'asset') return;
+    if (scope.kind !== 'episode' || creation.subject?.type !== 'asset' || creation.subject.id === dismissedSubject.current) return;
     const current = items.find(item => item.id === creation.subject?.id);
     if (!current) return;
     const label = `${labels[current.kind]} · ${current.name}`;
-    if (creation.subject.label !== label) creation.selectSubject?.({ type: 'asset', id: current.id, label });
+    if (creation.subject.label !== label || creation.subject.revision !== current.row_version) creation.selectSubject?.({ type: 'asset', id: current.id, label, revision: current.row_version });
   }, [scope.kind, items, creation.subject, creation.selectSubject]);
   useEffect(() => { if (refreshToken) refresh(); }, [refreshToken, refresh]);
   const [creating, setCreating] = useState(false);
@@ -113,6 +114,13 @@ export function AssetLibraryPanel({
   const assetEntries = useRef(new Map<string, HTMLButtonElement>());
   const selectedId = useRef<string | null>(selected?.id ?? null);
   selectedId.current = selected?.id ?? null;
+  useEffect(() => {
+    const requestedId = creation.subject?.type === 'asset' ? creation.subject.id : null;
+    if (requestedId !== dismissedSubject.current) dismissedSubject.current = null;
+    if (scope.kind !== 'episode' || !requestedId || requestedId === dismissedSubject.current || selected || loading) return;
+    const item = items.find(asset => asset.id === requestedId);
+    if (item) void openSelected(item);
+  }, [scope.kind, creation.subject?.id, creation.subject?.type, selected, loading, items]);
   useLayoutEffect(() => {
     if (!inEpisode || selected || !selectedTrigger.current) return;
     const trigger = selectedTrigger.current;
@@ -208,8 +216,9 @@ export function AssetLibraryPanel({
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     try {
       if (selectedDirty && !await confirmAction('切换素材会放弃当前未保存的修改。确定继续？')) return;
+      dismissedSubject.current = null;
       selectedTrigger.current = { node: trigger, id: item.id };
-      if (scope.kind === 'episode') creation.selectSubject?.({ type: 'asset', id: item.id, label: `${labels[item.kind]} · ${item.name}` });
+      if (scope.kind === 'episode') { creation.selectSubject?.({ type: 'asset', id: item.id, label: `${labels[item.kind]} · ${item.name}`, revision: item.row_version }); creation.revealPanel?.(); }
       selectedId.current = item.id;
       setSelected(item); setSelectedSaved(item); setNotice(''); setCandidates([]); setCandidateTotal(0); setCandidateOffset(0);
       setEditorConflict(false); setConflictReviewOpen(false); conflictRequestRef.current?.abort();
@@ -221,18 +230,6 @@ export function AssetLibraryPanel({
     if (selectedDirty && !await confirmAction('放弃尚未保存的素材修改？')) return;
     clearSelected();
   }
-  async function openAsset(item: LibraryAssetRead) {
-    if (inEpisode && creation.mode === 'agent') {
-      if (busy || generationSubmitting || switchingSelected.current) return;
-      switchingSelected.current = true;
-      try {
-        if (selectedDirty && !await confirmAction('切换素材会放弃当前未保存的修改。确定继续？')) return;
-        clearSelected();
-        creation.selectSubject?.({ type: 'asset', id: item.id, label: `${labels[item.kind]} · ${item.name}` });
-        creation.revealPanel?.();
-      } finally { switchingSelected.current = false; }
-    } else void openSelected(item);
-  }
   async function saveAndCloseSelected() {
     const saved = await saveBeforeGenerate();
     setCloseReviewOpen(false);
@@ -241,9 +238,12 @@ export function AssetLibraryPanel({
 
   function clearSelected() {
     detailRequestRef.current?.abort(); conflictRequestRef.current?.abort();
+    // 编辑立即关闭时，路由移除参数可能仍在过渡中；先阻止旧选择再次打开详情。
+    dismissedSubject.current = selectedId.current;
     selectedId.current = null;
     setSelected(null); setSelectedSaved(null); setDetailLoading(false); setDetailError('');
     setEditorConflict(false); setConflictReviewOpen(false); setConflictLatest(null);
+    if (scope.kind === 'episode') creation.selectSubject?.(null);
   }
 
   async function loadSelected(item: LibraryAssetRead) {
@@ -490,12 +490,11 @@ export function AssetLibraryPanel({
     }
   }
   return <section className="overview-card remote-asset-library" aria-label={title}>
-    {inEpisode && creation.mode === 'agent' && creation.subject?.type === 'asset' && <Button type="link" onClick={() => creation.selectSubject?.(null)}>返回本集素材提取对话</Button>}
     <div className="overview-heading"><div><h2>{title}</h2></div><div>{toolbar}{importFrom && !readOnly && <Button disabled={busy} onClick={() => void openImports()}>从{importLibrary}库{copiesOnImport ? '复制' : '添加'}</Button>}{!readOnly && <Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={busy} onClick={() => { setNotice(''); setCreating(true); }}>新建{labels[kind]}</Button>}</div></div>
     <div className="resource-toolbar"><Segmented aria-label="素材类别" value={kind} onChange={changeKind} options={(Object.keys(labels) as AssetKind[]).map((value) => ({ value, label: labels[value] }))}/><span className="asset-library-count" aria-live="polite">{loading ? '正在载入…' : `共 ${total} 个${labels[kind]}`}</span><Input.Search value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); }} aria-label="搜索素材" placeholder={`搜索${labels[kind]}名称或描述`} allowClear/></div>
     {!readOnly && <BatchLauncher scope={{ library: scope.kind, ...(scope.kind !== 'global' ? { project_id: scope.projectId } : {}), ...(scope.kind === 'episode' ? { episode_id: scope.episodeId } : {}), asset_kind: kind, search: query.trim() }} selection={batchSelection} loadedIds={items.map(item => item.id)} disabled={busy || loading || creating || !!selected}/>}
     {notice && <Alert type="info" showIcon message={notice}/>} {error && <Alert type="error" showIcon message={error} action={<Button onClick={refresh}>重试</Button>}/>}
-    {loading ? <Skeleton title paragraph={{ rows: 3 }}/> : items.length ? <div className="asset-grid">{items.map((item) => inEpisode ? <EpisodeAssetCard key={item.id} asset={item} selected={(creation.mode === 'agent' ? creation.subject?.id : selected?.id) === item.id} disabled={busy || generationSubmitting} readOnly={readOnly} canShare={!!shareTo} batchEnabled={batchSelection.enabled} batchChecked={batchSelection.ids.includes(item.id)} entryRef={node => { if (node) assetEntries.current.set(item.id, node); else assetEntries.current.delete(item.id); }} onOpen={() => openAsset(item)} onEdit={() => void openSelected(item)} onShare={() => void share(item)} onRemove={() => void remove(item)} onBatchChange={checked => batchSelection.toggle(item.id, checked)}/> : <article className="asset-card library-resource-card" key={item.id}>
+    {loading ? <Skeleton title paragraph={{ rows: 3 }}/> : items.length ? <div className="asset-grid">{items.map((item) => inEpisode ? <EpisodeAssetCard key={item.id} asset={item} selected={selected?.id === item.id} disabled={busy || generationSubmitting} readOnly={readOnly} canShare={!!shareTo} batchEnabled={batchSelection.enabled} batchChecked={batchSelection.ids.includes(item.id)} entryRef={node => { if (node) assetEntries.current.set(item.id, node); else assetEntries.current.delete(item.id); }} onOpen={() => void openSelected(item)} onEdit={() => void openSelected(item)} onShare={() => void share(item)} onRemove={() => void remove(item)} onBatchChange={checked => batchSelection.toggle(item.id, checked)}/> : <article className="asset-card library-resource-card" key={item.id}>
       {batchSelection.enabled && !readOnly && <Checkbox className="batch-item-select" aria-label={`批量选择 ${item.name}`} checked={batchSelection.ids.includes(item.id)} onChange={event => batchSelection.toggle(item.id, event.target.checked)}>批量选择</Checkbox>}
       <>{item.image?.url ? <PreviewImage triggerClassName="resource-image" src={item.image.url} alt={item.name}/> : <button type="button" className="resource-image" aria-label={`查看 ${item.name} 的详情`} onClick={() => openSelected(item)}><span><Icon name={item.kind === 'character' ? 'person' : item.kind} size={28}/>暂无图片</span></button>}</>
       <div className="asset-card-content"><h3><button type="button" className="asset-name-button" ref={node => { if (node) assetEntries.current.set(item.id, node); else assetEntries.current.delete(item.id); }} disabled={busy || generationSubmitting} onClick={() => openSelected(item)}>{item.name}</button></h3><p>{item.description || item.prompt || '补充外观或特征，方便后续创作。'}</p><div className="resource-meta"><span className={`status-badge ${item.state === 'confirmed' ? 'is-success' : 'is-pending'}`}>{item.state === 'confirmed' ? '已确认' : '待确认'}</span><small>{item.reference_count} 处引用</small></div></div>

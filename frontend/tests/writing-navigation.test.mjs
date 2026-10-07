@@ -30,6 +30,14 @@ test('initial content loading does not guard the first route normalization',()=>
   x.navigator.replace('/projects/1/episodes/2/source');
   assert.equal(x.replacements,1);assert.equal(x.confirmations,0);x.remove();
 });
+test('assistant view query changes preserve drafts without a navigation save or discard prompt',()=>{
+  const x=setup({status:'conflict'});
+  x.browser.location={href:'https://fixture.test/projects/1/episodes/2/source',pathname:'/projects/1/episodes/2/source'};
+  x.navigator.replace({search:'?assistant=open&conversation=9007199254740993'});
+  assert.equal(x.replacements,1);assert.equal(x.confirmations,0);
+  x.navigator.push('/projects/1/episodes/2/source?assistant=open');
+  assert.equal(x.rendered,3);assert.equal(x.confirmations,0);x.remove();
+});
 test('internal route push waits for successful flush before changing route',async()=>{
   const x=setup();x.navigator.push('/next');assert.equal(x.rendered,2);x.waiting.resolve(true);await tick();assert.equal(x.rendered,3);assert.equal(x.confirmations,0);x.remove();
 });

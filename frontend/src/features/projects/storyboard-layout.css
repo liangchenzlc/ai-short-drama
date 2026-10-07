@@ -30,8 +30,9 @@
 .storyboard-workspace .storyboard-card-skeleton > div { display: grid; gap: 10px; padding: 14px; }
 .storyboard-workspace .storyboard-card-skeleton i { height: 12px; border-radius: 4px; background: var(--surface-raised); }
 .storyboard-workspace .storyboard-card-skeleton i:last-child { width: 65%; }
-.is-storyboard-prompt .creation-panel-heading[hidden] { display: none; }
-.is-storyboard-prompt .creation-panel-content { padding: 0; gap: 0; }
+.is-storyboard-settings .creation-panel-heading[hidden] { display: none; }
+.is-wide .is-storyboard-settings .storyboard-selection-heading { padding-right: 64px; }
+.is-storyboard-settings .creation-panel-content { padding: 0; gap: 0; }
 .storyboard-prompt-panel { min-width: 0; }
 .storyboard-prompt-panel [hidden] { display: none !important; }
 .storyboard-selection-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 16px 12px; }

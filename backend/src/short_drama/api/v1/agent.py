@@ -336,6 +336,9 @@ def get_run(run_id: Identifier, service: Runs, scope: ExpectedScope):
 @router.post("/runs/{run_id}/stop", response_model=RunRead)
 def stop_run(run_id: Identifier, service: Runs, scope: ExpectedScope):
     check_run_scope(service, run_id, scope)
+    run = service.get_run(run_id)
+    if service.get_conversation(run.conversation_id).scope_version == 2:
+        raise WorkflowError("assistant_api_required", "项目对话只能通过 AI 创作助手接口停止", 409)
     return service.stop(run_id)
 
 

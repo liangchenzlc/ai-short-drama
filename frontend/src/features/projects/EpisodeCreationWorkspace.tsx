@@ -1,7 +1,6 @@
-import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AgentEpisodeLayout } from '../agents/AgentEpisodeLayout';
-import type { CreationMode } from '../agents/agent-navigation';
 import type { AgentSubject } from '../agents/agent-scope';
 import './episode-creation.css';
 
@@ -10,7 +9,6 @@ const CreationContext = createContext<{
   target: HTMLDivElement | null;
   editorTarget: HTMLDivElement | null;
   stage: CreationStage;
-  mode: CreationMode;
   revealPanel: () => void;
   setEditor: (stage: CreationStage, active: boolean) => void;
   subject: AgentSubject | null;
@@ -23,11 +21,11 @@ export function useEpisodeCreation() {
 
 export function useEpisodeCreationControls() {
   const workspace = useContext(CreationContext);
-  return { mode: workspace?.mode ?? 'prompt', revealPanel: workspace?.revealPanel, subject: workspace?.subject ?? null, selectSubject: workspace?.selectSubject };
+  return { revealPanel: workspace?.revealPanel, subject: workspace?.subject ?? null, selectSubject: workspace?.selectSubject };
 }
 
-export function EpisodeCreationWorkspace({ stage, mode, modeControl, agentPanel, workRequest, children, subject, onSubject }: {
-  stage: CreationStage; mode: CreationMode; modeControl: ReactNode; agentPanel: ReactNode; workRequest: number; children: ReactNode;
+export function EpisodeCreationWorkspace({ stage, assistantOpen, assistantPanel, onCloseAssistant, workRequest, children, subject, onSubject }: {
+  stage: CreationStage; assistantOpen: boolean; assistantPanel: ReactNode; onCloseAssistant: () => void; workRequest: number; children: ReactNode;
   subject: AgentSubject | null; onSubject: (subject: AgentSubject | null) => void;
 }) {
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
@@ -35,9 +33,11 @@ export function EpisodeCreationWorkspace({ stage, mode, modeControl, agentPanel,
   const [editorStage, setEditorStage] = useState<CreationStage | null>(null);
   const [panelRequest, setPanelRequest] = useState(0);
   const [editorDismissRequest, setEditorDismissRequest] = useState(0);
-  const revealPanel = useCallback(() => setPanelRequest(previous => previous + 1), []);
+  const closeAssistant = useRef(onCloseAssistant); closeAssistant.current = onCloseAssistant;
+  const revealPanel = useCallback(() => { closeAssistant.current(); setPanelRequest(previous => previous + 1); }, []);
   const setEditor = useCallback((nextStage: CreationStage, active: boolean) => {
     if (active) {
+      closeAssistant.current();
       setEditorStage(nextStage);
       setPanelRequest(previous => previous + 1);
     } else {
@@ -46,16 +46,15 @@ export function EpisodeCreationWorkspace({ stage, mode, modeControl, agentPanel,
     }
   }, []);
   const editing = editorStage === stage;
-  const workspace = useMemo(() => ({ target, editorTarget, stage, mode, setEditor, revealPanel, subject, selectSubject: onSubject }), [target, editorTarget, stage, mode, setEditor, revealPanel, subject, onSubject]);
+  const workspace = useMemo(() => ({ target, editorTarget, stage, setEditor, revealPanel, subject, selectSubject: onSubject }), [target, editorTarget, stage, setEditor, revealPanel, subject, onSubject]);
   return <CreationContext.Provider value={workspace}>
-    <AgentEpisodeLayout enabled={stage !== 'assembly'} workRequest={workRequest + editorDismissRequest} panelRequest={panelRequest} panel={<section className={`episode-creation-panel${stage === 'storyboard' && mode === 'prompt' ? ' is-storyboard-prompt' : ''}`} aria-label="AI 创作区域">
-      <div className="creation-mode-toolbar" hidden={editing}>{modeControl}</div>
-      <aside className="prompt-creation-panel" aria-label="提示词 AI 创作" hidden={editing || mode !== 'prompt'}>
+    <AgentEpisodeLayout enabled={stage !== 'assembly' || assistantOpen} assistantOpen={assistantOpen} onCloseAssistant={onCloseAssistant} workRequest={workRequest + editorDismissRequest} panelRequest={panelRequest} panel={<section className={`episode-creation-panel${stage === 'storyboard' && !assistantOpen ? ' is-storyboard-settings' : ''}${assistantOpen ? ' is-assistant-open' : ''}`} aria-label={assistantOpen ? 'AI 创作助手区域' : '模型与生成设置'}>
+      <aside className="generation-settings-panel" aria-label="模型与生成设置" hidden={editing || assistantOpen}>
         <header className="creation-panel-heading" hidden={stage === 'storyboard'}><h2>AI 创作</h2><span>模型与生成设置</span></header>
         <div ref={setTarget} className="creation-panel-content" />
       </aside>
-      <div hidden={editing || mode !== 'agent'}>{agentPanel}</div>
-      <div ref={setEditorTarget} className="creation-editor-target" hidden={!editing}/>
+      <div className="episode-assistant-target" hidden={!assistantOpen}>{assistantPanel}</div>
+      <div ref={setEditorTarget} className="creation-editor-target" hidden={!editing || assistantOpen}/>
     </section>}>{children}</AgentEpisodeLayout>
   </CreationContext.Provider>;
 }

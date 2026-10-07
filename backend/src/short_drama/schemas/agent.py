@@ -94,7 +94,7 @@ class ConversationPatch(InputModel):
 class ConversationRead(ReadModel):
     id: Identifier
     project_id: Identifier
-    episode_id: Identifier
+    episode_id: Identifier | None
     title: str
     row_version: Identifier
     archived: bool
@@ -106,7 +106,7 @@ class ConversationRead(ReadModel):
     subject_type: ConversationSubject | None = None
     subject_id: Identifier | None = None
     task_type: ConversationTask | None = None
-    scope_version: Literal[0, 1] = 0
+    scope_version: Literal[0, 1, 2] = 0
 
 
 class AgentStatus(ReadModel):

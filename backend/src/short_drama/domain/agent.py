@@ -82,7 +82,7 @@ class AgentConversation(Base):
     id: Mapped[int] = _id()
     owner_user_id: Mapped[int] = _number()
     project_id: Mapped[int] = _number()
-    episode_id: Mapped[int] = _number()
+    episode_id: Mapped[int | None] = _number(nullable=True)
     stage: Mapped[str | None] = mapped_column(
         VARCHAR(16, collation="utf8mb4_0900_bin"), nullable=True
     )
@@ -123,6 +123,15 @@ class AgentConversation(Base):
         ),
         Index("idx_agent_conversations_project", "project_id", "owner_user_id", "id"),
         Index(
+            "idx_agent_conversations_project_chat",
+            "owner_user_id",
+            "project_id",
+            "scope_version",
+            "status",
+            "updated_at",
+            "id",
+        ),
+        Index(
             "idx_agent_conversations_scope",
             "owner_user_id",
             "episode_id",
@@ -136,9 +145,13 @@ class AgentConversation(Base):
             "id",
         ),
         CheckConstraint(
-            "(scope_version = 0 AND stage IS NULL AND subject_type IS NULL "
+            "(scope_version = 2 AND episode_id IS NULL AND stage IS NULL "
+            "AND subject_type IS NULL AND subject_id IS NULL AND task_type IS NULL) OR "
+            "(scope_version = 0 AND episode_id IS NOT NULL AND stage IS NULL "
+            "AND subject_type IS NULL "
             "AND subject_id IS NULL AND task_type IS NULL) OR "
-            "(scope_version = 1 AND stage IS NOT NULL AND subject_type IS NOT NULL "
+            "(scope_version = 1 AND episode_id IS NOT NULL AND stage IS NOT NULL "
+            "AND subject_type IS NOT NULL "
             "AND subject_id IS NOT NULL AND subject_id > 0 AND task_type IS NOT NULL AND ("
             "(stage = 'source' AND subject_type = 'episode' AND subject_id = episode_id "
             "AND task_type = 'writing') OR "

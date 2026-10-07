@@ -77,7 +77,7 @@ export function StoryboardStage({
   refreshToken?: number;
 }) {
   const api = storyboardApi(projectId, episodeId);
-  const { mode, revealPanel, subject, selectSubject } = useEpisodeCreationControls();
+  const { revealPanel, subject, selectSubject } = useEpisodeCreationControls();
   const batchSelection = useBatchSelection(`${projectId}:${episodeId}`);
   const [page, setPageState] = useState<StoryboardPage | null>(null);
   const pageRef = useRef<StoryboardPage | null>(null);
@@ -110,8 +110,6 @@ export function StoryboardStage({
   const [mediaTab, setMediaTab] = useState<string>('image');
   const [editorTab, setEditorTab] = useState('info');
   const [batchMode, setBatchMode] = useState(false);
-  const [shotInfoOpen, setShotInfoOpen] = useState(false);
-  const [closingShotInfo, setClosingShotInfo] = useState(false);
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
   const selectedShotRef = useRef<string | null>(null);
   const selectionEpoch = useRef(0);
@@ -204,7 +202,7 @@ export function StoryboardStage({
     setAssets([]); setAssetsLoading(true); setAssetsError(''); setTasks([]); setTasksTotal(0); setTasksLoading(true); setTasksLoaded(false); setTasksError(''); selectShotId(subject?.type === 'shot' ? subject.id : null); setCandidate(null); setMessage(''); setBusy(false); setSubmittedTask(null); setSubmitting(false); setSettingsOpen(false); submissionLock.current = false;
     setLockedShots(new Set());
     setTaskDetailId(null); shotMutation.current = null;
-    setEditorTab('info'); setBatchMode(false); setShotInfoOpen(false); setClosingShotInfo(false);
+    setEditorTab('info'); setBatchMode(false);
     return () => {
       mounted.current = false;
       contextEpoch.current++;
@@ -273,7 +271,7 @@ export function StoryboardStage({
       setUnavailableDraftId(id);
       setMessage('当前分镜已归档或删除，未保存的输入仍保留。请下载分镜草稿后核对。');
     } else setMessage('当前分镜已归档或删除，已返回本集分镜规划。');
-    selectShotId(null); selectSubject?.(null); setShotInfoOpen(false); setDetailLoading(false);
+    selectShotId(null); selectSubject?.(null); setDetailLoading(false);
   }
 
   function downloadShotDraft() {
@@ -541,7 +539,7 @@ export function StoryboardStage({
       });
       if (!isCurrentContext(epoch)) return;
       setCandidate(null); setHistoryOpen(false);
-      if (mode === 'replace' && selectionEpoch.current === selection) { selectShotId(null); selectSubject?.(null); setShotInfoOpen(false); }
+      if (mode === 'replace' && selectionEpoch.current === selection) { selectShotId(null); selectSubject?.(null); }
       setStoryboardRevision((revision) => revision + 1);
       setTaskRevision((revision) => revision + 1);
     } catch (cause) { if (isCurrentContext(epoch)) setMessage(errorMessage(cause)); }
@@ -578,8 +576,8 @@ export function StoryboardStage({
     } else if (page.items.length < page.total && !moreError) void loadMoreShots();
   }, [page, loading, moreLoading, moreError]);
   useEffect(() => {
-    if (selectedShot && subject?.id === selectedShot.id) selectSubject?.({ type: 'shot', id: selectedShot.id, label: `分镜 ${String(selectedShot.position).padStart(2, '0')}` });
-  }, [selectedShot?.id, selectedShot?.position, subject?.id, selectSubject]);
+    if (selectedShot && subject?.id === selectedShot.id) selectSubject?.({ type: 'shot', id: selectedShot.id, label: `分镜 ${String(selectedShot.position).padStart(2, '0')}`, revision: selectedShot.row_version });
+  }, [selectedShot?.id, selectedShot?.position, selectedShot?.row_version, subject?.id, selectSubject]);
   const selectionDisabled = busy || loading || !!loadError || moreLoading || lockedShots.size > 0;
   const saveStatus = selectedShot ? saving.current.has(selectedShot.id) ? '保存中…' : dirty.current.has(selectedShot.id) ? '等待保存' : '已保存' : '';
 
@@ -588,7 +586,7 @@ export function StoryboardStage({
     leaveDialogue(() => {
       selectShotId(id);
       const shot = getShot(id);
-      if (shot) selectSubject?.({ type: 'shot', id, label: `分镜 ${String(shot.position).padStart(2, '0')}` });
+      if (shot) selectSubject?.({ type: 'shot', id, label: `分镜 ${String(shot.position).padStart(2, '0')}`, revision: shot.row_version });
       revealPanel?.();
     });
   }
@@ -627,18 +625,6 @@ export function StoryboardStage({
     if (next) { event.preventDefault(); selectEditorTab(next, true); }
   }
 
-  async function closeShotInformation() {
-    if (!selectedShot || closingShotInfo) return;
-    if (dialogueBarrier.current?.hasUnsettled()) { setMessage('对白尚未保存，请先在对白窗口保存或明确放弃修改。'); return; }
-    const epoch = contextEpoch.current;
-    setClosingShotInfo(true);
-    try {
-      if (readOnly || await saveShot(selectedShot.id)) {
-        if (isCurrentContext(epoch)) setShotInfoOpen(false);
-      }
-    } finally { if (isCurrentContext(epoch)) setClosingShotInfo(false); }
-  }
-
   async function mutateShot(id: string, action: 'up' | 'down' | 'archive') {
     const access = currentAccess.current;
     if (shotMutation.current || access.readOnly || access.busy || access.loading || access.loadError || shotLocks.current.size || selectedShotRef.current !== id) return;
@@ -656,7 +642,7 @@ export function StoryboardStage({
         if (!isCurrentContext(epoch) || currentAccess.current.readOnly || selectedShotRef.current !== id) return;
         await api.remove(id, shot.row_version);
         if (!isCurrentContext(epoch)) return;
-        if (selectedShotRef.current === id) { selectShotId(null); selectSubject?.(null); setShotInfoOpen(false); }
+        if (selectedShotRef.current === id) { selectShotId(null); selectSubject?.(null); }
       } else {
         if (action === 'up' && shot.position <= 1 || action === 'down' && shot.position >= current.total) return;
         await api.move(id, current.storyboard_version, action === 'up' ? -1 : 1);
@@ -672,16 +658,16 @@ export function StoryboardStage({
     { key: 'down', label: '下移', disabled: !page || selectedShot.position >= page.total },
     { key: 'archive', label: '归档', danger: true },
   ], onClick: ({ key }) => mutateShot(selectedShot.id, key as 'up' | 'down' | 'archive') }}>
-    <Button type="text" aria-label={`分镜 ${String(selectedShot.position).padStart(2, '0')} 更多操作`} disabled={selectionDisabled || closingShotInfo} icon={<Icon name="more" size={18}/>}/>
+    <Button type="text" aria-label={`分镜 ${String(selectedShot.position).padStart(2, '0')} 更多操作`} disabled={selectionDisabled} icon={<Icon name="more" size={18}/>}/>
   </Dropdown> : null;
 
   const shotInformation = selectedShot ? <div className="storyboard-shot-information" key={selectedShot.id}>
     <div className="shot-script-panel">
       <div className="shot-script-heading"><strong>分镜脚本</strong><span role="status">{saveStatus}</span></div>
-      <Input.TextArea aria-label={'分镜 ' + selectedShot.position + ' 脚本'} autoSize={{ minRows: 5, maxRows: 12 }} value={selectedShot.script} disabled={readOnly || closingShotInfo || !!shotMutation.current || lockedShots.has(selectedShot.id)} onChange={event => updateLocal(selectedShot.id, { script: event.target.value })}/>
+      <Input.TextArea aria-label={'分镜 ' + selectedShot.position + ' 脚本'} autoSize={{ minRows: 5, maxRows: 12 }} value={selectedShot.script} disabled={readOnly || !!shotMutation.current || lockedShots.has(selectedShot.id)} onChange={event => updateLocal(selectedShot.id, { script: event.target.value })}/>
     </div>
-    <label className="storyboard-duration-field"><span>镜头时长</span><InputNumber aria-label={'分镜 ' + selectedShot.position + ' 时长'} min={1} max={10} step={0.5} precision={1} value={selectedShot.duration_ms / 1000} suffix="秒" disabled={readOnly || closingShotInfo || !!shotMutation.current || lockedShots.has(selectedShot.id)} onChange={seconds => { if (seconds !== null) updateLocal(selectedShot.id, { duration_ms: Math.round(seconds * 1000) }); }}/></label>
-    <ShotAssetPicker assets={assets} assetIds={selectedShot.asset_ids} disabled={readOnly || busy || closingShotInfo || assetsLoading || !!assetsError || lockedShots.has(selectedShot.id)} onChange={asset_ids => updateLocal(selectedShot.id, { asset_ids })}/>
+    <label className="storyboard-duration-field"><span>镜头时长</span><InputNumber aria-label={'分镜 ' + selectedShot.position + ' 时长'} min={1} max={10} step={0.5} precision={1} value={selectedShot.duration_ms / 1000} suffix="秒" disabled={readOnly || !!shotMutation.current || lockedShots.has(selectedShot.id)} onChange={seconds => { if (seconds !== null) updateLocal(selectedShot.id, { duration_ms: Math.round(seconds * 1000) }); }}/></label>
+    <ShotAssetPicker assets={assets} assetIds={selectedShot.asset_ids} disabled={readOnly || busy || assetsLoading || !!assetsError || lockedShots.has(selectedShot.id)} onChange={asset_ids => updateLocal(selectedShot.id, { asset_ids })}/>
   </div> : null;
 
   return <div className="storyboard-workspace">
@@ -698,17 +684,17 @@ export function StoryboardStage({
         <aside className="storyboard-prompt-panel" aria-label="分镜媒体设置">
           {selectedShot ? <>
             <header className="storyboard-selection-heading">
-              <div><h3>分镜 {String(selectedShot.position).padStart(2, '0')}</h3><span role="status">{saveStatus}</span>{mode === 'prompt' ? shotActions : null}</div>
+              <div><h3>分镜 {String(selectedShot.position).padStart(2, '0')}</h3><span role="status">{saveStatus}</span>{shotActions}</div>
               <nav aria-label="切换编辑镜头"><Button type="text" aria-label="上一个分镜" disabled={selectionDisabled || selectedShot.position <= 1} onClick={() => void selectAdjacent(-1)}><Icon name="back" size={16}/></Button><Button type="text" aria-label="下一个分镜" loading={moreLoading} disabled={selectionDisabled || !page || selectedShot.position >= page.total} onClick={() => void selectAdjacent(1)}><Icon name="arrow" size={16}/></Button></nav>
             </header>
             <div className="storyboard-editor-tabs" role="tablist" aria-label="镜头制作内容">
               {([{ key: 'info', label: '镜头信息' }, { key: 'image', label: '分镜图' }, { key: 'video', label: '分镜视频' }]).map(tab => <button key={tab.key} type="button" role="tab" id={'storyboard-' + tab.key + '-tab'} aria-selected={editorTab === tab.key} aria-controls={'storyboard-' + tab.key + '-pane'} tabIndex={editorTab === tab.key ? 0 : -1} disabled={lockedShots.has(selectedShot.id)} onClick={() => selectEditorTab(tab.key)} onKeyDown={navigateEditorTabs}>{tab.label}</button>)}
             </div>
-            <div className="storyboard-info-pane" id="storyboard-info-pane" role="tabpanel" aria-labelledby="storyboard-info-tab" hidden={editorTab !== 'info'}>{mode === 'prompt' ? shotInformation : null}</div>
+            <div className="storyboard-info-pane" id="storyboard-info-pane" role="tabpanel" aria-labelledby="storyboard-info-tab" hidden={editorTab !== 'info'}>{shotInformation}</div>
           </> : detailLoading ? <div role="status">正在载入分镜详情…</div> : <div className="storyboard-prompt-empty"><strong>选择一个镜头开始制作</strong><p>在左侧卡片中选择镜头，编辑脚本、关联素材或制作图片与视频。</p></div>}
           <label className="writing-control storyboard-image-model" hidden={!selectedShot || editorTab !== 'image'}><span>分镜生图模型</span><EpisodeModelSelect kind="image" label="分镜生图模型" value={value.models.storyboardImage} disabled={readOnly || busy || lockedShots.size > 0} onResolvedChange={onResolvedImageModel} onChange={id => onChange({ ...value, models: { ...value.models, storyboardImage: id } })}/></label>
           {selectedShot && <div className="storyboard-media-pane" id={'storyboard-' + mediaTab + '-pane'} role="tabpanel" aria-labelledby={'storyboard-' + mediaTab + '-tab'} hidden={editorTab !== mediaTab}>
-            {mediaTab === 'video' && mode === 'prompt' && !shotInfoOpen && <NativeDialoguePanel key={selectedShot.id} revision={storyboardRevision} registerBarrier={registerDialogueBarrier} projectId={projectId} episodeId={episodeId} shotId={selectedShot.id} disabled={readOnly || busy || lockedShots.has(selectedShot.id)} prepare={() => saveShot(selectedShot.id)} onChanged={() => setStoryboardRevision(revision => revision + 1)}/>}
+            {mediaTab === 'video' && <NativeDialoguePanel key={selectedShot.id} revision={storyboardRevision} registerBarrier={registerDialogueBarrier} projectId={projectId} episodeId={episodeId} shotId={selectedShot.id} disabled={readOnly || busy || lockedShots.has(selectedShot.id)} prepare={() => saveShot(selectedShot.id)} onChanged={() => setStoryboardRevision(revision => revision + 1)}/>}
             {mediaTab === 'video' ? <ShotVideoCandidates key={selectedShot.id} shot={selectedShot} disabled={readOnly || busy || lockedShots.has(selectedShot.id)} model={value.models.video} onModelChange={id => onChange({ ...value, models: { ...value.models, video: id } })} onEdit={patch => updateLocal(selectedShot.id, patch)} prepareShot={() => prepareShot(selectedShot.id, 'adoption')} onChanged={() => setStoryboardRevision(revision => revision + 1)}/> : <ShotImageCandidates key={selectedShot.id} shot={selectedShot} disabled={readOnly || busy || lockedShots.has(selectedShot.id)} modelId={imageModelId} capabilities={imageCapabilities} capabilitiesLoading={capabilitiesLoading} onRefreshCapabilities={refreshCapabilities} episodeAspect={value.aspect} prepareShot={purpose => prepareShot(selectedShot.id, purpose)} onChanged={() => setStoryboardRevision(revision => revision + 1)} settings={<>
               <label>图片清晰度<Select aria-label="图片清晰度" value={selectedShot.image_settings.resolution} disabled={readOnly || lockedShots.has(selectedShot.id)} options={['1K', '2K', '4K'].map(value => ({ value, label: value }))} onChange={resolution => updateLocal(selectedShot.id, { image_settings: { ...selectedShot.image_settings, resolution } })}/></label>
               <label>图片比例<Select aria-label="图片比例" value={selectedShot.image_settings.aspect} disabled={readOnly || lockedShots.has(selectedShot.id)} options={['inherit', '16:9', '9:16', '1:1', '4:3', '3:4'].map(value => ({ value, label: value === 'inherit' ? '跟随本集画幅' : value }))} onChange={aspect => updateLocal(selectedShot.id, { image_settings: { ...selectedShot.image_settings, aspect } })}/></label>
@@ -719,7 +705,7 @@ export function StoryboardStage({
       </CreationSlot>
       <section className="creation-editor storyboard-editor" aria-label="分镜创作区域">
         <div className="storyboard-editor-heading">
-          <div><h3>本集分镜</h3>{selectedShot && <><span className="storyboard-selected-caption">已选 {String(selectedShot.position).padStart(2, '0')}</span>{mode === 'agent' && <><Button type="text" disabled={selectionDisabled} onClick={() => setShotInfoOpen(true)}>镜头信息</Button>{shotActions}<Button type="link" disabled={selectionDisabled} onClick={() => leaveDialogue(() => { selectShotId(null); selectSubject?.(null); revealPanel?.(); })}>返回本集分镜规划对话</Button></>}</>}</div>
+          <div><h3>本集分镜</h3>{selectedShot && <span className="storyboard-selected-caption">已选 {String(selectedShot.position).padStart(2, '0')}</span>}</div>
           {batchSelection.enabled && !readOnly && <Button type="text" aria-pressed={batchMode} disabled={selectionDisabled} onClick={() => setBatchMode(current => !current)}>{batchMode ? '退出批量操作' : '批量操作'}</Button>}
         </div>
         {!readOnly && <BatchLauncher scope={{ library: 'episode', project_id: projectId, episode_id: episodeId }} selection={{ ...batchSelection, enabled: batchSelection.enabled && batchMode }} loadedIds={page?.items.map(shot => shot.id) ?? []} disabled={busy || loading || !!loadError || lockedShots.size > 0} beforePreflight={flushAll}/>}
@@ -733,12 +719,6 @@ export function StoryboardStage({
         </div>
       </section>
     </div>
-    {shotInfoOpen && selectedShot && <Dialog title={'分镜 ' + String(selectedShot.position).padStart(2, '0') + ' · 镜头信息'} className="storyboard-shot-dialog" canClose={!closingShotInfo && !lockedShots.has(selectedShot.id)} onClose={() => void closeShotInformation()}>
-      <div className="storyboard-shot-dialog-body">{message && <Alert type="warning" showIcon message={message}/>} {shotInformation}
-        <NativeDialoguePanel key={'dialogue-' + selectedShot.id} revision={storyboardRevision} registerBarrier={registerDialogueBarrier} projectId={projectId} episodeId={episodeId} shotId={selectedShot.id} disabled={readOnly || busy || closingShotInfo || lockedShots.has(selectedShot.id)} prepare={() => saveShot(selectedShot.id)} onChanged={() => setStoryboardRevision(revision => revision + 1)}/>
-      </div>
-      <footer className="storyboard-shot-dialog-footer"><span>修改自动保存</span><Button type="primary" aria-label="完成" aria-busy={closingShotInfo} loading={closingShotInfo} disabled={lockedShots.has(selectedShot.id)} onClick={() => void closeShotInformation()}>完成</Button></footer>
-    </Dialog>}
     {settingsOpen && <Dialog title="提取分镜" className="storyboard-settings-dialog" canClose={!submitting} onClose={() => setSettingsOpen(false)}>
       <div className="storyboard-settings-body">
         <p className="episode-help">从当前已确认剧本生成分镜候选，完成后在历史记录中预览并明确采用。</p>

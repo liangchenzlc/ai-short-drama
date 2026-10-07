@@ -465,9 +465,18 @@ def _guard_agent_write(session, entity, actor, new):
         if conversation.owner_user_id != actor.user_id:
             raise NotFound("Resource does not exist")
         require_project(session, conversation.project_id)
-        episode = _agent_parent(session, "episodes", conversation.episode_id)
-        if episode.project_id != conversation.project_id:
-            raise NotFound("Episode does not belong to this project")
+        if conversation.scope_version == 2:
+            if conversation.episode_id is not None or any(
+                getattr(conversation, field) is not None
+                for field in ("stage", "subject_type", "subject_id", "task_type")
+            ):
+                raise WorkflowError("assistant_scope_invalid", "项目对话范围无效", 403)
+            if name == "agent_tool_calls":
+                raise WorkflowError("assistant_tools_forbidden", "创作助手只提供对话建议", 403)
+        else:
+            episode = _agent_parent(session, "episodes", conversation.episode_id)
+            if episode.project_id != conversation.project_id:
+                raise NotFound("Episode does not belong to this project")
         if name == "agent_runs":
             if new and entity.initiated_by is None:
                 entity.initiated_by = actor.user_id

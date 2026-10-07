@@ -11,7 +11,7 @@
 - 分页一般为 `{items,total,offset,limit}`，`offset>=0`，HTTP `limit` 为 1–100，默认 20；分镜列表默认 100，并额外返回集合版本。
 - 错误格式为 `{error:{code,message,fields?,details?}}`。字段错误为 `{field,message}`；业务 details 仅包含允许的版本或引用信息，不回显任意请求、凭据或供应商异常。
 - 404 表示不存在或嵌套归属错误；409 为版本/业务冲突；422 为参数/内容校验；413 为上传超限；503 为依赖不可用。
-- `Idempotency-Key` 通常长度 1–128，生成、新任务重试、素材/分镜新建、素材提取采用必填；Agent 消息必填且长度 1–64，创建 Agent 会话可选且最长 64。同键同请求返回原结果，同键异参 409。标准模式项目/分集创建不提供该保障；无限画布模式项目创建要求该键并原子创建主画布。
+- `Idempotency-Key` 通常长度 1–128，生成、新任务重试、素材/分镜新建、素材提取采用必填；旧 Agent 与新助手消息必填且长度 1–64，旧 Agent 创建会话可选，新助手明确新建会话必填（`resolve` 原子返回或创建最近对话除外）。同键同请求返回原结果，同键异参 409。标准模式项目/分集创建不提供该保障；无限画布模式项目创建要求该键并原子创建主画布。
 - 读取内容不创建空白稿，不自动生成或采用。未保存内容应先成功保存，再提交依赖它的操作。
 
 ## 账号与协作
@@ -41,11 +41,13 @@
 
 新提交、重试、恢复与取消遵守 [协作权限矩阵](../plans/2026-10-02-project-collaboration.md)。API 不接受客户端提供的 owner、scope_user_id、initiated_by 或操作人字段。
 
-## Agent 创作与私有候选
+## 项目 AI 创作助手与旧创作候选
+
+标准分集和画布统一使用[项目 AI 创作助手](assistant.md)：`/assistant` 按本人项目提供多段对话，每轮自动作品上下文可移除，保留多模态附件和个人 Skill。助手只回答、分析和给建议，不执行生成、提取、修改或候选创建。新会话 `scope_version=2`，与旧 `/agent` 写接口隔离；原阶段/对象会话和已存在任务、候选保留原归属与处理规则。
 
 Agent 默认开启；运行须完成九表迁移、保持账号认证并启动独立 Agent Worker，执行可通过 `AGENT_ENABLED=false` 显式关闭。附件、个人 Skill、模型输入能力及限制见 [Agent 上下文 API](agent.md)，配置和故障处理见[部署说明](../agent-deployment.md)。既有所选配置的真实文本、图片与视频证据见[验收记录](../agent-verification.md)；本次本地协议测试仍不能证明其他供应商或新增多模态配置的远端兼容性。
 
-私有入口以 [Agent 路由](../../backend/src/short_drama/api/v1/agent.py)、[会话 schema](../../backend/src/short_drama/schemas/agent.py) 和[运行 schema](../../backend/src/short_drama/schemas/agent_runtime.py) 为准。会话、消息、运行、审核与事件仅对拥有者且仍有当前项目访问权的账号开放，项目成员身份不能读取别人的对话或模型配置。
+新对话入口以[助手路由](../../backend/src/short_drama/api/v1/assistant.py)及[助手输入 schema](../../backend/src/short_drama/schemas/assistant.py)为准，旧记录处理继续使用 [Agent 路由](../../backend/src/short_drama/api/v1/agent.py)。共用[会话 schema](../../backend/src/short_drama/schemas/agent.py)和[运行 schema](../../backend/src/short_drama/schemas/agent_runtime.py)。会话、消息、运行、审核与事件仅对拥有者且仍有当前项目访问权的账号开放，项目成员身份不能读取别人的对话或模型配置。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |

@@ -31,7 +31,7 @@ function mount(context, overrides = {}) {
   let tree;
   let barrier;
   const window = Object.assign(new EventTarget(), { confirm: () => true });
-  const controls = overrides.creationControls ?? { mode: 'prompt' };
+  const controls = overrides.creationControls ?? {};
   const scrolls = [];
   const document = { getElementById: id => ({ scrollIntoView: () => scrolls.push(id), focus() {} }) };
   const api = {
@@ -119,7 +119,7 @@ function mount(context, overrides = {}) {
 test('restored off-page shot is editable without changing the list pagination offset', async context => {
   const rows = Array.from({ length: 80 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
   const offsets = []; const saves = [];
-  const controls = { mode: 'prompt', subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { controls.subject = next; } };
+  const controls = { subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, {
     autoSelect: false, creationControls: controls,
     shots: async (_signal, _archived, offset = 0) => { offsets.push(offset); return { ...page(rows.slice(offset, offset + 20)), total: 80, offset, limit: 20 }; },
@@ -142,7 +142,7 @@ test('off-page autosave accepts its receipt before the initial list is ready', a
   const visible = Array.from({ length: 20 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
   const restored = { ...shot('150'), position: 50 };
   let serverShot = restored;
-  const controls = { mode: 'prompt', subject: { type: 'shot', id: restored.id, label: '' }, selectSubject: next => { controls.subject = next; } };
+  const controls = { subject: { type: 'shot', id: restored.id, label: '' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, {
     autoSelect: false, creationControls: controls,
     shots: async () => ++listReads === 1 ? list.promise : { ...page(visible), storyboard_version: String(saves.length + 1), total: 80, limit: 20 },
@@ -181,7 +181,7 @@ test('off-page autosave accepts its receipt before the initial list is ready', a
 
 test('late restored detail cannot overwrite a newer selected shot', async context => {
   const responses = new Map([['150', deferred()], ['151', deferred()]]);
-  const controls = { mode: 'prompt', subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { controls.subject = next; } };
+  const controls = { subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, { autoSelect: false, creationControls: controls, shot: id => responses.get(id).promise });
   await flush(); setup.render();
   controls.subject = { type: 'shot', id: '151', label: '' }; setup.render(); setup.render();
@@ -196,7 +196,7 @@ test('late restored detail cannot overwrite a newer selected shot', async contex
 test('late adjacent pagination merges its list without replacing a newer selected shot', async context => {
   const nextPage = deferred();
   const rows = Array.from({ length: 80 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
-  const controls = { mode: 'prompt', subject: { type: 'shot', id: '120', label: '' }, selectSubject: next => { controls.subject = next; } };
+  const controls = { subject: { type: 'shot', id: '120', label: '' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, { autoSelect: false, creationControls: controls,
     shots: async (_signal, _archived, offset = 0) => offset === 0 ? { ...page(rows.slice(0, 20)), total: 80 } : nextPage.promise,
     shot: async id => ({ shot: rows.find(row => row.id === id), storyboard_version: '1' }),
@@ -216,7 +216,7 @@ test('late adjacent pagination merges its list without replacing a newer selecte
 
 test('off-page dirty drafts survive refresh and joining a later loaded page', async context => {
   const rows = Array.from({ length: 80 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
-  const controls = { mode: 'prompt', subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { controls.subject = next; } };
+  const controls = { subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, { autoSelect: false, creationControls: controls,
     shots: async (_signal, _archived, offset = 0) => ({ ...page(rows.slice(offset, offset + 20)), total: 80, offset, limit: 20 }),
     shot: async id => ({ shot: rows.find(row => row.id === id), storyboard_version: '1' }),
@@ -231,7 +231,7 @@ test('off-page dirty drafts survive refresh and joining a later loaded page', as
 });
 
 test('Agent artifact refresh checks archived detail before clearing its loaded scope', async context => {
-  const controls = { mode: 'prompt', subject: { type: 'shot', id: '11', label: '分镜 01' }, selectSubject: next => { controls.subject = next; } };
+  const controls = { subject: { type: 'shot', id: '11', label: '分镜 01' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, { autoSelect: false, creationControls: controls, shot: async () => ({ shot: { ...shot(), deleted_at: '2026-10-04T00:00:00Z' }, storyboard_version: '2' }) });
   await flush(); setup.render();
   assert.equal(controls.subject.id, '11');
@@ -241,7 +241,7 @@ test('Agent artifact refresh checks archived detail before clearing its loaded s
 
 test('only archived shot detail clears an unavailable Agent scope', async context => {
   const selections = [];
-  const controls = { mode: 'prompt', subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { selections.push(next); controls.subject = next; } };
+  const controls = { subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { selections.push(next); controls.subject = next; } };
   const setup = mount(context, { autoSelect: false, creationControls: controls, shot: async () => ({ shot: { ...shot('150'), deleted_at: '2026-10-04T00:00:00Z' }, storyboard_version: '2' }) });
   await flush(); setup.render(); await flush(); setup.render();
   assert.equal(selections.includes(null), true); assert.equal(controls.subject, null);
@@ -250,7 +250,7 @@ test('only archived shot detail clears an unavailable Agent scope', async contex
 
 test('detail read failure retains its scope and offers an explicit retry', async context => {
   let reads = 0;
-  const controls = { mode: 'prompt', subject: { type: 'shot', id: '150', label: '' } };
+  const controls = { subject: { type: 'shot', id: '150', label: '' } };
   const setup = mount(context, { autoSelect: false, creationControls: controls, shot: async () => { reads++; if (reads === 1) throw new Error('detail offline'); return { shot: { ...shot('150'), position: 50 }, storyboard_version: '1' }; } });
   await flush(); setup.render(); await flush(); setup.render();
   assert.equal(controls.subject.id, '150');
@@ -260,7 +260,7 @@ test('detail read failure retains its scope and offers an explicit retry', async
 });
 
 test('creating a shot selects its returned ID before it is loaded into the list', async context => {
-  const controls = { mode: 'prompt', subject: null, selectSubject: next => { controls.subject = next; } };
+  const controls = { subject: null, selectSubject: next => { controls.subject = next; } };
   const rows = Array.from({ length: 20 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
   const setup = mount(context, { autoSelect: false, creationControls: controls, create: async () => ({ shot: { ...shot('181'), position: 81 }, storyboard_version: '2' }), shot: async () => ({ shot: { ...shot('181'), position: 81 }, storyboard_version: '2' }), shots: async () => ({ ...page(rows), total: 80 }) });
   await flush(); setup.render();
@@ -270,7 +270,7 @@ test('creating a shot selects its returned ID before it is loaded into the list'
 });
 
 for (const mode of ['replace', 'append']) test(`${mode} adoption updates its scope correctly`, async context => {
-  const controls = { mode: 'prompt', subject: { type: 'shot', id: '11', label: '分镜 01' }, selectSubject: next => { controls.subject = next; } };
+  const controls = { subject: { type: 'shot', id: '11', label: '分镜 01' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, {
     autoSelect: false, creationControls: controls,
     listTasks: async () => ({ items: [{ generation_id: '8001', status: 'succeeded', created_at: '2026-10-04T00:00:00Z' }], total: 1 }),
@@ -323,7 +323,7 @@ test('failed history refresh keeps previously loaded records', async context => 
 
 test('shot menu saves drafts before moving and archives the current scope explicitly', async context => {
   const calls = [];
-  const controls = { mode: 'prompt', subject: { type: 'shot', id: '11', label: '分镜 01' }, selectSubject: next => { controls.subject = next; } };
+  const controls = { subject: { type: 'shot', id: '11', label: '分镜 01' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, { autoSelect: false, creationControls: controls,
     update: async (id, body) => { calls.push({ kind: 'save', body }); return { shot: { ...shot(id), ...body, row_version: '2' }, storyboard_version: '2' }; },
     move: async (id, version, direction) => { calls.push({ kind: 'move', id, version, direction }); return { storyboard_version: '3' }; },
@@ -374,17 +374,17 @@ test('failed save blocks menu mutation and preserves the editing draft', async c
   assert.equal(setup.nodes('Dropdown').length, 0);
 });
 
-test('Agent shot information provides one dialogue editor and keeps an unsettled dialogue open', async context => {
-  const controls = { mode: 'agent', subject: { type: 'shot', id: '11', label: '分镜 01' } };
+test('one dialogue editor blocks changing the selected shot while its draft is unsettled', async context => {
+  const controls = { subject: { type: 'shot', id: '11', label: '?? 01' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, { autoSelect: false, creationControls: controls });
   await flush(); setup.render();
-  setup.nodes('Button').find(node => node.children === '镜头信息').onClick(); setup.render();
+  setup.nodes('button').find(node => node.id === 'storyboard-video-tab').onClick(); setup.render();
   const dialogue = setup.nodes('NativeDialoguePanel');
   assert.equal(dialogue.length, 1);
   dialogue[0].registerBarrier({ hasUnsettled: () => true, flush: async () => false });
-  await setup.nodes('Button').find(node => node['aria-label'] === '完成').onClick(); setup.render();
-  assert.equal(setup.nodes('Dialog').some(node => node.title === '分镜 01 · 镜头信息'), true);
-  assert.ok(setup.nodes('Alert').some(node => node.message.includes('对白尚未保存')));
+  assert.equal(setup.barrier.hasUnsettled(), true);
+  assert.equal(await setup.barrier.flush(), false);
+  assert.equal(controls.subject.id, '11');
 });
 
 test('adoption survives focus and model refresh while generation preparation is invalidated', async context => {

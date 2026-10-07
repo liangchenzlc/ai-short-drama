@@ -167,6 +167,9 @@ class AgentRunService(AgentConversationService):
 
     def send_message(self, identifier, payload, idempotency_key):
         values = MessageCreate.model_validate(self._payload(MessageCreate, payload))
+        return self._send_message_values(identifier, values, idempotency_key)
+
+    def _send_message_values(self, identifier, values, idempotency_key, *, assistant_input=None):
         if (
             not isinstance(idempotency_key, str)
             or not 1 <= len(idempotency_key) <= 64
@@ -175,10 +178,14 @@ class AgentRunService(AgentConversationService):
             )
         ):
             raise WorkflowError("invalid_idempotency_key", "发送消息需要有效的幂等键", 422)
-        request_hash = digest(values.model_dump(mode="json"))
+        request_hash = digest((assistant_input or values).model_dump(mode="json"))
         key = hashlib.sha256(idempotency_key.encode()).hexdigest()
         with self._transaction():
             conversation = self._conversation(identifier, lock=True)
+            if (conversation.scope_version == 2) != (assistant_input is not None):
+                raise WorkflowError(
+                    "assistant_api_required", "项目对话只能通过 AI 创作助手接口发送", 409
+                )
             self.check_expected_scope(conversation, values.expected_scope, validate_subject=True)
             existing = self.session.scalar(
                 select(AgentMessage)
@@ -223,6 +230,26 @@ class AgentRunService(AgentConversationService):
                 self.session, conversation, values.attachment_ids, snapshot, values.video_audio
             )
             selected_skills = freeze_skills(self.session, actor.user_id, values.skills)
+            source_snapshot = None
+            if assistant_input is not None:
+                from short_drama.agent.model_gateway import AgentGatewayError, select_agent_protocol
+                from short_drama.service.assistant_context_service import freeze_assistant_context
+
+                try:
+                    select_agent_protocol(snapshot)
+                except AgentGatewayError:
+                    raise WorkflowError(
+                        "unsupported_assistant_protocol", "此模型协议尚不支持创作助手", 422
+                    ) from None
+                source_snapshot, source_references, source_media = freeze_assistant_context(
+                    self.session, conversation.project_id, assistant_input.context
+                )
+                if len(attachments) + len(source_media) > 16:
+                    raise WorkflowError(
+                        "agent_context_too_large", "附件与引用媒体合计不能超过 16 项", 422
+                    )
+                attachments.extend(source_media)
+                references.extend(source_references)
             references.extend(
                 {
                     "type": "skill",
@@ -330,7 +357,11 @@ class AgentRunService(AgentConversationService):
                     "history": None,
                     "scope": {
                         "project_id": str(conversation.project_id),
-                        "episode_id": str(conversation.episode_id),
+                        **(
+                            {"episode_id": str(conversation.episode_id)}
+                            if conversation.episode_id is not None
+                            else {}
+                        ),
                         **(conversation_scope(conversation) or {}),
                     },
                     "supplement_run_id": next(
@@ -353,9 +384,18 @@ class AgentRunService(AgentConversationService):
                     "conversation_context": context,
                     "selected_skills": selected_skills,
                     "requested_task": task.model_dump(mode="json") if task else None,
+                    **(
+                        {"purpose": "assistant_chat", "context_snapshot": source_snapshot}
+                        if assistant_input is not None
+                        else {}
+                    ),
                 },
                 config_snapshot=snapshot,
-                budget=budget_limits(images=images, videos=videos),
+                budget=budget_limits(
+                    "assistant" if assistant_input is not None else "discuss",
+                    images=images,
+                    videos=videos,
+                ),
                 usage=initial_usage(),
                 message_status="pending",
                 message_version=1,

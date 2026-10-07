@@ -347,17 +347,17 @@ export function CanvasTopBar({
 
                 <div className="canvas-topbar-cluster canvas-topbar-local-cluster pointer-events-auto hidden items-center gap-1 lg:flex" style={dockStyle}>
                     {onToggleAssistant ? (
-                        <CanvasTopBarTooltip label="助手（Ctrl/Cmd + J）">
+                        <CanvasTopBarTooltip label="AI 创作助手（Ctrl/Cmd + J）">
                             <Button
                                 type="text"
                                 className="canvas-topbar-action canvas-topbar-agent-button !h-9 !rounded-xl !px-2.5 !font-medium"
                                 style={{ color: theme.node.text, background: assistantOpen ? theme.toolbar.activeBg : undefined }}
                                 icon={<Sparkles className="size-4" />}
                                 onClick={onToggleAssistant}
-                                aria-label="助手"
+                                aria-label="AI 创作助手"
                                 aria-pressed={assistantOpen}
                             >
-                                助手
+                                AI 创作助手
                             </Button>
                         </CanvasTopBarTooltip>
                     ) : null}
@@ -411,17 +411,17 @@ export function CanvasTopBar({
                         </CanvasTopBarTooltip>
                     ) : null}
                     {onToggleAssistant ? (
-                        <CanvasTopBarTooltip label="助手（Ctrl/Cmd + J）">
+                        <CanvasTopBarTooltip label="AI 创作助手（Ctrl/Cmd + J）">
                             <Button
                                 type="text"
                                 className="canvas-topbar-action canvas-topbar-agent-button !h-10 !rounded-xl !px-2.5 !font-medium"
                                 style={{ color: theme.node.text, background: assistantOpen ? theme.toolbar.activeBg : undefined }}
                                 icon={<Sparkles className="size-4" />}
                                 onClick={onToggleAssistant}
-                                aria-label="助手"
+                                aria-label="AI 创作助手"
                                 aria-pressed={assistantOpen}
                             >
-                                <span className="sr-only">助手</span>
+                                <span className="sr-only">AI 创作助手</span>
                             </Button>
                         </CanvasTopBarTooltip>
                     ) : null}

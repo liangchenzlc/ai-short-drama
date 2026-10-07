@@ -15,6 +15,16 @@ ACTIVE = frozenset({"queued", "running", "waiting_review", "waiting_generation"}
 
 
 def budget_limits(mode="discuss", *, images=0, videos=0):
+    if mode == "assistant":
+        return {
+            "decision_calls": 1,
+            "tool_calls": 0,
+            "output_tokens_per_call": 8192,
+            "output_tokens": 8192,
+            "active_seconds": 300,
+            "images": 0,
+            "videos": 0,
+        }
     workflow = mode == "workflow"
     return {
         "decision_calls": 16 if workflow else 8,

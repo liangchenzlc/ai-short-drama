@@ -111,6 +111,10 @@ def tool_manifest():
 
 
 def prepare_decision(session, conversation, run):
+    from short_drama.agent.assistant_chat import is_assistant_chat, prepare_assistant_decision
+
+    if is_assistant_chat(conversation, run):
+        return prepare_assistant_decision(session, conversation, run)
     checkpoint = run.checkpoint
     if not checkpoint.get("history"):
         trigger = session.get(AgentMessage, run.trigger_message_id)
@@ -546,6 +550,13 @@ def execute_tools(factory, settings, run_id):
                 return
             project, conversation, run = rows
             if run.status in TERMINAL or run.status in {"waiting_review", "waiting_generation"}:
+                return
+            from short_drama.agent.assistant_chat import is_assistant_chat
+
+            if is_assistant_chat(conversation, run):
+                finish_locked(
+                    session, conversation, run, "failed", {"code": "assistant_tools_forbidden"}
+                )
                 return
             if (
                 not settings.agent_enabled

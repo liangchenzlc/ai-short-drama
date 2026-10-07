@@ -10,8 +10,8 @@
     "upstream_sha256": "fcb11684247b1909ede89ad0fa1faf52f48e4e797d2cafc39fc0b631281f2aea"
   },
   "src/pages/canvas/use-canvas-generation-executor.ts": {
-    "reason": "每次明确生成创建稳定操作身份；仅在原执行器生成节点与连线更新时同步提交React状态，确保准入读取到最新目标，不改变原布局或操作步骤。",
-    "sha256": "71df34cc2d7565e96ad16eb865685666cce14612cfb7aaafc47552d117369305",
+    "reason": "保留节点生成入口、稳定操作身份和同步图状态；移除已取消的助手批准快照与指定模型分支，恢复调用原 buildGenerationConfig，画布生成仍读取最新节点、连线、模型和附件。",
+    "sha256": "030d96fab5cfb5f32d314e652716a3b4b74b17d8d43a37976ed0ac2a465d73b5",
     "upstream_sha256": "c8c8318ceb744d3d59705b7f0f0efc54f3f1fadcffafc28d6db6708bd0f2b925"
   },
   "src/pages/canvas/canvas-text-generation-executor.ts": {
@@ -70,13 +70,13 @@
     "upstream_sha256": "6708a2327052a55502aec11e65f446033f8f4f73f3b263ff941c0a1d49abcff5"
   },
   "src/pages/canvas/canvas-assistant-proposal-snapshot.ts": {
-    "reason": "服务端画布及模型偏好版本改为十进制字符串，保留原版几何、操作和本地缓存计数。",
-    "sha256": "59c94d6ec77559df0e2c481912ad66a0dde6fc94bf5faddd802a819c7462d7cb",
+    "action": "removed",
+    "reason": "统一助手仅提供问答与建议，不再执行画布改图或生成提议；物理删除旧 Go/pi 助手 API、批准快照和执行适配。节点生成继续使用原 buildGenerationConfig，聊天统一接入 Python /assistant 接口。",
     "upstream_sha256": "1a32674a579bf52866570af8144ab39c639578f0558eacae948945efd307f22f"
   },
   "src/pages/canvas/canvas-assistant-proposal-source.ts": {
-    "reason": "服务端画布及模型偏好版本改为十进制字符串，保留原版几何、操作和本地缓存计数。",
-    "sha256": "bd47c678a57eead2e91ddf080f2f50664e7a65fac7506c2fef26f4f9d45283b8",
+    "action": "removed",
+    "reason": "按用户最新需求统一项目纯对话助手，物理删除旧助手 UI、运行与提议处理模块；由共享 CreativeAssistantPanel 提供聊天、模型选择、附件、Skill、草稿与恢复，避免维护两套助手。",
     "upstream_sha256": "f71ac3d7b37d601ecd476c853623c1b8a8b14ad4d3df2bd298f16184d0b69c86"
   },
   "src/pages/canvas/canvas-version-history.tsx": {
@@ -90,8 +90,8 @@
     "upstream_sha256": "0102c8ce9e1b14cf6473ada49c19459e9915da39a1fbe57845b857343a4a9fc3"
   },
   "src/services/api/agent-assistant.ts": {
-    "reason": "服务端画布及模型偏好版本改为十进制字符串，保留原版几何、操作和本地缓存计数。",
-    "sha256": "c2a0cc19196ae9806d7cc7b847bb9cfa445760583ed2253926fa6e62747c8f7d",
+    "action": "removed",
+    "reason": "统一助手仅提供问答与建议，不再执行画布改图或生成提议；物理删除旧 Go/pi 助手 API、批准快照和执行适配。节点生成继续使用原 buildGenerationConfig，聊天统一接入 Python /assistant 接口。",
     "upstream_sha256": "012bf830d3aab900e591572d43d795399b46c8e536e35885bd0938c7be5d47c2"
   },
   "src/services/api/operations.ts": {
@@ -140,8 +140,8 @@
     "upstream_sha256": "197f84eeeeed43e4d5f5e36e9a88ef7ce8c581e6ea8cddd048a9c11e262bb3da"
   },
   "src/pages/canvas/project.tsx": {
-    "reason": "??????/??/CAS??????????????????????????????????????????????? ??????????????nodes/connections/chat/viewport?????ACK??????????????dirty?????????????????????????????????????????",
-    "sha256": "bd969d5914e3fda27fbc43089ea69b69cdb455055d501d2abca9fa91cdf046c4",
+    "reason": "按最新需求接入共享 CreativeAssistantPanel，以项目纯对话替换源助手执行与改图；引用画布前等待图保存回执并冻结版本，保留原停靠、拖宽、抽屉及节点生成操作。首次图加载后建立停靠监听，窄屏助手深链退出专注模式；旧链接转换期间阻止新对话抢写地址，保留旧记录身份。",
+    "sha256": "085d06d4c91bac8303fb80ead81623403acf677281d766d011270f183199d26f",
     "upstream_sha256": "36ca409ced7f1d562a3630bd34fe3f53fdeb8cbb5831f4f0602750b5fd90a5e8"
   },
   "src/services/api/request.ts": {
@@ -355,8 +355,8 @@
     "upstream_sha256": "5d26ded8c9287ec6640f4b63958b9203f816bb89f3d6b77b81fd00a1fc76d279"
   },
   "src/pages/canvas/canvas-assistant-sidebar.tsx": {
-    "reason": "按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。",
-    "sha256": "3690e71fe2b4919833af8f592f8e2937ba0942535894efb310996cad6515a2a1",
+    "action": "removed",
+    "reason": "按用户最新需求统一项目纯对话助手，物理删除旧助手 UI、运行与提议处理模块；由共享 CreativeAssistantPanel 提供聊天、模型选择、附件、Skill、草稿与恢复，避免维护两套助手。",
     "upstream_sha256": "0b90d3e37497548b74dc7d277ce90b9b80c01a1bfb13f3047888f9513cf38864"
   },
   "src/pages/create/creation-workspace.tsx": {
@@ -375,8 +375,8 @@
     "upstream_sha256": "9f3a2b1a4dae4d4415130de6a24528e1718437f9c695b59432d81ea3e52ce3fb"
   },
   "src/pages/canvas/canvas-assistant-sidebar.css": {
-    "reason": "共同依赖改用宿主 AntD 5 后，按源 AntD 6 Select 的实际 DOM 与 computed style，将助手模型外壳尺寸、字体、背景、内容和箭头布局映射到 AntD 5 根/selector/placeholder/arrow，保留原 Select、选项、搜索及键盘操作，按源自然宽度裁切占位符末字。 透明 selector 触发框覆盖源根框以保持 popup 对齐与最小宽度；打开时采用源已选值 opacity 0.25，按源 borderless input:focus-visible 恢复根 outline 与内偏移，保持鼠标/键盘焦点条件和原选项行为。",
-    "sha256": "368897268da9d2c9e182598386c39ab366382ac8b7851ba2959bceb6f41f095d",
+    "reason": "移除已被共享助手替代的消息、输入和模型样式，仅保留画布停靠栏、拖宽控件与明暗主题边界；助手内部使用共用前端样式。",
+    "sha256": "410ebe6cb40a6cfee1e8b9164880e976f40e5f269e0d2fc78f185b49de71189d",
     "upstream_sha256": "4dfcfceb3c41822026e99a547926b868b0ad4c1afbf84e4e87d130da22dfb566"
   },
   "src/lib/app-theme.ts": {
@@ -835,8 +835,58 @@
     "upstream_sha256": "8d8656878ff34191af47f79746e85bcf071f893fbee5b1c691d2d04c88f915ac"
   },
   "src/pages/canvas/canvas-project-top-bar.tsx": {
-    "reason": "??????????????????????????????????????????????????????????",
-    "sha256": "fcd08fbee0be2f29ae19ceef95e9710785eadd0fab34e344dc68c6fde6be6961",
+    "reason": "将桌面与窄屏助手入口统一命名为 AI 创作助手，保留原按钮位置、状态及 Ctrl/Cmd + J 快捷键。",
+    "sha256": "d4f54cdf8ed5d0faf3810b420696f17e9de989cd0a9ecc44b97837da39696bb4",
     "upstream_sha256": "4eccbc8ab87117c264a6ea79b0bd4bf3fabd7daaf7dc299740d283b6fc2dea93"
+  },
+  "src/pages/canvas/assistant-readiness.ts": {
+    "action": "removed",
+    "reason": "按用户最新需求统一项目纯对话助手，物理删除旧助手 UI、运行与提议处理模块；由共享 CreativeAssistantPanel 提供聊天、模型选择、附件、Skill、草稿与恢复，避免维护两套助手。",
+    "upstream_sha256": "9f8a0d75a316543319eb26c5be335d3e2f28989c9d31fcf84fb8283bf4058417"
+  },
+  "src/pages/canvas/canvas-assistant-composer.tsx": {
+    "action": "removed",
+    "reason": "按用户最新需求统一项目纯对话助手，物理删除旧助手 UI、运行与提议处理模块；由共享 CreativeAssistantPanel 提供聊天、模型选择、附件、Skill、草稿与恢复，避免维护两套助手。",
+    "upstream_sha256": "2f0fa4c97d10ab1e175cef33070ffe09a565afa8594c84174028db39693bc315"
+  },
+  "src/pages/canvas/canvas-assistant-copy.ts": {
+    "action": "removed",
+    "reason": "按用户最新需求统一项目纯对话助手，物理删除旧助手 UI、运行与提议处理模块；由共享 CreativeAssistantPanel 提供聊天、模型选择、附件、Skill、草稿与恢复，避免维护两套助手。",
+    "upstream_sha256": "d123ce177cf85343901c3abacccd8f220a84fb6efcd5d274df4c7bbcc44024a5"
+  },
+  "src/pages/canvas/canvas-assistant-highlight.ts": {
+    "action": "removed",
+    "reason": "按用户最新需求统一项目纯对话助手，物理删除旧助手 UI、运行与提议处理模块；由共享 CreativeAssistantPanel 提供聊天、模型选择、附件、Skill、草稿与恢复，避免维护两套助手。",
+    "upstream_sha256": "03245d6f05d1bf6395b8d05f03d2535e26343f967e8744f6056efd25b60dd442"
+  },
+  "src/pages/canvas/canvas-assistant-model-picker.tsx": {
+    "action": "removed",
+    "reason": "按用户最新需求统一项目纯对话助手，物理删除旧助手 UI、运行与提议处理模块；由共享 CreativeAssistantPanel 提供聊天、模型选择、附件、Skill、草稿与恢复，避免维护两套助手。",
+    "upstream_sha256": "c7df28c227dc002954eee5a703f95e909da02b231a4f5ab1bc0041fe6a8a9758"
+  },
+  "src/pages/canvas/canvas-assistant-recovery.ts": {
+    "action": "removed",
+    "reason": "按用户最新需求统一项目纯对话助手，物理删除旧助手 UI、运行与提议处理模块；由共享 CreativeAssistantPanel 提供聊天、模型选择、附件、Skill、草稿与恢复，避免维护两套助手。",
+    "upstream_sha256": "9438956d02659f0c86fea5060f40d61220b9afe11235ac9dae1b7da42d8b971e"
+  },
+  "src/pages/canvas/canvas-assistant-turn.tsx": {
+    "action": "removed",
+    "reason": "按用户最新需求统一项目纯对话助手，物理删除旧助手 UI、运行与提议处理模块；由共享 CreativeAssistantPanel 提供聊天、模型选择、附件、Skill、草稿与恢复，避免维护两套助手。",
+    "upstream_sha256": "0c76470dabd63857ed0ebefc6b0325e2aba2543252aa999a8f0c9f6a6205a073"
+  },
+  "src/pages/canvas/use-canvas-assistant-proposal.ts": {
+    "action": "removed",
+    "reason": "按用户最新需求统一项目纯对话助手，物理删除旧助手 UI、运行与提议处理模块；由共享 CreativeAssistantPanel 提供聊天、模型选择、附件、Skill、草稿与恢复，避免维护两套助手。",
+    "upstream_sha256": "f302f28e43c86b50383de6fc06d0767d5a5bca4eff09f03d6b725ed73a05e75b"
+  },
+  "src/pages/canvas/use-canvas-assistant.ts": {
+    "action": "removed",
+    "reason": "按用户最新需求统一项目纯对话助手，物理删除旧助手 UI、运行与提议处理模块；由共享 CreativeAssistantPanel 提供聊天、模型选择、附件、Skill、草稿与恢复，避免维护两套助手。",
+    "upstream_sha256": "6248a3f41e6d157759853bc1239eb370ad789ba4a2a10f621f24623693914b8e"
+  },
+  "src/pages/canvas/canvas-assistant-proposal-execution.ts": {
+    "action": "removed",
+    "reason": "统一助手仅提供问答与建议，不再执行画布改图或生成提议；物理删除旧 Go/pi 助手 API、批准快照和执行适配。节点生成继续使用原 buildGenerationConfig，聊天统一接入 Python /assistant 接口。",
+    "upstream_sha256": "f04eaf840ab2e7f6ebb587a206d4066bac0ae8f324162264cc530b0c548ce88a"
   }
 }

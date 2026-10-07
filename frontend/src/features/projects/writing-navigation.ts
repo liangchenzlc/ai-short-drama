@@ -38,13 +38,18 @@ export function installWritingNavigationGuard(navigator: Navigator, session: Wri
   };
   const push = navigator.push;
   const replace = navigator.replace;
-  const guard = (action: () => void) => {
+  const keepsPage = (to: Parameters<Navigator['push']>[0]) => {
+    if (!browser.location?.href) return false;
+    const target = typeof to === 'string' ? to : to.pathname ?? browser.location.pathname;
+    return new URL(target, browser.location.href).pathname === browser.location.pathname;
+  };
+  const guard = (action: () => void, viewOnly = false) => {
     if (pending || replaying) return;
-    if (!requiresGuard()) { action(); index = browser.history.state?.idx ?? index; }
+    if (viewOnly || !requiresGuard()) { action(); index = browser.history.state?.idx ?? index; }
     else request(action);
   };
-  navigator.push = (...args) => guard(() => push.apply(navigator, args));
-  navigator.replace = (...args) => guard(() => replace.apply(navigator, args));
+  navigator.push = (...args) => guard(() => push.apply(navigator, args), keepsPage(args[0]));
+  navigator.replace = (...args) => guard(() => replace.apply(navigator, args), keepsPage(args[0]));
   const onPop = (event: PopStateEvent) => {
     const next: number | undefined = event.state?.idx;
     if (replaying) { replaying = false; index = next ?? index; return; }

@@ -5,33 +5,9 @@ const origin = () => new URL(test.info().project.use.baseURL!).origin;
 const setup = (page: Page) => fixture(page, true, origin());
 const panel = (page: Page) => page.getByRole('complementary', { name: '分镜媒体设置', exact: true });
 
-async function scopedAgent(page: Page) {
-  const conversations: any[] = [];
-  await page.route('**/api/v1/agent/**', async route => {
-    const request = route.request(); const path = new URL(request.url()).pathname.slice('/api/v1/agent'.length);
-    const reply = (json: any) => route.fulfill({ json });
-    if (path === '/status') return reply({ enabled: true, schema_ready: true });
-    if (path === '/models') return reply({ items: [], preferred_id: null });
-    if (path === '/skills') return reply({ items: [], total: 0, offset: 0, limit: 50 });
-    if (path === '/conversations/resolve') {
-      const scope = request.postDataJSON();
-      let conversation = conversations.find(item => ['stage', 'subject_type', 'subject_id', 'task_type'].every(key => item[key] === scope[key]));
-      if (!conversation) { conversation = { ...scope, id: String(301 + conversations.length), project_id: '10', episode_id: '20', scope_version: 1, row_version: '1', archived: false, last_run_status: null, created_at: '2026-10-04T00:00:00Z', updated_at: '2026-10-04T00:00:00Z' }; conversations.push(conversation); }
-      return reply(conversation);
-    }
-    if (path === '/conversations') return reply({ items: conversations, total: conversations.length, offset: 0, limit: 20 });
-    if (/^\/conversations\/\d+$/.test(path)) return reply(conversations.find(item => item.id === path.split('/').pop()));
-    if (path.endsWith('/state')) return reply({ conversation_id: path.split('/')[2], cursor: 0, active_run: null, queued_runs: [] });
-    if (path.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': heartbeat\n\n' });
-    if (/\/(messages|attachments|runs)$/.test(path)) return reply({ items: [], total: 0, offset: 0, limit: 50 });
-    return route.fallback();
-  });
-  return conversations;
-}
-
 for (const position of [21, 50, 80]) test(`restores off-page shot ${position} with separate detail and saves it`, async ({ page }) => {
   const state = await setup(page); const id = String(100 + position);
-  await page.goto(`${root}/storyboard?agent_subject_storyboard=${id}`);
+  await page.goto(`${root}/storyboard?shot=${id}`);
   await expect(page.locator('.storyboard-shot-card')).toHaveCount(20);
   const input = panel(page).getByRole('textbox', { name: `分镜 ${position} 脚本`, exact: true });
   await expect(input).toBeEditable(); await input.fill(`恢复第 ${position} 镜并保存`);
@@ -111,7 +87,7 @@ test('shot menu moves across the page boundary and archive clears the scope', as
     if (method === 'DELETE') { shot.deleted_at = '2026-10-04T00:00:00Z'; for (const item of active()) if (item.position > shot.position) item.position--; version++; return route.fulfill({ status: 204 }); }
     return route.fulfill({ json: { shot, storyboard_version: String(version) } });
   });
-  await page.goto(`${root}/storyboard?agent_subject_storyboard=120`);
+  await page.goto(`${root}/storyboard?shot=120`);
   await expect(panel(page).getByRole('textbox', { name: '分镜 20 脚本', exact: true })).toBeVisible();
   await panel(page).getByRole('button', { name: '分镜 20 更多操作', exact: true }).click(); await page.getByRole('menuitem', { name: '下移', exact: true }).click();
   await expect(panel(page).getByRole('textbox', { name: '分镜 20 脚本', exact: true })).toBeDisabled();
@@ -120,7 +96,7 @@ test('shot menu moves across the page boundary and archive clears the scope', as
   await expect(panel(page).getByRole('textbox', { name: '分镜 21 脚本', exact: true })).toBeVisible();
   await panel(page).getByRole('button', { name: '分镜 21 更多操作', exact: true }).click(); await page.getByRole('menuitem', { name: '归档', exact: true }).click();
   await page.getByRole('button', { name: '确认继续', exact: true }).click();
-  await expect(page).toHaveURL(url => !url.searchParams.has('agent_subject_storyboard'));
+  await expect(page).toHaveURL(url => !url.searchParams.has('shot'));
   await expect(page.locator('.storyboard-stage-meta')).toContainText('本集共 79 镜');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
@@ -144,7 +120,7 @@ test('creating after eighty shots selects the returned shot and scrolls its card
   const card = page.locator('#storyboard-shot-181');
   await expect(card.getByRole('button', { name: '选择分镜 81', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(card).toBeInViewport();
-  await expect(page).toHaveURL(url => url.searchParams.get('agent_subject_storyboard') === '181');
+  await expect(page).toHaveURL(url => url.searchParams.get('shot') === '181');
   expect(offsets).toContain(80); expect(offsets).not.toContain(21);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
@@ -156,7 +132,7 @@ test('replacing all shots clears the previous stable shot scope after adoption',
     state.shots.splice(0, state.shots.length, { ...state.shots[0], id: '301', position: 1, script: '采用后的新分镜' });
     return route.fallback();
   });
-  await page.goto(`${root}/storyboard?agent_subject_storyboard=150`);
+  await page.goto(`${root}/storyboard?shot=150`);
   await expect(panel(page).getByRole('textbox', { name: '分镜 50 脚本', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '历史记录', exact: true }).click();
   const history = page.getByRole('dialog', { name: '分镜生成记录', exact: true });
@@ -164,7 +140,7 @@ test('replacing all shots clears the previous stable shot scope after adoption',
   await history.getByRole('button', { name: '替换当前分镜', exact: true }).click();
   await page.getByRole('button', { name: '确认继续', exact: true }).click();
   await expect(history).toHaveCount(0);
-  await expect(page).toHaveURL(url => !url.searchParams.has('agent_subject_storyboard'));
+  await expect(page).toHaveURL(url => !url.searchParams.has('shot'));
   await expect(page.locator('.storyboard-shot-card')).toHaveCount(1);
   await expect(page.locator('.storyboard-shot-card')).toContainText('采用后的新分镜');
   await expect(page.locator('.storyboard-summary[aria-pressed="true"]')).toHaveCount(0);
@@ -205,6 +181,7 @@ test('off-page autosave accepts its version before the initial list response arr
   });
   await page.goto(`${root}/storyboard?agent_subject_storyboard=150`);
   const input = panel(page).getByRole('textbox', { name: '分镜 50 脚本', exact: true });
+  await expect(page).toHaveURL(url => url.searchParams.get('shot') === '150' && !url.searchParams.has('agent_subject_storyboard'));
   await expect(input).toBeEditable(); await expect(page.locator('.storyboard-shot-card')).toHaveCount(0);
   await input.fill('列表迟到前保存第一版');
   await expect.poll(() => state.shots[49].script).toBe('列表迟到前保存第一版');
@@ -216,8 +193,8 @@ test('off-page autosave accepts its version before the initial list response arr
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('Agent information exposes dialogue review and a failed save retains its draft', async ({ page }) => {
-  const state = await setup(page); await scopedAgent(page);
+test('shot video editing exposes dialogue review and a failed save retains its draft', async ({ page }) => {
+  const state = await setup(page);
   let fail = true; const dialogue = { row_version: 1, mode: 'native', document: { lines: [], reviewed: false }, characters: [{ id: '501', name: '林晚' }], voices: [] };
   await page.route(`**/api/v1${root}/shots/101/dialogue`, route => {
     if (route.request().method() === 'PUT') {
@@ -226,16 +203,14 @@ test('Agent information exposes dialogue review and a failed save retains its dr
     }
     return route.fulfill({ json: dialogue });
   });
-  await page.goto(`${root}/storyboard?mode=agent&agent_subject_storyboard=101`);
-  await page.getByRole('button', { name: '镜头信息', exact: true }).click();
-  const information = page.getByRole('dialog', { name: '分镜 01 · 镜头信息', exact: true });
-  await information.getByRole('button', { name: '编辑并确认对白', exact: true }).click();
+  await page.goto(`${root}/storyboard?shot=101`);
+  await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
+  await panel(page).getByRole('button', { name: '编辑并确认对白', exact: true }).click();
   const review = page.getByRole('dialog', { name: '分镜对白与声音表演', exact: true });
   const save = review.getByRole('button', { name: /保存分镜对白$/ });
   await review.getByRole('checkbox').check(); await expect(save).toBeEnabled(); await save.click();
   await expect(review.getByRole('alert')).toBeVisible(); await expect(review.getByRole('checkbox')).toBeChecked();
   fail = false; await expect(save).toBeEnabled(); await save.click();
-  await expect(review).toHaveCount(0); await expect(information.getByText('0 句已确认对白', { exact: true })).toBeVisible();
-  await information.getByRole('button', { name: '完成', exact: true }).click(); await expect(information).toHaveCount(0);
+  await expect(review).toHaveCount(0); await expect(panel(page).getByText('0 句已确认对白', { exact: true })).toBeVisible();
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });

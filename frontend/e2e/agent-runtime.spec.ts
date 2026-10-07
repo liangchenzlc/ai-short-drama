@@ -3,13 +3,15 @@ import { fixture, root } from './studio-fixture';
 const time = '2026-10-03T00:00:00Z';
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; };
 
-async function runtimeFixture(page: Page, verified = true, history = 0) {
+async function runtimeFixture(page: Page, verified = true, history = 0, legacyOnly = false) {
   const base = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  await page.route('**/api/v1/auth/capabilities', route => route.fulfill({ json: { enabled: true } }));
+  await page.route('**/api/v1/auth/me', route => route.fulfill({ json: { user: { id: '9007199254740993', username: 'creator', display_name: 'Creator', email: 'creator@example.test', email_verified: true } } }));
   const calls: { path: string; method: string; body: any; key?: string }[] = [];
   const cursors: number[] = [];
   const servedEvents: number[] = [];
   const models = [{ id: '71', name: '创作协作模型', model_key: 'fixture-agent', row_version: '1', protocol: 'chat', verified, tool_calling: verified, tool_result_continuation: verified, streaming: 'verified', preferred: true }];
-  const conversations = ['301', '302'].map((id, i) => ({ id, project_id: '10', episode_id: '20', title: i ? '备选方向' : '主线讨论', row_version: '1', archived: false, last_run_status: null, created_at: time, updated_at: time, stage: 'source', subject_type: 'episode', subject_id: '20', task_type: 'writing', scope_version: 1 }));
+  const conversations = ['301', '302'].map((id, i) => ({ id, project_id: '10', episode_id: legacyOnly ? '20' : null, title: i ? '备选方向' : '主线讨论', row_version: '1', archived: false, last_run_status: null, created_at: time, updated_at: time, stage: legacyOnly ? 'source' : null, subject_type: legacyOnly ? 'episode' : null, subject_id: legacyOnly ? '20' : null, task_type: legacyOnly ? 'writing' : null, scope_version: legacyOnly ? 1 : 2 }));
   const messages: Record<string, any[]> = { '301': Array.from({ length: history }, (_, i) => ({ id: String(1001 + i), seq: i + 1, role: i % 2 ? 'assistant' : 'user', content: `历史消息 ${i + 1}：雨夜中的车站。${'保持故事与角色之间的张力。'.repeat(8)}`, references: [], artifacts: [], created_at: time })), '302': [] };
   const runs: Record<string, any | null> = { '301': null, '302': null };
   const queues: Record<string, any[]> = { '301': [], '302': [] };
@@ -23,14 +25,15 @@ async function runtimeFixture(page: Page, verified = true, history = 0) {
   let accessEnded = false;
   const emit = (event_type: string, run_id: string | null, payload: any = {}) => events.push({ seq: ++seq, event_type, run_id, payload, created_at: time });
   const makeRun = (id: string, mode = 'discuss') => ({ id: '901', conversation_id: id, status: 'running', phase: 'model', row_version: '1', mode: mode === 'generate' ? 'workflow' : 'discuss', model_config_id: '71', model_name: '创作协作模型', error: null, usage: { decision_calls: 1, output_tokens: 20 }, budget: { decision_calls: 8 }, review: null, created_at: time, updated_at: time, finished_at: null });
-  await page.route('**/api/v1/agent/**', async route => {
-    const request = route.request(); const url = new URL(request.url()); const path = url.pathname.slice('/api/v1/agent'.length); const method = request.method();
+  await page.route(/\/api\/v1\/(?:agent|assistant)\//, async route => {
+    const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api\/v1\/(?:agent|assistant)/, ''); const method = request.method();
     const body = method === 'POST' || method === 'PATCH' ? request.postDataJSON() : null;
     calls.push({ path, method, body, key: request.headers()['idempotency-key'] });
     const reply = (data: any, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) });
     if (path === '/status') return reply({ enabled: true, schema_ready: true });
     if (path === '/models') return reply({ items: models, preferred_id: '71' });
     if (path === '/models/71/verify') { Object.assign(models[0], { verified: true, tool_calling: true, tool_result_continuation: true }); return reply(models[0]); }
+    if (path === '/conversations/resolve') return reply(conversations[0]);
     if (path === '/conversations') return reply({ items: conversations, total: 2, offset: 0, limit: 20 });
     if (/^\/conversations\/\d+\/attachments$/.test(path) && method === 'GET') return reply({ items: [], total: 0, offset: 0, limit: 50 });
     const conversationId = path.split('/')[2];
@@ -59,7 +62,7 @@ async function runtimeFixture(page: Page, verified = true, history = 0) {
     if (path.endsWith('/state')) {
       const activeIds = [runs[conversationId], ...queues[conversationId]].filter(run => run && ['queued', 'running', 'waiting_generation', 'waiting_review'].includes(run.status)).map(run => run.id);
       const first = events.find(event => activeIds.includes(event.run_id));
-      return reply({ conversation_id: conversationId, cursor: seq, resume_cursor: first ? first.seq - 1 : seq, active_run: runs[conversationId], queued_runs: queues[conversationId] });
+      return reply({ conversation_id: conversationId, cursor: seq, resume_cursor: first ? first.seq - 1 : seq, active_run: runs[conversationId] && ['queued', 'running', 'waiting_review', 'waiting_generation'].includes(runs[conversationId].status) ? runs[conversationId] : null, queued_runs: queues[conversationId] });
     }
     if (path.endsWith('/runs')) return reply({ items: runs[conversationId] ? [runs[conversationId]] : [], total: runs[conversationId] ? 1 : 0, offset: 0, limit: 1 });
     if (path.startsWith('/runs/901')) {
@@ -76,67 +79,58 @@ async function runtimeFixture(page: Page, verified = true, history = 0) {
     gatePost: () => { postGate = deferred(); postStarted = deferred(); return { started: postStarted.promise, release: postGate.resolve }; } };
 }
 
-test('unverified models send directly while plan approval and stop stay user initiated', async ({ page }, info) => {
-  const state = await runtimeFixture(page, false);
-  await page.goto(`${root}/source?mode=agent&conversation=301`);
-  const composer = page.getByRole('textbox', { name: '创作要求' }); await expect(composer).toBeVisible();
-  await composer.fill('把结尾改成悬念，先给我制作计划。');
-  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: '选择模型', exact: true }).click();
-  await expect(page.getByRole('button', { name: '校验能力' })).toHaveCount(0);
-  await page.getByRole('dialog', { name: '选择 Agent 模型' }).getByRole('button', { name: '完成', exact: true }).click();
+test('unverified models send pure chat without capability probes or creation tools', async ({ page }) => {
+  const state = await runtimeFixture(page, false); await page.goto(`${root}/source?assistant=open&conversation=301`);
+  const composer = page.getByRole('textbox', { name: '给助手的消息' }); await expect(composer).toBeVisible();
+  await composer.fill('分析结尾的悬念'); await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
   expect(state.calls.filter(call => call.method === 'POST')).toEqual([]);
-  await composer.dispatchEvent('compositionstart'); await composer.press('Enter');
-  expect(state.calls.filter(call => call.path.endsWith('/messages') && call.method === 'POST')).toEqual([]);
-  await composer.dispatchEvent('compositionend');
-  await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(composer).toHaveValue('');
+  await page.getByRole('button', { name: '发送', exact: true }).click(); await expect(composer).toHaveValue('');
   const send = state.calls.find(call => call.path.endsWith('/messages') && call.method === 'POST')!;
-  expect(send.key).toBeTruthy(); expect(send.body.mode).toBeUndefined(); expect(send.body.expected_scope).toEqual({ stage: 'source', subject_type: 'episode', subject_id: '20', task_type: 'writing' }); expect(send.body.task).toBeUndefined();
-  Object.assign(state.runs['301'], { status: 'waiting_review', phase: 'wait', review: { tool_call_id: '951', review_version: '2', review_hash: 'a'.repeat(64), title: '雨夜结尾制作计划', summary: '保留车站对白，强化最后一封信的悬念。', steps: [{ id: '1', kind: 'script', target_id: null, instructions: '改写最后一幕，保留人物的克制对白。', count: 1, model_config_id: '71', model_name: '创作协作模型', source: { secret: 'DO_NOT_RENDER' }, parameters: { secret: 'DO_NOT_RENDER' } }] } });
-  state.emit('run.waiting', '901');
-  await expect(page.getByRole('region', { name: '待确认创作计划' })).toBeVisible();
-  expect(state.calls.filter(call => call.path.includes('/reviews/'))).toEqual([]);
-  await expect(page.getByText('DO_NOT_RENDER')).toHaveCount(0);
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: info.outputPath('agent-plan-1440.png'), fullPage: true });
-  await page.getByRole('button', { name: '批准并生成' }).click();
-  await expect(page.getByRole('region', { name: '待确认创作计划' })).toHaveCount(0);
-  expect(state.calls.find(call => call.path.includes('/reviews/'))?.body).toEqual({ review_version: '2', review_hash: 'a'.repeat(64), decision: 'approved' });
-  await page.setViewportSize({ width: 390, height: 900 });
-  await page.getByRole('tab', { name: 'AI 创作', exact: true }).click();
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: info.outputPath('agent-running-390.png'), fullPage: true });
-  await page.getByRole('button', { name: '停止运行', exact: true }).click();
-  await expect(page.getByRole('button', { name: '停止运行', exact: true })).toHaveCount(0);
-  expect(state.calls.filter(call => call.path.endsWith('/stop'))).toHaveLength(1);
-  expect(state.requests.filter(call => call.path.startsWith('/ai/generations/') && call.method === 'POST')).toEqual([]);
-  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+  expect(send.key).toBeTruthy(); expect(send.body.context).toMatchObject({ kind: 'episode', id: '20', revision: '1', stage: 'source' });
+  expect(send.body).not.toHaveProperty('mode'); expect(send.body).not.toHaveProperty('expected_scope'); expect(send.body).not.toHaveProperty('task');
+  expect(state.calls.filter(call => call.path.endsWith('/verify'))).toEqual([]);
+  await page.getByRole('button', { name: '停止', exact: true }).click(); await expect(page.getByRole('button', { name: '停止', exact: true })).toHaveCount(0);
+  expect(state.calls.filter(call => call.path.endsWith('/stop'))).toHaveLength(1); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const reviewing of [false, true]) {
-  test(`running conversations accept queued supplements${reviewing ? ' and lock the old plan approval' : ''}`, async ({ page }) => {
-    const state = await runtimeFixture(page, false);
-    state.runs['301'] = { ...state.makeRun('301'), status: reviewing ? 'waiting_review' : 'running', review: reviewing ? { tool_call_id: '951', review_version: '2', review_hash: 'a'.repeat(64), title: '待修订计划', summary: '保留人物姓名。', steps: [] } : null };
-    await page.goto(`${root}/source?mode=agent&conversation=301`);
-    const composer = page.getByRole('textbox', { name: '创作要求', exact: true });
-    await composer.fill('补充：保留人物姓名，缩短最后一幕');
-    await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: '发送', exact: true }).click();
-    await expect(composer).toHaveValue(''); await expect(page.locator('.agent-runtime-status')).toContainText('已排队 1 条补充要求');
-    expect(state.runs['301'].id).toBe('901'); expect(state.queues['301'][0].id).toBe('902');
-    await composer.fill('第二条尚未发送的草稿');
-    await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
-    if (reviewing) { await expect(page.getByRole('button', { name: '批准并生成' })).toBeDisabled(); await expect(page.getByRole('button', { name: '拒绝计划' })).toBeDisabled(); }
-    await page.reload(); await expect(composer).toHaveValue('第二条尚未发送的草稿');
-    await expect(page.locator('.agent-runtime-status')).toContainText('已排队 1 条补充要求');
-    expect(state.calls.filter(call => call.path.includes('/reviews/'))).toEqual([]);
-    expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
-  });
-}
+test('running project chats queue supplements and restore drafts after refresh', async ({ page }) => {
+  const state = await runtimeFixture(page, false); state.runs['301'] = state.makeRun('301');
+  await page.goto(`${root}/source?assistant=open&conversation=301`);
+  const composer = page.getByRole('textbox', { name: '给助手的消息', exact: true }); await composer.fill('补充人物动机');
+  await page.getByRole('button', { name: '发送', exact: true }).click(); await expect(composer).toHaveValue('');
+  await expect(page.getByLabel('排队消息')).toContainText('排队位置 1'); expect(state.runs['301'].id).toBe('901'); expect(state.queues['301'][0].id).toBe('902');
+  await composer.fill('尚未发送的草稿'); await page.reload(); await expect(composer).toHaveValue('尚未发送的草稿'); await expect(page.getByLabel('排队消息')).toContainText('排队位置 1');
+  expect(state.calls.filter(call => call.path.includes('/reviews/'))).toEqual([]); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('historical plans remain explicitly approved and stoppable without a message composer', async ({ page }, info) => {
+  const state = await runtimeFixture(page, false, 0, true);
+  state.runs['301'] = { ...state.makeRun('301'), status: 'waiting_review', phase: 'wait', review: {
+    tool_call_id: '951', review_version: '2', review_hash: 'a'.repeat(64), title: '雨夜结尾制作计划', summary: '保留车站对白。',
+    steps: [{ id: '1', kind: 'script', target_id: null, instructions: '保留人物克制对白。', count: 1, model_config_id: '71', model_name: '创作协作模型', source: { secret: 'DO_NOT_RENDER' }, parameters: { secret: 'DO_NOT_RENDER' } }],
+  } };
+  await page.goto(`${root}/source?mode=agent&conversation=301`); await expect(page.getByRole('region', { name: '待确认创作计划' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '创作要求' })).toHaveCount(0); expect(state.calls.filter(call => call.method === 'POST')).toEqual([]); await expect(page.getByText('DO_NOT_RENDER')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('historical-plan-1440.png'), fullPage: true });
+  await page.getByRole('button', { name: '批准并生成' }).click(); await expect(page.getByRole('region', { name: '待确认创作计划' })).toHaveCount(0);
+  expect(state.calls.find(call => call.path.includes('/reviews/'))?.body).toEqual({ review_version: '2', review_hash: 'a'.repeat(64), decision: 'approved' });
+  await page.setViewportSize({ width: 390, height: 900 }); await expect(page.getByRole('dialog', { name: 'AI 创作助手', exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('historical-running-390.png'), fullPage: true });
+  await page.getByRole('button', { name: '停止运行', exact: true }).click(); await expect(page.getByRole('button', { name: '停止运行', exact: true })).toHaveCount(0);
+  expect(state.requests.filter(call => call.path.startsWith('/ai/generations/') && call.method === 'POST')).toEqual([]); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('previously queued historical supplements keep the old plan approval locked', async ({ page }) => {
+  const state = await runtimeFixture(page, false, 0, true);
+  state.runs['301'] = { ...state.makeRun('301'), status: 'waiting_review', review: { tool_call_id: '951', review_version: '2', review_hash: 'a'.repeat(64), title: '待修订计划', summary: '保留人物姓名。', steps: [] } };
+  state.queues['301'].push({ ...state.makeRun('301'), id: '902', status: 'queued', queue_position: 1 });
+  await page.goto(`${root}/source?mode=agent&conversation=301`);
+  await expect(page.getByRole('button', { name: '批准并生成' })).toBeDisabled(); await expect(page.getByRole('button', { name: '拒绝计划' })).toBeDisabled(); await expect(page.getByRole('textbox', { name: '创作要求' })).toHaveCount(0);
+  expect(state.calls.filter(call => call.path.includes('/reviews/'))).toEqual([]); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
 
 for (const action of ['stop', 'review'] as const) test(`late ${action} response cannot restore a private run after access-ended`, async ({ page }) => {
-  const state = await runtimeFixture(page, true, 2); const gate = state.gateControl();
+  const state = await runtimeFixture(page, true, 2, true); const gate = state.gateControl();
   state.runs['301'] = { ...state.makeRun('301'), ...(action === 'review' ? { status: 'waiting_review', review: {
     tool_call_id: '951', review_version: '1', review_hash: 'c'.repeat(64), title: '图片制作计划', summary: '为本镜生成画面。',
     steps: [{ id: '1', kind: 'image', target_kind: 'shot', target_id: '41', target_label: '第 2 镜头 · 雨夜站台', instructions: '雨夜中的车站', count: 2, model_config_id: '71', model_name: '图片创作模型', source: {}, parameters: { resolution: '480p', duration_ms: 5000, aspect: '16:9', layout: 'grid4', reference_media_ids: ['61', '62'], secret: 'DO_NOT_RENDER' } }],
@@ -157,15 +151,15 @@ for (const action of ['stop', 'review'] as const) test(`late ${action} response 
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('save failure retains the composer and sends no Agent request', async ({ page }) => {
+test('save failure retains the composer and sends no assistant message', async ({ page }) => {
   const state = await runtimeFixture(page);
   await page.route(`**/api/v1${root}/novel`, route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'SAVE_UNAVAILABLE' } }) }));
-  await page.goto(`${root}/source?mode=agent&conversation=301`);
-  const composer = page.getByRole('textbox', { name: '创作要求' }); await expect(composer).toBeVisible();
+  await page.goto(`${root}/source?assistant=open&conversation=301`);
+  const composer = page.getByRole('textbox', { name: '给助手的消息' }); await expect(composer).toBeVisible();
   await page.getByRole('textbox', { name: '本集小说正文' }).fill('尚未保存的雨夜故事。');
   await composer.fill('围绕刚改的故事讨论结尾');
   await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(page.getByText('当前作品尚未保存成功。对话草稿已保留，请处理保存提示后再发送。')).toBeVisible();
+  await expect(page.getByText('当前正文尚未保存成功，请处理保存提示后再发送。')).toBeVisible();
   await expect(composer).toHaveValue('围绕刚改的故事讨论结尾');
   expect(state.calls.filter(call => call.path.endsWith('/messages') && call.method === 'POST')).toEqual([]);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
@@ -173,19 +167,19 @@ test('save failure retains the composer and sends no Agent request', async ({ pa
 
 test('late send preserves another conversation and its draft', async ({ page }) => {
   const state = await runtimeFixture(page); const gate = state.gatePost();
-  await page.goto(`${root}/source?mode=agent&conversation=302`);
-  const composer = page.getByRole('textbox', { name: '创作要求' }); await expect(composer).toBeVisible(); await composer.fill('B 的草稿');
+  await page.goto(`${root}/source?assistant=open&conversation=302`);
+  const composer = page.getByRole('textbox', { name: '给助手的消息' }); await expect(composer).toBeVisible(); await composer.fill('B 的草稿');
   await page.getByRole('button', { name: '对话记录', exact: true }).click();
-  await page.locator('.agent-history-entry').filter({ hasText: '主线讨论' }).click();
+  await page.locator('.ai-assistant-history-entry').filter({ hasText: '主线讨论' }).click();
   await expect(composer).toHaveValue(''); await composer.fill('A 的讨论要求');
   await page.getByRole('button', { name: '发送', exact: true }).click(); await gate.started;
-  await page.goBack(); await expect(composer).toHaveValue('B 的草稿');
-  const response = page.waitForResponse(result => result.url().endsWith('/agent/conversations/301/messages') && result.request().method() === 'POST');
+  await page.evaluate(() => { history.pushState({}, '', '?assistant=open&conversation=302'); window.dispatchEvent(new PopStateEvent('popstate')); }); await expect(composer).toHaveValue('B 的草稿');
+  const response = page.waitForResponse(result => result.url().endsWith('/assistant/conversations/301/messages') && result.request().method() === 'POST');
   gate.release(); await response;
   await expect(page).toHaveURL(url => url.searchParams.get('conversation') === '302');
   await expect(composer).toHaveValue('B 的草稿');
   await page.getByRole('button', { name: '对话记录', exact: true }).click();
-  await expect(page.locator('.agent-history-entry[aria-current="true"]')).toContainText('备选方向');
+  await expect(page.locator('.ai-assistant-history-list article.is-current')).toContainText('备选方向');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -194,8 +188,8 @@ test('replayed events use a persistent cursor and preserve upward reading positi
   state.runs['301'] = state.makeRun('301');
   state.emit('assistant.delta', '901', { run_id: '901', turn_id: '981', delta: '🎬', offset: 0 });
   state.emit('assistant.delta', '901', { run_id: '901', turn_id: '981', delta: '雨夜', offset: 1 });
-  await page.goto(`${root}/source?mode=agent&conversation=301`);
-  const transcript = page.locator('.agent-transcript'); await expect(page.getByText('🎬雨夜', { exact: true })).toBeVisible();
+  await page.goto(`${root}/source?assistant=open&conversation=301`);
+  const transcript = page.locator('.ai-assistant-log'); await expect(page.getByText('🎬雨夜', { exact: true })).toBeVisible();
   await transcript.evaluate(node => { node.scrollTop = 160; node.dispatchEvent(new Event('scroll')); });
   const before = await transcript.evaluate(node => node.scrollTop);
   state.emit('assistant.delta', '901', { run_id: '901', turn_id: '981', delta: '中的车站', offset: 3 });
@@ -205,23 +199,23 @@ test('replayed events use a persistent cursor and preserve upward reading positi
   await page.getByRole('button', { name: '载入更早消息' }).click();
   await expect(page.locator('[data-message-id="1001"]')).toBeAttached();
   Object.assign(state.runs['301'], { status: 'succeeded', finished_at: time }); state.emit('run.finished', '901');
-  await expect(page.locator('.is-streaming')).toHaveCount(0);
+  await expect(page.getByText('🎬雨夜中的车站', { exact: true })).toHaveCount(0);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
 test('an uncertain send only retries explicitly with the original body and idempotency key', async ({ page }) => {
   const state = await runtimeFixture(page); state.abortNextSend();
-  await page.goto(`${root}/source?mode=agent&conversation=301`);
-  const composer = page.getByRole('textbox', { name: '创作要求' }); await expect(composer).toBeVisible();
+  await page.goto(`${root}/source?assistant=open&conversation=301`);
+  const composer = page.getByRole('textbox', { name: '给助手的消息' }); await expect(composer).toBeVisible();
   await composer.fill('先讨论雨夜的结尾'); await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(page.getByText('发送结果尚未确认，草稿已保留。先核对消息与运行状态，避免重复请求。')).toBeVisible();
+  await expect(page.getByText('发送结果尚未确认，草稿已保留。请使用原请求核对，避免重复调用。')).toBeVisible();
   await expect(composer).toHaveValue('先讨论雨夜的结尾');
   await composer.fill('继续编辑的草稿');
-  await page.getByRole('button', { name: '核对发送状态', exact: true }).click();
+  await page.locator('.ai-assistant-uncertain').getByRole('button', { name: '核对状态', exact: true }).click();
   const sends = () => state.calls.filter(call => call.path.endsWith('/messages') && call.method === 'POST');
   expect(sends()).toHaveLength(1); await expect(page.getByRole('button', { name: '发送', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: '使用原请求重试', exact: true }).click();
-  await expect(page.getByRole('button', { name: '使用原请求重试', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '使用原请求核对', exact: true }).click();
+  await expect(page.getByRole('button', { name: '使用原请求核对', exact: true })).toHaveCount(0);
   expect(sends()).toHaveLength(2); expect(sends()[1].body).toEqual(sends()[0].body); expect(sends()[1].key).toBe(sends()[0].key);
   await expect(composer).toHaveValue('继续编辑的草稿');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
@@ -232,21 +226,21 @@ test('reopening a long conversation skips completed history and recovers the act
   for (let i = 0; i < 10000; i++) state.emit('run.started', String(10000 + i));
   state.runs['301'] = state.makeRun('301');
   state.emit('assistant.delta', '901', { turn_id: '981', delta: '保留雨夜', offset: 0 });
-  await page.goto(`${root}/source?mode=agent&conversation=301`);
-  await expect(page.locator('.is-streaming p')).toHaveText('保留雨夜');
+  await page.goto(`${root}/source?assistant=open&conversation=301`);
+  await expect(page.locator('.ai-assistant-log > .ai-assistant-reply p')).toHaveText('保留雨夜');
   expect(state.cursors[0]).toBe(10000); expect(state.servedEvents[0]).toBe(1);
   const firstState = state.calls.findIndex(call => call.path.endsWith('/state'));
   const firstMessages = state.calls.findIndex(call => call.path.endsWith('/messages') && call.method === 'GET');
   expect(firstState).toBeLessThan(firstMessages);
   state.emit('assistant.delta', '901', { turn_id: '981', delta: '中的车站', offset: 4 });
-  await expect(page.locator('.is-streaming p')).toHaveText('保留雨夜中的车站');
+  await expect(page.locator('.ai-assistant-log > .ai-assistant-reply p')).toHaveText('保留雨夜中的车站');
   expect(state.servedEvents.reduce((sum, count) => sum + count, 0)).toBe(2);
   await info.attach('long-conversation-recovery-counts', { body: Buffer.from(JSON.stringify({ historical_events: 10000, initial_cursor: state.cursors[0], delivered_events: state.servedEvents.reduce((sum, count) => sum + count, 0) })), contentType: 'application/json' });
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
 test('rejecting a plan sends the reviewed version without starting generation', async ({ page }) => {
-  const state = await runtimeFixture(page);
+  const state = await runtimeFixture(page, true, 0, true);
   state.runs['301'] = { ...state.makeRun('301'), status: 'waiting_review', phase: 'wait', review: {
     tool_call_id: '951', review_version: '4', review_hash: 'b'.repeat(64), title: '待拒绝计划', summary: '改写整集。',
     steps: [{ id: '1', kind: 'novel', target_id: null, instructions: '重新生成小说', count: 1, model_config_id: '71', model_name: '创作协作模型', source: {}, parameters: {} }],
@@ -261,12 +255,12 @@ test('rejecting a plan sends the reviewed version without starting generation', 
 
 test('access-ended clears private history and stops automatic reconnects', async ({ page }) => {
   const state = await runtimeFixture(page, true, 2);
-  await page.goto(`${root}/source?mode=agent&conversation=301`);
+  await page.goto(`${root}/source?assistant=open&conversation=301`);
   await expect(page.locator('[data-message-id="1001"]')).toBeVisible();
   state.endAccess();
   await expect(page.getByText('对话访问已结束，请核对登录与项目权限。')).toBeVisible();
-  await expect(page.locator('[data-message-id]')).toHaveCount(0); await expect(page.locator('.agent-transcript .ant-skeleton')).toHaveCount(0);
-  const composer = page.getByRole('textbox', { name: '创作要求' }); await composer.fill('访问已结束时的草稿');
+  await expect(page.locator('[data-message-id]')).toHaveCount(0); await expect(page.locator('.ai-assistant-log .ant-skeleton')).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: '给助手的消息' })).toBeDisabled();
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeDisabled();
   expect(state.calls.filter(call => call.method === 'POST')).toEqual([]);
   const connections = state.cursors.length;
@@ -276,15 +270,13 @@ test('access-ended clears private history and stops automatic reconnects', async
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const modifier of ['Control', 'Meta']) test(`Enter makes a newline and ${modifier}+Enter sends outside IME composition`, async ({ page }) => {
-  const state = await runtimeFixture(page); await page.goto(`${root}/source?mode=agent&conversation=301`);
-  const composer = page.getByRole('textbox', { name: '创作要求' }); await expect(composer).toBeVisible();
-  await composer.fill('第一行'); await composer.press('Enter'); await expect(composer).toHaveValue('第一行\n'); await page.keyboard.insertText('第二行');
+test('Shift+Enter makes a newline and Enter sends outside IME composition', async ({ page }) => {
+  const state = await runtimeFixture(page); await page.goto(`${root}/source?assistant=open&conversation=301`);
+  const composer = page.getByRole('textbox', { name: '给助手的消息' }); await expect(composer).toBeVisible();
+  await composer.fill('第一行'); await composer.press('Shift+Enter'); await expect(composer).toHaveValue('第一行\n'); await page.keyboard.insertText('第二行');
   await expect(composer).toHaveValue('第一行\n第二行');
-  const sends = () => state.calls.filter(call => call.path.endsWith('/messages') && call.method === 'POST');
-  expect(sends()).toEqual([]);
-  await composer.dispatchEvent('compositionstart'); await composer.press(`${modifier}+Enter`); expect(sends()).toEqual([]);
-  await composer.dispatchEvent('compositionend'); await composer.press(`${modifier}+Enter`);
-  await expect(composer).toHaveValue(''); expect(sends()).toHaveLength(1); expect(sends()[0].body.content).toBe('第一行\n第二行');
-  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+  const sends = () => state.calls.filter(call => call.path.endsWith('/messages') && call.method === 'POST'); expect(sends()).toEqual([]);
+  await composer.dispatchEvent('compositionstart'); await composer.press('Enter'); expect(sends()).toEqual([]);
+  await composer.dispatchEvent('compositionend'); await composer.press('Enter'); await expect(composer).toHaveValue('');
+  expect(sends()).toHaveLength(1); expect(sends()[0].body.content).toBe('第一行\n第二行'); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });

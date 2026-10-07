@@ -5,6 +5,7 @@ from short_drama.api.v1.agent_artifacts import router as agent_artifacts_router
 from short_drama.api.v1.ai_generations import router as ai_generations_router
 from short_drama.api.v1.ai_model_configs import router as ai_model_configs_router
 from short_drama.api.v1.assets import router as assets_router
+from short_drama.api.v1.assistant import router as assistant_router
 from short_drama.api.v1.auth import router as auth_router
 from short_drama.api.v1.canvas_beefapi import router as canvas_beefapi_router
 from short_drama.api.v1.canvas_catalog import router as canvas_catalog_router
@@ -43,6 +44,7 @@ router.include_router(canvas_model_tests_router)
 router.include_router(canvas_library_router)
 router.include_router(canvas_library_folders_router)
 router.include_router(agent_router)
+router.include_router(assistant_router)
 router.include_router(agent_artifacts_router)
 router.include_router(episode_assembly_router)
 router.include_router(episode_sound_router)
