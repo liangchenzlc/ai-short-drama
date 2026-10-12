@@ -157,10 +157,14 @@ def mix_sound(renderer, source, sound, sources, directory, total_ms, width, heig
             "".join(voices) + f"amix=inputs={len(voices)}:normalize=0:duration=longest[dialogue]"
         )
         if duck:
-            graph.append("[dialogue]asplit=2[spoken][sidechain]")
+            # 对齐压缩器两路输入的样本时钟和帧大小，保留延后开始的配乐尾段。
+            graph.append(
+                "[dialogue]asplit=2[spoken][sidechain_raw];"
+                "[sidechain_raw]asetpts=N/SR/TB,asetnsamples=n=1024:p=1[sidechain]"
+            )
         channels.append("[spoken]" if duck else "[dialogue]")
     if music:
-        args += ["-protocol_whitelist", "file,pipe", "-i", str(sources[music["media_id"]])]
+        music_source = sources[music["media_id"]]
         start, end = music["trim_in_ms"] / 1000, music["trim_out_ms"] / 1000
         available = max(0, seconds - music["start_ms"] / 1000)
         length = available if music["loop"] else min(available, end - start)
@@ -175,8 +179,47 @@ def mix_sound(renderer, source, sound, sources, directory, total_ms, width, heig
         filters += (
             f",atrim=duration={length},volume={music['volume']},afade=t=in:d={fade_in},"
             f"afade=t=out:st={max(0, length - fade_out)}:d={fade_out},"
-            f"adelay={music['start_ms']}:all=1,apad,atrim=duration={seconds}[music]"
+            f"adelay={music['start_ms']}:all=1,apad,atrim=duration={seconds},asetpts=N/SR/TB[music]"
         )
+        # 先冻结配乐的延迟、裁剪和淡入淡出，避免 sidechain 调度丢失静音样本。
+        music_script = directory / "music-track.txt"
+        music_script.write_text(filters.replace(f"[{inputs}:a]", "[0:a]"), encoding="utf-8")
+        music_output = directory / "music-track.wav"
+        renderer.run(
+            [
+                executable(renderer.settings.render_ffmpeg_path),
+                "-v",
+                "error",
+                "-nostdin",
+                "-y",
+                "-protocol_whitelist",
+                "file,pipe",
+                "-i",
+                str(music_source),
+                "-filter_complex_threads",
+                "1",
+                "-filter_complex_script",
+                str(music_script),
+                "-map",
+                "[music]",
+                "-t",
+                str(seconds),
+                "-c:a",
+                "pcm_f32le",
+                "-rf64",
+                "auto",
+                str(music_output),
+            ],
+            directory,
+            stage="mixing",
+            progress=90,
+        )
+        music_source = music_output
+        filters = f"[{inputs}:a]aresample=48000,aformat=channel_layouts=stereo,asetpts=N/SR/TB"
+        if duck:
+            filters += ",asetnsamples=n=1024:p=1"
+        filters += "[music]"
+        args += ["-protocol_whitelist", "file,pipe", "-i", str(music_source)]
         graph.append(filters)
         intervals = doc.get("native_ducking", []) if sound.get("mode") == "native" else []
         if music["ducking"] and intervals:
@@ -202,13 +245,43 @@ def mix_sound(renderer, source, sound, sources, directory, total_ms, width, heig
     )
     script = directory / "sound-mix.txt"
     script.write_text(";".join(graph), encoding="utf-8")
+    soundtrack = directory / "soundtrack.wav"
     args += [
+        "-filter_complex_threads",
+        "1",
         "-filter_complex_script",
         str(script),
         "-map",
+        "[mix]",
+        "-t",
+        str(seconds),
+        "-c:a",
+        "pcm_f32le",
+        "-rf64",
+        "auto",
+        str(soundtrack),
+    ]
+    renderer.run(args, directory, stage="mixing", progress=91)
+    # 音轨已完整输出后再编码字幕画面，避免音频分支与视频编码相互等待。
+    args = [
+        executable(renderer.settings.render_ffmpeg_path),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-protocol_whitelist",
+        "file,pipe",
+        "-i",
+        str(source),
+        "-protocol_whitelist",
+        "file,pipe",
+        "-i",
+        str(soundtrack),
+        "-map",
         "0:v:0",
         "-map",
-        "[mix]",
+        "1:a:0",
         "-t",
         str(seconds),
     ]
@@ -255,5 +328,5 @@ def mix_sound(renderer, source, sound, sources, directory, total_ms, width, heig
         "+faststart",
         str(output),
     ]
-    renderer.run(args, directory, stage="mixing", progress=91)
+    renderer.run(args, directory, stage="mixing", progress=92)
     output.replace(source)

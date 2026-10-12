@@ -11,7 +11,6 @@ import {
     logicalModelIDForConfig,
 } from "@/lib/canvas/canvas-project-generation";
 import {
-    cinematicStoryboardColumns,
     createCanvasNode,
     createStoryboardRow,
     expandStoryboardTextMentions,
@@ -25,9 +24,10 @@ import { reconcileStoryboardTargetConnections, storyboardComposerContent, storyb
 import { generationErrorMessage } from "@/lib/generation-error";
 import { navigateToSettings } from "@/lib/settings-navigation";
 import type { Skill } from "@/services/api/skills";
-import { createGenerationTask, waitForGenerationTask } from "@/services/api/task-center";
+import { createGenerationTask, waitForGenerationTask, type CanvasStoryboardTaskInput } from "@/services/api/task-center";
 import { skillRuntime } from "@/services/skill-runtime";
 import { submitStoryboardTask } from "@/services/storyboard-submission";
+import { bindBackendCanvasGenerationResult } from "@/services/canvas-generation-consumer";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { modelDisplayName, resolveModelRequestConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { workspaceCapabilities } from "@/services/workspace-mode";
@@ -52,7 +52,6 @@ type UseCanvasStoryboardOptions = {
 
 const NODE_STATUS_IDLE = "idle" as const;
 const NODE_STATUS_LOADING = "loading" as const;
-const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
 
 export function useCanvasStoryboard({
@@ -139,11 +138,13 @@ export function useCanvasStoryboard({
         const lifetimeSignal = storyboardLifetime.current.signal;
         const signal = callerSignal ? AbortSignal.any([lifetimeSignal, callerSignal]) : lifetimeSignal;
         const scope = getActiveUserScope();
+        let receivedTaskId: string | undefined;
         const originalRows = JSON.stringify(scriptNode.metadata?.storyboard?.rows || []);
         const assertCurrent = () => {
             signal.throwIfAborted();
             const current = nodesRef.current.find((node) => node.id === nodeId);
-            if (getActiveUserScope() !== scope || !current || JSON.stringify(current.metadata?.storyboard?.rows || []) !== originalRows) throw new Error("画布、账号或分镜内容已变化，未覆盖现有镜头，请重新读取后处理");
+            const alreadyBound = receivedTaskId && current?.metadata?.taskId === receivedTaskId && current.metadata.generationEffectKeys?.includes(`attach-node:${receivedTaskId}:${nodeId}:0`);
+            if (getActiveUserScope() !== scope || !current || !alreadyBound && JSON.stringify(current.metadata?.storyboard?.rows || []) !== originalRows) throw new Error("画布、账号或分镜内容已变化，未覆盖现有镜头，请重新读取后处理");
         };
         let storyboardContext: ReturnType<typeof resolveStoryboardGenerationContext>;
         try {
@@ -172,7 +173,7 @@ export function useCanvasStoryboard({
             assertCurrent();
             setNodes((current) => current.map((node) => node.id === nodeId ? { ...node, metadata: { ...node.metadata, composerContent: prompt, status: NODE_STATUS_LOADING, taskStage: "正在创建任务", taskProgress: 0, errorDetails: undefined, ...skillExecution.metadata } } : node));
             assertCurrent();
-            const request = {
+            const request: CanvasStoryboardTaskInput = {
                 projectId,
                 type: "canvas_text",
                 operation: "storyboard",
@@ -189,7 +190,7 @@ export function useCanvasStoryboard({
                     shotDurationSeconds,
                     shotCount: requestedShotCount,
                     config: backendProviderConfig(generationConfig, "text"),
-                    metadata: { nodeId, ...skillExecution.metadata },
+                    metadata: { nodeId, sourceNodeId: nodeId, clientOperationId: `storyboard:${nanoid()}`, ...skillExecution.metadata },
                 },
             };
             const managed = Boolean(logicalModelIDForConfig(generationConfig) || resolveModelRequestConfig(generationConfig, generationConfig.model).channelId);
@@ -215,6 +216,7 @@ export function useCanvasStoryboard({
                 if (!signal.aborted && scope === getActiveUserScope()) setNodes((current) => current.map((node) => node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: scriptNode.metadata?.status || NODE_STATUS_IDLE, taskStage: undefined } } : node));
                 return false;
             }
+            receivedTaskId = task.id;
             assertCurrent();
             setNodes((current) => current.map((node) => node.id === nodeId ? { ...node, metadata: { ...node.metadata, ...generationTaskMetadata(task), status: NODE_STATUS_LOADING } } : node));
             const completed = await waitForGenerationTask(task.id, {
@@ -225,22 +227,7 @@ export function useCanvasStoryboard({
             });
             const result = storyboardRowsFromTask(completed);
             assertCurrent();
-            replaceScriptRows(nodeId, result.rows);
-            setNodes((current) => current.map((node) => node.id === nodeId ? {
-                ...node,
-                title: result.title || node.title,
-                metadata: {
-                    ...node.metadata,
-                    status: NODE_STATUS_SUCCESS,
-                    errorDetails: undefined,
-                    ...generationTaskMetadata(completed),
-                    storyboard: {
-                        rows: result.rows,
-                        visibleColumns: cinematicStoryboardColumns(node.metadata?.storyboard?.visibleColumns),
-                        referenceNodeIds: node.metadata?.storyboard?.referenceNodeIds || [],
-                    },
-                },
-            } : node));
+            await bindBackendCanvasGenerationResult({ canvasId: projectId, nodeId, task: completed, signal, nodesRef, setNodes, isCurrent: () => { assertCurrent(); return true; } });
             message.success(`已生成 ${result.rows.length} 个镜头`);
             return true;
         } catch (error) {

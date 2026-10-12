@@ -38,3 +38,25 @@ test("整组存储失败不产生部分记录，损坏或跨组文档拒绝覆�
         await assert.rejects(readInitialCanvasGroup({ ...storage, getItem: () => raw }, "root"), /原有草稿已保留/);
     }
 });
+
+test("多图复制各自冻结明确父图，不由首图所属项目推断后续来源", async () => {
+    const values = new Map();
+    const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
+    const input = projects().map((project, index) => ({ ...project, initialSourceCanvas: { canvasKey: "parent-" + index, rowVersion: String(9007199254740999n + BigInt(index)) } }));
+    const group = await prepareInitialCanvasGroup(storage, input);
+    input[1].initialSourceCanvas.canvasKey = "wrong-parent";
+    assert.deepEqual(await prepareInitialCanvasGroup(storage, input), group);
+    for (const project of (await readInitialCanvasGroup(storage, "root")).projects) await prepareInitialCanvasWrite(storage, project);
+    assert.deepEqual((await readInitialCanvasWrite(storage, "root")).initialSourceCanvas, { canvasKey: "parent-0", rowVersion: "9007199254740999" });
+    assert.deepEqual((await readInitialCanvasWrite(storage, "child")).initialSourceCanvas, { canvasKey: "parent-1", rowVersion: "9007199254741000" });
+});
+
+test("旧无来源整组与归档后续图保持无来源", async () => {
+    const values = new Map();
+    const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
+    const group = await prepareInitialCanvasGroup(storage, projects());
+    for (const project of group.projects) {
+        await prepareInitialCanvasWrite(storage, project);
+        assert.equal("initialSourceCanvas" in await readInitialCanvasWrite(storage, project.id), false);
+    }
+});

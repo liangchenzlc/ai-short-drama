@@ -1,15 +1,22 @@
 import { nanoid } from "nanoid";
 import { creationRuns, type CreationSubmission } from "./api/creation-runs";
-import type { CreateTaskInput } from "./api/task-center";
+import type { CanvasStoryboardTaskInput } from "./api/task-center";
+import { captureUserScope } from "@/lib/user-scope-guard";
+import { canvasTaskAdmissionIdentity } from "./host-generation-admission";
+import { persistCanvasGenerationSource } from "./canvas-generation-consumer";
 
 // Both the node composer and Agent submit the same locally admitted task.
-export async function submitStoryboardTask(request: CreateTaskInput, options: {
+export async function submitStoryboardTask(request: CanvasStoryboardTaskInput, options: {
     signal: AbortSignal;
     assertCurrent: () => void;
     confirm: (submission: CreationSubmission) => Promise<boolean>;
 }, api = creationRuns) {
     const { signal, assertCurrent } = options;
-    const detail = await api.create({ clientKey: `storyboard:${nanoid()}`, canvasId: request.projectId, state: { kind: "storyboard" } }, signal);
+    const identity = canvasTaskAdmissionIdentity(request);
+    assertCurrent();
+    await persistCanvasGenerationSource(request, captureUserScope());
+    assertCurrent();
+    const detail = await api.create({ clientKey: identity.operationId, canvasId: identity.projectId, state: { kind: "storyboard", nodeId: identity.nodeId, sourceNodeId: identity.sourceNodeId, logicalModelId: request.logicalModelId, model: request.model } }, signal);
     const run = await api.claim(detail.run.id, { expectedEpoch: detail.run.executionEpoch, owner: `storyboard:${nanoid()}` }, signal);
     const guard = { executionEpoch: run.executionEpoch, owner: run.executionOwner };
     let connectionError: unknown;

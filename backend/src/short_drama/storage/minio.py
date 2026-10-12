@@ -21,6 +21,8 @@ class MinioStorage:
         self.settings = settings
         self._pool = None
         self._client = client
+        self._provider_client = None
+        self._provider_pool = None
         if client is None and all(
             (settings.minio_endpoint, settings.minio_access_key, settings.minio_secret_key)
         ):
@@ -140,9 +142,48 @@ class MinioStorage:
                 bucket, key, expires=timedelta(seconds=expires_seconds)
             )
 
+    def provider_presigned_get(self, bucket: str, key: str) -> str:
+        """签名供应商引用；显式 region 和静态凭据使签名不查询公网地域。"""
+        if not self.settings.provider_references_enabled or not all(
+            (
+                self.settings.minio_region.strip(),
+                self.settings.minio_access_key,
+                self.settings.minio_secret_key,
+            )
+        ):
+            raise ConfigurationError("Provider reference storage is not configured")
+        if self._provider_client is None:
+            self._provider_pool = urllib3.PoolManager(cert_reqs="CERT_REQUIRED")
+            try:
+                self._provider_client = Minio(
+                    self.settings.minio_public_endpoint,
+                    access_key=self.settings.minio_access_key.get_secret_value(),
+                    secret_key=self.settings.minio_secret_key.get_secret_value(),
+                    secure=True,
+                    region=self.settings.minio_region,
+                    http_client=self._provider_pool,
+                )
+            except (TypeError, ValueError):
+                self._provider_pool.clear()
+                self._provider_pool = None
+                raise ConfigurationError(
+                    "Provider reference storage configuration is invalid"
+                ) from None
+        try:
+            with self._errors():
+                return self._provider_client.presigned_get_object(
+                    bucket,
+                    key,
+                    expires=timedelta(seconds=self.settings.minio_provider_presign_expiry),
+                )
+        except (TypeError, ValueError):
+            raise ConfigurationError("Provider reference storage signing failed") from None
+
     def close(self) -> None:
         if self._pool is not None:
             self._pool.clear()
+        if self._provider_pool is not None:
+            self._provider_pool.clear()
 
     def copy(self, bucket: str, source_name: str, target_name: str) -> StoredObject:
         from minio.commonconfig import CopySource

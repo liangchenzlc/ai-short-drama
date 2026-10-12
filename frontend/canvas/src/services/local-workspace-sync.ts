@@ -1,7 +1,7 @@
 import { assertUserScope, captureUserScope, type CapturedUserScope } from "@/lib/user-scope-guard";
 import type { CanvasHistoryRestore } from "@/services/api/workspace-data";
 import { rebindInconsistentCanvasAssets, type CanvasAssetRebindResult } from "@/services/canvas-asset-repair";
-import { createLocalCanvasProject, deleteLocalCanvasProjects, openLocalCanvasProject, openLocalCanvasProjectFromBackend, persistCanvasDocument, restoreLocalCanvasProjectFromHistory } from "@/services/local-workspace-repository";
+import { createLocalCanvasProject, deleteLocalCanvasProjects, loadLatestLocalCanvasProject, openLocalCanvasProject, openLocalCanvasProjectFromBackend, persistCanvasDocument, restoreLocalCanvasProjectFromHistory } from "@/services/local-workspace-repository";
 import { flushAssetStorePersistence, useAssetStore, type Asset } from "@/stores/use-asset-store";
 import {
     loadWorkspaceAssetLibraryPage,
@@ -44,7 +44,8 @@ export async function loadCanvasProjectForEditing(
         options.onLoad?.(restored);
         return restored;
     }
-    const project = await openLocalCanvasProjectFromBackend(id, expected);
+    const project = options.latest ? await loadLatestLocalCanvasProject(id, expected) : await openLocalCanvasProjectFromBackend(id, expected);
+    assertUserScope(expected);
     if (project) options.onLoad?.(project);
     return project || undefined;
 }

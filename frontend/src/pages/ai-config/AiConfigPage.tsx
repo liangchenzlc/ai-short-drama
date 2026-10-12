@@ -13,6 +13,7 @@ import { useSearchParams } from 'react-router-dom';
 import { safeCanvasReturn } from '../../features/ai-config/config-form-model';
 import { BeefAPIConnection } from '../../features/ai-config/BeefAPIConnection';
 import { ModelConfigTest } from '../../features/ai-config/ModelConfigTest';
+import { CanvasEditorTools } from '../../features/ai-config/CanvasEditorTools';
 
 const PAGE_SIZE = 20;
 export function AiConfigPage() {
@@ -106,6 +107,7 @@ export function AiConfigPage() {
   return <section className="studio-page ai-config-page" aria-labelledby="ai-title">
     <PageHeader id="ai-title" title="AI 配置" actions={<>{returnTo && <Button disabled={!!busyId || formOpen || !!testing} onClick={() => window.location.assign(returnTo)}>返回画布</Button>}<Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={!!busyId} onClick={() => { setEditing(null); setFormOpen(true); }}>添加{serviceLabels[tab]}</Button></>} />
     <BeefAPIConnection onChanged={reloadList}/>
+    <CanvasEditorTools/>
     <div className="studio-tabs" role="tablist" aria-label="AI 模型类别">
       {configTabs.map((kind, index) => <button key={kind} id={`model-tab-${kind}`} role="tab" aria-selected={tab === kind}
         aria-controls={`model-panel-${kind}`} tabIndex={tab === kind ? 0 : -1} className={tab === kind ? 'active' : ''}

@@ -1,6 +1,7 @@
 """Reclaim abandoned creation bytes without losing their retry identity."""
 
 import logging
+from collections.abc import Iterator
 
 from sqlalchemy import select
 
@@ -14,6 +15,18 @@ from .canvas_resource_copy import canvas_copy_lock
 logger = logging.getLogger(__name__)
 
 
+def _expired_creation_ids(factory) -> Iterator[int]:
+    cursor, cutoff = 0, utcnow()
+    while True:
+        with factory() as session:
+            identifiers = CanvasCreationDAO(session).expired(cutoff, 100, after_id=cursor)
+        if not identifiers:
+            return
+        # 回收会更新updated_at，失败项仍保留；稳定ID保证一轮内每项只尝试一次。
+        cursor = identifiers[-1]
+        yield from identifiers
+
+
 def cleanup_canvas_creations(factory, storage, settings, *, apply=False):
     buckets = {
         settings.minio_image_bucket,
@@ -22,9 +35,8 @@ def cleanup_canvas_creations(factory, storage, settings, *, apply=False):
     }
     with factory() as session:
         engine = session.get_bind().engine
-        identifiers = CanvasCreationDAO(session).expired(utcnow(), 100)
     examined = removed = failed = 0
-    for identifier in identifiers:
+    for identifier in _expired_creation_ids(factory):
         try:
             # The same mutex serializes the entire create, including I/O and commit.
             with canvas_copy_lock(engine, identifier):

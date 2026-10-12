@@ -16,12 +16,14 @@ import {
     type MediaConversionOperation,
 } from "@/lib/media-conversion/contracts";
 import { convertImageLocally, LocalImageConversionError } from "@/lib/media-conversion/local-converter";
-import { getActiveUserScope } from "@/lib/user-scope";
+import { captureUserScope, assertUserScope, isUserScopeAbandonedError } from "@/lib/user-scope-guard";
 import { runLocalDepthEstimation } from "@/services/depth-runtime";
 import { runLocalLineartEstimation } from "@/services/lineart-runtime";
 import { runLocalPoseEstimation } from "@/services/pose-runtime";
-import { resolveImageUrl, setImageBlob } from "@/services/image-storage";
+import { resolveImageUrl } from "@/services/image-storage";
 import { resolveMediaUrl } from "@/services/file-storage";
+import { canvasKeyFromPath } from "@/services/host-resource-upload";
+import { MediaConversionArchiveError, persistMediaConversionResult } from "@/services/media-conversion-result";
 import { LocalRuntimeClientError } from "@/services/local-runtime-session";
 import { useLocalRuntimeStore } from "@/stores/use-local-runtime-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
@@ -56,6 +58,27 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
     const [showResult, setShowResult] = useState(status === "completed" || status === "stale");
     const [notice, setNotice] = useState("");
     const abortRef = useRef<AbortController | null>(null);
+    const liveRef = useRef({ nodeId: node.id, inputId: input?.id, fingerprint: currentFingerprint, operation: state.operation, multiple: hasMultipleInputs });
+
+    useLayoutEffect(() => {
+        liveRef.current = { nodeId: node.id, inputId: input?.id, fingerprint: currentFingerprint, operation: state.operation, multiple: hasMultipleInputs };
+    });
+
+    useEffect(() => {
+        const controller = abortRef.current;
+        if (!controller) return;
+        controller.abort();
+        abortRef.current = null;
+        // 来源变化只停止当前转换，不让旧响应覆盖新来源或新选择。
+        if (updateNode) updateNode(node.id, current => {
+            const conversion = current.metadata?.mediaConversion;
+            if (conversion?.status !== "processing") return current;
+            return { ...current, metadata: { ...current.metadata, mediaConversion: {
+                ...conversion, status: conversion.resultStorageKey ? "stale" : "idle", updatedAt: new Date().toISOString(),
+            } } };
+        });
+        setShowResult(false);
+    }, [currentFingerprint, input?.id, hasMultipleInputs, state.operation, node.id, updateNode]);
 
     useEffect(() => {
         let active = true;
@@ -166,6 +189,18 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
         abortRef.current?.abort();
         const controller = new AbortController();
         abortRef.current = controller;
+        const expectedScope = captureUserScope();
+        const hostCanvasKey = canvasKeyFromPath(window.location.pathname);
+        const assertActive = () => {
+            assertUserScope(expectedScope);
+            const live = liveRef.current;
+            if (controller.signal.aborted || abortRef.current !== controller || live.nodeId !== node.id
+                || live.inputId !== input.id || live.fingerprint !== currentFingerprint
+                || live.operation !== state.operation || live.multiple
+                || canvasKeyFromPath(window.location.pathname) !== hostCanvasKey) {
+                throw new DOMException("转换来源已变化", "AbortError");
+            }
+        };
         const startedAt = new Date().toISOString();
         updateState({ status: "processing", sourceNodeId: input.id, sourceFingerprint: currentFingerprint, outputKind: "image", errorCode: undefined, errorMessage: undefined, startedAt, updatedAt: startedAt });
         let posterObjectUrl = "";
@@ -173,6 +208,7 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
             let conversionSourceUrl = sourceUrl;
             if (inputKind === "video") {
                 const captured = await captureVideoPoster(sourceUrl, { signal: controller.signal, maxWidth: 1024 });
+                assertActive();
                 if (captured.poster) {
                     posterObjectUrl = URL.createObjectURL(captured.poster);
                     conversionSourceUrl = posterObjectUrl;
@@ -193,9 +229,12 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
                 : state.operation === "pose"
                     ? await runLocalPoseEstimation(sourceUrl, controller.signal)
                 : await convertImageLocally(conversionSourceUrl, state.operation, { signal: controller.signal, maxDimension: 1024 });
-            if (controller.signal.aborted) return;
-            const storageKey = localConversionStorageKey(node.id, currentFingerprint, state.operation);
-            const url = await setImageBlob(storageKey, result.blob);
+            assertActive();
+            const { storageKey, url } = await persistMediaConversionResult(result, {
+                nodeId: node.id, sourceFingerprint: currentFingerprint, operation: state.operation,
+                expectedScope, hostCanvasKey, assertActive,
+            });
+            assertActive();
             const completedAt = new Date().toISOString();
             const detectedPeople = state.operation === "pose" && "personCount" in result && typeof result.personCount === "number" ? result.personCount : undefined;
             const completedPatch = {
@@ -247,9 +286,19 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
             setResultUrl(url);
             setShowResult(true);
         } catch (error) {
-            if (controller.signal.aborted) return;
+            if (controller.signal.aborted || isUserScopeAbandonedError(error)
+                || error instanceof Error && error.name === "AbortError") return;
             const aborted = error instanceof LocalImageConversionError && error.code === "aborted";
             if (aborted) return;
+            try { assertActive(); } catch (stopped) {
+                if (isUserScopeAbandonedError(stopped) || stopped instanceof Error && stopped.name === "AbortError") return;
+                throw stopped;
+            }
+            if (error instanceof MediaConversionArchiveError) {
+                updateState({ status: "error", errorCode: "result_archive_failed", errorMessage: error.message, updatedAt: new Date().toISOString() });
+                setNotice(error.message);
+                return;
+            }
             if (error instanceof LocalRuntimeClientError) {
                 if (error.code === "pose_no_person") {
                     updateState({ status: "skipped", errorCode: error.code, errorMessage: error.message, detectedPeople: 0, updatedAt: new Date().toISOString() });
@@ -267,6 +316,7 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
             setNotice(conversionError.message);
         } finally {
             if (posterObjectUrl) URL.revokeObjectURL(posterObjectUrl);
+            if (abortRef.current === controller) abortRef.current = null;
         }
     };
 
@@ -604,8 +654,4 @@ function localRuntimeNotice(error: LocalRuntimeClientError, connection: ReturnTy
     if (error.code === "lineart_model_missing") return "AI 线稿依赖或模型尚未安装，请先完成本地线稿模型安装";
     if (error.code === "pose_model_missing") return "姿态模型或依赖尚未安装，请先完成本地姿态模型安装";
     return error.message;
-}
-
-function localConversionStorageKey(nodeId: string, fingerprint: string, operation: MediaConversionOperation) {
-    return `image:${getActiveUserScope()}:media-conversion:${nodeId}:${fingerprint}:${operation}`;
 }

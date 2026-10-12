@@ -127,6 +127,23 @@ export type CreateTaskInput = {
 	logicalModelId?: string;
     input?: Record<string, unknown>;
 };
+
+export type CanvasStoryboardTaskInput = CreateTaskInput & {
+    projectId: string;
+    type: "canvas_text";
+    operation: "storyboard";
+    input: Record<string, unknown> & {
+        mode: "text";
+        prompt: string;
+        canvasAssets: import("@/lib/canvas/canvas-storyboard-assets").StoryboardAssetCatalogItem[];
+        requirements: string;
+        projectStyle: import("@/lib/canvas/canvas-storyboard-context").StoryboardGenerationContext["projectStyle"];
+        characters: import("@/lib/canvas/canvas-storyboard-context").StoryboardGenerationContext["characters"];
+        shotDurationSeconds: number;
+        shotCount: number;
+        metadata: { nodeId: string; sourceNodeId: string; clientOperationId: string } & Record<string, unknown>;
+    };
+};
 const canvasTaskAdmission = createCanvasTaskAdmission<GenerationTask>({
     store: (scope) => localForageStorageForScope(scope.userScope),
     assertCurrent: assertUserScope,

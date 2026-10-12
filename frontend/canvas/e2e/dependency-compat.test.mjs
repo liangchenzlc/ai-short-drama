@@ -11,6 +11,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 test("宿主 AntD5 下原提示词助手保留长对话滚动、Sender 发送及页脚操作", { timeout: 90000 }, async () => {
     const server = await createServer({
         root,
+        cacheDir: resolve(root, ".runtime/vite-e2e-dependency-compat"),
         server: { host: "127.0.0.1", port: 4188, strictPort: true },
         logLevel: "error",
         plugins: [{

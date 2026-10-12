@@ -129,6 +129,21 @@ test("宿主模型经真实工作区恢复保留选择与逻辑ID，同时剔除
     assert.deepEqual(restored.channels.map(item => item.id), [`host-${id}`]);
 });
 
+test("真实工作区恢复保留宿主RunningHub条目和保存标记，旧本地连接被剔除", () => {
+    const source = sourceModelConfig({ row_version: "1", preferences: {}, models: [hostModel({
+        service_type: "image", runtime_profile: { protocol: "runninghub-workflow-image",
+            runninghub_workflow: { kind: "workflow", workflow_id: "workflow-17", title: "工作流" } },
+    })] });
+    Object.assign(source.runningHub, { apiKey: "stale-key", baseUrl: "https://stale.example", uploadApiKey: "stale-upload", walletApiKey: "stale-wallet" });
+    const restored = localWorkspaceConfig(source);
+    assert.equal(restored.runningHub.workflows.length, 1);
+    assert.equal(restored.runningHub.workflows[0].logicalModelId, "9007199254740999");
+    assert.equal(restored.runningHub.workflows[0].hasApiKey, true);
+    assert.equal(restored.runningHub.workflowId, "workflow-17");
+    for (const key of ["apiKey", "baseUrl", "uploadApiKey", "walletApiKey"]) assert.equal(restored.runningHub[key], "");
+    assert.deepEqual(localWorkspaceConfig({ ...source, hostModelDirectory: false }).runningHub, defaultConfig.runningHub);
+});
+
 test("保存ACK采用真实逻辑ID与脱敏结果", () => {
     const submitted = config();
     const durable = structuredClone(submitted);

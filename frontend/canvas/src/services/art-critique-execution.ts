@@ -11,6 +11,7 @@ export const ART_CRITIQUE_MAX_MODEL_CALLS = 9;
 // One execution boundary for manual UI and future approved Agent runs.
 // The executor may be replaced by an approval-aware task submitter; parsing stays in the pipeline.
 export async function executeArtCritique(input: {
+    projectId: string;
     nodeId: string;
     runId: string;
     source: CanvasNodeData;
@@ -21,7 +22,7 @@ export async function executeArtCritique(input: {
     onDraftReport?: ArtCritiquePipelineOptions["onDraftReport"];
     submitStage?: typeof runBackendToolGenerationTask;
 }, dependencies = { inspectImage: inspectAgentImage, runTask: runBackendToolGenerationTask, runPipeline: runArtCritiquePipeline }) {
-    if (!input.nodeId || !input.runId || !isArtCritiqueImageInput(input.source)) throw new Error("分析需要真实目标节点、执行标识和已有图片");
+    if (!input.projectId || !input.nodeId || !input.runId || !isArtCritiqueImageInput(input.source)) throw new Error("分析需要已保存画布、真实目标节点、执行标识和已有图片");
     const scope = getActiveUserScope();
     const assertLive = () => {
         if (input.signal.aborted || getActiveUserScope() !== scope) throw new DOMException("分析已停止或账号已切换", "AbortError");
@@ -40,6 +41,7 @@ export async function executeArtCritique(input: {
             if (calledStages.has(toolName) || calledStages.size >= ART_CRITIQUE_MAX_MODEL_CALLS) throw new Error("分析阶段重复或超过本次调用数量上限");
             calledStages.add(toolName);
             const result = await (input.submitStage || dependencies.runTask)({
+                projectId: input.projectId,
                 config, messages, tools: [tool], toolChoice: { type: "function", name: toolName },
                 prompt: `图片审美分析：${toolName}`, signal,
                 metadata: { source: "art-critique", nodeId: input.nodeId, runId: input.runId, stage: toolName },

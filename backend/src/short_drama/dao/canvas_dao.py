@@ -1,8 +1,8 @@
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from short_drama.domain import Project, ProjectCanvas, ProjectCanvasSettings
-from short_drama.domain.canvas import CanvasWriteReceipt
+from short_drama.domain.canvas import CanvasRevision, CanvasWriteReceipt
 from short_drama.domain.collaboration import User
 
 
@@ -15,7 +15,9 @@ class CanvasDAO:
 
     def project(self, project_id: int, *, lock: bool = False):
         query = select(Project).where(Project.id == project_id, Project.archived_at.is_(None))
-        return self.session.scalar(query.with_for_update() if lock else query)
+        return self.session.scalar(
+            query.with_for_update().execution_options(populate_existing=True) if lock else query
+        )
 
     def canvas(self, project_id: int, canvas_id: int, *, lock: bool = False):
         query = select(ProjectCanvas).where(
@@ -23,7 +25,18 @@ class CanvasDAO:
             ProjectCanvas.id == canvas_id,
             ProjectCanvas.archived_at.is_(None),
         )
-        return self.session.scalar(query.with_for_update() if lock else query)
+        return self.session.scalar(
+            query.with_for_update().execution_options(populate_existing=True) if lock else query
+        )
+
+    def source_canvas(self, source_key: str, *, lock: bool = False):
+        """来源只能精确匹配稳定 key，不与数值数据库 ID 混用。"""
+        query = select(ProjectCanvas).where(
+            ProjectCanvas.source_key == source_key, ProjectCanvas.archived_at.is_(None)
+        )
+        if lock:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        return self.session.scalar(query)
 
     def settings(self, project_id: int):
         return self.session.scalar(
@@ -62,7 +75,9 @@ class CanvasDAO:
             )
             .limit(1)
         )
-        return self.session.scalar(query.with_for_update() if lock else query)
+        return self.session.scalar(
+            query.with_for_update().execution_options(populate_existing=True) if lock else query
+        )
 
     def recycle_receipts(self, actor_id: int):
         # The ORM receipt predicate checks the author and current membership,
@@ -101,6 +116,26 @@ class CanvasDAO:
             query = query.where(model.archived_at.is_(None))
         if lock:
             query = query.with_for_update().execution_options(populate_existing=True)
+        return list(self.session.scalars(query))
+
+    def snapshot_revisions(self, canvas_id: int) -> list[CanvasRevision]:
+        query = (
+            select(CanvasRevision)
+            .options(defer(CanvasRevision.snapshot_json, raiseload=True))
+            .where(CanvasRevision.canvas_id == canvas_id)
+            .order_by(CanvasRevision.canvas_row_version.desc())
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return list(self.session.scalars(query))
+
+    def current_resource_references(self, model, canvas_id: int):
+        query = (
+            select(model)
+            .where(model.canvas_id == canvas_id, model.owner_kind != "revision")
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         return list(self.session.scalars(query))
 
     def canvases(self, project_id: int | None = None, *, lock: bool = False):

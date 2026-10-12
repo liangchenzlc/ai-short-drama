@@ -4,6 +4,9 @@ import re
 
 from pydantic import ValidationError
 
+from short_drama.ai.canvas_runninghub_adapters import RUNNINGHUB_ADAPTERS
+from short_drama.ai.canvas_text_adapters import TEXT_IMAGE_ADAPTERS
+from short_drama.ai.canvas_tool_adapters import CANVAS_TOOL_ADAPTERS
 from short_drama.ai.canvas_video_adapters import normalize_canvas_video_config
 from short_drama.ai.types import GenerationError
 from short_drama.core.exceptions import GenerationRequestError, WorkflowError
@@ -106,10 +109,38 @@ def _video_input(request: CanvasRuntimeTaskCreate, references: list[str], adapte
 def generation_payload(
     request: CanvasRuntimeTaskCreate, project_id: int, adapter: str | None = None
 ) -> dict:
+    tool = request.input.agent_requests is not None
+    if tool and adapter not in CANVAS_TOOL_ADAPTERS:
+        unsupported("editor tool protocol")
     config = request.input.config
     for key in config:
         if key not in OPTIONS:
             unsupported(key)
+    if adapter in RUNNINGHUB_ADAPTERS:
+        if (
+            request.provider not in {None, "runninghub"}
+            or request.input.capability_options
+            or request.input.text_history
+            or request.input.agent_requests
+            or request.input.text_options.thinking
+        ):
+            unsupported("workflow execution scope")
+        return (
+            GENERATION_SCHEMAS[request.input.mode]
+            .model_validate(
+                {
+                    "project_id": str(project_id),
+                    "config_id": request.logical_model_id,
+                    "input": {
+                        "text" if request.input.mode == "audio" else "prompt": request.prompt
+                    },
+                    **({"parameters": {"voice": "alloy"}} if request.input.mode == "audio" else {}),
+                }
+            )
+            .model_dump(mode="json", exclude_none=True)
+        )
+    if request.input.execution is not None:
+        unsupported("workflow protocol")
     if request.input.mode == "video" and adapter in VIDEO_ADAPTERS:
         if (
             request.provider
@@ -138,8 +169,12 @@ def generation_payload(
         request.input.mode != "image" or adapter != "openai_images.v1"
     ):
         unsupported("mask")
-    if request.input.reference_videos or request.input.reference_audios:
-        unsupported("referenceVideos/referenceAudios")
+    if request.input.reference_audios:
+        unsupported("referenceAudios")
+    if request.input.reference_videos and (
+        request.input.mode != "text" or adapter not in TEXT_IMAGE_ADAPTERS
+    ):
+        unsupported("referenceVideos")
     if request.input.text_options.thinking:
         unsupported("thinking")
     kind = request.input.mode
@@ -154,7 +189,7 @@ def generation_payload(
     if (
         request.operation
         not in {
-            "text": {"text"},
+            "text": {"text", "storyboard"},
             "image": {"image"},
             "video": {"text_to_video", "image_to_video"}
             | ({"reference_to_video"} if adapter is not None else set()),
@@ -164,14 +199,25 @@ def generation_payload(
         unsupported(request.operation)
     parameters = {}
     if kind == "text":
-        if references and adapter != "openai_chat.v1":
+        if references and adapter not in (CANVAS_TOOL_ADAPTERS if tool else TEXT_IMAGE_ADAPTERS):
             unsupported("text referenceImages")
         messages = [item.model_dump(mode="json") for item in request.input.text_history]
         system = config.get("systemPrompt")
-        if system:
+        if system and not tool:
             if not isinstance(system, str):
                 unsupported("systemPrompt")
             messages.insert(0, {"role": "system", "content": system})
+        if request.operation == "storyboard":
+            from .canvas_storyboard import storyboard_system_prompt
+
+            messages.append(
+                {
+                    "role": "system",
+                    "content": storyboard_system_prompt(
+                        request.model_dump(mode="json", by_alias=True, exclude_none=True)
+                    ),
+                }
+            )
         messages.append({"role": "user", "content": request.prompt})
         inputs = {"messages": messages}
     elif kind == "image":
@@ -226,7 +272,10 @@ def generation_payload(
                     unsupported(option)
         else:
             frozen_canvas_parameters(request, adapter)
-        parameters["voice"] = config.get("audioVoice", "alloy")
+        voice = config.get("audioVoice", "alloy")
+        if adapter in {"openai_speech.v1", "canvas_async_audio.v1"} and isinstance(voice, str):
+            voice = voice.strip() or "alloy"
+        parameters["voice"] = voice
         inputs = {"text": request.prompt}
     try:
         return (

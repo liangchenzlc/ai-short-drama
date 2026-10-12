@@ -100,6 +100,11 @@ const LOCAL_TASK_ADMISSION_FAILURE: CategoryCopy = {
     action: "请重启应用后重试；若仍失败，请保留排查信息并联系支持",
 };
 
+const PROVIDER_QUEUE_REJECTED: CategoryCopy = {
+    reason: "模型服务的视频队列已满，本次未创建供应商任务",
+    action: "请稍后显式重试",
+};
+
 const CATEGORY_COPY: Record<GenerationErrorCategory, CategoryCopy> = {
     auth: { reason: "模型服务鉴权失败", action: "请检查 API Key 后重试" },
     permission: { reason: "当前渠道没有使用该模型的权限", action: "请更换模型或检查渠道权限" },
@@ -145,6 +150,7 @@ const PROVIDER_CODE_CATEGORIES: Record<string, GenerationErrorCategory> = {
     invalid_reference_audio: "invalid_params",
     insufficient_user_quota: "quota_user",
     model_temporarily_unavailable: "provider_unavailable",
+    provider_queue_full: "provider_unavailable",
     no_available_channel: "provider_unavailable",
     "channel:invalid_key": "provider_unavailable",
     "channel:no_available_key": "provider_unavailable",
@@ -513,6 +519,9 @@ function classifyHttp(status: number | undefined, body: unknown): Classified {
 function classifyText(raw: string): Classified {
     const text = raw.trim();
     if (!text) return { category: "unknown", retryable: false };
+    if (text.startsWith(`${PROVIDER_QUEUE_REJECTED.reason}。`)) {
+        return { category: "provider_unavailable", ...PROVIDER_QUEUE_REJECTED, fromCode: true, retryable: true };
+    }
     if (text === LOCAL_TASK_ADMISSION_FAILURE.reason || text.startsWith(`${LOCAL_TASK_ADMISSION_FAILURE.reason}。`)) {
         return { category: "local_storage", ...LOCAL_TASK_ADMISSION_FAILURE, fromCode: true, retryable: false };
     }
@@ -582,6 +591,9 @@ function classifyText(raw: string): Classified {
 
 function specialize(classified: Classified, fields: ExtractedFields): Classified {
     fields = { ...fields, message: sanitizeProviderText(fields.message) };
+    if (normalizeCode(fields.code) === "provider_queue_full" || (classified.category === "provider_unavailable" && fields.message.startsWith(`${PROVIDER_QUEUE_REJECTED.reason}。`))) {
+        return { ...classified, ...PROVIDER_QUEUE_REJECTED, retryable: true };
+    }
     classified.requestId ||= sanitizeDebugId(fields.message.match(/\brequest\s*id:\s*([A-Za-z0-9_-]{6,127})\b/i)?.[1]);
     const taskConstraint = persistedTaskConstraintCopy(fields.message) || taskConstraintCopy(`${fields.code} ${fields.message}`);
     if (taskConstraint && ["unknown", "invalid_params"].includes(classified.category))

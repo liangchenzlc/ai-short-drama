@@ -262,7 +262,9 @@ function buildUserMessage(input: PromptOptimizationInput, modelProfile: ModelAda
 
     const content: PluginTextContentPart[] = [{ type: "text", text: textParts.join("\n") }];
     for (const image of input.context?.images || []) {
-        if (/^(data:|https?:\/\/)/i.test(image.url.trim())) content.push({ type: "image_url", image_url: { url: image.url.trim() } });
+        const url = image.url.trim();
+        if (!/^(data:|https?:\/\/|resource:[1-9]\d*$)/i.test(url)) throw new Error("参考图片尚未保存，请重新上传后再优化");
+        content.push({ type: "image_url", image_url: { url } });
     }
     return { role: "user", content };
 }

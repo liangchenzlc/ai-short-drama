@@ -9,6 +9,16 @@ export type CanvasTaskAdmissionInput = {
 };
 
 export type CanvasTaskAdmissionScope = { userScope: string; epoch: number };
+
+export function isCanvasEditorToolInput(input: { input?: Record<string, unknown> }) {
+    return Boolean(input.input?.agentRequests);
+}
+
+export function isCanvasEditorToolTask(task: { inputJson?: string; clientContext?: { source?: string } }) {
+    if (task.clientContext?.source === "prompt-optimizer" || task.clientContext?.source === "art-critique") return true;
+    try { return isCanvasEditorToolInput({ input: JSON.parse(task.inputJson || "{}") }); }
+    catch { return false; }
+}
 type AdmissionStore = {
     getItem(key: string): string | null | Promise<string | null>;
     setItem(key: string, value: string): unknown | Promise<unknown>;
@@ -102,12 +112,12 @@ export function createCanvasTaskAdmission<T extends { id: string }>(dependencies
     };
 }
 
-export function canvasRecoveryTaskForNode<T extends { id: string; projectId?: string; clientOperationId?: string; clientContext?: { nodeId?: string } }>(
+export function canvasRecoveryTaskForNode<T extends { id: string; projectId?: string; clientOperationId?: string; inputJson?: string; clientContext?: { nodeId?: string; source?: string } }>(
     node: { id: string; metadata?: { taskId?: string; taskClientOperationId?: string } },
     projectId: string,
     tasks: readonly T[],
 ) {
-    const candidates = tasks.filter((task) => task.projectId === projectId && task.clientContext?.nodeId === node.id);
+    const candidates = tasks.filter((task) => !isCanvasEditorToolTask(task) && task.projectId === projectId && task.clientContext?.nodeId === node.id);
     if (node.metadata?.taskId) return candidates.find((task) => task.id === node.metadata?.taskId);
     if (node.metadata?.taskClientOperationId) return candidates.find((task) => task.clientOperationId === node.metadata?.taskClientOperationId);
     return candidates[0];
@@ -115,8 +125,9 @@ export function canvasRecoveryTaskForNode<T extends { id: string; projectId?: st
 
 export function canvasTaskCanUpdateNode(
     node: { metadata?: { taskId?: string; taskClientOperationId?: string } },
-    task: { id: string; clientOperationId?: string },
+    task: { id: string; clientOperationId?: string; inputJson?: string; clientContext?: { source?: string } },
 ) {
+    if (isCanvasEditorToolTask(task)) return false;
     if (node.metadata?.taskId && node.metadata.taskId !== task.id) return false;
     return !node.metadata?.taskClientOperationId || !task.clientOperationId || node.metadata.taskClientOperationId === task.clientOperationId;
 }
@@ -142,13 +153,13 @@ type RecoveryNode = {
 };
 type RecoverySourceTask = {
     id: string; projectId?: string; type: string; status: string; clientOperationId?: string;
-    clientContext?: { nodeId?: string; sourceNodeId?: string };
+    clientContext?: { nodeId?: string; sourceNodeId?: string; source?: string };
     inputJson?: string; createdAt?: string; error?: string;
 };
 
 /** Config nodes own a task group, never a child's task identity. */
 export function canvasConfigGenerationState(source: RecoveryNode, projectId: string, nodes: readonly RecoveryNode[], tasks: readonly RecoverySourceTask[], settledTaskIds: ReadonlySet<string> = new Set()) {
-    const sourceTasks = tasks.filter((task) => task.projectId === projectId && task.clientContext?.sourceNodeId === source.id && task.clientContext.nodeId !== source.id)
+    const sourceTasks = tasks.filter((task) => !isCanvasEditorToolTask(task) && task.projectId === projectId && task.clientContext?.sourceNodeId === source.id && task.clientContext.nodeId !== source.id)
         .sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || ""));
     const baseForTask = (task: RecoverySourceTask) => {
         let metadata: Record<string, unknown> | undefined;

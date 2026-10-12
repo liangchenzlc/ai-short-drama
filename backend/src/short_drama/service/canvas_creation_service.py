@@ -34,6 +34,7 @@ from .canvas_media_locators import canonicalize_canvas_media
 from .canvas_resource_copy import CanvasResourceCopyService, canvas_copy_lock
 
 logger = logging.getLogger(__name__)
+SOURCE_BINDING_KEY = "$source_project_binding"
 
 
 class CanvasCreationService(CanvasResourceCopyService):
@@ -56,7 +57,7 @@ class CanvasCreationService(CanvasResourceCopyService):
             with (
                 self._global_order_lock(),
                 canvas_folder_write_lock(self.session),
-                self._transaction(),
+                self._transaction(lock_request_project=False),
             ):
                 attempt = self._lock_creation(reserved)
                 if attempt.status == "ready":
@@ -105,14 +106,14 @@ class CanvasCreationService(CanvasResourceCopyService):
         operation = "canvas.create" if project_id is not None else "canvas.workspace.create"
         original = canvas_creation_payload(request)
         payload = original if project_id is None else {"project_id": str(project_id), **original}
-        with self._global_order_lock(), self._transaction():
-            if project_id is not None:
-                self.canvases.require_project(project_id, lock=True)
+        with self._global_order_lock(), self._transaction(lock_request_project=False):
             digest, receipt = self.canvases.begin_write(key, operation, payload)
             if receipt:
+                self.canvases.require_creation_result(receipt.result_json)
                 return deepcopy(receipt.result_json)
-            old = self.creations.by_key(self.actor_id, key)
+            old = self.creations.by_key(self.actor_id, key, lock=False)
             if old is not None:
+                old = self._lock_creation(old.id)
                 if old.operation_kind != operation or old.request_hash != digest:
                     raise WorkflowError(
                         "canvas_idempotency_conflict", "此请求标识已用于另一份画布", 409
@@ -126,7 +127,6 @@ class CanvasCreationService(CanvasResourceCopyService):
             source_key = request.source_key or (document.id if document else uuid4().hex)
             if document and (
                 document.id != source_key
-                or document.project_id
                 or document.workspace_project_id
                 not in {None, document.id if project_id is None else str(project_id)}
             ):
@@ -137,16 +137,21 @@ class CanvasCreationService(CanvasResourceCopyService):
             sources = self.resources.resource_map(identifiers)
             if set(sources) != identifiers:
                 raise NotFound("Canvas creation source does not exist")
-            # Source projects can be standard projects. Lock them before their files.
-            for owner in sorted({row.project_id for row in sources.values() if row.project_id}):
-                require_project(self.session, owner, lock=True)
+            binding = self.canvases.inherited_source_binding(
+                request,
+                project_id=project_id,
+                extra_project_ids={row.project_id for row in sources.values() if row.project_id},
+            )
+            frozen_request = deepcopy(original)
+            if binding is not None:
+                frozen_request[SOURCE_BINDING_KEY] = binding
             attempt = CanvasCreationAttempt(
                 **self.canvases.audit(),
                 user_id=self.actor_id,
                 idempotency_key=key,
                 operation_kind=operation,
                 request_hash=digest,
-                request_json=deepcopy(original),
+                request_json=frozen_request,
                 source_key=source_key,
                 target_project_id=project_id,
                 status="pending",
@@ -223,13 +228,37 @@ class CanvasCreationService(CanvasResourceCopyService):
         attempt = self.creations.attempt(identifier, lock=False)
         if attempt is None:
             raise NotFound("Canvas creation does not exist")
-        if attempt.target_project_id is not None:
-            self.canvases.require_project(attempt.target_project_id, lock=True)
+        if attempt.status == "ready":
+            self.canvases.require_creation_result(attempt.result_json)
+        else:
+            frozen = attempt.request_json
+            request = CanvasCreateRequest.model_validate(
+                {field: value for field, value in frozen.items() if field != SOURCE_BINDING_KEY}
+            )
+            pending_ids = {
+                row.source_resource_id
+                for row in self.creations.resources(attempt.id, lock=False)
+                if row.status == "pending"
+            }
+            pending_sources = self.resources.resource_map(pending_ids)
+            if set(pending_sources) != pending_ids:
+                raise NotFound("Canvas creation source does not exist")
+            binding = self.canvases.inherited_source_binding(
+                request,
+                project_id=attempt.target_project_id,
+                extra_project_ids={
+                    row.project_id for row in pending_sources.values() if row.project_id
+                },
+            )
+            if binding != frozen.get(SOURCE_BINDING_KEY):
+                raise WorkflowError(
+                    "canvas_source_changed", "父画布可信来源与首次冻结记录不一致，原请求已保留", 409
+                )
         return self.creations.attempt(identifier)
 
     def _replay_creation(self, attempt):
         result = attempt.result_json
-        self.canvases.require_canvas(int(result["project_id"]), int(result["id"]), lock=True)
+        self.canvases.require_creation_result(result)
         return deepcopy(result)
 
     def _pending_file(self, attempt, identifier):
@@ -258,7 +287,7 @@ class CanvasCreationService(CanvasResourceCopyService):
         return row
 
     def _copy_prepared_file(self, attempt_id, identifier):
-        with self._global_order_lock(), self._transaction():
+        with self._global_order_lock(), self._transaction(lock_request_project=False):
             attempt = self._lock_creation(attempt_id)
             if attempt.status == "ready":
                 return
@@ -281,7 +310,7 @@ class CanvasCreationService(CanvasResourceCopyService):
             ) from None
         if stored.storage_locator != target_locator or stored.size != snapshot["byte_size"]:
             raise WorkflowError("canvas_resource_copy_changed", "复制文件大小或位置不符", 409)
-        with self._global_order_lock(), self._transaction():
+        with self._global_order_lock(), self._transaction(lock_request_project=False):
             attempt = self._lock_creation(attempt_id)
             row = self._pending_file(attempt, identifier)
             row.status = "copied"

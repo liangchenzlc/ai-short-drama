@@ -1,0 +1,111 @@
+# 原画布 HEVC 上传与播放专项
+
+2026-10-10晚准备可信样片，2026-10-11原产品 native-a **2 passed / 0 skipped，
+84.92s，exit0**，1440/390两种屏宽全部 Python 后置通过。这里只证明本机 Chrome
+154 上这份 HEVC/hvc1 样片的原上传、首段播放、永久媒体、封面、刷新恢复与权限。
+没有新增生产代码或兼容副本，没有模型调用；不能将本地转码称为 Agnes 生成的
+H.265 视频，也不能宣称全部 H.265 格式、浏览器或源成对对照完成。
+
+## 样片来源与浏览器诊断
+
+源为[正式生成审计](2026-10-10-beeftv-agnes-generation-broker-audit.md)已通过的
+视频j原件，883988字节、H.264/AAC、1280×720、24fps、4.48秒，SHA-256：
+`43dac3b818d45c383fb5a0bf6b475ab549878f37f20dc3946cf93df484e163ab`。
+核对原摘要后，使用既有 FFmpeg/libx265 本地编码为 Main/yuv420p/hvc1，AAC原轨
+复制，完整时长保留；源原件未覆盖，也没有再次提交供应商。
+派生样片220115字节，SHA-256：
+`305a03da5beaa4a27f9f2e8953578f5aa1f538b8688a2056c9dd435ed1b9aa83`。
+FFprobe实际确认HEVC/hvc1、1280×720、4.48秒，FFmpeg解码1秒处帧成功并已查看。
+
+独立本机HTTP诊断分别用H.264原件和HEVC派生样片，真实点击播放按钮；Chrome
+**154.0.8037.98** 两场均有1280×720视频帧，`currentTime > 0.3`、未暂停、
+readyState=4、媒体错误为空。`canPlayType`仅作为附带信息，实际播放才是证据。
+HEVC独立播放截图已实际查看。这是普通HTML解码诊断，不是源/目标产品验收；
+没有等待全片播完，也不作为音质或独立音频模型验收。
+
+## 固定源可达性与当前产品范围
+
+固定基准仍为 `4ca2a65a7780a8dfcaaa86c33679f84fb04e055c`。源后端使用原完整
+仓库的 `git show <固定commit>:backend/internal/playback/service.go` 读取，
+不将当前HEAD `ef65732...` 当成固定版本。源playback Service仅给ready/local视频
+认领异步H.264副本；普通画布节点直接播放原定位值，没有请求 `variant=playback`。
+
+固定源 `web/src/services/workspace-mode.ts` 的 `isLocalWorkspaceMode()` 恒为true。
+`router.tsx` 的 `LocalAwareProjectRoute` 把项目详情路由重定向到画布；
+`pages/projects/detail/editor.tsx` 虽有 `useEditorSlots` 调用，在此边界下不可达。
+因此不能说“全源没有EditorSlot调用者”。画布内没有该槽位渲染调用，兼容副本的
+旧站点使用点不作为本片新增入口。目标按已授权的
+[产品范围](../../frontend/PRODUCT.md)物理删除源项目详情与整站资产页，本片没有恢复它们。
+
+上述为固定源代码与当前路由/产品范围核对，未运行源成对浏览器HEVC场景。
+本片不由本机可解码推断兼容副本、其他平台或完整R19已完成。
+
+## 原产品实跑与后置合同
+
+新增[Python专项](../../backend/tests/integration/test_canvas_hevc_browser.py)与
+[独立浏览器驱动](../../frontend/canvas/scripts/verify-hevc-python.mjs)，旧冻结测试/驱动
+保持。沿用[隔离认证API](../../backend/tests/integration/test_canvas_browser.py)和
+[随机媒体桶fixture](../../backend/tests/integration/test_canvas_resources.py)，实际调用
+Python路由、Service、MySQL与MinIO；API的 `lifespan=off` 是现有隔离fixture合同，
+认证schema仍检查，不能称正式八角色启动或AMQP验收。
+
+先用原文件input上传220115字节HEVC，每场原视频POST恰好一次。原画布生成稳定
+媒体/素材ID，真实FFprobe确认宽高/时长，原播放按钮实际解码。来源永久封面按
+既有 `captureVersion=2 / sourceKey` 生成400×225图片；在规范封面远端回执出现后
+关闭旧context，仅cookies、空origins新建context，再通过原按钮播放同一节点。
+没有API种节点/生成结果、没有拦截成功请求或通过更换H.264文件代替HEVC播放。
+
+| 宽度 | 实际结果 | 播放与恢复 |
+| --- | --- | --- |
+| 1440 | 全部后置通过 | 初次与fresh均1280×720、4.48s、currentTime>0.1、未暂停、error为空，原字节SHA保持 |
+| 390 | 全部后置通过 | 同上，窄屏原专注模式与Ctrl+0，节点边界在390×900内，恢复无重上传 |
+
+两场共两次真实视频上传、四次首段播放/原字节读取，供应商调用与生成任务为0。
+规范封面按源既有规则上传；刷新后包括封面在内零新增上传，原媒体ID、节点ID、
+素材ID和封面定位值不变。实际MySQL媒体项目/发布/作者、字节数、摘要、宽高、
+4480ms、24/1及has_audio正确；MinIO原视频与封面字节严格等于已读取的原件。
+作者与项目成员均可读这两个永久媒体，外人404；共享图保留同一视频定位值，
+外人不可读图，任务/调用/绑定计数全部为0。页面错误、HTTP错误和播放副本请求均为0。
+
+两场规范封面SHA-256均为
+`1e76804a3b367f7fbe0d0c18ee219b330a84967ee62e82b0ff118a57606bf3f2`。
+两张fresh播放原图与合成图已实际查看，红盒画面和播放控件可见，没有解码错误。
+这些截图不代替固定源全幅像素、几何、动效或全片内容检查。
+
+## 复现、静态检查与清理
+
+本机样片准备、独立Chrome诊断脚本和原件在忽略的
+`backend/.runtime/hevc-capability-a/`；这是本机准备材料，未引入依赖、下载工具或
+提交二进制。显式验收在 `backend/` 执行，设置 `RUN_CANVAS_RESOURCE_MINIO=1`、
+`RUN_CANVAS_BROWSER_INTEGRATION=1`、`RUN_CANVAS_HEVC_SAMPLE=1`、
+`SNOWFLAKE_WORKER_ID=1022`，Chrome沿现有完整路径，
+`CANVAS_HEVC_SAMPLE_PATH` 指向上述已核对摘要的HEVC文件。该本机专项还使用既有
+`.tools/ffmpeg/probe-5.1/bin/ffprobe.exe`，不是跨平台CI通用媒体夹具。
+
+```powershell
+uv run python scripts/run_integration.py `
+  tests/integration/test_canvas_hevc_browser.py -q --tb=short --assert=plain `
+  -p no:cacheprovider --basetemp=.runtime/hevc-browser-new-temp
+```
+
+实际使用既有 `.venv/Scripts/python.exe ../.runtime/beeftv-resume-run.py` 创建
+独占MySQL再调用该入口；native-a日志为 `backend/.runtime/hevc-browser-live-a.log`。
+各场完整acceptance、归档原HEVC、封面与截图保留在独立basetemp，汇总在
+`hevc-browser-final-review/`，环境核验为 `hevc-browser-final-environment.json`。
+全仓 Ruff check、新Python format与新JS语法检查通过，只有既有Starlette弃用warning；
+未重复前片2463快测、Node整组、统一build或source像素对照。
+
+环境盘点第一次从仓库根调用Settings，关键栈为
+`assistant-agnes-environment.py:7 → MinioStorage.client:55 → ConfigurationError:
+Object storage is not configured`。核对后改为在backend工作目录调用现有只读脚本，
+实际重跑通过；没有修改 `.env` 或存储配置，不把第一次失败算作清理完成。
+两个隔离API线程按fixture断言退出，三Node进程无存活，4198/51658及实际API端口
+51210/65412无监听，任务容器/测试桶0，MinIO原3桶、用户原服务启动时刻及两源树
+保持。原H.264及派生HEVC均保留，未动业务数据库或用户进程。
+
+独立2841文件基线仅两源码＋六文档变化，25前片冻结源码保持，新增两源码单独
+冻结后合计27；无生产、HTTP、DDL、依赖或源适配账本变化。未重导、commit或push。
+普通HEVC本机两宽度成功范围现已补齐；源成对运行、兼容副本、其他profile/容器/
+浏览器、解码/上传异常和完整H.265对照仍未验证。接着按供应商状态复验正式视频390，
+原打光unknown/增人/指针遮挡、Responses图片成功、同版部署、其他独立工具/政策/
+离线并发、音频/企业、32ms、R23候选与完整M0–M5继续，goal active。

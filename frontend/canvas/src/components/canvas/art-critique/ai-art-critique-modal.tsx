@@ -35,6 +35,7 @@ import { IconButton } from "@/components/ui/base/buttons";
 import { Callout } from "@/components/ui/product/callout";
 
 type AiArtCritiqueModalProps = {
+    projectId: string;
     startRequestId?: string;
     restartRequested?: boolean;
     onRunningChange?: (running: boolean) => void;
@@ -61,7 +62,7 @@ type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
 type AiArtCritiqueView = "overview" | "detail";
 type ArtCritiquePromptStatus = "ready" | "pending" | "unavailable";
 
-export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdateState, startRequestId, restartRequested, onRunningChange }: AiArtCritiqueModalProps) {
+export function AiArtCritiqueModal({ projectId, node, upstreamNodes, open, onClose, onUpdateState, startRequestId, restartRequested, onRunningChange }: AiArtCritiqueModalProps) {
     const theme = canvasThemes[useActiveTheme()];
     const effectiveConfig = useEffectiveConfig();
     const selectedCritiqueModel = effectiveConfig.textModel.trim();
@@ -201,13 +202,13 @@ export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdat
         let runningReport: ArtCritiqueReport | undefined = state.report;
         const stageTaskIds: Record<string, string> = resume ? { ...state.stageTaskIds } : {};
         const approval = new ApprovedToolExecution({
-            clientKey: `art-critique:${runId}`, runId: executionRunId,
-            identity: { kind: "art-critique", nodeId: node.id, sourceFingerprint, model: selectedCritiqueModel }, signal: controller.signal,
+            clientKey: `art-critique:${runId}`, projectId, runId: executionRunId,
+            identity: { kind: "art-critique", nodeId: node.id, sourceNodeId: input.id, sourceFingerprint, model: selectedCritiqueModel }, signal: controller.signal,
             onRun: (id) => { executionRunId = id; publishState({ ...baseState, stageTaskIds: { ...stageTaskIds } }); },
         });
         try {
             const report = await executeArtCritique({
-                    nodeId: node.id, runId, source: input, config: effectiveConfig,
+                    projectId, nodeId: node.id, runId, source: input, config: effectiveConfig,
                     signal: controller.signal,
                     submitStage: approval.execute,
                     onTaskCreated: (stage, taskId) => {

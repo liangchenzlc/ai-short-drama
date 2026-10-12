@@ -1,4 +1,5 @@
 import { resourceFileUrl, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
+import { assertUserScope, captureUserScope, isUserScopeAbandonedError, type CapturedUserScope } from "@/lib/user-scope-guard";
 import type { ReferenceImage } from "@/types/image";
 
 /** 调色参数，单位与 CSS filter 一致（百分比 / 度） */
@@ -27,8 +28,8 @@ export function colorGradeCssFilter(grade: CanvasColorGrade) {
 // 不做跨会话缓存：那需要往节点 metadata 回写，而构建参考图的路径拿不到写入通道。
 const publishedCache = new Map<string, { url: string; storageKey: string; type: string }>();
 
-function cacheKey(url: string, grade: CanvasColorGrade) {
-    return `${url}|${grade.brightness}|${grade.contrast}|${grade.saturate}|${grade.hueRotate}`;
+function cacheKey(projectId: string, scope: CapturedUserScope, url: string, grade: CanvasColorGrade) {
+    return JSON.stringify([scope.userScope, scope.epoch, projectId, url, grade.brightness, grade.contrast, grade.saturate, grade.hueRotate]);
 }
 
 async function renderGradedBlob(url: string, grade: CanvasColorGrade) {
@@ -62,26 +63,35 @@ async function renderGradedBlob(url: string, grade: CanvasColorGrade) {
  *
  * 只在生成真正要用它时才调用（见 canvas-node-generation），所以拖滑杆调参数不会产生上传。
  */
-export async function resolveCanvasColorGradeReference(image: ReferenceImage): Promise<ReferenceImage> {
+export async function resolveCanvasColorGradeReference(image: ReferenceImage, projectId: string): Promise<ReferenceImage> {
     const source = image.source;
     if (!source || source.kind !== "colorgrade") return image;
 
-    const cached = publishedCache.get(cacheKey(source.url, source.grade));
+    const expectedScope = captureUserScope();
+    const sourceUrl = source.url;
+    const grade = { ...source.grade };
+    const key = cacheKey(projectId, expectedScope, sourceUrl, grade);
+    const cached = publishedCache.get(key);
     if (cached) return { ...image, dataUrl: "", url: cached.url, storageKey: cached.storageKey, type: cached.type };
 
     try {
-        const render = await renderGradedBlob(source.url, source.grade);
+        const render = await renderGradedBlob(sourceUrl, grade);
+        assertUserScope(expectedScope);
         const resource = await uploadResourceFile(render.blob, "image", {
             width: render.width,
             height: render.height,
             fileName: `colorgrade-${image.id}.png`,
+            hostCanvasKey: projectId,
+            expectedScope,
         });
+        assertUserScope(expectedScope);
         const storageKey = resourceStorageKey(resource.id);
         const url = resource.publicUrl || resourceFileUrl(resource.id);
         const type = resource.mimeType || "image/png";
-        publishedCache.set(cacheKey(source.url, source.grade), { url, storageKey, type });
+        publishedCache.set(key, { url, storageKey, type });
         return { ...image, dataUrl: "", url, storageKey, type };
     } catch (error) {
+        if (isUserScopeAbandonedError(error)) throw error;
         throw new Error(error instanceof Error ? `调色参考图生成失败：${error.message}` : "调色参考图生成失败");
     }
 }

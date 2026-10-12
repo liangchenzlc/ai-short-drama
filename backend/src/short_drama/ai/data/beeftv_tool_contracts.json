@@ -1,0 +1,1003 @@
+{
+  "commit": "4ca2a65a7780a8dfcaaa86c33679f84fb04e055c",
+  "sources": [
+    {
+      "path": "web/src/lib/plugins/builtin/prompt-optimizer.ts",
+      "sha256": "40da45c47aa44384d69ad0c44ed2e7f318881c673eff95aee9f72d8ffe11b197"
+    },
+    {
+      "path": "web/src/lib/art-critique/pipeline.ts",
+      "sha256": "3d817e75622678693872873bcec439ab2a0b783427a0b977fe21982aafcaf980"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "optimize_prompt",
+        "description": "返回结构化的 AI 生图或生视频提示词优化结果。",
+        "strict": true,
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "optimizedPrompt",
+            "negativePrompt",
+            "changes",
+            "assumptions",
+            "variants"
+          ],
+          "properties": {
+            "optimizedPrompt": {
+              "type": "string",
+              "description": "可直接用于生成的正向提示词。"
+            },
+            "negativePrompt": {
+              "type": "string",
+              "description": "需要规避的内容；没有时返回空字符串。"
+            },
+            "changes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "相较输入提示词做出的关键变化。"
+            },
+            "assumptions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "对模糊需求做出的假设；没有时返回空数组。"
+            },
+            "variants": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "label",
+                  "prompt"
+                ],
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "type": "string"
+                  }
+                }
+              },
+              "description": "最多两个可选的提示词版本。"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "analyze_art_scene",
+        "description": "只理解图片类型、主体、意图和视觉上下文，不评价问题，不提交批改候选。",
+        "strict": true,
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scene"
+          ],
+          "properties": {
+            "scene": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "imageType",
+                "style",
+                "subjects",
+                "intendedFocus",
+                "compositionType",
+                "lightingType",
+                "mood",
+                "estimatedIntent",
+                "sceneDepth"
+              ],
+              "properties": {
+                "imageType": {
+                  "type": "string",
+                  "enum": [
+                    "portrait",
+                    "landscape",
+                    "product",
+                    "illustration",
+                    "concept-art",
+                    "architecture",
+                    "still-life",
+                    "other"
+                  ]
+                },
+                "style": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                },
+                "subjects": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "description",
+                      "importance"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 80
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 240
+                      },
+                      "importance": {
+                        "type": "string",
+                        "enum": [
+                          "primary",
+                          "secondary",
+                          "background"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "intendedFocus": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "compositionType": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                },
+                "lightingType": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                },
+                "mood": {
+                  "type": "string",
+                  "maxLength": 180
+                },
+                "estimatedIntent": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "sceneDepth": {
+                  "type": "string",
+                  "enum": [
+                    "flat",
+                    "shallow",
+                    "medium",
+                    "deep"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "review_art_composition",
+        "description": "只检查构图与叙事关系，提交有证据的候选问题；允许返回空候选。",
+        "strict": true,
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidates"
+          ],
+          "properties": {
+            "candidates": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "checkId",
+                  "kind",
+                  "category",
+                  "title",
+                  "observation",
+                  "reason",
+                  "evidence",
+                  "severity",
+                  "confidence",
+                  "targetDescription"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "checkId": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "issue",
+                      "option"
+                    ]
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "composition",
+                      "color",
+                      "lighting",
+                      "proportion",
+                      "other"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 180
+                  },
+                  "observation": {
+                    "type": "string",
+                    "maxLength": 600
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 800
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 300
+                    }
+                  },
+                  "severity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "targetDescription": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "review_art_color",
+        "description": "只检查色彩和调色关系，提交有证据的候选问题；允许返回空候选。",
+        "strict": true,
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidates"
+          ],
+          "properties": {
+            "candidates": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "checkId",
+                  "kind",
+                  "category",
+                  "title",
+                  "observation",
+                  "reason",
+                  "evidence",
+                  "severity",
+                  "confidence",
+                  "targetDescription"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "checkId": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "issue",
+                      "option"
+                    ]
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "composition",
+                      "color",
+                      "lighting",
+                      "proportion",
+                      "other"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 180
+                  },
+                  "observation": {
+                    "type": "string",
+                    "maxLength": 600
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 800
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 300
+                    }
+                  },
+                  "severity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "targetDescription": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "review_art_lighting",
+        "description": "只检查光线和曝光关系，提交有证据的候选问题；允许返回空候选。",
+        "strict": true,
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidates"
+          ],
+          "properties": {
+            "candidates": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "checkId",
+                  "kind",
+                  "category",
+                  "title",
+                  "observation",
+                  "reason",
+                  "evidence",
+                  "severity",
+                  "confidence",
+                  "targetDescription"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "checkId": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "issue",
+                      "option"
+                    ]
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "composition",
+                      "color",
+                      "lighting",
+                      "proportion",
+                      "other"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 180
+                  },
+                  "observation": {
+                    "type": "string",
+                    "maxLength": 600
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 800
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 300
+                    }
+                  },
+                  "severity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "targetDescription": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "review_art_structure",
+        "description": "只检查结构、比例、透视和细节一致性，提交有证据的候选问题；允许返回空候选。",
+        "strict": true,
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidates"
+          ],
+          "properties": {
+            "candidates": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "checkId",
+                  "kind",
+                  "category",
+                  "title",
+                  "observation",
+                  "reason",
+                  "evidence",
+                  "severity",
+                  "confidence",
+                  "targetDescription"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "checkId": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "issue",
+                      "option"
+                    ]
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "composition",
+                      "color",
+                      "lighting",
+                      "proportion",
+                      "other"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 180
+                  },
+                  "observation": {
+                    "type": "string",
+                    "maxLength": 600
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 800
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 300
+                    }
+                  },
+                  "severity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "targetDescription": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "aggregate_art_critique",
+        "description": "合并多个 Reviewer 的候选问题，去重、排序并形成可执行的最终问题草案。",
+        "strict": true,
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "summary",
+            "strengths",
+            "issues",
+            "options"
+          ],
+          "properties": {
+            "summary": {
+              "type": "string",
+              "maxLength": 1600
+            },
+            "strengths": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "issues": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "category",
+                  "title",
+                  "explanation",
+                  "severity",
+                  "confidence",
+                  "targetDescription",
+                  "suggestion",
+                  "sourceCandidateIds"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "composition",
+                      "color",
+                      "lighting",
+                      "proportion",
+                      "other"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 180
+                  },
+                  "explanation": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "severity": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high"
+                    ]
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "targetDescription": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "suggestion": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "goal",
+                      "actions",
+                      "preserve",
+                      "expectedEffect"
+                    ],
+                    "properties": {
+                      "goal": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "actions": {
+                        "type": "array",
+                        "maxItems": 6,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "preserve": {
+                        "type": "array",
+                        "maxItems": 6,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "expectedEffect": {
+                        "type": "string",
+                        "maxLength": 500
+                      }
+                    }
+                  },
+                  "sourceCandidateIds": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 80
+                    }
+                  }
+                }
+              }
+            },
+            "options": {
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "category",
+                  "title",
+                  "explanation",
+                  "confidence",
+                  "suggestion",
+                  "sourceCandidateIds"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "composition",
+                      "color",
+                      "lighting",
+                      "proportion",
+                      "other"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 180
+                  },
+                  "explanation": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "suggestion": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "goal",
+                      "actions",
+                      "preserve",
+                      "expectedEffect"
+                    ],
+                    "properties": {
+                      "goal": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "actions": {
+                        "type": "array",
+                        "maxItems": 6,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "preserve": {
+                        "type": "array",
+                        "maxItems": 6,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "expectedEffect": {
+                        "type": "string",
+                        "maxLength": 500
+                      }
+                    }
+                  },
+                  "sourceCandidateIds": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 80
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "ground_art_critique_issues",
+        "description": "只把已有问题绑定到图片区域，不重新评价图片，也不创建新问题。",
+        "strict": true,
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "targets"
+          ],
+          "properties": {
+            "targets": {
+              "type": "array",
+              "maxItems": 5,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "issueId",
+                  "target",
+                  "groundingConfidence"
+                ],
+                "properties": {
+                  "issueId": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "target": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type",
+                      "points"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "point",
+                          "points",
+                          "polygon",
+                          "global"
+                        ]
+                      },
+                      "points": {
+                        "type": "array",
+                        "maxItems": 12,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "properties": {
+                            "x": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            },
+                            "y": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "groundingConfidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "generate_art_edit_prompts",
+        "description": "根据已有问题和已定位区域，为每个问题生成可直接用于局部图像编辑的 AI 提示词；不得创建新问题。",
+        "strict": true,
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "prompts"
+          ],
+          "properties": {
+            "prompts": {
+              "type": "array",
+              "maxItems": 5,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "issueId",
+                  "editPrompt"
+                ],
+                "properties": {
+                  "issueId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "editPrompt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2400
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "verify_art_critique",
+        "description": "作为没有参与前面判断的复核者，逐项确认已有问题和位置是否有图像证据。不得新增问题。",
+        "strict": true,
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "decisions"
+          ],
+          "properties": {
+            "decisions": {
+              "type": "array",
+              "maxItems": 5,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "issueId",
+                  "verdict",
+                  "confidence",
+                  "reason"
+                ],
+                "properties": {
+                  "issueId": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "verdict": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "uncertain",
+                      "rejected"
+                    ]
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

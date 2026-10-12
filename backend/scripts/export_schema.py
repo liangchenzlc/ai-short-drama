@@ -1,10 +1,10 @@
-"""Export or check the complete, create-only MySQL schema from current models."""
+"""Export or check the complete MySQL schema, including deferred named foreign keys."""
 
 import argparse
 import re
 from pathlib import Path
 
-from sqlalchemy import PrimaryKeyConstraint
+from sqlalchemy import ForeignKeyConstraint, PrimaryKeyConstraint
 from sqlalchemy.dialects.mysql import dialect
 from sqlalchemy.schema import AddConstraint, CreateTable
 
@@ -13,6 +13,7 @@ from short_drama.domain import Base
 
 def schema_sql():
     statements = []
+    deferred = []
     for table in Base.metadata.sorted_tables:
         compiled = str(CreateTable(table).compile(dialect=dialect())).strip()
         options = compiled.split("\n)", 1)[1].strip()
@@ -30,6 +31,11 @@ def schema_sql():
                 value += " COMMENT '" + column.comment.replace("'", "''") + "'"
             declarations.append(value)
         for constraint in sorted(table.constraints, key=lambda item: item.name or ""):
+            if isinstance(constraint, ForeignKeyConstraint) and constraint.use_alter:
+                if not constraint.name:
+                    raise ValueError("Deferred foreign keys require an explicit name")
+                deferred.append(constraint)
+                continue
             if isinstance(constraint, PrimaryKeyConstraint):
                 declarations.append(
                     "  PRIMARY KEY (" + ", ".join(f"`{c.name}`" for c in constraint.columns) + ")"
@@ -51,8 +57,17 @@ def schema_sql():
             )
         source = f"CREATE TABLE `{table.name}` (\n" + ",\n".join(declarations) + "\n) " + options
         statements.append(source + ";")
+    table_count = len(statements)
+    for constraint in sorted(deferred, key=lambda item: (item.table.name, item.name)):
+        original_rule = constraint._create_rule
+        try:
+            statements.append(
+                str(AddConstraint(constraint).compile(dialect=dialect())).replace("%%", "%") + ";"
+            )
+        finally:
+            constraint._create_rule = original_rule
     return (
-        f"-- Canonical MySQL 8 schema: {len(statements)} tables.\n"
+        f"-- Canonical MySQL 8 schema: {table_count} tables.\n"
         "-- Generated from short_drama.domain by backend/scripts/export_schema.py.\n"
         "-- Initialize an empty database; upgrade existing databases with versioned migrations.\n"
         "-- Collaboration upgrades require explicit historical ownership backfill and finalize.\n\n"

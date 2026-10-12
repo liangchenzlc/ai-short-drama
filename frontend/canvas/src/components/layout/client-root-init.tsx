@@ -13,6 +13,7 @@ import { appQueryClient } from "@/lib/query-client";
 import { isLocalWorkspaceMode } from "@/services/workspace-mode";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { confirmDesktopUpdateStartup } from "@/services/desktop-update-startup";
+import { getRegisteredPlugin } from "@/lib/plugins/plugin-registry";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const userId = useUserStore((state) => state.user?.id || "");
@@ -28,6 +29,14 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const pluginStoreHydrated = usePluginStore((state) => state.hydrated);
     const localMediaCleanupScope = useRef("");
     const updateStartupConfirmed = useRef(false);
+
+    useEffect(() => {
+        if (!pluginStoreHydrated) return;
+        for (const id of ["prompt-optimizer", "ai-art-critique"]) {
+            const plugin = getRegisteredPlugin(id);
+            if (plugin) usePluginStore.getState().ensurePlugin(plugin.manifest);
+        }
+    }, [pluginStoreHydrated]);
 
     useEffect(() => {
         if (!localMode) return;
@@ -48,7 +57,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     }, []);
 
     useEffect(() => {
-        if (!userId || localMode || !pluginStoreHydrated) return;
+        if (!userId || storageMode !== "remote" || !pluginStoreHydrated) return;
         let cancelled = false;
         void appQueryClient.fetchQuery({ queryKey: ["plugin-runtime", userId], queryFn: fetchPluginRuntimeState, staleTime: 30_000 })
             .then(async (runtime) => {
@@ -82,7 +91,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         return () => {
             cancelled = true;
         };
-    }, [localMode, pluginStoreHydrated, setPluginStates, setRuntimeStatuses, userId]);
+    }, [storageMode, pluginStoreHydrated, setPluginStates, setRuntimeStatuses, userId]);
 
     useEffect(() => {
         initializeClientDiagnostics();

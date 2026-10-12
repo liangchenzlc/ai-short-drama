@@ -23,6 +23,17 @@ class CanvasResourceStart(InputModel):
     idempotency_key: str | None = Field(default=None, alias="idempotencyKey", max_length=512)
 
 
+class CanvasResourceImport(InputModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    url: str = Field(strict=True, min_length=1, max_length=16384)
+    kind: ResourceKind
+    width: Dimension | None = None
+    height: Dimension | None = None
+    duration_ms: int | None = Field(
+        default=None, alias="durationMs", strict=True, ge=0, le=2**53 - 1
+    )
+
+
 class CanvasResourceRead(InputModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
     id: Identifier

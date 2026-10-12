@@ -76,21 +76,17 @@ class CanvasResourceDAO:
                 return value
         return None
 
-    def resource_map(self, identifiers: set[int]):
+    def resource_map(self, identifiers: set[int], *, lock=False):
         result = {}
         if identifiers:
             for model in (MediaFile, CanvasBinaryResource):
-                result.update(
-                    {
-                        row.id: row
-                        for row in self.session.scalars(
-                            select(model).where(model.id.in_(identifiers))
-                        )
-                    }
-                )
+                query = select(model).where(model.id.in_(identifiers))
+                if lock:
+                    query = query.with_for_update()
+                result.update({row.id: row for row in self.session.scalars(query)})
         return result
 
-    def copy_ancestors(self, identifiers: set[int]) -> dict[int, set[int]]:
+    def copy_ancestors(self, identifiers: set[int], *, lock=False) -> dict[int, set[int]]:
         """Resolve only this actor's visible, completed copy provenance in batches."""
         parents: dict[int, set[int]] = {}
         pending, seen = set(identifiers), set()
@@ -101,7 +97,7 @@ class CanvasResourceDAO:
             seen.update(frontier)
             pending = set()
             for offset in range(0, len(frontier), 200):
-                rows = self.session.execute(
+                query = (
                     select(CanvasResourceCopySource, CanvasResourceUpload.reserved_resource_id)
                     .join(
                         CanvasResourceUpload,
@@ -115,6 +111,9 @@ class CanvasResourceDAO:
                         CanvasResourceUpload.status == "ready",
                     )
                 )
+                if lock:
+                    query = query.with_for_update(read=True)
+                rows = self.session.execute(query)
                 for source, target in rows:
                     parents[target] = {source.original_resource_id}
                     frozen = source.snapshot_json.get("resource_ancestors")

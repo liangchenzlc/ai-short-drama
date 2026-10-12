@@ -3,13 +3,16 @@
 import pytest
 from sqlalchemy import text
 
-from scripts.canvas_migration import apply, inspect_schema
+from scripts.canvas_migration import CREATION_DELETE_UPGRADE, apply, inspect_schema
+from tests.integration.test_canvas_creation_media_migration import legacy as legacy_deletion
 
 pytestmark = pytest.mark.integration
 
 
 def test_creation_tables_upgrade_is_reentrant(migration_mysql_engine):
     engine = migration_mysql_engine
+    # 缺创建表的真实旧版也没有新处置外键；先还原原上传删除表，再模拟缺表。
+    legacy_deletion(engine)
     with engine.begin() as connection:
         connection.execute(text("DROP TABLE canvas_creation_resources"))
         connection.execute(text("DROP TABLE canvas_creation_attempts"))
@@ -23,6 +26,7 @@ def test_creation_tables_upgrade_is_reentrant(migration_mysql_engine):
         "table:canvas_creation_attempts",
         "table:canvas_creation_resources",
         "index:canvas_creation_attempts.idx_canvas_creation_expiry",
+        "upgrade:" + CREATION_DELETE_UPGRADE,
     }
     assert apply(engine)["executed"] == []
 

@@ -8,6 +8,7 @@ import type { TimelineDirectMedia } from "@/types/timeline";
 
 type UseCanvasTimelineAssetInsertOptions = {
     linkedProjectId?: string;
+    refetchCharacters: () => void;
     refetchLinkedProject: () => Promise<unknown>;
     handleAssetsInsert: (payloads: InsertAssetPayload[], expectedScope?: CapturedUserScope) => Promise<CanvasNodeData[]>;
     handleProjectAssetsInsert: (payloads: InsertAssetPayload[], position?: Position, expectedScope?: CapturedUserScope) => Promise<CanvasNodeData[]>;
@@ -38,6 +39,7 @@ function payloadToTimelineMedia(payload: InsertAssetPayload): TimelineDirectMedi
 
 export function useCanvasTimelineAssetInsert({
     linkedProjectId,
+    refetchCharacters,
     refetchLinkedProject,
     handleAssetsInsert,
     handleProjectAssetsInsert,
@@ -104,9 +106,10 @@ export function useCanvasTimelineAssetInsert({
             setProjectAssetInsertPosition(position);
             setProjectAssetOpen(true);
             // 资产与项目实时同步：打开弹窗前刷新关联短剧项目资产，避免缓存导致资产列表空白/过期。
-            if (linkedProjectId) void refetchLinkedProject();
+            if (initialCategory === "character") refetchCharacters();
+            else if (linkedProjectId) void refetchLinkedProject();
         },
-        [linkedProjectId, refetchLinkedProject],
+        [linkedProjectId, refetchCharacters, refetchLinkedProject],
     );
 
     const openCanvasAssetLibrary = useCallback(

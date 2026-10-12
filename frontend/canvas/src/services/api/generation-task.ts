@@ -4,6 +4,7 @@ import { getImageBlob } from "@/services/image-storage";
 import { resourceIdFromStorageKey, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
 import { createGenerationTask, waitForGenerationTask, type GenerationTask, type CreateTaskInput } from "@/services/api/task-center";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
+import { isVolcengineArkVideoProtocol } from "@/lib/model-protocols";
 import { grokImagePromptLimitError } from "@/lib/grok-image-prompt-limit";
 import { resolveGenerationWorkflowExecution, type GenerationWorkflowExecution } from "@/lib/generation-workflow-execution";
 import { isArkPlanBaseUrl } from "@/lib/seedance-video";
@@ -127,6 +128,8 @@ export async function submitBackendGenerationTask(options: BackendGenerationTask
 }
 
 type BackendToolGenerationOptions = {
+    projectId?: string;
+    clientOperationId?: string;
     prompt: string;
     config: AiConfig;
     messages: ResponseInputMessage[];
@@ -135,12 +138,14 @@ type BackendToolGenerationOptions = {
     signal?: AbortSignal;
     onDelta?: (text: string) => void;
     onTaskCreated?: (task: GenerationTask) => void;
-    metadata?: { source: string; nodeId?: string; runId?: string; stage?: string };
+    metadata?: { source: string; nodeId?: string; sourceNodeId?: string; clientOperationId?: string; runId?: string; stage?: string };
 };
 
 // 准备和执行复用完全相同的任务协议，准备阶段不提交模型任务。
 export function prepareBackendToolGenerationTask(options: BackendToolGenerationOptions): CreateTaskInput {
     throwIfAborted(options.signal);
+    const nodeId = options.metadata?.nodeId;
+    if (!options.projectId || !nodeId) throw new Error("工具请求缺少已保存的画布和节点身份");
     assertAgentExchangeBudget(options.messages, options.tools, options.config.systemPrompt || "");
     const imageKeys = new Set<string>();
     for (const message of options.messages) {
@@ -154,8 +159,9 @@ export function prepareBackendToolGenerationTask(options: BackendToolGenerationO
     }
     const logicalModelId = logicalModelIDForConfig(options.config);
     const requestConfig = resolveModelRequestConfig(options.config, options.config.model);
-    if (!logicalModelId && !requestConfig.channelId && !requestConfig.interfaceType) throw new Error("当前模型未选择可用请求协议");
+    if (!logicalModelId) throw new Error("请先选择当前账号已保存的文字模型");
     const task: CreateTaskInput = {
+        projectId: options.projectId,
         type: "canvas_text",
         operation: "text",
         prompt: options.prompt,
@@ -164,11 +170,11 @@ export function prepareBackendToolGenerationTask(options: BackendToolGenerationO
         input: {
             mode: "text",
             prompt: options.prompt,
-            config: backendProviderConfig(options.config, "text"),
+            config: {},
             agentRequests: buildBackendToolRequests(options.messages, options.tools, options.toolChoice, options.config),
             textOptions: { stream: modelCapabilityConfigFor(options.config, requestConfig.model).text?.streaming !== false },
             referenceImages: [...imageKeys].map((storageKey) => ({ storageKey })),
-            metadata: options.metadata || { source: "canvas-online-agent" },
+            metadata: { ...options.metadata, nodeId, sourceNodeId: nodeId, clientOperationId: options.clientOperationId || options.metadata?.clientOperationId || crypto.randomUUID() },
         },
     };
     if (new Blob([JSON.stringify(task)]).size > 15 * 1024 * 1024) {
@@ -178,9 +184,12 @@ export function prepareBackendToolGenerationTask(options: BackendToolGenerationO
 }
 
 export async function runBackendToolGenerationTask(options: BackendToolGenerationOptions): Promise<ToolResponseResult> {
-    const task = await createGenerationTask(prepareBackendToolGenerationTask(options));
+    const expectedScope = captureUserScope();
+    const task = await createGenerationTask(prepareBackendToolGenerationTask(options), { expectedScope, signal: options.signal });
+    assertUserScope(expectedScope);
     options.onTaskCreated?.(task);
-    const completed = await waitForGenerationTask(task.id, { signal: options.signal, initialTask: task, onTextDelta: options.onDelta });
+    const completed = await waitForGenerationTask(task.id, { expectedScope, signal: options.signal, initialTask: task, onTextDelta: options.onDelta });
+    assertUserScope(expectedScope);
     const result = parseBackendGenerationResult(completed);
     return {
         content: result.text || "",
@@ -348,7 +357,7 @@ function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepa
     const { projectId, mode, prompt, config, metadata } = options;
     const videoOperation = generationOperation(options);
     const workflow = resolveGenerationWorkflowExecution(config, mode);
-    const logicalModelId = workflow ? "" : logicalModelIDForConfig(config);
+    const logicalModelId = workflow?.logicalModelId || logicalModelIDForConfig(config);
     return {
         ...(projectId ? { projectId } : {}),
         type: `canvas_${mode}`,
@@ -362,7 +371,7 @@ function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepa
             prompt,
             ...(workflow ? { execution: workflowPublicExecution(workflow) } : {}),
             config: backendProviderConfig(config, mode),
-            capabilityOptions: logicalModelId ? logicalCapabilityOptions(config, mode) : undefined,
+            capabilityOptions: logicalModelId && !workflow ? logicalCapabilityOptions(config, mode) : undefined,
             textHistory: options.textHistory,
             ...(mode === "text" ? { textOptions: { stream: options.streamText !== false, thinking: options.enableThinking === true } } : {}),
             referenceImages: prepared.referenceImages,
@@ -380,6 +389,7 @@ function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepa
 }
 
 function generationMetadata(config: AiConfig, metadata?: Record<string, unknown>) {
+    if (config.taskWorkflowProvider === "runninghub") return { ...metadata, workflowParameters: config.runningHub.parameters || {} };
     const channel = resolveModelChannel(config, config.model);
     const model = modelOptionName(config.model);
     const modelProfile = channel.modelProfiles?.find((item) => item.model === model);
@@ -454,9 +464,11 @@ function backendMediaReference<T extends ReferenceVideo | ReferenceAudio>(media:
 }
 
 export function backendProviderConfig(config: AiConfig, mode: BackendGenerationMode = "image") {
-    const requestConfig = resolveModelRequestConfig(config, config.model);
     const workflow = resolveGenerationWorkflowExecution(config, mode);
-    if (workflow) return workflowProviderConfig(config, requestConfig, workflow);
+    const ordinaryVideo = mode === "video" && !workflow;
+    const videoProfile = ordinaryVideo ? modelCapabilityConfigFor(config, config.model).video : undefined;
+    const videoChannel = ordinaryVideo ? resolveModelChannel(config, config.model) : undefined;
+    const videoProtocol = videoChannel?.modelProfiles?.find((item) => item.model === modelOptionName(config.model))?.protocol || videoChannel?.interfaceType;
     const generationOptions = {
         size: config.size,
         quality: omittedImageQuality(config.quality),
@@ -464,9 +476,9 @@ export function backendProviderConfig(config: AiConfig, mode: BackendGenerationM
         count: config.count,
         videoSeconds: config.videoSeconds,
         vquality: config.vquality,
-        videoGenerateAudio: config.videoGenerateAudio == null ? undefined : String(config.videoGenerateAudio),
-        videoWatermark: config.videoWatermark == null ? undefined : String(config.videoWatermark),
-        videoArkPrivateAssetUpload: config.videoArkPrivateAssetUpload == null ? undefined : String(config.videoArkPrivateAssetUpload),
+        ...(!ordinaryVideo || videoProfile?.generateAudio.supported ? { videoGenerateAudio: config.videoGenerateAudio == null ? undefined : String(config.videoGenerateAudio) } : {}),
+        ...(!ordinaryVideo || videoProfile?.watermark.supported ? { videoWatermark: config.videoWatermark == null ? undefined : String(config.videoWatermark) } : {}),
+        ...(!ordinaryVideo || isVolcengineArkVideoProtocol(videoProtocol) ? { videoArkPrivateAssetUpload: config.videoArkPrivateAssetUpload == null ? undefined : String(config.videoArkPrivateAssetUpload) } : {}),
         audioVoice: config.audioVoice,
         audioFormat: config.audioFormat,
         audioSpeed: config.audioSpeed,
@@ -475,7 +487,8 @@ export function backendProviderConfig(config: AiConfig, mode: BackendGenerationM
         audioInstructions: config.audioInstructions,
         systemPrompt: config.systemPrompt,
     };
-    if (logicalModelIDForConfig(config)) return generationOptions;
+    if (workflow || logicalModelIDForConfig(config)) return generationOptions;
+    const requestConfig = resolveModelRequestConfig(config, config.model);
     return {
         channelId: requestConfig.channelId,
         apiFormat: requestConfig.apiFormat,
@@ -488,46 +501,6 @@ export function backendProviderConfig(config: AiConfig, mode: BackendGenerationM
         credentialRef: requestConfig.credentialRef,
         model: requestConfig.model,
         ...generationOptions,
-        capabilityConfig: modelCapabilityConfigFor(config, requestConfig.model),
-        videoCapabilitiesVersion: resolveModelChannel(config, config.model).modelProfiles?.find((item) => item.model === requestConfig.model)?.videoCapabilitiesVersion,
-        systemPrompt: config.systemPrompt,
-    };
-}
-
-function workflowProviderConfig(config: AiConfig, requestConfig: ReturnType<typeof resolveModelRequestConfig>, workflow: GenerationWorkflowExecution) {
-    const runningHubActive = workflow.provider === "runninghub";
-    return {
-        channelId: "",
-        apiFormat: requestConfig.apiFormat,
-        interfaceType: workflow.interfaceType,
-        baseUrl: config.runningHub.baseUrl,
-        apiKey: runningHubActive ? config.runningHub.apiKey : "",
-        // 工作流是独立 Provider，不能继承普通模型渠道的密钥和自定义头。
-        secretKey: "",
-        headers: [],
-        model: workflow.providerModel,
-        size: config.size,
-        quality: config.quality,
-        transparentBackground: config.transparentBackground,
-        count: config.count,
-        videoSeconds: config.videoSeconds,
-        vquality: config.vquality,
-        videoGenerateAudio: config.videoGenerateAudio,
-        videoWatermark: config.videoWatermark,
-        videoArkPrivateAssetUpload: config.videoArkPrivateAssetUpload,
-        audioVoice: config.audioVoice,
-        audioFormat: config.audioFormat,
-        audioSpeed: config.audioSpeed,
-        audioPitch: config.audioPitch,
-        audioVolume: config.audioVolume,
-        audioInstructions: config.audioInstructions,
-        workflowId: workflow.workflowId,
-        webappId: workflow.webappId,
-        workflowJson: workflow.workflowJson,
-        workflowFields: workflow.workflowFields,
-        runningHubUseWallet: false,
-        runningHubWalletApiKey: "",
-        runningHubUploadApiKey: runningHubActive ? config.runningHub.uploadApiKey || "" : "",
         capabilityConfig: modelCapabilityConfigFor(config, requestConfig.model),
         videoCapabilitiesVersion: resolveModelChannel(config, config.model).modelProfiles?.find((item) => item.model === requestConfig.model)?.videoCapabilitiesVersion,
         systemPrompt: config.systemPrompt,

@@ -383,6 +383,10 @@ class AgentRuntimeStore:
             except BusinessError as error:
                 finish_locked(session, conversation, run, "failed", {"code": error.code})
                 return None
+            if run.status == "queued":
+                append_event(
+                    session, conversation, "run.started", {"run_id": str(run.id)}, run_id=run.id
+                )
             run.status = "running"
             run.started_at = run.started_at or now
             run.updated_at = now

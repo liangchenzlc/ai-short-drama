@@ -15,7 +15,35 @@ from short_drama.schemas.canvas_generation_parameters import (
     CanvasVideoParameters,
 )
 
+from .canvas_audio_adapters import (
+    ASYNC_AUDIO,
+    canvas_audio_options,
+    canvas_audio_poll_endpoint,
+    canvas_audio_voice,
+    parse_canvas_audio_result,
+)
+from .canvas_claude_adapters import (
+    CLAUDE_MESSAGES,
+    build_claude_text_submission,
+    parse_claude_text_result,
+)
+from .canvas_gemini_adapters import (
+    GEMINI_GENERATE_CONTENT,
+    build_gemini_text_submission,
+    parse_gemini_text_result,
+)
+from .canvas_runninghub_adapters import (
+    RUNNINGHUB_ADAPTERS,
+    parse_runninghub_result,
+    runninghub_root,
+    runninghub_submission,
+)
 from .canvas_text_adapters import canvas_text_messages, is_canvas_text_request
+from .canvas_tool_submission import (
+    build_canvas_tool_submission,
+    canvas_tool_resolved_parameters,
+    is_canvas_tool_request,
+)
 from .canvas_video_adapters import (
     VIDEO_ADAPTERS,
     build_canvas_video_submission,
@@ -27,12 +55,16 @@ from .transport import validated_url
 from .types import GenerationError, GenerationResult
 
 ADAPTER_TYPES = {
+    **RUNNINGHUB_ADAPTERS,
     **dict.fromkeys(VIDEO_ADAPTERS, "video"),
     "dashscope_voice_design.v1": "audio",
     "dashscope_speech.v1": "audio",
     "openai_speech.v1": "audio",
+    ASYNC_AUDIO: "audio",
     "openai_chat.v1": "text",
     "openai_responses.v1": "text",
+    CLAUDE_MESSAGES: "text",
+    GEMINI_GENERATE_CONTENT: "text",
     "openai_images.v1": "image",
     "ark_images.v1": "image",
     "ark_video.v1": "video",
@@ -256,6 +288,10 @@ def _input(request, allowed):
 
 def _canvas_image_submission(model, prompt, refs, count, parameters, adapter):
     """固定源声明式图片插件的请求；标准模式继续使用 _size。"""
+    from .canvas_agnes_adapters import AGNES_IMAGE, agnes_image_body
+
+    if adapter == "openai_images.v1" and model == AGNES_IMAGE:
+        return "/images/generations", {}, agnes_image_body(prompt, refs, count, parameters)
     body = {"model": model}
     raw = parameters.size
     if parameters.mask_media_id and (adapter != "openai_images.v1" or not refs):
@@ -362,6 +398,14 @@ def _canvas_image_submission(model, prompt, refs, count, parameters, adapter):
 
 
 def build_submission(snapshot, request, adapter):
+    if is_canvas_tool_request(request):
+        return build_canvas_tool_submission(snapshot, request, adapter)
+    if adapter == CLAUDE_MESSAGES:
+        return build_claude_text_submission(snapshot, request)
+    if adapter == GEMINI_GENERATE_CONTENT:
+        return build_gemini_text_submission(snapshot, request)
+    if adapter in RUNNINGHUB_ADAPTERS:
+        return runninghub_submission(snapshot, request, adapter)
     if adapter in VIDEO_ADAPTERS:
         return build_canvas_video_submission(snapshot, request, adapter)
     kind = ADAPTER_TYPES.get(adapter)
@@ -416,6 +460,8 @@ def build_submission(snapshot, request, adapter):
         )
     if kind == "audio":
         value = _input(request, {"text"})
+        if adapter == ASYNC_AUDIO and not isinstance(canvas_parameters, CanvasAudioParameters):
+            _unsupported()
         if (
             not isinstance(value.get("text"), str)
             or not value["text"].strip()
@@ -448,17 +494,32 @@ def build_submission(snapshot, request, adapter):
             )
         body.update(input=value["text"], voice=params["voice"], response_format="wav")
         if isinstance(canvas_parameters, CanvasAudioParameters):
-            body.update(response_format=canvas_parameters.format, speed=canvas_parameters.speed)
-            if canvas_parameters.instructions:
-                if not model.startswith("gpt-4o-mini-tts"):
-                    _unsupported()
-                body["instructions"] = canvas_parameters.instructions
+            options = canvas_audio_options(snapshot, request, adapter)
+            body.update(
+                response_format=canvas_parameters.format,
+                speed=canvas_parameters.speed or options.speed or 1,
+            )
+            fallback_voice = options.voice if options.voice and options.voice.strip() else "alloy"
+            body["voice"] = canvas_audio_voice(model, params["voice"]) or fallback_voice
+            instructions = canvas_parameters.instructions.strip() or options.instructions or ""
+            if instructions.strip():
+                body["instructions"] = instructions
+        if adapter == ASYNC_AUDIO:
+            from .canvas_video_adapters import canvas_video_endpoint
+
+            return canvas_video_endpoint(snapshot["base_url"], "/v1/audio/tasks"), headers, body
         return endpoint(snapshot["base_url"], "/audio/speech", adapter), headers, body
     if kind == "text":
         canvas_references = is_canvas_text_request(snapshot, request)
         value = _input(
             request,
-            {"messages", "reference_media_ids", "reference_urls"}
+            {
+                "messages",
+                "reference_media_ids",
+                "reference_urls",
+                "video_reference_media_ids",
+                "video_reference_urls",
+            }
             if canvas_references
             else {"messages"},
         )
@@ -476,6 +537,14 @@ def build_submission(snapshot, request, adapter):
         responses = adapter == "openai_responses.v1"
         if canvas_references:
             messages = canvas_text_messages(snapshot, request, adapter, messages)
+            if responses:
+                config = request["canvas_request"]["input"].get("config") or {}
+                if not isinstance(config, dict) or not isinstance(
+                    config.get("systemPrompt", ""), str
+                ):
+                    _unsupported()
+                if instructions := config.get("systemPrompt", "").strip():
+                    body["instructions"] = instructions
         body["input" if responses else "messages"] = messages
         # The worker collects SSE internally; the browser still uses task polling.
         body["stream"] = True
@@ -653,17 +722,18 @@ def build_submission(snapshot, request, adapter):
                 _unsupported()
             native_params["duration"] = duration // 1000
         if adapter == "modelhub_video.v1":
-            # Public ModelHub model catalogue + /quick-start, checked 2026-09-28.
-            # Only the configured Mini model has a verified parameter contract.
-            if model != "seedance-2.0-mini":
+            # Public ModelHub /v1/models + /quick-start, checked 2026-10-12.
+            minimax = model == "minimax-h3"
+            if model not in {"seedance-2.0-mini", "minimax-h3"}:
                 _unsupported()
             duration = native_params.get("duration", 5)
-            resolution = params.get("resolution", "720p").lower()
-            ratio = params.get("aspect", "auto" if first else "9:16")
+            resolution = params.get("resolution", "480p" if minimax else "720p").lower()
+            ratio = params.get("aspect", "auto" if first and not minimax else "9:16")
             if (
-                duration not in range(4, 16)
-                or resolution not in ("480p", "720p")
+                duration not in range(5 if minimax else 4, 16)
+                or resolution not in (("480p",) if minimax else ("480p", "720p"))
                 or ratio not in ("21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "auto")
+                or (minimax and (ratio == "auto" or audio_refs or "generate_audio" in params))
             ):
                 _unsupported()
             body.update(
@@ -745,6 +815,10 @@ def build_submission(snapshot, request, adapter):
 
 
 def poll_endpoint(snapshot, task_id, adapter):
+    if adapter in RUNNINGHUB_ADAPTERS:
+        return runninghub_root(snapshot["base_url"]) + "/task/openapi/outputs"
+    if adapter == ASYNC_AUDIO:
+        return canvas_audio_poll_endpoint(snapshot, task_id)
     if adapter in VIDEO_ADAPTERS:
         return canvas_video_poll_endpoint(snapshot, task_id, adapter)
     if not isinstance(task_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,512}", task_id):
@@ -764,6 +838,14 @@ def poll_endpoint(snapshot, task_id, adapter):
 
 
 def parse_result(body, adapter, *, submitted, task_id=None):
+    if adapter in RUNNINGHUB_ADAPTERS:
+        return parse_runninghub_result(body, adapter, submitted=submitted, task_id=task_id)
+    if adapter == ASYNC_AUDIO:
+        return parse_canvas_audio_result(body, submitted=submitted, task_id=task_id)
+    if adapter == CLAUDE_MESSAGES:
+        return parse_claude_text_result(body, submitted=submitted)
+    if adapter == GEMINI_GENERATE_CONTENT:
+        return parse_gemini_text_result(body, submitted=submitted)
     if adapter in VIDEO_ADAPTERS:
         return parse_canvas_video_result(body, adapter, submitted=submitted, task_id=task_id)
 
@@ -826,13 +908,17 @@ def parse_result(body, adapter, *, submitted, task_id=None):
                     "message": "The provider could not complete generation.",
                 }
             else:
-                texts = [
-                    part["text"]
-                    for item in body["output"]
-                    if item.get("type") == "message"
-                    for part in item["content"]
-                    if part.get("type") == "output_text"
-                ]
+                direct_text = body.get("output_text")
+                if isinstance(direct_text, str) and direct_text:
+                    texts = [direct_text]
+                else:
+                    texts = [
+                        part["text"]
+                        for item in body["output"]
+                        if item.get("type") == "message"
+                        for part in item["content"]
+                        if part.get("type") == "output_text"
+                    ]
                 if not texts or any(not isinstance(text, str) for text in texts):
                     invalid()
                 result.text = "".join(texts)
@@ -944,6 +1030,10 @@ def parse_result(body, adapter, *, submitted, task_id=None):
 
 
 def resolved_parameters(body):
+    from .canvas_agnes_adapters import AGNES_IMAGE
+
+    if body.get("model") == AGNES_IMAGE and "extra_body" in body:
+        return {key: body[key] for key in ("size", "ratio", "return_base64") if key in body}
     if isinstance(body.get("input"), dict) and "text" in body["input"] and "voice" in body["input"]:
         return {k: v for k, v in body["input"].items() if k != "text"}
     if "parameters" in body:
@@ -968,6 +1058,12 @@ def resolved_parameters(body):
 def validate_request(snapshot, request_data, adapter=None):
     """Pure admission validation; placeholders are never submitted to a provider."""
     adapter = adapter or select_adapter(snapshot)
+    from .canvas_agnes_adapters import is_agnes_video
+    from .canvas_video_adapters import validate_agnes_canvas_video_request
+
+    if is_agnes_video(snapshot, adapter):
+        body = validate_agnes_canvas_video_request(snapshot, request_data, adapter)
+        return {"adapter": adapter, "resolved_parameters": canvas_video_resolved_parameters(body)}
     request = copy.deepcopy(request_data)
     inputs = request.setdefault("input", {})
     if inputs.get("reference_media_ids") and "reference_urls" not in inputs:
@@ -979,10 +1075,23 @@ def validate_request(snapshot, request_data, adapter=None):
             f"https://reference.invalid/audio/{i}"
             for i, _ in enumerate(inputs["audio_reference_media_ids"])
         ]
+    if (
+        is_canvas_text_request(snapshot, request)
+        and inputs.get("video_reference_media_ids")
+        and "video_reference_urls" not in inputs
+    ):
+        inputs["video_reference_urls"] = [
+            f"https://reference.invalid/video/{i}"
+            for i, _ in enumerate(inputs["video_reference_media_ids"])
+        ]
     for name in ("first", "last"):
         if inputs.get(f"{name}_frame_media_id") and not inputs.get(f"{name}_frame_url"):
             inputs[f"{name}_frame_url"] = f"https://reference.invalid/{name}"
     _, _, body = build_submission(snapshot, request, adapter)
+    if is_canvas_tool_request(request):
+        return {"adapter": adapter, "resolved_parameters": canvas_tool_resolved_parameters(body)}
+    if adapter in RUNNINGHUB_ADAPTERS:
+        return {"adapter": adapter, "resolved_parameters": copy.deepcopy(body)}
     if adapter in VIDEO_ADAPTERS:
         return {"adapter": adapter, "resolved_parameters": canvas_video_resolved_parameters(body)}
     return {"adapter": adapter, "resolved_parameters": resolved_parameters(body)}
@@ -991,6 +1100,20 @@ def validate_request(snapshot, request_data, adapter=None):
 def video_input_capabilities(snapshot, adapter):
     model = snapshot.get("model_key", "")
     if adapter == "modelhub_video.v1":
+        if model == "minimax-h3":
+            return {
+                "first_frame": True,
+                "reference_images": True,
+                "duration_seconds": list(range(5, 16)),
+                "resolutions": ["480p"],
+                "audio_references": False,
+                "generate_audio": False,
+                "max_audio_references": 0,
+                "audio_min_ms": 3000,
+                "audio_max_ms": 7500,
+                "audio_evidence": "unsupported",
+                "voice_fidelity": "unverified",
+            }
         supported = model == "seedance-2.0-mini"
         return {
             "first_frame": supported,
@@ -1053,12 +1176,12 @@ def capabilities(snapshot):
             "video": ["aspect", "resolution", "duration_ms"],
         }[kind],
         "reference_images": adapter == "ark_images.v1"
-        or (adapter == "modelhub_video.v1" and model == "seedance-2.0-mini")
+        or (adapter == "modelhub_video.v1" and model in {"seedance-2.0-mini", "minimax-h3"})
         or (adapter == "dashscope_images.v1" and edit)
         or (adapter == "openai_images.v1" and _openai_image_references(model)),
         "first_frame": kind == "video",
         "last_frame": adapter == "ark_video.v1"
-        or (adapter == "modelhub_video.v1" and model == "seedance-2.0-mini")
+        or (adapter == "modelhub_video.v1" and model in {"seedance-2.0-mini", "minimax-h3"})
         or (adapter == "dashscope_video.v1" and "kf2v" in snapshot.get("model_key", "")),
         **({"video_input": video_input_capabilities(snapshot, adapter)} if kind == "video" else {}),
     }

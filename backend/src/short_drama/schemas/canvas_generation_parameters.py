@@ -2,16 +2,30 @@
 
 from typing import Annotated, Literal
 
-from pydantic import Field, TypeAdapter
+from pydantic import Field, TypeAdapter, field_validator
 
 from .base import Identifier, InputModel
 
 
 class CanvasAudioParameters(InputModel):
     mode: Literal["audio"]
-    format: Literal["mp3", "wav", "opus", "aac", "flac"] = "mp3"
-    speed: float = Field(default=1.0, strict=True, ge=0.25, le=4, allow_inf_nan=False)
+    format: Literal["mp3", "wav", "opus", "aac", "flac", "pcm"] = "mp3"
+    speed: float = Field(default=1.0, strict=True, ge=0, le=4, allow_inf_nan=False)
     instructions: str = Field(default="", strict=True, max_length=4096)
+
+    @field_validator("speed")
+    @classmethod
+    def source_speed_or_fallback(cls, value: float) -> float:
+        if 0 < value < 0.25:
+            raise ValueError("audio speed must be zero or between 0.25 and 4")
+        return value
+
+
+class CanvasAudioProviderOptions(InputModel):
+    voice: str | None = Field(default=None, strict=True, max_length=256)
+    response_format: Literal["mp3", "wav", "opus", "aac", "flac", "pcm"] | None = None
+    speed: float | None = Field(default=None, strict=True, ge=0.25, le=4, allow_inf_nan=False)
+    instructions: str | None = Field(default=None, strict=True, max_length=4096)
 
 
 class CanvasImageParameters(InputModel):

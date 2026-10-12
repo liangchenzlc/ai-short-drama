@@ -1,4 +1,4 @@
-/** Versioned semantic timeline plan compiled by Go internal/editing. */
+/** Python 编译的语义时间线计划，合同与固定源 Go internal/editing 一致。 */
 
 export const CANONICAL_PLAN_VERSION = 1;
 
@@ -48,8 +48,8 @@ export type CanonicalTimelinePlan = {
     output: CanonicalPlanOutput;
     durationMs: number;
     segments: CanonicalSegment[];
-    audio: CanonicalAudioClip[];
-    subtitles: CanonicalSubtitle[];
+    audio: CanonicalAudioClip[] | null;
+    subtitles: CanonicalSubtitle[] | null;
     subtitleSrt?: string;
 };
 

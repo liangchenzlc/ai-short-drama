@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     snowflake_worker_id: int = Field(default=1, ge=0, le=1023)
     model_discovery_allowed_hosts: list[str] = Field(default_factory=list)
     canvas_beefapi_test_origin: str = ""
+    canvas_whisper_base_url: str = ""
+    beeftv_depth_python: str = ""
+    beeftv_depth_tool_dir: str = ""
+    beeftv_depth_runtime: str = ""
+    beeftv_depth_manifest_url: str = ""
+    beeftv_depth_manifest_public_key: str = ""
+    canvas_depth_runtime_root: str = ".runtime/depth"
     minio_endpoint: str | None = None
     minio_access_key: SecretStr | None = None
     minio_secret_key: SecretStr | None = None
@@ -43,6 +50,8 @@ class Settings(BaseSettings):
     minio_connect_timeout: int = Field(default=5, ge=1, le=60)
     minio_read_timeout: int = Field(default=60, ge=1, le=600)
     minio_presign_expiry: int = Field(default=300, ge=1, le=604800)
+    minio_public_endpoint: str | None = None
+    minio_provider_presign_expiry: int | None = Field(default=None, ge=1, le=604800)
     rabbitmq_host: str = "127.0.0.1"
     rabbitmq_port: int = Field(default=5672, ge=1, le=65535)
     rabbitmq_user: str = "short_drama"
@@ -120,6 +129,59 @@ class Settings(BaseSettings):
         if endpoint.port is not None and not 1 <= endpoint.port <= 65535:
             raise ValueError("Invalid MinIO port")
         return value
+
+    @field_validator("minio_public_endpoint", "minio_provider_presign_expiry", mode="before")
+    @classmethod
+    def optional_provider_storage_value(cls, value):
+        if value == "":
+            return None
+        if type(value) in {bool, float}:
+            raise ValueError("Provider storage configuration cannot be boolean or floating point")
+        return value
+
+    @field_validator("minio_public_endpoint")
+    @classmethod
+    def valid_minio_public_endpoint(cls, value):
+        if value is None:
+            return value
+        cls.valid_minio_endpoint(value)
+        endpoint = urlsplit("//" + value)
+        host = endpoint.hostname.lower().rstrip(".")
+        if (
+            any(char in value for char in "@/?#\\")
+            or value.endswith(":")
+            or endpoint.username is not None
+            or endpoint.password is not None
+            or any(ord(char) < 32 or ord(char) == 127 for char in value)
+            or host == "invalid"
+            or host.endswith(".invalid")
+        ):
+            raise ValueError("MINIO_PUBLIC_ENDPOINT must be a valid public host with optional port")
+        return value
+
+    @model_validator(mode="after")
+    def complete_provider_storage_configuration(self):
+        if (self.minio_public_endpoint is None) != (self.minio_provider_presign_expiry is None):
+            raise ValueError("MINIO_PUBLIC_ENDPOINT and MINIO_PROVIDER_PRESIGN_EXPIRY are paired")
+        if self.minio_public_endpoint is not None and not all(
+            (
+                self.minio_endpoint,
+                self.minio_access_key.get_secret_value() if self.minio_access_key else None,
+                self.minio_secret_key.get_secret_value() if self.minio_secret_key else None,
+                self.minio_region.strip(),
+            )
+        ):
+            raise ValueError(
+                "Provider storage signing requires internal storage, credentials and region"
+            )
+        return self
+
+    @property
+    def provider_references_enabled(self) -> bool:
+        return (
+            self.minio_public_endpoint is not None
+            and self.minio_provider_presign_expiry is not None
+        )
 
     @field_validator("canvas_beefapi_test_origin")
     @classmethod

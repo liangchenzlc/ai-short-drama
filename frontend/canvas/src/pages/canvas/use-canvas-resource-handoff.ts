@@ -1,16 +1,10 @@
 import { createElement, useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { App, Button } from "antd";
 import type { SetURLSearchParams } from "react-router";
 
 import type { InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
-import { resolveProjectCanvasStyle } from "@/components/canvas/canvas-style-picker-modal";
-import { refreshCanvasCharacterReferenceNodes } from "@/lib/canvas/canvas-character-reference";
 import { canvasAssetHandoffIds, consumeCanvasAssetHandoff } from "@/lib/canvas/canvas-asset-handoff";
-import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { isUserScopeAbandonedError } from "@/lib/user-scope-guard";
-import { createStyleProfileSnapshot, resolveStyleProfile, serializeStyleProfile } from "@/lib/canvas/style-profile";
-import { getProject } from "@/services/api/projects";
 import { queryGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { loadAssetsForUse } from "@/services/local-workspace-sync";
 import { isLocalWorkspaceMode } from "@/services/workspace-mode";
@@ -22,13 +16,12 @@ import { CanvasNodeType, type CanvasNodeData, type Position } from "@/types/canv
 
 import { readOwnedCanvasNodes, runOwnedCanvasEnsureQueue, runOwnedCanvasPageCommit, useCanvasOwnerLifetime } from "./canvas-owner-epoch";
 import { applyArchivedCanvasNodeAssets, CANVAS_HANDOFF_PERSIST_FAILED_MESSAGE, commitOwnedCanvasAssetHandoff, rebaseCreatedCanvasNodes } from "./canvas-resource-handoff-commit";
-import { linkedFolderPresentation, planCanvasHandoffEffect, resolveCanvasAssetHandoffPlan } from "./canvas-resource-handoff-plan";
-
-const NODE_STATUS_SUCCESS = "success" as const;
+import { planCanvasHandoffEffect, resolveCanvasAssetHandoffPlan } from "./canvas-resource-handoff-plan";
 
 type UseCanvasResourceHandoffOptions = {
     projectId: string;
     linkedProjectId: string;
+    refetchLinkedProject: () => Promise<unknown>;
     projectLoaded: boolean;
     assets: Asset[];
     assetsHydrated: boolean;
@@ -44,6 +37,7 @@ type UseCanvasResourceHandoffOptions = {
 export function useCanvasResourceHandoff({
     projectId,
     linkedProjectId,
+    refetchLinkedProject,
     projectLoaded,
     assets,
     assetsHydrated,
@@ -65,9 +59,6 @@ export function useCanvasResourceHandoff({
     projectIdRef.current = projectId;
     const { lifetime, mountedRef, userScope } = useCanvasOwnerLifetime(projectId);
     useEffect(() => () => message.destroy(`canvas-handoff:${projectId}`), [message, projectId, userScope]);
-    const linkedProjectQuery = useQuery({ queryKey: ["project", linkedProjectId], queryFn: () => getProject(linkedProjectId), enabled: Boolean(linkedProjectId) });
-    const refetchLinkedProject = linkedProjectQuery.refetch;
-
     const archiveNodesToLinkedFolder = useCallback(
         (folder: CanvasNodeData, droppedNodes: CanvasNodeData[]) => {
             const folderId = folder.metadata?.folder?.assetFolderId;
@@ -105,61 +96,6 @@ export function useCanvasResourceHandoff({
         },
         [lifetime, linkedProjectId, message, projectId, refetchLinkedProject, setNodes],
     );
-
-    useEffect(() => {
-        if (!projectLoaded || !linkedProjectQuery.data) return;
-        setNodes((current) => refreshCanvasCharacterReferenceNodes(current, linkedProjectQuery.data.assets));
-    }, [linkedProjectQuery.data, projectLoaded, setNodes]);
-
-    useEffect(() => {
-        const project = linkedProjectQuery.data?.project;
-        const preset = resolveProjectCanvasStyle(project?.stylePresetId, project?.styleProfileJson);
-        if (!projectLoaded || !preset) return;
-        const profile = resolveStyleProfile(project?.stylePresetId, project?.styleProfileJson, preset.profile || createStyleProfileSnapshot(preset));
-        if (!profile) return;
-        const current = nodesRef.current.find((node) => node.type === CanvasNodeType.Text && node.metadata?.workflowKind === "styleboard");
-        const nextMetadata = {
-            content: profile.prompt,
-            prompt: profile.prompt,
-            status: NODE_STATUS_SUCCESS,
-            workflowKind: "styleboard" as const,
-            workflowTitle: "项目画风",
-            workflowDescription: profile.description,
-            stylePresetId: profile.presetId,
-            styleProfileJson: serializeStyleProfile(profile),
-            fontSize: 14,
-            locked: true,
-        };
-        if (current) {
-            if (current.metadata?.stylePresetId === profile.presetId && current.metadata?.content === profile.prompt && current.metadata?.styleProfileJson === nextMetadata.styleProfileJson && current.metadata?.locked) return;
-            setNodes((currentNodes) => currentNodes.map((node) => (node.id === current.id ? { ...node, title: `项目画风 · ${profile.title}`, metadata: { ...node.metadata, ...nextMetadata } } : node)));
-            return;
-        }
-        const node = createCanvasNode(CanvasNodeType.Text, getCanvasCenter(), nextMetadata);
-        node.title = `项目画风 · ${profile.title}`;
-        node.width = 420;
-        node.height = 240;
-        setNodes((currentNodes) => [...currentNodes, node]);
-    }, [getCanvasCenter, linkedProjectQuery.data?.project, nodesRef, projectLoaded, setNodes]);
-
-    useEffect(() => {
-        const folders = linkedProjectQuery.data?.assetFolders;
-        if (!folders?.length) return;
-        const byId = new Map(folders.map((folder) => [folder.id, folder]));
-        setNodes((current) => {
-            let changed = false;
-            const next = current.map((node) => {
-                const folderId = node.metadata?.folder?.assetFolderId;
-                const folder = folderId ? byId.get(folderId) : undefined;
-                if (!folder) return node;
-                const { style, theme } = linkedFolderPresentation(folder);
-                if (node.title === folder.name && node.metadata?.folder?.style === style && node.metadata?.folder?.theme === theme) return node;
-                changed = true;
-                return { ...node, title: folder.name, metadata: { ...node.metadata, folder: { ...node.metadata!.folder!, style, theme, themeCover: undefined } } };
-            });
-            return changed ? next : current;
-        });
-    }, [linkedProjectQuery.data?.assetFolders, setNodes]);
 
     useEffect(() => {
         if (!projectLoaded || searchParams.get("mode") !== "handoff") return;
@@ -315,8 +251,6 @@ export function useCanvasResourceHandoff({
     );
 
     return {
-        linkedProjectQuery,
-        refetchLinkedProject,
         archiveNodesToLinkedFolder,
         reloadCanvasNodeResource,
     };

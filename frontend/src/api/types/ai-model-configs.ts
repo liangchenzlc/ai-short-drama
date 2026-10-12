@@ -1,6 +1,15 @@
 export type ServiceTypeDto = 'text' | 'image' | 'video' | 'audio';
 export type ConfigJson = null | boolean | number | string | ConfigJson[] | { [key: string]: ConfigJson };
 export type ConfigJsonObject = { [key: string]: ConfigJson };
+export type RunningHubFieldDto = ConfigJsonObject & { nodeId: string; fieldName: string };
+export interface RunningHubWorkflowDto {
+  kind: 'workflow' | 'app';
+  workflow_id: string;
+  webapp_id: string;
+  title: string;
+  workflow_json: ConfigJsonObject;
+  fields: RunningHubFieldDto[];
+}
 export interface AiRuntimeProfileDto {
   version: 1;
   api_format: 'openai' | 'gemini' | 'claude';
@@ -12,6 +21,7 @@ export interface AiRuntimeProfileDto {
   logical_capability_profiles?: ConfigJsonObject[] | null;
   video_capabilities_version?: string | null;
   concurrency_limit?: number | null;
+  runninghub_workflow?: RunningHubWorkflowDto | null;
 }
 export interface ConfigHeaderReadDto { name: string; has_value: boolean }
 export interface ConfigHeaderWriteDto { name: string; value: string }

@@ -41,7 +41,8 @@ class BaseService:
         self.dao = BaseDAO(session, self.model)
 
     @contextmanager
-    def _transaction(self, *, read_only=False):
+    def _transaction(self, *, read_only=False, lock_request_project=True):
+        # 创建跨项目来源时仅延后隐式行锁，当前请求项目授权仍先核验。
         if self.session.in_transaction():
             raise BusinessError("Service operation requires its own transaction")
         try:
@@ -55,7 +56,9 @@ class BaseService:
                 if project_id:
                     from short_drama.db.access import require_project
 
-                    require_project(self.session, project_id, lock=not read_only)
+                    require_project(
+                        self.session, project_id, lock=not read_only and lock_request_project
+                    )
                 yield
         except IntegrityError:
             raise Conflict("Operation conflicts with an existing or referenced record") from None

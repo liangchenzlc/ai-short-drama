@@ -8,11 +8,31 @@ from short_drama.schemas.canvas_catalog import (
     CanvasChannelModelsRequest,
     CanvasPluginCatalogRead,
 )
+from short_drama.schemas.canvas_editor_tools import (
+    CanvasEditorToolActivation,
+    CanvasEditorToolActivationRead,
+    CanvasEditorToolStatusRead,
+)
+from short_drama.schemas.canvas_runninghub import RunningHubSchemaRequest, RunningHubWorkflow
+from short_drama.service.canvas_editor_tool_service import CanvasEditorToolService
 from short_drama.service.canvas_model_catalog_service import CanvasModelCatalogService
 from short_drama.service.canvas_model_discovery_service import CanvasModelDiscoveryService
 from short_drama.service.canvas_plugin_catalog import provider_catalog
+from short_drama.service.canvas_runninghub_schema_service import CanvasRunningHubSchemaService
 
 router = APIRouter(prefix="/canvas-runtime", tags=["Canvas model catalog"])
+
+
+@router.get("/plugins/status", response_model=CanvasEditorToolStatusRead)
+def read_canvas_editor_tool_status(service: Canvases):
+    return CanvasEditorToolService(service.session).read()
+
+
+@router.put("/plugins/{plugin_id}/activation", response_model=CanvasEditorToolActivationRead)
+def set_canvas_editor_tool_enabled(
+    plugin_id: str, payload: CanvasEditorToolActivation, service: Canvases
+):
+    return CanvasEditorToolService(service.session).set_enabled(plugin_id, payload.enabled)
 
 
 @router.get("/plugins/catalog", response_model=CanvasPluginCatalogRead)
@@ -33,3 +53,12 @@ def read_canvas_channel_models(
         settings,
         CanvasModelCatalogService(service.session, settings=settings),
     ).discover(payload)
+
+
+@router.post("/ai/models/{model_id}/runninghub-schema", response_model=RunningHubWorkflow)
+def read_runninghub_schema(
+    model_id: str, payload: RunningHubSchemaRequest, request: Request, service: Canvases
+):
+    return CanvasRunningHubSchemaService(service.session, request.app.state.settings).read(
+        model_id, payload
+    )

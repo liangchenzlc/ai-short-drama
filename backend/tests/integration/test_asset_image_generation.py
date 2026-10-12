@@ -20,6 +20,7 @@ from short_drama.domain import (
     AIGenerationRecord,
     Asset,
     AssetImageCandidate,
+    AssetVersion,
     AsyncTask,
     MediaAsset,
     MediaFile,
@@ -208,6 +209,11 @@ def submit_shot(flow, shot_id, count=1):
 @pytest.mark.parametrize("kind", ["character", "scene", "prop"])
 def test_generated_candidates_require_adoption_then_supply_shot_references(flow, kind):
     asset = create_asset(flow, kind)
+    with flow.factory() as session:
+        initial_count = session.scalar(
+            select(func.count()).select_from(AssetVersion).where(AssetVersion.asset_id == asset.id)
+        )
+        assert initial_count == (1 if kind == "character" else 0)
     task_id = submit(flow, asset, 2)
     assert drain(flow, task_id) == "succeeded"
     assert len(flow.provider.calls) == 1
@@ -220,6 +226,15 @@ def test_generated_candidates_require_adoption_then_supply_shot_references(flow,
         asset.row_version,
     )
     first, second = candidates["items"]
+    with flow.factory() as session:
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(AssetVersion)
+                .where(AssetVersion.asset_id == asset.id)
+            )
+            == initial_count
+        )
     assert first.generation.generation_id == int(task_id)
     assert not first.generation.is_stale
     confirmed = flow.images.confirm(
@@ -249,6 +264,18 @@ def test_generated_candidates_require_adoption_then_supply_shot_references(flow,
             "media_id": str(second.media_id),
         },
     )
+    with flow.factory() as session:
+        history = list(
+            session.scalars(
+                select(AssetVersion)
+                .where(AssetVersion.asset_id == asset.id)
+                .order_by(AssetVersion.version)
+            )
+        )
+        assert len(history) == (3 if kind == "character" else 0)
+        if kind == "character":
+            assert session.get(Asset, asset.id).current_version_id == history[-1].id
+            assert history[1].snapshot_json["asset"]["media_id"] == str(first.media_id)
     flow.library.link("episode", flow.episode.id, flow.project.id, asset.id)
     shot = ShotScriptService(flow.session).create(
         {"episode_id": flow.episode.id, "position": 1, "script": "A figure enters."}
@@ -754,7 +781,7 @@ def test_concurrent_adoption_allows_one_version_writer(flow):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
-    from sqlalchemy.orm import Session
+    from short_drama.db.session import AppSession
 
     asset = create_asset(flow)
     task_id = submit(flow, asset, 2)
@@ -763,7 +790,7 @@ def test_concurrent_adoption_allows_one_version_writer(flow):
     barrier = Barrier(2)
 
     def adopt(candidate):
-        with Session(
+        with AppSession(
             flow.session.get_bind(),
             expire_on_commit=False,
             autoflush=False,

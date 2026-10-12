@@ -11,7 +11,18 @@ from .base import Identifier, InputModel, nonblank
 
 TextKey = Annotated[str, Field(min_length=1, max_length=128), AfterValidator(nonblank)]
 ModelKey = Annotated[str, Field(min_length=1, max_length=255), AfterValidator(nonblank)]
-SECRET_KEYS = frozenset({"apikey", "secretkey", "authorization", "cookie", "password", "token"})
+SECRET_KEYS = frozenset(
+    {
+        "apikey",
+        "secretkey",
+        "authorization",
+        "cookie",
+        "password",
+        "token",
+        "runninghubuploadapikey",
+        "runninghubwalletapikey",
+    }
+)
 MAX_SECRET_BYTES = 16384
 MAX_CATALOG_BYTES = 2 * 1024 * 1024
 MAX_CHANNEL_HEADERS = 32

@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
-from .base import Identifier, InputModel, NonnegativeVersion
+from .base import Identifier, InputModel, NonnegativeVersion, parse_identifier
 
 SourceKey = Annotated[str, StringConstraints(min_length=1, max_length=128, pattern=r"^[\w:.-]+$")]
 CanvasKey = Annotated[str, StringConstraints(min_length=1, max_length=64, pattern=r"^[\w-]+$")]
@@ -185,6 +185,22 @@ class CanvasCreateRequest(InputModel):
     title: CanvasTitle = "未命名画布"
     source_key: CanvasKey | None = None
     source_document: CanvasDocument | None = None
+    source_canvas_key: CanvasKey | None = None
+    source_canvas_row_version: (
+        Annotated[
+            str,
+            StringConstraints(strict=True, min_length=1, max_length=20, pattern=r"^[1-9][0-9]*$"),
+        ]
+        | None
+    ) = None
+
+    @model_validator(mode="after")
+    def validate_source_canvas(self):
+        if (self.source_canvas_key is None) != (self.source_canvas_row_version is None):
+            raise ValueError("source canvas key and row version must be provided together")
+        if self.source_canvas_row_version is not None:
+            parse_identifier(self.source_canvas_row_version)
+        return self
 
 
 class CanvasCommitRequest(InputModel):
@@ -273,6 +289,7 @@ class CanvasViewportRequest(InputModel):
 class CanvasSummaryRead(InputModel):
     id: Identifier
     project_id: Identifier
+    source_project_id: Identifier | None = None
     source_key: CanvasKey
     title: CanvasTitle
     row_version: Identifier

@@ -1,7 +1,9 @@
 """Real MySQL verifies atomicity, access scope, CAS and source-document roundtrips."""
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -12,6 +14,7 @@ from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
 from short_drama.domain import Project, ProjectCanvas, ProjectCanvasSettings
 from short_drama.domain.canvas import (
+    CanvasEdge,
     CanvasNode,
     CanvasNodeUserState,
     CanvasRevision,
@@ -220,6 +223,121 @@ def test_workspace_model_preferences_are_private_and_never_force_conflicts(db_se
         assert all("私人生成指令" not in repr(value.__dict__) for value in events)
 
 
+def edge_rows(session, canvas_id):
+    with session.begin():
+        return {
+            row.edge_key: {
+                column.key: deepcopy(getattr(row, column.key))
+                for column in CanvasEdge.__table__.columns
+            }
+            for row in session.scalars(select(CanvasEdge).where(CanvasEdge.canvas_id == canvas_id))
+        }
+
+
+@pytest.mark.parametrize("node_count", [4, 100])
+def test_text_edit_does_not_write_unchanged_edges(db_session, node_count):
+    project_id, canvas_id = create(db_session)
+    service = CanvasService(db_session)
+    document = service.read(project_id, canvas_id, private=True)["source_document"]
+    document["nodes"] = [node(f"node-{index}") for index in range(node_count)]
+    document["connections"] = [
+        {
+            "id": f"edge-{index}",
+            "fromNodeId": f"node-{index}",
+            "toNodeId": f"node-{index + 1}",
+        }
+        for index in range(0, node_count, 2)
+    ]
+    seeded = service.commit(
+        project_id,
+        canvas_id,
+        {"expected_row_version": document["revision"], "source_document": document},
+        "edges-seed",
+    )
+    before = edge_rows(db_session, canvas_id)
+    document["revision"] = seeded["row_version"]
+    document["nodes"][0]["metadata"]["content"] = "仅修改一个文字节点"
+    updated_edges = 0
+
+    def collect(_connection, _cursor, statement, parameters, _context, many):
+        nonlocal updated_edges
+        if re.match(r"\s*UPDATE `?canvas_edges`?\s", statement, re.I):
+            updated_edges += len(parameters) if many else 1
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", collect)
+    try:
+        saved = service.commit(
+            project_id,
+            canvas_id,
+            {"expected_row_version": document["revision"], "source_document": document},
+            "edges-text-edit",
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", collect)
+    assert saved["row_version"] == str(int(seeded["row_version"]) + 1)
+    assert updated_edges == 0, "文字修改不能重写所有未变连线或推进其更新时间"
+    assert edge_rows(db_session, canvas_id) == before
+    current = service.read(project_id, canvas_id, private=True)["source_document"]
+    assert current["nodes"] == document["nodes"]
+    assert current["connections"] == document["connections"]
+
+
+def test_changed_edges_keep_fields_order_archive_and_stable_revival(db_session):
+    project_id, canvas_id = create(db_session)
+    service = CanvasService(db_session)
+    document = service.read(project_id, canvas_id, private=True)["source_document"]
+    document["nodes"] = [node(key) for key in ("a", "b", "c", "d")]
+    document["connections"] = [
+        {"id": "first", "fromNodeId": "a", "toNodeId": "b"},
+        {"id": "second", "fromNodeId": "c", "toNodeId": "d"},
+    ]
+
+    def save(key):
+        result = service.commit(
+            project_id,
+            canvas_id,
+            {"expected_row_version": document["revision"], "source_document": document},
+            key,
+        )
+        document["revision"] = result["row_version"]
+        current = service.read(project_id, canvas_id, private=True)["source_document"]
+        assert current["connections"] == document["connections"]
+        return edge_rows(db_session, canvas_id)
+
+    initial = save("edge-fields-seed")
+    for field, value in (
+        ("fromNodeId", "c"),
+        ("toNodeId", "d"),
+        ("fromHandleId", "output"),
+        ("toHandleId", "input"),
+        ("relation", "batch-output"),
+        ("storyboardRowId", "row-1"),
+        ("pathD", "M 0 0 L 10 10"),
+    ):
+        previous = edge_rows(db_session, canvas_id)
+        document["connections"][0][field] = value
+        changed = save(f"edge-field-{field}")
+        assert changed["first"]["id"] == initial["first"]["id"]
+        assert changed["first"]["updated_at"] > previous["first"]["updated_at"]
+        assert changed["second"] == previous["second"]
+    document["connections"].reverse()
+    reordered = save("edges-reorder")
+    assert reordered["second"]["position"] == 0 and reordered["first"]["position"] == 1
+    removed = document["connections"].pop()
+    archived = save("edges-delete")
+    assert archived["first"]["archived_at"] is not None
+    document["nodes"][0]["metadata"]["content"] = "删除连线后的文字修改"
+    retained = save("edges-after-delete")
+    assert retained == archived, "后续保存必须保留原归档时间且不重写其余未变连线"
+    document["connections"].append(removed)
+    revived = save("edges-revive")
+    assert revived["first"]["id"] == initial["first"]["id"]
+    assert revived["first"]["archived_at"] is None
+    assert revived["first"]["updated_at"] > archived["first"]["updated_at"]
+    assert revived["second"] == archived["second"]
+
+
 def test_document_roundtrip_private_membership_and_audit(db_session):
     session = db_session
     project_id, canvas_id = create(session)
@@ -271,6 +389,101 @@ def test_document_roundtrip_private_membership_and_audit(db_session):
         revoked.info["actor"] = actor(2)
         with pytest.raises(NotFound):
             CanvasService(revoked).read(project_id, canvas_id, private=True)
+
+
+def test_due_snapshot_reads_metadata_only_and_preserves_twenty_frozen_revisions(
+    db_session, monkeypatch
+):
+    project_id, canvas_id = create(db_session)
+    service = CanvasService(db_session)
+    document = edit(service, project_id, canvas_id)["source_document"]
+    engine = db_session.get_bind()
+    assert (engine.url.database or "").endswith("_test")
+
+    def age_history():
+        # 仅为本次随机测试库建立到期前提，不替换生产节流和历史写入。
+        with engine.begin() as connection:
+            connection.execute(
+                update(CanvasRevision.__table__)
+                .where(CanvasRevision.canvas_id == canvas_id)
+                .values(created_at=utcnow() - timedelta(minutes=6))
+            )
+
+    def save(index):
+        document["nodes"][0]["metadata"]["content"] = f"历史版本 {index} " + "冻结正文" * 2048
+        result = service.commit(
+            project_id,
+            canvas_id,
+            {"expected_row_version": document["revision"], "source_document": document},
+            f"snapshot-retention-{index}",
+        )
+        document["revision"] = result["row_version"]
+        return result
+
+    for index in range(21):
+        age_history()
+        save(index)
+    history = service.list_revisions(project_id, canvas_id)["items"]
+    assert len(history) == 20
+    oldest_id = int(history[-1]["id"])
+    with db_session.begin():
+        frozen = {
+            row.id: deepcopy(row.snapshot_json)
+            for row in db_session.scalars(select(CanvasRevision))
+        }
+    previous = deepcopy(document)
+    reading_snapshot = False
+    loaded_bodies = []
+    original_snapshot = CanvasService._snapshot
+
+    def observe_snapshot(service, canvas, before, *, reason):
+        nonlocal reading_snapshot
+        reading_snapshot = True
+        try:
+            return original_snapshot(service, canvas, before, reason=reason)
+        finally:
+            reading_snapshot = False
+
+    def collect(_connection, _cursor, statement, _parameters, _context, _many):
+        if reading_snapshot and re.search(
+            r"`?canvas_revisions`?\.`?snapshot_json`?", statement, re.I
+        ):
+            loaded_bodies.append(reason_for_query)
+
+    reason_for_query = "automatic"
+    monkeypatch.setattr(CanvasService, "_snapshot", observe_snapshot)
+    event.listen(engine, "before_cursor_execute", collect)
+    try:
+        age_history()
+        result = save(21)
+        assert loaded_bodies == [], "节流/回收不应读取最多20份完整历史正文"
+        latest_history = service.list_revisions(project_id, canvas_id)["items"]
+        assert len(latest_history) == 20
+        latest = service.read_revision(project_id, canvas_id, int(latest_history[0]["id"]))
+        assert latest["source_document"]["nodes"] == previous["nodes"]
+        assert latest["source_document"]["connections"] == previous["connections"]
+        with db_session.begin():
+            retained = {
+                row.id: row.snapshot_json for row in db_session.scalars(select(CanvasRevision))
+            }
+        assert oldest_id not in retained
+        assert all(retained[key] == value for key, value in frozen.items() if key in retained)
+        with pytest.raises(NotFound):
+            service.read_revision(project_id, canvas_id, oldest_id)
+        chosen = int(latest_history[-1]["id"])
+        chosen_document = service.read_revision(project_id, canvas_id, chosen)["source_document"]
+        reason_for_query = "before_restore"
+        restored = service.restore(
+            project_id, canvas_id, chosen, int(result["row_version"]), "snapshot-retention-restore"
+        )
+        assert loaded_bodies == [], "恢复前保留快照同样只应读取历史元数据"
+        assert restored["row_version"] == str(int(result["row_version"]) + 1)
+        current = service.read(project_id, canvas_id, private=True)["source_document"]
+        assert current["nodes"] == chosen_document["nodes"]
+        assert current["connections"] == chosen_document["connections"]
+        assert len(service.list_revisions(project_id, canvas_id)["items"]) == 20
+    finally:
+        event.remove(engine, "before_cursor_execute", collect)
 
 
 def test_cas_keeps_saved_work_and_history_restores_as_new_version(db_session):

@@ -50,6 +50,11 @@ def allowed_ids(name, user_id):
 def condition(table, user_id):
     name = table.original.name if hasattr(table, "original") else table.name
     c = table.c
+    if name == "canvas_local_jobs":
+        return and_(
+            c.user_id == user_id,
+            or_(c.project_id.is_(None), c.project_id.in_(project_ids(user_id))),
+        )
     if name in {
         "canvas_workspace_user_states",
         "canvas_model_catalogs",
@@ -280,6 +285,9 @@ def _scope_options(
 
 @event.listens_for(Session, "do_orm_execute")
 def restrict_queries(state):
+    from short_drama.db.asset_version_access import guard_version_bulk
+
+    guard_version_bulk(state)
     actor = state.session.info.get("actor")
     if not actor:
         return
@@ -313,6 +321,7 @@ def restrict_queries(state):
             "last_frame_media_id",
             "output_media_id",
             "current_media_id",
+            "current_version_id",
             "proxy_media_id",
             "created_by",
             "published_at",
@@ -362,6 +371,8 @@ def require_project(session, project_id, *, owner=False, lock=True):
 def scope_of(session, entity):
     """Resolve the actual ownership path, independent of the caller's entry point."""
     table = inspect(type(entity)).local_table
+    if table.name == "canvas_local_jobs":
+        return (None, entity.project_id) if entity.project_id else (entity.user_id, None)
     name = table.name
     if name in {"canvas_resource_chunks", "canvas_resource_copy_sources"}:
         return scope_of(session, _canvas_upload_parent(session, entity.upload_id))
@@ -684,10 +695,101 @@ def _canvas_upload_parent(session, identifier):
     return parent
 
 
-def _guard_canvas_write(session, entity, actor, new):
+def _canvas_snapshot_reads(session, actor):
+    from short_drama.domain import (
+        CanvasBinaryResource,
+        CanvasUserBinaryReference,
+        MediaFile,
+        Project,
+        ProjectCanvas,
+        ProjectMember,
+    )
+    from short_drama.domain.canvas import CanvasUserMediaReference
+
+    references = {
+        entity
+        for entity in session.new
+        if isinstance(entity, (CanvasUserMediaReference, CanvasUserBinaryReference))
+        and entity.owner_kind == "revision"
+        and entity.revision_id is not None
+        and entity.user_id == actor.user_id
+    }
+    if not references:
+        return set(), {}
+    # Mixed parent/resource edits retain the original per-entity checks. The
+    # maps below exist only for this flush, never as cached authorization.
+    related = (Project, ProjectCanvas, ProjectMember, MediaFile, CanvasBinaryResource)
+    if (
+        any(isinstance(entity, Project) for entity in session.new)
+        or any(isinstance(entity, related) for entity in session.deleted)
+        or any(
+            isinstance(entity, related) and session.is_modified(entity, include_collections=False)
+            for entity in session.dirty
+        )
+    ):
+        return set(), {}
+    project_ids = {entity.project_id for entity in references}
+    # Match the existing project/member -> resource lock order. These locks
+    # remain held while every reference's ownership and scope are checked.
+    for identifier in sorted(project_ids):
+        require_project(session, identifier)
+    reads = {}
+    for model, identifiers in (
+        (Project, project_ids),
+        (ProjectCanvas, {entity.canvas_id for entity in references}),
+        (
+            MediaFile,
+            {
+                entity.media_id
+                for entity in references
+                if isinstance(entity, CanvasUserMediaReference)
+            },
+        ),
+        (
+            CanvasBinaryResource,
+            {
+                entity.binary_id
+                for entity in references
+                if isinstance(entity, CanvasUserBinaryReference)
+            },
+        ),
+    ):
+        values = {
+            entity.id: entity
+            for entity in session.new
+            if isinstance(entity, model) and entity.id in identifiers
+        }
+        missing = sorted(identifiers - values.keys())
+        for offset in range(0, len(missing), 500):
+            statement = (
+                select(model).where(model.id.in_(missing[offset : offset + 500])).order_by(model.id)
+            )
+            if model in (MediaFile, CanvasBinaryResource):
+                statement = statement.with_for_update(read=True)
+            values.update((entity.id, entity) for entity in session.scalars(statement))
+        reads[model] = values
+    return references, reads
+
+
+def _guard_canvas_write(session, entity, actor, new, *, snapshot_reads=None):
     from short_drama.domain import Project, ProjectCanvas
 
     name = inspect(type(entity)).local_table.name
+    if name == "canvas_local_jobs":
+        from .canvas_local_access import guard_canvas_local
+
+        guard_canvas_local(session, entity, actor, new)
+        return
+    if name in {"canvas_render_jobs", "canvas_render_media_references"}:
+        from .canvas_render_access import guard_canvas_render
+
+        guard_canvas_render(session, entity, actor, new)
+        return
+    if name in {"canvas_tool_runs", "canvas_tool_submissions"}:
+        from .canvas_tool_run_access import guard_canvas_tool_run
+
+        guard_canvas_tool_run(session, entity, actor, new)
+        return
     if name in {"canvas_task_bindings", "canvas_task_media_references", "canvas_results"}:
         from .canvas_generation_access import guard_canvas_generation
 
@@ -814,20 +916,45 @@ def _guard_canvas_write(session, entity, actor, new):
         if entity.scope_user_id != actor.user_id:
             raise NotFound("Canvas resource does not exist")
         return
-    project = next(
-        (x for x in session.new if isinstance(x, Project) and x.id == entity.project_id), None
-    )
-    if project is None:
-        project = session.scalar(select(Project).where(Project.id == entity.project_id))
+    if snapshot_reads is not None:
+        project = snapshot_reads[Project].get(entity.project_id)
+    else:
+        project = next(
+            (x for x in session.new if isinstance(x, Project) and x.id == entity.project_id), None
+        )
+        if project is None:
+            project = session.scalar(select(Project).where(Project.id == entity.project_id))
     if project is None or project.workspace_mode != "infinite_canvas":
         raise NotFound("Infinite canvas project does not exist")
+    if name == "project_canvases":
+        if not new and inspect(entity).attrs.source_project_id.history.has_changes():
+            raise WorkflowError("canvas_binding_immutable", "可信业务绑定不能通过普通写入改变", 403)
+        if new and entity.source_project_id is not None:
+            business = next(
+                (
+                    row
+                    for row in session.new
+                    if isinstance(row, Project) and row.id == entity.source_project_id
+                ),
+                None,
+            )
+            if business is None:
+                business = session.scalar(
+                    select(Project).where(Project.id == entity.source_project_id)
+                )
+            if business is None or business.archived_at or business.workspace_mode != "standard":
+                raise NotFound("可信业务项目不存在或当前账号无权访问")
+            require_project(session, business.id)
     canvas_id = getattr(entity, "canvas_id", None) or getattr(entity, "primary_canvas_id", None)
     if canvas_id:
-        canvas = next(
-            (x for x in session.new if isinstance(x, ProjectCanvas) and x.id == canvas_id), None
-        )
-        if canvas is None:
-            canvas = session.scalar(select(ProjectCanvas).where(ProjectCanvas.id == canvas_id))
+        if snapshot_reads is not None:
+            canvas = snapshot_reads[ProjectCanvas].get(canvas_id)
+        else:
+            canvas = next(
+                (x for x in session.new if isinstance(x, ProjectCanvas) and x.id == canvas_id), None
+            )
+            if canvas is None:
+                canvas = session.scalar(select(ProjectCanvas).where(ProjectCanvas.id == canvas_id))
         if canvas is None or canvas.project_id != entity.project_id:
             raise NotFound("Canvas is outside this project")
     if not new:
@@ -848,8 +975,10 @@ def _guard_canvas_write(session, entity, actor, new):
 
 @event.listens_for(Session, "before_flush")
 def guard_writes(session, _context, _instances):
+    from short_drama.db.asset_version_access import guard_version_writes
     from short_drama.service.base import utcnow
 
+    guard_version_writes(session)
     actor = session.info.get("actor")
     legacy_user = session.info.get("legacy_user_id")
     if not actor and not legacy_user:
@@ -862,6 +991,9 @@ def guard_writes(session, _context, _instances):
         list(session.new)
         + [x for x in session.dirty if session.is_modified(x, include_collections=False)]
         + list(session.deleted)
+    )
+    snapshot_references, snapshot_reads = (
+        _canvas_snapshot_reads(session, actor) if actor else (set(), {})
     )
     for entity in changed:
         table = inspect(type(entity)).local_table
@@ -901,7 +1033,13 @@ def guard_writes(session, _context, _instances):
         if actor and name in AGENT_TABLES:
             _guard_agent_write(session, entity, actor, new)
         if actor and name in CANVAS_TABLES:
-            _guard_canvas_write(session, entity, actor, new)
+            _guard_canvas_write(
+                session,
+                entity,
+                actor,
+                new,
+                snapshot_reads=snapshot_reads if entity in snapshot_references else None,
+            )
         if new:
             if name in {"projects", "ai_model_configs"}:
                 entity.owner_user_id = user_id
@@ -934,7 +1072,10 @@ def guard_writes(session, _context, _instances):
         }:
             # Session.get may return an object already in the identity map. Verify
             # the stored ownership before accepting writes to private resources.
-            if session.scalar(select(type(entity).id).where(type(entity).id == entity.id)) is None:
+            query = select(type(entity).id).where(type(entity).id == entity.id)
+            if name == "media_files":
+                query = query.with_for_update()
+            if session.scalar(query) is None:
                 raise NotFound("Resource does not exist")
         if name in {"episode_scripts", "media_files", "canvas_binary_resources"} and not new:
             publication = inspect(entity).attrs.published_at.history
@@ -956,7 +1097,7 @@ def guard_writes(session, _context, _instances):
             )
             # Only this new private acknowledgement may be written after its
             # parent was archived. Scoped parent reads above still check membership.
-            if not disposal:
+            if not disposal and entity not in snapshot_references:
                 require_project(session, entity_scope[1])
         elif not entity_scope[1] and entity_scope[0] != actor.user_id:
             raise NotFound("Resource does not exist")
@@ -984,15 +1125,26 @@ def guard_writes(session, _context, _instances):
                 m.class_ for m in Base.registry.mappers if m.local_table.name == target_name
             )
             identifier = int(getattr(entity, field))
-            target = next(
-                (x for x in session.new if isinstance(x, model) and x.id == identifier), None
-            )
-            if target is None:
-                target = session.scalar(select(model).where(model.id == identifier))
+            if entity in snapshot_references:
+                target = snapshot_reads[model].get(identifier)
+            else:
+                target = next(
+                    (x for x in session.new if isinstance(x, model) and x.id == identifier), None
+                )
+                if target is None:
+                    # 任务当前读可能已看到Worker在本事务快照之后归档的媒体。
+                    # 引用校验同样读取当前行，并保留作者、项目和资源范围条件。
+                    target = session.scalar(
+                        select(model).where(model.id == identifier).with_for_update(read=True)
+                    )
             allowed_scopes = {entity_scope}
             if name == "agent_attachments" and field == "media_id":
                 allowed_scopes.add((actor.user_id, None))
             if name == "canvas_user_media_references" and field == "media_id":
+                allowed_scopes.add((actor.user_id, None))
+            if name == "canvas_render_media_references" and field == "media_id":
+                allowed_scopes.add((actor.user_id, None))
+            if name == "canvas_local_jobs" and field == "output_media_id":
                 allowed_scopes.add((actor.user_id, None))
             if name == "canvas_user_binary_references" and field == "binary_id":
                 allowed_scopes.add((actor.user_id, None))
@@ -1028,7 +1180,9 @@ def guard_writes(session, _context, _instances):
             from short_drama.domain import MediaFile
 
             for identifier in entity.reference_media_ids or []:
-                target = session.scalar(select(MediaFile).where(MediaFile.id == int(identifier)))
+                target = session.scalar(
+                    select(MediaFile).where(MediaFile.id == int(identifier)).with_for_update()
+                )
                 if target is None or scope_of(session, target) != entity_scope:
                     raise NotFound("Reference image is outside this resource scope")
         if hasattr(entity, "created_by") and new:

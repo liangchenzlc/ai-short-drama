@@ -63,3 +63,57 @@ def render_service():
 )
 def execute_render(job_id, message_version):
     render_service().execute(job_id, message_version)
+
+
+@lru_cache(maxsize=1)
+def canvas_render_service():
+    from short_drama.tasks.canvas_render import CanvasRenderExecutor
+
+    settings = Settings()
+    engine = build_engine(settings)
+    from short_drama.db.readiness import assert_identity_ready
+
+    assert_identity_ready(engine, settings)
+    return CanvasRenderExecutor(session_factory(engine), settings, MinioStorage(settings))
+
+
+@app.task(
+    name="short_drama.execute_canvas_render",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    ignore_result=True,
+)
+def execute_canvas_render(job_id, message_version):
+    try:
+        canvas_render_service().execute(job_id, message_version)
+    except Exception:
+        raise Reject(
+            "Canvas render interrupted; database lease recovery will reconcile", requeue=False
+        ) from None
+
+
+@lru_cache(maxsize=1)
+def canvas_local_service():
+    from short_drama.tasks.canvas_local import CanvasLocalExecutor
+
+    settings = Settings()
+    engine = build_engine(settings)
+    from short_drama.db.readiness import assert_identity_ready
+
+    assert_identity_ready(engine, settings)
+    return CanvasLocalExecutor(session_factory(engine), settings, MinioStorage(settings))
+
+
+@app.task(
+    name="short_drama.execute_canvas_local",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    ignore_result=True,
+)
+def execute_canvas_local(job_id, message_version):
+    try:
+        canvas_local_service().execute(job_id, message_version)
+    except Exception:
+        raise Reject(
+            "Canvas local task interrupted; database lease recovery will reconcile", requeue=False
+        ) from None

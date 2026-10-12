@@ -220,6 +220,7 @@ def test_read_schema_covers_exact_domain_columns_except_secret(class_name):
             "model_id",
             "created_by",
             "updated_by",
+            "current_version_id",  # 内部历史指针不属于 AssetRead 的公开合同。
         }
         expected -= {"reference_media_ids"}  # Exposed by the dedicated input-image endpoint.
         expected |= {"image", "reference_count"}

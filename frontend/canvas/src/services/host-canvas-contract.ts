@@ -1,5 +1,7 @@
 import type { CanvasCreationDto, CanvasCreationRequestDto, CanvasInitialDrawingDto, CanvasDrawingHeadsDto, CanvasReadDto, CanvasRecycleRestoreRequestDto, CanvasRevisionDto, CanvasSummaryDto, CanvasWorkspaceDto } from "@host/api/types/canvases";
 
+import { validateCanvasSourceOrigin, type CanvasSourceOrigin } from "./canvas-initial-write.ts";
+
 export type CanvasTransportRequest = {
     method: string;
     url: string;
@@ -18,7 +20,7 @@ export function createHostCanvasContract(transport: CanvasTransport, observeAlia
         return transport<CanvasReadDto>({ method: "get", url: `${path(canvas)}/my-document` });
     };
     const summary = (canvas: CanvasSummaryDto) => ({
-        id: canvas.source_key, workspaceProjectId: canvas.project_id,
+        id: canvas.source_key, workspaceProjectId: canvas.project_id, projectId: canvas.source_project_id ?? undefined,
         title: canvas.title, revision: canvas.row_version,
         createdAt: canvas.created_at, updatedAt: canvas.updated_at,
     });
@@ -88,7 +90,8 @@ export function createHostCanvasContract(transport: CanvasTransport, observeAlia
                 return { project: result.source_document };
             }
             if (method === "put" && !url.includes("/history")) {
-                const { project, drawingDocuments } = data as { project: Record<string, unknown>; drawingDocuments?: CanvasInitialDrawingDto[] };
+                const { project, drawingDocuments, sourceCanvas } = data as { project: Record<string, unknown>; drawingDocuments?: CanvasInitialDrawingDto[]; sourceCanvas?: CanvasSourceOrigin };
+                if (sourceCanvas !== undefined) validateCanvasSourceOrigin(sourceCanvas);
                 let projectId = String(project.workspaceProjectId || key);
                 // Source multi-canvas duplication groups following canvases by
                 // the first copy's source key. Resolve its canonical owner without
@@ -97,6 +100,7 @@ export function createHostCanvasContract(transport: CanvasTransport, observeAlia
                 const document = projectId === key || projectId === project.workspaceProjectId ? project : { ...project, workspaceProjectId: projectId };
                 const payload: CanvasCreationRequestDto = { title: typeof project.title === "string" ? project.title : undefined, source_key: key, source_document: document,
                     ...(drawingDocuments?.length ? { drawing_documents: drawingDocuments } : {}),
+                    ...(sourceCanvas ? { source_canvas_key: sourceCanvas.canvasKey, source_canvas_row_version: sourceCanvas.rowVersion } : {}),
                 };
                 const endpoint = projectId === key ? "/canvas-workspace" : `/projects/${encodeURIComponent(projectId)}/canvases`;
                 const saved = await write<CanvasCreationDto>("post", endpoint, payload, `canvas-create:${key}`);

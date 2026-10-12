@@ -272,7 +272,6 @@ export function useCanvasDirector({
         });
         const outputNodeIds = [previewId, videoUpload ? clayVideoId : null].filter((id): id is string => Boolean(id));
         const committedConnections = ensureDirectorOutputConnections(connectionsRef.current, sourceNodeId, outputNodeIds, nanoid);
-        nodesRef.current = finalizedNodes;
         connectionsRef.current = committedConnections;
         setNodes(finalizedNodes);
         setConnections(committedConnections);

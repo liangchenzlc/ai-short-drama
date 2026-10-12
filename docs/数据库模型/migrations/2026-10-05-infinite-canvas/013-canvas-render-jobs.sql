@@ -1,0 +1,78 @@
+-- 私人画布本地渲染与冻结媒体引用；用canvas_migration.py --apply核验并安全重入。
+CREATE TABLE canvas_render_jobs (
+	user_id BIGINT UNSIGNED NOT NULL,
+	client_operation_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	request_json JSON NOT NULL,
+	plan_json JSON NOT NULL,
+	source_snapshot JSON NOT NULL,
+	canvas_version BIGINT UNSIGNED NOT NULL,
+	status VARCHAR(16) NOT NULL,
+	stage VARCHAR(64) NOT NULL,
+	progress INTEGER UNSIGNED NOT NULL,
+	attempts INTEGER UNSIGNED NOT NULL,
+	message_version BIGINT UNSIGNED NOT NULL,
+	next_run_at DATETIME(6) NOT NULL,
+	lease_token CHAR(32) CHARACTER SET ascii COLLATE ascii_bin,
+	locked_until DATETIME(6),
+	cancel_requested INTEGER UNSIGNED NOT NULL,
+	output_media_id BIGINT UNSIGNED,
+	disposal_receipt_id BIGINT UNSIGNED,
+	result_json JSON,
+	error_json JSON,
+	started_at DATETIME(6),
+	finished_at DATETIME(6),
+	project_id BIGINT UNSIGNED NOT NULL,
+	canvas_id BIGINT UNSIGNED NOT NULL,
+	id BIGINT UNSIGNED NOT NULL,
+	created_at DATETIME(6) NOT NULL,
+	updated_at DATETIME(6) NOT NULL,
+	created_by BIGINT UNSIGNED NOT NULL,
+	updated_by BIGINT UNSIGNED NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT fk_canvas_render_jobs_project_id FOREIGN KEY(project_id, canvas_id) REFERENCES project_canvases (project_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT uk_canvas_render_operation UNIQUE (user_id, client_operation_id),
+	CONSTRAINT uk_canvas_render_scope UNIQUE (id, user_id, project_id, canvas_id),
+	CONSTRAINT ck_canvas_render_status CHECK (status IN ('queued','running','succeeded','failed','cancelled')),
+	CONSTRAINT ck_canvas_render_numbers CHECK (progress <= 100 AND cancel_requested IN (0,1) AND message_version > 0 AND canvas_version > 0),
+	CONSTRAINT ck_canvas_render_lease CHECK ((status = 'running' AND lease_token IS NOT NULL AND locked_until IS NOT NULL) OR (status <> 'running' AND lease_token IS NULL AND locked_until IS NULL)),
+	CONSTRAINT ck_canvas_render_output CHECK (status <> 'succeeded' OR ((output_media_id IS NOT NULL OR disposal_receipt_id IS NOT NULL) AND result_json IS NOT NULL AND finished_at IS NOT NULL)),
+	CONSTRAINT ck_canvas_render_disposal CHECK (disposal_receipt_id IS NULL OR (status IN ('succeeded','failed','cancelled') AND lease_token IS NULL AND locked_until IS NULL AND JSON_LENGTH(request_json) = 0 AND JSON_LENGTH(source_snapshot) = 0 AND JSON_LENGTH(plan_json) = 0 AND 0 <> COALESCE(JSON_UNQUOTE(JSON_EXTRACT(error_json, '$.code')) = 'canvas_work_disposed', FALSE))),
+	CONSTRAINT ck_canvas_render_snapshot CHECK (JSON_TYPE(request_json) = 'OBJECT' AND JSON_TYPE(plan_json) = 'OBJECT' AND JSON_TYPE(source_snapshot) = 'OBJECT'),
+	CONSTRAINT ck_canvas_render_result CHECK ((result_json IS NULL OR JSON_TYPE(result_json) = 'OBJECT') AND (error_json IS NULL OR JSON_TYPE(error_json) = 'OBJECT')),
+	CONSTRAINT ck_canvas_render_identity CHECK (CHAR_LENGTH(client_operation_id) >= 8 AND CHAR_LENGTH(request_hash) = 64),
+	CONSTRAINT fk_canvas_render_jobs_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_render_jobs_output_media_id FOREIGN KEY(output_media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_render_disposal FOREIGN KEY(disposal_receipt_id) REFERENCES canvas_write_receipts (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_render_jobs_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_render_jobs_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='本人画布时间线快照与独立本地成片任务' COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_canvas_render_author ON canvas_render_jobs (user_id, updated_at, id);
+
+CREATE INDEX idx_canvas_render_disposal ON canvas_render_jobs (disposal_receipt_id);
+
+CREATE INDEX idx_canvas_render_schedule ON canvas_render_jobs (status, next_run_at, id);
+
+CREATE TABLE canvas_render_media_references (
+	user_id BIGINT UNSIGNED NOT NULL,
+	job_id BIGINT UNSIGNED NOT NULL,
+	source_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
+	ordinal INTEGER UNSIGNED NOT NULL,
+	media_id BIGINT UNSIGNED NOT NULL,
+	project_id BIGINT UNSIGNED NOT NULL,
+	canvas_id BIGINT UNSIGNED NOT NULL,
+	id BIGINT UNSIGNED NOT NULL,
+	created_at DATETIME(6) NOT NULL,
+	updated_at DATETIME(6) NOT NULL,
+	created_by BIGINT UNSIGNED NOT NULL,
+	updated_by BIGINT UNSIGNED NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT fk_canvas_render_media_references_project_id FOREIGN KEY(project_id, canvas_id) REFERENCES project_canvases (project_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_render_source_job FOREIGN KEY(job_id, user_id, project_id, canvas_id) REFERENCES canvas_render_jobs (id, user_id, project_id, canvas_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT uk_canvas_render_source UNIQUE (job_id, source_key),
+	CONSTRAINT uk_canvas_render_source_order UNIQUE (job_id, ordinal),
+	CONSTRAINT fk_canvas_render_media_references_media_id FOREIGN KEY(media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_render_media_references_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_render_media_references_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='冻结渲染来源的稳定媒体引用，保护排队与历史任务' COLLATE utf8mb4_0900_ai_ci;

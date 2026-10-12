@@ -79,6 +79,11 @@ class GenerationReferenceService(AssetImageService):
             episode.updated_at = utcnow()
         self.session.flush()
 
+        if isinstance(owner, Asset):
+            from .asset_version_service import AssetVersionService
+
+            AssetVersionService(self.session).append_locked(owner)
+
     def _persist_upload(self, asset_id, inspected, stored, original_name):
         with self._transaction():
             owner, episode = self._owner(asset_id, lock=True)

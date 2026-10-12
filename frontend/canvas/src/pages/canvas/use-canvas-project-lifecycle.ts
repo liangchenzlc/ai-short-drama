@@ -17,10 +17,17 @@ import { forceOverwriteRemoteCanvasSync, hasRemoteUserDataSyncSession, loadCanva
 import { createCanvasResourceRemapper, type CanvasResourceRemapper } from "@/services/host-resource-normalization";
 import { createWorkspaceCanvasProject, deleteWorkspaceCanvasProjects } from "@/services/workspace-project-repository";
 import { flushCanvasStorePersistence, useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
-import { scheduleLocalCanvasBackendSync, syncLocalCanvasProjectToBackend } from "@/services/local-workspace-repository";
+import { hasUnconfirmedCanvasEdits, scheduleLocalCanvasBackendSync, syncLocalCanvasProjectToBackend } from "@/services/local-workspace-repository";
+import { initialCanvasSource } from "@/services/canvas-initial-write";
 import { saveHostCanvasViewport } from "@/services/host-canvas-viewport";
 import { saveHostCanvasViewPreferences } from "@/services/host-canvas-view-preferences";
-import { captureUserScope, userScopeMatches } from "@/lib/user-scope-guard";
+import { assertUserScope, captureUserScope, userScopeMatches } from "@/lib/user-scope-guard";
+import { retryPendingImageUpload } from "@/services/image-storage";
+import { retryPendingMediaUpload } from "@/services/file-storage";
+import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
+import { audioMetadata, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-generation-task-sync";
+import { CanvasNodeType } from "@/types/canvas";
+import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasHistoryStore } from "@/stores/canvas/use-canvas-history-store";
 import type { CanvasDrawingHeads, CanvasHistoryRestore } from "@/services/api/workspace-data";
 import { useCanvasThemeStore } from "@/stores/canvas/use-canvas-theme-store";
@@ -129,6 +136,11 @@ export function useCanvasProjectLifecycle({
     // changes. Track which project the live editor refs actually belong to so
     // that transition render can never persist A's snapshot into B (or vice versa).
     const editorProjectIdRef = useRef<string | null>(null);
+    const imageRecoveryControllers = useRef(new Set<AbortController>());
+    useEffect(() => () => {
+        for (const controller of imageRecoveryControllers.current) controller.abort();
+        imageRecoveryControllers.current.clear();
+    }, [projectId]);
 
     useEffect(() => {
         // The desktop repository is available independently of browser/session
@@ -385,22 +397,6 @@ export function useCanvasProjectLifecycle({
         updateProject(projectId, { viewport: viewportRef.current });
     }, [projectId, projectLoaded, updateProject, viewportRef]);
 
-    const createAndOpenCanvas = useCallback(() => {
-        const workspaceProjectId = currentProject ? canvasWorkspaceProjectId(currentProject) : undefined;
-        const domainProjectId = currentProject?.projectId;
-        if (localMode) {
-            void createWorkspaceCanvasProject("未命名画布", domainProjectId, undefined, workspaceProjectId)
-                .then(({ id }) => navigate(`/canvas/${id}`))
-                .catch((error) => message.error(error instanceof Error ? `新建画布失败：${error.message}` : "新建画布失败，请稍后重试"));
-            return;
-        }
-        void createWorkspaceCanvasProject("未命名画布", domainProjectId, undefined, workspaceProjectId).then(({ id, syncError }) => {
-            // 本地/访客模式下没有远端同步会话，这是预期状态，不应在画布中央弹出错误 toast。
-            if (syncError && !isExpectedLocalOnlySyncError(syncError)) message.warning(syncError instanceof Error ? `画布已在本地创建，云端同步失败：${syncError.message}` : "画布已在本地创建，云端同步失败");
-            navigate(`/canvas/${id}`);
-        }).catch((error) => message.error(error instanceof Error ? `新建画布失败：${error.message}` : "新建画布失败，请稍后重试"));
-    }, [currentProject, localMode, message, navigate]);
-
     const deleteCurrentProject = useCallback(async () => {
         const siblingCanvases = listCanvasWorkspaceProjectCanvases(useCanvasStore.getState().projects, projectId);
         const nextCanvas = siblingCanvases.find((canvas) => canvas.id !== projectId);
@@ -431,9 +427,97 @@ export function useCanvasProjectLifecycle({
         scheduleLocalCanvasBackendSync(root.id);
     }, [currentProject, renameProject]);
 
-    const persistLocalEdits = useCallback(async () => {
+    const persistLocalEdits = useCallback(async (options: { requireRemote?: boolean } = {}) => {
         if (!projectLoaded || editorProjectIdRef.current !== projectId) return;
         const expected = captureUserScope();
+        const pendingImages = nodesRef.current.filter(node => node.type === CanvasNodeType.Image && node.metadata?.storageKey?.startsWith(`image:${expected.userScope}:`));
+        const pendingMedia = nodesRef.current.filter(node => (node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && node.metadata?.storageKey?.startsWith(`${node.type}:${expected.userScope}:`));
+        if (options.requireRemote !== false && localMode && (pendingImages.length || pendingMedia.length)) {
+            const controller = new AbortController();
+            imageRecoveryControllers.current.add(controller);
+            const assertActive = () => {
+                assertUserScope(expected);
+                if (controller.signal.aborted || editorProjectIdRef.current !== projectId) throw new DOMException("Aborted", "AbortError");
+            };
+            try {
+                const recovered = new Map<string, Awaited<ReturnType<typeof retryPendingImageUpload>>>();
+                for (const pending of pendingImages) {
+                    assertActive();
+                    const key = pending.metadata!.storageKey!;
+                    if (!nodesRef.current.some(node => node.id === pending.id && node.metadata?.storageKey === key)) continue;
+                    let image = recovered.get(key);
+                    if (!image) {
+                        image = await retryPendingImageUpload(key, expected, projectId);
+                        assertActive();
+                        recovered.set(key, image);
+                    }
+                    const current = nodesRef.current.find(node => node.id === pending.id && node.metadata?.storageKey === key);
+                    if (!current) continue;
+                    for (const asset of useAssetStore.getState().assets) {
+                        if (asset.kind !== "image" || asset.data.storageKey !== key) continue;
+                        useAssetStore.getState().updateAsset(asset.id, {
+                            data: { ...asset.data, dataUrl: image.url, storageKey: image.storageKey },
+                            coverUrl: image.url,
+                            metadata: { ...asset.metadata, resourceKey: image.storageKey },
+                        });
+                    }
+                    const updated = { ...current, metadata: { ...current.metadata, ...imageMetadata(image) } };
+                    const binding = await ensureCanvasNodeAsset({ canvasId: projectId, node: updated, source: "canvas-manual", expectedScope: expected, signal: controller.signal });
+                    assertActive();
+                    if (!binding.confirmed) throw new Error("重传图片的素材绑定尚未确认，草稿已保留");
+                    const live = nodesRef.current.map(node => node.id === current.id && node.metadata?.storageKey === key
+                        ? { ...node, metadata: { ...node.metadata, ...imageMetadata(image!), assetId: binding.assetId } } : node);
+                    nodesRef.current = live;
+                    setNodes(live);
+                    updateProject(projectId, { nodes: live, connections: connectionsRef.current });
+                    await flushCanvasStorePersistence();
+                    assertActive();
+                }
+                const recoveredMedia = new Map<string, Awaited<ReturnType<typeof retryPendingMediaUpload>>>();
+                for (const pending of pendingMedia) {
+                    assertActive();
+                    const key = pending.metadata!.storageKey!;
+                    if (!nodesRef.current.some(node => node.id === pending.id && node.type === pending.type && node.metadata?.storageKey === key)) continue;
+                    let media = recoveredMedia.get(key);
+                    if (!media) {
+                        media = await retryPendingMediaUpload(key, expected, projectId, {
+                            width: pending.metadata?.naturalWidth, height: pending.metadata?.naturalHeight,
+                            durationMs: pending.metadata?.durationMs,
+                        });
+                        assertActive();
+                        recoveredMedia.set(key, media);
+                    }
+                    const current = nodesRef.current.find(node => node.id === pending.id && node.type === pending.type && node.metadata?.storageKey === key);
+                    if (!current) continue;
+                    const metadata = current.type === CanvasNodeType.Video ? videoMetadata(media) : audioMetadata(media);
+                    if (current.type === CanvasNodeType.Video) {
+                        // 重传只恢复视频本体，保留当前封面与原上传的音轨结论。
+                        delete metadata.videoPreview;
+                        delete metadata.hasAudio;
+                    }
+                    for (const asset of useAssetStore.getState().assets) {
+                        if ((asset.kind !== "audio" && asset.kind !== "video") || asset.kind !== current.type || asset.data.storageKey !== key) continue;
+                        useAssetStore.getState().updateAsset(asset.id, {
+                            data: { ...asset.data, url: media.url, storageKey: media.storageKey, bytes: media.bytes, mimeType: media.mimeType, durationMs: media.durationMs },
+                            metadata: { ...asset.metadata, resourceKey: media.storageKey },
+                        });
+                    }
+                    const updated = { ...current, metadata: { ...current.metadata, ...metadata } };
+                    const binding = await ensureCanvasNodeAsset({ canvasId: projectId, node: updated, source: "canvas-manual", expectedScope: expected, signal: controller.signal });
+                    assertActive();
+                    if (!binding.confirmed) throw new Error("重传音视频的素材绑定尚未确认，草稿已保留");
+                    const live = nodesRef.current.map(node => node.id === current.id && node.type === current.type && node.metadata?.storageKey === key
+                        ? { ...node, metadata: { ...node.metadata, ...metadata, assetId: binding.assetId } } : node);
+                    nodesRef.current = live;
+                    setNodes(live);
+                    updateProject(projectId, { nodes: live, connections: connectionsRef.current });
+                    await flushCanvasStorePersistence();
+                    assertActive();
+                }
+            } finally {
+                imageRecoveryControllers.current.delete(controller);
+            }
+        }
         const snapshot = { nodes: nodesRef.current, connections: connectionsRef.current, chatSessions, activeChatId, canvasAppearance, backgroundMode, showImageInfo };
         if (observedContentRef.current && JSON.stringify(observedContentRef.current) !== JSON.stringify(snapshot)) {
             traceCanvasGraph("editor.explicitSave", { observed: { id: projectId, ...observedContentRef.current }, live: { id: projectId, ...snapshot }, stored: useCanvasStore.getState().openProject(projectId) });
@@ -451,13 +535,27 @@ export function useCanvasProjectLifecycle({
         }
         updateProject(projectId, { viewport: viewportRef.current });
         await flushCanvasStorePersistence();
+        if (options.requireRemote === false) return;
         if (localMode) await syncLocalCanvasProjectToBackend(projectId, expected);
         await saveHostCanvasViewport(projectId, viewportRef.current, expected);
         await saveHostCanvasViewPreferences(projectId, { appearance: canvasAppearance, backgroundMode, showImageInfo }, expected);
-    }, [activeChatId, backgroundMode, canvasAppearance, chatSessions, connectionsRef, localMode, nodesRef, projectId, projectLoaded, showImageInfo, updateProject, viewportRef]);
+    }, [activeChatId, backgroundMode, canvasAppearance, chatSessions, connectionsRef, localMode, nodesRef, projectId, projectLoaded, setNodes, showImageInfo, updateProject, viewportRef]);
+
+    const createAndOpenCanvas = useCallback(() => {
+        void (async () => {
+            await persistLocalEdits();
+            const parent = useCanvasStore.getState().openProject(projectId);
+            if (!parent || !projectLoaded || editorProjectIdRef.current !== projectId) throw new Error("来源画布尚未完成加载，请重试");
+            if (localMode && hasUnconfirmedCanvasEdits(parent.id)) throw new Error("来源画布仍有未确认编辑，请保存后再新建");
+            const sourceCanvas = localMode ? initialCanvasSource(parent) : undefined;
+            const { id, syncError } = await createWorkspaceCanvasProject("未命名画布", parent.projectId, undefined, canvasWorkspaceProjectId(parent), sourceCanvas);
+            if (syncError && !isExpectedLocalOnlySyncError(syncError)) message.warning(syncError instanceof Error ? `画布已在本地创建，云端同步失败：${syncError.message}` : "画布已在本地创建，云端同步失败");
+            navigate(`/canvas/${id}`);
+        })().catch((error) => message.error(error instanceof Error ? `新建画布失败：${error.message}` : "新建画布失败，请稍后重试"));
+    }, [localMode, message, navigate, persistLocalEdits, projectId, projectLoaded]);
 
     const reloadLatestCanvasProject = useCallback(async () => {
-        await persistLocalEdits();
+        await persistLocalEdits({ requireRemote: false });
         return new Promise<void>((resolve, reject) => {
             pendingReloadRef.current?.reject(new Error("已有新的加载请求"));
             loadLatestRef.current = true;
@@ -527,6 +625,7 @@ export function useCanvasProjectLifecycle({
         renameCurrentProject,
         reloadLatestCanvasProject,
         restoreCanvasProjectVersion,
+        flushCanvasProject: persistLocalEdits,
         saveCanvasProject,
         forceSaveCanvasProject,
         updateProject,

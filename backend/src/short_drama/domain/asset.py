@@ -64,6 +64,12 @@ class Asset(ResourceScope, Base):
     row_version: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, server_default=text("1"), comment="编辑并发版本"
     )
+    current_version_id: Mapped[int | None] = mapped_column(
+        BIGINT(unsigned=True),
+        nullable=True,
+        server_default=text("NULL"),
+        comment="角色当前不可变作品版本；非角色及未回填旧数据为空",
+    )
     state: Mapped[str] = mapped_column(
         VARCHAR(16, collation="utf8mb4_0900_bin"),
         nullable=False,
@@ -112,6 +118,7 @@ class Asset(ResourceScope, Base):
         Index("idx_assets_kind_name", "kind", "name"),
         Index("idx_assets_model_id", "model_id"),
         Index("idx_assets_media_id", "media_id"),
+        Index("idx_assets_current_version", "id", "current_version_id"),
         Index("uk_assets_creation_key", "creation_key", unique=True),
         ForeignKeyConstraint(
             ["model_id"],
@@ -126,6 +133,18 @@ class Asset(ResourceScope, Base):
             name="fk_assets_media_id",
             ondelete="RESTRICT",
             onupdate="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["id", "current_version_id"],
+            ["asset_versions.asset_id", "asset_versions.id"],
+            name="fk_assets_current_version",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+            use_alter=True,
+        ),
+        CheckConstraint(
+            "kind = 'character' OR current_version_id IS NULL",
+            name="ck_assets_character_version",
         ),
         CheckConstraint(
             "`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`",

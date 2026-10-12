@@ -1,4 +1,4 @@
-"""真实 Chat 图片 wire、MinIO、正文增量与原子准入；不调用付费供应商。"""
+"""真实 Chat/Responses 图片 wire、MinIO、正文增量与原子准入；不调用付费供应商。"""
 
 import hashlib
 import json
@@ -31,7 +31,7 @@ pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
         os.environ.get("RUN_CANVAS_RESOURCE_MINIO") != "1",
-        reason="Enable isolated Chat image HTTP/MySQL/MinIO verification",
+        reason="Enable isolated Chat/Responses image HTTP/MySQL/MinIO verification",
     ),
 ]
 WORKSPACE = "/api/v1/canvas-runtime/workspace/model-config"
@@ -40,14 +40,22 @@ HEADER = "X-Chat-Image-Fixture"
 HEADER_VALUE = "canvas-chat-image-placeholder-private-header"
 FIRST, SECOND = "按顺序看到红色图片🌈", "，然后是蓝色图片。"
 CAPABILITY = {
-    "references": {"maxImages": 2, "maxImageBytes": 1024, "promptMaxChars": 32000},
+    "references": {
+        "maxImages": 2,
+        "maxImageBytes": 1024,
+        "maxVideos": 2,
+        "maxVideoBytes": 1024 * 1024,
+        "promptMaxChars": 32000,
+    },
     "streaming": True,
 }
 
 
-@pytest.fixture
-def text_image_runtime(resource_app):
+@pytest.fixture(params=["chat-completion", "openai-response"])
+def text_image_runtime(resource_app, request):
     app, factory, original_settings = resource_app
+    protocol = request.param
+    responses = protocol == "openai-response"
     state = {"mode": "success", "hold": False}
     posts, supplier_errors = [], []
     first_sent, finish_allowed = Event(), Event()
@@ -57,32 +65,35 @@ def text_image_runtime(resource_app):
 
         def do_POST(self):
             try:
-                assert self.path == "/v1/chat/completions"
+                assert self.path == ("/v1/responses" if responses else "/v1/chat/completions")
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                wire, images = deepcopy(body), []
+                wire, images, videos = deepcopy(body), [], []
                 evidence = {
                     "path": self.path,
                     "authenticated": self.headers.get("Authorization") == "Bearer " + KEY,
                     "custom_header": self.headers.get(HEADER) == HEADER_VALUE,
                     "body": wire,
                     "images": images,
+                    "videos": videos,
                 }
                 posts.append(evidence)
                 with httpx.Client(timeout=5, trust_env=False) as client:
-                    for message in wire["messages"]:
+                    for message in wire["input" if responses else "messages"]:
                         if not isinstance(message["content"], list):
                             continue
                         for item in message["content"]:
-                            if item["type"] != "image_url":
+                            if item["type"] not in {"image_url", "video_url"}:
                                 continue
-                            url = item["image_url"]["url"]
+                            kind = item["type"].removesuffix("_url")
+                            media = images if kind == "image" else videos
+                            url = item[item["type"]]["url"]
                             signed = urlsplit(url)
                             assert signed.scheme in {"http", "https"}
                             assert "X-Amz-Signature=" in signed.query
                             response = client.get(url)
                             assert response.status_code == 200
                             content = response.content
-                            images.append(
+                            media.append(
                                 {
                                     "bytes": content,
                                     "sha256": hashlib.sha256(content).hexdigest(),
@@ -90,14 +101,16 @@ def text_image_runtime(resource_app):
                                 }
                             )
                             # 不把临时签名 URL、header 或 API Key 写入测试证据。
-                            item["image_url"]["url"] = f"saved-image-{len(images) - 1}"
+                            item[item["type"]]["url"] = f"saved-{kind}-{len(media) - 1}"
                 if state["mode"] == "401":
                     self.json_response(401, {"error": {"message": "controlled auth failure"}})
                     return
                 if body["stream"] is False:
                     self.json_response(
                         200,
-                        {
+                        {"status": "completed", "output_text": FIRST + SECOND}
+                        if responses
+                        else {
                             "choices": [
                                 {"message": {"content": FIRST + SECOND}, "finish_reason": "stop"}
                             ]
@@ -108,7 +121,11 @@ def text_image_runtime(resource_app):
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
-                self.chunk({"choices": [{"delta": {"content": FIRST}}]})
+                self.chunk(
+                    {"type": "response.output_text.delta", "delta": FIRST}
+                    if responses
+                    else {"choices": [{"delta": {"content": FIRST}}]}
+                )
                 first_sent.set()
                 if state["hold"]:
                     assert finish_allowed.wait(15), "Test did not release the supplier stream"
@@ -118,9 +135,21 @@ def text_image_runtime(resource_app):
                     return
                 # 跨过真实 writer 的批次间隔，独立保存第二段，不替换 callback/Gateway。
                 Event().wait(0.14)
-                self.chunk({"choices": [{"delta": {"content": SECOND}}]})
-                self.chunk({"choices": [{"delta": {}, "finish_reason": "stop"}]})
-                self.chunk("[DONE]")
+                self.chunk(
+                    {"type": "response.output_text.delta", "delta": SECOND}
+                    if responses
+                    else {"choices": [{"delta": {"content": SECOND}}]}
+                )
+                if responses:
+                    self.chunk(
+                        {
+                            "type": "response.completed",
+                            "response": {"status": "completed", "output_text": FIRST + SECOND},
+                        }
+                    )
+                else:
+                    self.chunk({"choices": [{"delta": {}, "finish_reason": "stop"}]})
+                    self.chunk("[DONE]")
                 self.wfile.write(b"0\r\n\r\n")
                 self.wfile.flush()
             except BaseException as error:
@@ -153,6 +182,7 @@ def text_image_runtime(resource_app):
     runtime = SimpleNamespace(
         app=(app, factory, settings),
         origin=origin,
+        protocol=protocol,
         state=state,
         posts=posts,
         supplier_errors=supplier_errors,
@@ -167,11 +197,11 @@ def text_image_runtime(resource_app):
         server.shutdown()
         server.server_close()
         server_thread.join(5)
-        assert not server_thread.is_alive(), "Task-owned Chat supplier did not stop"
+        assert not server_thread.is_alive(), "Task-owned text supplier did not stop"
         assert supplier_errors == [], supplier_errors
 
 
-def save_channel(runtime, client, *, capability=None, protocol="chat-completion"):
+def save_channel(runtime, client, *, capability=None, protocol=None):
     capability_config = {"version": 1}
     if capability != {}:
         capability_config["text"] = deepcopy(CAPABILITY if capability is None else capability)
@@ -188,7 +218,7 @@ def save_channel(runtime, client, *, capability=None, protocol="chat-completion"
             "runtime_profile": {
                 "version": 1,
                 "api_format": "openai",
-                "protocol": protocol,
+                "protocol": protocol or runtime.protocol,
                 "capability_config": capability_config,
             },
         },
@@ -237,15 +267,17 @@ def saved_image(client, source_key, color):
     )
 
 
-def text_seed(runtime, *, capability=None, protocol="chat-completion"):
+def text_seed(runtime, *, capability=None, protocol=None, images=True):
     client, user, project, path, request = seed(runtime.app, "canvas_chat_image_author")
     channel = save_channel(runtime, client, capability=capability, protocol=protocol)
     profile = channel["modelProfiles"][0]
     request["logicalModelId"] = profile["logicalModelId"]
-    references, contents = zip(
-        *[saved_image(client, request["projectId"], color) for color in ("red", "blue")],
-        strict=True,
-    )
+    references, contents = (), ()
+    if images:
+        references, contents = zip(
+            *[saved_image(client, request["projectId"], color) for color in ("red", "blue")],
+            strict=True,
+        )
     request["input"]["referenceImages"] = list(references)
     request["input"]["textHistory"] = [
         {"role": "user", "content": "上一条输入"},
@@ -294,22 +326,34 @@ def first_delta(client, task):
     pytest.fail("The actual provider first chunk was not persisted before completion")
 
 
-def assert_wire(runtime, request, contents, stream):
+def assert_wire(runtime, request, contents, stream, *, videos=()):
     assert len(runtime.posts) == 1, runtime.posts
     post = runtime.posts[0]
     assert post["authenticated"] and post["custom_header"]
     body = post["body"]
     assert body["model"] == request["model"] and body["stream"] is stream
-    assert body.get("stream_options") == ({"include_usage": True} if stream else None)
-    assert body["messages"] == [
-        {"role": "system", "content": request["input"]["config"]["systemPrompt"]},
+    responses = runtime.protocol == "openai-response"
+    assert body.get("stream_options") == (
+        {"include_usage": True} if stream and not responses else None
+    )
+    system = request["input"]["config"].get("systemPrompt", "").strip()
+    if responses:
+        assert body.get("instructions", "") == system
+    assert body["input" if responses else "messages"] == [
+        *([{"role": "system", "content": system}] if system and not responses else []),
         *request["input"]["textHistory"],
         {
             "role": "user",
             "content": [
                 {"type": "text", "text": request["prompt"]},
-                {"type": "image_url", "image_url": {"url": "saved-image-0"}},
-                {"type": "image_url", "image_url": {"url": "saved-image-1"}},
+                *[
+                    {"type": "image_url", "image_url": {"url": f"saved-image-{index}"}}
+                    for index, _ in enumerate(contents)
+                ],
+                *[
+                    {"type": "video_url", "video_url": {"url": f"saved-video-{index}"}}
+                    for index, _ in enumerate(videos)
+                ],
             ],
         },
     ]
@@ -318,6 +362,11 @@ def assert_wire(runtime, request, contents, stream):
         hashlib.sha256(content).hexdigest() for content in contents
     ]
     assert all(item["mime_type"] == "image/png" for item in post["images"])
+    assert [item["bytes"] for item in post["videos"]] == list(videos)
+    assert [item["sha256"] for item in post["videos"]] == [
+        hashlib.sha256(content).hexdigest() for content in videos
+    ]
+    assert all(item["mime_type"] == "video/mp4" for item in post["videos"])
 
 
 def assert_frozen(runtime, request, task, contents, capability):
@@ -326,6 +375,9 @@ def assert_frozen(runtime, request, task, contents, capability):
             select(AIGenerationRecord).where(AIGenerationRecord.task_id == int(task["id"]))
         )
         assert record.config_snapshot["canvas_text_capability"] == capability
+        assert record.adapter == (
+            "openai_responses.v1" if runtime.protocol == "openai-response" else "openai_chat.v1"
+        )
         frozen = record.request_data
         expected = [
             {
@@ -352,7 +404,7 @@ def assert_frozen(runtime, request, task, contents, capability):
 
 
 @pytest.mark.parametrize("variant", ["stream", "nonstream", "channel-nonstream"])
-def test_chat_two_saved_images_preserve_wire_freeze_and_private_replay(text_image_runtime, variant):
+def test_two_saved_images_preserve_wire_freeze_and_private_replay(text_image_runtime, variant):
     runtime = text_image_runtime
     capability = deepcopy(CAPABILITY)
     if variant == "channel-nonstream":
@@ -406,7 +458,7 @@ def test_chat_two_saved_images_preserve_wire_freeze_and_private_replay(text_imag
     assert_wire(runtime, request, contents, stream)
 
 
-def test_queued_chat_images_keep_saved_capability_credentials_and_wire_after_catalog_change(
+def test_queued_images_keep_saved_capability_credentials_and_wire_after_catalog_change(
     text_image_runtime,
 ):
     runtime = text_image_runtime
@@ -439,7 +491,7 @@ def test_queued_chat_images_keep_saved_capability_credentials_and_wire_after_cat
 
 
 @pytest.mark.parametrize("failure", ["401", "disconnect"])
-def test_chat_image_provider_failure_never_automatically_submits_again(text_image_runtime, failure):
+def test_image_provider_failure_never_automatically_submits_again(text_image_runtime, failure):
     runtime = text_image_runtime
     runtime.state["mode"] = failure
     client, user, _, path, request, contents = text_seed(runtime)
@@ -481,17 +533,17 @@ def test_chat_image_provider_failure_never_automatically_submits_again(text_imag
         ("image-bytes", "reference_images_too_large", 422),
         ("prompt-chars", "canvas_text_prompt_too_long", 422),
         ("unsaved-image", "canvas_reference_not_saved", 422),
-        ("responses-protocol", "canvas_generation_option_unsupported", 422),
+        ("unsupported-protocol", "canvas_generation_option_unsupported", 422),
         ("another-project", "not_found", 404),
         ("other-private-image", "not_found", 404),
     ],
 )
-def test_chat_image_admission_boundaries_leave_no_task_or_supplier_call(
+def test_image_admission_boundaries_leave_no_task_or_supplier_call(
     text_image_runtime, boundary, expected_code, status
 ):
     runtime = text_image_runtime
     capability = deepcopy(CAPABILITY)
-    protocol = "openai-response" if boundary == "responses-protocol" else "chat-completion"
+    protocol = "gemini-generate-content" if boundary == "unsupported-protocol" else runtime.protocol
     if boundary == "undeclared-vision":
         capability = {}
     elif boundary == "image-bytes":

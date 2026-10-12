@@ -243,6 +243,28 @@ export async function getMediaBlob(storageKey: string) {
     return getLocalMediaBlob(storageKey);
 }
 
+export async function retryPendingMediaUpload(storageKey: string, expected: CapturedUserScope, canvasKey: string, meta: Pick<UploadedFile, "width" | "height" | "durationMs"> = {}): Promise<UploadedFile> {
+    assertUserScope(expected);
+    const kind = storageKey.startsWith(`video:${expected.userScope}:`) ? "video"
+        : storageKey.startsWith(`audio:${expected.userScope}:`) ? "audio" : undefined;
+    if (!kind) throw new Error("当前音视频不属于本人的待上传草稿");
+    const blob = await getMediaBlob(storageKey);
+    assertUserScope(expected);
+    if (!blob) throw new Error("待上传音视频的本地原文件不可用，请保留草稿并重新上传");
+    // 原声明参与服务端请求摘要，重传不能重新探测或生成封面后改变同键请求。
+    const resource = await uploadResourceFile(blob, kind, {
+        ...meta, fileName: blob instanceof File ? blob.name : undefined,
+        idempotencyKey: storageKey, expectedScope: expected, hostCanvasKey: canvasKey,
+    });
+    assertUserScope(expected);
+    return {
+        url: resource.publicUrl || resourceFileUrl(resource.id), storageKey: resourceStorageKey(resource.id),
+        bytes: resource.size || blob.size, mimeType: resource.mimeType || blob.type || "application/octet-stream",
+        width: resource.width || meta.width, height: resource.height || meta.height,
+        durationMs: resource.durationMs || meta.durationMs,
+    };
+}
+
 export async function setMediaBlob(storageKey: string, blob: Blob) {
     if (resourceIdFromStorageKey(storageKey)) return primeResourceBlobCache(storageKey, blob);
     return setLocalMediaBlob(storageKey, blob);

@@ -3,7 +3,7 @@ from pathlib import Path
 
 from sqlalchemy import CheckConstraint, ForeignKeyConstraint, UniqueConstraint
 from sqlalchemy.dialects.mysql import dialect
-from sqlalchemy.schema import CreateTable
+from sqlalchemy.schema import AddConstraint, CreateTable
 
 from short_drama.domain import Base
 
@@ -11,10 +11,18 @@ SQL = (Path(__file__).resolve().parents[3] / "docs/数据库模型/schema.mysql8
     encoding="utf-8"
 )
 TABLES = dict(re.findall(r"CREATE TABLE `?(\w+)`? \((.*?)\n\) ENGINE", SQL, re.S))
+DEFERRED_FOREIGN_KEYS = {
+    (match[1], match[3]): match[2]
+    for match in re.finditer(
+        r"ALTER TABLE `?(\w+)`? ADD (CONSTRAINT `?(\w+)`? FOREIGN KEY\s*\(.*?);",
+        SQL,
+        re.S,
+    )
+}
 
 
 def normalized(value):
-    return " ".join(value.replace("`", "").split())
+    return " ".join(value.replace("`", "").replace("FOREIGN KEY(", "FOREIGN KEY (").split())
 
 
 def test_all_tables_and_columns_match_authoritative_sql():
@@ -71,6 +79,7 @@ def test_constraints_indexes_and_mysql_compilation_match_sql():
         assert "ENGINE=InnoDB" in ddl
         assert "utf8mb4_0900_ai_ci" in ddl
         expected_names = set(re.findall(r"(?:CONSTRAINT|(?:UNIQUE )?KEY) `?(\w+)`?", body))
+        expected_names |= {key for owner, key in DEFERRED_FOREIGN_KEYS if owner == name}
         actual_names = {item.name for item in table.constraints | table.indexes if item.name}
         assert actual_names == expected_names, name
         for constraint in table.constraints:
@@ -105,7 +114,13 @@ def test_constraints_indexes_and_mysql_compilation_match_sql():
                     f"REFERENCES `{table_name}` (`{target}`) "
                     f"ON DELETE {expected_delete} ON UPDATE RESTRICT"
                 )
-                assert normalized(expected_fk) in normalized(body)
+                if constraint.use_alter:
+                    deferred = DEFERRED_FOREIGN_KEYS[name, constraint.name]
+                    assert normalized(expected_fk) == normalized(deferred)
+                    assert constraint.name not in body
+                else:
+                    assert (name, constraint.name) not in DEFERRED_FOREIGN_KEYS
+                    assert normalized(expected_fk) in normalized(body)
             elif isinstance(constraint, CheckConstraint):
                 assert normalized(str(constraint.sqltext)) in normalized(body)
             elif isinstance(constraint, UniqueConstraint):
@@ -195,17 +210,42 @@ def test_generation_constraints_and_columns_match_incremental_sql():
                 assert constraint.onupdate == "RESTRICT"
 
 
-def test_full_schema_is_create_only_and_ordered_by_foreign_keys():
+def test_full_schema_creates_tables_then_declared_deferred_foreign_keys():
     statements = [
         item.strip() for item in re.sub(r"(?m)^\s*--.*$", "", SQL).split(";") if item.strip()
     ]
-    assert len(statements) == len(Base.metadata.tables)
+    expected_deferred = {
+        (table.name, constraint.name): constraint
+        for table in Base.metadata.tables.values()
+        for constraint in table.foreign_key_constraints
+        if constraint.use_alter
+    }
+    assert set(DEFERRED_FOREIGN_KEYS) == set(expected_deferred)
+    assert len(statements) == len(Base.metadata.tables) + len(expected_deferred)
     created = set()
+    added = set()
     for statement in statements:
         match = re.match(r"CREATE TABLE `?(\w+)`?", statement)
-        assert match, statement[:80]
-        name = match[1]
-        assert name not in created
-        created.add(name)  # Self references are allowed.
-        assert set(re.findall(r"REFERENCES `?(\w+)`?", statement)) <= created
+        if match:
+            assert not added, "全部表须在延后外键之前创建"
+            name = match[1]
+            assert name not in created
+            created.add(name)  # Self references are allowed.
+            assert set(re.findall(r"REFERENCES `?(\w+)`?", statement)) <= created
+        else:
+            match = re.match(r"ALTER TABLE `?(\w+)`? ADD CONSTRAINT `?(\w+)`?", statement)
+            assert match, statement[:80]
+            assert created == set(Base.metadata.tables)
+            key = (match[1], match[2])
+            assert key in expected_deferred and key not in added
+            constraint = expected_deferred[key]
+            original_rule = constraint._create_rule
+            try:
+                expected = str(AddConstraint(constraint).compile(dialect=dialect()))
+            finally:
+                constraint._create_rule = original_rule
+            assert normalized(statement) == normalized(expected)
+            assert set(re.findall(r"REFERENCES `?(\w+)`?", statement)) <= created
+            added.add(key)
+    assert created == set(Base.metadata.tables) and added == set(expected_deferred)
     assert "target_ms" not in SQL

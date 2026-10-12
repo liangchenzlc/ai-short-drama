@@ -10,12 +10,13 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, update
-from sqlalchemy.orm import aliased, sessionmaker
+from sqlalchemy.orm import aliased
 
 from short_drama.core.config import Settings
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
 from short_drama.dao.task_runtime_dao import TaskRuntimeDAO
+from short_drama.db.session import session_factory
 from short_drama.domain import AIGenerationRecord, Asset, AsyncTask, MediaFile, Project
 from short_drama.domain.collaboration import (
     EmailChallenge,
@@ -44,7 +45,7 @@ def identity_app(db_session):
         public_origin="http://testserver",
         encryption_key=base64.b64encode(b"x" * 32).decode(),
     )
-    factory = sessionmaker(db_session.get_bind(), expire_on_commit=False, autoflush=False)
+    factory = session_factory(db_session.get_bind())
     app = create_app(settings)
     app.state.session_factory, app.state.storage = factory, None
     return app, factory, settings
@@ -330,6 +331,10 @@ class CopyStorage:
     def remove(self, bucket, object_name, **kwargs):
         self.objects.pop((bucket, object_name), None)
 
+    def presigned_get(self, bucket, object_name, expires_seconds):
+        self.objects[bucket, object_name]
+        return f"https://storage.test/{bucket}/{object_name}?expires={expires_seconds}"
+
 
 def private_media(identity_app, user_id, storage=None):
     storage = storage or CopyStorage()
@@ -435,14 +440,31 @@ def test_import_independent_physical_copy_idempotency_and_adoption_scope(identit
     owner, a = account(identity_app, "copy_owner")
     p = project(owner)
     mid, storage = private_media(identity_app, a["id"])
+    identity_app[0].state.storage = storage
     asset = owner.post(
         "/api/v1/libraries/global/assets",
-        json={"kind": "character", "name": "Private actor"},
+        json={"kind": "character", "name": "Private actor", "description": "source actor"},
         headers={"Idempotency-Key": "private-actor"},
     )
     assert asset.status_code == 201, asset.text
     with identity_app[1].begin() as session:
-        session.get(Asset, int(asset.json()["id"])).media_id = mid
+        from short_drama.domain import AssetImageCandidate
+
+        # Seed the persisted upload candidate, then use the ordinary adoption API.
+        session.add(
+            AssetImageCandidate(
+                id=next_id(),
+                asset_id=int(asset.json()["id"]),
+                media_id=mid,
+                created_by=int(a["id"]),
+                created_at=utcnow(),
+            )
+        )
+    adopted = owner.post(
+        f"/api/v1/assets/{asset.json()['id']}/confirm",
+        json={"row_version": "1", "media_id": str(mid), "expected_media_id": None},
+    )
+    assert adopted.status_code == 200, adopted.text
     payload = {"source_type": "asset", "source_id": asset.json()["id"]}
     path = f"/api/v1/projects/{p['id']}/imports"
     first = owner.post(path, json=payload, headers={"Idempotency-Key": "copy-receipt"})
@@ -460,7 +482,16 @@ def test_import_independent_physical_copy_idempotency_and_adoption_scope(identit
         assert copied.id != int(asset.json()["id"]) and copied.media_id != mid
         assert copied.project_id == int(p["id"]) and copied.scope_user_id is None
         assert copied_media.storage_locator != session.get(MediaFile, mid).storage_locator
-        session.get(Asset, int(asset.json()["id"])).name = "Changed personal actor"
+        from short_drama.domain import AssetVersion
+
+        version = session.get(AssetVersion, copied.current_version_id)
+        assert version.asset_id == copied.id and version.version == 1
+        assert version.snapshot_json["asset"]["media_id"] == str(copied_media.id)
+    changed = owner.patch(
+        f"/api/v1/assets/{asset.json()['id']}",
+        json={"row_version": "2", "name": "Changed personal actor"},
+    )
+    assert changed.status_code == 200, changed.text
     assert owner.get(f"/api/v1/assets/{status['result_id']}").json()["name"] == "Private actor"
     # Direct writable references cannot cross from personal into a project.
     target = owner.post(

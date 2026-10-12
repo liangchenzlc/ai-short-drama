@@ -1,15 +1,17 @@
 import { nanoid } from "nanoid";
-import { creationRuns, type CreationRun, type CreationSubmission } from "./api/creation-runs";
+import { creationRuns, type CreationRun } from "./api/creation-runs";
 import { prepareBackendToolGenerationTask, parseBackendGenerationResult, runBackendToolGenerationTask } from "./api/generation-task";
 import { waitForGenerationTask } from "./api/task-center";
 import { getActiveUserScope } from "@/lib/user-scope";
+import { assertUserScope, captureUserScope } from "@/lib/user-scope-guard";
+import { persistCanvasGenerationSource } from "@/services/canvas-generation-consumer";
 
 type Request = Parameters<typeof runBackendToolGenerationTask>[0];
 // This boundary persists and executes local tool tasks. Pipeline code never bypasses the durable submission guard.
 export class ApprovedToolExecution {
     private run?: CreationRun;
     private owner = `plugin:${nanoid()}`;
-    private scope = getActiveUserScope();
+    private scope = captureUserScope();
     private heartbeat?: ReturnType<typeof setInterval>;
     private disposed = false;
     private stopReason?: string;
@@ -17,22 +19,27 @@ export class ApprovedToolExecution {
     private controller = new AbortController();
 
     constructor(private options: {
-        clientKey: string; runId?: string; identity: Record<string, string>;
+        clientKey: string; projectId: string; runId?: string; identity: Record<string, string>;
         signal: AbortSignal; onRun: (id: string) => void;
-    }, private api = creationRuns, private waitTask = waitForGenerationTask) {
+    }, private api = creationRuns, private waitTask = waitForGenerationTask, private saveSource = persistCanvasGenerationSource) {
         options.signal.addEventListener("abort", this.abort, { once: true });
     }
 
     private assertLive() {
-        if (this.disposed || this.options.signal.aborted || this.scope !== getActiveUserScope() || this.controller.signal.aborted) throw new DOMException(this.stopReason || "分析已停止，请重新打开后继续", "AbortError");
+        assertUserScope(this.scope);
+        if (this.disposed || this.options.signal.aborted || this.controller.signal.aborted) throw new DOMException(this.stopReason || "分析已停止，请重新打开后继续", "AbortError");
     }
     private guard() { return { owner: this.owner, executionEpoch: this.run!.executionEpoch }; }
-    private initialize() {
+    private initialize(request: Request) {
         return this.ready ||= (async () => {
             this.assertLive();
-            const detail = this.options.runId ? await this.api.get(this.options.runId, this.controller.signal) : await this.api.create({ clientKey: this.options.clientKey, state: this.options.identity }, this.controller.signal);
+            const initial = prepareBackendToolGenerationTask(request);
+            await this.saveSource(initial, this.scope);
             this.assertLive();
-            if (Object.entries(this.options.identity).some(([key, value]) => detail.run.state[key] !== value)) throw new Error("原分析的图片、节点或模型已变化，请开始新的分析");
+            const identity = { ...this.options.identity, logicalModelId: initial.logicalModelId! };
+            const detail = this.options.runId ? await this.api.get(this.options.runId, this.controller.signal) : await this.api.create({ clientKey: this.options.clientKey, canvasId: this.options.projectId, state: identity }, this.controller.signal);
+            this.assertLive();
+            if (detail.run.canvasId !== this.options.projectId || Object.entries(identity).some(([key, value]) => detail.run.state[key] !== value)) throw new Error("原分析的图片、节点或模型已变化，请开始新的分析");
             this.run = await this.api.claim(detail.run.id, { expectedEpoch: detail.run.executionEpoch, owner: this.owner }, this.controller.signal);
             this.assertLive();
             this.options.onRun(this.run.id);
@@ -50,20 +57,26 @@ export class ApprovedToolExecution {
             this.abort(error);
             throw new DOMException(error instanceof Error ? error.message : "分析提交失败，请重新打开后继续", "AbortError");
         });
-        if (this.scope === getActiveUserScope()) request.onTaskCreated?.(task);
+        if (this.scope.userScope === getActiveUserScope()) {
+            assertUserScope(this.scope);
+            request.onTaskCreated?.(task);
+        }
         this.assertLive();
-        const completed = await this.waitTask(task.id, { initialTask: task, signal: this.controller.signal, onTextDelta: request.onDelta });
+        const completed = await this.waitTask(task.id, { expectedScope: this.scope, initialTask: task, signal: this.controller.signal, onTextDelta: request.onDelta });
         this.assertLive();
         const result = parseBackendGenerationResult(completed);
         return { content: result.text || "", toolCalls: result.toolCalls || [], ...(result.reasoning ? { reasoning: result.reasoning } : {}) };
     };
 
     private async submit(request: Request) {
-        await this.initialize();
+        await this.initialize(request);
         this.assertLive();
         const stage = request.metadata?.stage;
         if (!stage) throw new Error("分析阶段缺少稳定标识");
-        let submission = await this.api.prepare(this.run!.id, { ...this.guard(), itemKey: `stage:${stage}`, request: prepareBackendToolGenerationTask(request) }, this.controller.signal);
+        const prepared = prepareBackendToolGenerationTask({ ...request, clientOperationId: `canvas-tool:${this.run!.id}:${stage}` });
+        await this.saveSource(prepared, this.scope);
+        this.assertLive();
+        let submission = await this.api.prepare(this.run!.id, { ...this.guard(), itemKey: `stage:${stage}`, request: prepared }, this.controller.signal);
         this.assertLive();
         if (submission.revokedAt) {
             const detail = await this.api.get(this.run!.id, this.controller.signal);
@@ -90,6 +103,10 @@ export class ApprovedToolExecution {
         this.disposed = true; this.abort();
         if (this.heartbeat) clearInterval(this.heartbeat);
         this.options.signal.removeEventListener("abort", this.abort);
-        if (this.run && this.scope === getActiveUserScope()) void this.api.release(this.run.id, this.guard()).catch(() => { /* Lease expiry releases an offline owner. */ });
+        if (this.run && this.scope.userScope === getActiveUserScope()) {
+            try { assertUserScope(this.scope); }
+            catch { return; }
+            void this.api.release(this.run.id, this.guard()).catch(() => { /* Lease expiry releases an offline owner. */ });
+        }
     }
 }

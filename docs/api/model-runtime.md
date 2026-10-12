@@ -17,6 +17,7 @@
 | `logical_capability_spec` | 可选逻辑规格 |
 | `logical_capability_profiles` | 可选逻辑规格集合 |
 | `video_capabilities_version` | 可选视频能力版本 |
+| `runninghub_workflow` | 内置 RunningHub 的公开描述：`kind=workflow|app`、`workflow_id/webapp_id`、`title`、`workflow_json`、`fields`；仅三个内置协议可保存 |
 | `concurrency_limit` | 可选 1–1024 整数；保存元数据不代表已新增渠道调度执行能力 |
 
 公开 JSON 禁止凭据字段和非有限数字，大小受限；参考数量、字节限制和能力开关需满足实际类型。模型类型仍由不可变 `service_type` 决定。`runtime_profile` 省略保留，显式 null 清除高级配置，回到旧标准协议解析；不同模型类型不能通过 profile 冒充。读取时 profile 的可选字段可能为 null，表示未设置，编辑表单按空值恢复；用户填写的 JSON `null` 仍不能替代对象或对象数组。
@@ -33,6 +34,24 @@
 读取新增 `runtime_profile`、`has_secret_key`、`headers:[{name,has_value}]`、只读 `credential_source: manual|beefapi`。读取响应不含 `secret_key`、header 值或任何加密信封。托管配置的来源、地址、模型身份、协议与企业密钥由服务端控制；普通 CRUD 不能冒充或替换企业授权。
 
 ## 画布目录和偏好
+
+内置 RunningHub 本人配置使用 `api_format=openai` 和
+`protocol=runninghub-workflow-image|runninghub-workflow-video|runninghub-workflow-audio`。
+`apikey` 为积分 Key，负责结构查询、提交和轮询；`secret_key` 为企业级素材上传 Key。
+浏览器只接收公开描述、稳定模型 ID 和凭据存在标记。宿主目录增加三个
+`sourceKind=builtin` 条目，来源为固定 commit 的 `web/src/lib/plugins/builtin/workflows.ts`，
+只开放本人自定义渠道与画布 scope；不冒充原 85 份声明式 manifest。
+
+`POST /api/v1/canvas-runtime/ai/models/{id}/runninghub-schema` 正文仅为
+`{"row_version":"…"}`。只能读取本人未删除配置，版本不符409，其他账号404，额外字段422；
+上游HTTP/结构错误502，超时504。Workflow查询`/api/openapi/getJsonApiFormat`，
+App查询`/api/webapp/apiCallDemo`，均不提交生成、不改保存配置；字段回填后仍须明确保存。
+内置生成、输出和恢复范围见[画布内置 RunningHub](canvases.md#画布内置-runninghub)。
+同名声明式`runninghub-workflow`选择独立`canvas_runninghub_workflow.v1`，仅支持视频；
+使用Bearer创建及无任务ID参数的GET查询，不使用内置`runninghub_workflow`描述或上传Key。
+公开动态参数保存在`default_options`并由原UI提交到本次`providerOptions`命名空间，
+完整输入、响应、归档及原任务恢复边界见[声明式 RunningHub](canvases.md#画布声明式-runninghub)。
+收费模型与企业授权按用户“先记录起来，暂不用真实供应商验收”保留为未验证项。
 
 `GET /api/v1/canvas-runtime/workspace/model-config` 保留 `{models,channels,preferences,row_version}` 外形。`models` 是全部本人可见、未删除宿主模型的安全投影，包括已迁移旧绑定；附带完整运行 profile、默认、扩展凭据存在标记及 `selection_aliases`。`channels` 不再提供独立可编辑的模型目录。
 
@@ -56,6 +75,74 @@ Agent 按保存的 profile 选择 OpenAI Chat Completions 或 Responses；未知
 
 无高级 profile 的既有 ModelHub 视频配置仍沿原适配器运行；画布鉴权范围包含原已可执行的 `modelhub_video.v1`，未因此开放其他音频、插件或未知协议。
 
-标准配置 `runtime_profile=null` 保留原行为；显式高级协议按当前已接通的 Python 适配器运行。Claude、Gemini、RunningHub、签名协议及其他尚未实现分支仍明确拒绝，配置表单存在不等于完整协议已接通或真实供应商验收通过。
+标准配置 `runtime_profile=null` 保留原行为；显式高级协议按当前已接通的 Python 适配器运行。画布普通纯文字及独立模型测试已接通 `api_format=claude / protocol=claude-api` 的 `claude_messages.v1`，范围见[画布 Claude 合同](canvases.md#画布-claude-普通纯文字)。Gemini 普通纯文字接通 `api_format=openai / protocol=gemini-generate-content|google-gemini-generate-content` 的非流 `gemini_generate_content.v1`，对应固定源 hosted 派生格式；`api_format=gemini` 保留 custom gate，节点受理和宿主测试分别返回 422 与 400，详见[画布 Gemini 合同](canvases.md#画布-gemini-普通纯文字)。标准生成和 Agent 不开放这些画布专用适配器；尚未完成的多模态、thinking、工具和签名协议分支仍按各自准入边界拒绝。配置表单存在不等于完整协议接通或真实供应商验收通过。最新授权允许下述 Agnes 三种免费模型真实调用；Claude、Gemini 供应商本身仍未验。
 
 数据库部署顺序见[统一模型迁移](../数据库模型/migrations/2026-10-06-host-model-runtime/README.md)。
+
+画布音频现支持本人保存的 `api_format=openai / protocol=async-audio`，
+使用 `canvas_async_audio.v1` 的创建、原 ID 轮询及 content 下载合同；
+`openai-audio` 保留同步二进制合同。凭据和音频参数均从服务端冻结，
+已生成音频的归档失败不能通过 `retryOf` 再生成。
+MP3/WAV/Opus/AAC/FLAC在画布路径解码归档；PCM保留原字节和未知时长。
+音色默认值与两协议manifest命名空间按源优先级解析，`default_options`随模型冻结。
+范围、错误/恢复和其余未完成边界见[画布音频协议](canvases.md#画布音频协议)。
+本轮无需新增表或迁移；音频真实供应商和企业授权仍未验。
+
+Chat/Responses普通画布文字图片引用使用保存的 `capability_config.text.references` 限额，
+两协议受控HTTP/MySQL/MinIO与原UI专项30项通过。文字视频新增 `maxVideos/maxVideoBytes` 校验，
+冻结永久资源与真实元信息，视频运行/原UI仍在验证；详见[文字引用合同](canvases.md#画布文字图片引用)。
+Responses保持固定源默认manifest的text/image_url/video_url与独立instructions，
+不得将受控协议测试记为真实供应商验收。
+
+## Agnes 免费模型
+
+2026-10-10 用户授权按[官方指南](https://wiki.agnes-ai.cn/zh-Hans/docs/overview)
+调用下列准确模型名，并允许修复后重复验收。保存地址为
+`https://api.agnes-ai.cn/v1`，`runtime_profile.version=1`、`api_format=openai`；
+API Key 沿既有服务端加密配置保存，公开目录和浏览器仅接收存在标记。
+
+| 类型 | `model_key` | 保存的 `protocol` | 画布执行合同 |
+| --- | --- | --- | --- |
+| 文字 | `agnes-3.0-flash` | `chat-completion` | 既有 `/v1/chat/completions` SSE |
+| 图片 | `agnes-image-2.5-flash` | `openai-image` | JSON `/v1/images/generations`；文生图和内联参考图 |
+| 视频 | `agnes-video-2.5-flash` | `openai-videos` | JSON `/v1/videos`；按原 `video_id` 查询 `/agnesapi` |
+
+图片准确模型名仅在画布 OpenAI 图片路径选择 Agnes 合同。源 `auto/low/medium/high`
+质量映射为 `1K/1K/2K/4K`，宽高比使用官方 `ratio`；Base64 格式放入
+`extra_body.response_format`。参考图由 Worker 从已授权永久媒体读取原字节，
+转换为 `extra_body.image` 中的 Data URI，不发送私有 MinIO 展示 URL，
+不持久化内联图像到 `resolved_parameters`。沿源每图 30 MiB、最多 16 图及宿主
+总量 100 MiB 限制，mask 和透明背景在调用前拒绝。
+
+视频 Flash 仅接受 `720P`、字符串 4–12 秒、单个输出；保存能力和节点参数应与此
+一致。纯文字为 `mode=text`，首尾帧为 `keyframe`，图片/音频参考为 `reference`；
+最多 5 图、3 音频，不接视频参考。参考媒体须为可公开访问的 HTTPS URL；
+本机永久资源返回 `422 reference_media_requires_url`，沿既有补链接流程处理。
+创建只保存 `video_id`，不以响应的 `id/task_id` 替换轮询身份；查询带
+`model_name=agnes-video-2.5-flash`。完成以公共 `status` 和顶层 `url` 为准，
+内部进度及未完成时已有 URL 均不算成功，也不编造 content 下载入口。
+
+仅 Agnes 视频创建显式读取最多 64 KiB 的服务端错误体；实测 HTTP 503、顶层
+`code=video_queue_full`、`data=null` 且无任务 ID 时，记录
+`provider_queue_full` 和“未创建供应商任务”，允许用户稍后显式重试。
+不会自动再次 POST；其他 5xx 或不确定回执仍保留受理未知保护。
+原节点与任务详情保留“队列已满、本次未创建供应商任务”，显示原显式重试入口；
+消费者持久化分类后二次解释仍保留原因，受理未知阶段始终禁止重提。
+
+真实应用验收、红批、媒体字节、运行方式和未验范围见
+[Agnes 验收审计](../plans/2026-10-10-beeftv-agnes-live-audit.md)。
+当前文字、文生图、图生图×两屏宽六场完整通过；视频390px已通过真实生成、归档、
+原UI播放/fresh恢复及可见无文字内容，实际1280×720/4.48秒。桌面仍队列满未通过；
+视频存在音频流，听觉内容未验，明确队列满不记为成功。
+共用纯对话助手在画布和标准模式中已分批实际验证 Chat Completions 与 Responses
+两协议/两屏宽，已保存作品上下文、移除作品后的历史、复制和仅cookies恢复通过。
+画布和标准Chat图片/Skill四场分批完整通过；Agnes Responses图片输入实测HTTP400，
+普通文字Responses通过不能当图片通过。当前图片上下文优先使用已验Chat配置。
+实际范围与供应商拒绝原因见
+[助手真实审计](../plans/2026-10-10-beeftv-assistant-agnes-live-audit.md)。
+两端/两协议/两屏宽的真实停止和完整回执后的进程中断恢复16场已分批通过，原SDK
+仅本地重放原回执、供应商POST仍一次；受理未知八场也分批完整通过，共24个独立
+生命周期场。真实200响应头后中断保留unknown/raw空、精确系统失败提示和零模型
+结果/增量，stale/current送达均不重发。使用任务独占执行器
+和自然150秒有效租约，不代表正式Agent Worker/AMQP或同版八角色部署。
+本片没有数据库结构或依赖变更，完整迁移和正式部署仍按各自门禁核验。

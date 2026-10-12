@@ -310,6 +310,8 @@ function workflowFieldRange(value: unknown) {
 }
 
 export type RunningHubWorkflow = {
+    logicalModelId?: string;
+    hasApiKey?: boolean;
     kind?: RunningHubWorkflowKind;
     capability?: RunningHubCapability;
     workflowId: string;
@@ -323,6 +325,8 @@ export type RunningHubWorkflow = {
 };
 
 export type RunningHubConfig = {
+    selectedLogicalModelId?: string;
+    parameters?: Record<string, unknown>;
     enabled: boolean;
     baseUrl: string;
     apiKey: string;
@@ -622,8 +626,14 @@ export function channelHasGenerationCredential(channel: Pick<ModelChannel, "id" 
 
 function isAiConfigReady(config: AiConfig, model: string) {
     if (config.taskWorkflowProvider === "runninghub") {
-        const key = config.runningHub.apiKey;
-        return Boolean(config.runningHub.enabled && config.runningHub.baseUrl.trim() && key.trim() && config.runningHub.workflowId.trim());
+        const runningHub = config.runningHub;
+        const workflow = runningHub.workflows.find((item) =>
+            item.logicalModelId === runningHub.selectedLogicalModelId
+            && item.workflowId.trim() === runningHub.workflowId.trim()
+            && (item.kind === "app" ? "app" : "workflow") === runningHub.selectedKind
+            && normalizeRunningHubCapability(item.capability) === normalizeRunningHubCapability(runningHub.capability));
+        return Boolean(runningHub.enabled && workflow?.hasApiKey && workflow.logicalModelId
+            && /^[1-9]\d*$/.test(workflow.logicalModelId) && runningHub.workflowId.trim());
     }
     if (config.hostModelDirectory && !configuredModelMatchesCapability(config, model)) return false;
     const channel = resolveModelChannel(config, model);

@@ -5,6 +5,7 @@ import { usePluginStore } from "@/stores/use-plugin-store";
 export type GenerationWorkflowMode = "text" | "image" | "video" | "audio";
 
 export type GenerationWorkflowExecution = {
+    logicalModelId: string;
 	provider: "runninghub";
     kind: RunningHubWorkflowKind;
     capability: RunningHubCapability;
@@ -29,17 +30,18 @@ export function resolveGenerationWorkflowExecution(config: AiConfig, mode: Gener
         const workflowId = runningHub.workflowId.trim();
         const kind = runningHub.selectedKind === "app" ? "app" : "workflow";
         // RunningHub 工作流的参数拉取、提交和轮询固定使用积分 API Key；企业级 Key 只用于素材上传。
-        const apiKey = runningHub.apiKey;
-        if (!runningHub.enabled || !runningHub.baseUrl.trim() || !apiKey.trim() || !workflowId) {
-            throw new Error("RunningHub 工作流配置不完整，请填写积分 API Key 并选择已保存条目");
-        }
-        const workflow = runningHub.workflows.find((item) => item.workflowId.trim() === workflowId && (item.kind === "app" ? "app" : "workflow") === kind);
+        const workflow = runningHub.workflows.find((item) => item.workflowId.trim() === workflowId && (item.kind === "app" ? "app" : "workflow") === kind
+            && (!runningHub.selectedLogicalModelId || item.logicalModelId === runningHub.selectedLogicalModelId));
         if (!workflow) throw new Error("当前 RunningHub 工作流条目不存在，请重新选择已保存条目");
+        if (!runningHub.enabled || !workflow.hasApiKey || !workflow.logicalModelId || !/^[1-9]\d*$/.test(workflow.logicalModelId)) {
+            throw new Error("RunningHub 工作流配置不完整，请在模型设置中保存积分 API Key 并选择已保存条目");
+        }
         const capability = normalizeRunningHubCapability(workflow.capability, normalizeRunningHubCapability(runningHub.capability));
         assertWorkflowCapability("RunningHub", capability, mode);
         const webappId = kind === "app" ? (workflow.webappId || workflow.workflowId).trim() : "";
         const name = workflow.title?.trim() || webappId || workflowId;
         return {
+            logicalModelId: workflow.logicalModelId,
             provider: "runninghub",
             kind,
             capability,

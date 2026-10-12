@@ -23,6 +23,23 @@ test('高级协议、能力、默认参数与逻辑规范在编辑普通名称�
   assert.equal(draft.headers[0].value, '');
 });
 
+test('RunningHub条目身份、映射和结构在编辑名称时保留，第二Key独立加密字段提交', () => {
+  const saved = existing();
+  saved.serviceType = 'image';
+  const workflow = { kind: 'app', workflow_id: '', webapp_id: 'app-17', title: '已保存应用',
+    workflow_json: {}, fields: [{ nodeId: '1', fieldName: 'image', source: 'referenceImage', imageOrder: 1 }] };
+  saved.runtimeProfile = { version: 1, api_format: 'openai', protocol: 'runninghub-workflow-image', runninghub_workflow: workflow };
+  const draft = createConfigDraft(saved, 'image');
+  draft.name = '修改名称';
+  draft.secretKey = 'fixture-upload-key';
+  const body = serializeConfigDraft(draft);
+  assert.deepEqual(body.runtime_profile.runninghub_workflow, workflow);
+  assert.equal(body.secret_key, draft.secretKey);
+  assert.equal('apikey' in body, false);
+  draft.runtime.runningHubFields = '[{"nodeId":"1","fieldName":"cfg","runningHubUploadApiKey":"hidden"}]';
+  assert.throws(() => serializeConfigDraft(draft), /密钥与认证信息/);
+});
+
 test('服务端可选运行参数的null还原为空表单，改名可保存且保留已有默认参数', () => {
   const saved = existing();
   saved.runtimeProfile = { version: 1, api_format: 'openai', protocol: 'chat-completion', reference_asset_origin: null, capability_config: null, default_options: { temperature: 0 }, logical_capability_spec: null, logical_capability_profiles: null, video_capabilities_version: null, concurrency_limit: null };

@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { aiConfigTools } from '../../api/modules/ai-config-tools';
 import { errorMessage } from '../../api/http';
 import type { ProtocolProviderDto } from '../../api/types/ai-config-tools';
-import type { RuntimeDraft, ServiceType } from './config-model';
+import type { AiConfig, RuntimeDraft, ServiceType } from './config-model';
+import { RunningHubConfigFields } from './RunningHubConfigFields';
 
-export function RuntimeConfigFields({ value, serviceType, onChange, readOnly }: {
+export function RuntimeConfigFields({ value, serviceType, onChange, readOnly, saved, connectionSaved, onBusy }: {
   value: RuntimeDraft; serviceType: ServiceType; onChange: (value: RuntimeDraft) => void; readOnly: boolean;
+  saved: AiConfig | null; connectionSaved: boolean; onBusy: (busy: boolean) => void;
 }) {
   const [providers, setProviders] = useState<ProtocolProviderDto[]>([]);
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
@@ -42,6 +44,7 @@ export function RuntimeConfigFields({ value, serviceType, onChange, readOnly }: 
         {state === 'loading' && <p role="status" className="config-default-hint">正在读取协议目录…</p>}
         {error && <p role="alert" className="form-error">{error} <button type="button" onClick={() => void loadProtocols()}>重新读取协议目录</button></p>}
         {selected?.unavailableReason && <p role="alert" className="form-error">当前协议尚不可执行：{selected.unavailableReason}</p>}
+        {/^runninghub-workflow-(image|video|audio)$/.test(value.protocol) && <RunningHubConfigFields value={value} saved={saved} connectionSaved={connectionSaved} onChange={onChange} onBusy={onBusy}/>}
         <label>参考资源源站<input type="url" value={value.referenceAssetOrigin} maxLength={2048} onChange={event => patch({ referenceAssetOrigin: event.target.value })} placeholder="选填，例如 https://media.example.com"/></label>
         {jsonFields.map(([key, label, hint]) => <label key={key}>{label}<textarea className="config-json-editor" rows={4} spellCheck={false} value={value[key]} onChange={event => patch({ [key]: event.target.value })} placeholder={key === 'logicalCapabilityProfiles' ? '[]' : '{}'}/><span className="config-default-hint">{hint}</span></label>)}
         <div className="config-field-pair">

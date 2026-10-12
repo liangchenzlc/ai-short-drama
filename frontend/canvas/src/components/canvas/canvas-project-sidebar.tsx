@@ -4,23 +4,28 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowUpRight, BookOpenText, ChevronLeft, ChevronRight, Crosshair, FolderKanban, GripVertical, Images, LocateFixed, LoaderCircle, Palette, Plus, Search, Settings2, X } from "lucide-react";
 import { Link } from "react-router";
 
-import { resolveProjectCanvasStyle } from "@/components/canvas/canvas-style-picker-modal";
-import { getProject, getProjectUnit, type ProjectDetail, type ProjectUnit } from "@/services/api/projects";
+import { episodePath, projectPath } from "@host/app/paths";
+import { sourceEpisodeChapter, type CanvasSourceChapterPayload, type CanvasSourceEpisodeSummary } from "@/services/host-source-project";
+import type { CanvasSourceProjectReader } from "@/pages/canvas/use-canvas-source-project";
+import type { CanvasSourceChapterStatus } from "@/pages/canvas/use-canvas-upload";
 
 export const CANVAS_PROJECT_CHAPTER_DND_TYPE = "application/x-infinite-canvas-project-chapter";
-export type CanvasProjectChapterPayload = Pick<ProjectUnit, "id" | "title" | "position"> & { projectId: string; sourceText?: string };
+export type CanvasProjectChapterPayload = CanvasSourceChapterPayload;
 
 const CHAPTER_ROW_HEIGHT = 36;
 
 type CanvasProjectSidebarProps = {
     projectId: string;
-    detail?: ProjectDetail;
+    source: CanvasSourceProjectReader;
+    chapterStatus: CanvasSourceChapterStatus | null;
+    characterCount: number;
+    hasCanvasStyle: boolean;
     onAddChapter: (chapter: CanvasProjectChapterPayload) => void | Promise<void>;
     onLocateStyle: () => void;
     onOpenAssets: () => void;
 };
 
-export function CanvasProjectSidebar({ projectId, detail, onAddChapter, onLocateStyle, onOpenAssets }: CanvasProjectSidebarProps) {
+export function CanvasProjectSidebar({ projectId, source, chapterStatus, characterCount, hasCanvasStyle, onAddChapter, onLocateStyle, onOpenAssets }: CanvasProjectSidebarProps) {
     const [collapsed, setCollapsed] = useState(false);
     const [query, setQuery] = useState("");
     const [selectedId, setSelectedId] = useState("");
@@ -28,28 +33,33 @@ export function CanvasProjectSidebar({ projectId, detail, onAddChapter, onLocate
     const [pendingScrollId, setPendingScrollId] = useState("");
     const scrollRef = useRef<HTMLDivElement>(null);
     const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase("zh-CN"));
-    const projectQuery = useQuery({ queryKey: ["project", projectId], queryFn: () => getProject(projectId), enabled: Boolean(projectId) && !detail });
-    const projectDetail = detail || projectQuery.data;
-    const style = resolveProjectCanvasStyle(projectDetail?.project.stylePresetId, projectDetail?.project.styleProfileJson);
-    const mediaAssetCount = projectDetail?.assets.filter((asset) => asset.mediaType === "image" || asset.mediaType === "video").length || 0;
-    const orderedUnits = useMemo(() => projectDetail?.units.slice().sort((left, right) => left.position - right.position) || [], [projectDetail?.units]);
+    const projectDetail = source.overview;
+    const styleText = projectDetail?.project.style_text || "";
+    const orderedUnits = useMemo(() => projectDetail?.episodes.slice().sort((left, right) => left.position - right.position) || [], [projectDetail?.episodes]);
     const visibleUnits = useMemo(() => {
+        if (source.loading) return [];
         if (!deferredQuery) return orderedUnits.map((unit, index) => ({ unit, index }));
         const numericQuery = /^\d+$/.test(deferredQuery) ? deferredQuery.replace(/^0+/, "") || "0" : "";
-        return orderedUnits.reduce<Array<{ unit: ProjectUnit; index: number }>>((result, unit, index) => {
-            const chapterNumber = String(index + 1);
+        return orderedUnits.reduce<Array<{ unit: CanvasSourceEpisodeSummary; index: number }>>((result, unit, index) => {
+            const chapterNumber = String(unit.position);
             const matchesNumber = numericQuery && chapterNumber.startsWith(numericQuery);
             const matchesTitle = unit.title.toLocaleLowerCase("zh-CN").includes(deferredQuery);
             if (matchesNumber || matchesTitle) result.push({ unit, index });
             return result;
         }, []);
-    }, [deferredQuery, orderedUnits]);
+    }, [deferredQuery, orderedUnits, source.loading]);
     const selectedUnit = orderedUnits.find((unit) => unit.id === selectedId);
     const selectedUnitQuery = useQuery({
-        queryKey: ["project-unit", projectId, selectedId],
-        queryFn: () => getProjectUnit(projectId, selectedId),
-        enabled: Boolean(projectId && selectedId),
+        queryKey: ["canvas-source-episode", source.contextKey, selectedId, selectedUnit?.content_version || ""],
+        queryFn: async () => ({ result: await source.readEpisode(selectedId, selectedUnit!.content_version), contextKey: source.contextKey }),
+        enabled: Boolean(selectedUnit) && !source.error && !source.loading, retry: false,
     });
+    const selectedBody = selectedUnitQuery.data?.contextKey === source.contextKey && !selectedUnitQuery.isError ? selectedUnitQuery.data.result : undefined;
+    const [insertError, setInsertError] = useState("");
+    const sourceContextRef = useRef(source.contextKey);
+    sourceContextRef.current = source.contextKey;
+    const chapterError = chapterStatus?.error || insertError;
+    useEffect(() => { setSelectedId(""); setAddingId(""); setInsertError(""); }, [source.contextKey]);
     const chapterVirtualizer = useVirtualizer({
         count: visibleUnits.length,
         getScrollElement: () => scrollRef.current,
@@ -90,13 +100,17 @@ export function CanvasProjectSidebar({ projectId, detail, onAddChapter, onLocate
         setSelectedId(first.unit.id);
         chapterVirtualizer.scrollToIndex(0, { align: "center" });
     };
-    const insertChapter = async (unit: ProjectUnit, sourceText?: string) => {
-        if (addingId) return;
+    const insertChapter = async (unit: CanvasSourceEpisodeSummary) => {
+        if (addingId || chapterStatus?.loading) return;
+        const expectedContext = source.contextKey;
         setAddingId(unit.id);
+        setInsertError("");
         try {
-            await onAddChapter({ id: unit.id, projectId, title: unit.title, position: unit.position, sourceText });
+            await onAddChapter(sourceEpisodeChapter(unit, projectId));
+        } catch (error) {
+            if (sourceContextRef.current === expectedContext) setInsertError(error instanceof Error ? error.message : "章节插入失败，请重试");
         } finally {
-            setAddingId("");
+            if (sourceContextRef.current === expectedContext) setAddingId("");
         }
     };
 
@@ -131,29 +145,25 @@ export function CanvasProjectSidebar({ projectId, detail, onAddChapter, onLocate
                         <Palette className="size-3.5" />
                         项目画风
                     </span>
-                    <Link to={`/projects/${projectId}/settings`} className="grid size-6 place-items-center rounded text-foreground/35 hover:bg-surface-hover hover:text-foreground" title="编辑项目画风" aria-label="编辑项目画风">
+                    <a href={projectPath(projectId)} className="grid size-6 place-items-center rounded text-foreground/35 hover:bg-surface-hover hover:text-foreground" title="打开来源项目设置" aria-label="打开来源项目设置">
                         <Settings2 className="size-3.5" />
-                    </Link>
+                    </a>
                 </div>
                 <button
                     type="button"
-                    disabled={!style}
+                    disabled={!hasCanvasStyle}
                     onClick={onLocateStyle}
                     className="canvas-project-sidebar-style-button group flex h-11 w-full items-center gap-2 rounded-md px-1.5 text-left hover:bg-surface-hover disabled:cursor-default disabled:hover:bg-transparent"
-                    title={style ? "定位画布中的项目画风节点" : "项目尚未设置画风"}
+                    title={hasCanvasStyle ? "定位画布中已保存的画风节点；来源画风快照暂不可同步" : "来源项目暂无可同步的画风快照；可从画布画风菜单添加"}
                 >
-                    {style ? (
-                        <img src={style.imageUrl} alt="" width={48} height={32} className="h-8 w-12 shrink-0 rounded object-cover" />
-                    ) : (
                         <span className="grid h-8 w-12 shrink-0 place-items-center rounded border border-dashed border-border text-foreground/30">
                             <Palette className="size-3.5" />
                         </span>
-                    )}
                     <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs font-medium">{style?.title || "尚未设置画风"}</span>
-                        <span className="mt-0.5 block truncate text-[var(--fs-micro)] text-foreground/38">{style ? "随项目设置自动同步" : "前往项目设置选择"}</span>
+                        <span className="block truncate text-xs font-medium" title={styleText}>{hasCanvasStyle ? "已有画布画风" : styleText || "暂无来源画风说明"}</span>
+                        <span className="mt-0.5 block truncate text-[var(--fs-micro)] text-foreground/38">来源画风快照暂不可同步</span>
                     </span>
-                    {style ? <LocateFixed className="size-3.5 shrink-0 text-foreground/25 group-hover:text-[var(--workspace-accent)]" /> : null}
+                    {hasCanvasStyle ? <LocateFixed className="size-3.5 shrink-0 text-foreground/25 group-hover:text-[var(--workspace-accent)]" /> : null}
                 </button>
             </section>
 
@@ -188,7 +198,7 @@ export function CanvasProjectSidebar({ projectId, detail, onAddChapter, onLocate
                             </button>
                         ) : null}
                     </label>
-                    {deferredQuery ? <div className="mt-1 px-0.5 text-[var(--fs-micro)] tabular-nums text-foreground/35">找到 {visibleUnits.length.toLocaleString("zh-CN")} 章</div> : null}
+                    {deferredQuery && !source.loading ? <div className="mt-1 px-0.5 text-[var(--fs-micro)] tabular-nums text-foreground/35">找到 {visibleUnits.length.toLocaleString("zh-CN")} 章</div> : null}
                 </div>
 
                 <div ref={scrollRef} className="canvas-project-sidebar-chapter-scroll thin-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5" aria-label="项目章节列表">
@@ -197,14 +207,14 @@ export function CanvasProjectSidebar({ projectId, detail, onAddChapter, onLocate
                             {chapterVirtualizer.getVirtualItems().map((virtualItem) => {
                                 const item = visibleUnits[virtualItem.index];
                                 if (!item) return null;
-                                const { unit, index } = item;
+                                const { unit } = item;
                                 const active = unit.id === selectedId;
                                 return (
                                     <div key={unit.id} className="absolute left-0 top-0 w-full" style={{ height: virtualItem.size, transform: `translateY(${virtualItem.start}px)` }}>
                                         <div
                                             draggable
                                             onDragStart={(event) => {
-                                                const payload: CanvasProjectChapterPayload = { id: unit.id, projectId, title: unit.title, position: unit.position };
+                                                const payload = sourceEpisodeChapter(unit, projectId);
                                                 event.dataTransfer.setData(CANVAS_PROJECT_CHAPTER_DND_TYPE, JSON.stringify(payload));
                                                 event.dataTransfer.effectAllowed = "copy";
                                             }}
@@ -215,14 +225,14 @@ export function CanvasProjectSidebar({ projectId, detail, onAddChapter, onLocate
                                                 type="button"
                                                 onClick={() => setSelectedId(unit.id)}
                                                 className="flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--workspace-accent)]"
-                                                aria-label={`预览第 ${index + 1} 章 ${unit.title}`}
+                                                aria-label={`预览第 ${unit.position} 章 ${unit.title}`}
                                             >
-                                                <span className="w-7 shrink-0 text-[var(--fs-micro)] tabular-nums text-foreground/34">{String(index + 1).padStart(Math.max(2, String(orderedUnits.length).length), "0")}</span>
+                                                <span className="w-7 shrink-0 text-[var(--fs-micro)] tabular-nums text-foreground/34">{String(unit.position).padStart(Math.max(2, String(orderedUnits.length).length), "0")}</span>
                                                 <span className="min-w-0 flex-1 truncate text-foreground/68">{unit.title}</span>
                                             </button>
                                             <button
                                                 type="button"
-                                                disabled={Boolean(addingId)}
+                                                disabled={Boolean(addingId) || Boolean(chapterStatus?.loading)}
                                                 className="grid size-6 shrink-0 place-items-center rounded text-foreground/30 opacity-0 hover:bg-[var(--workspace-accent-soft)] hover:text-[var(--workspace-accent)] group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-wait"
                                                 title="添加到画布中央"
                                                 aria-label={`添加${unit.title}到画布`}
@@ -236,7 +246,7 @@ export function CanvasProjectSidebar({ projectId, detail, onAddChapter, onLocate
                             })}
                         </div>
                     ) : (
-                        <div className="px-2 py-8 text-center text-xs text-foreground/40">{orderedUnits.length ? "没有匹配的章节" : "暂无章节"}</div>
+                        <div className="px-2 py-8 text-center text-xs text-foreground/40" role="status">{source.loading ? "正在读取来源项目…" : source.error || (orderedUnits.length ? "没有匹配的章节" : "暂无已保存分集")}{source.error ? <button type="button" onClick={() => void source.refreshSourceProject()} className="mt-2 block w-full text-[var(--workspace-accent)]">重新读取来源项目</button> : null}</div>
                     )}
                 </div>
             </section>
@@ -245,19 +255,25 @@ export function CanvasProjectSidebar({ projectId, detail, onAddChapter, onLocate
                 <button type="button" onClick={onOpenAssets} className="canvas-project-sidebar-assets-button flex h-9 w-full items-center gap-2 rounded-md border border-border/45 px-2 text-xs text-foreground/65 hover:border-[var(--workspace-accent)] hover:bg-[var(--workspace-accent-soft)]">
                     <Images className="size-3.5 text-foreground/42" />
                     <span className="flex-1 text-left">引用项目资产</span>
-                    <span className="rounded bg-foreground/[.06] px-1.5 py-0.5 text-[var(--fs-micro)] tabular-nums text-foreground/45">{mediaAssetCount.toLocaleString("zh-CN")}</span>
+                    <span className="rounded bg-foreground/[.06] px-1.5 py-0.5 text-[var(--fs-micro)] tabular-nums text-foreground/45">{characterCount.toLocaleString("zh-CN")}</span>
                 </button>
+                <p className="mt-1 px-1 text-[var(--fs-micro)] text-foreground/48">可引用已采用角色；来源素材目录与其他资产暂不可读取</p>
+                {chapterError || chapterStatus?.loading ? <p data-canvas-source-chapter-status role={chapterError ? "alert" : "status"} aria-live="polite" className="mt-1 break-words px-1 text-xs text-foreground">{chapterError || "正在读取章节正文…"}</p> : null}
             </section>
 
             {selectedUnit ? (
                 <ChapterPreview
                     projectId={projectId}
-                    unit={selectedUnitQuery.data?.unit || selectedUnit}
-                    chapterNumber={orderedUnits.findIndex((unit) => unit.id === selectedUnit.id) + 1}
-                    loading={selectedUnitQuery.isLoading}
-                    loadError={selectedUnitQuery.isError}
-                    adding={addingId === selectedUnit.id}
-                    onAdd={() => insertChapter(selectedUnit, selectedUnitQuery.data?.unit.sourceText)}
+                    unit={selectedUnit}
+                    text={selectedBody?.novel.plain_text ?? ""}
+                    missing={selectedBody?.novel.state === "missing"}
+                    chapterNumber={selectedUnit.position}
+                    loading={source.loading || selectedUnitQuery.isPending || selectedUnitQuery.isFetching}
+                    loadError={selectedUnitQuery.isError ? (selectedUnitQuery.error instanceof Error ? selectedUnitQuery.error.message : "正文读取失败") : ""}
+                    onRetry={() => { setSelectedId(""); void source.refreshSourceProject(); }}
+                    insertError={chapterStatus?.chapterId === selectedUnit.id && chapterStatus.contentVersion === selectedUnit.content_version ? chapterStatus.error : ""}
+                    adding={addingId === selectedUnit.id || Boolean(chapterStatus?.loading && chapterStatus.chapterId === selectedUnit.id)}
+                    onAdd={() => insertChapter(selectedUnit)}
                     onClose={() => setSelectedId("")}
                 />
             ) : null}
@@ -268,23 +284,30 @@ export function CanvasProjectSidebar({ projectId, detail, onAddChapter, onLocate
 function ChapterPreview({
     projectId,
     unit,
+    text,
+    missing,
     chapterNumber,
     loading,
     loadError,
+    insertError,
+    onRetry,
     adding,
     onAdd,
     onClose,
 }: {
     projectId: string;
-    unit: ProjectUnit;
+    unit: CanvasSourceEpisodeSummary;
+    text: string;
+    missing: boolean;
     chapterNumber: number;
     loading: boolean;
-    loadError: boolean;
+    loadError: string;
+    insertError: string;
+    onRetry: () => void;
     adding: boolean;
     onAdd: () => void | Promise<void>;
     onClose: () => void;
 }) {
-    const text = htmlToPlainText(unit.sourceText);
     return (
         <section
             className="absolute bottom-20 left-[calc(100%+8px)] top-14 z-[var(--z-panel-floating)] flex w-[var(--panel-width-compact)] flex-col overflow-hidden rounded-lg border border-border/85 bg-background/[.96] shadow-[0_18px_48px_rgba(0,0,0,.22)] backdrop-blur-xl"
@@ -300,31 +323,27 @@ function ChapterPreview({
                 </button>
             </header>
             <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-3">
-                <p className="whitespace-pre-wrap text-xs leading-5 text-foreground/58">{loading ? "正在读取本章正文…" : loadError ? "正文读取失败，请稍后重试" : text || "本章还没有正文"}</p>
+                <p className="whitespace-pre-wrap break-words text-xs leading-5 text-foreground/58" role={loadError ? "alert" : "status"}>{loading ? "正在读取本章正文…" : loadError || (missing ? "本集尚未保存小说正文" : text || "已保存的小说正文为空")}</p>
+                {insertError ? <p role="alert" className="mt-2 break-words text-xs text-foreground">{insertError}</p> : null}
+                {loadError || insertError ? <button type="button" onClick={onRetry} className="mt-2 text-xs text-[var(--workspace-accent)]">刷新分集目录并重新选择</button> : null}
                 {!loading && !loadError ? <div className="mt-2 text-[var(--fs-tiny)] tabular-nums text-foreground/35">{text.length.toLocaleString("zh-CN")} 字</div> : null}
             </div>
             <footer className="flex shrink-0 items-center justify-between border-t border-border/70 px-2 py-2">
                 <button
                     type="button"
-                    disabled={adding}
+                    disabled={adding || loading || Boolean(loadError) || missing}
                     onClick={() => void onAdd()}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-[var(--workspace-accent)] hover:bg-[var(--workspace-accent-soft)] disabled:cursor-wait"
                 >
                     {adding ? <LoaderCircle className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}添加到画布
                 </button>
-                <Link to={`/projects/${projectId}/chapters/${unit.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs text-foreground/62 hover:bg-surface-hover hover:text-foreground">
+                <a href={episodePath(projectId, unit.id, "source")} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs text-foreground/62 hover:bg-surface-hover hover:text-foreground">
                     打开编辑器
                     <ArrowUpRight className="size-3.5" />
-                </Link>
+                </a>
             </footer>
         </section>
     );
-}
-
-function htmlToPlainText(value: string) {
-    if (!value) return "";
-    const documentNode = new DOMParser().parseFromString(value, "text/html");
-    return (documentNode.body.textContent || "").replace(/\u00a0/g, " ").trim();
 }
 
 function readStoredScroll(key: string) {

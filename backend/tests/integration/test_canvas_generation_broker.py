@@ -126,8 +126,12 @@ def broker_app(resource_app, tmp_path):
     )
     app.state.settings = settings
     released = threading.Event()
+    hold_images = threading.Event()
+    image_started = threading.Event()
+    images_released = threading.Event()
     stopped = threading.Event()
     release_path = tmp_path / "source-browser-refreshed"
+    image_release_path = tmp_path / "source-image-browser-restored"
     posts, supplier_errors, publisher_errors = [], [], []
     image = png("purple")
 
@@ -170,6 +174,12 @@ def broker_app(resource_app, tmp_path):
                     self.wfile.write(b"0\r\n\r\n")
                     self.wfile.flush()
                 elif self.path in {"/v1/images/generations", "/v1/images/edits"}:
+                    if hold_images.is_set():
+                        image_started.set()
+                        deadline = time.monotonic() + 90
+                        while not images_released.is_set() and not image_release_path.exists():
+                            if stopped.wait(0.02) or time.monotonic() >= deadline:
+                                raise AssertionError("Source browser did not release HTTP image")
                     payload = json.dumps(
                         {"data": [{"b64_json": base64.b64encode(image).decode()}]}
                     ).encode()
@@ -267,6 +277,10 @@ def broker_app(resource_app, tmp_path):
             url=f"http://127.0.0.1:{supplier.server_port}/v1",
             release=released,
             release_path=release_path,
+            hold_images=hold_images,
+            image_started=image_started,
+            images_released=images_released,
+            image_release_path=image_release_path,
             posts=posts,
             image=image,
             worker_pid=worker.pid,
@@ -279,6 +293,7 @@ def broker_app(resource_app, tmp_path):
         )
     finally:
         released.set()
+        images_released.set()
         stopped.set()
         if publication_thread is not None:
             publication_thread.join(10)

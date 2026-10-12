@@ -494,7 +494,7 @@ export async function hydrateNodeGenerationContext(context: NodeGenerationContex
     let referenceImages = await Promise.all(
         context.referenceImages.map(async (image) => {
             if (image.source?.kind === "drawing") return resolveCanvasDrawingReference(projectId, image);
-            if (image.source?.kind === "colorgrade") return resolveCanvasColorGradeReference(image);
+            if (image.source?.kind === "colorgrade") return resolveCanvasColorGradeReference(image, projectId);
             return { ...image, dataUrl: await imageToDataUrl(image) };
         }),
     );

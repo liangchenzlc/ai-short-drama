@@ -1,16 +1,18 @@
-"""原图片→文字 UI、真实本机 Chat stream/MySQL/MinIO；普通节点仅终态回填。"""
+"""原图片→文字 UI、真实本机 Chat/Responses/MySQL/MinIO；普通节点仅终态回填。"""
 
 import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from short_drama.domain import (
     AIGenerationRecord,
@@ -23,8 +25,8 @@ from short_drama.domain import (
 from short_drama.domain.canvas import CanvasEdge, CanvasNode
 from short_drama.domain.canvas_generation import CanvasTaskMediaReference
 from short_drama.service.base import utcnow
+from short_drama.storage.models import ObjectLocation
 from tests.integration.test_canvas_browser import isolated_api, stop_browser
-from tests.integration.test_canvas_image_tools_browser import minio_bytes
 from tests.integration.test_canvas_library import database_errors as database_errors
 from tests.integration.test_canvas_resources import png
 from tests.integration.test_canvas_resources import resource_app as resource_app
@@ -32,12 +34,14 @@ from tests.integration.test_canvas_text_image_runtime import (
     FIRST,
     SECOND,
     WORKSPACE,
+    assert_wire,
     executor,
     save_channel,
 )
 from tests.integration.test_canvas_text_image_runtime import (
     text_image_runtime as text_image_runtime,
 )
+from tests.integration.test_canvas_text_video_runtime import video_bytes
 from tests.integration.test_identity_collaboration import PASSWORD, account, join
 from tests.integration.test_identity_collaboration import identity_app as identity_app
 
@@ -46,15 +50,58 @@ pytestmark = [
     pytest.mark.skipif(
         os.environ.get("RUN_CANVAS_RESOURCE_MINIO") != "1"
         or os.environ.get("RUN_CANVAS_BROWSER_INTEGRATION") != "1",
-        reason="Enable original text image UI with isolated Chat HTTP/MySQL/MinIO",
+        reason="Enable original text image UI with isolated Chat/Responses HTTP/MySQL/MinIO",
     ),
 ]
 PROMPT = "请按连线顺序描述这两张图，保留颜色与顺序。"
+EXPLICIT_PROMPT = "先描述 @图片2，再描述 @图片1，复核 @图片2。"
+RESOLVED_PROMPT = "先描述 @图片1，再描述 @图片2，复核 @图片1。"
 SYSTEM = "浏览器图片文字源系统上下文"
 
 
-def test_original_image_to_text_ui_stream_stays_loading_then_binds_and_restores(
-    text_image_runtime, database_errors, tmp_path
+@pytest.fixture
+def text_deadlock_evidence(resource_app, tmp_path):
+    engine = resource_app[1].kw["bind"]
+
+    def capture(context):
+        if getattr(context.original_exception, "args", (None,))[0] != 1213:
+            return
+        with engine.connect() as connection:
+            status = connection.exec_driver_sql("SHOW ENGINE INNODB STATUS").one()[2]
+        section = status.split("LATEST DETECTED DEADLOCK", 1)[-1].split("TRANSACTIONS\n", 1)[0]
+        lines = []
+        for line in section.splitlines():
+            if line.startswith(
+                (
+                    "***",
+                    "TRANSACTION ",
+                    "mysql tables",
+                    "LOCK WAIT",
+                    "MySQL thread",
+                    "RECORD LOCKS",
+                    "TABLE LOCK",
+                )
+            ):
+                lines.append(line)
+            elif re.match(r"^(SELECT|INSERT|UPDATE|DELETE)\b", line):
+                # 只保留 SQL 动词和表名；不落盘 JSON 正文、参数或凭据。
+                tables = re.findall(r"(?:FROM|INTO|UPDATE|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_.]*)", line)
+                lines.append(line.split()[0] + " tables=" + ",".join(tables))
+        (tmp_path / "deadlock-locks.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    event.listen(engine, "handle_error", capture)
+    try:
+        yield
+    finally:
+        event.remove(engine, "handle_error", capture)
+
+
+@pytest.mark.parametrize(
+    "media_kind,scenario",
+    [("image", "automatic"), ("video", "automatic"), ("image", "explicit"), ("image", "batch")],
+)
+def test_original_media_to_text_ui_stream_stays_loading_then_binds_and_restores(
+    text_image_runtime, database_errors, text_deadlock_evidence, tmp_path, media_kind, scenario
 ):
     runtime = text_image_runtime
     node = shutil.which("node")
@@ -63,7 +110,7 @@ def test_original_image_to_text_ui_stream_stays_loading_then_binds_and_restores(
     assert (frontend / "node_modules" / "playwright").is_dir()
     owner, owner_user = account(runtime.app, "canvas_text_image_browser_owner")
     member, member_user = account(runtime.app, "canvas_text_image_browser_member")
-    outsider, _ = account(runtime.app, "canvas_text_image_browser_outsider")
+    outsider, _ = account(runtime.app, "canvas_text_image_outsider")
     project_response = owner.post(
         "/api/v1/projects",
         headers={"Idempotency-Key": "text-image-browser-project"},
@@ -93,7 +140,14 @@ def test_original_image_to_text_ui_stream_stays_loading_then_binds_and_restores(
         },
     )
     assert selected.status_code == 200, selected.text
-    originals = [png(color) for color in ("red", "blue")]
+    originals = [
+        png(color) if media_kind == "image" else video_bytes(tmp_path, color)
+        for color in ("red", "blue")
+    ]
+    text_count = 3 if scenario == "batch" else 1
+    prompt = PROMPT if scenario == "automatic" else EXPLICIT_PROMPT
+    effective_prompt = PROMPT if scenario == "automatic" else RESOLVED_PROMPT
+    reference_order = [0, 1] if scenario == "automatic" else [1, 0]
     settings = runtime.app[2].model_copy(update={"public_origin": "http://127.0.0.1:4199"})
     release_path = tmp_path / "allow-chat-terminal"
     stopped = threading.Event()
@@ -107,13 +161,15 @@ def test_original_image_to_text_ui_stream_stays_loading_then_binds_and_restores(
                 with runtime.app[1]() as session:
                     pending = list(
                         session.execute(
-                            select(AsyncTask.id, AsyncTask.message_version).where(
+                            select(AsyncTask.id, AsyncTask.message_version)
+                            .where(
                                 AsyncTask.project_id == int(project["id"]),
                                 AsyncTask.initiated_by == int(owner_user["id"]),
                                 AsyncTask.status.not_in({"succeeded", "failed", "cancelled"}),
                                 AsyncTask.message_status == "pending",
                                 AsyncTask.next_run_at <= utcnow(),
                             )
+                            .order_by(AsyncTask.id)
                         )
                     )
                 for identifier, version in pending:
@@ -141,14 +197,23 @@ def test_original_image_to_text_ui_stream_stays_loading_then_binds_and_restores(
             "sourceKey": source_key,
             "username": "canvas_text_image_browser_owner",
             "memberUsername": "canvas_text_image_browser_member",
-            "outsiderUsername": "canvas_text_image_browser_outsider",
+            "outsiderUsername": "canvas_text_image_outsider",
             "password": PASSWORD,
             "images": [base64.b64encode(content).decode() for content in originals],
-            "prompt": PROMPT,
-            "systemPrompt": SYSTEM,
+            "mediaKind": media_kind,
+            "prompt": prompt,
+            "effectivePrompt": effective_prompt,
+            "referenceOrder": reference_order,
+            "textCount": text_count,
+            "verifyMissingMention": scenario != "automatic",
+            # 固定源 normalizeConfigSnapshot 清空旧全局提示，不把它传入普通节点。
+            # 下方仍核对持久化旧偏好未被本次节点生成改写。
+            "systemPrompt": "",
             "first": FIRST,
             "second": SECOND,
             "releasePath": str(release_path),
+            "protocol": runtime.protocol,
+            "outputDirectory": str(tmp_path / "browser"),
         }
         process = subprocess.Popen(
             [node, "scripts/verify-text-images-python.mjs"],
@@ -184,89 +249,130 @@ def test_original_image_to_text_ui_stream_stays_loading_then_binds_and_restores(
 
     for field in (
         "original_connection_created_text",
-        "original_image_order_linked",
+        "original_media_order_linked",
         "source_saved_before_admission",
         "private_delta_kept_original_loading",
-        "original_images_unchanged",
+        "original_media_unchanged",
         "original_consumer_bound_same_node",
+        "saved_and_owner_closed",
         "fresh_context_restored",
+        "restored_media_decoded",
         "permissions_checked",
     ):
         assert report[field], field
     assert report["step"] == "complete" and report["page_errors"] == []
     assert report["failed_routes"] == []
-    assert report["task_post_count"] == 1 and report["page_text_event_count"] == 0
+    assert report["task_post_count"] == text_count and report["page_text_event_count"] == 0
+    if scenario != "automatic":
+        assert report["missing_mention_rejected"] and report["explicit_references_verified"]
+    if scenario == "batch":
+        assert report["text_count_bounds_verified"] and report["text_batch_layout_verified"]
     assert runtime.first_sent.is_set() and release_path.exists()
-    assert runtime.supplier_errors == [] and len(runtime.posts) == 1
-    post = runtime.posts[0]
-    assert post["authenticated"] and post["custom_header"]
-    assert post["body"]["model"] == "gpt-4o-mini" and post["body"]["stream"] is True
-    assert post["body"].get("stream_options") == {"include_usage": True}
-    assert post["body"]["messages"] == [
-        {"role": "system", "content": SYSTEM},
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": PROMPT},
-                {"type": "image_url", "image_url": {"url": "saved-image-0"}},
-                {"type": "image_url", "image_url": {"url": "saved-image-1"}},
-            ],
-        },
-    ]
-    assert [image["bytes"] for image in post["images"]] == originals
-    assert all(image["mime_type"] == "image/png" for image in post["images"])
+    assert runtime.supplier_errors == [] and len(runtime.posts) == text_count
+    ordered_contents = [originals[index] for index in reference_order]
+    for post in runtime.posts:
+        assert_wire(
+            SimpleNamespace(protocol=runtime.protocol, posts=[post]),
+            {
+                "model": "gpt-4o-mini",
+                "prompt": effective_prompt,
+                "input": {"config": {}, "textHistory": []},
+            },
+            ordered_contents if media_kind == "image" else [],
+            True,
+            videos=ordered_contents if media_kind == "video" else [],
+        )
     final = owner.get(path + "/my-document")
     assert final.status_code == 200, final.text
     document = final.json()["source_document"]
-    assert len(document["nodes"]) == 3 and len(document["connections"]) == 2
-    assert document["nodes"][-1]["id"] == report["text_node_id"]
+    assert len(document["nodes"]) == 2 + text_count
+    assert len(document["connections"]) == 1 + text_count
     text = next(item for item in document["nodes"] if item["id"] == report["text_node_id"])
     assert text["metadata"]["content"] == FIRST + SECOND
     assert owner.get(WORKSPACE).json()["preferences"]["systemPrompt"] == SYSTEM
-    task_id = int(report["task_id"])
-    image_ids = [int(image["resource_id"]) for image in report["images"]]
+    assert len(report["tasks"]) == text_count
+    assert [item["batch_index"] for item in report["tasks"]] == list(range(text_count))
+    assert report["tasks"][0]["target_node_id"] == report["text_node_id"]
+    task_ids = [int(item["task_id"]) for item in report["tasks"]]
+    media_ids = [int(media["resource_id"]) for media in report["media"]]
+    reference_ids = [media_ids[index] for index in reference_order]
     with runtime.app[1]() as session:
-        task = session.get(AsyncTask, task_id)
-        assert task.status == "succeeded" and task.initiated_by == int(owner_user["id"])
-        binding = session.scalar(
-            select(CanvasTaskBinding).where(CanvasTaskBinding.async_task_id == task_id)
+        saved_ids = set(
+            session.scalars(select(AsyncTask.id).where(AsyncTask.project_id == int(project["id"])))
         )
-        assert binding.node_key == binding.source_node_key == report["text_node_id"]
-        assert binding.initiated_by == int(owner_user["id"])
-        results = list(
-            session.scalars(select(CanvasResult).where(CanvasResult.task_binding_id == binding.id))
-        )
-        assert len(results) == 1 and results[0].attachment_status == "attached"
-        assert results[0].kind == "text" and results[0].content_json == {"content": FIRST + SECOND}
-        assert results[0].media_id is None and results[0].attachment_receipt_id is not None
-        deltas = list(
-            session.scalars(
-                select(CanvasTaskTextDelta)
-                .where(CanvasTaskTextDelta.task_binding_id == binding.id)
-                .order_by(CanvasTaskTextDelta.sequence)
+        assert saved_ids == set(task_ids)
+        for item in report["tasks"]:
+            task_id = int(item["task_id"])
+            task = session.get(AsyncTask, task_id)
+            assert task.status == "succeeded" and task.initiated_by == int(owner_user["id"])
+            binding = session.scalar(
+                select(CanvasTaskBinding).where(CanvasTaskBinding.async_task_id == task_id)
             )
-        )
-        assert [(delta.sequence, delta.content) for delta in deltas] == [(1, FIRST), (2, SECOND)]
-        assert all(delta.created_by == int(owner_user["id"]) for delta in deltas)
-        record = session.scalar(
-            select(AIGenerationRecord).where(AIGenerationRecord.task_id == task_id)
-        )
-        assert record.text_content == FIRST + SECOND
-        frozen = record.request_data
-        assert frozen["input"]["reference_media_ids"] == [
-            str(identifier) for identifier in image_ids
-        ]
-        assert frozen["canvas_request"]["prompt"] == PROMPT
-        serialized = json.dumps(frozen, ensure_ascii=False)
-        assert "X-Amz-" not in serialized and "reference_urls" not in frozen["input"]
-        references = list(
-            session.scalars(
-                select(CanvasTaskMediaReference)
-                .where(CanvasTaskMediaReference.task_binding_id == binding.id)
-                .order_by(CanvasTaskMediaReference.ordinal)
+            assert binding.node_key == item["target_node_id"]
+            assert binding.source_node_key == report["text_node_id"]
+            assert binding.initiated_by == int(owner_user["id"])
+            assert binding.client_operation_id == item["client_operation_id"]
+            results = list(
+                session.scalars(
+                    select(CanvasResult).where(CanvasResult.task_binding_id == binding.id)
+                )
             )
-        )
-        assert [reference.media_id for reference in references] == image_ids
+            assert len(results) == 1 and results[0].attachment_status == "attached"
+            assert results[0].kind == "text" and results[0].content_json == {
+                "content": FIRST + SECOND
+            }
+            assert results[0].media_id is None and results[0].attachment_receipt_id is not None
+            deltas = list(
+                session.scalars(
+                    select(CanvasTaskTextDelta)
+                    .where(CanvasTaskTextDelta.task_binding_id == binding.id)
+                    .order_by(CanvasTaskTextDelta.sequence)
+                )
+            )
+            assert [(delta.sequence, delta.content) for delta in deltas] == [
+                (1, FIRST),
+                (2, SECOND),
+            ]
+            assert all(delta.created_by == int(owner_user["id"]) for delta in deltas)
+            record = session.scalar(
+                select(AIGenerationRecord).where(AIGenerationRecord.task_id == task_id)
+            )
+            assert record.text_content == FIRST + SECOND
+            assert record.adapter == (
+                "openai_responses.v1" if runtime.protocol == "openai-response" else "openai_chat.v1"
+            )
+            frozen = record.request_data
+            reference_field = (
+                "reference_media_ids" if media_kind == "image" else "video_reference_media_ids"
+            )
+            assert frozen["input"][reference_field] == [
+                str(identifier) for identifier in reference_ids
+            ]
+            assert frozen["canvas_request"]["prompt"] == effective_prompt
+            metadata = frozen["canvas_request"]["input"]["metadata"]
+            assert metadata["batchIndex"] == item["batch_index"]
+            assert metadata["batchCount"] == text_count
+            serialized = json.dumps(frozen, ensure_ascii=False)
+            assert "X-Amz-" not in serialized
+            assert (
+                "reference_urls" not in frozen["input"]
+                and "video_reference_urls" not in frozen["input"]
+            )
+            references = list(
+                session.scalars(
+                    select(CanvasTaskMediaReference)
+                    .where(CanvasTaskMediaReference.task_binding_id == binding.id)
+                    .order_by(CanvasTaskMediaReference.ordinal)
+                )
+            )
+            assert [reference.media_id for reference in references] == reference_ids
+            assert all(reference.role == reference_field for reference in references)
+            saved_node = next(
+                node for node in document["nodes"] if node["id"] == item["target_node_id"]
+            )
+            assert saved_node["metadata"]["content"] == FIRST + SECOND
+            assert saved_node["metadata"]["composerContent"] == prompt
+            assert saved_node["metadata"]["prompt"] == effective_prompt
         stored_nodes = list(
             session.scalars(select(CanvasNode).where(CanvasNode.canvas_id == binding.canvas_id))
         )
@@ -281,17 +387,29 @@ def test_original_image_to_text_ui_stream_stays_loading_then_binds_and_restores(
             )
         )
         assert [(edge.from_node_key, edge.to_node_key) for edge in stored_edges] == [
-            (image["node_id"], report["text_node_id"]) for image in report["images"]
+            *((media["node_id"], report["text_node_id"]) for media in report["media"]),
+            *((report["text_node_id"], item["target_node_id"]) for item in report["tasks"][1:]),
         ]
-        for identifier, content in zip(image_ids, originals, strict=True):
+        for identifier, content in zip(media_ids, originals, strict=True):
             media = session.get(MediaFile, identifier)
             assert media.created_by == int(owner_user["id"]) and media.published_at
             assert media.checksum_sha256 == hashlib.sha256(content).hexdigest()
-            assert media.byte_size == len(content) and (media.width, media.height) == (37, 19)
-            assert minio_bytes(runtime.app, media) == content
-    task_path = f"/api/v1/canvas-runtime/tasks/{task_id}"
-    assert member.get(task_path).status_code == 404
-    assert member.get(task_path + "/text-deltas").status_code == 404
+            assert media.byte_size == len(content)
+            assert (media.width, media.height) == ((37, 19) if media_kind == "image" else (160, 90))
+            if media_kind == "video":
+                assert media.duration_ms == 1000
+            expected_bucket = (
+                settings.minio_image_bucket
+                if media_kind == "image"
+                else settings.minio_video_bucket
+            )
+            location = ObjectLocation.parse(media.storage_locator, {expected_bucket})
+            with runtime.app[0].state.storage.open(location.bucket, location.object_name) as stored:
+                assert stored.read() == content
+    for task_id in task_ids:
+        task_path = f"/api/v1/canvas-runtime/tasks/{task_id}"
+        assert member.get(task_path).status_code == 404
+        assert member.get(task_path + "/text-deltas").status_code == 404
     assert outsider.get(path + "/my-document").status_code == 404
     assert (
         member.get(path + "/my-document").json()["source_document"]["nodes"][-1]["metadata"][

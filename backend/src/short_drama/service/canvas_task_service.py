@@ -5,6 +5,7 @@ from copy import deepcopy
 from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import NotFound, WorkflowError
+from short_drama.dao.canvas_generation_dao import CanvasGenerationDAO
 from short_drama.dao.canvas_task_dao import CanvasTaskDAO
 from short_drama.domain import (
     AsyncTask,
@@ -17,9 +18,11 @@ from short_drama.schemas.canvas import CanvasDocument
 from short_drama.schemas.canvas_generation import CanvasTaskBindOperation, CanvasTaskRegistration
 
 from .base import BaseService, utcnow
+from .canvas_character_publication_service import CanvasCharacterPublicationService
 from .canvas_document import content_hash
 from .canvas_service import CanvasService
-from .canvas_task_outputs import durable_output, generation_metadata
+from .canvas_storyboard import storyboard_characters
+from .canvas_task_outputs import delivery_indices, durable_output, generation_metadata
 
 
 class CanvasTaskService(BaseService):
@@ -95,6 +98,7 @@ class CanvasTaskService(BaseService):
             "reference_media_ids",
             "video_reference_media_ids",
             "audio_reference_media_ids",
+            "mask_media_ids",
             "first_frame_media_id",
             "last_frame_media_id",
         ):
@@ -169,19 +173,17 @@ class CanvasTaskService(BaseService):
         if not records or records[-1].status != "succeeded":
             return []
         record = records[-1]
-        indices = (
-            [0]
-            if task.service_type == "text" and (record.text_content or "").strip()
-            else []
-            if task.service_type == "text"
-            else [asset.output_index - 1 for asset, _media in self.tasks.outputs(record.id)]
-        )
+        if "canvas_tool_canonical" in record.request_data:
+            raise WorkflowError(
+                "canvas_tool_binding_unsupported", "编辑器工具结果不能绑定为节点作品", 422
+            )
+        indices = delivery_indices(self, task, record)
         return [self._result(canvas, binding, task, index) for index in indices]
 
     def bind(self, operation: CanvasTaskBindOperation) -> dict:
         operation = CanvasTaskBindOperation.model_validate(operation.model_dump())
         args = operation.params
-        with self._transaction():
+        with self._transaction(lock_request_project=False):
             key = "canvas-bind:" + content_hash(operation.op_id)
             digest, prior = self.canvases.begin_write(
                 key, "canvas.task.bind", args.model_dump(mode="json", by_alias=True)
@@ -194,7 +196,25 @@ class CanvasTaskService(BaseService):
                     if prior is not None:
                         return self._response(operation, None, prior.result_json, replayed=True)
                 raise NotFound("Canvas does not exist")
-            canvas = self.canvases.require_canvas(canvas.project_id, canvas.id, lock=True)
+            # 冻结角色即使已从当前图删除，仍先按双项目稳定顺序持锁。
+            preflight = CanvasGenerationDAO(self.session).binding(
+                args.task_id, self.canvases.actor_id
+            )
+            frozen_characters = (
+                preflight.source_snapshot.get("request", {})
+                .get("canvas_storyboard_source", {})
+                .get("characters", [])
+                if preflight is not None
+                and (preflight.project_id, preflight.canvas_id) == (canvas.project_id, canvas.id)
+                else []
+            )
+            canvas = self.canvases.require_canvas(
+                canvas.project_id,
+                canvas.id,
+                lock=True,
+                publish_characters=bool(frozen_characters),
+                include_existing_characters=True,
+            )
             # Admission/replay lookup can establish an older REPEATABLE READ snapshot.
             # This operation owns a fresh transaction, so no pending graph edits are discarded.
             self.session.expire_all()
@@ -204,6 +224,11 @@ class CanvasTaskService(BaseService):
             binding = self.tasks.binding(args.task_id)
             if task is None or binding is None:
                 raise NotFound("画布生成任务不存在")
+            records = self.tasks.records(task.id)
+            if records and "canvas_tool_canonical" in records[0].request_data:
+                raise WorkflowError(
+                    "canvas_tool_binding_unsupported", "编辑器工具结果不能绑定为节点作品", 422
+                )
             if binding.canvas_id != canvas.id or task.project_id != canvas.project_id:
                 raise WorkflowError("canvas_mismatch", "任务不属于这块画布", 409)
             if binding.node_key != args.node_id:
@@ -234,10 +259,56 @@ class CanvasTaskService(BaseService):
                         "node_task_mismatch", "节点已绑定到其他任务，未覆盖该节点", 409
                     )
                 result = self._result(canvas, binding, task, args.output_index)
+                storyboard_source = (
+                    records[-1].request_data.get("canvas_storyboard_source") if records else None
+                )
+                if storyboard_source is not None:
+                    frozen_roles = storyboard_source.get("characters", [])
+                    current_roles = storyboard_characters(document)
+                    if sorted(content_hash(item) for item in frozen_roles) != sorted(
+                        content_hash(item) for item in current_roles
+                    ):
+                        raise WorkflowError(
+                            "canvas_storyboard_source_changed",
+                            "原分镜角色已变化，结果保留在私人任务中，未覆盖镜头",
+                            409,
+                        )
+                    CanvasCharacterPublicationService(self.canvases).validate(canvas, document)
+                    current_rows = (
+                        (node.get("metadata") or {}).get("storyboard", {}).get("rows", [])
+                    )
+                    if node["type"] != "script" or content_hash(current_rows) != content_hash(
+                        storyboard_source["rows"]
+                    ):
+                        raise WorkflowError(
+                            "canvas_storyboard_source_changed",
+                            "原分镜已编辑，结果保留在私人任务中，未覆盖镜头",
+                            409,
+                        )
                 effect_key = f"attach-node:{task.id}:{args.node_id}:{args.output_index}"
                 node["metadata"] = generation_metadata(
                     node.get("metadata") or {}, result, str(task.id), effect_key
                 )
+                if storyboard_source is not None:
+                    node["title"] = result.content_json["storyboardTitle"]
+                    row_ids = {row["id"] for row in result.content_json["storyboard"]["rows"]}
+                    document["connections"] = [
+                        edge
+                        for edge in document["connections"]
+                        if not (
+                            (edge["fromNodeId"] == node["id"] or edge["toNodeId"] == node["id"])
+                            and (
+                                edge.get("storyboardRowId")
+                                and edge["storyboardRowId"] not in row_ids
+                                or edge["fromNodeId"] == node["id"]
+                                and edge.get("fromHandleId", "").startswith("row:")
+                                and edge["fromHandleId"][4:] not in row_ids
+                                or edge["toNodeId"] == node["id"]
+                                and edge.get("toHandleId", "").startswith("row:")
+                                and edge["toHandleId"][4:] not in row_ids
+                            )
+                        )
+                    ]
                 self.canvases._apply_document(
                     canvas, CanvasDocument.model_validate(document), reason="generation_bind"
                 )

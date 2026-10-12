@@ -3,11 +3,25 @@ import type { CanvasInitialDrawingDto } from "@host/api/types/canvases";
 import { canonicalizeCanvasMedia } from "./canvas-media-locators.ts";
 import { collectCanvasResourceIds } from "./host-resource-normalization.ts";
 
-export type CanvasInitialWrite = CanvasProject & { initialDrawingDocuments?: CanvasInitialDrawingDto[]; initialArchiveBindings?: boolean };
+export type CanvasSourceOrigin = { canvasKey: string; rowVersion: string };
+export type CanvasInitialWrite = CanvasProject & { initialDrawingDocuments?: CanvasInitialDrawingDto[]; initialArchiveBindings?: boolean; initialSourceCanvas?: CanvasSourceOrigin };
+
+export function validateCanvasSourceOrigin(origin: CanvasSourceOrigin) {
+    if (!origin || typeof origin.canvasKey !== "string" || !/^[\p{L}\p{N}_-]{1,64}$/u.test(origin.canvasKey)
+        || typeof origin.rowVersion !== "string" || !/^[1-9][0-9]{0,19}$/.test(origin.rowVersion)
+        || BigInt(origin.rowVersion) > 18446744073709551615n) {
+        throw new Error("来源画布缺少已确认身份与版本，原有草稿已保留");
+    }
+    return origin;
+}
+
+export function initialCanvasSource(project: CanvasProject): CanvasSourceOrigin {
+    return validateCanvasSourceOrigin({ canvasKey: project.id, rowVersion: project.revision ?? "0" });
+}
 
 export function initialCanvasDocument(write: CanvasInitialWrite): CanvasProject {
-    if (!write.initialDrawingDocuments && !write.initialArchiveBindings) return write;
-    const { initialDrawingDocuments: _, initialArchiveBindings: _bindings, ...document } = write;
+    if (!write.initialDrawingDocuments && !write.initialArchiveBindings && !write.initialSourceCanvas) return write;
+    const { initialDrawingDocuments: _, initialArchiveBindings: _bindings, initialSourceCanvas: _source, ...document } = write;
     return document;
 }
 
@@ -41,6 +55,7 @@ export async function readInitialCanvasWrite(storage: AttemptStorage, id: string
     if (!saved || saved.id !== id || saved.revision !== "0" || !Array.isArray(saved.nodes)) {
         throw new Error("首次保存记录无法恢复，原有草稿已保留");
     }
+    if (saved.initialSourceCanvas !== undefined) validateCanvasSourceOrigin(saved.initialSourceCanvas);
     return saved;
 }
 
@@ -48,6 +63,7 @@ export async function readInitialCanvasWrite(storage: AttemptStorage, id: string
 export async function prepareInitialCanvasWrite(storage: AttemptStorage, project: CanvasInitialWrite): Promise<CanvasInitialWrite> {
     const previous = await readInitialCanvasWrite(storage, project.id);
     if (previous) return previous;
+    if (project.initialSourceCanvas !== undefined) validateCanvasSourceOrigin(project.initialSourceCanvas);
     const snapshot = canonicalizeCanvasMedia(structuredClone({ ...project, revision: "0" }));
     await storage.setItem(`canvas-initial-write:${project.id}`, JSON.stringify(snapshot));
     return snapshot;

@@ -1,0 +1,4 @@
+# 画布来源清单记录原始文件字节；各平台签出时保持文本 LF，二进制保持原字节。
+/frontend/canvas/** text=auto eol=lf
+# 第三方图标清单校验 npm 包的原始字节（包含 CRLF），不得归一化。
+/frontend/canvas/vendor/lobehub-icons/** -text

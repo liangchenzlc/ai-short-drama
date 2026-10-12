@@ -3,13 +3,15 @@
 import json
 import threading
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import timedelta
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from short_drama.ai import GenerationError, GenerationResult
+from short_drama.dao.canvas_generation_dao import CanvasGenerationDAO
 from short_drama.dao.task_runtime_dao import LeaseLost
 from short_drama.domain import AIGenerationRecord, AsyncTask, CanvasTaskTextDelta
 from short_drama.service import canvas_text_stream
@@ -17,6 +19,7 @@ from short_drama.service.base import utcnow
 from short_drama.service.generation_execution_service import GenerationExecutionService
 from tests.integration.test_canvas_browser import isolated_api
 from tests.integration.test_canvas_generation_runtime import TASKS, admit, seed
+from tests.integration.test_canvas_library import database_errors as database_errors
 from tests.integration.test_canvas_workspace import actor
 from tests.integration.test_identity_collaboration import account, join
 from tests.integration.test_identity_collaboration import identity_app as identity_app
@@ -94,6 +97,299 @@ def events(content):
         if data:
             parsed.append({"event": event, "id": identifier, "data": json.loads("\n".join(data))})
     return parsed
+
+
+@pytest.mark.parametrize("scope", ["canvas", "author"])
+def test_task_list_locks_batch_parents_before_text_ranges(
+    identity_app, database_errors, monkeypatch, scope
+):
+    from short_drama.service.canvas_generation_service import CanvasGenerationService
+
+    client, user, _, _, request = seed(identity_app, "canvas_text_batch_lock_order")
+    request["input"]["textOptions"]["stream"] = True
+    first_task = admit(client, request)
+    second_request = deepcopy(request)
+    second_request["input"]["metadata"]["clientOperationId"] += "-second"
+    second_task = admit(client, second_request)
+    writer_has_task = threading.Event()
+    writer_allowed = threading.Event()
+    first_persisted = threading.Event()
+    finish_allowed = threading.Event()
+    reader_started = threading.Event()
+    errors, values, reader_connection, listed_ids = [], [], [], []
+    original_owned_task = canvas_text_stream.owned_task
+    original_task_ids = CanvasGenerationDAO.task_ids
+
+    def hold_after_real_task_lock(session, *args):
+        current = original_owned_task(session, *args)
+        writer_has_task.set()
+        assert writer_allowed.wait(15), "The list did not reach the second task's MySQL lock"
+        return current
+
+    def observe_list_order(dao, *args, **kwargs):
+        identifiers = original_task_ids(dao, *args, **kwargs)
+        listed_ids.extend(identifiers)
+        return identifiers
+
+    monkeypatch.setattr(canvas_text_stream, "owned_task", hold_after_real_task_lock)
+    monkeypatch.setattr(CanvasGenerationDAO, "task_ids", observe_list_order)
+
+    class Gateway:
+        def validate(self, *_args):
+            return {}
+
+        def submit(self, *_args, **kwargs):
+            kwargs["on_text_delta"](FIRST)
+            first_persisted.set()
+            assert finish_allowed.wait(15), "The list did not release provider completion"
+            return GenerationResult("succeeded", "openai_chat.v1", text=FIRST)
+
+    executor = GenerationExecutionService(identity_app[1], identity_app[2], Gateway(), None)
+
+    def execute():
+        try:
+            executor.execute(second_task["id"], 1)
+        except BaseException as error:
+            errors.append(error)
+
+    def read_list():
+        try:
+            engine = identity_app[1].kw["bind"]
+            with engine.connect() as connection:
+                reader_connection.append(connection.scalar(text("SELECT CONNECTION_ID()")))
+                connection.rollback()
+                with identity_app[1](bind=connection) as session:
+                    session.info["actor"] = actor(int(user["id"]))
+                    reader_started.set()
+                    values.extend(
+                        CanvasGenerationService(session, identity_app[2]).list(
+                            project_id=request["projectId"] if scope == "canvas" else None,
+                            active_only=True,
+                        )
+                    )
+        except BaseException as error:
+            errors.append(error)
+
+    worker = threading.Thread(target=execute, name="canvas-text-batch-lock-worker", daemon=True)
+    reader = threading.Thread(target=read_list, name="canvas-text-batch-lock-reader", daemon=True)
+    worker.start()
+    try:
+        assert writer_has_task.wait(5), errors
+        with identity_app[1].begin() as session:
+            first = session.get(AsyncTask, int(first_task["id"]), with_for_update=True)
+            first.updated_at = utcnow()
+        reader.start()
+        assert reader_started.wait(5), errors
+        waiting_on = None
+        for _ in range(150):
+            with identity_app[1]() as session:
+                waiting_on = session.scalar(
+                    text(
+                        "SELECT requested.OBJECT_NAME FROM performance_schema.data_lock_waits w "
+                        "JOIN performance_schema.data_locks requested "
+                        "ON requested.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID "
+                        "JOIN performance_schema.threads t "
+                        "ON t.THREAD_ID = requested.THREAD_ID "
+                        "WHERE t.PROCESSLIST_ID = :connection LIMIT 1"
+                    ),
+                    {"connection": reader_connection[0]},
+                )
+            if waiting_on:
+                break
+            threading.Event().wait(0.02)
+        assert listed_ids == [int(first_task["id"]), int(second_task["id"])], listed_ids
+        assert waiting_on == "async_tasks", (errors, waiting_on)
+        # 旧列表此时已锁住第一项的空正文范围，再等待第二项；真实插入形成死锁。
+        writer_allowed.set()
+        reader.join(10)
+        assert not reader.is_alive(), "Task-owned batch list reader did not stop"
+        assert first_persisted.wait(5), errors
+        assert errors == [] and database_errors == [], (errors, database_errors)
+        second = next(value for value in values if value["id"] == second_task["id"])
+        assert second["textDraft"] == FIRST and second["textDraftSequence"] == 1
+    finally:
+        writer_allowed.set()
+        finish_allowed.set()
+        worker.join(10)
+        if reader.ident is not None:
+            reader.join(10)
+        assert not worker.is_alive() and not reader.is_alive()
+
+
+def test_text_writer_and_detail_reader_use_parent_before_task_lock_order(
+    identity_app, database_errors, monkeypatch
+):
+    client, user, _, _, request = seed(identity_app, "canvas_text_lock_order")
+    request["input"]["textOptions"]["stream"] = True
+    task = admit(client, request)
+    writer_has_task = threading.Event()
+    writer_allowed = threading.Event()
+    first_persisted = threading.Event()
+    finish_allowed = threading.Event()
+    reader_started = threading.Event()
+    errors, values, reader_connection = [], [], []
+    original_owned_task = canvas_text_stream.owned_task
+
+    def hold_after_real_task_lock(session, *args):
+        current = original_owned_task(session, *args)
+        writer_has_task.set()
+        assert writer_allowed.wait(10), "The reader did not reach a real MySQL lock wait"
+        return current
+
+    monkeypatch.setattr(canvas_text_stream, "owned_task", hold_after_real_task_lock)
+
+    class Gateway:
+        def validate(self, *_args):
+            return {}
+
+        def submit(self, *_args, **kwargs):
+            kwargs["on_text_delta"](FIRST)
+            first_persisted.set()
+            assert finish_allowed.wait(10), "The test did not release provider completion"
+            return GenerationResult("succeeded", "openai_chat.v1", text=FIRST)
+
+    executor = GenerationExecutionService(identity_app[1], identity_app[2], Gateway(), None)
+
+    def execute():
+        try:
+            executor.execute(task["id"], 1)
+        except BaseException as error:
+            errors.append(error)
+
+    def read_detail():
+        from short_drama.service.canvas_generation_service import CanvasGenerationService
+
+        try:
+            engine = identity_app[1].kw["bind"]
+            with engine.connect() as connection:
+                reader_connection.append(connection.scalar(text("SELECT CONNECTION_ID()")))
+                connection.rollback()
+                with identity_app[1](bind=connection) as session:
+                    session.info["actor"] = actor(int(user["id"]))
+                    reader_started.set()
+                    values.append(
+                        CanvasGenerationService(session, identity_app[2]).detail(int(task["id"]))
+                    )
+        except BaseException as error:
+            errors.append(error)
+
+    worker = threading.Thread(target=execute, name="canvas-text-parent-lock-worker", daemon=True)
+    reader = threading.Thread(
+        target=read_detail, name="canvas-text-parent-lock-reader", daemon=True
+    )
+    worker.start()
+    try:
+        assert writer_has_task.wait(5), errors
+        reader.start()
+        assert reader_started.wait(5), errors
+        waiting_on = None
+        # 用 MySQL 的实际等待状态释放闸门，不通过睡眠猜测读取是否已持锁。
+        for _ in range(150):
+            with identity_app[1]() as session:
+                waiting_on = session.scalar(
+                    text(
+                        "SELECT requested.OBJECT_NAME FROM performance_schema.data_lock_waits w "
+                        "JOIN performance_schema.data_locks requested "
+                        "ON requested.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID "
+                        "JOIN performance_schema.threads t "
+                        "ON t.THREAD_ID = requested.THREAD_ID "
+                        "WHERE t.PROCESSLIST_ID = :connection LIMIT 1"
+                    ),
+                    {"connection": reader_connection[0]},
+                )
+            if waiting_on:
+                break
+            threading.Event().wait(0.02)
+        assert waiting_on in {"projects", "project_canvases", "async_tasks"}, errors
+        writer_allowed.set()
+        reader.join(10)
+        assert not reader.is_alive(), "Task-owned detail reader did not stop"
+        assert first_persisted.wait(5), errors
+        assert errors == [] and database_errors == [], (errors, database_errors, waiting_on)
+        assert values[0]["textDraft"] == FIRST and values[0]["textDraftSequence"] == 1
+    finally:
+        writer_allowed.set()
+        finish_allowed.set()
+        worker.join(10)
+        if reader.ident is not None:
+            reader.join(10)
+        assert not worker.is_alive() and not reader.is_alive()
+
+
+@pytest.mark.parametrize("view", ["text-deltas", "detail"])
+def test_text_projection_reads_chunk_committed_after_ownership_snapshot(
+    identity_app, monkeypatch, view
+):
+    client, _, _, path, request = seed(identity_app, "canvas_text_snapshot")
+    request["input"]["textOptions"]["stream"] = True
+    task = admit(client, request)
+    before = client.get(path + "/my-document").json()
+    provider_ready = threading.Event()
+    first_allowed = threading.Event()
+    first_persisted = threading.Event()
+    finish_allowed = threading.Event()
+    errors = []
+
+    class Gateway:
+        def validate(self, *_args):
+            return {}
+
+        def submit(self, *_args, **kwargs):
+            provider_ready.set()
+            assert first_allowed.wait(10), "The reader did not release the first provider chunk"
+            kwargs["on_text_delta"](FIRST)
+            first_persisted.set()
+            assert finish_allowed.wait(10), "The reader did not release provider completion"
+            return GenerationResult("succeeded", "openai_chat.v1", text=FIRST)
+
+    executor = GenerationExecutionService(identity_app[1], identity_app[2], Gateway(), None)
+
+    def execute():
+        try:
+            executor.execute(task["id"], 1)
+        except BaseException as error:
+            errors.append(error)
+
+    original_binding = CanvasGenerationDAO.binding
+    snapshot_observed = False
+
+    def binding_then_commit_chunk(dao, identifier, actor_id):
+        nonlocal snapshot_observed
+        binding = original_binding(dao, identifier, actor_id)
+        if identifier == int(task["id"]) and not snapshot_observed:
+            snapshot_observed = True
+            # This real consistent read predates the callback's real MySQL commit.
+            # The service's following task/record reads acquire their existing locks.
+            first_allowed.set()
+            assert first_persisted.wait(5), errors
+        return binding
+
+    worker = threading.Thread(target=execute, name="canvas-text-snapshot-worker", daemon=True)
+    worker.start()
+    try:
+        assert provider_ready.wait(5), errors
+        monkeypatch.setattr(CanvasGenerationDAO, "binding", binding_then_commit_chunk)
+        response = client.get(
+            f"{TASKS}/{task['id']}" + ("/text-deltas" if view != "detail" else "")
+        )
+        assert response.status_code == 200, response.text
+        value = response.json()
+        assert snapshot_observed and first_persisted.is_set()
+        assert value["status"] == "running" and value["textDraft"] == FIRST
+        if view == "detail":
+            assert value["textDraftSequence"] == 1
+        else:
+            assert value["complete"] is False and not value.get("finalText")
+            assert [(delta["sequence"], delta["content"]) for delta in value["deltas"]] == [
+                (1, FIRST)
+            ]
+        assert client.get(path + "/my-document").json() == before
+    finally:
+        first_allowed.set()
+        finish_allowed.set()
+        worker.join(10)
+        assert not worker.is_alive(), "Task-owned snapshot Worker did not stop"
+        assert errors == [], errors
 
 
 def test_worker_deltas_are_durable_private_and_replayed_by_source_sequence(identity_app):

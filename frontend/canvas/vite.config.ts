@@ -41,6 +41,8 @@ export default defineConfig(({ mode }) => {
             __BEEFTV_HEAVY_MEDIA_ENABLED__: "true",
             "import.meta.env.VITE_APP_VERSION": JSON.stringify(appVersion),
         },
+        // FFmpeg从import.meta.url定位其Worker；预打包会移到deps目录并丢失相邻Worker。
+        optimizeDeps: { exclude: ["@ffmpeg/ffmpeg"] },
         resolve: {
             dedupe: ["axios", "react", "react-dom", "antd"],
             alias: {

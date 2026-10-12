@@ -171,3 +171,42 @@ test("私人资源来源在画布、历史与批量文档交给源修复流程�
     await bridge("get", "/canvas-projects", undefined, { includeDocuments: true });
     assert.deepEqual(observed, [aliases, aliases, aliases]);
 });
+
+test("创建来源独立转换、保持父版本和同一键，客户端业务声明不能成为来源", async () => {
+    const calls = [];
+    const bridge = createHostCanvasContract(async request => { calls.push(request); return { ...canvas, source_project_id: "9007199254741011" }; });
+    const project = { id: "child", workspaceProjectId: "child", title: "子图", projectId: "9007199254741011", nodes: [] };
+    const sourceCanvas = { canvasKey: "parent", rowVersion: "9007199254741021" };
+    const result = await bridge("put", "/canvas-projects/child", { project, sourceCanvas });
+    await bridge("put", "/canvas-projects/child", { project, sourceCanvas });
+    assert.deepEqual(calls[0], calls[1]);
+    assert.equal(calls[0].data.source_canvas_key, "parent");
+    assert.equal(calls[0].data.source_canvas_row_version, "9007199254741021");
+    assert.equal(calls[0].data.source_document, project);
+    assert.equal("source_project_id" in calls[0].data, false);
+    assert.equal("sourceCanvas" in calls[0].data.source_document, false);
+    assert.equal(result.project.projectId, "9007199254741011");
+});
+
+test("自由和 ZIP 创建不传空来源字段，摘要清除旧业务 JSON 值", async () => {
+    const calls = [];
+    const bridge = createHostCanvasContract(async request => { calls.push(request); return { ...canvas, source_project_id: null }; });
+    const project = { id: "imported", workspaceProjectId: "imported", title: "导入", nodes: [] };
+    const result = await bridge("put", "/canvas-projects/imported", { project });
+    assert.equal("source_canvas_key" in calls[0].data, false);
+    assert.equal("source_canvas_row_version" in calls[0].data, false);
+    assert.equal(result.project.projectId, undefined);
+    assert.equal(Object.hasOwn(result.project, "projectId"), true);
+    await assert.rejects(bridge("put", "/canvas-projects/imported", { project, sourceCanvas: { canvasKey: "parent", rowVersion: 1 } }), /来源画布/);
+    assert.equal(calls.length, 1);
+});
+
+test("整组后续图解析所属项目时仍使用它自己的明确父图", async () => {
+    const calls = [];
+    const bridge = createHostCanvasContract(async request => { calls.push(request); return canvas; });
+    const sourceCanvas = { canvasKey: "parent-second", rowVersion: "9007199254741021" };
+    await bridge("put", "/canvas-projects/second-copy", { project: { id: "second-copy", workspaceProjectId: "first-copy", title: "第二图" }, sourceCanvas });
+    assert.equal(calls[1].data.source_canvas_key, sourceCanvas.canvasKey);
+    assert.equal(calls[1].data.source_canvas_row_version, sourceCanvas.rowVersion);
+    assert.equal(calls[1].data.source_document.workspaceProjectId, canvas.project_id);
+});

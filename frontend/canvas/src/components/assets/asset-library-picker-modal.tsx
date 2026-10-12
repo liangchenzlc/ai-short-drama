@@ -75,6 +75,8 @@ type Props = {
     emptyDescription?: string;
     footerNote?: string;
     loading?: boolean;
+    error?: string;
+    onRetry?: () => void;
     pagination?: { current: number; pageSize: number; total: number; onChange: (page: number, pageSize: number) => void };
     folderActionLabel?: string;
     folderActionSource?: "local" | "all";
@@ -118,6 +120,8 @@ function AssetLibraryPickerModalSession({
     emptyDescription = "换个分类后再试。",
     footerNote,
     loading = false,
+    error: readError,
+    onRetry,
     pagination,
     folderActionLabel = "将文件夹放到画布",
     folderActionSource = "all",
@@ -468,11 +472,11 @@ function AssetLibraryPickerModalSession({
                     </nav>
                     <div className="asset-picker-grid-wrap">
                         <div className="asset-picker-grid">
-                            {remoteEnabled && remoteQuery.isError ? (
+                            {readError || remoteEnabled && remoteQuery.isError ? (
                                 <div className="asset-picker-empty" role="alert">
                                     <strong>素材读取失败</strong>
-                                    <span>请稍后重试。</span>
-                                    <Button onClick={() => void remoteQuery.refetch()}>重试</Button>
+                                    <span>{readError || "请稍后重试。"}</span>
+                                    <Button onClick={() => readError ? onRetry?.() : void remoteQuery.refetch()}>重试</Button>
                                 </div>
                             ) : loading || (remoteEnabled && !remoteQuery.isSuccess) ? (
                                 <div className="asset-picker-empty">
@@ -525,7 +529,7 @@ function AssetLibraryPickerModalSession({
                             <Button type="text" onClick={onClose} disabled={working}>
                                 取消
                             </Button>
-                            <Button type="primary" icon={<Check />} disabled={working || !selectedIds.length} loading={working && !uploading} onClick={() => void confirm()}>
+                            <Button type="primary" icon={<Check />} disabled={working || loading || Boolean(readError) || !selectedIds.length} loading={working && !uploading} onClick={() => void confirm()}>
                                 {confirmLabel(selectedIds.length)}
                             </Button>
                         </>

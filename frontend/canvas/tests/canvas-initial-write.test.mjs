@@ -70,3 +70,41 @@ test("缺失首次记录不能生成恢复请求，损坏记录不能覆盖", as
     raw = JSON.stringify({ id: "a", revision: "0", nodes: [] });
     assert.deepEqual(await readInitialCanvasWrite(storage, "a"), JSON.parse(raw));
 });
+
+test("来源身份与超大版本随首次请求冻结，失败和重载不能更新父版本", async () => {
+    const values = new Map();
+    const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+    const origin = { canvasKey: "parent", rowVersion: "9007199254740999" };
+    const project = { id: "child", revision: "0", nodes: [], initialSourceCanvas: origin };
+    const first = await prepareInitialCanvasWrite(storage, project);
+    origin.rowVersion = "9007199254741000";
+    assert.deepEqual(await prepareInitialCanvasWrite(storage, project), first);
+    assert.deepEqual((await readInitialCanvasWrite(storage, "child")).initialSourceCanvas, { canvasKey: "parent", rowVersion: "9007199254740999" });
+    assert.equal("initialSourceCanvas" in initialCanvasDocument(first), false);
+    assert.equal("projectId" in initialCanvasDocument(first), false);
+});
+
+test("非法或未确认来源停止发送，旧无来源记录仍按原文恢复", async () => {
+    let raw = null;
+    const storage = { getItem: () => raw, setItem: (_key, value) => { raw = value; } };
+    for (const origin of [{ canvasKey: "parent", rowVersion: 1 }, { canvasKey: "parent", rowVersion: "0" }, { canvasKey: "parent", rowVersion: "18446744073709551616" }, { canvasKey: "bad/key", rowVersion: "1" }]) {
+        await assert.rejects(prepareInitialCanvasWrite(storage, { id: "child", revision: "0", nodes: [], initialSourceCanvas: origin }), /原有草稿已保留/);
+        assert.equal(raw, null);
+        raw = JSON.stringify({ id: "child", revision: "0", nodes: [], initialSourceCanvas: origin });
+        await assert.rejects(readInitialCanvasWrite(storage, "child"), /原有草稿已保留/);
+        raw = null;
+    }
+    raw = JSON.stringify({ id: "child", revision: "0", nodes: [] });
+    const unchanged = raw;
+    assert.deepEqual(await readInitialCanvasWrite(storage, "child"), JSON.parse(unchanged));
+    assert.equal(raw, unchanged);
+});
+
+test("来源 key 沿用服务端允许的 Unicode 字母与数字", async () => {
+    let raw = null;
+    const storage = { getItem: () => raw, setItem: (_key, value) => { raw = value; } };
+    const project = { id: "child", revision: "0", nodes: [], initialSourceCanvas: { canvasKey: "父图_一-1", rowVersion: "1" } };
+    const frozen = await prepareInitialCanvasWrite(storage, project);
+    assert.equal((await readInitialCanvasWrite(storage, "child")).initialSourceCanvas.canvasKey, "父图_一-1");
+    assert.equal("initialSourceCanvas" in initialCanvasDocument(frozen), false);
+});

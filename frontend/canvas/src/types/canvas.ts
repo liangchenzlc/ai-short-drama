@@ -253,6 +253,7 @@ export type CanvasNodeMetadata = {
     workflowProvider?: "model" | "runninghub";
     runningHubWorkflowId?: string;
     runningHubWorkflowKind?: "workflow" | "app";
+    runningHubModelId?: string;
     /** 当前画布节点覆盖的工作流动态字段，键为 source:* 或 field:nodeId:fieldName。 */
     workflowParameters?: Record<string, unknown>;
     size?: string;

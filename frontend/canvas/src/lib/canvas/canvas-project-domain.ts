@@ -149,12 +149,12 @@ export function storyboardRowsFromTask(task: GenerationTask) {
         rows: result.rows.map((row, index) => {
             const next = createStoryboardRow(index + 1, {
                 ...row,
-                id: `shot-${Date.now()}-${index + 1}-${Math.random().toString(36).slice(2, 6)}`,
+                id: task.operation === "storyboard" ? row.id || `shot:${task.id}:${index + 1}` : `shot:${task.id}:${index + 1}`,
                 shotNumber: index + 1,
                 status: "idle",
                 assetBindings: normalizeStoryboardAssetBindings(row.assetBindings),
             });
-            next.characters = Array.isArray(row.characters) ? row.characters : [];
+            next.characters = Array.isArray(row.characters) ? row.characters.map((character) => typeof character === "string" ? { characterName: character } : character) : [];
             next.mustHave = Array.isArray(row.mustHave) ? row.mustHave : [];
             next.optionalDetails = Array.isArray(row.optionalDetails) ? row.optionalDetails : [];
             return next;

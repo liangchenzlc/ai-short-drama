@@ -8,6 +8,92 @@ from short_drama.schemas.canvas import CanvasDocument
 from short_drama.service.canvas_document import project_document, split_document
 
 
+@pytest.mark.parametrize("three_view", [False, True], ids=["character_cards", "three_view"])
+def test_source_image_workflow_keeps_media_and_private_parameters_after_projection(three_view):
+    original = document()
+    node = original["nodes"][0]
+    node["type"] = "image"
+    node["metadata"] = {
+        "workflowKind": "character",
+        "content": "resource:42",
+        "prompt": "本人提示词",
+        "composerContent": "本人输入",
+        "model": "fixture-only",
+    }
+    if three_view:
+        node["metadata"]["characterView"] = "multi"
+    shared, private = split_document(CanvasDocument.model_validate(original))
+    public = shared["nodes"][0]["metadata"]
+    assert public["content"] == "/api/v1/canvas-runtime/resources/42/file"
+    assert public["workflowKind"] == "character"
+    assert not {"prompt", "composerContent", "model"}.intersection(public)
+    projected = project_document(shared, private)["nodes"][0]["metadata"]
+    for field in ("prompt", "composerContent", "model"):
+        assert projected[field] == node["metadata"][field]
+
+
+@pytest.mark.parametrize("field", ["characterAssetId", "characterVersionId", "characterCoverUrl"])
+def test_image_identity_keys_keep_unverified_voice_private_before_publication_validation(field):
+    original = document()
+    node = original["nodes"][0]
+    node["type"] = "image"
+    node["metadata"] = {
+        field: "",
+        "characterVoiceName": "本人声音选择",
+        "characterVoiceProfile": {"model": "fixture-only"},
+    }
+    shared, private = split_document(CanvasDocument.model_validate(original))
+    public = shared["nodes"][0]["metadata"]
+    assert field in public
+    assert "characterVoiceName" not in public and "characterVoiceProfile" not in public
+    assert project_document(shared, private)["nodes"][0]["metadata"] == node["metadata"]
+
+
+def test_character_work_identity_and_cover_are_shared_but_voice_and_prompt_stay_private():
+    original = document()
+    original["nodes"][0]["metadata"] = {
+        "workflowKind": "character",
+        "characterAssetId": "9200000000000001",
+        "characterVersionId": "9200000000000002",
+        "characterVersionPolicy": "current",
+        "characterName": "角色",
+        "characterDefinition": {"description": "作品", "prompt": "本人参数"},
+        "characterCoverUrl": "/api/v1/canvas-runtime/resources/9400000000000001/file",
+        "characterPrompt": "本人提示词",
+        "characterVoiceName": "没有声音权威",
+        "characterVoiceProfile": {"provider": "本人声音参数"},
+        "characterVisualStatus": "unverified",
+        "modelConfigId": "123",
+        "taskId": "456",
+    }
+    shared, private = split_document(CanvasDocument.model_validate(original))
+    public = shared["nodes"][0]["metadata"]
+    assert public["characterAssetId"] == "9200000000000001"
+    assert public["characterVersionId"] == "9200000000000002"
+    assert public["characterCoverUrl"].endswith("/9400000000000001/file")
+    assert public["characterDefinition"] == {"description": "作品"}
+    assert not any(
+        "Voice" in key or key in {"characterPrompt", "modelConfigId", "taskId"} for key in public
+    )
+    projected = project_document(shared, private)
+    assert projected["nodes"][0]["metadata"] == original["nodes"][0]["metadata"]
+
+
+def test_character_cover_resource_is_collected_and_remapped_without_touching_prompt():
+    from short_drama.service.canvas_document import media_references, remap_resource_references
+
+    value = {
+        "metadata": {
+            "characterCoverUrl": "https://old/api/resources/42/file?signature=expired",
+            "characterPrompt": "https://old/api/resources/42/file?signature=expired",
+        }
+    }
+    assert list(media_references(value)) == [(("metadata", "characterCoverUrl"), 42)]
+    result = remap_resource_references(value, {42: 43})
+    assert result["metadata"]["characterCoverUrl"] == "/api/v1/canvas-runtime/resources/43/file"
+    assert result["metadata"]["characterPrompt"] == value["metadata"]["characterPrompt"]
+
+
 def document():
     return {
         "id": "canvas-one",
@@ -57,6 +143,48 @@ def test_author_roundtrip_and_shared_projection_do_not_publish_private_extension
     assert original == document()
 
 
+@pytest.mark.parametrize("status", ["completed", "processing", "error", "stale"])
+def test_conversion_publishes_work_only_and_preserves_author_state(status):
+    original = document()
+    node = original["nodes"][0]
+    node["type"] = "media-conversion"
+    node["metadata"] = {
+        "storageKey": "resource:42",
+        "mimeType": "image/png",
+        "naturalWidth": 64,
+        "naturalHeight": 48,
+        "mediaConversion": {
+            "schemaVersion": 1,
+            "operation": "depth",
+            "status": status,
+            "sourceNodeId": "image-source",
+            "sourceFingerprint": "v1-source",
+            "resultStorageKey": "resource:42",
+            "resultWidth": 64,
+            "resultHeight": 48,
+            "outputKind": "image",
+            "startedAt": "private-time",
+            "errorMessage": "private-error",
+            "futureCredentials": {"key": "private-value"},
+        },
+    }
+    shared, private = split_document(CanvasDocument.model_validate(original))
+    conversion = shared["nodes"][0]["metadata"]["mediaConversion"]
+    assert conversion == {
+        "schemaVersion": 1,
+        "operation": "depth",
+        "status": status if status in {"completed", "stale"} else "stale",
+        "sourceNodeId": "image-source",
+        "sourceFingerprint": "v1-source",
+        "resultStorageKey": "resource:42",
+        "resultWidth": 64,
+        "resultHeight": 48,
+        "outputKind": "image",
+    }
+    projected = project_document(shared, private)
+    assert projected["nodes"][0]["metadata"] == node["metadata"]
+
+
 def test_media_projection_uses_stable_files_and_preserves_text_and_private_prose():
     source = document()
     source["nodes"][0]["metadata"]["content"] = "blob:literal-text"
@@ -93,6 +221,48 @@ def test_media_projection_uses_stable_files_and_preserves_text_and_private_prose
         "/api/v1/canvas-runtime/resources/44/file?variant=playback#t=2"
     )
     assert source["nodes"][1]["metadata"]["content"] == "blob:page-preview"
+
+
+@pytest.mark.parametrize("kind", ["skill", "text"])
+def test_skill_body_stays_private_while_text_work_remains_shared(kind):
+    source = document()
+    source["nodes"][0]["type"] = kind
+    bodies = {
+        "content": "仅本人技能模板",
+        "previewContent": "仅本人技能预览",
+        "richText": {"type": "doc", "content": [{"type": "text", "text": "仅本人富文本"}]},
+    }
+    source["nodes"][0]["metadata"].update(bodies)
+    source["nodes"][0]["metadata"]["skillSnapshot"] = {"template": "本人安装的技能"}
+    shared, private = split_document(CanvasDocument.model_validate(source))
+    metadata = shared["nodes"][0]["metadata"]
+    for field, value in bodies.items():
+        if kind == "skill":
+            assert field not in metadata
+        else:
+            assert metadata[field] == value
+    assert "skillSnapshot" not in metadata
+    own = project_document(shared, private)
+    assert own["nodes"][0]["metadata"] == source["nodes"][0]["metadata"]
+
+
+def test_old_shared_skill_bodies_are_redacted_before_applying_trusted_personal_state():
+    shared = document()
+    shared["nodes"][0]["type"] = "skill"
+    shared["nodes"][0]["metadata"] = {
+        "content": "旧共享模板，作者未知",
+        "previewContent": "旧共享预览",
+        "richText": {"type": "doc", "content": []},
+        "locked": True,
+    }
+    original = deepcopy(shared)
+    assert project_document(shared, None)["nodes"][0]["metadata"] == {"locked": True}
+    private = {"nodes": {"a": {"content": "本人已确认的模板"}}}
+    assert project_document(shared, private)["nodes"][0]["metadata"] == {
+        "locked": True,
+        "content": "本人已确认的模板",
+    }
+    assert shared == original
 
 
 def test_media_locations_cover_derived_images_and_do_not_reinterpret_text_or_unknown_types():

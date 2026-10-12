@@ -90,7 +90,7 @@ function runningHubWorkflowKind(workflow: RunningHubWorkflow): RunningHubWorkflo
 }
 
 function runningHubWorkflowEntryKey(workflow: RunningHubWorkflow): string {
-    return `${runningHubWorkflowKind(workflow)}:${workflow.workflowId.trim()}`;
+    return workflow.logicalModelId ? `host:${workflow.logicalModelId}` : `${runningHubWorkflowKind(workflow)}:${workflow.workflowId.trim()}`;
 }
 
 export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigChange, onGenerate, onComposerToggle, workspaceMode = "professional" }: CanvasConfigNodePanelProps) {
@@ -129,7 +129,8 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const config = buildNodeConfig(globalConfig, node, mode, requirements);
     const defaultWorkflowCapability = normalizeRunningHubCapability(globalConfig.runningHub.capability);
     const selectedRunningHubWorkflow = globalConfig.runningHub.workflows.find(
-        (item) => item.workflowId.trim() === node.metadata?.runningHubWorkflowId?.trim() && (!node.metadata?.runningHubWorkflowKind || runningHubWorkflowKind(item) === node.metadata.runningHubWorkflowKind),
+        (item) => item.workflowId.trim() === node.metadata?.runningHubWorkflowId?.trim() && (!node.metadata?.runningHubWorkflowKind || runningHubWorkflowKind(item) === node.metadata.runningHubWorkflowKind)
+            && (!node.metadata?.runningHubModelId ? item.capability === workflowCapability : item.logicalModelId === node.metadata.runningHubModelId),
     );
     const selectedRunningHubCapability = selectedRunningHubWorkflow ? normalizeRunningHubCapability(selectedRunningHubWorkflow.capability, defaultWorkflowCapability) : undefined;
     const selectedWorkflowFields: WorkflowVideoFieldLike[] = workflowProvider === "runninghub" ? (selectedRunningHubWorkflow?.fields?.length ? selectedRunningHubWorkflow.fields : workflowVideoFieldsFromJson(selectedRunningHubWorkflow?.workflowJson)) : [];
@@ -146,7 +147,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                 ) || globalConfig.runningHub.workflows.find((item) => normalizeRunningHubCapability(item.capability, capability) === workflowCapability);
             if (workflow) {
                 const workflowMode = normalizeRunningHubCapability(workflow.capability, capability);
-                onConfigChange(node.id, { generationMode: workflowMode, runningHubWorkflowId: workflow.workflowId, runningHubWorkflowKind: runningHubWorkflowKind(workflow), workflowParameters: {} });
+                onConfigChange(node.id, { generationMode: workflowMode, runningHubWorkflowId: workflow.workflowId, runningHubWorkflowKind: runningHubWorkflowKind(workflow), runningHubModelId: workflow.logicalModelId, workflowParameters: {} });
             }
             return;
         }
@@ -168,12 +169,14 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
         .filter(
             (item) =>
                 normalizeRunningHubCapability(item.capability, defaultWorkflowCapability) === workflowCapability ||
-                (item.workflowId.trim() === node.metadata?.runningHubWorkflowId?.trim() && (!node.metadata?.runningHubWorkflowKind || runningHubWorkflowKind(item) === node.metadata.runningHubWorkflowKind)),
+                (item.workflowId.trim() === node.metadata?.runningHubWorkflowId?.trim() && (!node.metadata?.runningHubWorkflowKind || runningHubWorkflowKind(item) === node.metadata.runningHubWorkflowKind)
+                    && (!node.metadata?.runningHubModelId ? item.capability === workflowCapability : item.logicalModelId === node.metadata.runningHubModelId)),
         )
         .map((item) => ({
             label: item.title || item.workflowId,
             value: runningHubWorkflowEntryKey(item),
             workflowId: item.workflowId,
+            logicalModelId: item.logicalModelId,
             kind: runningHubWorkflowKind(item),
             title: `${item.title || item.workflowId} · ${capabilityLabel(normalizeRunningHubCapability(item.capability, defaultWorkflowCapability))}`,
         }));
@@ -218,7 +221,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                             size="small"
                             className="canvas-config-mode !rounded-md !p-0.5"
                             value={mode}
-                            onChange={(value) => onConfigChange(node.id, { generationMode: value as CanvasGenerationMode, runningHubWorkflowId: undefined, runningHubWorkflowKind: undefined, workflowParameters: {} })}
+                            onChange={(value) => onConfigChange(node.id, { generationMode: value as CanvasGenerationMode, runningHubWorkflowId: undefined, runningHubWorkflowKind: undefined, runningHubModelId: undefined, workflowParameters: {} })}
                             options={[
                                 {
                                     value: "image",
@@ -341,7 +344,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                             onChange={(value) => {
                                 const nextProvider = value as "model" | "runninghub";
                                 if (nextProvider === "model") {
-                                    onConfigChange(node.id, { workflowProvider: "model", workflowTitle: undefined, runningHubWorkflowId: undefined, runningHubWorkflowKind: undefined, workflowParameters: {} });
+                                    onConfigChange(node.id, { workflowProvider: "model", workflowTitle: undefined, runningHubWorkflowId: undefined, runningHubWorkflowKind: undefined, runningHubModelId: undefined, workflowParameters: {} });
                                     return;
                                 }
                                 if (nextProvider === "runninghub") {
@@ -376,7 +379,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                                 }}
                                 onChange={(value) => {
                                     const workflow = runningHubEntries.find((item) => item.value === value);
-                                    onConfigChange(node.id, { runningHubWorkflowId: workflow?.workflowId, runningHubWorkflowKind: workflow?.kind, workflowParameters: {} });
+                                    onConfigChange(node.id, { runningHubWorkflowId: workflow?.workflowId, runningHubWorkflowKind: workflow?.kind, runningHubModelId: workflow?.logicalModelId, workflowParameters: {} });
                                 }}
                             />
                         ) : null}
@@ -630,7 +633,8 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
     const selectedRunningHubWorkflowId = node.metadata?.runningHubWorkflowId?.trim();
     const modeCapability = mode === "video" || mode === "audio" ? mode : "image";
     const selectedRunningHubWorkflow = selectedRunningHubWorkflowId
-        ? globalConfig.runningHub.workflows.find((item) => item.workflowId.trim() === selectedRunningHubWorkflowId && (!node.metadata?.runningHubWorkflowKind || runningHubWorkflowKind(item) === node.metadata.runningHubWorkflowKind))
+        ? globalConfig.runningHub.workflows.find((item) => item.workflowId.trim() === selectedRunningHubWorkflowId && (!node.metadata?.runningHubWorkflowKind || runningHubWorkflowKind(item) === node.metadata.runningHubWorkflowKind)
+            && (!node.metadata?.runningHubModelId ? item.capability === modeCapability : item.logicalModelId === node.metadata.runningHubModelId))
         : undefined;
     const selectedWorkflowFields = workflowProvider === "runninghub" ? (selectedRunningHubWorkflow?.fields?.length ? selectedRunningHubWorkflow.fields : workflowVideoFieldsFromJson(selectedRunningHubWorkflow?.workflowJson)) : [];
     const capabilityProfile = {
@@ -662,6 +666,8 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         enabled: mode !== "text" && workflowProvider === "runninghub" && globalConfig.runningHub.enabled,
         selectedKind: selectedRunningHubWorkflow ? runningHubWorkflowKind(selectedRunningHubWorkflow) : globalConfig.runningHub.selectedKind,
         workflowId: selectedRunningHubWorkflowId || "",
+        selectedLogicalModelId: selectedRunningHubWorkflow?.logicalModelId || node.metadata?.runningHubModelId,
+        parameters: workflowParameters,
         capability: normalizeRunningHubCapability(selectedRunningHubWorkflow?.capability, normalizeRunningHubCapability(globalConfig.runningHub.capability)),
     };
     return {

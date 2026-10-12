@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
-import { canvasGenerationOperationBase, canvasTaskAdmissionIdentity, createCanvasTaskAdmission } from "../src/services/host-generation-admission.ts";
+import { canvasGenerationOperationBase, canvasTaskAdmissionIdentity, createCanvasTaskAdmission, isCanvasEditorToolInput } from "../src/services/host-generation-admission.ts";
 
 const source = readFileSync(new URL("../src/services/canvas-generation-consumer.ts", import.meta.url), "utf8");
 const start = source.indexOf("export async function persistCanvasGenerationSource(");
@@ -20,6 +20,7 @@ function setup(persist = async () => undefined) {
     const saveSource = vm.runInNewContext(`${javascript}\npersistCanvasGenerationSource`, {
         assertUserScope: captured => assert.deepEqual(captured, scope),
         canvasTaskAdmissionIdentity,
+        isCanvasEditorToolInput,
         canvasGenerationOperationBase,
         canvasGenerationLiveAdapterKey: (user, project) => `${user}\0${project}`,
         canvasGenerationLiveAdapters: adapters,

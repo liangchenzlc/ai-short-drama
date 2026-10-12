@@ -5,6 +5,8 @@ import test from "node:test";
 import { chromium } from "playwright";
 import { createServer } from "vite";
 
+const testCacheDir = resolve(".runtime/vite-e2e-host-canvas");
+
 // These fixtures verify the real editor and HTTP adapter, not providers or Python persistence.
 const initial = {
     id: "parity-canvas", workspaceProjectId: "9007199254740995", revision: "1",
@@ -16,6 +18,7 @@ const initial = {
 
 async function installApi(page, options = {}) {
     let document = structuredClone(initial);
+    if (options.nodes) document.nodes = structuredClone(options.nodes);
     const commits = [];
     const viewportWrites = [];
     const preferenceWrites = [];
@@ -52,6 +55,16 @@ async function installApi(page, options = {}) {
         else if (path === "/agent/models") body = { items: [{ id: "71", name: "对话模型", row_version: "1", model_key: "fixture", protocol: "chat", verified: false, preferred: true }], preferred_id: "71" };
         else if (path === "/agent/skills") body = { items: [], total: 0, offset: 0, limit: 50 };
         else if (path === "/canvas-runtime/assets" || path === "/canvas-runtime/tasks") body = [];
+        else if (path === "/canvas-runtime/plugins/status" && request.method() === "GET") {
+            const pluginIds = ["prompt-optimizer", "ai-art-critique", "runninghub-workflow-provider"];
+            body = {
+                statuses: Object.fromEntries(pluginIds.map(pluginId => [pluginId, "disabled"])),
+                states: Object.fromEntries(pluginIds.map(pluginId => [pluginId, {
+                    pluginId, platformAvailable: true, userEnabled: false, userConfigured: false,
+                    effectiveEnabled: false, canToggle: true, canConfigure: false,
+                }])),
+            };
+        }
         else if (path === `/projects/${initial.workspaceProjectId}/assets`) body = { items: [], total: 0, offset: 0, limit: 20 };
         else if (path === "/agent/conversations/401") body = legacyConversation;
         else if (path === "/agent/conversations/401/messages") body = { items: legacyMessages, total: legacyMessages.length, offset: 0, limit: 50 };
@@ -145,14 +158,175 @@ async function installApi(page, options = {}) {
         heldCommit, waitingCommits: () => commitWaiters.length, releaseCommits: () => { holdCommits = false; for (const release of commitWaiters.splice(0)) release(); } };
 }
 
+test("图形视口预览不重复测量容器，窗口缩放后选区与DPR保持对齐", { timeout: 120000 }, async () => {
+    await mkdir(resolve(".runtime/browser"), { recursive: true });
+    const browserBaseUrl = process.env.CANVAS_BROWSER_BASE_URL || "http://127.0.0.1:4182";
+    const server = process.env.CANVAS_BROWSER_BASE_URL ? undefined : await createServer({ cacheDir: testCacheDir, server: { host: "127.0.0.1", port: 4182, strictPort: true }, logLevel: "error" });
+    await server?.listen();
+    let browser;
+    try {
+        browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
+        for (const deviceScaleFactor of [1, 2]) {
+            const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor, colorScheme: "dark", reducedMotion: "no-preference" });
+            try {
+                await context.addCookies([{ name: "sd_csrf", value: "browser-fixture", url: browserBaseUrl }]);
+                const page = await context.newPage();
+                const errors = [];
+                page.on("pageerror", error => errors.push(error.message));
+                const api = await installApi(page, { nodes: [
+                    { ...initial.nodes[0], width: 160, height: 180 },
+                    { ...initial.nodes[0], id: "text-two", title: "第二文字节点", position: { x: 620, y: 260 }, width: 160, height: 180 },
+                ] });
+                await page.addInitScript(() => {
+                    window.__graphicsPreview = { calls: 0, reads: 0, viewports: [] };
+                    let inPreview = false;
+                    const dispatch = EventTarget.prototype.dispatchEvent;
+                    EventTarget.prototype.dispatchEvent = function (event) {
+                        const previous = inPreview;
+                        if (event.type === "canvas:graphics-viewport-preview") {
+                            inPreview = true;
+                            window.__graphicsPreview.calls++;
+                            window.__graphicsPreview.viewports.push({ ...event.detail });
+                        }
+                        try { return dispatch.call(this, event); }
+                        finally { inPreview = previous; }
+                    };
+                    const bounds = Element.prototype.getBoundingClientRect;
+                    Element.prototype.getBoundingClientRect = function () {
+                        if (inPreview && (this.hasAttribute("data-canvas-viewport") || this.hasAttribute("data-node-id"))) window.__graphicsPreview.reads++;
+                        return bounds.call(this);
+                    };
+                });
+                await page.goto(`${browserBaseUrl}/canvas-app/canvas/parity-canvas`);
+                const node = page.locator('[data-node-id="text-one"]');
+                await node.waitFor({ state: "visible" });
+                await page.getByRole("button", { name: "画布保存状态：已保存", exact: true }).waitFor();
+                await page.getByRole("button", { name: "适合屏幕", exact: true }).click();
+                await page.waitForFunction(() => {
+                    const container = document.querySelector("[data-canvas-viewport]");
+                    const bounds = document.querySelector('[data-node-id="text-one"]').getBoundingClientRect();
+                    return !container.dataset.canvasViewportInteracting && bounds.left >= 0 && bounds.right <= innerWidth && bounds.bottom <= innerHeight - 200;
+                });
+                const initialNode = await node.boundingBox();
+                await page.mouse.click(initialNode.x + 20, initialNode.y + 8);
+                const panel = page.locator("[data-canvas-node-panel]");
+                await panel.waitFor({ state: "visible" });
+                const panelBefore = await panel.boundingBox();
+                const nodeBefore = await node.boundingBox();
+                const before = await page.evaluate(() => ({ ...window.__graphicsPreview }));
+                const panBounds = await page.locator("[data-canvas-viewport]").boundingBox();
+                const panStart = { x: panBounds.x + panBounds.width - 80, y: panBounds.y + panBounds.height - 140 };
+                await page.mouse.move(panStart.x, panStart.y);
+                await page.keyboard.down("Space");
+                await page.mouse.down();
+                for (let step = 1; step <= 12; step++) {
+                    await page.mouse.move(panStart.x - step * 3, panStart.y - step * 2);
+                    await page.evaluate(() => new Promise(requestAnimationFrame));
+                }
+                await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+                const panelAfter = await panel.boundingBox();
+                const nodeAfter = await node.boundingBox();
+                for (const coordinate of ["x", "y"]) {
+                    assert.ok(Math.abs((panelAfter[coordinate] - panelBefore[coordinate]) - (nodeAfter[coordinate] - nodeBefore[coordinate])) <= 1, `单选浮层${coordinate}必须逐帧跟随真实节点：${JSON.stringify({ panelBefore, panelAfter, nodeBefore, nodeAfter })}`);
+                }
+                assert.ok(Math.abs(panelAfter.y - (nodeAfter.y + nodeAfter.height) - 16) <= 1, "无遮挡时单选浮层保持原16px间隔");
+                // 在合成预览尚未提交时改变实际容器尺寸。
+                await page.setViewportSize({ width: 1000, height: 760 });
+                await page.mouse.up();
+                await page.keyboard.up("Space");
+                const zoomBounds = await page.locator("[data-canvas-viewport]").boundingBox();
+                await page.mouse.move(zoomBounds.x + zoomBounds.width - 80, zoomBounds.y + zoomBounds.height - 140);
+                await page.keyboard.down("Control");
+                for (const delta of [-24, -24, -24, 24, 24, 24]) {
+                    await page.mouse.wheel(0, delta);
+                    await page.evaluate(() => new Promise(requestAnimationFrame));
+                }
+                await page.keyboard.up("Control");
+                await page.waitForFunction(() => !document.querySelector("[data-canvas-viewport]").dataset.canvasViewportInteracting);
+                const after = await page.evaluate(() => ({ ...window.__graphicsPreview }));
+                const viewports = after.viewports.slice(before.calls);
+                const changed = new Set(viewports.map(viewport => viewport.k)).size > 1 && new Set(viewports.map(viewport => `${viewport.x},${viewport.y}`)).size > 1;
+                if (!changed) await page.screenshot({ path: resolve(`.runtime/browser/graphics-preview-dpr${deviceScaleFactor}-failed.png`) });
+                assert.ok(changed, `原鼠标平移和缩放必须实际改变图形视口：${JSON.stringify(viewports)}`);
+                assert.equal(after.reads - before.reads, 0, "视口预览不能在写入变换后同步测量容器");
+                await page.keyboard.down("Control");
+                await page.mouse.wheel(0, -48);
+                await page.keyboard.up("Control");
+                await page.waitForFunction(() => !document.querySelector("[data-canvas-viewport]").dataset.canvasViewportInteracting);
+                await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+                const zoomedNode = await node.boundingBox();
+                const zoomedPanel = await panel.boundingBox();
+                assert.ok(Math.abs(zoomedPanel.y - (zoomedNode.y + zoomedNode.height) - 16) <= 1, `缩放提交后浮层必须继续贴合真实节点边界：${JSON.stringify({ zoomedNode, zoomedPanel })}`);
+
+                for (const size of [{ width: 600, height: 900 }, { width: 1440, height: 900 }]) {
+                    await page.setViewportSize(size);
+                    await page.getByRole("button", { name: "适合屏幕", exact: true }).click();
+                    await page.waitForFunction(() => {
+                        const container = document.querySelector("[data-canvas-viewport]");
+                        const node = document.querySelector('[data-node-id="text-one"]');
+                        if (!node || container.dataset.canvasViewportInteracting) return false;
+                        const bounds = node.getBoundingClientRect();
+                        return bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight;
+                    });
+                    await page.keyboard.press("Escape");
+                    const nodeBounds = await node.boundingBox();
+                    await page.mouse.click(nodeBounds.x + 20, nodeBounds.y + 8);
+                    const second = await page.locator('[data-node-id="text-two"]').boundingBox();
+                    await page.keyboard.down("Shift");
+                    await page.mouse.click(second.x + 20, second.y + 8);
+                    await page.keyboard.up("Shift");
+                    await page.locator("[data-canvas-selection-bounds]").waitFor();
+                    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+                    await page.waitForFunction(() => {
+                        const container = document.querySelector("[data-canvas-viewport]");
+                        const canvas = document.querySelector("[data-canvas-leafer-overlay] canvas");
+                        const bounds = container.getBoundingClientRect();
+                        return canvas && Math.abs(canvas.width - bounds.width * devicePixelRatio) <= 1 && Math.abs(canvas.height - bounds.height * devicePixelRatio) <= 1;
+                    });
+                    const geometry = await page.evaluate(() => {
+                        const host = document.querySelector("[data-canvas-leafer-overlay]");
+                        const canvas = host.querySelector("canvas");
+                        const rect = canvas.getBoundingClientRect();
+                        const nodes = [...document.querySelectorAll('[data-node-id][data-node-selected="true"]')].map(node => node.getBoundingClientRect());
+                        const bounds = { left: Math.min(...nodes.map(node => node.left)), top: Math.min(...nodes.map(node => node.top)), right: Math.max(...nodes.map(node => node.right)), bottom: Math.max(...nodes.map(node => node.bottom)) };
+                        const image = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+                        let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+                        for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+                            if (image.data[(y * canvas.width + x) * 4 + 3] < 20) continue;
+                            left = Math.min(left, x); top = Math.min(top, y);
+                            right = Math.max(right, x); bottom = Math.max(bottom, y);
+                        }
+                        return { preview: host.dataset.canvasLeaferPreview || null, painted: Number.isFinite(left), canvas: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, selection: { left: rect.left + left / devicePixelRatio, top: rect.top + top / devicePixelRatio, right: rect.left + (right + 1) / devicePixelRatio, bottom: rect.top + (bottom + 1) / devicePixelRatio }, node: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom } };
+                    });
+                    assert.equal(geometry.preview, null);
+                    assert.ok(geometry.painted, "选区描边必须绘制到真实canvas");
+                    for (const [side, padding] of [["left", -12], ["top", -12], ["right", 12], ["bottom", 12]]) {
+                        const expected = padding < 0 ? Math.max(geometry.canvas[side], geometry.node[side] + padding) : Math.min(geometry.canvas[side], geometry.node[side] + padding);
+                        assert.ok(Math.abs(geometry.selection[side] - expected) <= 2, `${size.width}px/DPR${deviceScaleFactor}选区${side}未对齐：${JSON.stringify(geometry)}`);
+                    }
+                    await page.screenshot({ path: resolve(`.runtime/browser/graphics-selection-dpr${deviceScaleFactor}-${size.width}.png`) });
+                }
+                assert.deepEqual(errors, []);
+                assert.deepEqual([...api.unimplemented], []);
+            } finally {
+                await context.close();
+            }
+        }
+    } finally {
+        await browser?.close();
+        await server?.close();
+    }
+});
+
 test("原版编辑器拖拽保存、视口和外观独立恢复，撤权后停止编辑", { timeout: 90000 }, async () => {
     // 外部统一 preview 用于复测生产产物；默认仍运行独立画布开发服务器。
     const browserBaseUrl = process.env.CANVAS_BROWSER_BASE_URL || "http://127.0.0.1:4182";
-    const server = process.env.CANVAS_BROWSER_BASE_URL ? undefined : await createServer({ server: { host: "127.0.0.1", port: 4182, strictPort: true }, logLevel: "error" });
+    const server = process.env.CANVAS_BROWSER_BASE_URL ? undefined : await createServer({ cacheDir: testCacheDir, server: { host: "127.0.0.1", port: 4182, strictPort: true }, logLevel: "error" });
     await server?.listen();
     let browser;
     let page;
-    const diagnostics = { errors: [], unimplemented: [] };
+    let api;
+    const diagnostics = { errors: [], unimplemented: [], failedRequests: [], httpErrors: [] };
     await mkdir(resolve(".runtime/browser"), { recursive: true });
     try {
         browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
@@ -160,7 +334,17 @@ test("原版编辑器拖拽保存、视口和外观独立恢复，撤权后停�
         await context.addCookies([{ name: "sd_csrf", value: "browser-fixture", url: browserBaseUrl }]);
         page = await context.newPage();
         page.on("pageerror", error => diagnostics.errors.push(error.stack ?? error.message));
-        const api = await installApi(page);
+        page.on("requestfailed", request => diagnostics.failedRequests.push({
+            method: request.method(), path: new URL(request.url()).pathname,
+            error: request.failure()?.errorText,
+        }));
+        page.on("response", response => {
+            if (response.status() >= 400) diagnostics.httpErrors.push({
+                method: response.request().method(), path: new URL(response.url()).pathname,
+                status: response.status(),
+            });
+        });
+        api = await installApi(page);
         await page.goto(new URL("/canvas-app/canvas/parity-canvas", browserBaseUrl).href, { waitUntil: "domcontentloaded", timeout: 60000 });
         const node = page.locator('[data-node-id="text-one"]');
         await node.waitFor({ state: "visible", timeout: 60000 });
@@ -226,7 +410,9 @@ test("原版编辑器拖拽保存、视口和外观独立恢复，撤权后停�
         await page.getByText("宿主项目列表").waitFor({ state: "visible" });
         diagnostics.unimplemented = [...api.unimplemented];
         assert.deepEqual(diagnostics.errors, []);
+        assert.deepEqual(diagnostics.unimplemented, []);
     } catch (error) {
+        diagnostics.unimplemented = [...(api?.unimplemented ?? [])];
         if (page) {
             await page.screenshot({ path: resolve(".runtime/browser/canvas-failure.png") }).catch(() => {});
             diagnostics.body = await page.locator("body").innerText().catch(() => "");
@@ -240,7 +426,7 @@ test("原版编辑器拖拽保存、视口和外观独立恢复，撤权后停�
 
 test("助手首次加载中关闭后再次打开可恢复对话", { timeout: 120000 }, async () => {
     const baseUrl = process.env.CANVAS_BROWSER_BASE_URL || "http://127.0.0.1:4182";
-    const server = process.env.CANVAS_BROWSER_BASE_URL ? undefined : await createServer({ server: { host: "127.0.0.1", port: 4182, strictPort: true }, logLevel: "error" });
+    const server = process.env.CANVAS_BROWSER_BASE_URL ? undefined : await createServer({ cacheDir: testCacheDir, server: { host: "127.0.0.1", port: 4182, strictPort: true }, logLevel: "error" });
     await server?.listen();
     let browser;
     try {
@@ -293,7 +479,7 @@ test("助手首次加载中关闭后再次打开可恢复对话", { timeout: 120
 
 test("设置与工作台导航等待画布保存，409保留草稿", { timeout: 180000 }, async () => {
     const baseUrl = process.env.CANVAS_BROWSER_BASE_URL || "http://127.0.0.1:4182";
-    const server = process.env.CANVAS_BROWSER_BASE_URL ? undefined : await createServer({ server: { host: "127.0.0.1", port: 4182, strictPort: true }, logLevel: "error" });
+    const server = process.env.CANVAS_BROWSER_BASE_URL ? undefined : await createServer({ cacheDir: testCacheDir, server: { host: "127.0.0.1", port: 4182, strictPort: true }, logLevel: "error" });
     await server?.listen();
     let browser;
     let privatePreferenceServer;
@@ -366,7 +552,7 @@ test("设置与工作台导航等待画布保存，409保留草稿", { timeout: 
 
         // This section injects an existing private preference through the real development store.
         // The API remains a fixture; this does not verify a user model-selection UI or providers.
-        privatePreferenceServer = await createServer({ server: { host: "127.0.0.1", port: 4183, strictPort: true }, logLevel: "error" });
+        privatePreferenceServer = await createServer({ cacheDir: resolve(".runtime/vite-e2e-private-preferences"), server: { host: "127.0.0.1", port: 4183, strictPort: true }, logLevel: "error" });
         await privatePreferenceServer.listen();
         const preferencesBaseUrl = "http://127.0.0.1:4183";
         const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
@@ -408,7 +594,7 @@ test("设置与工作台导航等待画布保存，409保留草稿", { timeout: 
 
 test("共用创作助手保存后引用画布、保留草稿并只读打开旧记录", { timeout: 120000 }, async () => {
     const baseUrl = process.env.CANVAS_BROWSER_BASE_URL || "http://127.0.0.1:4182";
-    const server = process.env.CANVAS_BROWSER_BASE_URL ? undefined : await createServer({ server: { host: "127.0.0.1", port: 4182, strictPort: true }, logLevel: "error" });
+    const server = process.env.CANVAS_BROWSER_BASE_URL ? undefined : await createServer({ cacheDir: testCacheDir, server: { host: "127.0.0.1", port: 4182, strictPort: true }, logLevel: "error" });
     await server?.listen();
     let browser;
     let page;

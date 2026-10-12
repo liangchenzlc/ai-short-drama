@@ -89,7 +89,9 @@ export function localWorkspaceConfig(config: AiConfig): AiConfig {
         config: {
             ...config,
             channels: config.channels.filter((channel) => (channel.id.startsWith("host-") && channel.credentialRef === `host:${channel.id.slice(5)}`) || (!config.hostModelDirectory && channel.scope !== "system" && !isSystemProxyBaseUrl(channel.baseUrl))),
-            runningHub: { ...defaultConfig.runningHub },
+            runningHub: config.hostModelDirectory
+                ? { ...config.runningHub, baseUrl: "", apiKey: "", walletApiKey: "", uploadApiKey: "" }
+                : { ...defaultConfig.runningHub },
         },
     }).config;
 }

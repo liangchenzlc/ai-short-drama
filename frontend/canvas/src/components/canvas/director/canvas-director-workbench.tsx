@@ -1244,6 +1244,15 @@ export function CanvasDirectorWorkbench({ open, scene, projectId, imageNodes, on
     };
 
     const handleActorRigReady = useCallback((id: string, rig: DirectorRig, animations: AnimationClip[]) => {
+        const object = draftRef.current?.objects.find((item) => item.id === id);
+        if (!object) return;
+        const previous = object.rig;
+        const unchanged = previous && previous.status === rig.status
+            && previous.animationNames.length === rig.animationNames.length
+            && previous.animationNames.every((name, index) => name === rig.animationNames[index])
+            && Object.keys(previous.boneMap).length === Object.keys(rig.boneMap).length
+            && Object.entries(rig.boneMap).every(([bone, name]) => previous.boneMap[bone as DirectorHumanoidBone] === name);
+        if (unchanged && (object.motionClips?.length || animations.length === 0)) return;
         replaceWithoutHistory((current) => ({
             ...current,
             objects: current.objects.map((item) => {

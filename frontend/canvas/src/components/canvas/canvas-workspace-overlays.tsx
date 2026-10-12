@@ -93,9 +93,13 @@ export const CANVAS_MAIN_DOCK_CLEARANCE = 80;
 
 export function CanvasNodePanelOverlay({ node, viewport, containerRef, panelWidth, panelMinWidth = 660, panelMaxWidth = 920, panelWidthScale = 1.5, panelHeight = 190, dragOffset, isDragging = false, allowOverflow = false, keepBelowNode = false, avoidBottomDock = false, className, children }: { node: CanvasNodeData; viewport: ViewportTransform; containerRef: RefObject<HTMLDivElement | null>; panelWidth?: number; panelMinWidth?: number; panelMaxWidth?: number; panelWidthScale?: number; panelHeight?: number; dragOffset?: Position | null; isDragging?: boolean; allowOverflow?: boolean; keepBelowNode?: boolean; avoidBottomDock?: boolean; className?: string; children: ReactNode }) {
     const panelRef = useRef<HTMLDivElement>(null);
+    const viewportRef = useRef(viewport);
+    viewportRef.current = viewport;
+    const viewportSizeRef = useRef({ width: 0, height: 0 });
+    const syncPositionRef = useRef<(() => void) | null>(null);
     const { bringToFront, zIndex } = useCanvasOverlayLayer(`node-panel:${node.id}`, "var(--z-modal-overlay)");
     const initialWidth = resolveNodePanelWidth(node, viewport, panelWidth, panelMinWidth, panelMaxWidth, panelWidthScale);
-    const initialPosition = getNodePanelPosition(node, viewport, { width: containerRef.current?.clientWidth || 0, height: containerRef.current?.clientHeight || 0 }, initialWidth, panelHeight, dragOffset, keepBelowNode, avoidBottomDock);
+    const initialPosition = getNodePanelPosition(node, viewport, viewportSizeRef.current, initialWidth, panelHeight, dragOffset, keepBelowNode, avoidBottomDock);
 
     useLayoutEffect(() => {
         bringToFront();
@@ -105,24 +109,36 @@ export function CanvasNodePanelOverlay({ node, viewport, containerRef, panelWidt
         const container = containerRef.current;
         const panel = panelRef.current;
         if (!container || !panel) return;
-        let liveViewport = viewport;
+        const worldLayer = container.querySelector<HTMLElement>("[data-canvas-world-layer]");
+        let liveViewport = viewportRef.current;
         let liveDragOffset = dragOffset;
-        let viewportSize = { width: container.clientWidth, height: container.clientHeight };
+        let viewportSize = viewportSizeRef.current;
+        const readLiveViewport = () => {
+            const x = Number.parseFloat(container.style.getPropertyValue("--canvas-live-x"));
+            const y = Number.parseFloat(container.style.getPropertyValue("--canvas-live-y"));
+            const k = Number.parseFloat(container.style.getPropertyValue("--canvas-live-scale"));
+            return { x: Number.isFinite(x) ? x : viewportRef.current.x, y: Number.isFinite(y) ? y : viewportRef.current.y, k: Number.isFinite(k) ? k : viewportRef.current.k };
+        };
         const update = (nextViewport: ViewportTransform) => {
             liveViewport = nextViewport;
             const nextWidth = resolveNodePanelWidth(node, nextViewport, panelWidth, panelMinWidth, panelMaxWidth, panelWidthScale);
             panel.style.width = `${nextWidth}px`;
-            const nodeElement = container.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(node.id)}"]`);
-            const position = nodeElement
-                ? getAttachedNodePanelPosition(nodeElement, container, nextWidth, panelHeight, keepBelowNode, avoidBottomDock)
-                : getNodePanelPosition(node, nextViewport, viewportSize, nextWidth, panelHeight, liveDragOffset, keepBelowNode, avoidBottomDock);
+            // 保留源提交倍率与预览变换叠加时的实际节点边界，读取内联样式不会触发布局。
+            const committedScale = Number.parseFloat(container.style.getPropertyValue("--canvas-committed-scale")) || nextViewport.k;
+            const worldTransform = worldLayer?.style.transform ? new DOMMatrixReadOnly(worldLayer.style.transform) : null;
+            const renderedViewport = worldTransform ? { x: worldTransform.e, y: worldTransform.f, k: worldTransform.a * committedScale } : nextViewport;
+            const position = getNodePanelPosition(node, renderedViewport, viewportSize, nextWidth, panelHeight, liveDragOffset, keepBelowNode, avoidBottomDock);
             panel.style.transform = `translate3d(${position.left}px, ${position.top}px, 0)`;
         };
-        update(viewport);
-        const resizeObserver = new ResizeObserver(() => {
+        const resize = () => {
             viewportSize = { width: container.clientWidth, height: container.clientHeight };
-            update(liveViewport);
-        });
+            viewportSizeRef.current = viewportSize;
+            update(readLiveViewport());
+        };
+        if (viewportSize.width && viewportSize.height) update(readLiveViewport());
+        else resize();
+        syncPositionRef.current = () => update(readLiveViewport());
+        const resizeObserver = new ResizeObserver(resize);
         resizeObserver.observe(container);
         const unsubscribeViewport = subscribeCanvasGraphicsViewportPreview(container, update);
         const unsubscribeDrag = subscribeCanvasNodeDragPreview(container, (preview) => {
@@ -130,11 +146,16 @@ export function CanvasNodePanelOverlay({ node, viewport, containerRef, panelWidt
             update(liveViewport);
         });
         return () => {
+            syncPositionRef.current = null;
             resizeObserver.disconnect();
             unsubscribeViewport();
             unsubscribeDrag();
         };
-    }, [avoidBottomDock, containerRef, dragOffset?.x, dragOffset?.y, isDragging, keepBelowNode, node.height, node.id, node.position.x, node.position.y, node.width, panelHeight, panelMaxWidth, panelMinWidth, panelWidth, panelWidthScale, viewport]);
+    }, [avoidBottomDock, containerRef, dragOffset?.x, dragOffset?.y, isDragging, keepBelowNode, node.height, node.id, node.position.x, node.position.y, node.width, panelHeight, panelMaxWidth, panelMinWidth, panelWidth, panelWidthScale]);
+
+    useLayoutEffect(() => {
+        syncPositionRef.current?.();
+    }, [viewport]);
 
     return (
         <div
@@ -247,20 +268,6 @@ function constrainNodePanelPosition(left: number, top: number, viewportSize: { w
         top: keepBelowNode
             ? (avoidBottomDock ? Math.min(top, maxTop) : top)
             : clamp(top > maxTop ? Math.max(gap, preferredTop - panelHeight - gap) : top, gap, maxTop),
-    };
-}
-
-function getAttachedNodePanelPosition(nodeElement: HTMLElement, container: HTMLElement, panelWidth: number, panelHeight: number, keepBelowNode = false, avoidBottomDock = false) {
-    const gap = 16;
-    const nodeRect = nodeElement.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    const viewportSize = { width: container.clientWidth, height: container.clientHeight };
-    const left = nodeRect.left - containerRect.left + nodeRect.width / 2 - panelWidth / 2;
-    const preferredTop = nodeRect.top - containerRect.top;
-    const top = nodeRect.bottom - containerRect.top + gap;
-    return {
-        ...constrainNodePanelPosition(left, top, viewportSize, panelWidth, panelHeight, preferredTop, keepBelowNode, avoidBottomDock),
-        placement: "below" as const,
     };
 }
 

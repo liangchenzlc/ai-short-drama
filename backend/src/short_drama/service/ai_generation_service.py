@@ -33,6 +33,8 @@ from short_drama.schemas.storyboard_result import parse_storyboard_result
 from .base import BaseService, utcnow
 
 ERROR_MESSAGES = {
+    "provider_queue_full": "模型服务的视频队列已满，本次未创建供应商任务。请稍后显式重试。",
+    "canvas_work_disposed": "原画布作品已处置，执行载荷已回收，不能恢复或重新生成。",
     "transport_error": (
         "与模型服务通信时连接中断，未收到完整结果，无法确认服务商是否已受理。"
         "系统未自动重发，请先核对服务商调用记录。"
@@ -87,15 +89,28 @@ def safe_error(error):
 
 
 def can_retry(task, record):
+    from short_drama.ai.canvas_audio_adapters import ASYNC_AUDIO
+    from short_drama.ai.canvas_runninghub_adapters import RUNNINGHUB_ADAPTERS
     from short_drama.ai.canvas_video_adapters import VIDEO_ADAPTERS
 
+    if (task.error or {}).get("code") == "canvas_work_disposed":
+        return False
     if (
-        getattr(task, "service_type", None) == "video"
-        and getattr(record, "adapter", None) in VIDEO_ADAPTERS
-        and ((getattr(record, "request_data", None) or {}).get("source") or {}).get("scene")
+        ((getattr(record, "request_data", None) or {}).get("source") or {}).get("scene")
         == "canvas_node"
         and record.status == "succeeded"
-        and record.provider_task_id
+        and (
+            getattr(record, "adapter", None) in RUNNINGHUB_ADAPTERS
+            or (
+                getattr(task, "service_type", None) == "video"
+                and getattr(record, "adapter", None) in VIDEO_ADAPTERS
+                and record.provider_task_id
+            )
+            or (
+                getattr(task, "service_type", None) == "audio"
+                and getattr(record, "adapter", None) in {"openai_speech.v1", ASYNC_AUDIO}
+            )
+        )
     ):
         return False
     return (
@@ -123,18 +138,23 @@ def can_reparse_storyboard(record):
 
 
 def resume_action(task, record):
+    from short_drama.ai.canvas_runninghub_adapters import RUNNINGHUB_ADAPTERS
+
+    if (task.error or {}).get("code") == "canvas_work_disposed":
+        return None
     response = record.response_data or {}
     entries = response.get("media_manifest", [])
+    expected_count = response.get("expected_count", 1)
+    if getattr(record, "adapter", None) in RUNNINGHUB_ADAPTERS:
+        expected_count -= sum(bool(item.get("ignored")) for item in entries)
+        entries = [item for item in entries if not item.get("ignored")]
     recoverable_media = bool(entries) and (
         any(
             not item.get("saved")
             and (item.get("source_cipher") or item.get("locator") or item.get("inline_cipher"))
             for item in entries
         )
-        or (
-            all(item.get("saved") for item in entries)
-            and len(entries) >= response.get("expected_count", 1)
-        )
+        or (all(item.get("saved") for item in entries) and len(entries) >= expected_count)
     )
     if task.locked_until and task.locked_until > utcnow():
         return None
@@ -155,6 +175,32 @@ def resume_action(task, record):
         return "save"
     if task.status == "failed" and record.status == "succeeded" and recoverable_media:
         return "save"
+    if (
+        task.status == "failed"
+        and record.status == "sent"
+        and getattr(record, "adapter", None) in RUNNINGHUB_ADAPTERS
+        and record.provider_task_id
+        and not task.cancel_requested
+        and (
+            (task.error or {}).get("code")
+            in {
+                "upstream_unavailable",
+                "invalid_response",
+                "connection_error",
+                "transport_error",
+                "dns_error",
+                "timeout",
+                "rate_limited",
+                "provider_rate_limit",
+                "provider_task_not_ready",
+            }
+            or (task.error or {}).get("http_status") in {404, 408, 409, 425, 429}
+        )
+        and task.started_at is not None
+        and (utcnow() - task.started_at).total_seconds()
+        < record.config_snapshot.get("budget_seconds", 180)
+    ):
+        return "poll"
     if task.status != "failed" or (task.error or {}).get("code") != "message_delivery_unknown":
         return None
     if task.next_action == "submit" and record.status == "prepared" and not task.cancel_requested:
@@ -436,13 +482,20 @@ class AIGenerationService(BaseService):
                 self.settings, "generation_archive_budget_seconds", 86400
             ),
         )
-        if (payload.get("source") or {}).get("scene") in {"canvas_node", "canvas_model_test"}:
+        if (payload.get("source") or {}).get("scene") in {
+            "canvas_node",
+            "canvas_model_test",
+            "canvas_tool",
+        }:
             capability = config.capability_cache or {}
             for field in (
                 "canvas_channel_key",
                 "canvas_video_capability",
                 "canvas_video_variants",
                 "canvas_text_capability",
+                "canvas_text_defaults",
+                "canvas_audio_defaults",
+                "canvas_runninghub_workflow",
             ):
                 if field in capability:
                     snapshot[field] = copy.deepcopy(capability[field])

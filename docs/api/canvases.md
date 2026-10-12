@@ -43,9 +43,15 @@
 
 当前文档校验节点/边唯一键、父子循环、端点归属、有限几何值、正尺寸、凭据字段、32 MiB 上限和嵌套深度。文档分解到关系表；不同时维护第二份可独立修改的当前全图 JSON。共享 metadata 使用显式字段清单，新字段默认进入作者私人投影。
 
+`type=skill` 节点的 `content`、`previewContent`、`richText` 属于本人模板，和 `skillSnapshot` 一起保存到 `canvas_node_user_states`，不进入共享节点；普通 text 正文仍共享。只修改 Skill 私人正文不推进共享画布版本，不覆盖其他成员的本人模板。当前文档、工作区预览/完整文档及历史读取都先遮蔽旧共享 Skill 正文，再叠加当前账号可信的本人状态。
+
+旧共享 Skill 正文没有可证明的作者身份，`created_by` 或 `updated_by` 不能作为归属依据。存在这些字段的旧当前文档、旧历史快照在保存、快照创建或恢复时返回 `409 canvas_legacy_skill_body_private`，整次事务回滚，保留原始记录和本人草稿；不能根据遮蔽后的读取结果自动覆盖旧正文。升级旧环境前须由管理员核对作者，将已确认正文迁至对应本人节点/历史状态，并在同一维护事务中清除共享字段、同步历史摘要及校验值；不得将未知正文分配给项目所有者或最后移动节点者。2026-10-09 已只读核对本机 `short_drama`，相关旧节点/历史数量均为 0，本次未执行数据改写或 DDL。
+
+原画布保存仍按409暂停自动提交并保留草稿；历史恢复对这一特定原因保留后端作者确认说明，不将其改写为“当前画布已有更新”。普通版本409/428沿用原冲突提示，恢复失败不读取或替换当前作品。该错误反馈经过实际恢复函数的Node回归；未将旧数据管理迁移或缓存清理写成已完成。
+
 图保存、首次创建/复制和历史快照按字段语义规范媒体展示值：image/video/audio/model/panorama 的 content/url/dataUrl 有稳定 resource 身份时使用同源受鉴权文件地址，保留播放 variant、proxy 和片段，不持久化原 origin 或签名参数。drawingPreviewUrl、directorCoverUrl 使用各自的预览资源键；没有稳定身份的临时派生预览省略，不能把待生成预览指向旧原图。文字正文、提示词和未知字段不做通用 URL 替换。
 
-新写入的主要媒体为 Blob/data URL 且没有稳定资源身份时返回 `422 canvas_media_not_persisted`，保留草稿。旧图和历史在私人字段投影完成后兼容读取；下一次成功保存会真实清理旧图行，不能仅在返回值掩盖旧数据。前端内容比较和三方合并使用同样的规范值，避免同一文件的 Blob 与文件 URL 产生假冲突或假未保存。已持久化、结果未知的首次请求和在途提交仍按原键、原正文重放，不回写规范后的正文；服务端原始请求审计可能保留旧客户端提交值，不能据此改变幂等哈希。没有稳定身份的外部 URL 导入仍未实现。
+新写入的主要媒体为 Blob/data URL 且没有稳定资源身份时返回 `422 canvas_media_not_persisted`，保留草稿。旧图和历史在私人字段投影完成后兼容读取；下一次成功保存会真实清理旧图行，不能仅在返回值掩盖旧数据。前端内容比较和三方合并使用同样的规范值，避免同一文件的 Blob 与文件 URL 产生假冲突或假未保存。已持久化、结果未知的首次请求和在途提交仍按原键、原正文重放，不回写规范后的正文；服务端原始请求审计可能保留旧客户端提交值，不能据此改变幂等哈希。外部 URL 可显式调用下文 `resources/import` 取得永久身份；文档保存不自动下载任意外部 URL。
 
 分镜、导演、时间线等嵌套私人数组按条目稳定 `id` 对应，成员插入、重排、删除不改变私人字段的归属，也不复活已删除的父对象。无 `id` 的旧格式条目只在公共内容完全相同时匹配；含私人字段的重复身份返回 `422 canvas_private_identity_required`。内部投影标记 `$canvas_projection` 不接受客户端输入，也不会出现在作者文档中。无锚点的旧位置数组返回 `409 canvas_private_projection_upgrade_required`，保留原数据并要求显式迁移，不能猜测其归属。本次升级核验当前 `short_drama` 的三类画布私人状态表均为 0 行，没有需要转换的已有数据；本次无 DDL 变更。
 
@@ -79,6 +85,8 @@
 
 视口采用字段级比较更新，避免正文保存和个人偏好保存相互产生假冲突；其他窗口已移动视口时返回 `409 canvas_viewport_conflict`，前端保留本机位置并停止重试，须显式重新加载。进行中的视口请求串行执行，网络结果不明时先重试原请求再保存后续位置。作品图提交忽略所携带的旧 viewport；首次创建仍接受初始位置。视口保存不生成作品历史版本。
 
+视口 CAS 将 `expected_viewport` 和目标 `viewport` 在当前已校验画布的 ORM 查询中转换为 MySQL JSON 的数值表示，再与持久化值精确比较。MySQL 的双精度 JSON 序列化可能改变末位数字，例如 `453.20626631853787` 读回为 `453.2062663185378`；这一表示差异不能误报其他窗口冲突。响应仍确认原请求目标，重复该目标不推进本人版本；实际不同的旧位置仍返回409，不引入浮点容差或自动覆盖。
+
 外观使用相同的独立保存边界，设置变化 500 ms 后串行提交，显式保存等待服务端确认。比较的是三项外观设置，不受视口、对话或共享图版本变化影响；其他窗口修改外观返回 `409 canvas_view_preferences_conflict`，保留本机设置并冻结自动覆盖。旧图提交与历史恢复不会重置已经保存的本人外观，首次创建接受导入的初始外观。`appearance.mode` 为 `light|dark|custom`；custom 的色码为六位十六进制，明亮度范围 -30～30，网格强度 0～100；`backgroundMode` 为 `dots|lines|blank`。
 
 保存进度和错误进入原版顶栏的保存状态与弹层；源样式会隐藏全局 Toast，不能依赖 Toast 表达托管端失败。图提交的 saving/done/error/conflict 和个人设置的 pending/error 分别保留，图保存成功不能清掉个人外观冲突。错误弹层保留当前内容下载与显式重新加载入口。
@@ -105,7 +113,50 @@
 
 前端重新读取本人规范文档，写入原提交日记和本机草稿后才移除回收卡片。服务器已恢复但响应丢失时，当前弹窗保留卡片；明确重试仍使用原键，重新打开或刷新目录会移除已恢复记录，不自动重发恢复。如果本机已经出现未保存编辑，保留编辑并提示处理，不用旧回收快照覆盖新内容。验证结果和范围见[实施记录](../plans/2026-10-05-beeftv-implementation-log.md)。
 
-彻底删除使用 `canvas-recycle-purge:{source_key}:{revision}` 固定键，服务端先锁项目、画布，再核对回执和当前归档代次，写入私人 `canvas.recycle.purge` 回执。与恢复竞争只允许一方成功：恢复先成功时旧处置返回 409，处置先成功时恢复返回 `410 canvas_recycle_purged`。同键重放返回原处置结果，没有再次修改作品的副作用；失败回滚回执，并释放窄归档作用域。带 Actor 的业务 Session 禁止改写或删除既有画布写回执，批量写同样受保护。前端移除卡片落盘失败时恢复原列表，保留原快照与 `archiveKey`；如果期间已有新列表，则不以旧列表覆盖。这一接口阻止正常业务恢复和回收预览，尚未物理擦除冻结文档、历史、绘图以及仍被引用的 MinIO 文件；不能宣称全部数据已经物理删除。
+彻底删除使用 `canvas-recycle-purge:{source_key}:{revision}` 固定键，服务端先锁项目、画布，再核对回执和当前归档代次，写入私人 `canvas.recycle.purge` 回执。与恢复竞争只允许一方成功：恢复先成功时旧处置返回 409，处置先成功时恢复返回 `410 canvas_recycle_purged`。同键重放返回原处置结果，没有再次修改作品的副作用；失败回滚回执，并释放窄归档作用域。带 Actor 的业务 Session 禁止改写或删除既有画布写回执，批量写同样受保护。前端移除卡片落盘失败时恢复原列表，保留原快照与 `archiveKey`；如果期间已有新列表，则不以旧列表覆盖。这一接口提交不可恢复处置，物理回收由后台分阶段执行，响应不表示全部数据或 MinIO 字节已擦除。
+
+新版 scheduler 每 10 秒检查已处置的精确归档代次，按稳定回执 ID 每页 100 条扫描至末页；失败或延期项单轮只尝试一次，不挡住后页。清理器只允许内部维护 Session，重新按项目、画布、回执取得锁，核对处置作者的原归档回执、源键及版本；仅归档、已恢复、再次归档的新代次或标准模式不进入回收。从画布绑定与工具提交沿实际重试外键检查全部后代，包含没有画布绑定的通用重试。存在未结束生成/本地/渲染任务、持有执行者的工具租约，或任何 `sent/unknown` 生成记录时保留图载荷，不自行取消或重发任务。
+
+清理节点、连线、时间线、导演子文档、绘图版本、整图快照及其共享/私人投影和引用，擦除回执内部的 `$archive_document` 恢复预览；画布身份和公开回执结果、请求 hash、版本保留，继续支持原处置重放、状态查询及恢复 410。内部 `$recycle_cleanup` 版本 2 标记代表图载荷及允许清理的本人执行载荷已同事务提交；旧版本 1 会再次进入检查，普通源文档中同名字段不能代替完成标记。这不是全部物理数据或字节已擦除的证明。
+
+同一事务擦除处置作者本人已完成创建的 `canvas_creation_attempts.request_json` 正文副本。
+准备记录没有 `canvas_id`，必须用冻结结果中的十进制 `project_id/id`、`source_key`、
+创建操作及目标项目核对当前作品，再验证同作者、原键、原 hash 的公开创建回执与结果
+保持一致。缺失或不一致的创建回执、未完成准备或未释放来源 pin 会使本次清理失败并
+回滚。仅归档、已恢复、其他作者或冻结目标不匹配的请求保持原生命周期；尚未完成
+创建的请求不被擦除。已标记版本 2 的旧图若仍有符合条件的创建正文，会再次进入
+检查；正文清空且没有待处理的历史创建媒体后不再重复处理。此维护操作禁止带 Actor
+的业务 Session 调用。
+
+创建身份、请求 hash、状态、公开结果和准备资源的来源/校验和/祖先快照保留，
+原键同内容继续重放原公开结果，同键更换内容仍冲突，不重新创建图或媒体。无公开
+回执的已完成准备重放，按项目、画布、准备记录的顺序加锁；已处置目标不能复活。
+当前创建流程建立正式的 copy 上传与已释放来源记录，图清理后符合原引用规则的
+副本由原删除队列回收，独立素材和其他作品仍保护媒体。早期缺少上传身份的创建
+媒体按同一作者、冻结资源映射、原准备记录和精确处置回执核对。目标必须保持同项目、
+原校验和/长度/元数据及 `canvas/resources/{id}` 定位；无外部引用才在图清理事务内
+退役规范记录。原 `canvas_resource_deletions` 以 `creation_resource_id` 和
+`disposal_receipt_id` 保留 RESTRICT 出处，两者与上传身份互斥；上传 ID/hash 均为空，
+不伪造上传或分片。已清正文的旧 v2 及仍被独立素材、其他作品/历史或复制 pin 保护的
+历史媒体继续检查，引用释放后可接续退役。来源与祖先快照、创建 hash/公开回执保持，
+原创建键仍重放原结果；该路径没有上传键的 410 墓碑语义。字节删除器再次核对创建
+作者、原映射和公开回执，失败或丢失响应按原定位重试。
+
+第二阶段只擦除处置者本人的终态执行载荷。生成任务及全部调用须具有匹配的项目、画布和 `canvas_node/canvas_tool` 冻结出处；其他作者、来源不匹配、Agent 管理或批次任务，以及被标准模式/Agent 审计外键引用的记录，保留原生命周期。允许清理的请求、来源快照、配置中的执行字段、正文/增量、诊断原文和冻结凭据被擦除；只保留任务与调用身份、hash、类型/模型标识、供应商任务 ID、状态、时间及数值用量。媒体归档清单保留稳定定位、ID、校验和及实际元数据，移除下载来源/内联密文；媒体产物索引及独立私人素材继续保护规范资源，媒体结果行仅擦除内容副本。已清理任务记录 `canvas_work_disposed`，停止调度，`can_retry/can_resume` 均为 false；原键可重放既有任务，异内容仍冲突，新键不能从该任务恢复或重新生成。最后一张图归档后项目不可读时，原通用 API 仍返回 404，不能把内部维护读取当成账号访问许可。已绑定结果的公开回执保持不可变。
+
+本人没有执行租约的工具状态、来源快照及阶段请求被擦除；关联受保护任务的工具运行保留。本人终态本地/渲染任务按精确处置回执擦除请求、来源、计划、结果正文和诊断，保留身份、hash、状态和时间，并以 `disposal_receipt_id` 保留原处置出处。只有无租约的终态、已清空冻结载荷且记录 `canvas_work_disposed` 时，才释放本地输入、两类输出及渲染来源外键；普通任务继续要求来源和成功输出。其他作者和外部审计保护的任务保持原生命周期。当前深度/渲染产物已有正式分片上传，符合原引用规则时沿既有上传删除队列回收，不伪造上传身份。旧 v2 已清图却仍保留本地引用的记录会补处理。已处置任务的结果不可用，不能恢复或重试；归档画布下的原键和任务请求仍按活动画布权限返回 404，不据此新建任务。清理先 flush 本事务释放的引用，再核对是否可退役上传；提交失败整体回滚。
+
+完成图/执行载荷清理后，scheduler单独检查本人已退役任务的生成媒体。以原处置代次、
+任务/调用、产物及真实归档清单核对完整生成对象路径、校验和和实际元数据，不能用
+MediaFile ID代替路径中的产物asset_id，也不能伪造上传身份。独立素材、其他作品/
+历史、来源任务、标准/Agent审计和复制pin仍保护媒体；这些引用释放后继续检查。
+无外部引用时，同事务删除本人结果行、产物索引及规范媒体，并写专用
+`canvas_generation_media_deletions`，保留任务/hash、归档证据和公开绑定回执。
+字节删除独立执行并重新校验可信出处，任何账号规范记录仍保护相同定位或ID；
+保护、失败或删除后响应丢失均保留pending并按原定位重试，不提交新的供应商任务。
+此阶段不改变HTTP处置响应，也不代表创建/本地渲染媒体或全部物理数据已经删除。
+
+图清理同一事务退役本次删除者本人、归属该画布上传或上述真实创建准备、且仍在可信 `canvas/resources/{id}` 命名空间中的规范资源。其他画布/历史、任意账号私人素材、文件夹封面、复制/创建 pin、保留的生成/本地/渲染引用以及标准模式/Agent 的实际引用都继续保护资源。未结束上传沿用原过期回收，其他作者、私人范围及缺少上述可信出处的资源保持各自生命周期；已处置的本人生成媒体由上述独立阶段核对。上传身份或创建/处置出处及精确定位写入已有 `canvas_resource_deletions`，图清理失败整体回滚；MinIO I/O 由原删除队列独立执行，失败或删除成功但响应丢失仍按原定位重试，任意账号的规范媒体/二进制记录继续保护相同定位或 ID。受保护审计、其他缺乏出处的早期媒体及全套未保存子文档回收尚未完成，不能宣称整张作品的所有物理数据已经删除。
 
 ## 项目文件夹
 
@@ -163,6 +214,8 @@ DELETE 尚无 CAS 前提或独立幂等回执，不能将重复删除已删除�
 
 `T=/canvas-runtime/tasks`。任务接口返回源 camelCase 裸对象，列表返回裸数组；不再包一层 `code/data/msg`。所有读取与操作都要求本人任务、当前项目权限和活动无限画布。项目成员不能查询另一成员的参数、草稿或未绑定产物。
 
+任务列表和本人任务详情遇到合法保存引起的画布版本竞争时，最多执行两次完整事务尝试。只有项目与可信来源均未变化、仅画布版本变化时才重新读取；首轮事务完全回滚后，列表重新查询全部任务与画布，详情重新查询本人任务绑定与画布，均核验当前权限并重新规划项目的排序锁，不复用旧预检。第二轮仍有版本竞争则返回 `409 canvas_binding_changed`。来源变化、撤权和其他错误不被自动忽略；该重读不会重新提交生成任务或调用供应商。
+
 | 方法 | 路径 | 合同 |
 | --- | --- | --- |
 | POST | `T` | `CanvasRuntimeTaskCreate`；首次 202，相同操作/完整正文重放 200 |
@@ -180,6 +233,8 @@ DELETE 尚无 CAS 前提或独立幂等回执，不能将重复删除已删除�
 
 成功媒体首先由现有执行器检验并归档 MinIO，再交付真实存在的私人素材。`outputs[].outputIndex` 及结果内容项的 `outputIndex` 保留原槽位，不能把稀疏的 0、2 压成 0、1。稳定素材身份为 `generation_` 加 `SHA256("materialize:<taskId>:<outputIndex>")`，重复读取保留用户后续编辑；既有旧身份继续兼容。原版消费器随后调用 `canvas.task.bind`，通过同一写回执直接回填作品并发布媒体；标准模式的候选采用流程保持原样。
 
+表情编辑保留固定源的局部合成步骤：供应商产物只用于目标人脸区域，消费器以已保存的原图引用为底执行羽化合成，上传独立派生图并登记本人素材，再通过 `canvas.document.commit` 保存作品与 `attach-node` 效果标记。正常生成和关闭窗口后的恢复共用此路径，派生上传键按本人、任务及产物槽固定；供应商原图、裁切参考、任务和参数继续私人可见，只有进入共享图的合成作品按项目权限发布。来源删除、任务或输入变化、账号切换及未确认保存均不能用供应商整图代替合成结果。
+
 文本增量来自供应商实际 SSE，Worker 在短事务中检查执行租约后写入 `canvas_task_text_deltas`。每条最多 64 KiB、每任务最多 2 MiB/4096 条、本人有效增量总量最多 64 MiB；成功保留 24 小时，失败/取消保留 7 天，最终正文仍存任务记录。scheduler 每小时清理过期增量，启用新表后应重启同版 scheduler。`textDraftSequence` 表示详情中完整草稿已包含的最大序号，前端从该游标续读以免重复拼接。客户端不能 POST 增量或直接把执行中任务标成成功。
 
 SSE 每次读取重新核对会话、作者及当前成员权限；撤权/账号变化会关闭观察。断开浏览器连接只停止观察，不取消供应商任务。供应商断流保留实际已存草稿并标记未知提交，不能据此重新提交收费任务。当前尚待完整渠道/RunningHub/协议、所有参数、结构化产物、完整任务日志与一比一操作验收；专项使用受控供应商不代表真实供应商验收。
@@ -189,36 +244,229 @@ SSE 每次读取重新核对会话、作者及当前成员权限；撤权/账号
 
 OpenAI 图片编辑支持已保存的同项目 `mask`，准入和实际执行均检查资源类型与权限；蒙版须为有透明像素的 PNG，且与首张源图尺寸一致。Canvas 的 multipart 保留源重复 `image` 字段和 `mask`；标准接口继续使用其原字段。图片参考与蒙版在执行内存中读取真实 MinIO 字节，不依赖临时签名 URL。总字节预算与部分源动态限制尚有差异，不能声明完整参考合同已经一致。
 
+### 画布内置 RunningHub
+
+三个内置协议使用`canvas_runninghub_workflow_{image,video,audio}.v1`，仅本人画布及独立
+模型测试可用；标准生成、Agent不借此开放协议。节点准入要求本人插件
+`runninghub-workflow-provider`已启用。`input.execution`只能传所选
+`provider/kind/interfaceType/name/workflowId/webappId`，字段值通过
+`input.metadata.workflowParameters`提交；身份须匹配保存的`runtime_profile.runninghub_workflow`。
+字段、随机值、本人凭据和来源版本在准入时冻结，浏览器不能提供地址、密钥或替换结构。
+
+根地址去除尾部`/openapi/v2`或`/openapi`并保留代理路径。Workflow提交
+`POST /task/openapi/create`，App提交`POST /task/openapi/ai-app/run`；积分Key放JSON正文。
+轮询为`POST /task/openapi/outputs`并保留原`taskId`。参考图片、视频、音频和蒙版先校验
+授权永久资源及字段槽位，再读真实字节，由企业级上传Key经`POST /task/openapi/upload`
+multipart上传。缺Key、非法槽位或资源不能触发收费create。
+
+缺回执或断连为unknown，同键重放不重新create。已知任务的临时查询错误按预算和服务端
+许可恢复原ID；视频保留连续错误计数和有限下载重试。归档失败恢复save，不重新生成。
+产物下载不附两个Key或自定义鉴权头，即使同源。实际MIME决定类型，仅空/通用MIME按源
+后缀表回落；不支持MIME和空字节持久略过，全无有效媒体终态
+`workflow_output_type_unsupported`。交付全部图片、最后video及最后audio，mode按
+audio/video/image优先；保留原槽位，早期未选video/audio不进入画布产物、私人素材库或绑定。
+
+固定源list菜单隐藏工作流创建入口，本包保持隐藏；原UI专项从已保存Config开始。
+声明式协议的独立合同见下节。原UI专项使用受控HTTP、真实MySQL/MinIO、直接执行器
+和Chrome；消息投递另由`test_canvas_runninghub_broker.py`使用随机队列命名空间、
+真实RabbitMQ和独立Celery进程验证。收费供应商和企业授权按用户指示暂缓，
+本机受控供应商证据不替代这两项或固定源完整视觉对照。
+
+### 画布声明式 RunningHub
+
+本人已保存模型的`runtime_profile.protocol=runninghub-workflow`选择独立的
+`canvas_runninghub_workflow.v1`，仅支持视频及画布/独立模型测试。鉴权为Bearer；
+地址遵循源APIURL规则，保留代理及显式版本前缀，缺省补`/v1`。
+创建为`POST /task/openapi/create`，查询为`GET /task/openapi/status`，
+固定manifest没有任务ID查询参数、路径占位或正文，宿主不额外添加。
+
+扩展参数使用`input.metadata.providerOptions["runninghub-workflow"]`；允许
+`version/model/input/workflow/client_id/webhook/webhook_events_filter`七个键。
+`input/workflow`中的公开JSON保持完整结构，不裁剪动态字段，也不允许凭据或非有限数值。
+空值按源模板省略/回落，0和false保留。`workflow`映射到供应商`prompt`；未指定非空
+`input`时使用提示词和三组参考数组，媒体顺序保持。持续时间、比例、分辨率、音频和
+水印没有manifest映射，不添加到创建正文。原UI把本人保存的模型`default_options`
+合入本次命名空间；服务端冻结实际提交参数，不从新配置覆盖已受理任务。
+
+默认能力仍是9张图片、无参考视频/音频、文生与图生视频；本人保存的能力可明确覆盖。
+永久资源先核对项目/作者及真实元数据，执行期内联原字节；HTTPS引用保持URL。
+数据请求总量沿源64MiB限制。查询保留`id/request_id/prompt_id`及原任务ID，媒体只读取
+`response.data`，支持源URL别名与dataURL/裸base64；pending加媒体升成功，processing
+仍等待。`error.code`按源错误语义处理，成功无媒体失败，不伪造`/content`。
+全部返回视频先归档，交付第一个视频；其他槽位不能绑定或进入私人素材/画布产物。
+同源下载携带冻结Bearer和自定义头，跨源不携带。视频轮询保留连续404/格式错误三次
+停止及有限下载重试；失败后使用`query-provider`查询原任务，归档失败按许可恢复save。
+未知提交同键不重新create，不能自动或显式重试收费请求。
+
+归档插入媒体的数据库事务先锁项目再锁任务，避免与本人任务列表的相反锁顺序
+形成死锁；外部下载和MinIO写入仍在该事务之外。确定时序并发专项同时检查
+画布列表和全局列表，不以自动重试409替代无死锁断言。
+
+### 画布 Claude 普通纯文字
+
+本人已保存的宿主配置使用 `runtime_profile.api_format=claude / protocol=claude-api`，
+普通 `canvas_text / operation=text` 和独立 `canvas_model_test` 可使用 `claude_messages.v1`。
+准入冻结已保存的凭据、文字能力和 `default_options`；排队后修改配置不替换任务快照。
+标准生成和 Agent 继续沿原协议许可，不借此开放 Claude。
+
+请求使用 `/v1/messages`，保留服务地址中的代理前缀，接受已含完整端点的地址；
+鉴权为 `x-api-key`。默认 `anthropic-version=2023-06-01`，显式自定义版本头保留，
+同名大小写变体归为一个请求头。`max_tokens` 依次使用内部显式 `max_output_tokens`、
+本次 `input.metadata.providerOptions["claude-api"]`、服务端冻结的默认选项、4096。
+非空本次 `config.systemPrompt` 成为顶层 `system`，否则使用供应商默认 `system`；
+历史 `system` 不重复拼入 `messages`。`textOptions.stream=false` 或保存能力
+`text.streaming=false` 均使用非流 JSON。
+
+JSON 仅拼接各 `text` 块，SSE 接收实际 `content_block_start / text_delta` 正文；
+两者都将 thinking 独立保存为本人 `resultJson.reasoning`，不进入正文增量或共享作品。
+流读取覆盖 UTF-8 分块、CRLF、多行 data、BOM、JSON 回退及有效正文 EOF；
+格式错误、仅有 reasoning 或正文截断保留实际私人草稿和错误状态，不自动二次提交。
+本片明确拒绝图片、视频、音频、`thinking=true` 和工具等未完成参数。
+普通节点仍在终态后由原消费者回填，受控 HTTP/MySQL/原 UI 验证不等于收费供应商验收。
+
+### 画布 Gemini 普通纯文字
+
+普通 `canvas_text / operation=text` 和独立 `canvas_model_test` 使用
+`gemini_generate_content.v1`。本人已保存配置必须为 `runtime_profile.api_format=openai`，
+协议为 `gemini-generate-content` 或 `google-gemini-generate-content`；这对应固定源
+hosted 渠道派生为 OpenAI 格式的可达分支。`api_format=gemini` 保留源 custom 普通文字
+gate：节点受理返回 `422 canvas_generation_protocol_unsupported`，宿主模型测试返回
+`400 generation_unsupported_protocol`，不因品牌或模型名自动放行。
+
+请求使用非流 `/v1beta/models/<escaped model>:generateContent`，保留代理前缀并替换
+基础地址末尾的已知 API 版本。模型键按 Go `url.PathEscape` 的 segment 规则编码；
+斜线、问号和井号不能变为新路径、query 或 fragment。凭据仅在执行时转换为
+`x-goog-api-key`，不发送 Bearer 或 query key；自定义请求头沿宿主加密凭据规则处理。
+历史 system 被过滤，assistant 映射为 model，当前 `config.systemPrompt` 成为独立
+`systemInstruction`；本次无指令时保留源 JSON null 形状。
+
+准入冻结服务端 `default_options` 为 `canvas_text_defaults`。本次选项只从
+`input.metadata.providerOptions["gemini-generate-content"]` 读取，使用闭合的普通
+`generationConfig`、`safetySettings` 和 `cachedContent` 合同；未知字段、工具、thinking
+及多模态拒绝。即使源节点请求 `textOptions.stream=true`，本分支仍使用非流 HTTP，
+不发送 stream 字段，也不向 OpenAI SSE observer 传递响应；运行时私人草稿为空，节点保持
+loading，终态由原消费者直接回填。
+
+仅取 candidate 0，将其正文 text 逐段 trim 后无分隔拼接。意外返回的 `thought=true`
+独立进入本人 `resultJson.reasoning`，不进入正文或共享图；这是为私人过程隔离做的明确
+适配，与源 manifest 拼接全部 text 的行为不同。受控 HTTP/MySQL/Chrome 验证不代表
+Gemini 真实供应商或企业授权验收；仅免费 Agnes 文本/图片/视频真实验收已获授权，其他供应商协议、收费模型、真实音频与企业授权仍暂缓，结果以专项验收记录为准。
+
 ### 画布文字图片引用
 
-普通 `canvas_text / operation=text` 节点目前接通 `openai_chat.v1` 的已保存图片引用。
-`input.referenceImages[].storageKey` 必须为当前项目可授权的 `resource:<十进制字符串>`；
+普通 `canvas_text / operation=text` 节点接通 `openai_chat.v1`、`openai_responses.v1` 的已保存图片引用，
+并增加这两种默认 manifest 的视频引用。`input.referenceImages[].storageKey` 与
+`input.referenceVideos[].storageKey` 必须为当前项目可授权的 `resource:<十进制字符串>`；
 不接受未保存 URL、Blob 或浏览器内嵌图片。标准模式 `TextInput.messages[].content` 继续为字符串，
 不能通过标准接口提交任意多模态 JSON。
 
 准入从本人宿主配置的 `runtime_profile.capability_config.text` 冻结 `canvas_text_capability`，
-不采用本次请求声明的视觉能力，也不按模型名猜测。没有配置时沿用源文字默认最大图片数 0；
+不采用本次请求声明的视觉能力，也不按模型名猜测。没有配置时沿用源文字默认最大图片/视频数 0；
 图片数、单图字节和提示词长度检查保存的 `references.maxImages/maxImageBytes/promptMaxChars`。
-当前画布非视频 DTO 最多 16 张图片，这个阶段限制尚未代表源全部可配置范围。
+视频检查 `references.maxVideos/maxVideoBytes`；当前文字 DTO 分别最多16张图片和16个视频，
+这个阶段限制尚未代表源全部可配置范围。
 准入校验实际资源范围、永久 MinIO 定位、MIME 与大小，用闭合 `canvas_text_references` 内部信封保存；
 浏览器提供的类型、大小、尺寸与展示 URL 不作为可信媒体元信息。
 
 Worker 沿源对象存储分支在执行时签发短期读取 URL，按原顺序构造当前 user 的
-`[{type:text,text}, {type:image_url,image_url:{url}}, ...]`，system 与已有文本历史保持字符串。
+`[{type:text,text}, {type:image_url,image_url:{url}}, ..., {type:video_url,video_url:{url}}, ...]`，
+图片在视频之前，各组保持输入顺序。Chat 的 system 与已有文本历史保持字符串；Responses
+`input` 过滤 system、保留非空 user/assistant 历史，配置系统提示词放入独立 `instructions`。
+这是固定源默认 manifest 的 wire；`input_text/input_image/input_video` 属于源另一 fallback 分支，
+不能据受控联调声称原生 Responses 供应商已经接受该默认形状。
 签名 URL 只用于本次供应商请求，不写入任务身份、请求归档或画布。MinIO 的供应商读取地址须可由
 所选供应商访问；本机受控 HTTP 能读取图片不代表远程供应商已经验收。
-PNG、JPEG、WebP、GIF 为本片接通的 MIME；其他图片、文字视频/音频、Responses/Claude/Gemini
-多模态、工具和 thinking 仍单独实施。
+PNG、JPEG、WebP、GIF 为已接通的图片 MIME；视频为 MP4、WebM、MOV，并冻结服务端检测的正时长。
+其他图片、文字音频、Claude/Gemini多模态、工具和 thinking 仍单独实施。
 
 `textOptions.stream=false` 或保存的 `text.streaming=false` 使用非流请求；Chat 流式请求沿源
 增加 `stream_options.include_usage=true`。正文仍使用已有 delta/SSE、本人权限、游标恢复和直接
 结果绑定；普通画布文字节点按源等待终态回填，未新增逐字展示。
+Responses 流使用 `response.output_text.delta` 与完成事件；非流解析非空顶层 `output_text`，
+兼容既有 `output` 消息数组。双协议图片/视频HTTP/MySQL/MinIO专项48项通过，
+原UI自动图片/视频、显式引用顺序/重复去重/缺失拒绝及三份批量已分别通过。
+绘图引用使用已保存版本的永久render；双协议原UI通过空绘图拒绝、真实笔画、精确资源复用、
+终态及关闭旧窗口后的预览/笔画恢复，未重复上传同版render。
+份数按源为1–15，默认1可缺省；各份独立任务和操作键，普通节点终态直接回填。
+上述受控验证不覆盖其他文字协议或全部绘图组合；仅免费 Agnes 文本/图片/视频真实验收已获授权，其他供应商协议、收费模型、真实音频与企业授权仍暂缓，结果以专项验收记录为准。
 不会把 reasoning 加入作品。同键图片顺序或内容变化返回 409，读取/重放不提交新生成。
 
 新任务准入、选择 adapter 前，按服务器保存的宿主 `runtime_profile` 刷新派生能力缓存。
 缓存变化只推进执行配置版本，不修改配置正文、凭据或个人偏好；相同缓存完全无操作。
 旧任务继续使用原冻结配置，同键重放直接返回原任务；旧版本画布任务的完成回写不能覆盖新配置缓存。
 未绑定的标准配置、停用/已删除模型与不支持的协议继续遵循原权限和拒绝行为。
+
+### 编辑器工具请求
+
+文字任务可提交`input.agentRequests.canonical`，含`messages`、唯一固定`tools`、`toolChoice`与`systemPrompt`。当前固定工具为`optimize_prompt`及九个审美阶段工具；schema由固定源快照验证，客户端不得改工具名或参数定义。`metadata.source=prompt-optimizer|art-critique`、目标节点与阶段必须一致；仅图片引用，`referenceImages`顺序须与canonical相同，图片定位仅永久`resource:<uint64十进制ID>`，服务端核对权限和实际字节。普通历史、thinking、音视频、mask、客户端transport或不同config均拒绝。
+
+工具使用本人已保存文字模型与四种已实现协议。保存配置的非流模式仍为非流；Chat/Responses/Claude流回复须有协议闭合证据，Gemini为非流。成功`resultJson`含`text`、`toolCalls`及私人`reasoning`，仅工具调用、空text也可成功。工具请求与结果不改变来源节点loading或共享图，不生成`CanvasResult`，物化与bind返回422。创建、列表、详情、日志和文本增量保持本人隔离；前端优化结果通过源“采用优化后的提示词”显式写入。
+
+截断、非法工具JSON及断连保留unknown许可，不自动重新POST。Chat兼容回退只对明确400/422工具选择拒绝启用：强制选择、auto、省略最多三次，共用原deadline；普通认证/服务端错误与其他协议不触发回退。秘密与签名URL不归档，固定schema在解析和脱敏后再次校验。审美直接提交`/tasks`仍返回`409 canvas_tool_approval_required`；只有下列持久阶段批准链可以准入。
+
+审美与已有分镜节点生成使用`/canvas-runtime/creation-runs`，接通`kind=art-critique`及`kind=storyboard`，不开放旧助手proposal或共享图提交接口：
+
+| 方法与相对路径 | 合同 |
+| --- | --- |
+| POST、GET `/creation-runs`；GET `/{id}` | 创建、本人列表与详情；创建带`clientKey`、`canvasId`和固定身份`state`，同键同输入重放，不同输入409 |
+| POST `/{id}/claim` | `{expectedEpoch, owner}`；45秒租约，CAS成功后推进`executionEpoch`；被其他活跃窗口持有或旧epoch返回409 |
+| POST `/{id}/heartbeat`、`/{id}/release` | `{executionEpoch, owner}`；前端每15秒续租，过期或旧窗口不能续租/释放新租约 |
+| POST `/{id}/submissions/prepare` | `{executionEpoch, owner, itemKey, request}`；唯一`itemKey=stage:<固定工具名>`，冻结请求摘要，阶段不同输入409 |
+| POST `/{id}/submissions/approve` | `{executionEpoch, owner, submissionIds}`；仅批准本人本运行已准备阶段，最多九个且不能重复 |
+| POST `/{id}/execute` | `{executionEpoch, owner, submissionId}`；未批准409，新受理202，已受理回执重放200并返回同一任务 |
+
+创建运行前必须已保存审美节点，且恰好连接一张本项目永久图片。服务端冻结图片稳定定位、元数据、真实checksum及本人模型执行配置/凭据摘要；摘要不含可读取秘密。新阶段准备、批准和执行均复核来源、连线、模型配置与个人启用状态。每次运行最多九个固定阶段，任务操作键为`canvas-tool:<运行数据库ID>:<工具名>`；改变同阶段输入须开始新分析。
+
+分镜运行的`clientKey`为`storyboard:<稳定操作键>`，`state={kind:"storyboard",nodeId,sourceNodeId,model,logicalModelId}`；来源与目标须为同一已保存Script。客户端先完成来源保存，再创建/claim/prepare；`itemKey="storyboard"`，任务`clientOperationId`与运行`clientKey`一致。取消不批准也不执行；租约与批准沿上表，来源、画风、资产目录或模型改变时阻止新执行，已受理/unknown回放只读取原任务。直接`POST /tasks`不能绕过分镜批准。
+
+任务为`type="canvas_text",operation="storyboard"`，`input`携带`mode="text"`、相同`prompt`、`canvasAssets`、`requirements`、`projectStyle={presetId,title,prompt,profileJson?}`、`characters`、`shotCount`和`shotDurationSeconds`。镜数范围0–100、每镜秒数0–60，0表示自动；引用媒体、history、工具canonical等不能混入该请求。服务端从本人已保存文档重建上下文，拒绝客户端伪造的目录或画风。项目角色使用已保存角色卡的`assetId/versionId/name/definition`，创建、准备、批准和最终准入均校验可信来源、两侧项目权限、素材关系、当前版本及封面来源；`canvasAssets`保留角色节点身份和`type="character"`。同一真实角色重复卡保留，同名不同素材或版本返回422 `canvas_storyboard_character_ambiguous`，不会按名称静默覆盖身份。
+
+模型只可返回闭合`{title,rows}` JSON，镜号从1顺序递增、每镜1–60秒，指定镜数/时长必须一致；字段类型、角色名及资产绑定均验证，不能注入节点ID、图片/视频关联或状态。非法结果使私人任务failed，保留本人正文，零作品回填。成功`resultJson`包含服务端验证的`title/rows`和原`text`；行ID固定为`shot:<十进制任务ID>:<顺序>`，角色名转为冻结素材和版本的编辑器角色对象。绑定复核冻结的原行与角色上下文，并再次校验真实角色来源；删卡、刷新角色版本或来源当前版本变化时保留私人结果，拒绝覆盖镜头。合法绑定在同一图事务更新原Script、标题及分镜，删除失效逐镜连线并保留旧媒体节点。绑定回执、仅cookies恢复及重复消费复用原行身份；共享分镜作品，运行/正文/生成偏好仅本人可读。该合同与标准模式候选采用分开，遵循无限画布直接回填边界。
+
+批准核对、任务创建及阶段任务关联在同一事务内完成；事务提交后重新读取任务详情，避免并发等待锁时的旧快照。阶段请求、批准时间及任务回执不能替换，普通HTTP作用域ORM写入不能伪造授权。已受理阶段在停用工具后仍可观察原回执；unknown恢复只查询原任务，不重新调用供应商。运行、阶段、报告及reasoning保持本人隔离，项目成员权限不能代替作者权限。
+
+部署先补[011-canvas-tool-runs.sql](../数据库模型/migrations/2026-10-05-infinite-canvas/011-canvas-tool-runs.sql)，应用不自动迁移。本机业务库`short_drama`已实际创建`canvas_tool_runs`、作者更新时间索引及`canvas_tool_submissions`，迁移检查为ready/无缺项/无漂移；没有修改既有业务记录。
+
+个人工具状态使用GET `/canvas-runtime/plugins/status`与PUT `/canvas-runtime/plugins/{plugin_id}/activation`，写入`{ "enabled": true|false }`，保留源camelCase状态合同。仅支持`prompt-optimizer`、`ai-art-critique`，默认关闭，复用本人偏好JSON；成员不读取或修改他人状态，模型偏好保存不会清除它。停用拒绝新的优化请求，原受理同键重放仍返回原任务。
+
+宿主只显示可达的AI审美开关。固定源CSS隐藏提示词标题栏，优化/放大唯一入口位于该栏，保持隐藏；优化器组件与relay合同不构成可达原UI验收。44项工具/状态/模型偏好、原画布开关恢复1项、持久授权/四协议九阶段及迁移27项已有证据。原审美UI另通过取消观察后的仅cookies恢复：继续原run和五任务，随后九阶段完成，终态报告再次恢复；原SVG定位与复制提示词可用，私人报告及任务不对成员开放，原图不变。完整动态运行政策/存储统计仍待R22移植；受控供应商和直接执行器不代表AMQP、收费供应商或模型审美质量；仅免费 Agnes 文本/图片/视频真实验收已获授权，其他供应商协议、收费模型、真实音频与企业授权仍暂缓，结果以专项验收记录为准。
+
+### 画布音频协议
+
+本人保存的 `api_format=openai` 音频模型可使用 `openai-audio`（`openai_speech.v1`）
+或 `async-audio`（`canvas_async_audio.v1`）。同步协议 POST `/v1/audio/speech` 返回二进制；
+异步协议 POST `/v1/audio/tasks`，按原供应商 ID GET `/v1/audio/tasks/{id}`。
+正文冻结 `model/input/voice/response_format/speed` 和非空 `instructions`；
+兼容模型的指令不依赖 OpenAI 模型名猜测，标准无画布 envelope 的默认 WAV 保留。
+
+异步结果接受固定 manifest 的六个 URL 路径、内联 data URL 和媒体对象/数组，
+音频节点取首个产物；完成但没有媒体地址时通过 `/v1/audio/tasks/{id}/content` 下载，
+同源保留本人冻结 Bearer/header，并发送 `Accept: audio/*`，跨源媒体不继承认证。
+MP3、WAV、Opus、AAC、FLAC经过实际 FFmpeg 解码后保存为 MinIO 永久资源。
+PCM按冻结格式保留原始字节和`audio/pcm`，不猜测采样参数或时长、不转封装；
+Chrome原播放器无法解码时显示就近错误并禁用进度。成功回执保持本人隔离，
+只有原消费者完成 bind 后才进入共享画布。
+
+异步首次轮询立即调度，后续间隔 2.5 秒，并受冻结任务预算限制；
+固定源非视频声明式 policy 没有开启 `RetryTransient`，查询错误停止自动轮询。
+未知受理不自动重新提交或开放 `retryOf`。投递中断若保有原供应商 ID 和安全恢复许可，
+继续原任务的 poll；已确认生成的音频归档失败只恢复 save，不允许重新付费生成。
+17 项受控 HTTP/MySQL/MinIO 集成与 186 项相邻单测已通过，
+原音频 UI 三项和调度单项另为 4 passed：关闭旧窗口后仅 cookies 恢复、
+原生成/播放/键盘进度、终态再次恢复和 unknown 无重试均已实际验证，
+字节/数据库/权限后置断言执行，零页面错误/失败请求；受控执行器不是 AMQP 或收费供应商验收。
+两协议六格式及unknown另有41项实际联调，包含13个原UI场景；容器格式实际播放、
+PCM原错误态、仅cookies恢复及数据库/字节/权限断言执行，未调用收费供应商。
+
+MiniMax Speech的空音色、OpenAI音色别名或“中文”按可信模型解析为
+`male-qn-qingse`，自定义音色保留。MiniMax Music解析为空后继续manifest回落。
+`input.metadata.providerOptions["openai-audio"|"async-audio"]`仅支持
+`voice/response_format/speed/instructions`；字段类型及范围在准入时校验。
+保存的`default_options`随模型冻结，本次同名选项覆盖该默认；画布音色、格式和
+非零语速优先于命名空间，空指令与音乐的空音色才回落，零语速标记回落到命名空间或1。
+未知字段与非法类型返回`400 generation_unsupported_parameters`，不产生任务或
+供应商请求；`capabilityOptions`不能代替该入口。
+其他协议、模型声音质量、完整批次和一比一对照仍未完成。
 
 ### 画布视频协议
 
@@ -231,6 +479,21 @@ PNG、JPEG、WebP、GIF 为本片接通的 MIME；其他图片、文字视频/�
 视频请求仍使用上述任务接口。客户端提交稳定 `resource:<id>`；服务端读取当前项目内媒体的真实类型、字节、尺寸和时长，不采用客户端伪造元信息，不把临时 URL 作为媒体身份。画布视频请求最多容纳 30 张图片；实际准入取协议与冻结能力上限，Seedance 2.0 为 9 图/3 视频/3 音频，2.5 为 30 图/10 视频/10 音频，标准 `VideoInput` 仍最多 9 图。编辑、延长等操作须由明确的元数据意图与模型能力共同允许，不能从提示词推断。
 
 自定义 Channel 2 的本地参考在创建任务前返回 `422/reference_media_requires_url`，此时没有任务、执行记录或供应商请求；原界面替换为有效 HTTPS 链接后可用原操作键重新提交。该准入只校验 HTTPS 语法，供应商获取链接；后端实际读取远程媒体时仍使用既有受限 transport。官方 `wan3.0-video` 保留单图 inline 例外，不因协议元数据扩大其他参考类型。
+
+`agnes-video-2.5-flash` 使用 `canvas_openai_videos.v1`，稳定参考仅在服务端同时配置
+`MINIO_PUBLIC_ENDPOINT` 与显式 `MINIO_PROVIDER_PRESIGN_EXPIRY` 时开放；缺失配置仍在
+创建任务前返回上述 422。资源必须属于当前项目，真实类型、尺寸、字节及首尾节点映射
+继续校验。首次 Worker submit 重新核对授权和媒体后，将已冻结的原索引解析为临时
+HTTPS 签名，按原节点选择输出 `first_frame/last_frame` 或参考组；签名只进入提交副本，
+不成为媒体身份、幂等来源或持久化参数。纯结构校验不生成 `.invalid` 占位 URL，最终
+wire 拒绝未解析引用及 `.invalid`。unknown 不二次 POST，后续 poll/save 不重新签名。
+POST 前短事务保存输入 URL 和敏感签名参数的单向指纹，事务结束后才发送请求；
+缺失或损坏指纹的稳定参考任务以 `reference_guard_unavailable` 停止，不重新签名补全。
+提交、轮询及归档前均拒绝输入 URL 或敏感签名值回显，包括同 query 换路径及换参数名，
+错误为 `reference_output_rejected`；输入签名不进入输出归档的 `source_cipher`。
+POST 后仍保留安全供应商 ID 与未知受理状态，轮询拒绝回显不自动重试；
+正常独立视频输出保持原归档行为。检查有 URL、字符及节点上限，不扫描 base64。
+这些合同及模拟测试不证明供应商已读取首帧；公网 GET 和视频首帧内容必须独立验收。
 
 选定服务器目录模型后，视频配置与合法能力选项按规范冻结；`duration/aspectRatio/resolution` 对应 `videoSeconds/size/vquality`。空参数取冻结模型能力默认值；时长枚举/range step、画幅及分辨率按该快照校验，官方单规格分辨率固定到声明值。原请求正文继续决定幂等身份，规范后的 config、能力选项和私有布尔参数决定显示及实际执行；换正文不能重用原键。原全局 `videoArkPrivateAssetUpload=true` 在这三个非 Ark 协议中不触发 Ark 上传。
 
@@ -298,6 +561,7 @@ API Key 保存在宿主原加密字段；Secret Key 和全部 header 值在服�
 | 方法 | 路径 | 合同 |
 | --- | --- | --- |
 | POST | `R` | multipart `file`、`kind=image|video|audio|file`，可选 width/height/durationMs；返回 `{resource}` |
+| POST | `R/import` | JSON `{url,kind,width?,height?,durationMs?}`，必须带 `X-Idempotency-Key`，可选 `X-Canvas-Key`；有界下载公开 HTTP/HTTPS 原文件，返回 `{resource}` |
 | POST | `R/uploads` | JSON `{fileName,kind,size,width?,height?,durationMs?}`；返回 uploadId/chunkSize/chunkCount/expiresAt |
 | PUT | `R/uploads/{id}/chunks/{index}` | 原始字节，单片最多 8 MiB；重复分片须长度与 SHA256 相同 |
 | POST | `R/uploads/{id}/complete` | 校验全部分片、重新探测媒体、归档 MinIO 后返回 `{resource}`；重复完成返回相同结果 |
@@ -309,6 +573,29 @@ API Key 保存在宿主原加密字段；Secret Key 和全部 header 值在服�
 上传首次请求可带 `X-Idempotency-Key`；前端对原 Blob/源本地存储键保持同一个键。本人同键异参、同分片异内容返回 `409 canvas_upload_conflict`，未知结果用原键重试。超过 50 MiB 的文件走分片；会话保留 90 分钟，单人最多 32 个活跃待完成会话。上传最终对象采用预留资源 ID 构造固定路径，存储响应未知不另建资源。
 
 `X-Canvas-Key` 为上传开始时捕获的 source_key，服务端校验成员和画布归属；没有该头时为本人私人资源。图片/音视频尺寸和时长以 Pillow/ffprobe 的实际探测为准，不相信客户端尺寸。源 `resource:<id>` 保存为稳定身份，响应不暴露 MinIO 内部定位值、凭据或临时签名 URL；文件下载端点每次鉴权。
+
+URL 导入先核验本人及目标画布权限，再沿既有 SafeTransport 校验 DNS、地址和每次跳转，
+下载结束由原上传服务再次核权。禁止 URL 用户密码、fragment、任意调用者请求头或
+Cookie；下载不转发当前账号凭据。公开下载默认拒绝私网，显式管理员允许主机沿既有
+transport 配置处理，不修改全局网络策略。上限为 50 MiB，超限返回
+`413 canvas_upload_too_large`，提示下载后分片上传；空文件和非法媒体返回422，不伪造
+尺寸或时长。地址/跳转不允许返回422；其他下载失败返回
+`503 canvas_resource_download_failed`，公开详情仅包含安全原因码，不回显来源 URL。
+
+同作者同键同来源与字段的 ready 请求直接返回原永久 ID，来源过期或变动不再触发GET。
+来源和字段摘要加入原 multipart 声明，不存储 URL 原文或签名查询。未完成请求若原
+MinIO 对象已经存在，重检原字节并沿预留 ID 完成，不重新下载；尚未存储时再下载，
+变动字节被原请求摘要拒绝409，保留原预留身份。同键异来源/字段返回409，同键并发
+使用独占导入锁，忙时保留原请求重试；不持有项目、上传行或用户全局锁下载文件。
+已彻底删除资源的原导入键返回410，不换键复活。导入成功仍沿原私人/共享发布规则，
+只有加入共享作品后成员才能读取；跨项目沿原独立副本归一化。
+
+默认画布本地分支的外部图片先在浏览器fetch，再按原文件上传；只有非本地分支的
+`uploadImage` 会先请求此导入接口。API导入与默认原界面上传恢复的验证分开记录，
+不能据此关闭全部外部URL菜单、源动态大小/配额或H.265门禁。后续已补原画布
+音视频节点的显式保存重传：保留本人原File/声明/幂等键、素材确认后回填，16独立
+场分批通过；立即图片、时间线等其他离线媒体及全部并发仍未由节点恢复关闭，
+详见[音视频验收](../plans/2026-10-10-beeftv-pending-media-audit.md)。
 
 本人同项目资源进入共享图时直接发布，符合画布原版操作步骤；只进入私人参数不会发布。私人全局文件或其他项目文件须通过独立副本接入共享作品，不能直接放宽资源范围。已有画布的源保存流程已接入自动映射，首次整图创建接入原子准备与回执映射；原版素材选择、图片托盘点击/拖入、图片及连线的跨画布粘贴已通过真实操作验证，其它媒体和绘图子文档仍需专项验收。`variant=playback` 当前仍返回原文件，H.265 播放代理尚未迁移。
 
@@ -326,7 +613,14 @@ API Key 保存在宿主原加密字段；Secret Key 和全部 header 值在服�
 
 新复制在不可变来源快照中保存当时本人可见的 `resource_ancestors`，副本再次复制后仍可匹配原素材；中间项目撤权不会抹去最终副本已确认的来源。早期没有此字段的记录在本人可访问范围内沿来源继续解析。完成的副本被节点或时间线 directMedia 使用且仍声明原 `assetId` 时，画布保存校验本人素材与副本来源一致，并登记该素材到实际副本的引用；不新增素材，也不修改原素材的项目归属、payload 或 storageKey。不相关的素材/副本配对返回 `409 canvas_asset_resource_conflict`，整个保存回滚；普通跨项目资源引用继续拒绝。
 
-完成后先提交资源元数据再清理分片。清理失败保留记录并记统一日志；`cleanup_canvas_uploads.py` 默认检查，`--apply` 清理已完成分片和到期暂存。已升级资源删除表的环境由 scheduler 每小时执行暂存清理；启动后首次调度也会执行。清理 helper 已在隔离 MinIO 验证，未在业务库执行批量清理。URL 导入、OSS/Ark 协议与完整存储用量接口尚未完成。
+完成后先提交资源元数据再清理分片。清理失败保留记录并记统一日志；`cleanup_canvas_uploads.py` 默认检查，`--apply` 清理已完成分片和到期暂存。已升级资源删除表的环境由 scheduler 每小时执行暂存清理；启动后首次调度也会执行。清理 helper 已在隔离 MinIO 验证，未在业务库执行批量清理。URL 导入已接入上述有界原文件合同，源动态导入政策、OSS/Ark 协议与完整存储用量接口尚未完成。
+
+该脚本同时检查首次整图创建的到期准备对象。每轮固定过期截止时间，按稳定 ID 每页
+100 条读取，每项仍在原副本锁下重验 pending 状态、有效期、规范媒体/二进制记录和
+预留对象命名空间。单项失败保留原身份并继续后页；回收更新 updated_at 或规范记录
+持续保留页首对象时，后面的独立对象仍会被处理。删除字节前先将准备态改为 pending
+并撤销复制确认；删除响应丢失后仍可安全重试，原创建请求恢复到同一个预留媒体 ID。
+已完成创建、未到期准备对象及仍被规范记录保留的字节受原有检查保护。
 
 彻底删除资源后，原上传身份进入私人删除回执：重复使用原键/原内容，或对原上传会话继续分片、完成，返回 `410 canvas_resource_deleted`；同键异内容仍返回 `409 canvas_upload_conflict`。只有明确的新上传键才会建立新身份。回执在文件回收成功后也保留，防止网络重试复活已删除资源。
 
@@ -358,7 +652,7 @@ API Key 保存在宿主原加密字段；Secret Key 和全部 header 值在服�
 
 数字必须有限，拒绝数字字符串和布尔值；保留源允许的小数，以及视频尺寸为 0 的“未知”语义。MIME 去首尾空白并转为小写；图片、视频和音频须匹配所属种类，也允许源明确支持的 `application/octet-stream`。可选字段省略表示未知，显式 `null` 不合法；未知 `data` 字段按源解析器忽略。`source/note/primaryVersionId/arkAssetId` 若提供须为字符串，`portraitCertified` 须为布尔值；素材 ID 不可全为空白，分类接受五种标准值和源历史别名。
 
-宿主媒体身份仍要求 `resource:` 后接有效非零 uint64 十进制 ID，并由 Service 验证实际资源及权限；此时 `dataUrl/url` 可以是空字符串。仅外部 URL 或浏览器本地键的导入尚未实现，这是已记录的接入差距，不计为完整源合同兼容。后端补齐默认封面、标签和分类，时间戳以服务器为准；不补造缺失尺寸、MIME 或字节数。非法请求返回 422，不能写入新素材、覆盖原内容或改变原资源引用。
+宿主媒体身份仍要求 `resource:` 后接有效非零 uint64 十进制 ID，并由 Service 验证实际资源及权限；此时 `dataUrl/url` 可以是空字符串。外部 URL 须先通过上述导入接口取得永久身份；素材写入不会自动下载 URL 或读取浏览器本地键，完整旧源导入仍有接入差距。后端补齐默认封面、标签和分类，时间戳以服务器为准；不补造缺失尺寸、MIME 或字节数。非法请求返回 422，不能写入新素材、覆盖原内容或改变原资源引用。
 
 分页参数与源一致：page、pageSize（默认 40，最多 120）、kind、category、folderId、uncategorized、status、q、favorite、recent、project、generated。实体类型不进入普通素材分页；active 排除 archived，recent 为最近 30 天。generated 仅图片/视频/音频且来源为“生成任务”或具有字符串 generationEffectKey。分类计数按 status，收藏/最近/项目/生成快捷计数按 active。
 
@@ -380,4 +674,200 @@ API Key 保存在宿主原加密字段；Secret Key 和全部 header 值在服�
 
 托盘插入与原快捷键跨画布粘贴，继续使用保存前资源归一化：同项目复用实际媒体，跨项目建立独立副本，原 `assetId` 和原素材文件保持。已验证图片节点、相对位置、真实拖出的连线、复制后的新节点/连线 ID、真实文件字节以及全新浏览器上下文恢复。节点剪贴板的 sessionStorage 键按账号划分，系统标记必须与当前账号所保存的标记一致，旧无归属槽不作为恢复来源；账号变化时清除内存剪贴板。该本机隔离不授予任何后端资源权限。
 
-仅外部 URL 的素材导入、旧源 ID 映射以及尚未迁入的生成/绘图/工作流引用仍待补齐。已有画布的保存归一化及副本来源恢复已接入，原版选择弹窗、等待期间拖拽/删除/撤销/重做，以及提交失败后刷新重试已有浏览器验证；首次整图创建的验收范围见实施记录。上述托盘/剪贴板证据限于已列出的图片场景，尚未覆盖所有媒体类型、绘图子文档和特殊 URL 路径。新业务接入时必须同时建立资源引用与删除保护，不能仅凭当前删除链路测试通过认定完整素材功能已验收。
+尚未取得永久身份的外部 URL 素材、旧源 ID 映射以及尚未迁入的生成/绘图/工作流引用仍待补齐。已有画布的保存归一化及副本来源恢复已接入，原版选择弹窗、等待期间拖拽/删除/撤销/重做，以及提交失败后刷新重试已有浏览器验证；首次整图创建的验收范围见实施记录。上述托盘/剪贴板证据限于已列出的图片场景，尚未覆盖所有媒体类型、绘图子文档和特殊 URL 路径。新业务接入时必须同时建立资源引用与删除保护，不能仅凭当前删除链路测试通过认定完整素材功能已验收。
+
+## 时间线只读编译
+
+`POST /api/v1/canvas-runtime/timeline/render-plan` 接受源 camelCase 合同
+`{timeline,sources?,options?}`，认证后直接返回语义计划，不排队、下载媒体、写入数据库或调用
+模型。保留 `X-Canvas-Actor` 捕获账号检查；匿名返回 401，账号变化返回 409。来源元数据
+仅参与此次规划，实际渲染仍须重新核验媒体权限与探测信息，不能由该接口授予资源访问权。
+
+- `timeline.version=2`，轨道 `visible` 缺省为真、`muted` 缺省为假；隐藏轨片段跳过内容
+  校验，但所有轨道和片段 ID 仍必须非空且不重复，片段不能引用不存在的轨道。未知 UI 字段忽略。
+- `sources` 缺省或 null 时，从 `directMedia.storageKey=resource:<opaque-id>` 提取来源；
+  显式数组（包括空数组）要求每个可见媒体匹配 `nodeId`、资源纯 ID、`resource:ID` 或
+  `directMedia.id`，按此顺序选择。不解析原生文件路径或外部 URL。
+- `options` 缺省为 1920×1080、30fps、44100Hz、烧录字幕；尺寸须为偶数，最大
+  7680×4320，fps 为 1–120、采样率为 8000–96000。0 使用源默认值。
+- 时间为整数毫秒，总时长不超过 12 小时；不按 30fps 量化。video/image 按开始时间和
+  ID 排序，跨轨视觉重叠返回 400，空隙补 gap。独立音频保留混音、静音、0 音量、来源
+  裁剪和淡入淡出；已知非图片来源允许 100ms 时长容差，明确缺少所需音视频轨时拒绝。
+- 字幕去首尾空白、稳定排序并生成末尾双换行的 SRT；`burnSubtitles=false` 清除字幕及
+  SRT，但保留时间线总时长。可见 text clip 与纯字幕/空时间线沿固定源规则拒绝。
+
+计划 `version=1`，包含 `output/durationMs/segments/audio/subtitles`。未使用的 audio 和
+subtitles 为 null；空 `subtitleSrt` 省略，段落的空身份、0 裁剪/淡入淡出和 false muted
+字段按 Go `omitempty` 省略，`hasAudio` 始终存在。业务拒绝返回 400 和稳定
+`canvas_timeline_<reason>`；非法字段类型返回 422。前端 `compileTimelineRenderPlan`
+复用宿主 HTTP，失败继续上抛，导出不得自行改用另一套语义编译。
+
+只读计划夹具通过不等于成片渲染验收；原生FFmpeg及固定源成对产物的实际证据见实施记录。
+
+## 时间线私人渲染任务
+
+`POST /api/v1/canvas-runtime/timeline/renders` 接受
+`{projectId,clientOperationId,timeline,options?}`，返回202和源任务中心合同。
+`projectId` 是当前画布的 `source_key`；`clientOperationId` 必须为8–128字符ASCII稳定键。
+若提供 `Idempotency-Key`，须与请求字段一致。同作者/键/内容返回原任务，内容或画布变化
+返回 `409 canvas_render_operation_conflict`；不能用新键重试一个回执未知的原请求。
+
+编译时不接收客户端 `sources`、URL、探测事实或凭据；可见片段必须引用本人可访问的
+当前项目资源或本人私有媒体，`resource:` 后为非零uint64十进制字符串。跨项目来源即使
+作者可访问也须先复制。准入冻结编译计划、实际媒体定位、摘要、字节数及当时画布版本，
+保留来源真实外键。时长受 `RENDER_MAX_DURATION_MS` 限制，默认一小时。
+
+任务类型/操作为 `timeline_render`，provider/model 为 `local`/`ffmpeg`；不使用AI任务表。
+详情、列表、日志、取消及显式恢复沿 `/tasks` 合同，只有作者及当前项目权限可读。
+queued取消立即终止，running取消由执行器检查并停止；failed/cancelled恢复保留原ID和
+冻结请求，仅增加消息版本。重复消息及旧租约不得覆盖结果。普通ORM写入不能伪造或
+改写渲染快照、来源引用和完成回执，HTTP也不能开启系统执行会话。
+
+后台复用现有render队列，重新检查当前账号、项目、画布权限并按冻结字节校验来源。
+成片使用固定上传键 `canvas-render:<task-id>:0` 和持久分片上传，先恢复已有归档或完整
+分片，再决定编码；完成前核验实际SHA-256、字节数、音视频轨、尺寸和时长。
+成功的 `resultJson` 含字符串 `resourceId`、`fileName`、`size`、`durationMs` 和可选
+`subtitleSrt`。成片仅本人可见，明确放入共享图后才发布；关闭前端观察不等于取消任务。
+
+持久准入、本地执行器与独立Celery/AMQP、实际FFmpeg/MinIO专项已通过；证据和未验
+范围见实施记录。原画布“导出成片/生成新片段”沿固定源使用浏览器FFmpeg并调用只读
+render-plan；后台renders调用位于源整站剪辑页组件，该页面按当前产品范围已删除。
+原画布浏览器下载、新片段归档和仅cookies恢复在两宽度、开发及宿主组合生产预览
+专项通过，实际SHA/ffprobe和三方权限已验证。完整取消/异常与成对视觉仍在验证，
+不由DDL、计划、后端专项或本次正常运行范围推断全部通过。
+
+## 私人本地字幕转写
+
+`POST /api/v1/canvas-runtime/timeline/transcriptions` 使用源 camelCase 合同
+`{resourceId,language?,projectId?,clientOperationId}`。`resourceId` 为非零uint64十进制字符串，
+`clientOperationId` 为8–128位字母/数字/冒号/下划线/横线。可附同值 `Idempotency-Key`；
+同一作者同键同请求返回原任务200，新任务202，改输入或请求头不一致返回409。客户端
+不能提交服务地址、凭据、租约或终态。语言去首尾Go空白，最多128字符。
+
+`projectId` 是原稳定画布键；当前项目来源或本人全局私人媒体可准入。未传时，项目媒体
+使用其已授权主画布，全局私人媒体创建无项目的本人任务。跨项目来源须先复制；图片、
+外部URL及无权来源拒绝。准入冻结实际定位、SHA/字节长度、MIME及画布版本，来源外键
+保护排队与历史输入，不把签名URL保存为身份。当前账号、项目、画布和来源权限在执行
+回调及完成事务内重新检查。
+
+任务的type/operation为 `timeline_transcription`，provider/model为 `local`/`whisper.cpp`；
+详情、列表、日志、取消和明确恢复沿现有 `/tasks` 合同，只允许作者及当前权限读取。
+queued取消立即终止，running取消停止本地预处理和HTTP观察；failed/cancelled恢复保留
+原ID/来源，仅增加消息版本。完成回执 `resultJson` 解包为 `{segments,srt,language}`，
+segment字段为 `startMs/endMs/text`，毫秒按固定Go源半值远离0取整；保持返回顺序、
+去Go空白、跳过空正文，SRT每条末尾两个换行，负SRT时间钳0。
+
+Worker使用 `CANVAS_WHISPER_BASE_URL` 的 `/inference` 和真实16kHz单声道PCM WAV，
+配置缺失、静音/坏媒体、HTTP/解析错误会持久失败，无自动HTTP重试。成功结果仍为私人
+回执，不改共享图或自动采用字幕；固定源调用所在的整站剪辑页已按产品范围删除。
+014 DDL已在当前 `short_drama` 执行；受控HTTP测试不代表真实ASR模型验收，完整迁移仍
+按台账逐项验证。
+
+## 私人深度动作捕捉
+
+`POST /api/v1/canvas-runtime/depth-captures` 使用源 camelCase 合同
+`{resourceId,projectId?,clientOperationId}`，标识和操作键约束同本地字幕转写。
+可附同值 `Idempotency-Key`；新任务202，同作者同键同输入返回原任务200，改输入、
+跨任务类型复用键或请求头不一致返回409。客户端不能指定模型、设备、组件路径、
+发布清单或执行回执。来源须为已授权的永久视频资源；超过15100ms拒绝，实际执行前
+再次探测时长和冻结字节。当前画布与本人全局私人媒体的范围规则同转写，不接受
+跨项目资源或外部URL直接作为输入。
+
+任务复用014的 `canvas_local_jobs`，不新增表；`type/operation=depth_capture`，
+`provider=local`，`model=video-depth-anything-small`，固定
+`profile=vda-small-mps-standard-v1`。详情、列表、日志、取消和明确恢复沿 `/tasks`
+合同，只允许作者及当前权限。关闭前端观察不取消后台；失败/取消后明确恢复保持
+原ID与来源，旧消息或失效租约不能完成任务。
+
+独立组件支持Windows x64的CPU/CUDA与Apple Silicon的MPS。仅CUDA设备故障退出码42
+允许一次CPU回退；模型缺失、安装、推理或编码错误持久失败。默认CLI参数为输入280、
+最长边960、输出1920×1080、最长15秒、2/98百分位和gamma1.25。执行设备、回退原因与
+耗时先持久保存；视频按 `depth:<task-id>` 分片归档，完成回执丢失后复用原资源，
+不重复推理。完成前重新核验归档SHA-256、大小、分辨率和时长。
+
+成功 `resultJson` 解包为
+`{resourceId,fileName,size,durationMs,width,height,device,fallbackReason,runtimeVersion,processingMs}`。
+`resourceId` 为十进制字符串；`fileName=depth-action-reference.mp4`，尺寸1920×1080，
+`device` 为 `cpu/cuda/mps`，`runtimeVersion=v1`。回执与未放入图的结果仅本人可见；
+原画布操作附加节点后，成品才按项目权限共享。组件部署配置见
+[开发指南](../development.md#环境准备)，验收范围和未验部分见剩余工作台账。
+
+可信业务项目绑定：画布摘要增加只读 nullable `source_project_id`（十进制字符串），`project_id` 仍是所属无限画布工作区。服务端在当前图、私人叠加、历史文档及回收预览最后按可信列设置或移除源界面的 `projectId`，历史 JSON 不会成为绑定事实。
+
+创建子图或复制图时可成对提供 `source_canvas_key`、`source_canvas_row_version`；版本必须是正十进制字符串，超过 JavaScript 安全整数仍原样保留。服务端按精确 key 读取父图，校验当前父 owning、目标 owning（已有时）和 standard 业务项目权限，锁定并核验父版本后继承 nullable 列。未提供父图时创建 NULL；非空客户端 `projectId` 只允许匹配可信父关系，不能传入 `source_project_id` 创建或修改绑定。自由创建和 ZIP 导入不发送来源字段。
+
+来源身份与版本进入首次幂等请求摘要；缺省新字段不会改变旧摘要。服务端冻结的父 identity/business 事实仅保存在不可变准备记录中，不接受为公开参数。pending 恢复每一步核验冻结父关系、精确版本与当前权限，变更返回 409 并保留原请求和 key。已完成创建的回放核验当前目标 owning/business 权限，返回原 ACK，不重新创建或改绑；独立完成的媒体副本仍沿用既有撤权恢复规则。
+
+普通 commit、私人偏好、history restore、archive/recycle restore 均不能改绑；省略或空 `projectId` 不解除已有可信关系，非空不匹配返回 422。Actor ORM 写入对已有列改动返回 `canvas_binding_immutable`，canvas bulk 写仍禁止。旧库必须显式执行 018 迁移；旧图保持 NULL，不自动推导业务来源。旧源项目/角色/版本映射与真实来源对照仍待独立实施。
+
+## 画布角色目录与表示图读取
+
+`R=/canvas-runtime/canvas-projects/{source_key}/character-catalog`。这组接口只读取可信业务来源的当前已保存角色；`source_key` 精确匹配画布稳定键，纯数字键也不能当作画布数据库 ID。来源只由 `ProjectCanvas.source_project_id` 决定，客户端 query 和图 JSON 的 `projectId` 不能替代它。每次读取都核对当前 Actor、所属无限画布项目与 standard 来源项目的权限、模式及归档状态，再验证真实 `ProjectAsset`、角色、当前作品版本和媒体可见性。
+
+| 方法 | 路径 | 合同 |
+| --- | --- | --- |
+| GET | `R` | 返回 `{canvas_key,canvas_row_version,source_project_id,items}`；按实际关联 position、关系 ID 排序，只列角色 |
+| GET | `R/{asset_id}` | 返回同一上下文及 `item`；未关联角色不能通过任意 asset ID 读取 |
+| GET | `R/{asset_id}/image-resources?expected_version_id=...` | 必填当前作品版本；返回 `{canvas_key,canvas_row_version,source_project_id,asset_id,version_id,images}`，不支持 pinned 历史解析 |
+
+全部数据库 ID 和版本的 JSON 输出是十进制字符串；路径、查询发送正 uint64 十进制文本，不转成 JavaScript number。现有 `Identifier` 的输入 OpenAPI 类型仍为 integer，服务端校验精确正值与 uint64 上限。`X-Canvas-Actor` 沿用账号切换校验，不能授予身份或项目权限。
+
+目录 `item` 包含 `asset_id/asset_row_version/current_version_id/version/position`、角色平面字段、完整 JSON `definition`、`definition_origin` 和 `representations`。表示槽位保留真实 `reference_id/role/ordinal/media_id` 及媒体 MIME、文件名、大小和宽高；同一媒体的不同槽位不去重，真实空表示图返回空数组。不返回私人生成参数、原始存储定位或源 `ProjectDetail`、文件夹投影。
+
+图片解析只接受目录刚读取的当前版本。当前版本不同返回 `409 canvas_character_version_changed`，不会自动升级或读取旧历史。每个图片槽位返回真实 `reference_id/role/ordinal/media_id`、`resource_key=resource:{id}`、稳定 `file_path=/api/v1/canvas-runtime/resources/{id}/file`、`requires_canvas_copy` 和现有 `CanvasResourceRead` 别名合同的 `resource`。MIME、大小、作者和时间来自真实媒体记录；响应的 `endpoint/bucket/objectKey/publicUrl` 为空，不暴露 MinIO locator 或签名 URL。
+
+这些 GET 只执行 SELECT；为一致性持有读取行锁，但不创建或修复绑定、版本、关联、媒体映射或任务，也不写对象。resolver 校验媒体范围、审计和白名单定位，不检查对象字节。随后读取 `file_path` 时，原资源端点重新鉴权并实际 stat/下载；对象缺失返回 404，不能把 resolver 成功当作文件已存在。
+
+`requires_canvas_copy=true` 仅提示当前资源项目与目标画布项目不同；读取不复制，也不授予生成或图保存准入。调用者仍须按现有归一化/复制规则独立处理，不能据此猜出副本资源或直接回填共享图。
+
+| 条件 | HTTP / code |
+| --- | --- |
+| 无可信 Actor / 账号头变化 | 401 `authentication_required` / 409 `canvas_actor_changed` |
+| 来源未绑定 / 模式不符 / 锁后来源变化 | 409 `canvas_character_source_required` / `canvas_binding_invalid` / `canvas_binding_changed` |
+| 画布、任一项目、关联、角色或媒体不可访问 | 404 `not_found` |
+| 当前指针、快照、hash 或槽位漂移 | 409 `conflict`；不自动修复 |
+| 预期作品版本已变化 | 409 `canvas_character_version_changed` |
+| 同 ID 的媒体及二进制资源都可见 | 409 `canvas_character_resource_ambiguous` |
+| 图片 MIME、审计、大小或定位合同不合格 | 409 `canvas_character_resource_invalid` |
+
+本节是专用 HTTP 读取合同；角色 UI、宿主客户端实际接线、业务数据回填和供应商验收按独立实施范围核验，不能从接口可读取推断这些工作已完成。
+
+### current 角色目录的画布界面调用
+
+现有三个角色入口接专用目录与图片 resolver，不调用标准项目 API 构造假的角色详情。列表和详情使用同一可信 source 与画布 row-version，选择确认再读取 current/detail 并核原选择版本，所有异步阶段校验账号 epoch、画布 lifetime、角色 identity 与表示槽位。未绑定来源、真实空目录和读取失败分别显示；角色路径不回退个人素材库。
+
+进入图的角色仍采用固定源 Text 卡、封面优先级和原详情布局。definition 字典原样保存，legacy description/prompt 仅有限编译提示词；不扩造结构化设定或声音事实。封面进入图保存时沿统一 normalize/copy、journal、CAS 与 reload；同版本复制封面及本人私人 prompt/voice 保持，版本/槽位变化必须重新解析。此接线仅支持 current；pinned、声音绑定/生成、角色生成、生成引用和 standalone builder 不在该 UI 范围。UI/API 替身测试不构成真实供应商、MySQL/MinIO、cookie 或完整固定源验收。
+
+
+## 可信来源项目与分集小说读取
+
+`S=/canvas-runtime/canvas-projects/{canvas_key}/source-project`。`canvas_key` 是画布稳定键，数值形式的键也不会转成数据库 ID。来源只取自可信 `ProjectCanvas.source_project_id`，客户端不能用 query、分集 payload 或画布 JSON 指定其他来源。读取必须同时具有当前无限画布所属项目和 standard 来源项目权限，两项目与画布均未归档且模式有效。
+
+| 方法与路径 | 必填 query | 返回内容 |
+| --- | --- | --- |
+| `GET S` | `expected_canvas_row_version`、`expected_owning_project_id`、`expected_source_project_id` | 当前可信来源项目摘要、按 `position,id` 排序的分集目录与能力状态 |
+| `GET S/episodes/{episode_id}` | 上述三项，另加 `expected_content_version` | 该来源项目内的分集身份及已保存小说正文 |
+
+所有 ID 和版本均为十进制字符串；`position` 为数据库的一基正整数，不转换为从零开始的索引。expected 参数用于比较当前绑定和版本，不提供访问权限。服务先读取稳定画布身份，按项目 ID 顺序锁定和核验两项目，再重新锁定画布并核对绑定与 `row_version`；分集和小说按当前视图读取，不以旧 ORM 缓存或私人生成候选补数据。
+
+两响应均包含 `canvas_key/canvas_row_version/owning_project_id/source_project_id`。目录响应另含：
+
+- `project`：真实 `id,row_version,name,synopsis,aspect,style_text`。`style_text` 是标准项目的已保存自由文本，不是源画风预设或结构化快照。
+- `episodes`：真实 `id,title,position,content_version,kind:"episode"`，不混入私人创作记录。
+- `capabilities`：`source_style_snapshot:"unavailable"`、`source_asset_folders:"unavailable"`、`source_assets:"not_included"`。本接口未提供源画风快照、源共享素材文件夹或通用素材列表；角色仍由独立角色目录接口读取，不将标准素材 ID 传入私人素材库接口。
+
+正文响应另含 `episode`（与目录相同字段）以及判别联合 `novel`：
+
+```json
+{"state":"present","content_format":"plain_text","plain_text":"原样小说正文"}
+```
+
+已保存的空字符串同样是 `present`。没有 `EpisodeNovel` 记录时返回：
+
+```json
+{"state":"missing","content_format":"plain_text","plain_text":null}
+```
+
+原文中的换行、首尾空白、`<...>` 和 `&...;` 保持原值，不解析成 HTML、不 strip，不以梗概、剧本或模型候选代替小说。前端预览按纯文本展示；插入前带该分集 `content_version` 重新读取，只有 `present` 可以插入，包括空正文。旧响应不能跨账号、画布或来源版本覆盖新状态；正文冲突后刷新分集目录并由用户重新选择。
+
+缺少或非法 expected 参数返回422；不可见、归档或不属于可信来源的分集返回404。缺来源为 `canvas_source_project_required`/409，模式或自身绑定非法为 `canvas_binding_invalid`/409，读取间绑定变化为 `canvas_binding_changed`/409，expected 项目身份不符为 `canvas_source_context_conflict`/409，画布版本不符为 `canvas_revision_conflict`/409，正文版本不符为 `canvas_source_content_conflict`/409。响应不会静默改选来源、自动重试写入或创建生成任务。

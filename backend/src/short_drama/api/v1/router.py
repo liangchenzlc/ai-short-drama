@@ -9,6 +9,9 @@ from short_drama.api.v1.assistant import router as assistant_router
 from short_drama.api.v1.auth import router as auth_router
 from short_drama.api.v1.canvas_beefapi import router as canvas_beefapi_router
 from short_drama.api.v1.canvas_catalog import router as canvas_catalog_router
+from short_drama.api.v1.canvas_character_catalog import router as canvas_character_catalog_router
+from short_drama.api.v1.canvas_character_images import router as canvas_character_images_router
+from short_drama.api.v1.canvas_depth import router as canvas_depth_router
 from short_drama.api.v1.canvas_drawings import router as canvas_drawings_router
 from short_drama.api.v1.canvas_folders import router as canvas_folders_router
 from short_drama.api.v1.canvas_library import folder_router as canvas_library_folders_router
@@ -16,7 +19,10 @@ from short_drama.api.v1.canvas_library import router as canvas_library_router
 from short_drama.api.v1.canvas_model_tests import router as canvas_model_tests_router
 from short_drama.api.v1.canvas_provider_tasks import router as canvas_provider_tasks_router
 from short_drama.api.v1.canvas_resources import router as canvas_resources_router
+from short_drama.api.v1.canvas_source_project import router as canvas_source_project_router
 from short_drama.api.v1.canvas_tasks import router as canvas_tasks_router
+from short_drama.api.v1.canvas_timeline import router as canvas_timeline_router
+from short_drama.api.v1.canvas_tool_runs import router as canvas_tool_runs_router
 from short_drama.api.v1.canvases import router as canvases_router
 from short_drama.api.v1.collaboration import router as collaboration_router
 from short_drama.api.v1.episode_assembly import router as episode_assembly_router
@@ -34,11 +40,17 @@ from short_drama.api.v1.test import router as test_router
 router = APIRouter(prefix="/api/v1")
 router.include_router(canvas_beefapi_router)
 router.include_router(canvas_catalog_router)
+router.include_router(canvas_character_catalog_router)
+router.include_router(canvas_character_images_router)
 router.include_router(canvases_router)
 router.include_router(canvas_drawings_router)
 router.include_router(canvas_folders_router)
 router.include_router(canvas_resources_router)
+router.include_router(canvas_source_project_router)
 router.include_router(canvas_tasks_router)
+router.include_router(canvas_timeline_router)
+router.include_router(canvas_depth_router)
+router.include_router(canvas_tool_runs_router)
 router.include_router(canvas_provider_tasks_router)
 router.include_router(canvas_model_tests_router)
 router.include_router(canvas_library_router)

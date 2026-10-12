@@ -14,6 +14,8 @@ from short_drama.schemas.canvas_task_runtime import (
     CanvasTaskTextReplayRead,
 )
 from short_drama.service.canvas_generation_service import CanvasGenerationService
+from short_drama.service.canvas_local_service import CanvasLocalService
+from short_drama.service.canvas_render_service import CanvasRenderService
 from short_drama.service.canvas_task_service import CanvasTaskService
 
 router = APIRouter(prefix="/canvas-runtime", tags=["Canvas tasks"])
@@ -50,24 +52,68 @@ def list_canvas_tasks(
         str | None, Query(alias="sourceNodeId", min_length=1, max_length=128)
     ] = None,
 ):
-    return CanvasGenerationService(service.session, request.app.state.settings).list(
+    items = CanvasGenerationService(service.session, request.app.state.settings).list(
         project_id=project_id,
         active_only=active_only,
         limit=page_size,
         client_operation_id=client_operation_id,
         source_node_id=source_node_id,
     )
+    if source_node_id is None:
+        items.extend(
+            CanvasLocalService(service.session, request.app.state.settings).list(
+                project_id=project_id,
+                active_only=active_only,
+                limit=page_size,
+                client_operation_id=client_operation_id,
+            )
+        )
+        items.extend(
+            CanvasRenderService(service.session, request.app.state.settings).list(
+                project_id=project_id,
+                active_only=active_only,
+                limit=page_size,
+                client_operation_id=client_operation_id,
+            )
+        )
+    return sorted(items, key=lambda item: (item["updatedAt"], int(item["id"])), reverse=True)[
+        :page_size
+    ]
 
 
 @router.get(
     "/tasks/{task_id}", response_model=CanvasRuntimeTaskRead, response_model_exclude_none=True
 )
 def canvas_task(task_id: Identifier, request: Request, service: Canvases):
+    local = CanvasLocalService(service.session, request.app.state.settings).maybe_detail(task_id)
+    if local is not None:
+        return local
+    local = CanvasRenderService(service.session, request.app.state.settings).maybe_detail(task_id)
+    if local is not None:
+        return local
     return CanvasGenerationService(service.session, request.app.state.settings).detail(task_id)
 
 
 @router.get("/tasks/{task_id}/logs", response_model=list[CanvasRuntimeTaskLog])
 def canvas_task_logs(task_id: Identifier, request: Request, service: Canvases):
+    local = CanvasLocalService(service.session, request.app.state.settings).maybe_detail(task_id)
+    if local is not None:
+        return [
+            {
+                "summary": local.get("error") or local["stage"],
+                "level": "error" if local.get("error") else "info",
+                "createdAt": local["updatedAt"],
+            }
+        ]
+    local = CanvasRenderService(service.session, request.app.state.settings).maybe_detail(task_id)
+    if local is not None:
+        return [
+            {
+                "summary": local.get("error") or local["stage"],
+                "level": "error" if local.get("error") else "info",
+                "createdAt": local["updatedAt"],
+            }
+        ]
     return CanvasGenerationService(service.session, request.app.state.settings).logs(task_id)
 
 
@@ -108,6 +154,16 @@ def canvas_text_events(
     response_model_exclude_none=True,
 )
 def cancel_canvas_task(task_id: Identifier, request: Request, service: Canvases):
+    local = CanvasLocalService(service.session, request.app.state.settings).maybe_action(
+        task_id, "cancel"
+    )
+    if local is not None:
+        return local
+    local = CanvasRenderService(service.session, request.app.state.settings).maybe_action(
+        task_id, "cancel"
+    )
+    if local is not None:
+        return local
     return CanvasGenerationService(service.session, request.app.state.settings).action(
         task_id, "cancel"
     )
@@ -119,6 +175,16 @@ def cancel_canvas_task(task_id: Identifier, request: Request, service: Canvases)
     response_model_exclude_none=True,
 )
 def resume_canvas_task(task_id: Identifier, request: Request, service: Canvases):
+    local = CanvasLocalService(service.session, request.app.state.settings).maybe_action(
+        task_id, "resume"
+    )
+    if local is not None:
+        return local
+    local = CanvasRenderService(service.session, request.app.state.settings).maybe_action(
+        task_id, "resume"
+    )
+    if local is not None:
+        return local
     return CanvasGenerationService(service.session, request.app.state.settings).action(
         task_id, "resume"
     )

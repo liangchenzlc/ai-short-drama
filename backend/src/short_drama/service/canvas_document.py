@@ -19,6 +19,7 @@ nodeRole resultOrigin generatedFromNodeId content previewContent videoPreview ri
 fontSize naturalWidth naturalHeight freeResize primaryImageId imageBatchExpanded storageKey
 mimeType bytes durationMs hasAudio assetTags assetCategory workflowKind workflowTitle
 workflowDescription chapterTitle shotIndex characterName characterAliases characterDefinition
+characterAssetId characterVersionId characterCoverUrl
 characterVersionPolicy characterView characterViewNodeIds videoMergeSourceNodeIds
 depthSourceNodeId videoFrameSourceNodeId videoFrameTimeMs videoSegmentSourceNodeId
 videoSegmentStartMs videoSegmentEndMs videoSegmentIndex videoSegmentAction videoTrimStartMs
@@ -31,8 +32,9 @@ subtitleEntries subtitleHighlights subtitleStyle subtitleUpdatedAt chartKind col
 manualSize storyboard frame folder drawingId drawingEngine drawingRevision drawingUpdatedAt
 drawingPreviewStorageKey drawingPreviewUrl drawingShapeCount drawingPageCount
 referenceAssetNodeIds assetBindings characterVoiceName characterVoiceProfile
-""".split()
+    """.split()
 )
+SKILL_BODY_METADATA = frozenset({"content", "previewContent", "richText"})
 PRIVATE_ROOT = frozenset(
     {
         "chatSessions",
@@ -50,6 +52,7 @@ SERVER_ROOT = frozenset(
         "revision",
         "remoteContentHash",
         "workspaceProjectId",
+        "projectId",
         "createdAt",
         "updatedAt",
     }
@@ -63,7 +66,7 @@ RESOURCE_KEY = re.compile(r"^resource:([1-9][0-9]*)$")
 RESOURCE_URL = re.compile(r"^/api/(?:v1/canvas-runtime/)?resources/([1-9][0-9]*)(?:/.*)?$")
 RESOURCE_LOCATOR_FIELDS = frozenset(
     "storageKey content previewContent drawingPreviewStorageKey drawingPreviewUrl url dataUrl "
-    "coverUrl imageUrl videoUrl audioUrl referenceUrl referenceUrls artifactRef "
+    "coverUrl characterCoverUrl imageUrl videoUrl audioUrl referenceUrl referenceUrls artifactRef "
     "providerArtifactRef".split()
 )
 RESOURCE_ID_FIELDS = frozenset(
@@ -71,6 +74,28 @@ RESOURCE_ID_FIELDS = frozenset(
 )
 PROJECTION_KEY = "$canvas_projection"
 ABSENT = object()
+CHARACTER_IDENTITY_FIELDS = frozenset(
+    {"characterAssetId", "characterVersionId", "characterCoverUrl"}
+)
+CHARACTER_UNVERIFIED_FIELDS = frozenset({"characterVoiceName", "characterVoiceProfile"})
+CHARACTER_PRIVATE_NESTED = re.compile(
+    r"^(api_?key$|secret|credential|authorization$|access_?token$|model$|modelId$)", re.I
+)
+
+
+def character_node(node: dict) -> bool:
+    metadata = node.get("metadata") or {}
+    return bool(CHARACTER_IDENTITY_FIELDS.intersection(metadata)) or (
+        node.get("type") == "text" and metadata.get("workflowKind") == "character"
+    )
+
+
+def has_character_nodes(document: CanvasDocument | dict | None) -> bool:
+    if document is None:
+        return False
+    if isinstance(document, CanvasDocument):
+        document = document.model_dump(mode="json", by_alias=True, exclude_unset=True)
+    return any(character_node(node) for node in document.get("nodes", []))
 
 
 def content_hash(value: object) -> str:
@@ -89,20 +114,20 @@ def _item_identity(value) -> str:
     return "content:" + content_hash(value)
 
 
-def _split_nested(value):
+def _split_nested(value, extra_private=None):
     if isinstance(value, dict):
         shared, private = {}, {}
         for key, item in value.items():
-            if PRIVATE_NESTED.match(key):
+            if PRIVATE_NESTED.match(key) or extra_private and extra_private.match(key):
                 private[key] = deepcopy(item)
             else:
-                public, hidden = _split_nested(item)
+                public, hidden = _split_nested(item, extra_private)
                 shared[key] = public
                 if hidden is not None:
                     private[key] = hidden
         return shared, {PROJECTION_KEY: {"kind": "object", "fields": private}} if private else None
     if isinstance(value, list):
-        pairs = [_split_nested(item) for item in value]
+        pairs = [_split_nested(item, extra_private) for item in value]
         shared = [public for public, _ in pairs]
         identities = [_item_identity(item) for item in shared]
         counts = Counter(identities)
@@ -153,6 +178,46 @@ def overlay(shared, private):
     return deepcopy(private)
 
 
+def _split_conversion_work(value):
+    """仅发布转换作品及来源，处理状态、诊断和未知字段由作者投影恢复。"""
+    if not isinstance(value, dict):
+        return {}, deepcopy(value)
+    allowed = {
+        "schemaVersion": lambda item: type(item) is int and item == 1,
+        "operation": lambda item: (
+            isinstance(item, str)
+            and item in {"grayscale", "edge-canny", "lineart", "depth", "pose", "cutout"}
+        ),
+        "sourceNodeId": lambda item: isinstance(item, str) and 0 < len(item) <= 128,
+        "sourceFingerprint": lambda item: isinstance(item, str) and 0 < len(item) <= 128,
+        "outputKind": lambda item: item == "image",
+        "resultStorageKey": lambda item: (
+            isinstance(item, str)
+            and bool(RESOURCE_KEY.fullmatch(item))
+            and len(item) <= 29
+            and int(item[9:]) <= 2**64 - 1
+        ),
+        "resultWidth": lambda item: type(item) is int and 0 < item <= 32768,
+        "resultHeight": lambda item: type(item) is int and 0 < item <= 32768,
+        "detectedPeople": lambda item: type(item) is int and item >= 0,
+    }
+    public = {
+        key: deepcopy(item) for key, item in value.items() if key in allowed and allowed[key](item)
+    }
+    hidden = {key: deepcopy(item) for key, item in value.items() if key not in public}
+    if "status" in value:
+        public["status"] = (
+            value["status"]
+            if isinstance(value["status"], str) and value["status"] in {"completed", "stale"}
+            else "stale"
+            if public.get("resultStorageKey")
+            else "idle"
+        )
+        if value["status"] == public["status"]:
+            hidden.pop("status", None)
+    return public, {PROJECTION_KEY: {"kind": "object", "fields": hidden}}
+
+
 def split_document(document: CanvasDocument, *, strict_media=True) -> tuple[dict, dict]:
     source = canonicalize_canvas_media(
         document.model_dump(mode="json", by_alias=True, exclude_unset=True), strict=strict_media
@@ -175,8 +240,20 @@ def split_document(document: CanvasDocument, *, strict_media=True) -> tuple[dict
         metadata = node.get("metadata", {})
         public, hidden = {}, {}
         for key, value in metadata.items():
-            if key in SHARED_METADATA:
-                public[key], nested = _split_nested(value)
+            if key == "mediaConversion" and node.get("type") == "media-conversion":
+                public[key], hidden[key] = _split_conversion_work(value)
+            elif key in SHARED_METADATA and not (
+                node.get("type") == "skill"
+                and key in SKILL_BODY_METADATA
+                or character_node(node)
+                and key in CHARACTER_UNVERIFIED_FIELDS
+            ):
+                public[key], nested = _split_nested(
+                    value,
+                    CHARACTER_PRIVATE_NESTED
+                    if character_node(node) and key == "characterDefinition"
+                    else None,
+                )
                 if nested is not None:
                     hidden[key] = nested
             else:
@@ -189,6 +266,12 @@ def split_document(document: CanvasDocument, *, strict_media=True) -> tuple[dict
 
 def project_document(shared: dict, private: dict | None) -> dict:
     result = deepcopy(shared)
+    # Old rows have no reliable body-author identity. Never expose or assign
+    # their shared Skill prose; only a trusted personal projection may restore it.
+    for node in result.get("nodes", []):
+        if node.get("type") == "skill":
+            for field in SKILL_BODY_METADATA:
+                node.get("metadata", {}).pop(field, None)
     if private:
         result = overlay(result, private.get("root", {}))
         for node in result.get("nodes", []):

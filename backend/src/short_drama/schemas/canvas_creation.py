@@ -52,6 +52,9 @@ def canvas_creation_payload(request: CanvasCreateRequest) -> dict:
     payload = request.model_dump(mode="json")
     # Existing immutable requests and receipts predate the optional drawing list.
     # Absence and an empty list retain exactly their original digest input.
+    if payload.get("source_canvas_key") is None:
+        payload.pop("source_canvas_key", None)
+        payload.pop("source_canvas_row_version", None)
     if not payload.get("drawing_documents"):
         payload.pop("drawing_documents", None)
     return payload

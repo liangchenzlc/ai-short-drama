@@ -99,7 +99,19 @@ export function CanvasZoomControls({ scale, onScaleChange, onFitContent, onAutoA
         liveScaleRef.current = nextScale;
         const percent = String(Math.round(nextScale * 100));
         if (inputRef.current && document.activeElement !== inputRef.current) inputRef.current.value = percent;
-        if (dockLabelRef.current) dockLabelRef.current.textContent = percent;
+        const dockLabel = dockLabelRef.current;
+        if (dockLabel && dockLabel.textContent !== percent) {
+            const textNode = dockLabel.firstChild;
+            if (
+                textNode &&
+                textNode === dockLabel.lastChild &&
+                textNode.nodeType === Node.TEXT_NODE
+            ) {
+                (textNode as Text).data = percent;
+            } else {
+                dockLabel.textContent = percent;
+            }
+        }
     }
 
     function commitScale(nextScale: number) {

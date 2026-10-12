@@ -29,12 +29,12 @@ export type UploadedImage = {
 const store = localForageInstance(IMAGE_FILES_STORE_NAME);
 const objectUrls = new Map<string, string>();
 
-export async function uploadImage(input: string | Blob, onProgress?: (uploadedBytes: number, totalBytes: number) => void, expectedScope?: CapturedUserScope, canvasKey?: string | null): Promise<UploadedImage> {
+export async function uploadImage(input: string | Blob, onProgress?: (uploadedBytes: number, totalBytes: number) => void, expectedScope?: CapturedUserScope, canvasKey?: string | null, idempotencyKey?: string): Promise<UploadedImage> {
     // 同一个逻辑上传在本地资源服务不可用后会退回 IndexedDB。
     // 提前生成稳定 key，确保恢复路径仍能定位同一份本地媒体。
     const expected = expectedScope ?? captureUserScope();
     const hostCanvasKey = canvasKey === undefined ? canvasKeyFromPath(window.location.pathname) : canvasKey;
-    const storageKey = `image:${expected.userScope}:${nanoid()}`;
+    const storageKey = idempotencyKey || `image:${expected.userScope}:${nanoid()}`;
     const localRuntime = isLocalRuntimeMode();
     if (!localRuntime && typeof input === "string" && shouldImportRemoteImage(input)) {
         try {
@@ -133,6 +133,27 @@ export async function resolveImageUrl(storageKey?: string, fallback = "", option
 export async function getImageBlob(storageKey: string) {
     if (resourceIdFromStorageKey(storageKey)) return getCachedResourceBlob(storageKey);
     return store.getItem<Blob>(storageKey);
+}
+
+/** 明确保存时重传本人缓存的原字节；复用直传键，不重新加工图片或降级为已保存。 */
+export async function retryPendingImageUpload(storageKey: string, expected: CapturedUserScope, canvasKey: string): Promise<UploadedImage> {
+    assertUserScope(expected);
+    if (!storageKey.startsWith(`image:${expected.userScope}:`)) throw new Error("当前图片不属于本人的待上传草稿");
+    const blob = await getImageBlob(storageKey);
+    assertUserScope(expected);
+    if (!blob) throw new Error("待上传图片的本地原文件不可用，请保留草稿并重新上传");
+    const preview = await resolveImageUrl(storageKey);
+    const meta = await readImageMeta(preview);
+    assertUserScope(expected);
+    const resource = await uploadResourceFile(blob, "image", {
+        width: meta.width, height: meta.height, idempotencyKey: storageKey, expectedScope: expected, hostCanvasKey: canvasKey,
+    });
+    assertUserScope(expected);
+    return {
+        url: resource.publicUrl || resourceFileUrl(resource.id), storageKey: resourceStorageKey(resource.id),
+        width: resource.width || meta.width, height: resource.height || meta.height,
+        bytes: resource.size || blob.size, mimeType: resource.mimeType || blob.type || meta.mimeType,
+    };
 }
 
 export async function setImageBlob(storageKey: string, blob: Blob) {

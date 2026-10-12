@@ -194,6 +194,9 @@ class AssetLibraryService(BaseService):
                 episode = self._require(Episode, parent_id, for_update=False)
                 set_scope(self.session, (None, episode.project_id))
         asset = self.assets.create(self._creation_audit(values))
+        from .asset_version_service import AssetVersionService
+
+        AssetVersionService(self.session).append_locked(asset)
         return asset, self._create_link(kind, parent_id, asset.id)
 
     def link_locked(self, kind, parent, asset_id):
@@ -328,5 +331,8 @@ class AssetLibraryService(BaseService):
                 )
             changes.update(row_version=asset.row_version + 1, state="unconfirmed")
             self._apply_update(asset, changes)
+            from .asset_version_service import AssetVersionService
+
+            AssetVersionService(self.session).append_locked(asset)
             media = self.library.media(asset.media_id) if asset.media_id else None
             return self._read(asset, media)

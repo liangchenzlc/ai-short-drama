@@ -20,7 +20,8 @@ import { resourceIdFromStorageKey } from "@/services/api/resources";
 import { http } from "@/services/api/request";
 import { uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
-import { getProjectUnit } from "@/services/api/projects";
+import { sourceEpisodePlainText } from "@/services/host-source-project";
+import type { CanvasSourceProjectReader } from "./use-canvas-source-project";
 import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { useAssetStore, type ImageAsset } from "@/stores/use-asset-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type ContextMenuState, type Position } from "@/types/canvas";
@@ -32,6 +33,8 @@ import { createOwnedCanvasUploadGuard, persistOwnedCanvasUploadNode, shouldSuppr
 type UseCanvasUploadOptions = {
     canvasId: string;
     domainProjectId?: string;
+    readSourceEpisode: CanvasSourceProjectReader["readEpisode"];
+    sourceContextKey: string;
     nodesRef: { current: CanvasNodeData[] };
     connectionsRef: { current: CanvasConnection[] };
     selectedNodeIdsRef: { current: Set<string> };
@@ -43,6 +46,16 @@ type UseCanvasUploadOptions = {
     setSelectedConnectionId: Dispatch<SetStateAction<string | null>>;
     setContextMenu: Dispatch<SetStateAction<ContextMenuState | null>>;
     setDialogNodeId: Dispatch<SetStateAction<string | null>>;
+};
+
+export type CanvasSourceChapterStatus = {
+    contextKey: string;
+    contextEpoch: number;
+    requestId: number;
+    chapterId: string;
+    contentVersion: string;
+    loading: boolean;
+    error: string;
 };
 
 export type StartCanvasUploadStatus = (title: string, detail: string, total?: number) => {
@@ -66,6 +79,8 @@ function isBatchTableDragEvent(event: DragEvent<HTMLElement>) {
 export function useCanvasUpload({
     canvasId,
     domainProjectId,
+    readSourceEpisode,
+    sourceContextKey,
     nodesRef,
     connectionsRef,
     selectedNodeIdsRef,
@@ -92,6 +107,14 @@ export function useCanvasUpload({
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [uploadStatus, setUploadStatus] = useState<CanvasUploadStatus | null>(null);
     const [fileDropActive, setFileDropActive] = useState(false);
+    const chapterContextKey = JSON.stringify({ canvasId, sourceContextKey, scope: captureUserScope() });
+    const chapterContextRef = useRef({ key: chapterContextKey, epoch: 0 });
+    if (chapterContextRef.current.key !== chapterContextKey) chapterContextRef.current = { key: chapterContextKey, epoch: chapterContextRef.current.epoch + 1 };
+    const chapterContextEpoch = chapterContextRef.current.epoch;
+    const chapterRequestRef = useRef(0);
+    const [sourceChapterStatus, setSourceChapterStatus] = useState<CanvasSourceChapterStatus | null>(null);
+
+    useEffect(() => { setSourceChapterStatus(null); }, [chapterContextKey, chapterContextEpoch]);
 
     useEffect(() => () => {
         statusTimersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -413,37 +436,42 @@ export function useCanvasUpload({
             getLiveCanvasId: () => canvasIdRef.current,
             mounted: () => mountedRef.current,
         });
-        let sourceText = chapter.sourceText;
-        if (sourceText === undefined) {
-            try {
-                sourceText = (await getProjectUnit(chapter.projectId, chapter.id, guard.expectedScope, guard.signal)).unit.sourceText;
-            } catch (error) {
-                if (guard.suppress(error)) return;
-                message.error(error instanceof Error ? `章节正文读取失败：${error.message}` : "章节正文读取失败");
-                return;
-            }
-        }
         if (!guard.alive()) return;
-        const content = htmlToPlainText(sourceText);
+        const requestId = ++chapterRequestRef.current;
+        const current = () => guard.alive() && chapterContextRef.current.key === chapterContextKey && chapterContextRef.current.epoch === chapterContextEpoch;
+        setSourceChapterStatus({ contextKey: chapterContextKey, contextEpoch: chapterContextEpoch, requestId, chapterId: chapter.id, contentVersion: chapter.contentVersion, loading: true, error: "" });
+        let result;
+        let content: string;
+        try {
+            if (chapter.projectId !== domainProjectId) throw new Error("所选章节与当前来源项目不匹配，请重新选择");
+            result = await readSourceEpisode(chapter.id, chapter.contentVersion, guard.expectedScope, guard.signal);
+            content = sourceEpisodePlainText(result);
+        } catch (error) {
+            if (guard.suppress(error) || !current()) return;
+            const detail = error instanceof Error ? `章节正文读取失败：${error.message}` : "章节正文读取失败，请重试";
+            setSourceChapterStatus(status => status?.contextKey === chapterContextKey && status.requestId === requestId ? { ...status, loading: false, error: detail } : status);
+            return;
+        }
+        if (!current()) return;
         const node = createCanvasNode(CanvasNodeType.Text, position || getCanvasCenter(), {
             content,
             prompt: content,
             status: NODE_STATUS_SUCCESS,
             workflowKind: "free",
             workflowTitle: "项目章节",
-            workflowDescription: `第 ${chapter.position + 1} 章`,
-            chapterId: chapter.id,
-            chapterTitle: chapter.title,
+            workflowDescription: `第 ${result.episode.position} 章`,
+            chapterId: result.episode.id,
+            chapterTitle: result.episode.title,
             fontSize: 14,
         });
-        node.title = `章节 · ${chapter.title}`;
+        node.title = `章节 · ${result.episode.title}`;
         node.width = 460;
         node.height = 280;
         setNodes((current) => [...current, node]);
         selectInsertedNode(node.id, "preserve");
         setContextMenu(null);
-        message.success(`已添加“${chapter.title}”`);
-    }, [canvasId, getCanvasCenter, lifetime, message, mountedRef, selectInsertedNode, setContextMenu, setNodes]);
+        setSourceChapterStatus(status => status?.contextKey === chapterContextKey && status.requestId === requestId ? null : status);
+    }, [canvasId, chapterContextEpoch, chapterContextKey, domainProjectId, getCanvasCenter, lifetime, mountedRef, readSourceEpisode, selectInsertedNode, setContextMenu, setNodes]);
 
     const handleUploadRequest = useCallback((nodeId?: string, position?: Position) => {
         uploadTargetRef.current = { nodeId, position };
@@ -969,6 +997,7 @@ export function useCanvasUpload({
         handleImageInputChange,
         handleProjectAssetsInsert,
         handleProjectChapterInsert,
+        sourceChapterStatus: sourceChapterStatus?.contextKey === chapterContextKey && sourceChapterStatus.contextEpoch === chapterContextEpoch ? sourceChapterStatus : null,
         handleUploadFiles,
         handleUploadRequest,
         handleUploadReferenceRequest,
@@ -992,15 +1021,8 @@ function parseProjectChapterPayload(value: string): CanvasProjectChapterPayload 
     if (!value) return null;
     try {
         const payload = JSON.parse(value) as Partial<CanvasProjectChapterPayload>;
-        const validSource = payload.sourceText === undefined || typeof payload.sourceText === "string";
-        return typeof payload.id === "string" && typeof payload.projectId === "string" && typeof payload.title === "string" && validSource && typeof payload.position === "number" ? payload as CanvasProjectChapterPayload : null;
+        return typeof payload.id === "string" && typeof payload.projectId === "string" && typeof payload.title === "string" && typeof payload.contentVersion === "string" && Number.isSafeInteger(payload.position) && Number(payload.position) >= 1 ? payload as CanvasProjectChapterPayload : null;
     } catch {
         return null;
     }
-}
-
-function htmlToPlainText(value: string) {
-    if (!value) return "";
-    const document = new DOMParser().parseFromString(value, "text/html");
-    return document.body.textContent?.trim() || "";
 }

@@ -10,14 +10,21 @@ from sqlalchemy import select
 
 from short_drama.ai import GenerationError
 from short_drama.ai.canvas_credentials import decode_canvas_credentials
+from short_drama.ai.canvas_runninghub_adapters import (
+    RUNNINGHUB_ADAPTERS,
+    RUNNINGHUB_VIDEO,
+    runninghub_output_kind,
+)
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import NotFound
 from short_drama.dao.asset_image_candidate_dao import AssetImageCandidateDAO
 from short_drama.dao.task_runtime_dao import LeaseLost, owned_task
-from short_drama.domain import AIGenerationRecord, Asset, MediaAsset, MediaFile
+from short_drama.domain import AIGenerationRecord, Asset, AsyncTask, MediaAsset, MediaFile
 from short_drama.service.base import utcnow
 from short_drama.storage.models import ObjectLocation
 from short_drama.utils.snowflake import next_id
+
+from .task_access import lock_resource_project
 
 MAX_MEDIA_BYTES = {"image": 50 * 1024**2, "video": 1024**3, "audio": 100 * 1024**2}
 
@@ -67,7 +74,9 @@ class GenerationArchive:
             entry = {
                 "output_index": index,
                 "asset_id": str(next_id()),
-                "media_type": task.service_type,
+                "media_type": output.get("media_type", task.service_type)
+                if record.adapter in RUNNINGHUB_ADAPTERS
+                else task.service_type,
             }
             if output.get("url"):
                 entry["source_cipher"] = self._cipher().encrypt(output["url"])
@@ -116,10 +125,24 @@ class GenerationArchive:
 
             from .audio_media import inspect_audio
 
-            with TemporaryDirectory() as directory:
-                path = Path(directory) / "speech.media"
-                path.write_bytes(data)
-                meta = inspect_audio(path, self.settings)
+            with self.factory() as session:
+                record = session.get(AIGenerationRecord, record_id)
+                canvas_audio = record is not None and "canvas_request" in record.request_data
+                audio_format = (
+                    (record.request_data.get("canvas_parameters") or {}).get("format")
+                    if canvas_audio
+                    else None
+                )
+            if audio_format == "pcm":
+                if not data or len(data) > MAX_MEDIA_BYTES["audio"]:
+                    raise ValueError("Media exceeds size limit or is empty")
+                # 固定源保留无头PCM原字节；没有采样参数时不能推算时长或改封装。
+                meta = {"mime": "audio/pcm", "ext": "pcm"}
+            else:
+                with TemporaryDirectory() as directory:
+                    path = Path(directory) / "speech.media"
+                    path.write_bytes(data)
+                    meta = inspect_audio(path, self.settings, canvas_formats=canvas_audio)
         else:
             meta = inspect_media(data, entry["media_type"])
         if entry["media_type"] == "video":
@@ -205,6 +228,8 @@ class GenerationArchive:
         return "linked"
 
     def save_one(self, task, record, entry, version, token, *, ownership_check=owned_task):
+        if entry.get("ignored"):
+            return False
         with self.factory.begin() as session:
             ownership_check(session, task.id, version, token)
             current_record = session.get(AIGenerationRecord, record.id)
@@ -248,16 +273,41 @@ class GenerationArchive:
                     ),
                 }
             try:
-                data, _mime = self.gateway.download_media(
-                    url, MAX_MEDIA_BYTES[task.service_type], **options
+                data, mime = self.gateway.download_media(
+                    url,
+                    max(MAX_MEDIA_BYTES.values())
+                    if record.adapter in RUNNINGHUB_ADAPTERS
+                    else MAX_MEDIA_BYTES[entry["media_type"]],
+                    **options,
                 )
             except GenerationError as error:
                 from .canvas_video_admission import VIDEO_ADAPTERS
                 from .canvas_video_policy import CanvasVideoDownloadError
 
-                if record.adapter in VIDEO_ADAPTERS:
+                if record.adapter in VIDEO_ADAPTERS or record.adapter == RUNNINGHUB_VIDEO:
                     raise CanvasVideoDownloadError(error) from None
                 raise
+            if record.adapter in RUNNINGHUB_ADAPTERS:
+                kind = runninghub_output_kind(url, mime)
+                if not data or kind is None:
+                    with self.factory.begin() as session:
+                        ownership_check(session, task.id, version, token)
+                        current_record = session.get(AIGenerationRecord, record.id)
+                        response = dict(current_record.response_data or {})
+                        manifest = [dict(item) for item in response.get("media_manifest", [])]
+                        for item in manifest:
+                            if item["output_index"] == entry["output_index"]:
+                                item.update(
+                                    ignored=True,
+                                    ignore_reason="empty" if not data else "unsupported_type",
+                                )
+                                item.pop("source_cipher", None)
+                                item.pop("save_error", None)
+                        response["media_manifest"] = manifest
+                        current_record.response_data = response
+                        current_record.updated_at = utcnow()
+                    return False
+                entry = {**entry, "media_type": kind}
             entry = {**entry, **self._store(task.id, record.id, entry, data)}
         location = ObjectLocation.parse(
             entry["locator"],
@@ -271,6 +321,8 @@ class GenerationArchive:
         if stored.size != entry["byte_size"]:
             raise ValueError("Stored media size changed")
         with self.factory.begin() as session:
+            # 新媒体的项目外键也会加锁；先锁项目，再锁任务，与任务读取事务一致。
+            lock_resource_project(session, AsyncTask, task.id)
             ownership_check(session, task.id, version, token)
             current_record = session.get(AIGenerationRecord, record.id)
             asset = session.scalar(
@@ -313,13 +365,13 @@ class GenerationArchive:
             elif media.checksum_sha256 != entry["checksum"]:
                 raise ValueError("Stored metadata does not match output")
             if asset is None:
-                label = {"image": "图片", "video": "视频", "audio": "配音"}[task.service_type]
+                label = {"image": "图片", "video": "视频", "audio": "配音"}[entry["media_type"]]
                 asset = MediaAsset(
                     id=int(entry["asset_id"]),
                     record_id=record.id,
                     output_index=entry["output_index"],
                     media_id=media.id,
-                    media_type=task.service_type,
+                    media_type=entry["media_type"],
                     name=f"{label}-{task.id}-{entry['output_index']}",
                     row_version=1,
                     created_at=now,

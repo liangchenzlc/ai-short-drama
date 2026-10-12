@@ -14,6 +14,7 @@ from short_drama.schemas.canvas_resource import (
     CanvasChunkRead,
     CanvasResourceCopyRequest,
     CanvasResourceEnvelope,
+    CanvasResourceImport,
     CanvasResourceNormalizeRead,
     CanvasResourceNormalizeRequest,
     CanvasResourceStart,
@@ -36,6 +37,19 @@ def get_resources(request: Request, canvases: Canvases):
 
 
 Resources = Annotated[CanvasResourceService, Depends(get_resources)]
+
+
+@router.post("/import", response_model=CanvasResourceEnvelope)
+def import_resource(
+    payload: CanvasResourceImport,
+    service: Resources,
+    key: Annotated[str, Header(alias="X-Idempotency-Key", min_length=1, max_length=512)],
+    canvas_key: CanvasKey = None,
+):
+    from short_drama.service.canvas_resource_import import CanvasResourceImportService
+
+    importer = CanvasResourceImportService(service.session, service.settings, service.storage)
+    return {"resource": importer.import_url(payload, key, canvas_key)}
 
 
 @router.post("/normalize", response_model=CanvasResourceNormalizeRead)

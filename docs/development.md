@@ -13,6 +13,50 @@
 | MinIO | 预先准备图片和视频两个 bucket，应用不会自动创建 |
 | FFmpeg / FFprobe | 成片探测、预览和导出需要；加入 PATH 或设置 `RENDER_FFMPEG_PATH` / `RENDER_FFPROBE_PATH` |
 
+画布本地字幕转写执行器通过 `CANVAS_WHISPER_BASE_URL` 调用独立 whisper.cpp 服务的
+`/inference`，服务须支持 multipart `file`、`response_format=verbose_json` 和可选 `language`。
+执行器使用现有 FFmpeg 将音视频转成 16kHz、单声道、16-bit PCM WAV，临时文件在退出时清理；
+服务 HTTP 超时为 20 分钟，结果读取上限为 8MiB。模型由该独立服务准备，不由应用自动下载。
+私人任务通过 `/api/v1/canvas-runtime/timeline/transcriptions` 准入，复用现有 render Worker；
+旧库须显式补齐014迁移，并同时部署API、scheduler和Worker。固定源的整站剪辑页按当前
+产品范围已删除，本轮不恢复该页或新增转写按钮。配置地址和受控HTTP通过都不代表真实
+ASR模型验收；API 和负责本地执行的 Worker 应使用相同配置。
+
+画布“深度动作捕捉”使用独立 Video Depth Anything Small 组件，任务同样由 render Worker
+执行，支持 Windows x64 与 Apple Silicon Mac。已有部署组件时同时设置
+`BEEFTV_DEPTH_PYTHON`、`BEEFTV_DEPTH_TOOL_DIR`、`BEEFTV_DEPTH_RUNTIME`：前者为独立
+Python 可执行文件，工具目录含 `depth_capture/`，其同级 `vda/` 使用源固定提交
+`4f5ae23172ba60fd7bc11ef671cca678842c7072`，模型目录保存固定权重。组件依赖独立安装，
+不添加到应用 `uv.lock`；FFmpeg/ffprobe 沿用现有服务端配置，Windows 组件须包含可加载的
+VC++ 运行库。仅填写一部分路径会明确失败。
+
+未配置三项路径时，组件安装器使用 `CANVAS_DEPTH_RUNTIME_ROOT`（默认 `.runtime/depth`）
+持久保存运行包、模型和下载缓存。`BEEFTV_DEPTH_MANIFEST_URL` 可指定部署发布清单；
+Windows 必须配置发布方提供的 `BEEFTV_DEPTH_MANIFEST_PUBLIC_KEY`（Base64 编码的32字节
+Ed25519公钥），验签后才下载。固定源公钥由发布流程注入，仓库没有可直接沿用的公钥；
+不能生成一个临时公钥或关闭校验来替代。下载校验SHA-256和大小，支持断点/分片，并在
+发布失败时恢复旧组件；API、scheduler、render Worker 须使用同版代码及一致配置。
+
+标准深度配置保持输入280、最长边960、输出1920×1080、最长15秒；准入与真实探测均保留
+源15100ms边界。Windows先检查NVIDIA设备再探测CUDA，只有组件退出码42允许回退CPU，
+CPU处理可能较慢；macOS使用MPS，其他平台持久返回不支持。处理期间续租和检查取消，
+退出清理临时文件；结果以 `depth:<task-id>` 归档，恢复已完成上传时不重复推理。
+模型推理、组件安装、AMQP和浏览器范围分别记录，受控组件通过不代表真实模型质量或
+CUDA/MPS验收。接口及权限见[画布API](api/canvases.md#私人深度动作捕捉)。
+
+静态图片的“深度图/AI线稿/姿态骨架”属于独立 Framefield Local Runtime，默认地址为
+`http://127.0.0.1:17371`。前端保持固定源的 runtime-info、ECDSA挑战/签名会话和受限scope；
+可在画布构建时用 `VITE_FRAMEFIELD_LOCAL_RUNTIME_ENDPOINT` 指定一个精确的127.0.0.1
+HTTP origin。该服务的实际模型与安装程序不在当前Python仓库；没有服务时沿源显示
+不可用/重试连接，不在API里返回伪造ready或模拟算法。灰度和Canny继续使用原浏览器算法，
+视频高级模型仍保留原“打开视频剪辑”边界，透明抠图保留源未就绪状态。
+
+转换成功后先通过宿主资源上传永久归档，再把 `resource:<id>` 写入原节点及结果状态；
+上传键包含冻结账号/画布、来源、操作、输出SHA和尺寸，同输出重放复用原身份。来源、
+账号、操作或画布变化后停止旧回填，保存失败在原节点反馈并允许用户重试；不把仅存于
+IndexedDB的Blob标为完成。成员可读取共享的转换作品和来源，处理过程、错误、时间与未知
+扩展仍仅作者可见。灰度/Canny浏览器恢复通过不等于三类Framefield模型真实运行验收。
+
 ```powershell
 # backend/
 uv sync --locked
@@ -34,6 +78,8 @@ Copy-Item .env.example .env
 | `MINIO_ACCESS_KEY/SECRET_KEY/SECURE` | 凭据及是否 HTTPS，与实际服务一致 |
 | `MINIO_IMAGE_BUCKET/VIDEO_BUCKET` | 默认 `image/video`，两者必须不同 |
 | `MINIO_PRESIGN_EXPIRY` | 默认 300；账号模式最多五分钟 |
+| `MINIO_PUBLIC_ENDPOINT` | 可选供应商引用签名主机及端口，不含协议、用户信息、路径、query 或 fragment；固定使用 HTTPS，必须指向同一 MinIO 对象 |
+| `MINIO_PROVIDER_PRESIGN_EXPIRY` | 与公网 endpoint 配对，空值禁用；没有默认值，按供应商延迟取图窗口显式设置 1–604800 秒 |
 | `MODEL_DISCOVERY_ALLOWED_HOSTS` | 仅需内网模型网关时设置精确主机名 JSON 数组，默认 `[]` |
 | `GENERATION_*_BUDGET_SECONDS` | 文本/图片/视频执行和媒体归档预算，详见 `.env.example` |
 | `AGENT_ENABLED/LEASE_SECONDS/POLL_SECONDS` | 默认开启；启动前需完成显式迁移并准备独立 Worker，见 [Agent 部署](agent-deployment.md) |
@@ -220,8 +266,31 @@ HTTP 检查：`GET /api/v1/test`、`/api/v1/test/db`、`/api/v1/test/minio`。AP
 | 保存返回 409 | 保留草稿，重新读取版本后核对；不要自动覆盖 |
 | 生图参数拒绝 | 模型是否支持参考图、画幅、分辨率与张数；独立任务可先省略可选参数 |
 | 图片 URL 无法显示 | 签名是否过期；浏览器是否能访问 MinIO endpoint；HTTPS 页面是否引用 HTTP 资源 |
+| Agnes 已保存首帧返回 `reference_media_requires_url` | 供应商公网签名配置是否完整；缺失时在创建任务前返回 422，不产生供应商请求 |
 | 旧库缺字段/表 | 核对迁移索引和 schema；重启 API 不能补数据库结构 |
 | 读配置正常但保存 Key 失败 | 检查 `ENCRYPTION_KEY` 是否为有效的 Base64 编码 32 字节主密钥；旧密文无法解密时，可在编辑页明确输入新 Key 并保存以修复，或明确清除。留空保留旧值，不会修复旧密文 |
+
+Agnes 视频的稳定参考使用单独的供应商签名 client，复用服务端既有凭据和显式非空
+`MINIO_REGION`。普通上传、stat、下载与浏览器展示仍走内部地址；账号模式展示 URL
+仍最多五分钟。公网签名绑定 host、对象路径及 query，不能先签内部 URL 再替换主机，
+代理必须保留这些部分。配置校验、纯结构测试和本地签名不证明公网可达；启用前须从
+授权的外网环境实际 GET 独立测试对象并校验字节、Content-Type 和 TLS。
+
+Worker 在第一次 submit 的权限检查后重新核对真实媒体及对象元信息，再签名并构建
+临时请求副本。数据库、冻结记录、幂等身份及画布仍保存 `resource:<id>`，签名 URL
+不进入持久化参数或日志。poll/save 沿用已受理身份，不重新签名或提交。离线 signer/
+供应商替身、隔离数据库/MinIO、公网 GET 与真实供应商首帧内容检查须分别报告；
+测试跳过或尚未配置公网 endpoint 不算真实首帧验收通过。
+
+发送 POST 前，Worker 在持有当前 lease/version 的短事务中将输入 URL 及
+`X-Amz-Signature/Credential/Security-Token` 的 SHA-256 指纹保存到执行记录的
+`agnes_reference_guard`，提交事务后才调用供应商。指纹不含 URL 或签名原文；缺失、
+损坏或提交失败返回 `reference_guard_unavailable`，不能靠重新签名继续提交或轮询。
+提交及轮询返回复用原 URL、换路径的同一签名 query 或敏感签名值时，以
+`reference_output_rejected` 停止；归档前再次检查，禁止将输入签名加密进 `source_cipher`。
+POST 后拒绝回显仍保留安全的供应商任务 ID 与未知受理状态，不自动重发。检查最多
+8 个输入 URL、每个 8192 字符、24 个敏感值指纹；返回值检查有总字符和节点预算，
+不扫描 base64 媒体。正常独立视频 URL 使用原下载归档链路。
 
 RabbitMQ 消费确认超时需要覆盖单次 Worker 调用时长。较长文本/视频预算应同步评估 broker 的 `consumer_timeout`；应用不会替部署者修改 RabbitMQ 配置。
 

@@ -71,6 +71,11 @@ export function CanvasBatchTableNodeContent({ node, nodes, connections, batch, t
     const draggingCellRef = useRef<ReferenceCell | null>(null);
     const dragStartRef = useRef<{ x: number; y: number; pointerId: number; cell: ReferenceCell } | null>(null);
     const suppressClickRef = useRef(false);
+    const moveReferenceCellRef = useRef(onMoveReferenceCell);
+
+    useEffect(() => {
+        moveReferenceCellRef.current = onMoveReferenceCell;
+    }, [onMoveReferenceCell]);
 
     const clearReferenceDrag = useCallback(() => {
         dragStartRef.current = null;
@@ -103,7 +108,7 @@ export function CanvasBatchTableNodeContent({ node, nodes, connections, batch, t
             if (!start || start.pointerId !== event.pointerId) return;
             const sourceCell = draggingCellRef.current;
             const targetCell = sourceCell ? findReferenceCellAtPoint(event.clientX, event.clientY) : null;
-            if (sourceCell && targetCell) onMoveReferenceCell?.(sourceCell.rowId, sourceCell.columnIndex, targetCell.rowId, targetCell.columnIndex);
+            if (sourceCell && targetCell) moveReferenceCellRef.current?.(sourceCell.rowId, sourceCell.columnIndex, targetCell.rowId, targetCell.columnIndex);
             const didDrag = Boolean(sourceCell);
             clearReferenceDrag();
             if (didDrag) {
@@ -119,7 +124,7 @@ export function CanvasBatchTableNodeContent({ node, nodes, connections, batch, t
             window.removeEventListener("pointerup", handleUp);
             window.removeEventListener("pointercancel", handleUp);
         };
-    }, [clearReferenceDrag, findReferenceCellAtPoint, onMoveReferenceCell, readOnly]);
+    }, [clearReferenceDrag, findReferenceCellAtPoint, readOnly]);
 
     const startCellDrag = (event: ReactPointerEvent, rowId: string, columnIndex: number) => {
         if (readOnly || event.button !== 0) return;
@@ -176,7 +181,7 @@ export function CanvasBatchTableNodeContent({ node, nodes, connections, batch, t
                         <span className="shrink-0 tabular-nums" style={{ color: theme.node.muted }}>已连 {connectedImageCount} · 完成 {completed}/{table.rows.length}</span>
                     </div>
                     {!readOnly ? (
-                        <div className="ml-auto flex shrink-0 items-center gap-1.5" onPointerDown={(event) => event.stopPropagation()}>
+                        <div className="ml-auto flex shrink-0 items-center gap-1.5" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
                             <Tooltip title="增量同步画布连线，不会删除已有任务行">
                                 <Button size="small" type="text" icon={<Rows3 className="size-3.5" />} onClick={onFillRows}>同步连线</Button>
                             </Tooltip>

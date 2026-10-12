@@ -133,8 +133,8 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
     };
     const promptOptimizerProvider = useMemo(() => {
         if (!promptOptimizerEnabled || !promptOptimizerInstallation || !promptOptimizerPlugin.createPromptOptimizer) return null;
-        return promptOptimizerPlugin.createPromptOptimizer(createPluginHostContext(promptOptimizerPlugin, promptOptimizerInstallation, globalConfig));
-    }, [globalConfig, promptOptimizerEnabled, promptOptimizerInstallation]);
+        return promptOptimizerPlugin.createPromptOptimizer(createPluginHostContext(promptOptimizerPlugin, promptOptimizerInstallation, globalConfig, { projectId, nodeId: node.id }));
+    }, [globalConfig, node.id, projectId, promptOptimizerEnabled, promptOptimizerInstallation]);
     const priceChannel = resolveModelChannel(config, config.model);
     const activeReferenceCount = activeReferences.length;
     const videoFrameOptions = resolvedMentionReferences.filter((item) => item.active && item.kind === "image").map((item) => ({ nodeId: item.nodeId, label: item.label, title: item.title, previewUrl: item.previewUrl }));

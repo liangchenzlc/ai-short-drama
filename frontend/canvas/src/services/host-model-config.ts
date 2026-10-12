@@ -1,4 +1,4 @@
-import { defaultConfig, normalizeConfigSnapshot, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { defaultConfig, normalizeConfigSnapshot, type AiConfig, type ModelChannel, type RunningHubWorkflow, type WorkflowFieldMapping } from "@/stores/use-config-store";
 
 type ModelProfile = NonNullable<ModelChannel["modelProfiles"]>[number];
 export type HostRuntimeProfile = {
@@ -12,6 +12,7 @@ export type HostRuntimeProfile = {
     logical_capability_profiles?: ModelProfile["logicalCapabilityProfiles"];
     video_capabilities_version?: string;
     concurrency_limit?: number;
+    runninghub_workflow?: { kind: "workflow" | "app"; workflow_id?: string; webapp_id?: string; title?: string; fields?: WorkflowFieldMapping[]; workflow_json?: Record<string, unknown> };
 };
 export type HostModelConfig = {
     row_version: string;
@@ -31,7 +32,17 @@ export type HostModelConfig = {
 const preferenceKeys = ["model", "imageModel", "videoModel", "textModel", "audioModel", "assistantModel", "audioVoice", "audioFormat", "audioSpeed", "audioPitch", "audioVolume", "audioInstructions", "videoSeconds", "vquality", "videoGenerateAudio", "videoWatermark", "videoArkPrivateAssetUpload", "systemPrompt", "quality", "size", "transparentBackground", "count", "canvasImageCount", "taskWorkflowProvider"] as const;
 /** 宿主模型是唯一目录；源渠道标识只用于恢复旧选择，不能作为可编辑目录回写。 */
 export function sourceModelConfig(value: HostModelConfig): AiConfig {
-    const channels: ModelChannel[] = value.models.map(model => {
+    const isWorkflow = (model: HostModelConfig["models"][number]) => /^runninghub-workflow-(image|video|audio)$/.test(model.runtime_profile?.protocol || "");
+    const workflows: RunningHubWorkflow[] = value.models.filter(isWorkflow).map(model => {
+        const saved = model.runtime_profile?.runninghub_workflow;
+        const kind = saved?.kind === "app" ? "app" : "workflow";
+        return { kind, capability: model.service_type as RunningHubWorkflow["capability"],
+            logicalModelId: model.id, hasApiKey: model.has_api_key && model.enabled,
+            workflowId: (kind === "app" ? saved?.webapp_id || saved?.workflow_id : saved?.workflow_id) || model.model_key,
+            webappId: kind === "app" ? saved?.webapp_id || saved?.workflow_id || model.model_key : "",
+            title: saved?.title || model.name, fields: saved?.fields || [], workflowJson: saved?.workflow_json || {} };
+    });
+    const channels: ModelChannel[] = value.models.filter(model => !isWorkflow(model)).map(model => {
         const runtime = model.runtime_profile;
         return {
             id: `host-${model.id}`, name: model.name, baseUrl: `/api/v1/canvas-runtime/ai/models/${model.id}`,
@@ -53,13 +64,17 @@ export function sourceModelConfig(value: HostModelConfig): AiConfig {
     });
     const defaults: Partial<AiConfig> = {};
     for (const capability of ["text", "image", "video", "audio"] as const) {
-        const model = value.models.find(item => item.service_type === capability && item.enabled && item.is_default);
+        const model = value.models.find(item => !isWorkflow(item) && item.service_type === capability && item.enabled && item.is_default);
         defaults[`${capability}Model`] = model ? `host-${model.id}::${model.model_key}` : "";
     }
     const preferences = { ...defaults, ...value.preferences };
     return normalizeConfigSnapshot({ config: { ...defaultConfig, ...preferences,
         model: preferences.model ?? preferences.imageModel ?? preferences.textModel ?? "",
         hostModelDirectory: true, channels,
+        runningHub: { ...defaultConfig.runningHub, enabled: workflows.some(item => item.hasApiKey),
+            baseUrl: "", apiKey: "", walletApiKey: "", uploadApiKey: "", workflows,
+            workflowId: workflows[0]?.workflowId || "", selectedKind: workflows[0]?.kind || "workflow",
+            selectedLogicalModelId: workflows[0]?.logicalModelId, capability: workflows[0]?.capability || "image" },
     } }).config;
 }
 

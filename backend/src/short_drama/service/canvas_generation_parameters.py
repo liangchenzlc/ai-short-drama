@@ -88,7 +88,7 @@ def frozen_canvas_parameters(
         except ValidationError as error:
             unsupported(str(error.errors()[0]["loc"][0]))
     if request.input.mode == "audio":
-        if adapter not in {None, "openai_speech.v1"}:
+        if adapter not in {None, "openai_speech.v1", "canvas_async_audio.v1"}:
             unsupported("audioFormat/audioSpeed/audioInstructions")
         if number(config.get("audioPitch"), "audioPitch", 0) != 0:
             unsupported("audioPitch")

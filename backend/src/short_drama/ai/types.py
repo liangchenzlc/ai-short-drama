@@ -45,3 +45,5 @@ class GenerationResult:
     error: dict | None = None
     resolved_parameters: dict = field(default_factory=dict)
     voice: dict = field(default_factory=dict)
+    reasoning: str | None = None
+    tool_calls: list[dict] = field(default_factory=list)

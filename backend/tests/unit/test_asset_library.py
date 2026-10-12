@@ -4,7 +4,7 @@ from pydantic import ValidationError
 from sqlalchemy import event, select
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.domain import Asset
+from short_drama.domain import Asset, AssetVersion
 from short_drama.schemas.asset import AssetCreate, AssetPatch
 from short_drama.schemas.asset_library import AssetLibraryCreate
 from short_drama.service.asset_library_service import AssetLibraryService, creation_fingerprint
@@ -150,3 +150,13 @@ def test_shared_patch_requires_confirmation_and_advances_one_asset_version():
         with pytest.raises(WorkflowError) as error:
             service.patch(item.id, {"row_version": "1", "description": "stale"})
         assert error.value.code == "asset_version_conflict"
+        with session.begin():
+            history = list(
+                session.scalars(
+                    select(AssetVersion)
+                    .where(AssetVersion.asset_id == int(item.id))
+                    .order_by(AssetVersion.version)
+                )
+            )
+            assert [row.version for row in history] == [1, 2]
+            assert session.get(Asset, int(item.id)).current_version_id == history[-1].id

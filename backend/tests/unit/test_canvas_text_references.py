@@ -1,4 +1,4 @@
-"""画布文字图片准入与源 Chat 消息合同；标准文本保持闭合。"""
+"""画布文字图片准入与源 Chat/Responses 默认 manifest；标准文本保持闭合。"""
 
 from copy import deepcopy
 from types import SimpleNamespace
@@ -97,10 +97,54 @@ def test_chat_recipe_keeps_system_text_first_and_all_images_in_source_order():
     assert body["stream_options"] == {"include_usage": True}
 
 
-@pytest.mark.parametrize("adapter", [None, "openai_responses.v1"])
+@pytest.mark.parametrize("adapter", [None, "claude_messages.v1", "gemini_generate_content.v1"])
 def test_unimplemented_text_image_protocols_are_rejected_before_admission(adapter):
     with pytest.raises(WorkflowError):
         generation_payload(CanvasRuntimeTaskCreate.model_validate(text_request()), 1, adapter)
+
+
+def test_saved_responses_images_keep_the_standard_placeholder_before_trusted_transform():
+    body = text_request()
+    before = deepcopy(body)
+    payload = generation_payload(
+        CanvasRuntimeTaskCreate.model_validate(body), 1, "openai_responses.v1"
+    )
+    assert payload["input"] == {
+        "messages": [
+            {"role": "system", "content": "请按顺序说明图片"},
+            {"role": "user", "content": body["prompt"]},
+        ]
+    }
+    assert body == before
+
+
+@pytest.mark.parametrize("system", ["", "  请按顺序说明图片  "])
+def test_responses_images_use_default_manifest_wire_and_separate_instructions(system):
+    snapshot, payload = text_snapshot(), prepared_text()
+    payload["canvas_request"]["input"]["config"]["systemPrompt"] = system
+    payload["input"]["messages"].insert(1, {"role": "system", "content": "历史系统不能成为指令"})
+    payload["input"]["messages"].insert(2, {"role": "user", "content": "  上一条输入  "})
+    payload["input"]["messages"].insert(3, {"role": "assistant", "content": "  上一条回复  "})
+    before = deepcopy(payload)
+    url, _, body = build_submission(snapshot, payload, "openai_responses.v1")
+    assert url == "https://provider.example/v1/responses"
+    assert body["input"] == [
+        {"role": "user", "content": "上一条输入"},
+        {"role": "assistant", "content": "上一条回复"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": payload["canvas_request"]["prompt"]},
+                *[
+                    {"type": "image_url", "image_url": {"url": value}}
+                    for value in payload["input"]["reference_urls"]
+                ],
+            ],
+        },
+    ]
+    assert body.get("instructions") == (system.strip() or None)
+    assert body["stream"] is True and "stream_options" not in body
+    assert "messages" not in body and payload == before
 
 
 def test_standard_text_cannot_accept_reference_ids_or_arbitrary_multimodal_json():
@@ -113,11 +157,12 @@ def test_standard_text_cannot_accept_reference_ids_or_arbitrary_multimodal_json(
 
 
 @pytest.mark.parametrize("gate", ["source", "canvas_request", "canvas_text_references"])
-def test_missing_trusted_canvas_gate_never_enables_multimodal_input(gate):
+@pytest.mark.parametrize("adapter", ["openai_chat.v1", "openai_responses.v1"])
+def test_missing_trusted_canvas_gate_never_enables_multimodal_input(gate, adapter):
     payload = prepared_text()
     payload.pop(gate)
     with pytest.raises(GenerationError):
-        build_submission(text_snapshot(), payload, "openai_chat.v1")
+        build_submission(text_snapshot(), payload, adapter)
 
 
 @pytest.mark.parametrize("field", ["canvas_request", "source"])
@@ -129,7 +174,8 @@ def test_malformed_frozen_gate_remains_a_controlled_rejection(field):
 
 
 @pytest.mark.parametrize("mutation", ["ids", "urls", "declared", "prompt", "envelope", "mime"])
-def test_frozen_reference_order_identity_and_closed_metadata_are_enforced(mutation):
+@pytest.mark.parametrize("adapter", ["openai_chat.v1", "openai_responses.v1"])
+def test_frozen_reference_order_identity_and_closed_metadata_are_enforced(mutation, adapter):
     payload = prepared_text()
     if mutation == "ids":
         payload["input"]["reference_media_ids"].reverse()
@@ -145,7 +191,7 @@ def test_frozen_reference_order_identity_and_closed_metadata_are_enforced(mutati
         payload["canvas_text_references"]["references"][0]["mime_type"] = "video/mp4"
     before = deepcopy(payload)
     with pytest.raises(GenerationError):
-        build_submission(text_snapshot(), payload, "openai_chat.v1")
+        build_submission(text_snapshot(), payload, adapter)
     assert payload == before
 
 
@@ -157,11 +203,12 @@ def test_frozen_reference_order_identity_and_closed_metadata_are_enforced(mutati
         {"references": {"maxImages": 2, "maxImageBytes": 100}},
     ],
 )
-def test_only_frozen_saved_limits_allow_the_recipe(capability):
+@pytest.mark.parametrize("adapter", ["openai_chat.v1", "openai_responses.v1"])
+def test_only_frozen_saved_limits_allow_the_recipe(capability, adapter):
     snapshot = text_snapshot()
     snapshot["canvas_text_capability"] = capability
     with pytest.raises(GenerationError, match="reference_images_too_large"):
-        build_submission(snapshot, prepared_text(), "openai_chat.v1")
+        build_submission(snapshot, prepared_text(), adapter)
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -190,6 +237,35 @@ def test_saved_streaming_false_matches_source_canvas_stream_gate():
     snapshot["canvas_text_capability"]["streaming"] = False
     _, _, body = build_submission(snapshot, prepared_text(), "openai_chat.v1")
     assert body["stream"] is False
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("response_shape", ["default-manifest", "output-array"])
+def test_real_responses_http_receives_default_manifest_images_without_archive_mutation(
+    gateway, provider, stream, response_shape
+):
+    base, state, calls = provider
+    state["body"] = {"output_text": "按原顺序描述", "status": "completed"}
+    if response_shape == "output-array":
+        state["body"] = {
+            "output": [
+                {"type": "message", "content": [{"type": "output_text", "text": "按原顺序描述"}]}
+            ],
+            "status": "completed",
+        }
+    snapshot, payload = text_snapshot(), prepared_text()
+    snapshot["base_url"] = base + "/v1/responses"
+    payload["canvas_request"]["input"]["textOptions"] = {"stream": stream, "thinking": False}
+    before = deepcopy(payload)
+    result = gateway.submit(snapshot, payload, "controlled-responses-reference-key")
+    assert result.text == "按原顺序描述" and len(calls) == 1
+    assert calls[0][0:2] == ("POST", "/v1/responses")
+    body = calls[0][3]
+    assert body["stream"] is stream and "stream_options" not in body
+    assert [item["image_url"]["url"] for item in body["input"][-1]["content"][1:]] == payload[
+        "input"
+    ]["reference_urls"]
+    assert body["instructions"] == "请按顺序说明图片" and payload == before
 
 
 def admission_fixture(monkeypatch):
@@ -227,12 +303,13 @@ def admission_fixture(monkeypatch):
     return generation, media, payload, cache
 
 
-def test_admission_freezes_actual_metadata_and_removes_client_transient_urls(monkeypatch):
+@pytest.mark.parametrize("adapter", ["openai_chat.v1", "openai_responses.v1"])
+def test_admission_freezes_actual_metadata_and_removes_client_transient_urls(monkeypatch, adapter):
     generation, _, payload, cache = admission_fixture(monkeypatch)
     payload["canvas_request"]["input"]["referenceImages"][0].update(
         type="video/mp4", bytes=1, width=1, height=1, url="https://untrusted.example/image"
     )
-    freeze_text_references(generation, payload, 1, "openai_chat.v1", cache)
+    freeze_text_references(generation, payload, 1, adapter, cache)
     assert payload["canvas_text_references"] == prepared_text()["canvas_text_references"]
     reference = payload["canvas_request"]["input"]["referenceImages"][0]
     assert reference["type"] == "image/png" and reference["bytes"] == 90
@@ -241,7 +318,8 @@ def test_admission_freezes_actual_metadata_and_removes_client_transient_urls(mon
 
 
 @pytest.mark.parametrize("failure", ["scope", "locator", "size", "mime", "count", "unsaved"])
-def test_failed_admission_never_partially_rewrites_the_draft(monkeypatch, failure):
+@pytest.mark.parametrize("adapter", ["openai_chat.v1", "openai_responses.v1"])
+def test_failed_admission_never_partially_rewrites_the_draft(monkeypatch, failure, adapter):
     generation, media, payload, cache = admission_fixture(monkeypatch)
     second = media["9007199254740999"]
     if failure == "scope":
@@ -258,7 +336,7 @@ def test_failed_admission_never_partially_rewrites_the_draft(monkeypatch, failur
         payload["canvas_request"]["input"]["referenceImages"][1]["storageKey"] = "blob:unsaved"
     before = deepcopy(payload)
     with pytest.raises(NotFound if failure == "scope" else WorkflowError):
-        freeze_text_references(generation, payload, 1, "openai_chat.v1", cache)
+        freeze_text_references(generation, payload, 1, adapter, cache)
     assert payload == before
 
 

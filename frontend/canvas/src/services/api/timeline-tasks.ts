@@ -4,13 +4,13 @@ import type { GenerationTask } from "@/services/api/task-center";
 import type { TimelineProject } from "@/types/timeline";
 
 // 时间线字幕转写任务 API。
-// 创建入参与后端 TimelineTranscriptionCreateRequest 保持同名字段，结果由任务中心统一查询。
+// 保留固定源字段；宿主准入要求稳定 clientOperationId，结果由私人任务中心查询。
 
 export type TimelineTranscriptionCreateRequest = {
     resourceId: string;
     language?: string;
     projectId?: string;
-    clientOperationId?: string;
+    clientOperationId: string;
 };
 
 export type TimelineTranscriptionResult = {

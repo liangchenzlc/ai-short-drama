@@ -3,7 +3,7 @@ import { canonicalizeCanvasMedia } from "./canvas-media-locators.ts";
 
 const maximumId = "18446744073709551615";
 const identifier = (value: unknown): value is string => typeof value === "string" && /^[1-9][0-9]{0,19}$/.test(value) && (value.length < maximumId.length || value <= maximumId);
-const locatorFields = new Set("storageKey content previewContent drawingPreviewStorageKey drawingPreviewUrl url dataUrl coverUrl imageUrl videoUrl audioUrl referenceUrl referenceUrls artifactRef providerArtifactRef".split(" "));
+const locatorFields = new Set("storageKey content previewContent drawingPreviewStorageKey drawingPreviewUrl url dataUrl coverUrl characterCoverUrl imageUrl videoUrl audioUrl referenceUrl referenceUrls artifactRef providerArtifactRef".split(" "));
 const idFields = new Set("resourceId resourceIds sampleResourceId referenceResourceId referenceResourceIds".split(" "));
 type Reference = { id: string; url?: URL; suffix?: string; bare?: boolean };
 type WalkCache = WeakMap<object, Map<string, unknown>>;

@@ -5,13 +5,22 @@ import re
 from copy import deepcopy
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
+from .canvas_agnes_adapters import (
+    agnes_video_body,
+    agnes_video_poll_url,
+    is_agnes_video,
+    validate_agnes_video_structure,
+)
+from .canvas_runninghub_workflow import RUNNINGHUB_WORKFLOW, parse_workflow_result, workflow_body
 from .transport import validated_url
 from .types import GenerationError, GenerationResult
 
 OPENAI_VIDEOS = "canvas_openai_videos.v1"
 NEWAPI_VIDEO_GENERATIONS = "canvas_newapi_video_generations.v1"
 BEEFAPI_SEEDANCE = "canvas_beefapi_seedance_video.v1"
-VIDEO_ADAPTERS = frozenset({OPENAI_VIDEOS, NEWAPI_VIDEO_GENERATIONS, BEEFAPI_SEEDANCE})
+VIDEO_ADAPTERS = frozenset(
+    {OPENAI_VIDEOS, NEWAPI_VIDEO_GENERATIONS, BEEFAPI_SEEDANCE, RUNNINGHUB_WORKFLOW}
+)
 REFERENCE_GROUPS = (
     ("image", "referenceImages"),
     ("video", "referenceVideos"),
@@ -353,10 +362,13 @@ def frozen_video_input(snapshot: dict, request: dict) -> dict:
 
 
 def _profile(snapshot: dict, adapter: str) -> dict:
-    seedance2 = is_seedance_2(snapshot.get("model_key", ""))
-    seedance25 = is_seedance_25(snapshot.get("model_key", ""))
+    seedance2 = adapter != RUNNINGHUB_WORKFLOW and is_seedance_2(snapshot.get("model_key", ""))
+    seedance25 = adapter != RUNNINGHUB_WORKFLOW and is_seedance_25(snapshot.get("model_key", ""))
     refs = {"maxImages": 9, "maxVideos": 0, "maxAudios": 0}
     operations = {"text_to_video", "image_to_video"}
+    if is_agnes_video(snapshot, adapter):
+        refs.update(maxImages=5, maxVideos=0, maxAudios=3)
+        operations.update({"reference_to_video", "audio_to_video"})
     if adapter == NEWAPI_VIDEO_GENERATIONS:
         refs.update(maxVideos=3, maxAudios=3)
         operations.add("reference_to_video")
@@ -549,11 +561,31 @@ def _media_value(item: dict) -> str:
     return item.get("storageKey") or item.get("dataUrl") or item.get("url") or ""
 
 
+def validate_agnes_canvas_video_request(snapshot: dict, request: dict, adapter: str) -> dict:
+    if not is_agnes_video(snapshot, adapter):
+        _invalid("unsupported_protocol")
+    value = validate_canvas_video_input(snapshot, request, adapter)
+    canvas_video_endpoint(snapshot["base_url"], "/v1/videos")
+    return validate_agnes_video_structure(value, request.get("input") or {})
+
+
 def build_canvas_video_submission(
     snapshot: dict, request: dict, adapter: str
 ) -> tuple[str, dict, dict]:
     value = validate_canvas_video_input(snapshot, request, adapter)
     model = snapshot["model_key"]
+    if is_agnes_video(snapshot, adapter):
+        return (
+            canvas_video_endpoint(snapshot["base_url"], "/v1/videos"),
+            {},
+            agnes_video_body(value),
+        )
+    if adapter == RUNNINGHUB_WORKFLOW:
+        return (
+            canvas_video_endpoint(snapshot["base_url"], "/task/openapi/create"),
+            {},
+            workflow_body(value, model),
+        )
     body = {"model": model, "prompt": value["prompt"]}
     if adapter == OPENAI_VIDEOS:
         body["seconds"] = str(value["duration"])
@@ -674,6 +706,12 @@ def build_canvas_video_submission(
 
 
 def canvas_video_poll_endpoint(snapshot: dict, task_id: str, adapter: str) -> str:
+    if is_agnes_video(snapshot, adapter):
+        return agnes_video_poll_url(snapshot["base_url"], task_id)
+    if adapter == RUNNINGHUB_WORKFLOW:
+        if not isinstance(task_id, str) or not re.fullmatch(r"[^\x00-\x20\x7f]{1,512}", task_id):
+            _invalid("invalid_provider_task")
+        return canvas_video_endpoint(snapshot["base_url"], "/task/openapi/status")
     if not isinstance(task_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,512}", task_id):
         _invalid("invalid_provider_task")
     route = (
@@ -704,6 +742,8 @@ def _first(body: dict, paths: tuple[str, ...]):
 def parse_canvas_video_result(
     body: dict, adapter: str, *, submitted: bool, task_id=None
 ) -> GenerationResult:
+    if adapter == RUNNINGHUB_WORKFLOW:
+        return parse_workflow_result(body, submitted=submitted, task_id=task_id)
     if not isinstance(body, dict):
         raise GenerationError(
             "invalid_response", accepted_unknown=submitted, retryable=not submitted
@@ -822,6 +862,8 @@ def complete_video_urls(snapshot: dict, result: GenerationResult) -> GenerationR
             output["url"] = canvas_video_endpoint(
                 snapshot["base_url"], route + quote(identity, safe="") + "/content"
             )
+        if "url" not in output:
+            continue
         raw = output["url"]
         if raw.startswith("/") and not raw.startswith("//"):
             raw = urljoin(snapshot["base_url"], raw)

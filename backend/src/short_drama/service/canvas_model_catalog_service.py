@@ -37,6 +37,8 @@ def model_capability_cache(config: AIModelConfig, channel: dict, profile: dict) 
     adapter = protocol_adapter(channel, profile)
     if not adapter or not config.base_url:
         return None
+    if adapter == "gemini_generate_content.v1" and channel.get("apiFormat") != "openai":
+        return None
     identity = model_credential_identity(config)
     snapshot = {
         "base_url": config.base_url,
@@ -57,6 +59,8 @@ def model_capability_cache(config: AIModelConfig, channel: dict, profile: dict) 
             cache["canvas_video_variants"] = deepcopy(defaults["variants"])
     if config.service_type == "text" and isinstance(capability.get("text"), dict):
         cache["canvas_text_capability"] = deepcopy(capability["text"])
+    if adapter in {"claude_messages.v1", "gemini_generate_content.v1"}:
+        cache["canvas_text_defaults"] = deepcopy(profile.get("defaultOptions") or {})
     return cache
 
 

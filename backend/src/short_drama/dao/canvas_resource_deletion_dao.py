@@ -56,7 +56,9 @@ class CanvasResourceDeletionDAO:
             ],
         )
 
-    def referenced(self, resource, *, history: bool = False) -> bool:
+    def referenced(
+        self, resource, *, history: bool = False, released: dict[str, list[int]] | None = None
+    ) -> bool:
         queries = []
         target = resource.__tablename__ + ".id"
         for original in Base.metadata.sorted_tables:
@@ -69,6 +71,8 @@ class CanvasResourceDeletionDAO:
                 continue
             table = original.alias()
             predicate = or_(*(table.c[field] == resource.id for field in fields))
+            if released and original.name in released:
+                predicate = and_(predicate, table.c.id.not_in(released[original.name]))
             if original.name == "canvas_revision_media_references":
                 if not history:
                     continue

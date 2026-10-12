@@ -7,12 +7,13 @@ from copy import deepcopy
 from datetime import UTC, timedelta
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import JSON, cast, literal, select
 
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.canvas_dao import CanvasDAO
 from short_drama.dao.canvas_drawing_dao import CanvasDrawingDAO
 from short_drama.dao.canvas_resource_dao import CanvasResourceDAO
+from short_drama.db.access import require_project as require_project_access
 from short_drama.domain import Project, ProjectCanvas, ProjectCanvasSettings
 from short_drama.domain.canvas import (
     CanvasDirectorScene,
@@ -47,7 +48,13 @@ from short_drama.schemas.canvas_creation import canvas_creation_payload
 from short_drama.utils.snowflake import next_id
 
 from .base import BaseService, utcnow
-from .canvas_document import content_hash, media_references, project_document, split_document
+from .canvas_document import (
+    SKILL_BODY_METADATA,
+    content_hash,
+    media_references,
+    project_document,
+    split_document,
+)
 from .canvas_drawing_history import (
     bind_revision_drawings,
     check_drawing_heads,
@@ -106,12 +113,124 @@ class CanvasService(BaseService):
             raise WorkflowError("canvas_mode_required", "This project uses standard mode", 409)
         return project
 
-    def require_canvas(self, project_id: int, canvas_id: int, *, lock=False):
+    def require_canvas(
+        self,
+        project_id: int,
+        canvas_id: int,
+        *,
+        lock=False,
+        publish_characters=False,
+        include_existing_characters=False,
+    ):
+        if lock and (publish_characters or include_existing_characters):
+            from .canvas_character_publication_service import CanvasCharacterPublicationService
+            from .canvas_document import character_node
+
+            original = self.canvas_dao.canvas(project_id, canvas_id)
+            if original is None:
+                raise NotFound("Canvas does not exist")
+            initial_version = original.row_version
+            if (
+                publish_characters
+                or include_existing_characters
+                and any(
+                    character_node(node.content_json)
+                    for node in self.canvas_dao.children(CanvasNode, original.id, active=True)
+                )
+            ):
+                return CanvasCharacterPublicationService(self).lock_canvas(original)
         self.require_project(project_id, lock=lock)
         canvas = self.canvas_dao.canvas(project_id, canvas_id, lock=lock)
         if canvas is None:
             raise NotFound("Canvas does not exist")
+        if lock and include_existing_characters and canvas.row_version != initial_version:
+            raise WorkflowError("canvas_binding_changed", "加锁期间画布已变化，请重新读取", 409)
         return canvas
+
+    @staticmethod
+    def project_source_binding(document: dict, canvas) -> dict:
+        """在所有共享、私人、历史投影完成后，仅以可信列解释业务项目。"""
+        if canvas.source_project_id is None:
+            document.pop("projectId", None)
+        else:
+            document["projectId"] = str(canvas.source_project_id)
+        return document
+
+    def require_creation_result(self, result: dict):
+        canvas = self.require_canvas(int(result["project_id"]), int(result["id"]))
+        identity = (canvas.id, canvas.project_id, canvas.source_project_id)
+        identifiers = {canvas.project_id}
+        if canvas.source_project_id is not None:
+            identifiers.add(canvas.source_project_id)
+        for identifier in sorted(identifiers):
+            project = self.canvas_dao.project(identifier, lock=True)
+            if project is None:
+                raise NotFound("创建结果的所属或业务项目不存在或当前账号无权访问")
+            require_project_access(self.session, identifier, lock=True)
+            mode = "standard" if identifier == canvas.source_project_id else "infinite_canvas"
+            if project.workspace_mode != mode:
+                raise WorkflowError("canvas_binding_invalid", "创建结果的项目模式不匹配", 409)
+        canvas = self.canvas_dao.canvas(identity[1], identity[0], lock=True)
+        if canvas is None or (canvas.id, canvas.project_id, canvas.source_project_id) != identity:
+            raise NotFound("创建结果已不存在或当前账号无权访问")
+        return canvas
+
+    def inherited_source_binding(
+        self, request, *, project_id: int | None = None, extra_project_ids: set[int] | None = None
+    ) -> dict | None:
+        """锁定明确父图及相关项目，返回只由服务端生成的不可变来源事实。"""
+        parent = (
+            self.canvas_dao.source_canvas(request.source_canvas_key)
+            if request.source_canvas_key is not None
+            else None
+        )
+        if request.source_canvas_key is not None and parent is None:
+            raise NotFound("来源画布不存在或当前账号无权访问")
+        projects = set(extra_project_ids or ())
+        if project_id is not None:
+            projects.add(project_id)
+        if parent is not None:
+            identity = (parent.id, parent.project_id, parent.source_project_id)
+            projects.add(parent.project_id)
+            if parent.source_project_id is not None:
+                projects.add(parent.source_project_id)
+        for identifier in sorted(projects):
+            project = self.canvas_dao.project(identifier, lock=True)
+            if project is None:
+                raise NotFound("来源或目标项目不存在或当前账号无权访问")
+            require_project_access(self.session, identifier, lock=True)
+            if identifier == project_id or parent is not None and identifier == parent.project_id:
+                if project.workspace_mode != "infinite_canvas":
+                    raise WorkflowError("canvas_mode_required", "来源或目标不是无限画布项目", 409)
+            if parent is not None and identifier == parent.source_project_id:
+                if project.workspace_mode != "standard":
+                    raise WorkflowError("canvas_binding_invalid", "来源不是可绑定的业务项目", 422)
+        if parent is None:
+            if request.source_document and request.source_document.project_id:
+                raise WorkflowError(
+                    "canvas_binding_invalid", "未提供可信父画布，不能声明业务绑定", 422
+                )
+            return None
+        parent = self.canvas_dao.source_canvas(request.source_canvas_key, lock=True)
+        if parent is None:
+            raise NotFound("来源画布不存在或当前账号无权访问")
+        if (parent.id, parent.project_id, parent.source_project_id) != identity:
+            raise WorkflowError("canvas_source_changed", "父画布可信来源已变化，原请求已保留", 409)
+        self._check_version(parent, int(request.source_canvas_row_version))
+        expected = str(parent.source_project_id) if parent.source_project_id is not None else None
+        if request.source_document and request.source_document.project_id not in {
+            None,
+            "",
+            expected,
+        }:
+            raise WorkflowError("canvas_binding_invalid", "画布声明与可信父绑定不一致", 422)
+        return {
+            "canvas_id": str(parent.id),
+            "owning_project_id": str(parent.project_id),
+            "source_canvas_key": parent.source_key,
+            "source_canvas_row_version": str(parent.row_version),
+            "source_project_id": expected,
+        }
 
     def begin_write(self, key: str, operation: str, payload: dict, *, lock: bool = False):
         validate_key(key)
@@ -148,11 +267,14 @@ class CanvasService(BaseService):
         )
         self.session.flush()
 
-    def initialize_project(self, project, *, source_key=None, title="未命名画布"):
+    def initialize_project(
+        self, project, *, source_key=None, title="未命名画布", source_project_id=None
+    ):
         """Called inside the owning ProjectService transaction."""
         canvas = ProjectCanvas(
             **self.audit(),
             project_id=project.id,
+            source_project_id=source_project_id,
             source_key=source_key or uuid4().hex,
             title=title,
             position=0,
@@ -179,6 +301,9 @@ class CanvasService(BaseService):
         return {
             "id": str(canvas.id),
             "project_id": str(canvas.project_id),
+            "source_project_id": str(canvas.source_project_id)
+            if canvas.source_project_id is not None
+            else None,
             "source_key": canvas.source_key,
             "title": canvas.title,
             "row_version": str(canvas.row_version),
@@ -241,7 +366,7 @@ class CanvasService(BaseService):
         # Pre-upgrade documents may contain an unverified private classification.
         # Only the owning account's canonical membership may expose this field.
         document.pop("folderId", None)
-        return document
+        return self.project_source_binding(document, canvas)
 
     def _private_state(self, canvas, *, children=None, lock=False):
         def rows(model):
@@ -255,6 +380,7 @@ class CanvasService(BaseService):
         state = states[0] if states else None
         root = deepcopy(state.preferences_json) if state else {}
         root.pop("folderId", None)
+        root.pop("projectId", None)
         folders = rows(CanvasProjectFolderItem)
         if folders:
             root["folderId"] = folders[0].folder_key
@@ -267,16 +393,18 @@ class CanvasService(BaseService):
         }
 
     def _document(self, canvas, *, private, children=None, lock=False):
-        document = self._shared_document(canvas, children=children, lock=lock)
+        document = project_document(
+            self._shared_document(canvas, children=children, lock=lock),
+            self._private_state(canvas, children=children, lock=lock) if private else None,
+        )
         if private:
-            document = project_document(
-                document, self._private_state(canvas, children=children, lock=lock)
-            )
             document.setdefault("chatSessions", [])
             document.setdefault("activeChatId", None)
             document.setdefault("backgroundMode", "dots")
             document.setdefault("showImageInfo", False)
-        return canonicalize_canvas_media(document, strict=False)
+        return self.project_source_binding(
+            canonicalize_canvas_media(document, strict=False), canvas
+        )
 
     def read(self, project_id, canvas_id, *, private=False):
         with self._transaction(read_only=True):
@@ -384,7 +512,7 @@ class CanvasService(BaseService):
         with (
             self._copy_binding_lock(request.source_document),
             canvas_folder_write_lock(self.session),
-            self._transaction(),
+            self._transaction(lock_request_project=False),
         ):
             return self.create_in_transaction(request, key, project_id=project_id)
 
@@ -393,7 +521,7 @@ class CanvasService(BaseService):
         with (
             self._copy_binding_lock(payload.source_document),
             canvas_folder_write_lock(self.session),
-            self._transaction(),
+            self._transaction(lock_request_project=False),
         ):
             return self.create_in_transaction(payload, key)
 
@@ -402,20 +530,24 @@ class CanvasService(BaseService):
     ):
         """Creation coordinator owns the transaction and any prepared file attachment."""
         operation = "canvas.create" if project_id is not None else "canvas.workspace.create"
-        if project_id is not None:
-            self.require_project(project_id, lock=True)
         original = canvas_creation_payload(request)
         if project_id is not None:
             original = {"project_id": str(project_id), **original}
         digest, receipt = self.begin_write(key, operation, original)
         if receipt:
+            self.require_creation_result(receipt.result_json)
             return receipt.result_json
+        binding = self.inherited_source_binding(request, project_id=project_id)
+        source_project_id = (
+            int(binding["source_project_id"]) if binding and binding["source_project_id"] else None
+        )
         document = request.source_document
         if project_id is not None:
             existing = self.canvas_dao.canvases(project_id)
             canvas = ProjectCanvas(
                 **self.audit(),
                 project_id=project_id,
+                source_project_id=source_project_id,
                 source_key=source_key or request.source_key or uuid4().hex,
                 title=request.title,
                 position=max((x.position for x in existing), default=-1) + 1,
@@ -445,7 +577,10 @@ class CanvasService(BaseService):
             self.session.add(project)
             self.session.flush()
             canvas = self.initialize_project(
-                project, source_key=source_key or request.source_key, title=request.title
+                project,
+                source_key=source_key or request.source_key,
+                title=request.title,
+                source_project_id=source_project_id,
             )
             if document:
                 document = document.model_copy(update={"workspace_project_id": str(project.id)})
@@ -454,6 +589,7 @@ class CanvasService(BaseService):
             document, extra = prepare_document(canvas, document)
         if document is not None:
             self._validate_identity(canvas, document)
+            self._validate_character_publications(canvas, document)
             self._bind_library_copies(document)
             shared, private = split_document(document)
             self._replace_graph(canvas, shared)
@@ -470,9 +606,13 @@ class CanvasService(BaseService):
             raise WorkflowError(
                 "canvas_identity_mismatch", "Document belongs to another canvas", 422
             )
-        if document.project_id:
-            # BeefTV projectId is a separate short-drama binding, never the owning workspace ID.
-            raise WorkflowError("canvas_binding_invalid", "Unverified business binding", 422)
+        expected_binding = (
+            str(canvas.source_project_id) if canvas.source_project_id is not None else None
+        )
+        if document.project_id not in {None, "", expected_binding}:
+            raise WorkflowError(
+                "canvas_binding_invalid", "客户端不能创建、替换或解除可信业务绑定", 422
+            )
 
     @staticmethod
     def _check_version(canvas, expected):
@@ -484,6 +624,19 @@ class CanvasService(BaseService):
                 {"current_version": str(canvas.row_version)},
             )
 
+    @staticmethod
+    def _check_legacy_skill_body(document):
+        if any(
+            node.get("type") == "skill"
+            and SKILL_BODY_METADATA.intersection(node.get("metadata", {}))
+            for node in document.get("nodes", [])
+        ):
+            raise WorkflowError(
+                "canvas_legacy_skill_body_private",
+                "旧版 Skill 正文尚未确认归属，已保留原始内容；请先由管理员确认作者并迁移至本人状态",
+                409,
+            )
+
     def commit(self, project_id, canvas_id, payload, key):
         request = CanvasCommitRequest.model_validate(
             payload.model_dump(exclude_unset=True)
@@ -493,9 +646,17 @@ class CanvasService(BaseService):
         with (
             self._copy_binding_lock(request.source_document),
             canvas_folder_write_lock(self.session),
-            self._transaction(),
+            self._transaction(lock_request_project=False),
         ):
-            canvas = self.require_canvas(project_id, canvas_id, lock=True)
+            from .canvas_document import has_character_nodes
+
+            canvas = self.require_canvas(
+                project_id,
+                canvas_id,
+                lock=True,
+                publish_characters=has_character_nodes(request.source_document),
+            )
+            self._validate_identity(canvas, request.source_document)
             digest, receipt = self.begin_write(
                 key,
                 "canvas.commit",
@@ -543,6 +704,7 @@ class CanvasService(BaseService):
         )
 
     def _apply_document(self, canvas, document, *, reason="automatic"):
+        self._validate_character_publications(canvas, document)
         shared, private = split_document(document)
         # Viewport saves are independent of graph commits. An older graph request must not
         # rewind a position already acknowledged by the personal viewport endpoint.
@@ -556,6 +718,7 @@ class CanvasService(BaseService):
             if field in saved_preferences:
                 private["root"][field] = deepcopy(saved_preferences[field])
         before = self._shared_document(canvas, lock=True)
+        self._check_legacy_skill_body(before)
         # Do not replace pre-upgrade positional drafts without first proving that
         # they can be projected. Current deployments have no legacy private rows.
         previous_private = self._private_state(canvas, lock=True)
@@ -577,7 +740,28 @@ class CanvasService(BaseService):
         self._save_private(canvas, private)
         self.session.flush()
 
+    def _validate_character_publications(self, canvas, document, *, shared=False):
+        from .canvas_character_publication_service import CanvasCharacterPublicationService
+
+        CanvasCharacterPublicationService(self).validate(canvas, document, shared=shared)
+
     def _replace_graph(self, canvas, document):
+        self._validate_character_publications(canvas, document, shared=True)
+
+        def _calculate_node_z_index(index: int, node_data: dict) -> int:
+            """
+            计算节点 z-index，视频类型节点使用更高的层级基准。
+
+            这确保视频播放按钮不会被同坐标的图片节点遮挡。
+            视频节点使用 10000+ 的 z-index 基准，图片等其他节点使用原始索引。
+            """
+            node_type = node_data.get("type", "")
+            if node_type == "media":
+                content = node_data.get("content", {})
+                if isinstance(content, dict) and content.get("mediaType") == "video":
+                    return index + 10000
+            return index
+
         now = utcnow()
         nodes = {x.node_key: x for x in self.canvas_dao.children(CanvasNode, canvas.id, lock=True)}
         wanted = {x["id"] for x in document.get("nodes", [])}
@@ -598,7 +782,7 @@ class CanvasService(BaseService):
                 y=data["position"]["y"],
                 width=data["width"],
                 height=data["height"],
-                z_index=index,
+                z_index=_calculate_node_z_index(index, data),
                 content_json=content,
                 archived_at=None,
             )
@@ -630,7 +814,7 @@ class CanvasService(BaseService):
         edges = {x.edge_key: x for x in self.canvas_dao.children(CanvasEdge, canvas.id, lock=True)}
         wanted_edges = {x["id"] for x in document.get("connections", [])}
         for edge in edges.values():
-            if edge.edge_key not in wanted_edges:
+            if edge.edge_key not in wanted_edges and edge.archived_at is None:
                 edge.archived_at, edge.updated_at = now, now
         for index, data in enumerate(document.get("connections", [])):
             values = dict(
@@ -658,7 +842,7 @@ class CanvasService(BaseService):
             edge = edges.get(data["id"])
             if edge is None:
                 self.session.add(CanvasEdge(**self.child(canvas), edge_key=data["id"], **values))
-            else:
+            elif any(getattr(edge, key) != value for key, value in values.items()):
                 for key, value in values.items():
                     setattr(edge, key, value)
                 edge.updated_at = now
@@ -772,7 +956,9 @@ class CanvasService(BaseService):
 
     def _replace_media_refs(self, canvas, document, *, private):
         references = list(media_references(document))
-        resources = CanvasResourceDAO(self.session).resource_map({item[1] for item in references})
+        resources = CanvasResourceDAO(self.session).resource_map(
+            {item[1] for item in references}, lock=True
+        )
         for binary in (False, True):
             self._replace_resource_refs(
                 canvas, document, references, resources, private=private, binary=binary
@@ -785,11 +971,7 @@ class CanvasService(BaseService):
         else:
             model = CanvasUserMediaReference if private else CanvasMediaReference
             field = "media_id"
-        previous = [
-            x
-            for x in self.canvas_dao.children(model, canvas.id, lock=True)
-            if x.owner_kind != "revision"
-        ]
+        previous = self.canvas_dao.current_resource_references(model, canvas.id)
         desired = {}
         for path, identifier in references:
             media = resources.get(identifier)
@@ -823,8 +1005,9 @@ class CanvasService(BaseService):
                 publish(media)
             reference = existing.pop(key, None)
             if reference:
-                setattr(reference, field, identifier)
-                reference.updated_at = utcnow()
+                if getattr(reference, field) != identifier:
+                    setattr(reference, field, identifier)
+                    reference.updated_at = utcnow()
             else:
                 values = {"user_id": self.actor_id} if private else {"node_key": node_key}
                 self.session.add(
@@ -842,12 +1025,9 @@ class CanvasService(BaseService):
             self.session.delete(reference)
 
     def _snapshot(self, canvas, before, *, reason):
+        self._check_legacy_skill_body(before)
         before = canonicalize_canvas_media(before, strict=False)
-        revisions = sorted(
-            self.canvas_dao.children(CanvasRevision, canvas.id, lock=True),
-            key=lambda x: x.canvas_row_version,
-            reverse=True,
-        )
+        revisions = self.canvas_dao.snapshot_revisions(canvas.id)
         if revisions and (
             revisions[0].canvas_row_version == canvas.row_version
             or (
@@ -856,6 +1036,9 @@ class CanvasService(BaseService):
             )
         ):
             return
+        # 完整权限表达式的编译缓存键遍历会主导快照开销；此事务采用直接编译。
+        # 连接选项随事务结束释放，全部权限查询与行锁仍按原路径执行。
+        self.session.connection().execution_options(compiled_cache=None)
         before, drawing_versions = freeze_drawings(
             self, canvas.id, before, lock=True, current=reason == "before_restore"
         )
@@ -879,8 +1062,13 @@ class CanvasService(BaseService):
                 state_json=private,
             )
         )
-        for path, identifier in media_references(private):
-            resource = CanvasResourceDAO(self.session).resource(identifier)
+        private_references = list(media_references(private))
+        shared_identifiers = {value for _, value in media_references(before)}
+        resources = CanvasResourceDAO(self.session).resource_map(
+            shared_identifiers | {value for _, value in private_references}
+        )
+        for path, identifier in private_references:
+            resource = resources.get(identifier)
             binary = isinstance(resource, CanvasBinaryResource)
             model = CanvasUserBinaryReference if binary else CanvasUserMediaReference
             self.session.add(
@@ -895,8 +1083,8 @@ class CanvasService(BaseService):
                     **{"binary_id" if binary else "media_id": identifier},
                 )
             )
-        for identifier in sorted({value for _, value in media_references(before)}):
-            resource = CanvasResourceDAO(self.session).resource(identifier)
+        for identifier in sorted(shared_identifiers):
+            resource = resources.get(identifier)
             if isinstance(resource, CanvasBinaryResource):
                 self.session.add(
                     CanvasBinaryReference(
@@ -962,7 +1150,7 @@ class CanvasService(BaseService):
             raise NotFound("Canvas history does not exist or has expired")
         return row
 
-    def _revision_document(self, revision):
+    def _revision_document(self, revision, canvas):
         private = self.session.scalar(
             select(CanvasRevisionUserState).where(
                 CanvasRevisionUserState.revision_id == revision.id
@@ -974,13 +1162,15 @@ class CanvasService(BaseService):
             project_document(shared, private.state_json if private else None),
             strict=False,
         )
-        return freeze_drawings(self, revision.canvas_id, document)[0]
+        return self.project_source_binding(
+            freeze_drawings(self, revision.canvas_id, document)[0], canvas
+        )
 
     def read_revision(self, project_id, canvas_id, revision_id):
         with self._transaction(read_only=True):
-            self.require_canvas(project_id, canvas_id)
+            canvas = self.require_canvas(project_id, canvas_id)
             revision = self._revision(canvas_id, revision_id)
-            document = self._revision_document(revision)
+            document = self._revision_document(revision, canvas)
             return {
                 "revision": self._revision_summary(revision),
                 "source_document": document,
@@ -990,8 +1180,20 @@ class CanvasService(BaseService):
     def restore(
         self, project_id, canvas_id, revision_id, expected, key, expected_drawing_heads=None
     ):
-        with canvas_folder_write_lock(self.session), self._transaction():
-            canvas = self.require_canvas(project_id, canvas_id, lock=True)
+        with (
+            canvas_folder_write_lock(self.session),
+            self._transaction(lock_request_project=False),
+        ):
+            from .canvas_document import has_character_nodes
+
+            original = self.require_canvas(project_id, canvas_id)
+            historical = self._revision(original.id, revision_id)
+            canvas = self.require_canvas(
+                project_id,
+                canvas_id,
+                lock=True,
+                publish_characters=has_character_nodes(historical.snapshot_json),
+            )
             payload = {
                 "project_id": str(project_id),
                 "canvas_id": str(canvas_id),
@@ -1010,7 +1212,8 @@ class CanvasService(BaseService):
             self._check_version(canvas, expected)
             check_drawing_heads(self, canvas, expected_drawing_heads)
             revision = self._revision(canvas_id, revision_id)
-            document = self._revision_document(revision)
+            self._check_legacy_skill_body(revision.snapshot_json)
+            document = self._revision_document(revision, canvas)
             self._snapshot(
                 canvas, self._shared_document(canvas, lock=True), reason="before_restore"
             )
@@ -1107,7 +1310,13 @@ class CanvasService(BaseService):
             if request.viewport is not None:
                 private["root"]["viewport"] = request.viewport.model_dump()
             if request.preferences is not None:
-                private["root"].update(request.preferences)
+                private["root"].update(
+                    {
+                        field: value
+                        for field, value in request.preferences.items()
+                        if field != "projectId"
+                    }
+                )
             self._save_private(canvas, private)
             self.session.flush()
             state = self.canvas_dao.children(CanvasUserState, canvas_id, lock=True)[0]
@@ -1126,10 +1335,30 @@ class CanvasService(BaseService):
             state = states[0] if states else None
             current = state.viewport_json if state else {"x": 0, "y": 0, "k": 1}
             desired = payload.viewport.model_dump()
+            # Binary JSON can print an IEEE double with a different last digit. Compare
+            # the database's exact JSON representation, not a floating-point tolerance.
+            normalized = self.session.scalar(
+                select(
+                    cast(
+                        literal(
+                            json.dumps(
+                                {
+                                    "expected": payload.expected_viewport.model_dump(),
+                                    "desired": desired,
+                                }
+                            )
+                        ),
+                        JSON,
+                    )
+                )
+                .select_from(ProjectCanvas)
+                .where(ProjectCanvas.id == canvas.id)
+            )
+            stored_viewport = normalized["desired"]
             # Equality recovers a lost acknowledgement without another write. CAS only the
             # viewport field so unrelated personal preferences do not create false conflicts.
-            if current != desired:
-                if current != payload.expected_viewport.model_dump():
+            if current != stored_viewport:
+                if current != normalized["expected"]:
                     raise WorkflowError(
                         "canvas_viewport_conflict",
                         "视口已在其他窗口更新，本机位置已保留；请重新加载后继续保存",
@@ -1139,13 +1368,13 @@ class CanvasService(BaseService):
                     state = CanvasUserState(
                         **self.child(canvas),
                         user_id=self.actor_id,
-                        viewport_json=desired,
+                        viewport_json=stored_viewport,
                         preferences_json={},
                         row_version=1,
                     )
                     self.session.add(state)
                 else:
-                    state.viewport_json = desired
+                    state.viewport_json = stored_viewport
                     state.row_version += 1
                     state.updated_at = utcnow()
                     state.updated_by = self.actor_id

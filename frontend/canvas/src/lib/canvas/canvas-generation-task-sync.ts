@@ -15,6 +15,7 @@ import { applyGenerationConsumerEffect, generationEffectApplied } from "@/servic
 import { attachNodeEffectKey } from "@/services/generation-task-materializer";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
 import { mediaResultMetadata } from "@/lib/canvas/canvas-node-semantics";
+import { cinematicStoryboardColumns, storyboardRowsFromTask } from "@/lib/canvas/canvas-project-domain";
 
 export function generationTaskInput(task: GenerationTask) {
     if (!task.inputJson) return null;
@@ -114,6 +115,7 @@ function workflowMetadataForResultNode(): Partial<CanvasNodeMetadata> {
         workflowProvider: undefined,
         runningHubWorkflowId: undefined,
         runningHubWorkflowKind: undefined,
+        runningHubModelId: undefined,
         workflowParameters: undefined,
     };
 }
@@ -139,15 +141,17 @@ export type GenerationResultMediaIO = {
     storeGeneratedVideo: typeof storeGeneratedVideo;
     storeGeneratedAudio: typeof storeGeneratedAudio;
     fetchBlob: (url: string) => Promise<Blob>;
+    compositeEmotionImage: typeof compositeEmotionImage;
 };
 
-const defaultGenerationResultMediaIO: GenerationResultMediaIO = {
+export const defaultGenerationResultMediaIO: GenerationResultMediaIO = {
     resolveImageUrl,
     uploadImage,
     resolveMediaUrl,
     storeGeneratedVideo,
     storeGeneratedAudio,
     fetchBlob: async (url) => (await fetch(url)).blob(),
+    compositeEmotionImage,
 };
 
 export async function buildGenerationTaskNodeResult(node: CanvasNodeData, task: GenerationTask, nodes: CanvasNodeData[] = [node], mediaIO: GenerationResultMediaIO = defaultGenerationResultMediaIO): Promise<CanvasNodeData> {
@@ -167,9 +171,11 @@ export async function buildGenerationTaskNodeResult(node: CanvasNodeData, task: 
             if (!emotionEdit.editRegion) throw new Error("情绪编辑任务缺少局部合成区域，已拒绝使用整图重绘结果");
             const sourceNode = nodes.find((item) => item.id === emotionEdit.sourceNodeId);
             if (!sourceNode?.metadata?.content) throw new Error("情绪编辑源图片已删除，无法恢复局部合成结果");
-            const sourceDataUrl = await resolveImageUrl(sourceNode.metadata.storageKey, sourceNode.metadata.content);
+            const frozenSource = node.metadata?.references?.[0];
+            const fallback = frozenSource ? (/^(resource:|image:)/.test(frozenSource) ? "" : frozenSource) : sourceNode.metadata.content;
+            const sourceDataUrl = await mediaIO.resolveImageUrl(frozenSource || sourceNode.metadata.storageKey, fallback, { cacheMiss: true });
             if (!sourceDataUrl) throw new Error("无法读取情绪编辑源图片，未使用整图重绘结果");
-            resultDataUrl = await compositeEmotionImage(sourceDataUrl, resultDataUrl, emotionEdit.editRegion, emotionEdit.faceBox);
+            resultDataUrl = await mediaIO.compositeEmotionImage(sourceDataUrl, resultDataUrl, emotionEdit.editRegion, emotionEdit.faceBox);
         }
         const uploaded =
             reuseImageKey && !emotionEdit
@@ -177,7 +183,7 @@ export async function buildGenerationTaskNodeResult(node: CanvasNodeData, task: 
                 : await mediaIO.uploadImage(resultDataUrl);
         const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
         const requestedImageSize = nodeSizeFromRatio(node.metadata?.size || "auto", imageConfig.width, imageConfig.height);
-        const imageSizeBounds = requestedImageSize || { width: node.width || imageConfig.width, height: node.height || imageConfig.height };
+        const imageSizeBounds = (emotionEdit ? undefined : requestedImageSize) || { width: node.width || imageConfig.width, height: node.height || imageConfig.height };
         const hasReportedImageSize = Boolean(image?.width && image.width > 0 && image.height && image.height > 0);
         const resultWidth = reuseImageKey && !hasReportedImageSize && requestedImageSize ? requestedImageSize.width : uploaded.width;
         const resultHeight = reuseImageKey && !hasReportedImageSize && requestedImageSize ? requestedImageSize.height : uploaded.height;
@@ -189,7 +195,7 @@ export async function buildGenerationTaskNodeResult(node: CanvasNodeData, task: 
             type: CanvasNodeType.Image,
             width: imageSize.width,
             height: imageSize.height,
-            position: { x: node.position.x + node.width / 2 - imageSize.width / 2, y: node.position.y + node.height / 2 - imageSize.height / 2 },
+            position: emotionEdit ? node.position : { x: node.position.x + node.width / 2 - imageSize.width / 2, y: node.position.y + node.height / 2 - imageSize.height / 2 },
             metadata: applyGeneratedMediaResultMetadata(node, imageMetadata(normalizedImage), { prompt, ...completedTaskMetadata(task) }),
         };
     }
@@ -235,6 +241,14 @@ export async function buildGenerationTaskNodeResult(node: CanvasNodeData, task: 
         return { ...node, type: CanvasNodeType.Audio, metadata: applyGeneratedMediaResultMetadata(node, audioMetadata(audio), { prompt, ...completedTaskMetadata(task) }) };
     }
 
+    if (task.operation === "storyboard") {
+        if (node.type !== CanvasNodeType.Script) throw new Error("分镜任务只能回填原脚本节点");
+        const storyboard = storyboardRowsFromTask(task);
+        return {
+            ...node, title: storyboard.title || node.title,
+            metadata: { ...node.metadata, content: result.text, prompt, ...completedTaskMetadata(task), status: "success", storyboard: { rows: storyboard.rows, visibleColumns: cinematicStoryboardColumns(node.metadata?.storyboard?.visibleColumns), referenceNodeIds: node.metadata?.storyboard?.referenceNodeIds || [] } },
+        };
+    }
     if (!result.text) throw new Error("后端任务没有返回文本");
     return {
         ...node,

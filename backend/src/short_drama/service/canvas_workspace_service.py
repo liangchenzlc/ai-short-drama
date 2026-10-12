@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.canvas_workspace_dao import CanvasWorkspaceDAO
 from short_drama.domain.canvas import CanvasWorkspaceUserState
-from short_drama.schemas.canvas_workspace import CanvasWorkspacePreferencesRequest
+from short_drama.schemas.canvas_editor_tools import EDITOR_TOOL_PREFERENCES_KEY
+from short_drama.schemas.canvas_workspace import (
+    PREFERENCE_FIELDS,
+    CanvasWorkspacePreferencesRequest,
+)
 from short_drama.utils.snowflake import next_id
 
 from .base import BaseService, utcnow
@@ -31,7 +35,11 @@ class CanvasWorkspaceService(BaseService):
     def _preferences(state: CanvasWorkspaceUserState | None) -> dict:
         return {
             "row_version": str(state.row_version) if state else "0",
-            "preferences": deepcopy(state.preferences_json) if state else {},
+            "preferences": {
+                key: deepcopy(value)
+                for key, value in (state.preferences_json if state else {}).items()
+                if key in PREFERENCE_FIELDS
+            },
         }
 
     def read_models(self) -> dict:
@@ -67,8 +75,13 @@ class CanvasWorkspaceService(BaseService):
                     {"current_version": str(current)},
                 )
             if state:
-                if state.preferences_json != payload.preferences:
-                    state.preferences_json = deepcopy(payload.preferences)
+                preferences = deepcopy(payload.preferences)
+                if EDITOR_TOOL_PREFERENCES_KEY in state.preferences_json:
+                    preferences[EDITOR_TOOL_PREFERENCES_KEY] = deepcopy(
+                        state.preferences_json[EDITOR_TOOL_PREFERENCES_KEY]
+                    )
+                if state.preferences_json != preferences:
+                    state.preferences_json = preferences
                     state.row_version += 1
                     state.updated_at = utcnow()
             else:

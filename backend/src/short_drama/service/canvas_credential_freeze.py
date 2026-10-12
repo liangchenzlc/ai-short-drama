@@ -10,6 +10,7 @@ from short_drama.ai.canvas_credentials import (
     MODEL_AUTH_ADAPTERS,
     CanvasCredentials,
 )
+from short_drama.ai.canvas_runninghub_adapters import RUNNINGHUB_ADAPTERS
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import AIGenerationRecord
@@ -28,6 +29,11 @@ def freeze_canvas_credentials(record: AIGenerationRecord, secrets: dict, cipher:
                     {"name": name, "value": value}
                     for name, value in secrets.get("headers", {}).items()
                 ],
+                **(
+                    {"runningHubUploadApiKey": secrets.get("secretKey", "")}
+                    if record.adapter in RUNNINGHUB_ADAPTERS
+                    else {}
+                ),
             }
         )
     except (ValueError, TypeError, ValidationError):
@@ -41,6 +47,8 @@ def freeze_canvas_credentials(record: AIGenerationRecord, secrets: dict, cipher:
             {"name": item.name, "value": item.value.get_secret_value()} for item in values.headers
         ],
     }
+    if record.adapter in RUNNINGHUB_ADAPTERS:
+        plaintext["runningHubUploadApiKey"] = values.runninghub_upload_key.get_secret_value()
     record.credential_cipher = cipher.encrypt(
         json.dumps(plaintext, ensure_ascii=False, separators=(",", ":"))
     )

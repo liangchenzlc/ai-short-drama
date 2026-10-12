@@ -9,9 +9,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.orm import Session
 
-from short_drama.db.session import configure_mysql
+from short_drama.db.session import AppSession, configure_mysql
 
 
 def isolated_mysql_database():
@@ -99,7 +98,7 @@ def migration_mysql_engine():
 def db_session(mysql_engine):
     from short_drama.domain.base import Base
 
-    with Session(mysql_engine, expire_on_commit=False, autoflush=False) as session:
+    with AppSession(mysql_engine, expire_on_commit=False, autoflush=False) as session:
         from short_drama.domain.collaboration import User
         from short_drama.service.base import utcnow
 
@@ -119,6 +118,9 @@ def db_session(mysql_engine):
             )
         yield session
     with mysql_engine.begin() as connection:
+        # Disposable test database only: release the cycle before deleting any table.
+        assets = Base.metadata.tables["assets"]
+        connection.execute(assets.update().values(current_version_id=None))
         for table in reversed(Base.metadata.sorted_tables):
             if table.name == "async_tasks":
                 # MySQL checks RESTRICT per row, including rows deleted in this statement.

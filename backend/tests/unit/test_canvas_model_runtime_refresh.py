@@ -207,6 +207,7 @@ def test_old_result_cannot_replace_upgraded_canvas_cache_but_standard_policy_is_
         config_id=config.id,
         config_snapshot=deepcopy(frozen),
         request_data={"source": {"scene": scene}},
+        adapter=None,
         response_data={},
         provider_task_id=None,
     )
@@ -256,6 +257,7 @@ def test_old_standard_result_cannot_reintroduce_cache_after_header_account_chang
         config_id=config.id,
         config_snapshot=deepcopy(frozen),
         request_data={"source": {"scene": "shot_video"}},
+        adapter=None,
         response_data={},
         provider_task_id=None,
     )

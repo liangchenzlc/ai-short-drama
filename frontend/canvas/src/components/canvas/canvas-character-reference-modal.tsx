@@ -1,17 +1,20 @@
 
-import { AudioLines, BadgeCheck, Image as ImageIcon, UserRound, Volume2 } from "lucide-react";
+import { AudioLines, BadgeCheck, Image as ImageIcon, UserRound, Volume2, LoaderCircle } from "lucide-react";
 import { AppModal } from "@/components/ui/product/app-modal";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Button } from "antd";
 
 import type { CanvasNodeData } from "@/types/canvas";
 
-export function CanvasCharacterReferenceModal({ node, open, onClose }: { node: CanvasNodeData | null; open: boolean; onClose: () => void }) {
+export function CanvasCharacterReferenceModal({ node, open, onClose, loading = false, error = "", onRetry }: { node: CanvasNodeData | null; open: boolean; onClose: () => void; loading?: boolean; error?: string; onRetry?: () => void }) {
+    const [imageError, setImageError] = useState(false);
+    useEffect(() => { setImageError(false); }, [node?.id, node?.metadata?.characterCoverUrl, open]);
     if (!node) return null;
     const metadata = node.metadata;
     const definition = metadata?.characterDefinition || {};
     const name = metadata?.characterName || node.title || "未命名角色";
     const aliases = metadata?.characterAliases || stringList(definition.aliases);
-    const visualReady = metadata?.characterVisualStatus === "ready";
+    const visualReady = metadata?.characterVisualStatus === "ready" && !loading && !error && !imageError;
     const voiceReady = metadata?.characterVoiceStatus === "ready";
     const voiceProfile = metadata?.characterVoiceProfile;
 
@@ -34,10 +37,15 @@ export function CanvasCharacterReferenceModal({ node, open, onClose }: { node: C
                         </span>
                         <StatusDot icon={<ImageIcon />} ready={visualReady} readyLabel="形象已绑定" emptyLabel="形象待完善" />
                     </div>
-                    {metadata?.characterCoverUrl ? (
+                    {loading || error || imageError ? (
+                        <div className="grid h-full place-items-center px-8 text-center text-foreground/45" role={error || imageError ? "alert" : "status"}>
+                            <div>{loading ? <LoaderCircle className="mx-auto size-6 animate-spin" /> : null}<p className="mt-3 text-xs">{loading ? "正在读取当前角色" : error || "角色图片读取失败，请重试"}</p>{!loading && onRetry ? <Button type="text" onClick={() => { setImageError(false); onRetry(); }}>重试</Button> : null}</div>
+                        </div>
+                    ) : metadata?.characterCoverUrl ? (
                         <div className="flex h-full w-full items-center justify-center p-5 pt-16 md:p-8 md:pt-20">
                             <img
                                 src={metadata.characterCoverUrl}
+                                onError={() => setImageError(true)}
                                 alt={`${name}人物三视图`}
                                 className="max-h-full max-w-full select-none object-contain drop-shadow-[0_22px_42px_rgba(0,0,0,.14)]"
                                 draggable={false}

@@ -1,0 +1,79 @@
+# BeefTV 内置插件与外部工作流可达性审计
+
+核对日期：2026-10-10。固定源为 `4ca2a65a7780a8dfcaaa86c33679f84fb04e055c`，
+隔离副本为 `.runtime/beeftv-visual-source/`。本片只核对当前编辑器及已有执行链，
+不恢复已按用户要求删除的整站插件、模型、资产与剪辑管理页，
+也不恢复已由共用纯对话助手替代的旧助手工具链。
+
+本文区分注册、可达入口、执行与验收证据；注册器里存在代码并不等于入口已启用。
+真实供应商、付费模型和企业授权按用户要求继续暂缓，不重复询问模型或预算。
+
+## 固定源注册与实际可达范围
+
+固定源与目标的内置注册入口均导入六个模块，入口字节 SHA-256 均为
+`b510b24b03e9437a709f8e60a46136dfcd905d716ded89cefcf982dd348c64c7`。
+目标入口见[内置注册](../../frontend/canvas/src/lib/plugins/builtin/index.ts)。
+
+| 注册模块 | 固定源/当前编辑器的实际边界 | 已有执行与证据 | 仍需保留的门禁 |
+| --- | --- | --- | --- |
+| `eagle` | 固定源 `isLocalWorkspaceMode()` 返回 true，素材 Hook 不枚举外部来源；自动写回也提前返回。目标保持该分支 | [素材来源 Hook](../../frontend/canvas/src/hooks/use-external-asset-sources.ts)、[自动写回](../../frontend/canvas/src/services/external-asset-sources.ts)、[运行模式](../../frontend/canvas/src/services/workspace-mode.ts)均已核对 | 注册的 Eagle HTTP 方法不构成当前启用功能，不据此恢复 Eagle 配置或服务器代理 |
+| `prompt-optimizer` | 注册保留，原提示词栏保持隐藏；私人开关由宿主配置，不允许旧本地状态复活 | R06 的服务端工具准入、私人阶段记录及 `settings-green-a`、`browser-e` 证据保持各自版本 | 不能把隐藏栏、代码注册或 HTTP 工具通过描述为全部原优化 UI 已验 |
+| `ai-art-critique` | 本人启用后，原审美节点/菜单及弹窗可达；结果按源 SVG 及提示词流程落位 | R06 的四协议、九阶段批准/租约、`tool-runs-native-b` 与 `art-ui-g/h/i` 保持原范围 | 其他异常、完整源对照及资源/配额门禁继续 |
+| `workflows` | RunningHub Workflow/App × 图片/视频/音频；原“添加节点→搜索工作流”仍不提供创建入口，已有 Config 节点可选择本人已保存条目 | [原节点面板](../../frontend/canvas/src/components/canvas/canvas-config-node-panel.tsx)、[工作流选择](../../frontend/canvas/src/lib/generation-workflow-execution.ts)、R08 的执行/恢复/独立 AMQP 证据 | 完整固定源视觉与全部异常尚未关闭；真实供应商/企业授权暂缓 |
+| `media-conversion` | 转换插件注册保留，源 MediaConversion 创建菜单禁用；已有节点的转换/本地任务能力属于 R13 | [插件声明](../../frontend/canvas/src/lib/plugins/builtin/media-conversion.ts)、R13 的实际 CPU/HTTP/MySQL/MinIO 切片保持原范围 | 不启用源禁用菜单，不由灰度等局部切片声称全部模型与异常已验 |
+| `editor/editor-shell` | 八个 fullscreen 插槽仍注册；整站剪辑页面已删除，不能由这些注册恢复旧页面或 AI 编辑工具 | [插槽注册](../../frontend/canvas/src/lib/plugins/builtin/editor/editor-shell.tsx)、[当前路由](../../frontend/canvas/src/router.tsx)已核对；画布内时间线与本地执行在 R12/R13 另验 | 不把未挂载 fullscreen 插槽列为当前可达编辑器，也不把画布时间线证据套为整站剪辑验收 |
+
+源 `web/src/lib/canvas/canvas-workflow-builder.ts` 是旧 Agent 操作构建辅助文件。
+固定源 `web/src/` 搜索 `buildCanvasWorkflowOps` 只找到定义；当前目标也没有该调用链。
+它不构成独立的可达外部工作流编辑器。源整站 `workflow-graph-editor` 等页面不因名称
+包含“工作流”就加入当前编辑器范围。RunningHub 节点采用原直接执行及结果落位流程，
+不新增标准模式的候选采用或计划审批步骤。
+
+## 私人插件与执行边界
+
+[服务端状态](../../backend/src/short_drama/service/canvas_editor_tool_service.py)只允许
+`prompt-optimizer`、`ai-art-critique`、`runninghub-workflow-provider` 三个本人开关，
+默认关闭，保存到本人工作区偏好；[API](../../backend/src/short_drama/api/v1/canvas_catalog.py)
+提供 status、activation 与 catalog。注册目录不提供任意插件安装/上传/运行授权。
+
+RunningHub 以十进制 `logicalModelId` 选择本人保存的用途匹配条目。
+客户端不提交 Key、Base URL 或完整执行配置；服务端冻结模型、字段、来源及凭据。
+积分 Key 用于 schema/create/poll，企业 Key 仅用于受控媒体上传。
+unknown 不能自动重新提交；恢复继续原任务，不产生新的 create。
+任务与记录本人可见，进入共享图的作品按项目权限可见。
+
+相关执行链：
+
+- [RunningHub 准入](../../backend/src/short_drama/service/canvas_runninghub_admission.py)
+- [字段映射](../../backend/src/short_drama/ai/canvas_runninghub_fields.py)
+- [协议执行](../../backend/src/short_drama/ai/canvas_runninghub_adapters.py)
+- [已有 HTTP/MySQL/MinIO 测试](../../backend/tests/integration/test_canvas_runninghub_runtime.py)
+- [已有独立 RabbitMQ/Worker 测试](../../backend/tests/integration/test_canvas_runninghub_broker.py)
+- [原界面测试](../../backend/tests/integration/test_canvas_runninghub_browser.py)
+
+## 本片原界面复验范围
+
+沿用现有生产 preview 驱动，先组合构建当前两包，测试端口 4199。
+准备已存在的 Config 节点；这不是原菜单创建工作流验收。
+新增三种原 UI 组合后，正常场景完整覆盖六种 Workflow/App × image/video/audio，
+另保留 image Workflow unknown-create。每场编辑六项源业务字段：
+`cfg`、`sampler_name`、`quality`、`seed`、`watermark`、`negative_prompt`。
+
+Workflow JSON 的字段类型优先于保存映射，内部角色默认禁用；App 的显式 SLIDER
+保留滑块。沿源业务字段与这两种不同合同准备测试，不改源字段分类或控件优先级。
+空数值及不符合步长的值须就近提示并阻止任务提交；布尔开关、随机开关及 App 滑块
+通过 Space/Enter/ArrowRight 操作。生成前保存来源；关闭原 context，仅携 cookies
+恢复并在完成后再次 fresh 打开，检查精确字段、同任务、媒体和零重提交。
+
+Python 后置断言核对全部 nodeInfo 字符串、MySQL 记录及精确字段、MinIO 原字节、
+主人/成员/外人访问与任务私人边界。该 fixture 以受控 HTTP 提供供应商，
+执行器为测试线程；本片不能宣称独立 AMQP、Go 服务、收费供应商或企业授权验收。
+最终 `runninghub-fields-native-c` **7 passed / 0 skipped，218.38s，exit0**，
+全部 Python 后置断言执行；七份报告 `complete`，各场 task POST 为 1，
+`page_errors=[] / failed_routes=[]`。已查看 image-App 与 video-App 的 fresh 截图。
+驱动首两批失败来自下拉选项/随机按钮定位歧义，另按源字段角色和类型优先级
+修正准备；生产实现未改。随后仅按 Ruff 折行 Python 测试准备参数，行为与断言保持。
+实际命令、失败堆栈、清理状态及本片未验范围见
+[本片台账](2026-10-08-beeftv-remaining-work.md#2026-10-10r16插件可达性与工作流字段恢复)。
+
+R16 的可达性清单已明确，但完整成对视觉、全部异常与最终 M0–M5 门禁继续。

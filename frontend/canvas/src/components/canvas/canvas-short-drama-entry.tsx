@@ -7,18 +7,23 @@ import type { CanvasCreateCommand } from "@/components/canvas/canvas-create-menu
 import type { CanvasShortDramaProgress, CanvasShortDramaStepId } from "@/lib/canvas/canvas-short-drama";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import type { CanvasNodeData } from "@/types/canvas";
+import type { CanvasSourceChapterStatus } from "@/pages/canvas/use-canvas-upload";
 
-export function CanvasLinkedProjectEmptyState({ projectName, hasChapter, onAddFirstChapter, onOpenAssets, onAddText }: { projectName: string; hasChapter: boolean; onAddFirstChapter: () => void; onOpenAssets: () => void; onAddText: () => void }) {
+export function CanvasLinkedProjectEmptyState({ projectName, hasChapter, sourceLoading, sourceError, chapterStatus, onRefreshSource, onAddFirstChapter, onOpenAssets, onAddText }: { projectName: string; hasChapter: boolean; sourceLoading: boolean; sourceError: string; chapterStatus: CanvasSourceChapterStatus | null; onRefreshSource: () => void; onAddFirstChapter: () => void; onOpenAssets: () => void; onAddText: () => void }) {
     const theme = canvasThemes[useActiveTheme()];
+    const error = sourceError || chapterStatus?.error || "";
+    const detail = error || (sourceLoading ? "正在读取来源项目…" : chapterStatus?.loading ? "正在读取首章正文…" : !hasChapter ? "暂无已保存分集" : "");
     return (
         <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center px-4 pb-16 pt-20">
             <div className="pointer-events-auto w-full max-w-[440px] rounded-lg border p-3 shadow-sm backdrop-blur" data-canvas-no-zoom style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}>
                 <div className="flex items-center gap-2.5"><span className="grid size-8 shrink-0 place-items-center rounded-md" style={{ background: theme.toolbar.itemHover, color: theme.node.muted }}><FolderKanban className="size-4" /></span><div className="min-w-0"><h2 className="truncate text-sm font-semibold">{projectName}</h2><p className="mt-0.5 text-[var(--fs-label)]" style={{ color: theme.node.muted }}>项目画布为空</p></div></div>
                 <div className="mt-3 grid grid-cols-3 gap-1.5">
-                    <button type="button" disabled={!hasChapter} onClick={onAddFirstChapter} className="flex h-9 min-w-0 items-center justify-center gap-1 rounded-md border px-2 text-[var(--fs-label)] font-medium disabled:opacity-35" style={{ borderColor: theme.node.stroke, background: theme.node.fill }}><Plus className="size-3.5 shrink-0" /><span className="truncate">添加首章</span></button>
+                    <button type="button" disabled={!hasChapter || sourceLoading || Boolean(chapterStatus?.loading)} onClick={onAddFirstChapter} className="flex h-9 min-w-0 items-center justify-center gap-1 rounded-md border px-2 text-[var(--fs-label)] font-medium disabled:opacity-35" style={{ borderColor: theme.node.stroke, background: theme.node.fill }}><Plus className="size-3.5 shrink-0" /><span className="truncate">添加首章</span></button>
                     <button type="button" onClick={onOpenAssets} className="flex h-9 min-w-0 items-center justify-center gap-1 rounded-md border px-2 text-[var(--fs-label)] font-medium" style={{ borderColor: theme.node.stroke, background: theme.node.fill }}><Images className="size-3.5 shrink-0" /><span className="truncate">项目资产</span></button>
                     <button type="button" onClick={onAddText} className="flex h-9 min-w-0 items-center justify-center gap-1 rounded-md border px-2 text-[var(--fs-label)] font-medium" style={{ borderColor: theme.node.stroke, background: theme.node.fill }}><Type className="size-3.5 shrink-0" /><span className="truncate">新建文本</span></button>
                 </div>
+                {detail ? <p data-canvas-source-first-chapter-status role={error ? "alert" : "status"} aria-live="polite" className="mt-2 break-words text-xs">{detail}</p> : null}
+                {error ? <button type="button" onClick={onRefreshSource} disabled={sourceLoading || Boolean(chapterStatus?.loading)} className="mt-1 text-xs underline underline-offset-2">重新读取来源项目</button> : null}
             </div>
         </div>
     );

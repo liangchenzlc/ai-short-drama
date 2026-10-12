@@ -15,13 +15,11 @@ type ArtCritiqueNodeProps = {
 
 export function ArtCritiqueNodeContent({ node }: ArtCritiqueNodeProps) {
     const theme = canvasThemes[useActiveTheme()];
-    const installations = usePluginStore((state) => state.installations);
+    const enabled = usePluginStore((state) => state.pluginStates[ART_CRITIQUE_PLUGIN_ID]?.effectiveEnabled ?? (ART_CRITIQUE_PLUGIN_ID in state.runtimeStatuses ? state.runtimeStatuses[ART_CRITIQUE_PLUGIN_ID] === "enabled" : Boolean(state.installations.find((item) => item.manifest.id === ART_CRITIQUE_PLUGIN_ID)?.enabled)));
     const { openArtCritique } = useCanvasNodeActions();
     const imageInputs = useUpstreamNodes(node.id).filter(isArtCritiqueImageInput);
     const input = imageInputs[0];
     const state = node.metadata?.artCritique || createDefaultArtCritiqueState();
-    const installation = installations.find((item) => item.manifest.id === ART_CRITIQUE_PLUGIN_ID);
-    const enabled = installation?.enabled === true;
     const currentFingerprint = input ? artCritiqueSourceFingerprint(input) : "";
     const hasStaleReport = Boolean(state.report && currentFingerprint && state.report.sourceFingerprint !== currentFingerprint);
     const status = hasStaleReport ? "stale" : state.status;

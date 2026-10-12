@@ -34,6 +34,11 @@ export interface RuntimeDraft {
   logicalCapabilityProfiles: string;
   videoCapabilitiesVersion: string;
   concurrencyLimit: string;
+  runningHubKind: 'workflow' | 'app';
+  runningHubId: string;
+  runningHubTitle: string;
+  runningHubFields: string;
+  runningHubJson: string;
 }
 export interface HeaderDraft { name: string; value: string; hasValue: boolean }
 export type ConfigDraft = Pick<AiConfig, 'name' | 'provider' | 'serviceType' | 'baseUrl' | 'modelKey' | 'enabled'> & {
@@ -49,6 +54,7 @@ export const emptyRuntime: RuntimeDraft = {
   enabled: false, apiFormat: 'openai', protocol: '', referenceAssetOrigin: '',
   capabilityConfig: '', defaultOptions: '', logicalCapabilitySpec: '',
   logicalCapabilityProfiles: '', videoCapabilitiesVersion: '', concurrencyLimit: '',
+  runningHubKind: 'workflow', runningHubId: '', runningHubTitle: '', runningHubFields: '', runningHubJson: '',
 };
 export const emptyConfig: ConfigDraft = {
   name: "",

@@ -137,16 +137,38 @@ class CanvasResourceChunk(Base):
 
 
 class CanvasResourceDeletion(CanvasAudit, Base):
-    """Durable deletion outbox and tombstone for a retired upload identity."""
+    """Durable deletion outbox backed by an upload or a disposed creation copy."""
 
     __tablename__ = "canvas_resource_deletions"
     user_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT")
     )
     resource_id: Mapped[int] = mapped_column(BIGINT(unsigned=True))
-    upload_id: Mapped[int] = mapped_column(BIGINT(unsigned=True))
-    idempotency_hash: Mapped[str] = mapped_column(CHAR(64, charset="ascii", collation="ascii_bin"))
-    request_hash: Mapped[str] = mapped_column(CHAR(64, charset="ascii", collation="ascii_bin"))
+    upload_id: Mapped[int | None] = mapped_column(BIGINT(unsigned=True))
+    idempotency_hash: Mapped[str | None] = mapped_column(
+        CHAR(64, charset="ascii", collation="ascii_bin")
+    )
+    request_hash: Mapped[str | None] = mapped_column(
+        CHAR(64, charset="ascii", collation="ascii_bin")
+    )
+    creation_resource_id: Mapped[int | None] = mapped_column(
+        BIGINT(unsigned=True),
+        ForeignKey(
+            "canvas_creation_resources.id",
+            name="fk_canvas_deletion_creation_resource",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+    )
+    disposal_receipt_id: Mapped[int | None] = mapped_column(
+        BIGINT(unsigned=True),
+        ForeignKey(
+            "canvas_write_receipts.id",
+            name="fk_canvas_deletion_disposal",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+    )
     storage_locator: Mapped[str] = mapped_column(VARCHAR(700, collation="utf8mb4_0900_bin"))
     chunk_count: Mapped[int] = mapped_column(INTEGER(unsigned=True))
     status: Mapped[str] = mapped_column(VARCHAR(16))
@@ -158,7 +180,17 @@ class CanvasResourceDeletion(CanvasAudit, Base):
         UniqueConstraint("resource_id", name="uk_canvas_deletion_resource"),
         UniqueConstraint("upload_id", name="uk_canvas_deletion_upload"),
         UniqueConstraint("user_id", "idempotency_hash", name="uk_canvas_deletion_identity"),
+        UniqueConstraint("creation_resource_id", name="uk_canvas_deletion_creation_resource"),
         Index("idx_canvas_deletion_due", "status", "next_attempt_at", "id"),
+        Index("idx_canvas_deletion_disposal", "disposal_receipt_id"),
+        CheckConstraint(
+            "(upload_id IS NOT NULL AND idempotency_hash IS NOT NULL AND request_hash IS NOT NULL "
+            "AND creation_resource_id IS NULL AND disposal_receipt_id IS NULL) OR "
+            "(upload_id IS NULL AND idempotency_hash IS NULL AND request_hash IS NULL "
+            "AND creation_resource_id IS NOT NULL AND disposal_receipt_id IS NOT NULL "
+            "AND chunk_count = 0)",
+            name="ck_canvas_deletion_origin",
+        ),
         CheckConstraint(
             "status IN ('pending','completed','retained')", name="ck_canvas_deletion_status"
         ),

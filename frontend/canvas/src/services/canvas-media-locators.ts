@@ -75,6 +75,12 @@ export function canonicalizeCanvasMedia<T>(document: T, strict = true): T {
                     if (transient(input.previewContent)) delete next.previewContent;
                 }
                 for (const [field, storageField] of Object.entries(derivedPairs)) normalize(field, storageField, true);
+                const cover = input.characterCoverUrl;
+                if (cover !== undefined && cover !== null && cover !== "") {
+                    const found = resource(cover);
+                    if (found && found.suffix === "/file") next.characterCoverUrl = `/api/v1/canvas-runtime/resources/${found.id}/file`;
+                    else if (strict) throw new Error("角色封面必须先归一化为真实画布资源，原草稿已保留");
+                }
                 result = Object.keys(next).length !== Object.keys(input).length
                     || Object.keys(next).some(key => next[key] !== input[key]) ? next : value;
             }

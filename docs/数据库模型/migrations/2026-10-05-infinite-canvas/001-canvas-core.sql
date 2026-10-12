@@ -3,6 +3,29 @@ ALTER TABLE projects ADD COLUMN workspace_mode VARCHAR(16) NOT NULL DEFAULT 'sta
 
 ALTER TABLE projects ADD CONSTRAINT ck_projects_workspace_mode CHECK (workspace_mode IN ('standard','infinite_canvas'));
 
+CREATE TABLE canvas_beefapi_connections (
+	user_id BIGINT UNSIGNED NOT NULL, 
+	state_json JSON NOT NULL, 
+	secrets_cipher MEDIUMTEXT, 
+	row_version BIGINT UNSIGNED NOT NULL, 
+	next_poll_at DATETIME(6), 
+	lease_until DATETIME(6), 
+	lease_owner VARCHAR(64), 
+	id BIGINT UNSIGNED NOT NULL, 
+	created_at DATETIME(6) NOT NULL, 
+	updated_at DATETIME(6) NOT NULL, 
+	created_by BIGINT UNSIGNED NOT NULL, 
+	updated_by BIGINT UNSIGNED NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uk_canvas_beefapi_user UNIQUE (user_id), 
+	CONSTRAINT ck_canvas_beefapi_version CHECK (row_version > 0), 
+	CONSTRAINT fk_canvas_beefapi_connections_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_beefapi_connections_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_beefapi_connections_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_canvas_beefapi_poll ON canvas_beefapi_connections (next_poll_at, lease_until, id);
+
 CREATE TABLE canvas_library_folders (
 	user_id BIGINT UNSIGNED NOT NULL, 
 	name VARCHAR(40) NOT NULL, 
@@ -22,36 +45,21 @@ CREATE TABLE canvas_library_folders (
 
 CREATE INDEX idx_canvas_library_folder_order ON canvas_library_folders (user_id, position, id);
 
-CREATE TABLE canvas_resource_deletions (
+CREATE TABLE canvas_model_catalogs (
 	user_id BIGINT UNSIGNED NOT NULL, 
-	resource_id BIGINT UNSIGNED NOT NULL, 
-	upload_id BIGINT UNSIGNED NOT NULL, 
-	idempotency_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
-	request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
-	storage_locator VARCHAR(700) COLLATE utf8mb4_0900_bin NOT NULL, 
-	chunk_count INTEGER UNSIGNED NOT NULL, 
-	status VARCHAR(16) NOT NULL, 
-	attempts INTEGER UNSIGNED NOT NULL, 
-	next_attempt_at DATETIME(6) NOT NULL, 
-	completed_at DATETIME(6), 
-	error_code VARCHAR(64), 
+	channels_json JSON NOT NULL, 
+	credentials_cipher MEDIUMTEXT, 
 	id BIGINT UNSIGNED NOT NULL, 
 	created_at DATETIME(6) NOT NULL, 
 	updated_at DATETIME(6) NOT NULL, 
 	created_by BIGINT UNSIGNED NOT NULL, 
 	updated_by BIGINT UNSIGNED NOT NULL, 
 	PRIMARY KEY (id), 
-	CONSTRAINT uk_canvas_deletion_resource UNIQUE (resource_id), 
-	CONSTRAINT uk_canvas_deletion_upload UNIQUE (upload_id), 
-	CONSTRAINT uk_canvas_deletion_identity UNIQUE (user_id, idempotency_hash), 
-	CONSTRAINT ck_canvas_deletion_status CHECK (status IN ('pending','completed','retained')), 
-	CONSTRAINT ck_canvas_deletion_completion CHECK ((status = 'pending' AND completed_at IS NULL) OR (status IN ('completed','retained') AND completed_at IS NOT NULL)), 
-	CONSTRAINT fk_canvas_resource_deletions_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
-	CONSTRAINT fk_canvas_resource_deletions_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
-	CONSTRAINT fk_canvas_resource_deletions_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+	CONSTRAINT uk_canvas_model_catalog_user UNIQUE (user_id), 
+	CONSTRAINT fk_canvas_model_catalogs_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_model_catalogs_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_model_catalogs_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 )ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
-
-CREATE INDEX idx_canvas_deletion_due ON canvas_resource_deletions (status, next_attempt_at, id);
 
 CREATE TABLE canvas_workspace_user_states (
 	user_id BIGINT UNSIGNED NOT NULL, 
@@ -94,6 +102,26 @@ CREATE TABLE canvas_binary_resources (
 	CONSTRAINT fk_canvas_binary_resources_project_id FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
 	CONSTRAINT fk_canvas_binary_resources_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
 	CONSTRAINT fk_canvas_binary_resources_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE canvas_channel_models (
+	user_id BIGINT UNSIGNED NOT NULL, 
+	channel_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL, 
+	model_key VARCHAR(255) COLLATE utf8mb4_0900_bin NOT NULL, 
+	model_config_id BIGINT UNSIGNED NOT NULL, 
+	runtime_migrated_at DATETIME(3), 
+	id BIGINT UNSIGNED NOT NULL, 
+	created_at DATETIME(6) NOT NULL, 
+	updated_at DATETIME(6) NOT NULL, 
+	created_by BIGINT UNSIGNED NOT NULL, 
+	updated_by BIGINT UNSIGNED NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uk_canvas_channel_model UNIQUE (user_id, channel_key, model_key), 
+	CONSTRAINT uk_canvas_channel_config UNIQUE (model_config_id), 
+	CONSTRAINT fk_canvas_channel_models_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_channel_models_model_config_id FOREIGN KEY(model_config_id) REFERENCES ai_model_configs (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_channel_models_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_channel_models_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 )ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE canvas_creation_attempts (
@@ -153,7 +181,8 @@ CREATE TABLE canvas_library_assets (
 CREATE INDEX idx_canvas_library_user ON canvas_library_assets (user_id, updated_at, id);
 
 CREATE TABLE project_canvases (
-	project_id BIGINT UNSIGNED NOT NULL, 
+	project_id BIGINT UNSIGNED NOT NULL,
+	source_project_id BIGINT UNSIGNED, 
 	source_key VARCHAR(64) COLLATE utf8mb4_0900_bin NOT NULL, 
 	title VARCHAR(255) NOT NULL, 
 	position INTEGER UNSIGNED NOT NULL, 
@@ -171,12 +200,15 @@ CREATE TABLE project_canvases (
 	CONSTRAINT uk_canvas_source_key UNIQUE (source_key), 
 	CONSTRAINT ck_canvas_version CHECK (row_version > 0 AND schema_version > 0), 
 	CONSTRAINT ck_canvas_title CHECK (CHAR_LENGTH(TRIM(title)) > 0), 
-	CONSTRAINT fk_project_canvases_project_id FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_project_canvases_project_id FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_source_project FOREIGN KEY(source_project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
 	CONSTRAINT fk_project_canvases_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
 	CONSTRAINT fk_project_canvases_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 )ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE INDEX idx_canvas_project_order ON project_canvases (project_id, archived_at, position, id);
+
+CREATE INDEX idx_canvas_source_project ON project_canvases (source_project_id);
 
 CREATE TABLE canvas_creation_resources (
 	attempt_id BIGINT UNSIGNED NOT NULL, 
@@ -451,6 +483,43 @@ CREATE TABLE canvas_timelines (
 	CONSTRAINT fk_canvas_timelines_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 )ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
+CREATE TABLE canvas_tool_runs (
+	user_id BIGINT UNSIGNED NOT NULL, 
+	client_key VARCHAR(120) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
+	create_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
+	state_json JSON NOT NULL, 
+	source_snapshot JSON NOT NULL, 
+	source_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
+	source_media_id BIGINT UNSIGNED, 
+	model_config_id BIGINT UNSIGNED NOT NULL, 
+	config_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
+	row_version BIGINT UNSIGNED NOT NULL, 
+	execution_epoch BIGINT UNSIGNED NOT NULL, 
+	execution_owner VARCHAR(120) NOT NULL, 
+	lease_expires_at DATETIME(6), 
+	project_id BIGINT UNSIGNED NOT NULL, 
+	canvas_id BIGINT UNSIGNED NOT NULL, 
+	id BIGINT UNSIGNED NOT NULL, 
+	created_at DATETIME(6) NOT NULL, 
+	updated_at DATETIME(6) NOT NULL, 
+	created_by BIGINT UNSIGNED NOT NULL, 
+	updated_by BIGINT UNSIGNED NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT fk_canvas_tool_runs_project_id FOREIGN KEY(project_id, canvas_id) REFERENCES project_canvases (project_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT uk_canvas_tool_run_client UNIQUE (user_id, client_key), 
+	CONSTRAINT uk_canvas_tool_run_scope UNIQUE (id, user_id, project_id, canvas_id), 
+	CONSTRAINT ck_canvas_tool_run_version CHECK (row_version > 0), 
+	CONSTRAINT ck_canvas_tool_run_lease CHECK ((execution_owner = '' AND lease_expires_at IS NULL) OR (execution_owner <> '' AND lease_expires_at IS NOT NULL AND execution_epoch > 0)), 
+	CONSTRAINT ck_canvas_tool_run_identity CHECK (CHAR_LENGTH(client_key) > 0 AND CHAR_LENGTH(create_hash) = 64 AND CHAR_LENGTH(source_hash) = 64 AND CHAR_LENGTH(config_hash) = 64), 
+	CONSTRAINT fk_canvas_tool_runs_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_tool_runs_source_media_id FOREIGN KEY(source_media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_tool_runs_model_config_id FOREIGN KEY(model_config_id) REFERENCES ai_model_configs (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_tool_runs_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_tool_runs_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_canvas_tool_run_author ON canvas_tool_runs (user_id, updated_at, id);
+
 CREATE TABLE canvas_user_states (
 	user_id BIGINT UNSIGNED NOT NULL, 
 	viewport_json JSON NOT NULL, 
@@ -586,6 +655,106 @@ CREATE TABLE canvas_edges (
 
 CREATE INDEX idx_canvas_edge_order ON canvas_edges (canvas_id, archived_at, position);
 
+CREATE TABLE canvas_generation_media_deletions (
+	user_id BIGINT UNSIGNED NOT NULL,
+	purge_receipt_id BIGINT UNSIGNED NOT NULL,
+	task_id BIGINT UNSIGNED NOT NULL,
+	record_id BIGINT UNSIGNED NOT NULL,
+	asset_id BIGINT UNSIGNED NOT NULL,
+	resource_id BIGINT UNSIGNED NOT NULL,
+	output_index INTEGER UNSIGNED NOT NULL,
+	media_type VARCHAR(16) NOT NULL,
+	checksum_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	extension VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	storage_locator VARCHAR(700) COLLATE utf8mb4_0900_bin NOT NULL,
+	status VARCHAR(16) NOT NULL,
+	attempts INTEGER UNSIGNED NOT NULL,
+	next_attempt_at DATETIME(6) NOT NULL,
+	completed_at DATETIME(6),
+	error_code VARCHAR(64),
+	project_id BIGINT UNSIGNED NOT NULL,
+	canvas_id BIGINT UNSIGNED NOT NULL,
+	id BIGINT UNSIGNED NOT NULL,
+	created_at DATETIME(6) NOT NULL,
+	updated_at DATETIME(6) NOT NULL,
+	created_by BIGINT UNSIGNED NOT NULL,
+	updated_by BIGINT UNSIGNED NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT fk_canvas_generation_media_deletions_project_id FOREIGN KEY(project_id, canvas_id) REFERENCES project_canvases (project_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT uk_canvas_generation_delete_resource UNIQUE (resource_id),
+	CONSTRAINT uk_canvas_generation_delete_asset UNIQUE (asset_id),
+	CONSTRAINT uk_canvas_generation_delete_output UNIQUE (record_id, output_index),
+	CONSTRAINT ck_canvas_generation_delete_origin CHECK (media_type IN ('image','video','audio') AND output_index > 0 AND asset_id > 0 AND resource_id > 0 AND CHAR_LENGTH(checksum_sha256) = 64 AND CHAR_LENGTH(TRIM(extension)) > 0 AND CHAR_LENGTH(TRIM(storage_locator)) > 0),
+	CONSTRAINT ck_canvas_generation_delete_state CHECK ((status = 'pending' AND completed_at IS NULL) OR (status = 'completed' AND completed_at IS NOT NULL)),
+	CONSTRAINT ck_canvas_generation_delete_time CHECK (updated_at >= created_at),
+	CONSTRAINT fk_canvas_generation_media_deletions_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_generation_media_deletions_purge_receipt_id FOREIGN KEY(purge_receipt_id) REFERENCES canvas_write_receipts (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_generation_media_deletions_task_id FOREIGN KEY(task_id) REFERENCES async_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_generation_media_deletions_record_id FOREIGN KEY(record_id) REFERENCES ai_generation_records (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_generation_media_deletions_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_generation_media_deletions_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_canvas_generation_delete_due ON canvas_generation_media_deletions (status, next_attempt_at, id);
+
+CREATE TABLE canvas_local_jobs (
+	user_id BIGINT UNSIGNED NOT NULL, 
+	project_id BIGINT UNSIGNED, 
+	canvas_id BIGINT UNSIGNED, 
+	task_type VARCHAR(32) COLLATE utf8mb4_0900_bin NOT NULL, 
+	client_operation_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
+	request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
+	request_json JSON NOT NULL, 
+	source_media_id BIGINT UNSIGNED, 
+	source_snapshot JSON NOT NULL, 
+	canvas_version BIGINT UNSIGNED NOT NULL, 
+	status VARCHAR(16) NOT NULL, 
+	stage VARCHAR(64) NOT NULL, 
+	progress INTEGER UNSIGNED NOT NULL, 
+	attempts INTEGER UNSIGNED NOT NULL, 
+	message_version BIGINT UNSIGNED NOT NULL, 
+	next_run_at DATETIME(6) NOT NULL, 
+	lease_token CHAR(32) CHARACTER SET ascii COLLATE ascii_bin, 
+	locked_until DATETIME(6), 
+	cancel_requested INTEGER UNSIGNED NOT NULL, 
+	output_media_id BIGINT UNSIGNED, 
+	disposal_receipt_id BIGINT UNSIGNED, 
+	result_json JSON, 
+	error_json JSON, 
+	started_at DATETIME(6), 
+	finished_at DATETIME(6), 
+	id BIGINT UNSIGNED NOT NULL, 
+	created_at DATETIME(6) NOT NULL, 
+	updated_at DATETIME(6) NOT NULL, 
+	created_by BIGINT UNSIGNED NOT NULL, 
+	updated_by BIGINT UNSIGNED NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT fk_canvas_local_jobs_project_id FOREIGN KEY(project_id, canvas_id) REFERENCES project_canvases (project_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT uk_canvas_local_operation UNIQUE (user_id, client_operation_id), 
+	CONSTRAINT ck_canvas_local_type CHECK (task_type IN ('timeline_transcription','depth_capture')), 
+	CONSTRAINT ck_canvas_local_status CHECK (status IN ('queued','running','succeeded','failed','cancelled')), 
+	CONSTRAINT ck_canvas_local_numbers CHECK (progress <= 100 AND cancel_requested IN (0,1) AND message_version > 0 AND ((project_id IS NULL AND canvas_id IS NULL AND canvas_version = 0) OR (project_id IS NOT NULL AND canvas_id IS NOT NULL AND canvas_version > 0))), 
+	CONSTRAINT ck_canvas_local_lease CHECK ((status = 'running' AND lease_token IS NOT NULL AND locked_until IS NOT NULL) OR (status <> 'running' AND lease_token IS NULL AND locked_until IS NULL)), 
+	CONSTRAINT ck_canvas_local_output CHECK (status <> 'succeeded' OR (result_json IS NOT NULL AND finished_at IS NOT NULL AND (task_type <> 'depth_capture' OR output_media_id IS NOT NULL OR disposal_receipt_id IS NOT NULL))), 
+	CONSTRAINT ck_canvas_local_source CHECK (source_media_id IS NOT NULL OR disposal_receipt_id IS NOT NULL), 
+	CONSTRAINT ck_canvas_local_disposal CHECK (disposal_receipt_id IS NULL OR (project_id IS NOT NULL AND canvas_id IS NOT NULL AND status IN ('succeeded','failed','cancelled') AND lease_token IS NULL AND locked_until IS NULL AND JSON_LENGTH(request_json) = 0 AND JSON_LENGTH(source_snapshot) = 0 AND 0 <> COALESCE(JSON_UNQUOTE(JSON_EXTRACT(error_json, '$.code')) = 'canvas_work_disposed', FALSE))), 
+	CONSTRAINT ck_canvas_local_snapshot CHECK (JSON_TYPE(request_json) = 'OBJECT' AND JSON_TYPE(source_snapshot) = 'OBJECT'), 
+	CONSTRAINT ck_canvas_local_result CHECK ((result_json IS NULL OR JSON_TYPE(result_json) = 'OBJECT') AND (error_json IS NULL OR JSON_TYPE(error_json) = 'OBJECT')), 
+	CONSTRAINT ck_canvas_local_identity CHECK (CHAR_LENGTH(client_operation_id) >= 8 AND CHAR_LENGTH(request_hash) = 64), 
+	CONSTRAINT fk_canvas_local_jobs_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_local_source FOREIGN KEY(source_media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_local_jobs_output_media_id FOREIGN KEY(output_media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_local_disposal FOREIGN KEY(disposal_receipt_id) REFERENCES canvas_write_receipts (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_local_jobs_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_local_jobs_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='本人本地转写与深度捕捉的冻结来源及执行回执' COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_canvas_local_author ON canvas_local_jobs (user_id, updated_at, id);
+
+CREATE INDEX idx_canvas_local_disposal ON canvas_local_jobs (disposal_receipt_id);
+
+CREATE INDEX idx_canvas_local_schedule ON canvas_local_jobs (status, next_run_at, id);
+
 CREATE TABLE canvas_media_references (
 	owner_kind VARCHAR(32) NOT NULL, 
 	owner_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL, 
@@ -644,6 +813,61 @@ CREATE TABLE canvas_project_folder_items (
 
 CREATE INDEX idx_canvas_project_folder_items ON canvas_project_folder_items (user_id, folder_key, canvas_id);
 
+CREATE TABLE canvas_render_jobs (
+	user_id BIGINT UNSIGNED NOT NULL, 
+	client_operation_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
+	request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
+	request_json JSON NOT NULL, 
+	plan_json JSON NOT NULL, 
+	source_snapshot JSON NOT NULL, 
+	canvas_version BIGINT UNSIGNED NOT NULL, 
+	status VARCHAR(16) NOT NULL, 
+	stage VARCHAR(64) NOT NULL, 
+	progress INTEGER UNSIGNED NOT NULL, 
+	attempts INTEGER UNSIGNED NOT NULL, 
+	message_version BIGINT UNSIGNED NOT NULL, 
+	next_run_at DATETIME(6) NOT NULL, 
+	lease_token CHAR(32) CHARACTER SET ascii COLLATE ascii_bin, 
+	locked_until DATETIME(6), 
+	cancel_requested INTEGER UNSIGNED NOT NULL, 
+	output_media_id BIGINT UNSIGNED, 
+	disposal_receipt_id BIGINT UNSIGNED, 
+	result_json JSON, 
+	error_json JSON, 
+	started_at DATETIME(6), 
+	finished_at DATETIME(6), 
+	project_id BIGINT UNSIGNED NOT NULL, 
+	canvas_id BIGINT UNSIGNED NOT NULL, 
+	id BIGINT UNSIGNED NOT NULL, 
+	created_at DATETIME(6) NOT NULL, 
+	updated_at DATETIME(6) NOT NULL, 
+	created_by BIGINT UNSIGNED NOT NULL, 
+	updated_by BIGINT UNSIGNED NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT fk_canvas_render_jobs_project_id FOREIGN KEY(project_id, canvas_id) REFERENCES project_canvases (project_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT uk_canvas_render_operation UNIQUE (user_id, client_operation_id), 
+	CONSTRAINT uk_canvas_render_scope UNIQUE (id, user_id, project_id, canvas_id), 
+	CONSTRAINT ck_canvas_render_status CHECK (status IN ('queued','running','succeeded','failed','cancelled')), 
+	CONSTRAINT ck_canvas_render_numbers CHECK (progress <= 100 AND cancel_requested IN (0,1) AND message_version > 0 AND canvas_version > 0), 
+	CONSTRAINT ck_canvas_render_lease CHECK ((status = 'running' AND lease_token IS NOT NULL AND locked_until IS NOT NULL) OR (status <> 'running' AND lease_token IS NULL AND locked_until IS NULL)), 
+	CONSTRAINT ck_canvas_render_output CHECK (status <> 'succeeded' OR ((output_media_id IS NOT NULL OR disposal_receipt_id IS NOT NULL) AND result_json IS NOT NULL AND finished_at IS NOT NULL)), 
+	CONSTRAINT ck_canvas_render_disposal CHECK (disposal_receipt_id IS NULL OR (status IN ('succeeded','failed','cancelled') AND lease_token IS NULL AND locked_until IS NULL AND JSON_LENGTH(request_json) = 0 AND JSON_LENGTH(source_snapshot) = 0 AND JSON_LENGTH(plan_json) = 0 AND 0 <> COALESCE(JSON_UNQUOTE(JSON_EXTRACT(error_json, '$.code')) = 'canvas_work_disposed', FALSE))), 
+	CONSTRAINT ck_canvas_render_snapshot CHECK (JSON_TYPE(request_json) = 'OBJECT' AND JSON_TYPE(plan_json) = 'OBJECT' AND JSON_TYPE(source_snapshot) = 'OBJECT'), 
+	CONSTRAINT ck_canvas_render_result CHECK ((result_json IS NULL OR JSON_TYPE(result_json) = 'OBJECT') AND (error_json IS NULL OR JSON_TYPE(error_json) = 'OBJECT')), 
+	CONSTRAINT ck_canvas_render_identity CHECK (CHAR_LENGTH(client_operation_id) >= 8 AND CHAR_LENGTH(request_hash) = 64), 
+	CONSTRAINT fk_canvas_render_jobs_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_render_jobs_output_media_id FOREIGN KEY(output_media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_render_disposal FOREIGN KEY(disposal_receipt_id) REFERENCES canvas_write_receipts (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_render_jobs_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_render_jobs_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='本人画布时间线快照与独立本地成片任务' COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_canvas_render_author ON canvas_render_jobs (user_id, updated_at, id);
+
+CREATE INDEX idx_canvas_render_disposal ON canvas_render_jobs (disposal_receipt_id);
+
+CREATE INDEX idx_canvas_render_schedule ON canvas_render_jobs (status, next_run_at, id);
+
 CREATE TABLE canvas_resource_chunks (
 	id BIGINT UNSIGNED NOT NULL, 
 	upload_id BIGINT UNSIGNED NOT NULL, 
@@ -676,6 +900,45 @@ CREATE TABLE canvas_resource_copy_sources (
 )ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE INDEX idx_canvas_copy_origin ON canvas_resource_copy_sources (original_resource_id);
+
+CREATE TABLE canvas_resource_deletions (
+	user_id BIGINT UNSIGNED NOT NULL,
+	resource_id BIGINT UNSIGNED NOT NULL,
+	upload_id BIGINT UNSIGNED,
+	idempotency_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin,
+	request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin,
+	creation_resource_id BIGINT UNSIGNED,
+	disposal_receipt_id BIGINT UNSIGNED,
+	storage_locator VARCHAR(700) COLLATE utf8mb4_0900_bin NOT NULL,
+	chunk_count INTEGER UNSIGNED NOT NULL,
+	status VARCHAR(16) NOT NULL,
+	attempts INTEGER UNSIGNED NOT NULL,
+	next_attempt_at DATETIME(6) NOT NULL,
+	completed_at DATETIME(6),
+	error_code VARCHAR(64),
+	id BIGINT UNSIGNED NOT NULL,
+	created_at DATETIME(6) NOT NULL,
+	updated_at DATETIME(6) NOT NULL,
+	created_by BIGINT UNSIGNED NOT NULL,
+	updated_by BIGINT UNSIGNED NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uk_canvas_deletion_resource UNIQUE (resource_id),
+	CONSTRAINT uk_canvas_deletion_upload UNIQUE (upload_id),
+	CONSTRAINT uk_canvas_deletion_identity UNIQUE (user_id, idempotency_hash),
+	CONSTRAINT uk_canvas_deletion_creation_resource UNIQUE (creation_resource_id),
+	CONSTRAINT ck_canvas_deletion_origin CHECK ((upload_id IS NOT NULL AND idempotency_hash IS NOT NULL AND request_hash IS NOT NULL AND creation_resource_id IS NULL AND disposal_receipt_id IS NULL) OR (upload_id IS NULL AND idempotency_hash IS NULL AND request_hash IS NULL AND creation_resource_id IS NOT NULL AND disposal_receipt_id IS NOT NULL AND chunk_count = 0)),
+	CONSTRAINT ck_canvas_deletion_status CHECK (status IN ('pending','completed','retained')),
+	CONSTRAINT ck_canvas_deletion_completion CHECK ((status = 'pending' AND completed_at IS NULL) OR (status IN ('completed','retained') AND completed_at IS NOT NULL)),
+	CONSTRAINT fk_canvas_resource_deletions_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_deletion_creation_resource FOREIGN KEY(creation_resource_id) REFERENCES canvas_creation_resources (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_deletion_disposal FOREIGN KEY(disposal_receipt_id) REFERENCES canvas_write_receipts (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_resource_deletions_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_resource_deletions_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_canvas_deletion_disposal ON canvas_resource_deletions (disposal_receipt_id);
+
+CREATE INDEX idx_canvas_deletion_due ON canvas_resource_deletions (status, next_attempt_at, id);
 
 CREATE TABLE canvas_results (
 	task_binding_id BIGINT UNSIGNED NOT NULL, 
@@ -773,6 +1036,61 @@ CREATE TABLE canvas_task_media_references (
 
 CREATE INDEX idx_canvas_task_media ON canvas_task_media_references (media_id);
 
+CREATE TABLE canvas_task_text_deltas (
+	task_binding_id BIGINT UNSIGNED NOT NULL, 
+	generation_record_id BIGINT UNSIGNED NOT NULL, 
+	sequence INTEGER UNSIGNED NOT NULL, 
+	content MEDIUMTEXT NOT NULL, 
+	byte_count INTEGER UNSIGNED NOT NULL, 
+	expires_at DATETIME(6) NOT NULL, 
+	project_id BIGINT UNSIGNED NOT NULL, 
+	canvas_id BIGINT UNSIGNED NOT NULL, 
+	id BIGINT UNSIGNED NOT NULL, 
+	created_at DATETIME(6) NOT NULL, 
+	updated_at DATETIME(6) NOT NULL, 
+	created_by BIGINT UNSIGNED NOT NULL, 
+	updated_by BIGINT UNSIGNED NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT fk_canvas_task_text_deltas_project_id FOREIGN KEY(project_id, canvas_id, task_binding_id) REFERENCES canvas_task_bindings (project_id, canvas_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT uk_canvas_text_sequence UNIQUE (task_binding_id, sequence), 
+	CONSTRAINT ck_canvas_text_delta CHECK (sequence BETWEEN 1 AND 4096 AND byte_count BETWEEN 1 AND 65536 AND OCTET_LENGTH(content) = byte_count), 
+	CONSTRAINT fk_canvas_task_text_deltas_generation_record_id FOREIGN KEY(generation_record_id) REFERENCES ai_generation_records (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_task_text_deltas_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_task_text_deltas_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_canvas_text_author ON canvas_task_text_deltas (created_by, expires_at);
+
+CREATE INDEX idx_canvas_text_expiry ON canvas_task_text_deltas (expires_at, id);
+
+CREATE TABLE canvas_tool_submissions (
+	user_id BIGINT UNSIGNED NOT NULL, 
+	run_id BIGINT UNSIGNED NOT NULL, 
+	item_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
+	request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, 
+	request_json JSON NOT NULL, 
+	execution_json JSON NOT NULL, 
+	approved_at DATETIME(6), 
+	async_task_id BIGINT UNSIGNED, 
+	project_id BIGINT UNSIGNED NOT NULL, 
+	canvas_id BIGINT UNSIGNED NOT NULL, 
+	id BIGINT UNSIGNED NOT NULL, 
+	created_at DATETIME(6) NOT NULL, 
+	updated_at DATETIME(6) NOT NULL, 
+	created_by BIGINT UNSIGNED NOT NULL, 
+	updated_by BIGINT UNSIGNED NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT fk_canvas_tool_submissions_project_id FOREIGN KEY(project_id, canvas_id) REFERENCES project_canvases (project_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_tool_submission_run FOREIGN KEY(run_id, user_id, project_id, canvas_id) REFERENCES canvas_tool_runs (id, user_id, project_id, canvas_id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT uk_canvas_tool_submission_stage UNIQUE (run_id, item_key), 
+	CONSTRAINT uk_canvas_tool_submission_task UNIQUE (async_task_id), 
+	CONSTRAINT ck_canvas_tool_submission_approval CHECK (async_task_id IS NULL OR approved_at IS NOT NULL), 
+	CONSTRAINT ck_canvas_tool_submission_identity CHECK (CHAR_LENGTH(item_key) > 0 AND CHAR_LENGTH(request_hash) = 64), 
+	CONSTRAINT fk_canvas_tool_submissions_async_task_id FOREIGN KEY(async_task_id) REFERENCES async_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_tool_submissions_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_tool_submissions_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
 CREATE TABLE canvas_user_binary_references (
 	user_id BIGINT UNSIGNED NOT NULL, 
 	revision_id BIGINT UNSIGNED, 
@@ -841,6 +1159,29 @@ CREATE TABLE canvas_drawing_media_references (
 	CONSTRAINT fk_canvas_drawing_media_references_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
 	CONSTRAINT fk_canvas_drawing_media_references_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 )ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE canvas_render_media_references (
+	user_id BIGINT UNSIGNED NOT NULL, 
+	job_id BIGINT UNSIGNED NOT NULL, 
+	source_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL, 
+	ordinal INTEGER UNSIGNED NOT NULL, 
+	media_id BIGINT UNSIGNED NOT NULL, 
+	project_id BIGINT UNSIGNED NOT NULL, 
+	canvas_id BIGINT UNSIGNED NOT NULL, 
+	id BIGINT UNSIGNED NOT NULL, 
+	created_at DATETIME(6) NOT NULL, 
+	updated_at DATETIME(6) NOT NULL, 
+	created_by BIGINT UNSIGNED NOT NULL, 
+	updated_by BIGINT UNSIGNED NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT fk_canvas_render_media_references_project_id FOREIGN KEY(project_id, canvas_id) REFERENCES project_canvases (project_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_render_source_job FOREIGN KEY(job_id, user_id, project_id, canvas_id) REFERENCES canvas_render_jobs (id, user_id, project_id, canvas_id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT uk_canvas_render_source UNIQUE (job_id, source_key), 
+	CONSTRAINT uk_canvas_render_source_order UNIQUE (job_id, ordinal), 
+	CONSTRAINT fk_canvas_render_media_references_media_id FOREIGN KEY(media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_render_media_references_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_canvas_render_media_references_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='冻结渲染来源的稳定媒体引用，保护排队与历史任务' COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE canvas_revision_drawing_references (
 	revision_id BIGINT UNSIGNED NOT NULL, 

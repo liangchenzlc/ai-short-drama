@@ -1,6 +1,6 @@
 # MySQL 8 数据库说明
 
-项目当前设计包含 **93 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已合并写作、素材、分镜、成片、批量生成、声音、原生音色、账号协作、Agent 和无限画布结构。原有 32 张业务表和 11 张身份与协作表保留，Agent 增加 9 张独立表，无限画布当前增加 41 张表。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。010 BeefAPI 新表的当前业务库执行状态见[迁移记录](migrations/2026-10-05-infinite-canvas/README.md)，不能以 SQL 已生成代替 DDL 已执行。
+项目当前设计包含 **101 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已合并写作、素材、分镜、成片、批量生成、声音、原生音色、账号协作、Agent 和无限画布结构。原有 32 张业务表和 11 张身份与协作表保留，Agent 增加 9 张独立表，无限画布增加 47 张表，角色不可变版本增加 2 张表。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。当前业务库执行状态见[迁移记录](migrations/2026-10-05-infinite-canvas/README.md)，不能以 SQL 已生成代替 DDL 已执行；当前 `short_drama` 的 019 结构已实际执行并独立回读；角色回填与同版七角色部署尚未执行，结构就绪不代表角色菜单或供应商验收通过。
 
 本文说明表的职责、关系及应用维护的约束，不另维护一份重复的字段清单。开发与测试见[开发说明](../development.md)，模块关系见[架构说明](../architecture.md)，接口见[API 文档](../api/README.md)。旧库升级使用[迁移目录](migrations/README.md)。
 
@@ -17,7 +17,7 @@ uv run python scripts/export_schema.py --check
 
 ## 初始化与升级
 
-新库要求 MySQL **8.0.21+**。先由数据库管理员创建并选定空数据库，连接使用 `utf8mb4`、UTC（`+00:00`）及严格 SQL 模式（至少 `STRICT_TRANS_TABLES`），再执行完整的 `schema.mysql8.sql`。文件只包含按外键依赖顺序排列的 93 条 `CREATE TABLE`，不创建数据库、不设置连接、不导入数据，也不自动选择业务库。
+新库要求 MySQL **8.0.21+**。先由数据库管理员创建并选定空数据库，连接使用 `utf8mb4`、UTC（`+00:00`）及严格 SQL 模式（至少 `STRICT_TRANS_TABLES`），再执行完整的 `schema.mysql8.sql`。文件包含按外键依赖顺序排列的 101 条 `CREATE TABLE`，角色当前版本的循环外键在相关表建立后用命名 `ALTER TABLE` 添加；不创建数据库、不设置连接、不导入数据，也不自动选择业务库。
 
 已有数据库不能用全量脚本覆盖。根据实际字段、索引、约束和已执行记录判断缺少哪些迁移，按[迁移顺序](migrations/README.md)补齐；应用启动不会自动迁移。新库执行完整脚本后无需叠加历史迁移。
 
@@ -135,7 +135,7 @@ Agent 默认开启，旧库显式执行[Agent 迁移](migrations/2026-10-02-agen
 
 `enabled` 控制新操作可用性，`is_deleted` 保留历史引用，`is_default` 标识该服务默认项。默认配置必须启用且未删除，`(owner_user_id, default_service_type)` 的唯一约束保证每个账号每种服务最多一个未删除默认项。配置编辑、删除及默认切换使用 `row_version`；历史调用使用独立快照，不把当前配置误当作调用时配置。
 
-### 媒体与素材（6 张）
+### 媒体与素材（8 张）
 
 | 表 | 职责与关键字段 | 关系和约束 |
 | --- | --- | --- |
@@ -145,10 +145,20 @@ Agent 默认开启，旧库显式执行[Agent 迁移](migrations/2026-10-02-agen
 | `project_assets` | 项目素材库收录关系和排序 | `(project_id, asset_id)` 和 `(project_id, position)` 分别唯一 |
 | `episode_assets` | 分集素材库收录关系和排序 | `(episode_id, asset_id)` 和 `(episode_id, position)` 分别唯一 |
 | `asset_image_candidates` | 本人的素材可选图片与文件关系 | `(created_by, asset_id, media_id)` 唯一；未知创建人隔离，不复制媒体元数据 |
+| `asset_versions` | 角色不可变规范快照、独立 `version`、来源编辑号、内容摘要与真实建版审计 | `(asset_id, id)`、`(asset_id, version)` 唯一；父 Asset 外键 RESTRICT；不按内容 hash 复用旧版本 |
+| `asset_version_media_references` | 每版表示图及生成参考的用途、角色、顺序和真实媒体身份 | `(asset_id, version_id, purpose, ordinal)` 唯一；版本复合外键与 MediaFile 外键均 RESTRICT |
 
 同一项目的项目库与分集库可以引用同一 `assets` 本体，共享修改会影响本项目内的引用处。个人或其他项目导入时，通过 `resource_imports` 复制本体、当前媒体和参考图片，物理存储独立；不复制私有模型配置、生成历史或项目音色。删除库收录关系不等于删除素材或实际文件。素材编辑、确认与采用使用本体 `row_version`；手动创建通过唯一 `creation_key` 和初始 `creation_hash` 去重，两字段必须同时为空或同时有效。
 
 `label` 是单一分类文本，多标签单独保存在 `tags` 数组中。数据库检查数组最多 20 项，应用校验每项字符串、长度、去空和去重。仅场景允许非空 `scene_time`。候选可来自上传或生成，上传不需要伪造 AI 调用记录；历史当前图片由专用迁移回填为候选，读取操作不隐式回填。
+
+`assets.current_version_id` 只用于角色，允许 NULL，并以 `(id, current_version_id)` 复合外键指向 `asset_versions(asset_id, id)`，防止跨资产指针。ORM 使用显式命名 `fk_assets_current_version` 与 `use_alter` 化解建表循环。普通 HTTP 输入不开放该指针；历史行只能由明确维护入口回填，读取和应用启动不补版。删除有历史的角色或历史所用媒体会受到 RESTRICT 保护。
+
+应用工厂和角色回填使用 `AppSession`，精确拒绝 Asset 及两个角色历史 mapper 的三个 legacy bulk API；其他 mapper 沿用原行为。事件保护拒绝角色历史实体修改及 Session DML 指针绕写，独立 Connection 仍是可信迁移边界，不将该保护描述为所有 SQLAlchemy Session 的全面限制。
+
+角色快照同时保存真实平面字段、完整 `definition` JSON 扩展、`definition_origin`、表示图和独立生成参考。表示图角色为 `primary/front/side/back/turnaround_sheet/expression_sheet`；生成参考的 role 为非空约束下的空字符串，不能冒充多视角作品。当前主图必须存在于明确表示图槽位。内容 hash 包含定义来源类型和有业务顺序的数组，仅排除 `source_audit`；状态、编辑号、作者、时间和模型偏好不建立作品内容版。相同当前内容不新增，A→B→A 则建立新第三版。
+
+旧库结构与数据操作分别使用 [019 迁移](migrations/2026-10-05-infinite-canvas/019-asset-versions.sql)、`asset_version_migration.py` 与 `backfill_asset_versions.py`。后者只保存旧角色当前快照为 v1，来源编辑号保留实际值，不推造过去版本、项目关联或声音 ready；完整结构化定义只沿可信版本保留。角色 v4 已应用；随机临时 MySQL 六模块实际 81 passed / 1 skipped，跳过项为实际 MinIO 导入字节验证。2026-10-11 当前 `short_drama` 的 019 七条结构 DDL 与独立 verify 已完成，原资产/画布指纹不变，版本/版本媒体/当前指针均 0；未执行 backfill 或同版部署，准确语句与边界见上述迁移记录。
 
 ### 分镜与已采用结果（5 张）
 
@@ -211,6 +221,40 @@ DDL 会隐式提交，迁移无法作为一个普通事务整体回滚。停写�
 
 ## 无限画布基础存储
 
+`canvas_local_jobs` 保存本人的本地转写/深度捕捉任务，固定操作键、请求、来源媒体外键、
+定位、SHA/长度及画布版本，私人素材可无项目归属。项目任务同时约束项目/画布复合外键，
+作者/操作键唯一，HTTP 会话不能改写快照、租约或执行回执；来源外键保护排队和未处置的历史输入。
+2026-10-09 已在当前 `short_drama` 实际执行014的 `CREATE TABLE canvas_local_jobs`、
+`CREATE INDEX idx_canvas_local_author` 和 `CREATE INDEX idx_canvas_local_schedule`。
+预检仅缺此表且无漂移；执行后再次核验 `ready/missing=[]/changed=[]`。未改写既有业务行，
+ORM、完整SQL、001及014同步；执行与原界面验收范围另见实施台账。
+
+`canvas_render_jobs` 保存本人独立的本地时间线渲染任务，冻结原请求、编译计划、画布版本和
+服务端媒体定位/摘要；作者与 `client_operation_id` 唯一。数据库租约、消息版本和取消标志
+防止过期执行器改写新尝试；成片通过真实 `media_files` 外键与不可变完成回执关联。
+`canvas_render_media_references` 用同作者/项目/画布复合外键绑定任务，来源文件使用
+RESTRICT 外键保护。该路径不创建供应商模型、AI任务或虚构的分集合成记录。
+
+2026-10-09 已在当前业务库 `short_drama` 实际执行013的两条 `CREATE TABLE` 和任务作者、
+调度两条 `CREATE INDEX`；预检后只缺这两张表，执行后 `ready`、无缺表/结构漂移，未改旧
+业务数据。完整SQL、001及013与ORM同步。DDL完成不代表Worker、MinIO或原UI验收通过。
+
+本地与渲染任务的 `disposal_receipt_id` 以 RESTRICT 外键保留 `canvas_write_receipts`
+处置出处，各有一个处置索引。016只认可精确旧版来源列、成功输出 CHECK 和原外键，
+两表分别用一条原子 ALTER 升级；本地来源改为可空，并以 `ck_canvas_local_source`
+维持普通任务必填来源。无租约的终态、空请求/快照（渲染另需空计划）和
+`canvas_work_disposed` 是使用处置回执的 CHECK 前提，成功输出只有此时可释放。
+本地来源外键由原自动名改为 `fk_canvas_local_source`，避免 MySQL 在同一 ALTER 中
+拒绝重建同名外键；新旧约束都按完整列、目标和 RESTRICT 规则核验，未知漂移拒绝升级。
+ORM、完整SQL、001、013、014与 [016增量](migrations/2026-10-05-infinite-canvas/016-canvas-local-disposal.sql)
+同步，仍为99张表/47张画布表。普通HTTP会话不能写处置出处或释放冻结媒体引用。
+2026-10-10 08:58（UTC+8）已在当前 `short_drama` 实际执行016的两条 ALTER：
+本地表新增处置列、外键/索引、来源与处置 CHECK，来源可空并重建原 RESTRICT 外键；
+渲染表新增处置列、外键/索引与处置 CHECK，两表更新成功输出 CHECK。
+预检仅缺两项精确旧版升级、无漂移；执行后独立回读 `ready/missing=[]/changed=[]`，
+表数99→99，两张任务表行数分别0→0。未清理业务行/字节或重启API/Worker/scheduler；
+执行报告在忽略的 `backend/.runtime/local-disposal-ddl-report.json`。应用不自动迁移。
+
 当前项目增加固定的 `workspace_mode`，历史项目默认 `standard`。`infinite_canvas` 使用 `project_canvas_settings` 的主画布指针和 `project_canvases` 的一对多归属。源画布稳定键 source_key 与数据库 ID 分开，源节点、连线 ID 保持原值；几何使用 DOUBLE 保留拖拽小数，数据库 ID/版本对外使用十进制字符串。
 
 当前图按 canvas_nodes/canvas_edges 保存，时间线和导演子文档分别放在 canvas_timelines/canvas_director_scenes。canvas_revisions 保存历史共享快照，canvas_revision_user_states 保存作者快照投影。快照拥有的私人状态与媒体/文件引用、上传拥有的分片、素材拥有的资源引用和分类归属允许 ON DELETE CASCADE；资源与作品本身的外键保持 RESTRICT，避免连带删除文件或作品。
@@ -229,6 +273,28 @@ canvas_resource_uploads.mode 明确区分 multipart/chunked/copy。canvas_resour
 
 canvas_resource_deletions 保存永久删除资源的持久清理任务和原上传身份墓碑。素材、上传、资源记录与删除回执在一个事务内移除/创建，MinIO 删除在提交后由 scheduler 重试。原 resource_id、upload_id 不再设置到已删除记录的外键；(user_id,idempotency_hash)、resource_id、upload_id 各自唯一，状态为 pending/completed/retained。跨账号共用物理定位值时保留文件；完成后保留回执，旧请求返回 410，避免未知响应重试重新创建已经删除的资源。
 
+早期已完成创建但没有正式上传记录的媒体也复用此表，以唯一 `creation_resource_id`
+和 `disposal_receipt_id` 的 RESTRICT 外键保留真实出处。`ck_canvas_deletion_origin`
+要求上传 ID/两个 hash 齐全且创建出处为空，或上传字段全空、两个创建出处齐全且
+`chunk_count=0`；两种出处互斥。创建路径核对原作者、公开回执/资源映射、完整元数据
+及永久定位，不产生上传身份。创建准备的 `target_resource_id` 本身是原数值身份，
+不是规范媒体外键；来源 pin 只在准备未完成时保护来源。准备和祖先快照保持，规范
+目标仅在全部引用检查通过后退役；受保护历史媒体继续检查，引用释放后可回收。
+创建原键继续重放原创建结果，不采用上传键的410语义。旧库按
+[017创建媒体删除出处](migrations/2026-10-05-infinite-canvas/017-canvas-creation-media-deletions.sql)
+精确升级，表数保持99；新库直接使用完整SQL。
+2026-10-10 09:53（UTC+8）已在当前 `short_drama` 执行017的一条原子 ALTER，
+预检仅缺该升级、无漂移，执行后及独立回读均 ready。该队列表行数0→0，原列内容
+摘要相同，表数99→99；没有业务行/媒体清理或服务重启。
+
+canvas_generation_media_deletions 单独记录已处置画布的本人生成媒体退役，不伪造上传记录。
+处置回执、任务及调用记录保留 RESTRICT 外键；产物索引 asset_id 与规范媒体 resource_id
+作为删除后的原身份保留，两者不是同一个 ID。无外部引用时，本人结果行、产物索引、
+规范媒体与 pending 回收记录在同一事务删除/创建；归档清单和公开绑定回执保留。
+删除器核对归档清单、checksum、扩展名及完整生成对象路径，跨账号规范定位继续保护
+字节，保护释放后仍可重试。状态仅 pending/completed，丢失删除响应不会新建生成。
+此表只允许内部维护写入，旧库增量见[015](migrations/2026-10-05-infinite-canvas/015-canvas-generation-media-deletions.sql)。
+
 canvas_library_assets / canvas_library_asset_references 保存私人的源素材文档与其稳定资源关系，不复用标准角色/场景素材表。canvas_library_folders / canvas_library_folder_items 保存个人分类与单一分类归属，分类删除通过关系清理将素材回到未分类。folderId 仅在输出中从关系表投影，避免 JSON 与分类表分别可写。
 
 canvas_project_folders / canvas_project_folder_items 是本人项目文件夹及画布归属，与素材分类分开。`(user_id,source_key)` 和 `(user_id,canvas_id)` 分别唯一；归属以 `(user_id,folder_key)` 复合外键固定到同一作者文件夹，不透明键最多 80 字符。封面使用 media_files/canvas_binary_resources 二选一外键，墓碑禁止继续保留封面引用。文件夹不物理删除，防止旧客户端 PUT 复活；画布真正删除时可级联清除其私人归属，但文件夹删除不级联删除作品。共享文档与共享历史不含 folderId，只有本人投影携带。撤权后的分类清理不授予作品读取/修改权限。
@@ -240,3 +306,9 @@ canvas_creation_attempts / canvas_creation_resources 保存本人首次完整创
 canvas_drawings 保存 `(canvas_id,source_key)` 唯一的绘图身份、当前版本及删除墓碑；canvas_drawing_versions 保存 `(drawing_id,row_version)` 唯一的不可变 Excalidraw 文档、预览/成品身份与摘要。版本的 document_json 内 snapshot 采用精确 JSON 字符串封装，并以内部 `$snapshot_encoding` 标记，防止 MySQL JSON 浮点转码改变笔画坐标；读取解码，外部合同仍为原始 snapshot 对象。canvas_drawing_media_references 保护每版实际引用的图片，版本内部引用可随版本 CASCADE，图片外键保持 RESTRICT。当前绘图不维护第二份可编辑全量 JSON，读取由身份表与对应版本组合。已保存作品按项目成员共享，未提交本机草稿不进这些表。
 
 canvas_revision_drawing_references 通过同画布复合外键将整图历史绑定到不可变绘图版本，版本不能在被引用时删除；历史淘汰可级联删除自己的绑定。历史图保存稳定预览定位，恢复绘图使用原版本正文并新增单调递增版本，图、绘图、媒体引用和写回执在同一事务提交。恢复同时检查打开列表时的图版本与绘图版本/墓碑，不能覆盖列表打开后另行保存的笔画。删除绘图仍保留全部版本与资源，版本保留/回收策略及跨项目绘图复制尚须继续迁移。
+
+## 审美与分镜私人运行及阶段批准
+
+`canvas_tool_runs`保存本人、画布、模型与来源的冻结身份，以及45秒租约、持有者与执行epoch。`canvas_tool_submissions`按运行/固定阶段唯一保存不可变请求、批准时间与唯一任务回执；同键恢复不重复生成任务。两表的作者/项目/画布使用复合外键，普通HTTP写入不能伪造授权或替换回执；共享项目成员不能读取他人的创作过程。审美运行以非空源媒体外键保护输入；分镜运行不伪造图片，`source_media_id`为空，来源快照保存原分镜行、画风与资产目录。已批准阶段与任务关联在同一准入事务提交，来源或配置变化阻止尚未执行的新阶段；已受理任务的私人回执仍可核对。
+
+[012分镜来源增量](migrations/2026-10-05-infinite-canvas/012-canvas-storyboard-run.sql)只将该外键列改为可空，保留外键和原记录。2026-10-09已在当前业务库`short_drama`执行，核验`ready/missing=[]/changed=[]`。分镜结果经服务端闭合结构校验，镜头ID由任务ID与顺序确定；绑定复核原行未改变，旧媒体节点保留，失效的逐镜连线删除。项目角色版本接口尚未接通，相关分镜请求明确拒绝，不能把零角色路径通过写成角色验收。

@@ -11,6 +11,7 @@ import { CanvasGenerationHistoryPicker } from "@/components/canvas/canvas-genera
 import { CanvasNodeInfoModal } from "@/components/canvas/canvas-node-toolbar";
 import { CanvasNodeSearchModal } from "@/components/canvas/canvas-node-search-modal";
 import { CanvasPanoramaConfigModal, type PanoramaGenerateConfig } from "@/components/canvas/canvas-panorama-config-modal";
+import type { CanvasProjectCharacterCard } from "@/services/host-character-catalog";
 import { CanvasProjectAssetModal } from "@/components/canvas/canvas-project-asset-modal";
 import { CanvasScriptEditor } from "@/components/canvas/canvas-script-node";
 import { CanvasStylePickerModal } from "@/components/canvas/canvas-style-picker-modal";
@@ -112,6 +113,9 @@ export type CanvasProjectEditorDialogsProps = {
     };
     character: {
         node: CanvasNodeData | null;
+        loading?: boolean;
+        error?: string;
+        onRetry?: () => void;
         onClose: () => void;
     };
     text: {
@@ -199,6 +203,15 @@ export type CanvasProjectEditorDialogsProps = {
         onClosePicker: () => void;
         projectOpen: boolean;
         detail?: ProjectDetail;
+        sourceLinked?: boolean;
+        sourceLoading?: boolean;
+        sourceError?: string;
+        onRetrySource?: () => void;
+        characters?: CanvasProjectCharacterCard[];
+        characterLoading?: boolean;
+        characterError?: string;
+        onRetryCharacters?: () => void;
+        readCharacter?: (assetId: string, expectedScope: CapturedUserScope) => Promise<CanvasProjectCharacterCard>;
         initialCategory?: string;
         initialFolderId?: string;
         onCloseProject: () => void;
@@ -262,7 +275,7 @@ export function CanvasProjectEditorDialogs({
                     onCreateAssembledNode={timeline.onCreateAssembledNode}
                 />
             ) : null}
-            <CanvasCharacterReferenceModal node={character.node} open={Boolean(character.node)} onClose={character.onClose} />
+            <CanvasCharacterReferenceModal node={character.node} open={Boolean(character.node)} loading={character.loading} error={character.error} onRetry={character.onRetry} onClose={character.onClose} />
             <CanvasTextEditorModal node={text.node} open={Boolean(text.node)} onClose={text.onClose} onSave={text.onSave} />
             {drawing.node ? (
                 <Suspense
@@ -276,6 +289,7 @@ export function CanvasProjectEditorDialogs({
                 </Suspense>
             ) : null}
             <AiArtCritiqueModal
+                projectId={projectId}
                 startRequestId={artCritique.startRequestId}
                 restartRequested={artCritique.restartRequested}
                 onRunningChange={artCritique.onRunningChange}
@@ -354,6 +368,15 @@ export function CanvasProjectEditorDialogs({
             <CanvasProjectAssetModal
                 open={assets.projectOpen}
                 detail={assets.detail}
+                sourceLinked={assets.sourceLinked}
+                sourceLoading={assets.sourceLoading}
+                sourceError={assets.sourceError}
+                onRetrySource={assets.onRetrySource}
+                characters={assets.characters}
+                characterLoading={assets.characterLoading}
+                characterError={assets.characterError}
+                onRetryCharacters={assets.onRetryCharacters}
+                readCharacter={assets.readCharacter}
                 initialCategory={assets.initialCategory}
                 initialFolderId={assets.initialFolderId}
                 onClose={assets.onCloseProject}

@@ -1,6 +1,7 @@
 export interface CanvasSummaryDto {
   id: string;
   project_id: string;
+  source_project_id?: string | null;
   source_key: string;
   title: string;
   row_version: string;
@@ -71,6 +72,8 @@ export interface CanvasInitialDrawingDto {
 export interface CanvasCreationRequestDto {
   title?: string;
   source_key?: string;
+  source_canvas_key?: string;
+  source_canvas_row_version?: string;
   source_document?: Record<string, unknown>;
   drawing_documents?: CanvasInitialDrawingDto[];
 }

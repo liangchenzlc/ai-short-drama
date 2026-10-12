@@ -7,6 +7,7 @@ from pydantic import Field, JsonValue, field_validator, model_validator
 
 from .base import InputModel
 from .canvas_model_catalog import validate_channel_url, validate_public_json
+from .canvas_runninghub import RunningHubWorkflow
 
 
 class ModelRuntimeProfile(InputModel):
@@ -20,6 +21,7 @@ class ModelRuntimeProfile(InputModel):
     logical_capability_profiles: list[dict[str, JsonValue]] | None = Field(None, max_length=2000)
     video_capabilities_version: str | None = Field(None, max_length=128)
     concurrency_limit: int | None = Field(None, strict=True, ge=1, le=1024)
+    runninghub_workflow: RunningHubWorkflow | None = None
 
     @field_validator("version", mode="before")
     @classmethod
@@ -44,6 +46,12 @@ class ModelRuntimeProfile(InputModel):
             raise ValueError("runtime profile exceeds 2 MiB")
         if self.reference_asset_origin:
             validate_channel_url(self.reference_asset_origin)
+        if self.runninghub_workflow is not None and self.protocol not in {
+            "runninghub-workflow-image",
+            "runninghub-workflow-video",
+            "runninghub-workflow-audio",
+        }:
+            raise ValueError("RunningHub descriptor requires its built-in workflow protocol")
         capability = self.capability_config or {}
         for kind in ("text", "image", "video"):
             section = capability.get(kind)

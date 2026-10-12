@@ -24,7 +24,7 @@ def test_catalog_keeps_every_fixed_manifest_with_verifiable_source_bytes():
 
 def test_catalog_distinguishes_metadata_from_execution_and_preserves_source_projection():
     providers = {item["id"]: item for item in provider_catalog("user.custom-channel")}
-    assert len(providers) == 86
+    assert len(providers) == 89
     for identifier in (
         "chat-completion",
         "openai-response",
@@ -55,6 +55,31 @@ def test_catalog_filters_scope_and_capability_without_discarding_unavailable_met
     assert providers and all(item["categories"] == ["image"] for item in providers)
     assert any(not item["enabled"] for item in providers)
     assert all("canvas" in item["scopes"] for item in providers)
+
+
+@pytest.mark.parametrize("capability", ["image", "video", "audio"])
+def test_catalog_exposes_builtin_runninghub_without_forging_a_declarative_manifest(capability):
+    providers = {item["id"]: item for item in provider_catalog("user.custom-channel", capability)}
+    builtin = providers[f"runninghub-workflow-{capability}"]
+    assert builtin["executionSupported"] and builtin["enabled"]
+    assert builtin["categories"] == [capability]
+    assert builtin["sourceKind"] == "builtin"
+    assert builtin["sourceCommit"] == SOURCE_COMMIT
+    assert builtin["sourcePath"] == "web/src/lib/plugins/builtin/workflows.ts"
+    assert builtin["pluginId"] == "runninghub-workflow-provider"
+    assert not builtin.get("manifestText")
+    assert not any(
+        item["id"] == builtin["id"]
+        for package in bundled_manifest_snapshot()["packages"]
+        for item in json.loads(package["manifestText"])["contributes"].get("providers", [])
+    )
+    assert all(item["id"] != builtin["id"] for item in provider_catalog("creation", capability))
+    if capability == "video":
+        declarative = providers["runninghub-workflow"]
+        assert declarative["executionSupported"]
+        assert declarative["create"] == "POST /task/openapi/create"
+        assert declarative["poll"] == "GET /task/openapi/status"
+        assert not declarative.get("sourceKind")
 
 
 @pytest.mark.parametrize("scope,capability", [("bogus", None), ("canvas", "bogus")])

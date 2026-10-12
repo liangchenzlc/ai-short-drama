@@ -258,10 +258,12 @@ export function resolveModelGenerationDefaults(
     if (!capability) return {};
     const channel = resolveModelChannel(config, model);
     const profile = channel.modelProfiles?.find((item) => item.model === modelOptionName(model));
-    const isManagedModel = Boolean(profile?.logicalModelId || profile?.logicalCapabilitySpec);
+    const isManagedModel = capability === "video"
+        ? Boolean(profile?.logicalCapabilitySpec || profile?.logicalCapabilityProfiles?.length || (profile?.logicalModelId && profile?.protocol))
+        : Boolean(profile?.logicalModelId || profile?.logicalCapabilitySpec);
     // A channel model capability profile is an explicit per-model contract too.
-    // The persisted global values are legacy defaults and must not override a
-    // model's configured duration, ratio, or resolution on a new canvas node.
+    // 视频有显式协议或能力契约时，旧全局值不能覆盖模型默认值；仅有
+    // 宿主逻辑 ID 的未配置视频保留工作区选项，图片维持原模型默认行为。
     const hasModelCapabilityProfile = Boolean(profile?.capabilityConfig);
     const source = (key: keyof ModelGenerationDefaults) => explicit[key] ?? (isManagedModel || hasModelCapabilityProfile ? undefined : fallback[key]);
     const capabilityProfile = modelCapabilityConfigFor(config, model);

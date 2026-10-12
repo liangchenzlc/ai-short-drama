@@ -89,6 +89,20 @@ test("恢复按本人投影的操作关联匹配，已有新任务绑定不被�
     assert.equal(canvasTaskCanUpdateNode({ metadata: { taskClientOperationId: "old-op" } }, tasks[1]), true);
 });
 
+test("私人编辑器工具不能成为普通节点的恢复来源或覆盖其状态", () => {
+    const base = { projectId: "canvas-key", clientContext: { nodeId: "target" } };
+    const tasks = [
+        { ...base, id: "tool-first", inputJson: JSON.stringify({ agentRequests: { canonical: {} } }) },
+        { ...base, id: "tool-context", clientContext: { nodeId: "target", source: "prompt-optimizer" } },
+        { ...base, id: "ordinary", inputJson: "{}" },
+    ];
+    assert.equal(canvasRecoveryTaskForNode({ id: "target" }, "canvas-key", tasks)?.id, "ordinary");
+    for (const task of tasks.slice(0, 2)) {
+        assert.equal(canvasTaskCanUpdateNode({}, task), false);
+        assert.equal(canvasRecoveryTaskForNode({ id: "target", metadata: { taskId: task.id } }, "canvas-key", tasks), undefined);
+    }
+});
+
 test("并发同操作复用一份保存与POST，参数变化不能借用正在准入的操作", async () => {
     let release;
     const gate = new Promise(resolve => { release = resolve; });

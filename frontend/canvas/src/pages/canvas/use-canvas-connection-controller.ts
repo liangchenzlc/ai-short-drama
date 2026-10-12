@@ -306,7 +306,7 @@ export function useCanvasConnectionController({
                 status: NODE_STATUS_IDLE,
                 ...(selectedWorkflowProvider === "runninghub" ? {
                     workflowTitle: "RunningHub 工作流",
-                    ...(runningHubWorkflow ? { runningHubWorkflowId: runningHubWorkflow.workflowId, runningHubWorkflowKind: runningHubWorkflow.kind === "app" ? "app" as const : "workflow" as const } : {}),
+                    ...(runningHubWorkflow ? { runningHubWorkflowId: runningHubWorkflow.workflowId, runningHubWorkflowKind: runningHubWorkflow.kind === "app" ? "app" as const : "workflow" as const, runningHubModelId: runningHubWorkflow.logicalModelId } : {}),
                 } : {})
               }
             : nodeType === CanvasNodeType.Drawing

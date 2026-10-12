@@ -1,17 +1,19 @@
 import type { Dispatch, SetStateAction } from "react";
 
 import { parseCanvasStorageDocument, rebaseCanvasProjects, serializeCanvasStorageDocument } from "@/lib/canvas/canvas-storage-revision";
+import { buildGenerationTaskNodeResult, defaultGenerationResultMediaIO } from "@/lib/canvas/canvas-generation-task-sync";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { assertUserScope, captureUserScope, isUserScopeAbandonedError, UserScopeAbandonedError, userScopeMatches, type CapturedUserScope } from "@/lib/user-scope-guard";
 import { bindCanvasTaskOutput, type CanvasTaskBindReceipt } from "@/services/api/operations";
 import type { GenerationTask, GenerationTaskOutput } from "@/services/api/task-center";
-import { canvasGenerationOperationBase, canvasTaskAdmissionIdentity, type CanvasTaskAdmissionInput } from "@/services/host-generation-admission";
+import { canvasGenerationOperationBase, canvasTaskAdmissionIdentity, canvasTaskCanUpdateNode, isCanvasEditorToolInput, isCanvasEditorToolTask, type CanvasTaskAdmissionInput } from "@/services/host-generation-admission";
 import { CanvasBackendSubmitPausedError, CanvasStaleScopeError, isCanvasRevisionConflict } from "@/services/canvas-revision-conflict";
 import { generationEffectApplied } from "@/services/generation-consumer-dedupe";
 import { attachNodeEffectKey } from "@/services/generation-task-materializer";
-import { persistCanvasDocument } from "@/services/local-workspace-repository";
-import { hydrateBackendGeneratedOutputs } from "@/services/project-asset-sync";
+import { persistCanvasDocument, withCanvasGenerationBinding } from "@/services/local-workspace-repository";
+import { attachGenerationTaskNode, ensureCanvasNodeAsset, hydrateBackendGeneratedOutputs } from "@/services/project-asset-sync";
+import { uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import {
     CANVAS_STORE_KEY,
@@ -123,7 +125,8 @@ export async function persistCanvasGenerationSource(input: CanvasTaskAdmissionIn
     if (!state.nodes.some((node) => node.id === sourceNodeId) || !state.nodes.some((node) => node.id === nodeId)) {
         throw new Error("生成来源或目标节点尚未保存，请重新打开画布后再试");
     }
-    const next = {
+    const tool = isCanvasEditorToolInput(input);
+    const next = tool ? state : {
         ...state,
         nodes: state.nodes.map((node) => {
             if (node.id === nodeId) return {
@@ -135,7 +138,7 @@ export async function persistCanvasGenerationSource(input: CanvasTaskAdmissionIn
             return node;
         }),
     };
-    adapter.write(next);
+    if (!tool) adapter.write(next);
     await persistCanvasDocument(projectId, { nodes: next.nodes, connections: next.connections }, expectedScope);
     assertUserScope(expectedScope);
     if (canvasGenerationLiveAdapters.get(key) !== adapter) throw new CanvasStaleScopeError();
@@ -187,6 +190,7 @@ export type BindBackendCanvasGenerationRuntime = {
     adoptConfirmedProjection?: AdoptServerConfirmedProjection;
     captureScope?: () => CapturedUserScope;
     liveScope?: () => CapturedUserScope;
+    consumeEmotionResult?: typeof consumeCanvasEmotionGenerationResult;
 };
 
 export async function bindBackendCanvasGenerationResult(input: {
@@ -200,6 +204,7 @@ export async function bindBackendCanvasGenerationResult(input: {
     setNodes: Dispatch<SetStateAction<CanvasNodeData[]>>;
     runtime?: BindBackendCanvasGenerationRuntime;
 }) {
+    if (isCanvasEditorToolTask(input.task)) throw new Error("编辑器工具结果不能绑定为节点作品");
     if (input.task.status !== "succeeded") throw new Error("只有成功的任务才能绑定到画布");
     const runtime = input.runtime ?? {};
     const liveScope = runtime.liveScope ?? captureUserScope;
@@ -207,15 +212,14 @@ export async function bindBackendCanvasGenerationResult(input: {
     const capturedCanvasId = input.canvasId;
     const outputIndex = input.outputIndex ?? input.task.outputs?.[0]?.outputIndex ?? 0;
     const hydrateOutputs = runtime.hydrateOutputs ?? hydrateBackendGeneratedOutputs;
-    const persistDocument = runtime.persistDocument ?? (async (id, patch, entryCapturedScope) => {
-        const captured = entryCapturedScope ?? capturedScope;
-        assertUserScope(captured, liveScope());
-        await (persistCanvasDocument as PersistCanvasDocumentWithScope)(id, patch, captured);
-    });
     const bindOutput = runtime.bindOutput ?? bindCanvasTaskOutput;
-    const adoptConfirmedProjection = runtime.adoptConfirmedProjection ?? defaultAdoptConfirmedProjection;
 
     assertBindDispatchScope(capturedScope, liveScope);
+    if (input.nodesRef.current.find((node) => node.id === input.nodeId)?.metadata?.emotionEdit) {
+        await (runtime.consumeEmotionResult ?? consumeCanvasEmotionGenerationResult)({ ...input, outputIndex, expectedScope: capturedScope });
+        assertBindDispatchScope(capturedScope, liveScope);
+        return;
+    }
     await hydrateOutputs(input.task, input.signal, {
         writeAsset: (asset) => {
             if (!userScopeMatches(capturedScope, liveScope())) return;
@@ -224,39 +228,46 @@ export async function bindBackendCanvasGenerationResult(input: {
     });
     assertBindDispatchScope(capturedScope, liveScope);
 
-    const live = useCanvasStore.getState().projects.find((project) => project.id === capturedCanvasId);
-    if (live) {
-        try {
-            await persistDocument(capturedCanvasId, { nodes: live.nodes, connections: live.connections }, capturedScope);
-        } catch (error) {
-            if (error instanceof Error && error.name === "AbortError") throw error;
-            if (isUserScopeAbandonedError(error)) throw error;
-            if (error instanceof CanvasStaleScopeError) throw error;
-            assertBindDispatchScope(capturedScope, liveScope);
-            // 画布 document.commit 的陈旧 revision / 已暂停提交不能当成生成失败：
-            // 资源已落盘，bind 回执才是画布真相；继续绑定后由三路合并保留并发节点。
-            if (!(isCanvasRevisionConflict(error) || error instanceof CanvasBackendSubmitPausedError)) {
-                throw error instanceof CanvasBindFlushError ? error : new CanvasBindFlushError(error);
+    const adopted = await withCanvasGenerationBinding(capturedCanvasId, capturedScope, async (transaction) => {
+        const persistDocument: PersistCanvasDocumentWithScope = runtime.persistDocument ?? (async (_id, _patch, entryCapturedScope) => {
+            assertUserScope(entryCapturedScope ?? capturedScope, liveScope());
+            await transaction.flushDocument();
+        });
+        const adoptConfirmedProjection: AdoptServerConfirmedProjection = runtime.adoptConfirmedProjection ?? ((project) => transaction.adoptProjection(project));
+        const live = useCanvasStore.getState().projects.find((project) => project.id === capturedCanvasId);
+        if (live) {
+            try {
+                await persistDocument(capturedCanvasId, { nodes: live.nodes, connections: live.connections }, capturedScope);
+            } catch (error) {
+                if (error instanceof Error && error.name === "AbortError") throw error;
+                if (isUserScopeAbandonedError(error)) throw error;
+                if (error instanceof CanvasStaleScopeError) throw error;
+                assertBindDispatchScope(capturedScope, liveScope);
+                // 画布 document.commit 的陈旧 revision / 已暂停提交不能当成生成失败：
+                // 资源已落盘，bind 回执才是画布真相；继续绑定后由三路合并保留并发节点。
+                if (!(isCanvasRevisionConflict(error) || error instanceof CanvasBackendSubmitPausedError)) {
+                    throw error instanceof CanvasBindFlushError ? error : new CanvasBindFlushError(error);
+                }
             }
         }
-    }
-    assertBindDispatchScope(capturedScope, liveScope);
+        assertBindDispatchScope(capturedScope, liveScope);
 
-    const response = await bindOutput({
-        operationId: attachNodeEffectKey(input.task.id, input.nodeId, outputIndex),
-        canvasId: capturedCanvasId,
-        taskId: input.task.id,
-        nodeId: input.nodeId,
-        outputIndex,
-        signal: input.signal,
-        expectedScope: capturedScope,
+        const response = await bindOutput({
+            operationId: attachNodeEffectKey(input.task.id, input.nodeId, outputIndex),
+            canvasId: capturedCanvasId,
+            taskId: input.task.id,
+            nodeId: input.nodeId,
+            outputIndex,
+            signal: input.signal,
+            expectedScope: capturedScope,
     });
     assertBindDispatchScope(capturedScope, liveScope);
 
     const receipt = response.result ?? {};
     if (receipt.bindingStatus === "deleted" && !receipt.canvas) return;
     const canonical = canonicalCanvasFromReceipt(capturedCanvasId, receipt);
-    const adopted = await adoptConfirmedProjection(canonical, capturedScope.userScope, capturedScope);
+    return adoptConfirmedProjection(canonical, capturedScope.userScope, capturedScope);
+    });
     assertBindDispatchScope(capturedScope, liveScope);
     if (adopted && input.isCurrent()) {
         input.nodesRef.current = adopted.nodes;
@@ -264,18 +275,104 @@ export async function bindBackendCanvasGenerationResult(input: {
     }
 }
 
-function assertBindDispatchScope(expected: CapturedUserScope, live: () => CapturedUserScope) {
-    if (!userScopeMatches(expected, live())) throw new UserScopeAbandonedError();
+type CanvasEmotionGenerationInput = {
+    canvasId: string;
+    nodeId: string;
+    task: GenerationTask;
+    outputIndex: number;
+    expectedScope: CapturedUserScope;
+    signal?: AbortSignal;
+    isCurrent: () => boolean;
+    nodesRef: { current: CanvasNodeData[] };
+    setNodes: Dispatch<SetStateAction<CanvasNodeData[]>>;
+};
+
+export type CanvasEmotionGenerationRuntime = {
+    buildResult?: typeof buildGenerationTaskNodeResult;
+    ensureAsset?: typeof ensureCanvasNodeAsset;
+    persistEffect?: typeof persistCanvasGenerationEffect;
+    attachResult?: typeof attachGenerationTaskNode;
+    syncProject?: (id: string, expectedScope: CapturedUserScope) => Promise<void>;
+};
+
+export async function consumeCanvasEmotionGenerationResult(input: CanvasEmotionGenerationInput, runtime: CanvasEmotionGenerationRuntime = {}) {
+    const assertCurrent = () => {
+        throwIfAborted(input.signal);
+        assertUserScope(input.expectedScope);
+        const node = input.nodesRef.current.find((item) => item.id === input.nodeId);
+        if (!node?.metadata?.emotionEdit || node.metadata.taskId !== input.task.id || !canvasTaskCanUpdateNode(node, input.task)) {
+            throw new Error("表情编辑节点已删除或已切换任务，未覆盖当前内容");
+        }
+        return node;
+    };
+    assertCurrent();
+    if (input.task.status !== "succeeded") throw new Error("只有成功的任务才能合成表情结果");
+    const effectKey = attachNodeEffectKey(input.task.id, input.nodeId, input.outputIndex);
+    let persisted: CanvasProject | undefined;
+    await (runtime.attachResult ?? attachGenerationTaskNode)(input.task, input.nodeId, input.outputIndex, async ({ signal }) => {
+        const node = assertCurrent();
+        const syncProject = runtime.syncProject ?? (async (id, expected) => {
+            const { syncLocalCanvasProjectToBackend } = await import("@/services/local-workspace-repository");
+            await syncLocalCanvasProjectToBackend(id, expected);
+        });
+        if (generationEffectApplied(node.metadata || {}, effectKey) && node.metadata?.status === "success" && node.metadata.storageKey) {
+            await syncProject(input.canvasId, input.expectedScope);
+            assertCurrent();
+            persisted = useCanvasStore.getState().projects.find((project) => project.id === input.canvasId);
+            return;
+        }
+        const fingerprint = JSON.stringify([node.metadata?.emotionEdit, node.metadata?.references, node.metadata?.prompt]);
+        const assertSameInput = () => {
+            const current = assertCurrent();
+            if (JSON.stringify([current.metadata?.emotionEdit, current.metadata?.references, current.metadata?.prompt]) !== fingerprint) {
+                throw new Error("表情编辑参数已变化，未用旧结果覆盖当前内容");
+            }
+            return current;
+        };
+        const updated = await (runtime.buildResult ?? buildGenerationTaskNodeResult)(node, input.task, input.nodesRef.current, {
+            ...defaultGenerationResultMediaIO,
+            uploadImage: (data) => {
+                assertCurrent();
+                throwIfAborted(signal);
+                return uploadImage(data, undefined, input.expectedScope, input.canvasId, `image:${input.expectedScope.userScope}:emotion:${input.task.id}:${input.outputIndex}`);
+            },
+        });
+        const current = assertSameInput();
+        throwIfAborted(signal);
+        const resultNode = { ...updated, title: current.title, position: current.position };
+        const asset = await (runtime.ensureAsset ?? ensureCanvasNodeAsset)({
+            canvasId: input.canvasId, node: resultNode, source: "canvas-generation", taskId: input.task.id, signal, expectedScope: input.expectedScope,
+        });
+        const latest = assertSameInput();
+        throwIfAborted(signal);
+        if (!asset.confirmed) throw new Error("表情合成图片尚未永久保存，未标记生成完成");
+        const previousNodes = input.nodesRef.current;
+        const completedNode = {
+            ...resultNode,
+            title: latest.title,
+            position: latest.position,
+            metadata: { ...resultNode.metadata, assetId: asset.assetId, generationEffectKeys: Array.from(new Set([...(resultNode.metadata?.generationEffectKeys || []), effectKey])) },
+        };
+        persisted = await (runtime.persistEffect ?? persistCanvasGenerationEffect)({
+            projectId: input.canvasId, effectKey, previousNodes, nodes: previousNodes.map((item) => item.id === input.nodeId ? completedNode : item), signal, expectedScope: input.expectedScope,
+        });
+        assertUserScope(input.expectedScope);
+    }, input.signal);
+    assertUserScope(input.expectedScope);
+    throwIfAborted(input.signal);
+    if (!persisted) {
+        const { openLocalCanvasProjectFromBackend } = await import("@/services/local-workspace-repository");
+        persisted = await openLocalCanvasProjectFromBackend(input.canvasId, input.expectedScope) ?? undefined;
+    }
+    assertUserScope(input.expectedScope);
+    if (persisted && input.isCurrent()) {
+        input.nodesRef.current = persisted.nodes;
+        input.setNodes(persisted.nodes);
+    }
 }
 
-async function defaultAdoptConfirmedProjection(project: CanvasProject, scope: string, entryCapturedScope?: CapturedUserScope) {
-    const captured = entryCapturedScope;
-    if (!captured || captured.userScope !== scope) throw new CanvasBindProjectionAdoptionError();
-    const repository = await import("@/services/local-workspace-repository");
-    assertUserScope(captured);
-    const adopt = (repository as { adoptServerConfirmedGenerationPatch?: AdoptServerConfirmedProjection }).adoptServerConfirmedGenerationPatch;
-    if (!adopt) throw new CanvasBindProjectionAdoptionError();
-    return adopt(project, captured.userScope, captured);
+function assertBindDispatchScope(expected: CapturedUserScope, live: () => CapturedUserScope) {
+    if (!userScopeMatches(expected, live())) throw new UserScopeAbandonedError();
 }
 
 function canonicalCanvasFromReceipt(canvasId: string, receipt: CanvasTaskBindReceipt): CanvasProject {
@@ -556,6 +653,7 @@ export type CanvasGenerationEffectInput = {
     previousActiveChatId?: string | null;
     activeChatId?: string | null;
     signal?: AbortSignal;
+    expectedScope?: CapturedUserScope;
 };
 
 function generationProjectDelta(input: CanvasGenerationEffectInput, memoryProject: CanvasProject) {
@@ -608,7 +706,9 @@ function rebaseCommittedCanvasGenerationOntoLiveProject(scope: string, projectId
 
 export async function persistCanvasGenerationEffect(input: CanvasGenerationEffectInput) {
     throwIfAborted(input.signal);
-    const scope = getActiveUserScope();
+    const expected = input.expectedScope ?? captureUserScope();
+    assertUserScope(expected);
+    const scope = expected.userScope;
     if (!useCanvasStore.getState().projects.some((project) => project.id === input.projectId)) {
         const { loadCanvasProjectForEditing } = await import("@/services/local-workspace-sync");
         await loadCanvasProjectForEditing(input.projectId);
@@ -710,14 +810,15 @@ export async function persistCanvasGenerationEffect(input: CanvasGenerationEffec
             },
             { requireCrossRealmLock: true },
         );
-        // IndexedDB is only a desktop cache. A generation is not durably
-        // acknowledged until the completed node snapshot is also stored in
-        // the Go repository that will hydrate the next app launch.
+        // 本地缓存不是完成回执；合成图已有本人素材身份，再用当前 document.commit
+        // 保存图与效果标记，避免调用旧 Go generated-assets 路由。
+        assertUserScope(expected);
         if (getActiveUserScope() === scope) {
-            const { syncLocalCanvasGenerationProjectToBackend } = await import("@/services/local-workspace-repository");
-            await syncLocalCanvasGenerationProjectToBackend(input.projectId);
+            const { syncLocalCanvasProjectToBackend } = await import("@/services/local-workspace-repository");
+            await syncLocalCanvasProjectToBackend(input.projectId, expected);
         }
-        return persisted;
+        assertUserScope(expected);
+        return useCanvasStore.getState().projects.find((project) => project.id === input.projectId) ?? persisted;
     } finally {
         unregisterAttempt();
     }

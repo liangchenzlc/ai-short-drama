@@ -244,7 +244,7 @@ def test_canvas_audio_options_reach_speech_body_without_changing_standard_wav():
     assert "speed" not in body and "instructions" not in body
 
 
-@pytest.mark.parametrize("audio_format", ["mp3", "wav", "opus", "aac", "flac"])
+@pytest.mark.parametrize("audio_format", ["mp3", "wav", "opus", "aac", "flac", "pcm"])
 def test_canvas_audio_format_is_not_replaced_by_wav(audio_format):
     payload = frozen_request(request("audio", {"audioFormat": audio_format}), "openai_speech.v1")
     _, _, body = build_submission(snapshot("audio", "tts-1"), payload, "openai_speech.v1")

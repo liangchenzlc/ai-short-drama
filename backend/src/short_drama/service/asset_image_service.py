@@ -387,6 +387,9 @@ class AssetImageService(BaseService):
             },
         )
         publish(media)
+        from .asset_version_service import AssetVersionService
+
+        AssetVersionService(self.session).append_locked(asset)
         return asset, media
 
 

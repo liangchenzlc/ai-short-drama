@@ -2,6 +2,32 @@ import pytest
 from generation_fixtures import config, generation_session, settings
 
 
+@pytest.mark.parametrize("status", ["failed", "cancelled"])
+@pytest.mark.parametrize("record_status", ["prepared", "failed", "succeeded"])
+def test_disposed_canvas_execution_cannot_retry_or_resume_retained_archive(status, record_status):
+    from types import SimpleNamespace
+
+    from short_drama.service.ai_generation_service import can_retry, resume_action
+
+    task = SimpleNamespace(
+        status=status,
+        error={"code": "canvas_work_disposed"},
+        locked_until=None,
+        next_action="save",
+        cancel_requested=0,
+        service_type="image",
+    )
+    record = SimpleNamespace(
+        status=record_status,
+        request_data={"source": {"scene": "canvas_node"}},
+        adapter="openai_images.v1",
+        response_data={"media_manifest": [{"asset_id": "123", "locator": "minio://image/kept"}]},
+        text_content="",
+    )
+    assert can_retry(task, record) is False
+    assert resume_action(task, record) is None
+
+
 def test_upstream_failure_explains_unknown_result_and_only_exposes_valid_http_status():
     from short_drama.service.ai_generation_service import safe_error
 

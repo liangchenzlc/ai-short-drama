@@ -3,6 +3,28 @@ import test from "node:test";
 import { collectCanvasResourceIds, remapCanvasResourceReferences, prepareCanvasDocumentResources, createCanvasResourceRemapper } from "../src/services/host-resource-normalization.ts";
 import { canonicalizeCanvasMedia } from "../src/services/canvas-media-locators.ts";
 
+test("角色封面只用真实稳定资源归一化，提示词不会成为封面身份", async () => {
+    const input = { nodes: [{ type: "text", metadata: { workflowKind: "character", characterCoverUrl: "https://old/api/resources/42/file?signature=temporary", characterPrompt: "https://old/api/resources/42/file" } }] };
+    assert.deepEqual(collectCanvasResourceIds(input), ["42"]);
+    const result = await prepareCanvasDocumentResources(input, { assertActive() {}, normalize: async ids => {
+        assert.deepEqual(ids, ["42"]);
+        return { resource_map: { "42": "43" }, resource_aliases: { "43": ["42"] } };
+    } });
+    assert.equal(result.document.nodes[0].metadata.characterCoverUrl, "/api/v1/canvas-runtime/resources/43/file");
+    assert.equal(result.document.nodes[0].metadata.characterPrompt, input.nodes[0].metadata.characterPrompt);
+    assert.equal(input.nodes[0].metadata.characterCoverUrl, "https://old/api/resources/42/file?signature=temporary");
+});
+
+test("临时或供应商角色封面严格拒绝且不开始复制，空封面允许", async () => {
+    for (const characterCoverUrl of ["blob:preview", "data:image/png;base64,preview", "https://provider.example/signed?token=temporary"]) {
+        const input = { nodes: [{ type: "text", metadata: { workflowKind: "character", characterCoverUrl } }] };
+        await assert.rejects(prepareCanvasDocumentResources(input, { assertActive() {}, normalize: () => assert.fail("unstable cover must not copy") }), /角色封面/);
+        assert.equal(input.nodes[0].metadata.characterCoverUrl, characterCoverUrl);
+    }
+    const input = { nodes: [{ type: "text", metadata: { workflowKind: "character", characterCoverUrl: "" } }] };
+    assert.equal(canonicalizeCanvasMedia(input), input);
+});
+
 test("媒体语义覆盖裁剪来源、导演/绘图封面，文字媒体类型不能改变正文", () => {
     const source = { nodes: [
         { type: "text", metadata: { content: "blob:literal", mimeType: "image/png", storageKey: "resource:42" } },

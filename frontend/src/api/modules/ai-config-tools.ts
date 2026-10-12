@@ -1,6 +1,7 @@
 import { http } from '../http';
 import type { BeefAPIConnectionDto, ModelTestDto, ProtocolProviderDto } from '../types/ai-config-tools';
 import type { AiConfig, ServiceType } from '../../features/ai-config/config-model';
+import type { RunningHubWorkflowDto } from '../types/ai-model-configs';
 
 const runtime = '/canvas-runtime';
 function checkedTestReceipt(value: ModelTestDto, expectedId?: string): ModelTestDto {
@@ -12,6 +13,9 @@ function checkedTestReceipt(value: ModelTestDto, expectedId?: string): ModelTest
   return value;
 }
 export const aiConfigTools = {
+  async runningHubSchema(id: string, rowVersion: string, signal?: AbortSignal) {
+    return (await http.post<RunningHubWorkflowDto>(`${runtime}/ai/models/${encodeURIComponent(id)}/runninghub-schema`, { row_version: rowVersion }, { signal })).data;
+  },
   async protocols(kind: ServiceType, signal?: AbortSignal) {
     return (await http.get<{ providers: ProtocolProviderDto[] }>(`${runtime}/plugins/catalog`, { params: { scope: 'user.custom-channel', capability: kind }, signal })).data.providers;
   },

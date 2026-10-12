@@ -1,0 +1,67 @@
+-- 本人审美执行租约与阶段批准；用 canvas_migration.py --apply 安全重入。
+CREATE TABLE canvas_tool_runs (
+	user_id BIGINT UNSIGNED NOT NULL,
+	client_key VARCHAR(120) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	create_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	state_json JSON NOT NULL,
+	source_snapshot JSON NOT NULL,
+	source_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	source_media_id BIGINT UNSIGNED,
+	model_config_id BIGINT UNSIGNED NOT NULL,
+	config_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	row_version BIGINT UNSIGNED NOT NULL,
+	execution_epoch BIGINT UNSIGNED NOT NULL,
+	execution_owner VARCHAR(120) NOT NULL,
+	lease_expires_at DATETIME(6),
+	project_id BIGINT UNSIGNED NOT NULL,
+	canvas_id BIGINT UNSIGNED NOT NULL,
+	id BIGINT UNSIGNED NOT NULL,
+	created_at DATETIME(6) NOT NULL,
+	updated_at DATETIME(6) NOT NULL,
+	created_by BIGINT UNSIGNED NOT NULL,
+	updated_by BIGINT UNSIGNED NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT fk_canvas_tool_runs_project_id FOREIGN KEY(project_id, canvas_id) REFERENCES project_canvases (project_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT uk_canvas_tool_run_client UNIQUE (user_id, client_key),
+	CONSTRAINT uk_canvas_tool_run_scope UNIQUE (id, user_id, project_id, canvas_id),
+	CONSTRAINT ck_canvas_tool_run_version CHECK (row_version > 0),
+	CONSTRAINT ck_canvas_tool_run_lease CHECK ((execution_owner = '' AND lease_expires_at IS NULL) OR (execution_owner <> '' AND lease_expires_at IS NOT NULL AND execution_epoch > 0)),
+	CONSTRAINT ck_canvas_tool_run_identity CHECK (CHAR_LENGTH(client_key) > 0 AND CHAR_LENGTH(create_hash) = 64 AND CHAR_LENGTH(source_hash) = 64 AND CHAR_LENGTH(config_hash) = 64),
+	CONSTRAINT fk_canvas_tool_runs_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_tool_runs_source_media_id FOREIGN KEY(source_media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_tool_runs_model_config_id FOREIGN KEY(model_config_id) REFERENCES ai_model_configs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_tool_runs_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_tool_runs_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_canvas_tool_run_author ON canvas_tool_runs (user_id, updated_at, id);
+
+CREATE TABLE canvas_tool_submissions (
+	user_id BIGINT UNSIGNED NOT NULL,
+	run_id BIGINT UNSIGNED NOT NULL,
+	item_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	request_json JSON NOT NULL,
+	execution_json JSON NOT NULL,
+	approved_at DATETIME(6),
+	async_task_id BIGINT UNSIGNED,
+	project_id BIGINT UNSIGNED NOT NULL,
+	canvas_id BIGINT UNSIGNED NOT NULL,
+	id BIGINT UNSIGNED NOT NULL,
+	created_at DATETIME(6) NOT NULL,
+	updated_at DATETIME(6) NOT NULL,
+	created_by BIGINT UNSIGNED NOT NULL,
+	updated_by BIGINT UNSIGNED NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT fk_canvas_tool_submissions_project_id FOREIGN KEY(project_id, canvas_id) REFERENCES project_canvases (project_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_tool_submission_run FOREIGN KEY(run_id, user_id, project_id, canvas_id) REFERENCES canvas_tool_runs (id, user_id, project_id, canvas_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT uk_canvas_tool_submission_stage UNIQUE (run_id, item_key),
+	CONSTRAINT uk_canvas_tool_submission_task UNIQUE (async_task_id),
+	CONSTRAINT ck_canvas_tool_submission_approval CHECK (async_task_id IS NULL OR approved_at IS NOT NULL),
+	CONSTRAINT ck_canvas_tool_submission_identity CHECK (CHAR_LENGTH(item_key) > 0 AND CHAR_LENGTH(request_hash) = 64),
+	CONSTRAINT fk_canvas_tool_submissions_async_task_id FOREIGN KEY(async_task_id) REFERENCES async_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_tool_submissions_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_tool_submissions_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+ALTER TABLE canvas_tool_runs MODIFY COLUMN source_media_id BIGINT UNSIGNED NULL;

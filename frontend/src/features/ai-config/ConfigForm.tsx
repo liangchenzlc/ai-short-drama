@@ -18,6 +18,7 @@ export function ConfigForm({ existing, serviceType, onClose, onSave, onReload }:
 }) {
   const [form, setForm] = useState<ConfigDraft>(() => createConfigDraft(existing, serviceType));
   const managed = existing?.credentialSource === 'beefapi';
+  const runningHub = /^runninghub-workflow-(image|video|audio)$/.test(form.runtime.protocol);
   const [makeDefault, setMakeDefault] = useState(existing?.isDefault ?? false);
   const [initial] = useState(() => JSON.stringify(form));
   async function requestClose() {
@@ -78,7 +79,7 @@ export function ConfigForm({ existing, serviceType, onClose, onSave, onReload }:
         <label>API 密钥<input type="password" value={form.apiKey} disabled={form.clearApiKey || managed} onChange={(e) => change({ apiKey: e.target.value })} autoComplete="new-password" placeholder={existing?.hasApiKey ? '已保存密钥；留空保留原密钥' : '选填，输入后保存到服务端'} /></label>
         {existing?.hasApiKey && !managed && <label className="form-check"><input type="checkbox" checked={form.clearApiKey} onChange={(e) => change({ clearApiKey: e.target.checked, apiKey: '' })} />清除已保存的密钥</label>}
         <label>Secret Key（第二密钥）<input type="password" value={form.secretKey} disabled={form.clearSecretKey || managed} onChange={event => change({ secretKey: event.target.value })} autoComplete="new-password" placeholder={existing?.hasSecretKey ? '已保存第二密钥；留空保留' : '按服务商要求填写，选填'}/></label>
-        <p className="config-default-hint">模型列表使用 API 密钥与请求头；第二密钥当前仅安全保存。</p>
+        <p className="config-default-hint">{runningHub ? 'API 密钥用于 RunningHub 积分查询、提交与轮询；第二密钥作为企业级参考素材上传 API Key。' : '模型列表使用 API 密钥与请求头；第二密钥按所选协议使用。'}</p>
         {existing?.hasSecretKey && !managed && <label className="form-check"><input type="checkbox" checked={form.clearSecretKey} onChange={event => change({ clearSecretKey: event.target.checked, secretKey: '' })}/>清除已保存的第二密钥</label>}
         <details className="config-advanced"><summary>自定义请求头{form.headers.length ? ` · ${form.headers.length} 项` : ''}</summary><div className="config-advanced-body">
           <p className="config-default-hint">已保存的值不会回显；同名留空保留原值，删除条目后保存会清除。认证和传输字段由服务端管理。</p>
@@ -90,7 +91,8 @@ export function ConfigForm({ existing, serviceType, onClose, onSave, onReload }:
           <button type="button" disabled={form.headers.length >= 32} onClick={() => change({ headersChanged: true, headers: [...form.headers, { name: '', value: '', hasValue: false }] })}>添加请求头</button>
         </div></details>
         <ModelIdentifierField form={form} existing={existing} disabled={pending || managed} onChange={(modelKey) => change({ modelKey })} />
-        <RuntimeConfigFields value={form.runtime} serviceType={serviceType} readOnly={managed} onChange={runtime => change({ runtime })}/>
+        <RuntimeConfigFields value={form.runtime} serviceType={serviceType} readOnly={managed} onChange={runtime => change({ runtime })}
+          saved={existing} onBusy={setPending} connectionSaved={!!existing && form.baseUrl === existing.baseUrl && form.modelKey === existing.modelKey && !form.apiKey && !form.clearApiKey && !form.secretKey && !form.clearSecretKey && !form.headersChanged}/>
         <div className="config-form-toggles">
           <label className="form-check"><input type="checkbox" checked={form.enabled} onChange={(e) => {
             change({ enabled: e.target.checked });

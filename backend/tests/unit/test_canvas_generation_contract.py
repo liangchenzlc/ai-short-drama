@@ -99,7 +99,7 @@ def test_media_delivery_keeps_source_stable_identity_and_library_payload():
         service,
         SimpleNamespace(project_id=2, source_key="canvas-key"),
         SimpleNamespace(id=17, service_type="image"),
-        SimpleNamespace(id=19),
+        SimpleNamespace(id=19, adapter="openai_images.v1"),
         0,
     )
     assert kind == "image" and media_id == 12

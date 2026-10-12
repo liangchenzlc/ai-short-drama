@@ -32,6 +32,10 @@ for (const [name, metadata] of Object.entries(manifest.files)) {
         if (existsSync(path) || !ledger[name].reason?.trim() || ledger[name].upstream_sha256 !== (metadata.upstream_sha256 || metadata.sha256)) changed.push(name);
         continue;
     }
+    if (ledger[name] && (
+        typeof ledger[name].upstream_sha256 !== "string"
+        || ledger[name].upstream_sha256 !== (metadata.upstream_sha256 || metadata.sha256)
+    )) changed.push(name);
     if (!existsSync(path) || digest(path) !== (ledger[name]?.sha256 || metadata.sha256)) changed.push(name);
 }
 for (const name of Object.keys(ledger)) if (!manifest.files[name]) changed.push(name);

@@ -1,3 +1,4 @@
+import copy
 from typing import Literal
 
 from short_drama.core.exceptions import BusinessError, Conflict, WorkflowError
@@ -6,6 +7,7 @@ from short_drama.domain import Asset
 from short_drama.schemas.asset import AssetCreate, AssetRecordRead, AssetUpdate
 from short_drama.schemas.base import UINT64_MAX
 
+from .asset_version_service import AssetVersionService, canonical_current
 from .base import BaseService
 from .episode_asset_service import EpisodeAssetService
 from .global_asset_service import GlobalAssetService
@@ -17,6 +19,15 @@ class AssetService(BaseService):
     create_schema = AssetCreate
     update_schema = AssetUpdate
     read_schema = AssetRecordRead
+
+    def create(self, payload):
+        values = self._payload(self.create_schema, payload)
+        with self._transaction():
+            self._lock_parent(values)
+            self._validate_create(values)
+            asset = self.dao.create(self._creation_audit(values))
+            AssetVersionService(self.session).append_locked(asset)
+            return self._read(asset)
 
     def _validate_create(self, values):
         self._validate_model(values.get("model_id"), "image")
@@ -69,7 +80,9 @@ class AssetService(BaseService):
         if entity.row_version >= UINT64_MAX:
             raise Conflict("Asset version exhausted")
         changes.update(row_version=entity.row_version + 1, state="unconfirmed")
-        return self._apply_update(entity, changes)
+        self._apply_update(entity, changes)
+        AssetVersionService(self.session).append_locked(entity)
+        return entity
 
     def copy_for_library(
         self,
@@ -94,14 +107,33 @@ class AssetService(BaseService):
         with association_service._transaction():
             association = association_service._get_locked(link_id)
             original = self._require(Asset, association.asset_id)
+            version_service = AssetVersionService(self.session)
+            source_snapshot = None
+            if original.kind == "character":
+                source_snapshot = version_service.snapshot_for_copy_locked(original)
             model_id = patch.pop("model_id", original.model_id)
             values = {field: getattr(original, field) for field in AssetCreate.model_fields}
             values.update(patch)
             values = AssetCreate.model_validate(values).model_dump()
+            values["reference_media_ids"] = copy.deepcopy(original.reference_media_ids or [])
             values["model_id"] = model_id
             # Historical model selections are preserved; newly selected references
             # receive exactly the same validation as an explicit asset edit.
             self._validate_update(original, values)
             copied = self.dao.create(self._creation_audit(values))
+            if copied.kind == "character":
+                version_service.append_locked(
+                    copied,
+                    snapshot=canonical_current(copied, previous=source_snapshot),
+                    source_audit={
+                        "operation": "copy_for_library",
+                        "source_asset_id": str(original.id),
+                        "source_version_id": (
+                            str(original.current_version_id)
+                            if original.current_version_id
+                            else None
+                        ),
+                    },
+                )
             association_service._apply_update(association, {"asset_id": copied.id})
             return self._read(copied)

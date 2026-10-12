@@ -1,5 +1,5 @@
-import { resourceFileUrl } from "@/services/api/resources";
-import type { ProjectAsset } from "@/services/api/projects";
+import { ownedResourceIdFromMediaRef, resourceFileUrl } from "@/services/api/resources";
+import type { CanvasProjectCharacterCard } from "@/services/host-character-catalog";
 import type { CanvasNodeData } from "@/types/canvas";
 
 export type CharacterBreakdown = {
@@ -18,7 +18,12 @@ export type CharacterBreakdown = {
     voiceTimbre: string;
 };
 
-export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], assets: ProjectAsset[]) {
+export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], assets: CanvasProjectCharacterCard[], options: {
+    expectedNodes?: Map<string, CanvasNodeData>;
+    coverEquivalent?: (left?: string, right?: string) => boolean;
+    preservePrivateVoice?: boolean;
+    preservePrivatePrompt?: boolean;
+} = {}) {
     const characters = new Map(assets.filter((asset) => asset.category === "character" && asset.character).map((asset) => [asset.id, asset]));
     let changed = false;
     const next = nodes.map((node) => {
@@ -26,10 +31,14 @@ export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], as
         const assetId = metadata?.workflowKind === "character" ? metadata.characterAssetId : "";
         const asset = assetId ? characters.get(assetId) : undefined;
         if (!metadata || !asset?.character || metadata.characterVersionPolicy === "pinned") return node;
+        const expected = options.expectedNodes?.get(node.id);
+        if (options.expectedNodes && (!expected || expected.title !== node.title
+            || ["characterAssetId", "characterVersionId", "characterName", "characterPrompt", "characterAliases", "characterDefinition"].some(key => JSON.stringify(expected.metadata?.[key as keyof typeof metadata]) !== JSON.stringify(metadata[key as keyof typeof metadata]))
+            || expected.metadata?.characterCoverUrl !== metadata.characterCoverUrl && !options.coverEquivalent?.(expected.metadata?.characterCoverUrl, metadata.characterCoverUrl))) return node;
         const card = asset.character;
         const cover = card.representations.find((item) => item.role === "turnaround_sheet") || card.representations.find((item) => item.role === "primary") || card.representations.find((item) => item.role === "front");
         const aliases = Array.isArray(card.definition.aliases) ? card.definition.aliases.filter((value): value is string => typeof value === "string") : [];
-        const patch = {
+        const patch: Partial<NonNullable<CanvasNodeData["metadata"]>> = {
             characterVersionId: card.versionId,
             characterName: asset.title,
             characterPrompt: compileCharacterReferencePrompt(asset.title, card.definition),
@@ -47,6 +56,18 @@ export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], as
             } : undefined,
             characterVoiceInstructions: card.voice?.instructions,
         };
+        const persistedCoverId = ownedResourceIdFromMediaRef(undefined, metadata.characterCoverUrl);
+        // 同版本已核验的共享封面不依赖作者私人的复制来源链；新版本仍重新解析。
+        if (metadata.characterVersionId === card.versionId && cover && persistedCoverId
+            && metadata.characterCoverUrl === resourceFileUrl(persistedCoverId)) patch.characterCoverUrl = metadata.characterCoverUrl;
+        if (options.preservePrivatePrompt && metadata.characterPrompt !== undefined
+            && metadata.characterPrompt !== compileCharacterReferencePrompt(metadata.characterName || node.title, metadata.characterDefinition || {})) patch.characterPrompt = metadata.characterPrompt;
+        if (options.preservePrivateVoice) {
+            patch.characterVoiceStatus = metadata.characterVoiceStatus;
+            patch.characterVoiceName = metadata.characterVoiceName;
+            patch.characterVoiceProfile = metadata.characterVoiceProfile;
+            patch.characterVoiceInstructions = metadata.characterVoiceInstructions;
+        }
         if (node.title === asset.title
             && metadata.characterVersionId === patch.characterVersionId
             && metadata.characterPrompt === patch.characterPrompt
@@ -68,7 +89,8 @@ export function compileCharacterReferencePrompt(name: string, definition: Record
     const parts = [definition.role, definition.appearance, definition.physique, definition.clothing, definition.personality, definition.props, definition.consistencyPrompt]
         .map((value) => typeof value === "string" ? value.trim() : "")
         .filter(Boolean);
-    return [`【角色卡：${name}】`, ...parts].join("\n");
+    const fallback = parts.length ? [] : [definition.description, definition.prompt].map(value => typeof value === "string" ? value.trim() : "").filter(Boolean);
+    return [`【角色卡：${name}】`, ...parts, ...fallback].join("\n");
 }
 
 export function normalizeCharacterName(value?: string) {

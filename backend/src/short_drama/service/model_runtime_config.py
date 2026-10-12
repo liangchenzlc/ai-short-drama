@@ -6,6 +6,7 @@ from copy import deepcopy
 from pydantic import ValidationError
 
 from short_drama.ai.adapters import capability_fingerprint
+from short_drama.ai.canvas_runninghub_adapters import RUNNINGHUB_ADAPTERS
 from short_drama.ai.canvas_video_adapters import VIDEO_ADAPTERS
 from short_drama.ai.model_identity import model_credential_identity
 from short_drama.ai.types import GenerationError
@@ -20,11 +21,15 @@ from short_drama.schemas.model_runtime_profile import ModelRuntimeProfile
 PROTOCOL_ADAPTERS = {
     "chat-completion": "openai_chat.v1",
     "openai-response": "openai_responses.v1",
+    "claude-api": "claude_messages.v1",
+    "gemini-generate-content": "gemini_generate_content.v1",
+    "google-gemini-generate-content": "gemini_generate_content.v1",
     "openai-image": "openai_images.v1",
     "volcengine-ark-image": "ark_images.v1",
     "qwen-image": "dashscope_images.v1",
     "dashscope-qwen-image": "dashscope_images.v1",
     "openai-audio": "openai_speech.v1",
+    "async-audio": "canvas_async_audio.v1",
     "volcengine-ark-video": "ark_video.v1",
     "qwen-video": "dashscope_video.v1",
     "dashscope-wan-video": "dashscope_video.v1",
@@ -32,6 +37,8 @@ PROTOCOL_ADAPTERS = {
     "openai-video": "canvas_openai_videos.v1",
     "openai-videos": "canvas_openai_videos.v1",
     "newapi-channel-2": "canvas_newapi_video_generations.v1",
+    "runninghub-workflow": "canvas_runninghub_workflow.v1",
+    **{f"runninghub-workflow-{kind}": adapter for adapter, kind in RUNNINGHUB_ADAPTERS.items()},
 }
 
 
@@ -124,12 +131,18 @@ def refresh_runtime_model(config, channel_key: str = "") -> bool:
     adapter = runtime_protocol_adapter(profile, channel_key, config.model_key, config.service_type)
     from short_drama.ai.adapters import ADAPTER_TYPES
 
-    if profile["api_format"] != "openai" or ADAPTER_TYPES.get(adapter) != config.service_type:
+    expected_format = "claude" if adapter == "claude_messages.v1" else "openai"
+    if (
+        profile["api_format"] != expected_format
+        or ADAPTER_TYPES.get(adapter) != config.service_type
+    ):
         raise GenerationError("unsupported_protocol")
     identity = model_credential_identity(config)
     snapshot = {key: getattr(config, key) for key in ("base_url", "model_key", "service_type")}
     cache = {"adapter": adapter, "fingerprint": capability_fingerprint(snapshot, identity)}
     capability = profile.get("capability_config") or {}
+    if adapter in RUNNINGHUB_ADAPTERS:
+        cache["canvas_runninghub_workflow"] = deepcopy(profile.get("runninghub_workflow") or {})
     if adapter in VIDEO_ADAPTERS:
         cache["canvas_channel_key"] = channel_key
         if isinstance(capability.get("video"), dict):
@@ -139,6 +152,10 @@ def refresh_runtime_model(config, channel_key: str = "") -> bool:
             cache["canvas_video_variants"] = deepcopy(variants)
     if config.service_type == "text" and isinstance(capability.get("text"), dict):
         cache["canvas_text_capability"] = deepcopy(capability["text"])
+    if adapter in {"claude_messages.v1", "gemini_generate_content.v1"}:
+        cache["canvas_text_defaults"] = deepcopy(profile.get("default_options") or {})
+    if config.service_type == "audio" and adapter in {"openai_speech.v1", "canvas_async_audio.v1"}:
+        cache["canvas_audio_defaults"] = deepcopy(profile.get("default_options") or {})
     if config.capability_cache == cache:
         return False
     config.capability_cache = cache

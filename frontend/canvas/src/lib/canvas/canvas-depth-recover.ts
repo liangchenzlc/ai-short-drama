@@ -9,7 +9,7 @@ import {
     observeLocalExecutorTask,
     type LocalExecutorSession,
 } from "@/lib/plugins/builtin/editor/local-executor-session";
-import { type CapturedUserScope } from "@/lib/user-scope-guard";
+import { assertUserScope, type CapturedUserScope } from "@/lib/user-scope-guard";
 import { type DepthCaptureResult } from "@/services/api/depth-capture";
 import { getResource, resourceFileUrl, resourceStorageKey } from "@/services/api/resources";
 import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";
@@ -29,22 +29,34 @@ export async function recoverOwnedDepthCaptureNode(input: {
     session: LocalExecutorSession;
     persist: RecoverOwnedDepthCapturePersist;
     setNodes: (updater: (current: CanvasNodeData[]) => CanvasNodeData[]) => void;
-    nodeStillMounted: (nodeId: string) => boolean;
+    getLiveNode: (nodeId: string) => CanvasNodeData | undefined;
 }): Promise<void> {
     const { node, session } = input;
     const taskId = node.metadata?.taskId;
-    if (!taskId) {
-        input.setNodes((current) => current.map((item) => item.id === node.id ? {
-            ...item,
-            metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: "深度任务未成功提交，请重新生成" },
-        } : item));
-        return;
-    }
+    const sameTask = (current: CanvasNodeData | undefined) => current?.id === node.id
+        && current.type === node.type
+        && current.metadata?.taskId === taskId
+        && current.metadata?.taskClientOperationId === node.metadata?.taskClientOperationId
+        && current.metadata?.taskClientOperationInput === node.metadata?.taskClientOperationInput
+        && current.metadata?.depthSourceNodeId === node.metadata?.depthSourceNodeId;
+    const pendingTask = (current: CanvasNodeData | undefined) => sameTask(current)
+        && current?.metadata?.status === NODE_STATUS_LOADING
+        && current.metadata.storageKey === node.metadata?.storageKey;
+    let attachedStorageKey: string | undefined;
     try {
+        assertLocalExecutorSession(session);
+        if (!pendingTask(input.getLiveNode(node.id))) return;
+        if (!taskId) {
+            input.setNodes((current) => current.map((item) => pendingTask(item) ? {
+                ...item,
+                metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: "深度任务未成功提交，请重新生成" },
+            } : item));
+            return;
+        }
         const completed = await observeLocalExecutorTask(taskId, session, {
             intervalMs: 1000,
             onTaskUpdate: (task) => {
-                input.setNodes((current) => current.map((item) => item.id === node.id ? {
+                input.setNodes((current) => current.map((item) => pendingTask(item) ? {
                     ...item,
                     metadata: {
                         ...item.metadata,
@@ -56,6 +68,8 @@ export async function recoverOwnedDepthCaptureNode(input: {
                 } : item));
             },
         });
+        assertLocalExecutorSession(session);
+        if (!pendingTask(input.getLiveNode(node.id))) return;
         const result = JSON.parse(completed.resultJson || "{}") as DepthCaptureResult;
         if (!result.resourceId) throw new Error("任务完成但没有返回深度视频资源");
         const resource = await getResource(result.resourceId, {
@@ -63,14 +77,15 @@ export async function recoverOwnedDepthCaptureNode(input: {
             expectedScope: session.expectedScope,
         });
         assertLocalExecutorSession(session);
-        if (!input.nodeStillMounted(node.id)) return;
+        const liveNode = input.getLiveNode(node.id);
+        if (!liveNode || !pendingTask(liveNode)) return;
         const size = fitNodeSize(resource.width || result.width || 1920, resource.height || result.height || 1080, VIDEO_NODE_MAX_SIZE.width, VIDEO_NODE_MAX_SIZE.height);
         const completedNode: CanvasNodeData = {
-            ...node,
+            ...liveNode,
             width: size.width,
             height: size.height,
             metadata: mediaResultMetadata("derived", {
-                ...node.metadata,
+                ...liveNode.metadata,
                 content: resourceFileUrl(result.resourceId),
                 storageKey: resourceStorageKey(result.resourceId),
                 mimeType: resource.mimeType || "video/mp4",
@@ -87,7 +102,8 @@ export async function recoverOwnedDepthCaptureNode(input: {
             }),
         };
         await attachLocalExecutorResult(session, async () => {
-            input.setNodes((current) => current.map((item) => item.id === node.id ? completedNode : item));
+            attachedStorageKey = completedNode.metadata?.storageKey;
+            input.setNodes((current) => current.map((item) => pendingTask(item) ? completedNode : item));
             await input.persist([completedNode], undefined, {
                 expectedScope: session.expectedScope,
                 signal: session.controller.signal,
@@ -101,7 +117,7 @@ export async function recoverOwnedDepthCaptureNode(input: {
             if (isLocalExecutorSessionStop(stop)) return;
             throw stop;
         }
-        input.setNodes((current) => current.map((item) => item.id === node.id ? {
+        input.setNodes((current) => current.map((item) => (pendingTask(item) || (attachedStorageKey && sameTask(item) && item.metadata?.storageKey === attachedStorageKey)) ? {
             ...item,
             metadata: { ...item.metadata, status: NODE_STATUS_ERROR, taskStatus: "failed", errorDetails: generationErrorMessage(error) },
         } : item));
@@ -117,17 +133,17 @@ export function recoverOwnedDepthCaptureNodes(input: {
     observers: Set<AbortController>;
     persist: RecoverOwnedDepthCapturePersist;
     setNodes: (updater: (current: CanvasNodeData[]) => CanvasNodeData[]) => void;
-    nodeStillMounted: (nodeId: string) => boolean;
+    getLiveNode: (nodeId: string) => CanvasNodeData | undefined;
 }): void {
+    if (input.signal.aborted) return;
+    try {
+        assertUserScope(input.expectedScope);
+    } catch (error) {
+        if (isLocalExecutorSessionStop(error)) return;
+        throw error;
+    }
     for (const node of input.nodes) {
         if (!node.metadata?.depthSourceNodeId || node.metadata.status !== NODE_STATUS_LOADING) continue;
-        if (!node.metadata?.taskId) {
-            input.setNodes((current) => current.map((item) => item.id === node.id ? {
-                ...item,
-                metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: "深度任务未成功提交，请重新生成" },
-            } : item));
-            continue;
-        }
         const observer = new AbortController();
         input.observers.add(observer);
         const onAbort = () => observer.abort();
@@ -142,7 +158,7 @@ export function recoverOwnedDepthCaptureNodes(input: {
             session,
             persist: input.persist,
             setNodes: input.setNodes,
-            nodeStillMounted: input.nodeStillMounted,
+            getLiveNode: input.getLiveNode,
         }).finally(() => {
             input.signal.removeEventListener("abort", onAbort);
             input.observers.delete(observer);

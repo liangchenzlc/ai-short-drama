@@ -9,8 +9,9 @@ let input = "";
 for await (const chunk of process.stdin) input += chunk;
 const config = JSON.parse(input);
 const origin = "http://127.0.0.1:4194";
-const output = resolve(".runtime/video-protocols-python-browser", config.mode);
+const output = config.outputDir || resolve(".runtime/video-protocols-python-browser", config.mode);
 const report = { source_saved_before_admission: false, original_https_dialog: false, same_operation_after_replacement: false, same_task_after_refresh: false, source_bind_applied: false, source_play_clicked: false, real_video_decoded: false, fresh_browser_preserved: false, unknown_retry_unavailable: false, task_posts: [], admission_errors: [], page_errors: [], failed_routes: [] };
+const failureReads = [];
 await mkdir(output, { recursive: true });
 const server = await createServer({ server: { host: "127.0.0.1", port: 4194, strictPort: true, proxy: { "/api": { target: config.apiUrl, changeOrigin: true } } }, logLevel: "silent" });
 await server.listen();
@@ -34,7 +35,14 @@ function observe(context) {
         report.task_posts.push({ operation_key: body.input.metadata.clientOperationId, source_node: body.input.metadata.sourceNodeId, target_node: body.input.metadata.nodeId, operation: body.operation, config: body.input.config, capability_options: body.input.capabilityOptions, saved_references: (body.input.referenceImages || []).map(item => ({ storage_key: item.storageKey || "", url: item.url || "" })) });
     });
     context.on("response", response => {
-        if (response.status() >= 400 && new URL(response.url()).pathname.startsWith("/api/")) report.failed_routes.push({ path: new URL(response.url()).pathname, status: response.status() });
+        const target = new URL(response.url());
+        if (response.status() < 400 || !target.pathname.startsWith("/api/")) return;
+        const failure = { path: target.pathname, query: target.search, method: response.request().method(), status: response.status() };
+        report.failed_routes.push(failure);
+        failureReads.push(response.json().then(body => {
+            failure.code = body.error?.code;
+            failure.message = body.error?.message;
+        }).catch(error => { failure.response_read_error = error.name; }));
     });
 }
 async function currentTask(context, taskId, predicate) {
@@ -68,10 +76,15 @@ async function inspectVideo(page, node) {
     assert.equal(measured.width, 160);
     assert.equal(measured.height, 90);
     assert.ok(measured.duration >= 0.9 && measured.duration <= 1.5);
+    await page.waitForFunction(nodeId => {
+        const video = document.querySelector(`[data-node-id="${nodeId}"] video`);
+        const indicator = document.querySelector(`[data-node-id="${nodeId}"] .vds-buffering-spinner`);
+        return video && video.currentTime > 0 && indicator && Number(getComputedStyle(indicator).opacity) === 0;
+    }, await node.getAttribute("data-node-id"));
 }
 try {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "no-preference" });
+    let context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "no-preference" });
     context.setDefaultTimeout(30000);
     context.setDefaultNavigationTimeout(60000);
     observe(context);
@@ -118,6 +131,7 @@ try {
         report.same_operation_after_replacement = true;
     }
     const task = await read(admittedResponse);
+    report.task_id = task.id;
     assert.match(task.id, /^\d+$/);
     assert.equal(task.clientContext.sourceNodeId, "runtime-node");
     const savedBefore = await read(await context.request.get(`${path}/my-document`));
@@ -125,6 +139,7 @@ try {
     assert.equal(JSON.parse(task.inputJson).prompt, typed);
     report.source_saved_before_admission = true;
     const nodeId = task.clientContext.nodeId;
+    report.node_id = nodeId;
     if (config.mode === "unknown") {
         const failed = await currentTask(context, task.id, task => task.status === "failed");
         assert.equal(failed.canRetry, false);
@@ -140,15 +155,32 @@ try {
         assert.equal(report.task_posts.length, 1);
         report.same_task_after_refresh = true;
     } else {
-        const recovered = page.waitForResponse(async response => {
-            const target = new URL(response.url());
-            if (response.request().method() !== "GET" || !target.pathname.startsWith("/api/v1/canvas-runtime/tasks") || target.pathname.endsWith("/logs") || !response.ok()) return false;
-            const data = await response.json().catch(() => undefined);
-            return Array.isArray(data) ? data.some(item => item.id === task.id) : data?.id === task.id;
-        });
-        await page.reload();
+        if (config.mode === "declarative") {
+            await currentTask(context, task.id, current => current.status === "running");
+            const cookies = await context.cookies();
+            await context.close();
+            context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "no-preference", storageState: { cookies, origins: [] } });
+            context.setDefaultTimeout(30000);
+            context.setDefaultNavigationTimeout(60000);
+            await context.setExtraHTTPHeaders({ Origin: origin, "X-CSRF-Token": cookies.find(cookie => cookie.name === "sd_csrf").value });
+            observe(context);
+            page = await context.newPage();
+            await page.goto(url);
+            const restored = await read(await context.request.get(`${origin}/api/v1/canvas-runtime/tasks/${task.id}`));
+            assert.equal(restored.id, task.id);
+            report.closed_owner_before_completion = true;
+        } else {
+            const recovered = page.waitForResponse(async response => {
+                const target = new URL(response.url());
+                if (response.request().method() !== "GET" || !target.pathname.startsWith("/api/v1/canvas-runtime/tasks") || target.pathname.endsWith("/logs") || !response.ok()) return false;
+                const data = await response.json().catch(() => undefined);
+                return Array.isArray(data) ? data.some(item => item.id === task.id) : data?.id === task.id;
+            });
+            await page.reload();
+            await page.locator(`[data-node-id="${nodeId}"]`).waitFor({ state: "visible" });
+            await recovered;
+        }
         await page.locator(`[data-node-id="${nodeId}"]`).waitFor({ state: "visible" });
-        await recovered;
         report.same_task_after_refresh = true;
         const boundResponse = page.waitForResponse(response => new URL(response.url()).pathname === "/api/v1/canvas-runtime/ops/canvas.task.bind" && response.request().method() === "POST" && response.ok());
         await writeFile(config.releasePath, "Original task observed after browser refresh.\n");
@@ -168,7 +200,7 @@ try {
         const persisted = savedAfter.source_document.nodes.find(node => node.id === nodeId);
         assert.equal(persisted.metadata.storageKey, media.storageKey);
         const originalImage = savedAfter.source_document.nodes.find(node => node.id === "browser-saved-reference");
-        assert.equal(originalImage.metadata.storageKey, config.referenceKey);
+        if (config.referenceKey) assert.equal(originalImage.metadata.storageKey, config.referenceKey);
     }
     const fresh = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "no-preference", storageState: { cookies: await context.cookies(), origins: [] } });
     fresh.setDefaultTimeout(30000);
@@ -179,20 +211,26 @@ try {
     const freshNode = page.locator(`[data-node-id="${nodeId}"]`);
     await freshNode.waitFor({ state: "visible" });
     if (config.mode === "unknown") {
+        const closeAssistant = page.getByRole("button", { name: "关闭助手", exact: true });
+        if (await closeAssistant.isVisible()) await closeAssistant.click();
+        await page.getByRole("button", { name: "适合屏幕", exact: true }).click();
         await freshNode.locator(".canvas-node-error-content").waitFor({ state: "visible" });
         assert.equal(await freshNode.getByRole("button", { name: /^重新生成/ }).count(), 0);
     } else await inspectVideo(page, freshNode);
     const finalTasks = await read(await fresh.request.get(`${origin}/api/v1/canvas-runtime/tasks?projectId=${config.sourceKey}`));
     assert.deepEqual(finalTasks.map(item => item.id), [task.id]);
-    assert.equal(report.task_posts.length, config.mode === "unknown" ? 1 : 2);
+    assert.equal(report.task_posts.length, config.mode === "https-replacement" ? 2 : 1);
     report.fresh_browser_preserved = true;
+    await Promise.all(failureReads);
     assert.deepEqual(report.page_errors, []);
     assert.ok(report.failed_routes.every(item => item.path.startsWith("/api/v1/canvas-runtime/assistant/") || (item.path === "/api/v1/canvas-runtime/tasks" && item.status === 422)));
+    await page.screenshot({ path: resolve(output, "video-final-fresh.png") });
 } catch (error) {
     report.failure_stack = (error.stack || error.message || String(error)).split("\n").filter((line, index) => index === 0 || /^\s*at\s/.test(line)).slice(0, 12).join("\n");
     if (page) await page.screenshot({ path: resolve(output, "failure.png") }).catch(() => {});
     throw error;
 } finally {
+    await Promise.all(failureReads);
     await writeFile(resolve(output, "report.json"), JSON.stringify(report, null, 2) + "\n");
     await browser?.close();
     await server.close();

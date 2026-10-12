@@ -436,12 +436,13 @@ export function getGenerationCount(count: string) {
     return Math.max(1, Math.min(15, Math.floor(Math.abs(Number(count)) || 1)));
 }
 
-export function generationWorkflowMetadata(config: AiConfig): Pick<CanvasNodeMetadata, "workflowProvider" | "runningHubWorkflowId" | "runningHubWorkflowKind"> {
+export function generationWorkflowMetadata(config: AiConfig): Pick<CanvasNodeMetadata, "workflowProvider" | "runningHubWorkflowId" | "runningHubWorkflowKind" | "runningHubModelId"> {
     const provider = config.taskWorkflowProvider || "model";
     return {
         workflowProvider: provider,
         runningHubWorkflowId: provider === "runninghub" ? config.runningHub.workflowId : undefined,
         runningHubWorkflowKind: provider === "runninghub" ? config.runningHub.selectedKind : undefined,
+        runningHubModelId: provider === "runninghub" ? config.runningHub.selectedLogicalModelId : undefined,
     };
 }
 
@@ -456,7 +457,8 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
     const workflowParameters = node?.metadata?.workflowParameters || {};
     const runningHubWorkflowId = node?.metadata?.runningHubWorkflowId?.trim() || config.runningHub.workflowId.trim();
     const selectedRunningHubWorkflow = workflowProvider === "runninghub"
-        ? config.runningHub.workflows.find((item) => item.workflowId.trim() === runningHubWorkflowId && (!node?.metadata?.runningHubWorkflowKind || (item.kind === "app" ? "app" : "workflow") === node.metadata.runningHubWorkflowKind))
+        ? config.runningHub.workflows.find((item) => item.workflowId.trim() === runningHubWorkflowId && (!node?.metadata?.runningHubWorkflowKind || (item.kind === "app" ? "app" : "workflow") === node.metadata.runningHubWorkflowKind)
+            && (!node?.metadata?.runningHubModelId ? item.capability === mode : item.logicalModelId === node.metadata.runningHubModelId))
         : undefined;
     const selectedWorkflowFields = workflowProvider === "runninghub"
         ? selectedRunningHubWorkflow?.fields?.length ? selectedRunningHubWorkflow.fields : workflowVideoFieldsFromJson(selectedRunningHubWorkflow?.workflowJson)
@@ -531,7 +533,7 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
         : {};
     const modeCapability = mode === "video" || mode === "audio" ? mode : "image";
     const runningHubCapability = normalizeRunningHubCapability(selectedRunningHubWorkflow?.capability, normalizeRunningHubCapability(config.runningHub.capability));
-    const runningHub = { ...config.runningHub, enabled: workflowProvider === "runninghub" && config.runningHub.enabled, selectedKind: selectedRunningHubWorkflow?.kind === "app" ? "app" as const : "workflow" as const, workflowId: runningHubWorkflowId, capability: runningHubCapability, workflows: workflowProvider === "runninghub" ? config.runningHub.workflows.map((item) => item.workflowId.trim() === runningHubWorkflowId && (!node?.metadata?.runningHubWorkflowKind || (item.kind === "app" ? "app" : "workflow") === node.metadata.runningHubWorkflowKind) ? { ...item, fields: applyWorkflowParameterValues(item.fields?.length ? item.fields : workflowVideoFieldsFromJson(item.workflowJson) as WorkflowFieldMapping[], workflowParameters) } : item) : config.runningHub.workflows };
+    const runningHub = { ...config.runningHub, enabled: workflowProvider === "runninghub" && config.runningHub.enabled, selectedKind: selectedRunningHubWorkflow?.kind === "app" ? "app" as const : "workflow" as const, workflowId: runningHubWorkflowId, capability: runningHubCapability, selectedLogicalModelId: selectedRunningHubWorkflow?.logicalModelId || node?.metadata?.runningHubModelId, parameters: workflowParameters, workflows: workflowProvider === "runninghub" ? config.runningHub.workflows.map((item) => item === selectedRunningHubWorkflow ? { ...item, fields: applyWorkflowParameterValues(item.fields?.length ? item.fields : workflowVideoFieldsFromJson(item.workflowJson) as WorkflowFieldMapping[], workflowParameters) } : item) : config.runningHub.workflows };
     return {
         ...requestedConfig,
         taskWorkflowProvider: workflowProvider,

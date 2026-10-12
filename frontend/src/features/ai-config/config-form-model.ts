@@ -1,7 +1,7 @@
-import type { AiModelConfigCreateDto, AiRuntimeProfileDto, ConfigJson, ConfigJsonObject } from '../../api/types/ai-model-configs';
+import type { AiModelConfigCreateDto, AiRuntimeProfileDto, ConfigJson, ConfigJsonObject, RunningHubFieldDto } from '../../api/types/ai-model-configs';
 import type { AiConfig, ConfigDraft, RuntimeDraft, ServiceType } from './config-model';
 
-const secretFields = new Set(['apikey', 'secretkey', 'authorization', 'cookie', 'password', 'token']);
+const secretFields = new Set(['apikey', 'secretkey', 'authorization', 'cookie', 'password', 'token', 'runninghubuploadapikey', 'runninghubwalletapikey']);
 const blockedHeaders = new Set(['authorization', 'proxy-authorization', 'proxy-authenticate', 'cookie', 'set-cookie', 'host', 'content-length', 'content-type', 'accept', 'connection', 'proxy-connection', 'keep-alive', 'transfer-encoding', 'te', 'trailer', 'upgrade', 'forwarded', 'x-goog-api-key']);
 const jsonText = (value: ConfigJson | undefined) => value == null ? '' : JSON.stringify(value, null, 2);
 
@@ -10,7 +10,12 @@ export function runtimeDraft(profile: AiRuntimeProfileDto | null | undefined): R
     referenceAssetOrigin: profile?.reference_asset_origin ?? '', capabilityConfig: jsonText(profile?.capability_config),
     defaultOptions: jsonText(profile?.default_options), logicalCapabilitySpec: jsonText(profile?.logical_capability_spec),
     logicalCapabilityProfiles: jsonText(profile?.logical_capability_profiles), videoCapabilitiesVersion: profile?.video_capabilities_version ?? '',
-    concurrencyLimit: profile?.concurrency_limit == null ? '' : String(profile.concurrency_limit) };
+    concurrencyLimit: profile?.concurrency_limit == null ? '' : String(profile.concurrency_limit),
+    runningHubKind: profile?.runninghub_workflow?.kind ?? 'workflow',
+    runningHubId: profile?.runninghub_workflow?.kind === 'app' ? profile.runninghub_workflow.webapp_id : profile?.runninghub_workflow?.workflow_id ?? '',
+    runningHubTitle: profile?.runninghub_workflow?.title ?? '',
+    runningHubFields: jsonText(profile?.runninghub_workflow?.fields),
+    runningHubJson: jsonText(profile?.runninghub_workflow?.workflow_json) };
 }
 
 export function createConfigDraft(existing: AiConfig | null, serviceType: ServiceType): ConfigDraft {
@@ -62,12 +67,21 @@ export function parseRuntimeDraft(draft: RuntimeDraft): AiRuntimeProfileDto | nu
   const defaults = parseJson(draft.defaultOptions, '默认参数') as ConfigJsonObject | undefined;
   const spec = parseJson(draft.logicalCapabilitySpec, '逻辑能力规范') as ConfigJsonObject | undefined;
   const profiles = parseJson(draft.logicalCapabilityProfiles, '逻辑能力配置集', true) as ConfigJsonObject[] | undefined;
+  const runningHub = /^runninghub-workflow-(image|video|audio)$/.test(draft.protocol.trim());
+  const workflow = runningHub ? {
+    kind: draft.runningHubKind,
+    workflow_id: draft.runningHubKind === 'app' ? '' : draft.runningHubId.trim(),
+    webapp_id: draft.runningHubKind === 'app' ? draft.runningHubId.trim() : '',
+    title: draft.runningHubTitle.trim(),
+    fields: (parseJson(draft.runningHubFields, '工作流字段映射', true) ?? []) as RunningHubFieldDto[],
+    workflow_json: (parseJson(draft.runningHubJson, '工作流结构') ?? {}) as ConfigJsonObject,
+  } : undefined;
   return { version: 1, api_format: draft.apiFormat, protocol: draft.protocol.trim(),
     ...(origin ? { reference_asset_origin: origin } : {}), ...(capability ? { capability_config: capability } : {}),
     ...(defaults ? { default_options: defaults } : {}), ...(spec ? { logical_capability_spec: spec } : {}),
     ...(profiles ? { logical_capability_profiles: profiles } : {}),
     ...(draft.videoCapabilitiesVersion.trim() ? { video_capabilities_version: draft.videoCapabilitiesVersion.trim() } : {}),
-    ...(limit ? { concurrency_limit: Number(limit) } : {}) };
+    ...(limit ? { concurrency_limit: Number(limit) } : {}), ...(workflow ? { runninghub_workflow: workflow } : {}) };
 }
 
 export function serializeConfigDraft(draft: ConfigDraft): Omit<AiModelConfigCreateDto, 'service_type'> {

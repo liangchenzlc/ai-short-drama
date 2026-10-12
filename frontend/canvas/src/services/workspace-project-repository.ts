@@ -3,6 +3,8 @@ import { createLocalCanvasProject, deleteLocalCanvasProjects } from "@/services/
 import { createCanvasProjectWithRemoteSync, deleteCanvasProjectsWithRemoteSync } from "@/services/local-workspace-sync";
 import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
 
+import type { CanvasSourceOrigin } from "@/services/canvas-initial-write";
+
 type InitialCanvasContent = Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId">>;
 
 /**
@@ -10,9 +12,9 @@ type InitialCanvasContent = Partial<Pick<CanvasProject, "nodes" | "connections" 
  * Local mode writes only to the local repository; hosted mode keeps the
  * existing remote-sync implementation and its retry semantics.
  */
-export async function createWorkspaceCanvasProject(title: string, projectId?: string, initialContent?: InitialCanvasContent, workspaceProjectId?: string) {
+export async function createWorkspaceCanvasProject(title: string, projectId?: string, initialContent?: InitialCanvasContent, workspaceProjectId?: string, sourceCanvas?: CanvasSourceOrigin) {
     if (isLocalWorkspaceMode()) {
-        const local = await createLocalCanvasProject(title, projectId, initialContent, workspaceProjectId);
+        const local = await createLocalCanvasProject(title, projectId, initialContent, workspaceProjectId, sourceCanvas);
         return { ...local, syncError: undefined as undefined };
     }
     const created = await createCanvasProjectWithRemoteSync(title, projectId, initialContent);

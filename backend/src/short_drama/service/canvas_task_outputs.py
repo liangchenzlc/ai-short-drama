@@ -5,6 +5,8 @@ from hashlib import sha256
 
 from pydantic import ValidationError
 
+from short_drama.ai.canvas_runninghub_adapters import RUNNINGHUB_ADAPTERS
+from short_drama.ai.canvas_runninghub_workflow import RUNNINGHUB_WORKFLOW
 from short_drama.core.exceptions import WorkflowError
 from short_drama.dao.canvas_library_dao import CanvasLibraryDAO
 from short_drama.domain import CanvasLibraryAsset, CanvasLibraryAssetReference, CanvasResult
@@ -22,6 +24,28 @@ def generated_asset_id(task_id: str | int, index: int) -> str:
     return "generation_" + sha256(materialize_effect_key(task_id, index).encode()).hexdigest()
 
 
+def delivery_indices(service, task, record) -> list[int]:
+    if task.service_type == "text":
+        return [0] if (record.text_content or "").strip() else []
+    rows = service.tasks.outputs(record.id)
+    if record.adapter == RUNNINGHUB_WORKFLOW:
+        return [rows[0][0].output_index - 1] if rows else []
+    if record.adapter not in RUNNINGHUB_ADAPTERS:
+        return [asset.output_index - 1 for asset, _media in rows]
+    last = {
+        kind: max(
+            (asset.output_index for asset, _media in rows if asset.media_type == kind),
+            default=None,
+        )
+        for kind in ("video", "audio")
+    }
+    return [
+        asset.output_index - 1
+        for asset, _media in rows
+        if asset.media_type == "image" or asset.output_index == last.get(asset.media_type)
+    ]
+
+
 def durable_output(
     service, canvas, task, record, index: int, *, binding=None
 ) -> tuple[str, dict, int | None]:
@@ -31,12 +55,31 @@ def durable_output(
         content = (record.text_content or "").strip()
         if not content:
             raise WorkflowError("output_not_ready", "文本任务还没有可绑定的结果", 409)
+        request = getattr(record, "request_data", {}).get("canvas_request", {})
+        if request.get("operation") == "storyboard":
+            from .canvas_storyboard import canvas_storyboard_result
+
+            structured = canvas_storyboard_result(content, request, str(task.id))
+            return (
+                "text",
+                {
+                    "content": content,
+                    "storyboard": {"rows": structured["rows"]},
+                    "storyboardTitle": structured["title"],
+                },
+                None,
+            )
         return "text", {"content": content}, None
+    if record.adapter in {
+        *RUNNINGHUB_ADAPTERS,
+        RUNNINGHUB_WORKFLOW,
+    } and index not in delivery_indices(service, task, record):
+        raise WorkflowError("output_not_available", "此产物不在 RunningHub 最终交付结果中", 422)
     output = service.tasks.output(record.id, index)
     if output is None:
         raise WorkflowError("output_not_ready", "任务产物尚未归档，不能绑定到画布", 409)
     asset, media = output
-    kind = task.service_type
+    kind = asset.media_type if record.adapter in RUNNINGHUB_ADAPTERS else task.service_type
     if (
         asset.media_type != kind
         or media.project_id != canvas.project_id
@@ -157,6 +200,17 @@ def generation_metadata(
     metadata: dict, result: CanvasResult, task_id: str, effect_key: str
 ) -> dict:
     value = deepcopy(metadata)
+    if "storyboard" in result.content_json:
+        from .canvas_storyboard import CINEMATIC_COLUMNS
+
+        original = value.get("storyboard") or {}
+        value["storyboard"] = {
+            "rows": deepcopy(result.content_json["storyboard"]["rows"]),
+            "visibleColumns": list(
+                dict.fromkeys(CINEMATIC_COLUMNS + (original.get("visibleColumns") or []))
+            ),
+            "referenceNodeIds": deepcopy(original.get("referenceNodeIds") or []),
+        }
     for key, item in result.content_json.items():
         if key == "resourceId":
             continue

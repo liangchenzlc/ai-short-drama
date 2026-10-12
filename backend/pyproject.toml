@@ -19,6 +19,7 @@ dependencies = [
   "celery>=5.4,<6",
   "pillow>=11,<13",
   "python-multipart>=0.0.20,<1",
+  "jsonschema>=4.25,<5",
 ]
 
 [dependency-groups]
@@ -33,7 +34,7 @@ packages = ["src/short_drama"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 markers = [
   "integration: requires an explicitly configured MySQL test database",
   "storage_integration: opt-in MinIO cloud object roundtrip and cleanup",

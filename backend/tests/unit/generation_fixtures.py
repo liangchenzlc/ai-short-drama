@@ -30,6 +30,8 @@ def generation_session():
             ),
         )
         db.create_function("JSON_LENGTH", 1, lambda value: len(json.loads(value)))
+        # SQLite JSON_EXTRACT 已将字符串标量解码；只适配该原生返回值。
+        db.create_function("JSON_UNQUOTE", 1, lambda value: value)
 
     event.listen(engine, "connect", sqlite_functions)
     metadata = MetaData()

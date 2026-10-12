@@ -9,6 +9,7 @@ from typing import Any
 
 from PIL import Image
 
+from .canvas_agnes_adapters import AGNES_IMAGE
 from .types import GenerationError
 
 # 固定源默认每图 30 MiB、16 张；总量暂沿用宿主的 100 MiB 内存预算。
@@ -30,9 +31,10 @@ def is_canvas_image_request(snapshot: dict, request: dict) -> bool:
 
 
 def uses_canvas_inline_images(snapshot: dict, request: dict, adapter: str) -> bool:
-    """只接入源支持内联的 Ark/Qwen；Wanx 仍要求公网 URL。"""
+    """Ark/Qwen 与已明确保存的 Agnes 图片内联；Wanx 仍要求公网 URL。"""
     return is_canvas_image_request(snapshot, request) and (
         adapter == "ark_images.v1"
+        or (adapter == "openai_images.v1" and snapshot.get("model_key") == AGNES_IMAGE)
         or (
             adapter == "dashscope_images.v1"
             and snapshot.get("model_key", "").startswith(("qwen-image", "wan2.6", "wan2.7"))
@@ -126,6 +128,8 @@ def inline_saved_image_references(
         raise GenerationError("timeout")
     if adapter == "ark_images.v1":
         body["image"] = values[0] if len(values) == 1 else values
+    elif adapter == "openai_images.v1" and body.get("model") == AGNES_IMAGE:
+        body["extra_body"]["image"] = values
     else:
         content = body["input"]["messages"][0]["content"]
         images = [item for item in content if "image" in item]

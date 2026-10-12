@@ -108,7 +108,7 @@ export type VoiceProfile = {
 
 export type CharacterCardSummary = {
     versionId: string;
-    version: number;
+    version: number | string;
     definition: Record<string, unknown>;
     representations: CharacterRepresentation[];
     voice?: { profile: VoiceProfile; instructions: string };

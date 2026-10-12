@@ -1,4 +1,3 @@
-import type { ProjectUnit } from "@/services/api/projects";
 import type { CanvasNodeData } from "@/types/canvas";
 
 export type CanvasContextSummary = {
@@ -8,7 +7,7 @@ export type CanvasContextSummary = {
     shotLabel: string;
 };
 
-export function summarizeCanvasContext(nodes: CanvasNodeData[], selectedNodeIds: Set<string>, units: ProjectUnit[] = []): CanvasContextSummary {
+export function summarizeCanvasContext(nodes: CanvasNodeData[], selectedNodeIds: Set<string>, units: Array<{ id: string; title: string }> = []): CanvasContextSummary {
     const selectedNodes = nodes.filter((node) => selectedNodeIds.has(node.id));
     const unitTitleById = new Map(units.map((unit) => [unit.id, unit.title]));
     const chapterTitles = unique(selectedNodes.flatMap((node) => {

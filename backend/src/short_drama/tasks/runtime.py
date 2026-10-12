@@ -9,6 +9,8 @@ from short_drama.core.config import Settings
 from short_drama.core.logging import configure_logging
 from short_drama.db.session import build_engine, session_factory
 from short_drama.service.generation_batch_service import dispatch_batches
+from short_drama.tasks.canvas_local import CanvasLocalPublisher
+from short_drama.tasks.canvas_render import CanvasRenderPublisher
 from short_drama.tasks.publisher import Publisher
 from short_drama.tasks.recovery import purge_credentials, recover
 from short_drama.tasks.render import RenderPublisher, cleanup_render_scratch
@@ -29,11 +31,18 @@ def main():
     with engine.connect() as connection:
         agent_schema_available = inspect_agent_schema(connection)["status"] == "ready"
         canvas_cleanup_available = inspect(connection).has_table("canvas_resource_deletions")
+        canvas_generation_cleanup_available = inspect(connection).has_table(
+            "canvas_generation_media_deletions"
+        )
         canvas_text_available = inspect(connection).has_table("canvas_task_text_deltas")
         canvas_beefapi_available = inspect(connection).has_table("canvas_beefapi_connections")
+        canvas_render_available = inspect(connection).has_table("canvas_render_jobs")
+        canvas_local_available = inspect(connection).has_table("canvas_local_jobs")
     factory = session_factory(engine)
     publisher = Publisher(factory, settings)
     renders = RenderPublisher(factory, settings)
+    canvas_renders = CanvasRenderPublisher(factory, settings) if canvas_render_available else None
+    canvas_locals = CanvasLocalPublisher(factory, settings) if canvas_local_available else None
     if settings.agent_enabled:
         from short_drama.agent.publisher import AgentPublisher
         from short_drama.agent.recovery import recover as recover_agent
@@ -58,14 +67,35 @@ def main():
                         "Canvas BeefAPI recovery unavailable: error=%s", type(error).__name__
                     )
             if canvas_cleanup_available and time.monotonic() >= next_canvas_cleanup:
+                from short_drama.service.canvas_recycle_cleanup import cleanup_canvas_recycle
                 from short_drama.service.canvas_resource_cleanup import cleanup_canvas_resources
 
+                try:
+                    cleanup_canvas_recycle(factory, settings, apply=True)
+                except Exception as error:
+                    log.warning(
+                        "Canvas recycle cleanup unavailable: error=%s", type(error).__name__
+                    )
                 try:
                     cleanup_canvas_resources(factory, storage, settings, apply=True)
                 except Exception as error:
                     log.warning(
                         "Canvas resource cleanup unavailable: error=%s", type(error).__name__
                     )
+                if canvas_generation_cleanup_available:
+                    from short_drama.service.canvas_generation_media_cleanup import (
+                        cleanup_canvas_generation_media,
+                        retire_canvas_generation_media,
+                    )
+
+                    try:
+                        retire_canvas_generation_media(factory, settings, apply=True)
+                        cleanup_canvas_generation_media(factory, storage, settings, apply=True)
+                    except Exception as error:
+                        log.warning(
+                            "Canvas generation media cleanup unavailable: error=%s",
+                            type(error).__name__,
+                        )
                 next_canvas_cleanup = time.monotonic() + 10
             try:
                 from short_drama.tasks.email import deliver_one
@@ -111,6 +141,14 @@ def main():
                 for _ in range(10):
                     if not renders.tick():
                         break
+                if canvas_renders is not None:
+                    for _ in range(10):
+                        if not canvas_renders.tick():
+                            break
+                if canvas_locals is not None:
+                    for _ in range(10):
+                        if not canvas_locals.tick():
+                            break
                 if settings.agent_enabled:
                     for _ in range(50):
                         if not agents.tick():

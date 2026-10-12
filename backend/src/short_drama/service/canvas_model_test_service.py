@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from short_drama.ai import GenerationError, select_adapter
 from short_drama.ai.adapters import ADAPTER_TYPES
+from short_drama.ai.canvas_runninghub_adapters import RUNNINGHUB_ADAPTERS
 from short_drama.ai.model_identity import model_credential_identity
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import (
@@ -208,6 +209,9 @@ class CanvasModelTestService(BaseService):
             "apiFormat": runtime.get("api_format", "openai"),
         }
         test = self.catalog._update_model(channel, profile, secret, None)
+        if adapter in RUNNINGHUB_ADAPTERS:
+            test.runtime_profile = deepcopy(saved.runtime_profile)
+            refresh_runtime_model(test, channel_key)
         self.session.flush()
         return test, adapter, secret
 
@@ -253,6 +257,11 @@ class CanvasModelTestService(BaseService):
                     "channel_key": payload.channel.source_key,
                 }
                 prepared["canvas_request"] = canvas_request.model_dump(mode="json", by_alias=True)
+                if adapter in RUNNINGHUB_ADAPTERS:
+                    from .canvas_runninghub_admission import freeze_runninghub_request
+
+                    freeze_runninghub_request(self.generation, prepared, config, secret, None)
+                    return prepared
                 parameters = frozen_canvas_parameters(canvas_request, adapter)
                 if parameters is not None:
                     prepared["canvas_parameters"] = parameters
@@ -291,6 +300,7 @@ class CanvasModelTestService(BaseService):
             else:
                 rows = self.tests.media([record.id for record in records])
                 media = []
+                grouped = {"image": [], "video": [], "audio": []}
                 for asset, file in rows:
                     item = {
                         "outputIndex": asset.output_index,
@@ -308,7 +318,17 @@ class CanvasModelTestService(BaseService):
                         if value is not None:
                             item[name] = value
                     media.append(item)
-                if task.service_type == "image":
+                    grouped[asset.media_type].append(item)
+                if records[-1].adapter in RUNNINGHUB_ADAPTERS:
+                    for kind, items in grouped.items():
+                        if items:
+                            result["images" if kind == "image" else kind] = (
+                                items if kind == "image" else items[-1]
+                            )
+                    result["mode"] = (
+                        "audio" if grouped["audio"] else "video" if grouped["video"] else "image"
+                    )
+                elif task.service_type == "image":
                     result["images"] = media
                 elif media:
                     result[task.service_type] = media[0]
@@ -367,17 +387,23 @@ class CanvasModelTestService(BaseService):
             if task.service_type == "text":
                 value["textDraft"] = result["text"]
             else:
-                media = (
-                    result.get("images", [])
-                    if task.service_type == "image"
-                    else [result[task.service_type]]
-                )
-                value["outputs"] = [
-                    {"outputIndex": item["outputIndex"], "mediaType": task.service_type}
-                    for item in media
+                media = [
+                    (kind, item)
+                    for kind in ("image", "video", "audio")
+                    for item in (
+                        result.get("images", [])
+                        if kind == "image"
+                        else [result[kind]]
+                        if kind in result
+                        else []
+                    )
                 ]
-                if media and task.service_type in {"image", "video"}:
-                    value.update(previewUrl=media[0]["url"], previewKind=task.service_type)
+                value["outputs"] = [
+                    {"outputIndex": item["outputIndex"], "mediaType": kind} for kind, item in media
+                ]
+                if media and result["mode"] in {"image", "video"}:
+                    preview = next(item for kind, item in media if kind == result["mode"])
+                    value.update(previewUrl=preview["url"], previewKind=result["mode"])
         return value
 
     def detail(self, identifier: int) -> dict:

@@ -92,6 +92,7 @@ class SafeTransport:
         on_chunk=None,
         on_send=None,
         read_error_body=False,
+        read_server_error_body=False,
     ):
         url = validated_url(url, query=query)
         parts = urlsplit(url)
@@ -187,9 +188,13 @@ class SafeTransport:
                 response_headers = dict(response.headers)
                 if on_headers is not None:
                     on_headers(response.status, response_headers)
-                # Agent may classify bounded 4xx details internally; other callers
-                # continue to discard untrusted error bodies entirely.
-                error_body = read_error_body and 400 <= response.status < 500
+                # 仅显式协议可内部分类受限错误体，正文不进入日志或公开错误。
+                error_body = (
+                    read_error_body
+                    and 400 <= response.status < 500
+                    or read_server_error_body
+                    and 500 <= response.status < 600
+                )
                 if (response.status < 200 or response.status >= 300) and not error_body:
                     return response.status, response_headers, b""
                 response_limit = min(max_bytes, 65536) if error_body else max_bytes

@@ -134,8 +134,8 @@ export function CanvasPromptOptimizerDrawer({ open, children, prompt, generation
     const imageContext = useMemo(
         () =>
             optimizationReferences
-                .filter((reference) => (reference.kind === "image" || reference.kind === "character") && reference.previewUrl && /^(data:|https?:\/\/)/i.test(reference.previewUrl))
-                .map((reference) => ({ title: reference.title || reference.label, url: reference.previewUrl! })),
+                .filter((reference) => reference.kind === "image" || reference.kind === "character")
+                .map((reference) => ({ title: reference.title || reference.label, url: reference.storageKey || reference.previewUrl || "" })),
         [optimizationReferences],
     );
 

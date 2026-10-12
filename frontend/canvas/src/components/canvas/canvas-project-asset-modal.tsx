@@ -7,17 +7,27 @@ import { compileCharacterReferencePrompt } from "@/lib/canvas/canvas-character-r
 import { ASSET_CATEGORY_LABELS, normalizeAssetCategory } from "@/lib/asset-category";
 import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
 import type { ProjectAsset, ProjectDetail } from "@/services/api/projects";
+import type { CanvasProjectCharacterCard } from "@/services/host-character-catalog";
 import { getWorkspaceAsset } from "@/services/api/workspace-data";
 import { usesWorkspaceAssetLibraryApi } from "@/services/workspace-asset-read";
 import { assertUserScope, type CapturedUserScope } from "@/lib/user-scope-guard";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 
 const categoryLabels: Record<string, string> = { all: "全部资产", ...ASSET_CATEGORY_LABELS };
-type ProjectPickerItem = { id: string; category: string; folderId?: string; project?: ProjectAsset; character?: ProjectAsset; media?: Asset };
+type ProjectPickerItem = { id: string; category: string; folderId?: string; project?: ProjectAsset; character?: Pick<ProjectAsset, "id" | "title" | "character">; media?: Asset };
 
 export function CanvasProjectAssetModal({
     open,
     detail,
+    sourceLinked = false,
+    sourceLoading,
+    sourceError,
+    onRetrySource,
+    characters,
+    characterLoading,
+    characterError,
+    onRetryCharacters,
+    readCharacter,
     initialCategory = "all",
     initialFolderId = "all",
     onClose,
@@ -26,6 +36,15 @@ export function CanvasProjectAssetModal({
 }: {
     open: boolean;
     detail?: ProjectDetail;
+    sourceLinked?: boolean;
+    sourceLoading?: boolean;
+    sourceError?: string;
+    onRetrySource?: () => void;
+    characters?: CanvasProjectCharacterCard[];
+    characterLoading?: boolean;
+    characterError?: string;
+    onRetryCharacters?: () => void;
+    readCharacter?: (assetId: string, expectedScope: CapturedUserScope) => Promise<CanvasProjectCharacterCard>;
     initialCategory?: string;
     initialFolderId?: string;
     onClose: () => void;
@@ -33,8 +52,10 @@ export function CanvasProjectAssetModal({
     onInsertFolder?: (folderId: string, expectedScope: CapturedUserScope) => Promise<void> | void;
 }) {
     const mediaAssets = useAssetStore((state) => state.assets);
-    const externalAssetSources = useExternalAssetSources(open);
+    const usesCharacterCatalog = characters !== undefined;
+    const externalAssetSources = useExternalAssetSources(open && !usesCharacterCatalog);
     const items = useMemo<ProjectPickerItem[]>(() => {
+        if (characters !== undefined) return characters.map(character => ({ id: character.id, category: "character", character }));
         const mediaById = new Map(mediaAssets.map((asset) => [asset.id, asset]));
         const projectItems = (detail?.assets || []).flatMap((asset): ProjectPickerItem[] => {
             if (asset.category === "character" && asset.character) return [{ id: asset.id, category: "character", folderId: asset.folderId, project: asset, character: asset }];
@@ -45,7 +66,7 @@ export function CanvasProjectAssetModal({
         if (detail) return projectItems;
         // 自由画布未关联项目时回退到个人素材库。
         return mediaAssets.filter((asset) => asset.kind !== "model" && asset.kind !== "entity" && asset.status !== "archived").map((media): ProjectPickerItem => ({ id: media.id, category: normalizeAssetCategory(media.category), media }));
-    }, [detail?.assets, mediaAssets]);
+    }, [characters, detail?.assets, mediaAssets]);
     const localPickerItems = useMemo<AssetLibraryPickerItem[]>(
         () =>
             items.map((item) => {
@@ -80,10 +101,13 @@ export function CanvasProjectAssetModal({
 
     return (
         <AssetLibraryPickerModal
-            remoteLibrary={!detail && usesWorkspaceAssetLibraryApi()}
+            remoteLibrary={!usesCharacterCatalog && !detail && usesWorkspaceAssetLibraryApi()}
             open={open}
             mediaKinds={["image", "video", "audio", "text"]}
             items={pickerItems}
+            loading={sourceLinked ? sourceLoading || characterLoading : usesCharacterCatalog && characterLoading}
+            error={sourceLinked ? sourceError || characterError : usesCharacterCatalog ? characterError : undefined}
+            onRetry={sourceLinked ? () => { onRetrySource?.(); onRetryCharacters?.(); } : usesCharacterCatalog ? onRetryCharacters : undefined}
             categoryLabels={{ ...categoryLabels, ...externalAssetSources.categoryLabels }}
             initialCategory={initialCategory}
             initialFolderId={initialFolderId}
@@ -92,10 +116,10 @@ export function CanvasProjectAssetModal({
             title="项目资产"
             confirmLabel={(count) => `引入已选资产${count ? `（${count}）` : ""}`}
             emptyTitle="此分类没有可引用资产"
-            emptyDescription={detail ? "先在项目角色与资产中完成角色确认或素材关联。" : "当前为自由画布，可先在素材库添加内容。"}
-            footerNote={externalAssetSources.error || "角色引用会在生成时解析当前角色版本"}
+            emptyDescription={usesCharacterCatalog ? "此项目暂无已采用角色。" : detail ? "先在项目角色与资产中完成角色确认或素材关联。" : "当前为自由画布，可先在素材库添加内容。"}
+            footerNote={sourceLinked ? "可引入已采用角色；来源素材目录、场景与道具等暂不可引入。角色生成时读取当前版本。" : externalAssetSources.error || "角色引用会在生成时解析当前角色版本"}
             onFolderAction={
-                onInsertFolder
+                !usesCharacterCatalog && onInsertFolder
                     ? async (folderId, expectedScope) => {
                           await onInsertFolder(folderId, expectedScope);
                           assertUserScope(expectedScope);
@@ -105,12 +129,14 @@ export function CanvasProjectAssetModal({
             }
             onClose={onClose}
             onConfirm={async (ids, expectedScope) => {
+                if (sourceLinked && sourceError) throw new Error(sourceError);
                 const payloads = await Promise.all(
                     ids.map(async (id) => {
                         const external = externalAssetSources.items.find((item) => item.id === id)?.external;
                         if (external) return externalAssetToInsertPayload(external);
                         const item = items.find((candidate) => candidate.id === id);
                         if (!item) throw new Error("所选资产已不存在，请重新选择");
+                        if (item.character && readCharacter && usesCharacterCatalog) return projectCharacterToInsertPayload(await readCharacter(item.id, expectedScope));
                         if (item.media || item.character || !item.project) return toInsertPayload(item);
                         const { asset } = await getWorkspaceAsset(item.project.id, undefined, { expectedScope });
                         return toInsertPayload({ ...item, media: asset });
@@ -179,7 +205,7 @@ function projectAssetMediaUrl(storageKey?: string, fallback = "") {
     return resourceId ? resourceFileUrl(resourceId) : fallback;
 }
 
-export function projectCharacterToInsertPayload(asset: ProjectAsset): InsertAssetPayload {
+export function projectCharacterToInsertPayload(asset: Pick<ProjectAsset, "id" | "title" | "character">): InsertAssetPayload {
     if (!asset.character) throw new Error("项目角色信息不完整");
     const card = asset.character;
     const definition = card.definition;

@@ -9,20 +9,32 @@ from .video_render import VideoRenderer, executable
 MAX_AUDIO_BYTES = 100 * 1024**2
 
 
-def inspect_audio(path, settings):
+def inspect_audio(path, settings, *, canvas_formats=False):
     path = Path(path)
     if not 0 < path.stat().st_size <= MAX_AUDIO_BYTES:
         raise ValueError("音频须小于 100 MiB 且不能为空")
     with path.open("rb") as stream:
-        head = stream.read(16)
+        head = stream.read(64)
     if head.startswith(b"RIFF") and head[8:12] == b"WAVE":
         mime, ext = "audio/wav", "wav"
+    elif canvas_formats and head.startswith(b"fLaC"):
+        mime, ext = "audio/flac", "flac"
+    elif canvas_formats and head.startswith(b"OggS"):
+        mime, ext = ("audio/opus", "opus") if b"OpusHead" in head else ("audio/ogg", "ogg")
+    elif canvas_formats and (
+        head.startswith(b"ADIF") or (len(head) >= 2 and head[0] == 255 and head[1] & 246 == 240)
+    ):
+        mime, ext = "audio/aac", "aac"
     elif head.startswith(b"ID3") or (len(head) >= 2 and head[0] == 255 and head[1] & 224 == 224):
         mime, ext = "audio/mpeg", "mp3"
     elif head[4:8] == b"ftyp":
         mime, ext = "audio/mp4", "m4a"
     else:
-        raise ValueError("仅支持 MP3、WAV、M4A")
+        raise ValueError(
+            "画布生成音频仅支持 MP3、WAV、M4A、FLAC、Opus、AAC"
+            if canvas_formats
+            else "仅支持 MP3、WAV、M4A"
+        )
     # Decode, not just trust the filename/MIME/container header. Network protocols are disabled.
     result = subprocess.run(
         [

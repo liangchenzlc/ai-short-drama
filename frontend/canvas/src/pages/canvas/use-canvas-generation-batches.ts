@@ -8,7 +8,6 @@ import { shouldBlockAutomaticRetry } from "@/lib/generation-error";
 import { listGenerationTasks } from "@/services/api/task-center";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import { isLocalWorkspaceMode } from "@/services/workspace-mode";
 import type { CanvasGenerationBatch, CanvasGenerationBatchItem, CanvasGenerationBatchMode, CanvasNodeData } from "@/types/canvas";
 
 import type { CanvasNodeGenerationOptions } from "./use-canvas-generation-executor";
@@ -33,7 +32,6 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const activeTaskLimit = useUserStore((state) => state.runtimeLimits.activeTaskLimit);
-    const localMode = isLocalWorkspaceMode();
     const schedulingRef = useRef(false);
     const controllersRef = useRef(new Map<string, AbortController>());
 
@@ -155,7 +153,7 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
 
     // 仅查询当前画布的活跃任务来安排批次，跨画布并发仍由后端创建任务时原子校验。
     const scheduleWaitingItems = useCallback(async () => {
-        if (localMode || !projectLoaded || schedulingRef.current) return;
+        if (!projectLoaded || schedulingRef.current) return;
         schedulingRef.current = true;
         try {
             const currentNodes = nodesRef.current;
@@ -233,7 +231,7 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
         } finally {
             schedulingRef.current = false;
         }
-    }, [activeTaskLimit, effectiveConfig, handleGenerateNode, isAiConfigReady, localMode, nodesRef, projectId, projectLoaded, reconcileBatches, updateBatch]);
+    }, [activeTaskLimit, effectiveConfig, handleGenerateNode, isAiConfigReady, nodesRef, projectId, projectLoaded, reconcileBatches, updateBatch]);
 
     const retryFailedBatchItems = useCallback(
         (sourceNodeId: string, batchId: string, itemId?: string) => {

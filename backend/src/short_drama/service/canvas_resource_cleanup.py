@@ -5,7 +5,14 @@ from datetime import timedelta
 
 from sqlalchemy import or_, select
 
-from short_drama.domain import CanvasBinaryResource, CanvasResourceDeletion, MediaFile
+from short_drama.domain import (
+    CanvasBinaryResource,
+    CanvasCreationAttempt,
+    CanvasCreationResource,
+    CanvasResourceDeletion,
+    MediaFile,
+)
+from short_drama.domain.canvas import CanvasWriteReceipt
 from short_drama.storage.models import ObjectLocation
 
 from .base import utcnow
@@ -33,7 +40,47 @@ def _remove(session, job, storage, settings) -> bool:
         },
     )
     if location.object_name != f"canvas/resources/{job.resource_id}":
-        raise ValueError("Deletion object is outside its retired upload namespace")
+        raise ValueError("Deletion object is outside its retired canvas resource namespace")
+    if job.creation_resource_id is not None:
+        prepared = session.get(CanvasCreationResource, job.creation_resource_id)
+        disposal = session.get(CanvasWriteReceipt, job.disposal_receipt_id)
+        attempt = session.get(CanvasCreationAttempt, prepared.attempt_id) if prepared else None
+        if (
+            prepared is None
+            or disposal is None
+            or attempt is None
+            or prepared.user_id != job.user_id
+            or prepared.created_by != job.user_id
+            or prepared.target_resource_id != job.resource_id
+            or prepared.storage_locator != job.storage_locator
+            or prepared.status != "attached"
+            or prepared.released_at is None
+            or prepared.source_media_id is not None
+            or prepared.source_binary_id is not None
+            or attempt.user_id != job.user_id
+            or attempt.created_by != job.user_id
+            or attempt.status != "ready"
+            or disposal.actor_user_id != job.user_id
+            or disposal.operation_kind != "canvas.recycle.purge"
+            or attempt.result_json.get("project_id") != str(disposal.project_id)
+            or attempt.result_json.get("id") != str(disposal.canvas_id)
+            or attempt.result_json.get("source_key") != disposal.result_json.get("source_key")
+            or attempt.result_json.get("resource_map", {}).get(str(prepared.source_resource_id))
+            != str(job.resource_id)
+        ):
+            raise ValueError("Deletion no longer identifies its disposed creation copy")
+        public = session.scalar(
+            select(CanvasWriteReceipt).where(
+                CanvasWriteReceipt.actor_user_id == job.user_id,
+                CanvasWriteReceipt.idempotency_key == attempt.idempotency_key,
+                CanvasWriteReceipt.operation_kind == attempt.operation_kind,
+                CanvasWriteReceipt.project_id == disposal.project_id,
+                CanvasWriteReceipt.canvas_id == disposal.canvas_id,
+                CanvasWriteReceipt.request_hash == attempt.request_hash,
+            )
+        )
+        if public is None or public.result_json != attempt.result_json:
+            raise ValueError("Deletion requires its unchanged public creation receipt")
     # Canonical records protect all tenants and archived projects. The worker uses
     # an internal session, never an HTTP-controlled bypass of account scoping.
     retained = _retained(session, job.storage_locator, job.resource_id)

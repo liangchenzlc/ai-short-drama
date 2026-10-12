@@ -117,6 +117,17 @@ def canonicalize_canvas_media(document, *, strict=True):
                 result.pop("previewContent", None)
         for field, storage_field in DERIVED_PAIRS.items():
             normalize(field, storage_field, derived=True)
+        cover = value.get("characterCoverUrl")
+        if cover is not None and cover != "":
+            found = _resource(cover)
+            if found and found[1] == "/file":
+                result["characterCoverUrl"] = f"/api/v1/canvas-runtime/resources/{found[0]}/file"
+            elif strict:
+                raise WorkflowError(
+                    "canvas_character_cover_not_persisted",
+                    "角色封面必须先归一化为真实画布资源，原草稿已保留",
+                    422,
+                )
         return result
 
     return visit(document)

@@ -298,6 +298,33 @@ class ChatGateway:
         }
 
 
+def test_worker_claim_notifies_queued_chat_before_model_admission(workspace):
+    factory, settings, project, _episode, model = workspace
+    with factory() as session:
+        service = assistant(session, settings)
+        conversation = service.create_project_conversation({"project_id": project})
+        accepted = service.send_message(
+            conversation.id, {"content": "只讨论", "model_config_id": model}, "queued-chat"
+        )
+        cursor = service.runtime_state(conversation.id).cursor
+    gateway = ChatGateway()
+    runtime = AgentRuntime(factory, settings, gateway)
+    assert runtime.store.claim_execution(accepted.run.id, 0, runtime.prepare_decision) is None
+    claim = runtime.store.claim_execution(accepted.run.id, 1, runtime.prepare_decision)
+    assert claim is not None and gateway.calls == 0
+    assert runtime.store.claim_execution(accepted.run.id, 1, runtime.prepare_decision) is None
+    with factory() as session:
+        service = assistant(session, settings)
+        assert service.runtime_state(conversation.id).active_run.status == "running"
+        events = service.events(conversation.id, cursor)
+        assert len(events) == 1
+        event = events[0]
+        assert event.event_type == "run.started"
+        assert event.run_id == accepted.run.id
+        assert event.payload == {"run_id": str(accepted.run.id)}
+        assert event.seq == cursor + 1
+
+
 @pytest.mark.parametrize("tools", [False, True])
 def test_worker_text_or_forbidden_tool_reply_never_creates_creative_effects(
     workspace, monkeypatch, tools

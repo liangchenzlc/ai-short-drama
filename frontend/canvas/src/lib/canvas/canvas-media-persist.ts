@@ -1,5 +1,6 @@
 import { canvasNodesMissingResourceAssetBinding } from "@/lib/canvas/canvas-node-asset";
 import { assertUserScope, captureUserScope, isUserScopeAbandonedError, type CapturedUserScope } from "@/lib/user-scope-guard";
+import { canvasResourceKeysEquivalent } from "@/services/host-resource-identities";
 import type { CanvasNodeAssetResult } from "@/services/project-asset-sync";
 import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";
 
@@ -65,6 +66,18 @@ export async function persistOwnedCanvasMediaNodes(
     const originalProjectId = input.canvasId;
     const mediaConnections = input.mediaConnections ?? [];
     const assetIds = new Map<string, string>();
+    const bindingNodes = new Map<string, CanvasNodeData>();
+    const observedLiveNodeIds = new Set(deps.getLiveNodes().map((node) => node.id));
+    const observedLiveConnectionIds = new Set(deps.getLiveConnections().map((connection) => connection.id));
+
+    const sameMedia = (current: CanvasNodeData, frozen: CanvasNodeData) => {
+        if (current.type !== frozen.type) return false;
+        const currentKey = current.metadata?.storageKey;
+        const frozenKey = frozen.metadata?.storageKey;
+        return currentKey && frozenKey
+            ? canvasResourceKeysEquivalent(currentKey, frozenKey)
+            : currentKey === frozenKey && current.metadata?.content === frozen.metadata?.content;
+    };
 
     const assertPersistOwnership = () => {
         throwIfAborted(input.signal);
@@ -76,6 +89,7 @@ export async function persistOwnedCanvasMediaNodes(
 
     const persistAsset = async (node: CanvasNodeData, required: boolean) => {
         assertPersistOwnership();
+        bindingNodes.set(node.id, { ...node, metadata: { ...node.metadata } });
         try {
             const result = await deps.ensureCanvasNodeAsset({
                 canvasId: originalProjectId,
@@ -106,28 +120,31 @@ export async function persistOwnedCanvasMediaNodes(
         await persistAsset(mediaNode, false);
     }
 
-    assertPersistOwnership();
-    const latestNodes = new Map(deps.getLiveNodes().map((node) => [node.id, node]));
-    const storedProject = deps.getStoredProject(originalProjectId);
-    for (const node of storedProject?.nodes || []) {
-        if (!latestNodes.has(node.id)) latestNodes.set(node.id, node);
-    }
-    for (const mediaNode of input.mediaNodes) {
-        const assetId = assetIds.get(mediaNode.id);
-        latestNodes.set(mediaNode.id, assetId ? { ...mediaNode, metadata: { ...mediaNode.metadata, assetId } } : mediaNode);
-    }
+    const readLatestNodes = () => {
+        assertPersistOwnership();
+        const liveNodes = deps.getLiveNodes();
+        for (const node of liveNodes) observedLiveNodeIds.add(node.id);
+        const latestNodes = new Map(liveNodes.map((node) => [node.id, node]));
+        for (const node of deps.getStoredProject(originalProjectId)?.nodes || []) {
+            if (!latestNodes.has(node.id) && !observedLiveNodeIds.has(node.id)) latestNodes.set(node.id, node);
+        }
+        for (const mediaNode of input.mediaNodes) {
+            if (!latestNodes.has(mediaNode.id) && !observedLiveNodeIds.has(mediaNode.id)) latestNodes.set(mediaNode.id, mediaNode);
+        }
+        for (const [id, frozen] of bindingNodes) {
+            const current = latestNodes.get(id);
+            if (!current || !sameMedia(current, frozen)) {
+                throw new DOMException("媒体节点已删除或资源已变化，停止写入旧媒体结果", "AbortError");
+            }
+            const assetId = assetIds.get(id);
+            if (assetId) latestNodes.set(id, { ...current, metadata: { ...current.metadata, assetId } });
+        }
+        return latestNodes;
+    };
 
-    for (const node of canvasNodesMissingResourceAssetBinding([...latestNodes.values()])) {
-        const assetId = await persistAsset(node, true);
-        if (assetId) latestNodes.set(node.id, { ...node, metadata: { ...node.metadata, assetId } });
-    }
-
-    assertPersistOwnership();
-    if (assetIds.size > 0) {
-        deps.setNodes((current) => current.map((item) => {
-            const assetId = assetIds.get(item.id);
-            return assetId ? { ...item, metadata: { ...item.metadata, assetId } } : item;
-        }));
+    for (const node of canvasNodesMissingResourceAssetBinding([...readLatestNodes().values()])) {
+        const current = readLatestNodes().get(node.id);
+        if (current) await persistAsset(current, true);
     }
 
     assertPersistOwnership();
@@ -139,19 +156,35 @@ export async function persistOwnedCanvasMediaNodes(
         throw new Error("当前画布未载入本地项目库，无法保存媒体结果");
     }
 
-    assertPersistOwnership();
-    const storedAfterOpen = deps.getStoredProject(originalProjectId);
-    const latestConnections = new Map((storedAfterOpen?.connections || []).map((connection) => [connection.id, connection]));
-    for (const connection of deps.getLiveConnections()) latestConnections.set(connection.id, connection);
-    for (const connection of mediaConnections) latestConnections.set(connection.id, connection);
-    const snapshot = { nodes: [...latestNodes.values()], connections: [...latestConnections.values()] };
+    const readLatestSnapshot = () => {
+        const latestNodes = readLatestNodes();
+        const liveConnections = deps.getLiveConnections();
+        for (const connection of liveConnections) observedLiveConnectionIds.add(connection.id);
+        const latestConnections = new Map(liveConnections.map((connection) => [connection.id, connection]));
+        for (const connection of [...(deps.getStoredProject(originalProjectId)?.connections || []), ...mediaConnections]) {
+            if (!latestConnections.has(connection.id) && !observedLiveConnectionIds.has(connection.id)) latestConnections.set(connection.id, connection);
+        }
+        return {
+            nodes: [...latestNodes.values()],
+            connections: [...latestConnections.values()].filter((connection) => latestNodes.has(connection.fromNodeId) && latestNodes.has(connection.toNodeId)),
+        };
+    };
+
+    const snapshot = readLatestSnapshot();
+    if (assetIds.size > 0) {
+        deps.setNodes((current) => current.map((item) => {
+            const assetId = assetIds.get(item.id);
+            const frozen = bindingNodes.get(item.id);
+            return assetId && frozen && sameMedia(item, frozen) ? { ...item, metadata: { ...item.metadata, assetId } } : item;
+        }));
+    }
     deps.updateProject(originalProjectId, snapshot);
     try {
         assertPersistOwnership();
         await deps.flushPersistence(expected);
         assertPersistOwnership();
         if (deps.isLocalWorkspace()) {
-            await deps.syncSnapshot?.(originalProjectId, snapshot, expected);
+            await deps.syncSnapshot?.(originalProjectId, readLatestSnapshot(), expected);
             assertPersistOwnership();
             const saved = await deps.readSavedProject?.(originalProjectId, expected);
             assertPersistOwnership();

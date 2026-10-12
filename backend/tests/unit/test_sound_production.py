@@ -114,7 +114,9 @@ def run_ffmpeg(*args):
 
 
 @pytest.mark.parametrize("burn", [False, True])
-def test_real_audio_decode_mix_preserves_frames_timing_and_subtitles(tmp_path, burn):
+@pytest.mark.parametrize("loop", [False, True])
+@pytest.mark.parametrize("duck", [False, True])
+def test_real_audio_decode_mix_preserves_frames_timing_and_subtitles(tmp_path, burn, loop, duck):
     from pathlib import Path
 
     video, speech, music = [tmp_path / name for name in ("base.mp4", "speech.wav", "music.wav")]
@@ -137,7 +139,7 @@ def test_real_audio_decode_mix_preserves_frames_timing_and_subtitles(tmp_path, b
     )
     run_ffmpeg("-f", "lavfi", "-i", "sine=frequency=600:sample_rate=44100:duration=0.5", speech)
     run_ffmpeg("-f", "lavfi", "-i", "sine=frequency=200:sample_rate=48000:duration=0.4", music)
-    settings = Settings(_env_file=None)
+    settings = Settings(_env_file=None, render_timeout_seconds=30)
     assert inspect_audio(speech, settings)["duration_ms"] == 500
     font = next(
         (
@@ -171,7 +173,8 @@ def test_real_audio_decode_mix_preserves_frames_timing_and_subtitles(tmp_path, b
             "media_id": "3",
             "trim_out_ms": 400,
             "start_ms": 1200,
-            "loop": True,
+            "loop": loop,
+            "ducking": duck,
             "volume": 0.3,
             "fade_in_ms": 100,
             "fade_out_ms": 100,
@@ -206,6 +209,27 @@ def test_real_audio_decode_mix_preserves_frames_timing_and_subtitles(tmp_path, b
     assert peak(0.55, 0.95) > 0.04
     assert peak(1.05, 1.15) < 0.001
     assert peak(1.35, 1.7) > 0.01
+    if loop:
+        for start, end in ((1.35, 1.4), (1.55, 1.6), (1.75, 1.8), (1.9, 1.95), (1.95, 1.99)):
+            assert peak(start, end) > 0.002
+        soundtrack_pcm = array(
+            "f",
+            run_ffmpeg(
+                "-i", out_dir / "soundtrack.wav", "-ac", "1", "-ar", "48000", "-f", "f32le", "-"
+            ).stdout,
+        )
+        assert len(soundtrack_pcm) == 2 * 48000
+        last_music_sample = max(
+            (
+                index
+                for index in range(round(1.2 * 48000), len(soundtrack_pcm))
+                if abs(soundtrack_pcm[index]) > 1e-6
+            ),
+            default=0,
+        )
+        assert last_music_sample / 48000 >= 1.999
+    else:
+        assert peak(1.75, 1.9) < 0.001
     frames = run_ffmpeg(
         "-i", output, "-vf", "scale=1:1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"
     ).stdout

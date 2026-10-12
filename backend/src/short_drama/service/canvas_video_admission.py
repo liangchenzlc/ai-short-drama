@@ -3,6 +3,7 @@
 import re
 from urllib.parse import urlsplit
 
+from short_drama.ai.canvas_agnes_adapters import AGNES_VIDEO
 from short_drama.ai.canvas_video_adapters import VIDEO_ADAPTERS as VIDEO_ADAPTERS
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.db.access import scope_of
@@ -49,7 +50,15 @@ def freeze_video_references(
                         "reference_media_requires_url", "参考媒体需要有效的 HTTPS 链接", 422
                     )
                 continue
-            if adapter == "canvas_newapi_video_generations.v1" and not allows_inline:
+            if (
+                adapter == "canvas_newapi_video_generations.v1"
+                and not allows_inline
+                or adapter == "canvas_openai_videos.v1"
+                and model == AGNES_VIDEO
+                and not getattr(
+                    getattr(generation, "settings", None), "provider_references_enabled", False
+                )
+            ):
                 raise WorkflowError(
                     "reference_media_requires_url",
                     "该渠道需要参考媒体的 HTTPS 链接，尚未创建生成任务",

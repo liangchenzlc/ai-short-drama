@@ -14,6 +14,7 @@ from .ai_generation_record import AIGenerationRecord
 from .ai_model_config import AIModelConfig
 from .asset import Asset
 from .asset_image_candidate import AssetImageCandidate
+from .asset_version import AssetVersion, AssetVersionMediaReference
 from .async_task import AsyncTask
 from .base import Base
 from .canvas import CANVAS_PRIVATE_TABLES, CANVAS_TABLES, ProjectCanvas, ProjectCanvasSettings
@@ -27,13 +28,16 @@ from .canvas_drawing import (
 )
 from .canvas_folder import CanvasProjectFolder, CanvasProjectFolderItem
 from .canvas_generation import CanvasResult, CanvasTaskBinding, CanvasTaskMediaReference
+from .canvas_generation_media_deletion import CanvasGenerationMediaDeletion
 from .canvas_library import (
     CanvasLibraryAsset,
     CanvasLibraryAssetReference,
     CanvasLibraryFolder,
     CanvasLibraryFolderItem,
 )
+from .canvas_local import CanvasLocalJob
 from .canvas_model_catalog import CanvasChannelModel, CanvasModelCatalog
+from .canvas_render import CanvasRenderJob, CanvasRenderMediaReference
 from .canvas_resource import (
     CanvasBinaryReference,
     CanvasBinaryResource,
@@ -44,6 +48,7 @@ from .canvas_resource import (
     CanvasUserBinaryReference,
 )
 from .canvas_text import CanvasTaskTextDelta
+from .canvas_tool_run import CanvasToolRun, CanvasToolSubmission
 from .episode import Episode
 from .episode_assembly import EpisodeAssembly, EpisodeAssemblyClip, EpisodeRenderJob
 from .episode_asset import EpisodeAsset
@@ -64,10 +69,16 @@ from .shot_script import ShotScript
 from .shot_video import ShotVideo
 
 __all__ = [
+    "CanvasRenderJob",
+    "CanvasLocalJob",
+    "CanvasRenderMediaReference",
+    "CanvasToolRun",
+    "CanvasToolSubmission",
     "CanvasBeefAPIConnection",
     "CanvasChannelModel",
     "CanvasModelCatalog",
     "CanvasResult",
+    "CanvasGenerationMediaDeletion",
     "CanvasTaskBinding",
     "CanvasTaskMediaReference",
     "CanvasTaskTextDelta",
@@ -117,6 +128,8 @@ __all__ = [
     "EpisodeScript",
     "Asset",
     "AssetImageCandidate",
+    "AssetVersion",
+    "AssetVersionMediaReference",
     "GlobalAsset",
     "ProjectAsset",
     "EpisodeAsset",
