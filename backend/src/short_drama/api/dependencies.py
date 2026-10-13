@@ -69,3 +69,9 @@ def get_asset_image_service(request: Request, session: Session = Depends(get_ses
     from short_drama.service.asset_image_service import AssetImageService
 
     return AssetImageService(session, request.app.state.settings, request.app.state.storage)
+
+
+def get_user_creation_draft_service(request: Request, session: Session = Depends(get_session)):
+    from short_drama.service.user_creation_draft_service import UserCreationDraftService
+
+    return UserCreationDraftService(session, request.app.state.settings, request.app.state.storage)

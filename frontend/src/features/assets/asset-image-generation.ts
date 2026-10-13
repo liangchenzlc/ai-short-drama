@@ -8,13 +8,14 @@ export interface AssetImageOptions {
   count: number;
   aspect?: ImageGenerationRequest['parameters']['aspect'];
   resolution?: string;
+  draft?: { id: string; draft_version: string };
 }
 
 export function buildAssetImageRequest(asset: Pick<LibraryAssetRead, 'id' | 'row_version'>, options: AssetImageOptions): ImageGenerationRequest {
   return {
     ...(options.configId ? { config_id: options.configId } : {}),
-    source: { scene: 'asset_image', asset_id: asset.id, row_version: asset.row_version, ...(options.scope && options.scope.kind !== 'global' ? { project_id: options.scope.projectId } : {}), ...(options.scope?.kind === 'episode' ? { episode_id: options.scope.episodeId } : {}) },
-    input: { prompt: options.supplement, reference_media_ids: [] },
+    source: { scene: 'asset_image', asset_id: asset.id, row_version: asset.row_version, ...(options.scope && options.scope.kind !== 'global' ? { project_id: options.scope.projectId } : {}), ...(options.scope?.kind === 'episode' ? { episode_id: options.scope.episodeId } : {}), ...(options.draft ? { draft_id: options.draft.id, draft_version: options.draft.draft_version } : {}) },
+    input: { prompt: options.draft ? '' : options.supplement, reference_media_ids: [] },
     parameters: {
       count: options.count,
       ...(options.aspect ? { aspect: options.aspect } : {}),
@@ -65,5 +66,13 @@ export function assetImageGenerationBlockReason(
   if (!configId) return '请选择可用的生图模型。';
   if (!asset.name.trim()) return '请先填写素材名称。';
   if (!asset.description.trim() && !asset.prompt.trim()) return '请先填写素材描述或提示词。';
+  return null;
+}
+
+export function assetPrivateInputBlockReason(prompt: string, sharedReferences: readonly string[], privateReferences: readonly string[], acceptsReferences: boolean): string | null {
+  if (prompt.length > 4000) return '画面要求最多 4000 字符。';
+  const count = new Set([...sharedReferences, ...privateReferences]).size;
+  if (count > 16) return '共享与个人参考图片合计最多 16 张。';
+  if (count && !acceptsReferences) return '当前模型不支持参考图片，请选择兼容模型或移除个人参考图片。';
   return null;
 }

@@ -1,0 +1,72 @@
+.novel-source-stage { height: 100%; min-width: 0; min-height: 0; }
+.novel-script-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); }
+.novel-script-heading { flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 49px; padding: 8px 14px; border-bottom: 1px solid var(--hair); }
+.novel-script-heading h2 { margin: 0; flex-shrink: 0; font-size: 14px; font-weight: 600; }
+.novel-script-heading-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px; margin-left: auto; min-width: 0; }
+.novel-script-heading-actions .status-badge { margin-right: 4px; font-size: 11px; }
+.novel-current-document { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.novel-current-document[hidden] { display: none; }
+.novel-quill-workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.novel-script-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; flex-shrink: 0; min-height: 43px; padding: 6px 14px; border-bottom: 1px solid var(--hair); color: var(--sub); font-size: 11px; font-variant-numeric: tabular-nums; }
+.novel-format-tools { display: flex; gap: 2px; }
+.novel-format-tools .ant-btn { width: 27px; height: 27px; padding: 4px; color: var(--sub); }
+.novel-format-tools .ant-btn[aria-pressed="true"] { background: var(--pale); color: var(--ink); }
+.novel-document-tabs { display: flex; gap: 2px; margin-left: auto; }
+.novel-document-tabs .ant-btn { font-size: 11px; color: var(--sub); }
+.novel-document-tabs .ant-btn[aria-pressed="true"] { background: var(--pale); color: var(--ink); }
+.novel-scene-shortcuts { display: flex; gap: 2px; max-width: 100%; overflow-x: auto; margin-left: auto; }
+.novel-scene-shortcuts .ant-btn { flex-shrink: 0; color: var(--sub); font-size: 11px; }
+.novel-quill-host { flex: 1; display: flex; min-height: 0; min-width: 0; overflow: hidden; }
+.novel-quill-host[hidden] { display: none; }
+.novel-quill-host > .ql-container { display: flex; flex: 1; min-width: 0; min-height: 0; border: 0; font-family: inherit; font-size: 14px; }
+.novel-quill-host .ql-editor { flex: 1; min-width: 0; min-height: 0; padding: 24px 28px 48px; color: var(--ink); line-height: 2; overflow-y: auto; outline: none; box-shadow: none; caret-color: var(--ink); }
+.novel-quill-host .ql-editor:focus, .novel-quill-host .ql-editor:focus-visible, .novel-quill-host .ql-container:focus-within { outline: none; box-shadow: none; }
+.novel-quill-host .ql-editor p { margin: 0; }
+.novel-quill-host .ql-editor h1, .novel-quill-host .ql-editor h2, .novel-quill-host .ql-editor h3 { margin: 16px 0 8px; font-weight: 600; line-height: 1.5; }
+.novel-quill-host .ql-editor h1 { font-size: 22px; }
+.novel-quill-host .ql-editor h2 { font-size: 19px; }
+.novel-quill-host .ql-editor h3 { font-size: 16px; }
+.novel-quill-host .ql-editor blockquote { border-left-color: var(--border-control); color: var(--sub); margin: 8px 0; }
+.novel-quill-host .ql-editor.ql-blank::before { color: var(--placeholder); font-style: normal; left: 28px; right: 28px; }
+.novel-quill-host .ql-editor::selection, .novel-quill-host .ql-editor *::selection { color: var(--ink); background: var(--pale); }
+.novel-quill-host .ql-editor::-webkit-scrollbar, .novel-scene-shortcuts::-webkit-scrollbar { width: 7px; height: 5px; }
+.novel-quill-host .ql-editor::-webkit-scrollbar-thumb, .novel-scene-shortcuts::-webkit-scrollbar-thumb { background: var(--border-control); border-radius: 5px; }
+.novel-editor-loading { padding: 24px; }
+.novel-script-confirm { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-shrink: 0; min-height: 58px; padding: 10px 18px; border-top: 1px solid var(--hair); background: var(--surface-raised); }
+.novel-script-confirm strong { font-size: 12px; font-weight: 500; color: var(--sub); }
+.novel-generation-feedback { flex-shrink: 0; margin: 8px 14px 0; }
+.novel-adaptation-settings { height: 100%; min-width: 0; }
+.novel-adaptation-settings > header { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 18px; }
+.novel-adaptation-settings > header h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.novel-adaptation-settings .writing-control { margin-bottom: 14px; }
+.novel-adaptation-settings .writing-control > span { font-size: 12px; color: var(--sub); }
+.novel-adaptation-settings .episode-help { display: none; }
+.novel-adaptation-settings .generation-composer textarea.ant-input { height: 180px; min-height: 160px; max-height: 360px; }
+.novel-adaptation-settings .generation-composer:focus-within, .novel-adaptation-settings .generation-composer textarea.ant-input:focus, .novel-adaptation-settings .generation-composer textarea.ant-input:focus-visible { outline: none; border-color: var(--hair); box-shadow: none; }
+.novel-adaptation-settings .generation-composer .ant-select-focused .ant-select-selector, .novel-adaptation-settings .generation-composer .ant-select-open .ant-select-selector { border-color: var(--border-control) !important; box-shadow: none !important; outline: none; }
+.novel-adaptation-settings .generation-composer .ant-select-selector:focus-within { outline: none; box-shadow: none; }
+.novel-adaptation-settings .generation-composer-footer { flex-wrap: nowrap; }
+.novel-adaptation-settings .generation-composer-parameters:empty { display: none; }
+.novel-adaptation-settings .generation-composer-model .ant-select { font-size: 11px; }
+.novel-adaptation-settings .writing-assistant-hint { margin: 12px 0; font-size: 12px; color: var(--sub); }
+.novel-draft-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.novel-uncertain-action { margin-top: 12px; width: 100%; }
+.novel-source-drawer.ui-dialog { position: fixed; left: 0; top: 0; bottom: 0; right: auto; margin: 0; width: min(560px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; padding: 0; border-radius: 0; }
+.novel-source-drawer[open] { display: flex; flex-direction: column; }
+.novel-source-drawer > header { padding: 14px 20px; margin: 0; border-bottom: 1px solid var(--hair); }
+.novel-source-drawer-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; color: var(--sub); font-size: 12px; }
+.novel-source-drawer .ant-alert { margin: 0 20px 12px; }
+.novel-source-input { display: flex; flex: 1; min-height: 0; padding: 0 20px 16px; }
+.novel-source-input textarea { flex: 1; min-height: 0; width: 100%; height: 100%; resize: none; color: var(--ink); background: var(--canvas); border-color: var(--border-control); line-height: 2; }
+.novel-source-drawer > footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 20px; color: var(--sub); font-size: 12px; border-top: 1px solid var(--hair); }
+@media (max-width: 700px) {
+  .novel-source-stage { min-height: 540px; }
+  .novel-script-panel { min-height: 540px; }
+  .novel-script-heading { padding: 9px 10px; flex-wrap: wrap; }
+  .novel-script-heading-actions { gap: 1px; }
+  .novel-script-heading-actions .status-badge { font-size: 10px; }
+  .novel-script-toolbar { padding: 6px 10px; gap: 8px; }
+  .novel-quill-host .ql-editor { padding: 18px 16px 32px; min-height: 350px; }
+  .novel-quill-host .ql-editor.ql-blank::before { left: 16px; right: 16px; }
+  .novel-script-confirm { padding: 10px 12px; }
+}

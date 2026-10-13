@@ -1,24 +1,28 @@
-import type { WritingResponse, WritingTransport } from '../../api/modules/episode-writing';
+import type { EditorDocument, WritingResponse, WritingTransport } from '../../api/modules/episode-writing';
+import { documentText, sameDocument } from './script-document';
 
 type Field = 'novel' | 'script';
 type Status = 'loading' | 'saved' | 'unsaved' | 'saving' | 'error' | 'conflict';
 export interface WritingSnapshot {
   loaded: boolean; status: Status; novel: string; script: string; scriptId: string | null;
   contentVersion: string; confirmed: boolean; dirty: boolean; busy: boolean; message: string;
+  editorDocument: EditorDocument | null;
   recoverable?: boolean; recoveryChanged?: boolean; recoveryBlocked?: boolean;
 }
-export interface WritingDraft { base_version: string; novel: string; script: string; script_id: string | null }
+export interface WritingDraft { base_version: string; novel: string; script: string; script_id: string | null; editor_document?: EditorDocument | null }
 export interface WritingRecovery { read: () => WritingDraft | null; save: (draft: WritingDraft) => void; clear: () => void; export?: () => string | null }
-type Attempt = { before: WritingResponse; field: Field; content: string };
+type Attempt = { before: WritingResponse; field: Field; content: string; editorDocument: EditorDocument | null };
 const sameRecord = (a: WritingResponse['novel'], b: WritingResponse['novel']) => a?.id === b?.id && a?.content === b?.content;
+const sameScript = (a: WritingResponse['editing_script'], b: WritingResponse['editing_script']) => sameRecord(a, b)
+  && sameDocument(a?.editor_document, b?.editor_document, a?.content ?? '');
 const sameWriting = (a: WritingResponse, b: WritingResponse) => a.content_version === b.content_version
-  && sameRecord(a.novel, b.novel) && sameRecord(a.editing_script, b.editing_script)
+  && sameRecord(a.novel, b.novel) && sameScript(a.editing_script, b.editing_script)
   && a.editing_script?.state === b.editing_script?.state && a.confirmed_script_id === b.confirmed_script_id;
 
 /** One mounted episode owns one queue. Server acknowledgement never replaces a newer draft. */
 export class WritingSession {
   private server: WritingResponse | null = null;
-  private snapshot: WritingSnapshot = { loaded: false, status: 'loading', novel: '', script: '', scriptId: null, contentVersion: '0', confirmed: false, dirty: false, busy: false, message: '' };
+  private snapshot: WritingSnapshot = { loaded: false, status: 'loading', novel: '', script: '', editorDocument: null, scriptId: null, contentVersion: '0', confirmed: false, dirty: false, busy: false, message: '' };
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private running: Promise<boolean> | null = null;
@@ -34,17 +38,19 @@ export class WritingSession {
   private publish(patch: Partial<WritingSnapshot> = {}) {
     if (this.disposed) return;
     this.snapshot = { ...this.snapshot, ...patch };
-    this.snapshot.dirty = !!this.server && (this.snapshot.novel !== (this.server.novel?.content ?? '') || this.snapshot.script !== (this.server.editing_script?.content ?? ''));
+    const scriptChanged = this.snapshot.script !== (this.server?.editing_script?.content ?? '')
+      || !sameDocument(this.snapshot.editorDocument, this.server?.editing_script?.editor_document, this.snapshot.script);
+    this.snapshot.dirty = !!this.server && (this.snapshot.novel !== (this.server.novel?.content ?? '') || scriptChanged);
     this.snapshot.scriptId = this.server?.editing_script?.id ?? null;
     this.snapshot.contentVersion = this.server?.content_version ?? '0';
     this.snapshot.confirmed = !!this.server?.editing_script && this.server.editing_script.state === 'confirmed'
-      && this.server.confirmed_script_id === this.server.editing_script.id && this.snapshot.script === this.server.editing_script.content;
+      && this.server.confirmed_script_id === this.server.editing_script.id && !scriptChanged;
     this.snapshot.recoverable = this.recovered !== null;
     this.snapshot.recoveryBlocked = this.recoveryBlocked;
     this.snapshot.recoveryChanged = !!this.recovered && (this.recovered.base_version !== this.server?.content_version || this.recovered.script_id !== this.server?.editing_script?.id && !(this.recovered.script_id === null && !this.server?.editing_script));
     if (this.recovery && this.server && this.snapshot.loaded && !this.recovered && !this.recoveryBlocked) {
       try {
-        const draft: WritingDraft = { base_version: this.server.content_version, novel: this.snapshot.novel, script: this.snapshot.script, script_id: this.server.editing_script?.id ?? null };
+        const draft: WritingDraft = { base_version: this.server.content_version, novel: this.snapshot.novel, script: this.snapshot.script, editor_document: this.snapshot.editorDocument, script_id: this.server.editing_script?.id ?? null };
         const fingerprint = this.snapshot.dirty ? JSON.stringify(draft) : '';
         if (fingerprint !== this.persisted) {
           if (fingerprint) this.recovery.save(draft); else this.recovery.clear();
@@ -63,17 +69,21 @@ export class WritingSession {
       if (!this.snapshot.loaded && this.recovery) {
         try {
           this.recovered = this.recovery.read();
-          if (this.recovered && this.recovered.novel === (data.novel?.content ?? '') && this.recovered.script === (data.editing_script?.content ?? '')) { this.recovery.clear(); this.recovered = null; }
+          if (this.recovered && this.recovered.novel === (data.novel?.content ?? '') && this.recovered.script === (data.editing_script?.content ?? '') && sameDocument(this.recovered.editor_document, data.editing_script?.editor_document, this.recovered.script)) { this.recovery.clear(); this.recovered = null; }
         } catch { this.recoveryBlocked = true; }
       } else if (this.snapshot.loaded && this.recovery) { this.recovery.clear(); this.recovered = null; this.recoveryBlocked = false; this.persisted = ''; }
       this.server = data; this.uncertain = null;
-      this.publish({ loaded: true, novel: data.novel?.content ?? '', script: data.editing_script?.content ?? '', status: this.recoveryBlocked ? 'error' : 'saved', busy: false, message: this.recoveryBlocked ? '本机正文恢复记录无法读取，服务端正文仍可查看。请下载恢复记录核对，明确放弃后才能继续编辑。' : '' });
+      this.publish({ loaded: true, novel: data.novel?.content ?? '', script: data.editing_script?.content ?? '', editorDocument: data.editing_script?.editor_document ?? null, status: this.recoveryBlocked ? 'error' : 'saved', busy: false, message: this.recoveryBlocked ? '本机正文恢复记录无法读取，服务端正文仍可查看。请下载恢复记录核对，明确放弃后才能继续编辑。' : '' });
       return true;
     } catch { this.publish({ status: 'error', busy: false, message: '内容加载失败，请重试。草稿不会自动提交。' }); return false; }
   }
-  edit(field: Field, content: string) {
+  edit(field: Field, content: string, editorDocument: EditorDocument | null = null) {
     if (!this.server || this.disposed || this.snapshot.status === 'loading' || this.recovered || this.recoveryBlocked) return;
-    this.publish({ [field]: content });
+    if (field === 'script' && editorDocument && documentText(editorDocument) !== content) {
+      this.fail(false, '剧本文字与格式不一致，已保留原稿。请重新载入编辑器后重试。');
+      return;
+    }
+    this.publish({ [field]: content, ...(field === 'script' ? { editorDocument } : {}) });
     if (this.snapshot.status === 'error' || this.snapshot.status === 'conflict') return;
     this.publish({ status: this.snapshot.busy ? 'saving' : this.snapshot.dirty ? 'unsaved' : 'saved' });
     clearTimeout(this.timer);
@@ -86,13 +96,14 @@ export class WritingSession {
     return false;
   }
   private acknowledged(data: WritingResponse, attempt: Attempt) {
-    const { before, field, content } = attempt;
+    const { before, field, content, editorDocument } = attempt;
     if (data.content_version !== String(BigInt(before.content_version) + 1n)) return false;
     if (field === 'novel') return !!data.novel && data.novel.content === content
       && (!before.novel || before.novel.id === data.novel.id)
-      && sameRecord(data.editing_script, before.editing_script)
+      && sameScript(data.editing_script, before.editing_script)
       && data.editing_script?.state === before.editing_script?.state && data.confirmed_script_id === before.confirmed_script_id;
     return !!data.editing_script && data.editing_script.content === content && data.editing_script.state === 'unconfirmed'
+      && sameDocument(data.editing_script.editor_document, editorDocument, content)
       && (!before.editing_script || data.editing_script.id === before.editing_script.id)
       && sameRecord(data.novel, before.novel)
       && data.confirmed_script_id === (before.confirmed_script_id === before.editing_script?.id ? null : before.confirmed_script_id);
@@ -119,17 +130,19 @@ export class WritingSession {
     while (!this.disposed && this.snapshot.dirty && this.server) {
       const field: Field = this.snapshot.novel !== (this.server.novel?.content ?? '') ? 'novel' : 'script';
       const content = this.snapshot[field];
+      const editorDocument = this.snapshot.editorDocument;
       if (new TextEncoder().encode(content).length > 1048576) return this.fail(false, '单份文本不能超过 1 MiB，请缩短内容后重试。');
-      const attempt = { before: this.server, field, content };
+      const attempt = { before: this.server, field, content, editorDocument };
       try {
         const body = { content, content_version: this.server.content_version };
         if (field === 'novel') {
           const result = await this.api.novel(body);
           this.server = { ...this.server, ...result };
         } else {
-          const result = await this.api.script({ ...body, script_id: this.server.editing_script?.id ?? null });
+          const result = await this.api.script({ ...body, ...(editorDocument ? { editor_document: editorDocument } : {}), script_id: this.server.editing_script?.id ?? null });
           this.server = { ...this.server, content_version: result.content_version, editing_script: result.script,
             confirmed_script_id: this.server.confirmed_script_id === result.script.id && result.script.state !== 'confirmed' ? null : this.server.confirmed_script_id };
+          if (!sameDocument(result.script.editor_document, editorDocument, content)) return this.fail(true, '服务端返回的剧本格式与保存内容不一致，草稿已保留，请下载草稿并核对。');
         }
         this.publish();
       } catch (error) {
@@ -170,9 +183,9 @@ export class WritingSession {
       if (this.disposed) return false;
       this.server = latest;
       const changed = latest.content_version !== draft.base_version || (latest.editing_script?.id ?? null) !== draft.script_id;
-      if (changed && !rebase) { this.publish({ novel: latest.novel?.content ?? '', script: latest.editing_script?.content ?? '', message: '恢复稿的基准版本已变化，请对照当前正文并明确决定是否保留恢复稿。' }); return false; }
+      if (changed && !rebase) { this.publish({ novel: latest.novel?.content ?? '', script: latest.editing_script?.content ?? '', editorDocument: latest.editing_script?.editor_document ?? null, message: '恢复稿的基准版本已变化，请对照当前正文并明确决定是否保留恢复稿。' }); return false; }
       this.recovered = null; this.persisted = '';
-      this.publish({ novel: draft.novel, script: draft.script, status: 'unsaved', message: '' });
+      this.publish({ novel: draft.novel, script: draft.script, editorDocument: draft.editor_document ?? null, status: 'unsaved', message: '' });
       return true;
     } catch { this.publish({ message: '恢复前读取最新正文失败，恢复稿仍保留，请重试。' }); return false; }
     finally { this.publish({ busy: false }); }
@@ -190,10 +203,10 @@ export class WritingSession {
     if (!id || (kind === 'confirm' && !this.snapshot.script.trim())) return false;
     const accept = (data: WritingResponse) => {
       this.server = data;
-      if (kind === 'select' && this.snapshot.script !== (before.editing_script?.content ?? '')) {
+      if (kind === 'select' && (this.snapshot.script !== (before.editing_script?.content ?? '') || !sameDocument(this.snapshot.editorDocument, before.editing_script?.editor_document, this.snapshot.script))) {
         return this.fail(true, '切换剧本期间出现了新的本地修改，草稿已保留。请先下载草稿，再载入选中的服务端剧本并手动合并。');
       }
-      this.publish({ ...(kind === 'select' ? { script: data.editing_script?.content ?? '' } : {}), status: 'saved' });
+      this.publish({ ...(kind === 'select' ? { script: data.editing_script?.content ?? '', editorDocument: data.editing_script?.editor_document ?? null } : {}), status: 'saved' });
       return true;
     };
     this.publish({ busy: true, status: 'saving' });
@@ -207,7 +220,7 @@ export class WritingSession {
         try {
           const data = await this.api.get();
           const version = data.content_version === before.content_version || data.content_version === String(BigInt(before.content_version) + 1n);
-          const match = data.editing_script?.id === id && (kind === 'select' || (data.confirmed_script_id === id && data.editing_script?.state === 'confirmed' && data.editing_script.content === before.editing_script?.content));
+          const match = data.editing_script?.id === id && (kind === 'select' || (data.confirmed_script_id === id && data.editing_script?.state === 'confirmed' && sameScript(data.editing_script, before.editing_script)));
           if (version && match && sameRecord(data.novel, before.novel)) {
             return accept(data);
           }

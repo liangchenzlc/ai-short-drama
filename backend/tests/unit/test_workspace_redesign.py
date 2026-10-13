@@ -178,6 +178,7 @@ def test_storyboard_history_pages_only_requested_shots_and_checks_episode_scope(
         assert page["items"][0] == {
             "position": 21,
             "title": "",
+            "shot_size": None,
             "script": "shot 20",
             "duration_ms": 3000,
             "source_excerpt": "hidden",

@@ -3,7 +3,7 @@ import { fixture, root, image } from './studio-fixture';
 
 const origin = () => new URL(test.info().project.use.baseURL!).origin;
 const setup = (page: Page) => fixture(page, true, origin());
-const panel = (page: Page) => page.getByRole('complementary', { name: '分镜媒体设置', exact: true });
+const panel = (page: Page) => page.locator('.standard-storyboard-panel');
 
 for (const position of [21, 50, 80]) test(`restores off-page shot ${position} with separate detail and saves it`, async ({ page }) => {
   const state = await setup(page); const id = String(100 + position);
@@ -24,25 +24,27 @@ test('asset list failure leaves shot editing readable and retry keeps its draft'
   await page.locator('.storyboard-summary').first().click();
   const input = panel(page).getByRole('textbox', { name: '分镜 1 脚本', exact: true });
   await input.fill('素材失败时保留镜头输入');
-  await expect(panel(page).getByRole('combobox', { name: '关联角色' })).toBeDisabled();
+  await expect(panel(page).getByRole('combobox', { name: '关联角色' })).toHaveCount(0);
+  const assetIds = [...state.shots[0].asset_ids];
   fail = false; await page.getByRole('button', { name: '重新加载关联素材', exact: true }).click();
-  await expect(panel(page).getByRole('combobox', { name: '关联角色' })).toBeEnabled();
   await expect(input).toHaveValue('素材失败时保留镜头输入');
+  await expect.poll(() => state.shots[0].script).toBe('素材失败时保留镜头输入');
+  expect(state.shots[0].asset_ids).toEqual(assetIds);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
 test('seventeen combined image references block submission and removing one allows sixteen', async ({ page }) => {
   const state = await setup(page);
-  state.referenceState['shot/101'] = Array.from({ length: 16 }, (_, index) => ({ media_id: String(2000 + index), name: `manual ${index}`, url: image }));
+  state.creationDrafts.set('101:storyboard_image', { id: '95001', project_id: '10', episode_id: '20', object_id: '101', purpose: 'storyboard_image', model_config_id: '77', input_text: '', image_settings: { aspect: '16:9', resolution: '2K', count: 1 }, video_settings: null, reference_media_ids: Array.from({ length: 16 }, (_, index) => String(2000 + index)), reference_images: Array.from({ length: 16 }, (_, index) => ({ media_id: String(2000 + index), url: image })), row_version: '1', draft_version: '1', source_version: '1' });
   await page.goto(`${root}/storyboard`); await page.locator('.storyboard-summary').first().click();
   await panel(page).getByRole('tab', { name: '分镜图', exact: true }).click();
   await expect(panel(page).getByText(/去重合计 17\/16 张/)).toBeVisible();
   await expect(panel(page).getByRole('button', { name: '生成图片', exact: true })).toBeDisabled();
   expect(state.requests.filter(request => request.path === '/ai/generations/image' && request.method === 'POST')).toHaveLength(0);
-  await panel(page).getByRole('button', { name: '移除', exact: true }).first().click();
+  await panel(page).getByRole('button', { name: '移除个人参考图片', exact: true }).first().click();
   await expect(panel(page).getByText(/去重合计 16\/16 张/)).toBeVisible();
   await expect(panel(page).getByRole('button', { name: '生成图片', exact: true })).toBeEnabled();
-  expect(state.referenceState['shot/101']).toHaveLength(15);
+  await expect.poll(() => state.creationDrafts.get('101:storyboard_image').reference_media_ids.length).toBe(15);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -52,7 +54,7 @@ test('history displays failure instead of empty and then reviews complete candid
     if (new URL(route.request().url()).searchParams.get('source_scene') === 'script_shots' && fail) return route.fulfill({ status: 503, json: { error: { code: 'OFFLINE' } } });
     return route.fallback();
   });
-  await page.goto(`${root}/storyboard`); await page.getByRole('button', { name: '历史记录', exact: true }).click();
+  await page.goto(`${root}/storyboard`); await page.getByRole('button', { name: '分镜生成记录', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '分镜生成记录', exact: true });
   await expect(dialog.getByRole('alert')).toBeVisible();
   await expect(dialog.getByText('暂无分镜生成记录，确认剧本后开始生成。', { exact: true })).toHaveCount(0);
@@ -91,13 +93,13 @@ test('shot menu moves across the page boundary and archive clears the scope', as
   await expect(panel(page).getByRole('textbox', { name: '分镜 20 脚本', exact: true })).toBeVisible();
   await panel(page).getByRole('button', { name: '分镜 20 更多操作', exact: true }).click(); await page.getByRole('menuitem', { name: '下移', exact: true }).click();
   await expect(panel(page).getByRole('textbox', { name: '分镜 20 脚本', exact: true })).toBeDisabled();
-  await expect(panel(page).getByRole('spinbutton', { name: '分镜 20 时长', exact: true })).toBeDisabled();
+  await expect(panel(page).getByRole('textbox', { name: '镜头名称', exact: true })).toBeDisabled();
   releaseMove();
   await expect(panel(page).getByRole('textbox', { name: '分镜 21 脚本', exact: true })).toBeVisible();
   await panel(page).getByRole('button', { name: '分镜 21 更多操作', exact: true }).click(); await page.getByRole('menuitem', { name: '归档', exact: true }).click();
   await page.getByRole('button', { name: '确认继续', exact: true }).click();
   await expect(page).toHaveURL(url => !url.searchParams.has('shot'));
-  await expect(page.locator('.storyboard-stage-meta')).toContainText('本集共 79 镜');
+  await expect(page.locator('.standard-storyboard-list h3')).toContainText('79');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -129,12 +131,12 @@ test('replacing all shots clears the previous stable shot scope after adoption',
   const state = await setup(page);
   await page.route(`**/api/v1${root}/storyboard-results/*/apply`, async route => {
     expect(route.request().postDataJSON()).toMatchObject({ mode: 'replace', confirm_replace: true });
-    state.shots.splice(0, state.shots.length, { ...state.shots[0], id: '301', position: 1, script: '采用后的新分镜' });
+    state.shots.splice(0, state.shots.length, { ...state.shots[0], id: '301', position: 1, title: '采用后的新分镜', script: '采用后的新分镜' });
     return route.fallback();
   });
   await page.goto(`${root}/storyboard?shot=150`);
   await expect(panel(page).getByRole('textbox', { name: '分镜 50 脚本', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '历史记录', exact: true }).click();
+  await page.getByRole('button', { name: '分镜生成记录', exact: true }).click();
   const history = page.getByRole('dialog', { name: '分镜生成记录', exact: true });
   await history.getByRole('button', { name: '查看分镜', exact: true }).first().click();
   await history.getByRole('button', { name: '替换当前分镜', exact: true }).click();
@@ -154,7 +156,7 @@ test('history shows a pending response before the empty state', async ({ page })
     if (new URL(route.request().url()).searchParams.get('source_scene') !== 'script_shots') return route.fallback();
     await pending; return route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 20 } });
   });
-  await page.goto(`${root}/storyboard`); await page.getByRole('button', { name: '历史记录', exact: true }).click();
+  await page.goto(`${root}/storyboard`); await page.getByRole('button', { name: '分镜生成记录', exact: true }).click();
   const history = page.getByRole('dialog', { name: '分镜生成记录', exact: true });
   await expect(history.getByText('正在加载分镜生成记录…', { exact: true })).toBeVisible();
   await expect(history.getByText('暂无分镜生成记录，确认剧本后开始生成。', { exact: true })).toHaveCount(0);
@@ -167,7 +169,9 @@ test('off-page autosave accepts its version before the initial list response arr
   const pending = new Promise<void>(resolve => { release = resolve; });
   const staleRows = structuredClone(state.shots.slice(0, 20));
   await page.route(`**/api/v1${root}/shots?**`, async route => {
-    if (++reads === 1) { await pending; return route.fulfill({ json: { items: staleRows, total: 80, episode_id: '20', storyboard_version: '1', offset: 0, limit: 20 } }); }
+    if (new URL(route.request().url()).searchParams.get('limit') === '100') return route.fulfill({ json: { items: state.shots, total: 80, episode_id: '20', storyboard_version: version, offset: 0, limit: 100 } });
+    reads++;
+    if (!savedVersions.length) { await pending; return route.fulfill({ json: { items: staleRows, total: 80, episode_id: '20', storyboard_version: '1', offset: 0, limit: 20 } }); }
     return route.fulfill({ json: { items: state.shots.slice(0, 20), total: 80, episode_id: '20', storyboard_version: version, offset: 0, limit: 20 } });
   });
   await page.route(`**/api/v1${root}/shots/150`, async route => {

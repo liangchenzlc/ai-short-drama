@@ -32,7 +32,7 @@ def test_visual_script_is_normalized_without_changing_the_generated_text():
     content = json.dumps({"shots": [SHOT]}, ensure_ascii=False)
     result = parse_storyboard_result(content, {360615771405029376}, SOURCE)
 
-    expected = {**SHOT, "script": SHOT["visual_script"]}
+    expected = {**SHOT, "script": SHOT["visual_script"], "shot_size": None}
     del expected["visual_script"]
     assert result == {"shots": [expected]}
     assert json.loads(content) == {"shots": [SHOT]}

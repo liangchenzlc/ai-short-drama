@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { fixture, root } from './studio-fixture';
 
 async function editorFixture(page: Page) {
@@ -50,7 +51,13 @@ async function openEditor(page: Page) {
     await menu.click();
     await page.getByRole('menuitem', { name: '编辑素材', exact: true }).click();
   } else await page.getByRole('button', { name: '林晚', exact: true }).click();
-  return page.locator('.episode-asset-detail, .asset-editor-drawer');
+  const inEpisode = page.locator('.creation-editor-target');
+  if (await inEpisode.count()) {
+    const expand = inEpisode.getByRole('button', { name: '展开生成设置', exact: true });
+    if (await expand.isVisible()) await expand.click();
+    return inEpisode;
+  }
+  return page.locator('.asset-editor-drawer');
 }
 
 for (const scope of ['episode', 'project', 'global'] as const) {
@@ -64,8 +71,10 @@ for (const scope of ['episode', 'project', 'global'] as const) {
     }
     const editor = await openEditor(page);
     await editor.getByRole('textbox', { name: '描述', exact: true }).fill('修改后的外观，继续使用已采用的图片。');
-    await editor.getByRole('button', { name: '保存修改', exact: true }).click();
-    await expect(editor.getByText('待确认', { exact: true }).first()).toBeVisible();
+    if (scope === 'episode') await expect.poll(() => data.server.description).toBe('修改后的外观，继续使用已采用的图片。');
+    else await editor.getByRole('button', { name: '保存修改', exact: true }).click();
+    if (scope === 'episode') await expect(editor.getByText('素材信息已修改，当前图片待确认', { exact: true })).toBeVisible();
+    else await expect(editor.getByText('待确认', { exact: true }).first()).toBeVisible();
     await editor.getByRole('button', { name: '重新确认当前图片', exact: true }).click();
     await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确认继续', exact: true }).click();
     await expect.poll(() => data.server.state).toBe('confirmed');
@@ -82,7 +91,7 @@ test('opening the editor reads latest detail and retries a failed initial read',
   await page.goto(`${root}/assets`);
   const editor = await openEditor(page);
   await expect(editor.getByRole('button', { name: '重新读取素材', exact: true })).toBeVisible();
-  await expect(editor.getByRole('button', { name: '保存修改', exact: true })).toBeDisabled();
+  await expect(editor.getByRole('textbox', { name: '描述', exact: true })).toHaveCount(0);
   data.state.detailFailure = false;
   await editor.getByRole('button', { name: '重新读取素材', exact: true }).click();
   await expect(editor.getByRole('textbox', { name: '描述', exact: true })).toHaveValue('服务端最新描述');
@@ -97,10 +106,10 @@ test('a version conflict preserves and downloads the draft before explicit recon
   await expect(description).toBeEnabled();
   await description.fill('本页尚未保存的草稿');
   Object.assign(data.server, { description: '协作者最新描述', row_version: '5' });
-  await editor.getByRole('button', { name: '保存修改', exact: true }).click();
+  await expect(editor.getByRole('button', { name: '核对最新版本', exact: true })).toBeVisible();
   await expect(description).toHaveValue('本页尚未保存的草稿');
-  await expect(editor.getByRole('button', { name: '保存修改', exact: true })).toBeDisabled();
-  await expect(editor.getByRole('button', { name: /保存并生成图片$/ })).toBeDisabled();
+  await expect(editor.getByRole('button', { name: '保存修改', exact: true })).toHaveCount(0);
+  await expect(editor.getByRole('button', { name: '生成图片', exact: true })).toBeDisabled();
   const download = page.waitForEvent('download');
   await editor.getByRole('button', { name: '下载素材草稿', exact: true }).click();
   expect((await download).suggestedFilename()).toBe('asset-501-draft.json');
@@ -111,7 +120,6 @@ test('a version conflict preserves and downloads the draft before explicit recon
   expect(data.operations.filter(op => op.method === 'PATCH')).toHaveLength(1);
   await review.getByRole('button', { name: '已核对，保留草稿继续编辑', exact: true }).click();
   await expect(description).toHaveValue('本页尚未保存的草稿');
-  await editor.getByRole('button', { name: '保存修改', exact: true }).click();
   await expect.poll(() => data.server.description).toBe('本页尚未保存的草稿');
   expect(data.operations.filter(op => op.method === 'PATCH').at(-1)?.body.row_version).toBe('5');
   expect(data.errors).toEqual([]);
@@ -129,13 +137,13 @@ test('reconfirmation keeps stale-source and shared-impact confirmations', async 
   await confirmation.getByRole('button', { name: '确认继续', exact: true }).click();
   await expect(confirmation).toContainText('旧内容');
   await confirmation.getByRole('button', { name: '确认继续', exact: true }).click();
-  await expect(confirmation).toContainText('共享引用');
+  await expect(confirmation).toContainText('所有项目和分集引用');
   await confirmation.getByRole('button', { name: '确认继续', exact: true }).click();
   await expect.poll(() => data.server.state).toBe('confirmed');
   expect(data.operations.filter(op => op.path.endsWith('/confirm')).at(-1)?.body).toMatchObject({ acknowledge_stale_source: true, confirm_shared: true, row_version: '4', expected_media_id: '9901' });
 });
 
-test('closing a delayed detail request prevents the old response from reopening the editor', async ({ page }) => {
+test('selecting a new local card ignores a delayed detail response from the previous object', async ({ page }) => {
   const data = await editorFixture(page);
   let release!: () => void;
   const delayed = new Promise<void>(resolve => { release = resolve; });
@@ -147,9 +155,10 @@ test('closing a delayed detail request prevents the old response from reopening 
   await page.goto(`${root}/assets`);
   const editor = await openEditor(page);
   await expect(editor.getByText('正在读取最新素材…', { exact: true })).toBeVisible();
-  await editor.getByRole('button', { name: '返回素材列表', exact: true }).click();
+  await page.getByRole('button', { name: '新增素材', exact: true }).first().click();
+  await expect(editor.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('');
   release();
-  await expect(editor).toHaveCount(0);
+  await expect(editor.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('');
   await expect(page.getByText('迟到的旧响应', { exact: true })).toHaveCount(0);
   expect(data.errors).toEqual([]);
 });
@@ -163,10 +172,11 @@ test('a generation source conflict exposes recovery without submitting another t
   });
   await page.goto(`${root}/assets`);
   const editor = await openEditor(page);
-  await editor.getByRole('button', { name: '保存并生成图片', exact: true }).click();
+  await expect(editor.getByRole('button', { name: '生成图片', exact: true })).toBeEnabled();
+  await editor.getByRole('button', { name: '生成图片', exact: true }).click();
   await expect(editor.getByRole('button', { name: '核对最新版本', exact: true })).toBeVisible();
   await expect(editor.getByRole('textbox', { name: '描述', exact: true })).toHaveValue(data.server.description);
-  await expect(editor.getByRole('button', { name: /保存并生成图片$/ })).toBeDisabled();
+  await expect(editor.getByRole('button', { name: '生成图片', exact: true })).toBeDisabled();
   expect(submissions).toBe(1);
 });
 
@@ -178,7 +188,7 @@ test('conflict review can fail safely before explicitly discarding the draft at 
   const description = editor.getByRole('textbox', { name: '描述', exact: true });
   await description.fill('保留到明确弃稿之前');
   Object.assign(data.server, { description: '另一页面最新文字', row_version: '5' });
-  await editor.getByRole('button', { name: '保存修改', exact: true }).click();
+  await expect(editor.getByRole('button', { name: '核对最新版本', exact: true })).toBeVisible();
   data.state.detailFailure = true;
   await editor.getByRole('button', { name: '核对最新版本', exact: true }).click();
   const review = page.getByRole('dialog', { name: '核对素材版本', exact: true });
@@ -190,6 +200,31 @@ test('conflict review can fail safely before explicitly discarding the draft at 
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await review.getByRole('button', { name: '放弃草稿并载入最新版本', exact: true }).click();
   await expect(description).toHaveValue('另一页面最新文字');
-  await expect(editor.getByRole('button', { name: '保存修改', exact: true })).toBeDisabled();
+  await expect(editor.getByRole('button', { name: '核对最新版本', exact: true })).toHaveCount(0);
   expect(data.operations.filter(op => op.method === 'PATCH')).toHaveLength(1);
+});
+
+test('malformed local recovery remains downloadable and blocks editing until explicitly cleared', async ({ page }) => {
+  const data = await editorFixture(page);
+  const key = 'short-drama:asset-editor:v1:anonymous:10:20:501';
+  const original = JSON.stringify({ base: {}, fields: { description: '损坏记录中的原始文字' } });
+  await page.addInitScript(({ key, original }) => localStorage.setItem(key, original), { key, original });
+  await page.goto(`${root}/assets`);
+  const editor = await openEditor(page);
+  const description = editor.getByRole('textbox', { name: '描述', exact: true });
+  await expect(description).toBeDisabled();
+  await expect(editor.getByRole('button', { name: '生成图片', exact: true })).toBeDisabled();
+  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBe(original);
+  expect(data.operations.filter(op => op.method === 'PATCH')).toHaveLength(0);
+  const downloading = page.waitForEvent('download');
+  await editor.getByRole('button', { name: '下载本机恢复记录', exact: true }).click();
+  const backup = await downloading;
+  expect(await readFile((await backup.path())!, 'utf8')).toBe(original);
+  await editor.getByRole('button', { name: '清除本机恢复记录', exact: true }).click();
+  await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确认继续', exact: true }).click();
+  await expect(description).toBeEnabled();
+  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+  await description.fill('明确清除后继续编辑');
+  await expect.poll(() => data.server.description).toBe('明确清除后继续编辑');
+  expect(data.errors).toEqual([]);
 });

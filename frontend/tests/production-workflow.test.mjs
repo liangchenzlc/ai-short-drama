@@ -8,7 +8,7 @@ const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.Scri
 const workflow = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
 test('storyboard exposes the persisted image model selection', () => {
-  const component = '../src/pages/projects/episode/StoryboardStage.tsx';
+  const component = '../src/features/projects/ShotImageCandidates.tsx';
   const componentSource = readFileSync(new URL(component, import.meta.url), 'utf8');
   const file = ts.createSourceFile(component, componentSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let imageSelect;
@@ -24,8 +24,10 @@ test('storyboard exposes the persisted image model selection', () => {
   visit(file);
   assert.ok(imageSelect, 'missing image EpisodeModelSelect');
   assert.equal(imageSelect.label, '"分镜生图模型"');
-  assert.equal(imageSelect.value, '{value.models.storyboardImage}');
-  assert.match(imageSelect.onChange, /storyboardImage:\s*id/);
+  assert.equal(imageSelect.value, '{draft.value.model_config_id ?? modelSelection}');
+  assert.match(imageSelect.onChange, /draft.edit\(\{ model_config_id: id \|\| null \}\)/);
+  assert.match(imageSelect.onChange, /onModelChange\(id\)/);
+  assert.equal(imageSelect.onResolvedChange, '{handleResolved}');
 });
 
 test('asset image generation resolves the enabled default model into its request state', () => {

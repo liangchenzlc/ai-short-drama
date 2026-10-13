@@ -7,6 +7,7 @@ from typing import Annotated
 from pydantic import AfterValidator, AliasChoices, Field, model_validator
 
 from .base import Identifier, InputModel, nonblank
+from .shot_script import ShotSizeEnum
 
 
 def shot_text(value):
@@ -18,6 +19,7 @@ def shot_text(value):
 
 class GeneratedShot(InputModel):
     title: Annotated[str, Field(max_length=255), AfterValidator(nonblank)]
+    shot_size: ShotSizeEnum | None = None
     source_excerpt: Annotated[str, Field(max_length=8000), AfterValidator(nonblank)]
     story_beat: Annotated[str, Field(max_length=8000), AfterValidator(nonblank)]
     script: Annotated[str, AfterValidator(shot_text)] = Field(

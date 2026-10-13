@@ -59,6 +59,12 @@ class ShotScript(Base):
     row_version: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, server_default=text("1"), comment="单镜头并发版本"
     )
+    title: Mapped[str] = mapped_column(
+        VARCHAR(255), nullable=False, server_default=text("''"), comment="镜头名称；旧记录为空"
+    )
+    shot_size: Mapped[str | None] = mapped_column(
+        VARCHAR(20), nullable=True, server_default=text("NULL"), comment="受限景别元信息"
+    )
     image_settings: Mapped[dict | None] = mapped_column(
         JSON(none_as_null=True),
         nullable=True,
@@ -137,6 +143,11 @@ class ShotScript(Base):
         CheckConstraint("`position` > 0", name="ck_shot_scripts_position"),
         CheckConstraint("`duration_ms` BETWEEN 1000 AND 10000", name="ck_shot_scripts_duration_ms"),
         CheckConstraint("`row_version` > 0", name="ck_shot_scripts_row_version"),
+        CheckConstraint(
+            "`shot_size` IS NULL OR `shot_size` IN "
+            "('full_shot','medium_shot','close_up','extreme_close_up','wide_shot','two_shot')",
+            name="ck_shot_scripts_shot_size",
+        ),
         CheckConstraint(
             "`image_settings` IS NULL OR JSON_TYPE(`image_settings`) = 'OBJECT'",
             name="ck_shot_scripts_image_settings",

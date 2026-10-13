@@ -11,7 +11,18 @@ Prompt = Annotated[str, Field(min_length=1, max_length=1048576), AfterValidator(
 Aspect = Literal["16:9", "9:16", "1:1", "4:3", "3:4"]
 
 
-class ShotImageSource(InputModel):
+class CreationDraftSource(InputModel):
+    draft_id: Identifier | None = None
+    draft_version: Identifier | None = None
+
+    @model_validator(mode="after")
+    def complete_draft_reference(self):
+        if (self.draft_id is None) != (self.draft_version is None):
+            raise ValueError("私人草稿引用须同时提供 draft_id 和 draft_version")
+        return self
+
+
+class ShotImageSource(CreationDraftSource):
     scene: Literal["shot_image"]
     shot_id: Identifier
     layout: Literal["single", "four", "five", "nine"]
@@ -21,6 +32,8 @@ class ShotImageSource(InputModel):
 
     @model_validator(mode="after")
     def context_tokens(self):
+        if self.draft_id is not None and self.context_mode != "saved":
+            raise ValueError("私人草稿生成必须使用已保存分镜来源")
         if self.context_mode == "saved":
             if self.row_version is None or self.context_hash is None:
                 raise ValueError("Saved context requires version and hash")
@@ -29,15 +42,21 @@ class ShotImageSource(InputModel):
         return self
 
 
-class AssetImageSource(InputModel):
+class AssetImageSource(CreationDraftSource):
     scene: Literal["asset_image"]
     asset_id: Identifier
     row_version: Identifier
     project_id: Identifier | None = None
     episode_id: Identifier | None = None
 
+    @model_validator(mode="after")
+    def scoped_draft(self):
+        if self.draft_id is not None and (self.project_id is None or self.episode_id is None):
+            raise ValueError("私人素材草稿生成须指定项目和分集")
+        return self
 
-class NovelScriptSource(InputModel):
+
+class NovelScriptSource(CreationDraftSource):
     scene: Literal["novel_script"]
     project_id: Identifier
     episode_id: Identifier
@@ -166,7 +185,7 @@ class VideoInput(InputModel):
     last_frame_media_id: Identifier | None = None
 
 
-class ShotVideoSource(InputModel):
+class ShotVideoSource(CreationDraftSource):
     scene: Literal["shot_video"]
     shot_id: Identifier
     row_version: Identifier

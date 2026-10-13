@@ -1,8 +1,10 @@
 # MySQL 8 数据库说明
 
-项目当前设计包含 **101 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已合并写作、素材、分镜、成片、批量生成、声音、原生音色、账号协作、Agent 和无限画布结构。原有 32 张业务表和 11 张身份与协作表保留，Agent 增加 9 张独立表，无限画布增加 47 张表，角色不可变版本增加 2 张表。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。当前业务库执行状态见[迁移记录](migrations/2026-10-05-infinite-canvas/README.md)，不能以 SQL 已生成代替 DDL 已执行；当前 `short_drama` 的 019 结构已实际执行并独立回读；角色回填与同版七角色部署尚未执行，结构就绪不代表角色菜单或供应商验收通过。
+项目当前设计包含 **102 张表**。[schema.mysql8.sql](schema.mysql8.sql) 是新库初始化的完整结构，已合并写作、素材、分镜、成片、批量生成、声音、原生音色、账号协作、Agent 和无限画布结构。原有 32 张业务表和 11 张身份与协作表保留，Agent 增加 9 张独立表，无限画布增加 47 张表，角色不可变版本增加 2 张表。字段的完整类型、默认值、索引和 CHECK 以该文件为准；[SQLAlchemy Domain](../../backend/src/short_drama/domain) 与其保持一致。当前业务库执行状态见[迁移记录](migrations/2026-10-05-infinite-canvas/README.md)，不能以 SQL 已生成代替 DDL 已执行；当前 `short_drama` 的 019 结构已实际执行并独立回读；角色回填与同版七角色部署尚未执行，结构就绪不代表角色菜单或供应商验收通过。
 
 本文说明表的职责、关系及应用维护的约束，不另维护一份重复的字段清单。开发与测试见[开发说明](../development.md)，模块关系见[架构说明](../architecture.md)，接口见[API 文档](../api/README.md)。旧库升级使用[迁移目录](migrations/README.md)。
+
+标准模式创作新增镜头名称、受限景别、剧本 Delta 和私人生成草稿表，见[2026-10-13 迁移及实际执行记录](migrations/2026-10-13-standard-creation-workflow/README.md)。正文与格式同事务保存，私人草稿按本人、稳定对象和用途隔离，生成引用继续校验来源版本及上下文。
 
 ## 保持完整 SQL 同步
 

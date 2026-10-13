@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, field_validator, model_validator
 
 from .base import Identifier, InputModel, ReadModel
+from .shot_script import ShotSizeEnum, ShotTitle
 
 
 class ShotImageSettings(InputModel):
@@ -38,6 +39,8 @@ def _require_complete_image_settings(data):
 
 class StoryboardCreate(InputModel):
     storyboard_version: Identifier
+    title: ShotTitle = ""
+    shot_size: ShotSizeEnum | None = None
     script: ShotScriptText = ""
     duration_ms: int = Field(default=3000, strict=True, ge=1000, le=10000)
     asset_ids: list[Identifier] = Field(default_factory=list, max_length=100)
@@ -55,6 +58,8 @@ class StoryboardCreate(InputModel):
 
 class StoryboardUpdate(InputModel):
     row_version: Identifier
+    title: ShotTitle = None
+    shot_size: ShotSizeEnum | None = None
     script: ShotScriptText = None
     duration_ms: int = Field(default=None, strict=True, ge=1000, le=10000)
     asset_ids: list[Identifier] = Field(default=None, max_length=100)
@@ -85,7 +90,8 @@ class StoryboardOrder(InputModel):
 
 
 class StoryboardGeneratedShot(InputModel):
-    title: str = ""
+    title: ShotTitle = ""
+    shot_size: ShotSizeEnum | None = None
     source_excerpt: Annotated[str, Field(max_length=8000)] = ""
     story_beat: Annotated[str, Field(max_length=8000)] = ""
     script: ShotScriptText
@@ -111,6 +117,7 @@ class StoryboardResultAsset(ReadModel):
 class StoryboardResultShot(ReadModel):
     position: int = Field(ge=1)
     title: str
+    shot_size: ShotSizeEnum | None = None
     script: str
     duration_ms: int = Field(ge=1000, le=10000)
     source_excerpt: str
@@ -161,6 +168,8 @@ class ShotVideoRead(ReadModel):
 class StoryboardShotRead(ReadModel):
     id: Identifier
     position: int
+    title: ShotTitle = ""
+    shot_size: ShotSizeEnum | None = None
     script: str
     duration_ms: int
     source_excerpt: str

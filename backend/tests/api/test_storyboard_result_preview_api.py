@@ -17,6 +17,7 @@ def preview_payload():
             {
                 "position": 21,
                 "title": "next shot",
+                "shot_size": "close_up",
                 "script": "opening",
                 "duration_ms": 4500,
                 "asset_ids": ["9007199254740995"],

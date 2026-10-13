@@ -97,6 +97,15 @@ def list_generations(
     )
 
 
+@router.get("/by-idempotency-key")
+def lookup_generation(
+    service: Service,
+    service_type: Literal["text", "image", "video", "audio"],
+    idempotency_key: Annotated[str, Query(min_length=1, max_length=128)],
+):
+    return service.lookup_by_key(service_type, idempotency_key)
+
+
 @router.get("/{generation_id}")
 def detail(generation_id: Identifier, service: Service):
     return service.detail(generation_id)

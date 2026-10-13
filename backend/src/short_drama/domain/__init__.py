@@ -67,6 +67,7 @@ from .shot_asset import ShotAsset
 from .shot_image import ShotImage
 from .shot_script import ShotScript
 from .shot_video import ShotVideo
+from .user_creation_draft import UserCreationDraft
 
 __all__ = [
     "CanvasRenderJob",
@@ -137,6 +138,7 @@ __all__ = [
     "ShotAsset",
     "ShotImage",
     "ShotVideo",
+    "UserCreationDraft",
     "ScriptShotRecord",
     "MediaRecycleBin",
     "NovelScriptRecord",

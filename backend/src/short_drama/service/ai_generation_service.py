@@ -460,7 +460,13 @@ class AIGenerationService(BaseService):
                     references.append(parameters["mask_media_id"])
             for identifier in references:
                 media = self._require(MediaFile, identifier, for_update=False)
-                if scope_of(self.session, media) != scope:
+                allowed_scopes = {scope}
+                private_ids = (payload.get("creation_draft_snapshot") or {}).get(
+                    "reference_media_ids", []
+                )
+                if str(identifier) in private_ids:
+                    allowed_scopes.add((actor.user_id, None))
+                if scope_of(self.session, media) not in allowed_scopes:
                     raise WorkflowError(
                         "not_found", "Import reference media into this scope first", 404
                     )
@@ -605,13 +611,30 @@ class AIGenerationService(BaseService):
         if existing:
             return existing
         self._lock_payload_scope(parsed.model_dump(mode="json", exclude_none=True))
-        config = self._config(kind, parsed.config_id)
-        request = self._prepare(kind, parsed.model_dump(mode="json", exclude_none=True))
+        request = parsed.model_dump(mode="json", exclude_none=True)
+        if (request.get("source") or {}).get("draft_id"):
+            from .user_creation_draft_service import UserCreationDraftService
+
+            request = UserCreationDraftService(self.session).freeze_for_generation(request)
+        config = self._config(kind, request.get("config_id"))
+        request = self._prepare(kind, request)
         if prepare_transform is not None:
             request = prepare_transform(request)
         return self._insert(kind, request, key, request_hash, config)
 
     create_generation = create
+
+    def lookup_by_key(self, kind, key):
+        from short_drama.core.identity import require_actor
+        from short_drama.db.access import scoped_key
+
+        actor = require_actor(self.session)
+        key = self._key(key)
+        with self._transaction(read_only=True):
+            task = self.dao.by_key(scoped_key(self.session, key))
+            if task is None or task.service_type != kind or task.initiated_by != actor.user_id:
+                return None
+            return self._summary(task)
 
     def list(self, offset=0, limit=20, filters=None):
         if not 1 <= limit <= 100 or offset < 0:

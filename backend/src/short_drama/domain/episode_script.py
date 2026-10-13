@@ -11,6 +11,7 @@ from sqlalchemy.dialects.mysql import (
     BIGINT,
     DATETIME,
     INTEGER,
+    JSON,
     MEDIUMTEXT,
     VARCHAR,
 )
@@ -37,6 +38,9 @@ class EpisodeScript(Base):
     )
     content: Mapped[str] = mapped_column(
         MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="剧本正文"
+    )
+    editor_document: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True, comment="与纯文本同版本保存的受限 Quill Delta"
     )
     state: Mapped[str] = mapped_column(
         VARCHAR(16, collation="utf8mb4_0900_bin"),
@@ -94,6 +98,10 @@ class EpisodeScript(Base):
             name="ck_episode_scripts_audit_time",
         ),
         CheckConstraint("`state` IN ('unconfirmed', 'confirmed')", name="ck_scripts_state"),
+        CheckConstraint(
+            "`editor_document` IS NULL OR JSON_TYPE(`editor_document`) = 'OBJECT'",
+            name="ck_scripts_editor_document",
+        ),
         {
             "mysql_engine": "InnoDB",
             "mysql_row_format": "DYNAMIC",

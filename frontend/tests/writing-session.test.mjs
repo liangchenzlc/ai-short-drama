@@ -4,7 +4,10 @@ import test from 'node:test';
 import ts from 'typescript';
 
 const source = readFileSync(new URL('../src/features/projects/writing-session.ts', import.meta.url), 'utf8');
-const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
+const compilerOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 };
+const helpers = ts.transpileModule(readFileSync(new URL('../src/features/projects/script-document.ts', import.meta.url), 'utf8'), { compilerOptions }).outputText;
+const helperUrl = `data:text/javascript;base64,${Buffer.from(helpers).toString('base64')}`;
+const compiled = ts.transpileModule(source, { compilerOptions }).outputText.replace("'./script-document'", JSON.stringify(helperUrl));
 const { WritingSession } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const initial = () => ({ episode_id: '9', content_version: '1', novel: null, editing_script: null, confirmed_script_id: null });
 const record = (id, content, state) => ({ id, content, updated_at: '2026-09-21T00:00:00Z', ...(state ? { state } : {}) });
@@ -14,7 +17,7 @@ function transport() {
   return { writes, get server() { return server; }, set server(v) {server=v;},
     async get() { return structuredClone(server); },
     async novel(body) { writes.push(['novel',body]); server = {...server, content_version: String(BigInt(server.content_version)+1n), novel: record('11',body.content)}; return {content_version:server.content_version,novel:server.novel}; },
-    async script(body) { writes.push(['script',body]); server={...server,content_version:String(BigInt(server.content_version)+1n),editing_script:record('12',body.content,'unconfirmed'),confirmed_script_id:null}; return {content_version:server.content_version,script:server.editing_script}; },
+    async script(body) { writes.push(['script',body]); server={...server,content_version:String(BigInt(server.content_version)+1n),editing_script:{...record('12',body.content,'unconfirmed'),editor_document:body.editor_document ?? null},confirmed_script_id:null}; return {content_version:server.content_version,script:server.editing_script}; },
     async confirm(id,body) { writes.push(['confirm',id,body]); server={...server,content_version:String(BigInt(server.content_version)+1n),editing_script:{...server.editing_script,state:'confirmed'},confirmed_script_id:id};return structuredClone(server); },
     async select() { throw new Error('unused'); },
   };
@@ -133,4 +136,84 @@ test('uncertain committed save remains paused after draft returns to stale snaps
   const q=new WritingSession(api);await q.load();api.novel=async body=>{await save(body);throw {};};api.get=async()=>{throw {};};
   q.edit('novel','B');assert.equal(await q.flush(),false);q.edit('novel','A');assert.equal(q.getSnapshot().dirty,false);assert.equal(q.getSnapshot().status,'error');assert.equal(await q.flush(),false);assert.equal(api.server.novel.content,'B');
   api.get=get;api.novel=save;assert.equal(await q.retry(),true);assert.equal(api.server.novel.content,'A');assert.equal(q.getSnapshot().status,'saved');q.dispose();
+});
+
+const boldDocument = content => ({ ops: [{ insert: content, attributes: { bold: true } }, { insert: '\n' }] });
+const italicDocument = content => ({ ops: [{ insert: content, attributes: { italic: true } }, { insert: '\n' }] });
+
+test('format-only editing is dirty, unconfirms, and saves plain text plus Delta in one version', async () => {
+  const api = transport(), session = new WritingSession(api);
+  await session.load(); session.edit('script', '第一场\n主角：你好'); await session.confirm();
+  const document = boldDocument(session.getSnapshot().script);
+  session.edit('script', session.getSnapshot().script, document);
+  assert.equal(session.getSnapshot().dirty, true); assert.equal(session.getSnapshot().confirmed, false);
+  await session.flush();
+  assert.deepEqual(api.writes.at(-1)[1], { content: '第一场\n主角：你好', content_version: '3', script_id: '12', editor_document: document });
+  const refreshed = new WritingSession(api); await refreshed.load();
+  assert.deepEqual(refreshed.getSnapshot().editorDocument, document); assert.equal(refreshed.getSnapshot().dirty, false);
+  session.dispose(); refreshed.dispose();
+});
+
+test('late format save acknowledgement keeps a newer format in the same serial queue', async () => {
+  const api = transport(), session = new WritingSession(api), waiting = deferred();
+  await session.load(); session.edit('script', '正文'); await session.flush();
+  const save = api.script.bind(api); let first = true;
+  api.script = async body => { if (first) { first = false; await waiting.promise; } return save(body); };
+  session.edit('script', '正文', boldDocument('正文')); const saving = session.flush();
+  session.edit('script', '正文', italicDocument('正文')); waiting.resolve(); await saving;
+  assert.deepEqual(api.writes.slice(-2).map(write => write[1].content_version), ['2', '3']);
+  assert.deepEqual(session.getSnapshot().editorDocument, italicDocument('正文'));
+  assert.deepEqual(api.server.editing_script.editor_document, italicDocument('正文')); session.dispose();
+});
+
+test('format conflict retains local Delta and does not send a second save', async () => {
+  const api = transport(), session = new WritingSession(api);
+  await session.load(); session.edit('script', '正文'); await session.flush();
+  api.script = async () => { throw { status: 409 }; };
+  session.edit('script', '正文', boldDocument('正文'));
+  assert.equal(await session.flush(), false); assert.equal(session.getSnapshot().status, 'conflict');
+  assert.deepEqual(session.getSnapshot().editorDocument, boldDocument('正文'));
+  assert.equal(await session.retry(), false); session.dispose();
+});
+
+test('format recovery retains Delta and requires explicit restoration before writes', async () => {
+  const api = transport(); api.server.editing_script = record('12', '正文', 'unconfirmed');
+  let saved = null;
+  const recovery = { read: () => saved, save: draft => { saved = structuredClone(draft); }, clear: () => { saved = null; } };
+  const first = new WritingSession(api, recovery); await first.load(); first.edit('script', '正文', boldDocument('正文')); first.dispose();
+  const next = new WritingSession(api, recovery); await next.load();
+  assert.equal(next.getSnapshot().recoverable, true); assert.equal(await next.flush(), false); assert.equal(api.writes.length, 0);
+  await next.restoreRecovered(); assert.deepEqual(next.getSnapshot().editorDocument, boldDocument('正文'));
+  await next.flush(); assert.equal(saved, null); assert.deepEqual(api.server.editing_script.editor_document, boldDocument('正文')); next.dispose();
+});
+
+test('lost format response checks Delta as well as content before acknowledging', async () => {
+  const api = transport(), session = new WritingSession(api);
+  await session.load(); session.edit('script', '正文'); await session.flush();
+  api.script = async body => {
+    api.server = { ...api.server, content_version: '3', editing_script: { ...api.server.editing_script, editor_document: italicDocument(body.content) } };
+    throw {};
+  };
+  session.edit('script', '正文', boldDocument('正文'));
+  assert.equal(await session.flush(), false); assert.equal(session.getSnapshot().status, 'conflict');
+  assert.deepEqual(session.getSnapshot().editorDocument, boldDocument('正文')); session.dispose();
+});
+
+test('format editing during candidate adoption keeps the draft for explicit reconciliation', async () => {
+  const api = transport(), session = new WritingSession(api), waiting = deferred();
+  await session.load(); session.edit('script', '正文'); await session.flush();
+  api.select = async id => { await waiting.promise; return { ...api.server, content_version: '3', editing_script: record(id, '候选', 'unconfirmed') }; };
+  const selection = session.select('22'); await new Promise(resolve => setTimeout(resolve, 0));
+  session.edit('script', '正文', boldDocument('正文')); waiting.resolve();
+  assert.equal(await selection, false); assert.equal(session.getSnapshot().status, 'conflict');
+  assert.deepEqual(session.getSnapshot().editorDocument, boldDocument('正文')); session.dispose();
+});
+
+test('legacy text editing clears saved formats and mismatched Delta never replaces the draft', async () => {
+  const api = transport(); api.server.editing_script = { ...record('12', '正文', 'unconfirmed'), editor_document: boldDocument('正文') };
+  const session = new WritingSession(api); await session.load();
+  session.edit('script', '新正文', boldDocument('别的内容'));
+  assert.equal(session.getSnapshot().script, '正文'); assert.equal(session.getSnapshot().status, 'error');
+  session.edit('script', '新正文'); await session.retry();
+  assert.equal(api.server.editing_script.editor_document, null); assert.equal(api.server.editing_script.content, '新正文'); session.dispose();
 });

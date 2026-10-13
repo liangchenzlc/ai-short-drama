@@ -96,6 +96,7 @@ class AssetUpdate(InputModel):
 
 class AssetPatch(InputModel):
     row_version: Identifier
+    kind: Literal["character", "scene", "prop"] = None
     name: Name = None
     label: Label = None
     description: MediumText = None
@@ -125,10 +126,8 @@ class AssetPatch(InputModel):
 
     @model_validator(mode="before")
     @classmethod
-    def reject_kind_and_empty_patch(cls, values):
+    def reject_empty_patch(cls, values):
         if isinstance(values, dict):
-            if "kind" in values:
-                raise ValueError("asset kind cannot be changed")
             changed = set(values) - {"row_version", "confirm_shared"}
             if not changed:
                 raise ValueError("provide at least one field to update")

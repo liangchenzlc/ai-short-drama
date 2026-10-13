@@ -1,4 +1,4 @@
--- Canonical MySQL 8 schema: 101 tables.
+-- Canonical MySQL 8 schema: 102 tables.
 -- Generated from short_drama.domain by backend/scripts/export_schema.py.
 -- Initialize an empty database; upgrade existing databases with versioned migrations.
 -- Collaboration upgrades require explicit historical ownership backfill and finalize.
@@ -1083,6 +1083,7 @@ CREATE TABLE `episode_scripts` (
   `episode_id` BIGINT UNSIGNED NOT NULL COMMENT '所属分集',
   `position` INT UNSIGNED NOT NULL COMMENT '同一分集内剧本排序',
   `content` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '剧本正文',
+  `editor_document` JSON NULL COMMENT '与纯文本同版本保存的受限 Quill Delta',
   `state` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'unconfirmed' COMMENT '未确认 / 已确认',
   `published_at` DATETIME(6) NULL COMMENT '明确采用为项目作品的时间；候选为空',
   `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
@@ -1093,6 +1094,7 @@ CREATE TABLE `episode_scripts` (
   PRIMARY KEY (`id`),
   CONSTRAINT ck_episode_scripts_audit_time CHECK (`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`),
   CONSTRAINT ck_episode_scripts_position CHECK (`position` > 0),
+  CONSTRAINT ck_scripts_editor_document CHECK (`editor_document` IS NULL OR JSON_TYPE(`editor_document`) = 'OBJECT'),
   CONSTRAINT ck_scripts_state CHECK (`state` IN ('unconfirmed', 'confirmed')),
   CONSTRAINT fk_episode_scripts_episode_id FOREIGN KEY (episode_id) REFERENCES episodes (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_scripts_confirmed_episode` (confirmed_episode_id),
@@ -1145,6 +1147,8 @@ CREATE TABLE `shot_scripts` (
   `source_excerpt` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '生成分镜的连续剧本原文依据',
   `reference_media_ids` JSON NOT NULL DEFAULT (JSON_ARRAY()) COMMENT '持久化生成参考图片',
   `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '单镜头并发版本',
+  `title` VARCHAR(255) NOT NULL DEFAULT '' COMMENT '镜头名称；旧记录为空',
+  `shot_size` VARCHAR(20) NULL DEFAULT NULL COMMENT '受限景别元信息',
   `image_settings` JSON NULL DEFAULT NULL COMMENT '下一次生图设置',
   `video_prompt` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '视频用户提示词；空值使用分镜默认内容',
   `video_settings` JSON NULL DEFAULT NULL COMMENT '下一次视频设置',
@@ -1164,6 +1168,7 @@ CREATE TABLE `shot_scripts` (
   CONSTRAINT ck_shot_scripts_image_settings CHECK (`image_settings` IS NULL OR JSON_TYPE(`image_settings`) = 'OBJECT'),
   CONSTRAINT ck_shot_scripts_position CHECK (`position` > 0),
   CONSTRAINT ck_shot_scripts_row_version CHECK (`row_version` > 0),
+  CONSTRAINT ck_shot_scripts_shot_size CHECK (`shot_size` IS NULL OR `shot_size` IN ('full_shot','medium_shot','close_up','extreme_close_up','wide_shot','two_shot')),
   CONSTRAINT ck_shot_scripts_video_settings CHECK (`video_settings` IS NULL OR JSON_TYPE(`video_settings`) = 'OBJECT'),
   CONSTRAINT fk_shot_scripts_episode_id FOREIGN KEY (episode_id) REFERENCES episodes (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_shots_creation_key` (creation_key),
@@ -1171,6 +1176,38 @@ CREATE TABLE `shot_scripts` (
   UNIQUE KEY `uk_shots_id_episode` (id, episode_id),
   KEY `idx_shots_episode_deleted_position` (`episode_id`, `deleted_at`, `position`, `id`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COMMENT='分镜脚本' COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE `user_creation_drafts` (
+  `id` BIGINT UNSIGNED NOT NULL COMMENT 'Snowflake-generated stable identifier',
+  `user_id` BIGINT UNSIGNED NOT NULL COMMENT '本人草稿所有者',
+  `project_id` BIGINT UNSIGNED NOT NULL COMMENT 'Project scope',
+  `episode_id` BIGINT UNSIGNED NOT NULL COMMENT 'Episode scope',
+  `object_id` BIGINT UNSIGNED NOT NULL COMMENT '分集、素材或镜头的稳定对象ID',
+  `purpose` VARCHAR(32) COLLATE utf8mb4_0900_bin NOT NULL COMMENT 'novel_adaptation / asset_image / storyboard_image / storyboard_video',
+  `model_config_id` BIGINT UNSIGNED NULL COMMENT 'Saved model choice ID',
+  `input_text` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '本人本次输入；图片和改编最多4000字符，视频最多16000字符',
+  `image_settings` JSON NULL DEFAULT NULL COMMENT 'Image generation settings: aspect, resolution, count',
+  `video_settings` JSON NULL DEFAULT NULL COMMENT 'Video generation settings: resolution, duration_ms',
+  `draft_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Local draft version for UI conflict detection',
+  `reference_media_ids` JSON NOT NULL DEFAULT (JSON_ARRAY()) COMMENT '个人参考图永久媒体ID；不保存展示URL',
+  `source_version` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT 'Source object version when draft was last saved',
+  `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Optimistic concurrency token for server updates',
+  `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT 'Creation timestamp',
+  `updated_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT 'Last modification timestamp',
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_user_creation_drafts_draft_version CHECK (`draft_version` > 0),
+  CONSTRAINT ck_user_creation_drafts_image_settings CHECK (`image_settings` IS NULL OR JSON_TYPE(`image_settings`) = 'OBJECT'),
+  CONSTRAINT ck_user_creation_drafts_purpose CHECK (`purpose` IN ('novel_adaptation', 'asset_image', 'storyboard_image', 'storyboard_video')),
+  CONSTRAINT ck_user_creation_drafts_reference_media_ids CHECK (JSON_TYPE(`reference_media_ids`) = 'ARRAY' AND JSON_LENGTH(`reference_media_ids`) <= 16),
+  CONSTRAINT ck_user_creation_drafts_row_version CHECK (`row_version` > 0),
+  CONSTRAINT ck_user_creation_drafts_video_settings CHECK (`video_settings` IS NULL OR JSON_TYPE(`video_settings`) = 'OBJECT'),
+  CONSTRAINT fk_user_creation_drafts_episode_id FOREIGN KEY (episode_id) REFERENCES episodes (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_user_creation_drafts_project_id FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_user_creation_drafts_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_user_creation_drafts_scope` (user_id, project_id, episode_id, object_id, purpose),
+  KEY `idx_user_creation_drafts_user_episode` (`user_id`, `episode_id`),
+  KEY `idx_user_creation_drafts_user_project` (`user_id`, `project_id`)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COMMENT='本人、项目、分集、对象和用途独立的生成草稿' COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `agent_messages` (
   `id` BIGINT UNSIGNED NOT NULL,

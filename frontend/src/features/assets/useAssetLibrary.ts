@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { assetLibraries, type AssetKind, type AssetScope, type LibraryAssetRead } from '../../api/modules/assets';
 import { errorMessage } from '../../api/http';
 
-export function useAssetLibrary(scope: AssetScope, kind: AssetKind, query: string, offset = 0) {
+export function useAssetLibrary(scope: AssetScope, kind: AssetKind | 'all', query: string, offset = 0) {
   const [items, setItems] = useState<LibraryAssetRead[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -12,7 +12,7 @@ export function useAssetLibrary(scope: AssetScope, kind: AssetKind, query: strin
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError('');
-    assetLibraries.list(scope, { kind, q: query.trim() || undefined, offset, limit: 20 }, controller.signal)
+    assetLibraries.list(scope, { kind: kind === 'all' ? undefined : kind, q: query.trim() || undefined, offset, limit: 20 }, controller.signal)
       .then((page) => { if (!controller.signal.aborted) { setItems(page.items); setTotal(page.total); } })
       .catch((cause) => { if (!controller.signal.aborted) setError(errorMessage(cause)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });

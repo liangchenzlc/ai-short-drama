@@ -1,6 +1,6 @@
 # 旧数据库升级入口
 
-[完整建表脚本](../schema.mysql8.sql) 已包含当前全部 101 张表。新库只运行完整脚本；本目录保留旧库升级所需的增量 SQL、回填工具和操作说明。应用启动不自动执行迁移；账号模式会在结构、归属或关键约束缺失时拒绝启动。
+[完整建表脚本](../schema.mysql8.sql) 已包含当前全部 102 张表。新库只运行完整脚本；本目录保留旧库升级所需的增量 SQL、回填工具和操作说明。应用启动不自动执行迁移；账号模式会在结构、归属或关键约束缺失时拒绝启动。
 
 完整 SQL 从当前 Domain 模型生成。在 `backend/` 运行 `uv run python scripts/export_schema.py` 更新文件，运行 `uv run python scripts/export_schema.py --check` 检查是否同步；这两个命令不执行数据库迁移。具体约定见[数据库说明](../MySQL8数据表设计.md#保持完整-sql-同步)。
 
@@ -34,6 +34,8 @@
 2026-10-06 的[统一模型运行配置](2026-10-06-host-model-runtime/README.md) 在无限画布目录升级后，为 `ai_model_configs` 增加两列，为 `canvas_channel_models` 增加迁移时间标记，并将旧协议/能力和扩展秘密回填到稳定模型 ID。此阶段不新增表，仍为 93 张表；不能只执行 DDL 而遗漏 Python 加密回填。
 
 同日的[项目 AI 创作助手](2026-10-06-project-assistant/README.md) 复用现有九张 Agent 表，新增项目级 `scope_version=2`，将会话 `episode_id` 设为可空并扩展 CHECK、列表索引；仍为 93 张表。旧会话不改写，运行目的与当前作品快照保存在原 checkpoint JSON。新 API/Worker 上线前显式执行对应 ALTER 和严格结构核验。
+
+2026-10-13 的[标准模式创作流程](2026-10-13-standard-creation-workflow/README.md)新增镜头名称、景别、剧本 Delta 和本人对象用途独立的私人草稿表。当前完整结构为 102 张表；生成引用须核对私人草稿版本及原来源上下文。
 
 ## 公共执行边界
 

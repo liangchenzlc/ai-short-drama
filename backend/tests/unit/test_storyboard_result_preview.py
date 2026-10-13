@@ -79,6 +79,7 @@ def test_storyboard_preview_preserves_complete_candidates_and_frozen_asset_names
         assert first["items"][0] == {
             "position": 1,
             "title": "first title",
+            "shot_size": None,
             "script": "first shot",
             "duration_ms": 2500,
             "source_excerpt": "first",

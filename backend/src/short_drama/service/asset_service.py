@@ -34,10 +34,9 @@ class AssetService(BaseService):
         self._validate_media(values.get("media_id"), "image")
 
     def _validate_update(self, entity, values):
-        if "kind" in values and values["kind"] != entity.kind:
-            raise BusinessError("Asset kind cannot be changed")
-        if entity.kind != "scene" and values.get("scene_time"):
-            raise BusinessError("scene_time is only allowed for scene assets")
+        from .asset_kind import validate_asset_kind_change
+
+        validate_asset_kind_change(self.session, entity, values)
         if "model_id" in values and values["model_id"] != entity.model_id:
             self._validate_model(values["model_id"], "image")
         if "media_id" in values and values["media_id"] != entity.media_id:

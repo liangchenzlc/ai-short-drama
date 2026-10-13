@@ -3,7 +3,8 @@ export type GenerationKind = ServiceTypeDto;
 export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export interface Page<T> { items: T[]; total: number; offset: number; limit: number }
 export type ImageLayout = 'single' | 'four' | 'five' | 'nine';
-export type GenerationSource =
+interface DraftSourceReference { draft_id?: string; draft_version?: string }
+export type GenerationSource = (
   | { scene: 'character_voice_design'; project_id: string; asset_id: string; voice_prompt: string; preview_text: string }
   | { scene: 'dialogue_extract'; project_id: string; episode_id: string }
   | { scene: 'dialogue_audio'; project_id: string; episode_id: string; row_version: string; line_id: string }
@@ -11,7 +12,7 @@ export type GenerationSource =
   | { scene: 'shot_image'; shot_id: string; layout: ImageLayout; context_mode?: 'saved'; row_version?: string; context_hash?: string }
   | { scene: 'asset_image'; asset_id: string; row_version: string; project_id?: string; episode_id?: string }
   | { scene: 'novel_script'; project_id: string; episode_id: string; content_version: string }
-  | { scene: 'script_shots' | 'script_assets'; project_id: string; episode_id: string; script_id: string; content_version: string };
+  | { scene: 'script_shots' | 'script_assets'; project_id: string; episode_id: string; script_id: string; content_version: string }) & DraftSourceReference;
 interface CreateBase { config_id?: string }
 export interface TextGenerationRequest extends CreateBase {
   input?: { messages: { role: 'system' | 'user' | 'assistant'; content: string }[] };

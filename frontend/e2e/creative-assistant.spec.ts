@@ -59,6 +59,30 @@ async function assistantFixture(page: Page) {
   return { ...base, calls, conversations, messages, attachments, abortNextSend: () => { abortSend = true; } };
 }
 
+test('mobile novel settings and assistant remain mutually exclusive while preserving adaptation input', async ({ page }) => {
+  const state = await assistantFixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${root}/source`);
+  await page.getByRole('button', { name: '展开设置', exact: true }).click();
+  const prompt = page.getByRole('textbox', { name: '改编要求', exact: true });
+  await prompt.fill('保留手机设置里的输入');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'AI 创作助手', exact: true }).click();
+  const assistant = page.getByRole('textbox', { name: '给助手的消息', exact: true });
+  await expect(assistant).toBeVisible();
+  await expect(prompt).not.toBeVisible();
+  await assistant.fill('保留助手未发送的输入');
+  await page.keyboard.press('Escape');
+  await expect(assistant).not.toBeVisible();
+  await page.getByRole('button', { name: '展开设置', exact: true }).click();
+  await expect(prompt).toHaveValue('保留手机设置里的输入');
+  await expect(assistant).not.toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'AI 创作助手', exact: true }).click();
+  await expect(assistant).toHaveValue('保留助手未发送的输入');
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
 test('shared canvas-style composer keeps project conversation, attachments, Skills and safe Markdown', async ({ page }, info) => {
   const state = await assistantFixture(page);
   await page.goto(`${root}/source?assistant=open`);

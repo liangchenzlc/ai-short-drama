@@ -3,6 +3,7 @@ import type { AudioGenerationRequest, GenerationDetail, GenerationFilters, Gener
 const root = '/ai/generations';
 const headers = (key: string) => ({ 'Idempotency-Key': key });
 export const generations = {
+  async lookup(service_type: 'text' | 'image' | 'video' | 'audio', idempotency_key: string) { return (await http.get<GenerationReceipt | null>(`${root}/by-idempotency-key`, { params: { service_type, idempotency_key } })).data; },
   async generateAudio(body: AudioGenerationRequest, key: string) { return (await http.post<GenerationReceipt>(`${root}/audio`, body, { headers: headers(key) })).data; },
   async generateText(body: TextGenerationRequest, key: string) { return (await http.post<GenerationReceipt>(`${root}/text`, body, { headers: headers(key) })).data; },
   async generateImage(body: ImageGenerationRequest, key: string) { return (await http.post<GenerationReceipt>(`${root}/image`, body, { headers: headers(key) })).data; },

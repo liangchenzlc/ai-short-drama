@@ -5,6 +5,7 @@ test('writing draft survives refresh and checks a changed version before explici
   await page.clock.install();
   const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   await page.goto(`${root}/source`);
+  await page.getByRole('button', { name: '查看原文', exact: true }).click();
   const novel = page.getByRole('textbox', { name: '本集小说正文', exact: true });
   await expect(novel).toBeEditable();
   await novel.fill('刷新前的完整正文恢复稿');
@@ -13,14 +14,17 @@ test('writing draft survives refresh and checks a changed version before explici
   data.writing.content_version = '9007199254740993';
   data.writing.novel.content = '另一窗口的最新正文';
   await page.reload();
+  await page.getByRole('button', { name: '查看原文', exact: true }).click();
   await expect(page.getByText('发现本机未保存的正文恢复稿', { exact: true })).toBeVisible();
   await expect(novel).toHaveValue('另一窗口的最新正文'); await expect(novel).not.toBeEditable();
   expect(data.requests.filter(r => r.path === `${root}/novel` && r.method === 'PUT')).toHaveLength(0);
+  await page.getByRole('button', { name: '返回剧本', exact: true }).click();
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: '下载完整恢复稿', exact: true }).click();
   expect((await download).suggestedFilename()).toBe('episode-20-recovery.json');
   await page.getByRole('button', { name: '核对并恢复正文', exact: true }).click();
   await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确认继续', exact: true }).click();
+  await page.getByRole('button', { name: '查看原文', exact: true }).click();
   await expect(novel).toHaveValue('刷新前的完整正文恢复稿'); await expect(novel).toBeEditable();
   expect(data.requests.filter(r => r.path === `${root}/novel` && r.method === 'PUT')).toHaveLength(0);
   await novel.fill('核对后继续编辑'); await page.clock.runFor(1000);
@@ -34,12 +38,15 @@ test('damaged writing recovery does not overwrite the record or prevent reading 
   const scope = 'creation-recovery:user:anonymous:writing:10:20';
   await page.addInitScript(({ key }) => localStorage.setItem(key, '{damaged-record'), { key: scope });
   await page.goto(`${root}/source`);
+  await page.getByRole('button', { name: '查看原文', exact: true }).click();
   const novel = page.getByRole('textbox', { name: '本集小说正文', exact: true });
   await expect(novel).toHaveValue(data.writing.novel.content); await expect(novel).not.toBeEditable();
   await expect(page.getByText('本机正文恢复记录无法读取', { exact: true })).toBeVisible();
   expect(await page.evaluate(key => localStorage.getItem(key), scope)).toBe('{damaged-record');
+  await page.getByRole('button', { name: '返回剧本', exact: true }).click();
   await page.getByRole('button', { name: '放弃恢复稿', exact: true }).click();
   await page.getByRole('dialog', { name: '未保存的修改', exact: true }).getByRole('button', { name: '放弃修改', exact: true }).click();
+  await page.getByRole('button', { name: '查看原文', exact: true }).click();
   await expect(novel).toBeEditable();
   expect(await page.evaluate(key => localStorage.getItem(key), scope)).toBeNull();
   expect(data.requests.filter(r => r.path === `${root}/novel` && r.method === 'PUT')).toHaveLength(0);
@@ -51,6 +58,7 @@ test('a failed recovery check preserves the draft until server reload is explici
   const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   const scope = 'creation-recovery:user:anonymous:writing:10:20';
   await page.goto(`${root}/source`);
+  await page.getByRole('button', { name: '查看原文', exact: true }).click();
   const novel = page.getByRole('textbox', { name: '本集小说正文', exact: true });
   await expect(novel).toBeEditable();
   await novel.fill('读取失败时必须保留的正文恢复稿');
@@ -61,7 +69,11 @@ test('a failed recovery check preserves the draft until server reload is explici
   data.writing.content_version = '2';
   data.writing.novel.content = '另一个窗口修改后的正文';
   await page.reload();
+  await page.getByRole('button', { name: '查看原文', exact: true }).click();
   await expect(page.getByText('发现本机未保存的正文恢复稿', { exact: true })).toBeVisible();
+  await expect(novel).toHaveValue('另一个窗口修改后的正文');
+  await expect(novel).not.toBeEditable();
+  await page.getByRole('button', { name: '返回剧本', exact: true }).click();
   let failing = true;
   await page.route(`**/api/v1${root}/writing`, async route => {
     if (!failing) return route.fallback();
@@ -75,12 +87,15 @@ test('a failed recovery check preserves the draft until server reload is explici
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole('button', { name: '取消', exact: true }).click();
   expect(await page.evaluate(key => localStorage.getItem(key), scope)).toBe(record);
+  await page.getByRole('button', { name: '查看原文', exact: true }).click();
   await expect(novel).toHaveValue('另一个窗口修改后的正文');
   await expect(novel).not.toBeEditable();
   expect(data.requests.filter(r => r.path === `${root}/novel` && r.method === 'PUT')).toHaveLength(0);
+  await page.getByRole('button', { name: '返回剧本', exact: true }).click();
   failing = false;
   await page.getByRole('button', { name: '核对并恢复正文', exact: true }).click();
   await confirmation.getByRole('button', { name: '确认继续', exact: true }).click();
+  await page.getByRole('button', { name: '查看原文', exact: true }).click();
   await expect(novel).toHaveValue('读取失败时必须保留的正文恢复稿');
   await expect(novel).toBeEditable();
   expect(data.requests.filter(r => r.path === `${root}/novel` && r.method === 'PUT')).toHaveLength(0);

@@ -25,7 +25,7 @@ export const assetLibraries = {
   async link(scope: Scope, id: string) { return (await http.put<LibraryAssetRead>(`${path(scope)}/${encodeURIComponent(id)}`, {})).data; },
   async unlink(scope: Scope, id: string, rowVersion: string) { await http.delete(`${path(scope)}/${encodeURIComponent(id)}`, { headers: { 'If-Match': `"${rowVersion}"` } }); },
   async detail(id: string, signal?: AbortSignal) { return (await http.get<AssetRead>(`/assets/${encodeURIComponent(id)}`, { signal })).data; },
-  async update(id: string, body: Partial<Omit<AssetDraft, 'kind'>> & { row_version: string; confirm_shared?: boolean }) { return (await http.patch<AssetRead>(`/assets/${encodeURIComponent(id)}`, body)).data; },
+  async update(id: string, body: Partial<AssetDraft> & { row_version: string; confirm_shared?: boolean }) { return (await http.patch<AssetRead>(`/assets/${encodeURIComponent(id)}`, body)).data; },
   async candidates(id: string, signal?: AbortSignal, offset = 0, limit = 20) { return (await http.get<Page<AssetCandidate>>(`/assets/${encodeURIComponent(id)}/image-candidates`, { params: { offset, limit }, signal })).data; },
   async addCandidate(id: string, mediaId: string) { return (await http.post<AssetCandidate>(`/assets/${encodeURIComponent(id)}/image-candidates`, { media_id: mediaId })).data; },
   async upload(id: string, file: File) { const body = new FormData(); body.append('file', file); return (await http.post<AssetCandidate>(`/assets/${encodeURIComponent(id)}/image-candidates/upload`, body)).data; },

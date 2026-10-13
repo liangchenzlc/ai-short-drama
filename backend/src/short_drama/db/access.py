@@ -98,6 +98,8 @@ def condition(table, user_id):
                 project_ids(user_id, include_archived=name == "canvas_write_receipts")
             ),
         )
+    if name == "user_creation_drafts":
+        return and_(c.user_id == user_id, c.project_id.in_(project_ids(user_id)))
     # Private execution data never inherits the ordinary shared-project predicate.
     if name == "agent_conversations":
         return and_(c.owner_user_id == user_id, c.project_id.in_(project_ids(user_id)))
@@ -194,6 +196,7 @@ def condition(table, user_id):
                             "canvas_binary_resources",
                             "novel_script_records",
                             "script_shot_records",
+                            "user_creation_drafts",
                         ]
                     ),
                     c.action.in_(["publish", "work_update"]),
@@ -1012,6 +1015,14 @@ def guard_writes(session, _context, _instances):
         }:
             continue
         new = entity in session.new
+        if actor and name == "user_creation_drafts":
+            if entity.user_id != actor.user_id:
+                raise NotFound("私人创作草稿不存在")
+            if not new and any(
+                inspect(entity).attrs[field].history.has_changes()
+                for field in ("user_id", "episode_id", "object_id", "purpose")
+            ):
+                raise WorkflowError("ownership_immutable", "私人草稿所属和用途不可修改", 403)
         if actor and name in {"agent_skills", "agent_attachments"}:
             if entity.owner_user_id != actor.user_id:
                 raise NotFound("Resource does not exist")
@@ -1183,7 +1194,10 @@ def guard_writes(session, _context, _instances):
                 target = session.scalar(
                     select(MediaFile).where(MediaFile.id == int(identifier)).with_for_update()
                 )
-                if target is None or scope_of(session, target) != entity_scope:
+                allowed_scopes = {entity_scope}
+                if name == "user_creation_drafts":
+                    allowed_scopes.add((actor.user_id, None))
+                if target is None or scope_of(session, target) not in allowed_scopes:
                     raise NotFound("Reference image is outside this resource scope")
         if hasattr(entity, "created_by") and new:
             entity.created_by = actor.user_id
@@ -1194,6 +1208,7 @@ def guard_writes(session, _context, _instances):
         if name in AGENT_PRIVATE_TABLES | CANVAS_PRIVATE_TABLES or name in {
             "agent_attachments",
             "agent_skills",
+            "user_creation_drafts",
         }:
             continue
         action = "create" if new else "delete" if entity in session.deleted else "update"

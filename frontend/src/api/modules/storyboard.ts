@@ -12,6 +12,8 @@ export interface StoryboardResultAsset { id: string; kind: 'character' | 'prop' 
 export interface StoryboardResultShot { position: number; title: string; script: string; duration_ms: number; source_excerpt: string; story_beat: string; asset_ids: string[]; assets: StoryboardResultAsset[] }
 export interface StoryboardResultPage extends Page<StoryboardResultShot> { generation_id: string; total_duration_ms: number; applied: { mode: 'append' | 'replace'; shot_ids: string[]; applied_at: string | null; storyboard_version: string | null } | null }
 export interface ShotMutation { shot: ShotRead; storyboard_version: string }
+export type ShotSize = 'full_shot' | 'medium_shot' | 'close_up' | 'extreme_close_up' | 'wide_shot' | 'two_shot';
+export interface ShotRead { title?: string; shot_size?: ShotSize | null }
 export interface StoryboardApplyResult { generation_id: string; mode: 'append' | 'replace'; shot_ids: string[]; storyboard_version: string; already_applied: boolean }
 
 export function storyboardApi(projectId: string, episodeId: string) {
@@ -22,7 +24,7 @@ export function storyboardApi(projectId: string, episodeId: string) {
     async shots(signal?: AbortSignal, includeArchived = false, offset = 0, limit = 20) { return (await http.get<StoryboardPage>(`${root}/shots`, { params: { offset, limit, include_archived: includeArchived }, signal })).data; },
     async shot(id: string, signal?: AbortSignal) { return (await http.get<ShotMutation>(`${root}/shots/${encodeURIComponent(id)}`, { signal })).data; },
     async create(storyboardVersion: string, key: string) { return (await http.post<ShotMutation>(`${root}/shots`, { storyboard_version: storyboardVersion, script: '', asset_ids: [], image_settings: { resolution: '2K', aspect: 'inherit', layout: 'single' } }, { headers: { 'Idempotency-Key': key } })).data; },
-    async update(id: string, body: { row_version: string; script?: string; duration_ms?: number; asset_ids?: string[]; image_settings?: ShotRead['image_settings']; video_prompt?: string; video_settings?: ShotRead['video_settings'] }) { return (await http.patch<ShotMutation>(`${root}/shots/${encodeURIComponent(id)}`, body)).data; },
+    async update(id: string, body: { row_version: string; title?: string; shot_size?: ShotSize | null; script?: string; duration_ms?: number; asset_ids?: string[]; image_settings?: ShotRead['image_settings']; video_prompt?: string; video_settings?: ShotRead['video_settings'] }) { return (await http.patch<ShotMutation>(`${root}/shots/${encodeURIComponent(id)}`, body)).data; },
     async remove(id: string, rowVersion: string) { await http.delete(`${root}/shots/${encodeURIComponent(id)}`, { headers: { 'If-Match': `"${rowVersion}"` } }); },
     async move(id: string, storyboardVersion: string, direction: -1 | 1) { return (await http.post(`${root}/shots/${encodeURIComponent(id)}/move`, { storyboard_version: storyboardVersion, direction })).data; },
     async order(storyboardVersion: string, shotIds: string[]) { return (await http.put<{ storyboard_version: string; ordered_ids: string[] }>(`${root}/shots/order`, { storyboard_version: storyboardVersion, shot_ids: shotIds })).data; },

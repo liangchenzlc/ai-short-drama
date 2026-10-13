@@ -17,6 +17,9 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
   const shots: any[] = Array.from({ length: 80 }, (_, index) => ({ id: String(101 + index), position: index + 1, script: `林晚走过雨夜中的站台，镜头 ${index + 1}，列车的光线映在她的眼睛里。`, duration_ms: 3000, source_excerpt: '', asset_ids: ['501'], row_version: '1', context_hash: 'a'.repeat(64), image_settings: { aspect: 'inherit', resolution: '2K', layout: 'single' }, image: null, deleted_at: null }));
   let storyboardVersion = '1';
   const referenceState: Record<string, any[]> = {};
+  const creationDrafts = new Map<string, any>();
+  let nextDraftId = 95000;
+  for (const shot of shots) Object.assign(shot, { title: `站台镜头 ${shot.position}`, shot_size: null, video_prompt: '', video_default_prompt: shot.script, video_settings: { resolution: '720p', duration_ms: 3000 }, video_context_hash: 'a'.repeat(64), video: null });
   const source = (scene: string) => ({ scene, project_id: '10', episode_id: '20', script_id: '40', content_version: '1' });
   const task = (id: string, scene: string) => ({ generation_id: id, service_type: scene.endsWith('image') ? 'image' : 'text', status: 'succeeded', source: scene === 'asset_image' ? { scene, asset_id: '501', row_version: '1', project_id: '10', episode_id: '20' } : source(scene), config: { id: '77', name: '测试替身模型', model_key: 'fixture', provider: 'fixture' }, created_at: time, can_cancel: false, can_retry: false, can_resume: false, display_context: { project: project.name, episode: '第 1 集：归来的旅人', subject: scene === 'asset_image' ? '角色：林晚' : '分镜脚本', scope: '通用任务' } });
   const textTasks = Array.from({ length: 35 }, (_, index) => task(String(8001 + index), 'script_shots'));
@@ -50,6 +53,22 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     const reply = (data: any, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) });
     const paged = (items: any[]) => { const offset = Number(query.get('offset') || 0); const limit = Number(query.get('limit') || 20); return { items: items.slice(offset, offset + limit), total: items.length, offset, limit }; };
     if (path === '/auth/capabilities') return reply({ enabled: false });
+    if (path === '/ai/generations/by-idempotency-key') return reply(null);
+    if (path === '/generation-references/uploads') return reply({ media_id: '991', name: 'reference.png', url: image }, 201);
+    if (path.startsWith(`${root}/drafts`)) {
+      const parts = path.split('/');
+      const objectId = method === 'POST' ? body.object_id : parts.at(-2);
+      const purpose = method === 'POST' ? body.purpose : parts.at(-1);
+      const key = `${objectId}:${purpose}`;
+      if (method === 'GET') return reply(creationDrafts.get(key) ?? null);
+      const old = creationDrafts.get(key);
+      if (method === 'PATCH' && old?.row_version !== body.row_version) return reply({ error: { code: 'creation_draft_version_conflict' } }, 409);
+      const version = String(BigInt(old?.row_version ?? '0') + 1n);
+      const draft = { model_config_id: null, input_text: '', image_settings: null, video_settings: null, reference_media_ids: [], ...old, ...body,
+        id: old?.id ?? String(++nextDraftId), project_id: '10', episode_id: '20', object_id: objectId, purpose, row_version: version, draft_version: version, source_version: '1',
+        reference_images: (body.reference_media_ids ?? old?.reference_media_ids ?? []).map((media_id: string) => ({ media_id, url: image, width: 1, height: 1 })) };
+      creationDrafts.set(key, draft); return reply(draft, method === 'POST' ? 201 : 200);
+    }
     if (path === '/users/me/model-preferences') {
       if (method === 'PUT') { if (body.config_id) modelPreferences.set(body.context_key, body.config_id); else modelPreferences.delete(body.context_key); }
       return reply({ items: [...modelPreferences].map(([context_key, config_id]) => ({ context_key, config_id })) });
@@ -86,19 +105,19 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     if (path === root) { if (method === 'PATCH') Object.assign(episode, body); return reply(episode); }
     if (path === `${root}/writing`) return reply(writing);
     if (path === `${root}/novel`) { writing.novel.content = body.content; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, novel: writing.novel }); }
-    if (path === `${root}/script`) { writing.editing_script.content = body.content; writing.editing_script.state = 'unconfirmed'; writing.confirmed_script_id = null; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, script: writing.editing_script }); }
+    if (path === `${root}/script`) { Object.assign(writing.editing_script, { content: body.content, editor_document: body.editor_document ?? null }); writing.editing_script.state = 'unconfirmed'; writing.confirmed_script_id = null; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, script: writing.editing_script }); }
     if (path === `${root}/scripts`) return reply(paged([candidate]));
     if (path === `${root}/scripts/41`) return reply(candidate);
     if (path === `${root}/editing-script`) { writing.editing_script = { ...writing.editing_script, id: '41', content: candidate.content, state: 'unconfirmed' }; writing.confirmed_script_id = null; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply(writing); }
     if (/\/scripts\/\d+\/confirm$/.test(path)) { writing.editing_script.state = 'confirmed'; writing.confirmed_script_id = writing.editing_script.id; return reply(writing); }
     if (path === '/ai-model-configs') return reply(paged([{ id: '77', name: '测试替身模型', model_key: 'fixture', service_type: query.get('service_type'), provider: 'fixture', enabled: 1, is_default: 1, is_deleted: 0, row_version: '1', has_api_key: true }]));
-    if (path.endsWith('/capabilities')) return reply({ known: true, reference_images: true, parameters: ['aspect', 'resolution', 'count'] });
+    if (path.endsWith('/capabilities')) return reply({ known: true, reference_images: true, parameters: ['aspect', 'resolution', 'count'], video_input: { reference_images: true, audio_references: true, generate_audio: true, duration_seconds: [3, 5, 10], resolutions: ['480p', '720p', '1080p'] } });
     if (path === `${root}/assets` || path === '/projects/10/assets' || path === '/libraries/global/assets') {
       if (method === 'POST') { const next = { ...asset, ...body, id: '502', name: body.name }; assets.push(next); return reply(next, 201); }
       return reply(paged(assets.filter(item => !query.get('kind') || item.kind === query.get('kind'))));
     }
-    if (path === '/assets/501') { if (method === 'PATCH') Object.assign(asset, body, { row_version: String(Number(asset.row_version) + 1) }); return reply(asset); }
-    if (path === '/assets/501/image-candidates') return reply(paged([]));
+    if (/^\/assets\/\d+$/.test(path)) { const current = assets.find(item => item.id === path.split('/').at(-1)); if (!current) return reply({ error: { code: 'not_found' } }, 404); if (method === 'PATCH') Object.assign(current, body, { row_version: String(BigInt(current.row_version) + 1n) }); return reply(current); }
+    if (/^\/assets\/\d+\/image-candidates$/.test(path)) return reply(paged([]));
     if (path.startsWith('/generation-references/')) {
       const [, , kind, id, mediaId] = path.split('/');
       const key = `${kind}/${id}`;
@@ -112,7 +131,10 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
       }
       return reply({ row_version: owner.row_version, items: referenceState[key] });
     }
-    if (path === `${root}/shots`) return reply({ ...paged(shots), episode_id: '20', storyboard_version: storyboardVersion });
+    if (path === `${root}/shots`) {
+      if (method === 'POST') { const shot = { ...shots[0], ...body, id: String(101 + shots.length), title: '', shot_size: null, position: shots.length + 1, row_version: '1', image: null, video: null }; shots.push(shot); storyboardVersion = String(BigInt(storyboardVersion) + 1n); return reply({ shot, storyboard_version: storyboardVersion }, 201); }
+      return reply({ ...paged(shots), episode_id: '20', storyboard_version: storyboardVersion });
+    }
     if (new RegExp(`^${root}/shots/\\d+$`).test(path)) {
       const shot = shots.find(item => item.id === path.split('/').pop())!;
       if (method === 'PATCH') { Object.assign(shot, body, { row_version: String(Number(shot.row_version) + 1) }); storyboardVersion = String(Number(storyboardVersion) + 1); }
@@ -131,5 +153,5 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     if (path === '/media-library/items') return reply(paged([]));
     unexpected.push(`${method} ${path}`); return reply({ error: { code: 'UNEXPECTED_FIXTURE', message: path } }, 501);
   });
-  return { requests, unexpected, errors, writing, shots, asset, referenceState, controls };
+  return { requests, unexpected, errors, writing, shots, asset, referenceState, creationDrafts, controls };
 }

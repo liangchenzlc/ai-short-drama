@@ -198,11 +198,15 @@ class EpisodeWritingService(BaseService):
                     data["content"],
                     position=self.dao.next_position(episode.id),
                     state="unconfirmed",
+                    editor_document=data.get("editor_document"),
                 )
                 episode.editing_script_id = script.id
                 self._changed(episode)
-            elif script.content != data["content"]:
+            elif script.content != data["content"] or script.editor_document != data.get(
+                "editor_document"
+            ):
                 script.content, script.state = data["content"], "unconfirmed"
+                script.editor_document = data.get("editor_document")
                 script.updated_at, script.updated_by = utcnow(), None
                 self._changed(episode)
             return ScriptSaved(content_version=episode.content_version, script=script).model_dump(

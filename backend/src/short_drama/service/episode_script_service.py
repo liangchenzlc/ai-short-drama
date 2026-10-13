@@ -24,6 +24,8 @@ class EpisodeScriptService(BaseService):
         self.dao = VersionedDocumentDAO(session, self.model)
 
     def _validate_update(self, entity, values):
+        if "content" in values:
+            values["editor_document"] = None
         if "content" in values and values["content"] != entity.content:
             values["state"] = "unconfirmed"
 

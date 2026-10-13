@@ -165,6 +165,7 @@ class GenerationBusinessService(BaseService):
                     {
                         "position": index + 1,
                         "title": shot.get("title", ""),
+                        "shot_size": shot.get("shot_size"),
                         "script": shot["script"],
                         "duration_ms": shot.get("duration_ms", 3000),
                         "source_excerpt": shot.get("source_excerpt", ""),

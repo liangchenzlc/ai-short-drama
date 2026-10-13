@@ -58,8 +58,10 @@ function mount(context, overrides = {}) {
     useCallback(callback, dependencies) { const index = cursor++; const previous = slots[index]; if (!previous || dependencies.some((value, offset) => !Object.is(value, previous.dependencies[offset]))) slots[index] = { dependencies, callback }; return slots[index].callback; },
   };
   const jsx = (type, props) => ({ type, props });
+  const recovery = overrides.recovery ?? new Map();
   const { StoryboardStage } = compile('pages/projects/episode/StoryboardStage.tsx', {
     react, 'react/jsx-runtime': { jsx, jsxs: jsx },
+    'lucide-react': { History: 'History', Sparkles: 'Sparkles' },
     antd: { Alert: 'Alert', Button: 'Button', Dropdown: 'Dropdown', Checkbox: 'Checkbox', Input: { TextArea: 'TextArea' }, InputNumber: 'InputNumber', Segmented: 'Segmented', Select: 'Select', Spin: 'Spin' },
     '../../../api/http': { ApiError: class extends Error {}, errorMessage: cause => cause.message },
     '../../../api/modules/storyboard': { storyboardApi: () => api },
@@ -68,13 +70,14 @@ function mount(context, overrides = {}) {
     '../../../api/modules/ai-model-configs': { aiModelConfigs: configs },
     '../../../features/ai-config/config-events': { AI_CONFIGS_CHANGED: 'configs-changed' },
     '../../../features/projects/EpisodeModelSelect': { EpisodeModelSelect: 'EpisodeModelSelect' },
-    '../../../features/projects/EpisodeCreationWorkspace': { CreationSlot: 'CreationSlot', useEpisodeCreationControls: () => controls },
+    '../../../features/projects/EpisodeCreationWorkspace': { EpisodeEditorSlot: 'EpisodeEditorSlot', useEpisodeCreationControls: () => controls },
     '../../../features/projects/StoryboardShotCard': { StoryboardShotCard: 'StoryboardShotCard' },
     '../../../features/projects/storyboard-layout.css': {},
     '../../../features/projects/workflow-refinement.css': {},
     '../../../features/projects/workflow-contract': contract,
     '../../../features/projects/storyboard-session': session,
     '../../../features/projects/shot-image-workflow': workflow,
+    '../../../features/projects/creation-recovery': { creationScope: scope => scope, readRecovery: scope => recovery.get(scope) ?? null, saveRecovery: (scope, value) => recovery.set(scope, structuredClone(value)), clearRecovery: scope => recovery.delete(scope) },
     '../../../features/generations/attempt': { attemptStorage: () => null, requestAttempt: async () => 'same-attempt', clearAttempt() {} },
     '../../../features/generations/BatchGeneration': { BatchLauncher: 'BatchLauncher', useBatchSelection: () => ({ enabled: false, ids: [], setIds() {}, toggle() {} }) },
     '../../../features/generations/presentation': { taskLabel: () => '' },
@@ -88,7 +91,7 @@ function mount(context, overrides = {}) {
     '../../../features/projects/ShotImageCandidates': { ShotImageCandidates: 'ShotImageCandidates' },
     '../../../features/projects/ShotVideoCandidates': { ShotVideoCandidates: 'ShotVideoCandidates' },
     '../../../features/projects/NativeVoicePanel': { NativeDialoguePanel: 'NativeDialoguePanel', NativeSoundMode: 'NativeSoundMode' },
-  }, { window, document });
+  }, { window, document, CustomEvent, Event });
   let props = { value: { aspect: '16:9', models: { storyboardText: '', storyboardImage: '' } }, readOnly: false, projectId: '1', episodeId: '1', scriptId: null, confirmed: false, writingSession: {}, registerBarrier: next => { barrier = next; }, onChange: next => { props.value = next; } };
   const render = patch => {
     props = { ...props, ...patch }; cursor = 0; effects = []; layouts = [];
@@ -107,7 +110,7 @@ function mount(context, overrides = {}) {
   };
   const nodes = type => {
     const result = [];
-    function visit(node) { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) { node.forEach(visit); return; } if (node.type === type) result.push(node.props); visit(node.props?.children); }
+    function visit(node) { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) { node.forEach(visit); return; } if (node.type === type) result.push(node.props); visit(node.props?.children); if (node.type === 'ShotImageCandidates' || node.type === 'ShotVideoCandidates') visit(node.props?.information); }
     visit(tree); return result;
   };
   const unmount = () => { for (const slot of slots) slot?.cleanup?.(); };
@@ -264,7 +267,7 @@ test('creating a shot selects its returned ID before it is loaded into the list'
   const rows = Array.from({ length: 20 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
   const setup = mount(context, { autoSelect: false, creationControls: controls, create: async () => ({ shot: { ...shot('181'), position: 81 }, storyboard_version: '2' }), shot: async () => ({ shot: { ...shot('181'), position: 81 }, storyboard_version: '2' }), shots: async () => ({ ...page(rows), total: 80 }) });
   await flush(); setup.render();
-  setup.nodes('Button').find(node => node.children === '新增分镜').onClick(); await flush(); setup.render();
+  setup.nodes('Button').find(node => node['aria-label'] === '新增分镜').onClick(); await flush(); setup.render();
   assert.equal(controls.subject.id, '181');
   assert.equal(setup.scriptInput['aria-label'], '分镜 81 脚本');
 });
@@ -277,31 +280,33 @@ for (const mode of ['replace', 'append']) test(`${mode} adoption updates its sco
     apply: async () => ({ shot_ids: ['31'], storyboard_version: '2' }),
   });
   await flush(); setup.render({ writingSession: { getSnapshot: () => ({ contentVersion: '1' }) } });
-  setup.nodes('Button').find(node => node.children === '历史记录').onClick(); setup.render(); await flush(); setup.render();
+  setup.nodes('Button').find(node => node['aria-label'] === '分镜生成记录').onClick(); setup.render(); await flush(); setup.render();
   setup.nodes('Button').find(node => node.children === '查看分镜').onClick(); setup.render();
   setup.nodes('StoryboardResultPreview')[0].onApply(mode); await flush(); setup.render();
   assert.equal(controls.subject?.id ?? null, mode === 'replace' ? null : '11');
 });
 
 test('asset failure does not hide loaded shots and retry restores only the asset dependency', async context => {
-  let failAssets = true; let shotReads = 0;
-  const setup = mount(context, { shots: async () => { shotReads++; return page([shot()]); }, listAssets: async () => { if (failAssets) throw new Error('assets offline'); return { items: [], total: 0 }; } });
+  let failAssets = true; let shotReads = 0; const saves = [];
+  const setup = mount(context, { shots: async () => { shotReads++; return page([{ ...shot(), asset_ids: ['501'] }]); }, listAssets: async () => { if (failAssets) throw new Error('assets offline'); return { items: [], total: 0 }; }, update: async (id, body) => { saves.push(body); return { shot: { ...shot(id), ...body, row_version: '2' }, storyboard_version: '2' }; } });
   await flush(); setup.render();
   assert.equal(setup.nodes('StoryboardShotCard').length, 1);
-  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, true);
+  assert.equal(setup.nodes('ShotImageCandidates')[0].disabled, false);
+  assert.deepEqual(Array.from(setup.nodes('ShotImageCandidates')[0].shot.asset_ids), ['501']);
   setup.scriptInput.onChange({ target: { value: 'keep this draft' } }); setup.render();
   failAssets = false;
   setup.nodes('Alert').find(node => node.message.includes('assets offline')).action.props.onClick();
   setup.render(); await flush(); setup.render();
   assert.equal(shotReads, 1); assert.equal(setup.scriptInput.value, 'keep this draft');
-  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
+  assert.equal(await setup.barrier.flush(), true);
+  assert.deepEqual(Array.from(saves[0].asset_ids), ['501']);
 });
 
 test('storyboard history distinguishes loading, failed initial read, and successful empty result', async context => {
   const response = deferred(); let failed = true;
   const setup = mount(context, { listTasks: async () => { await response.promise; if (failed) throw new Error('history offline'); return { items: [], total: 0 }; } });
   await flush(); setup.render();
-  setup.nodes('Button').find(node => node.children === '历史记录').onClick(); setup.render();
+  setup.nodes('Button').find(node => node['aria-label'] === '分镜生成记录').onClick(); setup.render();
   assert.ok(setup.nodes('p').some(node => node.role === 'status' && node.children === '正在加载分镜生成记录…'));
   assert.equal(setup.nodes('p').some(node => node.children === '暂无分镜生成记录，确认剧本后开始生成。'), false);
   response.resolve(); await flush(); setup.render();
@@ -316,7 +321,7 @@ test('failed history refresh keeps previously loaded records', async context => 
   let fail = false;
   const setup = mount(context, { listTasks: async () => { if (fail) throw new Error('history refresh offline'); return { items: [{ generation_id: '8001', status: 'succeeded', created_at: '2026-10-04T00:00:00Z' }], total: 1 }; } });
   await flush(); setup.render();
-  fail = true; setup.nodes('Button').find(node => node.children === '历史记录').onClick(); setup.render(); await flush(); setup.render();
+  fail = true; setup.nodes('Button').find(node => node['aria-label'] === '分镜生成记录').onClick(); setup.render(); await flush(); setup.render();
   assert.equal(setup.nodes('Button').filter(node => node.children === '查看分镜').length, 1);
   assert.ok(setup.nodes('Alert').some(node => node.message.includes('history refresh offline')));
 });
@@ -351,7 +356,7 @@ test('pending menu mutation disables editing and rejects an older change handler
   const moving = setup.nodes('Dropdown')[0].menu.onClick({ key: 'down' });
   await flush(); setup.render();
   assert.equal(setup.scriptInput.disabled, true);
-  assert.equal(setup.nodes('InputNumber').find(node => node['aria-label'] === '分镜 1 时长').disabled, true);
+  assert.equal(setup.nodes('ShotImageCandidates')[0].disabled, true);
   previousInput.onChange({ target: { value: 'must not create a draft during the move' } });
   setup.render();
   assert.equal(setup.scriptInput.value, 'original');
@@ -418,7 +423,7 @@ test('stage holds a synchronous per-shot lock through submission and blocks edit
   await flush(); setup.render();
   assert.equal(setup.scriptInput.disabled, true);
   assert.equal(setup.nodes('ShotImageCandidates').length, 1);
-  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, true);
+  assert.equal(setup.nodes('ShotImageCandidates')[0].disabled, true);
   setup.scriptInput.onChange({ target: { value: 'blocked edit' } });
   for (const button of setup.nodes('Button').filter(button => ['上移', '下移', '归档'].includes(button.children))) {
     if (button.disabled) await button.onClick();
@@ -430,7 +435,7 @@ test('stage holds a synchronous per-shot lock through submission and blocks edit
   setup.render(); assert.equal(setup.scriptInput.disabled, true);
   prepared.release(); prepared.release(); setup.render();
   assert.equal(setup.scriptInput.disabled, false);
-  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
+  assert.equal(setup.nodes('ShotImageCandidates')[0].disabled, false);
 });
 
 test('preparation accepts changed remote context but stops until reviewed', async context => {
@@ -461,7 +466,7 @@ test('late saves cannot overwrite another episode or continue preparation', asyn
 test('resolved default is queried once and focus invalidates capability without dropping model ID', async context => {
   const setup = mount(context);
   await flush(); setup.render();
-  const select = setup.nodes('EpisodeModelSelect').find(item => item.kind === 'image');
+  const select = ({ onResolvedChange: setup.nodes('ShotImageCandidates')[0].onResolvedModel, onChange: setup.nodes('ShotImageCandidates')[0].onModelChange });
   assert.equal(typeof select.onResolvedChange, 'function');
   select.onResolvedChange('7'); setup.render(); await flush(); setup.render();
   assert.deepEqual(setup.capabilityCalls.map(call => call.id), ['7']);
@@ -494,7 +499,7 @@ test('save completes before single-shot read and read errors retain the saved dr
   assert.deepEqual(calls.map(call => call.kind), ['save', 'read']);
   assert.equal(setup.scriptInput.value, 'draft to save');
   assert.equal(setup.scriptInput.disabled, false);
-  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
+  assert.equal(setup.nodes('ShotImageCandidates')[0].disabled, false);
   assert.ok(setup.nodes('Alert').some(alert => alert.message === 'read offline'));
 });
 
@@ -509,7 +514,7 @@ test('failed saves keep dirty drafts through refresh and never read the shot', a
   setup.nodes('ShotImageCandidates')[0].onChanged(); setup.render(); await flush(); setup.render();
   assert.equal(setup.scriptInput.value, 'unsaved draft');
   assert.equal(setup.scriptInput.disabled, false);
-  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
+  assert.equal(setup.nodes('ShotImageCandidates')[0].disabled, true);
   assert.equal(reads, 0);
 });
 
@@ -538,7 +543,7 @@ test('older capability responses cannot replace a new model, disabled selection,
   const pending = [];
   setup.configs.capabilities = async (id, signal) => { const response = deferred(); pending.push({ id, signal, ...response }); return response.promise; };
   await flush(); setup.render();
-  const resolve = id => setup.nodes('EpisodeModelSelect').find(item => item.kind === 'image').onResolvedChange(id);
+  const resolve = id => ({ onResolvedChange: setup.nodes('ShotImageCandidates')[0].onResolvedModel, onChange: setup.nodes('ShotImageCandidates')[0].onModelChange }).onResolvedChange(id);
   resolve('7'); setup.render();
   resolve('8'); setup.render();
   assert.equal(pending[0].signal.aborted, true);
@@ -577,5 +582,5 @@ test('navigation waits for release and stale release cannot unlock a new context
   next.release(); setup.render();
   assert.equal(await setup.barrier.flush(), true);
   assert.equal(setup.scriptInput.disabled, false);
-  assert.equal(setup.nodes('ShotAssetPicker')[0].disabled, false);
+  assert.equal(setup.nodes('ShotImageCandidates')[0].disabled, false);
 });

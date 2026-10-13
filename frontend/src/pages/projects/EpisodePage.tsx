@@ -19,7 +19,8 @@ const SourceStage = preloadable(() => loadSourceStage().then(module => ({ defaul
 const AssetsStage = preloadable(() => loadAssetsStage().then(module => ({ default: module.AssetsStage })));
 const StoryboardStage = preloadable(() => loadStoryboardStage().then(module => ({ default: module.StoryboardStage })));
 const AgentArtifactShelf = lazy(() => import('../../features/agents/AgentArtifactShelf').then(module => ({ default: module.AgentArtifactShelf })));
-import { episodeStages, StageNav, visibleEpisodeStage } from './episode/StageNav';
+import { episodeStages, visibleEpisodeStage } from './episode/StageNav';
+import { TopStepNav } from './episode/TopStepNav';
 import { useEpisodeWriting } from '../../features/projects/useEpisodeWriting';
 import { Dialog } from '../../components/ui/Dialog';
 import { Icon } from '../../components/ui/Icon';
@@ -51,7 +52,8 @@ export async function preloadEpisodeStage(stage?: string): Promise<void> {
 }
 
 export function EpisodePage(props: ComponentProps<typeof EpisodeWorkspace>) {
-  return <EpisodeWorkspace key={`${props.session.projectId}:${props.episode.id}:${props.session.mode}`} {...props} />;
+  const { user } = useAuth();
+  return <EpisodeWorkspace key={`${user?.id ?? 'anonymous'}:${props.session.projectId}:${props.episode.id}:${props.session.mode}`} {...props} />;
 }
 function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session: ProjectSession; episode: RemoteEpisode; number: number; ready: boolean; onBack: () => void }) {
   const auth = useAuth();
@@ -60,10 +62,24 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
   const storyboardBarrier = useRef<NavigationBarrier | null>(null);
   const extractionBarrier = useRef<NavigationBarrier | null>(null);
   const assemblyBarrier = useRef<NavigationBarrier | null>(null);
+  const sourceBarrier = useRef<NavigationBarrier | null>(null);
+  const [creationStates, setCreationStates] = useState<Record<string, { status: string; message?: string }>>({});
+  useEffect(() => {
+    const receive = (event: Event) => {
+      const { key, status, message } = (event as CustomEvent<{ key: string; status: string | null; message?: string }>).detail;
+      setCreationStates(previous => {
+        const next = { ...previous };
+        if (status === null) delete next[key]; else next[key] = { status, message };
+        return next;
+      });
+    };
+    window.addEventListener('creation-save-state', receive);
+    return () => window.removeEventListener('creation-save-state', receive);
+  }, []);
   const getStoryboardBarrier = useRef(() => ({
-    hasUnsettled: () => !!storyboardBarrier.current?.hasUnsettled() || !!extractionBarrier.current?.hasUnsettled() || !!assemblyBarrier.current?.hasUnsettled(),
+    hasUnsettled: () => !!sourceBarrier.current?.hasUnsettled() || !!storyboardBarrier.current?.hasUnsettled() || !!extractionBarrier.current?.hasUnsettled() || !!assemblyBarrier.current?.hasUnsettled(),
     flush: async () => {
-      for (const barrier of [storyboardBarrier.current, extractionBarrier.current, assemblyBarrier.current]) {
+      for (const barrier of [sourceBarrier.current, storyboardBarrier.current, extractionBarrier.current, assemblyBarrier.current]) {
         if (barrier?.hasUnsettled() && !await barrier.flush()) return false;
       }
       return true;
@@ -109,7 +125,6 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
   const [extractionReview, setExtractionReview] = useState<{ artifact: AgentArtifactDetail; nonce: number } | null>(null);
   const availability = useAgentAvailability();
   const [writingTab, setWritingTab] = useState(stage === 'script' ? 'script' : 'novel');
-  const [collapsed, setCollapsed] = useState(false);
   const [subjects, setSubjects] = useState<Record<string, AgentSubject | null>>({});
   const objectParameter = step === 'assets' ? 'asset' : step === 'storyboard' ? 'shot' : null;
   const selectedObjectId = objectParameter ? parameters.get(objectParameter) : null;
@@ -133,8 +148,10 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
   const [localError, setLocalError] = useState('');
   const readOnly = session.mode === 'read';
   const writingReadOnly = readOnly || !writing.loaded || writing.status === 'loading' || !!writing.recoverable || !!writing.recoveryBlocked;
-  const writingLabel = { loading: '正在载入服务端内容…', saved: '正文已保存', unsaved: '有未保存的修改', saving: '正在保存…', error: '保存已暂停', conflict: '版本冲突，保存已暂停' }[writing.status];
-  const current = episodeStages.findIndex((stage) => stage.id === step);
+  const priority = ['conflict', 'error', 'saving', 'unsaved', 'loading', 'local'];
+  const extraStatus = priority.find(status => Object.values(creationStates).some(item => item.status === status));
+  const saveState = ['conflict', 'error', 'saving', 'unsaved'].includes(writing.status) ? writing.status : extraStatus ?? writing.status;
+  const writingLabel = ({ loading: '正在载入…', saved: '已保存', local: '本机草稿已保留', unsaved: '等待保存', saving: '正在保存…', error: '保存失败', conflict: '版本冲突' } as Record<string, string>)[saveState];
   function goToStep(next: StageId) {
     ++legacyNavigation.current.generation;
     if (next === 'script') setWritingTab('script');
@@ -211,8 +228,9 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
     setLocalError(result.ok ? '' : result.error);
   }
   function exportDraft() {
-    const url = URL.createObjectURL(new Blob([`本集小说\n${writing.novel}\n\n本集剧本\n${writing.script}`], { type: 'text/plain;charset=utf-8' }));
-    const link = document.createElement('a'); link.href = url; link.download = `episode-${episode.id}-draft.txt`; link.click();
+    const content = JSON.stringify({ novel: writing.novel, script: writing.script, script_id: writing.scriptId, content_version: writing.contentVersion, editor_document: writing.editorDocument }, null, 2);
+    const url = URL.createObjectURL(new Blob([content], { type: 'application/json;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = `episode-${episode.id}-draft.json`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   function exportRecovery() {
@@ -233,11 +251,10 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
     writing.session.edit(field, legacy[field]); setShowLegacy(false);
   }
   return <div className="episode-page web-episode">
-    <header className="episode-top"><Button type="link" className="detail-back" icon={<Icon name="back" size={16}/>} onClick={onBack}>返回项目详情</Button><div className="episode-heading"><span>{session.project.name} / 第 {number} 集</span><h1>{episode.title}</h1></div><Button className="episode-assistant-entry" aria-expanded={assistantOpen} aria-controls="agent-conversation-pane" onClick={() => updateParameters(previous => setAssistantOpen(previous.toString(), previous.get('assistant') !== 'open'))}>AI 创作助手</Button><span className={`episode-save-state state-${writing.status}`} title="小说与剧本的自动保存状态" role={writing.message ? 'alert' : 'status'}>{writingLabel}</span><AccountControls /></header>
+    <header className="episode-top"><Button type="link" className="detail-back" icon={<Icon name="back" size={16}/>} onClick={onBack}>返回项目详情</Button><div className="episode-heading"><span>{session.project.name} / 第 {number} 集</span><h1>{episode.title}</h1></div><Button className="episode-assistant-entry" aria-expanded={assistantOpen} aria-controls="agent-conversation-pane" onClick={() => updateParameters(previous => setAssistantOpen(previous.toString(), previous.get('assistant') !== 'open'))}>AI 创作助手</Button><span className={`episode-save-state state-${saveState}`} title="作品与个人生成草稿的自动保存状态" role={saveState === 'error' || saveState === 'conflict' ? 'alert' : 'status'}>{writingLabel}</span><AccountControls /></header>
+    <TopStepNav projectId={session.projectId} episodeId={episode.id} currentStage={step} workflow={workflow} onStageChange={goToStep} />
     {readOnly && <p className="episode-readonly-notice">当前为只读模式，可查看本集内容。</p>}
-    <div className={`episode-layout${collapsed ? ' is-collapsed' : ''}`}>
-      <aside className="episode-sidebar"><div className="episode-sidebar-inner"><div className="episode-nav-heading"><p className="episode-nav-title">创作流程</p><Button type="text" aria-label={collapsed ? '展开创作流程' : '收起创作流程'} aria-expanded={!collapsed} icon={<Icon name={collapsed ? 'arrow' : 'back'} size={18}/>} onClick={() => setCollapsed(!collapsed)}/></div><StageNav active={step} onSelect={goToStep}/><div className="episode-context-summary"><strong>{value.aspect} 画幅</strong><span>{value.style || '未设置视觉风格'}</span><p>正文自动保存。生成后先预览，再选择采用。</p></div></div></aside>
-      <div className="episode-content">
+    <div className="episode-layout">
         <EpisodeCreationWorkspace stage={step} subject={subject} onSubject={selectSubject} assistantOpen={assistantOpen} onCloseAssistant={closeAssistant} workRequest={artifactRequest?.accountId === (auth.user?.id ?? 'anonymous') ? artifactRequest.value.nonce : 0} assistantPanel={assistantMounted ? <Suspense fallback={<div role="status" className="studio-empty">正在载入 AI 创作助手…</div>}>
           <div hidden={!!legacyConversationId}><CreativeAssistantPanel open={assistantOpen && !legacyConversationId} key={auth.user?.id ?? 'anonymous'} projectId={session.projectId} projectTitle={session.project.name} accountId={auth.user?.id} readOnly={readOnly} onClose={closeAssistant} selectedConversationId={conversationId} onConversationChange={id => updateParameters(previous => selectAssistantConversation(previous.toString(), id))} onOpenModelSettings={() => navigate('/ai_config')} contextPreview={{ key: `${episode.id}:${step}:${subject?.id ?? ''}`, label: `${episode.title}${subject ? ` · ${subject.label}` : ''}` }} mentionReferences={subject ? [{ kind: subject.type, id: subject.id, name: subject.label, revision: subject.revision }] : []} prepareContext={prepareAssistantContext} onOpenLegacy={id => { void openLegacyRecord(id); }}/></div>
           {legacyConversationId && <LegacyCreationRecord key={`${auth.user?.id ?? 'anonymous'}:${legacyConversationId}`} projectId={session.projectId} episodeId={episode.id} id={legacyConversationId} accountId={auth.user?.id ?? 'anonymous'} readOnly={readOnly} beforeSend={saveBeforeAgentSend} onClose={closeAssistant} onBack={() => updateParameters(previous => { const next = new URLSearchParams(previous); next.delete('legacy_conversation'); return next; })} onConversation={setAgentConversation} onOpenArtifact={openArtifact}/>}</Suspense> : null}>
@@ -248,7 +265,7 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
         {(legacy.novel || legacy.script) && <p className="episode-help">发现浏览器旧稿，不会自动上传。<Button type="link" onClick={() => setShowLegacy(true)}>预览与导入</Button></p>}
         {!writing.loaded && step === 'source' && <div className="studio-empty" role="status">{writing.status === 'loading' ? <><Spin/> 正在载入本集内容…</> : '内容未载入，请重试后编辑。'}</div>}
         <Suspense fallback={<div className="studio-empty" role="status"><Spin /> 正在载入创作阶段…</div>}>
-        {writing.loaded && (step === 'source' || visitedStages.has('source')) && <section hidden={step !== 'source'} id="episode-stage-source" data-testid="episode-stage-source" className="episode-stage" aria-label="小说与剧本创作"><SourceStage value={value} writing={writing} readOnly={writingReadOnly} onChange={update} projectId={session.projectId} episodeId={episode.id} writingSession={writing.session} tab={writingTab} onTab={setWritingTab} onContinue={() => goToStep('assets')}/></section>}
+        {writing.loaded && (step === 'source' || visitedStages.has('source')) && <section hidden={step !== 'source'} id="episode-stage-source" data-testid="episode-stage-source" className="episode-stage" aria-label="小说与剧本创作"><SourceStage value={value} writing={writing} readOnly={writingReadOnly} onChange={update} projectId={session.projectId} episodeId={episode.id} writingSession={writing.session} tab={writingTab} onTab={setWritingTab} onContinue={() => goToStep('assets')} registerBarrier={barrier => { sourceBarrier.current = barrier; }}/></section>}
         {(step === 'assets' || visitedStages.has('assets')) && <section hidden={step !== 'assets'} id="episode-stage-assets" data-testid="episode-stage-assets" className="episode-stage" aria-label="素材准备"><AssetsStage value={workflow} readOnly={readOnly} ready={ready} projectId={session.projectId} episodeId={episode.id} onChange={update} onApply={update} writingSession={writing.session} onConfirmScript={() => goToStep('script')} refreshToken={artifactRevision} externalReview={extractionReview} registerBarrier={barrier => { extractionBarrier.current = barrier; }}/></section>}
         {step === 'storyboard' && <section id="episode-stage-storyboard" data-testid="episode-stage-storyboard" className="episode-stage" aria-label="分镜制作"><StoryboardStage value={workflow} readOnly={writingReadOnly} onChange={update} projectId={session.projectId} episodeId={episode.id} contentVersion={writing.contentVersion} scriptId={writing.scriptId} confirmed={writing.confirmed} writingSession={writing.session} refreshToken={artifactRevision} registerBarrier={(barrier) => { storyboardBarrier.current = barrier; }}/></section>}
         {step === 'assembly' && <section id="episode-stage-assembly" className="episode-stage"><AssemblyStage projectId={session.projectId} episodeId={episode.id} readOnly={readOnly} registerBarrier={barrier => { assemblyBarrier.current = barrier; }} onStoryboard={() => goToStep('storyboard')}/></section>}
@@ -258,9 +275,7 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
           canContinue={id => !!id && availability.available && legacyConversationId === id && agentConversation?.id === id && ['waiting_review', 'waiting_generation'].includes(agentConversation?.last_run_status ?? '')}
           onContinue={() => window.dispatchEvent(new Event('agent-run-updated'))}
           onOpenExtraction={artifact => { setExtractionReview({ artifact, nonce: ++artifactNonce.current }); goToStep('assets'); }}/></Suspense>}
-        <footer className="episode-step-footer">{current > 0 && <Button className="episode-step-previous" onClick={() => goToStep(episodeStages[current - 1].id)}>上一步</Button>}<span>步骤 {current + 1} / {episodeStages.length}</span>{current < episodeStages.length - 1 && <Button className="episode-step-next" onClick={() => goToStep(episodeStages[current + 1].id)}>下一步：{episodeStages[current + 1].label}</Button>}</footer>
         </EpisodeCreationWorkspace>
-      </div>
     </div>
     {showLegacy && <Dialog title="浏览器旧稿预览" onClose={() => setShowLegacy(false)}><p>以下为旧版浏览器草稿，可能包含演示内容。请核对后分别导入；旧稿仍保留在本浏览器。</p>{(['novel', 'script'] as const).filter(field => legacy[field]).map(field => <div key={field}><h3>{field === 'novel' ? '小说旧稿' : '剧本旧稿'}</h3><textarea rows={8} value={legacy[field]} readOnly aria-label={field === 'novel' ? '小说旧稿预览' : '剧本旧稿预览'} style={{ width: '100%' }}/><Button disabled={writingReadOnly || writing.busy || writing.status === 'conflict' || writing.status === 'error'} onClick={() => importLegacy(field)}>导入{field === 'novel' ? '小说' : '剧本'}并自动保存</Button></div>)}</Dialog>}
   </div>;

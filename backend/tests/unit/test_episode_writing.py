@@ -268,7 +268,7 @@ def test_http_writing_contract_and_closed_inputs():
     from short_drama.main import create_app
 
     document = {"id": "100", "content": "text", "updated_at": "2026-09-21T00:00:00Z"}
-    script = {**document, "state": "unconfirmed"}
+    script = {**document, "state": "unconfirmed", "editor_document": None}
     view = {
         "episode_id": "2",
         "content_version": "1",

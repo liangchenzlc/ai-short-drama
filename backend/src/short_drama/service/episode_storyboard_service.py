@@ -57,6 +57,10 @@ def storyboard_creation_hash(project_id: int, episode_id: int, payload: dict) ->
         "asset_ids": sorted(str(item) for item in payload["asset_ids"]),
         "image_settings": payload["image_settings"],
     }
+    if payload.get("title"):
+        intent["title"] = payload["title"]
+    if payload.get("shot_size") is not None:
+        intent["shot_size"] = payload["shot_size"]
     encoded = json.dumps(intent, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -119,6 +123,8 @@ class EpisodeStoryboardService(BaseService):
                     "episode_id": episode.id,
                     "position": position,
                     "script": values["script"],
+                    "title": values["title"],
+                    "shot_size": values["shot_size"],
                     "duration_ms": values["duration_ms"],
                     "source_excerpt": values["source_excerpt"],
                     "row_version": 1,
@@ -235,6 +241,8 @@ class EpisodeStoryboardService(BaseService):
         return StoryboardShotRead(
             id=shot.id,
             position=shot.position,
+            title=getattr(shot, "title", "") or "",
+            shot_size=getattr(shot, "shot_size", None),
             script=shot.script,
             duration_ms=shot.duration_ms,
             source_excerpt=shot.source_excerpt,
@@ -327,6 +335,8 @@ class EpisodeStoryboardService(BaseService):
                     "episode_id": episode.id,
                     "position": max((row.position for row in active), default=0) + 1,
                     "script": data["script"],
+                    "title": data["title"],
+                    "shot_size": data["shot_size"],
                     "duration_ms": data["duration_ms"],
                     "source_excerpt": "",
                     "row_version": 1,
@@ -359,6 +369,10 @@ class EpisodeStoryboardService(BaseService):
             require_shot_version(shot, data.pop("row_version"))
             now = utcnow()
             changed = False
+            for field in ("title", "shot_size"):
+                if field in data and getattr(shot, field) != data[field]:
+                    setattr(shot, field, data[field])
+                    changed = True
             if "video_prompt" in data and shot.video_prompt != data["video_prompt"]:
                 shot.video_prompt = data["video_prompt"]
                 changed = True

@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../src/features/assets/asset-image-generati
 const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
-const { assetImageGenerationBlockReason, buildAssetImageRequest, mergeAssetImageTasks, missingActiveTaskIds, shouldRefreshAssetCandidates } = await import(
+const { assetImageGenerationBlockReason, assetPrivateInputBlockReason, buildAssetImageRequest, mergeAssetImageTasks, missingActiveTaskIds, shouldRefreshAssetCandidates } = await import(
   `data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`
 );
 
@@ -90,4 +90,22 @@ test('generation gate explains missing usable model and empty saved visual conte
   assert.equal(assetImageGenerationBlockReason({ name: 'Hero', description: '', prompt: '' }, '9'), '请先填写素材描述或提示词。');
   assert.equal(assetImageGenerationBlockReason({ name: ' ', description: 'coat', prompt: '' }, '9'), '请先填写素材名称。');
   assert.equal(assetImageGenerationBlockReason(complete, '9'), null);
+});
+
+test('private draft references freeze exact version and do not submit personal prompt as shared artwork', () => {
+  const request = buildAssetImageRequest({ id: '22', row_version: '4' }, { configId: '33', scope: { kind: 'episode', projectId: '10', episodeId: '20' }, supplement: '个人要求', count: 2, aspect: '9:16', draft: { id: '9007199254740993', draft_version: '7' } });
+  assert.equal(request.source.draft_id, '9007199254740993');
+  assert.equal(request.source.draft_version, '7');
+  assert.equal(request.source.row_version, '4');
+  assert.equal(request.source.project_id, '10');
+  assert.equal(request.input.prompt, '');
+  assert.deepEqual(request.input.reference_media_ids, []);
+});
+
+test('private and shared references deduplicate and reject the 17th image; supplement enforces 4000', () => {
+  const refs = Array.from({ length: 16 }, (_, index) => String(index + 1));
+  assert.equal(assetPrivateInputBlockReason('字'.repeat(4000), refs, ['1'], true), null);
+  assert.match(assetPrivateInputBlockReason('字'.repeat(4001), [], [], true), /4000/);
+  assert.match(assetPrivateInputBlockReason('', refs, ['17'], true), /16/);
+  assert.match(assetPrivateInputBlockReason('', refs, [], false), /不支持/);
 });

@@ -115,6 +115,8 @@ class GenerationContextService:
         source["novel_id" if scene == "novel_script" else "script_id"] = str(document.id)
         instructions = request.pop("instructions", "")
         request["source_snapshot"] = snapshot
+        if request.get("creation_draft_snapshot"):
+            snapshot["creation_draft"] = request["creation_draft_snapshot"]
         request["business_intent"] = {"instructions": instructions}
         request["template_version"] = PROMPT_VERSIONS[scene]
         request["input"] = {"messages": text_messages(scene, snapshot, instructions)}
@@ -177,6 +179,8 @@ class GenerationContextService:
             "template_version": PROMPT_VERSIONS["asset_image"],
             "instructions": supplement,
         }
+        if request.get("creation_draft_snapshot"):
+            request["source_snapshot"]["creation_draft"] = request["creation_draft_snapshot"]
         request["input"] = {
             "prompt": asset_image_prompt(content, supplement),
             "reference_media_ids": list(
@@ -257,16 +261,26 @@ class GenerationContextService:
             "layout": "single",
         }
         aspect = episode.aspect if settings["aspect"] == "inherit" else settings["aspect"]
-        if (
-            source["layout"] != settings["layout"]
-            or request["parameters"].get("aspect") != aspect
-            or request["parameters"].get("resolution") != settings["resolution"]
+        private_draft = request.get("creation_draft_snapshot")
+        if source["layout"] != settings["layout"] or (
+            not private_draft
+            and (
+                request["parameters"].get("aspect") != aspect
+                or request["parameters"].get("resolution") != settings["resolution"]
+            )
         ):
             raise WorkflowError("generation_settings_changed", "请先保存图片设置")
+        if private_draft:
+            personal = private_draft.get("image_settings") or {}
+            request["parameters"].update(
+                aspect=personal.get("aspect") or aspect,
+                resolution=personal.get("resolution") or settings["resolution"],
+                count=personal.get("count", 1),
+            )
         references = [str(a.media_id) for a in assets if a.media_id and a.state == "confirmed"]
         references.extend(map(str, getattr(shot, "reference_media_ids", None) or []))
         extra = request["input"].get("reference_media_ids", [])
-        for identifier in extra:
+        for identifier in [] if private_draft else extra:
             if str(identifier) not in references and not self.session.scalar(
                 select(MediaAsset.id).where(
                     MediaAsset.media_id == int(identifier), MediaAsset.media_type == "image"
@@ -287,6 +301,8 @@ class GenerationContextService:
             "context_hash": digest,
             "row_version": str(shot.row_version),
         }
+        if private_draft:
+            request["source_snapshot"]["creation_draft"] = private_draft
         request["business_intent"] = {"instructions": supplement}
         request["template_version"] = PROMPT_VERSIONS["shot_image"]
         request["input"] = {
@@ -327,10 +343,40 @@ class GenerationContextService:
         duration = settings.get("duration_ms") or shot.duration_ms
         expected = {"duration_ms": duration, "resolution": settings["resolution"]}
         supplied = {k: v for k, v in request["parameters"].items() if v is not None}
-        if supplied and supplied != expected:
+        private_draft = request.get("creation_draft_snapshot")
+        if not private_draft and supplied and supplied != expected:
             raise WorkflowError("generation_settings_changed", "请先保存视频时长和清晰度", 422)
+        prompt = shot.video_prompt
+        if private_draft:
+            personal = private_draft.get("video_settings") or {}
+            duration = personal.get("duration_ms") or duration
+            expected = {
+                "duration_ms": duration,
+                "resolution": personal.get("resolution") or settings["resolution"],
+            }
+            prompt = private_draft["input_text"]
         snapshot = {**snapshot, "video_duration_ms": duration}
-        parts = video_prompt_parts(snapshot, shot.video_prompt)
+        effective_aspect = episode.aspect
+        if private_draft:
+            effective_aspect = (private_draft.get("video_settings") or {}).get(
+                "aspect"
+            ) or episode.aspect
+            actual_prompt = (
+                (
+                    "已保存分镜脚本（创作依据）：\n"
+                    + snapshot["shot"]["script"]
+                    + "\n本次视频提示词：\n"
+                    + prompt
+                )
+                if prompt.strip()
+                else prompt
+            )
+            parts = video_prompt_parts(
+                {**snapshot, "episode": {**snapshot["episode"], "aspect": effective_aspect}},
+                actual_prompt,
+            )
+        else:
+            parts = video_prompt_parts(snapshot, prompt)
         source.update(
             project_id=str(episode.project_id), episode_id=str(episode.id), source_id=str(shot.id)
         )
@@ -342,13 +388,15 @@ class GenerationContextService:
             "reference_layout": image.layout,
             "input_mode": "omni_reference",
             "row_version": str(shot.row_version),
-            "video_prompt": shot.video_prompt,
-            "video_settings": settings,
+            "video_prompt": prompt,
+            "video_settings": expected if private_draft else settings,
             "system_prompt": parts["system"],
             "user_prompt": parts["user"],
         }
+        if private_draft:
+            request["source_snapshot"]["creation_draft"] = private_draft
         request["template_version"] = PROMPT_VERSIONS["shot_video"]
-        request["parameters"] = {**expected, "aspect": episode.aspect}
+        request["parameters"] = {**expected, "aspect": effective_aspect}
         request["input"] = {"prompt": parts["prompt"], "reference_media_ids": [str(image.media_id)]}
         from .native_voice_service import native_context, native_prompt
 

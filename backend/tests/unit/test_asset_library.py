@@ -63,12 +63,13 @@ def test_asset_create_normalizes_tags_and_enforces_scene_time_scope():
         AssetCreate(kind="character", name="人物", scene_time="夜晚")
 
 
-def test_asset_patch_requires_a_version_and_rejects_kind_or_empty_patch():
+def test_asset_patch_requires_a_version_and_rejects_invalid_kind_or_empty_patch():
     assert AssetPatch(row_version="3", name="新名称").row_version == 3
+    assert AssetPatch(row_version="3", kind="prop").kind == "prop"
     for payload in (
         {"name": "new"},
         {"row_version": "3"},
-        {"row_version": "3", "kind": "prop"},
+        {"row_version": "3", "kind": "invalid"},
     ):
         with pytest.raises(ValidationError):
             AssetPatch.model_validate(payload)

@@ -1,17 +1,28 @@
 import { confirmAction } from '../../components/ui/confirm';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Button, Input, Skeleton, Tooltip } from 'antd';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Alert, Button, Skeleton, Tooltip } from 'antd';
 import { Dialog } from '../../components/ui/Dialog';
 import { Icon } from '../../components/ui/Icon';
 import { storyboardApi, type ScriptCandidate, type ScriptDetail } from '../../api/modules/storyboard';
 import { generations } from '../../api/modules/generations';
 import type { GenerationReceipt, GenerationSummary } from '../../api/types/generations';
 import { errorMessage } from '../../api/http';
-import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
+import { attemptStorage, clearAttempt, getAttemptAccount, requestAttempt } from '../generations/attempt';
 import { taskLabel } from '../generations/presentation';
 import { novelScriptRequest } from './workflow-contract';
 import type { WritingSession } from './writing-session';
+import type { useCreationDraft } from './useCreationDraft';
+import { GenerationComposer } from './GenerationComposer';
+import { CreationSlot } from './EpisodeCreationWorkspace';
+import { creationScope, clearRecovery, readRecovery, saveRecovery } from './creation-recovery';
+import { isNovelGenerationAttempt, type NovelGenerationAttempt } from './novel-generation-attempt';
 import './workflow-refinement.css';
+
+export interface NovelGenerationView {
+  candidate: ScriptDetail | null; showingCandidate: boolean; busy: boolean;
+  showCandidate: (show: boolean) => void; adopt: () => void;
+  history: ReactNode; feedback: ReactNode;
+}
 
 async function loadAllScripts(api: ReturnType<typeof storyboardApi>, signal: AbortSignal) {
   const items: ScriptCandidate[] = [];
@@ -41,42 +52,97 @@ async function loadAllTasks(projectId: string, episodeId: string, signal: AbortS
 }
 
 export function NovelScriptGeneration({
-  projectId, episodeId, modelId, novel, disabled, session, modelSelector, settings, onEditScript,
+  projectId, episodeId, novel, disabled, session, modelSelector, settings, onEditScript,
+  draft, children, settingsActions,
 }: {
   projectId: string;
   episodeId: string;
   contentVersion: string;
-  modelId: string;
+  modelId?: string;
   novel: string;
   disabled: boolean;
   session: WritingSession;
   modelSelector: ReactNode;
   settings?: ReactNode;
   onEditScript: () => void;
+  draft: ReturnType<typeof useCreationDraft>;
+  children: (view: NovelGenerationView) => ReactNode;
+  settingsActions?: ReactNode;
 }) {
-  const api = storyboardApi(projectId, episodeId);
-  const [instructions, setInstructions] = useState('');
+  const api = useMemo(() => storyboardApi(projectId, episodeId), [projectId, episodeId]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [items, setItems] = useState<ScriptCandidate[]>([]);
   const [tasks, setTasks] = useState<GenerationSummary[]>([]);
   const [preview, setPreview] = useState<ScriptDetail | null>(null);
+  const [showingCandidate, setShowingCandidate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submittedTask, setSubmittedTask] = useState<GenerationReceipt | null>(null);
+  const [uncertain, setUncertain] = useState<NovelGenerationAttempt | null>(null);
+  const [recoveryBlocked, setRecoveryBlocked] = useState(false);
   const submissionLock = useRef(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'error' | 'success' | 'info'>('error');
   const [scriptRevision, setScriptRevision] = useState(0);
   const [taskRevision, setTaskRevision] = useState(0);
   const completed = useRef(new Set<string>());
+  const currentGeneration = useRef<string | null>(null);
+  const active = useRef(true);
+  const accountId = getAttemptAccount();
+  const attemptScope = creationScope(`novel-adaptation-attempt:${projectId}:${episodeId}`);
   const pending = tasks.some(task => task.status === 'queued' || task.status === 'running') || !!submittedTask && (submittedTask.status === 'queued' || submittedTask.status === 'running');
+
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
+
+  function isCurrent() { return active.current && getAttemptAccount() === accountId; }
+
+  function acceptReceipt(receipt: GenerationReceipt) {
+    if (!isCurrent()) return false;
+    clearRecovery(attemptScope);
+    clearAttempt(`novel-script:${projectId}:${episodeId}`, attemptStorage());
+    setUncertain(null); setRecoveryBlocked(false); setSubmittedTask(receipt);
+    currentGeneration.current = receipt.generation_id;
+    setTaskRevision(revision => revision + 1);
+    return true;
+  }
+
+  async function resolveAttempt(attempt: NovelGenerationAttempt) {
+    try {
+      const receipt = await generations.lookup('text', attempt.key);
+      if (!isCurrent()) return;
+      if (receipt) { acceptReceipt(receipt); setMessageType('success'); setMessage('已找到原生成任务，将继续读取同一任务的结果。'); }
+      else { setMessageType('info'); setMessage('暂未查到原生成任务。请求仍待核对，请稍后再次核对；当前不会重新生成。'); }
+    } catch (cause) { if (isCurrent()) { setMessageType('error'); setMessage(`无法核对原生成请求：${errorMessage(cause)}`); } }
+  }
+
+  useEffect(() => {
+    try {
+      const restored = readRecovery(attemptScope, isNovelGenerationAttempt);
+      if (!restored) return;
+      const source = restored.body.source;
+      if (!source || source.scene !== 'novel_script' || source.project_id !== projectId || source.episode_id !== episodeId) throw new Error('生成恢复记录不属于当前分集。');
+      setUncertain(restored); setMessageType('info'); setMessage('发现待核对的剧本生成请求，请核对原请求后继续。');
+    } catch { setRecoveryBlocked(true); setMessageType('error'); setMessage('剧本生成恢复记录无法读取。请先核对任务中心的生成记录，当前已暂停新生成。'); }
+  }, [projectId, episodeId, attemptScope]);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     loadAllScripts(api, controller.signal)
-      .then((scripts) => { if (!controller.signal.aborted) setItems(scripts); })
+      .then(async (scripts) => {
+        if (controller.signal.aborted) return;
+        setItems(scripts);
+        const latest = scripts.find(item => item.generation_id === currentGeneration.current);
+        if (latest) {
+          const detail = await api.script(latest.id, controller.signal);
+          if (controller.signal.aborted) return;
+          currentGeneration.current = null; setPreview(detail); setShowingCandidate(true);
+        }
+      })
       .catch((cause) => { if (!controller.signal.aborted) { setMessageType('error'); setMessage(errorMessage(cause)); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -104,56 +170,98 @@ export function NovelScriptGeneration({
   }, [pending, tasks, submittedTask]);
 
   async function generate() {
-    if (submissionLock.current || busy || pending || disabled || !novel.trim()) return;
+    if (!isCurrent() || submissionLock.current || busy || pending || disabled || !novel.trim() || !draft.loaded || recoveryBlocked) return;
     submissionLock.current = true;
     setSubmitting(true); setMessage(''); setMessageType('error');
     try {
-      if (!await session.flush()) { setMessage('请先完成小说保存，再发起生成。'); return; }
+      if (uncertain) { await resolveAttempt(uncertain); return; }
+      const savedNovel = await session.flush();
+      if (!isCurrent()) return;
+      if (!savedNovel) { setMessage('请先完成小说保存，再发起生成。'); return; }
       const latest = session.getSnapshot();
+      const savedDraft = await draft.flush();
+      if (!isCurrent()) return;
+      if (!savedDraft) { setMessage('请先保存改编要求和文本模型，再发起生成。'); return; }
+      const checked = session.getSnapshot();
+      if (checked.dirty || checked.contentVersion !== latest.contentVersion || draft.session.hasUnsettled()) {
+        setMessage('保存期间内容发生变化，请核对最新内容后重新生成。'); return;
+      }
+      const request = novelScriptRequest(projectId, episodeId, checked.contentVersion, savedDraft.input_text);
       const body = {
-        ...(modelId ? { config_id: modelId } : {}),
-        ...novelScriptRequest(projectId, episodeId, latest.contentVersion, instructions),
+        ...(savedDraft.model_config_id ? { config_id: savedDraft.model_config_id } : {}),
+        ...request,
+        source: { ...request.source, draft_id: savedDraft.id, draft_version: savedDraft.draft_version },
       };
       const scope = `novel-script:${projectId}:${episodeId}`;
       const idempotencyKey = await requestAttempt(scope, body, attemptStorage());
+      if (!isCurrent()) return;
+      const attempt: NovelGenerationAttempt = { format: 1, key: idempotencyKey, body };
+      saveRecovery(attemptScope, attempt);
+      setUncertain(attempt);
       const receipt = await generations.generateText(body, idempotencyKey);
-      setSubmittedTask(receipt);
-      clearAttempt(scope, attemptStorage());
-      setMessageType('success'); setMessage('已开始生成。你可以继续编辑，完成后可在生成记录中预览采用。');
+      if (!acceptReceipt(receipt)) return;
+      setMessageType('success'); setMessage('已开始生成，完成后将在正文区只读预览。');
       setTaskRevision((revision) => revision + 1);
-    } catch (cause) { setMessageType('error'); setMessage(errorMessage(cause)); }
-    finally { submissionLock.current = false; setSubmitting(false); }
+    } catch (cause) {
+      if (!isCurrent()) return;
+      const status = (cause as { status?: number }).status;
+      if (status && status >= 400 && status < 500 && status !== 409) {
+        clearRecovery(attemptScope); clearAttempt(`novel-script:${projectId}:${episodeId}`, attemptStorage()); setUncertain(null);
+      }
+      setMessageType('error'); setMessage(errorMessage(cause));
+    }
+    finally { submissionLock.current = false; if (isCurrent()) setSubmitting(false); }
   }
 
   async function show(item: ScriptCandidate) {
     setBusy(true); setMessage(''); setMessageType('error');
-    try { setPreview(await api.script(item.id)); }
-    catch (cause) { setMessageType('error'); setMessage(errorMessage(cause)); }
-    finally { setBusy(false); }
+    try { const detail = await api.script(item.id); if (isCurrent()) { setPreview(detail); setShowingCandidate(true); setHistoryOpen(false); } }
+    catch (cause) { if (isCurrent()) { setMessageType('error'); setMessage(errorMessage(cause)); } }
+    finally { if (isCurrent()) setBusy(false); }
   }
 
   async function select(item: ScriptCandidate) {
     if (disabled || busy || !await confirmAction('切换前会先保存当前剧本草稿。确定设为当前编辑剧本？')) return;
+    if (!isCurrent()) return;
     setBusy(true); setMessage(''); setMessageType('error');
     try {
-      if (!await session.select(item.id)) setMessage('未能切换，当前草稿已保留。');
-      else { setPreview(null); setHistoryOpen(false); setScriptRevision((revision) => revision + 1); onEditScript(); }
-    } catch (cause) { setMessageType('error'); setMessage(errorMessage(cause)); }
-    finally { setBusy(false); }
+      const selected = await session.select(item.id);
+      if (!isCurrent()) return;
+      if (!selected) setMessage('未能切换，当前草稿已保留。');
+      else { setPreview(null); setShowingCandidate(false); setHistoryOpen(false); setScriptRevision((revision) => revision + 1); onEditScript(); }
+    } catch (cause) { if (isCurrent()) { setMessageType('error'); setMessage(errorMessage(cause)); } }
+    finally { if (isCurrent()) setBusy(false); }
   }
 
+  const history = <Tooltip title="生成记录"><Button type="text" size="small" aria-label="生成记录" icon={<Icon name="tasks" size={17}/>} onClick={() => setHistoryOpen(true)}/></Tooltip>;
+  const feedback = message ? <Alert className="novel-generation-feedback" type={messageType} showIcon message={message}/> : null;
   return <>
-    <aside className="writing-assistant" aria-label="剧本改编设置">
-      <h3><Icon name="film" size={20}/>AI 剧本改编</h3>
-      <p>将原文转为适合短剧的场景与对白，生成后由你选择采用。</p>
-      <label className="writing-control"><span>剧本生成模型</span>{modelSelector}</label>
+    <CreationSlot stage="source"><aside id="novel-adaptation-settings" className="writing-assistant novel-adaptation-settings" aria-label="剧本改编设置">
+      <header><h3>剧本改编设置</h3>{settingsActions}</header>
       {settings}
-      <label className="writing-control"><span>改编要求 <small>选填</small></span><Input.TextArea rows={4} maxLength={4000} value={instructions} disabled={disabled || busy || submitting} onChange={(event) => setInstructions(event.target.value)} placeholder="例如：突出主角冲突，保留关键对白，结尾设置悬念。"/></label>
-      <div className="script-generation-actions"><Button type="primary" aria-label="生成剧本" aria-busy={submitting || pending} loading={submitting || pending} disabled={disabled || busy || pending || !novel.trim()} onClick={() => void generate()}>生成剧本</Button><Tooltip title="生成记录"><Button aria-label="生成记录" icon={<Icon name="tasks" size={18}/>} onClick={() => setHistoryOpen(true)}/></Tooltip></div>
-      <p className="writing-assistant-hint">{novel.trim() ? '使用所选模型生成，可能产生模型服务费用。' : '先写入小说原文，再开始生成。'}</p>
-      {message && <Alert type={messageType} showIcon message={message}/>}
-      {pending && <p role="status">任务处理中，完成后可在生成记录中预览采用。</p>}
-    </aside>
+      <GenerationComposer purpose="novel" prompt={draft.value.input_text} onPrompt={input_text => draft.edit({ input_text })} model={modelSelector}
+        disabled={disabled || busy || submitting || !draft.loaded} busy={submitting || pending}
+        sendDisabled={disabled || busy || pending || recoveryBlocked || !!uncertain || !draft.loaded || draft.status === 'conflict' || draft.status === 'error' || !novel.trim()} onSend={() => void generate()}/>
+      {uncertain && <Button className="novel-uncertain-action" aria-label="核对生成请求" aria-busy={submitting} loading={submitting} disabled={disabled || busy || submitting} onClick={async () => {
+        if (submissionLock.current) return;
+        submissionLock.current = true; setSubmitting(true);
+        try { await resolveAttempt(uncertain); } finally { submissionLock.current = false; if (isCurrent()) setSubmitting(false); }
+      }}>核对生成请求</Button>}
+      {!novel.trim() && <p className="writing-assistant-hint">先在“查看原文”中写入或导入小说。</p>}
+      {draft.status === 'loading' && <p role="status">正在读取改编设置…</p>}
+      {draft.status === 'local' && <p className="creation-draft-feedback" role="status">{draft.message || '改编要求尚未保存到服务端。'}</p>}
+      {(draft.status === 'error' || draft.status === 'conflict') && <Alert type="warning" showIcon message={draft.message} action={<div className="novel-draft-actions">
+        <Button size="small" onClick={() => {
+          const url = URL.createObjectURL(new Blob([JSON.stringify(draft.value, null, 2)], { type: 'application/json' }));
+          const link = document.createElement('a'); link.href = url; link.download = `episode-${episodeId}-adaptation-draft.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
+        }}>下载草稿</Button>
+        {draft.status === 'error' && <Button size="small" onClick={() => void draft.retry()}>重试保存</Button>}
+        <Button size="small" onClick={() => void confirmAction('载入服务端改编设置将放弃本机参数草稿，请先下载备份。继续？').then(ok => { if (ok) void draft.reload(); })}>载入服务端版本</Button>
+      </div>}/>}
+      {pending && <p role="status">剧本正在生成…</p>}
+    </aside></CreationSlot>
+    {children({ candidate: preview, showingCandidate, busy, showCandidate: setShowingCandidate,
+      adopt: () => { if (preview) void select(preview); }, history, feedback })}
     {historyOpen && <Dialog title="剧本生成记录" className="script-preview-dialog" canClose={!busy} onClose={() => setHistoryOpen(false)}><section className="writing-candidates" aria-label="候选剧本">
       <header><div><h3>候选剧本 <span>{items.length}</span></h3><p>预览、比较，选中适合本集的一稿继续编辑。</p></div><Button disabled={busy || loading} onClick={() => { setTaskRevision(revision => revision + 1); setScriptRevision(revision => revision + 1); }}>刷新结果</Button></header>
       {loading ? <Skeleton title paragraph={{ rows: 2 }}/> : items.length ? <div className="script-candidate-list">{items.map(item => <article className={`script-candidate${item.is_editing ? ' is-current' : ''}`} key={item.id}>
@@ -162,6 +270,5 @@ export function NovelScriptGeneration({
       </article>)}</div> : <div className="candidate-empty"><Icon name="film" size={28}/><div><strong>让故事多一种表达</strong><p>生成的剧本会出现在这里，原稿会保留。</p></div></div>}
       {tasks.length > 0 && <details className="writing-task-history"><summary>生成记录（{tasks.length}）</summary>{tasks.map(task => <div className="writing-task-row" key={task.generation_id}><span className={`status-badge status-${task.status}`}>{taskLabel(task)}</span><span>{task.error?.message || `任务 ${task.generation_id}`}</span></div>)}</details>}
     </section></Dialog>}
-    {preview && <Dialog title="候选剧本预览" className="script-preview-dialog" canClose={!busy} onClose={() => setPreview(null)}><div className="script-preview-body">{message && <Alert type={messageType} showIcon message={message}/>}<pre>{preview.content}</pre></div><div className="dialog-actions"><Button disabled={busy} onClick={() => setPreview(null)}>关闭</Button>{items.find(item => item.id === preview.id)?.is_editing ? <Button type="primary" onClick={() => { setPreview(null); setHistoryOpen(false); onEditScript(); }}>继续编辑</Button> : <Button type="primary" loading={busy} disabled={disabled || busy || !items.some(item => item.id === preview.id)} onClick={() => { const item = items.find(item => item.id === preview.id); if (item) void select(item); }}>采用并编辑</Button>}</div></Dialog>}
   </>;
 }

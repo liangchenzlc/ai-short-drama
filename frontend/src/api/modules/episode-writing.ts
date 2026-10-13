@@ -1,13 +1,15 @@
 import { http } from '../http';
 
 export interface WritingNovel { id: string; content: string; updated_at: string | null }
-export interface WritingScript extends WritingNovel { state: 'unconfirmed' | 'confirmed' }
+export interface EditorAttributes { bold?: boolean; italic?: boolean; header?: 1 | 2 | 3; blockquote?: boolean }
+export interface EditorDocument { ops: { insert: string; attributes?: EditorAttributes }[] }
+export interface WritingScript extends WritingNovel { state: 'unconfirmed' | 'confirmed'; editor_document?: EditorDocument | null }
 export interface WritingResponse {
   episode_id: string; content_version: string; novel: WritingNovel | null;
   editing_script: WritingScript | null; confirmed_script_id: string | null;
 }
 export interface NovelBody { content_version: string; content: string }
-export interface ScriptBody extends NovelBody { script_id: string | null }
+export interface ScriptBody extends NovelBody { script_id: string | null; editor_document?: EditorDocument | null }
 export interface WritingTransport {
   get(): Promise<WritingResponse>;
   novel(body: NovelBody): Promise<{ content_version: string; novel: WritingNovel }>;

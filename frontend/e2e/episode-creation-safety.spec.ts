@@ -43,11 +43,12 @@ async function safetyFixture(page: Page) {
         state.updates.push({ id: current.id, ...body });
         started?.resolve();
         if (saving) await saving.promise;
-        if (state.conflicts) return reply({ error: { code: 'asset_version_conflict' } }, 409);
+        if (state.conflicts || body.row_version !== current.row_version) return reply({ error: { code: 'asset_version_conflict' } }, 409);
         Object.assign(current, body, { row_version: String(BigInt(current.row_version) + 1n) });
       }
       return reply(current);
     }
+    if (assets.some(item => path === `/assets/${item.id}/image-candidates`)) return reply({ items: [], total: 0, offset: 0, limit: 20 });
     if (path === '/agent/status') return reply({ enabled: true, schema_ready: true });
     if (path === '/agent/models') return reply({
       items: [{ id: '71', name: '创作协作模型', model_key: 'fixture-agent', row_version: 1,
@@ -88,13 +89,16 @@ async function openFirstAsset(page: Page) {
   await page.getByRole('button', { name: '林晚', exact: true }).click();
   const detail = page.locator('.episode-asset-detail');
   await expect(detail).toBeVisible();
+  const expand = detail.getByRole('button', { name: '展开生成设置', exact: true });
+  if (await expand.isVisible()) await expand.click();
+  await expect(detail.getByRole('textbox', { name: '素材名称', exact: true })).toBeEnabled();
   return detail;
 }
 
 test('leaving inline material editing saves the draft before returning to the project', async ({ page }) => {
   const data = await safetyFixture(page);
   const detail = await openFirstAsset(page);
-  await detail.getByLabel('名称', { exact: true }).fill('保存后离开的角色');
+  await detail.getByRole('textbox', { name: '素材名称', exact: true }).fill('保存后离开的角色');
   await page.getByRole('button', { name: '返回项目详情', exact: true }).click();
   await expect(page).toHaveURL(/\/projects\/10$/);
   expect(data.state.updates).toEqual([expect.objectContaining({ id: '501', name: '保存后离开的角色', row_version: '1' })]);
@@ -107,53 +111,59 @@ test('a material version conflict keeps the draft when leaving is cancelled', as
   const data = await safetyFixture(page);
   data.state.conflicts = true;
   const detail = await openFirstAsset(page);
-  await detail.getByLabel('名称', { exact: true }).fill('发生冲突仍保留的草稿');
+  await detail.getByRole('textbox', { name: '素材名称', exact: true }).fill('发生冲突仍保留的草稿');
   await page.getByRole('button', { name: '返回项目详情', exact: true }).click();
   const confirmation = page.getByRole('dialog', { name: '未保存的修改', exact: true });
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole('button', { name: '取消', exact: true }).click();
   await expect(page).toHaveURL(url => url.pathname === `${root}/assets` && url.searchParams.get('asset') === '501');
-  await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('发生冲突仍保留的草稿');
+  await expect(detail.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('发生冲突仍保留的草稿');
   expect(data.state.updates).toHaveLength(1);
   expect(data.state.assets[0].name).toBe('林晚');
   expect(data.errors).toEqual([]);
 });
 
-test('switching materials explicitly checks an unsaved draft and cancelling retains the current object', async ({ page }) => {
+test('switching materials first saves the current draft and preserves it when a conflict blocks switching', async ({ page }) => {
   const data = await safetyFixture(page);
   const detail = await openFirstAsset(page);
-  await detail.getByLabel('名称', { exact: true }).fill('尚未保存的林晚');
+  const name = detail.getByRole('textbox', { name: '素材名称', exact: true });
+  await name.fill('先保存再切换的林晚');
   await page.getByRole('button', { name: '沈川', exact: true }).click();
-  const confirmation = page.getByRole('dialog', { name: '未保存的修改', exact: true });
-  await expect(confirmation).toBeVisible();
-  await confirmation.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('尚未保存的林晚');
-  expect(data.state.updates).toEqual([]);
-  await page.getByRole('button', { name: '沈川', exact: true }).click();
-  await confirmation.getByRole('button', { name: '放弃修改', exact: true }).click();
-  await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('沈川');
+  await expect(name).toHaveValue('沈川');
+  expect(data.state.updates).toEqual([expect.objectContaining({ id: '501', name: '先保存再切换的林晚', row_version: '1' })]);
+  data.state.conflicts = true;
+  await name.fill('冲突后保留的沈川');
+  await page.getByRole('button', { name: '先保存再切换的林晚', exact: true }).click();
+  await expect(detail.getByRole('button', { name: '核对最新版本', exact: true })).toBeVisible();
+  await expect(name).toHaveValue('冲突后保留的沈川');
+  await expect(page).toHaveURL(url => url.searchParams.get('asset') === '504');
+  expect(data.state.assets[1].name).toBe('沈川');
+  expect(data.state.updates).toHaveLength(2);
   expect(data.errors).toEqual([]);
 });
 
-test('a pending material save locks object switching until its response has been applied', async ({ page }) => {
+test('a pending material save retains newer input and delays switching until every acknowledgement applies', async ({ page }) => {
   const data = await safetyFixture(page);
   const detail = await openFirstAsset(page);
-  await detail.getByLabel('名称', { exact: true }).fill('先保存林晚');
   const gate = data.gateSave();
-  await detail.getByRole('button', { name: '保存修改', exact: true }).click();
+  const name = detail.getByRole('textbox', { name: '素材名称', exact: true });
+  await name.fill('先保存林晚');
   await gate.started;
   const next = page.getByRole('button', { name: '沈川', exact: true });
   try {
-    await expect(next).toBeDisabled();
-    await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('先保存林晚');
+    await expect(name).toBeEnabled();
+    await name.fill('保存回执等待期间的新名称');
+    await next.click();
+    await expect(name).toHaveValue('保存回执等待期间的新名称');
+    await expect(page).toHaveURL(url => url.searchParams.get('asset') === '501');
     await expect(page.getByRole('dialog', { name: '未保存的修改', exact: true })).toHaveCount(0);
   } finally { gate.release(); }
-  await expect(detail.getByText('所有修改已保存', { exact: true })).toBeVisible();
-  await expect(next).toBeEnabled();
-  await next.click();
-  await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('沈川');
-  expect(data.state.assets[0].name).toBe('先保存林晚');
-  expect(data.state.updates).toHaveLength(1);
+  await expect(name).toHaveValue('沈川');
+  expect(data.state.assets[0].name).toBe('保存回执等待期间的新名称');
+  expect(data.state.updates).toEqual([
+    expect.objectContaining({ id: '501', name: '先保存林晚', row_version: '1' }),
+    expect.objectContaining({ id: '501', name: '保存回执等待期间的新名称', row_version: '2' }),
+  ]);
   expect(data.errors).toEqual([]);
 });
 
@@ -168,31 +178,25 @@ test('material saving conflicts retain editing and the project assistant draft',
   await page.getByRole('button', { name: '林晚', exact: true }).click();
   const detail = page.locator('.episode-asset-detail');
   await expect(detail).toBeVisible();
-  await detail.getByLabel('名称', { exact: true }).fill('助手消息发送前的素材草稿');
-  await expect(composer).toBeHidden();
-  await detail.getByRole('button', { name: '返回素材列表', exact: true }).click();
-  let confirmation = page.getByRole('dialog', { name: '未保存的修改', exact: true });
-  await confirmation.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('助手消息发送前的素材草稿');
-  await detail.getByRole('button', { name: '返回素材列表', exact: true }).click();
-  await confirmation.getByRole('button', { name: '保存并返回', exact: true }).click();
-  await expect(confirmation).toHaveCount(0);
-  await expect(detail).toBeVisible();
-  await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('助手消息发送前的素材草稿');
+  const name = detail.getByRole('textbox', { name: '素材名称', exact: true });
+  await name.fill('助手消息发送前的素材草稿');
+  await expect(composer).toBeVisible();
+  await expect(composer).toHaveValue(message);
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(detail.getByRole('button', { name: '核对最新版本', exact: true })).toBeVisible();
+  await expect(name).toHaveValue('助手消息发送前的素材草稿');
   expect(data.state.updates).toHaveLength(1);
   expect(data.state.sends).toEqual([]);
-  await expect(composer).toBeHidden();
+  await expect(composer).toBeVisible();
+  await expect(composer).toHaveValue(message);
   data.state.conflicts = false;
   await detail.getByRole('button', { name: '核对最新版本', exact: true }).click();
   const review = page.getByRole('dialog', { name: '核对素材版本', exact: true });
   await expect(review).toBeVisible();
   await review.getByRole('button', { name: '已核对，保留草稿继续编辑', exact: true }).click();
-  await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('助手消息发送前的素材草稿');
+  await expect(name).toHaveValue('助手消息发送前的素材草稿');
   expect(data.state.sends).toEqual([]);
-  await detail.getByRole('button', { name: '返回素材列表', exact: true }).click();
-  await confirmation.getByRole('button', { name: '保存并返回', exact: true }).click();
-  await expect(detail).toHaveCount(0);
-  await page.getByRole('button', { name: 'AI 创作助手', exact: true }).click();
+  await expect.poll(() => data.state.assets[0].name).toBe('助手消息发送前的素材草稿');
   await expect(composer).toBeVisible();
   await expect(composer).toHaveValue(message);
   await page.getByRole('button', { name: '发送', exact: true }).click();
@@ -248,38 +252,43 @@ test('sound version conflicts preserve the inline draft and block navigation', a
   expect(data.unexpected).toEqual([]);
 });
 
-test('closing inline material editing restores keyboard focus to its entry', async ({ page }) => {
+test('closing mobile material settings by keyboard restores focus to the settings entry', async ({ page }) => {
   const data = await safetyFixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${root}/assets`);
-  const entry = page.getByRole('button', { name: '林晚', exact: true });
+  const detail = page.locator('.episode-asset-detail');
+  const entry = detail.getByRole('button', { name: '展开生成设置', exact: true });
   await entry.focus();
   await page.keyboard.press('Enter');
-  const close = page.locator('.episode-asset-detail').getByRole('button', { name: '返回素材列表', exact: true });
+  await expect(detail.getByRole('dialog', { name: '素材生成设置', exact: true })).toBeVisible();
+  const close = detail.getByRole('button', { name: '收起生成设置', exact: true });
   await close.focus();
   await page.keyboard.press('Enter');
-  await expect(page.locator('.episode-asset-detail')).toHaveCount(0);
+  await expect(detail.getByRole('dialog', { name: '素材生成设置', exact: true })).toHaveCount(0);
   await expect(entry).toBeFocused();
+  await expect(detail.getByRole('region', { name: '素材图片预览', exact: true })).toBeVisible();
   expect(data.errors).toEqual([]);
 });
 
-test('closing a saved inline material restores focus after its card reloads', async ({ page }) => {
+test('closing saved material settings restores focus while the refreshed card and deep link retain the asset', async ({ page }) => {
   const data = await safetyFixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
   const detail = await openFirstAsset(page);
-  await detail.getByLabel('名称', { exact: true }).fill('保存后的林晚');
-  await detail.getByRole('button', { name: '保存修改', exact: true }).click();
-  await expect(detail.getByText('所有修改已保存', { exact: true })).toBeVisible();
-  const entry = page.getByRole('button', { name: '保存后的林晚', exact: true });
-  await expect(entry).toBeVisible();
-  await detail.getByRole('button', { name: '返回素材列表', exact: true }).focus();
-  await page.keyboard.press('Enter');
-  await expect(detail).toHaveCount(0);
-  await expect(page).toHaveURL(url => !url.searchParams.has('asset'));
+  const name = detail.getByRole('textbox', { name: '素材名称', exact: true });
+  await name.fill('保存后的林晚');
+  await expect.poll(() => data.state.assets[0].name).toBe('保存后的林晚');
+  await expect(page.getByRole('button', { name: '保存后的林晚', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  const entry = detail.getByRole('button', { name: '展开生成设置', exact: true });
   await expect(entry).toBeFocused();
-  await entry.click();
-  await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('保存后的林晚');
   await expect(page).toHaveURL(url => url.searchParams.get('asset') === '501');
+  await entry.click();
+  await expect(name).toHaveValue('保存后的林晚');
+  await expect(page).toHaveURL(url => url.searchParams.get('asset') === '501');
+  await expect(page.locator('.episode-save-state')).toHaveText('已保存');
   await page.reload();
-  await expect(detail.getByLabel('名称', { exact: true })).toHaveValue('保存后的林晚');
+  await entry.click();
+  await expect(name).toHaveValue('保存后的林晚');
   expect(data.state.updates).toHaveLength(1);
   expect(data.errors).toEqual([]);
 });

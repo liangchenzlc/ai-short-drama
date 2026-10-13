@@ -122,7 +122,9 @@ def test_structured_shots_accepts_one_fence_and_rejects_unknown_asset_or_extra_f
         "asset_ids": ["11"],
     }
     text = json.dumps({"shots": [shot]})
-    assert parse_storyboard_result("```json\n" + text + "\n```", {11}, source) == {"shots": [shot]}
+    assert parse_storyboard_result("```json\n" + text + "\n```", {11}, source) == {
+        "shots": [{**shot, "shot_size": None}]
+    }
     with pytest.raises(ValueError):
         parse_storyboard_result(text, {12}, source)
     with pytest.raises(ValueError):
@@ -338,6 +340,7 @@ def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archive
                     "shots": [
                         {
                             "title": "New shot",
+                            "shot_size": "close_up",
                             "source_excerpt": "script",
                             "story_beat": "The scene begins.",
                             "script": "new shot",
@@ -367,6 +370,8 @@ def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archive
             ["old shot", "new shot"] if mode == "append" else ["new shot"]
         )
         assert generated[-1]["duration_ms"] == 3000
+        assert generated[-1]["title"] == "New shot"
+        assert generated[-1]["shot_size"] == "close_up"
         assert generated[-1]["source_excerpt"] == "script"
         with session.begin():
             archived = session.get(ShotScript, int(old["shot"]["id"])).deleted_at is not None

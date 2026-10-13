@@ -36,6 +36,7 @@ from short_drama.api.v1.media_library import router as media_library_router
 from short_drama.api.v1.native_voice import router as native_voice_router
 from short_drama.api.v1.projects import router as projects_router
 from short_drama.api.v1.test import router as test_router
+from short_drama.api.v1.user_creation_drafts import router as user_creation_drafts_router
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(canvas_beefapi_router)
@@ -77,3 +78,4 @@ router.include_router(generation_batches_router)
 router.include_router(auth_router)
 
 router.include_router(collaboration_router)
+router.include_router(user_creation_drafts_router)

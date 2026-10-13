@@ -28,7 +28,7 @@ export function AssetImageGeneration({
   const [count, setCount] = useState(1);
   const [aspect, setAspect] = useState<ImageGenerationRequest['parameters']['aspect']>();
   const [resolution, setResolution] = useState('');
-  const { tasks, hasMore, refreshError, historyLoading, historyLoaded, loadingMore, submitError, submitting, actionTaskId, submit, perform, load, loadMore } =
+  const { tasks, hasMore, refreshError, historyLoading, historyLoaded, loadingMore, submitError, submitting, actionTaskId, submit, perform, load, loadMore, uncertain, reconciling, reconcileSubmission } =
     useAssetImageGeneration(asset, onSaveBeforeGenerate, onCandidatesChanged, onSubmissionBusyChange, onVersionConflict);
   const blockReason = assetImageGenerationBlockReason(asset, configId);
 
@@ -39,11 +39,11 @@ export function AssetImageGeneration({
       <label>画面比例<Select allowClear value={aspect} options={aspectOptions} disabled={submitting || disabled} placeholder="模型默认" onChange={setAspect}/></label>
       <label>分辨率<Input allowClear value={resolution} disabled={submitting || disabled} placeholder="模型默认，如 1024x1024" onChange={(event) => setResolution(event.target.value)}/></label>
       <div className="asset-generation-submit">
-        <Button type="primary" loading={submitting} disabled={disabled || submitting || !!blockReason} onClick={() => void submit({ configId, supplement: '', count, aspect, resolution, scope })}>保存并生成图片</Button>
+        <Button type="primary" loading={submitting} disabled={disabled || submitting || uncertain || !!blockReason} onClick={() => void submit({ configId, supplement: '', count, aspect, resolution, scope })}>保存并生成图片</Button>
         <span>{blockReason ?? '生成任务不会自动采用图片；请在候选区明确确认。'}</span>
       </div>
     </div>}
-    {(submitError || refreshError) && <Alert type="warning" showIcon message={submitError || refreshError} action={refreshError ? <Button loading={historyLoading} onClick={() => void load()}>重试读取生成记录</Button> : undefined}/>}
+    {(submitError || refreshError) && <Alert type="warning" showIcon message={submitError || refreshError} action={uncertain ? <Button loading={reconciling} onClick={() => void reconcileSubmission()}>核对原生成请求</Button> : refreshError ? <Button loading={historyLoading} onClick={() => void load()}>重试读取生成记录</Button> : undefined}/>}
     <details className="asset-generation-history"><summary>生成记录 <span>{!historyLoaded ? historyLoading ? '正在读取…' : '读取失败' : tasks.length ? `${tasks.length} 条${tasks.some(active) ? '，有任务处理中' : ''}` : '暂无记录'}</span></summary><div className="asset-generation-history-heading">
       <h4>生成记录</h4>
       <Button size="small" loading={historyLoading} disabled={submitting} onClick={() => void load()}>刷新</Button>

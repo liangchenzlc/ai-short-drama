@@ -8,6 +8,7 @@ from .base import (
     PositiveUInt32,
     ReadModel,
 )
+from .editor_document import EditorDocument
 
 
 class EpisodeScriptCreate(InputModel):
@@ -27,6 +28,7 @@ class EpisodeScriptRead(ReadModel):
     episode_id: Identifier
     position: PositiveUInt32
     content: MediumText
+    editor_document: EditorDocument | None = None
     state: Literal["unconfirmed", "confirmed"]
     created_at: datetime | None = None
     updated_at: datetime | None = None

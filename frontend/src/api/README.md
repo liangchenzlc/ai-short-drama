@@ -11,7 +11,7 @@
 
 ## 保存、冲突与生成
 
-小说与剧本使用`writing-session.ts`串行保存共享content_version。旧响应不能覆盖新输入；409暂停保存并保留草稿，网络不确定时先读取服务端核实。导航保护等待保存、确认和其他制作编辑；失败后才允许用户明确决定是否放弃。
+小说与剧本使用`writing-session.ts`串行保存共享content_version。剧本同时保存纯文本 `content` 和受限 Quill `editor_document`，格式变化也进入同一队列、恢复稿和版本校验；Delta 只移除文档结尾标记的一个换行，保留用户空行。旧纯文本读取用展示文档，旧客户端省略格式时服务端清除原格式。候选仍只读，生成、提取与导出使用纯文本。旧响应不能覆盖新输入；409暂停保存并保留草稿，网络不确定时先读取服务端核实。导航保护等待保存、确认和其他制作编辑；失败后才允许用户明确决定是否放弃。
 
 正文、剪辑与声音的本机恢复稿按账号和稳定对象隔离，记录服务端基准版本；刷新后先显示服务端内容和恢复提示，不能自动提交。恢复前重新读取最新对象；版本已变化须明确核对，声音审核状态在版本或剪辑变化后失效。损坏记录可下载核对并明确放弃，处理前禁止编辑覆盖该记录。剪辑只保存稳定媒体 ID 与编辑决定，不保存签名 URL；恢复重新读取展示地址，失效来源仍需处理。
 
@@ -21,17 +21,35 @@ Agent 待核对消息与普通输入草稿分开保存，包含原始完整请�
 
 素材与分镜使用各自版本；排序还需要storyboard_version。生成前先保存来源内容，采用时提交服务器返回的版本、当前媒体ID和上下文hash；不要在前端生成这些比较值。
 
+标准分集新增素材先保留本机临时卡片，名称与类型完整后用 `assetLibraries.create` 和原创建键保存；UUID 不发送为业务 ID，未命名占位文字不作为真实名称。请求受理不明时核对原键并保留原卡片，不能另建一张。素材 PATCH 支持 `kind`，同时保留 `row_version/confirm_shared`；转换不兼容时保留输入并展示错误，不能代替服务端删除声音、对白、历史或关联。
+
+镜头 `title` 与 `shot_size` 随创建、修改、详情和采用回执读取；title 默认空，界面显示“未命名镜头”，不用脚本第一行冒充名称。shot_size 可空，枚举为 `full_shot/medium_shot/close_up/extreme_close_up/wide_shot/two_shot`。名称、脚本沿同一镜头保存队列，图与视频页共用。隐藏的素材关联、脚本时长和完整 image_settings 保留服务端值，不被局部表单清空。
+
 分镜对象详情通过 `storyboardApi.shot(id)` 独立于 20 条分页恢复，额外详情不计入列表 offset；仅服务端详情的归档状态或明确 404 能证明当前对象不可用。详情先于列表返回时仍接收自动保存的行版本与上下文回执，保存后重新读取集合版本。迟到的相邻分页不能覆盖后来选择的对象；上移、下移、归档前完成保存，执行期间锁住编辑。镜头与素材列表独立加载，素材读取失败不得隐藏镜头或覆盖未保存输入。图片参考数为已确认素材图与手动图按 `media_id` 去重后的合计，最多 16 张；生成前保存读回并重新读取两类引用，不自动丢弃超限引用。
 
-`StoryboardResultPage` 预览包含逐镜 `title/script/duration_ms/asset_ids/assets/source_excerpt/story_beat` 和整批 `total_duration_ms`。素材名称取生成时冻结快照，`available` 标识是否仍属于本集，`snapshot_missing` 表示旧快照缺失；不得用当前名称冒充原始生成上下文。采用仍为完整批次，预览分页不限制采用范围。
+`StoryboardResultPage` 预览包含逐镜 `title/shot_size/script/duration_ms/asset_ids/assets/source_excerpt/story_beat` 和整批 `total_duration_ms`。素材名称取生成时冻结快照，`available` 标识是否仍属于本集，`snapshot_missing` 表示旧快照缺失；不得用当前名称冒充原始生成上下文。采用仍为完整批次，预览分页不限制采用范围。
 
 `generations/attempt.ts`按操作与请求内容保存幂等标识。请求超时后同一请求复用原键，内容改变或明确新建任务使用新键；不要为了“重试”自动触发第二次付费提交。可执行操作以can_cancel/can_resume/can_retry为准。
 
+`generations.lookup` 使用 `GET /ai/generations/by-idempotency-key`，按类型与原键只读核对本人任务。未知结果保留冻结请求及原键；查询返回 null 不能触发自动新提交。账号、对象、请求或草稿范围改变后，旧核对回执不能更新当前对象的任务。
+
 图片/视频的asset_id、素材本体id、media_id不是同一概念。参考图提交文件media_id；候选采用接口路径使用生成媒体资产asset_id；目标id则由target.type决定。
 
-素材详情提交 `source:{scene:"asset_image",asset_id,row_version}`，`input.prompt` 为本次补充要求，参考图片列表为空。保存回调必须返回服务端的新版本；短操作锁覆盖保存和提交，不能从尚未更新的 React state 读取版本。历史按素材 ID 查询；切换素材时取消旧请求，轮询错误不覆盖已有任务状态。
+素材详情的旧来源提交 `source:{scene:"asset_image",asset_id,row_version}`，`input.prompt` 为本次补充要求；标准分集的私人来源扩展见下一节。保存回调必须返回服务端的新版本；短操作锁覆盖保存和提交，不能从尚未更新的 React state 读取版本。历史按素材 ID 查询；切换素材时取消旧请求，轮询错误不覆盖已有任务状态。
 
 候选 `generation` 提供来源任务、版本和 `is_stale/stale_reason`。上传或通用图片候选该字段为 null。采用遇到 `stale_source` 时明确确认后提交 `acknowledge_stale_source`，共享确认标志与旧来源确认标志需同时保留，但均不能跳过目标版本冲突。
+
+## 标准模式私人生成草稿
+
+`modules/creation-drafts.ts` 访问 `E/drafts`，按账号、项目、分集、稳定对象和 `purpose` 管理。用途为 `novel_adaptation/asset_image/storyboard_image/storyboard_video`，小说对象为分集 ID。首次 POST 创建；已有草稿用 PATCH 和 `row_version`，遇到创建或版本冲突先读取当前草稿，保留当前输入等待明确核对。草稿只保存下一次生成输入，不随共享作品保存或暴露给协作者。
+
+DTO 保留 `model_config_id/input_text/image_settings/video_settings/reference_media_ids` 及服务端 `id/draft_version/source_version/row_version`。未选模型仍可保存输入，生成前必须选择本人可用模型。小说改编和图片补充输入最多 4000 字符，视频提示词最多 16000 字符；私人图片张数为 1/2/4，参考图最多 16 张。视频时长为整秒的毫秒值，实际范围遵守模型能力。仅保存永久媒体 ID，`reference_images` 里的现签 URL 用于展示；共享来源参考图与私人参考图分别管理，生成时合并去重并重新校验合计与模型上限。
+
+先完成作品来源保存，再等待本人草稿保存回执，最后提交来源的最新版本和 `draft_id/draft_version`。仅本机保留的输入不能显示服务端已保存，也不能引用为生成来源。`source_version` 是保存时的溯源版本，不替代当前作品许可；共享来源后来改变时重新读取最新行版本和 hash，私人输入仍保留，不自动拿缓存值拼可信最终提示词。
+
+素材私人来源还带 project_id/episode_id；分镜图使用 `context_mode:saved` 和当前完整 layout。图像补充提示词与可见参数由服务端读取本人草稿并冻结，隐藏 layout 保留共享值。分镜视频仍携带当前未过期采用图及 video_context_hash，禁止同时传 input；私人提示词只替代本次视频提示词段，保留剧本，私人时长不改脚本时长。无私人引用的请求仍遵守共享保存设置。409、未保存、不可用模型或采用图过期时停止提交并保稿；生成成功继续展示候选，明确采用才更新作品。
+
+私人草稿、提交核对记录和恢复稿都按账号及稳定范围隔离。A → B → A 与图片／视频切换分别恢复各自输入，旧保存和提交响应不能覆盖新对象；切账号清除当前会话中的私人展示。
 
 ## 配置与模型目录
 

@@ -306,10 +306,9 @@ class AssetLibraryService(BaseService):
                     "Asset changed; refresh before saving",
                     details={"current_version": asset.row_version},
                 )
-            if asset.kind != "scene" and values.get("scene_time"):
-                raise WorkflowError(
-                    "invalid_asset", "scene_time is only allowed for scene assets", 400
-                )
+            from .asset_kind import validate_asset_kind_change
+
+            validate_asset_kind_change(self.session, asset, values)
             if self.session.info.get("actor") and "model_id" in values:
                 from .model_preference_service import save_model_preference
 

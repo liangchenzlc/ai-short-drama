@@ -20,6 +20,7 @@ import { EpisodeEditorSlot, useEpisodeCreation, useEpisodeCreationControls } fro
 import { EpisodeAssetCard } from './EpisodeAssetCard';
 import '../projects/workflow-refinement.css';
 import type { NavigationBarrier } from '../projects/writing-navigation';
+import { EpisodeAssetWorkspace } from './EpisodeAssetWorkspace';
 
 const labels: Record<AssetKind, string> = { character: '角色', scene: '场景', prop: '道具' };
 const blank = (kind: AssetKind): AssetDraft => ({ kind, name: '', label: '', description: '', prompt: '', tags: [], scene_time: '' });
@@ -32,9 +33,7 @@ async function loadAllLibrary(scope: AssetScope, kind: AssetKind, signal?: Abort
   return items;
 }
 
-export function AssetLibraryPanel({
-  scope, title, readOnly = false, importFrom, shareTo, legacyDownload, initialKind = 'character', onKindChange, toolbar, refreshToken = 0, registerBarrier,
-}: {
+type AssetLibraryPanelProps = {
   scope: AssetScope;
   title: string;
   readOnly?: boolean;
@@ -46,7 +45,18 @@ export function AssetLibraryPanel({
   toolbar?: ReactNode;
   refreshToken?: number;
   registerBarrier?: (barrier: NavigationBarrier | null) => void;
-}) {
+  variant?: 'library' | 'standard';
+};
+
+export function AssetLibraryPanel(props: AssetLibraryPanelProps) {
+  return props.variant === 'standard' && props.scope.kind === 'episode'
+    ? <EpisodeAssetWorkspace {...props} scope={props.scope}/>
+    : <LibraryPanel {...props}/>;
+}
+
+function LibraryPanel({
+  scope, title, readOnly = false, importFrom, shareTo, legacyDownload, initialKind = 'character', onKindChange, toolbar, refreshToken = 0, registerBarrier,
+}: AssetLibraryPanelProps) {
   const auth = useAuth();
   const inEpisode = useEpisodeCreation();
   const creation = useEpisodeCreationControls();

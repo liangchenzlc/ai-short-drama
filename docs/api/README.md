@@ -103,7 +103,7 @@ Agent 默认开启；运行须完成九表迁移、保持账号认证并启动�
 | --- | --- | --- |
 | GET | `E/writing` | `content_version/novel/editing_script/confirmed_script_id`；尚未创建的正文为 null |
 | PUT | `E/novel` | `{content,content_version}` → 最新版本与小说 |
-| PUT | `E/script` | `{content,content_version,script_id}` → 最新版本与剧本；首次创建 script_id=null |
+| PUT | `E/script` | `{content,editor_document?,content_version,script_id}` → 最新版本与剧本；首次创建 script_id=null |
 | PUT | `E/editing-script` | `{script_id,content_version}` → 完整 writing |
 | POST | `E/scripts/{script_id}/confirm` | `{content_version}` → 完整 writing |
 | GET | `E/scripts` | 候选分页、200 字符预览、编辑/确认标记、生成来源 |
@@ -111,9 +111,46 @@ Agent 默认开启；运行须完成九表迁移、保持账号认证并启动�
 
 正文保留空白与换行，最大 1 MiB UTF-8，允许空字符串但不接受 null。空白剧本不能确认。小说、剧本和选择共用 `content_version`，过期返回 409 `writing_version_conflict`；无变化保存不推进版本。
 
+剧本读取另带 `editor_document: object | null`，小说仍为纯文本。格式文档采用受限 Quill Delta：`{ops:[{insert:string,attributes?:{header:1|2|3,bold:boolean,italic:boolean,blockquote:boolean}}]}`，最多 100000 个文本操作；禁止嵌入和其他属性。文档须以换行结束，转换为业务正文时只移除最后一个 Quill 结尾换行，保留用户空行，并与 `content` 完全一致。正文和格式在同一事务、同一 `content_version` 下保存；仅格式变化也推进版本并取消旧确认。旧客户端省略或明确传 null 时清除旧格式，提取、生成与导出继续读取纯文本。
+
 后台新增剧本候选不改变编辑指针和正文版本。切换候选不会自动确认；编辑已确认剧本会取消该稿确认；确认另一稿在同一事务取消旧稿确认。小说编辑不改变剧本内容或确认状态。
 
 普通 `E/scripts` 列表排除尚未采用、已拒绝或已归档的 Agent 剧本候选；已明确采用的稿仍可正常读取和选择。普通选择、保存和确认不能替代 Agent 采用回执，命中未采用稿返回 422 `agent_artifact_adoption_required`，旧编辑指针亦按此规则处理。必须在本人候选入口核对并明确采用，不静默补旧回执。
+
+## 本人创作草稿
+
+这些资源只保存本人下一次生成的输入，不修改共享作品或当前采用媒体。项目成员不能读取、修改或引用其他人的草稿；本人身份来自可信 Actor，不接受客户端的 `user_id/project_id/episode_id` 字段。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `E/drafts` | 本人在本集的草稿数组 |
+| POST | `E/drafts` | 首次创建，201；相同对象与用途已有草稿时返回 409 `draft_version_conflict` |
+| GET | `E/drafts/{object_id}/{purpose}` | 有效对象的本人草稿，不存在时返回 null |
+| PATCH | 同上 | 必带 `row_version`；冲突 409，保留输入后核对当前版本 |
+| DELETE | 同上 | 删除本人的该范围草稿，204；不删除生成历史或作品 |
+
+`purpose` 为 `novel_adaptation/asset_image/storyboard_image/storyboard_video`。小说改编的 `object_id` 必须等于当前分集 ID；素材须已关联本集，分镜须是本集未归档镜头。POST 请求为：
+
+```json
+{
+  "object_id": "360000000000000003",
+  "purpose": "storyboard_image",
+  "model_config_id": "201",
+  "input_text": "突出侧光",
+  "image_settings": {"aspect": "9:16", "resolution": "2K", "count": 2},
+  "reference_media_ids": []
+}
+```
+
+`model_config_id` 可空，以便保存尚未完成的输入；非空时必须是本人可用且用途匹配的模型。`input_text` 按用途限制：小说改编、素材图和分镜图最多 4000 字符，分镜视频最多 16000 字符，POST 与合并后的版本化 PATCH 均校验。图片用途才接受 `image_settings` 和参考媒体，视频用途才接受 `video_settings`；小说改编不接受这些媒体参数。图片画幅为 `16:9/9:16/1:1/4:3/3:4`，清晰度为 `1K/2K/4K`，张数仅 `1/2/4`；视频清晰度为 `480p/720p/1080p`，时长为 1000–3600000 整数毫秒且必须整秒，仍需通过生成时的具体模型限制。画幅、清晰度或视频时长可空，生成时沿用对应来源默认值；私人设置不包含隐藏的 `layout`。
+
+PATCH 只更新提供的字段，`model_config_id:null` 清除模型。返回含 `id/user_id/project_id/episode_id/object_id/purpose`、保存内容、`source_version/row_version/draft_version` 和 UTC 时间；全部 ID、版本为十进制字符串。`reference_media_ids` 最多 16 项，只保存可用的 MinIO 永久媒体 ID，允许本人私人图片或当前项目可访问图片；去重后另返回 `reference_images:[{media_id,url,width,height}]`，URL 每次读取现签，不作为持久化身份。
+
+`source_version` 由服务端在保存时读取，用于追溯当时来源，不是前端缓存的生成许可。生成仍须提交来源的最新 `row_version/content_version/context_hash`。保存成功才能引用 `source.draft_id/draft_version`，二者必须成对；`shot_image` 还须使用 `context_mode=saved`，`asset_image` 须带本项目与分集 ID。服务端校验本人、对象、用途及版本后冻结草稿；未选模型、模型不一致、来源或草稿版本冲突均阻止生成。
+
+私人图片输入替代本次补充提示词，模型与可见参数在该任务内使用已保存草稿；共享名称、描述、提示词与镜头正文仍由服务端读取，隐藏 `layout` 仍需匹配共享值。私人视频输入仅替代本次视频提示词段，保留镜头正文和当前采用图片，时长不修改脚本时长。任务 `source_snapshot.creation_draft` 保存私人输入、草稿版本及 `source_version/current_source_version`，实际参数在任务 `parameters` 中冻结。共享参考图与私人参考图按永久 ID 合并去重，共同校验 16 张及模型上限；视频仍只使用当前采用分镜图。无私人引用的旧请求沿用原来源语义，生成成功仍须明确采用。
+
+旧库先执行[标准创作流程迁移](../数据库模型/migrations/2026-10-13-standard-creation-workflow/README.md)，补齐草稿表、镜头元信息和剧本格式列。
 
 ## 模型配置
 
@@ -137,17 +174,20 @@ Agent 默认开启；运行须完成九表迁移、保持账号认证并启动�
 | --- | --- | --- |
 | POST | `/ai/generations/text` | 通用 messages 或服务端业务来源 |
 | POST | `/ai/generations/image` | 通用 prompt/参考图、已保存素材或分镜来源 |
-| POST | `/ai/generations/video` | 通用视频；尚无分镜业务 source |
+| POST | `/ai/generations/video` | 通用视频或已保存分镜视频来源 |
 | GET | `/ai/generations` | 类型、状态、模型、来源、项目/分集、时间筛选与分页 |
+| GET | `/ai/generations/by-idempotency-key` | 用 `service_type/idempotency_key` 只读核对本人的受理回执，未找到返回 null |
 | GET | `/ai/generations/{generation_id}` | 任务状态、错误、结果、`can_cancel/can_resume/can_retry` |
 | GET | `/ai/generations/{generation_id}/records` | 调用记录，不返回密钥 |
 | POST | `/ai/generations/{generation_id}/cancel` | 尽力取消 |
 | POST | `/ai/generations/{generation_id}/resume` | 按证据恢复原任务 |
 | POST | `/ai/generations/{generation_id}/retry` | 允许时创建新任务，可传 `{config_id}` |
 
-生成/重试首次返回 202，幂等重放 200，响应含 `generation_id/status/service_type/source/config` 等，不等待模型完成。`config_id` 省略或 null 使用对应类型的启用默认配置；无可用配置则拒绝。
+生成/重试首次返回 202，幂等重放 200，响应含 `generation_id/status/service_type/source/config` 等，不等待模型完成。无私人草稿引用时，`config_id` 省略或 null 使用对应类型的启用默认配置；引用草稿时使用草稿中本人保存的模型，显式 `config_id` 必须相同。无可用配置则拒绝。
 
 对外状态为 `queued/running/succeeded/failed/cancelled`。调用记录中的未知受理结果不是自动重发依据。取消不保证远端取消或免费；retry 可能再次计费，复用原输入快照；resume 不是再次付费生成的快捷方式。客户端依据 `can_*` 显示操作，不自行猜测。
+
+受理回执查询不提交任务、不更新模型或草稿，也不读取他人同键任务。查询的 null 只表示本次未找到可访问任务；未知请求继续保留原请求和原键，显式重试仍复用它们，不能自动换键付费提交。
 
 任务摘要及详情提供 `display_context:{project,episode,subject,scope}`，新任务冻结可读名称，旧任务按现存来源解析。素材来源可携带 project_id/episode_id，后端核对素材库归属。前端输入区只呈现提示词，协议仍保留采用所需参数。
 
@@ -209,7 +249,7 @@ ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 
 
 业务请求禁止同时提交 `input.messages`；后端读取保存内容构建提示词，instructions 最长4000字符。分镜生成使用 `source.scene=script_shots`，另带 `script_id`；必须是当前编辑且已确认的非空剧本。可传 `storyboard:{average_shot_duration_ms:3000}`，范围1000–10000毫秒。
 
-分镜模型结果每次1–100镜，包含 `title/source_excerpt/story_beat/script/duration_ms/asset_ids`。原文依据须能在输入剧本中按序定位，引用素材须在输入快照内；单镜正文≤32 KiB，最多50个不重复素材引用。不合法/截断输出保留原文并失败，不部分写入镜头。
+分镜模型结果每次1–100镜，包含 `title/shot_size/source_excerpt/story_beat/script/duration_ms/asset_ids`；`shot_size` 可缺省或 null，非空须是下文固定枚举。原文依据须能在输入剧本中按序定位，引用素材须在输入快照内；单镜正文≤32 KiB，最多50个不重复素材引用。不合法/截断输出保留原文并失败，不部分写入镜头。
 
 任务详情 `result.business` 包含类型、schema_version 和候选：小说结果含 script_id；分镜含 shots 和 applied；素材提取见下一节。历史分镜缺失的新字段有读取兼容，不降低新模型输出校验。
 
@@ -250,7 +290,9 @@ ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 
 | POST | `/assets/{asset_id}/image-candidates/upload` | multipart 字段 file，真实上传，201/去重200 |
 | POST | `/assets/{asset_id}/confirm` | 确认采用候选，返回素材详情 |
 
-新建字段：`kind/name/label/description/prompt/tags/scene_time`。kind为character/scene/prop且不可改；名称≤255、label≤120；tags最多20项，每项≤40字符，去首尾空格并去重，空白标签拒绝；scene_time≤60且仅场景可填。
+新建字段：`kind/name/label/description/prompt/tags/scene_time`。kind 为 character/scene/prop；名称必填且≤255、label≤120；tags最多20项，每项≤40字符，去首尾空格并去重，空白标签拒绝；scene_time≤60且仅场景可填。
+
+公开 PATCH 支持 `kind`，沿用 `row_version` 与 `confirm_shared`。转为非场景时必须明确清除已有 `scene_time`；角色已有不可变作品历史、声音绑定或对白引用时返回 422 `asset_kind_incompatible`，不删除这些依赖。新角色创建即产生不可变版本，因此不能通过改类型丢弃历史。允许的转换保留通用分镜关联，推进版本并取消确认；受影响媒体继续按原内容上下文判断过期。无权限与行版本冲突仍分别返回 404 与 409。
 
 允许从全局库添加到项目、从当前项目添加到分集、将分集素材共享回所属项目。移除库引用不删除素材本体；活动分镜仍引用的分集素材不能移除。共享素材的内容修改需明确确认影响多个引用。
 
@@ -267,9 +309,9 @@ ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 
 | PUT | `E/shots/order` | `{storyboard_version,shot_ids}`，必须包含全部活动镜头 |
 | POST | `E/storyboard-results/{generation_id}/apply` | 将候选追加或替换到本集 |
 
-列表包含 `episode_id/storyboard_version/items/total/offset/limit`，可用include_archived查看归档。单镜读取/新建/编辑返回 `{shot,storyboard_version}`。shot含id、position、script、duration_ms、source_excerpt、row_version、asset_ids、image_settings、context_hash、image、deleted_at。
+列表包含 `episode_id/storyboard_version/items/total/offset/limit`，可用include_archived查看归档。单镜读取/新建/编辑返回 `{shot,storyboard_version}`。shot 含 id、position、title、shot_size、script、duration_ms、source_excerpt、row_version、asset_ids、image_settings、context_hash、image、deleted_at，以及下文的视频字段。
 
-新建需 storyboard_version；编辑需 row_version。可编辑 script、duration_ms（1000–10000，默认3000）、asset_ids和image_settings。素材关联为完整集合替换；image_settings若提供必须包含全部字段：`resolution=1K|2K|4K`、`aspect=inherit|16:9|9:16|1:1|4:3|3:4`、`layout=single|four|five|nine`。source_excerpt为生成来源，不通过普通编辑伪造。
+新建需 storyboard_version；编辑需 row_version。可编辑 title（≤255 字符，默认空）、shot_size、script、duration_ms（1000–10000，默认3000）、asset_ids和image_settings。shot_size 可空，非空值固定为 `full_shot/medium_shot/close_up/extreme_close_up/wide_shot/two_shot`；缺失不从脚本猜测。生成候选采用时保存 title 与 shot_size，旧镜头的默认空名称和其他内容保留。名称与景别属于元信息，不加入图片或视频内容 hash，修改仍推进行版本。素材关联为完整集合替换；image_settings若提供必须包含全部字段：`resolution=1K|2K|4K`、`aspect=inherit|16:9|9:16|1:1|4:3|3:4`、`layout=single|four|five|nine`。source_excerpt为生成来源，不通过普通编辑伪造。
 
 有效修改推进行和集合版本；无变化不推进。活动分镜最多500个。归档保留历史媒体与关系，不取消已发出的生成任务，但不再允许采用到该镜头。
 
@@ -295,7 +337,7 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 }
 ```
 
-示例hash需替换为读取的真实context_hash，参数需匹配已保存设置，inherit在客户端解析为本集画幅。已确认关联素材图片由服务端自动加入参考图；额外图片限生成资产或当前已确认素材；去重后最多16张。saved模式prompt仅为补充要求，最长4000字符，允许空。
+示例 hash 需替换为读取的真实 context_hash。无私人草稿引用时，参数需匹配已保存设置，inherit 在客户端解析为本集画幅；引用草稿时按上文“本人创作草稿”冻结本次可见参数。两种请求的隐藏 layout 均需匹配保存值。已确认关联素材图片由服务端自动加入参考图；旧请求额外图片限生成资产或当前已确认素材；草稿中的本人私人参考图单独校验权限，两类合并去重后最多 16 张。saved 模式 prompt 仅为补充要求，最长 4000 字符，允许空。
 
 ## 媒体资产与采用
 
@@ -324,7 +366,7 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 - `POST` 同路径：multipart `file` 上传，`If-Match` 为所属素材/分镜当前 row_version。支持 PNG/JPEG/WebP、20 MiB、4000 万像素，最多 16 张；重复内容去重，不创建候选或自动采用。
 - `DELETE /generation-references/{kind}/{owner_id}/{media_id}`：同样需要 `If-Match`；仅解除关联，保留历史生成所需文件。
 - 参考图变化推进所属行版本，分镜同时推进集合版本及上下文摘要；旧版本返回 409 `reference_version_conflict`。保存图会与关联素材的确认图合并用于生成，不支持参考图的模型明确报错。
-- `GET E/storyboard-results/{generation_id}/shots?offset=0&limit=20`：分页返回 `{generation_id,items,total,total_duration_ms,offset,limit,applied}`，只读取本人、本集成功分镜任务。每项包含 `{position,title,script,duration_ms,asset_ids,assets,source_excerpt,story_beat}`；`assets` 为 `{id,kind,name,available,snapshot_missing}`，名称和类别来自生成时冻结的素材快照，`available` 表示当前仍属于本集，旧快照缺失时明确标记而不冒充当前名称。`total_duration_ms` 为整批计划时长，与分页无关。`applied` 为 `null` 或 `{mode,shot_ids,applied_at,storyboard_version}`，数据库 ID/版本均为十进制字符串。采用仍是整批操作，不限当前加载的页；预览不执行采用或自动生成。
+- `GET E/storyboard-results/{generation_id}/shots?offset=0&limit=20`：分页返回 `{generation_id,items,total,total_duration_ms,offset,limit,applied}`，只读取本人、本集成功分镜任务。每项包含 `{position,title,shot_size,script,duration_ms,asset_ids,assets,source_excerpt,story_beat}`；`assets` 为 `{id,kind,name,available,snapshot_missing}`，名称和类别来自生成时冻结的素材快照，`available` 表示当前仍属于本集，旧快照缺失时明确标记而不冒充当前名称。`total_duration_ms` 为整批计划时长，与分页无关。`applied` 为 `null` 或 `{mode,shot_ids,applied_at,storyboard_version}`，数据库 ID/版本均为十进制字符串。采用仍是整批操作，不限当前加载的页；预览不执行采用或自动生成。
 - `POST E/shots/{shot_id}/move`：`{storyboard_version,direction}`，direction 为 -1 或 1。服务端交换相邻活动镜头，返回新集合版本，客户端无需加载整集排序 ID。
 
 旧数据库须先执行 [参考图增量迁移](../数据库模型/migrations/2026-09-24-generation-references/README.md)。
@@ -346,7 +388,7 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 }
 ```
 
-ID、版本及 hash 必须替换为实际读取值。服务端从保存内容装配提示词、时长与清晰度，并校验参考图为本镜当前未过期图片，允许 single/four/five/nine 排版。可传 parameters，但需完整匹配已保存时长与清晰度；服务端从分集设置补充 aspect，避免宫格整图比例决定视频比例。ModelHub 发送 `functionMode=omni_reference`，输入为 `reference_media_ids`，不用首尾帧字段。生成历史与媒体库支持 `source_scene=shot_video&source_id=<shot_id>`。
+ID、版本及 hash 必须替换为实际读取值。服务端从保存内容装配提示词、时长与清晰度，并校验参考图为本镜当前未过期图片，允许 single/four/five/nine 排版。无私人引用时可传 parameters，但需完整匹配已保存时长与清晰度；服务端从分集设置补充 aspect。引用 `source.draft_id/draft_version` 后，本次提示词段、画幅、时长和清晰度取本人已保存草稿，仍保留镜头正文及采用图校验，仍禁止同时传 input。ModelHub 发送 `functionMode=omni_reference`，输入为 `reference_media_ids`，不用首尾帧字段。生成历史与媒体库支持 `source_scene=shot_video&source_id=<shot_id>`。
 
 模型能力返回可选 `video_input:{first_frame,reference_images,duration_seconds,resolutions}`。分镜视频需要 reference_images=true，仅支持首帧的模型不能替代全能参考模式。通用视频仍保留原首尾帧输入，另支持 reference_media_ids（最多 9 张），两种方式不可混用。数组为 NULL 表示尚无该模型的完整本地约束，不等于已验证全部参数；整数秒等协议规则仍由服务端校验。
 
