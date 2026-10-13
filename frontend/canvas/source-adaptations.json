@@ -1035,8 +1035,8 @@
     "sha256": "84654dc389271b3a3cce7d0f8483979f3ce969fa7fe11b429417fe73ddaae2ad"
   },
   "src/services/api/projects.ts": {
-    "reason": "专用 current 角色目录的 version 保留十进制字符串，源显示版本的类型兼容 number | string；其余旧 API 保持。",
-    "sha256": "b2bcee358e33a2078b55751b8d5dadba1f35cabe073f8e7d85984504b3bea09e",
+    "reason": "专用 current 角色目录的 version 保留十进制字符串，源显示版本的类型兼容 number | string；其余旧 API 保持。 源声音profile补可选bindingVersion用于宿主已采用样音独立版本冻结，不引入整站声音页面。",
+    "sha256": "ba5051f090c20fa61847a51e87ad6dbf3f9e80e6c4db1ed44c42361ed66a7362",
     "upstream_sha256": "066c2d7509de3f0d0f3d279a48fa8336f028e123f00fff348ac0b06ca6306c45"
   },
   "src/lib/canvas/canvas-character-reference.ts": {
@@ -1098,5 +1098,10 @@
     "reason": "仅对视频：宿主逻辑ID没有显式协议或能力契约时保留工作区视频默认值；已声明协议、能力默认值及节点明确选择优先级保持，图片维持原宿主逻辑模型默认行为。",
     "sha256": "adfc83fbe47001ba46166be81d981e5f8cdd6311468a9b8c10d907c8885acbcf",
     "upstream_sha256": "8fb6c1fe2ee07d540d2bfe8aeff120c6c5b7c53e070e9e39a4cfcb8dc5809b91"
+  },
+  "src/lib/zip.ts": {
+    "reason": "ZIP导入在解压filter中校验规范化名称重复，避免完全同名条目在fflate覆盖后丢失；原路径、数量、单项与总体容量限制保留。",
+    "sha256": "8467ae0b6f3f0f847289375271a2758fa9e2ed5dca56eaada02d948e78d01f8f",
+    "upstream_sha256": "0e85de03860b4cce30a3b9e85fe326182ce2c3dfd07d30ebe943418f4c5dbf9f"
   }
 }

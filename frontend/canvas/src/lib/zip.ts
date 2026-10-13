@@ -43,11 +43,14 @@ export async function createZip(files: ZipFile[]) {
 export async function readZip(file: Blob) {
     let total = 0;
     let count = 0;
+    const names = new Set<string>();
     let entries: Record<string, Uint8Array>;
     try {
         entries = unzipSync(new Uint8Array(await file.arrayBuffer()), {
             filter(info) {
-                confinedArchivePath(info.name);
+                const path = confinedArchivePath(info.name);
+                if (names.has(path)) throw new Error(`压缩包存在重名文件：${path}`);
+                names.add(path);
                 count += 1;
                 if (count > ARCHIVE_MAX_FILES) throw new Error("压缩包文件数量超出限制");
                 const size = info.originalSize || 0;
@@ -58,7 +61,7 @@ export async function readZip(file: Blob) {
             },
         });
     } catch (error) {
-        if (error instanceof Error && /非法路径|越界路径|超出限制|文件过大/.test(error.message)) throw error;
+        if (error instanceof Error && /非法路径|越界路径|超出限制|文件过大|重名文件/.test(error.message)) throw error;
         throw new Error("画布备份已损坏，无法导入");
     }
     const files = new Map<string, Blob>();

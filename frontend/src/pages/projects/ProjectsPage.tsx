@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Dialog } from '../../components/ui/Dialog';
 import { projectPath } from '../../app/paths';
 import { ProjectList } from '../../features/projects/ProjectList';
+import { CanvasArchiveDialog } from '../../features/projects/CanvasArchiveDialog';
 import { projectsApi, projectError, type RemoteProject, type WorkspaceMode } from '../../api/modules/projects';
 import { clearProjectCreation, prepareProjectCreation, readProjectCreation } from '../../features/projects/project-creation';
 import { useAuth } from '../../features/auth/AuthSession';
@@ -28,6 +29,7 @@ export function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [creating, setCreating] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
   const [aspect, setAspect] = useState<'16:9' | '9:16'>('16:9');
@@ -73,12 +75,13 @@ export function ProjectsPage() {
     finally { setBusy(false); }
   }
   return <section className="projects-home">
-    <PageHeader title="项目管理" description="管理你的故事、分集与创作素材。" actions={<Button type="primary" icon={<Icon name="plus" size={16} />} onClick={openCreation}>新建项目</Button>} />
+    <PageHeader title="项目管理" description="管理你的故事、分集与创作素材。" actions={<><Button onClick={() => setArchiveOpen(true)} disabled={!user}>画布导入导出</Button><Button type="primary" icon={<Icon name="plus" size={16} />} onClick={openCreation}>新建项目</Button></>} />
     <div className="project-search-bar"><Input.Search className="project-search" value={search} onChange={(event) => setSearch(event.target.value)} aria-label="搜索项目名称" placeholder="搜索项目名称" maxLength={120} allowClear onSearch={(value) => { setQuery(value.trim()); setOffset(0); }} /><span className="project-search-hint">找到故事，接着创作</span></div>
     {loadError ? <Alert type="error" showIcon message={loadError} action={<Button onClick={() => setRevision((v) => v + 1)}>重试</Button>} />
       : loading ? <div className="project-skeleton" role="status" aria-label="正在加载项目">{[0, 1, 2].map(item => <Skeleton key={item} title paragraph={{ rows: 2 }} />)}</div>
       : <><ProjectList recent={projects} total={total} filtered={!!query} onCreate={openCreation} onClear={() => { setSearch(''); setQuery(''); setOffset(0); }} />
         <Pagination current={offset / 20 + 1} pageSize={20} total={total} hideOnSinglePage showSizeChanger={false} onChange={(page) => setOffset((page - 1) * 20)} /></>}
+    {archiveOpen && <CanvasArchiveDialog onClose={() => setArchiveOpen(false)} onImported={() => setRevision(value => value + 1)} />}
     {creating && <Dialog title="新建项目" className="project-create-dialog" canClose={!busy} onClose={() => setCreating(false)}>
       <form className="project-form project-create-form" onSubmit={create}>
         <fieldset className="project-mode-field"><legend>创作模式</legend><Radio.Group name="workspace-mode" value={workspaceMode} disabled={busy} onChange={(event) => setWorkspaceMode(event.target.value)} options={[{ value: 'standard', label: '标准模式' }, { value: 'infinite_canvas', label: '无限画布模式' }]} /></fieldset>

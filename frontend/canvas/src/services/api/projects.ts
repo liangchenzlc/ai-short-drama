@@ -99,6 +99,7 @@ export type VoiceProfile = {
     name: string;
     provider: string;
     voiceKey: string;
+    bindingVersion?: string;
     language: string;
     timbre: string;
     sampleResourceId?: string;

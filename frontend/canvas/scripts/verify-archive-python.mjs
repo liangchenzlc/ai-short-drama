@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { unzipSync, zipSync, strFromU8 } from "fflate";
 import { chromium } from "playwright";
 import { createServer } from "vite";
@@ -9,17 +11,32 @@ let input = "";
 for await (const chunk of process.stdin) input += chunk;
 const config = JSON.parse(input);
 const origin = "http://127.0.0.1:4189";
-const output = resolve(".runtime/archive-python-browser");
-const report = { step: "start", page_errors: [], failed_routes: [] };
+const canvasCreation = /\/api\/v1\/(?:canvas-workspace|projects\/[^/]+\/canvases)$/;
+const output = resolve(process.env.CANVAS_ARCHIVE_BROWSER_OUTPUT || ".runtime/archive-python-browser", `${config.runtimeMode}-${config.archiveWidth}`);
+const report = { step: "start", runtime_mode: config.runtimeMode, archive_width: config.archiveWidth, page_errors: [], failed_routes: [] };
 await mkdir(output, { recursive: true });
-const server = await createServer({ server: { host: "127.0.0.1", port: 4189, strictPort: true, proxy: { "/api": { target: config.apiUrl, changeOrigin: true } } }, logLevel: "silent" });
-await server.listen();
+const frontend = resolve("..");
+const hostRequire = createRequire(resolve(frontend, "package.json"));
+const { createServer: createHostServer, preview: previewHost } = await import(pathToFileURL(hostRequire.resolve("vite")).href);
+let canvasServer;
+let server;
+if (config.runtimeMode === "production") {
+    server = await previewHost({ root: frontend, preview: { host: "127.0.0.1", port: 4189, strictPort: true,
+        proxy: { "/api": { target: config.apiUrl, changeOrigin: true } } }, logLevel: "silent" });
+} else {
+    canvasServer = await createServer({ server: { host: "127.0.0.1", port: 4190, strictPort: true, proxy: { "/api": { target: config.apiUrl, changeOrigin: true } } }, logLevel: "silent" });
+    await canvasServer.listen();
+    server = await createHostServer({ root: frontend, server: { host: "127.0.0.1", port: 4189, strictPort: true,
+        proxy: { "/canvas-app": { target: "http://127.0.0.1:4190", changeOrigin: true }, "/api": { target: config.apiUrl, changeOrigin: true } } }, logLevel: "silent" });
+    await server.listen();
+}
 let browser;
 let page;
 function observe(target) {
     target.on("pageerror", error => report.page_errors.push(error.message));
     target.on("response", response => {
         const path = new URL(response.url()).pathname;
+        if (path === "/canvas-app/host-archive.js" && response.ok()) report.production_bridge_loaded = true;
         if (response.status() >= 400 && path.startsWith("/api/")) report.failed_routes.push({ path, status: response.status() });
     });
 }
@@ -34,6 +51,20 @@ async function login(username) {
     const csrf = (await context.cookies()).find(cookie => cookie.name === "sd_csrf");
     await context.setExtraHTTPHeaders({ Origin: origin, "X-CSRF-Token": csrf.value });
     return context;
+}
+async function openArchive(target) {
+    await target.setViewportSize({ width: config.archiveWidth, height: 900 });
+    await target.goto(`${origin}/projects`);
+    await target.getByRole("button", { name: "画布导入导出", exact: true }).click();
+    const dialog = target.getByRole("dialog", { name: "画布导入导出", exact: true });
+    await dialog.waitFor();
+    await dialog.getByText("正在加载画布项目…", { exact: true }).waitFor({ state: "hidden" });
+    const box = await dialog.boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= config.archiveWidth);
+    assert.ok(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth));
+    report.archive_no_horizontal_overflow = true;
+    await target.screenshot({ path: resolve(output, `archive-${config.archiveWidth}.png`) });
+    return dialog;
 }
 async function openCanvas(target, key) {
     await target.goto(`${origin}/canvas-app/canvas/${key}`);
@@ -79,6 +110,11 @@ try {
     }));
     const path = `${origin}/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
     const initial = await read(await owner.request.get(`${path}/my-document`));
+    for (const [index, title] of ["归档分组第二画布", "归档分组第三画布"].entries()) {
+        await read(await owner.request.post(`${origin}/api/v1/projects/${project.id}/canvases`, {
+            headers: { "Idempotency-Key": `archive-group-${index}` }, data: { title },
+        }));
+    }
     page = await owner.newPage();
     observe(page);
     await openCanvas(page, initial.source_key);
@@ -134,15 +170,22 @@ try {
     });
 
     report.step = "source export selection and download";
-    await page.goto(`${origin}/canvas-app/canvas`);
-    await page.getByRole("checkbox", { name: `选择 ${created.title}`, exact: true }).check({ force: true });
+    const archiveDialog = await openArchive(page);
+    await archiveDialog.getByRole("radio", { name: "导出项目", exact: true }).check();
+    const exportProject = archiveDialog.getByRole("combobox", { name: "导出项目", exact: true });
+    await exportProject.focus();
+    await exportProject.press("ArrowDown");
+    await exportProject.press("Enter");
+    assert.equal(await archiveDialog.locator(".ant-select-selection-item").textContent(), "归档绘图验证");
     const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: "导出", exact: true }).click();
+    await archiveDialog.getByRole("button", { name: "导出 ZIP", exact: true }).click();
     const archive = await download;
     const archivePath = resolve(output, "drawing.zip");
     await archive.saveAs(archivePath);
     const zip = unzipSync(await readFile(archivePath));
     const manifest = JSON.parse(strFromU8(zip["projects.json"]));
+    assert.equal(manifest.projects.length, 3);
+    assert.ok(manifest.projects[0].drawingDocuments?.length);
     const exported = manifest.projects[0].drawingDocuments[0];
     for (const { node: source, file } of originalMedia) {
         const exportedMedia = manifest.projects[0].files.find(file => file.storageKey === source.metadata.storageKey);
@@ -162,12 +205,11 @@ try {
     const importer = await login(config.importer);
     page = await importer.newPage();
     observe(page);
-    await page.goto(`${origin}/canvas-app/canvas`);
-    await page.getByRole("button", { name: "导入画布", exact: true }).waitFor();
+    await openArchive(page);
     const published = page.waitForResponse(response => new URL(response.url()).pathname === "/api/v1/canvas-workspace" && response.request().method() === "POST");
     await page.locator('input[type="file"][accept="application/zip,.zip"]').setInputFiles(archivePath);
     const imported = await read(await published);
-    await page.getByText("已导入 1 个画布", { exact: true }).waitFor({ state: "attached" });
+    await page.getByText("已导入 3 个画布。", { exact: true }).waitFor({ state: "attached" });
     const importedDrawingPath = `/api/v1/canvas-runtime/canvas-projects/${imported.source_key}/drawings/${node.metadata.drawingId}`;
     const restored = (await read(await importer.request.get(`${origin}${importedDrawingPath}`))).drawing;
     assert.deepEqual(restored.snapshot, original.snapshot);
@@ -214,17 +256,20 @@ try {
     report.step = "lost import acknowledgement preserves immutable request";
     page = await importer.newPage();
     observe(page);
-    await page.goto(`${origin}/canvas-app/canvas`);
+    await page.goto(`${origin}/projects`);
+    await page.getByRole("button", { name: "画布导入导出", exact: true }).click();
     let accepted;
+    const committed = [];
     const attempts = [];
     const deletes = [];
     page.on("request", request => { if (request.method() === "DELETE") deletes.push(request.url()); });
-    await page.route(`${origin}/api/v1/canvas-workspace`, async route => {
+    await page.route(canvasCreation, async route => {
         if (route.request().method() !== "POST") return route.continue();
-        attempts.push({ body: route.request().postDataJSON(), key: route.request().headers()["idempotency-key"] });
+        attempts.push({ path: new URL(route.request().url()).pathname, body: route.request().postDataJSON(), key: route.request().headers()["idempotency-key"] });
         const response = await route.fetch();
-        if (!accepted && response.ok()) {
-            accepted = await response.json();
+        if (response.ok()) committed.push(await response.json());
+        if (!accepted && response.ok() && attempts.length === 2) {
+            accepted = committed.at(-1);
             return route.fulfill({ status: 503, json: { error: { code: "test_archive_ack_lost", message: "归档回执丢失验证" } } });
         }
         return route.fulfill({ response });
@@ -233,29 +278,46 @@ try {
     await page.getByText(/已保留导入草稿，请在工作区检查保存状态/).waitFor({ state: "attached" });
     assert.ok(accepted);
     assert.deepEqual(deletes, []);
-    const committedBeforeReload = await read(await importer.request.get(`${origin}/api/v1/projects/${accepted.project_id}/canvases/${accepted.id}/my-document`));
+    assert.equal(attempts.length, 2);
+    assert.equal(attempts[0].path, "/api/v1/canvas-workspace");
+    assert.equal(attempts[1].path, `/api/v1/projects/${accepted.project_id}/canvases`);
+    assert.equal(committed[0].project_id, accepted.project_id);
+    const firstCommitted = committed[0];
+    const committedBeforeReload = await read(await importer.request.get(`${origin}/api/v1/projects/${firstCommitted.project_id}/canvases/${firstCommitted.id}/my-document`));
     assert.equal(committedBeforeReload.source_document.nodes[0].metadata.drawingRevision, "1");
-    const replay = page.waitForResponse(response => new URL(response.url()).pathname === "/api/v1/canvas-workspace" && response.request().method() === "POST" && response.status() === 201);
+    const replay = page.waitForResponse(response => canvasCreation.test(new URL(response.url()).pathname) && response.request().method() === "POST" && response.status() === 201);
     await page.reload();
+    await page.getByRole("button", { name: "画布导入导出", exact: true }).click();
+    await page.getByRole("button", { name: "核对导入", exact: true }).click();
     await read(await replay);
-    await page.waitForFunction(async key => {
+    await page.getByText(/已核对 2 个画布。还有 1 个未导入/).waitFor({ state: "attached" });
+    if (config.runtimeMode === "development") await page.waitForFunction(async key => {
         const { readInitialCanvasWrite } = await import("/canvas-app/src/services/canvas-initial-write.ts");
         const { localForageStorageForScope } = await import("/canvas-app/src/lib/localforage-storage.ts");
         const { captureUserScope } = await import("/canvas-app/src/lib/user-scope-guard.ts");
         return await readInitialCanvasWrite(localForageStorageForScope(captureUserScope().userScope), key) === null;
     }, accepted.source_key);
-    assert.equal(attempts.length, 2);
-    assert.deepEqual(attempts[0], attempts[1]);
+    assert.equal(attempts.length, 3);
+    assert.deepEqual(attempts[1], attempts[2]);
+    await page.locator('input[type="file"][accept="application/zip,.zip"]').setInputFiles(archivePath);
+    await page.getByText("已导入 3 个画布。", { exact: true }).waitFor({ state: "attached" });
+    assert.equal(attempts.length, 4);
+    assert.equal(committed.at(-1).project_id, firstCommitted.project_id);
+    assert.notEqual(attempts[3].key, attempts[0].key);
+    const resumedGroup = await read(await importer.request.get(`${origin}/api/v1/projects/${firstCommitted.project_id}/canvases`));
+    assert.equal(resumedGroup.items.length, 3);
+    assert.deepEqual(new Set(resumedGroup.items.map(item => item.source_key)), new Set([firstCommitted.source_key, accepted.source_key, committed.at(-1).source_key]));
+    report.multi_canvas_resume_kept_group = true;
     assert.deepEqual(deletes, []);
-    const recovered = (await read(await importer.request.get(`${origin}/api/v1/canvas-runtime/canvas-projects/${accepted.source_key}/drawings/${node.metadata.drawingId}`))).drawing;
+    const recovered = (await read(await importer.request.get(`${origin}/api/v1/canvas-runtime/canvas-projects/${firstCommitted.source_key}/drawings/${node.metadata.drawingId}`))).drawing;
     assert.deepEqual(recovered.snapshot, original.snapshot);
-    const recoveredGraph = await graph(importer, `${origin}/api/v1/projects/${accepted.project_id}/canvases/${accepted.id}`, document => originalMedia.every(({ node }) => document.nodes.some(item => item.id === node.id && item.metadata.assetId)));
+    const recoveredGraph = await graph(importer, `${origin}/api/v1/projects/${firstCommitted.project_id}/canvases/${firstCommitted.id}`, document => originalMedia.every(({ node }) => document.nodes.some(item => item.id === node.id && item.metadata.assetId)));
     for (const { node } of originalMedia) {
         const recoveredNode = recoveredGraph.nodes.find(item => item.id === node.id);
         const recoveredAsset = (await read(await importer.request.get(`${origin}/api/v1/canvas-runtime/assets/${recoveredNode.metadata.assetId}`))).asset;
         assert.equal(recoveredAsset.data.storageKey, recoveredNode.metadata.storageKey);
     }
-    assert.equal((await read(await importer.request.get(`${origin}/api/v1/canvas-workspace`))).total, 2);
+    assert.equal((await read(await importer.request.get(`${origin}/api/v1/canvas-workspace`))).total, 6);
     report.unknown_import_replayed_once = true;
 
     report.step = "missing zip media is rejected before upload or publication";
@@ -280,6 +342,8 @@ try {
 } finally {
     await writeFile(resolve(output, "report.json"), JSON.stringify(report, null, 2) + "\n");
     await browser?.close();
-    await server.close();
+    if (config.runtimeMode === "production") await new Promise((resolve, reject) => server.httpServer.close(error => error ? reject(error) : resolve()));
+    else await server.close();
+    await canvasServer?.close();
 }
 process.stdout.write(JSON.stringify(report));

@@ -1,4 +1,4 @@
-"""通过原版归档 UI 验证隔离账号之间的完整绘图文件传递。"""
+"""通过宿主归档 UI 验证开发／生产入口、跨账号媒体及多画布恢复。"""
 
 import base64
 import json
@@ -28,7 +28,12 @@ pytestmark = [
 ]
 
 
-def test_original_archive_drawing_with_real_storage(resource_app, tmp_path):
+@pytest.mark.parametrize(
+    ("runtime_mode", "archive_width"), [("development", 1440), ("production", 600)]
+)
+def test_original_archive_drawing_with_real_storage(
+    resource_app, tmp_path, runtime_mode, archive_width
+):
     audio = BytesIO()
     with wave.open(audio, "wb") as output:
         output.setnchannels(1)
@@ -96,9 +101,11 @@ def test_original_archive_drawing_with_real_storage(resource_app, tmp_path):
                         "importer": "canvas_archive_importer",
                         "password": PASSWORD,
                         "media": media,
+                        "runtimeMode": runtime_mode,
+                        "archiveWidth": archive_width,
                     }
                 ),
-                timeout=180,
+                timeout=300,
             )
         except subprocess.TimeoutExpired:
             stop_browser(process)
@@ -114,6 +121,12 @@ def test_original_archive_drawing_with_real_storage(resource_app, tmp_path):
         assert result["concurrent_export_kept_one_version"]
         assert result["zip_import_atomic_drawing"] and result["fresh_import_editable"]
         assert result["unknown_import_replayed_once"]
+        assert result["multi_canvas_resume_kept_group"]
+        assert result["runtime_mode"] == runtime_mode
+        assert result["archive_width"] == archive_width
+        assert result["archive_no_horizontal_overflow"]
+        if runtime_mode == "production":
+            assert result["production_bridge_loaded"]
         assert result["invalid_zip_rejected_before_writes"]
         assert result["zip_image_and_library_binding_restored"]
         assert result["zip_audio_video_and_library_bindings_restored"]

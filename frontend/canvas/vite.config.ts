@@ -61,7 +61,10 @@ export default defineConfig(({ mode }) => {
         build: {
             assetsDir: "static",
             rollupOptions: {
+                preserveEntrySignatures: "strict",
+                input: { editor: resolve(root, "index.html"), "host-archive": resolve(root, "src/services/host-archive-entry.ts") },
                 output: {
+                    entryFileNames: chunk => chunk.name === "host-archive" ? "host-archive.js" : "static/[name]-[hash].js",
                     onlyExplicitManualChunks: true,
                     manualChunks(id) {
                         if (/node_modules[\\/]@babel[\\/]runtime[\\/]/.test(id)) return "vendor-babel-runtime";
