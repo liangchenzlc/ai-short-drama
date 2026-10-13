@@ -3623,3 +3623,51 @@ AN两视频新凭据POST200并完成下载，两图成功，四任务READY，作
 R22v3复用历史owned产物，新构建码null；两版各完整54组，均0/1/0、frame_budget_failed。1000节点zoom before91.8/116.7/108.4ms，candidate91.7/166.8/100.2ms，32ms未达；compare0仅受控parity，viewport候选未应用。R19新1440/PNG/immediate/upload-unavailable首次父目录缺失setup1error/13.51s保留，新目录重跑实际 **OS0/1passed/0skip/1warning/48.75s**；首次和刷新API转发0、Ctrl+S同键恰1，原文件/像素/永久身份/权限/媒体后置通过，model0，不当供应商或完整R19。原20guard/15服务/两源前后保持、4397absence/MySQL cleaned已到，不称完整资源树证明。
 
 原件、stack与边界见[统一媒体审计](2026-10-11-beeftv-agnes-storyboard-media-broker-audit.md#modelhub-an-r22v3-r19unavailable-current)、[AN终态](../../.runtime/modelhub-an-root-terminal-review-v2.json)、[R19终态](../../.runtime/r19-pending-image-unavailable-live-root-v2/root-terminal.json)。本片产品/DDL/依赖未新增；完整媒体/32ms/同版部署/可信公网首帧/R23/独立音频企业与R10/M0–M5/一比一继续开放。
+
+<a id="2026-10-13-ap-role-media-current"></a>
+
+## 2026-10-13 接续：AP 原比例失败；生成验收暂缓，转入 U03 后续实施
+
+用户最新指令要求先在交接标记当前进度，跳过生成验收，完成U03及后续实施；生成验收现暂缓，原失败／阈值／unknown规则保留。完整执行表见[本轮执行表](2026-10-13-beeftv-functional-execution.md)。
+
+AP 单次真实1440自然 **OS1／1 failed／0 skipped／1 warning／415.10s**，JUnit 1 test、1 failure、0 errors、0 skipped。两图及两视频各一次POST200，四任务API READY、作者／fresh cookies／成员视频共六次真实播放和图片六次解码、28条权限检查到达；Python首条视频check_stage:924实际失败于1038×576，abs(width/height−16/9)=0.02430555555555558超原<0.02。未改坐标／force click／阈值或转码，第二视频及最终HTTP／duplicate-stale AMQP／不变性／acceptance后置未到，不能记整体通过。
+
+账本实际由6／30增至 **8 reservations／40声明秒**，新增恰2×5秒、全部response；唯一ledger的policy15／60、旧六条和两份扩额审计保持。原AN／AO不重跑，第三次不提交，历史34unknown不重投。
+
+原collector缺原reconciliation自然失败保持；额外资源专用回查通过，仅证明捕获36进程实例、精确MySQL fullID/name、三监听端口、11队列/2交换机、三桶不存在及原15服务/两来源/该次57产品文件保持，不补造数据库终态。两视频原件全帧解码各124帧OS0；contact全帧实看不等于实时连续观看，固定镜头、蓝圆柱转动和蓝图边缘额外灰物仍不记内容通过。
+
+本轮恢复源nodes数组顺序保存，并修复同会话重读旧ProjectCanvas／CanvasNode identity；真实MySQL先2红、修后顺序＋workspace17绿。旧复制算法／搜索源码的假z-index集成测试撤回。节点序版本完整后端复跑2944 passed／2warnings／778.66s。
+
+U03已核current角色菜单／UI18／共享发布正式应用；不重复历史候选。新真实MySQL三场复现媒体cached identity：旧名称／37×19及非图片类型被旧缓存掩盖。AssetVersionDAO锁内当前媒体读取由版本服务与目录DAO共用，刷新干净列，保留dirty字段历史；新五场＋当前正式RR模块合计 **16 passed／0 skipped／13.22s**，角色相关单测 **213 passed／137.56s**；显式共享锁后走正常详情入口实观测S GRANTED／X WAITING。初次该新增锁场的内部int/JSON字符串断言写错而失败，已修正测试，同时验证JSON十进制字符串；原失败不当产品失败。仍不扩大为全部publication／S→X多调用链矩阵。
+
+全仓Ruff check通过、format831文件通过；U03媒体新修复后的最终全unit/API正在执行，前一版2944不替代新全量。无ORM/DDL/HTTP/依赖/标准模式改动，未commit。pinned／声音／完整角色媒体引用、可信旧回填、同版部署、R22≤32ms及R23未批准可见行为仍按完整表接续。
+
+原件：[AP结案](../../.runtime/beeftv-functional-handoff-20261013-root-v1/ap-terminal-review.json)、[AP原JUnit](../../.runtime/modelhub-storyboard-media-ap-v8-preparation-v1/junit.xml)、[原collector失败](../../.runtime/modelhub-storyboard-media-ap-v8-root-final-resource-review-v1/receipt.json)、[资源独立回查](../../.runtime/modelhub-storyboard-media-ap-v8-resource-only-readback-root-v1/receipt.json)、[全帧解码](../../.runtime/modelhub-ap-full-frame-review-root-v1/receipt.json)、[内容限定结论](../../.runtime/modelhub-ap-full-frame-review-root-v1/manual-contact-review.json)、[角色正式RR](../../backend/.runtime/character-media-rr-complete-20261013-root-v1.xml)。
+
+## 2026-10-13：画布性能热点优化与32ms门槛通过
+
+按用户优先级先收尾正式归档，再优化画布开图、自动整理、视口和大图保存。布局保留原顺序与精确坐标，替换队列移位／逐层扫描；原Markdown渲染与表情3D预览按需加载；CSS实时倍率只同步实际消费者并保留原世界变换，React交互期提交同步原继承值；日记新增轻量状态查询，完整冻结／unknown／回执继续返回独立副本。未加依赖、DDL或供应商调用。
+
+生产v3固定源／组合产物100／1000／5000各三轮，自然OS0，1000 drag p95为17.0／16.8／16.8ms、zoom为17.1／16.8／16.8ms，原≤32ms门槛已过。1000冷开1363.7→1169.1ms，初始decoded 7,074,945→6,302,749B；均为单次冷开，不称加载分位数。5000无边图整理由首轮优化v1的342.6／1872.4ms降至173.8／946.2ms（首帧／保存）；长链一轮为329.2／1409.6ms，坐标与固定源相等、完整撤销。保留100节点首轮zoom33.3ms及原失败记录。
+
+两包build v3、宿主Node219／画布Node568、source832／226／91通过。生产入口原UI v4五场通过，含DPR1／2与600／1440选区、保存／撤权／409／助手；偏好注入子场仍使用开发服务。加载／失败两场及临时媒体控件一场另行通过。原生产v3选区超时保留，测试改为原图标定位稳定点击，几何断言未变。
+
+详见[本轮交接最终收据](../2026-10-12-beeftv-functional-progress-handoff.md#2026-10-13-画布性能最终收据当前生产-v3)、[性能指标与复现](../performance.md#2026-10-13-无限画布性能)。U08全角色部署、重型交互／完整媒体与泄漏，以及U05余项、R23严格完整视觉仍开放；全部生成验收暂停，账本8／40未新增。
+
+## 2026-10-13：十八个兼容 Chat 协议接续
+
+已实核固定源十八份完整请求／鉴权／参数／响应合同，仅身份和默认地址不同。新增冻结协议标记与参数解析，接入普通画布、模型测试及 canonical 编辑器工具；保存能力、模型／消息和工具定义优先，私人 reasoning 与截断 unknown 保留。官方 86 provider 当前映射32、剩54，不把未实现记为源禁用。
+
+首次45红、边界5红已修；相关11文件453 passed，含61项新单测与本机HTTP。两protocol真实随机MySQL／MinIO隔离v4为2 passed／0 skip／41.28s／OS0，旧参数冻结、原字节顺序、共享不变、成员隔离和同键零重投后置全部到达。v1旧容器名setup错误、v2返回字段及v3私人投影测试基线错误保留。新版本后端全量v1为2981 passed／90 setup errors／812.08s；90项均因系统pytest临时目录WinError 5未进入测试。保持原断言、指定仓库独立basetemp的v2已自然OS0：3071 passed／0 skip／2 warnings／874.00s。全仓Ruff check与844文件format检查已通过，随后集成测试字段和基线修正的单文件静态／格式检查亦通过。
+
+合同见[模型说明](../api/model-runtime.md#canvas-compatible-chat)，详细日志与边界见[交接收据](../2026-10-12-beeftv-functional-progress-handoff.md#u05-compatible-chat-20261013)。无DDL／依赖／服务重启，全部真实生成暂停，账本8／40未新增；当前不关闭完整U05、部署或完整迁移。
+
+## 2026-10-13：新增导演数学减包收尾，按用户要求暂停
+
+主JS 4076.58→3375.17kB、gzip 1189.96→1010.82kB：导演同步数学直接引用Three0.185.1明确导出的源码入口，完整渲染器留在原按需面板。数学函数／创建时机未改，新增舞台／相机／旋转／骨骼／颜色互操作对照；画布572 passed、两包build v4自然OS0、source832／228／91通过。
+
+新生产v5在100节点整理后撤销失败，未到1000／5000；源／目标独立早撤销诊断均回到上次拖拽，等待原180ms历史落成后两端全部坐标恢复。原产品历史保留，正式性能驱动另记保存后历史等待，不混入首帧／保存耗时，原坐标及32ms断言保持；修订后未跑新矩阵，旧v3通过不覆盖v4。
+
+导演v1缺浏览器未进入业务；v2显式Chrome得到2 passed／1 failed／7 deselected／0 skipped／15warnings／191.56s／OS1。1440／600实际WebGL三视图、永久截图、恢复及权限通过；actor-video-1440开图等待20秒超时，未到演员场。按用户收尾指令不再复跑或展开新实施，已启动验证均自然退出。
+
+已同步主交接、执行表与性能说明，任务暂停，未宣称完整迁移或绝对性能极限。详细收据见[主交接](../2026-10-12-beeftv-functional-progress-handoff.md#u08-math-split-20261013)。恢复后补v4三规模、生产入口与演员场，再接U05余54／U06–U10；完整泄漏／同版部署／严格视觉仍开放。没有新供应商调用、业务库写入、DDL、服务重启或commit；全部生成暂停，账本保持已记录8／40、总上限15／60。

@@ -302,7 +302,7 @@ audio/video/image优先；保留原槽位，早期未选video/audio不进入画�
 形成死锁；外部下载和MinIO写入仍在该事务之外。确定时序并发专项同时检查
 画布列表和全局列表，不以自动重试409替代无死锁断言。
 
-### 画布 Claude 普通纯文字
+### 画布 Claude 普通文字与图片引用
 
 本人已保存的宿主配置使用 `runtime_profile.api_format=claude / protocol=claude-api`，
 普通 `canvas_text / operation=text` 和独立 `canvas_model_test` 可使用 `claude_messages.v1`。
@@ -321,7 +321,11 @@ JSON 仅拼接各 `text` 块，SSE 接收实际 `content_block_start / text_delt
 两者都将 thinking 独立保存为本人 `resultJson.reasoning`，不进入正文增量或共享作品。
 流读取覆盖 UTF-8 分块、CRLF、多行 data、BOM、JSON 回退及有效正文 EOF；
 格式错误、仅有 reasoning 或正文截断保留实际私人草稿和错误状态，不自动二次提交。
-本片明确拒绝图片、视频、音频、`thinking=true` 和工具等未完成参数。
+普通Claude图片引用已按保存的文字图片能力接入；执行期用永久资源签发URL，构造
+`image/source.type=url`块，图片位于当前user文字之后。视频和音频仍拒绝，普通
+Gemini多模态仍未开放。`thinking=true`仅在保存的`text.thinking`严格为true时接通；
+Claude使用`{type:enabled,budget_tokens:1024}`，`max_tokens`必须大于1024。编辑器工具
+沿下文独立合同处理，不借普通文字接口放行任意工具。
 普通节点仍在终态后由原消费者回填，受控 HTTP/MySQL/原 UI 验证不等于收费供应商验收。
 
 ### 画布 Gemini 普通纯文字
@@ -377,7 +381,12 @@ Worker 沿源对象存储分支在执行时签发短期读取 URL，按原顺序
 签名 URL 只用于本次供应商请求，不写入任务身份、请求归档或画布。MinIO 的供应商读取地址须可由
 所选供应商访问；本机受控 HTTP 能读取图片不代表远程供应商已经验收。
 PNG、JPEG、WebP、GIF 为已接通的图片 MIME；视频为 MP4、WebM、MOV，并冻结服务端检测的正时长。
-其他图片、文字音频、Claude/Gemini多模态、工具和 thinking 仍单独实施。
+Claude普通图片已接通相同永久图片资源信封，按Claude URL图片块执行；其视频拒绝。
+文字音频、其他图片MIME及Gemini普通多模态仍拒绝。Chat／Responses／Claude的普通
+文字及编辑器工具thinking均须保存的`text.thinking=true`能力；Chat使用
+`reasoning_effort=medium`，Responses使用`reasoning={effort:medium,summary:auto}`，
+Claude使用1024 token thinking预算并要求更高的输出上限。Gemini thinking按固定源拒绝。
+准入冻结原能力，后改配置不影响已受理任务；未声明能力时422且不新增任务／记录／binding。
 
 `textOptions.stream=false` 或保存的 `text.streaming=false` 使用非流请求；Chat 流式请求沿源
 增加 `stream_options.include_usage=true`。正文仍使用已有 delta/SSE、本人权限、游标恢复和直接
@@ -398,7 +407,7 @@ Responses 流使用 `response.output_text.delta` 与完成事件；非流解析�
 
 ### 编辑器工具请求
 
-文字任务可提交`input.agentRequests.canonical`，含`messages`、唯一固定`tools`、`toolChoice`与`systemPrompt`。当前固定工具为`optimize_prompt`及九个审美阶段工具；schema由固定源快照验证，客户端不得改工具名或参数定义。`metadata.source=prompt-optimizer|art-critique`、目标节点与阶段必须一致；仅图片引用，`referenceImages`顺序须与canonical相同，图片定位仅永久`resource:<uint64十进制ID>`，服务端核对权限和实际字节。普通历史、thinking、音视频、mask、客户端transport或不同config均拒绝。
+文字任务可提交`input.agentRequests.canonical`，含`messages`、唯一固定`tools`、`toolChoice`与`systemPrompt`。当前固定工具为`optimize_prompt`及九个审美阶段工具；schema由固定源快照验证，客户端不得改工具名或参数定义。`metadata.source=prompt-optimizer|art-critique`、目标节点与阶段必须一致；仅图片引用，`referenceImages`顺序须与canonical相同，图片定位仅永久`resource:<uint64十进制ID>`，服务端核对权限和实际字节。普通历史、音视频、mask、客户端transport或不同config均拒绝。合法布尔thinking仅在本人保存的`text.thinking=true`能力且为Chat／Responses／Claude时允许；Chat thinking移除`tool_choice`，其他两协议沿上述静态参数。Gemini thinking拒绝，Claude输出预算不够时拒绝。审美prepare／approve／execute共用这项能力门禁，不绕过阶段批准。
 
 工具使用本人已保存文字模型与四种已实现协议。保存配置的非流模式仍为非流；Chat/Responses/Claude流回复须有协议闭合证据，Gemini为非流。成功`resultJson`含`text`、`toolCalls`及私人`reasoning`，仅工具调用、空text也可成功。工具请求与结果不改变来源节点loading或共享图，不生成`CanvasResult`，物化与bind返回422。创建、列表、详情、日志和文本增量保持本人隔离；前端优化结果通过源“采用优化后的提示词”显式写入。
 
@@ -802,7 +811,7 @@ Worker使用 `CANVAS_WHISPER_BASE_URL` 的 `/inference` 和真实16kHz单声道P
 
 ## 画布角色目录与表示图读取
 
-`R=/canvas-runtime/canvas-projects/{source_key}/character-catalog`。这组接口只读取可信业务来源的当前已保存角色；`source_key` 精确匹配画布稳定键，纯数字键也不能当作画布数据库 ID。来源只由 `ProjectCanvas.source_project_id` 决定，客户端 query 和图 JSON 的 `projectId` 不能替代它。每次读取都核对当前 Actor、所属无限画布项目与 standard 来源项目的权限、模式及归档状态，再验证真实 `ProjectAsset`、角色、当前作品版本和媒体可见性。
+`R=/canvas-runtime/canvas-projects/{source_key}/character-catalog`。这组接口只读取可信业务来源的已保存角色作品；`source_key` 精确匹配画布稳定键，纯数字键也不能当作画布数据库 ID。来源只由 `ProjectCanvas.source_project_id` 决定，客户端 query 和图 JSON 的 `projectId` 不能替代它。每次读取都核对当前 Actor、所属无限画布项目与 standard 来源项目的权限、模式及归档状态，再验证真实 `ProjectAsset`、角色、当前作品版本和媒体可见性。
 
 | 方法 | 路径 | 合同 |
 | --- | --- | --- |
@@ -812,7 +821,7 @@ Worker使用 `CANVAS_WHISPER_BASE_URL` 的 `/inference` 和真实16kHz单声道P
 
 全部数据库 ID 和版本的 JSON 输出是十进制字符串；路径、查询发送正 uint64 十进制文本，不转成 JavaScript number。现有 `Identifier` 的输入 OpenAPI 类型仍为 integer，服务端校验精确正值与 uint64 上限。`X-Canvas-Actor` 沿用账号切换校验，不能授予身份或项目权限。
 
-目录 `item` 包含 `asset_id/asset_row_version/current_version_id/version/position`、角色平面字段、完整 JSON `definition`、`definition_origin` 和 `representations`。表示槽位保留真实 `reference_id/role/ordinal/media_id` 及媒体 MIME、文件名、大小和宽高；同一媒体的不同槽位不去重，真实空表示图返回空数组。不返回私人生成参数、原始存储定位或源 `ProjectDetail`、文件夹投影。
+目录 `item` 包含 `asset_id/asset_row_version/current_version_id/version_id/version/position`、角色平面字段、完整 JSON `definition`、`definition_origin` 和 `representations`。表示槽位保留真实 `reference_id/role/ordinal/media_id` 及媒体 MIME、文件名、大小和宽高；同一媒体的不同槽位不去重，真实空表示图返回空数组。不返回私人生成参数、原始存储定位或源 `ProjectDetail`、文件夹投影。
 
 图片解析只接受目录刚读取的当前版本。当前版本不同返回 `409 canvas_character_version_changed`，不会自动升级或读取旧历史。每个图片槽位返回真实 `reference_id/role/ordinal/media_id`、`resource_key=resource:{id}`、稳定 `file_path=/api/v1/canvas-runtime/resources/{id}/file`、`requires_canvas_copy` 和现有 `CanvasResourceRead` 别名合同的 `resource`。MIME、大小、作者和时间来自真实媒体记录；响应的 `endpoint/bucket/objectKey/publicUrl` 为空，不暴露 MinIO locator 或签名 URL。
 
@@ -836,7 +845,7 @@ Worker使用 `CANVAS_WHISPER_BASE_URL` 的 `/inference` 和真实16kHz单声道P
 
 现有三个角色入口接专用目录与图片 resolver，不调用标准项目 API 构造假的角色详情。列表和详情使用同一可信 source 与画布 row-version，选择确认再读取 current/detail 并核原选择版本，所有异步阶段校验账号 epoch、画布 lifetime、角色 identity 与表示槽位。未绑定来源、真实空目录和读取失败分别显示；角色路径不回退个人素材库。
 
-进入图的角色仍采用固定源 Text 卡、封面优先级和原详情布局。definition 字典原样保存，legacy description/prompt 仅有限编译提示词；不扩造结构化设定或声音事实。封面进入图保存时沿统一 normalize/copy、journal、CAS 与 reload；同版本复制封面及本人私人 prompt/voice 保持，版本/槽位变化必须重新解析。此接线仅支持 current；pinned、声音绑定/生成、角色生成、生成引用和 standalone builder 不在该 UI 范围。UI/API 替身测试不构成真实供应商、MySQL/MinIO、cookie 或完整固定源验收。
+进入图的角色仍采用固定源 Text 卡、封面优先级和原详情布局。definition 字典原样保存，legacy description/prompt 仅有限编译提示词；不扩造结构化设定或声音事实。封面进入图保存时沿统一 normalize/copy、journal、CAS 与 reload；同版本复制封面及本人私人 prompt/voice 保持，版本/槽位变化必须重新解析。目录默认读取 current；详情可用 `requested_version_id` 读取精确 pinned 历史，图片 resolver 对应 `version_policy=pinned`，缺失历史404，不回落当前版。角色生成引用已通过可信目录读取并冻结；standalone builder 另行核验。UI/API 替身测试不构成真实供应商、MySQL/MinIO、cookie 或完整固定源验收。
 
 
 ## 可信来源项目与分集小说读取
@@ -871,3 +880,28 @@ Worker使用 `CANVAS_WHISPER_BASE_URL` 的 `/inference` 和真实16kHz单声道P
 原文中的换行、首尾空白、`<...>` 和 `&...;` 保持原值，不解析成 HTML、不 strip，不以梗概、剧本或模型候选代替小说。前端预览按纯文本展示；插入前带该分集 `content_version` 重新读取，只有 `present` 可以插入，包括空正文。旧响应不能跨账号、画布或来源版本覆盖新状态；正文冲突后刷新分集目录并由用户重新选择。
 
 缺少或非法 expected 参数返回422；不可见、归档或不属于可信来源的分集返回404。缺来源为 `canvas_source_project_required`/409，模式或自身绑定非法为 `canvas_binding_invalid`/409，读取间绑定变化为 `canvas_binding_changed`/409，expected 项目身份不符为 `canvas_source_context_conflict`/409，画布版本不符为 `canvas_revision_conflict`/409，正文版本不符为 `canvas_source_content_conflict`/409。响应不会静默改选来源、自动重试写入或创建生成任务。
+
+
+### 固定角色版本与已采用样音（2026-10-13）
+
+`GET R/{asset_id}?requested_version_id=...` 返回精确历史作品。`item.version_id` 是本次实际作品 ID，`current_version_id` 始终是角色真实当前指针；默认 list/detail 返回 current。`GET R/{asset_id}/image-resources` 继续必填 `expected_version_id`，新增可选 `version_policy=current|pinned`（默认 current）。current 版本竞争409，pinned 缺失历史404；两种策略均验证不可变 hash、真实槽位、双项目权限和媒体可见性。
+
+目录 item 新增 `voice_status=unavailable|missing|ready` 与 `voice_sample`。原生声音与音频制作关闭时不查声音表；启用后仅投影已有 `CharacterVoice` 明确采用的已发布3～7.5秒、≤10MiB样音。投影包括独立 `binding_version`、稳定 `media_id`、SHA-256、时长和受鉴权资源元数据；不读取或暴露采用者的私人 generation record、模型、凭据或供应商 voice_id。声音版本独立于角色作品版本；pinned 角色读取仍返回此项目当前已采用样音，不能称为该角色历史声音。替换期间提交会409拒绝。
+
+画布任务 metadata 的 `resolvedCharacterVersions` 与 `resolvedCharacterVoices` 为 typed 身份声明。服务端按已保存角色节点校验并冻结真实角色内容／媒体；样音声明须给实际角色版本、`bindingVersion`、`sampleResourceId`，并对应实际参考音频或可信归一化副本，绑定版本及SHA竞争拒绝。原生样音不是可用于任意独立TTS的 `voiceKey`，不进行伪造映射；独立配音请求需要对应供应商音色，客户端提前就近报错。生成冻结与复制引用仅本人可见，采用候选仍走宿主现有声音面板。
+
+<a id="canvas-compatible-chat"></a>
+
+### 画布兼容 Chat 协议
+
+固定源以下十八个 provider 的完整声明式合同相同，已接入 `openai_chat.v1`：
+
+`atlascloud-chat`、`baichuan-chat`、`deepseek-chat`、`fireworks-chat`、`groq-chat`、`kimi-chat`、`litellm-proxy-chat`、`localai-chat`、`mistral-chat`、`newapi-chat`、`nvidia-nim-chat`、`openrouter-chat`、`siliconflow-chat`、`together-chat`、`vllm-chat`、`xai-grok-chat`、`yi-chat`、`zhipu-glm-chat`。
+
+本人保存 `service_type=text`、`api_format=openai` 和确切 `protocol`。画布节点、独立模型测试及编辑器工具冻结 `canvas_text_protocol` 与 `canvas_text_defaults`；后改配置不改变已受理任务。路由和鉴权只取冻结服务地址与加密凭据，地址支持 origin、`/v1`、完整 `/chat/completions` 和网关前缀。
+
+允许 `temperature/top_p/max_tokens/tools/tool_choice/response_format/stream/provider/transforms/extra_body`，从 `default_options` 读取，再由本次 `input.metadata.providerOptions.<确切协议>` 覆盖。未知字段、其他协议命名空间、非法类型、模型／地址／凭据覆盖拒绝；显式 `textOptions.stream`、保存的能力及冻结模型／消息优先。编辑器工具保留 canonical 的 tools／choice／response_format，协议参数不能替换它们；thinking 仍经过已有保存能力门禁。
+
+源族使用 `max_tokens` 且不额外加入 `stream_options`。非流正文读 `choices.0.message.content`，为空时兼容 `choices.0.text`；`reasoning_content` 仅进入本人的 reasoning，usage 单独保存。明确 JSON `error.code` 为失败；畸形返回或截断流保持 unknown，不自动重新提交。秘密、工具定义和临时签名 URL 不进入公开 resolved 参数。
+
+上述为执行合同与本机 HTTP／隔离 MySQL／MinIO 验证，未代表供应商接受全部参数、媒体或工具。2026-10-13 官方目录 86 个 provider 中32个有映射、54个仍待实施；全部真实生成验收按用户最新指令暂停。

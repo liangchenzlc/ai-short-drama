@@ -138,3 +138,54 @@ npm run test:e2e -- e2e/workspace-performance.spec.ts e2e/studio-production.spec
 ```
 
 第一组使用已启动的 4175 前端服务；第二组使用 4180 当前生产预览。也可使用 Playwright 配置自动启动测试服务。真实生成、RabbitMQ/Worker、MinIO 对象访问和跨网络生产延迟不在此次性能验收范围内。
+
+## 2026-10-13 无限画布性能
+
+> 下述三规模数据属于历史生产 v3。后续新增减包 v4 尚未完成新矩阵，已按用户要求暂停；最新状态见[减包与暂停记录](#u08-math-split-paused-20261013)。
+
+此次仅优化独立画布子包，保留固定 BeefTV commit `4ca2a65a7780a8dfcaaa86c33679f84fb04e055c` 的布局、坐标、交互与世界变换。原 Markdown 渲染器及表情 3D 预览按需加载；Three 仍部分由导演基础模块同步引用。布局队列与层分组减少重复扫描，CSS 倍率取消无关后代继承、仅逐帧更新真实内联消费者，保存门禁用轻量日记状态避免克隆全文。完整快照、持久化、提交、unknown 及回执语义不变。
+
+测量使用组合生产 `frontend/dist/canvas-app/` 与固定源生产产物、同一正式 `measure-performance.mjs`，没有运行时优化注入。Windows、Core Ultra 5 125H、约32GB内存、Node22.23.2、Chrome155.0.8059.40，1440×900／DPR1／深色／正常动效。HTTP与永久媒体身份由隔离夹具提供，PNG及MP4字节由真实浏览器解码／播放；每端每规模三轮拖拽、平移与缩放，1000节点三轮全部drag／zoom p95须≤32ms，失败自然非零退出。rAF间隔是浏览器回调指标，不等于GPU呈现帧。
+
+| 节点 | 开图 ms | 首次可交互 ms | 整理首帧 ms | 整理保存 ms | drag p95 三轮 ms | zoom p95 三轮 ms |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| 100 | 1546.3 | 1605.4 | 111.7 | 294.9 | 16.8／16.8／16.8 | 33.3／16.8／16.8 |
+| 1000 | 1169.1 | 1241.5 | 141.5 | 476.1 | 17.0／16.8／16.8 | 17.1／16.8／16.8 |
+| 5000 | 1767.9 | 1834.4 | 173.8 | 946.2 | 16.8／16.8／16.8 | 16.8／16.8／16.8 |
+
+开图从导航起至原工具栏与首节点可见并经过一帧；首次可交互还等待字体、保存就绪与统一起始视口。图片预读稳定时间另存 `ready_ms`／`prefetch_settle_ms`，不混入开图。整理首帧是原按钮click捕获至双rAF，保存耗时是click至夹具记录完整提交并被驱动观察到，包含Ctrl+S与轮询；不是纯算法时间或业务后端落库延迟。三规模冷开、整理各测一次，不能称加载／整理p95或SLA；100节点冷开较1000慢反映单次波动，首轮zoom33.3ms保留。
+
+优化前1000节点开图1363.7ms、首次可交互1454.9ms；当前为1169.1／1241.5ms。初始资源decoded 7,074,945→6,302,749B（约减少10.9%）、transfer 1,987,220→1,744,246B（约减少12.2%）。首次可交互前长任务当前100／1000／5000各为1／2／2个，总210／273／567ms，最长210／197／360ms；仍有加载长任务，不能宣称成本清零。5000无边图由首轮优化产物v1整理342.6／1872.4ms降到173.8／946.2ms，约减半；不是把固定源较快的本地保存当成Python宿主旧版。
+
+独立布局微基准12组（100／1000／5000×chain／fan／none／cycle）全部坐标与固定源相等；5000长链算法p50 635.1→6.18ms。追加5000长链真实浏览器一轮，当前完整整理329.2／1409.6ms（首帧／保存），固定源参考670.2／1583.1ms，坐标哈希相同、全部撤销恢复。微基准与浏览器长链不同样本和测量边界，不将6.18ms当完整操作耗时。
+
+最终三规模所有拖拽持久位置、最终视口、整理全坐标与源相同；图像／两段视频播放、保存与撤销、离页video=0，零未知路由／页面／HTTP／夹具错误。CSS消费者场另查原图与视频裁切、蒙版／标注、20px手柄、标题／新增节点、当前倍率轮廓和observer卸载0／重挂1。生产入口原UI5场覆盖DPR1／2、600／1440浮层与选区及409／撤权／助手；旧偏好注入子场仍在开发服务。Markdown／表情按需加载和失败回退另有2场通过，不代表3D像素或供应商效果。
+
+在 `frontend/canvas/` 执行：
+
+```powershell
+$env:BEEFTV_ROOT = 'C:/Users/snow/code/ai-short-drama/.runtime/beeftv-visual-source'
+$env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
+node scripts/measure-performance.mjs --nodes=100,1000,5000 --rounds=3 --arrange --output=.runtime/performance-current
+node scripts/measure-performance.mjs --nodes=5000 --rounds=1 --graph=chain --arrange --output=.runtime/performance-chain-current
+```
+
+先在 `frontend/` 执行 `npm run build`，并独立按固定源自己的锁文件构建 `web/dist/`。源目录必须匹配固定commit，驱动会校验；缺源不伪造对照。默认需要FFmpeg生成6秒测试MP4／PNG，可设置 `CANVAS_PERF_MEDIA_DIR` 指向同一已生成媒体目录，源／目标使用相同字节。测量独占运行，不与构建／其他浏览器并发。`--profile`仅用于CPU诊断，不用带诊断开销的结果关闭预算。
+
+记录在 `frontend/canvas/.runtime/u08-performance-root-v1/{baseline,production-v1,production-v3,chain-v3}/report.json`，本机证据可能在清理或换机后缺失。baseline和production-v1帧预算失败原样保留，最终production-v3为measured、frame_budget_1000_passed=true／OS0；chain-v3只有5000样本，frame_budget_1000_passed=null，不能把null写为通过。首版CSS浮层红测、生产v3选区超时均保留；测试最终改用原图标稳定定位点击，未改几何、像素与32ms门槛。
+
+验证：宿主Node219、画布Node568（均0skip）、两包build v3、source:check832／226／91及生产入口v4五场均通过。日志在 `backend/.runtime/u08-canvas-node-root-v3.log`、`u08-performance-build-root-v3.log`、`u08-source-check-root-v3.log`、`u08-host-production-root-v4.log`。测试未调用任何真实供应商，未写业务库或启停原服务；Python、业务MySQL、AMQP与跨网络生产延迟、GPU帧、完整Heap／GPU泄漏、时间线／导演等重型交互及严格完整视觉仍未验。
+
+<a id="u08-math-split-paused-20261013"></a>
+
+## 2026-10-13 追加减包与暂停状态
+
+导演基础模块的同步数学现在直接引用同版Three0.185.1明确导出的 `three/src/math/*.js`，不引入完整渲染入口；创建时机、数学函数及存储坐标不变。主JS由4076.58降到3375.17kB（约17.2%），gzip由1189.96降到1010.82kB（约15.1%）。这是构建文件大小，不是总首屏网络传输或新的加载分位数。
+
+画布Node v4为572 passed／0skip／4.368s，含数学／渲染器互操作；两包build v4自然OS0、source832／228／91通过。新生产v4因FFmpeg缺PATH未进入测量；v5复用与v3相同SHA的真实媒体，只完成100节点：开图995.7ms、首次交互1053.4ms、整理首帧51.5ms／保存185.9ms。所有整理坐标与源相等，但目标撤销断言失败，整体自然OS1，1000／5000未执行。不得把这一个失败样本写成三规模通过或稳定性能提升。
+
+独立观察180ms历史计时器，源和目标均复现历史未落成时撤销上次拖拽；历史补丁完成后，两端全部坐标恢复。诊断脚本包含计时观察，不用于正式性能预算。正式驱动现在先记录首帧／保存耗时，再等原客户端已保存状态、双rAF及180ms历史窗口，新增 `history_settle_wait_ms` 与 `undo_contract`；完整坐标／视口／保存次数和1000节点32ms门槛不变，未改产品历史行为。该等待只验证稳定历史后的撤销，**没有修复早撤销边界**。语法检查通过；按用户暂停指令，修订后的正式矩阵尚未执行。
+
+本片导演实际WebGL使用开发浏览器、真实随机MySQL／MinIO。v1因Playwright浏览器缺失未进业务；显式Chrome的v2为2 passed／1 failed／7 deselected／0skip／191.56s／OS1：1440／600 beauty／depth／normal及永久截图／恢复／权限通过，演员场等待初始画布20秒超时。不是导演全部功能或生产产物验证通过。新增源码版生产入口五场尚未复测，演员／视频、重型交互、Heap／GPU等完整泄漏和跨网络部署仍待接续。
+
+原件为 `frontend/canvas/.runtime/u08-performance-root-v1/{production-v5,history-early-v1,history-settled-v1}/report.json`、`backend/.runtime/u08-director-math-root-v1/v2.log/.xml` 和 `u08-{canvas-node,source-check,performance-build}-root-v4.log`。原失败不覆盖；详细关键栈见[主交接](2026-10-12-beeftv-functional-progress-handoff.md#u08-math-split-20261013)。本轮启动的验证已自然退出，任务已按用户要求暂停，没有新供应商调用、业务库写入、DDL或原服务启停；不宣称绝对性能极限。

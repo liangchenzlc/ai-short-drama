@@ -1,0 +1,168 @@
+# 2026-10-13 BeefTV 功能接续执行表
+
+按用户要求读取交接、列出剩余任务并逐步实施；范围为 U01–U10、R01–R24、M0–M5。最新指令已要求跳过生成验收，当前转入U03及以后产品实施与非供应商验证，原生成失败保留。
+
+> **2026-10-13 最新状态：按用户要求收尾并暂停。**已收齐启动中的验证；不再展开新实施、性能矩阵或生成验收。当前v4新增减包尚未完成正式三规模复测；[主交接暂停收据](../2026-10-12-beeftv-functional-progress-handoff.md#paused-handoff-20261013)优先于下方历史阶段记录。
+
+| 顺序 | 范围 | 待交付工作 | 关闭证据 | 实际状态 |
+| --- | --- | --- | --- | --- |
+| 0 | 前置 | 工作区／两来源／原 15 服务／AN、AO 终态／唯一预算 | 新身份、原字节、自然终态及账本 | 已实核，交接错误已更正 |
+| 1 | U01／R10 | 官方参数合同、1038×576 与原视频内容 | 官方文档、原件 probe、连续内容；比例 <0.02 | 合同／probe 已核，尺寸原因未闭合 |
+| 2 | U02 | 授权与唯一预算门禁 | 冻结历史六条／两份扩额审计；异常测试 | 前置已过，AP 2×5s，全局 15／60 |
+| 3 | U01／R10 | 源层序保存、成员重排、旧会话读取 | 正式 MySQL／Service、草稿隔离／409 | 已修复，17 场通过 |
+| 4 | U01／R10 | AP 原 Table 两图＋两视频、播放／恢复／DB／MinIO／HTTP／AMQP／内容 | 完整后置、单次自然终态、精确资源回查 | 1440已失败结案，用户要求暂缓生成验收，工作跳到U03 |
+| 5 | U03／R10 | 角色菜单／发布、pinned／声音、锁并发／backfill | 正式 UI／权限矩阵、维护回填／同版部署、真实参考 | current／pinned、角色版本／已采用样音冻结及资源归一化已实施；HTTP142、声音33、真实MySQL21、浏览器5及正式任务／真实MinIO复制3场通过；后端全量3010 passed／0 skip；回填预检被active／unknown阻止 |
+| 6 | U04、U05／R03–R11 | 表情／蒙版内容、全协议引用／thinking／tools／批次取消、Skill／绘图 | 固定源成对 UI／wire／字节／异常与内容 | 普通及工具thinking前三协议、Claude图片及十八个兼容Chat已实施；官方执行映射32／86、剩余54；新增相关453与正式HTTP／MySQL／MinIO2场通过；完整矩阵仍开放，生成验收暂缓 |
+| 7 | U06／R12–R15 | ASR／字幕、长视频深度、媒体工具／时间线／导演／全景／调色 | 真实输出与连续内容、导出／异常／平台成对 | 真实FFmpeg／WAV／受控HTTP 12 passed；已有执行器和原UI接线，真实ASR模型、长视频质量和平台矩阵仍未关闭 |
+| 8 | U07／R17、R19、R20 | ZIP 重导入／外媒体／HEVC／跨账号及引用释放 | 永久身份／权限／回执／scheduler 物理清理 | ZIP重名修复4场、导入账本5场；宿主入口开发1440／生产600正式归档2场通过，跨账号及三画布unknown续接已验证；外媒体／HEVC／物理清理仍待收尾 |
+| 9 | U08／R21、R22 | 子文档／撤权并发、宿主接线、同版全角色部署、大图／泄漏 | 100／1000／5000 真实媒体；1000 drag／zoom p95≤32ms | 历史生产v3三规模各3轮已过32ms；新增减包v4主JS3375.17kB、Node572及build/source通过；复测v5撤销失败，修订驱动后尚未复跑。导演2通过／1开图超时；新矩阵／泄漏／重型交互／部署待恢复后接续 |
+| 10 | U09／R23 | 主题／字体／默认值／触控／动效／完整视觉 | 全屏严格阈值 0、无 mask，授权差异逐项记录 | 可见行为候选未批准，先准备可审查结果 |
+| 11 | U10／R16、R18、R24 | 工作流／插件、共用助手同版、标准／共享私人回归及总交付 | 全部源启用项、R01–R24 与 M0–M5 完整证据 | 未完成，纯问答工具零预算 |
+
+## 本次代码与验证
+
+CanvasService 恢复源 nodes 数组顺序保存 z_index，正式 read 在新事务显式刷新 ProjectCanvas 及共享／私人子项；CanvasDAO 用 populate_existing 提供 refresh 查询选项。写入／publication 默认不刷新 dirty 状态。未改 ORM／DDL／HTTP DTO／依赖。
+
+删除只搜索源码的假集成测试；单测改正式节点契约；新增真实 MySQL 保存／重排／旧会话读取／私人草稿／409 回归。两个既有详情／列表并发包装器同步 refresh，原并发断言保持。
+
+| 验证 | 实际结果／边界 |
+| --- | --- |
+| 契约＋既有 ModelHub 单测 | 65 passed，不代表供应商 |
+| 新 MySQL 第一次 | 2 failed，复现 held ORM identity 旧层序 |
+| 修复后顺序＋workspace | 17 passed／42.25s，临时 MySQL 已清理 |
+| 完整后端第一次 | 2936 passed／8 failed／680.46s，包装器不接收 refresh |
+| 同步后的相关并发回归 | 15 passed／37.08s；节点序基线全量2944 passed／778.66s |
+| 全仓 Ruff | check 通过，format 830 files already formatted |
+| AP 准备 | 合成 SQLite 15 passed；真实账本只读 SHA 不变；326 Python／234 JS 验收保持 |
+| AP 1440 真实验收 | 1 failed／415.10s，比例原断言失败；播放／权限到达，完整后置未到；资源独立回查通过 |
+
+## 授权与证据
+
+用户原话：“确认 15 次／60 秒总上限，允许新轮最多两次各 5 秒”。唯一账本 backend/.runtime/modelhub-minimax-h3-budget-20261012.sqlite3，新 AP 不初始化、扩额、复制、清零或重投 unknown。
+
+AP .runtime/modelhub-storyboard-media-ap-v8-preparation-v1；manifest SHA=32a9139b9b3aab3b59b99f6cf2721c41aea5c4d78d1b349d072b8b68b086b840。控制器单次 main、媒体 Worker 存活时只读 capture，终态后另行 collect。原 AN／AO 失败原件保持，原未提交 handoff 字节备份在本轮 .runtime。未 Git commit。
+
+初次 PowerShell 管道未设 UTF-8，AP 冻结授权原句变问号；数字限制与发送门禁完整。独立 UTF-8 补记原文、原文件及 manifest SHA，不覆盖冻结包。
+
+[主交接](../2026-10-12-beeftv-functional-progress-handoff.md)、[R01–R24 台账](2026-10-08-beeftv-remaining-work.md)、[实施记录](2026-10-05-beeftv-implementation-log.md)、[分镜真实审计](2026-10-11-beeftv-agnes-storyboard-media-broker-audit.md)。
+
+
+## 最新 U03 进度
+
+角色current菜单／UI18／共享发布已应用，已从待办中更正，避免重复实施。新角色Media缓存问题由真实MySQL三红复现，DAO／Service已修：当前字段刷新，dirty历史保留；当前正式RR＋新增五场16绿，相关单测213绿。Media修复完整后端回归2944 passed／747.22s、0 skipped；不是供应商、对象字节或完整所有锁链验收。
+
+AP账本终态8／40，生成验收按用户要求暂缓；后续实现和本地／权限／并发／恢复／持久化检查继续，未批准R23可见行为仍先做可审查结果。
+
+[本轮实际结案与接续](2026-10-11-beeftv-agnes-storyboard-media-broker-audit.md#2026-10-13-ap-role-media-current)。
+
+## U03 pinned 接续（2026-10-13）
+
+已将精确历史详情／图片／共享发布及实际角色版本生成冻结接入产品。current stale 仍409，历史缺失404，不回落当前版；前端按可信来源读取，任务保存真实版本／定义／媒体引用。最新HTTP角色相关142场、声音定向33场、真实MySQL21场通过；画布Node540／宿主219场及两包构建通过，source:check通过。已采用样音公共投影、独立binding版本冻结及生成资源复制归一化已实施；pinned角色不固定历史声音，独立TTS不冒充voiceKey。浏览器／后端全量与正式任务复制组合继续核验，供应商生成全部暂缓。
+
+业务旧角色回填默认只读预检OS1：`ai_generation_records 仍有活动或未知任务；停止写入后再维护`，未写数据、未停止原服务、未绕过门禁。详细栈与边界见[主交接U03](../2026-10-12-beeftv-functional-progress-handoff.md#u03-角色来源与版本发布剩余项r10)。
+
+## U04–U10 实施核对顺序
+
+先核对源启用能力与当前调用链，区分产品缺口、已有实现待验和生成暂缓项。依次补协议文字thinking／多模态准入，核对图片工具／Skill／绘图、媒体时间线／本地ASR／深度、ZIP与引用释放、权限与性能、视觉批准边界、工作流与纯问答助手；不解锁源隐藏入口，不将测试替身或构建写成完整迁移。
+
+
+### 2026-10-13 本轮非生成收据
+
+| 范围 | 自然终态与验证边界 |
+| --- | --- |
+| U03角色原UI | v7：5 passed／0 skip／221.46s，1440／600、current／pinned／撤权／错误重试；API替身 |
+| U03正式准入与副本 | 3 passed／40.27s，独占MySQL已清理、真实MinIO原字节；声音已采用binding为可信夹具，未运行生成Worker |
+| U05 thinking | 首次工具红测4 failed／31 passed；修复后工具／文字306 passed／20.52s；新增HTTP／MySQL／MinIO 10 passed／48.53s，本机供应商HTTP替身 |
+| U07 ZIP | 原完全同名ZIP未拒绝先红，修复后4 passed／0 skip；中文／媒体原字节、规范化重名、越界及损坏 |
+| Node／来源 | 宿主219／画布544均passed、0 skipped；832文件／221适配／91删除 |
+
+日志均在`backend/.runtime/`：`u03-character-browser-root-v7.log`、`u03-character-runtime-root-v1.log/.xml`、`u05-tool-thinking-green-root-v1.log`、`u05-thinking-runtime-root-v2.log/.xml`、`u07-zip-green-root-v1.log`及`handoff-*-20261013-root-v3/v4.log`。失败记录保留，以上不关闭真实供应商、维护回填、同版用户部署、32ms性能或严格视觉门禁。
+
+## 2026-10-13 归档收尾与性能优先
+
+用户要求当前工作收尾后优先将画布打开、整理等性能尽量压低。U05全协议余项保留在表内，暂后置到性能工作之后；所有真实生成验收继续暂停，未调用免费或付费供应商。
+
+| 收尾项目 | 实际结果与边界 |
+| --- | --- |
+| 后端全量unit/API v5 | 3010 passed／0 skip／2 warnings／848.14s，自然OS0；不代表供应商 |
+| U06转写执行器 | 12 passed／10.98s，实际FFmpeg／WAV与受控HTTP，不代表ASR模型质量 |
+| 宿主ZIP导入账本 | 5 passed；账号隔离、同ZIP原计划恢复及损坏记录停止 |
+| 宿主正式归档 v7 | 开发／生产各失败；开发漏拦同项目创建，生产桥接导出被构建移除；原失败证据保留 |
+| 修复后正式归档 v8 | 2 passed／188.75s／1 warning／0 skip／自然OS0，开发1440、组合生产600；真实MySQL随机库和专属MinIO桶已清理 |
+| v8归档覆盖 | 原绘图笔画和并发版本冻结、跨账号图片／音视频原字节与库绑定、fresh会话编辑、三画布同组、第二画布回执丢失503后原键重放、第三画布续接、零DELETE、损坏ZIP写前拒绝 |
+| 两包build v8 | 自然OS0，生产桥接已保留全部导出；600只验证宿主归档对话框，画布媒体和绘图操作仍1440 |
+| CSS containment候选 | 1000节点／两端各3轮；viewport约50ms、world约50–66.6ms，均失败；未应用产品 |
+
+正式归档按用户“允许，仅用于隔离测试”授权，使用现有MySQL容器管理凭据仅在内存建立连接，未输出凭据、未写业务库或启停原15服务。日志：`backend/.runtime/u07-archive-runtime-root-v8.log/.xml`、`handoff-build-20261013-root-v8.log`；浏览器报告：`frontend/canvas/.runtime/archive-python-browser-root-v8/{development-1440,production-600}/report.json`。
+
+性能优化前U05固定源官方目录实核86个provider，当时14个ID有执行适配、72个仍待实现；性能收尾后已推进至32／54，详见文末本轮U05收据。源Manifest缺enabled字段默认为启用，不能将剩余协议记为源禁用；本轮thinking／Claude局部通过不关闭全协议任务。
+
+性能实施范围：扩展现有生产性能驱动，独立测开图、冷启动资源与长任务、原自动整理保存和撤销；先保存当前基线，再针对布局重复扫描、非当前功能的大依赖和缩放重布局做最小优化。100／1000／5000真实媒体矩阵与1000 drag／zoom p95≤32ms保持，源全部布局坐标及操作不变。
+
+
+### 2026-10-13 画布性能优化中间记录
+
+生成验收继续按用户要求暂停。性能基线与首次生产复测均保留在 `frontend/canvas/.runtime/u08-performance-root-v1/`，当前不能据候选或局部测试关闭 U08。
+
+- 首轮生产 1000 节点开图 1363.7→1168.6ms，初始资源 decoded 7,074,945→6,301,841 字节、transfer 1,987,220→1,744,066 字节；这两次各一场冷开，不是生产 SLA 或加载分位数。首次三规模完整复测 v1 中两轮缩放 p95 为33.3ms，32ms门槛仍失败；5000节点整理首帧342.6ms、保存1872.4ms。
+- 拓扑布局从逐层重扫与数组复制改为游标队列和一次分组，独立算法12组全部坐标与固定源相等。5000长链算法 p50 635.1→6.18ms；浏览器点击到首帧／保存尚须独立长链复测，不能将6.18ms写成整个整理操作耗时。
+- 原Markdown渲染器和表情3D预览按需加载；保留原Streamdown、GLB、表情和面板交互。两个真实浏览器加载／失败场景已通过，不代表供应商或3D像素质量。
+- 实时视口五个CSS属性仅同步实际消费者，逐帧不扫DOM、不读几何；纯文本变化不重收集，样式每个元素读取一次，只同步实际选区预览轮廓。完整快照和冻结提交仍返回副本；保存门禁改为轻量状态，避免克隆大图。
+- CSS作用域首版漏掉交互期React提交容器倍率，引发缩放后浮层对齐红测；已补同一提交的原继承值同步，DPR1／2、600／1440选区及浮层复测通过。新临时控件场景亦通过：原图／视频裁切、蒙版／标注、标题重命名、新增节点、选区当前倍率、卸载与重挂观察器。保留源世界变换，不修未经批准的源可见行为。
+- 最新两包build v3自然OS0；布局／视口／日记定向19场通过。当时正式生产v3、完整Node、5000长链及最终生产浏览器尚待收据；现已完成，结果见下方最终记录。
+
+证据：`backend/.runtime/u08-performance-{build,production}-root-v1.log`、`u08-performance-build-root-v3.log`、`u08-save-viewport-root-v2.log`、`u08-viewport-browser-root-v1/v2.log`、`u08-consumers-browser-root-v3/v4.log`。v1性能失败、浮层红测及测试夹具复位／选择器错误均保留；fixture修正不改变产品时机或原几何断言。没有新增供应商调用、DDL或服务重启。
+
+### 2026-10-13 画布性能最终收据（当前生产 v3）
+
+本轮已完成开图、整理、缩放与保存热点的产品优化和对应复测，**1000 节点拖拽／缩放 p95≤32ms 门槛已通过**。U08 的全角色部署、完整媒体／重型交互和泄漏矩阵仍开放，不能把本片写成完整迁移或绝对性能极限。所有真实生成验收继续暂停，唯一账本仍 8 次／40 秒。
+
+| 生产样本 | 开图 ms | 首次可交互 ms | 整理首帧 ms | 整理保存 ms | 拖拽 p95 三轮 ms | 缩放 p95 三轮 ms |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| 100 节点 | 1546.3 | 1605.4 | 111.7 | 294.9 | 16.8／16.8／16.8 | 33.3／16.8／16.8 |
+| 1000 节点 | 1169.1 | 1241.5 | 141.5 | 476.1 | 17.0／16.8／16.8 | 17.1／16.8／16.8 |
+| 5000 节点 | 1767.9 | 1834.4 | 173.8 | 946.2 | 16.8／16.8／16.8 | 16.8／16.8／16.8 |
+
+三规模每端各三轮，固定源与组合生产使用同一正式驱动，无运行时优化注入；真实 PNG 解码、MP4 播放、手势保存、原自动整理及撤销，全部整理坐标哈希、拖拽持久位置和最终视口相等，零未知路由／页面／HTTP／夹具错误，离页 video=0。100 节点第一轮缩放 33.3ms 原样保留；原 32ms 门槛只针对 1000 节点，不扩大为全规模每轮通过。各规模冷开仅一次，不是加载 p95／SLA。
+
+1000 节点优化前基线开图 1363.7ms、首次可交互 1454.9ms；当前初始资源 decoded 7,074,945→6,302,749 字节、transfer 1,987,220→1,744,246 字节。5000 无边图整理与首轮优化产物 v1 对比：首帧 342.6→173.8ms、保存 1872.4→946.2ms，约减半。5000 长链追加一轮：当前完整整理首帧 **329.2ms**、保存 **1409.6ms**；固定源参考为 670.2／1583.1ms，二者全坐标相等且完整撤销。该长链参考是固定源，不冒充优化前 Python 宿主基线；独立算法 635.1→6.18ms 的 p50 不冒充浏览器操作耗时。
+
+最终画布 Node **568 passed／0 skip／4.22s／OS0**，宿主承接 **219 passed／0 skip**，两包 build v3 **OS0**，source:check **832 文件／226 适配／91 删除**。生产入口五场 v4 **5 passed／0 skip／60.44s／OS0**，覆盖 DPR1／2、600／1440 选区与浮层、保存／撤权／409／助手；其中旧偏好注入子场仍使用独立开发服务。另有 Markdown／表情按需加载两场，以及实际图片／视频裁切、蒙版／标注、动态倍率、标题与观察器释放一场通过。此前生产 v3 的选区等待超时为 4 passed／1 failed，诊断场未复现；最终测试通过原图标定位点击等待稳定，不复用适合屏幕动画中的旧坐标，所有原几何／像素断言保留。
+
+证据位于 `frontend/canvas/.runtime/u08-performance-root-v1/{baseline,production-v1,production-v3,chain-v3}/report.json` 和 `backend/.runtime/u08-{performance-chain,host-production,canvas-node,source-check}-root-v3/v4.log`；文件名按实际运行选择。v1 的帧预算失败、浮层红测、生产 v3 选区超时及夹具错误不覆盖。完整复现与指标定义见 [性能说明](../performance.md)。本片未测 Python／业务 MySQL／跨网络部署延迟、GPU 呈现帧、Heap／GPU 泄漏及完整严格视觉；加载仍有长任务，不宣称全部成本清零。性能本片收尾后接续 U05 官方协议余项与后续产品实施。
+
+<a id="u05-compatible-chat-20261013"></a>
+
+### 2026-10-13 U05：十八个兼容 Chat 协议
+
+性能本片收尾后已接通固定源十八个完整合同相同的 Chat provider；身份和默认地址之外的参数、鉴权、请求及响应合同逐字段相等。实际只读统计：85 个包／86 个官方 provider，32 个 ID 有执行映射，54 个仍待实施，源 86 个均按默认 enabled=true；不能将尚未接通的项改称源禁用，32 也不是全部功能验收数。
+
+新增 `canvas_chat_protocols.py`，从本人已保存模型冻结协议及默认参数，仅带冻结标记的画布节点、独立模型测试和编辑器工具进入兼容分支。允许源的采样、token、结构化返回及 provider／transforms／extra_body 参数；本次仅自身 `metadata.providerOptions.<protocol>` 覆盖默认值，拒绝地址、模型、凭据和畸形命名空间。冻结的模型／消息、显式 stream、保存的能力门禁和 canonical 工具优先，普通 JSON 支持 text fallback 与私人 reasoning，SSE 仍要求闭合，截断保持 unknown。未增加 DTO、DDL 或依赖；原用户服务未重启，未做同版部署或供应商生成。
+
+| 验证 | 自然结果与边界 |
+| --- | --- |
+| 新协议初次红测 | 45 failed／1 passed，保留原日志 |
+| 参数边界红测 | 5 failed／56 passed，复现非法 protocol 和 False／[]／0 命名空间被忽略 |
+| 修复后相关 11 文件回归 | 453 passed／0 skip／63.28s／OS0，含 61 项新增合同与本机 HTTP 测试 |
+| 隔离集成 v1 | 2 setup errors，旧容器名不存在，未进业务测试 |
+| 隔离集成 v2／v3 | 各 2 failed；分别为测试误用返回字段、误用准入前私人投影基线，原日志保留 |
+| 隔离集成 v4 | 2 passed／0 skip／41.28s／1 warning／OS0，deepseek-chat／openrouter-chat；真实随机 MySQL、专属 MinIO、本机供应商 HTTP 替身 |
+| 后端全量当前版本 | v1：2981 passed／90 setup errors／812.08s／OS1，全部为系统 pytest 临时目录 WinError 5；v2 保持原断言、使用仓库独立 basetemp，3071 passed／0 skip／2 warnings／874.00s／自然 OS0 |
+
+全量 v1 关键栈：`_pytest/tmpdir.py:213 → _pytest/pathlib.py:175 → os.scandir(C:/Users/snow/AppData/Local/Temp/pytest-of-snow) → PermissionError [WinError 5]`。复现为不指定 `--basetemp` 的 `pytest tests/unit tests/api -q -p no:cacheprovider`；90 项均未进入测试。v2 全量已通过；仅改运行参数，将 `--basetemp` 指向仓库 `.runtime/u05-unit-api-<新UUID>`，启动前确认目录不存在，原产品、测试和断言不变。
+
+v4 实际覆盖旧默认参数在配置修改后仍冻结、两图真实原字节与顺序、共享图未变、执行未改变准入后私人投影、成员看不到本人任务／模型、快照无签名 URL、同键重放与重复执行不产生第二 POST。隔离入口成功退出时撤销临时授权并删除随机测试库；MinIO 夹具清理自己的桶。使用用户既有“允许，仅用于隔离测试”授权，不写业务库，不输出凭据，不启停现有服务。
+
+证据在 `backend/.runtime/u05-compatible-chat-{red,green,boundary-red,related,runtime,full-unit-api}-root-v1/v2/v3/v4.log/.xml`，按实际文件名选择。协议合同见[模型说明](../api/model-runtime.md#canvas-compatible-chat)与[画布说明](../api/canvases.md#canvas-compatible-chat)。全部真实生成继续暂停，账本保持 8 次／40 秒；U05 剩余 54 个协议、完整批次／取消／引用矩阵及后续 U06–U10 仍开放。
+
+<a id="paused-wrap-20261013"></a>
+
+## 2026-10-13 用户要求收尾暂停
+
+新增减包已写入两个导演数学源文件、源适配台账与互操作测试；主JS 4076.58→3375.17kB、gzip 1189.96→1010.82kB。画布572项、两包build v4及source832／228／91通过，无依赖／DDL／产品历史行为变更。
+
+生产v5只到100节点，整理51.5／185.9ms后撤销断言失败，1000／5000未执行。独立诊断确认固定源和目标均有180ms历史未落成时撤销上次拖拽的边界，历史完成后两端全部坐标恢复。正式驱动将客户端保存后的历史等待单独记录在 `history_settle_wait_ms`，首帧／保存计时、全部坐标／视口／提交次数及32ms门槛不变；语法检查通过，暂停前未启动修订驱动的新矩阵。
+
+已启动导演三场收齐：v1因缺Playwright浏览器全部失败；v2改用本机Chrome，**2 passed／1 failed／7 deselected／0 skipped／191.56s／OS1**。1440／600实际WebGL三视图、截图／永久资源、cookies恢复与成员权限通过；演员场 `verify-director-python.mjs:70` 等待画布20秒超时，未到演员业务验证。旧v3性能通过仅保留其版本范围。
+
+所有已启动验证均自然退出；未启动新矩阵／新产品任务。完整结果、关键栈和原件见[主交接本片收据](../2026-10-12-beeftv-functional-progress-handoff.md#u08-math-split-20261013)。任务现暂停，恢复后先收v4新矩阵与演员场，再接U05余54和U06–U10。全部真实生成继续暂停，唯一账本已记录8／40、总上限15／60；未写业务库、启停原服务或commit。

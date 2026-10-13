@@ -2,6 +2,8 @@
 
 命令按 Windows PowerShell 编写；除明确标注外，后端命令在 `backend/`、前端命令在 `frontend/` 执行。Linux/macOS 使用相同 uv/npm 命令，环境变量按对应 shell 设置。
 
+宿主项目页“画布导入导出”复用独立画布桥接：开发从`/canvas-app/src/services/host-archive-entry.ts`加载，统一生产构建输出`dist/canvas-app/host-archive.js`。两包build后再运行宿主preview；只构建标准模式不能提供生产归档桥接。原源项目库页面保持移除。
+
 ## 环境准备
 
 | 依赖 | 要求 |

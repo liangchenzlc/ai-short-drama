@@ -61,9 +61,9 @@ Agent 上下文使用 `modules/agents.ts`：附件上传/引用带幂等键，�
 
 角色目录及图片解析使用 [画布 API 合同](../../../docs/api/canvases.md#画布角色目录与表示图读取)。读取以可信画布 `source_key` 为入口，来源由服务端列决定；客户端图 `projectId`、query 或项目权限不能替代当前双项目、实际角色及媒体权限检查。
 
-先读取 `/canvas-runtime/canvas-projects/{source_key}/character-catalog` 或 `/{asset_id}`，保留返回的画布键/行版本、来源项目、角色 ID、`current_version_id` 和全部真实表示槽位。随后以同一版本请求 `/{asset_id}/image-resources?expected_version_id=...`；只支持 current，409 `canvas_character_version_changed` 需要重新读取并明确核对，不能静默升级或自动重试历史版本。全部 ID/版本保留十进制字符串，槽位按 `reference_id/role/ordinal/media_id` 保留，同媒体不同槽位不去重。
+先读取 `/canvas-runtime/canvas-projects/{source_key}/character-catalog` 或 `/{asset_id}`，保留返回的画布键/行版本、来源项目、角色 ID、`current_version_id` 和全部真实表示槽位。随后以同一版本请求 `/{asset_id}/image-resources?expected_version_id=...`；默认 current；精确历史详情用 `requested_version_id`，图片用 `version_policy=pinned`，返回 `version_id` 与当前指针分别保留。current 的409 `canvas_character_version_changed` 需要重新读取并明确核对，不能静默升级或自动重试历史版本。全部 ID/版本保留十进制字符串，槽位按 `reference_id/role/ordinal/media_id` 保留，同媒体不同槽位不去重。
 
-`types/canvas-character-images.ts` 保留服务端外层 snake_case 与现有资源投影的 `userId/mimeType/createdAt` 等别名。独立画布 `host-character-images.ts` 是纯 GET bridge；调用者须注入宿主统一 HTTP 客户端适配器并返回已解包正文，同时提供可信账号/画布上下文检查回调。bridge 在请求前后重核上下文，并比较画布版本、来源项目、角色、作品版本及全部槽位；当前没有 UI 调用或宿主客户端自动接线。
+`types/canvas-character-images.ts` 保留服务端外层 snake_case 与现有资源投影的 `userId/mimeType/createdAt` 等别名。独立画布 `host-character-images.ts` 是纯 GET bridge；调用者须注入宿主统一 HTTP 客户端适配器并返回已解包正文，同时提供可信账号/画布上下文检查回调。bridge 在请求前后重核上下文，并比较画布版本、来源项目、角色、作品版本及全部槽位；现已接入既有角色菜单、picker、详情与生成引用。
 
 使用返回的稳定 `resource_key` 和受鉴权 `file_path`，不保存临时签名 URL、Blob URL 或原 locator；MIME 使用真实响应，不硬编码 PNG。GET 不写数据库或对象，不创建版本、映射、任务或副本。resolver 不检查实际字节；下载端点重新鉴权并 stat/读取，缺对象返回404，读取失败须保留当前输入和就近反馈。
 
@@ -73,4 +73,13 @@ Agent 上下文使用 `modules/agents.ts`：附件上传/引用带幂等键，�
 
 无限画布的既有角色菜单、项目资产 picker 和详情通过宿主 HTTP 读取专用 `character-catalog` list/detail，再按相同当前版本读取 `image-resources`。角色目录映射为最小源角色 card，ID、版本和 row-version 保留十进制字符串；不伪造完整 `ProjectAsset` 或 `ProjectDetail`。无可信关联来源时就近显示错误，空目录不回退本人素材库。
 
-查询与确认重读核账号 epoch、画布 lifetime、source、row-version、角色 current 版本和全部表示槽位。图片 resolver 提供真实稳定 resource 身份；首次图保存沿现有 normalizer 复制封面，串行 journal/CAS 回执与 reload 确认持久化。同版本刷新保留已核的复制封面和本人私人 prompt/voice，旧响应不覆盖新输入。当前 UI 范围不含 pinned、声音绑定/生成、角色生成或生成引用；API 夹具与单元测试不等于真实 DB、MinIO、供应商或一比一验收。
+查询与确认重读核账号 epoch、画布 lifetime、source、row-version、角色 current 版本和全部表示槽位。图片 resolver 提供真实稳定 resource 身份；首次图保存沿现有 normalizer 复制封面，串行 journal/CAS 回执与 reload 确认持久化。同版本刷新保留已核的复制封面和本人私人 prompt/voice，旧响应不覆盖新输入。pinned 详情与角色生成引用已接入；声音只读取宿主当前已采用样音，保留独立绑定版本，TTS 音色不由样音伪造；API 夹具与单元测试不等于真实 DB、MinIO、供应商或一比一验收。
+
+声音公共投影 `voice_status/voice_sample` 与版本冻结详见[画布角色样音合同](../../../docs/api/canvases.md#固定角色版本与已采用样音2026-10-13)。关闭原生声音功能时为 unavailable，启用而无绑定为 missing；ready 仅表示真实已采用样音存在，不表示任意TTS协议可用。
+
+
+## 画布文字 thinking 与工具范围
+
+普通文字及固定编辑器工具的`input.textOptions.thinking`必须为布尔值，且本人已保存配置的`runtime_profile.capability_config.text.thinking`严格为true。Chat、Responses、Claude沿固定源转换各自参数；Gemini thinking拒绝。能力在准入冻结，配置后改和同键恢复不能改变原任务。Claude普通图片已接永久资源引用，视频拒绝；Gemini普通多模态仍拒绝。
+
+审美阶段prepare／approve／execute沿同一能力门禁；thinking不授予旧执行型助手权限。工具结果和reasoning仍本人可见，不直接改共享图。合同与实际受控测试范围见[画布文字引用及工具请求](../../../docs/api/canvases.md#画布文字图片引用)。真实生成验收按当前用户指令全部暂缓。

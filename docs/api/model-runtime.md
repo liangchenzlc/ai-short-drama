@@ -146,3 +146,19 @@ API Key 沿既有服务端加密配置保存，公开目录和浏览器仅接收
 结果/增量，stale/current送达均不重发。使用任务独占执行器
 和自然150秒有效租约，不代表正式Agent Worker/AMQP或同版八角色部署。
 本片没有数据库结构或依赖变更，完整迁移和正式部署仍按各自门禁核验。
+
+<a id="canvas-compatible-chat"></a>
+
+### 画布兼容 Chat 协议
+
+固定源以下十八个 provider 的完整声明式合同相同，已接入 `openai_chat.v1`：
+
+`atlascloud-chat`、`baichuan-chat`、`deepseek-chat`、`fireworks-chat`、`groq-chat`、`kimi-chat`、`litellm-proxy-chat`、`localai-chat`、`mistral-chat`、`newapi-chat`、`nvidia-nim-chat`、`openrouter-chat`、`siliconflow-chat`、`together-chat`、`vllm-chat`、`xai-grok-chat`、`yi-chat`、`zhipu-glm-chat`。
+
+本人保存 `service_type=text`、`api_format=openai` 和确切 `protocol`。画布节点、独立模型测试及编辑器工具冻结 `canvas_text_protocol` 与 `canvas_text_defaults`；后改配置不改变已受理任务。路由和鉴权只取冻结服务地址与加密凭据，地址支持 origin、`/v1`、完整 `/chat/completions` 和网关前缀。
+
+允许 `temperature/top_p/max_tokens/tools/tool_choice/response_format/stream/provider/transforms/extra_body`，从 `default_options` 读取，再由本次 `input.metadata.providerOptions.<确切协议>` 覆盖。未知字段、其他协议命名空间、非法类型、模型／地址／凭据覆盖拒绝；显式 `textOptions.stream`、保存的能力及冻结模型／消息优先。编辑器工具保留 canonical 的 tools／choice／response_format，协议参数不能替换它们；thinking 仍经过已有保存能力门禁。
+
+源族使用 `max_tokens` 且不额外加入 `stream_options`。非流正文读 `choices.0.message.content`，为空时兼容 `choices.0.text`；`reasoning_content` 仅进入本人的 reasoning，usage 单独保存。明确 JSON `error.code` 为失败；畸形返回或截断流保持 unknown，不自动重新提交。秘密、工具定义和临时签名 URL 不进入公开 resolved 参数。
+
+上述为执行合同与本机 HTTP／隔离 MySQL／MinIO 验证，未代表供应商接受全部参数、媒体或工具。2026-10-13 官方目录 86 个 provider 中32个有映射、54个仍待实施；全部真实生成验收按用户最新指令暂停。

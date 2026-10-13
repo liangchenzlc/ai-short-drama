@@ -2,8 +2,42 @@
 
 > 整理日期：2026-10-12。功能与验收终态快照：北京时间 16:56 左右。
 > 用途：接手人读完本文件即可确定现状、找到代码、了解调用授权并开始下一步；链接用于追溯证据。
-> 整体状态：**仍在实施，尚未达到完整一比一迁移的完成条件。**
-> 本次整理仅新增本文件，没有执行生成请求、扩额、部署、DDL、测试或修改产品代码。
+> 整体状态：**已按用户要求暂停，完整一比一迁移尚未完成。**
+> 2026-10-12 初次整理仅新增本文件；2026-10-13 的实施与验证另记在下面的暂停交接和阶段收据中。
+
+<a id="paused-handoff-20261013"></a>
+
+## 暂停交接（2026-10-13，用户要求收尾）
+
+用户最新指令：“现在开始收尾当前工作，把已完成的工作写在交接文档，然后可以先停止任务”。已收齐本轮启动的验证，不再启动新实施、性能矩阵或生成请求；任务暂停，等待用户明确接续。
+
+| 工作 | 暂停时状态 |
+| --- | --- |
+| U03 角色及来源 | current／pinned、角色版本、已采用样音冻结及资源归一化已实施；正式任务／真实 MinIO 复制等验证已记录。旧角色 backfill 被 active／unknown 预检阻止，未写业务库 |
+| U05 兼容 Chat | 十八个协议已接通；官方执行映射 32／86，仍余 54。相关 453 项、隔离集成 2 项和后端全量 3071 项通过；均非真实供应商验收 |
+| U07 归档 | 正式归档两场通过，包含跨账号字节与三画布 unknown 原键续接；外媒体、HEVC 和物理清理仍开放 |
+| U08 历史生产 v3 | 三规模性能矩阵已通过，1000 节点 drag／zoom p95 为 16.8～17.1ms；5000 整理首帧／保存为 173.8／946.2ms。仅属 v3 证据 |
+| U08 新增减包 v4 | 导演数学改用同版 Three 明确导出的源码入口；主 JS 4076.58→3375.17kB，gzip 1189.96→1010.82kB。572 项画布测试、两包 build v4 和 source 832／228／91 通过 |
+| v4 验证边界 | 生产复测 v5 在 100 节点整理撤销处失败，未到 1000／5000；源与目标均复现早撤销边界，历史落成后均恢复全部坐标。导演 v2 为 2 passed／1 failed，演员场在开画布等待超时，不能记全部通过 |
+
+当前减包后的版本**没有完成新的三规模性能矩阵**，不沿用 v3 的 32ms 结果代替。已修订正式驱动的历史就绪等待，并单独记录等待时间；按本次暂停指令，尚未用该驱动启动下一轮。详情见[本轮减包与撤销收据](#u08-math-split-20261013)、[接续执行表](plans/2026-10-13-beeftv-functional-execution.md)。
+
+所有真实生成（包括免费 Agnes）继续暂停，唯一账本保持已记录的 8 次／40 秒、总上限 15／60；本轮没有供应商调用、业务库写入、DDL、服务重启或 commit。MySQL 管理凭据仍仅获授权用于随机隔离测试，不输出凭据。保留全部既有未提交改动和原失败证据；恢复时先完成 v4 待验项，再按表接续 U05 余项及 U06–U10。
+
+## 最新进度更新（2026-10-13，主代理实际核验）
+
+> 以下为本次收尾前的实施记录；当前状态以顶部“暂停交接”为准。
+
+目标仍为 U01–U10、R01–R24 与 M0–M5 完整交付。 **此前实施指令：先跳过生成验收步骤，标记当前进度，继续完成 U03 及后续步骤实施。生成验收暂缓，原失败与阈值保留；继续产品实现和本地／权限／并发／持久化验证。**[本轮执行表](plans/2026-10-13-beeftv-functional-execution.md)记录步骤、状态及关闭证据。
+
+- 原“视频 +10000 z-index 已修复且集成通过”结论撤回：算法读取正式节点不允许的顶层 content；旧测试未覆盖真实服务。现恢复按源 nodes 数组保存层序，并修复成员重排后同会话 ORM 缓存返回旧顺序；真实 MySQL 首次两场复现失败，修复后与 workspace 合跑 17 passed。
+- AO 已在 2026-10-12 实际运行失败，非待执行：JUnit 1 test／1 failure／0 errors／0 skipped，649.11s；成员共享作品播放与私人批次隐藏已到达，Python check_stage:924 因 1038×576 比例超过原 <0.02 阈值失败。后补 preparation 与旧 baseline／manifest UUID 不同，原件不改、不重跑。
+- 原 15 服务的 PID／启动时间仍一致，无需重新启动。两来源 clean；固定视觉来源 HEAD=4ca2a65a7780a8dfcaaa86c33679f84fb04e055c，日常来源目录 HEAD=ef65732bff5ee99019664ca8689608b1c7831cbb，分别记录。
+- 用户本轮明确确认：“确认 15 次／60 秒总上限，允许新轮最多两次各 5 秒”。唯一真实账本准备时为 6 reservations／30 秒，两份历史扩额及证据 SHA 已实核；本轮不扩额、不退款、不改旧记录。 **AP 终态账本实核累计8次／40秒，全部response，恰新增2次／10秒，旧六条与两份扩额审计不变；未提交第三次。**
+- AP 已自然结案：OS1／JUnit 1 test、1 failure、0 errors、0 skipped／1 warning／415.10s。两图及两视频各一次 POST200，作者／fresh cookies／成员两视频共六次真实播放、两图六次解码及28条私人／外人权限检查到达。Python check_stage:924 实际比例失败：1038×576，差0.02430555555555558超过<0.02；完整后置与acceptance未到。按最新指令不继续生成验收，不改失败或门槛。
+- 节点序修复版本的完整后端复跑为2944 passed／2 warnings／778.66s；原2936 passed／8包装器失败保留。U03 新媒体旧 identity 三场先红；修复后的正式现有 RR 模块＋新增五场合计16 passed／13.22s、0 skipped；角色相关单测213 passed／1 warning／137.56s。全仓Ruff check通过、format831 files already formatted。U03 Media 修复后的完整unit/API已收自然OS0：2944 passed／2 warnings／747.22s、0 skipped；该结果不含随后新增的 pinned 实施。
+
+不以这些局部结果宣布完整迁移；供应商、内容、后置与资源清理结论须等待新轮终态。
 
 ## 目录
 
@@ -58,7 +92,7 @@
 | 候选未应用 | 仅隔离候选、实验或测试包；不能当作当前产品行为 |
 | 暂缓／替代／范围外 | 分别表示暂不验收、用户改变需求、当前无需交付；不得写成已完成 |
 
-**当前重点：** ModelHub 新凭据有效，两视频已经生成；分镜四媒体整体验收仍未过。R19 新图片上传不可用恢复单场通过。R22 两版完整性能矩阵均未达到 32ms；viewport 候选未应用。R23 可见行为候选仍未经批准，完整源视觉门禁未关闭。
+**2026-10-12 快照重点：** ModelHub 新凭据有效，两视频已经生成；分镜四媒体整体验收仍未过。R19 新图片上传不可用恢复单场通过。当时 R22 两版完整性能矩阵均未达到 32ms，viewport 候选未应用。2026-10-13 生产 v3 的性能门槛已过；随后新增减包 v4 尚未完成三规模复测，详见顶部暂停交接。R23 可见行为候选仍未经批准，完整源视觉门禁未关闭。
 
 ### 1.4 M0–M5 总阶段
 
@@ -240,29 +274,37 @@
 
 ### U01. 分镜真实四媒体完整验收（最高优先级，R10）
 
-- [ ] 核对ModelHub `minimax-h3` 最新官方比例／480p／模式合同，查明两视频1038×576来源；原16:9容差不变。
-- [ ] 恢复图片→视频顺序，或使用源正常升层交互，使成员可以真实点击视频播放；不force click、不改共享坐标。
-- [ ] 新独占轮完成两图＋两视频的原Table操作、来源保存、原／fresh cookies恢复、重复不新增与稳定绑定。
-- [ ] 成员实际播放两视频并解码两图片，同时维持私人Task／Asset不可见、外人资源拒绝。
-- [ ] 实际执行Python `check_graph`／`check_stage`、MySQL记录／结果／绑定、MinIO与供应商原字节SHA对应、精确尺寸／时长与输出元数据。
-- [ ] 完成HTTP／cache／HEAD／Range后置、duplicate／stale AMQP无第二POST、最终图与媒体不变性及acceptance。
-- [ ] 对原视频连续观看和必要帧／音频复核，验证固定镜头及缓慢转动；现有九点静帧不能证明全部内容。
-- [ ] 记录自然终态、原失败／警告／JUnit实际数值和精确资源清理范围；不重跑冻结AN包、不修改旧失败结果。
-- [ ] 补其余两宽度、动作板／首帧／角色版本／异常及完整成对对照。单个新轮通过也不等于R10整体完成。
+**用户已要求跳过生成验收。当前暂缓，以下未通过项仍开放，不再安排新生成请求；工作转入 U03 及以后实施。**
+
+- [x] 核对 ModelHub 最新公开目录：minimax-h3 接受 16:9、480p、5–15 秒及 omni_reference／first_last_frames；渠道能力可能不同。1038×576 官方原因仍未闭合，比例 <0.02 不变。
+- [x] 恢复源数组层序，撤回无效 +10000 算法；正式 MySQL 保存／重排／旧 ORM identity 刷新／私人草稿／409 回归通过。
+- [x] AP 静态门禁、授权、新 UUID／4313、57 文件 current baseline 已冻结，不沿用混用 AO 元数据。
+- [x] AP 两图→两视频原 Table 操作、来源保存、原／fresh cookies 恢复、重复不新增与稳定绑定已到；仅该1440切片，整轮失败保持。
+- [x] AP 成员真实播放两视频、解码两图，私人 Task／Asset 不可见与外人拒绝已到，28条权限检查。
+- [ ] Python check_graph／check_stage、MySQL／MinIO／供应商原字节 SHA、尺寸／时长与元数据全部后置。
+- [ ] HTTP／cache／HEAD／Range、duplicate／stale AMQP 无第二 POST、最终图媒体不变性及 acceptance。
+- [ ] 连续内容观看与帧／音频复核：固定镜头、缓慢转动不能由静帧推断。
+- [x] AP 自然终态及精确资源回查已记录；原collector缺reconciliation失败保持，另立资源只读核验通过，不补造数据库终态；AN／AO不改。
+- [ ] 其余宽度、动作板／首帧／角色版本／异常与完整成对对照；单轮不关闭完整 R10。
 
 ### U02. 新增付费视频次数的预算落地（调用前置）
 
-- [ ] 审查已准备的扩额候选，确认旧授权、原policy及四条reservation完整保留。
-- [ ] 在唯一真实账本中以事务记录新增五次授权；只扩次数，暂不扩累计声明秒数。
-- [ ] 核对扩额实际收据后绑定新预算观察器，不能改冻结AN或直接绕过门禁。
-- [ ] 首轮最多两次各5秒，已有20秒＋本轮10秒，累计声明≤30秒；任何失败／unknown都继续计数。
-- [ ] 每次调用前重新读取最新账本和实际授权，不依据本文的静态剩余额度直接调用。
+- [x] mode=ro 实核唯一账本：policy=15 POST／60 秒；新轮前六条 reservation／30 秒，全部 response；v1／v2 扩额授权、policy、reservations 的证据 SHA 均一致。
+- [x] 最新用户确认“确认 15 次／60 秒总上限，允许新轮最多两次各 5 秒”覆盖本文件原第 7 节旧 30 秒限制；本轮未执行新扩额／初始化／复制／清零。
+- [x] AP 每次 BEGIN IMMEDIATE 核对冻结旧六条、policy、schema、两份扩额审计及授权 SHA；累计 8／40 为本轮附加门禁，全局仍 15／60。
+- [x] 预算隔离测试 15 passed：第三次、同键、重复派发、unknown 后续发送、错误模型／分辨率／时长及证据／历史／schema 篡改拒绝；真实账本只读 SHA 不变。
+- [x] AP 终态实核8次／40秒、全部response；新增恰2次／10秒，失败不退款，第三次未提交。按最新用户指令暂缓生成验收。
+
+初次 AP 授权文件因主代理漏设 PowerShell UTF-8 而使中文原句变问号，额度字段与门禁完整；正确原文已独立补记并绑定冻结文件 SHA，未覆盖 AP 原件。补记位于 .runtime/beeftv-functional-handoff-20261013-root-v1/ap-authorization-confirmation-utf8-supplement.json。
 
 ### U03. 角色、来源与版本发布剩余项（R10）
 
-- [ ] 完成尚未正式应用的角色菜单／UI接线与共享发布后续方案；候选通过不自动成为产品实现。
-- [ ] 当前目录／图片resolver只支持current；pinned、声音、角色媒体生成引用及所需冻结规则分别补验。
-- [ ] 完成完整既有Media共享锁→排他锁、cached identity刷新、dirty publication及真实调用链并发；不由RR25案或正常七案推断全覆盖。
+- [x] current角色目录／原菜单／详情与共享发布已正式应用；本轮核对UI18应用收据及当前正常调用链，不重复应用历史候选。
+- [x] 新补cached Media当前读取：详情／目录／类型拒绝／dirty字段历史／实际版本append及显式S→X锁等待切片通过；正式现有RR＋新五场合计16 passed。该切片不扩大为全部publication或多调用链并发覆盖。
+- [x] 已实施 pinned 精确历史详情／图片读取与共享发布，current 竞争仍拒绝409、缺失历史不回落；角色生成引用按已保存节点冻结真实版本、定义与媒体槽位到本人任务。
+- [x] pinned HTTP／角色相关142场通过，pinned＋声音＋既有RR／Media真实MySQL21场通过；已采用样音公共投影与独立binding版本冻结已接线，不读取私人任务／生成记录，不以样音冒充供应商TTS voiceKey。
+- [x] pinned／current／撤权／图片错误恢复原UI浏览器5场通过；正式任务准入与真实MySQL／MinIO角色图片、已采用样音副本组合3场通过，未运行生成Worker。最终后端全量仍在收尾，21场历史结果不扩大为全部复制／供应商链。
+- [ ] 继续完整既有Media及dirty publication、多角色／共享回填调用链并发；本轮已补正常详情入口显式先S后X，实观测S GRANTED／X WAITING，但不覆盖其余全部调用链。
 - [ ] 旧角色backfill／可信来源映射须走维护流程：停旧写者、核无active／unknown、显式迁移、数据verify、同版部署；不补造项目关联。
 - [ ] 019已做结构、未做数据回填；不能重复执行已存在DDL或写成角色完整升级结束。
 - [ ] 验证有质量的真实角色图片。37×19颜色夹具只能证明身份与字节链。
@@ -282,7 +324,8 @@
 
 ### U05. 协议与完整生成矩阵（R03–R08）
 
-- [ ] Claude／Gemini纯文字已完成有限切片；多模态、thinking、tools及其他引用分别验，不继续按旧文档“纯文字未实施”重做。
+- [x] 固定源十八个兼容 Chat 协议已接通，完整合同全等；当前官方执行映射 32／86，剩余 54。453 项相关回归与两场真实随机 MySQL／MinIO、本机 HTTP 集成通过，非供应商验收；[本轮详细收据](#u05-compatible-chat-20261013)。
+- [x] 普通Chat／Responses／Claude文字及编辑器工具已接保存能力门禁的thinking；Claude普通图片引用已接永久资源与执行期签名URL。四协议工具已实施，Gemini普通多模态／thinking及Claude视频按固定源能力拒绝。工具与文字定向306场、正式HTTP／MySQL／MinIO新增10场通过；均非真实供应商验收。
 - [ ] Responses图片真实成功仍待验；最终拒绝UI已通过，不降低失败判断或按返回400宣称成功。
 - [ ] 全部模型协议的输入引用、结构化产物、批次调度／逐项重试、取消、版本／历史、unknown与恢复完整对照。
 - [ ] 真实音频供应商、其他付费供应商、企业登录授权暂缓，需新增明确授权后执行。
@@ -299,7 +342,8 @@
 
 ### U07. 导入导出、离线媒体与生命周期（R17／R19／R20）
 
-- [ ] ZIP重新导入、外部媒体归一化、更多节点／子文档组合、跨账号传递／并发与回执恢复。
+- [x] ZIP解压在文件被覆盖前拒绝完全同名与规范化重名路径，真ZIP字节／中文往返、损坏及越界4场通过。
+- [ ] ZIP原UI重新导入、外部媒体归一化、更多节点／子文档组合、跨账号传递／并发与回执恢复继续核验。
 - [ ] 源隐藏Toast相关可见反馈缺口，保留源边界与用户已授权改变，不掩盖失败。
 - [ ] HEVC固定源成对与兼容副本、其他编码／浏览器／平台／异常。
 - [ ] 新图片上传恢复只关闭1440／PNG／immediate／upload-unavailable单场；其余立即图片、更多媒体／政策／并发继续。
@@ -313,7 +357,8 @@
 - [ ] 当前API／scheduler／text／image／video／audio／render／agent同版用户部署；既有三角色助手部署或测试栈不代替。
 - [ ] 100／1000／5000节点，真实不同媒体、首次创建、分页、节点打开／播放／时间线／导演重型交互。
 - [ ] Worker／ObjectURL／缓存／进程等完整泄漏与生命周期检查。
-- [ ] **1000节点拖拽／缩放p95≤32ms**。最新zoom全部超标，viewport候选不应用、不降门槛。
+- [x] **历史生产 v3 的1000节点拖拽／缩放p95≤32ms**。v3三轮drag为17.0／16.8／16.8ms、zoom为17.1／16.8／16.8ms，自然OS0；不代替新增减包版本的验证，不关闭完整U08。原失败候选和32ms阈值保留。
+- [ ] 新增减包 v4 的三规模生产矩阵、生产入口回归及演员视频验证；本次按用户要求暂停，失败及接续入口见[收据](#u08-math-split-20261013)。
 - [ ] 继续定位真实渲染／样式／媒体解码成本；源参考同样高不能证明唯一目标根因。
 
 ### U09. 视觉差异与未批准候选（R23）
@@ -330,6 +375,17 @@
 - [ ] 外部工作流／内置插件全部可达正常／关键异常与成对视觉；真实企业／付费项继续按授权。
 - [ ] 所有范围内源启用项逐项通过，标准模式回归、共享／私人回归、源码／依赖／配置同步。
 - [ ] 逐条关闭R01–R24剩余条目；不能以构建、哈希、测试替身或局部技术通过宣布M0–M5完成。
+
+
+### 2026-10-13 U03 接续进度（生成验收暂缓）
+
+pinned／角色生成引用实施已进入当前产品代码，不是隔离候选。后端新增精确历史快照与 typed 版本引用；目录详情的 `version_id` 表示实际返回版本，`current_version_id` 仍表示真实当前指针。前端角色解析改走宿主可信目录，传递画布与来源项目上下文，拒绝缺失关联和在途版本变化。未改变 ORM、DDL、依赖或标准模式采用规则。
+
+最新定向验证：pinned／HTTP角色相关142 passed；声音／pinned／API33 passed；pinned＋样音＋既有RR／Media真实MySQL21 passed、0 skipped。角色接续当时画布Node540、宿主219均通过且0 skipped，两包构建OS0。最新ZIP接续后画布544／宿主219均通过且0 skipped，source:check通过（832文件、221适配、91删除）；角色浏览器5场通过，正式准入及真实图片／样音复制3场通过。随后新增thinking及ZIP的最终两包构建和后端全量仍在收尾。上述结果不代表供应商、真实媒体质量或完整U03完成。
+
+旧库数据回填仅执行默认只读预检：在 backend 运行 `.tools/uv/uv.exe run --locked --no-sync python -B scripts/backfill_asset_versions.py` 自然 OS1，关键栈 `backfill_asset_versions.py:213 → backfill:83 → _require_no_active_writers:51`，`ValueError: ai_generation_records 仍有活动或未知任务；停止写入后再维护`。未写业务数据、未绕过门禁、未清除历史 unknown、未重复019 DDL。日志 `backend/.runtime/u03-business-backfill-readonly-20261013.log`；同版部署／维护回填仍受阻，其他实施继续。
+
+声音已复用已有 `CharacterVoice`／`NativeVoiceService` 的已采用样音与本人候选边界：只投影已发布、有效scope／定位／SHA／时长的样音；pinned角色仍读取当前已采用声音，binding版本独立冻结，竞争409。生成选中的角色图／样音经宿主归一化复制到画布，声音声明保留原采用身份并验证实际副本来源。没有重建整站声音页面或新增DDL，不读取私人生成记录／配置；独立TTS仍要求供应商音色。后续生成验收全部暂缓，包括免费 Agnes；预算终态仍为8次／40秒，原失败和门槛保留。
 
 <a id="checkpoints"></a>
 
@@ -393,13 +449,30 @@ verifyMedia:698:70 → driver:1376:61
 - task／model POST均0，不是供应商验收。原20guard、15服务、两源保持；仅4397absence和原MySQL cleaned日志，未补完整存活树／全资源absence。
 - 该成功场不用无理由重复；继续缺失的相邻矩阵。
 
-### 4.4 新增五次授权正在准备，不能预记为已执行
+### 4.4 AO 旧终态复核与 AP 新轮（2026-10-13）
 
-截至本文件取证时，主线程已有 `.runtime/modelhub-budget-extension-root-v1/` 扩额候选、原账本baseline与10／30计划，并出现AO新准备目录。这里没有取得真实扩额apply或AO真实运行终态收据，**只能记为准备中**。
+AO 旧 live.log／receipt.json 为 2026-10-12 实际终态 OS1，JUnit 1 test／1 failure／0 errors／0 skipped，649.11s；check_stage:924 的 abs(width / height - 16 / 9) < 0.02 实际差 0.02430555555555558。两个供应商原件再次 ffprobe 均为 1038×576、24fps、124 帧、format 5.167s，SHA 分别 6087c1d4b9537fc3ddade9614ec0b47a6c33e8e5e546645def25ba0ed70aa66c 与 571d686052717ae5faf8bf4ac44837c7a134e90f9d9e10c60c291df0a92bf65e，字节与门槛未改。浏览器 step=complete、member_shared_works_private_batch_hidden=true；Python 比例失败后未到后置不能算通过。
 
-本文件不启动、审批、应用或接管这些主线程任务。接手人先核对最新实际收据，再决定下一步；不存在终态收据时不得补造“已扩额／已生成／已通过”。
+新 AP 目录 .runtime/modelhub-storyboard-media-ap-v8-preparation-v1；控制器 .runtime/modelhub-ap-root-live-control-v1；先图后视频，4313，新 UUID／57 当前文件／原 15 服务／两来源已冻结。manifest SHA=32a9139b9b3aab3b59b99f6cf2721c41aea5c4d78d1b349d072b8b68b086b840。预算本轮最多 2×5s，真实运行已启动，尚不预写通过。
 
-<a id="files"></a>
+### 4.5 AP 自然结案与最新工作切换
+
+AP 四次供应商生成 POST 均200（两次免费 Agnes 图片、两次 minimax-h3／480p／声明各5秒），四任务API READY。单次自然OS1／JUnit 1 test、1 failure、0 error、0 skip／1 warning／415.10s，关键stack：
+
+    test_canvas_agnes_storyboard_media_broker_live_v8.py:1236 → check_stage:924
+    assert abs(media.width / media.height - 16 / 9) < 0.02
+    E assert 0.02430555555555558 < 0.02
+    E width=1038, height=576
+
+复现：原Table保存三行并仅选择两行，先图片后视频，关闭运行窗口、仅cookies恢复，成员打开共享图实际播放；浏览器complete后Python检查首条视频尺寸失败。未force click、改坐标、放宽比例或转码；两视频原SHA分别693df35ec0004456086caa17785325c423fabc3d278e478db7c4419865650037、5c73b803d3be5eb4c12e03289468f56ba416fc6684fd8c592f7b8aff1e827a32，尺寸均1038×576、124帧／24fps、5.167s。
+
+原collector因没有失败后的原reconciliation而停在资源查询前，原failed收据保持。另立资源专用只读核验通过：捕获36个测试进程实例已不在、精确MySQL fullID／name不存在、4313／58310／64431无监听、11队列／2交换机／三桶不存在；原15服务、两来源、该次57产品基线保持。只证明该捕获范围，不补造业务数据库终态。
+
+两视频全帧解码OS0，原字节不改；主代理实看全部按时序排列的124帧和两图。红视频桌面背景变化，固定镜头未证明；蓝圆柱转动缺可辨识线索，蓝图左边缘有额外灰色结构；内容不记通过，未将全帧contact称实时连续观看。
+
+实际终态见 .runtime/beeftv-functional-handoff-20261013-root-v1/ap-terminal-review.json，SHA=ca6ec6a60830e771262095352ac147d11c584c8d79d1eba96b704588afe07740；资源专用收据SHA=ecb583d21d4ca76be6f1dd371f85e8aeb412440a53b3e1e74c90fef09a5fd2ab。AP预算终态8／40，旧六条／两审计不变。
+
+最新用户要求：“先跳过生成验收步骤，先在交接文档上标记当前工作的进度，随后跳过当前步骤，完成U03及之后的步骤实施”。据此暂缓所有新生成验收，接续U03产品实现、协议／工具／媒体／导入导出／性能／视觉等后续实施及非供应商验证；所有原未过生成项保留未完成。
 
 ## 5. 新增、修改及删除文件范围
 
@@ -408,6 +481,29 @@ verifyMedia:698:70 → driver:1376:61
 整理前实际读取 `git status --short`：**1858条状态记录，其中1492条已跟踪变更、366条未跟踪记录**。默认Git会把部分未跟踪目录汇总，因此这不是1858个唯一新增／修改文件，也不能据此断言全部变更由本次任务产生。
 
 工作区原有大量未提交内容必须保留。以下是当前迁移主线的改动范围与实现入口；vendor／来源文件的换行或哈希变化不能按数量当成功能数量。本次交接整理仅新增本Markdown。
+
+**2026-10-13 更新：Step 1-3 新增文件**
+
+| 目录／文件 | 说明 |
+| --- | --- |
+| `backend/src/short_drama/service/canvas_service.py` | 已修改：新增 `_calculate_node_z_index()` 函数（L758-785） |
+| `backend/tests/unit/test_canvas_node_z_index.py` | 新增：z-index 逻辑单元测试 |
+| `backend/tests/unit/test_canvas_z_index_integration.py` | 新增：z-index 集成测试 |
+| `docs/canvas-z-index-fix.md` | 新增：z-index 修复文档 |
+| `.runtime/modelhub-budget-extension-v2/` | 新增目录：v2 预算扩额 |
+| `.runtime/modelhub-budget-extension-v2/authorization-evidence.json` | 新增：用户授权证据 |
+| `.runtime/modelhub-budget-extension-v2/modelhub_budget.py` | 新增：v2 扩额预算逻辑 |
+| `.runtime/modelhub-budget-extension-v2/extend_budget.py` | 新增：扩额执行脚本 |
+| `.runtime/modelhub-storyboard-media-ao-v8-preparation-v1/` | 新增目录：AO 轮次准备 |
+| `.runtime/modelhub-storyboard-media-ao-v8-preparation-v1/manifest.json` | 新增：AO 轮次元数据 |
+| `.runtime/modelhub-storyboard-media-ao-v8-preparation-v1/preparation.json` | 新增：AO 准备记录 |
+| `.runtime/modelhub-storyboard-media-ao-v8-preparation-v1/baseline.json` | 新增：代码身份基线（49 文件） |
+| `.runtime/modelhub-storyboard-media-ao-v8-preparation-v1/test_*.py` | 复制并修改：测试文件（AN→AO） |
+| `.runtime/modelhub-storyboard-media-ao-v8-preparation-v1/run.py` | 复制并修改：启动脚本 |
+| `.runtime/modelhub-storyboard-media-ao-v8-preparation-v1/README.md` | 新增：AO 轮次说明 |
+| `.runtime/modelhub-storyboard-media-ao-v8-preparation-v1/STEP3-COMPLETED.md` | 新增：Step 3 完成总结 |
+| `.runtime/modelhub-storyboard-media-ao-v8-preparation-v1/STEP4-STATUS.md` | 新增：Step 4 执行状态报告 |
+| `backend/.runtime/modelhub-minimax-h3-budget-20261012.sqlite3` | 已修改：账本扩额至 15 posts / 60 seconds |
 
 ### 5.2 按文件夹汇总当前范围
 
@@ -482,29 +578,27 @@ verifyMedia:698:70 → driver:1376:61
 
 <a id="next"></a>
 
-## 6. 接下来应完成的工作顺序
+## 6. 暂停后的接续顺序
 
-| 顺序 | 工作与输入 | 完成后可进入下一步的条件 |
+任务已按用户要求暂停；下表供明确恢复工作后使用，不自动开始执行。生成验收继续暂缓，原 2026-10-12 的 AO／扩额执行顺序不再是当前计划；预算以第 7 节最新 15／60 授权及已用 8／40 为准。
+
+| 顺序 | 接续工作 | 完成条件与限制 |
 | --- | --- | --- |
-| 0 | 核对当前Git、主线程新收据、15原服务、两源HEAD／clean、真实账本；确认是否已有人继续AO | 不覆盖已有修改、不双开同轮、不复用旧PID／端口／基线；授权与实时额度明确 |
-| 1 | 读取正式adapters／ModelHub单测及官方合同，定位1038×576比例问题；核固定镜头／转动内容 | 参数使用有文档依据；不能预判通过，不能降比例阈值或转码掩盖 |
-| 2 | 审查并落地新增五次预算扩额，保留旧4次／20秒及授权审计 | 唯一账本事务完成且回读正确，次数上限按新授权、声明秒仍≤30 |
-| 3 | 完成AO或其他新独占验收包；恢复image→video或源正常升层，全部原断言与未知重投门禁保留 | 新UUID／端口／日志目录／manifest／产品基线；本地／静态检查通过；旧AN不修改 |
-| 4 | 首轮两次各5秒／480p真实视频，通过正式API→Worker→供应商；图片使用授权免费模型 | 按实际供应商及应用自然终态记录，所有POST含失败计预算；unknown立即停止重提 |
-| 5 | 完成成员播放、连续内容查看、MySQL／MinIO／原字节／HTTP／Range／AMQP／不变性全部后置 | 仅实际执行通过的范围结案；精确资源清理收据与旧证据保持 |
-| 6 | 收角色UI／发布／完整RR并发、backfill与可信首帧余项 | 先闭合代码／数据依赖门禁；维护／部署不凭测试夹具或结构DDL自动跳过 |
-| 7 | 定位R22真实缩放成本并验证最小性能修改；保留source／target同机100／1000／5000矩阵 | 正式1000drag／zoom≤32ms、行为／几何／媒体／保存无退化，候选实际通过后再按权限应用 |
-| 8 | 收R09表情内容失败及其他独立工具、R17／R19／R20／R21剩余矩阵 | 已绿场不无理由重跑；逐项输入／协议／宽度／异常与可见结果有证据 |
-| 9 | 在同版本用户环境核全部角色、配置、broker、媒体、可信HTTPS来源 | 不擅自启停原用户服务；测试栈与用户部署分开记 |
-| 10 | 闭合R23可见差异边界，完成R24全量M0–M5及标准／共享私人回归 | 所有范围内启用项通过、无未经接受的界面／流程偏差，才能声明完整迁移 |
+| 0 | 核对本次暂停收据、Git 状态和已启动测试终态 | 保留未提交改动；核实实际来源／监听和唯一预算，不复用旧进程或自动启动生成 |
+| 1 | 用修订后的正式性能驱动复测当前 v4 产物 | 100／1000／5000、各三轮；原 1000 drag／zoom p95≤32ms、全部坐标／视口／保存次数断言保持；历史等待单独计量 |
+| 2 | 当前生产入口与演员视频补验 | 沿原 UI；先定位演员场开图 20 秒超时，不以两场 render_views 通过替代；不把开发浏览器验证说成生产产物验收 |
+| 3 | U08 重型交互、完整媒体和泄漏矩阵 | 实际 Heap／GPU／Worker／ObjectURL 等生命周期检查、全部子文档／撤权并发及同版全角色部署仍开放 |
+| 4 | U05 剩余 54 个官方协议与 thinking／tools／批次取消／引用矩阵 | 逐项核固定源合同；实际执行映射数不等于供应商能力验收数；生成暂停期间仅做授权的实施和隔离验证 |
+| 5 | U03 回填和 U06–U10 余项 | active／unknown 下不写 backfill；媒体质量、外媒体／HEVC／物理清理、严格视觉、工作流和总交付按执行表逐项关闭 |
+| 6 | 用户明确恢复后的真实生成验收 | 本次没有恢复授权；免费或付费均不自动调用、不重投 unknown、不改比例／视觉／性能门槛 |
 
-步骤6–8中互不依赖的本地工作可并行安排；所有付费POST共用一份预算。遇到供应商不可用可继续授权范围内独立事项，不能反复制造或重投unknown。
-
-每个真实轮结束后更新四份主维护文件：实施记录、接续交接、剩余工作、统一分镜媒体审计；同时按实际新状态更新本文件。旧失败保持原结论，新结果单列，不改写历史。
+详细进度与证据见[接续执行表](plans/2026-10-13-beeftv-functional-execution.md)。完整 U01–U10、R01–R24 与 M0–M5 不因暂停或阶段通过而关闭。
 
 <a id="models"></a>
 
 ## 7. 模型调用指令、授权与额度规则
+
+**当前所有真实生成均暂停，任务也已按用户要求暂停。**下面保留的历史模型与额度授权不代表可以自动恢复调用；当前账本已记录 8／40，总上限 15／60。
 
 ### 7.1 用户授权的时间顺序
 
@@ -515,8 +609,12 @@ verifyMedia:698:70 → driver:1376:61
 | 3 | Agnes视频不可用时，ModelHub `minimax-h3`／480p，最多五次，五次总生成时长≤30s，可分配每次时长 | 只授权该备用视频模型；原总次数5、累计声明秒30，所有轮次共用账本 |
 | 4 | 两次401后用户提供新的API Key并说“重新试试看” | 服务端加密凭据已更新，主密钥保持；两旧401仍计2次／10秒，不退款 |
 | 5 | “我允许你再调用五次视频生成模型” | 新增五次调用授权，准备把次数上限5→10；**未明确增加秒数，仍保留累计声明≤30s** |
+| 6 | 本轮“确认 15 次／60 秒总上限，允许新轮最多两次各 5 秒” | 当前全局 15／60，AP 限 2／10，覆盖旧 30 秒累计限制 |
+| 7 | “先跳过生成验收步骤” | 所有真实生成，包括免费 Agnes，继续暂停 |
+| 8 | “允许，仅用于隔离测试” | 本机 MySQL 管理凭据只用于随机测试库，不写业务库、不输出凭据、不启停原服务 |
+| 9 | “把已完成的工作写在交接文档，然后可以先停止任务” | 收齐已启动验证并写交接后暂停；不自动实施剩余任务 |
 
-主代理已经向用户承诺：新增授权首轮先两次各5秒，480p，总声明时长保持原30秒以内。五次新增授权不要求全部耗尽；模型最短5秒且当前仅剩10声明秒，不能据新增次数自行扩至60秒。
+本轮最新确认已明确覆盖原 30 秒累计限制：“确认 15 次／60 秒总上限，允许新轮最多两次各 5 秒”。AP 只用 minimax-h3／480p，各声明 5 秒，最多两次；失败和 unknown 仍计数，本轮不再扩额。
 
 ### 7.2 允许使用的模型与官方入口
 
@@ -535,16 +633,16 @@ verifyMedia:698:70 → driver:1376:61
 
 ### 7.3 预算实时值与安全扩额
 
-本文件依据已存在的AN终态与扩额baseline，未直接查询真实SQLite：
+本轮已以只读方式查询唯一真实 SQLite：
 
-| 项目 | 最后可追溯数值 |
+| 项目 | AP 开始前实际值 |
 | --- | --- |
-| 已计POST | 4次：AH两次401＋AN两次200，均各声明5s |
-| 已计声明时长 | 20s |
-| 原policy | max_posts=5、max_seconds=30 |
-| 原policy剩余 | 1次／10s；不能据此直接开展需要两次的新轮 |
-| 新授权候选policy | max_posts=10、max_seconds=30，apply尚无终态证据 |
-| 扩额后按该快照 | 次数账面可剩6，秒数仍只剩10；本轮5s任务最多再做两次 |
+| 全局 policy | max_posts=15、max_seconds=60，两份历史扩额审计保持 |
+| 已计 POST／声明秒 | 六条 reservation／30 秒，均 response，旧失败不退款 |
+| 本轮最新授权 | minimax-h3／480p，最多两次各声明 5 秒 |
+| AP 附加事务门禁 | 累计不得超过 8 次／40 秒，本轮最多新增 2／10 |
+| AP 终态实核 | 8 reservations／40秒，全部response；不退款，未提交第三次；生成验收按用户最新指令暂缓 |
+| 剩余额度 | 仅供审计；本轮第三次未授权，不自动重试 |
 
 预算规则：
 
@@ -729,3 +827,112 @@ verifyMedia:698:70 → driver:1376:61
 | 新增五次预算准备 | [授权证据](../.runtime/modelhub-budget-extension-root-v1/authorization-evidence.json)、[扩额计划](../.runtime/modelhub-budget-extension-root-v1/real-ledger-extension-plan.json)，不代表apply成功 |
 
 `.runtime`证据仅在当前机器留存，换机或清理后可能不存在；本文件已写明结论、关键输入、失败位置、额度与下一步，不要求先读所有历史审计才能接手。需要复验时保留缺失证据事实、重新建立独立基线，不能伪造原日志或旧通过。
+
+
+### 2026-10-13 本轮非生成收据
+
+| 范围 | 自然终态与验证边界 |
+| --- | --- |
+| U03角色原UI | v7：5 passed／0 skip／221.46s，1440／600、current／pinned／撤权／错误重试；API替身 |
+| U03正式准入与副本 | 3 passed／40.27s，独占MySQL已清理、真实MinIO原字节；声音已采用binding为可信夹具，未运行生成Worker |
+| U05 thinking | 首次工具红测4 failed／31 passed；修复后工具／文字306 passed／20.52s；新增HTTP／MySQL／MinIO 10 passed／48.53s，本机供应商HTTP替身 |
+| U07 ZIP | 原完全同名ZIP未拒绝先红，修复后4 passed／0 skip；中文／媒体原字节、规范化重名、越界及损坏 |
+| Node／来源 | 宿主219／画布544均passed、0 skipped；832文件／221适配／91删除 |
+
+日志均在`backend/.runtime/`：`u03-character-browser-root-v7.log`、`u03-character-runtime-root-v1.log/.xml`、`u05-tool-thinking-green-root-v1.log`、`u05-thinking-runtime-root-v2.log/.xml`、`u07-zip-green-root-v1.log`及`handoff-*-20261013-root-v3/v4.log`。失败记录保留，以上不关闭真实供应商、维护回填、同版用户部署、32ms性能或严格视觉门禁。
+
+### 2026-10-13 当前优先级与归档收尾
+
+用户要求生成验收全部暂停，当前工作收尾后优先优化打开画布、整理画布等性能。U03之后各步骤的已实施／未闭合项继续见[执行表](plans/2026-10-13-beeftv-functional-execution.md)，U05剩余全协议任务暂后置，未关闭全部迁移。
+
+后端全量v5已自然终态：3010 passed／0 skip／848.14s；U06转写12 passed／10.98s仅为真实FFmpeg和受控HTTP。宿主项目页已接回ZIP导入导出，开发1440／组合生产600正式归档v8为2 passed／188.75s／自然OS0：真实随机MySQL和专属MinIO、跨账号图音视频与绘图笔画、并发版本冻结、fresh编辑、三画布同组及第二项回执丢失后的原键恢复／第三项续接、零DELETE、损坏ZIP写前拒绝。宿主600对话框无横向溢出；画布操作仍1440，不代表完整窄屏验收。
+
+v7的两处失败已保留：测试遗漏同项目画布创建接口、生产构建丢失桥接导出；修复后两包build v8与正式归档v8均自然OS0。用户已明确允许MySQL管理凭据仅用于隔离测试；凭据只在内存连接、未输出，随机测试库及桶已清理，业务库与原服务未改。
+
+优化前1000节点缩放p95约50ms，viewport／world的layout containment两候选均无收益、未应用。当前生产v3已在不降低32ms阈值的条件下通过1000节点门槛，并完成开图／资源／长任务和真实整理测量；完整结果及剩余边界见下方最终收据。性能优化前U05目录86个provider中14个ID有执行适配、72个待实施；性能收尾后已推进至32／54，见文末U05收据。源缺enabled字段默认启用，不能改称禁用。
+
+证据：`backend/.runtime/handoff-unit-api-20261013-root-v5.log/.xml`、`u06-transcription-runtime-root-v1.log/.xml`、`u07-archive-attempt-root-v1.log`、`u07-archive-runtime-root-v8.log/.xml`、`handoff-build-20261013-root-v8.log`；`frontend/canvas/.runtime/archive-python-browser-root-v8/`。生成账本仍8次／40秒，未新增调用。
+
+
+### 2026-10-13 画布性能优化中间记录
+
+生成验收继续按用户要求暂停。性能基线与首次生产复测均保留在 `frontend/canvas/.runtime/u08-performance-root-v1/`，当前不能据候选或局部测试关闭 U08。
+
+- 首轮生产 1000 节点开图 1363.7→1168.6ms，初始资源 decoded 7,074,945→6,301,841 字节、transfer 1,987,220→1,744,066 字节；这两次各一场冷开，不是生产 SLA 或加载分位数。首次三规模完整复测 v1 中两轮缩放 p95 为33.3ms，32ms门槛仍失败；5000节点整理首帧342.6ms、保存1872.4ms。
+- 拓扑布局从逐层重扫与数组复制改为游标队列和一次分组，独立算法12组全部坐标与固定源相等。5000长链算法 p50 635.1→6.18ms；浏览器点击到首帧／保存尚须独立长链复测，不能将6.18ms写成整个整理操作耗时。
+- 原Markdown渲染器和表情3D预览按需加载；保留原Streamdown、GLB、表情和面板交互。两个真实浏览器加载／失败场景已通过，不代表供应商或3D像素质量。
+- 实时视口五个CSS属性仅同步实际消费者，逐帧不扫DOM、不读几何；纯文本变化不重收集，样式每个元素读取一次，只同步实际选区预览轮廓。完整快照和冻结提交仍返回副本；保存门禁改为轻量状态，避免克隆大图。
+- CSS作用域首版漏掉交互期React提交容器倍率，引发缩放后浮层对齐红测；已补同一提交的原继承值同步，DPR1／2、600／1440选区及浮层复测通过。新临时控件场景亦通过：原图／视频裁切、蒙版／标注、标题重命名、新增节点、选区当前倍率、卸载与重挂观察器。保留源世界变换，不修未经批准的源可见行为。
+- 最新两包build v3自然OS0；布局／视口／日记定向19场通过。当时正式生产v3、完整Node、5000长链及最终生产浏览器尚待收据；现已完成，结果见下方最终记录。
+
+证据：`backend/.runtime/u08-performance-{build,production}-root-v1.log`、`u08-performance-build-root-v3.log`、`u08-save-viewport-root-v2.log`、`u08-viewport-browser-root-v1/v2.log`、`u08-consumers-browser-root-v3/v4.log`。v1性能失败、浮层红测及测试夹具复位／选择器错误均保留；fixture修正不改变产品时机或原几何断言。没有新增供应商调用、DDL或服务重启。
+
+### 2026-10-13 画布性能最终收据（当前生产 v3）
+
+本轮已完成开图、整理、缩放与保存热点的产品优化和对应复测，**1000 节点拖拽／缩放 p95≤32ms 门槛已通过**。U08 的全角色部署、完整媒体／重型交互和泄漏矩阵仍开放，不能把本片写成完整迁移或绝对性能极限。所有真实生成验收继续暂停，唯一账本仍 8 次／40 秒。
+
+| 生产样本 | 开图 ms | 首次可交互 ms | 整理首帧 ms | 整理保存 ms | 拖拽 p95 三轮 ms | 缩放 p95 三轮 ms |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| 100 节点 | 1546.3 | 1605.4 | 111.7 | 294.9 | 16.8／16.8／16.8 | 33.3／16.8／16.8 |
+| 1000 节点 | 1169.1 | 1241.5 | 141.5 | 476.1 | 17.0／16.8／16.8 | 17.1／16.8／16.8 |
+| 5000 节点 | 1767.9 | 1834.4 | 173.8 | 946.2 | 16.8／16.8／16.8 | 16.8／16.8／16.8 |
+
+三规模每端各三轮，固定源与组合生产使用同一正式驱动，无运行时优化注入；真实 PNG 解码、MP4 播放、手势保存、原自动整理及撤销，全部整理坐标哈希、拖拽持久位置和最终视口相等，零未知路由／页面／HTTP／夹具错误，离页 video=0。100 节点第一轮缩放 33.3ms 原样保留；原 32ms 门槛只针对 1000 节点，不扩大为全规模每轮通过。各规模冷开仅一次，不是加载 p95／SLA。
+
+1000 节点优化前基线开图 1363.7ms、首次可交互 1454.9ms；当前初始资源 decoded 7,074,945→6,302,749 字节、transfer 1,987,220→1,744,246 字节。5000 无边图整理与首轮优化产物 v1 对比：首帧 342.6→173.8ms、保存 1872.4→946.2ms，约减半。5000 长链追加一轮：当前完整整理首帧 **329.2ms**、保存 **1409.6ms**；固定源参考为 670.2／1583.1ms，二者全坐标相等且完整撤销。该长链参考是固定源，不冒充优化前 Python 宿主基线；独立算法 635.1→6.18ms 的 p50 不冒充浏览器操作耗时。
+
+最终画布 Node **568 passed／0 skip／4.22s／OS0**，宿主承接 **219 passed／0 skip**，两包 build v3 **OS0**，source:check **832 文件／226 适配／91 删除**。生产入口五场 v4 **5 passed／0 skip／60.44s／OS0**，覆盖 DPR1／2、600／1440 选区与浮层、保存／撤权／409／助手；其中旧偏好注入子场仍使用独立开发服务。另有 Markdown／表情按需加载两场，以及实际图片／视频裁切、蒙版／标注、动态倍率、标题与观察器释放一场通过。此前生产 v3 的选区等待超时为 4 passed／1 failed，诊断场未复现；最终测试通过原图标定位点击等待稳定，不复用适合屏幕动画中的旧坐标，所有原几何／像素断言保留。
+
+证据位于 `frontend/canvas/.runtime/u08-performance-root-v1/{baseline,production-v1,production-v3,chain-v3}/report.json` 和 `backend/.runtime/u08-{performance-chain,host-production,canvas-node,source-check}-root-v3/v4.log`；文件名按实际运行选择。v1 的帧预算失败、浮层红测、生产 v3 选区超时及夹具错误不覆盖。完整复现与指标定义见 [性能说明](performance.md)。本片未测 Python／业务 MySQL／跨网络部署延迟、GPU 呈现帧、Heap／GPU 泄漏及完整严格视觉；加载仍有长任务，不宣称全部成本清零。性能本片收尾后接续 U05 官方协议余项与后续产品实施。
+
+<a id="u05-compatible-chat-20261013"></a>
+
+### 2026-10-13 U05：十八个兼容 Chat 协议
+
+性能本片收尾后已接通固定源十八个完整合同相同的 Chat provider；身份和默认地址之外的参数、鉴权、请求及响应合同逐字段相等。实际只读统计：85 个包／86 个官方 provider，32 个 ID 有执行映射，54 个仍待实施，源 86 个均按默认 enabled=true；不能将尚未接通的项改称源禁用，32 也不是全部功能验收数。
+
+新增 `canvas_chat_protocols.py`，从本人已保存模型冻结协议及默认参数，仅带冻结标记的画布节点、独立模型测试和编辑器工具进入兼容分支。允许源的采样、token、结构化返回及 provider／transforms／extra_body 参数；本次仅自身 `metadata.providerOptions.<protocol>` 覆盖默认值，拒绝地址、模型、凭据和畸形命名空间。冻结的模型／消息、显式 stream、保存的能力门禁和 canonical 工具优先，普通 JSON 支持 text fallback 与私人 reasoning，SSE 仍要求闭合，截断保持 unknown。未增加 DTO、DDL 或依赖；原用户服务未重启，未做同版部署或供应商生成。
+
+| 验证 | 自然结果与边界 |
+| --- | --- |
+| 新协议初次红测 | 45 failed／1 passed，保留原日志 |
+| 参数边界红测 | 5 failed／56 passed，复现非法 protocol 和 False／[]／0 命名空间被忽略 |
+| 修复后相关 11 文件回归 | 453 passed／0 skip／63.28s／OS0，含 61 项新增合同与本机 HTTP 测试 |
+| 隔离集成 v1 | 2 setup errors，旧容器名不存在，未进业务测试 |
+| 隔离集成 v2／v3 | 各 2 failed；分别为测试误用返回字段、误用准入前私人投影基线，原日志保留 |
+| 隔离集成 v4 | 2 passed／0 skip／41.28s／1 warning／OS0，deepseek-chat／openrouter-chat；真实随机 MySQL、专属 MinIO、本机供应商 HTTP 替身 |
+| 后端全量当前版本 | v1：2981 passed／90 setup errors／812.08s／OS1，全部为系统 pytest 临时目录 WinError 5；v2 保持原断言、使用仓库独立 basetemp，3071 passed／0 skip／2 warnings／874.00s／自然 OS0 |
+
+全量 v1 关键栈：`_pytest/tmpdir.py:213 → _pytest/pathlib.py:175 → os.scandir(C:/Users/snow/AppData/Local/Temp/pytest-of-snow) → PermissionError [WinError 5]`。复现为不指定 `--basetemp` 的 `pytest tests/unit tests/api -q -p no:cacheprovider`；90 项均未进入测试。v2 全量已通过；仅改运行参数，将 `--basetemp` 指向仓库 `.runtime/u05-unit-api-<新UUID>`，启动前确认目录不存在，原产品、测试和断言不变。
+
+v4 实际覆盖旧默认参数在配置修改后仍冻结、两图真实原字节与顺序、共享图未变、执行未改变准入后私人投影、成员看不到本人任务／模型、快照无签名 URL、同键重放与重复执行不产生第二 POST。隔离入口成功退出时撤销临时授权并删除随机测试库；MinIO 夹具清理自己的桶。使用用户既有“允许，仅用于隔离测试”授权，不写业务库，不输出凭据，不启停现有服务。
+
+证据在 `backend/.runtime/u05-compatible-chat-{red,green,boundary-red,related,runtime,full-unit-api}-root-v1/v2/v3/v4.log/.xml`，按实际文件名选择。协议合同见[模型说明](api/model-runtime.md#canvas-compatible-chat)与[画布说明](api/canvases.md#canvas-compatible-chat)。全部真实生成继续暂停，账本保持 8 次／40 秒；U05 剩余 54 个协议、完整批次／取消／引用矩阵及后续 U06–U10 仍开放。
+
+<a id="u08-math-split-20261013"></a>
+
+### 2026-10-13 收尾：导演数学减包、撤销边界与暂停
+
+本片产品只调整 `director-scene.ts`、`director-stage-transform.ts` 的 Three 导入入口，保留同步创建、数学函数和全部持久坐标；已核实安装的 Three 0.185.1 明确导出 `./src/*`，源码及类型存在。新增数学／渲染器互操作测试，源适配台账同步。未修改产品历史 Hook、标准前端依赖或生成流程。
+
+| 验证 | 实际自然结果／边界 |
+| --- | --- |
+| 数学依赖红测 | 首次 1 failed／2 passed，复现同步引入完整 Three 渲染入口 |
+| 画布完整 Node v4 | 572 passed／0 skipped／4368.0481ms／OS0，含舞台矩阵、相机、旋转、骨骼插值和颜色标签对照 |
+| 两包 build v4 | 自然 OS0，含类型检查；主 JS 4076.58→3375.17kB（减少约17.2%），gzip 1189.96→1010.82kB（约15.1%），不等于总首屏网络字节 |
+| source:check v4 | 832 文件／228 适配／91 删除，OS0 |
+| 新生产启动 v4 | FFmpeg 不在 PATH，`spawnSync ffmpeg ENOENT`；未形成测量结果。随后使用旧基准媒体，两文件 SHA 与 v3 相同 |
+| 新生产复测 v5 | 自然 OS1；100节点目标开图995.7ms、首次交互1053.4ms，整理首帧51.5ms／保存185.9ms；源／目标整理全坐标哈希相等、错误通道为空，但目标撤销全部原坐标断言失败。未到1000／5000；不是完整矩阵通过或加载分位数 |
+| 早撤销独立诊断 | 固定源与目标各一场，均撤销上一次拖拽；整理180ms计时器未完成即被撤销清除。诊断观察计时器，不用于正式性能预算 |
+| 历史落成独立诊断 | 两端均恢复全部原坐标，诊断自然 OS0；不替代正式三规模矩阵 |
+| 正式驱动调整 | 先记录首帧／保存耗时，再等待客户端原保存状态、双rAF及源180ms历史窗口；新增 `history_settle_wait_ms`／`undo_contract`。原坐标／视口／提交次数与32ms断言保持，`node --check`已通过；调整后未启动新矩阵 |
+| 导演实际 WebGL v1 | 3 failed／7 deselected／32.28s／OS1；Playwright缺浏览器可执行文件，业务场景未进入 |
+| 导演实际 WebGL v2 | 显式使用已安装Chrome；2 passed／1 failed／7 deselected／0 skipped／15 warnings／191.56s／OS1。1440／600的beauty／depth／normal、永久截图、cookies恢复及成员权限后置通过；actor-video-1440开图等待20秒超时，未到演员业务场景 |
+
+生产 v5 关键栈：`measure-performance.mjs:331 → assert.deepEqual(read.layout(), previousLayout)`；node-0期待 `(298.37340398085877,273.89503604631017)`，实际回到上一轮拖拽前的 `(207.9867050421872,240.00000000000003)`。源／目标受控诊断均复现该历史边界；不据此修未经批准的源可见行为，也不把新的历史等待说成早撤销已修复。
+
+导演 v2 关键栈：`verify-director-python.mjs:70 → open → locator('[data-canvas-viewport]').waitFor → Timeout 20000ms exceeded`。复现使用 `RUN_CANVAS_RESOURCE_MINIO=1`、`RUN_CANVAS_BROWSER_INTEGRATION=1`、`RUN_CANVAS_TIMELINE_FFMPEG=1`、有效Chrome路径及仓库独立basetemp，通过 `scripts/benchmark_database.py --docker-container ai-short-drama-deps-mysql-1 -- tests/integration/test_canvas_director_browser.py -k 'render_views or (actor and 1440)' -q -p no:cacheprovider`；随机MySQL／专属MinIO，无供应商任务。整体OS1和演员未验边界保留，未在暂停指令后另行复跑。
+
+原件：`frontend/canvas/.runtime/u08-performance-root-v1/{production-v5,history-early-v1,history-settled-v1}/report.json`；`backend/.runtime/u08-{canvas-node,source-check,performance-build}-root-v4.log`、`u08-performance-production-root-v4/v5.log`、`u08-history-early/settled-root-v1.log`、`u08-director-math-root-v1/v2.log/.xml`（按实际文件名选择）。本轮启动的进程已自然退出；未重启用户服务、写业务库、执行DDL、供应商请求或commit。后端最后全量仍为兼容Chat片的3071 passed，宿主Node仍为219项既有通过。
+
+**暂停后的首项**：定位演员开图超时，并使用修订后的正式驱动完成 v4 三规模矩阵／生产入口回归；完整泄漏、重型交互、部署、剩余54协议和U06–U10仍开放。v3的既有通过不覆盖v4；不宣称性能已达绝对极限或完整迁移。参见[性能说明](performance.md#u08-math-split-paused-20261013)。

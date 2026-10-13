@@ -2201,3 +2201,23 @@ AN两视频新凭据POST200并完成下载，两图成功，四任务READY，作
 R22v3复用历史owned产物，新构建码null；两版各完整54组，均0/1/0、frame_budget_failed。1000节点zoom before91.8/116.7/108.4ms，candidate91.7/166.8/100.2ms，32ms未达；compare0仅受控parity，viewport候选未应用。R19新1440/PNG/immediate/upload-unavailable首次父目录缺失setup1error/13.51s保留，新目录重跑实际 **OS0/1passed/0skip/1warning/48.75s**；首次和刷新API转发0、Ctrl+S同键恰1，原文件/像素/永久身份/权限/媒体后置通过，model0，不当供应商或完整R19。原20guard/15服务/两源前后保持、4397absence/MySQL cleaned已到，不称完整资源树证明。
 
 原件、stack与边界见[统一媒体审计](2026-10-11-beeftv-agnes-storyboard-media-broker-audit.md#modelhub-an-r22v3-r19unavailable-current)、[AN终态](../../.runtime/modelhub-an-root-terminal-review-v2.json)、[R19终态](../../.runtime/r19-pending-image-unavailable-live-root-v2/root-terminal.json)。本片产品/DDL/依赖未新增；完整媒体/32ms/同版部署/可信公网首帧/R23/独立音频企业与R10/M0–M5/一比一继续开放。
+
+<a id="2026-10-13-ap-role-media-current"></a>
+
+## 2026-10-13 接续：AP 原比例失败；生成验收暂缓，转入 U03 后续实施
+
+用户最新指令要求先在交接标记当前进度，跳过生成验收，完成U03及后续实施；生成验收现暂缓，原失败／阈值／unknown规则保留。完整执行表见[本轮执行表](2026-10-13-beeftv-functional-execution.md)。
+
+AP 单次真实1440自然 **OS1／1 failed／0 skipped／1 warning／415.10s**，JUnit 1 test、1 failure、0 errors、0 skipped。两图及两视频各一次POST200，四任务API READY、作者／fresh cookies／成员视频共六次真实播放和图片六次解码、28条权限检查到达；Python首条视频check_stage:924实际失败于1038×576，abs(width/height−16/9)=0.02430555555555558超原<0.02。未改坐标／force click／阈值或转码，第二视频及最终HTTP／duplicate-stale AMQP／不变性／acceptance后置未到，不能记整体通过。
+
+账本实际由6／30增至 **8 reservations／40声明秒**，新增恰2×5秒、全部response；唯一ledger的policy15／60、旧六条和两份扩额审计保持。原AN／AO不重跑，第三次不提交，历史34unknown不重投。
+
+原collector缺原reconciliation自然失败保持；额外资源专用回查通过，仅证明捕获36进程实例、精确MySQL fullID/name、三监听端口、11队列/2交换机、三桶不存在及原15服务/两来源/该次57产品文件保持，不补造数据库终态。两视频原件全帧解码各124帧OS0；contact全帧实看不等于实时连续观看，固定镜头、蓝圆柱转动和蓝图边缘额外灰物仍不记内容通过。
+
+本轮恢复源nodes数组顺序保存，并修复同会话重读旧ProjectCanvas／CanvasNode identity；真实MySQL先2红、修后顺序＋workspace17绿。旧复制算法／搜索源码的假z-index集成测试撤回。节点序版本完整后端复跑2944 passed／2warnings／778.66s。
+
+U03已核current角色菜单／UI18／共享发布正式应用；不重复历史候选。新真实MySQL三场复现媒体cached identity：旧名称／37×19及非图片类型被旧缓存掩盖。AssetVersionDAO锁内当前媒体读取由版本服务与目录DAO共用，刷新干净列，保留dirty字段历史；新五场＋当前正式RR模块合计 **16 passed／0 skipped／13.22s**，角色相关单测 **213 passed／137.56s**；显式共享锁后走正常详情入口实观测S GRANTED／X WAITING。初次该新增锁场的内部int/JSON字符串断言写错而失败，已修正测试，同时验证JSON十进制字符串；原失败不当产品失败。仍不扩大为全部publication／S→X多调用链矩阵。
+
+全仓Ruff check通过、format831文件通过；U03媒体新修复后的最终全unit/API正在执行，前一版2944不替代新全量。无ORM/DDL/HTTP/依赖/标准模式改动，未commit。pinned／声音／完整角色媒体引用、可信旧回填、同版部署、R22≤32ms及R23未批准可见行为仍按完整表接续。
+
+原件：[AP结案](../../.runtime/beeftv-functional-handoff-20261013-root-v1/ap-terminal-review.json)、[AP原JUnit](../../.runtime/modelhub-storyboard-media-ap-v8-preparation-v1/junit.xml)、[原collector失败](../../.runtime/modelhub-storyboard-media-ap-v8-root-final-resource-review-v1/receipt.json)、[资源独立回查](../../.runtime/modelhub-storyboard-media-ap-v8-resource-only-readback-root-v1/receipt.json)、[全帧解码](../../.runtime/modelhub-ap-full-frame-review-root-v1/receipt.json)、[内容限定结论](../../.runtime/modelhub-ap-full-frame-review-root-v1/manual-contact-review.json)、[角色正式RR](../../backend/.runtime/character-media-rr-complete-20261013-root-v1.xml)。
