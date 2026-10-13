@@ -1,5 +1,7 @@
 import { nanoid } from "nanoid";
-import { Color, Euler, Quaternion } from "three";
+import { Color } from "three/src/math/Color.js";
+import { Euler } from "three/src/math/Euler.js";
+import { Quaternion } from "three/src/math/Quaternion.js";
 
 import type { DirectorBoneKeyframe, DirectorBoneTrack, DirectorCamera, DirectorGroup, DirectorHumanoidBone, DirectorKeyframe, DirectorKeyframeDeleteTarget, DirectorKeyframeEasing, DirectorLight, DirectorObject, DirectorPose, DirectorQuat, DirectorScene, DirectorTransform, DirectorVec3 } from "@/types/director";
 import { DIRECTOR_DEFAULT_GROUND } from "@/lib/canvas/director/director-ground";

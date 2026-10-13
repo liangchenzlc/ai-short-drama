@@ -58,8 +58,9 @@ export function layoutCanvasFlow(nodes: CanvasNodeData[], connections: CanvasCon
     const queue = nodes.filter((node) => !inbound.get(node.id)).map((node) => node.id);
     const layerById = new Map<string, number>();
     queue.forEach((id) => layerById.set(id, 0));
-    while (queue.length) {
-        const id = queue.shift()!;
+    let queueIndex = 0;
+    while (queueIndex < queue.length) {
+        const id = queue[queueIndex++]!;
         const layer = layerById.get(id) || 0;
         outbound.get(id)?.forEach((target) => {
             layerById.set(target, Math.max(layerById.get(target) || 0, layer + 1));
@@ -75,23 +76,30 @@ export function layoutCanvasFlow(nodes: CanvasNodeData[], connections: CanvasCon
     const top = Math.min(...nodes.map((node) => node.position.y));
     const result = new Map<string, Position>();
     const layers = [...new Set(layerById.values())].sort((a, b) => a - b);
+    const layerWidths = new Map<number, number>();
+    const stacksByLane = new Map<CanvasLayoutLane, Map<number, CanvasNodeData[]>>();
+    // 一次分组保留源泳道、层内输入顺序，避免长链逐层扫描和宽层反复复制数组。
+    nodes.forEach((node) => {
+        const layer = layerById.get(node.id) || 0;
+        layerWidths.set(layer, Math.max(layerWidths.get(layer) ?? -Infinity, node.width));
+        const lane = canvasLayoutLane(node);
+        let stacks = stacksByLane.get(lane);
+        if (!stacks) { stacks = new Map(); stacksByLane.set(lane, stacks); }
+        const stack = stacks.get(layer);
+        if (stack) stack.push(node);
+        else stacks.set(layer, [node]);
+    });
     const layerX = new Map<number, number>();
     let x = left;
     layers.forEach((layer) => {
-        const layerNodes = nodes.filter((node) => layerById.get(node.id) === layer);
         layerX.set(layer, x);
-        x += Math.max(...layerNodes.map((node) => node.width)) + FLOW_COLUMN_GAP;
+        x += layerWidths.get(layer)! + FLOW_COLUMN_GAP;
     });
 
     let laneTop = top;
     LANE_ORDER.forEach((lane) => {
-        const laneNodes = nodes.filter((node) => canvasLayoutLane(node) === lane);
-        if (!laneNodes.length) return;
-        const stacks = new Map<number, CanvasNodeData[]>();
-        laneNodes.forEach((node) => {
-            const layer = layerById.get(node.id) || 0;
-            stacks.set(layer, [...(stacks.get(layer) || []), node]);
-        });
+        const stacks = stacksByLane.get(lane);
+        if (!stacks) return;
         let laneHeight = 0;
         stacks.forEach((stack) => {
             const height = stack.reduce((sum, node) => sum + node.height, 0) + Math.max(0, stack.length - 1) * LANE_NODE_GAP;

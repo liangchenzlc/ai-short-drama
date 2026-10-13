@@ -207,8 +207,7 @@ test("图形视口预览不重复测量容器，窗口缩放后选区与DPR保�
                     const bounds = document.querySelector('[data-node-id="text-one"]').getBoundingClientRect();
                     return !container.dataset.canvasViewportInteracting && bounds.left >= 0 && bounds.right <= innerWidth && bounds.bottom <= innerHeight - 200;
                 });
-                const initialNode = await node.boundingBox();
-                await page.mouse.click(initialNode.x + 20, initialNode.y + 8);
+                await node.locator(".canvas-node-external-header > div > svg").click();
                 const panel = page.locator("[data-canvas-node-panel]");
                 await panel.waitFor({ state: "visible" });
                 const panelBefore = await panel.boundingBox();
@@ -269,12 +268,9 @@ test("图形视口预览不重复测量容器，窗口缩放后选区与DPR保�
                         return bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight;
                     });
                     await page.keyboard.press("Escape");
-                    const nodeBounds = await node.boundingBox();
-                    await page.mouse.click(nodeBounds.x + 20, nodeBounds.y + 8);
-                    const second = await page.locator('[data-node-id="text-two"]').boundingBox();
-                    await page.keyboard.down("Shift");
-                    await page.mouse.click(second.x + 20, second.y + 8);
-                    await page.keyboard.up("Shift");
+                    // Playwright等待原图标稳定并命中；避免复用适合屏幕动画中的旧坐标。
+                    await node.locator(".canvas-node-external-header > div > svg").click();
+                    await page.locator('[data-node-id="text-two"] .canvas-node-external-header > div > svg').click({ modifiers: ["Shift"] });
                     await page.locator("[data-canvas-selection-bounds]").waitFor();
                     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
                     await page.waitForFunction(() => {

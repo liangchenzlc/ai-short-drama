@@ -218,6 +218,19 @@ export function peekCanvasOperationJournal(canvasId: string, scope = getActiveUs
     return cached ? cloneJournal(cached) : undefined;
 }
 
+/** 仅供保存门禁读取状态，不复制或暴露完整提交正文；资源来源仍返回独立副本。 */
+export function peekCanvasOperationJournalStatus(canvasId: string, scope = getActiveUserScope()) {
+    const cached = memory.get(cacheKey(scope, canvasId));
+    if (!cached) return undefined;
+    return {
+        confirmedRevision: cached.confirmedRevision,
+        hasConfirmedSnapshot: Boolean(cached.confirmedSnapshot),
+        hasInFlight: Boolean(cached.inFlight),
+        hasPendingProjection: Boolean(cached.pendingProjection),
+        resourceAliases: cached.resourceAliases && Object.keys(cached.resourceAliases).length ? structuredClone(cached.resourceAliases) : {},
+    };
+}
+
 export async function loadCanvasOperationJournal(canvasId: string, scope = getActiveUserScope()) {
     return withJournal(scope, canvasId, () => readJournalUnlocked(canvasId, scope));
 }

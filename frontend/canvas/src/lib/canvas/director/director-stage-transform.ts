@@ -1,4 +1,7 @@
-import { Euler, Matrix4, Quaternion, Vector3 } from "three";
+import { Euler } from "three/src/math/Euler.js";
+import { Matrix4 } from "three/src/math/Matrix4.js";
+import { Quaternion } from "three/src/math/Quaternion.js";
+import { Vector3 } from "three/src/math/Vector3.js";
 
 import type { DirectorScene, DirectorTransform, DirectorVec3 } from "@/types/director";
 

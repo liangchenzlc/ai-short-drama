@@ -20,7 +20,7 @@ import { APP_STATE_STORE_NAME, localForageInstance, localForageStorageForScope }
 import { resourceIdFromStorageKey } from "@/services/api/resources";
 import { notifyCanvasRefresh } from "@/services/local-workspace-sync";
 import { canvasBackendSubmitPaused, CanvasBackendSubmitPausedError, CanvasStaleScopeError, handleRejectedCanvasBackendSave, isCanvasRevisionConflict, isCanvasSubmitControlError, pauseCanvasBackendSubmit, resumeCanvasBackendSubmit } from "@/services/canvas-revision-conflict";
-import { CanvasJournalError, clearCanvasOperationJournal, clearCanvasPendingProjection, loadCanvasOperationJournal, newCanvasCommitOperationId, peekCanvasOperationJournal, recordConfirmedCanvasCommit, updateCanvasOperationJournal } from "@/services/canvas-operation-journal";
+import { CanvasJournalError, clearCanvasOperationJournal, clearCanvasPendingProjection, loadCanvasOperationJournal, newCanvasCommitOperationId, peekCanvasOperationJournal, peekCanvasOperationJournalStatus, recordConfirmedCanvasCommit, updateCanvasOperationJournal } from "@/services/canvas-operation-journal";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { isLocalWorkspaceMode } from "@/services/workspace-mode";
 import { getActiveUserScope, scopedStorageKey } from "@/lib/user-scope";
@@ -176,8 +176,8 @@ export function hasUnconfirmedCanvasEdits(id: string) {
     const live = openLocalCanvasProject(id);
     if (!live) return false;
     if (canvasBackendSubmitPending(id, scope) || canvasSubmitBlocked(id, scope)) return true;
-    const journal = peekCanvasOperationJournal(id, scope);
-    if (journal?.inFlight || journal?.pendingProjection) return true;
+    const status = peekCanvasOperationJournalStatus(id, scope);
+    if (status?.hasInFlight || status?.hasPendingProjection) return true;
     const confirmed = canvasDocumentBase(id, scope)?.snapshot ?? serverConfirmedCanvasSnapshots.get(saveKey(scope, id));
     if (confirmed) return !sameCanvasDocument(confirmed, live);
     const durable = canvasDurableSnapshot(scope, id);
@@ -294,6 +294,12 @@ async function persistProjectedCanvas(id: string, scope: string, identity: strin
 }
 
 async function replayPendingCanvasProjection(id: string, scope: string, expected: CapturedUserScope, options: { throwOnFailure: boolean } = { throwOnFailure: false }) {
+    const status = peekCanvasOperationJournalStatus(id, scope);
+    if (status && !status.hasPendingProjection) {
+        assertDispatchGuard(expected);
+        observeCanvasResourceAliases(expected, status.resourceAliases);
+        return openLocalCanvasProject(id) ?? undefined;
+    }
     const journal = peekCanvasOperationJournal(id, scope) ?? await loadCanvasOperationJournal(id, scope);
     assertDispatchGuard(expected);
     observeCanvasResourceAliases(expected, journal.resourceAliases ?? {});
@@ -626,8 +632,8 @@ async function putCanvasProjectToBackend(id: string, project: CanvasProject, end
 }
 
 function isInitialCanvasCreate(project: CanvasProject, scope: string) {
-    const journal = peekCanvasOperationJournal(project.id, scope);
-    if (journal?.confirmedSnapshot || journal?.inFlight) return false;
+    const status = peekCanvasOperationJournalStatus(project.id, scope);
+    if (status?.hasConfirmedSnapshot || status?.hasInFlight) return false;
     return (project.revision ?? "0") === "0";
 }
 

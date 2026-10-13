@@ -18,6 +18,9 @@ const rounds = Number(option("rounds") || 3);
 assert.ok(counts.length && counts.every(count => Number.isSafeInteger(count) && count >= 20 && count <= 5000));
 assert.ok(Number.isSafeInteger(rounds) && rounds >= 1 && rounds <= 10);
 const profileEnabled = args.includes("--profile");
+const arrangeEnabled = args.includes("--arrange");
+const graphKind = option("graph") || "grid";
+assert.ok(["grid", "chain", "fan"].includes(graphKind));
 const output = resolve(option("output") || resolve(root, ".runtime/performance", new Date().toISOString().replace(/[:.]/g, "-")));
 const sourceRoot = process.env.BEEFTV_ROOT ? resolve(process.env.BEEFTV_ROOT) : null;
 const manifest = JSON.parse(await readFile(resolve(root, "source-manifest.json"), "utf8"));
@@ -32,7 +35,7 @@ if (!process.env.CANVAS_PERF_MEDIA_DIR) {
 }
 const digest = value => createHash("sha256").update(value).digest("hex");
 const mediaHashes = Object.fromEntries(await Promise.all(["sample.png", "sample.mp4"].map(async name => [name, digest(await readFile(resolve(mediaDir, name)))])));
-const report = { scope: "生产浏览器/受控HTTP夹具；未验Python、SQL、MinIO、AMQP、供应商、GPU呈现帧或泄漏", commit: manifest.commit, driver_sha256: digest(await readFile(fileURLToPath(import.meta.url))), node_counts: counts, rounds, started_at: new Date().toISOString(), profile_enabled: profileEnabled, frame_budget_ms: 32, viewport: { width: 1440, height: 900 }, dpr: 1, color_scheme: "dark", reduced_motion: "no-preference", machine: { platform: platform(), cpu: cpus()[0]?.model, logical_processors: cpus().length, ram_bytes: totalmem(), node: process.versions.node }, media_sha256: mediaHashes, cases: [], status: "running" };
+const report = { scope: "生产浏览器/受控HTTP夹具；未验Python、SQL、MinIO、AMQP、供应商、GPU呈现帧或泄漏", commit: manifest.commit, driver_sha256: digest(await readFile(fileURLToPath(import.meta.url))), node_counts: counts, rounds, started_at: new Date().toISOString(), profile_enabled: profileEnabled, arrange_enabled: arrangeEnabled, graph: graphKind, frame_budget_ms: 32, viewport: { width: 1440, height: 900 }, dpr: 1, color_scheme: "dark", reduced_motion: "no-preference", machine: { platform: platform(), cpu: cpus()[0]?.model, logical_processors: cpus().length, ram_bytes: totalmem(), node: process.versions.node }, media_sha256: mediaHashes, cases: [], status: "running" };
 const servers = [];
 let browser;
 
@@ -57,7 +60,9 @@ function scene(count, kind) {
         }
         return node;
     });
-    return { resources, document: { id: `performance-${count}`, workspaceProjectId: "9007199254740995", revision: kind === "source" ? 1 : "1", title: "组合生产大图基准", canvasTitle: "主画布", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", nodes, connections: [], chatSessions: [], activeChatId: null, directorScenes: [], viewport: { x: 1, y: 1, k: 1 }, backgroundMode: "dots", showImageInfo: false } };
+    const candidates = nodes.filter(node => node.type !== "frame" && !node.parentId);
+    const connections = graphKind === "grid" ? [] : candidates.slice(1).map((node, index) => ({ id: `connection-${index}`, fromNodeId: candidates[graphKind === "fan" ? 0 : index].id, toNodeId: node.id }));
+    return { resources, document: { id: `performance-${count}`, workspaceProjectId: "9007199254740995", revision: kind === "source" ? 1 : "1", title: "组合生产大图基准", canvasTitle: "主画布", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", nodes, connections, chatSessions: [], activeChatId: null, directorScenes: [], viewport: { x: 1, y: 1, k: 1 }, backgroundMode: "dots", showImageInfo: false } };
 }
 
 async function fixture(page, count, kind) {
@@ -119,16 +124,18 @@ async function fixture(page, count, kind) {
             await route.fulfill({ status: 500, json: { error: { code: "performance_fixture_failed", message: `性能夹具失败：${path}` } } });
         }
     });
-    return () => ({ count, document_bytes: Buffer.byteLength(JSON.stringify(document)), commits: commits.length, viewport_writes: viewportWrites.length, first_position: { ...document.nodes[0].position }, revision: document.revision, viewport: { ...document.viewport }, image_requests: images.length, unique_images: new Set(images).size, video_requests: videos.length, unique_videos: new Set(videos).size, ...structuredClone(errors) });
+    const read = () => ({ count, document_bytes: Buffer.byteLength(JSON.stringify(document)), commits: commits.length, viewport_writes: viewportWrites.length, first_position: { ...document.nodes[0].position }, revision: document.revision, viewport: { ...document.viewport }, image_requests: images.length, unique_images: new Set(images).size, video_requests: videos.length, unique_videos: new Set(videos).size, ...structuredClone(errors) });
+    read.layout = () => document.nodes.map(node => ({ id: node.id, position: { ...node.position } })).sort((left, right) => left.id.localeCompare(right.id));
+    return read;
 }
 
 async function instrument(page) {
     await page.addInitScript(() => {
-        window.__canvasPerf = { measuring: false, frames: [], long_tasks: [], viewports: [], pointer_hits: [], wheel_events: [] };
+        window.__canvasPerf = { measuring: false, frames: [], long_tasks: [], loading_long_tasks: [], viewports: [], pointer_hits: [], wheel_events: [] };
         let previous;
         const frame = time => { const state = window.__canvasPerf; if (state.measuring) { if (previous !== undefined) state.frames.push(time - previous); previous = time; } else previous = undefined; requestAnimationFrame(frame); };
         requestAnimationFrame(frame);
-        if (PerformanceObserver.supportedEntryTypes.includes("longtask")) new PerformanceObserver(list => { if (window.__canvasPerf.measuring) window.__canvasPerf.long_tasks.push(...list.getEntries().map(entry => ({ start_ms: entry.startTime, duration_ms: entry.duration }))); }).observe({ type: "longtask", buffered: false });
+        if (PerformanceObserver.supportedEntryTypes.includes("longtask")) new PerformanceObserver(list => { const entries = list.getEntries().map(entry => ({ start_ms: entry.startTime, duration_ms: entry.duration })); window.__canvasPerf.loading_long_tasks.push(...entries); if (window.__canvasPerf.measuring) window.__canvasPerf.long_tasks.push(...entries); }).observe({ type: "longtask", buffered: false });
         for (const name of ["pointerdown", "mousedown"]) document.addEventListener(name, event => {
             if (!window.__canvasPerf.measuring) return;
             window.__canvasPerf.pointer_hits.push({ type: event.type, x: event.clientX, y: event.clientY, node_id: event.target.closest("[data-node-id]")?.dataset.nodeId || null, visible_svg: Boolean(event.target.closest("svg")), button: Boolean(event.target.closest("button")), trusted: event.isTrusted });
@@ -169,6 +176,8 @@ async function landing(page) {
     throw new Error("悬停后原标题SVG没有可见拖拽区域");
 }
 
+const resources = page => page.evaluate(() => performance.getEntriesByType("resource").filter(entry => entry.initiatorType === "script" || entry.initiatorType === "link" || /\.woff2(?:$|\?)/.test(entry.name)).map(entry => ({ path: new URL(entry.name).pathname, same_origin: new URL(entry.name).origin === location.origin, duration_ms: entry.duration, encoded_bytes: entry.encodedBodySize, decoded_bytes: entry.decodedBodySize, transfer_bytes: entry.transferSize })));
+
 async function measure(base, count, kind) {
     const context = await browser.newContext({ viewport: report.viewport, deviceScaleFactor: 1, colorScheme: "dark", reducedMotion: "no-preference" });
     const entry = { kind, count, gestures: [], status: "running" };
@@ -180,8 +189,10 @@ async function measure(base, count, kind) {
         read = await fixture(page, count, kind); await instrument(page);
         await page.goto(`${base}/${kind === "source" ? "" : "canvas-app/"}canvas/performance-${count}`, { waitUntil: "domcontentloaded", timeout: 60000 });
         await page.locator(".canvas-main-toolbar").waitFor();
-        await page.evaluate(() => document.fonts.ready);
         await page.locator('[data-node-id="node-0"]').waitFor({ state: "visible" });
+        await nextFrame(page);
+        entry.canvas_open_ms = await page.evaluate(() => performance.now());
+        await page.evaluate(() => document.fonts.ready);
         await page.getByRole("button", { name: kind === "source" ? "画布保存状态：已保存在本地" : "画布保存状态：已保存", exact: true }).waitFor();
         if (kind === "source") {
             await page.getByRole("button", { name: "关闭助手", exact: true }).click();
@@ -202,6 +213,8 @@ async function measure(base, count, kind) {
         await page.locator('[data-node-id="node-0"]').waitFor({ state: "visible" });
         await page.getByRole("button", { name: kind === "source" ? "画布保存状态：已保存在本地" : "画布保存状态：已保存", exact: true }).waitFor();
         entry.first_interactive_ms = await page.evaluate(() => performance.now());
+        entry.loading_long_tasks = await page.evaluate(() => window.__canvasPerf.loading_long_tasks.filter(entry => entry.start_ms <= performance.now()));
+        entry.loading_resources = await resources(page);
         entry.initial_mounted_nodes = await page.locator("[data-node-id]").count();
         entry.initial_live_viewport = aligned;
         await page.evaluate(() => document.querySelector("[data-canvas-viewport]").addEventListener("canvas:graphics-viewport-preview", event => { if (window.__canvasPerf.measuring) window.__canvasPerf.viewports.push({ ...event.detail }); }));
@@ -290,7 +303,45 @@ async function measure(base, count, kind) {
         entry.after = read(); healthy(entry.after); assert.equal(entry.after.commits - entry.before.commits, rounds); assert.equal(entry.after.unique_videos, 2);
         entry.final_live_viewport = await liveViewport(page);
         entry.final_mounted_nodes = await page.locator("[data-node-id]").count(); assert.ok(entry.final_mounted_nodes <= 720);
-        entry.resources = await page.evaluate(() => performance.getEntriesByType("resource").filter(entry => entry.initiatorType === "script" || entry.initiatorType === "link" || /\.woff2(?:$|\?)/.test(entry.name)).map(entry => ({ path: new URL(entry.name).pathname, same_origin: new URL(entry.name).origin === location.origin })));
+        if (arrangeEnabled) {
+            const before = read(), previousLayout = read.layout();
+            await page.evaluate(() => {
+                const button = [...document.querySelectorAll("button")].find(element => element.getAttribute("aria-label") === "自动整理节点");
+                if (!button) throw new Error("原自动整理按钮不可达");
+                button.addEventListener("click", () => {
+                    window.__canvasPerf.arrange = { start_ms: performance.now() };
+                    requestAnimationFrame(() => requestAnimationFrame(() => { window.__canvasPerf.arrange.frame_ms = performance.now(); }));
+                }, { capture: true, once: true });
+            });
+            await page.getByRole("button", { name: "自动整理节点", exact: true }).click();
+            await page.waitForFunction(() => window.__canvasPerf.arrange?.frame_ms !== undefined);
+            await page.keyboard.press("Control+s");
+            const saved = await waitAudit(read, audit => audit.commits > before.commits);
+            assert.equal(saved.commits - before.commits, 1, "整理必须只保存一次完整文档");
+            const timing = await page.evaluate(() => ({ ...window.__canvasPerf.arrange, saved_ms: performance.now() }));
+            const arranged = read.layout();
+            const changed = arranged.filter((node, index) => JSON.stringify(node.position) !== JSON.stringify(previousLayout[index].position));
+            assert.ok(changed.length >= 2, "真实整理必须改变多个节点的位置");
+            entry.arrangement = { first_frame_ms: timing.frame_ms - timing.start_ms, saved_ms: timing.saved_ms - timing.start_ms, changed_nodes: changed.length, layout_sha256: digest(JSON.stringify(arranged)) };
+            await writeFile(resolve(output, `${kind}-${count}-arranged.json`), JSON.stringify(arranged));
+            // 保存请求到达HTTP夹具不代表原180ms分组历史已落成；两端都存在早撤销边界。
+            // 首帧与保存耗时在上方已记录，这段独立等待仅用于完整历史撤销校验。
+            await page.getByRole("button", { name: kind === "source" ? "画布保存状态：已保存在本地" : "画布保存状态：已保存", exact: true }).waitFor();
+            await nextFrame(page); await nextFrame(page);
+            await page.evaluate(() => new Promise(accept => setTimeout(accept, 180)));
+            entry.arrangement.history_settle_wait_ms = await page.evaluate(saved => performance.now() - saved, timing.saved_ms);
+            entry.arrangement.undo_contract = "client_saved_then_source_history_debounce_180ms";
+            await page.keyboard.press("Control+z");
+            await page.keyboard.press("Control+s");
+            const undone = await waitAudit(read, audit => audit.commits > saved.commits);
+            assert.equal(undone.commits - saved.commits, 1);
+            assert.deepEqual(read.layout(), previousLayout, "撤销整理必须恢复所有节点的原坐标");
+            const after = await liveViewport(page);
+            for (const key of ["x", "y", "k"]) assert.ok(Math.abs(after[key] - entry.final_live_viewport[key]) < .001, "整理及撤销不能改变视口");
+            entry.arrangement.undo_restored = true;
+            healthy(undone);
+        }
+        entry.resources = await resources(page);
         assert.ok(entry.resources.every(resource => resource.same_origin && !resource.path.includes("/@vite/")), "必须测量同源生产静态资源");
         await page.screenshot({ path: resolve(output, `${kind}-${count}.png`) });
         await page.goto("about:blank"); entry.video_elements_after_leave = await page.locator("video").count(); assert.equal(entry.video_elements_after_leave, 0);
@@ -324,6 +375,7 @@ try {
         }
         for (const key of ["x", "y"]) assert.ok(Math.abs(source.after.first_position[key] - target.after.first_position[key]) < .001, "两端同一手势的持久位置必须一致");
         for (const key of ["x", "y", "k"]) assert.ok(Math.abs(source.final_live_viewport[key] - target.final_live_viewport[key]) < .001, "两端同一手势的最终视口必须一致");
+        if (arrangeEnabled) assert.equal(target.arrangement.layout_sha256, source.arrangement.layout_sha256, "两端整理后所有节点坐标必须完全一致");
         return { count, gestures: target.gestures.map((gesture, index) => ({ round: gesture.round, kind: gesture.kind, source_p95_ms: source.gestures[index].frames.p95_ms, target_p95_ms: gesture.frames.p95_ms, ratio: gesture.frames.p95_ms / source.gestures[index].frames.p95_ms })) };
     });
     const budgetCases = report.cases.filter(entry => entry.kind === "target" && entry.count === 1000);

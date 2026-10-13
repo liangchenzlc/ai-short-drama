@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { resolveCanvasAppearance, resolveCanvasGridColor, type CanvasAppearance } from "@/lib/canvas/canvas-appearance";
 import { resolveCanvasPointerIntent } from "@/lib/canvas/canvas-selection";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
-import { applyCanvasLiveViewport, subscribeCanvasViewportPreview } from "@/lib/canvas/canvas-live-viewport";
+import { applyCanvasLiveViewport, releaseCanvasLiveViewport, syncCanvasViewportStyleConsumers, subscribeCanvasViewportPreview } from "@/lib/canvas/canvas-live-viewport";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import type { ViewportTransform } from "@/types/canvas";
 
@@ -92,6 +92,7 @@ export function InfiniteCanvas({ interactive = true, containerRef, viewport, app
     }, [interactive, containerRef]);
 
     useLayoutEffect(() => {
+        syncCanvasViewportStyleConsumers(containerRef.current);
         if (interactingRef.current) return;
         viewportRef.current = viewport;
         scaleRef.current = viewport.k;
@@ -107,15 +108,16 @@ export function InfiniteCanvas({ interactive = true, containerRef, viewport, app
         });
     }, [containerRef]);
 
-    useEffect(
-        () => () => {
+    useEffect(() => {
+        const container = containerRef.current;
+        return () => {
             if (frameRef.current) cancelAnimationFrame(frameRef.current);
             if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-            delete containerRef.current?.dataset.canvasViewportInteracting;
+            delete container?.dataset.canvasViewportInteracting;
+            releaseCanvasLiveViewport(container);
             document.body.style.cursor = "";
-        },
-        [containerRef],
-    );
+        };
+    }, [containerRef]);
 
     const syncViewport = useCallback(() => { if (interactive) onViewportChange(viewportRef.current); }, [interactive, onViewportChange]);
 
