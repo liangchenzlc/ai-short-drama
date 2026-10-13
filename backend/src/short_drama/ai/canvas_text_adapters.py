@@ -9,7 +9,8 @@ from short_drama.schemas.canvas_text_parameters import CanvasTextReferences
 from .transport import validated_url
 from .types import GenerationError
 
-TEXT_IMAGE_ADAPTERS = frozenset({"openai_chat.v1", "openai_responses.v1"})
+TEXT_VIDEO_ADAPTERS = frozenset({"openai_chat.v1", "openai_responses.v1"})
+TEXT_IMAGE_ADAPTERS = TEXT_VIDEO_ADAPTERS | {"claude_messages.v1"}
 
 
 def is_canvas_text_request(snapshot: dict, request: dict) -> bool:
@@ -121,6 +122,13 @@ def canvas_text_messages(snapshot: dict, request: dict, adapter: str, messages: 
         *[{"type": "image_url", "image_url": {"url": url}} for url in urls],
         *[{"type": "video_url", "video_url": {"url": url}} for url in video_urls],
     ]
+    if adapter == "claude_messages.v1":
+        if videos:
+            raise GenerationError("unsupported_parameters")
+        result[-1]["content"] = [
+            {"type": "text", "text": messages[-1]["content"]},
+            *[{"type": "image", "source": {"type": "url", "url": url}} for url in urls],
+        ]
     if adapter == "openai_responses.v1":
         # 固定源默认 manifest 沿用 text/image_url；input_image 属于另一 fallback 分支。
         history = [

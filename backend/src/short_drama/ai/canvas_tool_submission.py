@@ -7,9 +7,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from short_drama.schemas.canvas_tool_contracts import CanvasToolCanonical, CanvasToolReferences
 
+from .canvas_chat_protocols import (
+    apply_compatible_chat_options,
+    compatible_chat_endpoint,
+    is_compatible_chat,
+)
 from .canvas_claude_adapters import ClaudeTextOptions
 from .canvas_gemini_adapters import API_PREFIXES, GeminiTextOptions
 from .canvas_text_adapters import text_image_limits
+from .canvas_text_thinking import thinking_parameters
 from .canvas_tool_adapters import CANVAS_TOOL_ADAPTERS, build_canvas_tool_body
 from .transport import validated_url
 from .types import GenerationError
@@ -65,7 +71,7 @@ def build_canvas_tool_submission(
         if (
             options.keys() - {"stream", "thinking"}
             or type(options.get("stream", True)) is not bool
-            or options.get("thinking", False) is not False
+            or type(options.get("thinking", False)) is not bool
         ):
             raise ValueError
         envelope = CanvasToolReferences.model_validate(request["canvas_text_references"])
@@ -98,6 +104,13 @@ def build_canvas_tool_submission(
             for key, url, reference in zip(keys, urls, envelope.references, strict=True)
         }
         body = build_canvas_tool_body(canonical, adapter, image_references=references)
+        body.update(
+            thinking_parameters(
+                adapter, options.get("thinking", False), snapshot.get("canvas_text_capability")
+            )
+        )
+        if adapter == "openai_chat.v1" and options.get("thinking", False):
+            body.pop("tool_choice", None)
         model = snapshot["model_key"]
         if not isinstance(model, str) or not model.strip():
             raise ValueError
@@ -124,6 +137,8 @@ def build_canvas_tool_submission(
                 exclude={"anthropic_version", "anthropic_beta", "system", "stream"},
             )
             body.update(values, model=model, stream=stream)
+            if "thinking" in body and body["max_tokens"] <= body["thinking"]["budget_tokens"]:
+                raise ValueError
             if not path.endswith("/v1/messages"):
                 path += "/messages" if path.endswith("/v1") else "/v1/messages"
             headers = {"anthropic-version": saved.anthropic_version}
@@ -143,7 +158,10 @@ def build_canvas_tool_submission(
         # 已存在的OpenAI路径规范化与普通任务相同；调用时模块已完成初始化。
         from .adapters import endpoint
 
-        saved = OpenAIToolOptions.model_validate({**defaults, **parameters})
+        compatible = adapter == "openai_chat.v1" and is_compatible_chat(snapshot)
+        saved = OpenAIToolOptions.model_validate(
+            parameters if compatible else {**defaults, **parameters}
+        )
         body.update(
             saved.model_dump(exclude_none=True, exclude={"max_tokens", "max_output_tokens"})
         )
@@ -155,6 +173,9 @@ def build_canvas_tool_submission(
         body.update(model=model, stream=stream)
         if stream and adapter == "openai_chat.v1":
             body["stream_options"] = {"include_usage": True}
+        if compatible:
+            body = apply_compatible_chat_options(snapshot, request, body, tool=True)
+            return compatible_chat_endpoint(snapshot["base_url"]), {}, body
         return (
             endpoint(
                 snapshot["base_url"],
@@ -181,6 +202,9 @@ def canvas_tool_resolved_parameters(body: dict) -> dict:
             "max_tokens",
             "max_output_tokens",
             "stream",
+            "reasoning_effort",
+            "reasoning",
+            "thinking",
             "generationConfig",
             "safetySettings",
         )

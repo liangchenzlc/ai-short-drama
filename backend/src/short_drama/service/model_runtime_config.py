@@ -6,6 +6,7 @@ from copy import deepcopy
 from pydantic import ValidationError
 
 from short_drama.ai.adapters import capability_fingerprint
+from short_drama.ai.canvas_chat_protocols import COMPATIBLE_CHAT_PROTOCOLS
 from short_drama.ai.canvas_runninghub_adapters import RUNNINGHUB_ADAPTERS
 from short_drama.ai.canvas_video_adapters import VIDEO_ADAPTERS
 from short_drama.ai.model_identity import model_credential_identity
@@ -19,6 +20,7 @@ from short_drama.schemas.canvas_model_catalog import (
 from short_drama.schemas.model_runtime_profile import ModelRuntimeProfile
 
 PROTOCOL_ADAPTERS = {
+    **dict.fromkeys(COMPATIBLE_CHAT_PROTOCOLS, "openai_chat.v1"),
     "chat-completion": "openai_chat.v1",
     "openai-response": "openai_responses.v1",
     "claude-api": "claude_messages.v1",
@@ -153,6 +155,9 @@ def refresh_runtime_model(config, channel_key: str = "") -> bool:
     if config.service_type == "text" and isinstance(capability.get("text"), dict):
         cache["canvas_text_capability"] = deepcopy(capability["text"])
     if adapter in {"claude_messages.v1", "gemini_generate_content.v1"}:
+        cache["canvas_text_defaults"] = deepcopy(profile.get("default_options") or {})
+    if profile["protocol"] in COMPATIBLE_CHAT_PROTOCOLS:
+        cache["canvas_text_protocol"] = profile["protocol"]
         cache["canvas_text_defaults"] = deepcopy(profile.get("default_options") or {})
     if config.service_type == "audio" and adapter in {"openai_speech.v1", "canvas_async_audio.v1"}:
         cache["canvas_audio_defaults"] = deepcopy(profile.get("default_options") or {})

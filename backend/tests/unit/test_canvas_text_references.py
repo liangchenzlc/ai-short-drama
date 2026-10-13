@@ -97,7 +97,7 @@ def test_chat_recipe_keeps_system_text_first_and_all_images_in_source_order():
     assert body["stream_options"] == {"include_usage": True}
 
 
-@pytest.mark.parametrize("adapter", [None, "claude_messages.v1", "gemini_generate_content.v1"])
+@pytest.mark.parametrize("adapter", [None, "gemini_generate_content.v1"])
 def test_unimplemented_text_image_protocols_are_rejected_before_admission(adapter):
     with pytest.raises(WorkflowError):
         generation_payload(CanvasRuntimeTaskCreate.model_validate(text_request()), 1, adapter)
@@ -318,7 +318,7 @@ def test_admission_freezes_actual_metadata_and_removes_client_transient_urls(mon
 
 
 @pytest.mark.parametrize("failure", ["scope", "locator", "size", "mime", "count", "unsaved"])
-@pytest.mark.parametrize("adapter", ["openai_chat.v1", "openai_responses.v1"])
+@pytest.mark.parametrize("adapter", ["openai_chat.v1", "openai_responses.v1", "claude_messages.v1"])
 def test_failed_admission_never_partially_rewrites_the_draft(monkeypatch, failure, adapter):
     generation, media, payload, cache = admission_fixture(monkeypatch)
     second = media["9007199254740999"]

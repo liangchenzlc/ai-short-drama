@@ -201,7 +201,7 @@ class CanvasGenerationService(BaseService):
         if adapter in VIDEO_ADAPTERS:
             payload = normalize_video_request(payload, config.capability_cache)
         frozen_request = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
-        request = generation_payload(payload, canvas.project_id, adapter)
+        request = generation_payload(payload, canvas.project_id, adapter, config.capability_cache)
 
         def freeze(prepared: dict) -> dict:
             prepared["canvas_request"] = deepcopy(frozen_request)

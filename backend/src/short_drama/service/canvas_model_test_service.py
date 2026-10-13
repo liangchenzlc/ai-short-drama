@@ -248,7 +248,9 @@ class CanvasModelTestService(BaseService):
             )
             if adapter in VIDEO_ADAPTERS:
                 canvas_request = normalize_video_request(canvas_request, config.capability_cache)
-            request = generation_payload(canvas_request, self.catalog.actor_id, adapter)
+            request = generation_payload(
+                canvas_request, self.catalog.actor_id, adapter, config.capability_cache
+            )
             request.pop("project_id", None)
 
             def freeze(prepared):

@@ -22,6 +22,11 @@ from .canvas_audio_adapters import (
     canvas_audio_voice,
     parse_canvas_audio_result,
 )
+from .canvas_chat_protocols import (
+    apply_compatible_chat_options,
+    compatible_chat_endpoint,
+    is_compatible_chat,
+)
 from .canvas_claude_adapters import (
     CLAUDE_MESSAGES,
     build_claude_text_submission,
@@ -39,6 +44,7 @@ from .canvas_runninghub_adapters import (
     runninghub_submission,
 )
 from .canvas_text_adapters import canvas_text_messages, is_canvas_text_request
+from .canvas_text_thinking import thinking_parameters
 from .canvas_tool_submission import (
     build_canvas_tool_submission,
     canvas_tool_resolved_parameters,
@@ -554,9 +560,19 @@ def build_submission(snapshot, request, adapter):
                 not isinstance(options, dict)
                 or options.keys() - {"stream", "thinking"}
                 or type(options.get("stream", True)) is not bool
-                or options.get("thinking", False) is not False
+                or type(options.get("thinking", False)) is not bool
             ):
                 _unsupported()
+            if options.get("thinking", False) and (
+                (request.get("canvas_request") or {}).get("type") != "canvas_text"
+                or (request.get("canvas_request") or {}).get("operation") != "text"
+            ):
+                _unsupported()
+            body.update(
+                thinking_parameters(
+                    adapter, options.get("thinking", False), snapshot.get("canvas_text_capability")
+                )
+            )
             body["stream"] = options.get("stream", True)
             capability = snapshot.get("canvas_text_capability")
             if isinstance(capability, dict) and capability.get("streaming") is False:
@@ -571,6 +587,9 @@ def build_submission(snapshot, request, adapter):
                 token_field = "max_completion_tokens"
             body[token_field] = params["max_output_tokens"]
         suffix = "/responses" if responses else "/chat/completions"
+        if adapter == "openai_chat.v1" and is_compatible_chat(snapshot):
+            body = apply_compatible_chat_options(snapshot, request, body)
+            return compatible_chat_endpoint(snapshot["base_url"]), headers, body
     elif kind == "image":
         value = _input(request, {"prompt", "reference_media_ids", "reference_urls"})
         prompt, refs = value.get("prompt"), value.get("reference_urls", [])
@@ -1089,6 +1108,8 @@ def validate_request(snapshot, request_data, adapter=None):
             inputs[f"{name}_frame_url"] = f"https://reference.invalid/{name}"
     _, _, body = build_submission(snapshot, request, adapter)
     if is_canvas_tool_request(request):
+        return {"adapter": adapter, "resolved_parameters": canvas_tool_resolved_parameters(body)}
+    if adapter == "openai_chat.v1" and is_compatible_chat(snapshot):
         return {"adapter": adapter, "resolved_parameters": canvas_tool_resolved_parameters(body)}
     if adapter in RUNNINGHUB_ADAPTERS:
         return {"adapter": adapter, "resolved_parameters": copy.deepcopy(body)}

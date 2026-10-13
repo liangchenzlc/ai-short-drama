@@ -31,6 +31,7 @@ from .canvas_agnes_adapters import (
     validate_agnes_reference_guard,
 )
 from .canvas_audio_adapters import ASYNC_AUDIO, complete_audio_urls
+from .canvas_chat_protocols import is_compatible_chat, parse_compatible_chat_result
 from .canvas_claude_adapters import CLAUDE_MESSAGES
 from .canvas_claude_stream import ClaudeTextStreamObserver, decode_claude_text_stream
 from .canvas_credentials import CanvasCredentials, canvas_authentication
@@ -255,9 +256,15 @@ class GenerationGateway:
             if adapter == "openai_speech.v1"
             else body_response
             if isinstance(body_response, GenerationResult)
+            else parse_compatible_chat_result(body_response, adapter)
+            if adapter == "openai_chat.v1" and is_compatible_chat(snapshot)
             else parse_result(body_response, adapter, submitted=True)
         )
-        result.resolved_parameters = resolved_parameters(body)
+        result.resolved_parameters = (
+            canvas_tool_resolved_parameters(body)
+            if adapter == "openai_chat.v1" and is_compatible_chat(snapshot)
+            else resolved_parameters(body)
+        )
         if adapter == ASYNC_AUDIO:
             result = complete_audio_urls(snapshot, result)
         if adapter != "dashscope_voice_design.v1" and snapshot.get("service_type") == "audio":
@@ -949,7 +956,9 @@ class GenerationGateway:
                 return decode_canvas_tool_stream(data, canvas_tool_adapter)
             if claude_text:
                 return decode_claude_text_stream(data)
-            return decode_text_stream(data, responses="input" in body)
+            return decode_text_stream(
+                data, responses="input" in body, include_reasoning=is_compatible_chat(snapshot)
+            )
         if submitting and binary_audio:
             return data
         try:

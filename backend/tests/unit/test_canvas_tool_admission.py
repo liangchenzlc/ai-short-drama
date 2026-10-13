@@ -64,7 +64,7 @@ def test_incoherent_tool_scope_or_client_transport_is_rejected_by_public_schema(
     elif change == "history":
         inputs["textHistory"] = [{"role": "assistant", "content": "旧助手历史"}]
     elif change == "thinking":
-        inputs["textOptions"] = {"thinking": True}
+        inputs["textOptions"] = {"thinking": "true"}
     elif change == "source":
         inputs["metadata"]["source"] = "canvas-online-agent"
     elif change == "target":

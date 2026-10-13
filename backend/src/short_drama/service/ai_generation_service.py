@@ -494,6 +494,7 @@ class AIGenerationService(BaseService):
                 "canvas_video_variants",
                 "canvas_text_capability",
                 "canvas_text_defaults",
+                "canvas_text_protocol",
                 "canvas_audio_defaults",
                 "canvas_runninghub_workflow",
             ):

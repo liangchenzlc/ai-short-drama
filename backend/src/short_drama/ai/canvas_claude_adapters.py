@@ -5,6 +5,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
+from .canvas_text_adapters import canvas_text_messages
+from .canvas_text_thinking import thinking_parameters
 from .transport import validated_url
 from .types import GenerationError, GenerationResult
 
@@ -52,13 +54,7 @@ def build_claude_text_submission(snapshot: dict, request: dict) -> tuple[str, di
         or inputs.keys() - {"messages", "reference_media_ids", "reference_urls"}
         or not isinstance(canvas_input, dict)
         or canvas_input.get("mode") != "text"
-        or inputs.get("reference_media_ids")
-        or inputs.get("reference_urls")
-        or any(
-            canvas_input.get(field)
-            for field in ("referenceImages", "referenceVideos", "referenceAudios", "mask")
-        )
-        or (request.get("canvas_text_references") or {}).get("references")
+        or any(canvas_input.get(field) for field in ("referenceVideos", "referenceAudios", "mask"))
     ):
         _unsupported()
     messages = inputs.get("messages")
@@ -102,10 +98,26 @@ def build_claude_text_submission(snapshot: dict, request: dict) -> tuple[str, di
         not isinstance(text_options, dict)
         or text_options.keys() - {"stream", "thinking"}
         or type(text_options.get("stream", True)) is not bool
-        or text_options.get("thinking", False) is not False
+        or type(text_options.get("thinking", False)) is not bool
     ):
         _unsupported()
+    if (
+        inputs.get("reference_media_ids")
+        or inputs.get("reference_urls")
+        or canvas_input.get("referenceImages")
+        or (request.get("canvas_text_references") or {}).get("references")
+    ):
+        messages = canvas_text_messages(snapshot, request, CLAUDE_MESSAGES, messages)
     body = options.model_dump(exclude_none=True, exclude={"anthropic_version", "anthropic_beta"})
+    body.update(
+        thinking_parameters(
+            CLAUDE_MESSAGES,
+            text_options.get("thinking", False),
+            snapshot.get("canvas_text_capability"),
+        )
+    )
+    if "thinking" in body and body["max_tokens"] <= body["thinking"]["budget_tokens"]:
+        _unsupported()
     body.update(
         model=snapshot["model_key"],
         messages=deepcopy([item for item in messages if item["role"] != "system"]),

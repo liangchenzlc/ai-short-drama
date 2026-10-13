@@ -5,7 +5,8 @@ import re
 from pydantic import ValidationError
 
 from short_drama.ai.canvas_runninghub_adapters import RUNNINGHUB_ADAPTERS
-from short_drama.ai.canvas_text_adapters import TEXT_IMAGE_ADAPTERS
+from short_drama.ai.canvas_text_adapters import TEXT_IMAGE_ADAPTERS, TEXT_VIDEO_ADAPTERS
+from short_drama.ai.canvas_text_thinking import thinking_parameters
 from short_drama.ai.canvas_tool_adapters import CANVAS_TOOL_ADAPTERS
 from short_drama.ai.canvas_video_adapters import normalize_canvas_video_config
 from short_drama.ai.types import GenerationError
@@ -107,7 +108,10 @@ def _video_input(request: CanvasRuntimeTaskCreate, references: list[str], adapte
 
 
 def generation_payload(
-    request: CanvasRuntimeTaskCreate, project_id: int, adapter: str | None = None
+    request: CanvasRuntimeTaskCreate,
+    project_id: int,
+    adapter: str | None = None,
+    capability_cache: dict | None = None,
 ) -> dict:
     tool = request.input.agent_requests is not None
     if tool and adapter not in CANVAS_TOOL_ADAPTERS:
@@ -172,11 +176,18 @@ def generation_payload(
     if request.input.reference_audios:
         unsupported("referenceAudios")
     if request.input.reference_videos and (
-        request.input.mode != "text" or adapter not in TEXT_IMAGE_ADAPTERS
+        request.input.mode != "text" or adapter not in TEXT_VIDEO_ADAPTERS
     ):
         unsupported("referenceVideos")
     if request.input.text_options.thinking:
-        unsupported("thinking")
+        if request.input.mode != "text":
+            unsupported("thinking")
+        try:
+            thinking_parameters(
+                adapter, True, (capability_cache or {}).get("canvas_text_capability")
+            )
+        except GenerationError:
+            unsupported("thinking capability")
     kind = request.input.mode
     references = []
     for reference in request.input.reference_images:

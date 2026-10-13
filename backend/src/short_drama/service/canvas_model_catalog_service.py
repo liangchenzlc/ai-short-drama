@@ -4,6 +4,7 @@ import json
 from copy import deepcopy
 
 from short_drama.ai.adapters import capability_fingerprint
+from short_drama.ai.canvas_chat_protocols import COMPATIBLE_CHAT_PROTOCOLS
 from short_drama.ai.model_identity import model_credential_identity
 from short_drama.ai.types import GenerationError
 from short_drama.core.exceptions import ConfigurationError, NotFound, WorkflowError
@@ -60,6 +61,10 @@ def model_capability_cache(config: AIModelConfig, channel: dict, profile: dict) 
     if config.service_type == "text" and isinstance(capability.get("text"), dict):
         cache["canvas_text_capability"] = deepcopy(capability["text"])
     if adapter in {"claude_messages.v1", "gemini_generate_content.v1"}:
+        cache["canvas_text_defaults"] = deepcopy(profile.get("defaultOptions") or {})
+    protocol = profile.get("protocol") or channel.get("interfaceType")
+    if protocol in COMPATIBLE_CHAT_PROTOCOLS:
+        cache["canvas_text_protocol"] = protocol
         cache["canvas_text_defaults"] = deepcopy(profile.get("defaultOptions") or {})
     return cache
 

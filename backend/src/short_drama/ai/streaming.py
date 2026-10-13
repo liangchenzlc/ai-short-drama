@@ -130,7 +130,7 @@ def _events(data):
         _invalid()
 
 
-def decode_text_stream(data, *, responses):
+def decode_text_stream(data, *, responses, include_reasoning=False):
     if responses:
         for event in _events(data):
             if event is None:
@@ -150,6 +150,7 @@ def decode_text_stream(data, *, responses):
         _invalid()
 
     text, usage, finish, done = [], {}, None, False
+    reasoning = []
     try:
         for event in _events(data):
             if event is None:
@@ -169,6 +170,11 @@ def decode_text_stream(data, *, responses):
                     if not isinstance(content, str) or finish is not None:
                         _invalid()
                     text.append(content)
+                if include_reasoning and delta.get("reasoning_content") is not None:
+                    value = delta["reasoning_content"]
+                    if not isinstance(value, str) or finish is not None:
+                        _invalid()
+                    reasoning.append(value)
                 reason = choice.get("finish_reason")
                 if reason is not None:
                     if not isinstance(reason, str):
@@ -179,6 +185,14 @@ def decode_text_stream(data, *, responses):
     except (AttributeError, TypeError):
         _invalid()
     return {
-        "choices": [{"message": {"content": "".join(text)}, "finish_reason": finish}],
+        "choices": [
+            {
+                "message": {
+                    "content": "".join(text),
+                    **({"reasoning_content": "".join(reasoning)} if reasoning else {}),
+                },
+                "finish_reason": finish,
+            }
+        ],
         "usage": usage,
     }

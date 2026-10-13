@@ -75,8 +75,8 @@ class CanvasTaskReference(CanvasGenerationProtocol):
 
 
 class CanvasTextOptions(CanvasGenerationProtocol):
-    stream: bool = True
-    thinking: bool = False
+    stream: bool = Field(default=True, strict=True)
+    thinking: bool = Field(default=False, strict=True)
 
 
 class CanvasTaskInput(CanvasGenerationProtocol):
@@ -163,7 +163,6 @@ class CanvasRuntimeTaskCreate(CanvasGenerationProtocol):
                 inputs.mode != "text"
                 or self.operation != "text"
                 or inputs.text_history
-                or inputs.text_options.thinking
                 or inputs.mask
                 or inputs.reference_videos
                 or inputs.reference_audios

@@ -59,7 +59,7 @@ class ModelRuntimeProfile(InputModel):
                 continue
             if not isinstance(section, dict):
                 raise ValueError("model capability requires an object")
-            for field in ("streaming", "durationSupported"):
+            for field in ("streaming", "thinking", "durationSupported"):
                 if field in section and type(section[field]) is not bool:
                     raise ValueError("capability switches require boolean values")
             references = section.get("references")

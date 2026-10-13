@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from short_drama.ai.canvas_text_adapters import (
     TEXT_IMAGE_ADAPTERS,
+    TEXT_VIDEO_ADAPTERS,
     text_image_limits,
     text_video_limits,
 )
@@ -30,6 +31,8 @@ def freeze_text_references(
         return
     if (
         adapter not in (CANVAS_TOOL_ADAPTERS if tool else TEXT_IMAGE_ADAPTERS)
+        or videos
+        and adapter not in TEXT_VIDEO_ADAPTERS
         or canvas["operation"] != "text"
     ):
         raise WorkflowError(

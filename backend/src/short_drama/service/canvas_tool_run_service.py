@@ -351,7 +351,8 @@ class CanvasToolRunService(BaseService):
                 return self._submission(existing)
             config, adapter = self._check_current(run, canvas)
             prepared = self.generation.generation._prepare(
-                "text", generation_payload(payload, canvas.project_id, adapter)
+                "text",
+                generation_payload(payload, canvas.project_id, adapter, config.capability_cache),
             )
             prepared["canvas_request"] = deepcopy(request)
             freeze_text_references(
