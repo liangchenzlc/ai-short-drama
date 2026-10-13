@@ -1,9 +1,9 @@
 """角色锁内版本读取与追加；事务和锁由 Service 调用者管理。"""
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
-from short_drama.domain import AssetVersion, AssetVersionMediaReference
+from short_drama.domain import AssetVersion, AssetVersionMediaReference, MediaFile
 
 
 class AssetVersionDAO:
@@ -43,6 +43,26 @@ class AssetVersionDAO:
                 .execution_options(populate_existing=True)
             )
         )
+
+    def media(self, media_id: int) -> MediaFile | None:
+        cached = self.session.identity_map.get(
+            self.session.identity_key(MediaFile, ident=(media_id,))
+        )
+        query = select(MediaFile).where(MediaFile.id == media_id).with_for_update()
+        if cached is None or not self.session.is_modified(cached, include_collections=False):
+            return self.session.scalar(query.execution_options(populate_existing=True))
+        media = self.session.scalar(query)
+        if media is not None:
+            state = inspect(media)
+            unchanged = [
+                column.key
+                for column in state.mapper.column_attrs
+                if not state.attrs[column.key].history.has_changes()
+            ]
+            # 锁内读取当前列，不覆盖调用者尚待 flush 的媒体修改及其历史。
+            if unchanged:
+                self.session.refresh(media, attribute_names=unchanged, with_for_update=True)
+        return media
 
     def add(self, entity: AssetVersion | AssetVersionMediaReference) -> None:
         self.session.add(entity)

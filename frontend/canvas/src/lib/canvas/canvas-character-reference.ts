@@ -23,6 +23,7 @@ export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], as
     coverEquivalent?: (left?: string, right?: string) => boolean;
     preservePrivateVoice?: boolean;
     preservePrivatePrompt?: boolean;
+    refreshPinned?: boolean;
 } = {}) {
     const characters = new Map(assets.filter((asset) => asset.category === "character" && asset.character).map((asset) => [asset.id, asset]));
     let changed = false;
@@ -30,10 +31,10 @@ export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], as
         const metadata = node.metadata;
         const assetId = metadata?.workflowKind === "character" ? metadata.characterAssetId : "";
         const asset = assetId ? characters.get(assetId) : undefined;
-        if (!metadata || !asset?.character || metadata.characterVersionPolicy === "pinned") return node;
+        if (!metadata || !asset?.character || metadata.characterVersionPolicy === "pinned" && (!options.refreshPinned || metadata.characterVersionId !== asset.character.versionId)) return node;
         const expected = options.expectedNodes?.get(node.id);
         if (options.expectedNodes && (!expected || expected.title !== node.title
-            || ["characterAssetId", "characterVersionId", "characterName", "characterPrompt", "characterAliases", "characterDefinition"].some(key => JSON.stringify(expected.metadata?.[key as keyof typeof metadata]) !== JSON.stringify(metadata[key as keyof typeof metadata]))
+            || ["characterAssetId", "characterVersionId", "characterVersionPolicy", "characterName", "characterPrompt", "characterAliases", "characterDefinition"].some(key => JSON.stringify(expected.metadata?.[key as keyof typeof metadata]) !== JSON.stringify(metadata[key as keyof typeof metadata]))
             || expected.metadata?.characterCoverUrl !== metadata.characterCoverUrl && !options.coverEquivalent?.(expected.metadata?.characterCoverUrl, metadata.characterCoverUrl))) return node;
         const card = asset.character;
         const cover = card.representations.find((item) => item.role === "turnaround_sheet") || card.representations.find((item) => item.role === "primary") || card.representations.find((item) => item.role === "front");
@@ -62,7 +63,7 @@ export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], as
             && metadata.characterCoverUrl === resourceFileUrl(persistedCoverId)) patch.characterCoverUrl = metadata.characterCoverUrl;
         if (options.preservePrivatePrompt && metadata.characterPrompt !== undefined
             && metadata.characterPrompt !== compileCharacterReferencePrompt(metadata.characterName || node.title, metadata.characterDefinition || {})) patch.characterPrompt = metadata.characterPrompt;
-        if (options.preservePrivateVoice) {
+        if (options.preservePrivateVoice && (metadata.characterVoiceName || metadata.characterVoiceProfile || metadata.characterVoiceInstructions)) {
             patch.characterVoiceStatus = metadata.characterVoiceStatus;
             patch.characterVoiceName = metadata.characterVoiceName;
             patch.characterVoiceProfile = metadata.characterVoiceProfile;

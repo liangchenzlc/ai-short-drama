@@ -192,7 +192,7 @@ test("selection 每次确认重读详情，并保留所选版本约束", async (
     h.states[0] = { contextKey: h.queries[0].queryKey[1], cards: [asset], startingNodes: h.nodesRef.current };
     const selected = h.render();
     h.answer(async () => ({ canvas_key: "canvas-one", canvas_row_version: "7", source_project_id: "91", item: {
-        asset_id: asset.id, asset_row_version: "1", current_version_id: "9007199254740996", version: "3", position: 0, name: "阿青", label: "", description: "", prompt: "", tags: [], definition: {}, definition_origin: "structured", representations: [],
+        asset_id: asset.id, asset_row_version: "1", current_version_id: "9007199254740996", version_id: "9007199254740996", version: "3", position: 0, name: "阿青", label: "", description: "", prompt: "", tags: [], definition: {}, definition_origin: "structured", representations: [],
     } }));
     await assert.rejects(selected.readSelectedCharacter(asset.id, h.scope.captureUserScope()), /当前版本已变化/);
     assert.equal(h.calls.length, 1); assert.match(h.calls[0][0], new RegExp(`${asset.id}$`));
@@ -201,7 +201,7 @@ test("selection 每次确认重读详情，并保留所选版本约束", async (
 test("目录请求起点冻结角色字段，原地修改别名也不能被在途响应覆盖", async () => {
     const h = harness(); h.render(); const asset = card();
     const context = { canvas_key: "canvas-one", canvas_row_version: "7", source_project_id: "91" };
-    const item = { asset_id: asset.id, asset_row_version: "1", current_version_id: "9007199254740996", version: "3", position: 0, name: "阿青", label: "", description: "新设定", prompt: "", tags: [], definition: { description: "新设定" }, definition_origin: "legacy_current", representations: [] };
+    const item = { asset_id: asset.id, asset_row_version: "1", current_version_id: "9007199254740996", version_id: "9007199254740996", version: "3", position: 0, name: "阿青", label: "", description: "新设定", prompt: "", tags: [], definition: { description: "新设定" }, definition_origin: "legacy_current", voice_status: "unavailable", voice_sample: null, representations: [] };
     h.answer(async path => path.endsWith("image-resources") ? { ...context, asset_id: asset.id, version_id: item.current_version_id, images: [] } : { ...context, items: [item] });
     const pending = h.queries[0].queryFn();
     h.nodesRef.current[0].metadata.characterAliases.push("本人刚输入的别名");

@@ -168,7 +168,7 @@ class CanvasCharacterPublicationService:
                             "角色共享图不能包含私人参数，请先完成作者状态拆分",
                             422,
                         )
-        items = {}
+        roles = {}
         # 多角色共享稳定锁顺序，不根据前端节点排列获取 Asset 锁。
         for identifier in sorted(
             {self._identifier(node["metadata"], "characterAssetId") for node in nodes}
@@ -177,7 +177,8 @@ class CanvasCharacterPublicationService:
             asset = catalog.catalog.locked_asset(identifier)
             if relation is None or asset is None or asset.kind != "character":
                 raise NotFound("角色未关联到可信业务来源或当前账号无权访问")
-            items[identifier] = catalog._item(relation, asset)
+            roles[identifier] = (relation, asset)
+        items = {}
         previous = self._previous_covers(canvas)
         resources = CanvasResourceDAO(self.session)
         for node in nodes:
@@ -186,15 +187,20 @@ class CanvasCharacterPublicationService:
                 raise WorkflowError("canvas_character_invalid", "角色作品必须使用源角色卡节点", 422)
             identifier = self._identifier(metadata, "characterAssetId")
             expected_version = self._identifier(metadata, "characterVersionId")
-            item = items[identifier]
-            if expected_version != int(item.current_version_id):
+            policy = metadata.get("characterVersionPolicy")
+            if policy not in {"current", "pinned"}:
+                raise WorkflowError(
+                    "canvas_character_version_policy_unsupported", "角色版本策略无效", 422
+                )
+            relation, asset = roles[identifier]
+            if policy == "current" and expected_version != asset.current_version_id:
                 raise WorkflowError(
                     "canvas_character_version_changed", "角色当前版本已变化，请重新读取角色", 409
                 )
-            if metadata.get("characterVersionPolicy") != "current":
-                raise WorkflowError(
-                    "canvas_character_version_policy_unsupported", "当前只支持真实当前角色版本", 422
-                )
+            item_key = (identifier, expected_version)
+            if item_key not in items:
+                items[item_key] = catalog._item(relation, asset, expected_version)
+            item = items[item_key]
             definition = metadata.get("characterDefinition")
             public, _ = _split_nested(definition, CHARACTER_PRIVATE_NESTED)
             expected, _ = _split_nested(item.definition, CHARACTER_PRIVATE_NESTED)

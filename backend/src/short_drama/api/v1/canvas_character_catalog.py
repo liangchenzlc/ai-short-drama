@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Path, Query, Request
 
 from short_drama.api.v1.canvases import Canvases
 from short_drama.schemas.base import Identifier
@@ -20,10 +20,20 @@ AssetId = Annotated[Identifier, Path()]
 
 
 @router.get(PATH, response_model=CanvasCharacterCatalogRead)
-def list_canvas_characters(source_key: SourceKey, service: Canvases):
-    return CanvasCharacterCatalogService(service.session).list(source_key)
+def list_canvas_characters(source_key: SourceKey, request: Request, service: Canvases):
+    return CanvasCharacterCatalogService(
+        service.session, settings=getattr(request.app.state, "settings", None)
+    ).list(source_key)
 
 
 @router.get(PATH + "/{asset_id}", response_model=CanvasCharacterCatalogDetailRead)
-def get_canvas_character(source_key: SourceKey, asset_id: AssetId, service: Canvases):
-    return CanvasCharacterCatalogService(service.session).get(source_key, asset_id)
+def get_canvas_character(
+    source_key: SourceKey,
+    asset_id: AssetId,
+    request: Request,
+    service: Canvases,
+    requested_version_id: Annotated[Identifier | None, Query()] = None,
+):
+    return CanvasCharacterCatalogService(
+        service.session, settings=getattr(request.app.state, "settings", None)
+    ).get(source_key, asset_id, requested_version_id=requested_version_id)

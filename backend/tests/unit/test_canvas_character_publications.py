@@ -292,7 +292,7 @@ def test_real_copy_publishes_work_and_actor_private_fields_are_not_shared(catalo
         ("characterName", "forged", "canvas_character_work_changed"),
         ("characterDefinition", {"description": "forged"}, "canvas_character_work_changed"),
         ("characterAliases", ["forged"], "canvas_character_work_changed"),
-        ("characterVersionPolicy", "pinned", "canvas_character_version_policy_unsupported"),
+        ("characterVersionPolicy", "future", "canvas_character_version_policy_unsupported"),
         ("characterAssetId", ASSET, "canvas_character_invalid"),
         ("characterCoverUrl", "blob:preview", "canvas_character_cover_not_persisted"),
         (

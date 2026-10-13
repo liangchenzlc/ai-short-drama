@@ -29,6 +29,7 @@ export type ResolvedCharacterVoice = {
     versionId: string;
     characterName: string;
     voiceKey: string;
+    bindingVersion: string;
     sampleResourceId?: string;
     language?: string;
     voiceAge?: string;
@@ -500,9 +501,9 @@ export async function hydrateNodeGenerationContext(context: NodeGenerationContex
     );
     if (!context.characterReferences.length) return { ...context, referenceImages };
     if (!domainProjectId) throw new Error("角色引用未关联短剧项目，无法解析角色版本");
-    const { getProjectCharacter } = await import("@/services/api/projects");
+    const { readCanvasGenerationCharacters, normalizeCanvasCharacterGenerationResources } = await import("@/services/host-character-generation");
     const { getResource, resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey } = await import("@/services/api/resources");
-    const details = await Promise.all(context.characterReferences.map((reference) => getProjectCharacter(domainProjectId, reference.assetId)));
+    const details = await readCanvasGenerationCharacters(projectId, domainProjectId, context.characterReferences);
     const remainingBudget = Math.max(0, (referenceLimits?.maxImages ?? 9) - referenceImages.length);
     const selected = details.flatMap((detail) => {
         const representation = preferredCharacterRepresentation(detail.character.representations);
@@ -522,13 +523,13 @@ export async function hydrateNodeGenerationContext(context: NodeGenerationContex
         dataUrl: "",
         storageKey: resourceStorageKey(representation.resourceId),
     } satisfies ReferenceImage));
-    const hydratedCharacterImages = await Promise.all(characterImages.map(async (image) => ({ ...image, dataUrl: await imageToDataUrl(image) })));
-    referenceImages = [...referenceImages, ...hydratedCharacterImages];
     const characterBlocks = details.map((detail) => compileCharacterReferencePrompt(detail.asset.title, detail.character.definition));
-    const resolvedCharacterVersions = details.map((detail) => ({ assetId: detail.asset.id, versionId: detail.character.versionId }));
+    const resolvedCharacterVersions = Array.from(new Map(details.map(detail => [`${detail.asset.id}:${detail.character.versionId}`, { assetId: detail.asset.id, versionId: detail.character.versionId }])).values());
     const resolvedCharacterVoices = details.flatMap((detail): ResolvedCharacterVoice[] => {
         const voice = detail.character.voice;
         if (!voice) return [];
+        if (mode === "audio" && !voice.profile.voiceKey) throw new Error("角色当前声音为已采用样音，所选配音协议需要供应商音色；请使用支持样音参考的视频模型");
+        if (mode !== "video" || !includeCharacterVoiceSamples) return [];
         const language = stringField(detail.character.definition.voiceLanguage) || stringField(voice.profile.language);
         const voiceAge = stringField(detail.character.definition.voiceAge);
         const timbre = stringField(detail.character.definition.voiceTimbre) || stringField(voice.profile.timbre);
@@ -539,6 +540,7 @@ export async function hydrateNodeGenerationContext(context: NodeGenerationContex
             versionId: detail.character.versionId,
             characterName: detail.asset.title,
             voiceKey: stringField(voice.profile.voiceKey),
+            bindingVersion: stringField(voice.profile.bindingVersion),
             sampleResourceId: sampleResourceId || undefined,
             language: language || undefined,
             voiceAge: voiceAge || undefined,
@@ -547,6 +549,7 @@ export async function hydrateNodeGenerationContext(context: NodeGenerationContex
             instructions: [language && `语言与口音：${language}`, voiceAge && `声音年龄感：${voiceAge}`, timbre && `音色气质：${timbre}`, deliveryInstructions].filter(Boolean).join("；"),
         }];
     });
+    const uniqueCharacterVoices = resolvedCharacterVoices.filter((voice, index) => resolvedCharacterVoices.findIndex(value => value.assetId === voice.assetId && value.versionId === voice.versionId) === index);
     const usedAudioResourceIds = new Set(context.referenceAudios.map((audio) => resourceIdFromStorageKey(audio.storageKey)).filter(Boolean));
     const voiceSamples: ResolvedCharacterVoice[] = [];
     // 视频模型接收声音样本；独立配音任务仍通过 voiceKey 选音色，不能把两种协议混用。
@@ -559,15 +562,25 @@ export async function hydrateNodeGenerationContext(context: NodeGenerationContex
     }
     const maxAudios = referenceLimits?.maxAudios ?? 3;
     if (context.referenceAudios.length + voiceSamples.length > maxAudios) throw new Error(`当前模型参考音频容量不足：已连接 ${context.referenceAudios.length} 个音频，角色声音样本还需要 ${voiceSamples.length} 个名额`);
+    const resourceMap = await normalizeCanvasCharacterGenerationResources(projectId, [
+        ...characterImages.map(image => resourceIdFromStorageKey(image.storageKey)),
+        ...voiceSamples.map(voice => voice.sampleResourceId!),
+    ]);
+    const hydratedCharacterImages = await Promise.all(characterImages.map(async image => {
+        const copied = { ...image, storageKey: resourceStorageKey(resourceMap[resourceIdFromStorageKey(image.storageKey)]) };
+        return { ...copied, dataUrl: await imageToDataUrl(copied) };
+    }));
+    referenceImages = [...referenceImages, ...hydratedCharacterImages];
     const characterVoiceAudios = await Promise.all(voiceSamples.map(async (voice) => {
-        const resource = await getResource(voice.sampleResourceId!);
+        const sampleId = resourceMap[voice.sampleResourceId!];
+        const resource = await getResource(sampleId);
         const extension = audioFileExtension(resource.mimeType, resource.objectKey);
         return resolveReferenceMediaDuration({
             id: `character-voice-${voice.assetId}`,
             name: `${voice.characterName}-声音样本.${extension}`,
             type: resource.mimeType || "audio/mpeg",
-            url: resourceFileUrl(voice.sampleResourceId!),
-            storageKey: resourceStorageKey(voice.sampleResourceId!),
+            url: resourceFileUrl(sampleId),
+            storageKey: resourceStorageKey(sampleId),
             durationMs: resource.durationMs,
             bytes: resource.size,
         } satisfies ReferenceAudio);
@@ -580,7 +593,7 @@ export async function hydrateNodeGenerationContext(context: NodeGenerationContex
         referenceImages,
         referenceAudios,
         resolvedCharacterVersions,
-        resolvedCharacterVoices,
+        resolvedCharacterVoices: uniqueCharacterVoices,
         imageCount: referenceImages.length,
         audioCount: referenceAudios.length,
     };

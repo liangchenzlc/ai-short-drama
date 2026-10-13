@@ -2,13 +2,12 @@
 
 import copy
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
 from short_drama.dao.asset_version_dao import AssetVersionDAO
 from short_drama.db.asset_version_access import _append_context
-from short_drama.domain import Asset, AssetVersion, AssetVersionMediaReference, MediaFile
+from short_drama.domain import Asset, AssetVersion, AssetVersionMediaReference
 from short_drama.schemas.asset_version import (
     snapshot_content_hash,
     snapshot_media_references,
@@ -75,9 +74,7 @@ class AssetVersionService:
         from short_drama.db.access import scope_of
 
         for slot in snapshot_media_references(snapshot):
-            media = self.session.scalar(
-                select(MediaFile).where(MediaFile.id == int(slot["media_id"])).with_for_update()
-            )
+            media = self.dao.media(int(slot["media_id"]))
             if media is None or scope_of(self.session, media) != scope_of(self.session, asset):
                 raise NotFound("角色版本引用的媒体不属于角色范围")
             if not (media.format_code.startswith("image/") or media.format_code == "demo:image"):
@@ -122,6 +119,18 @@ class AssetVersionService:
         ):
             raise Conflict("角色当前内容与不可变版本不一致")
         return copy.deepcopy(snapshot)
+
+    def snapshot_locked(self, asset: Asset, version_id: int) -> dict:
+        """读取明确指定的不可变作品；历史版本不要求等于角色当前平面内容。"""
+        self._require_transaction()
+        if asset.kind != "character":
+            raise NotFound("角色作品版本不存在")
+        if version_id == asset.current_version_id:
+            return self.current_snapshot_locked(asset)
+        version = self.dao.current(asset.id, version_id)
+        if version is None:
+            raise NotFound("指定的角色作品版本不存在")
+        return copy.deepcopy(self._stored_snapshot(asset, version))
 
     def snapshot_for_copy_locked(self, asset: Asset) -> dict:
         """冻结复制来源；无历史的旧角色只记录实际当前值，不隐式补版。"""

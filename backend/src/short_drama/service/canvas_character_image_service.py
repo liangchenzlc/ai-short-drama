@@ -1,6 +1,7 @@
 """从当前不可变版本解析真实资源；只读，不复制、不检查对象字节。"""
 
 import re
+from typing import Literal
 
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -79,11 +80,18 @@ class CanvasCharacterImageService(CanvasCharacterCatalogService):
         )
 
     def get(
-        self, source_key: str, asset_id: int, expected_version_id: int
+        self,
+        source_key: str,
+        asset_id: int,
+        expected_version_id: int,
+        *,
+        version_policy: Literal["current", "pinned"] = "current",
     ) -> CanvasCharacterImagesRead:
         _ = self.actor_id
         asset_id = parse_identifier(asset_id)
         expected_version_id = parse_identifier(expected_version_id)
+        if version_policy not in {"current", "pinned"}:
+            raise WorkflowError("canvas_character_version_policy_invalid", "角色版本策略无效", 422)
         with self._transaction(read_only=True):
             canvas = self._bound_canvas(source_key)
             relation = self.catalog.relation(canvas.source_project_id, asset_id)
@@ -92,16 +100,16 @@ class CanvasCharacterImageService(CanvasCharacterCatalogService):
             asset = self.catalog.locked_asset(asset_id)
             if asset is None or asset.kind != "character":
                 raise NotFound("角色不存在或当前账号无权访问")
-            if asset.current_version_id != expected_version_id:
+            if version_policy == "current" and asset.current_version_id != expected_version_id:
                 raise WorkflowError(
                     "canvas_character_version_changed",
                     "角色当前版本已变化，请重新读取角色",
                     409,
                 )
-            item = self._item(relation, asset)
+            item = self._item(relation, asset, expected_version_id)
             return CanvasCharacterImagesRead(
                 **self._context(canvas),
                 asset_id=asset.id,
-                version_id=item.current_version_id,
+                version_id=item.version_id,
                 images=[self._resource(asset, slot, canvas) for slot in item.representations],
             )

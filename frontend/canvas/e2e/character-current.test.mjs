@@ -25,8 +25,8 @@ async function installApi(page, options = {}) {
     const characterCalls = [];
     const normalizes = [];
     let catalogFailure = false;
-    let imageFailure = false;
-    let characters = [characterFixture()];
+    let imageFailure = Boolean(options.failImage);
+    let characters = [characterFixture(options.currentVersion)];
     let heldCharacterRead;
     const heldCharacterWaiters = [];
     const viewportWrites = [];
@@ -65,19 +65,34 @@ async function installApi(page, options = {}) {
         else if (path === "/agent/skills") body = { items: [], total: 0, offset: 0, limit: 50 };
         else if (path.startsWith("/canvas-runtime/canvas-projects/parity-canvas/character-catalog")) {
             assert.equal(request.headers()["x-canvas-actor"], "111");
-            characterCalls.push({ path, method: request.method() });
+            const query = Object.fromEntries(new URL(request.url()).searchParams);
+            characterCalls.push({ path, method: request.method(), query });
             const snapshot = { canvas_key: document.id, canvas_row_version: document.revision, source_project_id: document.projectId };
-            const item = structuredClone(characters[0]);
+            let item = structuredClone(characters[0]);
+            const historical = path.endsWith("image-resources") ? query.version_policy === "pinned" : Boolean(query.requested_version_id);
+            if (historical) {
+                const requested = query.requested_version_id || query.expected_version_id;
+                if (requested !== "9500000000000001") {
+                    await route.fulfill({ status: 404, json: { error: { code: "not_found", message: "Historical version is missing" } } }); return;
+                }
+                item = { ...characterFixture(), current_version_id: characters[0].current_version_id, name: "阿青旧版", version: "1", definition_origin: "structured", definition: { description: "旧版青衣", prompt: "保持旧版" } };
+            }
             if (heldCharacterRead) await new Promise(resolve => heldCharacterWaiters.push(resolve));
             if (catalogFailure) {
                 await route.fulfill({ status: 409, json: { error: { code: "canvas_character_version_conflict", message: "当前角色版本已变化，请刷新" } } }); return;
             }
             if (path.endsWith("image-resources")) {
-                if (new URL(request.url()).searchParams.get("expected_version_id") !== item.current_version_id) {
+                if (query.expected_version_id !== item.version_id) {
                     await route.fulfill({ status: 409, json: { error: { code: "canvas_character_version_conflict", message: "当前角色版本已变化，请刷新" } } }); return;
                 }
-                body = { ...snapshot, asset_id: item.asset_id, version_id: item.current_version_id, images: item.representations.map(({ reference_id, role, ordinal, media_id }) => ({ reference_id, role, ordinal, media_id, resource_key: `resource:${media_id}`, file_path: `/api/v1/canvas-runtime/resources/${media_id}/file`, requires_canvas_copy: true, resource: resourceFixture(media_id) })) };
+                body = { ...snapshot, asset_id: item.asset_id, version_id: item.version_id, images: item.representations.map(({ reference_id, role, ordinal, media_id }) => ({ reference_id, role, ordinal, media_id, resource_key: `resource:${media_id}`, file_path: `/api/v1/canvas-runtime/resources/${media_id}/file`, requires_canvas_copy: true, resource: resourceFixture(media_id) })) };
             } else body = path.endsWith("character-catalog") ? { ...snapshot, items: structuredClone(characters) } : { ...snapshot, item };
+        }
+        else if (path === "/canvas-runtime/canvas-projects/parity-canvas/source-project") {
+            assert.equal(request.headers()["x-canvas-actor"], "111");
+            body = { canvas_key: document.id, canvas_row_version: document.revision, owning_project_id: document.workspaceProjectId, source_project_id: document.projectId,
+                project: { id: document.projectId, row_version: "1", name: "角色来源", synopsis: "", aspect: "16:9", style_text: "" }, episodes: [],
+                capabilities: { source_style_snapshot: "unavailable", source_asset_folders: "unavailable", source_assets: "not_included" } };
         }
         else if (path === "/canvas-runtime/resources/normalize") {
             const input = request.postDataJSON(); normalizes.push(input);
@@ -199,7 +214,7 @@ function resourceFixture(id) {
     return { id, userId: "111", kind: "image", status: "ready", provider: "minio", endpoint: "", bucket: "", objectKey: "", publicUrl: "", mimeType: "image/png", size: 68, width: 1, height: 1, durationMs: 0, etag: "", createdAt: initial.createdAt, updatedAt: initial.updatedAt };
 }
 function characterFixture(version = "9500000000000001") {
-    return { asset_id: "9200000000000001", asset_row_version: "1", current_version_id: version, version: "2", position: 0, name: "阿青", label: "主角", description: "青衣少女", prompt: "保持青衣", tags: ["主角"], definition: { description: "青衣少女", prompt: "保持青衣" }, definition_origin: "legacy_current", representations: [{ reference_id: "9600000000000001", role: "turnaround_sheet", ordinal: 0, media_id: "9400000000000001", format_code: "png", mime_type: "image/png", original_name: "角色.png", byte_size: 68, width: 1, height: 1 }] };
+    return { asset_id: "9200000000000001", asset_row_version: "1", current_version_id: version, version_id: version, version: "2", position: 0, name: "阿青", label: "主角", description: "青衣少女", prompt: "保持青衣", tags: ["主角"], definition: { description: "青衣少女", prompt: "保持青衣" }, definition_origin: "legacy_current", voice_status: "unavailable", voice_sample: null, representations: [{ reference_id: "9600000000000001", role: "turnaround_sheet", ordinal: 0, media_id: "9400000000000001", format_code: "png", mime_type: "image/png", original_name: "角色.png", byte_size: 68, width: 1, height: 1 }] };
 }
 async function until(check, label) {
     const deadline = Date.now() + 15000;
@@ -310,19 +325,23 @@ test("current目录错误/重试、详情图片失败、空与未绑定来源就
         api.failCatalog(false); await page.getByRole("button", { name: /重\s*试/ }).click();
         await page.locator(".asset-picker-card-action[title='阿青']").waitFor(); await insertSelected(page);
         await until(() => api.document().nodes.some(node => node.metadata?.characterAssetId), "插入应保存");
-        const saved = api.document().nodes.find(node => node.metadata?.characterAssetId);
-        api.failImage(true);
-        await page.reload();
-        await page.locator(`[data-node-id="${saved.id}"]`).waitFor();
-        await page.locator(`[data-node-id="${saved.id}"]`).dblclick();
-        await page.getByText("角色图片读取失败，请重试", { exact: true }).waitFor();
-        api.failImage(false); await page.getByRole("button", { name: /重\s*试/ }).click();
-        await page.getByRole("img", { name: "阿青人物三视图", exact: true }).waitFor();
-        await page.locator(".ant-modal-close").click();
         api.emptyCharacters();
         await page.getByRole("button", { name: "人像造型室", exact: true }).click();
         await page.getByText("此项目暂无已采用角色。", { exact: true }).waitFor();
         assert.equal(await page.locator(".asset-picker-card-action").count(), 0);
+    });
+    const role = { id: "image-error-role", type: "text", title: "阿青", position: { x: 420, y: 510 }, width: 320, height: 260,
+        metadata: { workflowKind: "character", characterAssetId: "9200000000000001", characterVersionId: "9500000000000001", characterVersionPolicy: "current",
+            characterName: "阿青", characterDefinition: { description: "青衣少女", prompt: "保持青衣" }, characterPrompt: "【角色卡：阿青】\n青衣少女\n保持青衣",
+            characterCoverUrl: "/api/v1/canvas-runtime/resources/9400000000000002/file", characterVisualStatus: "ready", characterVoiceStatus: "unavailable" } };
+    await withBrowser(1440, { failImage: true, nodes: [...initial.nodes, role] }, async ({ page, api }) => {
+        await page.getByRole("button", { name: "适合屏幕", exact: true }).click();
+        await page.locator('[data-node-id="image-error-role"]').dblclick();
+        await page.getByText("角色图片读取失败，请重试", { exact: true }).waitFor();
+        api.failImage(false);
+        await page.getByRole("button", { name: /重\s*试/ }).click();
+        await page.getByRole("img", { name: "阿青人物三视图", exact: true }).waitFor();
+        await page.waitForFunction(() => [...document.images].some(image => image.alt === "阿青人物三视图" && image.complete && image.naturalWidth > 0));
     });
     await withBrowser(600, { unbound: true }, async ({ page, api }) => {
         await page.getByRole("button", { name: "人像造型室", exact: true }).click();
@@ -368,5 +387,36 @@ test("撤权后在途目录响应不回灌、不继续resolver或保存（API替
         assert.equal(api.characterCalls.filter(call => call.path.endsWith("image-resources")).length, imageReads);
         assert.equal(api.commits.length, 0);
         assert.equal(api.document().nodes.filter(node => node.metadata?.characterAssetId).length, 0);
+    });
+});
+
+
+test("pinned角色详情与刷新固定历史，当前版推进不覆盖（1440/600px，API替身）", { timeout: 180000 }, async () => {
+    const pinned = { id: "pinned-role", type: "text", title: "阿青旧版", position: { x: 420, y: 510 }, width: 320, height: 260,
+        metadata: { workflowKind: "character", characterAssetId: "9200000000000001", characterVersionId: "9500000000000001", characterVersionPolicy: "pinned",
+            characterName: "阿青旧版", characterDefinition: { description: "旧版青衣", prompt: "保持旧版" }, characterPrompt: "【角色卡：阿青旧版】\n旧版青衣\n保持旧版",
+            characterCoverUrl: "/api/v1/canvas-runtime/resources/9400000000000002/file", characterVisualStatus: "ready", characterVoiceStatus: "unavailable" } };
+    for (const width of [1440, 600]) await withBrowser(width, { currentVersion: "9500000000000002", nodes: [...initial.nodes, pinned] }, async ({ page, api }) => {
+        const open = async () => {
+            await page.getByRole("button", { name: "适合屏幕", exact: true }).click();
+            await page.locator('[data-node-id="pinned-role"]').dblclick();
+            await page.getByText("项目角色引用 · 固定版本", { exact: true }).waitFor();
+            await page.getByRole("heading", { name: "阿青旧版", exact: true }).waitFor();
+            await page.getByRole("img", { name: "阿青旧版人物三视图", exact: true }).waitFor();
+        };
+        await open();
+        await page.screenshot({ path: resolve(`.runtime/browser/character-current/pinned-${width}.png`) });
+        await page.locator(".ant-modal-close").click();
+        await page.reload();
+        await page.locator('[data-node-id="pinned-role"]').waitFor();
+        if (width < 1024 && await page.getByRole("button", { name: "退出专注模式", exact: true }).isVisible()) await page.getByRole("button", { name: "退出专注模式", exact: true }).click();
+        await open();
+        const saved = api.document().nodes.find(node => node.id === "pinned-role");
+        assert.equal(saved.metadata.characterVersionPolicy, "pinned");
+        assert.equal(saved.metadata.characterVersionId, "9500000000000001");
+        assert.equal(saved.metadata.characterName, "阿青旧版");
+        assert.ok(api.characterCalls.filter(call => call.query.requested_version_id === "9500000000000001").length >= 2);
+        assert.ok(api.characterCalls.filter(call => call.query.version_policy === "pinned" && call.query.expected_version_id === "9500000000000001").length >= 2);
+        assert.equal(api.characterCalls.some(call => /projects\/.+\/characters\//.test(call.path)), false);
     });
 });

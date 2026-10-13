@@ -7,6 +7,7 @@ from pydantic import Field, JsonValue
 from .asset_version import RepresentationRole
 from .base import Identifier, PositiveUInt32, ReadModel, UInt64
 from .canvas import CanvasKey
+from .canvas_resource import CanvasResourceRead
 
 
 class CanvasCharacterRepresentationRead(ReadModel):
@@ -22,10 +23,19 @@ class CanvasCharacterRepresentationRead(ReadModel):
     height: PositiveUInt32 | None
 
 
+class CanvasCharacterVoiceSampleRead(ReadModel):
+    binding_version: Identifier
+    media_id: Identifier
+    checksum_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    duration_ms: Annotated[int, Field(strict=True, ge=3000, le=7500)]
+    resource: CanvasResourceRead
+
+
 class CanvasCharacterCatalogItemRead(ReadModel):
     asset_id: Identifier
     asset_row_version: Identifier
     current_version_id: Identifier
+    version_id: Identifier
     version: Identifier
     position: PositiveUInt32
     name: str
@@ -36,6 +46,8 @@ class CanvasCharacterCatalogItemRead(ReadModel):
     definition: dict[str, JsonValue]
     definition_origin: Literal["legacy_current", "structured"]
     representations: list[CanvasCharacterRepresentationRead]
+    voice_status: Literal["missing", "ready", "unavailable"] = "unavailable"
+    voice_sample: CanvasCharacterVoiceSampleRead | None = None
 
 
 class CanvasCharacterCatalogRead(ReadModel):

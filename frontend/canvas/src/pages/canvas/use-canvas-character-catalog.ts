@@ -61,13 +61,14 @@ export function useCanvasCharacterCatalog({ canvasKey, sourceProjectId, rowVersi
         },
     });
     const detailAssetId = detailNode?.metadata?.characterAssetId || "";
-    const detailSupported = detailNode?.metadata?.characterVersionPolicy !== "pinned";
+    const pinnedVersion = detailNode?.metadata?.characterVersionPolicy === "pinned" ? detailNode.metadata.characterVersionId : undefined;
+    const detailSupported = detailNode?.metadata?.characterVersionPolicy !== "pinned" || Boolean(pinnedVersion);
     const detail = useQuery({
-        queryKey: ["canvas-character-detail", contextKey, detailNode?.id || "", detailAssetId],
+        queryKey: ["canvas-character-detail", contextKey, detailNode?.id || "", detailAssetId, pinnedVersion || "current"],
         enabled: ready && Boolean(detailAssetId) && detailSupported, retry: false,
         queryFn: async () => {
             const read = beginRead();
-            const card = await readCanvasCharacterDetail(read.transport, read.context, detailAssetId, read.assertCurrent);
+            const card = await readCanvasCharacterDetail(read.transport, read.context, detailAssetId, read.assertCurrent, undefined, pinnedVersion);
             return { cards: [card], startingNodes: read.startingNodes, contextKey };
         },
     });
@@ -87,9 +88,9 @@ export function useCanvasCharacterCatalog({ canvasKey, sourceProjectId, rowVersi
         const expectedNodes = new Map(result.startingNodes.filter(node => node.id === detailNode.id).map(node => [node.id, node]));
         setNodes(current => {
             try { beginRead().assertCurrent(); } catch { return current; }
-            return refreshCanvasCharacterReferenceNodes(current, result.cards, { expectedNodes, coverEquivalent, preservePrivateVoice: true, preservePrivatePrompt: true });
+            return refreshCanvasCharacterReferenceNodes(current, result.cards, { expectedNodes, coverEquivalent, preservePrivateVoice: true, preservePrivatePrompt: true, refreshPinned: Boolean(pinnedVersion) });
         });
-    }, [beginRead, contextKey, detail.data, detail.isError, detailNode?.id, setNodes]);
+    }, [beginRead, contextKey, pinnedVersion, detail.data, detail.isError, detailNode?.id, setNodes]);
 
     const readSelectedCharacter = useCallback(async (assetId: string, expectedScope: CapturedUserScope) => {
         assertUserScope(expectedScope);
@@ -107,7 +108,7 @@ export function useCanvasCharacterCatalog({ canvasKey, sourceProjectId, rowVersi
         error: sourceError || (catalog.isError ? textError(catalog.error) : ""),
         refreshCharacters, readSelectedCharacter,
         detailLoading: ready && Boolean(detailAssetId) && detailSupported && (detail.isPending || detail.isFetching),
-        detailError: sourceError || (!detailSupported ? "固定版本角色引用暂不支持读取" : detail.isError ? textError(detail.error) : ""),
+        detailError: sourceError || (!detailSupported ? "固定版本角色缺少有效版本，请重新选择角色" : detail.isError ? textError(detail.error) : ""),
         retryDetail,
     };
 }

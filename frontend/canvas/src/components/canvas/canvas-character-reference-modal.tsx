@@ -69,7 +69,7 @@ export function CanvasCharacterReferenceModal({ node, open, onClose, loading = f
                             </span>
                             <div className="min-w-0">
                                 <h2 className="truncate text-xl font-semibold leading-7">{name}</h2>
-                                <p className="mt-1 text-[var(--fs-label)] text-foreground/45">项目角色引用 · 当前版本</p>
+                                <p className="mt-1 text-[var(--fs-label)] text-foreground/45">项目角色引用 · {metadata?.characterVersionPolicy === "pinned" ? "固定版本" : "当前版本"}</p>
                             </div>
                         </div>
                         <div className="mt-4 flex flex-wrap gap-1.5">

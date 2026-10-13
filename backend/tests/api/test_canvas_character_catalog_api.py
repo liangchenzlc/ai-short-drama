@@ -24,10 +24,20 @@ PATH = f"/api/v1/canvas-runtime/canvas-projects/{KEY}/character-catalog"
 
 
 @pytest.fixture
-def runtime(catalog_session):
+def runtime(catalog_session, request):
     session, _ = catalog_session
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
+    if getattr(request, "param", None):
+        from short_drama.core.config import Settings
+
+        app.state.settings = Settings(
+            _env_file=None,
+            native_video_enabled=True,
+            audio_production_enabled=True,
+            minio_image_bucket="fixture-only",
+            minio_audio_bucket="fixture-audio",
+        )
 
     def provided_session():
         yield session
@@ -115,3 +125,47 @@ def test_canvas_key_uses_existing_canonical_contract(runtime, key):
     request, _ = runtime
     response = request(PATH.replace(KEY, key))
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("identifier", ["0", "-1", "1.2", "18446744073709551616"])
+def test_requested_version_query_is_validated(runtime, identifier):
+    request, _ = runtime
+    assert (
+        request(PATH + "/" + str(ASSET), params={"requested_version_id": identifier}).status_code
+        == 422
+    )
+
+
+def test_requested_version_query_reads_exact_version_and_never_falls_back(runtime):
+    request, _ = runtime
+    current = request(PATH + "/" + str(ASSET)).json()["item"]
+    pinned = request(
+        PATH + "/" + str(ASSET), params={"requested_version_id": current["version_id"]}
+    )
+    assert pinned.status_code == 200 and pinned.json()["item"] == current
+    assert (
+        request(PATH + "/" + str(ASSET), params={"requested_version_id": "999999"}).status_code
+        == 404
+    )
+
+
+@pytest.mark.parametrize("runtime", [{"voice": True}], indirect=True)
+def test_adopted_voice_http_shares_only_public_sample(runtime, catalog_session):
+    from tests.catalog_fixtures import actor
+    from tests.unit.test_canvas_character_voice import SAMPLE, seed_voice
+
+    request, session = runtime
+    seed_voice(catalog_session[1])
+    session.info["actor"] = actor(2)
+    response = request(headers={"X-Canvas-Actor": "2"})
+    assert response.status_code == 200, response.text
+    item = response.json()["items"][0]
+    assert item["voice_status"] == "ready" and item["voice_sample"]["media_id"] == str(SAMPLE)
+    assert item["voice_sample"]["binding_version"] == "1"
+    assert not any(
+        value in response.text for value in ["record_id", "voice_id", "private-", "minio://"]
+    )
+    pinned = request(PATH + "/" + str(ASSET), params={"requested_version_id": item["version_id"]})
+    assert (
+        pinned.status_code == 200 and pinned.json()["item"]["voice_sample"] == item["voice_sample"]
+    )

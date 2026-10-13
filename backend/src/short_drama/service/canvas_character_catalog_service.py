@@ -21,8 +21,9 @@ from .canvas_service import CanvasService
 
 
 class CanvasCharacterCatalogService(CanvasService):
-    def __init__(self, session):
+    def __init__(self, session, *, settings=None):
         super().__init__(session)
+        self.settings = settings
         self.catalog = CanvasCharacterCatalogDAO(session)
         self.versions = AssetVersionDAO(session)
 
@@ -64,12 +65,22 @@ class CanvasCharacterCatalogService(CanvasService):
             "source_project_id": canvas.source_project_id,
         }
 
-    def _item(self, relation: ProjectAsset, asset: Asset) -> CanvasCharacterCatalogItemRead:
+    def _item(
+        self, relation: ProjectAsset, asset: Asset, requested_version_id: int | None = None
+    ) -> CanvasCharacterCatalogItemRead:
+        versions = AssetVersionService(self.session)
         try:
-            snapshot = AssetVersionService(self.session).current_snapshot_locked(asset)
+            snapshot = (
+                versions.current_snapshot_locked(asset)
+                if requested_version_id is None
+                else versions.snapshot_locked(asset, requested_version_id)
+            )
         except ValidationError:
             raise Conflict("角色版本快照不符合保存合同") from None
-        version = self.versions.current(asset.id, asset.current_version_id)
+        version = self.versions.current(
+            asset.id,
+            asset.current_version_id if requested_version_id is None else requested_version_id,
+        )
         if version is None:
             raise NotFound("角色当前作品版本不存在")
         representations = []
@@ -93,11 +104,17 @@ class CanvasCharacterCatalogService(CanvasService):
                     height=media.height,
                 )
             )
+        from .canvas_character_voice import read_canvas_voice_sample
+
+        voice_status, voice_sample = read_canvas_voice_sample(
+            self.catalog, self.settings, relation.project_id, asset
+        )
         flat = snapshot["asset"]
         return CanvasCharacterCatalogItemRead(
             asset_id=asset.id,
             asset_row_version=asset.row_version,
-            current_version_id=version.id,
+            current_version_id=asset.current_version_id,
+            version_id=version.id,
             version=version.version,
             position=relation.position,
             name=flat["name"],
@@ -108,6 +125,8 @@ class CanvasCharacterCatalogService(CanvasService):
             definition=snapshot["definition"],
             definition_origin=snapshot["definition_origin"],
             representations=representations,
+            voice_status=voice_status,
+            voice_sample=voice_sample,
         )
 
     def list(self, source_key: str) -> CanvasCharacterCatalogRead:
@@ -131,9 +150,13 @@ class CanvasCharacterCatalogService(CanvasService):
                 ],
             )
 
-    def get(self, source_key: str, asset_id: int) -> CanvasCharacterCatalogDetailRead:
+    def get(
+        self, source_key: str, asset_id: int, *, requested_version_id: int | None = None
+    ) -> CanvasCharacterCatalogDetailRead:
         _ = self.actor_id
         asset_id = parse_identifier(asset_id)
+        if requested_version_id is not None:
+            requested_version_id = parse_identifier(requested_version_id)
         with self._transaction(read_only=True):
             canvas = self._bound_canvas(source_key)
             relation = self.catalog.relation(canvas.source_project_id, asset_id)
@@ -143,5 +166,5 @@ class CanvasCharacterCatalogService(CanvasService):
             if asset is None or asset.kind != "character":
                 raise NotFound("角色不存在或当前账号无权访问")
             return CanvasCharacterCatalogDetailRead(
-                **self._context(canvas), item=self._item(relation, asset)
+                **self._context(canvas), item=self._item(relation, asset, requested_version_id)
             )

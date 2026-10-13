@@ -137,6 +137,16 @@ class CanvasGenerationService(BaseService):
             raise WorkflowError(
                 "canvas_generation_source_not_saved", "请先保存生成来源、目标节点与连线", 409
             )
+        from .canvas_character_generation import freeze_canvas_characters
+
+        frozen_characters = freeze_canvas_characters(
+            self.canvases,
+            canvas,
+            document,
+            metadata,
+            settings=self.generation.settings,
+            audio_references=payload.input.reference_audios,
+        )
         old_task_id = metadata.retry_of
         storyboard_source = None
         if payload.operation == "storyboard":
@@ -204,6 +214,8 @@ class CanvasGenerationService(BaseService):
                 "context_hash": content_hash(source),
             }
             prepared["source_snapshot"] = {"source_node": deepcopy(source)}
+            if frozen_characters:
+                prepared["canvas_character_references"] = deepcopy(frozen_characters)
             if storyboard_source is not None:
                 prepared["canvas_storyboard_source"] = deepcopy(storyboard_source)
             if tool_submission is not None:

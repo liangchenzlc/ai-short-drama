@@ -1,3 +1,13 @@
+import type { CanvasCharacterImageResourceDto } from './canvas-character-images'
+
+export interface CanvasCharacterVoiceSampleRead {
+  binding_version: string
+  media_id: string
+  checksum_sha256: string
+  duration_ms: number
+  resource: Omit<CanvasCharacterImageResourceDto, 'kind'> & { kind: 'audio' }
+}
+
 export type CanvasCharacterRepresentationRole =
   | 'primary'
   | 'front'
@@ -31,6 +41,7 @@ export interface CanvasCharacterCatalogItemRead {
   asset_id: string
   asset_row_version: string
   current_version_id: string
+  version_id: string
   version: string
   position: number
   name: string
@@ -41,6 +52,8 @@ export interface CanvasCharacterCatalogItemRead {
   definition: { [key: string]: CanvasCharacterJsonValue }
   definition_origin: 'legacy_current' | 'structured'
   representations: CanvasCharacterRepresentationRead[]
+  voice_status: 'missing' | 'ready' | 'unavailable'
+  voice_sample: CanvasCharacterVoiceSampleRead | null
 }
 
 export interface CanvasCharacterCatalogRead {

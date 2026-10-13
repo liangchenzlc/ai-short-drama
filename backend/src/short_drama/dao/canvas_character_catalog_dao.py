@@ -4,6 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from short_drama.domain import Asset, MediaFile, ProjectAsset
+from short_drama.domain.native_voice import CharacterVoice
+
+from .asset_version_dao import AssetVersionDAO
 
 
 class CanvasCharacterCatalogDAO:
@@ -38,6 +41,12 @@ class CanvasCharacterCatalogDAO:
         )
 
     def media(self, media_id: int) -> MediaFile | None:
+        return AssetVersionDAO(self.session).media(media_id)
+
+    def voice_binding(self, project_id: int, asset_id: int) -> CharacterVoice | None:
         return self.session.scalar(
-            select(MediaFile).where(MediaFile.id == media_id).with_for_update()
+            select(CharacterVoice)
+            .where(CharacterVoice.project_id == project_id, CharacterVoice.asset_id == asset_id)
+            .with_for_update(read=True)
+            .execution_options(populate_existing=True)
         )

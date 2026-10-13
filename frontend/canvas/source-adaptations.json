@@ -270,8 +270,8 @@
     "upstream_sha256": "0bb8ce026fbd3e63fcbad6de0793b1c4b08e86156676d7543167039844dd487a"
   },
   "src/components/canvas/canvas-node-generation.ts": {
-    "reason": "绘图数据库版本使用十进制字符串，保留原操作和布局。调色参考资源解析显式传入原画布身份，缓存与上传按本人epoch及画布隔离，保留原中性透传、CSS预览及生成时才落地的行为。",
-    "sha256": "124c0df51a033cc3eff4a7bd7f38801a1c8e330cbb947c78f29a4376b5bd560d",
+    "reason": "绘图数据库版本使用十进制字符串，保留原操作和布局。调色参考资源解析显式传入原画布身份，缓存与上传按本人epoch及画布隔离，保留原中性透传、CSS预览及生成时才落地的行为。 角色媒体引用改读可信画布角色目录／详情和stable图片resolver，显式传递pinned作品版本；保持源参考容量、封面优先级和提示词结构，不再请求已移除的整站项目角色接口。 角色参考图及已采用样音在生成前沿宿主归一化复制，任务使用画布资源；样音保留独立绑定版本，拒绝将样音冒充供应商TTS音色，重复角色冻结身份去重。",
+    "sha256": "6871304b739281dbc2ad9a12c9fa82caf1d38907890f1f7014a37a7149bb23dc",
     "upstream_sha256": "adbc889e5f389167ec451364b0edc86fc11f99b73bac9b1df6f4d7cc9c73b112"
   },
   "src/lib/canvas/canvas-color-grade.ts": {
@@ -1040,8 +1040,8 @@
     "upstream_sha256": "066c2d7509de3f0d0f3d279a48fa8336f028e123f00fff348ac0b06ca6306c45"
   },
   "src/lib/canvas/canvas-character-reference.ts": {
-    "reason": "current 刷新读取最小源角色 card，核请求起点字段；同版本规范已保存封面不依赖作者私人复制来源链，版本变更或无图片时重新解析，保留本人私人 prompt/voice 与拖动/尺寸；legacy 仅从真实 description/prompt 编译，definition 不扩造，pinned 保持。",
-    "sha256": "efa22a99944363c61f3b65d68a414cb2dc4b04fd3f66f6a70e3ebacfe3ddf950",
+    "reason": "current 刷新读取最小源角色 card，核请求起点字段；同版本规范已保存封面不依赖作者私人复制来源链，版本变更或无图片时重新解析，保留本人私人 prompt/voice 与拖动/尺寸；legacy 仅从真实 description/prompt 编译，definition 不扩造，pinned 保持。 固定版本只在详情核验同一作品版本后刷新，current目录不能更新pinned节点；在途读取同时核对版本策略，继续保留作者私人参数及已归一化封面。 无私人声音字段时可刷新真实已采用样音状态，存在私人声音输入时继续保留。",
+    "sha256": "4ebc0ed40c6ebbd0cc828c11bce81821dee7baf94cdaa93b9c57cee4b69dd0fa",
     "upstream_sha256": "14e182a1d57097b963f2a38d1781b283b034f5905aa07292f32a46fd23d9ccf5"
   },
   "src/pages/canvas/use-canvas-resource-handoff.ts": {
@@ -1060,8 +1060,8 @@
     "upstream_sha256": "b21f3f0435fe2c050071868b9ccb6042a861c29209659ef54cd74c5ec54c2c6d"
   },
   "src/components/canvas/canvas-character-reference-modal.tsx": {
-    "reason": "原 current 角色详情内容区增加可选 loading/error/retry 与图片失败反馈，保留成功布局、原字段和关闭操作，不扩造 legacy 结构化设定。",
-    "sha256": "0c7c6d8966670dbef82f3f459c10d2ea582ca477c74d3ebd5d72cedcb3b30750",
+    "reason": "原 current 角色详情内容区增加可选 loading/error/retry 与图片失败反馈，保留成功布局、原字段和关闭操作，不扩造 legacy 结构化设定。 固定版本角色详情使用原版同一布局，按真实版本策略显示固定版本／当前版本，避免把历史作品标成current。",
+    "sha256": "38e171a49f1314c569e462a15b83aab622e549623756cf68b61bca8180e2a76c",
     "upstream_sha256": "e7d0e03886865e1e92cb3e44b64896dd9fdc0919639905ebbdb91f56e0bd3424"
   },
   "src/pages/canvas/use-canvas-upload.ts": {

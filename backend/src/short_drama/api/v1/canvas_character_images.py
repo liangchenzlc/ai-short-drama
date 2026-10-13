@@ -1,6 +1,6 @@
 """专用只读图片 resolver；请求必须声明从目录读取的当前版本。"""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Path, Query, Request
 
@@ -26,7 +26,8 @@ def get_canvas_character_images(
     expected_version_id: ExpectedVersion,
     request: Request,
     service: Canvases,
+    version_policy: Annotated[Literal["current", "pinned"], Query()] = "current",
 ) -> CanvasCharacterImagesRead:
     return CanvasCharacterImageService(service.session, request.app.state.settings).get(
-        source_key, asset_id, expected_version_id
+        source_key, asset_id, expected_version_id, version_policy=version_policy
     )

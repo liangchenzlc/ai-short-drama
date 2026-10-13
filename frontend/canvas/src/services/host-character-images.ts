@@ -6,11 +6,12 @@ export type CanvasCharacterImageExpectation = {
     source_project_id: string;
     asset_id: string;
     version_id: string;
+    version_policy?: "current" | "pinned";
     representations: CanvasCharacterImageSlotDto[];
 };
 
 export type CanvasCharacterImageTransport = {
-    get(path: string, options: { params: { expected_version_id: string } }): Promise<unknown>;
+    get(path: string, options: { params: { expected_version_id: string; version_policy?: "current" | "pinned" } }): Promise<unknown>;
 };
 
 const maximumId = "18446744073709551615";
@@ -59,12 +60,13 @@ export async function readCanvasCharacterImages(transport: CanvasCharacterImageT
         || !/^[\p{Alphabetic}\p{Mark}\p{Decimal_Number}\p{Connector_Punctuation}\u200C\u200D-]+$/u.test(expected.canvas_key)
         || !identifier(expected.canvas_row_version) || !identifier(expected.source_project_id)
         || !identifier(expected.asset_id) || !identifier(expected.version_id)
+        || expected.version_policy !== undefined && !["current", "pinned"].includes(expected.version_policy)
         || !Array.isArray(expected.representations) || !expected.representations.every(slotValid)
         || new Set(expected.representations.map(slot => slot.reference_id)).size !== expected.representations.length) throw new Error("角色图片读取参数无效");
     const captured = structuredClone(expected);
     const response = await transport.get(
         `/canvas-runtime/canvas-projects/${encodeURIComponent(captured.canvas_key)}/character-catalog/${captured.asset_id}/image-resources`,
-        { params: { expected_version_id: captured.version_id } },
+        { params: { expected_version_id: captured.version_id, ...(captured.version_policy === "pinned" ? { version_policy: captured.version_policy } : {}) } },
     );
     assertCurrent();
     if (JSON.stringify(expected) !== JSON.stringify(captured)) throw new Error("角色图片读取上下文已变化");

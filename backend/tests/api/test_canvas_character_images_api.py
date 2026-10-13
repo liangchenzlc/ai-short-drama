@@ -88,3 +88,12 @@ def test_stale_version_actor_switch_and_anonymous_are_explicit(runtime):
     )
     session.info.pop("actor")
     assert request({"expected_version_id": str(expected)}).status_code == 401
+
+
+@pytest.mark.parametrize("policy,status", [("pinned", 200), ("current", 200), ("invalid", 422)])
+def test_image_version_policy_contract(runtime, policy, status):
+    request, _, expected = runtime
+    assert (
+        request({"expected_version_id": str(expected), "version_policy": policy}).status_code
+        == status
+    )
