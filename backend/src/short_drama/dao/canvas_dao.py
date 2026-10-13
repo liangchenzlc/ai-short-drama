@@ -19,12 +19,14 @@ class CanvasDAO:
             query.with_for_update().execution_options(populate_existing=True) if lock else query
         )
 
-    def canvas(self, project_id: int, canvas_id: int, *, lock: bool = False):
+    def canvas(self, project_id: int, canvas_id: int, *, lock: bool = False, refresh: bool = False):
         query = select(ProjectCanvas).where(
             ProjectCanvas.project_id == project_id,
             ProjectCanvas.id == canvas_id,
             ProjectCanvas.archived_at.is_(None),
         )
+        if refresh:
+            query = query.execution_options(populate_existing=True)
         return self.session.scalar(
             query.with_for_update().execution_options(populate_existing=True) if lock else query
         )
@@ -110,10 +112,12 @@ class CanvasDAO:
         )
         return list(self.session.scalars(query))
 
-    def children(self, model, canvas_id: int, *, active=False, lock=False):
+    def children(self, model, canvas_id: int, *, active=False, lock=False, refresh=False):
         query = select(model).where(model.canvas_id == canvas_id)
         if active:
             query = query.where(model.archived_at.is_(None))
+        if refresh:
+            query = query.execution_options(populate_existing=True)
         if lock:
             query = query.with_for_update().execution_options(populate_existing=True)
         return list(self.session.scalars(query))

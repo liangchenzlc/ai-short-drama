@@ -49,10 +49,10 @@ def observe_detail(session, monkeypatch, compete):
             )
         return original_batch(service, originals)
 
-    def canvas(dao, project_id, canvas_id, *, lock=False):
+    def canvas(dao, project_id, canvas_id, *, lock=False, refresh=False):
         if dao.session is session and lock:
             compete(journal, canvas_id)
-        return original_canvas(dao, project_id, canvas_id, lock=lock)
+        return original_canvas(dao, project_id, canvas_id, lock=lock, refresh=refresh)
 
     def owned(service, identifier):
         if service.session is session:

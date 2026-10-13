@@ -121,6 +121,7 @@ class CanvasService(BaseService):
         lock=False,
         publish_characters=False,
         include_existing_characters=False,
+        refresh=False,
     ):
         if lock and (publish_characters or include_existing_characters):
             from .canvas_character_publication_service import CanvasCharacterPublicationService
@@ -140,7 +141,7 @@ class CanvasService(BaseService):
             ):
                 return CanvasCharacterPublicationService(self).lock_canvas(original)
         self.require_project(project_id, lock=lock)
-        canvas = self.canvas_dao.canvas(project_id, canvas_id, lock=lock)
+        canvas = self.canvas_dao.canvas(project_id, canvas_id, lock=lock, refresh=refresh)
         if canvas is None:
             raise NotFound("Canvas does not exist")
         if lock and include_existing_characters and canvas.row_version != initial_version:
@@ -312,11 +313,13 @@ class CanvasService(BaseService):
             "updated_at": iso(canvas.updated_at),
         }
 
-    def _shared_document(self, canvas, *, children=None, lock=False):
+    def _shared_document(self, canvas, *, children=None, lock=False, refresh=False):
         def rows(model, *, active=False):
             if children is not None:
                 return children[model]
-            return self.canvas_dao.children(model, canvas.id, active=active, lock=lock)
+            return self.canvas_dao.children(
+                model, canvas.id, active=active, lock=lock, refresh=refresh
+            )
 
         nodes = sorted(rows(CanvasNode, active=True), key=lambda x: x.z_index)
         edges = sorted(rows(CanvasEdge, active=True), key=lambda x: x.position)
@@ -368,12 +371,12 @@ class CanvasService(BaseService):
         document.pop("folderId", None)
         return self.project_source_binding(document, canvas)
 
-    def _private_state(self, canvas, *, children=None, lock=False):
+    def _private_state(self, canvas, *, children=None, lock=False, refresh=False):
         def rows(model):
             return (
                 children[model]
                 if children is not None and model in children
-                else self.canvas_dao.children(model, canvas.id, lock=lock)
+                else self.canvas_dao.children(model, canvas.id, lock=lock, refresh=refresh)
             )
 
         states = rows(CanvasUserState)
@@ -392,10 +395,12 @@ class CanvasService(BaseService):
             },
         }
 
-    def _document(self, canvas, *, private, children=None, lock=False):
+    def _document(self, canvas, *, private, children=None, lock=False, refresh=False):
         document = project_document(
-            self._shared_document(canvas, children=children, lock=lock),
-            self._private_state(canvas, children=children, lock=lock) if private else None,
+            self._shared_document(canvas, children=children, lock=lock, refresh=refresh),
+            self._private_state(canvas, children=children, lock=lock, refresh=refresh)
+            if private
+            else None,
         )
         if private:
             document.setdefault("chatSessions", [])
@@ -408,8 +413,8 @@ class CanvasService(BaseService):
 
     def read(self, project_id, canvas_id, *, private=False):
         with self._transaction(read_only=True):
-            canvas = self.require_canvas(project_id, canvas_id)
-            document = self._document(canvas, private=private)
+            canvas = self.require_canvas(project_id, canvas_id, refresh=True)
+            document = self._document(canvas, private=private, refresh=True)
             return {
                 **self.summary(canvas),
                 "source_document": document,
@@ -748,20 +753,6 @@ class CanvasService(BaseService):
     def _replace_graph(self, canvas, document):
         self._validate_character_publications(canvas, document, shared=True)
 
-        def _calculate_node_z_index(index: int, node_data: dict) -> int:
-            """
-            计算节点 z-index，视频类型节点使用更高的层级基准。
-
-            这确保视频播放按钮不会被同坐标的图片节点遮挡。
-            视频节点使用 10000+ 的 z-index 基准，图片等其他节点使用原始索引。
-            """
-            node_type = node_data.get("type", "")
-            if node_type == "media":
-                content = node_data.get("content", {})
-                if isinstance(content, dict) and content.get("mediaType") == "video":
-                    return index + 10000
-            return index
-
         now = utcnow()
         nodes = {x.node_key: x for x in self.canvas_dao.children(CanvasNode, canvas.id, lock=True)}
         wanted = {x["id"] for x in document.get("nodes", [])}
@@ -782,7 +773,7 @@ class CanvasService(BaseService):
                 y=data["position"]["y"],
                 width=data["width"],
                 height=data["height"],
-                z_index=_calculate_node_z_index(index, data),
+                z_index=index,
                 content_json=content,
                 archived_at=None,
             )
