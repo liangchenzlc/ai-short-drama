@@ -5,14 +5,14 @@ const origin = () => new URL(test.info().project.use.baseURL!).origin;
 const setup = (page: Page) => fixture(page, true, origin());
 const panel = (page: Page) => page.locator('.standard-storyboard-panel');
 
-for (const position of [21, 50, 80]) test(`restores off-page shot ${position} with separate detail and saves it`, async ({ page }) => {
+for (const position of [20, 21, 50, 80]) test(`restores stable shot ${position} with separate detail and saves it`, async ({ page }) => {
   const state = await setup(page); const id = String(100 + position);
   await page.goto(`${root}/storyboard?shot=${id}`);
   await expect(page.locator('.storyboard-shot-card')).toHaveCount(20);
   const input = panel(page).getByRole('textbox', { name: `分镜 ${position} 脚本`, exact: true });
   await expect(input).toBeEditable(); await input.fill(`恢复第 ${position} 镜并保存`);
   await expect.poll(() => state.shots[position - 1].script).toBe(`恢复第 ${position} 镜并保存`);
-  expect(state.requests.some(request => request.path === `${root}/shots/${id}` && request.method === 'GET')).toBe(true);
+  if (position > 20) expect(state.requests.some(request => request.path === `${root}/shots/${id}` && request.method === 'GET')).toBe(true);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -38,11 +38,11 @@ test('seventeen combined image references block submission and removing one allo
   state.creationDrafts.set('101:storyboard_image', { id: '95001', project_id: '10', episode_id: '20', object_id: '101', purpose: 'storyboard_image', model_config_id: '77', input_text: '', image_settings: { aspect: '16:9', resolution: '2K', count: 1 }, video_settings: null, reference_media_ids: Array.from({ length: 16 }, (_, index) => String(2000 + index)), reference_images: Array.from({ length: 16 }, (_, index) => ({ media_id: String(2000 + index), url: image })), row_version: '1', draft_version: '1', source_version: '1' });
   await page.goto(`${root}/storyboard`); await page.locator('.storyboard-summary').first().click();
   await panel(page).getByRole('tab', { name: '分镜图', exact: true }).click();
-  await expect(panel(page).getByText(/去重合计 17\/16 张/)).toBeVisible();
+  await expect(panel(page).locator('.standard-reference-count')).toHaveText('17 / 16');
   await expect(panel(page).getByRole('button', { name: '生成图片', exact: true })).toBeDisabled();
   expect(state.requests.filter(request => request.path === '/ai/generations/image' && request.method === 'POST')).toHaveLength(0);
   await panel(page).getByRole('button', { name: '移除个人参考图片', exact: true }).first().click();
-  await expect(panel(page).getByText(/去重合计 16\/16 张/)).toBeVisible();
+  await expect(panel(page).locator('.standard-reference-count')).toHaveText('16 / 16');
   await expect(panel(page).getByRole('button', { name: '生成图片', exact: true })).toBeEnabled();
   await expect.poll(() => state.creationDrafts.get('101:storyboard_image').reference_media_ids.length).toBe(15);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
@@ -91,12 +91,14 @@ test('shot menu moves across the page boundary and archive clears the scope', as
   });
   await page.goto(`${root}/storyboard?shot=120`);
   await expect(panel(page).getByRole('textbox', { name: '分镜 20 脚本', exact: true })).toBeVisible();
-  await panel(page).getByRole('button', { name: '分镜 20 更多操作', exact: true }).click(); await page.getByRole('menuitem', { name: '下移', exact: true }).click();
+  await page.getByRole('button', { name: '分镜生成记录', exact: true }).click();
+  await page.getByRole('button', { name: '分镜 20 更多操作', exact: true }).click(); await page.getByRole('menuitem', { name: '下移', exact: true }).click();
   await expect(panel(page).getByRole('textbox', { name: '分镜 20 脚本', exact: true })).toBeDisabled();
   await expect(panel(page).getByRole('textbox', { name: '镜头名称', exact: true })).toBeDisabled();
   releaseMove();
   await expect(panel(page).getByRole('textbox', { name: '分镜 21 脚本', exact: true })).toBeVisible();
-  await panel(page).getByRole('button', { name: '分镜 21 更多操作', exact: true }).click(); await page.getByRole('menuitem', { name: '归档', exact: true }).click();
+  await page.getByRole('button', { name: '分镜生成记录', exact: true }).click();
+  await page.getByRole('button', { name: '分镜 21 更多操作', exact: true }).click(); await page.getByRole('menuitem', { name: '归档', exact: true }).click();
   await page.getByRole('button', { name: '确认继续', exact: true }).click();
   await expect(page).toHaveURL(url => !url.searchParams.has('shot'));
   await expect(page.locator('.standard-storyboard-list h3')).toContainText('79');
@@ -209,6 +211,7 @@ test('shot video editing exposes dialogue review and a failed save retains its d
   });
   await page.goto(`${root}/storyboard?shot=101`);
   await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
+  await panel(page).locator('.storyboard-dialogue-settings > summary').click();
   await panel(page).getByRole('button', { name: '编辑并确认对白', exact: true }).click();
   const review = page.getByRole('dialog', { name: '分镜对白与声音表演', exact: true });
   const save = review.getByRole('button', { name: /保存分镜对白$/ });

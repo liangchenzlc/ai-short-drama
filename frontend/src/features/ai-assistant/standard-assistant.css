@@ -1,0 +1,56 @@
+/* 标准创作工作区按确认原型适配；默认画布助手继续使用既有布局。 */
+.ai-assistant-panel.ai-assistant-standard { --assistant-background: var(--surface); --assistant-foreground: var(--ink); --assistant-secondary: var(--sub); --assistant-border: var(--hair); --assistant-body-size: 12px; --assistant-caption-size: 11px; --assistant-tiny-size: 10px; }
+.ai-assistant-standard .ai-assistant-header { flex: 0 0 auto; min-height: 49px; padding: 8px 14px; gap: 2px; border-bottom: 1px solid var(--hair); }
+.ai-assistant-standard .ai-assistant-header h2 { font-size: 13px; font-weight: 550; line-height: normal; }
+.ai-assistant-standard .ai-assistant-header .ant-btn { width: 32px; height: 32px; min-height: 32px; padding: 0; color: var(--sub); }
+.ai-assistant-standard .ai-assistant-log { display: flex; gap: 0; padding: 16px 14px; }
+.ai-assistant-standard .ai-assistant-log > * { flex-shrink: 0; }
+.ai-assistant-standard .ai-assistant-chips { gap: 6px; margin-bottom: 19px; }
+.ai-assistant-standard .ai-assistant-chips:empty { display: none; }
+.ai-assistant-standard .ai-assistant-chip { min-width: 0; min-height: 0; padding: 5px 8px; border-radius: 5px; background: #303030; color: #ddd; font-size: 10px; line-height: normal; }
+.ai-assistant-standard .ai-assistant-chip > svg { flex-shrink: 0; }
+.ai-assistant-standard .ai-assistant-chip button { width: 15px; height: 15px; min-height: 15px; padding: 0; border-radius: 3px; }
+.ai-assistant-standard .ai-assistant-turn, .ai-assistant-standard .ai-assistant-user { display: block; align-self: stretch; max-width: none; padding: 13px; margin-bottom: 13px; border-radius: 8px; background: #252525; color: #d4d4da; font-size: 12px; line-height: 1.85; }
+.ai-assistant-standard .ai-assistant-user { margin-left: 25px; background: #343434; }
+.ai-assistant-standard .ai-assistant-reply { font-size: 12px; line-height: 1.85; }
+.ai-assistant-standard .ai-assistant-reply p { margin: 0 0 7px; text-wrap: wrap; }
+.ai-assistant-standard .ai-assistant-reply p:last-child { margin-bottom: 0; }
+.ai-assistant-standard .ai-assistant-reply strong { color: #ededf0; font-weight: 550; }
+.ai-assistant-standard .ai-assistant-reply blockquote { border-left-width: 1px; }
+.ai-assistant-standard .ai-assistant-reply-actions { margin-top: 7px; font-size: 12px; }
+.ai-assistant-standard .ai-assistant-reply-actions .ant-btn { height: 29px; min-height: 29px; padding: 0 9px; font-size: 12px; }
+.ai-assistant-standard .ai-assistant-empty { padding: 24px 0; }
+.ai-assistant-standard .ai-assistant-empty h3 { font-size: 16px; letter-spacing: 0; }
+.ai-assistant-standard .ai-assistant-empty p { font-size: 12px; }
+.ai-assistant-standard .ai-assistant-meta { font-size: 11px; }
+.ai-assistant-standard .ai-assistant-notice { padding-inline: 14px; font-size: 12px; }
+.ai-assistant-standard .ai-assistant-connection { padding-inline: 14px; font-size: 11px; }
+.ai-assistant-standard .ai-assistant-new-content { margin-inline: 14px; }
+.ai-assistant-standard .ai-assistant-composer { gap: 0; padding: 13px 14px; margin: 0; border: 0; border-top: 1px solid var(--hair); border-radius: 0; background: var(--surface); box-shadow: none; }
+.ai-assistant-standard .ai-assistant-composer:focus-within { border-color: var(--hair); }
+.ai-assistant-standard .ai-assistant-input { padding: 0; }
+.ai-assistant-standard .ai-assistant-input textarea.ant-input { min-height: 84px !important; max-height: 180px !important; resize: vertical; padding: 10px !important; border: 1px solid #4a4a4a; border-radius: 7px; background: #111; color: var(--ink); font-size: 12px !important; line-height: 1.7; }
+.ai-assistant-standard .ai-assistant-input textarea.ant-input::placeholder { color: var(--sub); }
+.ai-assistant-standard .ai-assistant-input textarea.ant-input:focus-visible { outline: 2px solid #d9d9df; outline-offset: 3px; }
+.ai-assistant-panel.ai-assistant-standard .agent-input-tools { flex-wrap: wrap; gap: 10px; margin-top: 0; padding-top: 9px; }
+.ai-assistant-standard .agent-input-tools > .ant-btn { order: 4; width: 28px; height: 28px; min-height: 28px; padding: 0; }
+.ai-assistant-standard .ai-assistant-runtime:not(.is-standard-tools-open) .agent-input-tools > .ant-btn:not(.ai-assistant-send) { display: none; }
+.ai-assistant-standard .is-standard-tools-open .agent-input-tools::after { content: ''; flex-basis: 100%; height: 0; order: 3; }
+.ai-assistant-standard .agent-input-tools .ai-assistant-model.ant-select { order: 1; flex: 0 1 150px; min-width: 0; max-width: 150px; height: 30px; padding: 0; margin: 0; border: 0; border-radius: 0; align-items: center; background: transparent; color: var(--sub); font-size: 11px; line-height: 30px; }
+.ai-assistant-standard .agent-input-tools .ai-assistant-model.ant-select > .ant-select-selector { width: 100%; height: 30px; min-height: 30px; margin: 0; padding: 0 17px 0 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; line-height: 30px; }
+.ai-assistant-standard .ai-assistant-model.ant-select.ant-select-single.ant-select-sm.ant-select-show-arrow:has(> .ant-select-selector) :is(.ant-select-selection-wrap, .ant-select-selection-item, .ant-select-selection-placeholder) { padding: 0; line-height: 30px; }
+.ai-assistant-standard .agent-input-tools .ai-assistant-model.ant-select > .ant-select-arrow { inset-inline-end: 0; }
+.ai-assistant-panel.ai-assistant-standard .agent-input-tools-spacer { display: block; flex: 1; order: 1; }
+.ai-assistant-standard .agent-input-tools .ai-assistant-send.ant-btn { order: 2; width: 30px; height: 30px; min-height: 30px; padding: 0; border: 0; border-radius: 50%; background: #f5f5f5; color: #171717; }
+.ai-assistant-standard .agent-input-tools .ai-assistant-send.ant-btn:disabled { background: #444; color: #b9b9be; }
+.ai-assistant-standard .agent-attached-items, .ai-assistant-standard .agent-loaded-skills { margin-bottom: 8px; }
+.ai-assistant-standard .ai-assistant-composer > .ant-checkbox-wrapper { margin-bottom: 8px; font-size: 11px; }
+.ai-assistant-standard .standard-assistant-composer-extras { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
+.ai-assistant-standard .standard-assistant-tools-toggle.ant-btn { height: 20px; min-height: 20px; padding: 0; color: var(--sub); font-size: 10px; }
+.ai-assistant-standard .standard-assistant-private { margin: 0; color: var(--sub); font-size: 10px; line-height: normal; }
+.ai-assistant-standard .ai-assistant-run-state .ant-btn, .ai-assistant-standard .ai-assistant-queued .ant-btn, .ai-assistant-standard .ai-assistant-uncertain .ant-btn { height: 29px; min-height: 29px; font-size: 11px; }
+.ai-assistant-standard .ai-assistant-log::-webkit-scrollbar-thumb { background: #505054; border-radius: 6px; }
+.ai-assistant-standard ::selection { background: #52525b; color: #fff; }
+@media (max-width: 700px) {
+  .ai-assistant-standard .standard-assistant-tools-toggle.ant-btn { height: 28px; min-height: 28px; }
+}

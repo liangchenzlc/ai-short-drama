@@ -78,3 +78,32 @@ test('explicit server reload locks editing until its delayed response arrives', 
   assert.equal(data.session.getSnapshot().value.input_text, 'server after confirmation');
   assert.equal(data.stored, null); data.session.dispose();
 });
+
+for (const lateResult of ['response', 'failure']) test(`explicit server reload ignores an older retry ${lateResult}`, async () => {
+  const data = setup(); await data.session.load();
+  data.api.update = async () => { throw new Error('save timeout'); };
+  data.session.edit({ input_text: 'local input before server reload' });
+  assert.equal(await data.session.flush(), null);
+  const gate = deferred(); data.api.get = () => gate.promise;
+  const retry = data.session.retry();
+  data.api.get = async () => saved('confirmed server input', '2');
+  await data.session.load(true);
+  if (lateResult === 'response') gate.resolve(saved('older server input', '1'));
+  else gate.reject(new Error('late lookup failed'));
+  assert.equal(await retry, null);
+  assert.equal(data.session.getSnapshot().value.input_text, 'confirmed server input');
+  assert.equal(data.session.getSnapshot().saved.row_version, '2');
+  assert.equal(data.session.getSnapshot().status, 'saved');
+  assert.equal(data.session.getSnapshot().message, '');
+  assert.equal(data.stored, null); data.session.dispose();
+});
+
+test('disposed private draft ignores a delayed retry failure', async () => {
+  const data = setup(); await data.session.load();
+  const gate = deferred(); data.api.get = () => gate.promise;
+  const retry = data.session.retry();
+  data.session.dispose(); gate.reject(new Error('late lookup failed'));
+  assert.equal(await retry, null);
+  assert.equal(data.session.getSnapshot().status, 'saved');
+  assert.equal(data.session.getSnapshot().message, '');
+});

@@ -83,13 +83,14 @@ test('mobile novel settings and assistant remain mutually exclusive while preser
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('shared canvas-style composer keeps project conversation, attachments, Skills and safe Markdown', async ({ page }, info) => {
+test('standard composer keeps project conversation, attachments, Skills and safe Markdown', async ({ page }, info) => {
   const state = await assistantFixture(page);
   await page.goto(`${root}/source?assistant=open`);
   const input = page.getByRole('textbox', { name: '给助手的消息' }); await expect(input).toBeVisible();
   await input.fill('@林');
   await page.getByRole('option', { name: '林晚', exact: true }).click();
   await expect(page.getByLabel('本次消息附件')).toContainText('林晚');
+  await page.getByRole('button', { name: '附件与技能', exact: true }).click();
   await page.getByRole('button', { name: '加载 Skill', exact: true }).click();
   const skillDialog = page.getByRole('dialog', { name: '加载 Skill' });
   await skillDialog.getByRole('checkbox', { name: '人物连续性' }).check();
@@ -123,7 +124,15 @@ test('uncertain accepted message reuses its frozen payload after refresh and con
   await page.getByRole('button', { name: '这条消息不带当前作品' }).click();
   await input.fill('普通问答'); await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.getByText('发送结果尚未确认，草稿已保留。请使用原请求核对，避免重复调用。')).toBeVisible();
-  await page.reload(); await expect(input).toHaveValue('普通问答');
+  let reloading = true;
+  page.removeAllListeners('dialog');
+  page.on('dialog', dialog => {
+    if (reloading && dialog.type() === 'beforeunload') { void dialog.accept(); return; }
+    state.unexpected.push(`native dialog: ${dialog.message()}`); void dialog.dismiss();
+  });
+  try { await page.reload(); }
+  finally { reloading = false; }
+  await expect(input).toHaveValue('普通问答');
   await page.getByRole('button', { name: '使用原请求核对', exact: true }).click();
   await expect(input).toHaveValue('');
   const sends = state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'));

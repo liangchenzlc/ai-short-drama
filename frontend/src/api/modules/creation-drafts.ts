@@ -4,8 +4,8 @@ export type CreationPurpose = 'novel_adaptation' | 'asset_image' | 'storyboard_i
 export interface CreationDraftValue {
   model_config_id: string | null;
   input_text: string;
-  image_settings: { aspect?: string; resolution?: string; count: number } | null;
-  video_settings: { aspect?: string; resolution?: string; duration_ms?: number | null } | null;
+  image_settings: { aspect?: string | null; resolution?: string | null; count: number } | null;
+  video_settings: { aspect?: string | null; resolution?: string | null; duration_ms?: number | null } | null;
   reference_media_ids: string[];
 }
 export interface UserCreationDraft extends CreationDraftValue {

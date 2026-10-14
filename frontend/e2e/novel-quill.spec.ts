@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { fixture, root } from './studio-fixture';
 
 async function richFixture(page: Page) {
@@ -54,10 +54,69 @@ test('Quill format-only edits save one version, survive refresh, and retain undo
   await expect(editor.locator('strong').first()).toBeVisible();
   await page.reload(); await expect(editor).toBeEditable();
   await expect(editor.locator('strong').first()).toBeVisible();
-  await expect(page.locator('.novel-script-toolbar').getByText('2 场', { exact: true })).toBeVisible();
+  await expect(page.locator('.novel-script-toolbar').getByText('2 个场次', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '定位到第二场 车站', exact: true }).click();
   expect(await editor.evaluate(node => getComputedStyle(node).outlineStyle)).toBe('none');
   expect(data.errors).toEqual([]);
+});
+
+test('moving from Quill to requirements, model and assistant retains focus without adding focus decoration', async ({ page }) => {
+  const data = await richFixture(page);
+  const time = '2026-10-13T00:00:00Z';
+  const conversation = { id: '301', project_id: '10', episode_id: null, title: '创作讨论', scope_version: 2, stage: null, subject_type: null, subject_id: null, task_type: null, row_version: '1', archived: false, last_run_status: null, created_at: time, updated_at: time };
+  await page.route('**/api/v1/auth/capabilities', route => route.fulfill({ json: { enabled: true } }));
+  await page.route('**/api/v1/auth/me', route => route.fulfill({ json: { user: { id: '9007199254740993', username: 'creator', display_name: '创作者', email: 'creator@example.test', email_verified: true } } }));
+  await page.route('**/api/v1/agent/status', route => route.fulfill({ json: { enabled: true, schema_ready: true } }));
+  await page.route('**/api/v1/agent/models', route => route.fulfill({ json: { items: [{ id: '71', name: '创作讨论模型', model_key: 'fixture', row_version: '1', protocol: 'chat', tool_calling: false, tool_result_continuation: false, streaming: 'not_tested', verified: false, preferred: true }], preferred_id: '71' } }));
+  await page.route('**/api/v1/agent/skills**', route => route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 50 } }));
+  await page.route('**/api/v1/assistant/**', route => {
+    const request = route.request(); const path = new URL(request.url()).pathname;
+    if (request.method() === 'POST' && path === '/api/v1/assistant/conversations/resolve') return route.fulfill({ json: conversation });
+    if (request.method() !== 'GET') return route.fallback();
+    if (path === '/api/v1/assistant/conversations/301') return route.fulfill({ json: conversation });
+    if (path === '/api/v1/assistant/conversations') return route.fulfill({ json: { items: [conversation], total: 1, offset: 0, limit: 20 } });
+    if (path === '/api/v1/assistant/conversations/301/events') return route.fulfill({ contentType: 'text/event-stream', body: ': heartbeat\n\n' });
+    if (path === '/api/v1/assistant/conversations/301/state') return route.fulfill({ json: { conversation_id: '301', cursor: 0, resume_cursor: 0, active_run: null, queued_runs: [] } });
+    if (path === '/api/v1/assistant/conversations/301/runs') return route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 1 } });
+    if (['/api/v1/assistant/conversations/301/messages', '/api/v1/assistant/conversations/301/attachments'].includes(path)) return route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 50 } });
+    return route.fallback();
+  });
+  await page.goto(`${root}/source`);
+  const editor = page.getByRole('textbox', { name: '本集剧本正文', exact: true });
+  const prompt = page.getByRole('textbox', { name: '改编要求', exact: true });
+  const model = page.getByRole('combobox', { name: '文本模型', exact: true });
+  const composer = page.locator('.novel-adaptation-settings .generation-composer');
+  const modelSurface = composer.locator('.ant-select-selector');
+  const appearance = (target: Locator) => target.evaluate(node => {
+    const style = getComputedStyle(node);
+    return { outline: style.outlineStyle, shadow: style.boxShadow, borderWidth: style.borderWidth, borderStyle: style.borderStyle, border: style.borderWidth === '0px' ? null : style.borderColor };
+  });
+  await expect(editor).toBeEditable();
+  await expect(prompt).toBeEnabled(); await expect(model).toBeEnabled();
+  const original = data.writing.editing_script.content;
+  const editorBefore = await appearance(editor), promptBefore = await appearance(prompt);
+  const composerBefore = await appearance(composer), modelBefore = await appearance(modelSurface);
+  await editor.click(); await expect(editor).toBeFocused();
+  expect(await appearance(editor)).toEqual(editorBefore);
+  expect(editorBefore.outline).toBe('none'); expect(editorBefore.shadow).toBe('none');
+  await prompt.click(); await expect(prompt).toBeFocused();
+  await page.keyboard.insertText('保持改编要求输入在自己的区域');
+  await expect(prompt).toHaveValue('保持改编要求输入在自己的区域');
+  expect(await appearance(prompt)).toEqual(promptBefore); expect(await appearance(composer)).toEqual(composerBefore);
+  expect(promptBefore.outline).toBe('none'); expect(promptBefore.shadow).toBe('none');
+  await modelSurface.click(); await expect(model).toBeFocused();
+  expect(await appearance(modelSurface)).toEqual(modelBefore);
+  expect(modelBefore.outline).toBe('none'); expect(modelBefore.shadow).toBe('none');
+  await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
+  await expect(modelSurface.locator('.ant-select-selection-item')).toHaveText(/.+/);
+  await page.getByRole('button', { name: 'AI 创作助手', exact: true }).click();
+  const assistant = page.getByRole('textbox', { name: '给助手的消息', exact: true });
+  await assistant.click(); await expect(assistant).toBeFocused();
+  await page.keyboard.insertText('保持助手讨论在自己的区域');
+  await expect(assistant).toHaveValue('保持助手讨论在自己的区域');
+  await expect(editor).toHaveText(original, { useInnerText: true });
+  expect(data.writing.editing_script.content).toBe(original); expect(data.scriptWrites).toHaveLength(0);
+  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 
 test('composition waits for completed Chinese text and StrictMode does not duplicate editors or saves', async ({ page }) => {
@@ -144,9 +203,12 @@ test('mobile settings and original drawers preserve inputs without horizontal ov
   const prompt = page.getByRole('textbox', { name: '改编要求', exact: true }); await expect(prompt).toBeVisible(); await prompt.fill('手机输入的改编要求');
   expect(await prompt.evaluate(node => getComputedStyle(node).height)).toBe('180px');
   await page.keyboard.press('Escape'); await expect(prompt).not.toBeVisible();
+  await page.getByRole('button', { name: '展开设置', exact: true }).click();
   await page.getByRole('button', { name: '查看原文', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '本集小说原文', exact: true })).toBeVisible(); await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: '展开设置', exact: true })).toBeFocused();
   await page.getByRole('button', { name: '展开设置', exact: true }).click(); await expect(prompt).toHaveValue('手机输入的改编要求');
+  expect((await page.locator('.novel-adaptation-settings .generation-composer').boundingBox())!.height).toBe(249);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); expect(data.errors).toEqual([]);
 });
 
@@ -209,4 +271,59 @@ test('rich paste preserves supported formats and blank lines while TXT import an
   await expect(editor.locator('strong')).toHaveText('保留加粗'); await expect(editor.locator('em')).toHaveText('斜体');
   await page.screenshot({ path: test.info().outputPath('novel-quill-1440.png') });
   expect(data.writing.editing_script.content).toBe(saved.content); expect(data.errors).toEqual([]);
+});
+
+test('novel layout follows the prototype settings header, paired fields and centered document', async ({ page }) => {
+  const data = await richFixture(page);
+  data.writing.editing_script.editor_document = { ops: data.writing.editing_script.content.split('\n').map((line: string) => ({ insert: `${line}\n`, ...(/^第[一二]场/.test(line) ? { attributes: { header: 3 } } : {}) })) };
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${root}/source`);
+  const editor = page.getByRole('textbox', { name: '本集剧本正文', exact: true });
+  await expect(editor).toBeEditable();
+  const settings = page.locator('.novel-adaptation-settings');
+  const header = settings.locator(':scope > header');
+  const settingsBox = (await settings.boundingBox())!;
+  const headerBox = (await header.boundingBox())!;
+  expect(headerBox.width).toBeCloseTo(settingsBox.width, 0);
+  expect(headerBox.height).toBe(49);
+  await expect(header.getByRole('button', { name: '查看原文', exact: true })).toBeVisible();
+  await expect(page.locator('.novel-script-heading').getByRole('button', { name: '查看原文', exact: true })).toHaveCount(0);
+  const aspect = (await settings.getByRole('combobox', { name: '本集画幅', exact: true }).locator('..').boundingBox())!;
+  const visualStyle = (await settings.getByRole('combobox', { name: '视觉风格', exact: true }).locator('..').boundingBox())!;
+  expect(aspect.y).toBeCloseTo(visualStyle.y, 0);
+  const composer = settings.locator('.generation-composer');
+  expect((await composer.boundingBox())!.height).toBe(241);
+  expect((await settings.locator('.novel-text-model').boundingBox())!.width).toBe(176);
+  expect(visualStyle.x).toBeGreaterThan(aspect.x + aspect.width);
+  const title = page.locator('.novel-script-heading');
+  expect((await title.boundingBox())!.height).toBe(56);
+  expect(await title.locator('h2').evaluate(node => getComputedStyle(node).fontSize)).toBe('16px');
+  const panelBox = (await page.locator('.novel-script-panel').boundingBox())!;
+  const documentBox = (await editor.boundingBox())!;
+  expect(documentBox.width).toBe(760);
+  expect(documentBox.x + documentBox.width / 2).toBeCloseTo(panelBox.x + panelBox.width / 2, 0);
+  expect(await editor.evaluate(node => getComputedStyle(node).lineHeight)).toBe('27.3px');
+  expect(await editor.locator('p').first().evaluate(node => getComputedStyle(node).marginBottom)).toBe('16px');
+  expect(await editor.locator('h3').first().evaluate(node => getComputedStyle(node).borderBottomWidth)).toBe('1px');
+  expect(await editor.locator('h3').first().evaluate(node => getComputedStyle(node).marginTop)).toBe('10px');
+  await expect(page.getByRole('button', { name: '定位到第一场 雨夜', exact: true })).toHaveText('场次 01');
+  await header.getByRole('button', { name: '查看原文', exact: true }).click();
+  const drawer = page.getByRole('dialog', { name: '本集小说原文', exact: true });
+  expect((await drawer.boundingBox())!.width).toBe(500);
+  expect(await drawer.getByRole('textbox', { name: '本集小说正文', exact: true }).evaluate(node => getComputedStyle(node).borderWidth)).toBe('0px');
+  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+});
+
+test('mobile novel uses one heading row and a viewport-height script without scene shortcuts', async ({ page }) => {
+  const data = await richFixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${root}/source`);
+  await expect(page.getByRole('textbox', { name: '本集剧本正文', exact: true })).toBeEditable();
+  const heading = page.locator('.novel-script-heading');
+  expect((await heading.boundingBox())!.height).toBe(60);
+  const panel = page.locator('.novel-script-panel');
+  expect((await panel.boundingBox())!.height).toBe(725);
+  await expect(page.locator('.novel-scene-shortcuts')).not.toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });

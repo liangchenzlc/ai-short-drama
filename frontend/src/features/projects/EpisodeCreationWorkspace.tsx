@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRe
 import { createPortal } from 'react-dom';
 import type { AgentSubject } from '../agents/agent-scope';
 import './episode-creation.css';
+import '../ai-assistant/standard-assistant.css';
 
 type CreationStage = 'source' | 'assets' | 'storyboard' | 'assembly';
 const CreationContext = createContext<{
@@ -36,7 +37,9 @@ export function EpisodeCreationWorkspace({ stage, assistantOpen, assistantPanel,
   const [panelRequest, setPanelRequest] = useState(0);
   const [compact, setCompact] = useState(() => window.innerWidth < 1000);
   const [panelOpen, changePanelOpen] = useState(() => window.innerWidth > 700);
+  const [compactPreview, setCompactPreview] = useState(false);
   const frame = useRef<HTMLDivElement>(null);
+  const mainFrame = useRef<HTMLElement>(null);
   const panelTrigger = useRef<HTMLElement | null>(null);
   const closeAssistant = useRef(onCloseAssistant); closeAssistant.current = onCloseAssistant;
   const setPanelOpen = useCallback((open: boolean) => { if (open) { panelTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; if (window.innerWidth < 1000) closeAssistant.current(); } changePanelOpen(open); }, []);
@@ -50,6 +53,18 @@ export function EpisodeCreationWorkspace({ stage, assistantOpen, assistantPanel,
     }
   }, []);
   const editing = editorStage === stage;
+  useLayoutEffect(() => {
+    const panel = mainFrame.current;
+    if (!panel) return;
+    const update = () => {
+      const base = Number.parseFloat(getComputedStyle(panel).getPropertyValue('--creation-settings-base'));
+      setCompactPreview(panel.clientWidth < base * 10 / 9 + 402);
+    };
+    update();
+    const observer = new ResizeObserver(update); observer.observe(panel);
+    window.addEventListener('resize', update);
+    return () => { observer.disconnect(); window.removeEventListener('resize', update); };
+  }, [stage]);
   useLayoutEffect(() => {
     if (stage !== 'source' || !panelOpen || assistantOpen || window.innerWidth > 700) return;
     const pane = frame.current?.querySelector<HTMLElement>('.creation-main-panel');
@@ -93,7 +108,7 @@ export function EpisodeCreationWorkspace({ stage, assistantOpen, assistantPanel,
   }, [assistantOpen, compact]);
   const workspace = useMemo(() => ({ target, editorTarget, stage, setEditor, revealPanel, subject, selectSubject: onSubject, panelOpen, setPanelOpen, assistantOpen }), [target, editorTarget, stage, setEditor, revealPanel, subject, onSubject, panelOpen, setPanelOpen, assistantOpen]);
   const workStage = <div key="stage" className="episode-work-stage">{children}</div>;
-  const mainPanel = <section key="panel" className="creation-main-panel" aria-label={stage === 'source' ? '剧本改编设置' : '作品与生成设置'} hidden={stage === 'assembly' || stage === 'source' && !panelOpen}>
+  const mainPanel = <section ref={mainFrame} key="panel" className={`creation-main-panel${compactPreview ? ' is-compact-preview' : ''}`} aria-label={stage === 'source' ? '剧本改编设置' : '作品与生成设置'} hidden={stage === 'assembly' || stage === 'source' && !panelOpen}>
     <div ref={setTarget} className="creation-panel-content" hidden={editing}/>
     <div ref={setEditorTarget} className="creation-editor-target" hidden={!editing}/>
   </section>;

@@ -154,7 +154,7 @@ test('selecting a new local card ignores a delayed detail response from the prev
   });
   await page.goto(`${root}/assets`);
   const editor = await openEditor(page);
-  await expect(editor.getByText('正在读取最新素材…', { exact: true })).toBeVisible();
+  await expect(page.locator('.creation-main-panel').getByRole('status').filter({ hasText: '正在加载作品' })).toBeVisible();
   await page.getByRole('button', { name: '新增素材', exact: true }).first().click();
   await expect(editor.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('');
   release();

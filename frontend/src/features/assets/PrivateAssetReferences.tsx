@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Skeleton, Upload } from 'antd';
+import { Alert, Button, Dropdown, Skeleton } from 'antd';
 import { Plus, X } from 'lucide-react';
 import { generationReferences, uploadTaskReference, type ReferenceImage } from '../../api/modules/generation-references';
 import { creationDraftsApi, type UserCreationDraft } from '../../api/modules/creation-drafts';
 import { errorMessage } from '../../api/http';
 import { PreviewImage } from '../../components/ui/ImagePreview';
+import { ImagePicker } from '../media-library/ImagePicker';
 
 export function PrivateAssetReferences({ assetId, projectId, episodeId, privateIds, saved, disabled, onChange, onState, onBusyChange }: {
   assetId: string; projectId: string; episodeId: string; privateIds: string[]; saved: UserCreationDraft | null; disabled: boolean;
@@ -17,6 +18,8 @@ export function PrivateAssetReferences({ assetId, projectId, episodeId, privateI
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const fileInput = useRef<HTMLInputElement | null>(null);
   const alive = useRef(true);
   const lock = useRef(false);
   const ids = useRef(privateIds); ids.current = privateIds;
@@ -61,13 +64,30 @@ export function PrivateAssetReferences({ assetId, projectId, episodeId, privateI
       if (remote?.reference_images) setPrivateImages(current => ({ ...current, ...Object.fromEntries(remote.reference_images!.map(item => [item.media_id, item])) }));
     } catch (cause) { setError(`刷新个人参考图失败：${errorMessage(cause)}`); }
   }
+  const canAdd = !disabled && !busy && !loading && count < 16;
+  const addReference = <Dropdown trigger={['click']} menu={{ items: [
+    { key: 'upload', label: '上传本地参考图片', onClick: () => fileInput.current?.click() },
+    { key: 'library', label: '从资产库选择参考图片', onClick: () => setPickerOpen(true) },
+  ] }} disabled={!canAdd}>
+    <Button type="text" className={count ? 'standard-reference-add-tile' : 'standard-reference-empty'} aria-label="添加个人参考图片" title="添加参考图片" icon={<Plus size={16}/>} loading={busy} disabled={!canAdd}>{!count && '添加参考图片'}</Button>
+  </Dropdown>;
   return <section className="standard-asset-references" aria-label="参考图片">
-    <header><span>参考图片 <small>{count}/16</small></span><Upload accept="image/png,image/jpeg,image/webp" showUploadList={false} disabled={disabled || busy || loading || count >= 16} beforeUpload={upload}><Button type="text" size="small" aria-label="添加个人参考图片" title="添加个人参考图片" icon={<Plus size={16}/>} loading={busy} disabled={disabled || busy || loading || count >= 16}/></Upload></header>
-    {loading ? <Skeleton active paragraph={{ rows: 1 }}/> : <div className="standard-reference-strip">
+    <header><span>参考图片</span><small>{count} / 16</small></header>
+    <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={!canAdd} onChange={event => {
+      const file = event.currentTarget.files?.[0]; event.currentTarget.value = '';
+      if (file) void upload(file);
+    }}/>
+    {loading ? <div className="standard-reference-loading" role="status" aria-label="正在读取参考图片"><Skeleton active title={false} paragraph={{ rows: 1 }}/></div> : count ? <div className="standard-reference-strip">
       {shared.map(item => <figure key={item.media_id}><PreviewImage src={item.url} alt={item.name || '共享参考图'}/><figcaption>作品参考</figcaption></figure>)}
       {privateOnly.map(id => <figure key={id}>{privateImages[id]?.url ? <PreviewImage src={privateImages[id].url!} alt="个人参考图"/> : <Button size="small" title={`媒体 ${id}`} onClick={() => void refreshImages()}>刷新预览</Button>}<Button className="standard-reference-remove" size="small" type="text" aria-label={`移除个人参考图片 ${id}`} disabled={disabled || busy} icon={<X size={12}/>} onClick={() => onChange(privateIds.filter(value => value !== id))}/></figure>)}
-      {!count && <span className="standard-reference-empty">可添加个人参考图片</span>}
-    </div>}
+      {addReference}
+    </div> : addReference}
     {error && <Alert type="error" message={error} action={<Button size="small" onClick={() => void refreshImages()}>重试</Button>}/>}
+    {pickerOpen && <ImagePicker busy={busy} projectId={projectId || undefined} onClose={() => setPickerOpen(false)} onSelect={async (mediaId, media) => {
+      if (!canAdd || lock.current) return false;
+      setPrivateImages(current => ({ ...current, [mediaId]: { media_id: mediaId, url: media.url } }));
+      change.current([...new Set([...ids.current, mediaId])]);
+      return true;
+    }}/>}
   </section>;
 }

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { CheckOutlined } from '@ant-design/icons';
 import type { EpisodeNavigationStage as StageId, EpisodeWorkflow } from '../../../features/projects/episode-workflow';
 import { assetLibraries } from '../../../api/modules/assets';
 import { storyboardApi } from '../../../api/modules/storyboard';
@@ -12,6 +13,7 @@ export function TopStepNav({ currentStage, workflow, onStageChange, projectId, e
   currentStage: StageId; workflow: EpisodeWorkflow; onStageChange: (stage: StageId) => void;
   projectId: string; episodeId: string;
 }) {
+  const navigation = useRef<HTMLElement>(null);
   const [status, setStatus] = useState<Record<string, string>>({});
   const [revision, setRevision] = useState(0);
   useEffect(() => {
@@ -53,12 +55,24 @@ export function TopStepNav({ currentStage, workflow, onStageChange, projectId, e
     });
     return () => controller.abort();
   }, [projectId, episodeId, currentStage, revision]);
-  return <nav className="episode-top-step-nav" aria-label="分集制作流程">{steps.map((step, index) => {
+  useEffect(() => {
+    const reveal = () => {
+      const nav = navigation.current;
+      const current = nav?.querySelector<HTMLElement>('[aria-current="step"]');
+      if (!nav || !current) return;
+      const frame = nav.getBoundingClientRect(), button = current.getBoundingClientRect();
+      if (button.left < frame.left + 9 || button.right > frame.right - 9) nav.scrollLeft += button.left - frame.left - 9;
+    };
+    reveal(); window.addEventListener('resize', reveal);
+    return () => window.removeEventListener('resize', reveal);
+  }, [currentStage]);
+  return <nav ref={navigation} className="episode-top-step-nav" aria-label="分集制作流程">{steps.map((step, index) => {
     const label = step.id === 'source' ? workflow.reviews.script === 'confirmed' ? '剧本已确认' : '剧本待确认' : status[step.id] ?? '正在载入…';
-    return <button key={step.id} type="button" className={`episode-step-button${currentStage === step.id ? ' active' : ''}`}
+    return <Fragment key={step.id}>{index > 0 && <span className="episode-step-connector" aria-hidden="true"/>}<button type="button" className={`episode-step-button${currentStage === step.id ? ' active' : ''}`}
       aria-current={currentStage === step.id ? 'step' : undefined} onClick={() => onStageChange(step.id)} aria-label={`${step.label}，${label}`}>
-      <span className="episode-step-number">{String(index + 1).padStart(2, '0')}</span><span className="episode-step-name">{step.label}</span>
-      <span className="episode-step-status">{label}</span>
-    </button>;
-  })}</nav>;
+      <span className="episode-step-number">{String(index + 1).padStart(2, '0')}</span><span className="episode-step-text"><strong className="episode-step-name">{step.label}</strong>
+      <small className="episode-step-status">{label}</small></span>
+      {step.id === 'source' && workflow.reviews.script === 'confirmed' && <CheckOutlined className="episode-step-check" aria-hidden="true"/>}
+    </button></Fragment>;
+  })}<div className="episode-step-context" aria-label="本集画幅与风格"><span>{workflow.aspect}</span><span>{workflow.style || '未设置风格'}</span></div></nav>;
 }

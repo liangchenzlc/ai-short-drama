@@ -119,6 +119,12 @@ function mount(context, overrides = {}) {
   return { api, configs, capabilityCalls, window, scrolls, render, nodes, unmount, get scriptInput() { return nodes('TextArea').find(input => /^分镜 \d+ 脚本$/.test(input['aria-label'] ?? '')); }, get barrier() { return barrier; }, get props() { return props; } };
 }
 
+async function openShotMenu(setup) {
+  setup.nodes('Button').find(node => node['aria-label'] === '分镜生成记录').onClick();
+  setup.render(); await flush(); setup.render();
+  return setup.nodes('Dropdown')[0].menu;
+}
+
 test('restored off-page shot is editable without changing the list pagination offset', async context => {
   const rows = Array.from({ length: 80 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
   const offsets = []; const saves = [];
@@ -336,12 +342,14 @@ test('shot menu saves drafts before moving and archives the current scope explic
   });
   await flush(); setup.render();
   setup.scriptInput.onChange({ target: { value: 'save before moving' } });
-  const menu = setup.nodes('Dropdown')[0].menu;
+  const menu = await openShotMenu(setup);
   assert.equal(menu.items.find(item => item.key === 'up').disabled, true);
   await menu.onClick({ key: 'down' }); setup.render(); await flush(); setup.render();
+  assert.equal(setup.nodes('Dialog').some(dialog => dialog.title === '分镜生成记录'), false);
   assert.deepEqual(calls.map(call => call.kind), ['save', 'move']);
   assert.equal(calls[1].version, '2'); assert.equal(calls[1].direction, 1);
-  await setup.nodes('Dropdown')[0].menu.onClick({ key: 'archive' }); await flush(); setup.render();
+  const archiveMenu = await openShotMenu(setup);
+  await archiveMenu.onClick({ key: 'archive' }); await flush(); setup.render();
   assert.equal(calls.at(-1).kind, 'archive'); assert.equal(controls.subject, null);
 });
 
@@ -353,7 +361,8 @@ test('pending menu mutation disables editing and rejects an older change handler
   });
   await flush(); setup.render();
   const previousInput = setup.scriptInput;
-  const moving = setup.nodes('Dropdown')[0].menu.onClick({ key: 'down' });
+  const menu = await openShotMenu(setup);
+  const moving = menu.onClick({ key: 'down' });
   await flush(); setup.render();
   assert.equal(setup.scriptInput.disabled, true);
   assert.equal(setup.nodes('ShotImageCandidates')[0].disabled, true);
@@ -372,7 +381,8 @@ test('failed save blocks menu mutation and preserves the editing draft', async c
   const setup = mount(context, { update: async () => { throw new Error('save conflict'); }, move: async () => moves++ });
   await flush(); setup.render();
   setup.scriptInput.onChange({ target: { value: 'draft for recovery' } });
-  await setup.nodes('Dropdown')[0].menu.onClick({ key: 'down' }); setup.render();
+  const menu = await openShotMenu(setup);
+  await menu.onClick({ key: 'down' }); await flush(); setup.render();
   assert.equal(moves, 0); assert.equal(setup.scriptInput.value, 'draft for recovery');
   assert.equal(setup.barrier.hasUnsettled(), true);
   setup.render({ readOnly: true });

@@ -1,10 +1,10 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from 'antd';
-import { PanelRightClose, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useEpisodeCreationControls } from './EpisodeCreationWorkspace';
 
-export function ShotGenerationSettings({ open, active, onClose, children }: {
-  open: boolean; active: boolean; onClose: () => void; children: ReactNode;
+export function ShotGenerationSettings({ open, active, onClose, children, id }: {
+  open: boolean; active: boolean; onClose: () => void; children: ReactNode; id?: string;
 }) {
   const [compact, setCompact] = useState(() => window.innerWidth <= 700);
   const pane = useRef<HTMLDivElement>(null);
@@ -36,9 +36,9 @@ export function ShotGenerationSettings({ open, active, onClose, children }: {
   }, [drawerOpen]);
   return <>
     {drawerOpen && <button type="button" className="shot-settings-backdrop" tabIndex={-1} aria-label="关闭分镜生成设置" onClick={onClose}/>}
-    <div ref={pane} className="standard-object-settings" hidden={!open} role={drawerOpen ? 'dialog' : undefined} aria-modal={drawerOpen ? true : undefined} aria-label={drawerOpen ? '分镜生成设置' : undefined}>
-      {drawerOpen && <header className="shot-settings-drawer-heading"><h3>分镜生成设置</h3><Button type="text" aria-label="关闭分镜生成设置" title="关闭分镜生成设置" icon={compact ? <X size={17}/> : <PanelRightClose size={17}/>} onClick={onClose}/></header>}
-      {children}
+    <div id={id} ref={pane} className="standard-object-settings" hidden={!open} role={drawerOpen ? 'dialog' : undefined} aria-modal={drawerOpen ? true : undefined} aria-label={drawerOpen ? '分镜生成设置' : undefined}>
+      <header className="shot-settings-drawer-heading"><h3>生成设置</h3><Button type="text" aria-label="关闭分镜生成设置" title="关闭分镜生成设置" icon={<X size={16}/>} onClick={onClose}/></header>
+      <div className="shot-settings-scroll">{children}</div>
     </div>
   </>;
 }

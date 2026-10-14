@@ -17,7 +17,7 @@ export function ScriptStage({ script, editorDocument, confirmed, readOnly, busy,
   const preview = showingCandidate && candidate;
   const switches = candidate ? <div className="novel-document-tabs" aria-label="剧本版本">
     <Button type="text" size="small" aria-pressed={!preview} onClick={() => onShowCandidate?.(false)}>当前稿</Button>
-    <Button type="text" size="small" aria-pressed={!!preview} onClick={() => onShowCandidate?.(true)}>生成结果</Button>
+    <Button type="text" size="small" aria-pressed={!!preview} onClick={() => onShowCandidate?.(true)}>最新生成</Button>
   </div> : null;
   function download() {
     const url = URL.createObjectURL(new Blob([preview ? preview.content : script], { type: 'text/plain;charset=utf-8' }));
@@ -35,7 +35,7 @@ export function ScriptStage({ script, editorDocument, confirmed, readOnly, busy,
       <QuillScriptEditor content={script} document={editorDocument} readOnly={readOnly} onChange={onEdit} toolbarActions={switches}/>
     </div>
     {preview && <QuillScriptEditor key={preview.id} content={preview.content} readOnly label="新剧本结果预览" toolbarActions={switches}/>}
-    {preview ? <footer className="novel-script-confirm"><strong>新剧本 · 未采用</strong><Button type="primary" loading={busy} disabled={readOnly || busy} onClick={onAdopt}>采用并编辑</Button></footer>
-      : !confirmed && <footer className="novel-script-confirm"><strong>草稿待确认</strong><Button type="primary" loading={busy} disabled={readOnly || busy || !script.trim()} onClick={onConfirm}>确认当前剧本</Button></footer>}
+    {preview ? <footer className="novel-script-result"><strong>新剧本 · 未采用</strong><Button type="primary" aria-label="采用并编辑" loading={busy} disabled={readOnly || busy} onClick={onAdopt}>采用并编辑</Button></footer>
+      : !confirmed && <footer className="novel-script-confirm"><strong>草稿待确认</strong><Button type="primary" aria-label="确认当前剧本" loading={busy} disabled={readOnly || busy || !script.trim()} onClick={onConfirm}>确认当前剧本</Button></footer>}
   </section>;
 }

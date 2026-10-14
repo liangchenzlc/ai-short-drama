@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Alert, Button, Input, Select, Skeleton, Upload } from 'antd';
-import { History, PanelRightClose, PanelRightOpen, Share2, Trash2, X } from 'lucide-react';
+import { Alert, Button, Input, Popover, Select, Skeleton, Upload } from 'antd';
+import { Check, History, PanelRightClose, PanelRightOpen, Share2, Trash2, X } from 'lucide-react';
 import { assetLibraries, type AssetDraft, type AssetCandidate, type AssetRead, type AssetScope, type LibraryAssetRead } from '../../api/modules/assets';
 import type { CreationDraftValue } from '../../api/modules/creation-drafts';
 import { ApiError, errorMessage } from '../../api/http';
-import { PreviewImage } from '../../components/ui/ImagePreview';
+import { ImagePreview, PreviewImage } from '../../components/ui/ImagePreview';
+import { CreationImagePreview } from '../projects/CreationImagePreview';
 import { Dialog } from '../../components/ui/Dialog';
 import { confirmAction } from '../../components/ui/confirm';
 import { ImagePicker } from '../media-library/ImagePicker';
@@ -27,8 +28,8 @@ function AssetInformation({ value, disabled, onChange }: {
 }) {
   return <div className="standard-asset-information"><div className="standard-asset-name-type">
     <label>素材名称<Input aria-label="素材名称" value={value.name} placeholder="输入名称" maxLength={255} disabled={disabled} onChange={event => onChange({ name: event.target.value })}/></label>
-    <label>类型<Select aria-label="素材类型" value={value.kind ?? undefined} placeholder="选择类型" disabled={disabled} options={Object.entries(labels).map(([value, label]) => ({ value, label }))} onChange={kind => onChange({ kind })}/></label>
-  </div><label className="standard-asset-description">描述<Input.TextArea aria-label="描述" value={value.description} maxLength={8000} autoSize={{ minRows: 3, maxRows: 6 }} disabled={disabled} placeholder="外观、特征或环境" onChange={event => onChange({ description: event.target.value })}/></label></div>;
+    <label>素材类型<Select aria-label="素材类型" value={value.kind ?? undefined} placeholder="选择类型" disabled={disabled} options={Object.entries(labels).map(([value, label]) => ({ value, label }))} onChange={kind => onChange({ kind })}/></label>
+  </div><label className="standard-asset-description">素材描述<Input.TextArea aria-label="描述" value={value.description} maxLength={8000}  disabled={disabled} placeholder="外观、特征或环境" onChange={event => onChange({ description: event.target.value })}/></label></div>;
 }
 
 function useSettingsPanel() {
@@ -66,16 +67,19 @@ function useSettingsPanel() {
   }); } };
 }
 
-function ObjectPanel({ title, settings, actions, preview, children }: {
-  title: string; settings: ReturnType<typeof useSettingsPanel>; actions?: ReactNode; preview: ReactNode; children: ReactNode;
+function ObjectPanel({ title, kind, settings, actions, status, tabs, preview, children }: {
+  title: string; kind?: string; settings: ReturnType<typeof useSettingsPanel>; actions?: ReactNode; status?: ReactNode; tabs?: ReactNode; preview: ReactNode; children: ReactNode;
 }) {
   return <section className={`standard-object-panel episode-asset-detail${settings.open ? '' : ' is-settings-collapsed'}`} aria-label={`素材 ${title}`}>
-    <header className="standard-object-heading"><h3 title={title}>{title}</h3><div className="standard-asset-object-actions">{actions}{!settings.open && <Button type="text" aria-label="展开生成设置" title="展开生成设置" icon={<PanelRightOpen size={17}/>} onClick={settings.reveal}/>}</div></header>
-    <section className="standard-object-preview" aria-label="素材图片预览">{preview}</section>
-    {settings.open && settings.mobile && <button className="standard-asset-settings-backdrop" aria-label="关闭生成设置" onClick={settings.close}/>}
-    <div ref={settings.pane} className={`standard-object-settings${settings.mobile && settings.open ? ' is-mobile-open' : ''}`} hidden={!settings.open} role={settings.mobile && settings.open ? 'dialog' : undefined} aria-modal={settings.mobile && settings.open ? true : undefined} aria-label="素材生成设置">
-      <header className="standard-asset-settings-heading"><h4>生成设置</h4><Button type="text" aria-label="收起生成设置" title="收起生成设置" icon={settings.mobile ? <X size={17}/> : <PanelRightClose size={17}/>} onClick={settings.close}/></header>
-      <div className="standard-asset-settings-content">{children}</div>
+    <header className="standard-object-heading"><h3 title={title}>{title}</h3><div className="standard-asset-object-actions">{status}{actions}<Button type="text" aria-label={settings.open ? '收起生成设置' : '展开生成设置'} title={settings.open ? '收起生成设置' : '展开生成设置'} aria-expanded={settings.open} icon={settings.open ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>} onClick={settings.open ? settings.close : settings.reveal}/></div></header>
+    <div className="standard-object-tabs standard-asset-work-tabs"><div className="standard-asset-tab-buttons">{tabs ?? <button type="button" aria-pressed="true">当前采用</button>}</div>{kind && <span className="standard-asset-view-kind">{kind}</span>}</div>
+    <div className={`standard-object-media${settings.open ? '' : ' is-settings-collapsed'}`}>
+      <section className="standard-object-preview" aria-label="素材图片预览">{preview}</section>
+      {settings.open && settings.mobile && <button className="standard-asset-settings-backdrop" aria-label="关闭设置遮罩" onClick={settings.close}/>}
+      <div ref={settings.pane} className={`standard-object-settings${settings.mobile && settings.open ? ' is-mobile-open' : ''}`} hidden={!settings.open} role={settings.mobile && settings.open ? 'dialog' : undefined} aria-modal={settings.mobile && settings.open ? true : undefined} aria-label="素材生成设置">
+        <header className="standard-asset-settings-heading"><h4>生成设置</h4><Button type="text" aria-label="关闭生成设置" title="收起生成设置" icon={<X size={17}/>} onClick={settings.close}/></header>
+        <div className="standard-object-settings-scroll standard-asset-settings-content">{children}</div>
+      </div>
     </div>
   </section>;
 }
@@ -101,12 +105,13 @@ export function LocalAssetEditor({ draft, readOnly, onChange, onRetry, onRemove,
     return () => cancelAnimationFrame(frame);
   }, [draft.id]);
   const editPrivate = (patch: Partial<CreationDraftValue>) => onChange({ generation: { ...value, ...patch } });
-  return <ObjectPanel title={draft.name || '未命名素材'} settings={settings} actions={!readOnly && <Button type="text" danger aria-label="放弃本机素材草稿" disabled={draft.status === 'saving' || uploadBusy} icon={<Trash2 size={15}/>} onClick={onRemove}/>} preview={<div className="standard-asset-preview-empty"><span>待制作</span><p>填写名称和类型后保存素材，再生成图片。</p></div>}>
+  return <ObjectPanel title={draft.name || '未命名素材'} kind={draft.kind ? labels[draft.kind] : undefined} settings={settings} status={<span className="standard-asset-status">本机草稿</span>} preview={<CreationImagePreview alt={draft.name || '未命名素材'} empty={<><strong>还没有采用的图片</strong><p>填写名称和类型后保存素材，再生成图片。</p><Button onClick={settings.reveal}>打开生成设置</Button></>}/>}>
     <AssetInformation value={draft} disabled={readOnly} onChange={onChange}/>
     <div className="standard-asset-save-feedback" role="status">{draft.status === 'saving' ? '正在保存到服务端…' : '本机草稿已保留'}</div>
     {draft.message && <Alert type={draft.status === 'error' ? 'error' : 'warning'} message={draft.message} action={draft.status === 'unknown' || draft.status === 'error' ? <Button loading={false} onClick={onRetry}>{draft.status === 'unknown' ? '核对原创建请求' : '重试创建'}</Button> : undefined}/>}
     <PrivateAssetReferences assetId={draft.id} projectId="" episodeId="" privateIds={value.reference_media_ids} saved={null} disabled={readOnly || draft.status === 'saving'} onChange={reference_media_ids => editPrivate({ reference_media_ids })} onState={ignoredReferenceState} onBusyChange={handleUploadBusy}/>
     <GenerationComposer prompt={value.input_text} onPrompt={input_text => editPrivate({ input_text })} disabled={readOnly} model={<ConfigSelect kind="image" value={value.model_config_id ?? undefined} onChange={id => editPrivate({ model_config_id: id ?? null })} onResolvedChange={id => { if (id && id !== value.model_config_id && !readOnly) editPrivate({ model_config_id: id }); }} disabled={readOnly} label="生图模型"/>} parameters={<AssetGenerationParameters value={value} disabled={readOnly} onChange={editPrivate}/>} sendDisabled busy={false} onSend={() => {}}/>
+    {!readOnly && <Button type="text" size="small" danger className="standard-local-asset-discard" aria-label="放弃本机素材草稿" disabled={draft.status === 'saving' || uploadBusy} onClick={onRemove}>放弃本机素材草稿</Button>}
   </ObjectPanel>;
 }
 
@@ -143,16 +148,23 @@ export function EpisodeAssetEditor({ asset, scope, actor, readOnly, initialGener
   const [busy, setBusy] = useState(false);
   const [generationBusy, setGenerationBusy] = useState(false);
   const [showImages, setShowImages] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const closeHistory = () => { setToolsOpen(false); setHistoryOpen(false); };
+  const [sharing, setSharing] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [refreshedImage, setRefreshedImage] = useState<{ mediaId: string; url: string } | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [latest, setLatest] = useState<AssetRead | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState('');
   const candidateRequest = useRef<AbortController | null>(null);
+  const previewRequest = useRef<AbortController | null>(null);
   const reviewRequest = useRef<AbortController | null>(null);
   const operation = useRef(false);
   const alive = useRef(true);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; candidateRequest.current?.abort(); reviewRequest.current?.abort(); }; }, []);
-  const busyRef = useRef(false); busyRef.current = busy || generationBusy;
+  useEffect(() => { alive.current = true; return () => { alive.current = false; candidateRequest.current?.abort(); previewRequest.current?.abort(); reviewRequest.current?.abort(); }; }, []);
+  const busyRef = useRef(false); busyRef.current = busy || generationBusy || sharing;
   useEffect(() => {
     registerBarrier({ hasUnsettled: () => session.hasUnsettled() || !!barriers.current.private?.hasUnsettled() || busyRef.current,
       flush: async () => {
@@ -248,23 +260,46 @@ export function EpisodeAssetEditor({ asset, scope, actor, readOnly, initialGener
     catch (cause) { if (alive.current) setCandidateError(errorMessage(cause)); return false; }
     finally { operation.current = false; if (alive.current) setBusy(false); }
   }
+  async function shareArtwork() {
+    if (!onShare || readOnly || busy || generationBusy || sharing || blocked || operation.current) return;
+    operation.current = true; setSharing(true); setToolsOpen(false);
+    try { await onShare(); }
+    catch (cause) { if (alive.current) setCandidateError(`共享素材失败：${errorMessage(cause)}`); }
+    finally { operation.current = false; if (alive.current) setSharing(false); }
+  }
+  async function refreshPreview() {
+    if (selectedCandidate) { await loadCandidates(); return; }
+    const mediaId = state.saved.media_id;
+    if (!mediaId) return;
+    previewRequest.current?.abort(); const controller = new AbortController(); previewRequest.current = controller;
+    setPreviewLoading(true);
+    try {
+      const remote = await assetLibraries.detail(asset.id, controller.signal);
+      if (!controller.signal.aborted && alive.current && session.getSnapshot().saved.media_id === mediaId && remote.media_id === mediaId && remote.image?.url) setRefreshedImage({ mediaId, url: remote.image.url });
+    } catch (cause) { if (!controller.signal.aborted && alive.current) setCandidateError(`刷新素材图片失败：${errorMessage(cause)}`); }
+    finally { if (!controller.signal.aborted && alive.current) setPreviewLoading(false); }
+  }
   const shown = selectedCandidate ?? state.saved.image;
+  const shownUrl = selectedCandidate ? selectedCandidate.url : refreshedImage?.mediaId === state.saved.media_id ? refreshedImage.url : shown?.url;
+  const previewAlt = selectedCandidate ? `${state.asset.name}未采用结果` : state.asset.name;
   const preview = <>
-    <div className="standard-asset-work-tabs"><Button type={selectedCandidate ? 'text' : 'primary'} onClick={() => setPreviewId(null)}>当前作品</Button>{candidates.some(item => item.media_id !== state.saved.media_id) && <Button type={selectedCandidate ? 'primary' : 'text'} onClick={() => setPreviewId(candidates.find(item => item.media_id !== state.saved.media_id)?.id ?? null)}>新结果</Button>}</div>
-    <div className="standard-asset-image-stage">{shown?.url ? <PreviewImage triggerClassName="standard-asset-preview-image" src={shown.url} alt={selectedCandidate ? `${state.asset.name}未采用结果` : state.asset.name}/> : <div className="standard-asset-preview-empty"><span>待制作</span><p>生成或上传图片后，在这里核对采用。</p></div>}</div>
-    {selectedCandidate ? <div className="standard-asset-adoption"><span>{selectedCandidate.generation?.is_stale ? '未采用 · 来源已变化，需核对' : '未采用'}</span><Button type="primary" loading={busy} disabled={readOnly || generationBusy || blocked} onClick={() => void confirmImage(selectedCandidate)}>采用此结果</Button></div> : state.saved.state === 'unconfirmed' && state.saved.media_id ? <div className="standard-asset-adoption"><span>素材信息已修改，当前图片待确认</span>{!readOnly && <Button loading={busy} disabled={generationBusy || blocked} onClick={() => void confirmImage({ media_id: state.saved.media_id! }, true)}>重新确认当前图片</Button>}</div> : null}
+    <CreationImagePreview src={shownUrl} alt={previewAlt} loading={previewLoading || !shownUrl && candidateLoading && !candidateLoaded} onRefresh={() => void refreshPreview()} onOpen={() => setShowPreview(true)} empty={<><strong>还没有采用的图片</strong><p>生成或上传图片后，在这里核对采用。</p><Button onClick={settings.reveal}>打开生成设置</Button></>}/>
+    {selectedCandidate ? <div className="standard-asset-adoption"><strong>{selectedCandidate.generation?.is_stale ? '本次结果 · 未采用，来源已变化需核对' : '本次结果 · 未采用'}</strong><Button type="primary" loading={busy} disabled={readOnly || generationBusy || sharing || blocked} onClick={() => void confirmImage(selectedCandidate)}>采用此结果</Button></div> : state.saved.state === 'unconfirmed' && state.saved.media_id ? <div className="standard-asset-adoption"><strong>素材信息已修改，当前图片待确认</strong>{!readOnly && <Button loading={busy} disabled={generationBusy || sharing || blocked} onClick={() => void confirmImage({ media_id: state.saved.media_id! }, true)}>重新确认当前图片</Button>}</div> : null}
     {candidateError && <Alert type="error" message={candidateError} action={<Button onClick={() => void loadCandidates()}>重新读取候选</Button>}/>}
   </>;
-  const candidateHistory = <section className="standard-asset-candidate-history"><h4>图片候选</h4>{candidateLoading && !candidateLoaded ? <Skeleton active paragraph={{ rows: 2 }}/> : !candidates.length && !candidateError ? <p className="episode-help">暂无图片候选。</p> : <div className="image-candidate-grid">{candidates.map(candidate => <article className="image-candidate" key={candidate.id}><PreviewImage src={candidate.url} alt={`${state.asset.name}候选`}/><Button onClick={() => { setPreviewId(candidate.id); setHistoryOpen(false); }}>预览此结果</Button><Button disabled={readOnly || busy || generationBusy || blocked} onClick={() => void confirmImage(candidate)}>确认采用</Button></article>)}</div>}{candidateOffset < candidateTotal && <Button loading={candidateLoading} onClick={() => void loadCandidates(true)}>加载更多候选</Button>}</section>;
+  const tabs = <><button type="button" aria-pressed={!selectedCandidate} onClick={() => setPreviewId(null)}>当前采用</button>{candidates.some(item => item.media_id !== state.saved.media_id) && <button type="button" aria-pressed={!!selectedCandidate} onClick={() => setPreviewId(candidates.find(item => item.media_id !== state.saved.media_id)?.id ?? null)}>最新生成</button>}</>;
+  const status = <span className={`standard-asset-status${selectedCandidate ? ' is-warning' : state.saved.media_id && state.saved.state === 'confirmed' ? ' is-success' : ''}`}>{!selectedCandidate && state.saved.media_id && state.saved.state === 'confirmed' && <Check size={12}/>} {selectedCandidate ? '新结果 · 未采用' : state.saved.media_id ? state.saved.state === 'confirmed' ? '当前采用' : '当前图片 · 待确认' : '尚未制作'}</span>;
+  const candidateHistory = <section className="standard-asset-candidate-history"><h4>图片候选</h4>{candidateError && <Alert type="error" message={candidateError} action={<Button onClick={() => void loadCandidates()}>重新读取候选</Button>}/>} {candidateLoading && !candidateLoaded ? <div role="status"><Skeleton active paragraph={{ rows: 2 }}/><p className="episode-help">正在读取图片候选…</p></div> : !candidates.length && !candidateError ? <p className="episode-help">暂无图片候选。</p> : <div className="image-candidate-grid">{candidates.map(candidate => <article className="image-candidate" key={candidate.id}><PreviewImage src={candidate.url} alt={`${state.asset.name}候选`}/><Button onClick={() => { setPreviewId(candidate.id); setHistoryOpen(false); }}>预览此结果</Button><Button disabled={readOnly || busy || generationBusy || blocked} onClick={() => void confirmImage(candidate)}>确认采用</Button></article>)}</div>}{candidateOffset < candidateTotal && <Button loading={candidateLoading} onClick={() => void loadCandidates(true)}>加载更多候选</Button>}</section>;
+  const historyActions = !readOnly && <div className="standard-asset-history-actions"><Popover trigger="click" placement="topLeft" open={toolsOpen} onOpenChange={setToolsOpen} content={<div className="standard-asset-more-tools" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setToolsOpen(false); document.querySelector<HTMLButtonElement>('.asset-generation-history-dialog button[aria-label="素材更多操作"]')?.focus(); } }}><Upload accept="image/png,image/jpeg,image/webp" showUploadList={false} disabled={busy || generationBusy || sharing || blocked} beforeUpload={file => { closeHistory(); return upload(file); }}><Button type="text" disabled={busy || generationBusy || sharing || blocked}>上传作品图片</Button></Upload><Button type="text" disabled={busy || generationBusy || sharing || blocked} onClick={() => { closeHistory(); setShowImages(true); }}>从资产库选择</Button>{onShare && <Button type="text" aria-label="共享素材到项目" icon={<Share2 size={15}/>} loading={sharing} disabled={busy || generationBusy || blocked} onClick={() => { closeHistory(); void shareArtwork(); }}>共享到项目</Button>}<Button type="text" danger aria-label="从本集移除素材" icon={<Trash2 size={15}/>} disabled={busy || generationBusy || sharing || blocked} onClick={() => { closeHistory(); onRemove(); }}>从本集移除素材</Button></div>}><Button type="text" aria-label="素材更多操作" title="更多操作" aria-haspopup="true" aria-expanded={toolsOpen}>素材操作</Button></Popover></div>;
   return <>
-    <ObjectPanel title={state.asset.name || '未命名素材'} settings={settings} preview={preview} actions={<><Button type="text" aria-label="生成记录" title="生成记录" icon={<History size={16}/>} onClick={() => setHistoryOpen(true)}/>{!readOnly && onShare && <Button type="text" aria-label="共享素材到项目" title="共享到项目" icon={<Share2 size={15}/>} disabled={busy || generationBusy || blocked} onClick={() => void onShare()}/>} {!readOnly && <Button type="text" danger aria-label="从本集移除素材" title="从本集移除素材" icon={<Trash2 size={15}/>} disabled={busy || generationBusy || blocked} onClick={onRemove}/>}</>}>
-      <AssetInformation value={state.asset} disabled={readOnly || busy || generationBusy || state.recoveryBlocked} onChange={patch => session.edit(patch as Partial<AssetDraft>)}/>
+    <ObjectPanel title={state.asset.name || '未命名素材'} kind={labels[state.asset.kind]} settings={settings} tabs={tabs} status={status} preview={preview} actions={<Button type="text" aria-label="生成记录" title="生成记录" icon={<History size={16}/>} onClick={() => { setToolsOpen(false); setHistoryOpen(true); }}/>}>
+      <AssetInformation value={state.asset} disabled={readOnly || busy || generationBusy || sharing || state.recoveryBlocked} onChange={patch => session.edit(patch as Partial<AssetDraft>)}/>
       {state.status === 'shared' && <Alert type="warning" message={state.message} action={<Button disabled={readOnly} onClick={() => void session.approveShared()}>确认本次共享修改</Button>}/>}
       {state.status === 'error' && <Alert type="error" message={state.message} action={state.recoveryBlocked ? <><Button onClick={downloadDraft}>下载本机恢复记录</Button><Button onClick={async () => { if (await confirmAction('明确清除本机素材恢复记录？请先下载原记录备份。服务端素材会保留。')) session.discardRecovery(); }}>清除本机恢复记录</Button></> : <Button disabled={readOnly} onClick={() => void session.retry()}>重试保存</Button>}/>}
       {state.status === 'conflict' && <Alert type="warning" message={state.message} action={<><Button onClick={() => void reviewConflict()}>核对最新版本</Button><Button onClick={downloadDraft}>下载素材草稿</Button></>}/>}
-      <StandardAssetGeneration asset={state.asset} scope={scope} draft={draft} readOnly={readOnly} disabled={blocked || busy} historyOpen={historyOpen} onCloseHistory={() => setHistoryOpen(false)} onSaveBeforeGenerate={saveBeforeGenerate} onCandidatesChanged={candidatesChanged} onSubmissionBusyChange={setGenerationBusy} onVersionConflict={versionConflict} candidateHistory={candidateHistory}/>
-      {!readOnly && <div className="standard-asset-image-tools"><Upload accept="image/png,image/jpeg,image/webp" showUploadList={false} disabled={busy || generationBusy || blocked} beforeUpload={upload}><Button size="small" disabled={busy || generationBusy || blocked}>上传作品图片</Button></Upload><Button size="small" disabled={busy || generationBusy || blocked} onClick={() => setShowImages(true)}>从资产库选择</Button></div>}
+      <StandardAssetGeneration asset={state.asset} scope={scope} draft={draft} readOnly={readOnly} disabled={blocked || busy || sharing} historyOpen={historyOpen} onCloseHistory={closeHistory} onSaveBeforeGenerate={saveBeforeGenerate} onCandidatesChanged={candidatesChanged} onSubmissionBusyChange={setGenerationBusy} onVersionConflict={versionConflict} candidateHistory={candidateHistory} historyActions={historyActions}/>
     </ObjectPanel>
+    {showPreview && shownUrl && <ImagePreview src={shownUrl} alt={previewAlt} onClose={() => setShowPreview(false)}/> }
     {showImages && <ImagePicker busy={busy} projectId={scope.projectId} onClose={() => setShowImages(false)} onSelect={addMedia}/>}
     {reviewOpen && <Dialog title="核对素材版本" className="asset-import-dialog" onClose={() => { reviewRequest.current?.abort(); setReviewOpen(false); }}>
       <div className="asset-import-body">{reviewLoading ? <Skeleton active paragraph={{ rows: 3 }}/> : reviewError ? <Alert type="error" message={reviewError} action={<Button onClick={() => void reviewConflict()}>重试读取最新版本</Button>}/> : latest && <><h4>本页草稿</h4><p>{state.asset.name} · {labels[state.asset.kind]}</p><p>{state.asset.description}</p><h4>服务端最新版本</h4><p>{latest.name} · {labels[latest.kind]}</p><p>{latest.description}</p>{latest.image?.url && <PreviewImage src={latest.image.url} alt="服务端当前图片"/>}</>}</div>

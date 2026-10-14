@@ -1,6 +1,7 @@
 import { confirmAction } from '../../components/ui/confirm';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Skeleton, Tooltip } from 'antd';
+import { History } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import { Icon } from '../../components/ui/Icon';
 import { storyboardApi, type ScriptCandidate, type ScriptDetail } from '../../api/modules/storyboard';
@@ -233,12 +234,12 @@ export function NovelScriptGeneration({
     finally { if (isCurrent()) setBusy(false); }
   }
 
-  const history = <Tooltip title="生成记录"><Button type="text" size="small" aria-label="生成记录" icon={<Icon name="tasks" size={17}/>} onClick={() => setHistoryOpen(true)}/></Tooltip>;
+  const history = <Tooltip title="生成记录"><Button type="text" size="small" aria-label="生成记录" icon={<History size={18}/>} onClick={() => setHistoryOpen(true)}/></Tooltip>;
   const feedback = message ? <Alert className="novel-generation-feedback" type={messageType} showIcon message={message}/> : null;
   return <>
     <CreationSlot stage="source"><aside id="novel-adaptation-settings" className="writing-assistant novel-adaptation-settings" aria-label="剧本改编设置">
-      <header><h3>剧本改编设置</h3>{settingsActions}</header>
-      {settings}
+      <header><h3>剧本改编设置</h3><div className="novel-settings-heading-actions">{settingsActions}</div></header>
+      <div className="novel-adaptation-body">{settings}
       <GenerationComposer purpose="novel" prompt={draft.value.input_text} onPrompt={input_text => draft.edit({ input_text })} model={modelSelector}
         disabled={disabled || busy || submitting || !draft.loaded} busy={submitting || pending}
         sendDisabled={disabled || busy || pending || recoveryBlocked || !!uncertain || !draft.loaded || draft.status === 'conflict' || draft.status === 'error' || !novel.trim()} onSend={() => void generate()}/>
@@ -258,7 +259,7 @@ export function NovelScriptGeneration({
         {draft.status === 'error' && <Button size="small" onClick={() => void draft.retry()}>重试保存</Button>}
         <Button size="small" onClick={() => void confirmAction('载入服务端改编设置将放弃本机参数草稿，请先下载备份。继续？').then(ok => { if (ok) void draft.reload(); })}>载入服务端版本</Button>
       </div>}/>}
-      {pending && <p role="status">剧本正在生成…</p>}
+      {pending && <p role="status">剧本正在生成…</p>}</div>
     </aside></CreationSlot>
     {children({ candidate: preview, showingCandidate, busy, showCandidate: setShowingCandidate,
       adopt: () => { if (preview) void select(preview); }, history, feedback })}

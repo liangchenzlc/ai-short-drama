@@ -1,72 +1,107 @@
 .novel-source-stage { height: 100%; min-width: 0; min-height: 0; }
-.novel-script-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); }
-.novel-script-heading { flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 49px; padding: 8px 14px; border-bottom: 1px solid var(--hair); }
-.novel-script-heading h2 { margin: 0; flex-shrink: 0; font-size: 14px; font-weight: 600; }
-.novel-script-heading-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px; margin-left: auto; min-width: 0; }
-.novel-script-heading-actions .status-badge { margin-right: 4px; font-size: 11px; }
+.novel-script-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; border: 1px solid var(--hair); border-radius: 10px; background: var(--surface); }
+.novel-script-heading { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 12px 18px; }
+.novel-script-heading h2 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 600; }
+.novel-script-heading-actions { display: flex; align-items: center; gap: 7px; margin-left: auto; min-width: 0; flex-shrink: 0; }
+.novel-script-heading-actions .ant-btn { height: 29px; padding-inline: 9px; font-size: 12px; color: var(--sub); }
+.web-episode .novel-script-heading-actions .ant-btn, .web-episode .novel-format-tools .ant-btn, .web-episode .novel-document-tabs .ant-btn, .web-episode .novel-scene-shortcuts .ant-btn, .web-episode .novel-settings-heading-actions .ant-btn { min-height: 0; }
+.novel-script-heading-actions .ant-btn-icon-only { width: 32px; height: 32px; padding: 0; }
+.novel-script-heading-actions .status-badge { font-size: 11px; padding: 3px 7px; border: 1px solid #464646; border-radius: 4px; background: #282828; color: #cacacf; font-weight: 400; line-height: normal; white-space: nowrap; }
+.novel-script-heading-actions .status-badge.is-success { color: #8be1ac; background: #1b2920; border-color: #3b5944; }
+.novel-script-heading-actions .status-badge.is-pending { color: #f1c376; background: #30291e; border-color: #584932; }
 .novel-current-document { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .novel-current-document[hidden] { display: none; }
 .novel-quill-workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
-.novel-script-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; flex-shrink: 0; min-height: 43px; padding: 6px 14px; border-bottom: 1px solid var(--hair); color: var(--sub); font-size: 11px; font-variant-numeric: tabular-nums; }
-.novel-format-tools { display: flex; gap: 2px; }
-.novel-format-tools .ant-btn { width: 27px; height: 27px; padding: 4px; color: var(--sub); }
-.novel-format-tools .ant-btn[aria-pressed="true"] { background: var(--pale); color: var(--ink); }
-.novel-document-tabs { display: flex; gap: 2px; margin-left: auto; }
-.novel-document-tabs .ant-btn { font-size: 11px; color: var(--sub); }
-.novel-document-tabs .ant-btn[aria-pressed="true"] { background: var(--pale); color: var(--ink); }
-.novel-scene-shortcuts { display: flex; gap: 2px; max-width: 100%; overflow-x: auto; margin-left: auto; }
-.novel-scene-shortcuts .ant-btn { flex-shrink: 0; color: var(--sub); font-size: 11px; }
-.novel-quill-host { flex: 1; display: flex; min-height: 0; min-width: 0; overflow: hidden; }
-.novel-quill-host[hidden] { display: none; }
-.novel-quill-host > .ql-container { display: flex; flex: 1; min-width: 0; min-height: 0; border: 0; font-family: inherit; font-size: 14px; }
-.novel-quill-host .ql-editor { flex: 1; min-width: 0; min-height: 0; padding: 24px 28px 48px; color: var(--ink); line-height: 2; overflow-y: auto; outline: none; box-shadow: none; caret-color: var(--ink); }
+.novel-script-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; flex-shrink: 0; min-height: 40px; padding: 5px 20px; border-bottom: 1px solid var(--hair); background: #202020; color: var(--sub); font-size: 11px; font-variant-numeric: tabular-nums; }
+.novel-format-tools { display: flex; align-items: center; gap: 3px; }
+.novel-format-tools .ant-btn { width: 28px; height: 28px; padding: 5px; border-radius: 5px; color: var(--sub); }
+.novel-format-tools .ant-btn[aria-pressed="true"], .novel-format-tools .ant-btn:hover:not(:disabled) { background: #343434; color: var(--ink); }
+.novel-document-tabs { display: flex; align-items: center; gap: 18px; }
+.novel-document-tabs .ant-btn { position: relative; height: 28px; padding: 0; border-radius: 0; font-size: 12px; color: var(--sub); }
+.novel-document-tabs .ant-btn[aria-pressed="true"] { background: transparent; color: var(--ink); font-weight: 550; }
+.novel-document-tabs .ant-btn[aria-pressed="true"]::after { content: ''; position: absolute; height: 2px; left: 0; right: 0; bottom: -6px; background: #e9e9ed; }
+.novel-scene-shortcuts { display: flex; align-items: center; gap: 6px; max-width: 100%; overflow-x: auto; margin-left: auto; }
+.novel-scene-shortcuts .ant-btn { height: 25px; flex-shrink: 0; padding: 5px 7px; color: var(--sub); font-size: 10px; }
+.novel-script-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 22px 42px 38px; background: #151515; }
+.novel-script-scroll[hidden] { display: none; }
+.novel-quill-host { width: 100%; max-width: 760px; min-height: 100%; margin: 0 auto; }
+.novel-quill-host > .ql-container { height: auto; min-height: 100%; border: 0; font-family: inherit; font-size: 14px; }
+.novel-quill-host .ql-editor { min-width: 0; min-height: 520px; padding: 0; color: #d7d7dc; line-height: 1.95; overflow-y: visible; outline: none; box-shadow: none; caret-color: var(--ink); }
 .novel-quill-host .ql-editor:focus, .novel-quill-host .ql-editor:focus-visible, .novel-quill-host .ql-container:focus-within { outline: none; box-shadow: none; }
-.novel-quill-host .ql-editor p { margin: 0; }
-.novel-quill-host .ql-editor h1, .novel-quill-host .ql-editor h2, .novel-quill-host .ql-editor h3 { margin: 16px 0 8px; font-weight: 600; line-height: 1.5; }
-.novel-quill-host .ql-editor h1 { font-size: 22px; }
-.novel-quill-host .ql-editor h2 { font-size: 19px; }
-.novel-quill-host .ql-editor h3 { font-size: 16px; }
-.novel-quill-host .ql-editor blockquote { border-left-color: var(--border-control); color: var(--sub); margin: 8px 0; }
-.novel-quill-host .ql-editor.ql-blank::before { color: var(--placeholder); font-style: normal; left: 28px; right: 28px; }
-.novel-quill-host .ql-editor::selection, .novel-quill-host .ql-editor *::selection { color: var(--ink); background: var(--pale); }
-.novel-quill-host .ql-editor::-webkit-scrollbar, .novel-scene-shortcuts::-webkit-scrollbar { width: 7px; height: 5px; }
-.novel-quill-host .ql-editor::-webkit-scrollbar-thumb, .novel-scene-shortcuts::-webkit-scrollbar-thumb { background: var(--border-control); border-radius: 5px; }
+.novel-quill-host .ql-editor p { margin: 0 0 16px; }
+.novel-quill-host .ql-editor h3 { margin: 28px 0 14px; padding: 0 0 11px; border-bottom: 1px solid #363636; color: #f1f1f4; font-size: 15px; font-weight: 550; line-height: 1.8; }
+.novel-quill-host .ql-editor h3:first-child { margin-top: 10px; }
+.novel-quill-host .ql-editor blockquote { border-left: 1px solid #646464; padding-left: 16px; color: var(--sub); }
+.novel-quill-host .ql-editor.ql-blank::before { color: var(--placeholder); font-style: normal; left: 0; right: 0; }
+.novel-quill-host .ql-editor::selection, .novel-quill-host .ql-editor *::selection { color: #fff; background: #52525b; }
+.novel-script-scroll::-webkit-scrollbar, .novel-scene-shortcuts::-webkit-scrollbar { width: 6px; height: 6px; }
+.novel-script-scroll::-webkit-scrollbar-thumb, .novel-scene-shortcuts::-webkit-scrollbar-thumb { background: #505054; border-radius: 6px; }
 .novel-editor-loading { padding: 24px; }
-.novel-script-confirm { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-shrink: 0; min-height: 58px; padding: 10px 18px; border-top: 1px solid var(--hair); background: var(--surface-raised); }
-.novel-script-confirm strong { font-size: 12px; font-weight: 500; color: var(--sub); }
-.novel-generation-feedback { flex-shrink: 0; margin: 8px 14px 0; }
-.novel-adaptation-settings { height: 100%; min-width: 0; }
-.novel-adaptation-settings > header { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 18px; }
-.novel-adaptation-settings > header h3 { margin: 0; font-size: 14px; font-weight: 600; }
-.novel-adaptation-settings .writing-control { margin-bottom: 14px; }
-.novel-adaptation-settings .writing-control > span { font-size: 12px; color: var(--sub); }
+.novel-script-confirm, .novel-script-result { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-shrink: 0; padding: 14px 20px; border-top: 1px solid var(--hair); }
+.novel-script-confirm strong, .novel-script-result strong { display: block; font-size: 12px; font-weight: 550; }
+.web-episode .novel-script-confirm .ant-btn, .web-episode .novel-script-result .ant-btn { flex-shrink: 0; height: 34px; min-height: 34px; padding-inline: 12px; font-size: 13px; font-weight: 600; }
+.novel-script-result { padding: 12px 17px; gap: 12px; background: #24221e; border-top-color: #4c4335; }
+.novel-script-result strong { color: #efdab1; }
+.novel-generation-feedback { flex-shrink: 0; margin: 8px 14px; }
+.creation-slot .novel-adaptation-settings { display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; border-radius: 0; }
+.novel-adaptation-settings > header { display: flex; align-items: center; justify-content: space-between; flex: 0 0 48px; gap: 8px; margin: 0; padding: 8px 14px; border-bottom: 1px solid var(--hair); }
+.novel-adaptation-settings > header h3 { margin: 0; font-size: 13px; font-weight: 550; }
+.novel-settings-heading-actions { display: flex; align-items: center; gap: 2px; }
+.novel-settings-heading-actions .ant-btn { width: 32px; height: 32px; padding: 0; color: var(--sub); }
+.novel-adaptation-body { flex: 1; min-height: 0; overflow: auto; padding: 15px; overscroll-behavior: contain; }
+.novel-visual-settings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.novel-adaptation-settings .writing-control { min-width: 0; gap: 7px; margin-bottom: 14px; }
+.novel-adaptation-settings .writing-control > span { font-size: 12px; line-height: normal; color: #d3d3d8; }
+.novel-visual-settings .ant-select { height: 37px; font-size: 13px; }
+.novel-visual-settings .ant-select .ant-select-selector { min-height: 37px; padding-inline: 9px; border-radius: 6px; border-color: var(--border-control); background: #111; }
 .novel-adaptation-settings .episode-help { display: none; }
+.novel-adaptation-body .generation-inputs-novel { margin-top: 0; }
+.novel-adaptation-body .generation-composer-label { margin-bottom: 8px; line-height: normal; }
+.novel-visual-save-state { margin: 0 0 14px; font-size: 11px; color: var(--sub); }
 .novel-adaptation-settings .generation-composer textarea.ant-input { height: 180px; min-height: 160px; max-height: 360px; }
-.novel-adaptation-settings .generation-composer:focus-within, .novel-adaptation-settings .generation-composer textarea.ant-input:focus, .novel-adaptation-settings .generation-composer textarea.ant-input:focus-visible { outline: none; border-color: var(--hair); box-shadow: none; }
-.novel-adaptation-settings .generation-composer .ant-select-focused .ant-select-selector, .novel-adaptation-settings .generation-composer .ant-select-open .ant-select-selector { border-color: var(--border-control) !important; box-shadow: none !important; outline: none; }
+.novel-adaptation-settings .generation-composer:focus-within, .novel-adaptation-settings .generation-composer textarea.ant-input:focus, .novel-adaptation-settings .generation-composer textarea.ant-input:focus-visible { outline: none; border-color: #505050; box-shadow: none; }
+.novel-adaptation-settings .generation-composer .ant-select-focused .ant-select-selector, .novel-adaptation-settings .generation-composer .ant-select-open .ant-select-selector { border-color: #393939 !important; box-shadow: none !important; outline: none; }
 .novel-adaptation-settings .generation-composer .ant-select-selector:focus-within { outline: none; box-shadow: none; }
 .novel-adaptation-settings .generation-composer-footer { flex-wrap: nowrap; }
 .novel-adaptation-settings .generation-composer-parameters:empty { display: none; }
-.novel-adaptation-settings .generation-composer-model .ant-select { font-size: 11px; }
+.novel-adaptation-settings .generation-composer-model { max-width: 176px; }
+.novel-text-model { position: relative; display: flex; align-items: center; min-width: 0; border: 1px solid #393939; border-radius: 7px; background: #202020; }
+.novel-text-model .generation-config-select { display: flex; flex-direction: column; width: 100%; min-width: 0; }
+.novel-text-model > svg { position: absolute; top: 50%; left: 6px; transform: translateY(-50%); pointer-events: none; color: var(--sub); z-index: 1; }
+.novel-text-model .ant-select-selector { padding-left: 23px !important; }
+.novel-adaptation-settings .generation-composer-model .ant-select { height: 30px; font-size: 11px; }
+.novel-adaptation-settings .generation-composer-model .ant-select .ant-select-selector { height: 30px; min-height: 30px; border: 0; border-radius: 7px; background: transparent; }
 .novel-adaptation-settings .writing-assistant-hint { margin: 12px 0; font-size: 12px; color: var(--sub); }
 .novel-draft-actions { display: flex; gap: 4px; flex-wrap: wrap; }
 .novel-uncertain-action { margin-top: 12px; width: 100%; }
-.novel-source-drawer.ui-dialog { position: fixed; left: 0; top: 0; bottom: 0; right: auto; margin: 0; width: min(560px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; padding: 0; border-radius: 0; }
+.novel-source-drawer.ui-dialog { position: fixed; left: 0; top: 0; bottom: 0; right: auto; margin: 0; width: min(500px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; padding: 0; border-radius: 0 12px 12px 0; box-shadow: none; }
 .novel-source-drawer[open] { display: flex; flex-direction: column; }
-.novel-source-drawer > header { padding: 14px 20px; margin: 0; border-bottom: 1px solid var(--hair); }
-.novel-source-drawer-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; color: var(--sub); font-size: 12px; }
-.novel-source-drawer .ant-alert { margin: 0 20px 12px; }
-.novel-source-input { display: flex; flex: 1; min-height: 0; padding: 0 20px 16px; }
-.novel-source-input textarea { flex: 1; min-height: 0; width: 100%; height: 100%; resize: none; color: var(--ink); background: var(--canvas); border-color: var(--border-control); line-height: 2; }
-.novel-source-drawer > footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 20px; color: var(--sub); font-size: 12px; border-top: 1px solid var(--hair); }
+.novel-source-drawer > header { flex-shrink: 0; padding: 20px 22px 17px; margin: 0; gap: 14px; border-bottom: 1px solid var(--hair); }
+.novel-source-drawer > header .icon-button { width: 32px; height: 32px; min-height: 32px; }
+.novel-source-drawer-tools { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 12px; padding: 13px 22px; color: var(--sub); font-size: 11px; }
+.novel-source-drawer .ant-alert { margin: 0 22px 12px; }
+.novel-source-input { display: flex; flex: 1; min-height: 0; padding: 0; }
+.novel-source-drawer .novel-source-input textarea { flex: 1; min-height: 0; max-height: none; width: 100%; height: 100%; padding: 0 25px 22px; resize: none; border: 0; border-radius: 0; color: #d9d9df; background: transparent; font-size: 14px; line-height: 2; }
+.novel-source-drawer > footer { display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; gap: 9px; padding: 15px 22px; color: var(--sub); font-size: 11px; border-top: 1px solid var(--hair); }
+@media (max-width: 1279px) {
+  .novel-script-scroll { padding: 22px 30px; }
+}
 @media (max-width: 700px) {
-  .novel-source-stage { min-height: 540px; }
-  .novel-script-panel { min-height: 540px; }
-  .novel-script-heading { padding: 9px 10px; flex-wrap: wrap; }
-  .novel-script-heading-actions { gap: 1px; }
-  .novel-script-heading-actions .status-badge { font-size: 10px; }
-  .novel-script-toolbar { padding: 6px 10px; gap: 8px; }
-  .novel-quill-host .ql-editor { padding: 18px 16px 32px; min-height: 350px; }
-  .novel-quill-host .ql-editor.ql-blank::before { left: 16px; right: 16px; }
-  .novel-script-confirm { padding: 10px 12px; }
+  .novel-source-stage { height: calc(100dvh - 119px); }
+  .novel-script-heading { min-height: 60px; padding: 14px; }
+  .novel-script-heading h2 { font-size: 15px; }
+  .novel-script-heading-actions { gap: 2px; }
+  .novel-script-heading-actions .ant-btn-icon-only { width: 28px; }
+  .novel-script-heading-actions .status-badge { font-size: 10px; padding: 3px 5px; }
+  .novel-script-toolbar { padding: 0 14px; gap: 12px; }
+  .novel-format-tools .ant-btn { width: 32px; height: 32px; }
+  .novel-script-scroll { padding: 17px 18px 30px; }
+  .novel-quill-host .ql-editor { font-size: 13px; }
+  .novel-scene-shortcuts { display: none; }
+  .novel-script-confirm { padding: 14px; flex-wrap: wrap; }
+  .novel-script-result { padding: 13px; flex-wrap: wrap; }
+  .novel-source-drawer > header { padding: 18px 16px 15px; }
+  .novel-source-drawer > footer { padding: 13px 16px; flex-wrap: wrap; }
+  .novel-adaptation-settings .generation-composer-model .ant-select { height: 38px; }
+  .novel-adaptation-settings .generation-composer-model .ant-select .ant-select-selector { height: 38px; min-height: 38px; }
 }

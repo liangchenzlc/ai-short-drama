@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Select, Skeleton, Tooltip } from 'antd';
-import { ArrowUp, ArrowUpRight, Clapperboard, Square, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, BookOpen, Clapperboard, Plus, Square, X } from 'lucide-react';
 import { assistantApi } from '../../api/modules/assistant';
 import { agentsApi } from '../../api/modules/agents';
 import { ApiError, errorMessage } from '../../api/http';
@@ -21,8 +21,8 @@ export interface AssistantContextProps {
   prepareContext: (include: boolean, references?: readonly AssistantReference[]) => Promise<AssistantMessageContext | null>;
 }
 
-export function AssistantConversationBody({ conversation, accountId, readOnly, contextPreview, mentionReferences, prepareContext, onOpenModelSettings, onSendingChange }: AssistantContextProps & {
-  conversation: AssistantConversation; accountId: string; readOnly: boolean;
+export function AssistantConversationBody({ conversation, accountId, layout, readOnly, contextPreview, mentionReferences, prepareContext, onOpenModelSettings, onSendingChange }: AssistantContextProps & {
+  conversation: AssistantConversation; accountId: string; layout?: 'standard'; readOnly: boolean;
   onOpenModelSettings: () => void; onSendingChange: (sending: boolean) => void;
 }) {
   const runtime = useAssistantRuntime(conversation.id);
@@ -44,6 +44,7 @@ export function AssistantConversationBody({ conversation, accountId, readOnly, c
   const [actionError, setActionError] = useState(restoredSend.error);
   const [uncertain, setUncertain] = useState<AssistantPendingSend | null>(restoredSend.pending);
   const [newContent, setNewContent] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const inputContext = useRef<AgentContextController>(null);
   const transcript = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -142,8 +143,13 @@ export function AssistantConversationBody({ conversation, accountId, readOnly, c
     catch (cause) { if (alive.current) { setActionError(errorMessage(cause)); void runtime.reload(); } }
     finally { locked.current = false; if (alive.current) setBusy(''); }
   }
+  const contextChips = <div className="ai-assistant-chips">
+        {contextPreview && includeContext ? <span className="ai-assistant-chip" title={contextPreview.label}>{layout === 'standard' && <><BookOpen size={15} aria-hidden="true"/>引用：</>}{contextPreview.label}<button type="button" aria-label="这条消息不带当前作品" disabled={!!busy} onClick={() => setIncludeContext(false)}><X size={12}/></button></span>
+          : contextPreview ? <button className="ai-assistant-chip" type="button" disabled={!!busy} onClick={() => setIncludeContext(true)}>添加当前作品</button> : null}
+        {references.map(reference => <span key={`${reference.kind}:${reference.id}`} className="ai-assistant-chip">{reference.name}<button type="button" aria-label={`移除引用${reference.name}`} disabled={!!busy} onClick={() => setReferences(old => old.filter(item => item !== reference))}><X size={12}/></button></span>)}
+      </div>;
   const blocked = readOnly || runtime.loading || runtime.accessEnded || !!busy || contextBusy || !!contextBlockReason || !!uncertain || !!restoredSend.error || !model || !draft.trim();
-  return <div className="ai-assistant-runtime">
+  return <div className={`ai-assistant-runtime${layout === 'standard' && toolsOpen ? ' is-standard-tools-open' : ''}`}>
     {runtime.error || actionError || draftError ? <div className="ai-assistant-notice" role="alert"><span>{actionError || runtime.error || draftError}</span><Button size="small" onClick={() => { runtime.reconnect(); }}>核对状态</Button></div> : null}
     {modelsError || !modelsLoading && !models.length ? <div className="ai-assistant-notice" role="status"><span>{modelsError || '请先添加并启用文本模型。'}</span><Button size="small" onClick={onOpenModelSettings}>模型配置</Button><Button size="small" onClick={() => setModelRevision(value => value + 1)}>重新读取</Button></div> : null}
     {runtime.connection === 'reconnecting' ? <p className="ai-assistant-connection" role="status">正在恢复连接，已发送的消息继续处理。</p> : null}
@@ -151,6 +157,7 @@ export function AssistantConversationBody({ conversation, accountId, readOnly, c
       const node = event.currentTarget; pinned.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
       if (pinned.current) setNewContent(false);
     }}>
+      {layout === 'standard' ? contextChips : null}
       {runtime.messages.length < runtime.total ? <Button size="small" loading={runtime.olderLoading} onClick={() => {
         const node = transcript.current; if (node) prepend.current = { height: node.scrollHeight, top: node.scrollTop }; void runtime.older();
       }}>载入更早消息</Button> : null}
@@ -163,11 +170,7 @@ export function AssistantConversationBody({ conversation, accountId, readOnly, c
     </div>
     {newContent ? <Button className="ai-assistant-new-content" size="small" onClick={() => { if (transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight; pinned.current = true; setNewContent(false); }}>查看最新消息</Button> : null}
     <footer className="ai-assistant-composer">
-      <div className="ai-assistant-chips">
-        {contextPreview && includeContext ? <span className="ai-assistant-chip" title={contextPreview.label}>{contextPreview.label}<button type="button" aria-label="这条消息不带当前作品" disabled={!!busy} onClick={() => setIncludeContext(false)}><X size={12}/></button></span>
-          : contextPreview ? <button className="ai-assistant-chip" type="button" disabled={!!busy} onClick={() => setIncludeContext(true)}>添加当前作品</button> : null}
-        {references.map(reference => <span key={`${reference.kind}:${reference.id}`} className="ai-assistant-chip">{reference.name}<button type="button" aria-label={`移除引用${reference.name}`} disabled={!!busy} onClick={() => setReferences(old => old.filter(item => item !== reference))}><X size={12}/></button></span>)}
-      </div>
+      {layout !== 'standard' ? contextChips : null}
       <AgentContextComposer ref={inputContext} conversation={conversation} attachmentApi={assistantApi} dialogClassName="ai-assistant-context-dialog" initialSkills={restored.skills} onSkills={setSkills}
         disabled={readOnly || runtime.accessEnded || !!busy || !!uncertain} onBusy={setContextBusy} onBlockReason={setContextBlockReason}
         input={<div className="ai-assistant-input"><AssistantMentionTextarea projectId={conversation.project_id} references={mentionReferences} value={draft} disabled={readOnly || runtime.accessEnded} onChange={setDraft} onSubmit={() => { if (!blocked) void send(); }} onReference={async reference => {
@@ -178,6 +181,11 @@ export function AssistantConversationBody({ conversation, accountId, readOnly, c
         }}/></div>}
         modelControl={<Select className="ai-assistant-model" variant="borderless" size="small" aria-label="助手模型" value={modelId} loading={modelsLoading} disabled={!!busy || contextBusy || !!uncertain} placeholder="选择模型" options={models.map(item => ({ value: item.id, label: item.name }))} onChange={setModelId}/>}
         sendControl={<Tooltip title="Enter 发送 · Shift + Enter 换行"><Button className="ai-assistant-send" shape="circle" type="primary" aria-label="发送" loading={busy === 'send' || busy === 'save'} disabled={blocked} icon={<ArrowUp size={16}/>} onClick={() => void send()}/></Tooltip>}/>
+      {layout === 'standard' && <div className="standard-assistant-composer-extras">
+        <Button type="text" size="small" className="standard-assistant-tools-toggle" aria-label="附件与技能" aria-expanded={toolsOpen}
+          disabled={readOnly || runtime.accessEnded || !!busy || !!uncertain || contextBusy} icon={<Plus size={13}/>} onClick={() => setToolsOpen(previous => !previous)}>附件与技能</Button>
+        <p className="standard-assistant-private">对话仅你可见</p>
+      </div>}
       {readOnly ? <span className="ai-assistant-meta">当前项目只读，可以查看已有对话。</span> : null}
       {busy === 'save' ? <span className="ai-assistant-meta" role="status">正在保存并核对作品…</span> : null}
       {active && runtime.run ? <div className="ai-assistant-run-state" role="status"><span>{runtime.run.status === 'queued' ? '消息已排队' : '正在回复，可继续发送补充消息'}</span><Button size="small" icon={<Square size={12}/>} disabled={readOnly || !!busy} loading={busy === 'stop'} onClick={() => void stop(runtime.run!.id)}>停止</Button></div> : null}

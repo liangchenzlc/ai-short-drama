@@ -118,9 +118,10 @@ export class CreationDraftSession {
   retry = async () => {
     if (this.state.status === 'conflict' || this.disposed) return null;
     if (!this.state.loaded) { await this.load(); return this.state.saved; }
+    const epoch = this.epoch;
     try {
       const remote = await this.api.get();
-      if (this.disposed) return null;
+      if (this.disposed || epoch !== this.epoch) return null;
       if (this.pending && remote && equal(draftValue(remote), this.pending.value)) {
         this.pending = null;
         this.publish({ saved: remote, status: 'unsaved', message: '' });
@@ -130,7 +131,7 @@ export class CreationDraftSession {
         this.publish({ status: 'conflict', message: '服务端生成设置已变化，本机输入已保留。请核对后载入服务端版本。' }); return null;
       } else this.publish({ status: 'unsaved', loaded: true, message: '' });
       return await this.flush();
-    } catch (cause) { this.publish({ status: 'error', message: cause instanceof Error ? cause.message : '生成草稿核对失败。' }); return null; }
+    } catch (cause) { if (!this.disposed && epoch === this.epoch) this.publish({ status: 'error', message: cause instanceof Error ? cause.message : '生成草稿核对失败。' }); return null; }
   };
   dispose() { this.disposed = true; ++this.epoch; clearTimeout(this.timer); this.listeners.clear(); }
 }

@@ -1,7 +1,7 @@
 import { confirmAction } from '../../../components/ui/confirm';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Tooltip } from 'antd';
-import { BookOpen, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { BookOpen, PanelRight, Upload, X } from 'lucide-react';
 import { useEpisodeCreationControls } from '../../../features/projects/EpisodeCreationWorkspace';
 import { EpisodeModelSelect } from '../../../features/projects/EpisodeModelSelect';
 import { EpisodeVisualSettings } from '../../../features/projects/EpisodeVisualSettings';
@@ -42,21 +42,31 @@ export function SourceStage({ value, writing, readOnly, onChange, projectId, epi
     } catch (cause) { setError(cause instanceof Error ? cause.message : '文件读取失败，请重新选择。'); }
     finally { setImporting(false); if (input.current) input.current.value = ''; }
   }
-  const settingsToggle = <Tooltip title={controls.panelOpen ? '收起设置' : '展开设置'}><Button type="text" size="small" aria-label={controls.panelOpen ? '收起设置' : '展开设置'} aria-expanded={!!controls.panelOpen} aria-controls="novel-adaptation-settings" icon={controls.panelOpen ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={17}/>} onClick={() => controls.setPanelOpen?.(!controls.panelOpen)}/></Tooltip>;
+  function focusSettingsToggle() {
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.novel-script-heading [aria-controls="novel-adaptation-settings"]')?.focus());
+  }
+  function closeSource() {
+    setSourceOpen(false);
+    if (window.innerWidth <= 700) focusSettingsToggle();
+  }
+  const settingsToggle = <Tooltip title={controls.panelOpen ? '收起设置' : '展开设置'}><Button type="text" size="small" aria-label={controls.panelOpen ? '收起设置' : '展开设置'} aria-expanded={!!controls.panelOpen} aria-controls="novel-adaptation-settings" icon={<PanelRight size={18}/>} onClick={() => controls.setPanelOpen?.(!controls.panelOpen)}/></Tooltip>;
   return <div className="novel-source-stage" data-legacy-tab={tab}>
     <NovelScriptGeneration projectId={projectId} episodeId={episodeId} contentVersion={writing.contentVersion} novel={writing.novel} disabled={readOnly || importing} session={writingSession} draft={draft} onEditScript={() => onTab('script')}
-      settingsActions={settingsToggle}
+      settingsActions={<>
+        <Tooltip title="查看原文"><Button type="text" size="small" aria-label="查看原文" icon={<BookOpen size={18}/>} onClick={() => setSourceOpen(true)}/></Tooltip>
+        <Tooltip title="收起改编设置"><Button type="text" size="small" aria-label="收起改编设置" icon={<X size={18}/>} onClick={() => { controls.setPanelOpen?.(false); focusSettingsToggle(); }}/></Tooltip>
+      </>}
       settings={<EpisodeVisualSettings projectId={projectId} episodeId={episodeId} value={value} disabled={readOnly} onChange={onChange}/>}
-      modelSelector={<EpisodeModelSelect kind="text" label="文本模型" value={draft.value.model_config_id ?? ''} disabled={readOnly || !draft.loaded} onChange={id => draft.edit({ model_config_id: id || null })} onResolvedChange={id => { if (draft.loaded && !draft.value.model_config_id && id) draft.edit({ model_config_id: id }); }}/>}>
+      modelSelector={<div className="novel-text-model"><BookOpen size={12} aria-hidden="true"/><EpisodeModelSelect kind="text" label="文本模型" value={draft.value.model_config_id ?? ''} disabled={readOnly || !draft.loaded} onChange={id => draft.edit({ model_config_id: id || null })} onResolvedChange={id => { if (draft.loaded && !draft.value.model_config_id && id) draft.edit({ model_config_id: id }); }}/></div>}>
       {generation => <ScriptStage value={value} script={writing.script} editorDocument={writing.editorDocument} confirmed={writing.confirmed} busy={writing.busy || generation.busy} readOnly={readOnly} onEdit={(content, document) => writingSession.edit('script', content, document)} onConfirm={() => void writingSession.confirm()} onContinue={onContinue}
-        actions={<><Button type="text" size="small" icon={<BookOpen size={15}/>} onClick={() => setSourceOpen(true)}>查看原文</Button>{generation.history}{settingsToggle}</>}
+        actions={<>{generation.history}{settingsToggle}</>}
         candidate={generation.candidate} showingCandidate={generation.showingCandidate} onShowCandidate={generation.showCandidate} onAdopt={generation.adopt} message={generation.feedback}/>}
     </NovelScriptGeneration>
-    <Dialog title="本集小说原文" className="novel-source-drawer" open={sourceOpen} canClose={!importing} onClose={() => setSourceOpen(false)}>
-      <div className="novel-source-drawer-tools"><span>{writing.novel.length.toLocaleString()} 字</span><Button disabled={readOnly || writing.busy} loading={importing} onClick={() => input.current?.click()}>导入 TXT</Button><input hidden ref={input} type="file" accept=".txt,text/plain" aria-label="导入小说文件" onChange={event => void importFile(event.target.files?.[0])}/></div>
+    <Dialog title="本集小说原文" className="novel-source-drawer" open={sourceOpen} canClose={!importing} onClose={closeSource}>
+      <div className="novel-source-drawer-tools"><span>{writing.novel.length.toLocaleString()} 字</span><Button disabled={readOnly || writing.busy} loading={importing} icon={<Upload size={15}/>} onClick={() => input.current?.click()}>导入 TXT</Button><input hidden ref={input} type="file" accept=".txt,text/plain" aria-label="导入小说文件" onChange={event => void importFile(event.target.files?.[0])}/></div>
       {error && <Alert type="error" showIcon message={error}/>}
       <label className="novel-source-input"><span className="sr-only">本集小说正文</span><textarea id="episode-novel" className="episode-novel-text" rows={16} value={writing.novel} readOnly={readOnly || importing} placeholder="粘贴、导入或写下本集故事…" onChange={event => writingSession.edit('novel', event.target.value)}/></label>
-      <footer><span>停顿 1 秒自动保存</span><Button onClick={() => setSourceOpen(false)} disabled={importing}>返回剧本</Button></footer>
+      <footer><span>停顿 1 秒自动保存</span><Button onClick={closeSource} disabled={importing}>返回剧本</Button></footer>
     </Dialog>
   </div>;
 }

@@ -84,7 +84,7 @@ test('storyboard extraction uses a settings dialog that can close during an acti
   await expect(generate).toBeEnabled({ timeout: 10000 });
   expect(data.state.submissions).toBe(1);
   const firstCard = page.locator('.storyboard-item').first();
-  expect(await firstCard.evaluate(node => getComputedStyle(node).borderRadius)).toBe('12px');
+  expect(await firstCard.evaluate(node => getComputedStyle(node).borderRadius)).toBe('8px');
   expect(data.errors).toEqual([]);
 });
 
@@ -101,8 +101,12 @@ test('asset cards select the shared preview and settings panel without a details
   await expect(detail).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(card.getByRole('button', { name: '林晚更多操作', exact: true })).toHaveCount(0);
-  await expect(detail.getByRole('button', { name: '共享素材到项目', exact: true })).toBeVisible();
-  await expect(detail.getByRole('button', { name: '从本集移除素材', exact: true })).toBeVisible();
+  await detail.getByRole('button', { name: '生成记录', exact: true }).click();
+  await page.getByRole('button', { name: '素材更多操作', exact: true }).click();
+  await expect(page.getByRole('button', { name: '共享素材到项目', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '从本集移除素材', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
   const box = await card.boundingBox();
   await card.click({ position: { x: box!.width - 80, y: box!.height - 16 } });
   await expect(detail).toBeVisible();

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { generations } from '../../api/modules/generations';
 import type { GenerationDetail, GenerationSummary } from '../../api/types/generations';
 import { errorMessage, isCancelled } from '../../api/http';
-import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
+import { attemptStorage, clearAttempt, getAttemptAccount, requestAttempt } from '../generations/attempt';
 import { buildAssetImageRequest, mergeAssetImageTasks, missingActiveTaskIds, shouldRefreshAssetCandidates, type AssetImageOptions } from './asset-image-generation';
 import type { LibraryAssetRead } from '../../api/modules/assets';
 import type { UserCreationDraft } from '../../api/modules/creation-drafts';
@@ -50,6 +50,8 @@ export function useAssetImageGeneration(
   const candidatesChangedRef = useRef(onCandidatesChanged);
   assetIdRef.current = asset.id;
   candidatesChangedRef.current = onCandidatesChanged;
+  const accountId = getAttemptAccount();
+  const isCurrent = (expectedAssetId: string) => alive.current && assetIdRef.current === expectedAssetId && getAttemptAccount() === accountId;
 
   useEffect(() => {
     pendingRequest.current = null; recoveryBlocked.current = false;
@@ -194,7 +196,7 @@ export function useAssetImageGeneration(
   }, [asset.id, refresh]);
 
   async function submit(options: AssetImageOptions) {
-    if (submittingRef.current || pendingRequest.current || recoveryBlocked.current) return null;
+    if (!isCurrent(asset.id) || submittingRef.current || pendingRequest.current || recoveryBlocked.current) return null;
     submittingRef.current = true;
     setSubmitting(true);
     onSubmissionBusyChange(true);
@@ -202,24 +204,26 @@ export function useAssetImageGeneration(
     const expectedAssetId = asset.id;
     try {
       const saved = await onSaveBeforeGenerate();
-      if (!saved || assetIdRef.current !== expectedAssetId) return null;
+      if (!saved || !isCurrent(expectedAssetId)) return null;
       const privateDraft = onSavePrivateDraft ? await onSavePrivateDraft() : null;
-      if (onSavePrivateDraft && !privateDraft || assetIdRef.current !== expectedAssetId) return null;
+      if (onSavePrivateDraft && !privateDraft || !isCurrent(expectedAssetId)) return null;
       const body = buildAssetImageRequest(saved, privateDraft ? {
         ...options, configId: privateDraft.model_config_id ?? undefined, supplement: '',
-        count: privateDraft.image_settings?.count ?? 1, aspect: privateDraft.image_settings?.aspect,
-        resolution: privateDraft.image_settings?.resolution,
+        count: privateDraft.image_settings?.count ?? 1, aspect: privateDraft.image_settings?.aspect ?? undefined,
+        resolution: privateDraft.image_settings?.resolution ?? undefined,
         draft: { id: privateDraft.id, draft_version: privateDraft.draft_version },
       } : options);
       const scope = 'asset-image:' + saved.id;
       const key = await requestAttempt(scope, body, attemptStorage());
+      if (!isCurrent(expectedAssetId)) return null;
       const pending = { key, body };
       saveRecovery(recoveryScope, pending);
       pendingRequest.current = pending;
       const receipt = await generations.generateImage(body, key);
+      if (!isCurrent(expectedAssetId)) return null;
       pendingRequest.current = null; setUncertain(false); clearRecovery(recoveryScope);
       clearAttempt(scope, attemptStorage());
-      if (alive.current && assetIdRef.current === expectedAssetId) {
+      if (isCurrent(expectedAssetId)) {
         setTasks((current) => {
           const next = mergeAssetImageTasks(current, [{
             ...receipt,
@@ -236,7 +240,7 @@ export function useAssetImageGeneration(
       }
       return receipt;
     } catch (cause) {
-      if (alive.current && assetIdRef.current === expectedAssetId) {
+      if (isCurrent(expectedAssetId)) {
         if (pendingRequest.current && assetGenerationAcceptanceUnknown(cause)) {
           setUncertain(true); setSubmitError('图片生成请求受理结果待核对。原请求已保留，请先核对，避免重复生成。');
         } else {
@@ -247,34 +251,34 @@ export function useAssetImageGeneration(
       return null;
     } finally {
       submittingRef.current = false;
-      onSubmissionBusyChange(false);
-      if (alive.current && assetIdRef.current === expectedAssetId) setSubmitting(false);
+      if (isCurrent(expectedAssetId)) { onSubmissionBusyChange(false); setSubmitting(false); }
     }
   }
 
   async function reconcileSubmission() {
-    if (!pendingRequest.current || reconcileLock.current) return;
+    if (!isCurrent(asset.id) || !pendingRequest.current || reconcileLock.current) return;
     const pending = pendingRequest.current; const expectedAssetId = asset.id;
     reconcileLock.current = true; setReconciling(true);
     try {
       const receipt = await generations.lookup('image', pending.key);
-      if (!alive.current || assetIdRef.current !== expectedAssetId) return;
+      if (!isCurrent(expectedAssetId)) return;
       if (!receipt) {
         setSubmitError('尚未查到原请求的生成记录。受理状态仍待核对，原输入和请求键已保留。'); return;
       }
       const task = await generations.detail(receipt.generation_id);
+      if (!isCurrent(expectedAssetId)) return;
       if (task.source?.scene !== 'asset_image' || task.source.asset_id !== expectedAssetId) throw new Error('原生成请求的来源不匹配，请核对任务记录。');
       pendingRequest.current = null; clearRecovery(recoveryScope); clearAttempt('asset-image:' + expectedAssetId, attemptStorage());
       setUncertain(false); setSubmitError('');
       setTasks(current => { const next = mergeAssetImageTasks(current, [task]); tasksRef.current = next; return next; });
       if (task.status === 'succeeded') candidatesChangedRef.current();
       await refresh();
-    } catch (cause) { if (alive.current && assetIdRef.current === expectedAssetId) setSubmitError(`原生成请求核对失败：${errorMessage(cause)}`); }
-    finally { reconcileLock.current = false; if (alive.current && assetIdRef.current === expectedAssetId) setReconciling(false); }
+    } catch (cause) { if (isCurrent(expectedAssetId)) setSubmitError(`原生成请求核对失败：${errorMessage(cause)}`); }
+    finally { reconcileLock.current = false; if (isCurrent(expectedAssetId)) setReconciling(false); }
   }
 
   async function perform(task: GenerationSummary, action: 'cancel' | 'resume' | 'retry') {
-    if (actionRef.current) return;
+    if (!isCurrent(asset.id) || actionRef.current) return;
     actionRef.current = true;
     setActionTaskId(task.generation_id);
     const expectedAssetId = asset.id;
@@ -284,18 +288,20 @@ export function useAssetImageGeneration(
       else {
         const scope = 'asset-image-retry:' + task.generation_id;
         const key = await requestAttempt(scope, {}, attemptStorage());
+        if (!isCurrent(expectedAssetId)) return;
         await generations.retry(task.generation_id, key);
+        if (!isCurrent(expectedAssetId)) return;
         clearAttempt(scope, attemptStorage());
       }
-      if (assetIdRef.current === expectedAssetId) {
+      if (isCurrent(expectedAssetId)) {
         await refresh();
         await loadDetail(task.generation_id);
       }
     } catch (cause) {
-      if (alive.current && assetIdRef.current === expectedAssetId) setSubmitError(errorMessage(cause));
+      if (isCurrent(expectedAssetId)) setSubmitError(errorMessage(cause));
     } finally {
       actionRef.current = false;
-      if (alive.current && assetIdRef.current === expectedAssetId) setActionTaskId(undefined);
+      if (isCurrent(expectedAssetId)) setActionTaskId(undefined);
     }
   }
 

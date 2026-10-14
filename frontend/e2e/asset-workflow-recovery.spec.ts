@@ -6,9 +6,10 @@ async function baseFixture(page: Page) {
 }
 
 async function openEditor(page: Page) {
-  await page.getByRole('button', { name: '林晚更多操作', exact: true }).click();
-  await page.getByRole('menuitem', { name: '编辑素材', exact: true }).click();
+  await page.getByRole('button', { name: '林晚', exact: true }).click();
   const editor = page.locator('.episode-asset-detail');
+  const expand = editor.getByRole('button', { name: '展开生成设置', exact: true });
+  if (await expand.isVisible()) await expand.click();
   await expect(editor.getByRole('textbox', { name: '描述', exact: true })).toBeVisible();
   return editor;
 }
@@ -26,8 +27,8 @@ test('project import excludes episode members beyond the first page', async ({ p
     return route.fulfill({ json: { items: values.slice(offset, offset + limit), total: values.length, offset, limit } });
   });
   await page.goto(`${root}/assets`);
-  await page.getByRole('button', { name: '从项目库添加', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '从项目素材库添加', exact: true });
+  await page.getByRole('button', { name: '导入素材', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '从项目库导入素材', exact: true });
   await expect(dialog.getByText('尚未加入角色', { exact: true })).toBeVisible();
   await expect(dialog.getByText('第二页已有角色', { exact: true })).toHaveCount(0);
   expect(data.errors).toEqual([]);
@@ -45,12 +46,15 @@ test('image candidates show initial loading and recover from an initial error', 
   });
   await page.goto(`${root}/assets`);
   const editor = await openEditor(page);
-  await expect(editor.getByText('正在读取图片候选…', { exact: true })).toBeVisible();
+  await editor.getByRole('button', { name: '生成记录', exact: true }).click();
+  const history = page.getByRole('dialog', { name: '林晚 · 生成记录', exact: true });
+  await expect(history.getByText('正在读取图片候选…', { exact: true })).toBeVisible();
+  await expect(history.getByText('暂无图片候选。', { exact: true })).toHaveCount(0);
   release();
-  await expect(editor.getByRole('button', { name: '重试读取图片候选', exact: true })).toBeVisible();
+  await expect(history.getByRole('button', { name: '重新读取候选', exact: true })).toBeVisible();
   failed = false;
-  await editor.getByRole('button', { name: '重试读取图片候选', exact: true }).click();
-  await expect(editor.getByText('暂无其他候选图片。', { exact: true })).toBeVisible();
+  await history.getByRole('button', { name: '重新读取候选', exact: true }).click();
+  await expect(history.getByText('暂无图片候选。', { exact: true })).toBeVisible();
   expect(data.errors).toEqual([]);
 });
 
@@ -66,11 +70,12 @@ test('image history distinguishes initial loading from an empty history', async 
   });
   await page.goto(`${root}/assets`);
   const editor = await openEditor(page);
-  await editor.locator('.asset-generation-history > summary').click();
-  await expect(editor.getByText('正在读取生成记录…', { exact: true })).toBeVisible();
-  await expect(editor.getByText('暂无生成记录。', { exact: true })).toHaveCount(0);
+  await editor.getByRole('button', { name: '生成记录', exact: true }).click();
+  const history = page.getByRole('dialog', { name: '林晚 · 生成记录', exact: true });
+  await expect(history.getByText('正在读取生成记录…', { exact: true })).toBeVisible();
+  await expect(history.getByText('暂无生成记录。', { exact: true })).toHaveCount(0);
   release();
-  await expect(editor.getByText('暂无生成记录。', { exact: true })).toBeVisible();
+  await expect(history.getByText('暂无生成记录。', { exact: true })).toBeVisible();
 });
 
 test('a history refresh failure preserves known tasks and provides an explicit retry', async ({ page }) => {
@@ -83,15 +88,16 @@ test('a history refresh failure preserves known tasks and provides an explicit r
   });
   await page.goto(`${root}/assets`);
   const editor = await openEditor(page);
-  await editor.locator('.asset-generation-history > summary').click();
-  await expect(editor.getByText('任务 92001', { exact: true })).toBeVisible();
+  await editor.getByRole('button', { name: '生成记录', exact: true }).click();
+  const history = page.getByRole('dialog', { name: '林晚 · 生成记录', exact: true });
+  await expect(history.getByText('任务 92001', { exact: true })).toBeVisible();
   failed = true;
-  await editor.getByRole('button', { name: '刷新', exact: true }).click();
-  await expect(editor.getByRole('button', { name: '重试读取生成记录', exact: true })).toBeVisible();
-  await expect(editor.getByText('任务 92001', { exact: true })).toBeVisible();
+  await history.getByRole('button', { name: '刷新', exact: true }).click();
+  await expect(history.getByRole('button', { name: '重新读取生成记录', exact: true })).toBeVisible();
+  await expect(history.getByText('任务 92001', { exact: true })).toBeVisible();
   failed = false;
-  await editor.getByRole('button', { name: '重试读取生成记录', exact: true }).click();
-  await expect(editor.getByRole('button', { name: '重试读取生成记录', exact: true })).toHaveCount(0);
+  await history.getByRole('button', { name: '重新读取生成记录', exact: true }).click();
+  await expect(history.getByRole('button', { name: '重新读取生成记录', exact: true })).toHaveCount(0);
 });
 
 function extractionResult(asset: Record<string, any>, id = '88001') {

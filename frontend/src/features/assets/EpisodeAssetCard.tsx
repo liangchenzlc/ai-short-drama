@@ -4,7 +4,7 @@ import { PreviewImage } from '../../components/ui/ImagePreview';
 import { Icon } from '../../components/ui/Icon';
 import type { LibraryAssetRead } from '../../api/modules/assets';
 import type { LocalAssetDraft } from './episode-asset-drafts';
-import { Check } from 'lucide-react';
+import { Check, Image as ImageIcon } from 'lucide-react';
 
 export function StandardEpisodeAssetCard({ asset, selected, disabled, entryRef, onOpen }: {
   asset: LibraryAssetRead | LocalAssetDraft; selected: boolean; disabled: boolean;
@@ -14,7 +14,7 @@ export function StandardEpisodeAssetCard({ asset, selected, disabled, entryRef, 
   const labels = { character: '角色', scene: '场景', prop: '道具' };
   return <article className={`standard-asset-card${selected ? ' is-selected' : ''}`}>
     <button type="button" ref={entryRef} className="standard-asset-card-button" aria-label={asset.name || '未命名素材'} aria-pressed={selected} disabled={disabled} onClick={onOpen}>
-      <span className="standard-asset-card-media">{image?.url ? <img src={image.url} alt="" loading="lazy" onError={event => { event.currentTarget.hidden = true; }}/> : <Icon name={asset.kind === 'character' ? 'person' : asset.kind || 'scene'} size={30}/>}
+      <span className="standard-asset-card-media">{image?.url ? <img src={image.url} alt="" loading="lazy" onError={event => { event.currentTarget.hidden = true; }}/> : <ImageIcon size={27} aria-hidden="true"/>}
         {!image && <span className="standard-asset-pending">待制作</span>}
         {selected && <span className="standard-asset-selected" aria-hidden="true"><Check size={13}/></span>}
       </span>

@@ -3,7 +3,7 @@ import { confirmAction } from '../../../components/ui/confirm';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Alert, Button, Dropdown, Input, InputNumber, Segmented, Select } from 'antd';
 import { Icon } from '../../../components/ui/Icon';
-import { History, Sparkles } from 'lucide-react';
+import { Check, History, PanelRight, Sparkles } from 'lucide-react';
 import { ApiError, errorMessage } from '../../../api/http';
 import { storyboardApi, type ShotRead, type StoryboardPage } from '../../../api/modules/storyboard';
 import { assetLibraries, type LibraryAssetRead } from '../../../api/modules/assets';
@@ -123,6 +123,12 @@ export function StoryboardStage({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [mediaHistoryOpen, setMediaHistoryOpen] = useState<'image' | 'video' | null>(null);
+  const [mediaPreviewStates, setMediaPreviewStates] = useState<Record<string, 'current' | 'candidate' | 'empty'>>({});
+  const onPreviewStateChange = useCallback((shotId: string, media: 'image' | 'video', state: 'current' | 'candidate' | 'empty') => {
+    const key = `${shotId}:${media}`;
+    setMediaPreviewStates(previous => previous[key] === state ? previous : { ...previous, [key]: state });
+  }, []);
   const [mediaTab, setMediaTab] = useState<string>('image');
   const [editorTab, setEditorTab] = useState('image');
   const [search, setSearch] = useState('');
@@ -737,13 +743,26 @@ export function StoryboardStage({
     finally { if (shotMutation.current === token) shotMutation.current = null; if (isCurrentContext(epoch)) setBusy(false); }
   }
 
-  const shotActions = selectedShot && !readOnly ? <Dropdown trigger={['click']} menu={{ items: [
-    { key: 'up', label: '上移', disabled: selectedShot.position <= 1 },
-    { key: 'down', label: '下移', disabled: !page || selectedShot.position >= page.total },
-    { key: 'archive', label: '归档', danger: true },
-  ], onClick: ({ key }) => mutateShot(selectedShot.id, key as 'up' | 'down' | 'archive') }}>
-    <Button type="text" aria-label={`分镜 ${String(selectedShot.position).padStart(2, '0')} 更多操作`} disabled={selectionDisabled} icon={<Icon name="more" size={18}/>}/>
+  const shotActions = !readOnly && (selectedShot || batchSelection.enabled) ? <Dropdown trigger={['click']} menu={{ items: [
+    ...(batchSelection.enabled ? [{ key: 'batch', label: batchMode ? '退出批量操作' : '批量操作' }, { type: 'divider' as const }] : []),
+    ...(selectedShot ? [
+      { key: 'up', label: '上移', disabled: selectedShot.position <= 1 },
+      { key: 'down', label: '下移', disabled: !page || selectedShot.position >= page.total },
+      { key: 'archive', label: '归档', danger: true },
+    ] : []),
+  ], onClick: ({ key }) => {
+    setHistoryOpen(false); setCandidate(null);
+    if (key === 'batch') setBatchMode(current => !current);
+    else if (selectedShot) void mutateShot(selectedShot.id, key as 'up' | 'down' | 'archive');
+  } }}>
+    <Button type="text" aria-label={selectedShot ? `分镜 ${String(selectedShot.position).padStart(2, '0')} 更多操作` : '分镜列表更多操作'} disabled={selectionDisabled} icon={<Icon name="more" size={18}/>}/>
   </Dropdown> : null;
+
+  useEffect(() => { setMediaHistoryOpen(null); }, [selectedShotId, mediaTab]);
+  const currentMedia = mediaTab === 'video' ? selectedShot?.video : selectedShot?.image;
+  const headingPreviewState = selectedShot ? mediaPreviewStates[`${selectedShot.id}:${mediaTab}`] ?? (currentMedia ? 'current' : 'empty') : 'empty';
+  const availableReferences = assets.filter(asset => asset.state === 'confirmed' && asset.media_id && asset.image?.url)
+    .map(asset => ({ media_id: asset.media_id!, name: asset.name, url: asset.image!.url }));
 
   const shotInformation = selectedShot ? <div className="storyboard-shot-information">
     <label className="writing-control"><span>镜头名称</span><Input aria-label="镜头名称" maxLength={255} value={selectedShot.title ?? ''} disabled={readOnly || !!shotMutation.current || lockedShots.has(selectedShot.id)} onChange={event => updateLocal(selectedShot.id, { title: event.target.value })}/></label>
@@ -762,27 +781,31 @@ export function StoryboardStage({
     <EpisodeEditorSlot stage="storyboard">
       <div className="standard-storyboard-panel">
         <header className="standard-object-heading">
-          <h3>{selectedShot?.title || (selectedShot ? '未命名镜头' : '分镜制作')}</h3>
-          <div className="storyboard-editor-tabs" role="tablist" aria-label="镜头制作内容">
-            {([{ key: 'image', label: '分镜图' }, { key: 'video', label: '分镜视频' }]).map(tab => <button key={tab.key} type="button" role="tab" id={'storyboard-' + tab.key + '-tab'} aria-selected={editorTab === tab.key} aria-controls={'storyboard-' + tab.key + '-pane'} tabIndex={editorTab === tab.key ? 0 : -1} disabled={!!selectedShot && lockedShots.has(selectedShot.id)} onClick={() => selectEditorTab(tab.key)} onKeyDown={navigateEditorTabs}>{tab.label}</button>)}
-          </div>
+          <h3>{selectedShot ? `${String(selectedShot.position).padStart(2, '0')} · ${selectedShot.title || '未命名镜头'}` : '分镜制作'}</h3>
           <nav aria-label="切换编辑镜头">
+            {selectedShot && <span className={`creation-preview-status status-${headingPreviewState}`}>{headingPreviewState === 'current' && <Check size={12} aria-hidden="true"/>}{headingPreviewState === 'candidate' ? '新结果 · 未采用' : headingPreviewState === 'current' ? '当前采用' : '尚未制作'}</span>}
             <Button type="text" aria-label="上一个分镜" disabled={!selectedShot || selectionDisabled || selectedShot.position <= 1} onClick={() => void selectAdjacent(-1)} icon={<Icon name="back" size={16}/>}/>
             <Button type="text" aria-label="下一个分镜" loading={moreLoading} disabled={!selectedShot || selectionDisabled || !page || selectedShot.position >= page.total} onClick={() => void selectAdjacent(1)} icon={<Icon name="arrow" size={16}/>}/>
-            <Button type="text" aria-label="分镜生成记录" onClick={() => { setHistoryOpen(true); setCandidate(null); setTaskRevision(revision => revision + 1); }} icon={<History size={16}/>}/>
-            <Button type="text" aria-label={mediaSettingsOpen ? '收起生成设置' : '展开生成设置'} onClick={() => { if (!mediaSettingsOpen) revealPanel?.(); setMediaSettingsOpen(value => !value); }} icon={<Icon name="settings" size={16}/>}/>
-            {shotActions}
+            <Button type="text" aria-label={mediaTab === 'video' ? '视频生成记录' : '图片生成记录'} title="生成记录" disabled={!selectedShot} onClick={() => setMediaHistoryOpen(mediaTab === 'video' ? 'video' : 'image')} icon={<History size={16}/>}/>
+            <Button type="text" aria-label={mediaSettingsOpen ? '收起生成设置' : '展开生成设置'} aria-expanded={mediaSettingsOpen} aria-controls={mediaTab === 'video' ? 'storyboard-video-settings' : 'storyboard-image-settings'} onClick={() => { if (!mediaSettingsOpen) revealPanel?.(); setMediaSettingsOpen(value => !value); }} icon={<PanelRight size={16}/>}/>
           </nav>
         </header>
+        <div className="storyboard-editor-tabs standard-object-tabs" role="tablist" aria-label="镜头制作内容">
+          {([{ key: 'image', label: '分镜图' }, { key: 'video', label: '分镜视频' }]).map(tab => <button key={tab.key} type="button" role="tab" id={'storyboard-' + tab.key + '-tab'} aria-selected={editorTab === tab.key} aria-controls={'storyboard-' + tab.key + '-pane'} tabIndex={editorTab === tab.key ? 0 : -1} disabled={!!selectedShot && lockedShots.has(selectedShot.id)} onClick={() => selectEditorTab(tab.key)} onKeyDown={navigateEditorTabs}>{tab.label}</button>)}
+        </div>
         {selectedShot ? <div className={`standard-storyboard-media${mediaSettingsOpen ? '' : ' is-settings-collapsed'}`}>
           <div id="storyboard-image-pane" role="tabpanel" aria-labelledby="storyboard-image-tab" hidden={mediaTab !== 'image'}>
-            <ShotImageCandidates key={selectedShot.id} projectId={projectId} episodeId={episodeId} information={shotInformation} settingsOpen={mediaSettingsOpen} active={mediaTab === 'image'} onCloseSettings={() => setMediaSettingsOpen(false)}
+            <ShotImageCandidates key={selectedShot.id} projectId={projectId} episodeId={episodeId} information={shotInformation} settingsOpen={mediaSettingsOpen} active={mediaTab === 'image'} onCloseSettings={() => setMediaSettingsOpen(false)} onOpenSettings={() => { revealPanel?.(); setMediaSettingsOpen(true); }}
+              historyOpen={mediaHistoryOpen === 'image'} onHistoryOpenChange={open => setMediaHistoryOpen(open ? 'image' : null)} onPreviewStateChange={onPreviewStateChange}
+              availableReferences={availableReferences} availableLoading={assetsLoading} availableError={assetsError} onRefreshAvailable={() => setAssetsRevision(revision => revision + 1)}
               registerBarrier={registerImageDraft} modelSelection={value.models.storyboardImage} onModelChange={id => onChange({ ...value, models: { ...value.models, storyboardImage: id } })} onResolvedModel={onResolvedImageModel}
               shot={selectedShot} disabled={readOnly || busy || lockedShots.has(selectedShot.id) || pausedSaves.current.has(selectedShot.id)} modelId={imageModelId} capabilities={imageCapabilities} capabilitiesLoading={capabilitiesLoading}
               onRefreshCapabilities={refreshCapabilities} episodeAspect={value.aspect} prepareShot={purpose => prepareShot(selectedShot.id, purpose)} onChanged={() => setStoryboardRevision(revision => revision + 1)}/>
           </div>
           <div id="storyboard-video-pane" role="tabpanel" aria-labelledby="storyboard-video-tab" hidden={mediaTab !== 'video'}>
-            <ShotVideoCandidates key={selectedShot.id} projectId={projectId} episodeId={episodeId} episodeAspect={value.aspect} settingsOpen={mediaSettingsOpen} active={mediaTab === 'video'} onCloseSettings={() => setMediaSettingsOpen(false)} information={<>{shotInformation}<NativeDialoguePanel key={selectedShot.id} revision={storyboardRevision} registerBarrier={registerDialogueBarrier} projectId={projectId} episodeId={episodeId} shotId={selectedShot.id} disabled={readOnly || busy || lockedShots.has(selectedShot.id)} prepare={() => saveShot(selectedShot.id)} onChanged={() => setStoryboardRevision(revision => revision + 1)}/></>}
+            <ShotVideoCandidates key={selectedShot.id} projectId={projectId} episodeId={episodeId} episodeAspect={value.aspect} settingsOpen={mediaSettingsOpen} active={mediaTab === 'video'} onCloseSettings={() => setMediaSettingsOpen(false)} onOpenSettings={() => { revealPanel?.(); setMediaSettingsOpen(true); }}
+              historyOpen={mediaHistoryOpen === 'video'} onHistoryOpenChange={open => setMediaHistoryOpen(open ? 'video' : null)} onPreviewStateChange={onPreviewStateChange}
+              information={<>{shotInformation}<details className="storyboard-dialogue-settings"><summary>对白与音色</summary><NativeDialoguePanel key={selectedShot.id} revision={storyboardRevision} registerBarrier={registerDialogueBarrier} projectId={projectId} episodeId={episodeId} shotId={selectedShot.id} disabled={readOnly || busy || lockedShots.has(selectedShot.id)} prepare={() => saveShot(selectedShot.id)} onChanged={() => setStoryboardRevision(revision => revision + 1)}/></details></>}
               registerBarrier={registerVideoDraft} shot={selectedShot} disabled={readOnly || busy || lockedShots.has(selectedShot.id) || pausedSaves.current.has(selectedShot.id)} model={value.models.video}
               onModelChange={id => onChange({ ...value, models: { ...value.models, video: id } })} prepareShot={() => prepareShot(selectedShot.id, 'adoption')} onChanged={() => setStoryboardRevision(revision => revision + 1)}/>
           </div>
@@ -790,12 +813,14 @@ export function StoryboardStage({
       </div>
     </EpisodeEditorSlot>
     <section className="standard-storyboard-list" aria-label="分镜创作区域">
-      <header className="storyboard-editor-heading"><h3>本集分镜 <small>{page?.total ?? 0}</small></h3><div className="storyboard-heading-actions">
+      <header className="storyboard-editor-heading"><h3>本集镜头 <Button className="storyboard-list-count" type="text" aria-label="分镜生成记录" title="分镜提取记录" onClick={() => { setHistoryOpen(true); setCandidate(null); setTaskRevision(revision => revision + 1); }}>{page?.total ?? 0}</Button></h3><div className="storyboard-heading-actions">
         <Button type="text" aria-label="新增分镜" disabled={readOnly || busy || loading || !!loadError || !page} onClick={() => { setSearch(''); setPendingOnly(false); void add(); }} icon={<Icon name="plus" size={16}/>}/>
         <Button type="text" aria-label="提取分镜" disabled={readOnly || busy || submitting} onClick={() => setSettingsOpen(true)} icon={<Sparkles size={16}/>}/>
       </div></header>
-      <div className="standard-storyboard-filters"><Input aria-label="搜索镜头名称" value={search} placeholder="搜索镜头名称" onChange={event => setSearch(event.target.value)}/><Button size="small" aria-pressed={pendingOnly} onClick={() => setPendingOnly(value => !value)}>待制作</Button></div>
-      {batchSelection.enabled && !readOnly && <Button type="text" aria-pressed={batchMode} disabled={selectionDisabled} onClick={() => setBatchMode(current => !current)}>{batchMode ? '退出批量操作' : '批量操作'}</Button>}
+      <div className="standard-storyboard-filters"><Input prefix={<Icon name="search" size={14}/>} aria-label="搜索镜头名称" value={search} placeholder="搜索镜头内容" onChange={event => setSearch(event.target.value)}/>
+        <div className="storyboard-category-tabs" aria-label="镜头筛选"><button type="button" aria-pressed={!pendingOnly} onClick={() => setPendingOnly(false)}>全部镜头</button><button type="button" aria-pressed={pendingOnly} onClick={() => setPendingOnly(true)}>待制作</button></div>
+      </div>
+      {batchSelection.enabled && !readOnly && batchMode && <Button type="text" disabled={selectionDisabled} onClick={() => setBatchMode(false)}>退出批量操作</Button>}
       {!readOnly && batchMode && <BatchLauncher scope={{ library: 'episode', project_id: projectId, episode_id: episodeId }} selection={{ ...batchSelection, enabled: batchSelection.enabled && batchMode }} loadedIds={page?.items.map(shot => shot.id) ?? []} disabled={busy || loading || !!loadError || lockedShots.size > 0} beforePreflight={flushAll}/>}
       <div className="storyboard-list lazy-scroll" aria-busy={loading}>
         {loading && !page ? Array.from({ length: 3 }, (_, index) => <div className="storyboard-card-skeleton" key={index} role={index === 0 ? 'status' : undefined} aria-label={index === 0 ? '正在加载分镜' : undefined}><span/><div><i/><i/></div></div>) : <>
@@ -825,6 +850,7 @@ export function StoryboardStage({
         {tasks.map(task => <div key={task.generation_id} className="resource-import-row"><div><strong>{taskLabel(task)}</strong><p>{new Date(task.created_at).toLocaleString('zh-CN')}</p><small>任务 {task.generation_id}</small>{task.error && <p role="alert">{task.error.message}</p>}</div>{task.status === 'succeeded' ? <Button onClick={() => { setMessage(''); setCandidate(task); }}>查看分镜</Button> : <Button onClick={() => setTaskDetailId(task.generation_id)}>查看任务</Button>}</div>)}
         <LazyLoadMore hasMore={tasks.length < tasksTotal} loading={tasksLoading} error={tasksError} onLoad={() => void loadMoreTasks()}/>
       </div>}
+      <div className="production-dialog-footer">{shotActions}<Button disabled={busy} onClick={() => { setHistoryOpen(false); setCandidate(null); }}>关闭</Button></div>
     </Dialog>}
     {taskDetailId && <TaskDetail id={taskDetailId} onClose={() => setTaskDetailId(null)} onChanged={() => setTaskRevision(revision => revision + 1)} onCreated={task => { setTaskDetailId(task.generation_id); setTaskRevision(revision => revision + 1); }}/ >}
   </div>;

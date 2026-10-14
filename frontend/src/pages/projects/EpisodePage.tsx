@@ -21,6 +21,8 @@ const StoryboardStage = preloadable(() => loadStoryboardStage().then(module => (
 const AgentArtifactShelf = lazy(() => import('../../features/agents/AgentArtifactShelf').then(module => ({ default: module.AgentArtifactShelf })));
 import { episodeStages, visibleEpisodeStage } from './episode/StageNav';
 import { TopStepNav } from './episode/TopStepNav';
+import { EpisodeSwitch } from './episode/EpisodeSwitch';
+import { StarOutlined } from '@ant-design/icons';
 import { useEpisodeWriting } from '../../features/projects/useEpisodeWriting';
 import { Dialog } from '../../components/ui/Dialog';
 import { Icon } from '../../components/ui/Icon';
@@ -251,12 +253,25 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
     writing.session.edit(field, legacy[field]); setShowLegacy(false);
   }
   return <div className="episode-page web-episode">
-    <header className="episode-top"><Button type="link" className="detail-back" icon={<Icon name="back" size={16}/>} onClick={onBack}>返回项目详情</Button><div className="episode-heading"><span>{session.project.name} / 第 {number} 集</span><h1>{episode.title}</h1></div><Button className="episode-assistant-entry" aria-expanded={assistantOpen} aria-controls="agent-conversation-pane" onClick={() => updateParameters(previous => setAssistantOpen(previous.toString(), previous.get('assistant') !== 'open'))}>AI 创作助手</Button><span className={`episode-save-state state-${saveState}`} title="作品与个人生成草稿的自动保存状态" role={saveState === 'error' || saveState === 'conflict' ? 'alert' : 'status'}>{writingLabel}</span><AccountControls /></header>
+    <header className="episode-top">
+      <div className="episode-project-location">
+        <Button type="text" className="detail-back" aria-label="返回项目详情" icon={<Icon name="back" size={16}/>} onClick={onBack}/>
+        <span className="episode-brand-mark" aria-hidden="true"><Icon name="film" size={22}/></span>
+        <span className="episode-project-name" title={session.project.name}>{session.project.name}</span><span className="episode-breadcrumb-separator" aria-hidden="true">/</span>
+        <EpisodeSwitch projectId={session.projectId} episodeId={episode.id} number={number} title={episode.title} onSelect={id => navigate(episodePath(session.projectId, id, step))}/>
+        <span className="episode-mode-label">标准模式</span>
+      </div>
+      <div className="episode-project-actions">
+        <span className={`episode-save-state state-${saveState}`} title="作品与个人生成草稿的自动保存状态" role={saveState === 'error' || saveState === 'conflict' ? 'alert' : 'status'}>{writingLabel}</span>
+        <Button className="episode-assistant-entry" aria-label="AI 创作助手" icon={<StarOutlined aria-hidden="true"/>} aria-expanded={assistantOpen} aria-controls="agent-conversation-pane" onClick={() => updateParameters(previous => setAssistantOpen(previous.toString(), previous.get('assistant') !== 'open'))}>AI 创作助手</Button>
+        <AccountControls compact/>
+      </div>
+    </header>
     <TopStepNav projectId={session.projectId} episodeId={episode.id} currentStage={step} workflow={workflow} onStageChange={goToStep} />
     {readOnly && <p className="episode-readonly-notice">当前为只读模式，可查看本集内容。</p>}
     <div className="episode-layout">
         <EpisodeCreationWorkspace stage={step} subject={subject} onSubject={selectSubject} assistantOpen={assistantOpen} onCloseAssistant={closeAssistant} workRequest={artifactRequest?.accountId === (auth.user?.id ?? 'anonymous') ? artifactRequest.value.nonce : 0} assistantPanel={assistantMounted ? <Suspense fallback={<div role="status" className="studio-empty">正在载入 AI 创作助手…</div>}>
-          <div hidden={!!legacyConversationId}><CreativeAssistantPanel open={assistantOpen && !legacyConversationId} key={auth.user?.id ?? 'anonymous'} projectId={session.projectId} projectTitle={session.project.name} accountId={auth.user?.id} readOnly={readOnly} onClose={closeAssistant} selectedConversationId={conversationId} onConversationChange={id => updateParameters(previous => selectAssistantConversation(previous.toString(), id))} onOpenModelSettings={() => navigate('/ai_config')} contextPreview={{ key: `${episode.id}:${step}:${subject?.id ?? ''}`, label: `${episode.title}${subject ? ` · ${subject.label}` : ''}` }} mentionReferences={subject ? [{ kind: subject.type, id: subject.id, name: subject.label, revision: subject.revision }] : []} prepareContext={prepareAssistantContext} onOpenLegacy={id => { void openLegacyRecord(id); }}/></div>
+          <div hidden={!!legacyConversationId}><CreativeAssistantPanel layout="standard" open={assistantOpen && !legacyConversationId} key={auth.user?.id ?? 'anonymous'} projectId={session.projectId} projectTitle={session.project.name} accountId={auth.user?.id} readOnly={readOnly} onClose={closeAssistant} selectedConversationId={conversationId} onConversationChange={id => updateParameters(previous => selectAssistantConversation(previous.toString(), id))} onOpenModelSettings={() => navigate('/ai_config')} contextPreview={{ key: `${episode.id}:${step}:${subject?.id ?? ''}`, label: `${episode.title}${subject ? ` · ${subject.label}` : ''}` }} mentionReferences={subject ? [{ kind: subject.type, id: subject.id, name: subject.label, revision: subject.revision }] : []} prepareContext={prepareAssistantContext} onOpenLegacy={id => { void openLegacyRecord(id); }}/></div>
           {legacyConversationId && <LegacyCreationRecord key={`${auth.user?.id ?? 'anonymous'}:${legacyConversationId}`} projectId={session.projectId} episodeId={episode.id} id={legacyConversationId} accountId={auth.user?.id ?? 'anonymous'} readOnly={readOnly} beforeSend={saveBeforeAgentSend} onClose={closeAssistant} onBack={() => updateParameters(previous => { const next = new URLSearchParams(previous); next.delete('legacy_conversation'); return next; })} onConversation={setAgentConversation} onOpenArtifact={openArtifact}/>}</Suspense> : null}>
         {localError && <Alert type="error" showIcon message={localError}/>}
         {(writing.recoverable || writing.recoveryBlocked) && <Alert type="warning" showIcon message={writing.recoveryBlocked ? '本机正文恢复记录无法读取' : '发现本机未保存的正文恢复稿'} description={writing.recoveryBlocked ? '请先下载完整恢复记录核对。明确放弃前不会覆盖记录或提交正文。' : writing.recoveryChanged ? '基准版本已变化，请对照当前正文；恢复前会重新读取最新版本。' : '恢复稿不会自动提交，可先下载完整内容核对再恢复。'} action={<div><Button disabled={writing.busy} onClick={exportRecovery}>下载完整恢复稿</Button>{!writing.recoveryBlocked && <Button disabled={readOnly || writing.busy} onClick={async () => { const draft = writing.session.getRecoveredDraft(); if (!draft) return; if (await confirmAction(`小说恢复稿（前 500 字）：\n${draft.novel.slice(0, 500)}\n\n剧本恢复稿（前 500 字）：\n${draft.script.slice(0, 500)}\n\n${writing.recoveryChanged ? '确认以最新服务端版本为基础保留恢复稿并继续编辑？' : '恢复到编辑器，核对后再保存？'}`)) await writing.session.restoreRecovered(!!writing.recoveryChanged); }}>核对并恢复正文</Button>}<Button disabled={writing.busy} onClick={async () => { if (await confirmAction('确定放弃本机正文恢复稿，保留当前服务端版本？')) { try { writing.session.discardRecovered(); } catch { setLocalError('无法清除本机正文恢复记录，请检查浏览器存储权限。'); } } }}>放弃恢复稿</Button></div>}/>}

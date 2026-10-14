@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Skeleton, Tooltip } from 'antd';
-import { Bold, Italic, Quote, Undo2, Redo2 } from 'lucide-react';
+import { Bold, Italic, Quote, ArrowLeft, ArrowRight } from 'lucide-react';
 import type Quill from 'quill';
 import type { Delta, EmitterSource } from 'quill';
 import type { EditorDocument } from '../../api/modules/episode-writing';
@@ -61,7 +61,8 @@ export function QuillScriptEditor({ content, document, readOnly, onChange, label
       let compositionTimer: ReturnType<typeof setTimeout> | undefined;
       const updateTools = () => {
         if (!active) return;
-        const format = quill.getFormat();
+        const range = quill.getSelection();
+        const format = range ? quill.getFormat(range) : {};
         setTools({ bold: !!format.bold, italic: !!format.italic, blockquote: !!format.blockquote, undo: !!quill.history.stack.undo.length, redo: !!quill.history.stack.redo.length });
       };
       const emitChange = () => {
@@ -139,15 +140,15 @@ export function QuillScriptEditor({ content, document, readOnly, onChange, label
         <Tooltip title="加粗"><Button type="text" aria-label="加粗" aria-pressed={tools.bold} disabled={loading || !!error} icon={<Bold size={16}/>} onMouseDown={event => event.preventDefault()} onClick={() => format('bold')}/></Tooltip>
         <Tooltip title="斜体"><Button type="text" aria-label="斜体" aria-pressed={tools.italic} disabled={loading || !!error} icon={<Italic size={16}/>} onMouseDown={event => event.preventDefault()} onClick={() => format('italic')}/></Tooltip>
         <Tooltip title="引用"><Button type="text" aria-label="引用" aria-pressed={tools.blockquote} disabled={loading || !!error} icon={<Quote size={16}/>} onMouseDown={event => event.preventDefault()} onClick={() => format('blockquote')}/></Tooltip>
-        <Tooltip title="撤销编辑"><Button type="text" aria-label="撤销编辑" disabled={loading || !tools.undo} icon={<Undo2 size={16}/>} onClick={() => editor.current?.history.undo()}/></Tooltip>
-        <Tooltip title="重做编辑"><Button type="text" aria-label="重做编辑" disabled={loading || !tools.redo} icon={<Redo2 size={16}/>} onClick={() => editor.current?.history.redo()}/></Tooltip>
+        <Tooltip title="撤销编辑"><Button type="text" aria-label="撤销编辑" disabled={loading || !tools.undo} icon={<ArrowLeft size={16}/>} onClick={() => editor.current?.history.undo()}/></Tooltip>
+        <Tooltip title="重做编辑"><Button type="text" aria-label="重做编辑" disabled={loading || !tools.redo} icon={<ArrowRight size={16}/>} onClick={() => editor.current?.history.redo()}/></Tooltip>
       </div>}
-      <span>{scriptWordCount(content).toLocaleString()} 字</span><span>{scenes.length} 场</span>
+      <span>{scriptWordCount(content).toLocaleString()} 字</span><span>{scenes.length} 个场次</span>
       {toolbarActions}
-      {scenes.length > 0 && <div className="novel-scene-shortcuts" aria-label="场次定位">{scenes.map((scene, index) => <Tooltip key={scene.index} title={scene.label}><Button size="small" type="text" aria-label={`定位到${scene.label}`} disabled={loading || !!error} onClick={() => locate(scene.index)}>场 {index + 1}</Button></Tooltip>)}</div>}
+      {scenes.length > 0 && <div className="novel-scene-shortcuts" aria-label="场次定位">{scenes.map((scene, index) => <Tooltip key={scene.index} title={scene.label}><Button size="small" type="text" aria-label={`定位到${scene.label}`} disabled={loading || !!error} onClick={() => locate(scene.index)}>场次 {String(index + 1).padStart(2, '0')}</Button></Tooltip>)}</div>}
     </div>
     {error && <Alert type="error" showIcon message={error} action={<Button onClick={() => setRevision(value => value + 1)}>重试</Button>}/>}
     {loading && <Skeleton className="novel-editor-loading" active paragraph={{ rows: 6 }}/>}
-    <div ref={host} className="novel-quill-host" hidden={loading || !!error}/>
+    <div className="novel-script-scroll" hidden={loading || !!error}><div ref={host} className="novel-quill-host"/></div>
   </div>;
 }

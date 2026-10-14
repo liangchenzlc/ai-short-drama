@@ -1,19 +1,22 @@
 import { confirmAction } from '../../components/ui/confirm';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Button, Select, Spin } from 'antd';
+import { Alert, Button, Spin } from 'antd';
+import { Check } from 'lucide-react';
 import { generations } from '../../api/modules/generations';
 import { aiModelConfigs } from '../../api/modules/ai-model-configs';
 import { mediaLibrary } from '../../api/modules/media-library';
 import { assetLibraries, type AssetRead } from '../../api/modules/assets';
 import { ApiError, errorMessage } from '../../api/http';
 import type { GenerationDetail, MediaAsset } from '../../api/types/generations';
+import type { AiModelCapabilitiesDto } from '../../api/types/ai-model-configs';
 import type { ShotRead } from '../../api/modules/storyboard';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import { taskLabel } from '../generations/presentation';
 import { Dialog } from '../../components/ui/Dialog';
 import { generationReferences, type ReferenceImage } from '../../api/modules/generation-references';
 import { TaskDetail } from '../generations/TaskDetail';
-import { ImagePreview, PreviewImage } from '../../components/ui/ImagePreview';
+import { ImagePreview } from '../../components/ui/ImagePreview';
+import { CreationImagePreview } from './CreationImagePreview';
 import { shotImageApplyRequest, shotImageRequest } from './workflow-contract';
 import { imageGenerationBlockReason, summarizeImageReferenceCount, summarizeShotReferences, type ImageCapabilities, type PreparedShot } from './shot-image-workflow';
 import { useShotImageGeneration } from './useShotImageGeneration';
@@ -27,12 +30,16 @@ import { creationScope, clearRecovery, readRecovery, saveRecovery } from './crea
 import { isPendingShotGeneration, type PendingShotGeneration } from './shot-generation-submission';
 import { AI_CONFIGS_CHANGED } from '../ai-config/config-events';
 import { ShotGenerationSettings } from './ShotGenerationSettings';
+import { AssetGenerationParameters } from '../assets/StandardAssetGeneration';
 
-export function ShotImageCandidates({ shot, disabled, modelId, capabilities, onRefreshCapabilities, onChanged, prepareShot, episodeAspect, projectId, episodeId, modelSelection, onModelChange, onResolvedModel, registerBarrier, information, settingsOpen = true, active, onCloseSettings }: {
+export function ShotImageCandidates({ shot, disabled, modelId, capabilities, onRefreshCapabilities, onChanged, prepareShot, episodeAspect, projectId, episodeId, modelSelection, onModelChange, onResolvedModel, registerBarrier, information, settingsOpen = true, active, onCloseSettings, onOpenSettings, historyOpen, onHistoryOpenChange, onPreviewStateChange, availableReferences, availableLoading, availableError, onRefreshAvailable }: {
   projectId: string; episodeId: string; modelSelection: string; onModelChange: (id: string) => void;
   onResolvedModel: (id: string | undefined) => void;
   registerBarrier: (barrier: NavigationBarrier | null) => void; information?: ReactNode; settingsOpen?: boolean;
-  active: boolean; onCloseSettings: () => void;
+  active: boolean; onCloseSettings: () => void; onOpenSettings: () => void;
+  historyOpen: boolean; onHistoryOpenChange: (open: boolean) => void;
+  onPreviewStateChange: (shotId: string, media: 'image' | 'video', state: 'current' | 'candidate' | 'empty') => void;
+  availableReferences: ReferenceImage[]; availableLoading: boolean; availableError: string; onRefreshAvailable: () => void;
   shot: ShotRead; disabled: boolean; modelId: string | undefined; capabilities: ImageCapabilities | null;
   capabilitiesLoading: boolean; onRefreshCapabilities: () => void; onChanged: () => void;
   prepareShot: (purpose?: 'generation' | 'adoption') => Promise<PreparedShot | null>; episodeAspect: '16:9' | '9:16'; settings?: ReactNode;
@@ -48,11 +55,10 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, onR
   useEffect(() => {
     if (actualModelId && draft.loaded && !draft.value.model_config_id) draft.edit({ model_config_id: actualModelId });
   }, [actualModelId, draft.loaded, draft.value.model_config_id, draft.session]);
-  const [privateCapabilities, setPrivateCapabilities] = useState<ImageCapabilities | null>(null);
+  const [privateCapabilities, setPrivateCapabilities] = useState<AiModelCapabilitiesDto | null>(null);
   const [privateCapsLoading, setPrivateCapsLoading] = useState(false);
   const [privateCapsError, setPrivateCapsError] = useState('');
   const [privateCapsRevision, setPrivateCapsRevision] = useState(0);
-  const selectedSettings = draft.value.image_settings ?? { aspect: episodeAspect, resolution: shot.image_settings.resolution, count: 1 };
   useEffect(() => { const controller = new AbortController(); setPrivateCapsLoading(!!actualModelId); setPrivateCapabilities(null); setPrivateCapsError('');
     if (actualModelId) void aiModelConfigs.capabilities(actualModelId, controller.signal).then(result => { if (!controller.signal.aborted) setPrivateCapabilities(result); }).catch(cause => { if (!controller.signal.aborted) setPrivateCapsError(`图片模型能力读取失败：${errorMessage(cause)}`); }).finally(() => { if (!controller.signal.aborted) setPrivateCapsLoading(false); });
     return () => controller.abort();
@@ -62,7 +68,8 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, onR
     window.addEventListener('focus', refresh); window.addEventListener(AI_CONFIGS_CHANGED, refresh);
     return () => { window.removeEventListener('focus', refresh); window.removeEventListener(AI_CONFIGS_CHANGED, refresh); };
   }, []);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const setHistoryOpen = onHistoryOpenChange;
+  const [currentPreviewOpen, setCurrentPreviewOpen] = useState(false);
   const [uploaded, setUploaded] = useState<ReferenceImage[] | null>(null);
   const [referenceBusy, setReferenceBusy] = useState(false);
   const history = useShotImageGeneration({ shotId: shot.id, enabled: true });
@@ -139,7 +146,7 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, onR
         setMessage('参考图片已变化，请核对后重新点击生成。'); return;
       }
       const request = shotImageRequest(current, '', [], savedDraft.image_settings?.count ?? 1, episodeAspect);
-      const body = { ...request, config_id: savedDraft.model_config_id ?? actualModelId, source: { ...request.source, draft_id: savedDraft.id, draft_version: savedDraft.draft_version }, parameters: { ...request.parameters, ...(savedDraft.image_settings ?? {}) } };
+      const body = { ...request, config_id: savedDraft.model_config_id ?? actualModelId, source: { ...request.source, draft_id: savedDraft.id, draft_version: savedDraft.draft_version }, parameters: { ...request.parameters, ...(savedDraft.image_settings ?? {}), aspect: savedDraft.image_settings?.aspect ?? undefined, resolution: savedDraft.image_settings?.resolution ?? undefined } };
       const scope = `shot-image:${shot.id}`;
       const key = await requestAttempt(scope, body, attemptStorage());
       if (!alive.current || !prepared.isCurrent()) return;
@@ -225,29 +232,30 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, onR
   }
 
   const latestCandidate = showCurrent ? null : preview ?? history.candidates.find(item => item.media_id !== shot.image?.media_id) ?? null;
-  return <section className="shot-image-candidates standard-shot-media">
+  const previewState = latestCandidate ? 'candidate' : shot.image ? 'current' : 'empty';
+  useEffect(() => { if (active) onPreviewStateChange(shot.id, 'image', previewState); }, [active, shot.id, previewState, onPreviewStateChange]);
+  const readonlyReferences = [
+    ...assets.filter(asset => shot.asset_ids.includes(asset.id) && asset.state === 'confirmed' && asset.media_id && asset.image?.url).map(asset => ({ media_id: asset.media_id!, name: asset.name, url: asset.image!.url })),
+    ...(uploaded ?? []),
+  ];
+  return <section className={`shot-image-candidates standard-shot-media${settingsOpen ? '' : ' is-settings-collapsed'}`}>
     <div className="standard-object-preview" aria-label="分镜图片预览">
-      {latestCandidate?.url ? <><PreviewImage triggerClassName="shot-current-preview" src={latestCandidate.url} alt="未采用分镜图片结果"/><div className="standard-candidate-actions"><span>未采用</span><Button disabled={disabled || busy} onClick={() => void apply(latestCandidate)}>采用此结果</Button><Button onClick={() => { setPreview(null); setShowCurrent(true); }}>查看当前作品</Button></div></>
-        : shot.image?.url ? <PreviewImage triggerClassName="shot-current-preview" src={shot.image.url} alt="当前采用分镜图"/>
-          : <div className="studio-empty"><h3>待制作分镜图</h3><p>填写镜头名称与脚本后生成图片。</p></div>}
+      <CreationImagePreview src={latestCandidate ? latestCandidate.url : shot.image?.url} alt={latestCandidate ? '未采用分镜图片结果' : '当前采用分镜图'}
+        loading={history.loading && !latestCandidate?.url && !shot.image?.url} onRefresh={() => { onChanged(); void history.refresh(); }}
+        onOpen={latestCandidate ? () => void openPreview(latestCandidate) : shot.image?.url ? () => setCurrentPreviewOpen(true) : undefined}
+        empty={latestCandidate ? <><strong>候选图片预览暂不可用</strong><Button onClick={() => void history.refresh()}>刷新图片预览</Button></> : <><strong>还没有采用的图片</strong><Button onClick={onOpenSettings}>打开生成设置</Button></>}/>
+      {latestCandidate && <div className="standard-candidate-actions"><strong>本次结果 · 未采用</strong><Button type="primary" disabled={disabled || busy} icon={<Check size={14}/>} onClick={() => void apply(latestCandidate)}>采用此结果</Button><Button type="text" onClick={() => { setPreview(null); setShowCurrent(true); }}>查看当前作品</Button></div>}
       {shot.image?.is_stale && <Alert type="warning" message="创作内容已变化，请核对当前图片。"/>}
     </div>
-    <ShotGenerationSettings open={settingsOpen} active={active} onClose={onCloseSettings}>
+    <ShotGenerationSettings id="storyboard-image-settings" open={settingsOpen} active={active} onClose={onCloseSettings}>
       {information}
-      <PrivateReferenceImages draft={draft} disabled={disabled || busy} onBusy={setReferenceBusy}/>
-      <p className="episode-help">去重合计 {referenceCount.totalCount}/16 张参考图片</p>
+      <PrivateReferenceImages draft={draft} disabled={disabled || busy} onBusy={setReferenceBusy} readonlyReferences={readonlyReferences}
+        availableReferences={availableReferences} availableLoading={availableLoading} availableError={availableError} onRefreshAvailable={onRefreshAvailable}/>
       {references.unreadyAssetIds.length > 0 && <p className="episode-help">{references.unreadyAssetIds.length} 项关联素材尚未确认图片，本次仅使用文字设定。</p>}
       <GenerationComposer prompt={draft.value.input_text} onPrompt={input_text => draft.edit({ input_text })} busy={busy} disabled={disabled || !draft.loaded}
         sendDisabled={disabled || referenceBusy || !!blockReason || !!uncertain || recoveryBlocked || !shot.title?.trim() || !shot.script.trim()} onSend={() => void generate()}
         model={<EpisodeModelSelect kind="image" label="分镜生图模型" value={draft.value.model_config_id ?? modelSelection} disabled={disabled || busy || !draft.loaded}
-          onResolvedChange={handleResolved} onChange={id => { draft.edit({ model_config_id: id || null }); onModelChange(id); }}/>} parameters={<>
-          <Select aria-label="分镜图片比例与分辨率" value={`${selectedSettings.aspect}/${selectedSettings.resolution}`} disabled={disabled || busy}
-            options={['16:9','9:16','1:1','4:3','3:4'].flatMap(aspect => ['1K','2K','4K'].map(resolution => ({ value: `${aspect}/${resolution}`, label: `${aspect} · ${resolution}` })))}
-            onChange={next => { const [aspect, resolution] = next.split('/'); draft.edit({ image_settings: { ...selectedSettings, aspect, resolution } }); }}/>
-          <Select aria-label="图片数量" value={selectedSettings.count} disabled={disabled || busy} options={[1,2,4].map(value => ({ value, label: `${value} 张` }))}
-            onChange={count => draft.edit({ image_settings: { ...selectedSettings, count } })}/>
-        </>}/>
-      <Button type="text" disabled={busy || referenceBusy} onClick={() => setHistoryOpen(true)}>图片生成记录</Button>
+          onResolvedChange={handleResolved} onChange={id => { draft.edit({ model_config_id: id || null }); onModelChange(id); }}/>} parameters={<AssetGenerationParameters value={draft.value} disabled={disabled || busy || !draft.loaded || privateCapsLoading} onChange={draft.edit} capabilities={privateCapabilities}/>}/>
       <CreationDraftFeedback draft={draft}/>
       {blockReason && <Alert type="warning" showIcon message={blockReason} action={<Button size="small" onClick={() => { setReferencesRevision(revision => revision + 1); setPrivateCapsRevision(value => value + 1); onRefreshCapabilities(); }}>重新核对</Button>}/>}
       {uncertain && <Alert type="warning" showIcon message="上次图片请求仍待核对，已保留原请求。" action={<Button loading={busy} onClick={() => void resolveUnknown()}>核对原图片请求</Button>}/>}
@@ -268,6 +276,7 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, onR
 </details>
     </div><div className="production-dialog-footer"><span>候选保留原生成参数</span><Button disabled={busy} onClick={() => setHistoryOpen(false)}>关闭</Button></div></Dialog>}
     {taskId && <TaskDetail id={taskId} onClose={() => setTaskId(null)} onChanged={() => { void history.refresh(); }} onCreated={(task) => { setTaskId(task.generation_id); void history.refresh(); }}/ >}
+    {currentPreviewOpen && shot.image?.url && <ImagePreview src={shot.image.url} alt="当前采用分镜图" title="分镜图片预览" onClose={() => setCurrentPreviewOpen(false)}/>}
     {preview?.url && <ImagePreview title="分镜图片预览" src={preview.url} alt={preview.name} canClose={!busy} onClose={() => { previewSequence.current++; setPreview(null); }} footer={<>
       {message && <Alert type="info" showIcon message={message}/>}
       <span>{previewDetail ? `原生成参数：${previewDetail.source?.scene === 'shot_image' ? previewDetail.source.layout : '未知'} · ${previewDetail.parameters.aspect ?? '未知画幅'} · ${previewDetail.parameters.resolution ?? '未知分辨率'}` : '正在读取原生成参数…'}</span>

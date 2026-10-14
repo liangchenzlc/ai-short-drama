@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Skeleton, Tooltip } from 'antd';
-import { History, MessageSquarePlus, X } from 'lucide-react';
+import { History, MessageSquarePlus, Plus, X } from 'lucide-react';
 import { assistantApi } from '../../api/modules/assistant';
 import { ApiError, errorMessage } from '../../api/http';
 import type { AssistantConversation } from '../../api/types/assistant';
@@ -12,6 +12,7 @@ import './ai-assistant.css';
 
 export interface CreativeAssistantPanelProps extends AssistantContextProps {
   accountId?: string;
+  layout?: 'standard';
   projectId: string;
   projectTitle: string;
   open?: boolean;
@@ -25,9 +26,9 @@ export interface CreativeAssistantPanelProps extends AssistantContextProps {
   onCloseLegacy?: () => void;
 }
 
-/** 共用内容直接沿用画布助手的标题、消息与输入几何；停靠和抽屉由两端适配器负责。 */
+/** 共用会话与消息状态，标题及输入几何按工作区布局适配。 */
 export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
-  const { accountId, projectId, projectTitle, open = true, readOnly = false, onClose, selectedConversationId, onOpenModelSettings } = props;
+  const { accountId, projectId, projectTitle, layout, open = true, readOnly = false, onClose, selectedConversationId, onOpenModelSettings } = props;
   const [conversation, setConversation] = useState<AssistantConversation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -74,16 +75,16 @@ export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
     finally { if (alive.current) { setBusy(false); setLoading(false); } }
   }
   const fallbackLegacy = props.legacyConversationId ?? legacyId;
-  return <section className="ai-assistant-panel" aria-label="AI 创作助手" style={open ? undefined : { display: 'none' }}>
-    <header className="ai-assistant-header"><div className="ai-assistant-heading"><h2>AI 创作助手</h2><span title={projectTitle}>{projectTitle}</span></div>
-      <Tooltip title="新对话"><Button type="text" size="small" aria-label="新对话" disabled={readOnly || busy || sending || loading || !accountId} loading={busy} icon={<MessageSquarePlus size={16}/>} onClick={() => { void create().catch(() => {}); }}/></Tooltip>
-      <Tooltip title="对话记录"><Button type="text" size="small" aria-label="对话记录" disabled={!conversation || busy || sending} icon={<History size={16}/>} onClick={() => setHistory(true)}/></Tooltip>
-      <Tooltip title="关闭助手"><Button type="text" size="small" aria-label="关闭助手" icon={<X size={16}/>} onClick={() => { ++request.current; loadController.current?.abort(); onClose(); }}/></Tooltip>
+  return <section className={`ai-assistant-panel${layout === 'standard' ? ' ai-assistant-standard' : ''}`} aria-label="AI 创作助手" style={open ? undefined : { display: 'none' }}>
+    <header className="ai-assistant-header"><div className="ai-assistant-heading"><h2>AI 创作助手</h2>{layout !== 'standard' && <span title={projectTitle}>{projectTitle}</span>}</div>
+      <Tooltip title="新对话"><Button type="text" size="small" aria-label="新对话" disabled={readOnly || busy || sending || loading || !accountId} loading={busy} icon={layout === 'standard' ? <Plus size={18}/> : <MessageSquarePlus size={16}/>} onClick={() => { void create().catch(() => {}); }}/></Tooltip>
+      <Tooltip title="对话记录"><Button type="text" size="small" aria-label="对话记录" disabled={!conversation || busy || sending} icon={<History size={layout === 'standard' ? 18 : 16}/>} onClick={() => setHistory(true)}/></Tooltip>
+      <Tooltip title="关闭助手"><Button type="text" size="small" aria-label="关闭助手" icon={<X size={layout === 'standard' ? 18 : 16}/>} onClick={() => { ++request.current; loadController.current?.abort(); onClose(); }}/></Tooltip>
     </header>
     {error ? <div className="ai-assistant-notice" role="alert"><span>{error}</span><Button size="small" onClick={() => setRevision(value => value + 1)}>重新读取</Button></div> : null}
     {!accountId ? <p className="ai-assistant-meta">登录后可以使用 AI 创作助手。</p>
       : loading ? <div className="ai-assistant-log"><Skeleton active paragraph={{ rows: 5 }}/></div>
-        : conversation ? <AssistantConversationBody key={`${accountId}:${conversation.id}`} conversation={conversation} accountId={accountId} readOnly={readOnly || conversation.archived}
+        : conversation ? <AssistantConversationBody key={`${accountId}:${conversation.id}`} conversation={conversation} accountId={accountId} layout={layout} readOnly={readOnly || conversation.archived}
           contextPreview={props.contextPreview} mentionReferences={props.mentionReferences} prepareContext={props.prepareContext} onOpenModelSettings={onOpenModelSettings} onSendingChange={setSending}/>
           : !error ? <p className="ai-assistant-meta">暂无对话，点击“新对话”开始。</p> : null}
     {history && conversation ? <AssistantHistory projectId={projectId} currentId={conversation.id} readOnly={readOnly} onNew={create} onUpdated={item => setConversation(old => old?.id === item.id ? item : old)} onClose={() => setHistory(false)} onSelect={id => {
