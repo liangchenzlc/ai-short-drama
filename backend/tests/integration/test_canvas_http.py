@@ -7,6 +7,7 @@ from threading import Event
 import pytest
 from sqlalchemy import select
 
+from short_drama.dao.canvas_dao import CanvasDAO
 from short_drama.db import access
 from short_drama.domain.canvas import CanvasNode, CanvasRevision, CanvasUserState
 from tests.integration.test_canvas_library import database_errors as database_errors
@@ -228,19 +229,30 @@ def test_first_personal_writes_use_current_state_after_waiting_for_project_lock(
     path = f"/api/v1/projects/{project['id']}/canvases/{project['primary_canvas_id']}"
     document = client.get(path + "/my-document").json()["source_document"]
     document["title"] = "并发时保存作品"
-    original = access.require_project
+    original_access = access.require_project
+    original_project = CanvasDAO.project
     entered, other_committed = Event(), Event()
 
-    def snapshot_before_lock(session, project_id, **options):
-        if options.get("lock") and not entered.is_set():
+    def wait_after_snapshot(session):
+        if not entered.is_set():
             # Establish an empty REPEATABLE READ snapshot, just as a scoped
             # authorization read can before the project write lock is acquired.
             assert session.scalar(select(CanvasUserState)) is None
             entered.set()
             assert other_committed.wait(10)
-        return original(session, project_id, **options)
 
-    monkeypatch.setattr(access, "require_project", snapshot_before_lock)
+    def access_before_lock(session, project_id, **options):
+        if options.get("lock"):
+            wait_after_snapshot(session)
+        return original_access(session, project_id, **options)
+
+    def project_before_lock(self, project_id, *, lock=False):
+        if lock:
+            wait_after_snapshot(self.session)
+        return original_project(self, project_id, lock=lock)
+
+    monkeypatch.setattr(access, "require_project", access_before_lock)
+    monkeypatch.setattr(CanvasDAO, "project", project_before_lock)
     viewport = {"x": 12, "y": 24, "k": 1.25}
     expected = {"x": 0, "y": 0, "k": 1}
     with ThreadPoolExecutor(max_workers=2) as pool:

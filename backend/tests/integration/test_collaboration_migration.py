@@ -12,6 +12,7 @@ from short_drama.core.config import Settings
 from short_drama.db.readiness import assert_identity_ready
 from short_drama.domain import (
     AGENT_TABLES,
+    CANVAS_TABLES,
     AIModelConfig,
     Asset,
     Base,
@@ -145,9 +146,12 @@ def original_schema(engine):
                     connection.execute(text(f"ALTER TABLE `{name}` DROP INDEX `{index['name']}`"))
             for column in columns:
                 connection.execute(text(f"ALTER TABLE `{name}` DROP COLUMN `{column}`"))
-        # Agent依赖账号表；还原账号功能出现前的库时，先按外键顺序移除它们。
+        # Agent、画布和私人草稿均晚于账号功能，按外键顺序移除后再还原旧库。
+        account_dependent_tables = (
+            migration.IDENTITY | AGENT_TABLES | CANVAS_TABLES | {"user_creation_drafts"}
+        )
         for table in reversed(Base.metadata.sorted_tables):
-            if table.name in migration.IDENTITY | AGENT_TABLES:
+            if table.name in account_dependent_tables:
                 connection.execute(text(f"DROP TABLE `{table.name}`"))
         # The old global uniqueness must be replaced during finalize.
         connection.execute(

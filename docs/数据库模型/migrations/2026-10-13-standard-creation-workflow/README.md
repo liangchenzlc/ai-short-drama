@@ -17,3 +17,16 @@
 2026-10-13 已在当前本机 Docker MySQL `127.0.0.1:13306` 的 `short_drama` 库执行：两个镜头列及景别 CHECK、剧本 Delta 列及 JSON 对象 CHECK、私人草稿完整表及范围唯一键、外键、JSON／版本 CHECK 与两个索引；随后用 `ALTER TABLE user_creation_drafts MODIFY COLUMN input_text MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT ...` 同步分用途输入上限说明，字段类型与已有数据保持原值。已重入核对缺失结构，重复执行不会新增相同列、约束或索引。未读取或输出配置文件内容，没有对应用库运行测试。隔离集成测试结果由实施验收记录单独说明。
 
 此前工作区的 [docs/database 同名 P0 SQL](../../../database/2026-10-13-p0-contract-migration.sql) 已同步为同一增量合同，保留路径便于已有使用者查找；执行其中一份即可。
+
+2026-10-14 重新核对当前 Settings 指向的 `short_drama@127.0.0.1:3306`（MySQL 8.4.11）：Docker 引擎恢复后，该库尚无上述三个字段与私人草稿表；2026-10-13 的 `13306` 历史执行记录不能代替本轮当前库证据。已在 `backend/` 使用现有 `.tools/uv/uv.exe run python scripts/standard_creation_ddl.py --apply` 实际执行以下 8 条增量语句，保留已有作品和关联：
+
+1. 为 `shot_scripts` 增加非空 `title VARCHAR(255)`，旧记录默认空字符串。
+2. 为 `shot_scripts` 增加可空 `shot_size VARCHAR(20)`。
+3. 增加 `ck_shot_scripts_shot_size` 景别枚举 CHECK。
+4. 为 `episode_scripts` 增加可空 `editor_document JSON`。
+5. 增加 `ck_scripts_editor_document` JSON 对象 CHECK。
+6. 创建完整 `user_creation_drafts` 表，含范围唯一键、三个外键、JSON/用途/版本 CHECK 和个人参考媒体列。
+7. 创建 `idx_user_creation_drafts_user_episode`。
+8. 创建 `idx_user_creation_drafts_user_project`。
+
+随后对当前库执行同一 `apply_ddl` 重入，新增语句为 **0 条**；元数据断言确认字段类型/空值/默认值、私人草稿全部列、范围唯一键、三个外键、六个 CHECK 和两个业务索引与现有 ORM/完整 SQL 合同一致。执行日志位于被忽略的 `backend/.runtime/standard-backend-ddl-applied-20261014.log`，幂等与元数据核对位于 `backend/.runtime/standard-backend-ddl-reentry-metadata-20261014.log`。应用库未作为测试库，未读取或输出 `.env` 内容；本轮随机 MySQL 集成结果及环境边界由实施验收记录单独说明。

@@ -109,7 +109,7 @@ def test_catalog_encryption_redaction_and_stable_host_projection(db_session):
     assert "synthetic" not in json.dumps(public) and "hidden" not in json.dumps(public)
 
 
-@pytest.mark.parametrize("declared", [{"vision": True, "thinking": ["off", "on"]}, None])
+@pytest.mark.parametrize("declared", [{"vision": True, "thinking": True}, None])
 def test_host_text_capability_is_refreshed_and_versioned_without_model_name_inference(
     db_session, declared
 ):

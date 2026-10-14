@@ -211,9 +211,9 @@ uv run python scripts/run_integration.py
 uv run python scripts/run_integration.py tests/integration/test_production_workflow_migration.py -q
 ```
 
-`run_integration.py` 读取 `.env` 中的数据库服务器凭据，覆盖子进程的 `TEST_DATABASE_URL` 为测试基址；fixture 创建随机 `short_drama_<uuid>_test` 数据库，执行完整建表 SQL，结束后删除它。需要服务器 CREATE/DROP DATABASE 权限。脚本不采用应用数据库作为测试库，也不会使用原环境中的测试 URL 覆盖 `.env` 服务器。
+`run_integration.py` 优先保留已显式设置的 `TEST_DATABASE_URL`；未设置时才从当前工作目录的 Settings（含 `.env`）读取数据库服务器配置，将测试基址的数据库名设为 `short_drama_test`。fixture 创建随机 `short_drama_<uuid>_test` 数据库，执行完整建表 SQL，结束后删除它；不会使用应用数据库作为测试库。所选服务器需要 CREATE/DROP DATABASE 权限。
 
-要使用独立测试服务器，直接设置 `TEST_DATABASE_URL` 并运行 `uv run pytest tests/integration -q`；连接协议必须是 `mysql+pymysql`，所提供数据库名以 `_test` 结尾。fixture 仍会创建新的随机库。没有配置该变量时，直接运行 `uv run pytest` 会跳过 MySQL 集成测试。
+要使用独立测试服务器，显式设置 `TEST_DATABASE_URL` 后运行 `uv run python scripts/run_integration.py`，也可直接运行 `uv run pytest tests/integration -q`；连接协议必须是 `mysql+pymysql`，所提供数据库名以 `_test` 结尾。fixture 仍会创建新的随机库。没有配置该变量时，直接运行 `uv run pytest` 会跳过 MySQL 集成测试。
 
 以下测试需显式启用，使用真实外部基础设施；应在隔离环境执行，结束后移除启用变量：
 

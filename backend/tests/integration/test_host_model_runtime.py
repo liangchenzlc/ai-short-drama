@@ -257,6 +257,10 @@ def test_host_update_runtime_key_alias_and_preferences_cannot_overwrite_models(d
     db_session.info["actor"] = actor()
     service = AIModelConfigService(db_session, cipher=CIPHER)
     model = service.get(101)
+    updated_profile = {
+        **PROFILE,
+        "capability_config": {"text": {"references": {"maxImages": 0}}},
+    }
     changed = service.update(
         101,
         {
@@ -265,20 +269,28 @@ def test_host_update_runtime_key_alias_and_preferences_cannot_overwrite_models(d
             "apikey": "fresh-key",
             "headers": [{"name": "X-Provider-Key", "value": "fresh-header"}],
             "secret_key": None,
-            "runtime_profile": {
-                **PROFILE,
-                "capability_config": {"text": {"references": {"maxImages": 0}}},
-            },
+            "runtime_profile": updated_profile,
         },
     )
+    assert changed.row_version == model.row_version + 1
     catalog = CanvasModelCatalogService(db_session, cipher=CIPHER)
     with db_session.begin():
         config = db_session.get(AIModelConfig, 101)
-        catalog.refresh_runtime_model_locked(config)
+        assert catalog.refresh_runtime_model_locked(config)
+        # 后续持锁读取会 populate_existing，先落库刷新后的能力与版本。
+        db_session.flush()
+        cache = deepcopy(config.capability_cache)
+        assert cache["adapter"] == "openai_chat.v1"
+        assert cache["canvas_text_capability"] == updated_profile["capability_config"]["text"]
+        assert config.row_version == changed.row_version + 1
         credentials = catalog.runtime_credentials_locked(config.id, "openai_chat.v1")
-        assert credentials["apiKey"] == "fresh-key"
-        assert credentials["headers"] == {"X-Provider-Key": "fresh-header"}
-        assert config.capability_cache["canvas_text_capability"]["references"]["maxImages"] == 0
+        assert credentials == {
+            "apiKey": "fresh-key",
+            "secretKey": "",
+            "headers": {"X-Provider-Key": "fresh-header"},
+        }
+        assert config.capability_cache == cache and config.runtime_profile == updated_profile
+        assert config.row_version == changed.row_version + 1
     workspace = CanvasWorkspaceService(db_session, cipher=CIPHER)
     models = workspace.read_models()
     assert len(models["models"]) == 1 and models["channels"] == []
@@ -290,6 +302,7 @@ def test_host_update_runtime_key_alias_and_preferences_cannot_overwrite_models(d
         )
     )
     version = service.get(101).row_version
+    assert version == changed.row_version + 1
     for channels in (
         [],
         [
@@ -313,7 +326,11 @@ def test_host_update_runtime_key_alias_and_preferences_cannot_overwrite_models(d
     final = service.get(101)
     assert final.row_version == version and final.model_key == "renamed-model"
     assert final.enabled == 1 and final.is_deleted == 0 and not final.has_secret_key
-    assert final.row_version >= changed.row_version
+    assert final.runtime_profile.model_dump(mode="json", exclude_none=True) == updated_profile
+    with db_session.begin():
+        config = db_session.get(AIModelConfig, 101)
+        assert config.capability_cache == cache
+        assert catalog.runtime_credentials_locked(config.id, "openai_chat.v1") == credentials
 
 
 def test_runtime_crud_redacts_preserves_and_clears_credentials_with_cas(db_session):

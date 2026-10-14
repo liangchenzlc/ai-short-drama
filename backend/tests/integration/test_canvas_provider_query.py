@@ -24,14 +24,20 @@ from tests.integration.test_identity_collaboration import identity_app as identi
 
 pytestmark = pytest.mark.integration
 FROZEN_KEY = "controlled-frozen-video-key"
+FROZEN_HEADER = {"name": "X-Original-Video-Fixture", "value": "controlled-frozen-video-header"}
 PROVIDER_ID = "original-video-task"
 
 
-def update_key(client, identifier, key):
+def update_key(client, identifier, key, *, headers=None):
     path = "/api/v1/ai-model-configs/" + identifier
-    current = client.get(path).json()
-    updated = client.patch(path, json={"row_version": current["row_version"], "apikey": key})
+    current = client.get(path)
+    assert current.status_code == 200, current.text
+    payload = {"row_version": current.json()["row_version"], "apikey": key}
+    if headers is not None:
+        payload["headers"] = headers
+    updated = client.patch(path, json=payload)
     assert updated.status_code == 200, updated.text
+    return updated.json()
 
 
 def failed_video(app, name, *, anonymous=False, client=None, user=None, project=None):
@@ -43,8 +49,16 @@ def failed_video(app, name, *, anonymous=False, client=None, user=None, project=
         user=user,
         project=project,
     )
-    if not anonymous:
-        update_key(client, request["logicalModelId"], FROZEN_KEY)
+    model = update_key(
+        client,
+        request["logicalModelId"],
+        None if anonymous else FROZEN_KEY,
+        headers=[] if anonymous else [FROZEN_HEADER],
+    )
+    assert model["has_api_key"] is (not anonymous)
+    assert model["headers"] == (
+        [] if anonymous else [{"name": FROZEN_HEADER["name"], "has_value": True}]
+    )
     task = admit(client, request)
     with app[1].begin() as session:
         row = session.get(AsyncTask, int(task["id"]))
@@ -70,14 +84,22 @@ def provider(
     gateway = GenerationGateway(app[2])
     calls = []
 
-    def response(method, url, snapshot, headers, body):
+    def response(method, url, snapshot, headers, body, *, canvas_video, agnes_video):
         calls.append((method, url))
         assert method == "GET" and body is None
+        assert canvas_video is False and agnes_video is False
         assert url == (
             "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/" + PROVIDER_ID
         )
         assert snapshot["budget_seconds"] <= 60
-        assert headers == ({} if anonymous else {"Authorization": "Bearer " + FROZEN_KEY})
+        assert headers == (
+            {}
+            if anonymous
+            else {
+                "Authorization": "Bearer " + FROZEN_KEY,
+                FROZEN_HEADER["name"]: FROZEN_HEADER["value"],
+            }
+        )
         if observation:
             observation()
         return {
@@ -105,7 +127,12 @@ def test_original_video_query_preserves_failure_and_never_creates_generation(
         identity_app, "canvas_video_query_" + status
     )
     before = client.get(path + "/my-document").json()
-    update_key(client, request["logicalModelId"], "rotated-new-video-key")
+    update_key(
+        client,
+        request["logicalModelId"],
+        "rotated-new-video-key",
+        headers=[{"name": FROZEN_HEADER["name"], "value": "rotated-new-video-header"}],
+    )
     calls = provider(identity_app, monkeypatch, status=status)
     response = client.post(query_path(task))
     assert response.status_code == 200, response.text
@@ -115,6 +142,8 @@ def test_original_video_query_preserves_failure_and_never_creates_generation(
     assert result["task"]["id"] == task["id"]
     assert result["task"]["outputs"] == []
     assert FROZEN_KEY not in response.text and "rotated-new-video-key" not in response.text
+    assert FROZEN_HEADER["value"] not in response.text
+    assert "rotated-new-video-header" not in response.text
     assert len(calls) == 1
     assert records(identity_app, user) == {"tasks": 1, "records": 1, "bindings": 1}
     assert client.get(path + "/my-document").json() == before
@@ -125,13 +154,21 @@ def test_original_video_query_preserves_failure_and_never_creates_generation(
 
 
 def test_originally_anonymous_frozen_provider_remains_anonymous(identity_app, monkeypatch):
-    client, _, _, _, _, task = failed_video(
+    client, user, _, path, request, task = failed_video(
         identity_app, "canvas_video_query_anonymous", anonymous=True
     )
+    before = client.get(path + "/my-document").json()
+    update_key(client, request["logicalModelId"], FROZEN_KEY, headers=[FROZEN_HEADER])
     calls = provider(identity_app, monkeypatch, anonymous=True)
     response = client.post(query_path(task))
-    assert response.status_code == 200 and response.json()["recovered"] is False
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["recovered"] is False and result["task"]["status"] == "failed"
+    assert result["task"]["id"] == task["id"] and result["task"]["outputs"] == []
+    assert FROZEN_KEY not in response.text and FROZEN_HEADER["value"] not in response.text
     assert len(calls) == 1
+    assert records(identity_app, user) == {"tasks": 1, "records": 1, "bindings": 1}
+    assert client.get(path + "/my-document").json() == before
 
 
 @pytest.mark.parametrize("missing", ["unknown", "credentials", "unsafe-id", "unsupported"])

@@ -10,6 +10,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import NotFound, WorkflowError
+from short_drama.dao.canvas_dao import CanvasDAO
 from short_drama.domain import (
     AIGenerationRecord,
     AsyncTask,
@@ -18,15 +19,28 @@ from short_drama.domain import (
     CanvasTaskBinding,
     MediaAsset,
     MediaFile,
+    ProjectCanvas,
+)
+from short_drama.domain.canvas import (
+    CanvasNode,
+    CanvasNodeUserState,
+    CanvasRevision,
+    CanvasRevisionUserState,
+    CanvasUserState,
+    CanvasWriteReceipt,
 )
 from short_drama.domain.collaboration import AuditEvent, ProjectMember
 from short_drama.schemas.canvas_generation import CanvasTaskBindOperation, CanvasTaskRegistration
 from short_drama.service.ai_generation_service import AIGenerationService
 from short_drama.service.ai_model_config_service import AIModelConfigService
+from short_drama.service.asset_library_service import AssetLibraryService
+from short_drama.service.asset_service import AssetService
 from short_drama.service.base import utcnow
+from short_drama.service.canvas_character_catalog_service import CanvasCharacterCatalogService
 from short_drama.service.canvas_service import CanvasService
 from short_drama.service.canvas_task_outputs import generated_asset_id
 from short_drama.service.canvas_task_service import CanvasTaskService
+from short_drama.service.project_service import ProjectService
 from short_drama.utils.snowflake import next_id
 from tests.integration.test_canvas_workspace import actor, add_member, create, node
 
@@ -60,12 +74,237 @@ def test_bind_waiting_for_project_lock_preserves_the_latest_graph(db_session, mo
                         title="并发修改的标题", position={"x": 400.25, "y": -30.5}
                     )
 
-                edit_document(other, project_id, canvas_id, move)
+                latest = edit_document(other, project_id, canvas_id, move)
         finally:
             moved.set()
         receipt = pending.result()
     assert receipt["result"]["node"]["title"] == "并发修改的标题"
     assert receipt["result"]["node"]["position"] == {"x": 400.25, "y": -30.5}
+    persisted = CanvasService(db_session).read(project_id, canvas_id, private=True)
+    assert persisted["row_version"] == str(int(latest["row_version"]) + 1)
+    assert receipt["result"]["revision"] == persisted["row_version"]
+    assert persisted["source_document"]["nodes"][0] == receipt["result"]["node"]
+    assert persisted["source_document"]["nodes"][0]["metadata"]["content"] == "生成的正文"
+    with db_session.begin():
+        assert db_session.scalar(select(func.count()).select_from(CanvasResult)) == 1
+        assert (
+            db_session.scalar(
+                select(func.count())
+                .select_from(CanvasWriteReceipt)
+                .where(CanvasWriteReceipt.operation_kind == "canvas.task.bind")
+            )
+            == 1
+        )
+
+
+def character_fixture(session, project_id, canvas_id):
+    """角色及版本走真实服务；可信业务绑定仅由随机测试库的系统夹具写入。"""
+    previous_actor = session.info["actor"]
+    previous_scope = session.info.get("resource_scope")
+    session.info["actor"] = actor()
+    try:
+        source = ProjectService(session).create_project({"name": "角色来源", "aspect": "16:9"})
+        asset, created = AssetLibraryService(session).create(
+            "project",
+            source.id,
+            source.id,
+            {"kind": "character", "name": "原角色"},
+            "binding-character-" + uuid4().hex,
+        )
+        assert created
+        with Session(session.get_bind()) as trusted, trusted.begin():
+            trusted.get(ProjectCanvas, canvas_id).source_project_id = source.id
+            if previous_actor.user_id != 1:
+                trusted.add(
+                    ProjectMember(
+                        id=next_id(),
+                        project_id=source.id,
+                        user_id=previous_actor.user_id,
+                        status="active",
+                        joined_at=utcnow(),
+                    )
+                )
+        canvas = CanvasService(session).read(project_id, canvas_id)
+        item = CanvasCharacterCatalogService(session).get(canvas["source_key"], asset.id).item
+    finally:
+        session.info["actor"] = previous_actor
+        if previous_scope is None:
+            session.info.pop("resource_scope", None)
+        else:
+            session.info["resource_scope"] = previous_scope
+    return (
+        source.id,
+        asset,
+        {
+            **node("character"),
+            "title": item.name,
+            "metadata": {
+                "workflowKind": "character",
+                "characterAssetId": str(item.asset_id),
+                "characterVersionId": str(item.version_id),
+                "characterVersionPolicy": "current",
+                "characterName": item.name,
+                "characterAliases": [],
+                "characterDefinition": item.definition,
+                "characterCoverUrl": "",
+            },
+        },
+    )
+
+
+def persisted_bind_state(engine, canvas_id):
+    """无 Actor 的被动检查覆盖共享图、个人状态、历史、结果及写回执。"""
+    with Session(engine) as observed:
+        canvas = dict(
+            observed.execute(select(ProjectCanvas.__table__).where(ProjectCanvas.id == canvas_id))
+            .mappings()
+            .one()
+        )
+        return {
+            "canvas": canvas,
+            "children": {
+                model.__tablename__: [
+                    dict(row)
+                    for row in observed.execute(
+                        select(model.__table__)
+                        .where(model.canvas_id == canvas_id)
+                        .order_by(model.id)
+                    ).mappings()
+                ]
+                for model in (
+                    CanvasNode,
+                    CanvasNodeUserState,
+                    CanvasUserState,
+                    CanvasRevision,
+                    CanvasRevisionUserState,
+                    CanvasResult,
+                    CanvasWriteReceipt,
+                )
+            },
+        }
+
+
+@pytest.mark.parametrize(
+    ("initial_character", "mutation", "error_code"),
+    [
+        (False, "new_character", "canvas_binding_changed"),
+        (False, "new_character_without_revision", "canvas_binding_changed"),
+        (False, "source", "canvas_binding_changed"),
+        (False, "owning_revocation", "not_found"),
+        (True, "plain_edit", None),
+        (True, "role_version", "canvas_character_version_changed"),
+        (True, "source_revocation", "not_found"),
+    ],
+)
+def test_bind_rechecks_role_scope_after_preflight_without_losing_latest_graph(
+    db_session, monkeypatch, initial_character, mutation, error_code
+):
+    project_id, canvas_id = create(db_session)
+    add_member(db_session, project_id)
+    _, _, task_id, _, op = prepared(db_session, project=(project_id, canvas_id), user_id=2)
+    complete(db_session, task_id)
+    source_id, asset, character = character_fixture(db_session, project_id, canvas_id)
+    if initial_character:
+        edit_document(db_session, project_id, canvas_id, lambda doc: doc["nodes"].append(character))
+    initial = persisted_bind_state(db_session.get_bind(), canvas_id)
+    original = CanvasDAO.children
+    preflight_read, changed = Event(), Event()
+
+    def wait_after_preflight(self, model, identifier, **options):
+        rows = original(self, model, identifier, **options)
+        if (
+            self.session is db_session
+            and model is CanvasNode
+            and options.get("active")
+            and not options.get("lock")
+            and not preflight_read.is_set()
+        ):
+            preflight_read.set()
+            assert changed.wait(10)
+        return rows
+
+    monkeypatch.setattr(CanvasDAO, "children", wait_after_preflight)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(CanvasTaskService(db_session).bind, op)
+        assert preflight_read.wait(10)
+        try:
+            with Session(db_session.get_bind(), expire_on_commit=False, autoflush=False) as writer:
+                if mutation in {"new_character", "plain_edit", "role_version"}:
+                    writer.info["actor"] = actor()
+                if mutation == "new_character":
+                    edit_document(
+                        writer, project_id, canvas_id, lambda doc: doc["nodes"].append(character)
+                    )
+                elif mutation == "plain_edit":
+                    edit_document(
+                        writer,
+                        project_id,
+                        canvas_id,
+                        lambda doc: doc["nodes"][0].update(
+                            title="最新标题", position={"x": 42, "y": 8}
+                        ),
+                    )
+                elif mutation == "role_version":
+                    writer.info["request_project"] = source_id
+                    AssetService(writer).update(
+                        asset.id, {"row_version": asset.row_version, "name": "新角色"}
+                    )
+                else:
+                    # 不改画布版本的可信写入用于验证门禁不依赖版本 bump。
+                    with writer.begin():
+                        if mutation == "new_character_without_revision":
+                            row = writer.scalar(
+                                select(CanvasNode).where(
+                                    CanvasNode.canvas_id == canvas_id, CanvasNode.node_key == "a"
+                                )
+                            )
+                            row.content_json = {
+                                "title": character["title"],
+                                "metadata": character["metadata"],
+                            }
+                        elif mutation == "source":
+                            writer.get(ProjectCanvas, canvas_id).source_project_id = None
+                        else:
+                            member = writer.scalar(
+                                select(ProjectMember).where(
+                                    ProjectMember.project_id
+                                    == (
+                                        source_id if mutation == "source_revocation" else project_id
+                                    ),
+                                    ProjectMember.user_id == 2,
+                                )
+                            )
+                            member.status = "removed"
+            latest = persisted_bind_state(db_session.get_bind(), canvas_id)
+        finally:
+            changed.set()
+        if error_code is None:
+            receipt = pending.result()
+        else:
+            with pytest.raises(NotFound if error_code == "not_found" else WorkflowError) as caught:
+                pending.result()
+            assert caught.value.code == error_code
+            assert caught.value.status_code == (404 if error_code == "not_found" else 409)
+    if error_code is None:
+        document = CanvasService(db_session).read(project_id, canvas_id, private=True)
+        assert document["source_document"]["nodes"][0]["title"] == "最新标题"
+        assert receipt["result"]["node"]["position"] == {"x": 42, "y": 8}
+        assert document["source_document"]["nodes"][1] == character
+    else:
+        assert persisted_bind_state(db_session.get_bind(), canvas_id) == latest
+        if mutation in {"new_character_without_revision", "source"}:
+            assert latest["canvas"]["row_version"] == initial["canvas"]["row_version"]
+        with Session(db_session.get_bind()) as observed:
+            assert observed.scalar(select(func.count()).select_from(CanvasResult)) == 0
+            assert observed.scalar(select(func.count()).select_from(CanvasLibraryAsset)) == 0
+            assert (
+                observed.scalar(
+                    select(func.count())
+                    .select_from(CanvasWriteReceipt)
+                    .where(CanvasWriteReceipt.operation_kind == "canvas.task.bind")
+                )
+                == 0
+            )
 
 
 def test_replay_after_canvas_archive_keeps_historical_receipt_without_reviving_canvas(db_session):

@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy import bindparam, text
 
+from scripts.standard_creation_ddl import apply_ddl
+
 pytestmark = pytest.mark.integration
 
 TABLES = ("episodes", "shot_scripts", "assets", "shot_images", "asset_image_candidates")
@@ -61,14 +63,15 @@ def run_backfill(engine):
 
 def contract_snapshot(connection):
     table_params = {"names": TABLES}
+    # ORM 按列名访问；增量追加与完整 SQL 的物理列序可不同，列定义仍逐项严格核对。
     columns = connection.execute(
         text(
-            "SELECT table_name,column_name,ordinal_position,column_type,is_nullable,column_default,"
+            "SELECT table_name,column_name,column_type,is_nullable,column_default,"
             # Historical annotations may differ from Domain-generated canonical DDL.
             # Types, defaults, generated expressions and all constraints remain exact.
             "extra,generation_expression,character_set_name,collation_name "
             "FROM information_schema.columns WHERE table_schema=DATABASE() "
-            "AND table_name IN :names ORDER BY table_name,ordinal_position"
+            "AND table_name IN :names ORDER BY table_name,column_name"
         ).bindparams(bindparam("names", expanding=True)),
         table_params,
     ).mappings()
@@ -198,6 +201,7 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
         )
         connection.exec_driver_sql(
             "ALTER TABLE shot_scripts "
+            "DROP CHECK ck_shot_scripts_shot_size, DROP COLUMN title, DROP COLUMN shot_size, "
             "DROP CHECK ck_shot_scripts_video_settings, "
             "DROP COLUMN video_prompt, DROP COLUMN video_settings, "
             "DROP CHECK ck_shot_scripts_duration_ms, "
@@ -270,6 +274,8 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
             for path in sorted((MIGRATIONS.parent / directory).glob("*.sql")):
                 for statement in mysql_statements(path):
                     connection.exec_driver_sql(statement)
+        assert len(apply_ddl(connection)) == 3
+        assert apply_ddl(connection) == []
         assert contract_snapshot(connection) == canonical
 
         connection.exec_driver_sql("UPDATE episodes SET storyboard_version=7 WHERE id=9002")
@@ -285,6 +291,8 @@ def test_full_production_migration_is_reentrant_preserves_data_and_matches_canon
             run_sql(connection, name)
         run_backfill(migration_mysql_engine)
         run_sql(connection, "005_verify.sql")
+        assert apply_ddl(connection) == []
+        assert contract_snapshot(connection) == canonical
         assert connection.scalar(text("SELECT storyboard_version FROM episodes WHERE id=9002")) == 7
         assert connection.scalar(text("SELECT row_version FROM shot_scripts WHERE id=9007")) == 8
         assert connection.scalar(text("SELECT row_version FROM assets WHERE id=9004")) == 9

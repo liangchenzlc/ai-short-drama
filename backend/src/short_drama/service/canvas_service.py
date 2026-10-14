@@ -130,7 +130,7 @@ class CanvasService(BaseService):
             original = self.canvas_dao.canvas(project_id, canvas_id)
             if original is None:
                 raise NotFound("Canvas does not exist")
-            initial_version = original.row_version
+            initial_identity = (original.id, original.project_id, original.source_project_id)
             if (
                 publish_characters
                 or include_existing_characters
@@ -144,8 +144,15 @@ class CanvasService(BaseService):
         canvas = self.canvas_dao.canvas(project_id, canvas_id, lock=lock, refresh=refresh)
         if canvas is None:
             raise NotFound("Canvas does not exist")
-        if lock and include_existing_characters and canvas.row_version != initial_version:
-            raise WorkflowError("canvas_binding_changed", "加锁期间画布已变化，请重新读取", 409)
+        if lock and include_existing_characters:
+            if (canvas.id, canvas.project_id, canvas.source_project_id) != initial_identity:
+                raise WorkflowError(
+                    "canvas_binding_changed", "画布可信业务绑定已变化，请重新读取", 409
+                )
+            # 普通作品允许采用持锁后的最新图；新增角色必须重新按双项目顺序预检。
+            current_nodes = self.canvas_dao.children(CanvasNode, canvas.id, active=True, lock=True)
+            if any(character_node(node.content_json) for node in current_nodes):
+                raise WorkflowError("canvas_binding_changed", "加锁期间画布已变化，请重新读取", 409)
         return canvas
 
     @staticmethod

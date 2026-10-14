@@ -61,7 +61,8 @@ class ControlledProvider:
             "EXT. GARDEN - DAY\nA character enters."
             if scene == "novel_script"
             else (
-                '{"shots":[{"title":"Garden entrance","source_excerpt":"EXT. GARDEN - DAY",'
+                '{"shots":[{"title":"Garden entrance","shot_size":"wide_shot",'
+                '"source_excerpt":"EXT. GARDEN - DAY",'
                 '"story_beat":"A character enters the garden.","script":"Wide garden shot",'
                 '"duration_ms":3000,"asset_ids":[]}]}'
             )
@@ -217,6 +218,8 @@ def test_novel_to_storyboard_and_explicit_image_adoption(mysql_engine, db_sessio
         shot_id = applications[0]["shot_ids"][0]
         db_session.expire_all()
         assert board.list(p, e)["total"] == 1
+        adopted = board.get(p, e, shot_id)["shot"]
+        assert adopted["title"] == "Garden entrance" and adopted["shot_size"] == "wide_shot"
         with db_session.begin():
             assert (
                 db_session.scalar(

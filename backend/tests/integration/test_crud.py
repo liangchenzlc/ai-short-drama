@@ -2,9 +2,10 @@ from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound
+from short_drama.domain import Asset, AssetVersion, AssetVersionMediaReference
 
 pytestmark = pytest.mark.integration
 
@@ -45,7 +46,7 @@ def seed(session):
         {"project_id": project.id, "position": 1, "title": "episode", "aspect": "16:9"}
     )
     media = svc["MediaFile"].create({"format_code": "image/png", "storage_locator": uuid4().hex})
-    asset = svc["Asset"].create({"name": "asset", "kind": "character", "media_id": media.id})
+    asset = svc["Asset"].create({"name": "asset", "kind": "scene", "media_id": media.id})
     novel = svc["EpisodeNovel"].create({"episode_id": episode.id, "content": "novel"})
     shot = svc["ShotScript"].create({"episode_id": episode.id, "position": 1, "script": "shot"})
     global_asset = svc["GlobalAsset"].create({"asset_id": asset.id, "position": 1})
@@ -135,6 +136,68 @@ def test_crud_audit_pagination_and_restrict(db_session):
         svc["Project"].delete(rows["Project"].id)
     assert svc["Episode"].get(rows["Episode"].id).title == "changed"
     assert svc["Project"].get(rows["Project"].id).name == "changed"
+
+
+def test_character_and_historical_media_delete_preserve_immutable_history(db_session):
+    svc = services(db_session)
+    first, second = (
+        svc["MediaFile"].create({"format_code": "image/png", "storage_locator": uuid4().hex})
+        for _ in range(2)
+    )
+    original = svc["Asset"].create({"name": "character", "kind": "character", "media_id": first.id})
+    current = svc["Asset"].update(
+        original.id,
+        {"row_version": original.row_version, "name": "changed", "media_id": second.id},
+    )
+    assert current.media_id == second.id and current.media_id != first.id
+
+    def history():
+        with db_session.begin():
+            pointer = db_session.scalar(
+                select(Asset.current_version_id).where(Asset.id == original.id)
+            )
+            versions = [
+                dict(row)
+                for row in db_session.execute(
+                    select(AssetVersion.__table__)
+                    .where(AssetVersion.asset_id == original.id)
+                    .order_by(AssetVersion.version)
+                ).mappings()
+            ]
+            references = [
+                dict(row)
+                for row in db_session.execute(
+                    select(AssetVersionMediaReference.__table__)
+                    .where(AssetVersionMediaReference.asset_id == original.id)
+                    .order_by(AssetVersionMediaReference.id)
+                ).mappings()
+            ]
+            return pointer, versions, references
+
+    before = history()
+    pointer, versions, references = before
+    assert pointer == versions[-1]["id"]
+    assert [row["version"] for row in versions] == [1, 2]
+    assert [row["source_row_version"] for row in versions] == [1, 2]
+    assert [row["snapshot_json"]["asset"]["media_id"] for row in versions] == [
+        str(first.id),
+        str(second.id),
+    ]
+    assert {(row["version_id"], row["media_id"]) for row in references} == {
+        (versions[0]["id"], first.id),
+        (versions[1]["id"], second.id),
+    }
+    for service, identifier in (
+        (svc["Asset"], original.id),
+        (svc["MediaFile"], first.id),
+        (svc["MediaFile"], second.id),
+    ):
+        with pytest.raises(Conflict):
+            service.delete(identifier)
+        assert svc["Asset"].get(original.id) == current
+        assert svc["MediaFile"].get(first.id) == first
+        assert svc["MediaFile"].get(second.id) == second
+        assert history() == before
 
 
 def test_reorder_swaps_without_unique_conflict_and_rolls_back_invalid_ids(db_session):

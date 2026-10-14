@@ -1,21 +1,25 @@
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from threading import Event
 
 import pytest
 from sqlalchemy import inspect, select
+from test_asset_image_generation import flow as flow
 
 from scripts.standard_creation_ddl import apply_ddl
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
 from short_drama.db.session import session_factory
-from short_drama.domain import AIModelConfig, UserCreationDraft
+from short_drama.domain import AIModelConfig, Asset, MediaFile, UserCreationDraft
 from short_drama.domain.collaboration import ProjectMember, User
+from short_drama.service.ai_model_config_service import AIModelConfigService
 from short_drama.service.asset_library_service import AssetLibraryService
 from short_drama.service.base import utcnow
 from short_drama.service.episode_service import EpisodeService
 from short_drama.service.episode_storyboard_service import EpisodeStoryboardService
 from short_drama.service.episode_writing_service import EpisodeWritingService
 from short_drama.service.project_service import ProjectService
+from short_drama.service.shot_image_service import ShotImageService
 from short_drama.service.user_creation_draft_service import UserCreationDraftService
 
 pytestmark = pytest.mark.integration
@@ -64,6 +68,25 @@ def test_mysql_title_delta_and_legacy_format_clear_persist(db_session):
     db_session.expunge_all()
     assert storyboard.get(project, episode, created["id"])["shot"]["title"] == "夜雨"
     assert storyboard.get(project, episode, created["id"])["shot"]["shot_size"] == "close_up"
+    changed = storyboard.update(
+        project,
+        episode,
+        created["id"],
+        {"row_version": created["row_version"], "title": "雨夜归来", "shot_size": None},
+    )["shot"]
+    db_session.expunge_all()
+    persisted = storyboard.get(project, episode, created["id"])["shot"]
+    assert persisted["title"] == "雨夜归来" and persisted["shot_size"] is None
+    assert int(persisted["row_version"]) == int(created["row_version"]) + 1
+    assert persisted["context_hash"] == changed["context_hash"] == created["context_hash"]
+    with pytest.raises(WorkflowError) as stale_shot:
+        storyboard.update(
+            project,
+            episode,
+            created["id"],
+            {"row_version": created["row_version"], "title": "旧名称"},
+        )
+    assert stale_shot.value.code == "shot_version_conflict"
     assert writing.get(project, episode)["editing_script"]["editor_document"] == delta
     modified = writing.save_script(
         project,
@@ -174,8 +197,30 @@ def test_mysql_private_draft_conflict_serializes_two_editors_and_hides_other_own
 
 
 def test_mysql_additive_upgrade_and_reentry_match_full_schema(migration_mysql_engine):
+    def structures(connection):
+        inspector = inspect(connection)
+        return {
+            table: {
+                "columns": {
+                    column["name"]: {
+                        "type": str(column["type"]),
+                        "nullable": column["nullable"],
+                        "default": column["default"],
+                        "comment": column["comment"],
+                    }
+                    for column in inspector.get_columns(table)
+                },
+                "indexes": inspector.get_indexes(table),
+                "unique": inspector.get_unique_constraints(table),
+                "foreign_keys": inspector.get_foreign_keys(table),
+                "checks": inspector.get_check_constraints(table),
+            }
+            for table in ("shot_scripts", "episode_scripts", "user_creation_drafts")
+        }
+
     with migration_mysql_engine.begin() as connection:
         assert connection.engine.url.database.endswith("_test")
+        canonical = structures(connection)
         connection.exec_driver_sql("DROP TABLE user_creation_drafts")
         connection.exec_driver_sql(
             "ALTER TABLE shot_scripts DROP CHECK ck_shot_scripts_shot_size, "
@@ -188,6 +233,7 @@ def test_mysql_additive_upgrade_and_reentry_match_full_schema(migration_mysql_en
         statements = apply_ddl(connection)
         assert len(statements) == 8
         assert apply_ddl(connection) == []
+        assert structures(connection) == canonical
         tables = inspect(connection)
         columns = {c["name"]: c for c in tables.get_columns("shot_scripts")}
         assert not columns["title"]["nullable"] and columns["shot_size"]["nullable"]
@@ -327,3 +373,202 @@ def test_mysql_draft_save_and_generation_freeze_share_lock_order(db_session):
         saved, frozen = pool.submit(save), pool.submit(freeze)
         assert saved.result(timeout=20) == "2"
         assert frozen.result(timeout=20) == "draft_version_conflict"
+
+
+@pytest.mark.parametrize(
+    "purpose", ["novel_adaptation", "asset_image", "storyboard_image", "storyboard_video"]
+)
+def test_mysql_private_generation_draft_is_frozen_without_changing_shared_work(flow, purpose):
+    project, episode = flow.project.id, flow.episode.id
+    identity(flow.session, project)
+    board = EpisodeStoryboardService(flow.session)
+    writing = EpisodeWritingService(flow.session)
+    model_id = flow.config.id
+    request = {}
+    if purpose == "novel_adaptation":
+        model_id = (
+            AIModelConfigService(flow.session)
+            .create(
+                {
+                    "service_type": "text",
+                    "name": "controlled private text",
+                    "model_key": "fixture",
+                    "provider": "ark",
+                    "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+                }
+            )
+            .id
+        )
+        saved = writing.save_novel(
+            project, episode, {"content_version": "1", "content": "夜雨中的共享小说。"}
+        )
+        object_id = str(episode)
+        source = {
+            "scene": "novel_script",
+            "project_id": str(project),
+            "episode_id": str(episode),
+            "content_version": saved["content_version"],
+        }
+
+        def shared_work():
+            return writing.get(project, episode)
+
+    elif purpose == "asset_image":
+        asset, _ = flow.library.create(
+            "episode",
+            episode,
+            project,
+            {"kind": "prop", "name": "红伞", "description": "共享描述", "prompt": "共享蓝光"},
+            "mysql-private-asset",
+        )
+        object_id = str(asset.id)
+        source = {
+            "scene": "asset_image",
+            "asset_id": object_id,
+            "project_id": str(project),
+            "episode_id": str(episode),
+            "row_version": "1",
+        }
+
+        def shared_work():
+            with flow.session.begin():
+                row = flow.session.get(Asset, asset.id)
+                return row.name, row.description, row.prompt, row.row_version
+
+    else:
+        shot = board.create(
+            project,
+            episode,
+            {
+                "storyboard_version": "1",
+                "title": "抬眼",
+                "script": "人物抬头看向雨中的共享街口。",
+                "duration_ms": 5000,
+            },
+            "mysql-private-shot",
+        )["shot"]
+        object_id = shot["id"]
+        if purpose == "storyboard_video":
+            model_id = (
+                AIModelConfigService(flow.session)
+                .create(
+                    {
+                        "service_type": "video",
+                        "name": "controlled private video",
+                        "provider": "modelhub",
+                        "model_key": "seedance-2.0-mini",
+                        "base_url": "https://api.modelhub.cc",
+                    }
+                )
+                .id
+            )
+            with flow.session.begin():
+                flow.session.add(
+                    MediaFile(
+                        id=101,
+                        format_code="image/png",
+                        storage_locator="minio://images/private-video-frame.png",
+                        width=16,
+                        height=9,
+                        project_id=project,
+                        published_at=utcnow(),
+                    )
+                )
+            ShotImageService(flow.session).create(
+                {
+                    "episode_id": episode,
+                    "shot_id": object_id,
+                    "media_id": "101",
+                    "layout": "single",
+                    "resolution": "2K",
+                    "aspect": "16:9",
+                    "context_hash": shot["context_hash"],
+                }
+            )
+            shot = board.get(project, episode, object_id)["shot"]
+            source = {
+                "scene": "shot_video",
+                "shot_id": object_id,
+                "row_version": shot["row_version"],
+                "context_hash": shot["video_context_hash"],
+                "reference_media_id": "101",
+            }
+        else:
+            source = {
+                "scene": "shot_image",
+                "shot_id": object_id,
+                "layout": "single",
+                "context_mode": "saved",
+                "row_version": shot["row_version"],
+                "context_hash": shot["context_hash"],
+            }
+
+        def shared_work():
+            return board.get(project, episode, object_id)["shot"]
+
+    draft_body = {
+        "object_id": object_id,
+        "purpose": purpose,
+        "model_config_id": str(model_id),
+        "input_text": "只在本次生成使用的私人补充",
+    }
+    if purpose in {"asset_image", "storyboard_image"}:
+        draft_body["image_settings"] = {"aspect": "9:16", "resolution": "2K", "count": 2}
+        request.update(
+            input={"prompt": ""},
+            parameters={"aspect": "16:9", "resolution": "2K", "count": 1},
+        )
+    elif purpose == "storyboard_video":
+        draft_body["video_settings"] = {"duration_ms": 7000, "resolution": "480p"}
+    drafts = UserCreationDraftService(flow.session)
+    draft = drafts.create_for_scope(project, episode, draft_body)
+    request["source"] = {
+        **source,
+        "draft_id": draft["id"],
+        "draft_version": draft["draft_version"],
+    }
+    original = deepcopy(shared_work())
+    kind = (
+        "text"
+        if purpose == "novel_adaptation"
+        else "video"
+        if purpose == "storyboard_video"
+        else "image"
+    )
+    task, created = flow.generations.create(kind, request, "mysql-private-" + purpose)
+    assert created
+    flow.session.expunge_all()
+    frozen = flow.generations.detail(task["generation_id"])
+    snapshot = frozen["source_snapshot"]["creation_draft"]
+    assert snapshot["id"] == draft["id"]
+    assert snapshot["purpose"] == purpose
+    assert snapshot["input_text"] == draft_body["input_text"]
+    assert snapshot["draft_version"] == "1"
+    if purpose == "novel_adaptation":
+        assert any(
+            draft_body["input_text"] in message["content"]
+            for message in frozen["input"]["messages"]
+        )
+    else:
+        assert draft_body["input_text"] in frozen["input"]["prompt"]
+    if purpose in {"asset_image", "storyboard_image"}:
+        assert frozen["parameters"] == draft_body["image_settings"]
+    elif purpose == "storyboard_video":
+        assert frozen["parameters"]["duration_ms"] == 7000
+        assert frozen["parameters"]["resolution"] == "480p"
+        assert frozen["input"]["reference_media_ids"] == ["101"]
+        assert shared_work()["duration_ms"] == 5000
+    drafts.update_for_scope(
+        project, episode, object_id, purpose, {"row_version": "1", "input_text": "后续私人输入"}
+    )
+    flow.session.expunge_all()
+    assert (
+        flow.generations.detail(task["generation_id"])["source_snapshot"]
+        == frozen["source_snapshot"]
+    )
+    assert shared_work() == original
+    replayed, created = flow.generations.create(kind, request, "mysql-private-" + purpose)
+    assert not created and replayed["generation_id"] == task["generation_id"]
+    with pytest.raises(WorkflowError) as stale:
+        flow.generations.create(kind, request, "mysql-stale-private-" + purpose)
+    assert stale.value.code == "draft_version_conflict"
