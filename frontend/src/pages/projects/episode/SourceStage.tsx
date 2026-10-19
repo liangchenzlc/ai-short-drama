@@ -1,4 +1,3 @@
-import { confirmAction } from '../../../components/ui/confirm';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Tooltip } from 'antd';
 import { BookOpen, PanelRight, Upload, X } from 'lucide-react';
@@ -12,6 +11,7 @@ import { decodeNovelFile } from '../../../features/projects/novel-import';
 import { ScriptStage } from './ScriptStage';
 import { Dialog } from '../../../components/ui/Dialog';
 import { useCreationDraft } from '../../../features/projects/useCreationDraft';
+import { creationScope, saveRecovery } from '../../../features/projects/creation-recovery';
 import type { NavigationBarrier } from '../../../features/projects/writing-navigation';
 import '../../../features/projects/novel-editor.css';
 
@@ -36,7 +36,8 @@ export function SourceStage({ value, writing, readOnly, onChange, projectId, epi
     try {
       if (!file.name.toLowerCase().endsWith('.txt')) throw new Error('请选择 .txt 文件。');
       const content = decodeNovelFile(await file.arrayBuffer());
-      if (writingSession.getSnapshot().novel.trim() && !await confirmAction('导入将替换本集小说正文并自动保存，剧本不受影响。继续导入？')) return;
+      const current = writingSession.getSnapshot();
+      if (current.novel.trim()) saveRecovery(creationScope(`writing-before-replace:${projectId}:${episodeId}`), current);
       writingSession.edit('novel', content);
       if (!await writingSession.flush()) throw new Error('导入内容已保留，自动保存未完成，请核对保存状态后重试。');
     } catch (cause) { setError(cause instanceof Error ? cause.message : '文件读取失败，请重新选择。'); }
@@ -54,7 +55,7 @@ export function SourceStage({ value, writing, readOnly, onChange, projectId, epi
     <NovelScriptGeneration projectId={projectId} episodeId={episodeId} contentVersion={writing.contentVersion} novel={writing.novel} disabled={readOnly || importing} session={writingSession} draft={draft} onEditScript={() => onTab('script')}
       settingsActions={<>
         <Tooltip title="查看原文"><Button type="text" size="small" aria-label="查看原文" icon={<BookOpen size={18}/>} onClick={() => setSourceOpen(true)}/></Tooltip>
-        <Tooltip title="收起改编设置"><Button type="text" size="small" aria-label="收起改编设置" icon={<X size={18}/>} onClick={() => { controls.setPanelOpen?.(false); focusSettingsToggle(); }}/></Tooltip>
+        <Tooltip title="收起剧本设置"><Button type="text" size="small" aria-label="收起剧本设置" icon={<X size={18}/>} onClick={() => { controls.setPanelOpen?.(false); focusSettingsToggle(); }}/></Tooltip>
       </>}
       settings={<EpisodeVisualSettings projectId={projectId} episodeId={episodeId} value={value} disabled={readOnly} onChange={onChange}/>}
       modelSelector={<div className="novel-text-model"><BookOpen size={12} aria-hidden="true"/><EpisodeModelSelect kind="text" label="文本模型" value={draft.value.model_config_id ?? ''} disabled={readOnly || !draft.loaded} onChange={id => draft.edit({ model_config_id: id || null })} onResolvedChange={id => { if (draft.loaded && !draft.value.model_config_id && id) draft.edit({ model_config_id: id }); }}/></div>}>
@@ -66,7 +67,7 @@ export function SourceStage({ value, writing, readOnly, onChange, projectId, epi
       <div className="novel-source-drawer-tools"><span>{writing.novel.length.toLocaleString()} 字</span><Button disabled={readOnly || writing.busy} loading={importing} icon={<Upload size={15}/>} onClick={() => input.current?.click()}>导入 TXT</Button><input hidden ref={input} type="file" accept=".txt,text/plain" aria-label="导入小说文件" onChange={event => void importFile(event.target.files?.[0])}/></div>
       {error && <Alert type="error" showIcon message={error}/>}
       <label className="novel-source-input"><span className="sr-only">本集小说正文</span><textarea id="episode-novel" className="episode-novel-text" rows={16} value={writing.novel} readOnly={readOnly || importing} placeholder="粘贴、导入或写下本集故事…" onChange={event => writingSession.edit('novel', event.target.value)}/></label>
-      <footer><span>停顿 1 秒自动保存</span><Button onClick={closeSource} disabled={importing}>返回剧本</Button></footer>
+      <footer><Button onClick={closeSource} disabled={importing}>返回剧本</Button></footer>
     </Dialog>
   </div>;
 }

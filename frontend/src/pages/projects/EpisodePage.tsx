@@ -1,4 +1,3 @@
-import { confirmAction } from '../../components/ui/confirm';
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { Alert, Button, Spin } from 'antd';
 import { lazy, Suspense } from 'react';
@@ -33,6 +32,8 @@ import { useAuth } from '../../features/auth/AuthSession';
 import { AccountControls } from '../../features/auth/AccountControls';
 import { accountStorage, workflowStorage } from '../../features/auth/account-storage';
 import { EpisodeCreationWorkspace } from '../../features/projects/EpisodeCreationWorkspace';
+import { StandardSaveStatus } from '../../features/projects/StandardSaveStatus';
+import { creationScope, readRecoveryText, saveRecovery } from '../../features/projects/creation-recovery';
 import { useAgentAvailability } from '../../features/agents/useAgentAvailability';
 import { withEpisodeView } from '../../features/agents/agent-navigation';
 import { assistantView, replaceEpisodeView, selectAssistantConversation, selectEpisodeObject, setAssistantOpen } from '../../features/projects/assistant-navigation';
@@ -65,19 +66,6 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
   const extractionBarrier = useRef<NavigationBarrier | null>(null);
   const assemblyBarrier = useRef<NavigationBarrier | null>(null);
   const sourceBarrier = useRef<NavigationBarrier | null>(null);
-  const [creationStates, setCreationStates] = useState<Record<string, { status: string; message?: string }>>({});
-  useEffect(() => {
-    const receive = (event: Event) => {
-      const { key, status, message } = (event as CustomEvent<{ key: string; status: string | null; message?: string }>).detail;
-      setCreationStates(previous => {
-        const next = { ...previous };
-        if (status === null) delete next[key]; else next[key] = { status, message };
-        return next;
-      });
-    };
-    window.addEventListener('creation-save-state', receive);
-    return () => window.removeEventListener('creation-save-state', receive);
-  }, []);
   const getStoryboardBarrier = useRef(() => ({
     hasUnsettled: () => !!sourceBarrier.current?.hasUnsettled() || !!storyboardBarrier.current?.hasUnsettled() || !!extractionBarrier.current?.hasUnsettled() || !!assemblyBarrier.current?.hasUnsettled(),
     flush: async () => {
@@ -150,10 +138,6 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
   const [localError, setLocalError] = useState('');
   const readOnly = session.mode === 'read';
   const writingReadOnly = readOnly || !writing.loaded || writing.status === 'loading' || !!writing.recoverable || !!writing.recoveryBlocked;
-  const priority = ['conflict', 'error', 'saving', 'unsaved', 'loading', 'local'];
-  const extraStatus = priority.find(status => Object.values(creationStates).some(item => item.status === status));
-  const saveState = ['conflict', 'error', 'saving', 'unsaved'].includes(writing.status) ? writing.status : extraStatus ?? writing.status;
-  const writingLabel = ({ loading: '正在载入…', saved: '已保存', local: '本机草稿已保留', unsaved: '等待保存', saving: '正在保存…', error: '保存失败', conflict: '版本冲突' } as Record<string, string>)[saveState];
   function goToStep(next: StageId) {
     ++legacyNavigation.current.generation;
     if (next === 'script') setWritingTab('script');
@@ -245,12 +229,30 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
     } catch { setLocalError('无法下载本机恢复记录，请检查浏览器存储权限后重试。'); }
   }
   async function reloadWriting() {
-    if (hasUnsettledWriting(writing) && !await confirmAction('载入服务端版本会替换当前草稿，尚未核实的保存结果也将以服务端为准。请先下载草稿备份。确定继续？')) return;
-    void writing.session.load();
+    try {
+      backupWriting();
+      await writing.session.reloadFromServer();
+    } catch (cause) { setLocalError(errorMessage(cause)); }
+  }
+  function backupWriting() {
+    saveRecovery(creationScope(`writing-before-replace:${session.projectId}:${episode.id}`), {
+      current: writing.session.getSnapshot(), recovery: writing.session.exportRecovered(),
+    });
   }
   async function importLegacy(field: 'novel' | 'script') {
-    if (!await confirmAction('将用浏览器旧稿替换当前编辑内容，并自动保存至服务端。确定导入？')) return;
-    writing.session.edit(field, legacy[field]); setShowLegacy(false);
+    try {
+      saveRecovery(creationScope(`writing-before-replace:${session.projectId}:${episode.id}`), writing.session.getSnapshot());
+      writing.session.edit(field, legacy[field]); setShowLegacy(false);
+    } catch (cause) { setLocalError(errorMessage(cause)); }
+  }
+  function exportReplacement() {
+    try {
+      const content = readRecoveryText(creationScope(`writing-before-replace:${session.projectId}:${episode.id}`));
+      if (!content) { setLocalError('本集没有替换前的本机副本。'); return; }
+      const url = URL.createObjectURL(new Blob([content], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url; link.download = `episode-${episode.id}-before-replace.json`; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (cause) { setLocalError(errorMessage(cause)); }
   }
   return <div className="episode-page web-episode">
     <header className="episode-top">
@@ -262,21 +264,30 @@ function EpisodeWorkspace({ session, episode, number, ready, onBack }: { session
         <span className="episode-mode-label">标准模式</span>
       </div>
       <div className="episode-project-actions">
-        <span className={`episode-save-state state-${saveState}`} title="作品与个人生成草稿的自动保存状态" role={saveState === 'error' || saveState === 'conflict' ? 'alert' : 'status'}>{writingLabel}</span>
+        <StandardSaveStatus>
+          {(writing.message || writing.recoverable || writing.recoveryBlocked) && <details className="standard-writing-review"><summary>剧本版本核对</summary>
+            <p>{writing.message || (writing.recoveryBlocked ? '本机恢复记录无法读取，原始内容仍保留。' : '本机内容与服务端版本不同，请选择继续使用的内容。')}</p>
+            <Button size="small" disabled={writing.busy} onClick={exportDraft}>下载当前内容</Button>
+            {(writing.recoverable || writing.recoveryBlocked) && <Button size="small" disabled={writing.busy} onClick={exportRecovery}>下载完整恢复记录</Button>}
+            {writing.recoverable && !writing.recoveryBlocked && <><pre>{writing.session.getRecoveredDraft()?.script}</pre><Button size="small" disabled={readOnly || writing.busy} onClick={() => void writing.session.restoreRecovered(!!writing.recoveryChanged)}>保留本机内容继续编辑</Button></>}
+            {writing.status !== 'conflict' && <Button size="small" disabled={writing.busy} onClick={() => void writing.session.retry()}>重试同步</Button>}
+            <Button size="small" disabled={writing.busy} aria-label="使用服务端版本" aria-busy={writing.status === 'loading'} loading={writing.status === 'loading'} onClick={() => void reloadWriting()}>使用服务端版本</Button>
+            {writing.recoveryBlocked && <Button size="small" disabled={writing.busy} onClick={() => { try { backupWriting(); writing.session.discardRecovered(); } catch (cause) { setLocalError(errorMessage(cause)); } }}>保留服务端内容并清除损坏记录</Button>}
+          </details>}
+          <Button type="link" size="small" onClick={exportReplacement}>下载替换前的本机副本</Button>
+        </StandardSaveStatus>
         <Button className="episode-assistant-entry" aria-label="AI 创作助手" icon={<StarOutlined aria-hidden="true"/>} aria-expanded={assistantOpen} aria-controls="agent-conversation-pane" onClick={() => updateParameters(previous => setAssistantOpen(previous.toString(), previous.get('assistant') !== 'open'))}>AI 创作助手</Button>
         <AccountControls compact/>
       </div>
     </header>
-    <TopStepNav projectId={session.projectId} episodeId={episode.id} currentStage={step} workflow={workflow} onStageChange={goToStep} />
+    <TopStepNav currentStage={step} onStageChange={goToStep}/>
     {readOnly && <p className="episode-readonly-notice">当前为只读模式，可查看本集内容。</p>}
     <div className="episode-layout">
         <EpisodeCreationWorkspace stage={step} subject={subject} onSubject={selectSubject} assistantOpen={assistantOpen} onCloseAssistant={closeAssistant} workRequest={artifactRequest?.accountId === (auth.user?.id ?? 'anonymous') ? artifactRequest.value.nonce : 0} assistantPanel={assistantMounted ? <Suspense fallback={<div role="status" className="studio-empty">正在载入 AI 创作助手…</div>}>
           <div hidden={!!legacyConversationId}><CreativeAssistantPanel layout="standard" open={assistantOpen && !legacyConversationId} key={auth.user?.id ?? 'anonymous'} projectId={session.projectId} projectTitle={session.project.name} accountId={auth.user?.id} readOnly={readOnly} onClose={closeAssistant} selectedConversationId={conversationId} onConversationChange={id => updateParameters(previous => selectAssistantConversation(previous.toString(), id))} onOpenModelSettings={() => navigate('/ai_config')} contextPreview={{ key: `${episode.id}:${step}:${subject?.id ?? ''}`, label: `${episode.title}${subject ? ` · ${subject.label}` : ''}` }} mentionReferences={subject ? [{ kind: subject.type, id: subject.id, name: subject.label, revision: subject.revision }] : []} prepareContext={prepareAssistantContext} onOpenLegacy={id => { void openLegacyRecord(id); }}/></div>
           {legacyConversationId && <LegacyCreationRecord key={`${auth.user?.id ?? 'anonymous'}:${legacyConversationId}`} projectId={session.projectId} episodeId={episode.id} id={legacyConversationId} accountId={auth.user?.id ?? 'anonymous'} readOnly={readOnly} beforeSend={saveBeforeAgentSend} onClose={closeAssistant} onBack={() => updateParameters(previous => { const next = new URLSearchParams(previous); next.delete('legacy_conversation'); return next; })} onConversation={setAgentConversation} onOpenArtifact={openArtifact}/>}</Suspense> : null}>
         {localError && <Alert type="error" showIcon message={localError}/>}
-        {(writing.recoverable || writing.recoveryBlocked) && <Alert type="warning" showIcon message={writing.recoveryBlocked ? '本机正文恢复记录无法读取' : '发现本机未保存的正文恢复稿'} description={writing.recoveryBlocked ? '请先下载完整恢复记录核对。明确放弃前不会覆盖记录或提交正文。' : writing.recoveryChanged ? '基准版本已变化，请对照当前正文；恢复前会重新读取最新版本。' : '恢复稿不会自动提交，可先下载完整内容核对再恢复。'} action={<div><Button disabled={writing.busy} onClick={exportRecovery}>下载完整恢复稿</Button>{!writing.recoveryBlocked && <Button disabled={readOnly || writing.busy} onClick={async () => { const draft = writing.session.getRecoveredDraft(); if (!draft) return; if (await confirmAction(`小说恢复稿（前 500 字）：\n${draft.novel.slice(0, 500)}\n\n剧本恢复稿（前 500 字）：\n${draft.script.slice(0, 500)}\n\n${writing.recoveryChanged ? '确认以最新服务端版本为基础保留恢复稿并继续编辑？' : '恢复到编辑器，核对后再保存？'}`)) await writing.session.restoreRecovered(!!writing.recoveryChanged); }}>核对并恢复正文</Button>}<Button disabled={writing.busy} onClick={async () => { if (await confirmAction('确定放弃本机正文恢复稿，保留当前服务端版本？')) { try { writing.session.discardRecovered(); } catch { setLocalError('无法清除本机正文恢复记录，请检查浏览器存储权限。'); } } }}>放弃恢复稿</Button></div>}/>}
-
-        {writing.message && <Alert type={writing.status === 'conflict' ? 'warning' : 'error'} showIcon message={writing.message} action={<div><Button disabled={writing.busy} onClick={exportDraft}>下载当前草稿</Button>{writing.status !== 'conflict' && <Button disabled={writing.busy} onClick={() => void writing.session.retry()}>重试</Button>}<Button disabled={writing.busy} onClick={reloadWriting}>载入服务端版本</Button></div>}/>}
+        {(writing.recoverable || writing.recoveryBlocked || writing.status === 'conflict') && <p className="episode-help">剧本存在版本差异，可在顶部保存状态中核对；仍可切换其他阶段。</p>}
         {(legacy.novel || legacy.script) && <p className="episode-help">发现浏览器旧稿，不会自动上传。<Button type="link" onClick={() => setShowLegacy(true)}>预览与导入</Button></p>}
         {!writing.loaded && step === 'source' && <div className="studio-empty" role="status">{writing.status === 'loading' ? <><Spin/> 正在载入本集内容…</> : '内容未载入，请重试后编辑。'}</div>}
         <Suspense fallback={<div className="studio-empty" role="status"><Spin /> 正在载入创作阶段…</div>}>

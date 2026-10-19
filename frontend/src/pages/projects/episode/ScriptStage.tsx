@@ -6,7 +6,7 @@ import type { ScriptDetail } from '../../../api/modules/storyboard';
 import type { EpisodeWorkflow } from '../../../features/projects/episode-workflow';
 import { QuillScriptEditor } from '../../../features/projects/QuillScriptEditor';
 
-export function ScriptStage({ script, editorDocument, confirmed, readOnly, busy, onEdit, onConfirm, actions, candidate, showingCandidate = false, onShowCandidate, onAdopt, message }: {
+export function ScriptStage({ script, editorDocument, readOnly, busy, onEdit, actions, candidate, showingCandidate = false, onShowCandidate, onAdopt, message }: {
   value: EpisodeWorkflow; script: string; editorDocument?: EditorDocument | null;
   confirmed: boolean; readOnly: boolean; busy: boolean;
   onEdit: (content: string, document: EditorDocument) => void; onConfirm: () => void;
@@ -26,7 +26,7 @@ export function ScriptStage({ script, editorDocument, confirmed, readOnly, busy,
   }
   return <section className="novel-script-panel" aria-label="本集剧本编辑">
     <header className="novel-script-heading"><h2>本集剧本</h2><div className="novel-script-heading-actions">
-      <span className={`status-badge ${preview ? 'is-pending' : confirmed ? 'is-success' : ''}`}>{preview ? '新结果 · 未采用' : confirmed ? '已确认定稿' : '草稿 · 待确认'}</span>
+      {preview && <span className="status-badge is-pending">新结果 · 未采用</span>}
       <Button type="text" size="small" icon={<Download size={15}/>} onClick={download} disabled={!script && !preview}>导出</Button>
       {actions}
     </div></header>
@@ -35,7 +35,6 @@ export function ScriptStage({ script, editorDocument, confirmed, readOnly, busy,
       <QuillScriptEditor content={script} document={editorDocument} readOnly={readOnly} onChange={onEdit} toolbarActions={switches}/>
     </div>
     {preview && <QuillScriptEditor key={preview.id} content={preview.content} readOnly label="新剧本结果预览" toolbarActions={switches}/>}
-    {preview ? <footer className="novel-script-result"><strong>新剧本 · 未采用</strong><Button type="primary" aria-label="采用并编辑" loading={busy} disabled={readOnly || busy} onClick={onAdopt}>采用并编辑</Button></footer>
-      : !confirmed && <footer className="novel-script-confirm"><strong>草稿待确认</strong><Button type="primary" aria-label="确认当前剧本" loading={busy} disabled={readOnly || busy || !script.trim()} onClick={onConfirm}>确认当前剧本</Button></footer>}
+    {preview && <footer className="novel-script-result"><strong>新剧本 · 未采用</strong><Button type="primary" aria-label="采用并编辑" loading={busy} disabled={readOnly || busy} onClick={onAdopt}>采用并编辑</Button></footer>}
   </section>;
 }

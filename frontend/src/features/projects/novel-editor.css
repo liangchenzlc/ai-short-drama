@@ -72,7 +72,11 @@
 .novel-adaptation-settings .generation-composer-model .ant-select { height: 30px; font-size: 11px; }
 .novel-adaptation-settings .generation-composer-model .ant-select .ant-select-selector { height: 30px; min-height: 30px; border: 0; border-radius: 7px; background: transparent; }
 .novel-adaptation-settings .writing-assistant-hint { margin: 12px 0; font-size: 12px; color: var(--sub); }
-.novel-draft-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.novel-draft-feedback.ant-alert { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: var(--space-action); }
+.novel-draft-feedback .ant-alert-icon { margin-top: 4px; margin-inline-end: 0; }
+.novel-draft-feedback .ant-alert-content { overflow-wrap: anywhere; }
+.novel-draft-feedback .ant-alert-action { grid-column: 2; margin-inline-start: 0; }
+.novel-draft-actions { display: flex; gap: var(--space-action); flex-wrap: wrap; }
 .novel-uncertain-action { margin-top: 12px; width: 100%; }
 .novel-source-drawer.ui-dialog { position: fixed; left: 0; top: 0; bottom: 0; right: auto; margin: 0; width: min(500px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; padding: 0; border-radius: 0 12px 12px 0; box-shadow: none; }
 .novel-source-drawer[open] { display: flex; flex-direction: column; }

@@ -7,7 +7,7 @@ from sqlalchemy import inspect, select
 from test_asset_image_generation import flow as flow
 
 from scripts.standard_creation_ddl import apply_ddl
-from short_drama.core.exceptions import NotFound, WorkflowError
+from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
 from short_drama.db.session import session_factory
 from short_drama.domain import AIModelConfig, Asset, MediaFile, UserCreationDraft
@@ -37,6 +37,94 @@ def identity(session, project, user_id=1):
     )
     session.info["request_project"] = project
     session.info["resource_scope"] = (None, project)
+
+
+@pytest.mark.parametrize("kind", ["novel", "script", "asset", "draft", "shot"])
+def test_mysql_unchanged_save_fences_a_delayed_content_update(db_session, kind):
+    project, episode = scope(db_session)
+    identity(db_session, project)
+    writing = EpisodeWritingService(db_session)
+    if kind == "novel":
+        original = writing.save_novel(project, episode, {"content_version": "1", "content": "base"})
+    elif kind == "script":
+        original = writing.save_script(
+            project, episode, {"content_version": "1", "content": "base", "script_id": None}
+        )
+    elif kind == "asset":
+        asset, _ = AssetLibraryService(db_session).create(
+            "episode", episode, project, {"kind": "prop", "name": "base"}, "fence-asset"
+        )
+        original = {"row_version": str(asset.row_version), "id": str(asset.id)}
+    elif kind == "draft":
+        original = UserCreationDraftService(db_session).create_for_scope(
+            project,
+            episode,
+            {"object_id": str(episode), "purpose": "novel_adaptation", "input_text": "base"},
+        )
+    else:
+        original = EpisodeStoryboardService(db_session).create(
+            project, episode, {"storyboard_version": "1", "script": "base"}, "fence-shot"
+        )["shot"]
+    version = original.get("content_version", original.get("row_version"))
+
+    def save(session, content):
+        if kind == "novel":
+            result = EpisodeWritingService(session).save_novel(
+                project, episode, {"content_version": version, "content": content}
+            )
+            return result["content_version"], result["novel"]["content"]
+        if kind == "script":
+            result = EpisodeWritingService(session).save_script(
+                project,
+                episode,
+                {
+                    "content_version": version,
+                    "script_id": original["script"]["id"],
+                    "content": content,
+                },
+            )
+            return result["content_version"], result["script"]["content"]
+        if kind == "asset":
+            result = AssetLibraryService(session).patch(
+                original["id"], {"row_version": version, "name": content}
+            )
+            return str(result.row_version), result.name
+        if kind == "draft":
+            result = UserCreationDraftService(session).update_for_scope(
+                project,
+                episode,
+                str(episode),
+                "novel_adaptation",
+                {"row_version": version, "input_text": content},
+            )
+            return result["row_version"], result["input_text"]
+        result = EpisodeStoryboardService(session).update(
+            project, episode, original["id"], {"row_version": version, "script": content}
+        )["shot"]
+        return result["row_version"], result["script"]
+
+    factory = session_factory(db_session.get_bind())
+    prepared, release = Event(), Event()
+
+    def delayed_save():
+        with factory() as session:
+            identity(session, project)
+            prepared.set()
+            assert release.wait(timeout=15)
+            try:
+                save(session, "delayed obsolete edit")
+            except (Conflict, WorkflowError) as error:
+                return error.status_code
+            return "overwrote final input"
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(delayed_save)
+        try:
+            assert prepared.wait(timeout=15)
+            assert save(db_session, "base") == (str(int(version) + 1), "base")
+        finally:
+            release.set()
+        assert future.result(timeout=15) == 409
 
 
 def test_mysql_title_delta_and_legacy_format_clear_persist(db_session):

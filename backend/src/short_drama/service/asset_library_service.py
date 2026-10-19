@@ -14,7 +14,7 @@ from short_drama.domain.global_asset import GlobalAsset
 from short_drama.domain.project import Project
 from short_drama.schemas.asset import AssetImageRead, AssetPatch, AssetRead
 from short_drama.schemas.asset_library import AssetLibraryCreate, LibraryAssetRead
-from short_drama.schemas.base import parse_identifier
+from short_drama.schemas.base import UINT64_MAX, parse_identifier
 
 from .base import BaseService
 from .global_asset_service import GlobalAssetService
@@ -318,7 +318,10 @@ class AssetLibraryService(BaseService):
             changes = {
                 name: value for name, value in values.items() if getattr(asset, name) != value
             }
+            if asset.row_version >= UINT64_MAX:
+                raise Conflict("Asset version exhausted")
             if not changes:
+                self._apply_update(asset, {"row_version": asset.row_version + 1})
                 media = self.library.media(asset.media_id) if asset.media_id else None
                 return self._read(asset, media)
             references = self.library.reference_count(asset.id)

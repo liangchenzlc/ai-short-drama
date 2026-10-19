@@ -3,8 +3,8 @@ import { getAttemptAccount } from '../generations/attempt';
 export type RecoveryStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 export class CreationRecoveryError extends Error {}
 
-export function creationScope(scope: string): string {
-  const account = getAttemptAccount() ?? 'anonymous';
+export function creationScope(scope: string, actorId?: string): string {
+  const account = actorId ?? getAttemptAccount() ?? 'anonymous';
   return `creation-recovery:user:${account}:${scope}`;
 }
 export function recoveryStorage(): RecoveryStorage | null {

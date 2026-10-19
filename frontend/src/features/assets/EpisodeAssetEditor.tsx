@@ -12,6 +12,7 @@ import { ImagePicker } from '../media-library/ImagePicker';
 import { useEpisodeCreationControls } from '../projects/EpisodeCreationWorkspace';
 import { GenerationComposer } from '../projects/GenerationComposer';
 import { useCreationDraft } from '../projects/useCreationDraft';
+import { releaseStandardSession, retainStandardSession } from '../projects/standard-session-registry';
 import type { NavigationBarrier } from '../projects/writing-navigation';
 import { assetConfirmRequest } from '../projects/workflow-contract';
 import { ConfigSelect } from '../generations/ConfigSelect';
@@ -84,10 +85,11 @@ function ObjectPanel({ title, kind, settings, actions, status, tabs, preview, ch
   </section>;
 }
 
-export function LocalAssetEditor({ draft, readOnly, onChange, onRetry, onRemove, registerBarrier, onUploadBusyChange }: {
+export function LocalAssetEditor({ draft, readOnly, onChange, onRetry, onRemove, registerBarrier, onUploadBusyChange, onReferencesChange }: {
   draft: LocalAssetDraft; readOnly: boolean; onChange: (value: Partial<LocalAssetDraft>) => void; onRetry: () => void; onRemove: () => void;
   registerBarrier: (barrier: NavigationBarrier | null) => void;
   onUploadBusyChange: (busy: boolean) => void;
+  onReferencesChange: (ids: string[]) => void;
 }) {
   const settings = useSettingsPanel();
   const value = draft.generation ?? emptyAssetGeneration;
@@ -105,11 +107,10 @@ export function LocalAssetEditor({ draft, readOnly, onChange, onRetry, onRemove,
     return () => cancelAnimationFrame(frame);
   }, [draft.id]);
   const editPrivate = (patch: Partial<CreationDraftValue>) => onChange({ generation: { ...value, ...patch } });
-  return <ObjectPanel title={draft.name || '未命名素材'} kind={draft.kind ? labels[draft.kind] : undefined} settings={settings} status={<span className="standard-asset-status">本机草稿</span>} preview={<CreationImagePreview alt={draft.name || '未命名素材'} empty={<><strong>还没有采用的图片</strong><p>填写名称和类型后保存素材，再生成图片。</p><Button onClick={settings.reveal}>打开生成设置</Button></>}/>}>
+  return <ObjectPanel title={draft.name || '未命名素材'} kind={draft.kind ? labels[draft.kind] : undefined} settings={settings} preview={<CreationImagePreview alt={draft.name || '未命名素材'} empty={<><strong>还没有图片</strong><p>填写名称和类型后即可生成图片。</p><Button onClick={settings.reveal}>打开生成设置</Button></>}/>}>
     <AssetInformation value={draft} disabled={readOnly} onChange={onChange}/>
-    <div className="standard-asset-save-feedback" role="status">{draft.status === 'saving' ? '正在保存到服务端…' : '本机草稿已保留'}</div>
     {draft.message && <Alert type={draft.status === 'error' ? 'error' : 'warning'} message={draft.message} action={draft.status === 'unknown' || draft.status === 'error' ? <Button loading={false} onClick={onRetry}>{draft.status === 'unknown' ? '核对原创建请求' : '重试创建'}</Button> : undefined}/>}
-    <PrivateAssetReferences assetId={draft.id} projectId="" episodeId="" privateIds={value.reference_media_ids} saved={null} disabled={readOnly || draft.status === 'saving'} onChange={reference_media_ids => editPrivate({ reference_media_ids })} onState={ignoredReferenceState} onBusyChange={handleUploadBusy}/>
+    <PrivateAssetReferences assetId={draft.id} projectId="" episodeId="" privateIds={value.reference_media_ids} saved={null} disabled={readOnly || draft.status === 'saving'} onChange={onReferencesChange} onState={ignoredReferenceState} onBusyChange={handleUploadBusy}/>
     <GenerationComposer prompt={value.input_text} onPrompt={input_text => editPrivate({ input_text })} disabled={readOnly} model={<ConfigSelect kind="image" value={value.model_config_id ?? undefined} onChange={id => editPrivate({ model_config_id: id ?? null })} onResolvedChange={id => { if (id && id !== value.model_config_id && !readOnly) editPrivate({ model_config_id: id }); }} disabled={readOnly} label="生图模型"/>} parameters={<AssetGenerationParameters value={value} disabled={readOnly} onChange={editPrivate}/>} sendDisabled busy={false} onSend={() => {}}/>
     {!readOnly && <Button type="text" size="small" danger className="standard-local-asset-discard" aria-label="放弃本机素材草稿" disabled={draft.status === 'saving' || uploadBusy} onClick={onRemove}>放弃本机素材草稿</Button>}
   </ObjectPanel>;
@@ -121,11 +122,13 @@ export function EpisodeAssetEditor({ asset, scope, actor, readOnly, initialGener
   onArtwork: (asset: LibraryAssetRead) => void; onRemove: () => void; onShare?: () => Promise<void>;
 }) {
   const settings = useSettingsPanel();
-  const session = useMemo(() => new AssetEditingSession(asset, assetLibraries.update,
-    assetRecoveryStorage(assetRecoveryKey(actor, scope.projectId, scope.episodeId, asset.id))), [asset.id, actor, scope.projectId, scope.episodeId]);
+  const resourceKey = `asset:${asset.id}`;
+  const session = useMemo(() => retainStandardSession(actor, resourceKey, () => new AssetEditingSession(asset, assetLibraries.update,
+    assetRecoveryStorage(assetRecoveryKey(actor, scope.projectId, scope.episodeId, asset.id), `short-drama:asset-editor:v1:${actor}:${scope.projectId}:${scope.episodeId}:${asset.id}`), 1000, assetLibraries.detail),
+  { label: `素材 · ${asset.name}`, projectId: scope.projectId, episodeId: scope.episodeId }), [asset.id, actor, scope.projectId, scope.episodeId, resourceKey]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
-  const disposal = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => { clearTimeout(disposal.current); return () => { disposal.current = setTimeout(() => session.dispose(), 0); }; }, [session]);
+  useEffect(() => () => releaseStandardSession(actor, resourceKey), [session, actor, resourceKey]);
+  useEffect(() => { session.observe(asset); }, [session, asset]);
   const barriers = useRef<{ private: NavigationBarrier | null }>({ private: null });
   const registerPrivate = useCallback((barrier: NavigationBarrier | null) => { barriers.current.private = barrier; }, []);
   const draft = useCreationDraft({ projectId: scope.projectId, episodeId: scope.episodeId, objectId: asset.id, purpose: 'asset_image',
@@ -135,7 +138,7 @@ export function EpisodeAssetEditor({ asset, scope, actor, readOnly, initialGener
   useEffect(() => {
     if (!initialGeneration || !draft.loaded || readOnly || draft.saved) return;
     if (draft.status === 'saved' && currentGenerationKey !== initialGenerationKey) draft.edit(initialGeneration);
-    if (draft.status === 'local' || draft.status === 'unsaved') void draft.flush();
+    if (draft.status === 'idle' || draft.status === 'local' || draft.status === 'unsaved') void draft.flush();
   }, [initialGeneration, initialGenerationKey, currentGenerationKey, draft.loaded, draft.status, draft.saved, draft.flush, draft.edit, readOnly]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [candidates, setCandidates] = useState<AssetCandidate[]>([]);
@@ -167,6 +170,7 @@ export function EpisodeAssetEditor({ asset, scope, actor, readOnly, initialGener
   const busyRef = useRef(false); busyRef.current = busy || generationBusy || sharing;
   useEffect(() => {
     registerBarrier({ hasUnsettled: () => session.hasUnsettled() || !!barriers.current.private?.hasUnsettled() || busyRef.current,
+      hasMemoryOnlyChanges: () => session.hasMemoryOnlyChanges() || !!barriers.current.private?.hasMemoryOnlyChanges?.(),
       flush: async () => {
         if (busyRef.current || !await session.flush()) return false;
         if (barriers.current.private?.hasUnsettled() && !await barriers.current.private.flush()) return false;
@@ -209,7 +213,7 @@ export function EpisodeAssetEditor({ asset, scope, actor, readOnly, initialGener
   function downloadDraft() {
     let content = JSON.stringify({ asset_id: asset.id, scope, row_version: state.saved.row_version, draft: state.asset }, null, 2);
     if (state.recoveryBlocked) {
-      try { content = localStorage.getItem(assetRecoveryKey(actor, scope.projectId, scope.episodeId, asset.id)) ?? content; }
+      try { content = localStorage.getItem(assetRecoveryKey(actor, scope.projectId, scope.episodeId, asset.id)) ?? localStorage.getItem(`short-drama:asset-editor:v1:${actor}:${scope.projectId}:${scope.episodeId}:${asset.id}`) ?? content; }
       catch { setCandidateError('浏览器无法读取原恢复记录，下载中仅包含当前可读取的素材。'); }
     }
     const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));

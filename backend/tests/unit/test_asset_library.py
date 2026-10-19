@@ -4,10 +4,12 @@ from pydantic import ValidationError
 from sqlalchemy import event, select
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.domain import Asset, AssetVersion
+from short_drama.domain import Asset, AssetVersion, MediaFile
 from short_drama.schemas.asset import AssetCreate, AssetPatch
 from short_drama.schemas.asset_library import AssetLibraryCreate
 from short_drama.service.asset_library_service import AssetLibraryService, creation_fingerprint
+from short_drama.service.asset_version_service import AssetVersionService
+from short_drama.service.base import utcnow
 from short_drama.service.episode_service import EpisodeService
 from short_drama.service.project_service import ProjectService
 
@@ -161,3 +163,51 @@ def test_shared_patch_requires_confirmation_and_advances_one_asset_version():
             )
             assert [row.version for row in history] == [1, 2]
             assert session.get(Asset, int(item.id)).current_version_id == history[-1].id
+
+
+def test_unchanged_shared_asset_save_fences_delayed_edit_without_new_artwork_or_confirmation():
+    with generation_session() as session:
+        project = ProjectService(session).create({"name": "P", "aspect": "16:9"})
+        episode = EpisodeService(session).create(
+            {"project_id": project.id, "position": 1, "title": "E", "aspect": "16:9"}
+        )
+        service = AssetLibraryService(session)
+        asset, _ = service.create(
+            "project", project.id, project.id, {"kind": "character", "name": "Hero"}, "fence"
+        )
+        service.link("episode", episode.id, project.id, asset.id)
+        with session.begin():
+            now = utcnow()
+            row = session.get(Asset, int(asset.id))
+            image = MediaFile(
+                id=1,
+                project_id=row.project_id,
+                scope_user_id=row.scope_user_id,
+                format_code="image/png",
+                storage_locator="minio://images/fence.png",
+                original_name="fence.png",
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(image)
+            session.flush()
+            row.media_id = image.id
+            row.state = "confirmed"
+            AssetVersionService(session).append_locked(row)
+            artwork_version = row.current_version_id
+            history = list(session.scalars(select(AssetVersion.id)))
+        saved = service.patch(asset.id, {"row_version": "1", "name": "Hero"})
+        assert saved.row_version == 2
+        assert saved.state == "confirmed"
+        assert saved.reference_count == 2
+        with pytest.raises(WorkflowError) as conflict:
+            service.patch(
+                asset.id,
+                {"row_version": "1", "name": "obsolete", "confirm_shared": True},
+            )
+        assert conflict.value.code == "asset_version_conflict"
+        with session.begin():
+            row = session.get(Asset, int(asset.id))
+            assert row.name == "Hero"
+            assert row.current_version_id == artwork_version
+            assert list(session.scalars(select(AssetVersion.id))) == history

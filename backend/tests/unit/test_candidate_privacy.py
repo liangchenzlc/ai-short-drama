@@ -207,7 +207,9 @@ def test_three_members_only_see_own_execution_and_candidates_after_publication()
 
 @pytest.mark.parametrize("user_id", [1, 2])
 @pytest.mark.parametrize("status", ["ready", "rejected", "archived"])
-@pytest.mark.parametrize("operation", ["select", "save", "confirm"])
+@pytest.mark.parametrize(
+    "operation", ["select", "save", "confirm", "script_assets", "script_shots"]
+)
 def test_published_agent_script_still_requires_adoption_for_every_member(
     user_id, status, operation
 ):
@@ -238,10 +240,26 @@ def test_published_agent_script_still_requires_adoption_for_every_member(
                 writing.select_script(project_id, episode_id, payload)
             elif operation == "save":
                 writing.save_script(project_id, episode_id, {**payload, "content": "Changed"})
-            else:
+            elif operation == "confirm":
                 writing.confirm(
                     project_id, episode_id, "500", {"content_version": before["content_version"]}
                 )
+            else:
+                from short_drama.service.generation_context_service import GenerationContextService
+
+                with session.begin():
+                    GenerationContextService(session).prepare_text(
+                        {
+                            "source": {
+                                "scene": operation,
+                                "project_id": str(project_id),
+                                "episode_id": str(episode_id),
+                                **payload,
+                            },
+                            "parameters": {},
+                        },
+                        use_current_saved_script=True,
+                    )
         assert blocked.value.code == "agent_artifact_adoption_required"
         assert writing.get(project_id, episode_id) == before
         with session.begin():
@@ -250,7 +268,9 @@ def test_published_agent_script_still_requires_adoption_for_every_member(
             )
 
 
-@pytest.mark.parametrize("operation", ["select", "save", "confirm"])
+@pytest.mark.parametrize(
+    "operation", ["select", "save", "confirm", "script_assets", "script_shots"]
+)
 def test_adopted_agent_script_keeps_shared_editor_operations_without_private_artifact(operation):
     with generation_session() as session:
         project_id, episode_id, writing = seed(session)
@@ -274,13 +294,32 @@ def test_adopted_agent_script_keeps_shared_editor_operations_without_private_art
                 ]["content"]
                 == "Shared edit"
             )
-        else:
+        elif operation == "confirm":
             assert (
                 writing.confirm(
                     project_id, episode_id, "500", {"content_version": before["content_version"]}
                 )["confirmed_script_id"]
                 == "500"
             )
+        else:
+            from short_drama.service.generation_context_service import GenerationContextService
+
+            with session.begin():
+                request = GenerationContextService(session).prepare_text(
+                    {
+                        "source": {
+                            "scene": operation,
+                            "project_id": str(project_id),
+                            "episode_id": str(episode_id),
+                            **payload,
+                        },
+                        "parameters": {},
+                        "extraction": {"kinds": ["prop"]},
+                        "storyboard": {"average_shot_duration_ms": 3000},
+                    },
+                    use_current_saved_script=True,
+                )
+                assert request["source_snapshot"]["script_source_policy"] == "current_saved_v1"
         with session.begin():
             assert session.scalar(select(AgentArtifact.id).where(AgentArtifact.id == 800)) is None
 

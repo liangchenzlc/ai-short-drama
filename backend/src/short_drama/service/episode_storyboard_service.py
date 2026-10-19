@@ -401,11 +401,11 @@ class EpisodeStoryboardService(BaseService):
                     self.dao.require_episode_assets(episode.id, requested)
                     self.dao.replace_assets(shot, requested, now)
                     changed = True
+            shot.updated_at, shot.updated_by = now, None
+            advance_shot_version(shot)
             if changed:
-                shot.updated_at, shot.updated_by = now, None
-                advance_shot_version(shot)
                 advance_storyboard_version(episode)
-                self.session.flush()
+            self.session.flush()
             return {
                 "shot": self._shot(episode, shot),
                 "storyboard_version": str(episode.storyboard_version),

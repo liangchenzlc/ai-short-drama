@@ -78,12 +78,20 @@ test('storyboard timing summarizes generated beats and defaults legacy durations
   assert.deepEqual(workflow.storyboardTiming([]), { total_ms: 0, average_ms: 0 });
 });
 
-test('storyboard review keeps timing controls and loads compact result pages', () => {
+test('storyboard review keeps timing controls and loads compact result pages', async () => {
   const stage = readFileSync(new URL('../src/pages/projects/episode/StoryboardStage.tsx', import.meta.url), 'utf8');
   const preview = readFileSync(new URL('../src/features/projects/StoryboardResultPreview.tsx', import.meta.url), 'utf8');
   assert.match(stage, /平均镜头时长/);
   assert.match(stage, /自定义/);
-  assert.match(stage, /duration_ms:\s*shot\.duration_ms/);
+  const editingSource = readFileSync(new URL('../src/features/projects/storyboard-editing-session.ts', import.meta.url), 'utf8');
+  const editingFile = ts.createSourceFile('storyboard-editing-session.ts', editingSource, ts.ScriptTarget.Latest, true);
+  const draftFunction = editingFile.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'shotDraftValue');
+  assert.ok(draftFunction);
+  const draftSource = ts.createPrinter().printNode(ts.EmitHint.Unspecified, draftFunction, editingFile);
+  const draftCompiled = ts.transpileModule(draftSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
+  const { shotDraftValue } = await import(`data:text/javascript;base64,${Buffer.from(draftCompiled).toString('base64')}`);
+  const edited = { title: '短镜头', script: '雨落', duration_ms: 4500, asset_ids: ['9007199254740993'], image_settings: { aspect: '16:9' }, video_prompt: '推近', video_settings: { duration_ms: 5000 } };
+  assert.deepEqual(shotDraftValue({ ...edited, id: '42', row_version: '9' }), edited);
   assert.match(preview, /resultShots/);
   assert.match(preview, /LazyLoadMore/);
   assert.match(preview, /story_beat/);

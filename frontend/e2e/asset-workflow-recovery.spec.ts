@@ -34,12 +34,12 @@ test('project import excludes episode members beyond the first page', async ({ p
   expect(data.errors).toEqual([]);
 });
 
-test('image candidates show initial loading and recover from an initial error', async ({ page }) => {
+test('image group history shows initial loading and recovers from an initial error', async ({ page }) => {
   const data = await baseFixture(page);
   let release!: () => void;
   const delayed = new Promise<void>(resolve => { release = resolve; });
   let failed = true;
-  await page.route('**/api/v1/assets/501/image-candidates?*', async route => {
+  await page.route('**/api/v1/image-groups/history/asset/501?*', async route => {
     await delayed;
     if (failed) return route.fulfill({ status: 503, json: { error: { code: 'OFFLINE' } } });
     return route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 20 } });
@@ -48,13 +48,13 @@ test('image candidates show initial loading and recover from an initial error', 
   const editor = await openEditor(page);
   await editor.getByRole('button', { name: '生成记录', exact: true }).click();
   const history = page.getByRole('dialog', { name: '林晚 · 生成记录', exact: true });
-  await expect(history.getByText('正在读取图片候选…', { exact: true })).toBeVisible();
-  await expect(history.getByText('暂无图片候选。', { exact: true })).toHaveCount(0);
+  await expect(history.getByText('正在读取图片历史…', { exact: true })).toBeVisible();
+  await expect(history.getByText('生成或处理过的图片组会保留在这里。', { exact: true })).toHaveCount(0);
   release();
-  await expect(history.getByRole('button', { name: '重新读取候选', exact: true })).toBeVisible();
+  await expect(history.locator('.image-group-history').getByRole('button', { name: '重试', exact: true })).toBeVisible();
   failed = false;
-  await history.getByRole('button', { name: '重新读取候选', exact: true }).click();
-  await expect(history.getByText('暂无图片候选。', { exact: true })).toBeVisible();
+  await history.locator('.image-group-history').getByRole('button', { name: '重试', exact: true }).click();
+  await expect(history.getByText('生成或处理过的图片组会保留在这里。', { exact: true })).toBeVisible();
   expect(data.errors).toEqual([]);
 });
 
@@ -104,7 +104,7 @@ function extractionResult(asset: Record<string, any>, id = '88001') {
   return { generation_id: id, result_version: '1', content_version: '1', stale: false, kinds: ['character'], items: ['甲', '乙'].map((name, index) => ({ candidate_id: String(index).repeat(32), original: { ...asset, name, aliases: [] }, draft: { ...asset, name }, matches: [], duplicate_candidates: [], applied: null })) };
 }
 
-test('discarding one invalid unselected candidate preserves the other draft before adoption', async ({ page }) => {
+test('correcting an invalid unselected candidate preserves the other input without a discard confirmation', async ({ page }) => {
   const data = await baseFixture(page);
   const result = extractionResult(data.asset);
   const applications: any[] = [];
@@ -123,18 +123,20 @@ test('discarding one invalid unselected candidate preserves the other draft befo
   await page.goto(`${root}/assets`);
   await page.getByRole('button', { name: '从剧本提取素材', exact: true }).click();
   const review = page.locator('.asset-extraction-dialog');
-  const first = review.locator('.extraction-candidate').filter({ has: page.getByRole('heading', { name: '甲', exact: true }) });
-  const second = review.locator('.extraction-candidate').filter({ has: page.getByRole('heading', { name: '乙', exact: true }) });
+  const first = review.locator('.extraction-candidate').nth(0);
+  const second = review.locator('.extraction-candidate').nth(1);
   await first.getByRole('checkbox', { name: '选择 甲', exact: true }).uncheck();
   await first.getByRole('button', { name: '编辑', exact: true }).click();
-  await first.getByRole('textbox', { name: '素材描述', exact: true }).fill('');
+  await first.getByRole('textbox', { name: '素材名称', exact: true }).fill('');
   await second.getByRole('button', { name: '编辑', exact: true }).click();
   await second.getByRole('textbox', { name: '素材描述', exact: true }).fill('乙的合法修改');
   const adopt = review.getByRole('button', { name: '加入本集素材库（1）', exact: true });
   await expect(adopt).toBeDisabled();
-  await expect(first.getByText('请补充描述，或明确放弃此项修改。', { exact: true })).toBeVisible();
-  await first.getByRole('button', { name: '放弃此项修改', exact: true }).click();
-  await page.getByRole('dialog', { name: '未保存的修改', exact: true }).getByRole('button', { name: '放弃修改', exact: true }).click();
+  await expect(first.getByText('请补充名称，或明确放弃此项修改。', { exact: true })).toBeVisible();
+  await first.getByRole('button', { name: '编辑', exact: true }).click();
+  await first.getByRole('textbox', { name: '素材名称', exact: true }).fill('甲');
+  await expect(page.getByRole('dialog', { name: /未保存的修改|确认操作/ })).toHaveCount(0);
+  await second.getByRole('button', { name: '编辑', exact: true }).click();
   await expect(second.getByRole('textbox', { name: '素材描述', exact: true })).toHaveValue('乙的合法修改');
   await expect(adopt).toBeEnabled();
   await adopt.click();

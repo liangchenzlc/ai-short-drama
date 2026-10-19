@@ -14,7 +14,7 @@ from short_drama.schemas.base import parse_identifier
 
 from .asset_library_service import AssetLibraryService, creation_fingerprint
 from .base import BaseService, utcnow
-from .generation_context_service import content_hash
+from .generation_context_service import script_source_is_current
 
 
 def normalized(value):
@@ -68,12 +68,8 @@ class AssetExtractionService(BaseService):
         if for_update:
             statement = statement.with_for_update()
         script = self.session.scalar(statement)
-        return (
-            script is None
-            or episode.editing_script_id != script_id
-            or script.state != "confirmed"
-            or content_hash(script.content)
-            != record.request_data["source_snapshot"]["content_hash"]
+        return not script_source_is_current(
+            self.session, episode, script, record.request_data["source_snapshot"]
         )
 
     def _available(self, library, episode):
@@ -203,7 +199,7 @@ class AssetExtractionService(BaseService):
         if episode.content_version != parsed.content_version:
             raise WorkflowError("writing_version_conflict", "正文版本已变化，请刷新候选后重试")
         if self._stale(episode, record):
-            raise WorkflowError("source_changed", "剧本已变化，请根据当前已确认剧本重新提取")
+            raise WorkflowError("source_changed", "来源剧本已变化，请基于当前剧本重新提取")
         by_id = {item["candidate_id"]: item for item in result["items"]}
         # Stable lock order for batches reusing multiple shared assets.
         reuse_ids = sorted({item.asset_id for item in parsed.items if item.asset_id is not None})

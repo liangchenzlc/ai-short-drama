@@ -150,3 +150,81 @@ test('disposed sessions leave a replacement session recovery untouched when a sa
     } finally { newSession.dispose(); }
   }
 });
+
+test('shared asset recovery keys are identical across episodes and isolate different accounts', () => {
+  assert.equal(assetRecoveryKey('1', '2', '3', '4'), assetRecoveryKey('1', '2', '5', '4'));
+  assert.notEqual(assetRecoveryKey('1', '2', '3', '4'), assetRecoveryKey('9', '2', '3', '4'));
+});
+
+test('pending asset recovery CAS saves latest baseline input before an older request can overwrite it', async () => {
+  const storage = recovery(); const original = asset(); const writes = [];
+  storage.save({ base: original, fields: original, pending: { ...original, description: 'older in-flight fields' } });
+  const session = new AssetEditingSession(original, async (_, body) => {
+    writes.push(body); return { ...original, ...body, row_version: '2' };
+  }, storage, 60000);
+  assert.equal(session.getSnapshot().dirty, true); assert.notEqual(storage.value.pending, null);
+  await session.flush();
+  assert.equal(writes.length, 1); assert.equal(writes[0].row_version, '1'); assert.equal(writes[0].description, original.description);
+  assert.equal(storage.value, null); session.dispose();
+});
+
+test('lost asset response is read back before continuing newer serial input', async () => {
+  let server = asset(); const writes = []; const storage = recovery(); let lose = true;
+  const session = new AssetEditingSession(server, async (_, body) => {
+    writes.push(body); server = { ...server, ...body, row_version: String(BigInt(server.row_version) + 1n) };
+    if (lose) { lose = false; throw new Error('lost receipt'); } return server;
+  }, storage, 60000, async () => server);
+  session.edit({ description: 'new shared fields' }); await session.flush();
+  assert.equal(session.getSnapshot().status, 'saved'); assert.equal(writes.length, 1); assert.equal(storage.value, null); session.dispose();
+});
+
+test('another episode seed refreshes a clean shared session and never replaces dirty input or regresses versions', async () => {
+  const session = new AssetEditingSession(asset(), async () => asset(), recovery(), 60000);
+  session.observe({ ...asset(), row_version: '2', description: 'shared server version' });
+  assert.equal(session.getSnapshot().asset.description, 'shared server version');
+  assert.equal(session.getSnapshot().dirty, false);
+  session.observe(asset()); assert.equal(session.getSnapshot().saved.row_version, '2');
+  session.edit({ description: 'local input' });
+  session.observe({ ...asset(), row_version: '3', description: 'collaborator change' });
+  assert.equal(session.getSnapshot().status, 'conflict'); assert.equal(session.getSnapshot().asset.description, 'local input');
+  session.dispose();
+});
+
+for (const olderWins of [false, true]) {
+  test(`explicit asset server replacement fences the unknown request when ${olderWins ? 'older' : 'replacement'} commits first`, async () => {
+    const storage = recovery(); let server = asset(), older = null;
+    const commit = async body => {
+      if (body.row_version !== server.row_version) throw { status: 409, code: 'asset_version_conflict' };
+      server = { ...server, ...body, row_version: String(BigInt(server.row_version) + 1n) }; return server;
+    };
+    const session = new AssetEditingSession(server, async (_, body) => {
+      if (!older) { older = structuredClone(body); throw { status: 503 }; } return commit(body);
+    }, storage, 60000, async () => server);
+    try {
+      session.edit({ description: 'older request' }); await session.flush();
+      session.reconcile(server, false);
+      assert.equal(session.getSnapshot().asset.description, asset().description);
+      assert.equal(session.getSnapshot().dirty, true); assert.equal(storage.value.pending.description, 'older request');
+      if (olderWins) {
+        await commit(older); assert.equal(await session.flush(), null);
+        assert.equal(session.getSnapshot().status, 'conflict'); assert.equal(session.getSnapshot().asset.description, asset().description);
+        assert.notEqual(storage.value, null);
+      } else {
+        await session.flush(); await assert.rejects(commit(older), error => error.status === 409);
+        assert.equal(server.description, asset().description); assert.equal(server.row_version, '2');
+        assert.equal(storage.value, null);
+      }
+    } finally { session.dispose(); }
+  });
+}
+
+test('explicit asset server replacement clears an unknown request after the server version advances', async () => {
+  const storage = recovery(); const server = asset();
+  const session = new AssetEditingSession(server, async () => { throw { status: 503 }; }, storage, 60000, async () => server);
+  try {
+    session.edit({ description: 'older request' }); await session.flush();
+    session.reconcile({ ...server, row_version: '2', description: 'already accepted' }, false);
+    assert.equal(session.getSnapshot().asset.description, 'already accepted');
+    assert.equal(session.getSnapshot().dirty, false); assert.equal(storage.value, null);
+  } finally { session.dispose(); }
+});

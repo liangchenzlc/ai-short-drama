@@ -1,4 +1,3 @@
-import { confirmAction } from '../../components/ui/confirm';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Skeleton, Tooltip } from 'antd';
 import { History } from 'lucide-react';
@@ -222,7 +221,7 @@ export function NovelScriptGeneration({
   }
 
   async function select(item: ScriptCandidate) {
-    if (disabled || busy || !await confirmAction('切换前会先保存当前剧本草稿。确定设为当前编辑剧本？')) return;
+    if (disabled || busy) return;
     if (!isCurrent()) return;
     setBusy(true); setMessage(''); setMessageType('error');
     try {
@@ -250,14 +249,13 @@ export function NovelScriptGeneration({
       }}>核对生成请求</Button>}
       {!novel.trim() && <p className="writing-assistant-hint">先在“查看原文”中写入或导入小说。</p>}
       {draft.status === 'loading' && <p role="status">正在读取改编设置…</p>}
-      {draft.status === 'local' && <p className="creation-draft-feedback" role="status">{draft.message || '改编要求尚未保存到服务端。'}</p>}
-      {(draft.status === 'error' || draft.status === 'conflict') && <Alert type="warning" showIcon message={draft.message} action={<div className="novel-draft-actions">
+      {(draft.status === 'error' || draft.status === 'conflict') && <Alert className="novel-draft-feedback" type="warning" showIcon message={draft.message} action={<div className="novel-draft-actions">
         <Button size="small" onClick={() => {
           const url = URL.createObjectURL(new Blob([JSON.stringify(draft.value, null, 2)], { type: 'application/json' }));
           const link = document.createElement('a'); link.href = url; link.download = `episode-${episodeId}-adaptation-draft.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
         }}>下载草稿</Button>
         {draft.status === 'error' && <Button size="small" onClick={() => void draft.retry()}>重试保存</Button>}
-        <Button size="small" onClick={() => void confirmAction('载入服务端改编设置将放弃本机参数草稿，请先下载备份。继续？').then(ok => { if (ok) void draft.reload(); })}>载入服务端版本</Button>
+        <Button size="small" onClick={() => { try { saveRecovery(creationScope(`generation-before-replace:${projectId}:${episodeId}`), draft.value); void draft.reload(); } catch (cause) { setMessageType('error'); setMessage(errorMessage(cause)); } }}>使用服务端设置</Button>
       </div>}/>}
       {pending && <p role="status">剧本正在生成…</p>}</div>
     </aside></CreationSlot>
@@ -266,7 +264,7 @@ export function NovelScriptGeneration({
     {historyOpen && <Dialog title="剧本生成记录" className="script-preview-dialog" canClose={!busy} onClose={() => setHistoryOpen(false)}><section className="writing-candidates" aria-label="候选剧本">
       <header><div><h3>候选剧本 <span>{items.length}</span></h3><p>预览、比较，选中适合本集的一稿继续编辑。</p></div><Button disabled={busy || loading} onClick={() => { setTaskRevision(revision => revision + 1); setScriptRevision(revision => revision + 1); }}>刷新结果</Button></header>
       {loading ? <Skeleton title paragraph={{ rows: 2 }}/> : items.length ? <div className="script-candidate-list">{items.map(item => <article className={`script-candidate${item.is_editing ? ' is-current' : ''}`} key={item.id}>
-        <div className="candidate-copy"><h4>剧本 {item.position} {item.is_editing && <span className="status-badge">当前编辑</span>} {item.is_confirmed && <span className="status-badge is-success">已确认</span>}</h4><p>{item.preview || '暂无正文预览'}</p><time>{item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '时间未知'}</time></div>
+        <div className="candidate-copy"><h4>剧本 {item.position} {item.is_editing && <span className="status-badge">当前编辑</span>}</h4><p>{item.preview || '暂无正文预览'}</p><time>{item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '时间未知'}</time></div>
         <div className="candidate-actions"><Button disabled={busy} onClick={() => void show(item)}>预览全文</Button>{item.is_editing && <Button onClick={() => { setHistoryOpen(false); onEditScript(); }}>继续编辑</Button>}</div>
       </article>)}</div> : <div className="candidate-empty"><Icon name="film" size={28}/><div><strong>让故事多一种表达</strong><p>生成的剧本会出现在这里，原稿会保留。</p></div></div>}
       {tasks.length > 0 && <details className="writing-task-history"><summary>生成记录（{tasks.length}）</summary>{tasks.map(task => <div className="writing-task-row" key={task.generation_id}><span className={`status-badge status-${task.status}`}>{taskLabel(task)}</span><span>{task.error?.message || `任务 ${task.generation_id}`}</span></div>)}</details>}

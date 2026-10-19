@@ -1,8 +1,8 @@
 import type { AssetDraft, AssetRead, LibraryAssetRead } from '../../api/modules/assets';
 
 export type AssetSaveStatus = 'saved' | 'dirty' | 'saving' | 'error' | 'conflict' | 'shared';
-export interface AssetRecovery { base: LibraryAssetRead; fields: AssetDraft }
-export interface AssetRecoveryStorage { read: () => AssetRecovery | null; save: (value: AssetRecovery) => void; clear: () => void }
+export interface AssetRecovery { base: LibraryAssetRead; fields: AssetDraft; pending?: AssetDraft | null }
+export interface AssetRecoveryStorage { read: () => AssetRecovery | null; save: (value: AssetRecovery) => void; clear: () => void; backup?: (value: AssetRecovery) => void }
 export interface AssetEditingSnapshot {
   asset: LibraryAssetRead;
   saved: LibraryAssetRead;
@@ -17,6 +17,11 @@ export const assetFields = (asset: AssetDraft): AssetDraft => ({
 });
 const same = (left: AssetDraft, right: AssetDraft) => JSON.stringify(assetFields(left)) === JSON.stringify(assetFields(right));
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+function validFields(value: unknown): value is AssetDraft {
+  return record(value) && typeof value.kind === 'string' && ['character', 'scene', 'prop'].includes(value.kind)
+    && ['name', 'label', 'description', 'prompt', 'scene_time'].every(key => typeof value[key] === 'string')
+    && Array.isArray(value.tags) && value.tags.every(tag => typeof tag === 'string');
+}
 function validRecovery(value: unknown): value is AssetRecovery {
   if (!record(value) || !record(value.base) || !record(value.fields)) return false;
   const { base, fields } = value;
@@ -24,7 +29,8 @@ function validRecovery(value: unknown): value is AssetRecovery {
     && typeof base.row_version === 'string' && /^\d+$/.test(base.row_version)
     && typeof fields.kind === 'string' && ['character', 'scene', 'prop'].includes(fields.kind)
     && ['name', 'label', 'description', 'prompt', 'scene_time'].every(key => typeof fields[key] === 'string')
-    && Array.isArray(fields.tags) && fields.tags.every(tag => typeof tag === 'string');
+    && Array.isArray(fields.tags) && fields.tags.every(tag => typeof tag === 'string')
+    && (value.pending == null || validFields(value.pending));
 }
 
 /** Owns the shared artwork fields; private generation input has a separate session. */
@@ -34,6 +40,10 @@ export class AssetEditingSession {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private pending: Promise<LibraryAssetRead | null> | null = null;
   private disposed = false;
+  private active = true;
+  private epoch = 0;
+  private persistenceFailed = false;
+  private submitted: AssetDraft | null = null;
   private changeNo = 0;
   private approvedFields: AssetDraft | null = null;
 
@@ -42,6 +52,7 @@ export class AssetEditingSession {
     private update: (id: string, body: AssetDraft & { row_version: string; confirm_shared: boolean }) => Promise<AssetRead>,
     private recovery?: AssetRecoveryStorage,
     private pauseMs = 1000,
+    private read?: (id: string) => Promise<AssetRead>,
   ) {
     let recovered: AssetRecovery | null = null;
     let message = '';
@@ -53,13 +64,16 @@ export class AssetEditingSession {
     } catch { recoveryBlocked = true; message = '本机恢复记录无法读取。原记录已保留，请下载备份后明确清除。'; }
     const fields = recovered?.base.id === asset.id ? recovered.fields : null;
     const current = fields ? { ...asset, ...fields } : asset;
-    const dirty = !same(current, asset);
-    const changed = !!fields && recovered?.base.row_version !== asset.row_version;
+    const accepted = !!recovered?.pending && same(asset, recovered.pending) && asset.row_version === String(BigInt(recovered.base.row_version) + 1n);
+    this.submitted = accepted ? null : recovered?.pending ?? null;
+    const dirty = !same(current, asset) || !!this.submitted;
+    const changed = !!fields && (!same(current, asset) || !!this.submitted) && !accepted && recovered?.base.row_version !== asset.row_version;
     this.snapshot = {
       asset: current, saved: asset, dirty, recoveryBlocked,
       status: changed ? 'conflict' : dirty ? 'dirty' : message ? 'error' : 'saved',
       message: changed ? '服务端素材已变化，本机草稿已保留。请核对最新版本。' : message,
     };
+    if (dirty && !changed && !recoveryBlocked) this.timer = setTimeout(() => { void this.flush(); }, this.pauseMs);
   }
 
   getSnapshot = () => this.snapshot;
@@ -71,16 +85,18 @@ export class AssetEditingSession {
   private persist() {
     if (this.snapshot.recoveryBlocked) return;
     try {
-      if (this.snapshot.dirty) this.recovery?.save({ base: this.snapshot.saved, fields: assetFields(this.snapshot.asset) });
+      if (this.snapshot.dirty || this.submitted) this.recovery?.save({ base: this.snapshot.saved, fields: assetFields(this.snapshot.asset), pending: this.submitted });
       else this.recovery?.clear();
+      this.persistenceFailed = false;
     } catch {
+      this.persistenceFailed = true;
       this.publish({ message: '浏览器未能保留恢复稿，请保持本页打开或下载素材草稿。' });
     }
   }
   edit(patch: Partial<AssetDraft>) {
-    if (this.disposed) return;
+    if (this.disposed || !this.active) return;
     const asset = { ...this.snapshot.asset, ...patch };
-    const dirty = !same(asset, this.snapshot.saved);
+    const dirty = !same(asset, this.snapshot.saved) || !!this.submitted;
     this.changeNo += 1;
     this.approvedFields = null;
     const paused = ['conflict', 'shared', 'error'].includes(this.snapshot.status);
@@ -90,11 +106,13 @@ export class AssetEditingSession {
     if (!paused && dirty) this.timer = setTimeout(() => { void this.flush(); }, this.pauseMs);
   }
   hasUnsettled = () => this.snapshot.dirty || !!this.pending || ['error', 'conflict', 'shared'].includes(this.snapshot.status);
+  hasMemoryOnlyChanges = () => (this.snapshot.dirty || !!this.submitted) && (!this.recovery || this.persistenceFailed || this.snapshot.recoveryBlocked);
+  hasUnpersisted = this.hasMemoryOnlyChanges;
 
   flush = (): Promise<LibraryAssetRead | null> => {
     clearTimeout(this.timer);
     if (this.pending) return this.pending;
-    if (this.disposed || this.snapshot.recoveryBlocked || ['conflict', 'shared', 'error'].includes(this.snapshot.status)) return Promise.resolve(null);
+    if (this.disposed || !this.active || this.snapshot.recoveryBlocked || ['conflict', 'shared', 'error'].includes(this.snapshot.status)) return Promise.resolve(null);
     if (!this.snapshot.dirty) return Promise.resolve(this.snapshot.saved);
     const pending = this.saveQueue();
     this.pending = pending;
@@ -103,7 +121,8 @@ export class AssetEditingSession {
   };
 
   private async saveQueue(): Promise<LibraryAssetRead | null> {
-    while (this.snapshot.dirty && !this.disposed) {
+    const epoch = this.epoch;
+    while (this.snapshot.dirty && !this.disposed && this.active && epoch === this.epoch) {
       const submitted = this.snapshot.asset;
       if (!submitted.name.trim()) {
         this.publish({ status: 'error', message: '请填写素材名称，草稿已保留。' }); return null;
@@ -111,23 +130,40 @@ export class AssetEditingSession {
       const submittedFields = assetFields(submitted);
       const sequence = this.changeNo;
       const shared = this.approvedFields !== null && same(this.approvedFields, submittedFields);
+      const baseVersion = this.snapshot.saved.row_version;
+      this.submitted = { ...submittedFields, name: submitted.name.trim() }; this.persist();
       this.publish({ status: 'saving', message: '' });
       try {
         const next = await this.update(submitted.id, {
           ...submittedFields, name: submitted.name.trim(),
           row_version: this.snapshot.saved.row_version, confirm_shared: shared,
         });
-        if (this.disposed) return null;
+        if (this.disposed || !this.active || epoch !== this.epoch) return null;
         const saved = { ...this.snapshot.saved, ...next };
         // An acknowledgement updates the base version, but retains newer keystrokes.
         const asset = sequence === this.changeNo ? saved : { ...saved, ...assetFields(this.snapshot.asset) };
         const dirty = !same(asset, saved);
         this.publish({ saved, asset, dirty, status: dirty ? 'dirty' : 'saved' });
         this.approvedFields = null;
+        this.submitted = null;
         this.persist();
       } catch (cause) {
-        if (this.disposed) return null;
+        if (this.disposed || !this.active || epoch !== this.epoch) return null;
         const error = cause as { code?: string; status?: number; message?: string };
+        if (this.read && (!error.status || error.status >= 500 || error.status === 408)) {
+          try {
+            const latest = await this.read(submitted.id);
+            if (this.disposed || !this.active || epoch !== this.epoch) return null;
+            if (latest.row_version === String(BigInt(baseVersion) + 1n) && same(latest, this.submitted!)) {
+              const saved = { ...this.snapshot.saved, ...latest };
+              const asset = sequence === this.changeNo ? saved : { ...saved, ...assetFields(this.snapshot.asset) };
+              const dirty = !same(asset, saved);
+              this.submitted = null; this.approvedFields = null;
+              this.publish({ saved, asset, dirty, status: dirty ? 'dirty' : 'saved' }); this.persist(); continue;
+            }
+            if (latest.row_version !== baseVersion) { this.conflict(); return null; }
+          } catch { /* Retain the submitted snapshot until the next safe read. */ }
+        }
         const status = error.code === 'shared_asset_confirmation_required' ? 'shared'
           : error.code === 'asset_version_conflict' || error.status === 409 ? 'conflict' : 'error';
         this.publish({ status, message: status === 'shared' ? '保存会同步影响此素材的其他引用。请确认本次修改。'
@@ -137,11 +173,21 @@ export class AssetEditingSession {
         return null;
       }
     }
-    return this.disposed ? null : this.snapshot.saved;
+    return this.disposed || !this.active || epoch !== this.epoch ? null : this.snapshot.saved;
   }
 
   retry = async () => {
-    if (this.snapshot.status !== 'error' || this.snapshot.recoveryBlocked) return null;
+    if (!this.active || this.disposed || this.snapshot.status !== 'error' || this.snapshot.recoveryBlocked) return null;
+    if (this.read) {
+      const epoch = this.epoch;
+      try {
+        const latest = await this.read(this.snapshot.asset.id);
+        if (!this.active || epoch !== this.epoch) return null;
+        const accepted = this.submitted && latest.row_version === String(BigInt(this.snapshot.saved.row_version) + 1n) && same(latest, this.submitted);
+        if (accepted) { this.submitted = null; this.reconcile(latest, true); }
+        else if (latest.row_version !== this.snapshot.saved.row_version) { this.conflict(); return null; }
+      } catch { return null; }
+    }
     this.publish({ status: this.snapshot.dirty ? 'dirty' : 'saved', message: '' });
     return this.flush();
   };
@@ -153,11 +199,18 @@ export class AssetEditingSession {
   };
   reconcile(latest: AssetRead, keepDraft: boolean) {
     if (latest.id !== this.snapshot.asset.id || this.pending || this.snapshot.recoveryBlocked) return;
+    if (!keepDraft && this.snapshot.dirty) {
+      try { this.recovery?.backup?.({ base: this.snapshot.saved, fields: assetFields(this.snapshot.asset), pending: this.submitted }); }
+      catch { this.publish({ message: '无法保留替换前的素材副本，当前输入仍保留。请先下载后重试。' }); return; }
+    }
+    const unresolved = !!this.submitted && latest.row_version === this.snapshot.saved.row_version;
     const saved = { ...this.snapshot.saved, ...latest };
     const asset = keepDraft ? { ...saved, ...assetFields(this.snapshot.asset) } : saved;
+    if (!keepDraft && !unresolved) this.submitted = null;
     this.approvedFields = null;
     this.changeNo += 1;
-    this.publish({ saved, asset, dirty: !same(asset, saved), status: same(asset, saved) ? 'saved' : 'dirty', message: '' });
+    const dirty = !same(asset, saved) || !!this.submitted;
+    this.publish({ saved, asset, dirty, status: dirty ? 'dirty' : 'saved', message: '' });
     this.persist();
     clearTimeout(this.timer);
     if (this.snapshot.dirty && !this.disposed) this.timer = setTimeout(() => { void this.flush(); }, this.pauseMs);
@@ -173,20 +226,37 @@ export class AssetEditingSession {
   }
   /** Media adoption changes the base only after the explicit transaction succeeds. */
   accept(latest: AssetRead) { this.reconcile(latest, true); }
+  observe(latest: AssetRead) {
+    if (latest.id !== this.snapshot.asset.id || BigInt(latest.row_version) <= BigInt(this.snapshot.saved.row_version) || this.pending) return;
+    if (this.hasUnsettled()) this.conflict(); else this.reconcile(latest, false);
+  }
   conflict(message = '素材已在其他页面修改，草稿已保留。请核对最新版本。') {
     clearTimeout(this.timer); this.publish({ status: 'conflict', message }); this.persist();
   }
-  dispose() { this.disposed = true; clearTimeout(this.timer); this.listeners.clear(); }
+  suspend() { this.active = false; ++this.epoch; clearTimeout(this.timer); }
+  resume() {
+    if (this.active || this.disposed) return;
+    this.active = true;
+    const resume = () => {
+      if (['conflict', 'shared'].includes(this.snapshot.status) || this.snapshot.recoveryBlocked) return;
+      if (this.submitted) this.publish({ status: 'error' });
+      if (this.snapshot.status === 'error') void this.retry(); else void this.flush();
+    };
+    if (this.pending) void this.pending.finally(resume); else resume();
+  }
+  dispose() { this.disposed = true; this.suspend(); this.listeners.clear(); }
 }
 
 export function assetRecoveryKey(actorId: string, projectId: string, episodeId: string, assetId: string) {
-  return `short-drama:asset-editor:v1:${actorId}:${projectId}:${episodeId}:${assetId}`;
+  void episodeId;
+  return `short-drama:asset-editor:v2:${actorId}:${projectId}:${assetId}`;
 }
 
-export function assetRecoveryStorage(key: string): AssetRecoveryStorage {
+export function assetRecoveryStorage(key: string, legacyKey?: string): AssetRecoveryStorage {
   return {
-    read() { const value = localStorage.getItem(key); return value ? JSON.parse(value) as AssetRecovery : null; },
-    save(value) { localStorage.setItem(key, JSON.stringify(value)); },
-    clear() { localStorage.removeItem(key); },
+    read() { const value = localStorage.getItem(key) ?? (legacyKey ? localStorage.getItem(legacyKey) : null); return value ? JSON.parse(value) as AssetRecovery : null; },
+    save(value) { localStorage.setItem(key, JSON.stringify(value)); if (legacyKey) localStorage.removeItem(legacyKey); },
+    clear() { localStorage.removeItem(key); if (legacyKey) localStorage.removeItem(legacyKey); },
+    backup(value) { localStorage.setItem(`${key}:previous`, JSON.stringify(value)); },
   };
 }

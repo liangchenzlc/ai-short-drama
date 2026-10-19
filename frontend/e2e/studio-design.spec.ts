@@ -46,8 +46,20 @@ for (const width of [1024, 1440, 1920]) test(`all routes use the dark workspace 
   const state = await fixture(page, true);
   await page.setViewportSize({ width, height: 1000 });
   for (const [name, url, heading] of pages) {
-    await page.goto(url);
-    await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
+    if (url.startsWith(root) && new URL(page.url()).pathname.startsWith(root)) {
+      const stage = url.split('/').at(-1)!;
+      await page.getByRole('navigation', { name: '分集制作流程', exact: true }).getByRole('button', {
+        name: ({ assets: '素材生成', storyboard: '分镜制作', assembly: '成片合成' } as Record<string, string>)[stage], exact: true,
+      }).click();
+      await expect(page).toHaveURL(current => current.pathname === url);
+    } else {
+      if (new URL(page.url()).pathname.startsWith(root)) await expect(page.locator('.episode-save-state')).toHaveAttribute('aria-label', '保存状态：已保存');
+      await page.goto(url);
+    }
+    if (url.startsWith(root)) {
+      await expect(page.locator('.episode-switch')).toContainText(heading);
+      await expect(page.getByRole('navigation', { name: '分集制作流程', exact: true })).toBeVisible();
+    } else await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
     if (name === 'projects') await expect(page.locator('.project-tile')).toHaveCount(4);
     if (name === 'storyboard') await expect(page.locator('.storyboard-summary')).toHaveCount(20);
     if (name === 'assembly') await expect(page.getByRole('region', { name: '视频时间轴' })).toBeVisible();
@@ -158,13 +170,16 @@ test('production editor overlays and compact desktop layout remain usable', asyn
   const state = await fixture(page, true);
   await page.setViewportSize({ width: 1280, height: 960 });
   await page.goto(`${root}/assets`);
-  await page.getByRole('button', { name: '新建角色', exact: true }).first().click();
+  await page.locator('.standard-assets-filters').getByRole('button', { name: '角色', exact: true }).click();
+  await page.getByRole('button', { name: '新增素材', exact: true }).click();
+  await page.getByRole('textbox', { name: '素材名称', exact: true }).fill('站台旅客');
+  await expect.poll(() => state.requests.some(request => request.method === 'POST' && request.path === `${root}/assets` && request.body.name === '站台旅客')).toBe(true);
+  await expect(page).toHaveURL(url => url.searchParams.get('asset') === '504');
   await capture(page, info, 'asset-create');
-  await page.getByRole('button', { name: '取消', exact: true }).click();
   await page.getByRole('button', { name: '林晚', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '图片与生成', exact: true })).toBeVisible();
+  await expect(page.locator('.episode-asset-detail')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('林晚');
   await capture(page, info, 'asset-edit');
-  await page.getByRole('button', { name: '返回素材列表', exact: true }).click();
 
   await page.goto(`${root}/storyboard`);
   await page.locator('.storyboard-summary').first().click();
@@ -173,7 +188,8 @@ test('production editor overlays and compact desktop layout remain usable', asyn
   await page.getByRole('tab', { name: '分镜视频', exact: true }).click();
   await expect(page.locator('.shot-video-workspace')).toBeVisible();
   await capture(page, info, 'storyboard-video');
-  await page.getByRole('button', { name: /对白|声音表演/ }).click();
+  await page.locator('.storyboard-dialogue-settings > summary').click();
+  await page.getByRole('button', { name: '编辑并确认对白', exact: true }).click();
   await expect(page.locator('.native-dialogue-dialog')).toBeVisible();
   await capture(page, info, 'native-dialogue');
   await page.keyboard.press('Escape');

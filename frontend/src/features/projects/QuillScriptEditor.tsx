@@ -90,6 +90,10 @@ export function QuillScriptEditor({ content, document, readOnly, onChange, label
       quill.root.addEventListener('compositionend', endComposition);
       updateTools(); setLoading(false);
       cleanup = () => {
+        if (!latest.current.readOnly) {
+          const delta = normalizeDocument(quill.getContents() as EditorDocument);
+          if (JSON.stringify(delta) !== emitted.current) latest.current.onChange?.(documentText(delta), delta);
+        }
         clearTimeout(compositionTimer);
         quill.off('text-change', change);
         quill.off('selection-change', updateTools);

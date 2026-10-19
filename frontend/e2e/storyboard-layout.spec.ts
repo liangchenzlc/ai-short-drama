@@ -6,7 +6,16 @@ async function layoutFixture(page: Page) {
   state.shots[0].script = '中景，林晚停在雨夜中的站台。'.repeat(16);
   state.shots[0].title = '雨夜站台上等待来信主人的林晚'.repeat(5);
   state.shots[0].shot_size = 'medium_shot';
-  state.shots[1].image.is_stale = true;
+  const shot = state.shots[1];
+  state.imageGroups.set(`shot:${shot.id}`, {
+    id: '61102', kind: 'legacy', status: 'completed', target_kind: 'shot', target_id: shot.id,
+    target_version: shot.row_version, is_current: true, expected_count: 1, primary_index: 1,
+    primary_version: '1', notice: '创作内容已变化，请核对当前图片。', task_id: null,
+    created_at: '2026-09-24T00:00:00Z',
+    items: [{ id: '63102', media_id: shot.image.media_id, url: shot.image.url, output_index: 1,
+      width: 1920, height: 1080, item_version: '1', status: 'ready', error: null,
+      prompt: null, history: [] }],
+  });
   return state;
 }
 
@@ -52,13 +61,13 @@ test('fixed-height cards retain full accessible scripts and separate image and v
   const cards = page.locator('.storyboard-shot-card');
   await expect(cards).toHaveCount(20);
   await expect(cards.first().locator('.storyboard-card-media img')).toBeVisible();
-  await expect(cards.nth(3).getByText('尚无采用画面', { exact: true })).toBeVisible();
+  await expect(cards.nth(3).getByText('尚无主图', { exact: true })).toBeVisible();
   await expect(cards.nth(3).getByText('待制作', { exact: true })).toBeVisible();
   const firstCardButton = cards.first().getByRole('button', { name: '选择分镜 01', exact: true });
   await expect(firstCardButton).toHaveAccessibleDescription(/中景，林晚停在雨夜中的站台。/);
   await expect(firstCardButton).toHaveAccessibleDescription(new RegExp(`${state.shots[0].duration_ms / 1000}\\s*秒`));
-  await expect(firstCardButton).toHaveAccessibleDescription(/图片：已采用[\s\S]*视频：待制作/);
-  await expect(cards.nth(1).getByRole('button', { name: '选择分镜 02', exact: true })).toHaveAccessibleDescription(/图片：需核对/);
+  await expect(firstCardButton).toHaveAccessibleDescription(/图片：已有主图[\s\S]*视频：待制作/);
+  await expect(cards.nth(1).getByRole('button', { name: '选择分镜 02', exact: true })).toHaveAccessibleDescription(/图片：已有主图[\s\S]*视频：待制作/);
   await expect(cards.first().locator('.storyboard-card-heading strong')).toHaveAttribute('title', state.shots[0].title);
   await expect(cards.first().locator('.storyboard-card-heading')).toContainText('中景');
   await expect(cards.first().locator('.storyboard-summary-script,.storyboard-card-states')).toHaveCount(0);
@@ -135,7 +144,7 @@ test('batch selection is explicit and stays selected when a card opens', async (
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
 
-test('project assistant retains its draft while shot conflicts block navigation until explicitly resolved', async ({ page }) => {
+test('project assistant and shot input survive navigation while shot saving is conflicting', async ({ page }) => {
   const state = await layoutFixture(page);
   page.on('console', message => { if (message.text().includes('Encountered two children with the same key')) state.errors.push(message.text()); });
   await page.route('**/api/v1/auth/capabilities', route => route.fulfill({ json: { enabled: true } }));
@@ -174,16 +183,18 @@ test('project assistant retains its draft while shot conflicts block navigation 
   await script.fill('发生冲突仍保留的镜头草稿');
   const stages = page.getByRole('navigation', { name: '分集制作流程' });
   await stages.getByRole('button', { name: /素材生成/ }).click();
-  const confirmation = page.getByRole('dialog', { name: '未保存的修改', exact: true });
-  await expect(confirmation).toBeVisible();
-  await confirmation.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(page).toHaveURL(url => url.pathname.endsWith('/assets') && url.searchParams.get('conversation') === '301');
+  await expect(page.getByRole('dialog', { name: '未保存的修改', exact: true })).toHaveCount(0);
+  await expect(composer).toHaveValue('保留这段项目对话草稿');
+  await stages.getByRole('button', { name: '分镜制作', exact: true }).click();
+  await page.locator('.storyboard-summary').first().click();
   await expect(script).toHaveValue('发生冲突仍保留的镜头草稿');
   await expect(page.locator('#storyboard-image-pane').getByText('镜头保存已暂停，输入保留。', { exact: true })).toBeVisible();
   await expect(composer).toHaveValue('保留这段项目对话草稿');
   await expect(page).toHaveURL(url => url.pathname.endsWith('/storyboard'));
   conflict = false;
   await page.getByRole('button', { name: '载入服务端镜头', exact: true }).click();
-  await page.getByRole('button', { name: '确认继续', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '确认操作', exact: true })).toHaveCount(0);
   await expect(script).toHaveValue(state.shots[0].script);
   await script.fill('发生冲突仍保留的镜头草稿');
   await expect.poll(() => state.shots[0].script).toBe('发生冲突仍保留的镜头草稿');
@@ -223,7 +234,7 @@ test('storyboard follows the prototype heading, media tabs and settings structur
   const workspace = panel(page);
   const heading = workspace.locator('.standard-object-heading');
   await expect(heading.getByRole('heading', { name: '01 · 雨夜站台', exact: true })).toBeVisible();
-  await expect(heading.getByText('当前采用', { exact: true })).toBeVisible();
+  await expect(heading.getByText('当前主图', { exact: true })).toBeVisible();
   const tabs = workspace.getByRole('tablist', { name: '镜头制作内容', exact: true });
   await expect(heading.getByRole('tablist')).toHaveCount(0);
   const headingBox = (await heading.boundingBox())!;
@@ -242,9 +253,14 @@ test('storyboard follows the prototype heading, media tabs and settings structur
   expect(duration.y).toBeGreaterThan(number.y);
   await expect(page.getByRole('button', { name: '全部镜头', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: '待制作', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await expect(workspace.getByRole('button', { name: '缩小预览', exact: true })).toBeVisible();
-  await expect(workspace.getByRole('button', { name: '放大预览', exact: true })).toBeVisible();
-  await expect(workspace.getByRole('button', { name: '适合窗口', exact: true })).toBeVisible();
+  await workspace.locator('.image-subject').first().hover();
+  await workspace.getByRole('button', { name: '预览第 1 张图片', exact: true }).click();
+  const preview = page.getByRole('dialog', { name: '图片预览', exact: true });
+  await expect(preview.getByRole('button', { name: '放大镜', exact: true })).toBeEnabled();
+  await preview.getByRole('button', { name: '原始尺寸', exact: true }).click();
+  await expect(preview.getByRole('button', { name: '适应窗口', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(preview).toHaveCount(0);
   await workspace.getByRole('button', { name: '图片生成记录', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '分镜图片生成记录', exact: true })).toBeVisible();
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
@@ -258,7 +274,7 @@ test('adopted material references are selected into the private draft without ch
   await page.locator('.storyboard-summary').first().click();
   const references = panel(page).locator('#storyboard-image-pane').getByRole('region', { name: '个人参考图片', exact: true });
   await references.getByRole('button', { name: '添加参考图片', exact: true }).click();
-  const picker = page.getByRole('dialog', { name: '选择已采用的参考素材', exact: true });
+  const picker = page.getByRole('dialog', { name: '选择素材主图作为参考', exact: true });
   await expect(picker).toBeVisible();
   await picker.getByRole('checkbox', { name: '林晚', exact: true }).check();
   await picker.getByRole('button', { name: '确认选择', exact: true }).click();

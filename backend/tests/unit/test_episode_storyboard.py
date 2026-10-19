@@ -180,15 +180,24 @@ def test_create_replay_update_reorder_and_archive_preserve_versions_and_rows():
             first["shot"]["id"],
             {"row_version": "1", "script": ""},
         )
-        assert same["shot"]["row_version"] == "1"
+        assert same["shot"]["row_version"] == "2"
         assert same["storyboard_version"] == "2"
+        assert same["shot"]["context_hash"] == first["shot"]["context_hash"]
+        with pytest.raises(WorkflowError) as delayed:
+            service.update(
+                project_id,
+                episode_id,
+                first["shot"]["id"],
+                {"row_version": "1", "script": "delayed obsolete edit"},
+            )
+        assert delayed.value.code == "shot_version_conflict"
         changed = service.update(
             project_id,
             episode_id,
             first["shot"]["id"],
-            {"row_version": "1", "script": "close-up", "duration_ms": 5000},
+            {"row_version": "2", "script": "close-up", "duration_ms": 5000},
         )
-        assert changed["shot"]["row_version"] == "2"
+        assert changed["shot"]["row_version"] == "3"
         assert changed["shot"]["duration_ms"] == 5000
         assert changed["shot"]["source_excerpt"] == ""
         assert changed["storyboard_version"] == "3"

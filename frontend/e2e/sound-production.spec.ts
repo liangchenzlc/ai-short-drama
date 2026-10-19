@@ -22,7 +22,7 @@ test('reviewed dialogue, lost speech receipt, explicit adoption and SRT/music ed
     if (url.pathname === `${sound}/subtitles/import`) return reply({ subtitles: [{ start_ms: 500, end_ms: 1000, text: '你好，世界。' }] });
     throw new Error(`Unexpected sound endpoint ${req.method()} ${url.pathname}`);
   });
-  await page.goto('/e2e/sound-fixture.html');
+  await page.goto('/e2e/fixtures/sound-fixture.html');
   await page.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
   await page.getByRole('button', { name: /1. 甲/ }).click();
   await page.getByRole('button', { name: '生成此条配音' }).click();
@@ -65,17 +65,18 @@ test('reviewed dialogue, lost speech receipt, explicit adoption and SRT/music ed
   await page.screenshot({ path: '.runtime/sound-mobile.png', animations: 'disabled' });
   await page.getByRole('checkbox', { name: '已核对当前剪辑的声音与字幕时间' }).check();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.getByRole('dialog', { name: '未保存的修改', exact: true }).getByRole('button', { name: '放弃修改' }).click();
   await expect(page.getByRole('dialog', { name: '配音、字幕和配乐', exact: true })).toBeHidden();
+  await expect(page.getByRole('dialog', { name: '未保存的修改', exact: true })).toHaveCount(0);
+  await expect.poll(() => saved.length).toBe(3);
+  expect(saved.at(-1).reviewed).toBe(true);
   await page.getByRole('button', { name: '检查未保存状态' }).click();
   await expect(page.getByLabel('未保存状态')).toHaveText('false');
-  expect(saved.length).toBe(2);
   expect(errors).toEqual([]);
   expect(nativeDialogs).toEqual([]);
 });
 
 test('read-only episode does not open an editable sound panel', async ({ page }) => {
   await page.route('**/sound/capabilities', route => route.fulfill({ json: { enabled: true } }));
-  await page.goto('/e2e/sound-fixture.html?readonly=1');
+  await page.goto('/e2e/fixtures/sound-fixture.html?readonly=1');
   await expect(page.getByRole('button', { name: '声音、字幕和配乐', exact: true })).toBeDisabled();
 });

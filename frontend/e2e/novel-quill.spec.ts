@@ -40,7 +40,7 @@ test('Quill format-only edits save one version, survive refresh, and retain undo
   await expect(page.getByRole('button', { name: '确认当前剧本', exact: true })).toHaveCount(0);
   await editor.click(); await page.keyboard.press('Control+A');
   await page.getByRole('button', { name: '加粗', exact: true }).click();
-  await expect(page.getByRole('button', { name: '确认当前剧本', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '确认当前剧本', exact: true })).toHaveCount(0);
   await expect.poll(() => data.scriptWrites.length).toBe(1);
   const saved = data.scriptWrites[0];
   expect(saved.content).toBe(data.writing.editing_script.content);
@@ -138,7 +138,7 @@ test('composition waits for completed Chinese text and StrictMode does not dupli
   expect(data.errors).toEqual([]);
 });
 
-test('candidate preview occupies the script panel read-only and adoption remains separate from confirmation', async ({ page }) => {
+test('candidate preview stays read-only and one adoption action opens editing', async ({ page }) => {
   const data = await richFixture(page); await page.goto(`${root}/source`);
   const original = data.writing.editing_script.content;
   await page.getByRole('button', { name: '生成记录', exact: true }).click();
@@ -148,9 +148,9 @@ test('candidate preview occupies the script panel read-only and adoption remains
   await expect(page.getByRole('dialog', { name: '候选剧本预览', exact: true })).toHaveCount(0);
   expect(data.writing.editing_script.content).toBe(original);
   await page.getByRole('button', { name: '采用并编辑', exact: true }).click();
-  await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确认继续', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '确认操作', exact: true })).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: '本集剧本正文', exact: true })).toContainText('候选剧本');
-  await expect(page.getByRole('button', { name: '确认当前剧本', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '确认当前剧本', exact: true })).toHaveCount(0);
   expect(data.writing.editing_script.state).toBe('unconfirmed'); expect(data.errors).toEqual([]);
 });
 
@@ -175,6 +175,7 @@ test('unknown generation survives refresh and lookup reuses the original key wit
 
 test('completed generation previews the matching candidate automatically without changing the current script', async ({ page }) => {
   const data = await richFixture(page);
+  data.draft.input_text = '保留主线，突出本集冲突';
   let ready = false;
   await page.route('**/api/v1/ai/generations?**', async route => {
     const url = new URL(route.request().url());
@@ -214,6 +215,7 @@ test('mobile settings and original drawers preserve inputs without horizontal ov
 
 test('a delayed generation receipt cannot clear another account attempt or replace its generation state', async ({ page }) => {
   const data = await richFixture(page);
+  data.draft.input_text = '保留主线，突出本集冲突';
   const account = (id: string) => ({ id, username: `writer-${id}`, display_name: `创作者 ${id}`, email: `writer-${id}@example.test`, email_verified: true });
   await page.route('**/api/v1/auth/capabilities', route => route.fulfill({ json: { enabled: true } }));
   await page.route('**/api/v1/auth/me', route => route.fulfill({ json: { user: account('101') } }));
@@ -262,7 +264,7 @@ test('rich paste preserves supported formats and blank lines while TXT import an
   await page.getByRole('button', { name: '查看原文', exact: true }).click();
   const original = '导入的 UTF-8 小说原文\n\n结尾保留空行\n';
   await page.getByLabel('导入小说文件', { exact: true }).setInputFiles({ name: 'chapter.txt', mimeType: 'text/plain', buffer: Buffer.from(original) });
-  await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确认继续', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '确认操作', exact: true })).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: '本集小说正文', exact: true })).toHaveValue(original);
   await expect.poll(() => data.writing.novel.content).toBe(original);
   await page.getByRole('button', { name: '返回剧本', exact: true }).click();
@@ -272,6 +274,51 @@ test('rich paste preserves supported formats and blank lines while TXT import an
   await page.screenshot({ path: test.info().outputPath('novel-quill-1440.png') });
   expect(data.writing.editing_script.content).toBe(saved.content); expect(data.errors).toEqual([]);
 });
+
+for (const scenario of [
+  { name: 'desktop', width: 1440, height: 900, status: 404 },
+  { name: 'narrow desktop', width: 1000, height: 800, status: 404 },
+  { name: 'mobile conflict', width: 390, height: 844, status: 409 },
+  { name: 'small mobile', width: 320, height: 740, status: 404 },
+]) {
+  test(`adaptation draft feedback keeps text above wrapped actions on ${scenario.name}`, async ({ page }) => {
+    const data = await richFixture(page);
+    await page.route(`**/api/v1${root}/drafts**`, route => route.request().method() === 'GET'
+      ? route.fallback()
+      : route.fulfill({ status: scenario.status, json: { error: { code: scenario.status === 409 ? 'creation_draft_version_conflict' : 'NOT_FOUND' } } }));
+    await page.setViewportSize({ width: scenario.width, height: scenario.height });
+    await page.goto(`${root}/source`);
+    if (scenario.width <= 700) await page.getByRole('button', { name: '展开设置', exact: true }).click();
+    const settings = page.locator('.novel-adaptation-settings');
+    const prompt = settings.getByRole('textbox', { name: '改编要求', exact: true });
+    const input = '保留原著的悬念，让林晚在集尾发现信的主人。';
+    await expect(prompt).toBeEnabled(); await prompt.fill(input);
+    const feedback = settings.getByRole('alert');
+    await expect(feedback).toContainText(scenario.status === 409
+      ? '生成设置版本冲突，本机输入已保留，请载入服务端版本后核对。'
+      : '配置不存在或已被删除，请刷新列表。');
+    await feedback.scrollIntoViewIfNeeded();
+    const feedbackBox = (await feedback.boundingBox())!;
+    const messageBox = (await feedback.locator('.ant-alert-message').boundingBox())!;
+    const actions = feedback.locator('.novel-draft-actions');
+    const actionsBox = (await actions.boundingBox())!;
+    expect(messageBox.width).toBeGreaterThan(feedbackBox.width * 0.65);
+    expect(actionsBox.y).toBeGreaterThanOrEqual(messageBox.y + messageBox.height);
+    await expect(actions.getByRole('button', { name: '下载草稿', exact: true })).toBeVisible();
+    await expect(actions.getByRole('button', { name: '使用服务端设置', exact: true })).toBeVisible();
+    await expect(actions.getByRole('button', { name: '重试保存', exact: true })).toHaveCount(scenario.status === 409 ? 0 : 1);
+    for (const button of await actions.getByRole('button').all()) {
+      const box = (await button.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(messageBox.x - 1);
+      expect(box.x + box.width).toBeLessThanOrEqual(feedbackBox.x + feedbackBox.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(feedbackBox.y + feedbackBox.height);
+    }
+    await expect(prompt).toHaveValue(input);
+    expect(await settings.locator('.novel-adaptation-body').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+    await feedback.screenshot({ path: test.info().outputPath(`adaptation-draft-feedback-${scenario.width}.png`) });
+    expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+  });
+}
 
 test('novel layout follows the prototype settings header, paired fields and centered document', async ({ page }) => {
   const data = await richFixture(page);

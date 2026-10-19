@@ -3,6 +3,7 @@
 import hashlib
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from short_drama.ai.business_prompts import asset_image_prompt, image_prompt, text_messages
 from short_drama.ai.prompts.registry import PROMPT_VERSIONS
@@ -18,9 +19,31 @@ from short_drama.domain import (
     ShotScript,
 )
 
+from .episode_writing_service import EpisodeWritingService
+
+CURRENT_SAVED_SCRIPT_SOURCE_POLICY = "current_saved_v1"
+
 
 def content_hash(content):
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def script_source_is_current(
+    session: Session,
+    episode: Episode,
+    script: EpisodeScript | None,
+    snapshot: dict[str, object],
+) -> bool:
+    """新标准任务按正文判断来源；无策略标记的历史任务保留确认合同。"""
+    if (
+        script is None
+        or script.id != episode.editing_script_id
+        or content_hash(script.content) != snapshot.get("content_hash")
+    ):
+        return False
+    if snapshot.get("script_source_policy") == CURRENT_SAVED_SCRIPT_SOURCE_POLICY:
+        return not EpisodeWritingService(session)._requires_agent_adoption(script.id)
+    return script.state == "confirmed"
 
 
 def asset_snapshot(asset):
@@ -43,7 +66,7 @@ class GenerationContextService:
         self.session = session
         self.settings = settings
 
-    def prepare_text(self, request):
+    def prepare_text(self, request, *, use_current_saved_script=False):
         source = request["source"]
         episode = self.session.scalar(
             select(Episode)
@@ -73,13 +96,24 @@ class GenerationContextService:
                     EpisodeScript.episode_id == episode.id,
                 )
                 .with_for_update()
+                .execution_options(populate_existing=True)
             )
             if document is None:
                 raise NotFound("剧本不存在于当前分集")
-            if document.id != episode.editing_script_id or document.state != "confirmed":
+            if use_current_saved_script:
+                if document.id != episode.editing_script_id:
+                    raise WorkflowError("script_not_current", "请基于当前编辑剧本生成")
+                if EpisodeWritingService(self.session)._requires_agent_adoption(document.id):
+                    raise WorkflowError(
+                        "agent_artifact_adoption_required",
+                        "此剧本是尚未采用的 Agent 候选，请在原会话的创作候选中核对并采用。",
+                        422,
+                    )
+            elif document.id != episode.editing_script_id or document.state != "confirmed":
                 raise WorkflowError("script_not_confirmed", "请先确认当前剧本")
             if not document.content.strip():
-                raise WorkflowError("script_empty", "请先填写并确认剧本", 422)
+                message = "请先保存剧本正文" if use_current_saved_script else "请先填写并确认剧本"
+                raise WorkflowError("script_empty", message, 422)
         else:
             raise WorkflowError("invalid_source", "不支持的文本业务场景", 422)
         snapshot = {
@@ -89,6 +123,8 @@ class GenerationContextService:
             "aspect": episode.aspect,
             "style": episode.style,
         }
+        if use_current_saved_script and scene in {"script_shots", "script_assets"}:
+            snapshot["script_source_policy"] = CURRENT_SAVED_SCRIPT_SOURCE_POLICY
         if scene == "script_shots":
             assets = self.session.scalars(
                 select(Asset)

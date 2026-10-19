@@ -161,8 +161,8 @@ test('history shows a pending response before the empty state', async ({ page })
   await page.goto(`${root}/storyboard`); await page.getByRole('button', { name: '分镜生成记录', exact: true }).click();
   const history = page.getByRole('dialog', { name: '分镜生成记录', exact: true });
   await expect(history.getByText('正在加载分镜生成记录…', { exact: true })).toBeVisible();
-  await expect(history.getByText('暂无分镜生成记录，确认剧本后开始生成。', { exact: true })).toHaveCount(0);
-  release(); await expect(history.getByText('暂无分镜生成记录，确认剧本后开始生成。', { exact: true })).toBeVisible();
+  await expect(history.getByText('暂无分镜生成记录，编写或采用剧本后开始生成。', { exact: true })).toHaveCount(0);
+  release(); await expect(history.getByText('暂无分镜生成记录，编写或采用剧本后开始生成。', { exact: true })).toBeVisible();
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 

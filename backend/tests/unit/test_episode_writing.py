@@ -35,10 +35,38 @@ def test_empty_read_has_no_side_effects_and_novel_preserves_whitespace():
         assert saved["novel"]["updated_at"].endswith("Z")
         assert service.get(p, e)["novel"] == saved["novel"]
         same = service.save_novel(p, e, {"content": "  text\n\n", "content_version": "2"})
-        assert same == saved
+        assert same == {**saved, "content_version": "3"}
         with pytest.raises(Conflict):
             service.save_novel(p, e, {"content": "stale", "content_version": "1"})
         assert service.get(p, e)["novel"]["content"] == "  text\n\n"
+
+
+@pytest.mark.parametrize("field", ["novel", "script"])
+def test_unchanged_save_fences_a_delayed_write_without_changing_content_or_confirmation(field):
+    with generation_session() as session:
+        project, episode, service = setup(session)
+        if field == "novel":
+            service.save_novel(project, episode, {"content": "base", "content_version": "1"})
+        else:
+            saved = service.save_script(
+                project,
+                episode,
+                {"script_id": None, "content": "base", "content_version": "1"},
+            )
+            service.confirm(project, episode, saved["script"]["id"], {"content_version": "2"})
+        before = service.get(project, episode)
+        payload = {"content": "base", "content_version": before["content_version"]}
+        if field == "script":
+            payload["script_id"] = before["editing_script"]["id"]
+        save = getattr(service, f"save_{field}")
+        result = save(project, episode, payload)
+        assert result["content_version"] == str(int(before["content_version"]) + 1)
+        with pytest.raises(Conflict):
+            save(project, episode, {**payload, "content": "delayed obsolete edit"})
+        current = service.get(project, episode)
+        assert current["novel"] == before["novel"]
+        assert current["editing_script"] == before["editing_script"]
+        assert current["confirmed_script_id"] == before["confirmed_script_id"]
 
 
 def test_script_create_confirm_edit_and_empty_confirmation():
@@ -181,6 +209,35 @@ def test_prompt_only_schema_without_agent_table_keeps_script_workflow():
             )["editing_script"]["content"]
             == "Regular draft"
         )
+
+
+def test_format_only_script_save_keeps_legacy_confirmation_and_increments_version():
+    with generation_session() as session:
+        p, e, service = setup(session)
+        saved = service.save_script(
+            p, e, {"script_id": None, "content": "正文", "content_version": "1"}
+        )
+        sid = saved["script"]["id"]
+        service.confirm(p, e, sid, {"content_version": "2"})
+        formatted = service.save_script(
+            p,
+            e,
+            {
+                "script_id": sid,
+                "content": "正文",
+                "content_version": "3",
+                "editor_document": {
+                    "ops": [{"insert": "正文", "attributes": {"bold": True}}, {"insert": "\n"}]
+                },
+            },
+        )
+        assert formatted["content_version"] == "4"
+        assert formatted["script"]["state"] == "confirmed"
+        assert service.get(p, e)["confirmed_script_id"] == sid
+        with pytest.raises(Conflict):
+            service.save_script(
+                p, e, {"script_id": sid, "content": "旧窗口写入", "content_version": "3"}
+            )
 
 
 @pytest.mark.parametrize("operation", ["save", "confirm"])

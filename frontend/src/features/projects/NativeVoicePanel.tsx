@@ -1,5 +1,5 @@
 import { confirmAction } from '../../components/ui/confirm';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, Button, Checkbox, Input, Select, Spin } from 'antd';
 import { errorMessage } from '../../api/http';
 import { nativeVoiceApi as api, type CharacterVoice, type NativeDialogue, type SoundMode } from '../../api/modules/native-voice';
@@ -8,6 +8,10 @@ import { ConfigSelect } from '../generations/ConfigSelect';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import type { NavigationBarrier } from './writing-navigation';
 import { Dialog } from '../../components/ui/Dialog';
+import { useAuth } from '../auth/AuthSession';
+import { ResourceEditingSession } from './resource-editing-session';
+import { retainStandardSession, releaseStandardSession } from './standard-session-registry';
+import { creationScope, readRecovery, readRecoveryText, saveRecovery, clearRecovery, isStoredDraft, type StoredDraft } from './creation-recovery';
 import '../../app/native-voice.css';
 
 function useNativeEnabled() {
@@ -76,29 +80,68 @@ export function CharacterVoicePanel({ projectId, characterId, disabled }: { proj
 
 export function NativeDialoguePanel({ projectId, episodeId, shotId, disabled, prepare, onChanged, revision, registerBarrier }: { projectId: string; episodeId: string; shotId: string; disabled: boolean; prepare: () => Promise<unknown>; onChanged: () => void; revision?: number; registerBarrier?: (barrier: NavigationBarrier | null) => void }) {
   const enabled = useNativeEnabled();
-  const [state, setState] = useState<NativeDialogue | null>(null), [doc, setDoc] = useState<NativeDialogue['document'] | null>(null);
+  const { user } = useAuth();
+  const account = user?.id ?? 'anonymous', scope = `native-dialogue:${projectId}:${episodeId}:${shotId}`;
+  const session = useMemo(() => retainStandardSession(account, scope, () => {
+    const recoveryScope = creationScope(scope, account);
+    return new ResourceEditingSession<NativeDialogue, NativeDialogue['document']>({
+      read: () => api.dialogue(projectId, episodeId, shotId),
+      save: async (base, document, assertActive) => {
+        const body = { row_version: base.row_version, document };
+        const request_id = await requestAttempt(scope, body, attemptStorage());
+        assertActive();
+        const saved = await api.saveDialogue(projectId, episodeId, shotId, { ...body, request_id });
+        assertActive();
+        clearAttempt(scope, attemptStorage()); return saved;
+      },
+      version: value => String(value.row_version), document: value => value.document,
+      apply: (value, document) => ({ ...value, document }),
+      recovery: { read: () => readRecovery(recoveryScope, (value): value is StoredDraft<NativeDialogue['document']> => isStoredDraft(value) && !!value.document && typeof value.document === 'object' && Array.isArray((value.document as NativeDialogue['document']).lines) && typeof (value.document as NativeDialogue['document']).reviewed === 'boolean'),
+        save: value => saveRecovery(recoveryScope, value), clear: () => clearRecovery(recoveryScope), export: () => readRecoveryText(recoveryScope), previous: () => readRecoveryText(`${recoveryScope}:previous`), backup: raw => localStorage.setItem(`${recoveryScope}:previous`, raw) },
+    });
+  }, { label: '分镜对白', projectId, episodeId }), [account, scope, projectId, episodeId, shotId]);
+  const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const state = snapshot.value, doc = state?.document ?? null;
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
-  const lock = useRef(false), scope = `native-dialogue:${shotId}`;
-  useEffect(() => { if (!enabled || open) return; const controller = new AbortController(); void api.dialogue(projectId, episodeId, shotId, controller.signal).then(v => { if (!controller.signal.aborted) { setState(v); setDoc(v.document); } }).catch(e => { if (!controller.signal.aborted) setError(errorMessage(e)); }); return () => controller.abort(); }, [enabled, projectId, episodeId, shotId, revision, open]);
-  const dirty = JSON.stringify(doc) !== JSON.stringify(state?.document);
-  const live = useRef({ dirty, busy }); live.current = { dirty: open && dirty, busy };
-  useEffect(() => { registerBarrier?.({ hasUnsettled: () => live.current.dirty || live.current.busy, flush: async () => !live.current.dirty && !live.current.busy }); return () => registerBarrier?.(null); }, [registerBarrier]);
+  const lock = useRef(false);
+  useEffect(() => { if (enabled) void session.load(); }, [enabled, session, revision]);
+  useEffect(() => () => releaseStandardSession(account, scope), [account, scope]);
+  useEffect(() => { registerBarrier?.({ hasUnsettled: session.hasUnsettled, flush: session.flush }); return () => registerBarrier?.(null); }, [session, registerBarrier]);
   if (!enabled || state?.mode === 'legacy') return null;
-  const edit = (next: NativeDialogue['document']) => setDoc({ ...next, reviewed: false });
+  const edit = (next: NativeDialogue['document']) => session.edit({ ...next, reviewed: false });
   async function save() {
-    if (!state || !doc || lock.current || disabled) return; lock.current = true; setBusy(true); setError('');
-    try { if (!await prepare()) return; const body = { row_version: state.row_version, document: doc }; const request_id = await requestAttempt(scope, body, attemptStorage());
-      const next = await api.saveDialogue(projectId, episodeId, shotId, { ...body, request_id }); clearAttempt(scope, attemptStorage()); setState(next); setDoc(next.document); setOpen(false); onChanged();
-    } catch (e) { setError(errorMessage(e)); } finally { lock.current = false; setBusy(false); }
+    if (!state || !doc || lock.current || disabled) return;
+    lock.current = true; setBusy(true); setError('');
+    try { if (!await prepare()) return; if (await (session.getSnapshot().status === 'error' ? session.retry() : session.flush())) { setOpen(false); onChanged(); } }
+    catch (cause) { setError(errorMessage(cause)); }
+    finally { lock.current = false; setBusy(false); }
   }
+  async function chooseVersion(keepLocal: boolean) {
+    if (lock.current) return;
+    lock.current = true; setBusy(true); setError('');
+    try { await session.reload(keepLocal); }
+    catch (cause) { setError(errorMessage(cause)); }
+    finally { lock.current = false; setBusy(false); }
+  }
+  function downloadRecovery() {
+    try {
+      const raw = session.exportRecovered(); if (!raw) return;
+      const url = URL.createObjectURL(new Blob([raw], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url; link.download = `dialogue-${shotId}-recovery.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (cause) { setError(errorMessage(cause)); }
+  }
+  const versionActions = snapshot.status === 'conflict' || snapshot.recoveryBlocked
+    ? <div className="native-actions"><Button disabled={busy} onClick={() => void chooseVersion(true)}>以当前版本保留本机修改</Button><Button disabled={busy} onClick={() => void chooseVersion(false)}>使用服务端版本</Button></div>
+    : <Button disabled={busy} onClick={() => void session.retry()}>重试保存</Button>;
   return <section className="native-dialogue" aria-label="分镜原生对白"><h4>原生对白</h4>
     <p>{state?.document.reviewed ? `${state.document.lines.length} 句已确认对白` : '生成视频前，请确认角色、台词与音色；无对白镜头也需确认。'}</p>
     {state?.document.lines.map((line, i) => <p key={i}>{i + 1}. {state.characters.find(c => c.id === line.character_id)?.name ?? '角色已移除'}：{line.text}</p>)}
     {state?.voices.map(v => <div key={v.character_id}><span>{v.name} · {v.url ? `音色版本 ${v.version}` : '未绑定音色，请到角色库设计'}</span>{v.url && <audio aria-label={`${v.name}参考音色`} controls preload="none" src={v.url}/>}</div>)}
-    <Button disabled={disabled || !state} onClick={() => { setDoc(state!.document); setOpen(true); }}>编辑并确认对白</Button>
-    {error && !open && <Alert type="error" message={error}/>}
-    {open && doc && state && <Dialog className="native-dialogue-dialog" title="分镜对白与声音表演" canClose={!busy} onClose={async () => { if (!dirty || await confirmAction('对白尚未保存，放弃本次修改？')) { setOpen(false); setDoc(state.document); } }}>
-      <div className="native-voice"><p>最多两位角色按列表顺序轮流说话。角色外观沿用分镜参考图，声音使用角色库中已确认的样音。</p>{error && <Alert type="error" message={error}/>}
+    <Button disabled={disabled || !state} onClick={() => setOpen(true)}>编辑并确认对白</Button>
+    {session.hasPrevious() && <Button type="text" onClick={downloadRecovery}>下载本机备份</Button>}
+    {(error || snapshot.message) && !open && <Alert type="error" message={error || snapshot.message} action={versionActions}/>}
+    {open && doc && state && <Dialog className="native-dialogue-dialog" title="分镜对白与声音表演" onClose={() => { setOpen(false); void session.flush(); }}>
+      <div className="native-voice"><p>最多两位角色按列表顺序轮流说话。角色外观沿用分镜参考图，声音使用角色库中已确认的样音。</p>{(error || snapshot.message) && <Alert type="error" message={error || snapshot.message} action={versionActions}/>}
         <fieldset disabled={disabled || busy}>{doc.lines.map((line, i) => <div className="native-line" key={i}>
           <label>说话角色<Select aria-label={`第${i + 1}句角色`} value={line.character_id || undefined} options={state.characters.map(c => ({ value: c.id, label: c.name }))} onChange={v => edit({ ...doc, lines: doc.lines.map((l, n) => n === i ? { ...l, character_id: v } : l) })}/></label>
           <label>台词<Input.TextArea aria-label={`第${i + 1}句台词`} value={line.text} maxLength={500} onChange={e => edit({ ...doc, lines: doc.lines.map((l, n) => n === i ? { ...l, text: e.target.value } : l) })}/></label>
@@ -108,7 +151,7 @@ export function NativeDialoguePanel({ projectId, episodeId, shotId, disabled, pr
         </div>)}<Button disabled={!state.characters.length || doc.lines.length >= 20} onClick={() => edit({ ...doc, lines: [...doc.lines, { character_id: state.characters[0].id, text: '', delivery: '', speech: 'onscreen' }] })}>添加台词</Button>
         {!state.characters.length && <p>当前分镜没有关联角色；请先关联素材，或确认这是无对白镜头。</p>}
         <p>台词需适合视频时长；内容过长可能说不完，请手动缩短台词或调整分镜。</p>
-        <Checkbox checked={doc.reviewed} onChange={e => setDoc({ ...doc, reviewed: e.target.checked })}>已确认对白顺序与角色；空列表表示无对白</Checkbox>
+        <Checkbox checked={doc.reviewed} onChange={e => session.edit({ ...doc, reviewed: e.target.checked })}>已确认对白顺序与角色；空列表表示无对白</Checkbox>
         <div className="native-actions"><Button type="primary" loading={busy} onClick={() => void save()}>保存分镜对白</Button></div></fieldset>
       </div>
     </Dialog>}

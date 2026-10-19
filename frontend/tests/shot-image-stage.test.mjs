@@ -18,6 +18,7 @@ function compile(path, dependencies, globals = {}) {
 const workflow = compile('features/projects/shot-image-workflow.ts', {});
 const session = compile('features/projects/storyboard-session.ts', {});
 const contract = compile('features/projects/workflow-contract.ts', {});
+const resourceEditing = compile('features/projects/resource-editing-session.ts', {});
 const shot = (id = '11') => ({ id, position: 1, row_version: '1', context_hash: 'first', script: 'original', duration_ms: 3000, source_excerpt: '', asset_ids: [], deleted_at: null, image: null, image_settings: { layout: 'single', aspect: 'inherit', resolution: '2K' } });
 const page = (items, episode_id = '1') => ({ episode_id, storyboard_version: '1', items, total: items.length, offset: 0, limit: 100 });
 const deferred = () => { let resolve; let reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -56,9 +57,20 @@ function mount(context, overrides = {}) {
     useEffect: (callback, dependencies) => effect(effects)(callback, dependencies),
     useLayoutEffect: (callback, dependencies) => effect(layouts)(callback, dependencies),
     useCallback(callback, dependencies) { const index = cursor++; const previous = slots[index]; if (!previous || dependencies.some((value, offset) => !Object.is(value, previous.dependencies[offset]))) slots[index] = { dependencies, callback }; return slots[index].callback; },
+    useMemo(create, dependencies) { const index = cursor++; const previous = slots[index]; if (!previous || dependencies.some((value, offset) => !Object.is(value, previous.dependencies[offset]))) slots[index] = { dependencies, value: create() }; return slots[index].value; },
+    useSyncExternalStore(subscribe, getSnapshot) { effect(effects)(() => subscribe(() => {}), [subscribe]); return getSnapshot(); },
   };
   const jsx = (type, props) => ({ type, props });
   const recovery = overrides.recovery ?? new Map();
+  const recoveryAdapter = { creationScope: scope => scope, readRecovery: scope => recovery.get(scope) ?? null, saveRecovery: (scope, value) => recovery.set(scope, structuredClone(value)), clearRecovery: scope => recovery.delete(scope), readRecoveryText: scope => recovery.has(scope) ? JSON.stringify(recovery.get(scope)) : null };
+  const savedBackups = new Map();
+  const storyboardEditing = compile('features/projects/storyboard-editing-session.ts', {
+    '../../api/modules/storyboard': { storyboardApi: () => api }, './creation-recovery': recoveryAdapter,
+    './resource-editing-session': resourceEditing,
+  }, { localStorage: { setItem: (key, value) => savedBackups.set(key, value) }, crypto });
+  const registry = compile('features/projects/standard-session-registry.ts', {}, { queueMicrotask, setTimeout: (callback, delay) => setTimeout(callback, delay).unref() });
+  const retained = new Set();
+  const retainedRegistry = { ...registry, retainStandardSession: (...args) => { const value = registry.retainStandardSession(...args); retained.add(value); return value; } };
   const { StoryboardStage } = compile('pages/projects/episode/StoryboardStage.tsx', {
     react, 'react/jsx-runtime': { jsx, jsxs: jsx },
     'lucide-react': { History: 'History', Sparkles: 'Sparkles' },
@@ -77,7 +89,10 @@ function mount(context, overrides = {}) {
     '../../../features/projects/workflow-contract': contract,
     '../../../features/projects/storyboard-session': session,
     '../../../features/projects/shot-image-workflow': workflow,
-    '../../../features/projects/creation-recovery': { creationScope: scope => scope, readRecovery: scope => recovery.get(scope) ?? null, saveRecovery: (scope, value) => recovery.set(scope, structuredClone(value)), clearRecovery: scope => recovery.delete(scope) },
+    '../../../features/projects/creation-recovery': recoveryAdapter,
+    '../../../features/projects/storyboard-editing-session': storyboardEditing,
+    '../../../features/projects/standard-session-registry': retainedRegistry,
+    '../../../features/auth/AuthSession': { useAuth: () => ({ user: null }) },
     '../../../features/generations/attempt': { attemptStorage: () => null, requestAttempt: async () => 'same-attempt', clearAttempt() {} },
     '../../../features/generations/BatchGeneration': { BatchLauncher: 'BatchLauncher', useBatchSelection: () => ({ enabled: false, ids: [], setIds() {}, toggle() {} }) },
     '../../../features/generations/presentation': { taskLabel: () => '' },
@@ -115,6 +130,7 @@ function mount(context, overrides = {}) {
   };
   const unmount = () => { for (const slot of slots) slot?.cleanup?.(); };
   context.after(unmount);
+  context.after(() => { retained.forEach(controller => controller.dispose()); });
   render();
   return { api, configs, capabilityCalls, window, scrolls, render, nodes, unmount, get scriptInput() { return nodes('TextArea').find(input => /^分镜 \d+ 脚本$/.test(input['aria-label'] ?? '')); }, get barrier() { return barrier; }, get props() { return props; } };
 }
@@ -314,13 +330,13 @@ test('storyboard history distinguishes loading, failed initial read, and success
   await flush(); setup.render();
   setup.nodes('Button').find(node => node['aria-label'] === '分镜生成记录').onClick(); setup.render();
   assert.ok(setup.nodes('p').some(node => node.role === 'status' && node.children === '正在加载分镜生成记录…'));
-  assert.equal(setup.nodes('p').some(node => node.children === '暂无分镜生成记录，确认剧本后开始生成。'), false);
+  assert.equal(setup.nodes('p').some(node => node.children === '暂无分镜生成记录，编写或采用剧本后开始生成。'), false);
   response.resolve(); await flush(); setup.render();
   const alert = setup.nodes('Alert').find(node => node.message.includes('history offline'));
   assert.ok(alert);
-  assert.equal(setup.nodes('p').some(node => node.children === '暂无分镜生成记录，确认剧本后开始生成。'), false);
+  assert.equal(setup.nodes('p').some(node => node.children === '暂无分镜生成记录，编写或采用剧本后开始生成。'), false);
   failed = false; alert.action.props.onClick(); setup.render(); await flush(); setup.render();
-  assert.equal(setup.nodes('p').some(node => node.children === '暂无分镜生成记录，确认剧本后开始生成。'), true);
+  assert.equal(setup.nodes('p').some(node => node.children === '暂无分镜生成记录，编写或采用剧本后开始生成。'), true);
 });
 
 test('failed history refresh keeps previously loaded records', async context => {
@@ -389,7 +405,7 @@ test('failed save blocks menu mutation and preserves the editing draft', async c
   assert.equal(setup.nodes('Dropdown').length, 0);
 });
 
-test('one dialogue editor blocks changing the selected shot while its draft is unsettled', async context => {
+test('pending dialogue blocks dependent submission while selecting another shot remains immediate', async context => {
   const controls = { subject: { type: 'shot', id: '11', label: '?? 01' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, { autoSelect: false, creationControls: controls });
   await flush(); setup.render();
@@ -400,6 +416,8 @@ test('one dialogue editor blocks changing the selected shot while its draft is u
   assert.equal(setup.barrier.hasUnsettled(), true);
   assert.equal(await setup.barrier.flush(), false);
   assert.equal(controls.subject.id, '11');
+  setup.nodes('StoryboardShotCard').find(card => card.shot.id === '12').onSelect(); setup.render();
+  assert.equal(controls.subject.id, '12');
 });
 
 test('adoption survives focus and model refresh while generation preparation is invalidated', async context => {

@@ -206,7 +206,7 @@ class GenerationBusinessService(BaseService):
         if not self.session.in_transaction():
             raise BusinessError("Native adoption requires an active transaction")
         from .episode_storyboard_service import EpisodeStoryboardService
-        from .generation_context_service import content_hash
+        from .generation_context_service import script_source_is_current
 
         parsed = StoryboardApply.model_validate(payload)
         project_id, episode_id, generation_id = map(
@@ -253,15 +253,12 @@ class GenerationBusinessService(BaseService):
                 EpisodeScript.episode_id == episode_id,
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
-        if (
-            script is None
-            or script.id != episode.editing_script_id
-            or script.state != "confirmed"
-            or content_hash(script.content)
-            != record.request_data["source_snapshot"]["content_hash"]
+        if not script_source_is_current(
+            self.session, episode, script, record.request_data["source_snapshot"]
         ):
-            raise WorkflowError("source_changed", "来源剧本已变化，请基于当前确认剧本重新生成")
+            raise WorkflowError("source_changed", "来源剧本已变化，请基于当前剧本重新生成")
         if parsed.mode == "replace":
             storyboard.archive_active_locked(storyboard.list_active_for_update(episode.id))
         rows = storyboard.create_generated_locked(episode, result["shots"])

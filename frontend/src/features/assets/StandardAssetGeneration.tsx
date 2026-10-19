@@ -98,10 +98,10 @@ export function StandardAssetGeneration({ asset, scope, draft, readOnly, disable
       model={<ConfigSelect kind="image" value={configId} onChange={selectModel} onResolvedChange={selectModel} disabled={blocked} label="生图模型"/>}
       parameters={<AssetGenerationParameters value={draft.value} disabled={blocked} onChange={draft.edit} capabilities={capabilities}/>}
       sendDisabled={blocked || generation.uncertain || references.blocked || capabilityLoading || !!capabilityError || !!reason} busy={submitting} disabled={!draft.loaded}
-      onSend={() => void generation.submit({ configId, supplement: '', count: draft.value.image_settings?.count ?? 1, scope })}/>} 
+      onSend={() => void generation.submit({ configId, supplement: draft.value.input_text, count: draft.value.image_settings?.count ?? 1, scope })}/>}
     {!readOnly && reason && <p className="standard-generation-block" role="status">{reason}</p>}
     {capabilityError && <Alert type="error" message={capabilityError} action={<Button size="small" onClick={() => setCapabilityRevision(value => value + 1)}>重试读取能力</Button>}/>}
-    {draft.message && <Alert type={draft.status === 'conflict' ? 'warning' : draft.status === 'error' ? 'error' : 'info'} message={draft.message} action={draft.status === 'error' ? <Button size="small" onClick={() => void draft.retry()}>核对并重试保存</Button> : draft.status === 'conflict' ? <Button size="small" onClick={async () => { if (await confirmAction('明确放弃本机生成设置并载入服务端版本？')) void draft.reload(); }}>载入服务端设置</Button> : undefined}/>}
+    {draft.message && <Alert type={draft.status === 'conflict' ? 'warning' : draft.status === 'error' ? 'error' : 'info'} message={draft.message} action={draft.status === 'error' ? <Button size="small" onClick={() => void draft.retry()}>核对并重试保存</Button> : draft.status === 'conflict' ? <Button size="small" onClick={() => void draft.reload()}>载入服务端设置</Button> : undefined}/>}
     {(submitError || refreshError) && <Alert type="warning" showIcon message={submitError || refreshError} action={generation.uncertain ? <Button size="small" loading={generation.reconciling} onClick={() => void generation.reconcileSubmission()}>核对原生成请求</Button> : refreshError ? <Button size="small" onClick={() => void generation.load()}>重新读取生成记录</Button> : undefined}/>}
     {historyOpen && <Dialog title={`${asset.name} · 生成记录`} className="asset-generation-history-dialog" onClose={onCloseHistory}>
       {candidateHistory}

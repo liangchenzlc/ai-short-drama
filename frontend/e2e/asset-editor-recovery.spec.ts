@@ -228,3 +228,41 @@ test('malformed local recovery remains downloadable and blocks editing until exp
   await expect.poll(() => data.server.description).toBe('明确清除后继续编辑');
   expect(data.errors).toEqual([]);
 });
+
+test('same-base asset recovery resumes automatically without a restore prompt', async ({ page }) => {
+  const data = await editorFixture(page);
+  const key = 'short-drama:asset-editor:v2:anonymous:10:501';
+  const fields = { kind: data.server.kind, name: data.server.name, label: data.server.label, description: '重新进入后自动续存的素材设定', prompt: data.server.prompt, tags: data.server.tags, scene_time: data.server.scene_time };
+  await page.addInitScript(({ key, recovery }) => localStorage.setItem(key, JSON.stringify(recovery)), { key, recovery: { base: data.server, fields } });
+  await page.goto(`${root}/assets`);
+  const editor = await openEditor(page);
+  await expect(editor.getByRole('textbox', { name: '描述', exact: true })).toHaveValue(fields.description);
+  await expect(page.getByRole('dialog', { name: /确认操作|未保存|恢复/ })).toHaveCount(0);
+  await expect.poll(() => data.server.description).toBe(fields.description);
+  expect(data.operations.filter(op => op.method === 'PATCH')).toHaveLength(1);
+  expect(data.errors).toEqual([]);
+});
+
+test('a pending asset save does not delay selection of another object or lose later input', async ({ page }) => {
+  const data = await editorFixture(page);
+  let release!: () => void; let started = false;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/v1/assets/501', async route => {
+    if (route.request().method() !== 'PATCH') return route.fallback();
+    started = true; await gate; return route.fallback();
+  });
+  await page.goto(`${root}/assets`);
+  const editor = await openEditor(page);
+  const description = editor.getByRole('textbox', { name: '描述', exact: true });
+  await description.fill('慢保存中的第一份输入');
+  await expect.poll(() => started).toBe(true);
+  await description.fill('发出请求后继续输入的文字');
+  await page.getByRole('button', { name: '新增素材', exact: true }).first().click();
+  await expect(editor.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('');
+  await expect(page.getByRole('dialog', { name: /未保存|确认操作/ })).toHaveCount(0);
+  release();
+  await expect.poll(() => data.server.description).toBe('发出请求后继续输入的文字');
+  await page.locator('.standard-asset-card').getByRole('button', { name: '林晚', exact: true }).click();
+  await expect(editor.getByRole('textbox', { name: '描述', exact: true })).toHaveValue('发出请求后继续输入的文字');
+  expect(data.errors).toEqual([]);
+});

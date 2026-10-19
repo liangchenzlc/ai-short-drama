@@ -1,190 +1,100 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { assemblyApi, type AssemblyClip, type AssemblyState } from '../../api/modules/assembly';
 import { errorMessage } from '../../api/http';
+import { useAuth } from '../auth/AuthSession';
 import type { NavigationBarrier } from './writing-navigation';
-import { creationScope, readRecovery, readRecoveryText, saveRecovery, clearRecovery, type StoredDraft } from './creation-recovery';
+import { creationScope, readRecovery, readRecoveryText, saveRecovery, clearRecovery } from './creation-recovery';
 import { assemblyDraft, restoreAssemblyDraft, validAssemblyDraft, type AssemblyDraftDocument } from './assembly-recovery';
+import { ResourceEditingSession } from './resource-editing-session';
+import { retainStandardSession, releaseStandardSession } from './standard-session-registry';
 
 export function useAssembly(projectId: string, episodeId: string, registerBarrier: (barrier: NavigationBarrier | null) => void) {
+  const { user } = useAuth();
+  const account = user?.id ?? 'anonymous';
+  const key = `assembly:${projectId}:${episodeId}`;
   const api = useMemo(() => assemblyApi(projectId, episodeId), [projectId, episodeId]);
-  const recoveryScope = useMemo(() => creationScope(`assembly:${projectId}:${episodeId}:draft`), [projectId, episodeId]);
-  const [recoveredDraft, setRecoveredDraft] = useState<StoredDraft<AssemblyDraftDocument> | null>(null);
-  const [recoveryError, setRecoveryError] = useState('');
-  const [recoveryBlocked, setRecoveryBlocked] = useState(false);
-  const recoveryPending = useRef(false);
-  function offerRecovery(next: AssemblyState) {
-    try {
-      const draft = readRecovery(recoveryScope, validAssemblyDraft);
-      if (draft && next.assembly && JSON.stringify(draft.document) !== JSON.stringify(assemblyDraft(next).document)) {
-        recoveryPending.current = true; setRecoveredDraft(draft);
-      } else if (draft) clearRecovery(recoveryScope);
-    } catch {
-      recoveryPending.current = true; setRecoveryBlocked(true);
-      setRecoveryError('剪辑恢复记录无法读取，请下载完整恢复记录核对，明确放弃后才能继续编辑。');
-    }
-  }
-  function persistDraft() {
-    if (!state.current.value?.assembly || recoveryPending.current) return;
-    try {
-      if (state.current.saved !== state.current.revision) saveRecovery(recoveryScope, assemblyDraft(state.current.value));
-      else clearRecovery(recoveryScope);
-      setRecoveryError('');
-    } catch { setRecoveryError('本机剪辑恢复记录无法保存，请下载草稿备份。'); }
-  }
-  const [value, setValue] = useState<AssemblyState | null>(null);
-  const [status, setStatus] = useState<'loading' | 'saved' | 'unsaved' | 'saving' | 'error'>('loading');
-  const [error, setError] = useState('');
+  const session = useMemo(() => retainStandardSession(account, key, () => {
+    const scope = creationScope(`${key}:draft`, account);
+    return new ResourceEditingSession<AssemblyState, AssemblyDraftDocument>({
+      read: () => api.get(), save: (base, document) => api.save(restoreAssemblyDraft(base, { format: 1, base_version: base.assembly!.row_version, document })),
+      version: value => value.assembly?.row_version ?? '0',
+      document: value => value.assembly ? assemblyDraft(value).document : { assembly_id: '0', resolution: '1080p', clips: [] },
+      apply: (value, document) => value.assembly ? restoreAssemblyDraft(value, { format: 1, base_version: value.assembly.row_version, document }) : value,
+      recovery: { read: () => readRecovery(scope, validAssemblyDraft), save: draft => saveRecovery(scope, draft), clear: () => clearRecovery(scope), export: () => readRecoveryText(scope), previous: () => readRecoveryText(`${scope}:previous`), backup: raw => localStorage.setItem(`${scope}:previous`, raw) },
+      pauseMs: 650,
+    });
+  }, { label: '成片剪辑', projectId, episodeId }), [account, key, api, projectId, episodeId]);
+  const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const value = snapshot.value;
   const [connectionError, setConnectionError] = useState('');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
-  const past = useRef<AssemblyClip[][]>([]);
-  const future = useRef<AssemblyClip[][]>([]);
-  const state = useRef({ value: null as AssemblyState | null, revision: 0, saved: 0, paused: false, mounted: true });
-  const pending = useRef<Promise<boolean> | null>(null);
+  const past = useRef<AssemblyClip[][]>([]), future = useRef<AssemblyClip[][]>([]);
   const latestLoad = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const register = useRef(registerBarrier); register.current = registerBarrier;
-  function replace(next: AssemblyState) { state.current.value = next; if (state.current.mounted) setValue(next); }
   async function load() {
     const request = ++latestLoad.current;
-    const revision = state.current.revision;
-    const before = state.current.value;
-    const next = await api.get();
-    if (!state.current.mounted || request !== latestLoad.current) return next;
-    setConnectionError(''); setLastSyncedAt(Date.now());
-    if (state.current.value === before && state.current.revision === revision && state.current.saved === revision && !pending.current) replace(next);
-    else if (state.current.value?.assembly?.id === next.assembly?.id && state.current.value) {
-      // Render progress is independent of unsaved clip edits; never hide a finished
-      // or failed export just because a draft save is paused.
-      replace({ ...state.current.value, jobs: next.jobs, current_work: next.current_work });
-    }
-    return next;
+    const fresh = await session.load(true, true).catch(cause => {
+      if (request !== latestLoad.current) return session.getSnapshot().value;
+      throw cause;
+    });
+    if (!fresh) throw new Error(session.getSnapshot().message || '成片读取失败');
+    if (request !== latestLoad.current) return fresh;
+    session.updateMetadata(current => ({ ...current, jobs: fresh.jobs, current_work: fresh.current_work }));
+    setConnectionError(''); setLastSyncedAt(Date.now()); return fresh;
   }
-  function flush(): Promise<boolean> {
-    if (timer.current) clearTimeout(timer.current);
-    if (pending.current) return pending.current;
-    if (!state.current.value) return Promise.resolve(false);
-    if (state.current.paused) return Promise.resolve(false);
-    if (recoveryPending.current) return Promise.resolve(false);
-    const run = async () => {
-      while (state.current.saved !== state.current.revision) {
-        const revision = state.current.revision;
-        const current = state.current.value!;
-        if (state.current.mounted) setStatus('saving');
-        try {
-          const saved = await api.save(current);
-          state.current.saved = revision;
-          const latest = state.current.value!;
-          replace(revision === state.current.revision ? saved : { ...latest, assembly: { ...latest.assembly!, row_version: saved.assembly!.row_version } });
-          persistDraft();
-        } catch (cause) {
-          state.current.paused = true;
-          if (state.current.mounted) { setError(errorMessage(cause)); setStatus('error'); }
-          return false;
-        }
-      }
-      if (state.current.mounted) { setStatus('saved'); setError(''); }
-      return true;
-    };
-    pending.current = run().finally(() => { pending.current = null; });
-    return pending.current;
-  }
-  const flushRef = useRef(flush); flushRef.current = flush;
   function edit(transform: (value: AssemblyState) => AssemblyState, record = true) {
-    if (!state.current.value?.assembly || recoveryPending.current) return;
-    const before = state.current.value;
+    const before = session.getSnapshot().value;
+    if (!before?.assembly) return;
     const next = transform(before);
     if (next === before) return;
-    if (record && next.clips !== before.clips) {
-      past.current = [...past.current.slice(-99), before.clips ?? []]; future.current = [];
-    }
-    replace(next); state.current.revision++;
-    persistDraft();
-    setStatus(state.current.paused ? 'error' : 'unsaved');
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void flushRef.current(), 650);
-  }
-  async function reload() {
-    if (pending.current) await pending.current;
-    const initialLoad = !state.current.value;
-    if (!state.current.value && state.current.mounted) setStatus('loading');
-    try {
-      const next = await api.get();
-      if (!state.current.mounted) return;
-      state.current.saved = state.current.revision; state.current.paused = false;
-      past.current = []; future.current = [];
-      replace(next); setError(''); setStatus('saved');
-      if (initialLoad) offerRecovery(next);
-      else { recoveryPending.current = false; setRecoveredDraft(null); setRecoveryBlocked(false); persistDraft(); }
-    } catch (cause) {
-      if (state.current.mounted) { setError(errorMessage(cause)); setStatus('error'); }
-      throw cause;
-    }
+    if (record && next.clips !== before.clips) { past.current = [...past.current.slice(-99), before.clips ?? []]; future.current = []; }
+    session.edit(assemblyDraft(next).document);
   }
   function undo() {
-    const clips = past.current.pop();
-    if (!clips || !state.current.value) return;
-    future.current.push(state.current.value.clips ?? []);
-    edit(current => ({ ...current, clips }), false);
+    const clips = past.current.pop(), current = session.getSnapshot().value;
+    if (!clips || !current) return;
+    future.current.push(current.clips ?? []); edit(before => ({ ...before, clips }), false);
   }
   function redo() {
-    const clips = future.current.pop();
-    if (!clips || !state.current.value) return;
-    past.current.push(state.current.value.clips ?? []);
-    edit(current => ({ ...current, clips }), false);
+    const clips = future.current.pop(), current = session.getSnapshot().value;
+    if (!clips || !current) return;
+    past.current.push(current.clips ?? []); edit(before => ({ ...before, clips }), false);
   }
   async function refreshMedia() {
-    const fresh = await api.get();
-    if (!state.current.mounted || !state.current.value) return;
-    const sources = [...fresh.clips ?? [], ...fresh.sources ?? []];
-    const hydrate = (clips: AssemblyClip[]) => clips.map(c => {
-      const match = sources.find(s => s.media_id === c.media_id);
-      return match ? { ...c, url: match.url, poster: match.poster, filmstrip: match.filmstrip } : c;
+    const fresh = await api.get(), sources = [...fresh.clips ?? [], ...fresh.sources ?? []];
+    const hydrate = (clips: AssemblyClip[]) => clips.map(clip => {
+      const source = sources.find(item => item.media_id === clip.media_id);
+      return source ? { ...clip, url: source.url, poster: source.poster, filmstrip: source.filmstrip } : clip;
     });
-    replace({ ...state.current.value, clips: hydrate(state.current.value.clips ?? []),
-      sources: hydrate(state.current.value.sources ?? []), jobs: fresh.jobs, current_work: fresh.current_work });
+    session.updateMetadata(current => ({ ...current, clips: hydrate(current.clips ?? []), sources: hydrate(fresh.sources ?? []), jobs: fresh.jobs, current_work: fresh.current_work }));
     past.current = past.current.map(hydrate); future.current = future.current.map(hydrate);
   }
   useEffect(() => {
-    state.current.mounted = true;
-    let cancelled = false;
-    const initial = async () => { try { const next = await api.get(); if (!cancelled) {
-      replace(next); setStatus('saved'); setLastSyncedAt(Date.now());
-      offerRecovery(next);
-    } } catch (cause) { if (!cancelled) { setError(errorMessage(cause)); setStatus('error'); } } };
-    void initial();
-    register.current({ hasUnsettled: () => state.current.revision !== state.current.saved || !!pending.current || recoveryPending.current, flush: () => flushRef.current() });
+    let cancelled = false, pollTimer: ReturnType<typeof setTimeout>;
     let failures = 0;
-    let pollTimer: ReturnType<typeof setTimeout>;
+    void session.load();
+    registerBarrier({ hasUnsettled: session.hasUnsettled, flush: session.flush });
     const poll = async () => {
       if (cancelled) return;
-      if (state.current.value) {
+      if (session.getSnapshot().value) {
         try { await load(); failures = 0; }
         catch (cause) { failures++; if (!cancelled) setConnectionError(errorMessage(cause)); }
       }
       if (cancelled) return;
-      const active = state.current.value?.jobs?.some(job => ['queued', 'running'].includes(job.status));
-      const interval = document.hidden ? 30000 : active ? 4000 : 15000;
-      const delay = failures ? Math.max(interval, Math.min(30000, 4000 * 2 ** Math.min(failures, 3))) : interval;
+      const active = session.getSnapshot().value?.jobs?.some(job => ['queued', 'running'].includes(job.status));
+      const interval = document.hidden ? 30_000 : active ? 4000 : 15_000;
+      const delay = failures ? Math.max(interval, Math.min(30_000, 4000 * 2 ** Math.min(failures, 3))) : interval;
       pollTimer = setTimeout(() => void poll(), delay);
     };
     pollTimer = setTimeout(() => void poll(), 4000);
-    return () => { cancelled = true; state.current.mounted = false; clearTimeout(pollTimer); if (timer.current) clearTimeout(timer.current); register.current(null); };
-  }, [api]); // project/episode remount owns this editing session
-  return { api, value, status, error, connectionError, lastSyncedAt, recoveredDraft, recoveryError, recoveryBlocked, edit, flush, load, replace, reload, undo, redo, refreshMedia,
-    exportRecovered: () => readRecoveryText(recoveryScope),
-    discardRecovered: () => { clearRecovery(recoveryScope); recoveryPending.current = false; setRecoveredDraft(null); setRecoveryBlocked(false); setRecoveryError(''); },
-    restoreRecovered: async () => {
-      if (!recoveredDraft || !state.current.value?.assembly) return;
-      const fresh = await api.get();
-      if (!state.current.mounted) return;
-      if (fresh.assembly?.id !== recoveredDraft.document.assembly_id) throw new Error('恢复稿属于另一份成片草稿，请先下载恢复稿核对。');
-      replace(fresh); recoveryPending.current = false; state.current.paused = false; setRecoveredDraft(null);
-      edit(current => restoreAssemblyDraft(current, recoveredDraft));
-    },
+    return () => { cancelled = true; clearTimeout(pollTimer); registerBarrier(null); releaseStandardSession(account, key); };
+  }, [session, account, key]);
+  return {
+    api, value, status: snapshot.status, error: snapshot.message, connectionError, lastSyncedAt,
+    recoveredDraft: snapshot.recovered, recoveryError: snapshot.recoveryBlocked ? snapshot.message : '', recoveryBlocked: snapshot.recoveryBlocked,
+    edit, flush: session.flush, load, replace: session.accept, reload: () => session.getSnapshot().loaded ? session.reload(false) : session.load(true), undo, redo, refreshMedia,
+    exportRecovered: session.exportRecovered, hasPrevious: session.hasPrevious, discardRecovered: () => session.reload(false), restoreRecovered: () => session.reload(true),
     canUndo: past.current.length > 0, canRedo: future.current.length > 0,
-    clearHistory: () => { past.current = []; future.current = []; }, latest: () => state.current.value,
-    retrySave: async () => {
-      if (!state.current.value) { try { await reload(); return true; } catch { return false; } }
-      state.current.paused = false; return flush();
-    } };
+    clearHistory: () => { past.current = []; future.current = []; }, latest: () => session.getSnapshot().value,
+    retrySave: session.retry,
+  };
 }

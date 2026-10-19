@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { creationDraftsApi, type CreationDraftValue, type CreationPurpose } from '../../api/modules/creation-drafts';
 import { useAuth } from '../auth/AuthSession';
 import { CreationDraftSession, type DraftRecovery } from './creation-draft-session';
-import { clearRecovery, creationScope, readRecovery, saveRecovery } from './creation-recovery';
+import { clearRecovery, creationScope, readRecovery, readRecoveryText, saveRecovery } from './creation-recovery';
 import type { NavigationBarrier } from './writing-navigation';
+import { releaseStandardSession, retainStandardSession } from './standard-session-registry';
 
 const initial: CreationDraftValue = { model_config_id: null, input_text: '', image_settings: null, video_settings: null, reference_media_ids: [] };
 function isRecovery(value: unknown): value is DraftRecovery {
@@ -13,31 +14,33 @@ function isRecovery(value: unknown): value is DraftRecovery {
   return (item.row_version === null || typeof item.row_version === 'string' && /^\d+$/.test(item.row_version))
     && !!doc && typeof doc.input_text === 'string'
     && (doc.model_config_id === null || typeof doc.model_config_id === 'string' && /^\d+$/.test(doc.model_config_id))
-    && Array.isArray(doc.reference_media_ids) && doc.reference_media_ids.every(id => typeof id === 'string' && /^\d+$/.test(id));
+    && Array.isArray(doc.reference_media_ids) && doc.reference_media_ids.every(id => typeof id === 'string' && /^\d+$/.test(id))
+    && (!item.pending || isRecovery({ row_version: item.pending.version, value: item.pending.value }));
 }
 export function useCreationDraft({ projectId, episodeId, objectId, purpose, initialValue, readOnly = false, registerBarrier }: {
   projectId: string; episodeId: string; objectId: string; purpose: CreationPurpose;
   sourceVersion?: string; initialValue?: Partial<CreationDraftValue>; readOnly?: boolean;
   registerBarrier?: (barrier: NavigationBarrier | null) => void;
 }) {
-  const { user } = useAuth();
+  const { user, enabled } = useAuth();
+  const actor = user?.id ?? (enabled ? 'signed-out' : 'anonymous');
+  const resourceKey = `generation-draft:${projectId}:${episodeId}:${objectId}:${purpose}`;
   const seed = useRef(initialValue); seed.current = initialValue;
   const session = useMemo(() => {
-    const scope = creationScope(`generation-draft:${projectId}:${episodeId}:${objectId}:${purpose}`);
-    return new CreationDraftSession(creationDraftsApi(projectId, episodeId, objectId, purpose), {
+    const scope = creationScope(resourceKey, actor);
+    return retainStandardSession(actor, resourceKey, () => new CreationDraftSession(creationDraftsApi(projectId, episodeId, objectId, purpose), {
       read: () => readRecovery(scope, isRecovery), save: value => saveRecovery(scope, value), clear: () => clearRecovery(scope),
-    }, { ...initial, ...seed.current });
-  }, [projectId, episodeId, objectId, purpose, user?.id]);
+      backup: value => saveRecovery(`${scope}:previous`, { current: value, recovery: readRecoveryText(scope) }),
+    }, { ...initial, ...seed.current }), { label: '生成设置', projectId, episodeId });
+  }, [projectId, episodeId, objectId, purpose, actor, resourceKey]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
-  const cleanup = useRef<{ session: CreationDraftSession; timer: ReturnType<typeof setTimeout> } | undefined>(undefined);
   useEffect(() => {
-    if (cleanup.current?.session === session) clearTimeout(cleanup.current.timer);
     void session.load();
-    return () => { cleanup.current = { session, timer: setTimeout(() => session.dispose(), 0) }; };
-  }, [session]);
+    return () => releaseStandardSession(actor, resourceKey);
+  }, [session, actor, resourceKey]);
   useEffect(() => {
     if (!registerBarrier) return;
-    registerBarrier({ hasUnsettled: session.hasUnsettled, flush: async () => !!await session.flush() });
+    registerBarrier({ hasUnsettled: session.hasUnsettled, hasMemoryOnlyChanges: session.hasMemoryOnlyChanges, flush: async () => !!await session.flush() });
     return () => registerBarrier(null);
   }, [session, registerBarrier]);
   useEffect(() => {

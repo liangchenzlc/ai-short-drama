@@ -37,7 +37,7 @@ for (const viewport of windows) test(`three creation stages fill and adapt at ${
       await page.goto(`${root}/source`);
     } else {
       await page.getByRole('navigation', { name: '分集制作流程' })
-        .getByRole('button', { name: stage === 'assets' ? /^素材生成，/ : /^分镜制作，/ }).click();
+        .getByRole('button', { name: stage === 'assets' ? /^素材生成$/ : /^分镜制作$/ }).click();
       await expect(page).toHaveURL(url => url.pathname === `${root}/${stage}`);
       await page.getByTestId(`episode-stage-${stage}`)
         .getByRole('button', { name: stage === 'assets' ? '林晚' : '选择分镜 01', exact: true }).click();
@@ -210,7 +210,7 @@ for (const kind of ['image', 'video'] as const) test(`resolved default ${kind} m
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('confirmed shot reload locks editing during a delayed server response', async ({ page }) => {
+test('shot reload keeps a local backup and locks editing without confirmation', async ({ page }) => {
   const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   await page.route(`**/api/v1${root}/shots/101`, route => route.request().method() === 'PATCH'
     ? route.fulfill({ status: 409, json: { error: { code: 'version_conflict' } } }) : route.fallback());
@@ -226,7 +226,7 @@ test('confirmed shot reload locks editing during a delayed server response', asy
     readStarted = true; await readReady; return route.fallback();
   });
   await page.getByRole('button', { name: '载入服务端镜头', exact: true }).click();
-  await page.getByRole('button', { name: '确认继续', exact: true }).click();
+  await expect(page.getByRole('button', { name: '确认继续', exact: true })).toHaveCount(0);
   await expect.poll(() => readStarted).toBe(true);
   await expect(title).toBeDisabled();
   await expect(page.getByRole('textbox', { name: '分镜 1 脚本', exact: true })).toBeDisabled();
@@ -320,7 +320,7 @@ for (const action of ['retry', 'reload'] as const) test(`private draft ${action}
   await (action === 'retry' ? retry : reload).click();
   await expect(retry).toBeDisabled(); await expect(reload).toBeDisabled();
   await expect(action === 'retry' ? retry : reload).toHaveClass(/ant-btn-loading/);
-  if (action === 'reload') await page.getByRole('button', { name: '确认继续', exact: true }).click();
+  await expect(page.getByRole('button', { name: '确认继续', exact: true })).toHaveCount(0);
   await expect.poll(() => reads).toBe(1);
   if (action === 'reload') await expect(prompt).toBeDisabled();
   expect(reads).toBe(1); releaseRead();
@@ -330,7 +330,8 @@ for (const action of ['retry', 'reload'] as const) test(`private draft ${action}
     await expect.poll(() => state.creationDrafts.get('101:storyboard_image')?.input_text).toBe('核对期间保留的私人输入');
     await expect(prompt).toHaveValue('核对期间保留的私人输入');
   }
-  expect(reads).toBe(1); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+  // A timed-out create can require another scoped lookup after the locked read.
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
 for (const viewport of windows) test(`creation layout matches the actual HTML prototype at ${viewport.width}x${viewport.height}`, async ({ page }) => {

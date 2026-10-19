@@ -65,7 +65,7 @@ def body(p, e, sid, version="3", kinds=None):
 
 
 @contextmanager
-def extraction(items=None):
+def extraction(items=None, *, confirmed=True, legacy=False):
     with generation_session() as session:
         config(session, "text")
         p, e, writing = setup(session)
@@ -73,8 +73,15 @@ def extraction(items=None):
             p, e, {"content_version": "1", "script_id": None, "content": SCRIPT}
         )
         sid = saved["script"]["id"]
-        writing.confirm(p, e, sid, {"content_version": "2"})
-        task, _ = AIGenerationService(session, settings).create("text", body(p, e, sid), "extract")
+        if confirmed:
+            writing.confirm(p, e, sid, {"content_version": "2"})
+        request = body(p, e, sid, "3" if confirmed else "2")
+        generation = AIGenerationService(session, settings)
+        if legacy:
+            with session.begin():
+                task, _ = generation.create_locked("text", request, "extract")
+        else:
+            task, _ = generation.create("text", request, "extract")
         tid = int(task["generation_id"])
         with session.begin():
             record = session.scalar(select(AIGenerationRecord))
@@ -154,7 +161,7 @@ def test_parser_accepts_empty_and_fenced_json_but_not_wrong_category_or_excess()
             parse_extraction_result(raw, snapshot)
 
 
-def test_confirmation_gate_and_snapshot_settings():
+def test_current_saved_script_and_snapshot_settings():
     with generation_session() as session:
         config(session, "text")
         p, e, writing = setup(session)
@@ -163,12 +170,12 @@ def test_confirmation_gate_and_snapshot_settings():
         )
         sid = saved["script"]["id"]
         api = AIGenerationService(session, settings)
-        with pytest.raises(WorkflowError, match="请先确认"):
-            api.create("text", body(p, e, sid, "2"), "unconfirmed")
-        writing.confirm(p, e, sid, {"content_version": "2"})
-        receipt, _ = api.create("text", body(p, e, sid, kinds=["prop"]), "confirmed")
+        receipt, _ = api.create("text", body(p, e, sid, "2", kinds=["prop"]), "current-saved")
+        assert writing.get(p, e)["content_version"] == "2"
+        assert writing.get(p, e)["editing_script"]["state"] == "unconfirmed"
         with session.begin():
             request = session.scalar(select(AIGenerationRecord)).request_data
+            assert request["source_snapshot"]["script_source_policy"] == "current_saved_v1"
             assert request["source_snapshot"]["content"] == SCRIPT
             assert request["source_snapshot"]["extraction"] == {"kinds": ["prop"]}
             assert request["template_version"] == "script-assets-v2"
@@ -304,6 +311,43 @@ def test_changed_script_blocks_adoption_but_novel_only_change_allows_it():
         with pytest.raises(WorkflowError) as error:
             service.apply(p, e, tid, create_request(result), "stale-source")
         assert error.value.code == "source_changed"
+
+
+def test_unconfirmed_extraction_result_survives_format_only_save():
+    with extraction(confirmed=False) as (_, p, e, writing, sid, tid, service):
+        saved = writing.save_script(
+            p,
+            e,
+            {
+                "content_version": "2",
+                "script_id": sid,
+                "content": SCRIPT,
+                "editor_document": {
+                    "ops": [{"insert": SCRIPT, "attributes": {"bold": True}}, {"insert": "\n"}]
+                },
+            },
+        )
+        assert saved["content_version"] == "3"
+        result = service.get(p, e, tid)
+        assert not result["stale"]
+        assert service.apply(p, e, tid, create_request(result), "format-only")["created"] == 3
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_only_new_extraction_policy_ignores_legacy_confirmation_status(legacy):
+    from short_drama.domain import EpisodeScript
+
+    with extraction(legacy=legacy) as (session, p, e, _, sid, tid, service):
+        with session.begin():
+            session.get(EpisodeScript, int(sid)).state = "unconfirmed"
+        result = service.get(p, e, tid)
+        assert result["stale"] == legacy
+        if legacy:
+            with pytest.raises(WorkflowError) as error:
+                service.apply(p, e, tid, create_request(result), "legacy-state")
+            assert error.value.code == "source_changed"
+        else:
+            assert service.apply(p, e, tid, create_request(result), "new-state")["created"] == 3
 
 
 def test_truncated_result_and_wrong_ownership_cannot_be_adopted():

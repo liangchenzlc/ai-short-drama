@@ -15,6 +15,7 @@ import { ModelPreferencesProvider } from '../features/auth/ModelPreferences';
 import { ConfigCatalogProvider } from '../features/ai-config/ConfigCatalogProvider';
 import { preloadable } from '../components/ui/preloadable';
 import { accountPath, aiConfigPath } from './paths';
+import { hasStandardUnpersistedChanges, retryStandardSessions } from '../features/projects/standard-session-registry';
 
 const AssetsPage = lazy(() => import('../pages/assets/AssetsPage').then(module => ({ default: module.AssetsPage })));
 const AiConfigPage = lazy(() => import('../pages/ai-config/AiConfigPage').then(module => ({ default: module.AiConfigPage })));
@@ -69,6 +70,15 @@ export function App() {
   const stage = episode?.params.stage;
   const projectId = project?.params.projectId;
   const section = new URLSearchParams(location.search).get('section') ?? undefined;
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (hasStandardUnpersistedChanges()) { event.preventDefault(); event.returnValue = ''; }
+    };
+    const online = () => { void retryStandardSessions(); };
+    window.addEventListener('beforeunload', beforeUnload);
+    window.addEventListener('online', online);
+    return () => { window.removeEventListener('beforeunload', beforeUnload); window.removeEventListener('online', online); };
+  }, []);
   useEffect(() => {
     if (!episodeId && !projectId) return;
     // Load the requested view's code during authentication; AuthGate still owns data access.

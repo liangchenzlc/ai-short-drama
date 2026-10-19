@@ -73,6 +73,40 @@ def image_request(flow, draft):
     }
 
 
+def test_unchanged_draft_save_fences_delayed_input_without_changing_generation_version():
+    with generation_session() as session:
+        flow = setup_draft(session)
+        original = flow.drafts.create_for_scope(
+            flow.project,
+            flow.episode,
+            {"object_id": flow.shot["id"], "purpose": "storyboard_image", "input_text": "base"},
+        )
+        saved = flow.drafts.update_for_scope(
+            flow.project,
+            flow.episode,
+            flow.shot["id"],
+            "storyboard_image",
+            {"row_version": "1", "input_text": "base"},
+        )
+        assert saved["row_version"] == "2"
+        assert saved["draft_version"] == original["draft_version"]
+        with pytest.raises(WorkflowError) as conflict:
+            flow.drafts.update_for_scope(
+                flow.project,
+                flow.episode,
+                flow.shot["id"],
+                "storyboard_image",
+                {"row_version": "1", "input_text": "delayed obsolete edit"},
+            )
+        assert conflict.value.code == "draft_version_conflict"
+        assert (
+            flow.drafts.get_for_scope(
+                flow.project, flow.episode, flow.shot["id"], "storyboard_image"
+            )["input_text"]
+            == "base"
+        )
+
+
 def test_drafts_are_per_object_purpose_owner_and_versioned():
     with generation_session() as session:
         flow = setup_draft(session)
@@ -300,6 +334,7 @@ def test_private_references_are_persistent_deduplicated_and_limited_with_shared(
                 "object_id": str(asset.id),
                 "purpose": "asset_image",
                 "model_config_id": "1",
+                "input_text": "参考红伞的颜色与材质",
                 "reference_media_ids": [str(i) for i in range(101, 117)],
             },
         )
@@ -562,6 +597,7 @@ def test_legacy_draft_without_source_version_keeps_null_in_frozen_snapshot():
                 "object_id": flow.shot["id"],
                 "purpose": "storyboard_image",
                 "model_config_id": str(flow.model),
+                "input_text": "保留雨夜侧光",
             },
         )
         with session.begin():

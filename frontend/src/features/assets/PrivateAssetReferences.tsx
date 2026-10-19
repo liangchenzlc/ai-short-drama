@@ -6,6 +6,7 @@ import { creationDraftsApi, type UserCreationDraft } from '../../api/modules/cre
 import { errorMessage } from '../../api/http';
 import { PreviewImage } from '../../components/ui/ImagePreview';
 import { ImagePicker } from '../media-library/ImagePicker';
+import { getAttemptAccount } from '../generations/attempt';
 
 export function PrivateAssetReferences({ assetId, projectId, episodeId, privateIds, saved, disabled, onChange, onState, onBusyChange }: {
   assetId: string; projectId: string; episodeId: string; privateIds: string[]; saved: UserCreationDraft | null; disabled: boolean;
@@ -47,13 +48,14 @@ export function PrivateAssetReferences({ assetId, projectId, episodeId, privateI
     if (disabled || lock.current || count >= 16) return false;
     if (file.size > 20 * 1024 * 1024) { setError('参考图片不能超过 20 MiB。'); return false; }
     lock.current = true; setBusy(true); onBusyChange?.(true); setError('');
+    const actor = getAttemptAccount();
     try {
       const image = await uploadTaskReference(file);
-      if (!alive.current) return false;
-      setPrivateImages(current => ({ ...current, [image.media_id]: image }));
+      if (actor !== getAttemptAccount()) return false;
+      if (alive.current) setPrivateImages(current => ({ ...current, [image.media_id]: image }));
       change.current([...new Set([...ids.current, image.media_id])]);
     } catch (cause) { if (alive.current) setError(`上传参考图失败：${errorMessage(cause)}`); }
-    finally { lock.current = false; if (alive.current) { setBusy(false); onBusyChange?.(false); } }
+    finally { lock.current = false; if (alive.current) setBusy(false); onBusyChange?.(false); }
     return false;
   }
   async function refreshImages() {

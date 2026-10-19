@@ -258,7 +258,7 @@ test('malformed nested local generation stays available for backup and blocks au
   const raw = JSON.stringify([{ id: 'draft:broken', kind: 'character', name: '损坏恢复稿', label: '', description: '', prompt: '', tags: [], scene_time: '', status: 'local', message: '', attempt: null, generation: {} }]);
   await page.addInitScript(({ key, raw }) => { localStorage.setItem(key, raw); }, { key, raw });
   await page.goto(`${root}/assets`);
-  await expect(page.getByText('本机素材草稿无法读取。请下载备份后明确清除恢复记录。', { exact: true })).toBeVisible();
+  await expect(page.getByText('本机素材记录无法读取。原记录已保留，请下载后核对。', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '下载本机恢复记录', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '新增素材', exact: true }).first()).toBeDisabled();
   expect(await page.evaluate(key => localStorage.getItem(key), key)).toBe(raw);
@@ -418,4 +418,19 @@ test('asset category-count failure exposes retry without inventing category tota
   await expect(page.locator('.standard-asset-category-tabs').getByRole('button', { name: '角色', exact: true }).locator('small')).toHaveText('1');
   await expect(page.getByRole('button', { name: '重试读取分类数量', exact: true })).toHaveCount(0);
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+});
+
+test('an incomplete local asset switches stages without confirmation and restores its input', async ({ page }) => {
+  const data = await assetFixture(page);
+  await page.goto(`${root}/assets`);
+  await page.getByRole('button', { name: '新增素材', exact: true }).first().click();
+  await page.getByRole('textbox', { name: '描述', exact: true }).fill('名称和类型稍后再填，先保留人物设定');
+  await expect(page.getByText('本机草稿已保留', { exact: true })).toHaveCount(0);
+  const nav = page.getByRole('navigation', { name: '分集制作流程', exact: true });
+  await nav.getByRole('button', { name: /剧本创作/ }).click();
+  await expect(page).toHaveURL(new RegExp(`${root}/source`));
+  await expect(page.getByRole('dialog', { name: /未保存|确认操作/ })).toHaveCount(0);
+  await nav.getByRole('button', { name: /素材生成/ }).click();
+  await expect(page.getByRole('textbox', { name: '描述', exact: true })).toHaveValue('名称和类型稍后再填，先保留人物设定');
+  expect(data.creates).toHaveLength(0); expect(data.errors).toEqual([]);
 });

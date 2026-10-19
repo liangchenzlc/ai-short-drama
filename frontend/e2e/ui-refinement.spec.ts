@@ -23,25 +23,50 @@ test.describe('touch workspace', () => {
     await page.setViewportSize({ width, height: 900 });
     const overflow: unknown[] = [];
     for (const [name, path, heading] of routes) {
-      await page.goto(path);
-      await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
+      if (path.startsWith(root) && new URL(page.url()).pathname.startsWith(root)) {
+        const stage = path.split('/').at(-1)!;
+        await page.getByRole('navigation', { name: '分集制作流程', exact: true }).getByRole('button', {
+          name: ({ assets: '素材生成', storyboard: '分镜制作', assembly: '成片合成' } as Record<string, string>)[stage], exact: true,
+        }).click();
+        await expect(page).toHaveURL(current => current.pathname === path);
+      } else {
+        if (new URL(page.url()).pathname.startsWith(root)) await expect(page.locator('.episode-save-state')).toHaveAttribute('aria-label', '保存状态：已保存');
+        await page.goto(path);
+      }
+      if (path.startsWith(root)) {
+        await expect(page.locator('.episode-switch')).toContainText(heading);
+        await expect(page.getByRole('navigation', { name: '分集制作流程', exact: true })).toBeVisible();
+      } else await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
       if (name === 'projects') {
         await expect(page.locator('.project-tile')).toHaveCount(4);
         await expect(page.getByRole('searchbox', { name: '搜索项目名称' })).toBeVisible();
       }
       if (name.startsWith('assets-')) await expect(page.locator('.library-resource-card')).toHaveCount(1);
       if (name.startsWith('tasks-')) await expect(page.locator('.ant-table-row')).toHaveCount(4);
-      if (name === 'episode-storyboard') await expect(page.locator('.storyboard-summary')).toHaveCount(20);
+      if (name === 'episode-assets') await page.getByRole('button', { name: '林晚', exact: true }).click();
+      if (name === 'episode-storyboard') {
+        await expect(page.locator('.storyboard-summary')).toHaveCount(20);
+        await page.getByRole('button', { name: '选择分镜 01', exact: true }).click();
+      }
       if (name === 'episode-assembly') await expect(page.getByRole('region', { name: '视频时间轴' })).toBeVisible();
       const layout = await page.evaluate(() => ({ path: location.pathname, width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
         offenders: [...document.querySelectorAll('body *')].filter(node => { const box = node.getBoundingClientRect(); return box.width > 0 && (box.right > innerWidth + 1 || box.left < -1) && getComputedStyle(node).position !== 'fixed'; }).slice(0, 12).map(node => ({ tag: node.tagName, class: node.className, width: node.getBoundingClientRect().width })) }));
       if (layout.scrollWidth > width + 1) overflow.push(layout);
       await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: 'disabled' });
       if (name.startsWith('episode-') && name !== 'episode-assembly') {
-        await page.getByRole('tab', { name: 'AI 创作', exact: true }).click();
-        await expect(page.getByRole('complementary', { name: '提示词 AI 创作', exact: true })).toBeVisible();
+        if (name === 'episode-source') {
+          const toggle = page.getByRole('button', { name: /^(展开|收起)设置$/ });
+          await expect(toggle).toBeVisible();
+          if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+          await expect(page.getByRole('textbox', { name: '改编要求', exact: true })).toBeVisible();
+        } else {
+          const toggle = page.getByRole('button', { name: /^(展开|收起)生成设置$/ });
+          await expect(toggle).toBeVisible();
+          if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+          await expect(page.getByRole('textbox', { name: '画面要求', exact: true })).toBeVisible();
+        }
         await fits(page);
-        await page.screenshot({ path: info.outputPath(`${name}-ai.png`), fullPage: true, animations: 'disabled' });
+        await page.screenshot({ path: info.outputPath(`${name}-settings.png`), fullPage: true, animations: 'disabled' });
       }
     }
     expect(overflow).toEqual([]);
@@ -141,7 +166,9 @@ test('batch selection leaves room for asset descriptions and stays with its stor
   await expect(library.getByText('已选 1 项', { exact: true })).toBeVisible();
   await page.goto(`${root}/storyboard`);
   await expect(page.locator('.storyboard-summary')).toHaveCount(20);
-  await page.getByRole('button', { name: '批量操作', exact: true }).click();
+  await page.getByRole('button', { name: '分镜生成记录', exact: true }).click();
+  await page.getByRole('button', { name: /^(分镜 01 更多操作|分镜列表更多操作)$/ }).click();
+  await page.getByRole('menuitem', { name: '批量操作', exact: true }).click();
   const row = page.locator('.storyboard-item').first();
   const checkbox = row.getByRole('checkbox', { name: '批量选择分镜 1', exact: true });
   await checkbox.check();

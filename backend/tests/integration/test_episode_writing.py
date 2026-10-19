@@ -76,7 +76,9 @@ def test_concurrent_initial_save_has_one_winner(mysql_engine, db_session, kind):
         )
 
 
-def test_save_confirm_edit_and_noop_preserve_content_and_versions(mysql_engine, db_session):
+def test_save_confirm_edit_and_noop_preserve_content_and_fence_delayed_requests(
+    mysql_engine, db_session
+):
     project_id, episode_id = seed(db_session)
     service = EpisodeWritingService(db_session)
     novel = service.save_novel(
@@ -101,30 +103,30 @@ def test_save_confirm_edit_and_noop_preserve_content_and_versions(mysql_engine, 
         episode_id,
         {"content_version": "4", "script_id": script_id, "content": "  Scene one\n"},
     )
-    assert unchanged == {"content_version": "4", "script": confirmed["editing_script"]}
-    assert (
-        service.select_script(
-            project_id, episode_id, {"content_version": "4", "script_id": script_id}
+    assert unchanged == {"content_version": "5", "script": confirmed["editing_script"]}
+    with pytest.raises(Conflict):
+        service.save_script(
+            project_id,
+            episode_id,
+            {"content_version": "4", "script_id": script_id, "content": "delayed edit"},
         )
-        == confirmed
-    )
+    assert service.select_script(
+        project_id, episode_id, {"content_version": "5", "script_id": script_id}
+    ) == {**confirmed, "content_version": "5"}
     novel_edit = service.save_novel(
-        project_id, episode_id, {"content_version": "4", "content": "Novel revised"}
+        project_id, episode_id, {"content_version": "5", "content": "Novel revised"}
     )
-    assert novel_edit["content_version"] == "5"
+    assert novel_edit["content_version"] == "6"
     assert service.get(project_id, episode_id)["editing_script"] == confirmed["editing_script"]
-    assert (
-        service.save_novel(
-            project_id, episode_id, {"content_version": "5", "content": "Novel revised"}
-        )
-        == novel_edit
-    )
+    assert service.save_novel(
+        project_id, episode_id, {"content_version": "6", "content": "Novel revised"}
+    ) == {**novel_edit, "content_version": "7"}
     edited = service.save_script(
         project_id,
         episode_id,
-        {"content_version": "5", "script_id": script_id, "content": "scene changed  "},
+        {"content_version": "7", "script_id": script_id, "content": "scene changed  "},
     )
-    assert edited["content_version"] == "6"
+    assert edited["content_version"] == "8"
     assert edited["script"]["id"] == script_id
     assert edited["script"]["state"] == "unconfirmed"
     assert edited["script"]["content"] == "scene changed  "

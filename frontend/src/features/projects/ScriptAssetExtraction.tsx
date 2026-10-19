@@ -1,4 +1,3 @@
-import { confirmAction } from '../../components/ui/confirm';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import { Alert, Button, Checkbox, Empty, Input, Select, Spin, Tabs } from 'antd';
 import { Popover } from 'antd';
@@ -9,6 +8,9 @@ import { generations } from '../../api/modules/generations';
 import type { GenerationSummary } from '../../api/types/generations';
 import { errorMessage } from '../../api/http';
 import { Dialog } from '../../components/ui/Dialog';
+import { ResourceEditingSession, type ResourceRecovery } from './resource-editing-session';
+import { retainStandardSession, releaseStandardSession } from './standard-session-registry';
+import { creationScope, readRecovery, readRecoveryText, saveRecovery, clearRecovery } from './creation-recovery';
 import { EpisodeModelSelect } from './EpisodeModelSelect';
 import type { WritingSession } from './writing-session';
 import type { NavigationBarrier } from './writing-navigation';
@@ -26,6 +28,15 @@ const importanceLabels = { core: '推动剧情', continuity: '维持连续性' }
 const allKinds = Object.keys(labels) as AssetKind[];
 const active = (task: GenerationSummary) => task.status === 'queued' || task.status === 'running';
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const noReviewSubscribe = () => () => {};
+const noReviewSnapshot = () => null;
+type ExtractionDrafts = Record<string, AssetDraft>;
+function validExtractionRecovery(value: unknown): value is ResourceRecovery<ExtractionDrafts> {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as ResourceRecovery<ExtractionDrafts>;
+  return item.format === 1 && typeof item.base_version === 'string' && !!item.document
+    && Object.values(item.document).every(draft => draft && allKinds.includes(draft.kind) && typeof draft.name === 'string' && typeof draft.description === 'string' && typeof draft.prompt === 'string' && Array.isArray(draft.tags));
+}
 
 export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly, modelId, onModelChange, onApplied, onConfirmScript, registerBarrier, externalReview, embedded = false }: {
   projectId: string; episodeId: string; session: WritingSession; readOnly: boolean; modelId: string;
@@ -48,6 +59,31 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
   const [tasks, setTasks] = useState<GenerationSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const validationPaused = useRef(false);
+  const accountId = auth.user?.id ?? 'anonymous';
+  const reviewKey = `asset-extraction:${projectId}:${episodeId}:${activeId}`;
+  const reviewSession = useMemo(() => {
+    if (!activeId) return null;
+    const id = activeId;
+    const scope = creationScope(reviewKey, accountId);
+    return retainStandardSession(accountId, reviewKey, () => new ResourceEditingSession<ExtractionResult, ExtractionDrafts>({
+      read: () => api.get(id),
+      save: (resource, document) => {
+        const invalidDraft = Object.values(document).map(extractionDraftError).find(Boolean);
+        if (invalidDraft) { validationPaused.current = true; throw Object.assign(new ExtractionReviewError(invalidDraft), { status: 422 }); }
+        validationPaused.current = false;
+        return api.save(id, { result_version: resource.result_version,
+          items: resource.items.filter(item => !item.applied && document[item.candidate_id] && !same(item.draft, document[item.candidate_id])).map(item => ({ candidate_id: item.candidate_id, draft: document[item.candidate_id] })) });
+      },
+      version: resource => resource.result_version,
+      document: resource => Object.fromEntries(resource.items.filter(item => !item.applied).map(item => [item.candidate_id, item.draft])),
+      apply: (resource, document) => ({ ...resource, items: resource.items.map(item => ({ ...item, draft: document[item.candidate_id] ?? item.draft })) }),
+      recovery: { read: () => readRecovery(scope, validExtractionRecovery), save: value => saveRecovery(scope, value), clear: () => clearRecovery(scope),
+        export: () => readRecoveryText(scope), backup: raw => saveRecovery(`${scope}:previous`, { raw }), previous: () => readRecoveryText(`${scope}:previous`) },
+    }), { label: '素材提取结果', projectId, episodeId });
+  }, [accountId, api, activeId, reviewKey, projectId, episodeId]);
+  const review = useSyncExternalStore(reviewSession?.subscribe ?? noReviewSubscribe, reviewSession?.getSnapshot ?? noReviewSnapshot);
+  useEffect(() => () => { if (reviewSession) releaseStandardSession(accountId, reviewKey); }, [reviewSession, accountId, reviewKey]);
   const [result, setResult] = useState<ExtractionResult | null>(null);
   const [drafts, setDrafts] = useState<Record<string, AssetDraft>>({});
   const [choices, setChoices] = useState<Record<string, string>>({});
@@ -78,10 +114,10 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
     return () => controller.abort();
   }, [externalReview?.nonce]);
   const task = tasks.find(item => item.generation_id === activeId);
-  const dirty = !!result?.items.some(item => !item.applied && drafts[item.candidate_id] && !same(item.draft, drafts[item.candidate_id]));
+  const dirty = review?.dirty ?? !!result?.items.some(item => !item.applied && drafts[item.candidate_id] && !same(item.draft, drafts[item.candidate_id]));
   const invalid = !!result?.items.some(item => !item.applied && !!extractionDraftError(drafts[item.candidate_id] ?? item.draft));
-  const canExtract = writing.loaded && writing.confirmed && !!writing.script.trim() && !readOnly;
-  const stale = !!result && (result.stale || !writing.confirmed);
+  const canExtract = writing.loaded && !!writing.script.trim() && !readOnly;
+  const stale = !!result?.stale;
   const pending = tasks.some(active);
 
   const refreshTasks = useCallback(async (signal?: AbortSignal) => {
@@ -112,7 +148,9 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
   }, [refreshTasks, open, pending]);
 
   function acceptResult(next: ExtractionResult, reset: boolean) {
-    setResult(next); setDrafts(Object.fromEntries(next.items.map(item => [item.candidate_id, item.draft])));
+    reviewSession?.initialize(next);
+    const current = reviewSession?.getSnapshot().value ?? next;
+    setResult(current); setDrafts(Object.fromEntries(current.items.map(item => [item.candidate_id, item.draft])));
     setChoices(previous => Object.fromEntries(next.items.map(item => {
       const old = previous[item.candidate_id];
       const before = result?.items.find(prior => prior.candidate_id === item.candidate_id);
@@ -123,6 +161,12 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
     setSelected(previous => new Set(next.items.filter(item => !item.applied && (reset ? !!defaultAdoption(item) : previous.has(item.candidate_id))).map(item => item.candidate_id)));
     if (reset) { setTab(next.kinds[0] ?? 'character'); setEditing(null); }
   }
+
+  useEffect(() => {
+    if (!review?.value) return;
+    setResult(review.value);
+    setDrafts(Object.fromEntries(review.value.items.map(item => [item.candidate_id, item.draft])));
+  }, [review?.value]);
 
   useEffect(() => {
     if (!open || phase !== 'result' || !activeId || task?.status !== 'succeeded' || dirty) return;
@@ -137,6 +181,10 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
   async function saveDrafts(): Promise<ExtractionResult | null> {
     if (!result || !dirty) return result;
     if (readOnly || invalid) throw new ExtractionReviewError('名称、描述和图片生成提示词均不能为空，请补充后保存。');
+    if (reviewSession) {
+      if (!await reviewSession.flush()) throw new ExtractionReviewError(reviewSession.getSnapshot().message || '提取结果尚未同步，修改已保留。');
+      return reviewSession.getSnapshot().value;
+    }
     const next = await api.save(result.generation_id, {
       result_version: result.result_version,
       items: result.items.filter(item => !item.applied && !same(item.draft, drafts[item.candidate_id])).map(item => ({ candidate_id: item.candidate_id, draft: drafts[item.candidate_id] })),
@@ -167,14 +215,14 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
     return () => registerBarrier(null);
   }, [registerBarrier]);
 
-  const close = () => { void run(async () => { await saveDrafts(); setOpen(false); if (embedded) setPhase('settings'); }); };
+  const close = () => { setOpen(false); if (embedded) setPhase('settings'); void reviewSession?.flush(); };
   async function generate() {
     if (!canExtract || !kinds.length || pending) return;
     await run(async () => {
       await saveDrafts();
       if (!await session.flush()) throw new ExtractionReviewError('请先完成正文保存，再提取素材。');
       const latest = session.getSnapshot();
-      if (!latest.confirmed || !latest.scriptId) throw new ExtractionReviewError('请先确认当前剧本。');
+      if (!latest.scriptId || !latest.script.trim()) throw new ExtractionReviewError('先编写或采用一份剧本，再提取素材。');
       const configId = savedConfigId(modelId);
       const body = { ...scriptAssetsRequest(projectId, episodeId, latest.scriptId, latest.contentVersion, kinds, instructions), ...(configId ? { config_id: configId } : {}) };
       const scope = `script-assets:${projectId}:${episodeId}`;
@@ -203,7 +251,6 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
       }
       if (!await session.flush()) throw new ExtractionReviewError('请先完成正文保存。');
       const latest = session.getSnapshot();
-      if (!latest.confirmed) throw new ExtractionReviewError('请先确认当前剧本。');
       const body = extractionApplyRequest(saved, selected, choices, latest.contentVersion);
       const scope = `script-assets-apply:${saved.generation_id}`;
       const key = await requestAttempt(scope, body, attemptStorage());
@@ -221,14 +268,16 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
 
   async function reloadResult() {
     await run(async () => {
-      if (dirty && !await confirmAction('重新载入会放弃尚未保存的候选修改。确定继续？')) return;
-      if (activeId) acceptResult(await api.get(activeId), true);
+      if (reviewSession) {
+        const next = await reviewSession.reload();
+        if (next) acceptResult(next, true);
+      } else if (activeId) acceptResult(await api.get(activeId), true);
     });
   }
 
   async function showTask(id: string) {
     await run(async () => {
-      await saveDrafts(); setActiveId(id); setResult(null); setDrafts({}); setEditing(null); setPhase('result');
+      void reviewSession?.flush(); setActiveId(id); setResult(null); setDrafts({}); setEditing(null); setPhase('result');
     });
   }
 
@@ -243,15 +292,22 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
   }
 
   function editDraft(item: ExtractionCandidate, patch: Partial<AssetDraft>) {
-    setDrafts(previous => ({ ...previous, [item.candidate_id]: { ...(previous[item.candidate_id] ?? item.draft), ...patch } }));
+    const next = { ...drafts, [item.candidate_id]: { ...(drafts[item.candidate_id] ?? item.draft), ...patch } };
+    setDrafts(next); reviewSession?.edit(next);
+    if (validationPaused.current && !Object.values(next).some(extractionDraftError)) {
+      validationPaused.current = false; void reviewSession?.retry();
+    }
     if (patch.name !== undefined || patch.kind !== undefined || patch.scene_time !== undefined) setChoices(previous => ({ ...previous, [item.candidate_id]: '' }));
   }
 
-  async function discardItemDraft(item: ExtractionCandidate) {
-    if (!await confirmAction(`放弃“${item.draft.name}”本页尚未保存的候选修改？其他候选草稿仍会保留。`)) return;
-    setDrafts(previous => ({ ...previous, [item.candidate_id]: item.draft }));
-    setChoices(previous => ({ ...previous, [item.candidate_id]: previous[item.candidate_id] || defaultAdoption(item) }));
-    setTab(item.draft.kind);
+  function downloadRecovery() {
+    try {
+      const raw = reviewSession?.exportRecovered();
+      if (!raw) return;
+      const url = URL.createObjectURL(new Blob([raw], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url; link.download = `asset-extraction-${activeId}-recovery.json`; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (cause) { setError(errorMessage(cause)); }
   }
 
   const rows = result?.items.filter(item => (drafts[item.candidate_id] ?? item.draft).kind === tab) ?? [];
@@ -265,10 +321,16 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
     {(open || embedded && phase === 'settings') && <Frame title={phase === 'settings' ? '从剧本提取素材' : phase === 'history' ? '素材提取记录' : '素材提取结果'} className={`asset-extraction-dialog${phase === 'settings' ? ' is-settings' : ''}`} canClose={!busy} onClose={close}>
       <div className="extraction-body">
         {error && <Alert type="error" showIcon message={error} action={phase === 'result' && task?.status === 'succeeded' ? <Button disabled={busy} onClick={() => void reloadResult()}>重新载入结果</Button> : undefined}/>}
+        {phase === 'result' && review && ['error', 'conflict'].includes(review.status) && <Alert type={review.status === 'conflict' ? 'warning' : 'error'} showIcon message={review.message} action={<>
+          {review.status === 'error' && <Button disabled={busy} onClick={() => void run(async () => { await reviewSession?.retry(); })}>重试同步</Button>}
+          {review.status === 'conflict' && <Button disabled={busy || readOnly} onClick={() => void run(async () => { await reviewSession?.reload(true); })}>以当前版本保留本机修改</Button>}
+          <Button disabled={busy} onClick={() => void reloadResult()}>使用服务端版本</Button>
+        </>}/>}
+        {phase === 'result' && reviewSession?.hasPrevious() && <Button type="text" onClick={downloadRecovery}>下载本机备份</Button>}
         {message && <Alert type="success" showIcon message={message}/>}
         {phase === 'settings' && <div className="extraction-settings">
-          <p>从本集已确认剧本整理文字素材，核对后加入本集素材库。</p>
-          {!canExtract && <Alert type="info" showIcon message={readOnly ? '当前为只读模式，可查看已有提取结果。' : !writing.loaded ? '正在等待剧本载入。' : '先确认剧本，再提取素材。'} action={!readOnly && writing.loaded ? <Button onClick={() => { setOpen(false); onConfirmScript(); }}>去确认剧本</Button> : undefined}/>}
+          <p>从本集当前剧本整理文字素材，核对后加入本集素材库。</p>
+          {!canExtract && <Alert type="info" showIcon message={readOnly ? '当前为只读模式，可查看已有提取结果。' : !writing.loaded ? '正在等待剧本载入。' : '先编写或采用一份剧本，再提取素材。'} action={!readOnly && writing.loaded ? <Button onClick={() => { setOpen(false); onConfirmScript(); }}>去编写剧本</Button> : undefined}/>}
           <fieldset disabled={busy || readOnly}><legend>提取范围</legend><Checkbox.Group aria-label="提取范围" value={kinds} options={allKinds.map(value => ({ value, label: labels[value] }))} onChange={values => setKinds(values as AssetKind[])}/></fieldset>
           <label className="writing-control"><span>补充要求 <small>选填</small></span><Input.TextArea aria-label="提取补充要求" rows={4} maxLength={4000} showCount value={instructions} disabled={busy || readOnly} onChange={event => setInstructions(event.target.value)} placeholder="例如：仅提取有台词的角色，保留推动剧情的重要道具。"/></label>
           <div className="writing-control"><span>文本模型</span><EpisodeModelSelect kind="text" label="素材提取文本模型" value={modelId} disabled={busy || readOnly} onChange={onModelChange}/></div>
@@ -287,7 +349,7 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
           {!loading && (!task || active(task)) && <div className="extraction-wait" role="status"><Spin/><h3>{task ? taskLabel(task) : '正在查询任务'}</h3><p>正在整理角色、场景与道具。可以关闭弹窗，任务会继续处理。</p>{task?.can_cancel && <Button disabled={busy || readOnly} onClick={() => void run(async () => { await generations.cancel(task.generation_id); await refreshTasks(); })}>取消提取任务</Button>}{historyError && <Alert type="error" message={historyError} action={<Button onClick={() => void refreshTasks()}>重试查询</Button>}/>}</div>}
           {task && ['failed', 'cancelled'].includes(task.status) && <div className="extraction-wait"><Alert type={task.status === 'failed' ? 'error' : 'info'} showIcon message={task.error?.message ?? '提取任务已取消。'}/>{task.can_resume && <Button disabled={busy || readOnly} onClick={() => void run(async () => { await generations.resume(task.generation_id); await refreshTasks(); })}>恢复结果保存</Button>}<Button disabled={busy || readOnly || task.can_resume} onClick={() => setPhase('settings')}>调整要求并重新提取</Button></div>}
           {!loading && result?.generation_id === activeId && <>
-            {stale && <Alert type="warning" showIcon message="来源剧本已变化，结果可查看；请确认当前剧本后重新提取。"/>}
+            {stale && <Alert type="warning" showIcon message="来源剧本已变化，结果可查看；请从当前剧本重新提取。"/>}
             <Tabs activeKey={tab} onChange={key => setTab(key as AssetKind)} items={allKinds.map(kind => ({ key: kind, label: `${labels[kind]} ${result.items.filter(item => (drafts[item.candidate_id] ?? item.draft).kind === kind).length}${!result.kinds.includes(kind) ? '（未提取）' : ''}` }))}/>
             {rows.length > 0 && <div className="extraction-selection"><Checkbox disabled={busy || readOnly || stale || !selectable.length} checked={!!selectable.length && selectable.every(item => selected.has(item.candidate_id))} indeterminate={selectable.some(item => selected.has(item.candidate_id)) && !selectable.every(item => selected.has(item.candidate_id))} onChange={event => setSelected(previous => { const next = new Set(previous); for (const item of selectable) { if (event.target.checked) next.add(item.candidate_id); else next.delete(item.candidate_id); } return next; })}>本类全选</Checkbox><span>名称、描述与提示词均可编辑</span></div>}
             {!rows.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={result.kinds.includes(tab) ? `未提取到${labels[tab]}，可调整要求后重新提取。` : `本次未选择提取${labels[tab]}。`}/>}
@@ -311,7 +373,6 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
                 </div> : <div className="extraction-copy"><div><h4>描述</h4><ExtractionText text={draft.description}/></div></div>}
                 {item.original.aliases.length > 0 && <p className="episode-help">别名：{item.original.aliases.join('、')}</p>}
                 {draftError && <Alert type="error" showIcon message={draftError}/>}
-                {!disabled && !same(draft, item.draft) && <Button type="link" onClick={() => void discardItemDraft(item)}>放弃此项修改</Button>}
                 {!item.applied && <div className="extraction-adoption"><label>采用方式<Select aria-label={`${draft.name}的采用方式`} disabled={disabled || dirty} value={choices[item.candidate_id] || undefined} placeholder={dirty ? '保存候选后核对匹配' : '请选择新建或复用'} options={[{ value: 'create', label: item.matches.length || item.duplicate_candidates?.length ? '明确另建素材' : '新建本集素材' }, ...item.matches.map(match => ({ value: match.asset_id, label: `复用${match.scope === 'episode' ? '本集' : '项目'}素材：${match.name}` }))]} onChange={value => setChoices(previous => ({ ...previous, [item.candidate_id]: value }))}/></label>{choices[item.candidate_id] && choices[item.candidate_id] !== 'create' && <p>沿用已有素材的描述、提示词与图片，提取文字保留在本次记录中。</p>}{item.matches.length > 0 && <p>{item.matches.length > 1 || !item.matches[0].exact ? '发现疑似重复素材，请核对后选择。' : '发现同名素材，可复用或明确另建。'}</p>}{!!item.duplicate_candidates?.length && <p>本次结果还有同名候选，请只选择需要的项，或修改名称后明确另建。</p>}</div>}
               </article>;
             })}
@@ -319,8 +380,8 @@ export function ScriptAssetExtraction({ projectId, episodeId, session, readOnly,
         </>}
       </div>
       <footer className="extraction-footer">
-        <div>{phase === 'result' && result ? <span>已选 <strong>{chosen.length}</strong> 项{dirty ? ' · 有未保存修改' : ''}</span> : <span>仅加入本集素材库</span>}<Button type="link" disabled={busy} onClick={() => { setOpen(true); setPhase(phase === 'history' ? activeId ? 'result' : 'settings' : 'history'); }}>{phase === 'history' ? '返回' : '提取记录'}</Button>{phase === 'result' && !readOnly && <Button type="link" disabled={busy || pending} onClick={() => setPhase('settings')}>重新提取</Button>}</div>
-        <div>{phase === 'result' && dirty && <Button disabled={busy || invalid || readOnly} onClick={() => void run(async () => { await saveDrafts(); setMessage('候选修改已保存。'); })}>保存候选</Button>}{(!embedded || phase !== 'settings') && <Button disabled={busy} onClick={close}>{phase === 'settings' ? '取消' : pending ? '后台处理' : '稍后处理'}</Button>}{phase === 'settings' && <Button type="primary" loading={busy} disabled={!canExtract || !kinds.length || pending} onClick={() => void generate()}>AI 提取素材</Button>}{phase === 'result' && result && <Button type="primary" loading={busy} disabled={readOnly || stale || !chosen.length || invalid || chosen.some(item => !choices[item.candidate_id])} onClick={() => void adopt()}>加入本集素材库（{chosen.length}）</Button>}</div>
+        <div>{phase === 'result' && result ? <span>已选 <strong>{chosen.length}</strong> 项</span> : <span>仅加入本集素材库</span>}<Button type="link" disabled={busy} onClick={() => { setOpen(true); setPhase(phase === 'history' ? activeId ? 'result' : 'settings' : 'history'); }}>{phase === 'history' ? '返回' : '提取记录'}</Button>{phase === 'result' && !readOnly && <Button type="link" disabled={busy || pending} onClick={() => setPhase('settings')}>重新提取</Button>}</div>
+        <div>{(!embedded || phase !== 'settings') && <Button disabled={busy} onClick={close}>{phase === 'settings' ? '取消' : pending ? '后台处理' : '稍后处理'}</Button>}{phase === 'settings' && <Button type="primary" loading={busy} disabled={!canExtract || !kinds.length || pending} onClick={() => void generate()}>AI 提取素材</Button>}{phase === 'result' && result && <Button type="primary" loading={busy} disabled={readOnly || stale || !chosen.length || invalid || chosen.some(item => !choices[item.candidate_id])} onClick={() => void adopt()}>加入本集素材库（{chosen.length}）</Button>}</div>
       </footer>
     </Frame>}
   </>;

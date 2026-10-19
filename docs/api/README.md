@@ -109,9 +109,9 @@ Agent 默认开启；运行须完成九表迁移、保持账号认证并启动�
 | GET | `E/scripts` | 候选分页、200 字符预览、编辑/确认标记、生成来源 |
 | GET | `E/scripts/{script_id}` | 候选元信息及完整 content |
 
-正文保留空白与换行，最大 1 MiB UTF-8，允许空字符串但不接受 null。空白剧本不能确认。小说、剧本和选择共用 `content_version`，过期返回 409 `writing_version_conflict`；无变化保存不推进版本。
+正文保留空白与换行，最大 1 MiB UTF-8，允许空字符串但不接受 null。空白剧本不能确认。小说、剧本和选择共用 `content_version`，过期返回 409 `writing_version_conflict`；每次受理正文保存均推进版本，包括内容未变化的保存，以阻止旧的在途请求覆盖最后输入。
 
-剧本读取另带 `editor_document: object | null`，小说仍为纯文本。格式文档采用受限 Quill Delta：`{ops:[{insert:string,attributes?:{header:1|2|3,bold:boolean,italic:boolean,blockquote:boolean}}]}`，最多 100000 个文本操作；禁止嵌入和其他属性。文档须以换行结束，转换为业务正文时只移除最后一个 Quill 结尾换行，保留用户空行，并与 `content` 完全一致。正文和格式在同一事务、同一 `content_version` 下保存；仅格式变化也推进版本并取消旧确认。旧客户端省略或明确传 null 时清除旧格式，提取、生成与导出继续读取纯文本。
+剧本读取另带 `editor_document: object | null`，小说仍为纯文本。格式文档采用受限 Quill Delta：`{ops:[{insert:string,attributes?:{header:1|2|3,bold:boolean,italic:boolean,blockquote:boolean}}]}`，最多 100000 个文本操作；禁止嵌入和其他属性。文档须以换行结束，转换为业务正文时只移除最后一个 Quill 结尾换行，保留用户空行，并与 `content` 完全一致。正文和格式在同一事务、同一 `content_version` 下保存；仅格式变化也推进版本，保留旧确认及正文相同的素材提取、分镜候选有效性。旧客户端省略或明确传 null 时清除旧格式，提取、生成与导出继续读取纯文本。
 
 后台新增剧本候选不改变编辑指针和正文版本。切换候选不会自动确认；编辑已确认剧本会取消该稿确认；确认另一稿在同一事务取消旧稿确认。小说编辑不改变剧本内容或确认状态。
 
@@ -144,7 +144,7 @@ Agent 默认开启；运行须完成九表迁移、保持账号认证并启动�
 
 `model_config_id` 可空，以便保存尚未完成的输入；非空时必须是本人可用且用途匹配的模型。`input_text` 按用途限制：小说改编、素材图和分镜图最多 4000 字符，分镜视频最多 16000 字符，POST 与合并后的版本化 PATCH 均校验。图片用途才接受 `image_settings` 和参考媒体，视频用途才接受 `video_settings`；小说改编不接受这些媒体参数。图片画幅为 `16:9/9:16/1:1/4:3/3:4`，清晰度为 `1K/2K/4K`，张数仅 `1/2/4`；视频清晰度为 `480p/720p/1080p`，时长为 1000–3600000 整数毫秒且必须整秒，仍需通过生成时的具体模型限制。画幅、清晰度或视频时长可空，生成时沿用对应来源默认值；私人设置不包含隐藏的 `layout`。
 
-PATCH 只更新提供的字段，`model_config_id:null` 清除模型。返回含 `id/user_id/project_id/episode_id/object_id/purpose`、保存内容、`source_version/row_version/draft_version` 和 UTC 时间；全部 ID、版本为十进制字符串。`reference_media_ids` 最多 16 项，只保存可用的 MinIO 永久媒体 ID，允许本人私人图片或当前项目可访问图片；去重后另返回 `reference_images:[{media_id,url,width,height}]`，URL 每次读取现签，不作为持久化身份。
+PATCH 只更新提供的字段，`model_config_id:null` 清除模型。每次受理保存均推进 `row_version`；保存内容与来源版本未变化时保留 `draft_version`，避免无变化保存使生成参数失效。返回含 `id/user_id/project_id/episode_id/object_id/purpose`、保存内容、`source_version/row_version/draft_version` 和 UTC 时间；全部 ID、版本为十进制字符串。`reference_media_ids` 最多 16 项，只保存可用的 MinIO 永久媒体 ID，允许本人私人图片或当前项目可访问图片；去重后另返回 `reference_images:[{media_id,url,width,height}]`，URL 每次读取现签，不作为持久化身份。
 
 `source_version` 由服务端在保存时读取，用于追溯当时来源，不是前端缓存的生成许可。生成仍须提交来源的最新 `row_version/content_version/context_hash`。保存成功才能引用 `source.draft_id/draft_version`，二者必须成对；`shot_image` 还须使用 `context_mode=saved`，`asset_image` 须带本项目与分集 ID。服务端校验本人、对象、用途及版本后冻结草稿；未选模型、模型不一致、来源或草稿版本冲突均阻止生成。
 
@@ -255,7 +255,7 @@ ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 
 
 ### 剧本素材提取
 
-同一文本生成接口，source.scene=`script_assets`，带 project_id、episode_id、script_id、content_version；可传 `extraction:{kinds:["character","scene","prop"]}` 和 instructions。必须使用当前已确认剧本。默认输入≤30000字符、候选≤100、输出上限8192 Token；超限不静默截断。
+同一文本生成接口，source.scene=`script_assets`，带 project_id、episode_id、script_id、content_version；可传 `extraction:{kinds:["character","scene","prop"]}` 和 instructions。标准工作台新任务使用当前已保存的非空剧本，不要求单独定稿。服务端冻结 `script_source_policy=current_saved_v1`；客户端不能设置或伪造该策略。生成分镜沿用同一来源规则。受理仍校验正文版本、当前编辑指针、项目权限和 Agent 候选采用来源；结果采用按剧本身份及正文哈希判定来源，纯格式变化不误判过期。未带新策略的历史任务和内部旧 Agent 调用保留原确认合同。默认输入≤30000字符、候选≤100、输出上限8192 Token；超限不静默截断。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -292,7 +292,7 @@ ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 
 
 新建字段：`kind/name/label/description/prompt/tags/scene_time`。kind 为 character/scene/prop；名称必填且≤255、label≤120；tags最多20项，每项≤40字符，去首尾空格并去重，空白标签拒绝；scene_time≤60且仅场景可填。
 
-公开 PATCH 支持 `kind`，沿用 `row_version` 与 `confirm_shared`。转为非场景时必须明确清除已有 `scene_time`；角色已有不可变作品历史、声音绑定或对白引用时返回 422 `asset_kind_incompatible`，不删除这些依赖。新角色创建即产生不可变版本，因此不能通过改类型丢弃历史。允许的转换保留通用分镜关联，推进版本并取消确认；受影响媒体继续按原内容上下文判断过期。无权限与行版本冲突仍分别返回 404 与 409。
+公开 PATCH 支持 `kind`，沿用 `row_version` 与 `confirm_shared`。每次受理保存均推进 `row_version`；无变化保存保留确认状态、内容 hash 和角色作品历史，不要求再次确认共享修改。转为非场景时必须明确清除已有 `scene_time`；角色已有不可变作品历史、声音绑定或对白引用时返回 422 `asset_kind_incompatible`，不删除这些依赖。新角色创建即产生不可变版本，因此不能通过改类型丢弃历史。允许的转换保留通用分镜关联，推进版本并取消确认；受影响媒体继续按原内容上下文判断过期。无权限与行版本冲突仍分别返回 404 与 409。
 
 允许从全局库添加到项目、从当前项目添加到分集、将分集素材共享回所属项目。移除库引用不删除素材本体；活动分镜仍引用的分集素材不能移除。共享素材的内容修改需明确确认影响多个引用。
 
@@ -313,7 +313,7 @@ ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 
 
 新建需 storyboard_version；编辑需 row_version。可编辑 title（≤255 字符，默认空）、shot_size、script、duration_ms（1000–10000，默认3000）、asset_ids和image_settings。shot_size 可空，非空值固定为 `full_shot/medium_shot/close_up/extreme_close_up/wide_shot/two_shot`；缺失不从脚本猜测。生成候选采用时保存 title 与 shot_size，旧镜头的默认空名称和其他内容保留。名称与景别属于元信息，不加入图片或视频内容 hash，修改仍推进行版本。素材关联为完整集合替换；image_settings若提供必须包含全部字段：`resolution=1K|2K|4K`、`aspect=inherit|16:9|9:16|1:1|4:3|3:4`、`layout=single|four|five|nine`。source_excerpt为生成来源，不通过普通编辑伪造。
 
-有效修改推进行和集合版本；无变化不推进。活动分镜最多500个。归档保留历史媒体与关系，不取消已发出的生成任务，但不再允许采用到该镜头。
+每次受理镜头编辑均推进行版本，包括内容未变化的保存；仅有效修改推进集合版本，无变化保存保留内容 hash。活动分镜最多500个。归档保留历史媒体与关系，不取消已发出的生成任务，但不再允许采用到该镜头。
 
 分镜候选采用请求：
 

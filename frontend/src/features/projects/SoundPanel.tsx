@@ -1,5 +1,5 @@
 import { confirmAction } from '../../components/ui/confirm';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, Button, Checkbox, Drawer, Input, InputNumber, Select, Spin, Tabs } from 'antd';
 import { errorMessage } from '../../api/http';
 import { soundApi, type AudioCandidate, type Dialogue, type Extraction, type SoundDocument, type SoundState } from '../../api/modules/sound';
@@ -8,7 +8,10 @@ import { ConfigSelect } from '../generations/ConfigSelect';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import type { NavigationBarrier } from './writing-navigation';
 import { useEpisodeCreation } from './EpisodeCreationWorkspace';
-import { creationScope, readRecovery, readRecoveryText, saveRecovery, clearRecovery, isStoredDraft, type StoredDraft } from './creation-recovery';
+import { CreationRecoveryError, creationScope, readRecovery, readRecoveryText, saveRecovery, clearRecovery, isStoredDraft, type StoredDraft } from './creation-recovery';
+import { useAuth } from '../auth/AuthSession';
+import { ResourceEditingSession } from './resource-editing-session';
+import { retainStandardSession, releaseStandardSession } from './standard-session-registry';
 import '../../app/sound.css';
 
 const newLine = (): Dialogue => ({ id: crypto.randomUUID(), character: '旁白', text: '', voice: '', config_id: null, start_ms: 0, media_id: null, adopted_hash: null });
@@ -21,13 +24,43 @@ export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled
   const [capabilityStatus, setCapabilityStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [capabilityError, setCapabilityError] = useState('');
   const [audioError, setAudioError] = useState('');
-  const recoveryScope = useMemo(() => creationScope(`sound:${projectId}:${episodeId}:draft`), [projectId, episodeId]);
-  const [recoveredDraft, setRecoveredDraft] = useState<StoredDraft<{ document: SoundDocument; timeline_hash: string; reviewed: boolean; selected: string }> | null>(null);
-  const [recoveryError, setRecoveryError] = useState('');
-  const [recoveryBlocked, setRecoveryBlocked] = useState(false);
-  const [state, setState] = useState<SoundState | null>(null), [doc, setDoc] = useState<SoundDocument | null>(null);
+  const { user } = useAuth();
+  const account = user?.id ?? 'anonymous', sessionKey = `sound:${projectId}:${episodeId}`;
+  const recoveryScope = useMemo(() => creationScope(`sound:${projectId}:${episodeId}:draft`, account), [account, projectId, episodeId]);
+  type SoundEdit = { document: SoundDocument; reviewed: boolean; timeline_hash?: string };
+  const session = useMemo(() => retainStandardSession(account, sessionKey, () => new ResourceEditingSession<SoundState, SoundEdit>({
+    read: () => api.get(),
+    save: async (base, value, assertActive) => {
+      const body = { row_version: base.row_version, timeline_hash: base.timeline_hash, document: value.document, reviewed: value.reviewed && value.timeline_hash === base.timeline_hash };
+      const request_id = await requestAttempt(`${sessionKey}:save`, body, attemptStorage());
+      assertActive();
+      const saved = await api.save({ ...body, request_id }); assertActive(); clearAttempt(`${sessionKey}:save`, attemptStorage()); return saved;
+    },
+    version: value => value.row_version, document: value => ({ document: value.document, reviewed: !value.needs_review, timeline_hash: value.timeline_hash }),
+    apply: (value, edit) => ({ ...value, document: edit.document, needs_review: !edit.reviewed || edit.timeline_hash !== value.timeline_hash }),
+    recovery: {
+      read: () => {
+        const stored = readRecovery(recoveryScope, (value): value is StoredDraft<SoundEdit> => isStoredDraft(value) && !!value.document && typeof value.document === 'object' && !!(value.document as SoundEdit).document && Array.isArray((value.document as SoundEdit).document.dialogue) && Array.isArray((value.document as SoundEdit).document.subtitles) && typeof (value.document as SoundEdit).reviewed === 'boolean');
+        return stored ? { ...stored, document: { document: stored.document.document, reviewed: stored.document.reviewed, timeline_hash: stored.document.timeline_hash } } : null;
+      },
+      save: value => saveRecovery(recoveryScope, value), clear: () => clearRecovery(recoveryScope), export: () => readRecoveryText(recoveryScope), previous: () => readRecoveryText(`${recoveryScope}:previous`), backup: raw => localStorage.setItem(`${recoveryScope}:previous`, raw),
+    },
+  }), { label: '声音与字幕', projectId, episodeId }), [account, sessionKey, api, recoveryScope, projectId, episodeId]);
+  const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const state = snapshot.value, doc = state?.document ?? null, reviewed = !!state && !state.needs_review;
+  const recoveredDraft = snapshot.recovered;
+  const recoveryError = snapshot.recoveryBlocked ? snapshot.message : '';
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState('');
-  const [reviewed, setReviewed] = useState(false), [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState('');
+  function setReviewed(value: boolean) { const current = session.getSnapshot().value; if (current) session.edit({ document: current.document, reviewed: value, timeline_hash: current.timeline_hash }); }
+  function setDoc(value: SoundDocument) { const current = session.getSnapshot().value; if (current) session.edit({ document: value, reviewed: false, timeline_hash: current.timeline_hash }); }
+  function setState(value: SoundState | ((previous: SoundState | null) => SoundState | null)) {
+    session.updateMetadata(current => {
+      const next = typeof value === 'function' ? value(current) : value;
+      return next ? { ...current, media: next.media, uploads: next.uploads, voice_defaults: next.voice_defaults } : current;
+    });
+  }
+  useEffect(() => () => releaseStandardSession(account, sessionKey), [account, sessionKey]);
   const [candidates, setCandidates] = useState<AudioCandidate[]>([]), [pollVersion, setPollVersion] = useState(0);
   const [textConfig, setTextConfig] = useState<string>(), [extractId, setExtractId] = useState(''), [extraction, setExtraction] = useState<Extraction | null>(null);
   const [voiceCharacter, setVoiceCharacter] = useState(''), [voiceName, setVoiceName] = useState('');
@@ -40,7 +73,7 @@ export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled
       restoreFocus.current = false;
     }
   }, [inline, open]);
-  const dirty = !!doc && (JSON.stringify(doc) !== JSON.stringify(state?.document) || reviewed !== !state?.needs_review);
+  const dirty = snapshot.dirty;
   const live = useRef({ dirty, busy, save: async () => false });
   const scope = `sound:${projectId}:${episodeId}`;
   const line = doc?.dialogue.find(l => l.id === selected);
@@ -52,7 +85,7 @@ export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled
     catch (cause) { if (mounted.current && epoch === capabilityEpoch.current) { setCapabilityError(errorMessage(cause)); setCapabilityStatus('error'); } }
   }, [api]);
   useEffect(() => { mounted.current = true; void loadCapability(); return () => { mounted.current = false; capabilityEpoch.current++; }; }, [loadCapability]);
-  useEffect(() => { registerBarrier({ hasUnsettled: () => live.current.dirty || live.current.busy, flush: () => live.current.save() }); return () => registerBarrier(null); }, [registerBarrier]);
+  useEffect(() => { registerBarrier({ hasUnsettled: () => session.hasUnsettled() || live.current.busy, flush: () => live.current.save() }); return () => registerBarrier(null); }, [registerBarrier, session]);
   useEffect(() => {
     if (!open || !selected) return;
     const controller = new AbortController();
@@ -66,68 +99,41 @@ export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled
     const poll = async () => { try { const result = await api.extraction(extractId, controller.signal); if (controller.signal.aborted) return; setExtraction(result); if (['queued', 'running'].includes(result.status)) timer = setTimeout(() => void poll(), 2500); } catch (e) { if (!controller.signal.aborted) setNotice(errorMessage(e)); } };
     void poll(); return () => { controller.abort(); clearTimeout(timer); };
   }, [api, open, extractId]);
-  function replace(next: SoundState) { setState(next); setDoc(next.document); setReviewed(!next.needs_review); }
-  function edit(next: SoundDocument) { if (disabled || lock.current || recoveredDraft || recoveryBlocked) return; setDoc(next); setReviewed(false); }
-  useEffect(() => {
-    if (!state || !doc || recoveredDraft || recoveryBlocked) return;
-    try {
-      if (dirty) saveRecovery(recoveryScope, { format: 1, base_version: state.row_version, document: { document: doc, timeline_hash: state.timeline_hash, reviewed, selected } });
-      else clearRecovery(recoveryScope);
-      setRecoveryError('');
-    } catch { setRecoveryError('声音恢复记录无法保存，请下载草稿备份。'); }
-  }, [state, doc, dirty, reviewed, selected, recoveredDraft, recoveryBlocked, recoveryScope]);
+  function replace(next: SoundState) { session.accept(next); }
+  function edit(next: SoundDocument) { if (disabled || lock.current) return; setDoc(next); }
+  function replaceDocument(next: SoundDocument) {
+    const current = session.getSnapshot().value;
+    if (!current || readOnly) return;
+    saveRecovery(`${recoveryScope}:previous`, { format: 1, base_version: current.row_version, document: { document: current.document, reviewed: !current.needs_review, timeline_hash: current.timeline_hash }, previous_recovery: readRecoveryText(recoveryScope) });
+    setDoc(next);
+  }
   function editLine(change: Partial<Dialogue>) { if (doc && line) edit({ ...doc, dialogue: doc.dialogue.map(l => l.id === line.id ? { ...l, ...change } : l) }); }
   async function action(work: () => Promise<void>) {
     if (lock.current) return;
     lock.current = true; setBusy(true); setNotice('');
-    try { await work(); } catch (e) { if (mounted.current) setNotice(errorMessage(e)); }
+    try { await work(); } catch (e) { if (mounted.current) setNotice(e instanceof CreationRecoveryError ? e.message : errorMessage(e)); }
     finally { lock.current = false; if (mounted.current) setBusy(false); }
   }
   async function saveDocument(markReviewed = reviewed): Promise<SoundState | null> {
-    if (!state || !doc || recoveredDraft || recoveryBlocked || readOnly || !await flushVideo()) return null;
-    const body = { row_version: state.row_version, timeline_hash: state.timeline_hash, document: doc, reviewed: markReviewed };
-    const request_id = await requestAttempt(`${scope}:save`, body, attemptStorage());
-    const next = await api.save({ ...body, request_id });
-    clearAttempt(`${scope}:save`, attemptStorage());
-    if (mounted.current) replace(next);
-    await onSaved(); return next;
+    if (!state || !doc || readOnly || !await flushVideo()) return null;
+    setReviewed(markReviewed);
+    if (!await (session.getSnapshot().status === 'error' ? session.retry() : session.flush())) { setNotice(session.getSnapshot().message); return null; }
+    await onSaved(); return session.getSnapshot().value;
   }
-  live.current = { dirty: dirty || !!recoveredDraft || recoveryBlocked, busy, save: async () => {
-    if (lock.current) return false;
-    if (recoveredDraft || recoveryBlocked) return false;
-    if (!dirty) return true;
-    let saved = false; await action(async () => { saved = !!await saveDocument(); }); return saved;
-  } };
+  live.current = { dirty: session.hasUnsettled(), busy, save: async () => !readOnly && await session.flush() };
   async function begin() { await action(async () => {
-    if (!await flushVideo()) return;
-    const fresh = await api.get();
-    try {
-      const saved = readRecovery(recoveryScope, isStoredDraft);
-      if (saved) {
-      const candidate = saved.document as { document?: SoundDocument; timeline_hash?: unknown; reviewed?: unknown; selected?: unknown };
-      if (!candidate || !candidate.document || !Array.isArray(candidate.document.dialogue) || !Array.isArray(candidate.document.subtitles) || typeof candidate.timeline_hash !== 'string' || !/^[a-f0-9]{64}$/.test(candidate.timeline_hash) || typeof candidate.reviewed !== 'boolean' || typeof candidate.selected !== 'string') throw new Error('声音恢复记录无效，请先下载草稿核对。');
-      if (JSON.stringify(candidate.document) !== JSON.stringify(fresh.document) || candidate.reviewed !== !fresh.needs_review) setRecoveredDraft(saved as NonNullable<typeof recoveredDraft>);
-      else clearRecovery(recoveryScope);
-      }
-      setRecoveryBlocked(false); setRecoveryError('');
-    } catch { setRecoveryBlocked(true); setRecoveryError('声音恢复记录无法读取，请下载完整恢复记录核对，明确放弃后才能继续编辑。'); }
-    replace(fresh); setOpen(true);
+    setOpen(true);
+    await session.load();
     try { setExtractId(sessionStorage.getItem(`${scope}:extraction`) ?? ''); } catch { /* history remains in task center */ }
   }); }
-  async function close() { if (!busy && (!dirty || await confirmAction('声音草稿尚未保存，确定放弃本次修改？'))) { restoreFocus.current = true; setOpen(false); if (state) replace(state); if (!recoveredDraft && !recoveryBlocked) clearRecovery(recoveryScope); } }
-  async function restoreSound() {
-    if (!recoveredDraft) return;
-    const fresh = await api.get();
-    if (!mounted.current) return;
-    const draft = recoveredDraft.document;
-    replace(fresh); setDoc(draft.document); setSelected(draft.selected);
-    setReviewed(draft.reviewed && recoveredDraft.base_version === fresh.row_version && draft.timeline_hash === fresh.timeline_hash);
-    setRecoveredDraft(null);
+  async function close() {
+    restoreFocus.current = true; setOpen(false); void session.flush();
   }
+  async function restoreSound() { await session.reload(true); }
   function backup() { const url = URL.createObjectURL(new Blob([JSON.stringify({ ...state, document: doc }, null, 2)], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = 'sound-draft.json'; a.click(); URL.revokeObjectURL(url); }
   function backupRecovery() {
     try {
-      const content = readRecoveryText(recoveryScope); if (!content) return;
+      const content = session.exportRecovered(); if (!content) return;
       const url = URL.createObjectURL(new Blob([content], { type: 'application/json;charset=utf-8' }));
       const link = document.createElement('a'); link.href = url; link.download = 'sound-recovery.json'; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -158,29 +164,29 @@ export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled
   if (capabilityStatus === 'error') return <Alert type="warning" showIcon message="声音功能读取失败" description={capabilityError} action={<Button onClick={() => void loadCapability()}>重新读取声音功能</Button>}/>;
   if (!enabled) return null;
   const title = state?.mode === 'native' ? '原声、字幕和配乐' : '配音、字幕和配乐';
-  const actions = <div className="sound-actions"><Button onClick={backup}>下载草稿</Button><Checkbox disabled={disabled || busy || !!recoveredDraft || recoveryBlocked} checked={reviewed} onChange={e => setReviewed(e.target.checked)}>已核对当前剪辑的声音与字幕时间</Checkbox><Button type="primary" disabled={disabled || !doc || !!recoveredDraft || recoveryBlocked} loading={busy} onClick={() => void action(async () => { await saveDocument(); })}>保存声音草稿</Button></div>;
+  const actions = <div className="sound-actions"><Button onClick={backup}>下载草稿</Button>{session.hasPrevious() && <Button type="text" onClick={backupRecovery}>下载本机备份</Button>}<Checkbox disabled={disabled || busy} checked={reviewed} onChange={e => setReviewed(e.target.checked)}>已核对当前剪辑的声音与字幕时间</Checkbox><Button type="primary" disabled={disabled || !doc} loading={busy} onClick={() => void action(async () => { await saveDocument(); })}>保存声音草稿</Button></div>;
   const content = <>
       {audioError && <Alert type="warning" showIcon message={audioError} action={<Button loading={busy} disabled={busy} onClick={() => void action(refreshAudio)}>刷新试听地址</Button>}/>}
-      {recoveryError && <Alert type="warning" showIcon message={recoveryError} action={<div className="sound-actions"><Button onClick={recoveryBlocked ? backupRecovery : backup}>{recoveryBlocked ? '下载完整恢复稿' : '下载草稿'}</Button>{recoveryBlocked && <Button disabled={busy} onClick={() => void action(async () => { if (await confirmAction('确定放弃无法读取的声音恢复记录，保留当前服务端版本？')) { clearRecovery(recoveryScope); setRecoveryBlocked(false); setRecoveryError(''); } })}>放弃恢复稿</Button>}</div>}/>}
-      {recoveredDraft && <Alert type="warning" showIcon message="发现本机未保存的声音恢复稿" description={`恢复稿版本 ${recoveredDraft.base_version}，当前版本 ${state?.row_version}。恢复后仍需核对声音、字幕和剪辑时间。`} action={<div className="sound-actions"><Button disabled={busy || readOnly} onClick={() => void action(async () => { if (await confirmAction('以重新读取的服务端版本为基础保留声音恢复稿？请核对时间和试听结果后再保存。')) await restoreSound(); })}>核对并恢复声音</Button><Button disabled={busy} onClick={() => void action(async () => { if (await confirmAction('放弃本机声音恢复稿，保留当前服务端版本？')) { clearRecovery(recoveryScope); setRecoveredDraft(null); } })}>放弃恢复稿</Button></div>}/>}
+      {recoveryError && <Alert type="warning" showIcon message={recoveryError} action={<div className="sound-actions"><Button onClick={backupRecovery}>下载完整恢复稿</Button><Button disabled={busy} onClick={() => void action(async () => { await session.reload(false); })}>使用服务端版本</Button></div>}/>}
+      {recoveredDraft && <Alert type="warning" showIcon message="声音存在不同版本，本机输入已保留" action={<div className="sound-actions"><Button disabled={busy || readOnly} onClick={() => void action(restoreSound)}>以当前版本保留本机修改</Button><Button disabled={busy} onClick={() => void action(async () => { await session.reload(false); })}>使用服务端版本</Button></div>}/>}
       <p>时间均为成片中的绝对毫秒。修改视频后需重新核对；保存后通过“合成预览”检查混音与字幕。</p>
-      {notice && <Alert type="error" showIcon message={notice} action={<Button disabled={busy} onClick={async () => { if (!dirty || await confirmAction('重新载入将替换本页声音编辑，是否继续？')) void action(async () => replace(await api.get())); }}>重新载入</Button>}/>}
+      {(notice || snapshot.message) && !recoveryError && !recoveredDraft && <Alert type="error" showIcon message={notice || snapshot.message} action={<><Button disabled={busy} onClick={() => void session.retry()}>重试保存</Button><Button disabled={busy} onClick={() => void action(async () => { await session.reload(false); })}>使用服务端版本</Button></>}/>}
       {state?.needs_review && <Alert type="warning" showIcon message="声音或剪辑有变化，导出前请核对时间并勾选确认。"/>}
       {state?.mode === 'native' && doc && <section className="native-voice" aria-label="原生视频后期声音">
         <p>对白来自视频原声，不叠加独立配音。字幕时间需逐句校对，视频内对白和环境音不能分别调节。</p>
-        <Button disabled={busy || disabled} onClick={async () => { if (doc.subtitles.length && !await confirmAction('用采用视频的冻结台词替换字幕草稿？时间只是建议，需要重新试听校对。')) return; void action(async () => { const draft = await api.nativeSubtitles(); if (draft.timeline_hash !== state.timeline_hash) throw new Error('剪辑已变化，请重新载入声音面板。'); if (mounted.current) { setDoc({ ...doc, subtitles: draft.subtitles }); setReviewed(false); } }); }}>从采用视频的台词创建字幕草稿</Button>
+        <Button disabled={busy || disabled} onClick={() => void action(async () => { const draft = await api.nativeSubtitles(); if (draft.timeline_hash !== state.timeline_hash) throw new Error('剪辑已变化，请重新载入声音面板。'); if (mounted.current) replaceDocument({ ...doc, subtitles: draft.subtitles }); })}>从采用视频的台词创建字幕草稿</Button>
         <Button disabled={busy || disabled || !doc.subtitles.length} onClick={() => edit({ ...doc, native_ducking: doc.subtitles.map(s => ({ ...s })) })}>用已校对字幕设置对白压低区间</Button>
         <p>区间内配乐降为设定音量的四分之一；仅在启用“对白期间自动降低配乐音量”时生效。</p>
         {(doc.native_ducking ?? []).map((range, i) => <div className="sound-subtitle" key={i}><label>对白开始毫秒<InputNumber min={0} max={3600000} precision={0} disabled={busy || disabled} value={range.start_ms} onChange={v => edit({ ...doc, native_ducking: doc.native_ducking!.map((r, n) => n === i ? { ...r, start_ms: v ?? 0 } : r) })}/></label><label>对白结束毫秒<InputNumber min={1} max={3600000} precision={0} disabled={busy || disabled} value={range.end_ms} onChange={v => edit({ ...doc, native_ducking: doc.native_ducking!.map((r, n) => n === i ? { ...r, end_ms: v ?? 1 } : r) })}/></label><span>{range.text}</span><Button disabled={busy || disabled} onClick={() => edit({ ...doc, native_ducking: doc.native_ducking!.filter((_, n) => n !== i) })}>移除区间</Button></div>)}
       </section>}
-      {!doc || !state ? <Spin/> : <fieldset disabled={disabled || busy || !!recoveredDraft || recoveryBlocked} className="sound-fieldset"><Tabs items={[
+      {!doc || !state ? <Spin/> : <fieldset disabled={disabled || busy} className="sound-fieldset"><Tabs items={[
         { key: 'dialogue', label: `配音 · ${doc.dialogue.length}`, children: <>
           <div className="sound-actions"><ConfigSelect kind="text" label="台词提取模型" value={textConfig} onChange={setTextConfig} disabled={busy || disabled}/><Button disabled={busy || disabled || !!extraction && ['queued', 'running'].includes(extraction.status)} onClick={() => void action(async () => {
             const body = { ...(textConfig ? { config_id: textConfig } : {}), source: { scene: 'dialogue_extract' as const, project_id: projectId, episode_id: episodeId }, parameters: {} };
             const receipt = await generations.generateText(body, await requestAttempt(`${scope}:extract`, body, attemptStorage()));
             clearAttempt(`${scope}:extract`, attemptStorage()); setExtractId(receipt.generation_id); setExtraction(null); try { sessionStorage.setItem(`${scope}:extraction`, receipt.generation_id); } catch { /* receipt is available in task center */ }
           })}>从已保存分镜提取台词</Button><Button disabled={busy || disabled || doc.dialogue.length >= 300} onClick={async () => { const l = newLine(); edit({ ...doc, dialogue: [...doc.dialogue, l] }); setSelected(l.id); }}>添加台词</Button></div>
-          {extraction && <div className="sound-extraction"><p>提取状态：{extraction.status}。提取文本需人工校对，建议时间不代表准确对齐。</p>{extraction.error && <Alert type="warning" message={extraction.error}/>}<pre>{extraction.raw_text}</pre>{extraction.dialogue && <Button disabled={busy || disabled} onClick={async () => { if (!doc.dialogue.length || await confirmAction('用提取候选替换本页台词？已保存版本在点击保存前保持不变。')) { edit({ ...doc, dialogue: extraction.dialogue!.map(l => ({ ...l, voice: state.voice_defaults.voices[l.character] ?? '' })) }); setSelected(extraction.dialogue![0]?.id ?? ''); setExtraction(null); } }}>放入编辑区校对</Button>}</div>}
+          {extraction && <div className="sound-extraction"><p>提取状态：{extraction.status}。提取文本需人工校对，建议时间不代表准确对齐。</p>{extraction.error && <Alert type="warning" message={extraction.error}/>}<pre>{extraction.raw_text}</pre>{extraction.dialogue && <Button disabled={busy || disabled} onClick={() => void action(async () => { replaceDocument({ ...doc, dialogue: extraction.dialogue!.map(l => ({ ...l, voice: state.voice_defaults.voices[l.character] ?? '' })) }); setSelected(extraction.dialogue![0]?.id ?? ''); setExtraction(null); })}>放入编辑区校对</Button>}</div>}
           <div className="sound-editor"><nav aria-label="台词列表">{doc.dialogue.map((l, i) => <button type="button" key={l.id} aria-pressed={selected === l.id} onClick={() => setSelected(l.id)}><strong>{i + 1}. {l.character}</strong><span>{l.text || '待填写台词'}</span><small>{l.media_id ? state.stale_lines.includes(l.id) ? '配音已过期' : '已采用配音' : '待配音'}</small></button>)}</nav>
           {line ? <section className="sound-fields">
             <label>角色<Input value={line.character} maxLength={100} onChange={e => editLine({ character: e.target.value })}/></label>
@@ -196,7 +202,7 @@ export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled
           <details><summary>项目角色默认音色</summary><p>默认音色只在手动应用时填入台词，不会覆盖已有配音。</p><div className="sound-actions"><Input aria-label="默认音色角色" placeholder="角色名" value={voiceCharacter} onChange={e => setVoiceCharacter(e.target.value)}/><Input aria-label="默认音色标识" placeholder="音色标识" value={voiceName} onChange={e => setVoiceName(e.target.value)}/><Button disabled={busy || disabled || !voiceCharacter.trim() || !voiceName.trim()} onClick={() => void action(async () => { const voices = await api.voices({ row_version: state.voice_defaults.row_version, voices: { ...state.voice_defaults.voices, [voiceCharacter.trim()]: voiceName.trim() } }); setState({ ...state, voice_defaults: voices }); })}>保存默认音色</Button></div>{Object.entries(state.voice_defaults.voices).map(([name, voice]) => <p key={name}>{name}：{voice}</p>)}</details>
         </> },
         { key: 'subtitles', label: `字幕 · ${doc.subtitles.length}`, children: <>
-          <div className="sound-actions"><label className="sound-file">导入 UTF-8 SRT<input type="file" accept=".srt" disabled={busy || disabled} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; if (file.size > 2 * 1024**2) { setNotice('SRT 文件不能超过 2 MiB。'); return; } void action(async () => { const bytes = await file.arrayBuffer(); const subtitles = await api.importSrt(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); setDoc({ ...doc, subtitles }); setReviewed(false); }); }}/></label><a href={api.srtUrl} download>导出已保存 SRT</a><Button disabled={busy || disabled || doc.subtitles.length >= 2000} onClick={async () => edit({ ...doc, subtitles: [...doc.subtitles, { start_ms: doc.subtitles.at(-1)?.end_ms ?? 0, end_ms: (doc.subtitles.at(-1)?.end_ms ?? 0) + 1000, text: '' }] })}>添加字幕</Button>{state.mode !== 'native' && <Button disabled={busy || disabled || !doc.dialogue.length} onClick={async () => { if (!doc.subtitles.length || await confirmAction('将用已采用配音的台词和实际时长替换字幕，是否继续？')) edit({ ...doc, subtitles: doc.dialogue.filter(l => l.media_id && state.media[l.media_id]).map(l => ({ start_ms: l.start_ms, end_ms: l.start_ms + state.media[l.media_id!].duration_ms, text: l.text })).sort((a, b) => a.start_ms - b.start_ms) }); }}>从采用的配音填入字幕</Button>}</div>
+          <div className="sound-actions"><label className="sound-file">导入 UTF-8 SRT<input type="file" accept=".srt" disabled={busy || disabled} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; if (file.size > 2 * 1024**2) { setNotice('SRT 文件不能超过 2 MiB。'); return; } void action(async () => { const bytes = await file.arrayBuffer(); const subtitles = await api.importSrt(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); setDoc({ ...doc, subtitles }); setReviewed(false); }); }}/></label><a href={api.srtUrl} download>导出已保存 SRT</a><Button disabled={busy || disabled || doc.subtitles.length >= 2000} onClick={async () => edit({ ...doc, subtitles: [...doc.subtitles, { start_ms: doc.subtitles.at(-1)?.end_ms ?? 0, end_ms: (doc.subtitles.at(-1)?.end_ms ?? 0) + 1000, text: '' }] })}>添加字幕</Button>{state.mode !== 'native' && <Button disabled={busy || disabled || !doc.dialogue.length} onClick={() => void action(async () => { replaceDocument({ ...doc, subtitles: doc.dialogue.filter(l => l.media_id && state.media[l.media_id]).map(l => ({ start_ms: l.start_ms, end_ms: l.start_ms + state.media[l.media_id!].duration_ms, text: l.text })).sort((a, b) => a.start_ms - b.start_ms) }); })}>从采用的配音填入字幕</Button>}</div>
           <Checkbox checked={doc.burn_subtitles} disabled={busy || disabled} onChange={e => edit({ ...doc, burn_subtitles: e.target.checked })}>导出时烧录字幕</Checkbox><label>字幕字号<InputNumber min={12} max={72} precision={0} value={doc.font_size} onChange={v => edit({ ...doc, font_size: v ?? 24 })}/></label>
           <p>字幕按开始时间排列且不能重叠。配音可能有停顿，请人工调整每条字幕的起止时间。</p>
           {doc.subtitles.map((s, i) => <div className="sound-subtitle" key={i}><label>开始毫秒<InputNumber min={0} max={3600000} precision={0} value={s.start_ms} onChange={v => edit({ ...doc, subtitles: doc.subtitles.map((x, j) => j === i ? { ...x, start_ms: v ?? 0 } : x) })}/></label><label>结束毫秒<InputNumber min={1} max={3600000} precision={0} value={s.end_ms} onChange={v => edit({ ...doc, subtitles: doc.subtitles.map((x, j) => j === i ? { ...x, end_ms: v ?? 1 } : x) })}/></label><label>字幕文本<Input.TextArea value={s.text} maxLength={1000} onChange={e => edit({ ...doc, subtitles: doc.subtitles.map((x, j) => j === i ? { ...x, text: e.target.value } : x) })}/></label><Button danger disabled={busy || disabled} onClick={() => edit({ ...doc, subtitles: doc.subtitles.filter((_, j) => i !== j) })}>删除</Button></div>)}
@@ -213,8 +219,8 @@ export function SoundPanel({ projectId, episodeId, disabled, readOnly = disabled
     {(!inline || !open) && <Button ref={entry} disabled={disabled} loading={busy} onClick={() => void begin()}>声音、字幕和配乐</Button>}
     {!open && notice && <Alert type="error" showIcon message={notice}/>}
     {inline ? open && <section className="sound-inline" aria-label={title}>
-      <header><h3>{title}</h3><Button disabled={busy} onClick={() => void close()}>收起声音编辑</Button></header>
+      <header><h3>{title}</h3><Button onClick={() => void close()}>收起声音编辑</Button></header>
       {content}{actions}
-    </section> : <Drawer open={open} width={960} title={title} onClose={close} maskClosable={false} closable={!busy} keyboard={!busy} destroyOnHidden rootClassName="sound-drawer" footer={actions}>{content}</Drawer>}
+    </section> : <Drawer open={open} width={960} title={title} onClose={close} maskClosable destroyOnHidden rootClassName="sound-drawer" footer={actions}>{content}</Drawer>}
   </>;
 }

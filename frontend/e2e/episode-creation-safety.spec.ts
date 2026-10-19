@@ -101,40 +101,41 @@ test('leaving inline material editing saves the draft before returning to the pr
   await detail.getByRole('textbox', { name: '素材名称', exact: true }).fill('保存后离开的角色');
   await page.getByRole('button', { name: '返回项目详情', exact: true }).click();
   await expect(page).toHaveURL(/\/projects\/10$/);
-  expect(data.state.updates).toEqual([expect.objectContaining({ id: '501', name: '保存后离开的角色', row_version: '1' })]);
+  await expect.poll(() => data.state.updates).toEqual([expect.objectContaining({ id: '501', name: '保存后离开的角色', row_version: '1' })]);
   expect(data.state.assets[0].name).toBe('保存后离开的角色');
   expect(data.errors).toEqual([]);
   expect(data.unexpected).toEqual([]);
 });
 
-test('a material version conflict keeps the draft when leaving is cancelled', async ({ page }) => {
+test('a material version conflict allows leaving and retains the draft on return', async ({ page }) => {
   const data = await safetyFixture(page);
   data.state.conflicts = true;
   const detail = await openFirstAsset(page);
   await detail.getByRole('textbox', { name: '素材名称', exact: true }).fill('发生冲突仍保留的草稿');
   await page.getByRole('button', { name: '返回项目详情', exact: true }).click();
   const confirmation = page.getByRole('dialog', { name: '未保存的修改', exact: true });
-  await expect(confirmation).toBeVisible();
-  await confirmation.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(page).toHaveURL(url => url.pathname === `${root}/assets` && url.searchParams.get('asset') === '501');
+  await expect(confirmation).toHaveCount(0);
+  await expect(page).toHaveURL(/\/projects\/10$/);
+  await page.goBack();
   await expect(detail.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('发生冲突仍保留的草稿');
   expect(data.state.updates).toHaveLength(1);
   expect(data.state.assets[0].name).toBe('林晚');
   expect(data.errors).toEqual([]);
 });
 
-test('switching materials first saves the current draft and preserves it when a conflict blocks switching', async ({ page }) => {
+test('switching materials retains both drafts and never blocks on conflict', async ({ page }) => {
   const data = await safetyFixture(page);
   const detail = await openFirstAsset(page);
   const name = detail.getByRole('textbox', { name: '素材名称', exact: true });
   await name.fill('先保存再切换的林晚');
   await page.getByRole('button', { name: '沈川', exact: true }).click();
   await expect(name).toHaveValue('沈川');
-  expect(data.state.updates).toEqual([expect.objectContaining({ id: '501', name: '先保存再切换的林晚', row_version: '1' })]);
+  await expect.poll(() => data.state.assets[0].name).toBe('先保存再切换的林晚');
   data.state.conflicts = true;
   await name.fill('冲突后保留的沈川');
   await page.getByRole('button', { name: '先保存再切换的林晚', exact: true }).click();
-  await expect(detail.getByRole('button', { name: '核对最新版本', exact: true })).toBeVisible();
+  await expect(name).toHaveValue('先保存再切换的林晚');
+  await page.getByRole('button', { name: '冲突后保留的沈川', exact: true }).click();
   await expect(name).toHaveValue('冲突后保留的沈川');
   await expect(page).toHaveURL(url => url.searchParams.get('asset') === '504');
   expect(data.state.assets[1].name).toBe('沈川');
@@ -142,7 +143,7 @@ test('switching materials first saves the current draft and preserves it when a 
   expect(data.errors).toEqual([]);
 });
 
-test('a pending material save retains newer input and delays switching until every acknowledgement applies', async ({ page }) => {
+test('a pending material save retains newer input while switching immediately', async ({ page }) => {
   const data = await safetyFixture(page);
   const detail = await openFirstAsset(page);
   const gate = data.gateSave();
@@ -154,12 +155,12 @@ test('a pending material save retains newer input and delays switching until eve
     await expect(name).toBeEnabled();
     await name.fill('保存回执等待期间的新名称');
     await next.click();
-    await expect(name).toHaveValue('保存回执等待期间的新名称');
-    await expect(page).toHaveURL(url => url.searchParams.get('asset') === '501');
+    await expect(name).toHaveValue('沈川');
+    await expect(page).toHaveURL(url => url.searchParams.get('asset') === '504');
     await expect(page.getByRole('dialog', { name: '未保存的修改', exact: true })).toHaveCount(0);
   } finally { gate.release(); }
   await expect(name).toHaveValue('沈川');
-  expect(data.state.assets[0].name).toBe('保存回执等待期间的新名称');
+  await expect.poll(() => data.state.assets[0].name).toBe('保存回执等待期间的新名称');
   expect(data.state.updates).toEqual([
     expect.objectContaining({ id: '501', name: '先保存林晚', row_version: '1' }),
     expect.objectContaining({ id: '501', name: '保存回执等待期间的新名称', row_version: '2' }),
@@ -221,8 +222,9 @@ for (const width of [1440, 390]) {
     await sound.getByLabel('原视频声音音量', { exact: true }).fill('0.65');
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await page.screenshot({ path: info.outputPath(`assembly-sound-expanded-${width}.png`), fullPage: true, animations: 'disabled' });
-    await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /小说改编/ }).click();
+    await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /剧本创作/ }).click();
     await expect(page).toHaveURL(url => url.pathname.endsWith('/source'));
+    await expect.poll(() => data.requests.filter(request => request.path === `${root}/sound` && request.method === 'PUT').length).toBe(1);
     const saves = data.requests.filter(request => request.path === `${root}/sound` && request.method === 'PUT');
     expect(saves).toHaveLength(1);
     expect(saves[0].body.document.original_volume).toBe(0.65);
@@ -231,7 +233,7 @@ for (const width of [1440, 390]) {
   });
 }
 
-test('sound version conflicts preserve the inline draft and block navigation', async ({ page }) => {
+test('sound version conflicts preserve the inline draft while navigation remains immediate', async ({ page }) => {
   const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   await page.route(`**/api/v1${root}/sound`, async route => {
     if (route.request().method() !== 'PUT') return route.fallback();
@@ -244,9 +246,14 @@ test('sound version conflicts preserve the inline draft and block navigation', a
   await sound.getByRole('tab', { name: '配乐与混音' }).click();
   const volume = sound.getByLabel('原视频声音音量', { exact: true });
   await volume.fill('0.65');
-  await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /小说改编/ }).click();
-  await expect(sound.getByRole('alert').filter({ hasText: '数据已被修改' })).toBeVisible();
-  await expect(page).toHaveURL(url => url.pathname.endsWith('/assembly'));
+  await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /剧本创作/ }).click();
+  await expect(page).toHaveURL(url => url.pathname.endsWith('/source'));
+  await expect(page.getByRole('dialog', { name: /确认|未保存/ })).toHaveCount(0);
+  await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /成片合成/ }).click();
+  await expect(rail).toBeVisible();
+  if (!await sound.isVisible()) await rail.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
+  await sound.getByRole('tab', { name: '配乐与混音' }).click();
+  await expect(sound.getByRole('alert').filter({ hasText: '服务端版本已变化' })).toBeVisible();
   await expect(volume).toHaveValue('0.65');
   expect(data.errors).toEqual([]);
   expect(data.unexpected).toEqual([]);
@@ -285,7 +292,7 @@ test('closing saved material settings restores focus while the refreshed card an
   await entry.click();
   await expect(name).toHaveValue('保存后的林晚');
   await expect(page).toHaveURL(url => url.searchParams.get('asset') === '501');
-  await expect(page.locator('.episode-save-state')).toHaveText('已保存');
+  await expect(page.locator('.episode-save-state')).toHaveAttribute('aria-label', '保存状态：已保存');
   await page.reload();
   await entry.click();
   await expect(name).toHaveValue('保存后的林晚');
@@ -307,3 +314,25 @@ test('collapsing inline sound editing restores keyboard focus to its entry', asy
   await expect(entry).toBeFocused();
   expect(data.errors).toEqual([]);
 });
+
+for (const width of [1440, 390]) {
+  test(`save status stays quiet and opens nonmodal details by keyboard at ${width}px`, async ({ page }, info) => {
+    const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${root}/source`);
+    await expect(page.getByRole('textbox', { name: '本集剧本正文', exact: true })).toBeEditable();
+    const status = page.getByRole('button', { name: '保存状态：已保存', exact: true });
+    await expect(status).toBeVisible(); await expect(status).toHaveText('');
+    await expect(page.getByRole('button', { name: '确认当前剧本', exact: true })).toHaveCount(0);
+    await status.focus(); await page.keyboard.press('Enter');
+    await expect(page.locator('.standard-save-details')).toBeVisible();
+    await expect.poll(async () => {
+      const box = await page.locator('.standard-save-details').boundingBox();
+      return !!box && box.x >= 8 && box.x + box.width <= width - 8;
+    }).toBe(true);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`quiet-save-details-${width}.png`), animations: 'disabled' });
+    expect(data.errors).toEqual([]);
+  });
+}

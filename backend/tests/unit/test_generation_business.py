@@ -1,9 +1,282 @@
 import json
+from contextlib import contextmanager
 
 import pytest
 from pydantic import ValidationError
 
 from short_drama.schemas.ai_generation import ImageGenerationCreate, TextGenerationCreate
+
+
+def saved_script_request(project_id, episode_id, script_id, scene, version="2"):
+    return {
+        "source": {
+            "scene": scene,
+            "project_id": str(project_id),
+            "episode_id": str(episode_id),
+            "script_id": script_id,
+            "content_version": version,
+        }
+    }
+
+
+@pytest.mark.parametrize("scene", ["script_assets", "script_shots"])
+def test_current_saved_script_generation_freezes_without_confirming_and_replays(scene):
+    from generation_fixtures import config, generation_session, settings
+    from sqlalchemy import func, select
+    from test_episode_writing import setup
+
+    from short_drama.domain import AIGenerationRecord, AsyncTask
+    from short_drama.service.ai_generation_service import AIGenerationService
+
+    with generation_session() as session:
+        config(session, "text")
+        p, e, writing = setup(session)
+        saved = writing.save_script(
+            p, e, {"script_id": None, "content": "已保存正文", "content_version": "1"}
+        )
+        request = saved_script_request(p, e, saved["script"]["id"], scene)
+        service = AIGenerationService(session, settings)
+        receipt, created = service.create("text", request, "saved-script")
+        replay, duplicate = service.create("text", request, "saved-script")
+        assert created and not duplicate
+        assert replay["generation_id"] == receipt["generation_id"]
+        assert writing.get(p, e)["content_version"] == "2"
+        assert writing.get(p, e)["editing_script"]["state"] == "unconfirmed"
+        with session.begin():
+            record = session.scalar(select(AIGenerationRecord))
+            assert record.request_data["source_snapshot"]["content"] == "已保存正文"
+            assert (
+                record.request_data["source_snapshot"]["script_source_policy"] == "current_saved_v1"
+            )
+            assert session.scalar(select(func.count()).select_from(AsyncTask)) == 1
+
+
+@pytest.mark.parametrize("scene", ["script_assets", "script_shots"])
+@pytest.mark.parametrize("invalid", ["version", "noncurrent", "empty", "agent_candidate"])
+def test_current_saved_script_still_rejects_invalid_sources(scene, invalid):
+    from generation_fixtures import config, generation_session, settings
+    from sqlalchemy import func, select
+    from test_episode_writing import setup
+
+    from short_drama.core.exceptions import WorkflowError
+    from short_drama.domain import AgentArtifact, AsyncTask, Episode
+    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.base import utcnow
+
+    with generation_session() as session:
+        config(session, "text")
+        p, e, writing = setup(session)
+        saved = writing.save_script(
+            p,
+            e,
+            {
+                "script_id": None,
+                "content": " " if invalid == "empty" else "已保存正文",
+                "content_version": "1",
+            },
+        )
+        sid = saved["script"]["id"]
+        request = saved_script_request(p, e, sid, scene, "1" if invalid == "version" else "2")
+        if invalid in {"noncurrent", "agent_candidate"}:
+            with session.begin():
+                if invalid == "noncurrent":
+                    session.get(Episode, e).editing_script_id = None
+                else:
+                    session.add(
+                        AgentArtifact(
+                            id=101,
+                            project_id=p,
+                            episode_id=e,
+                            tool_call_id=102,
+                            result_index=1,
+                            kind="script_candidate",
+                            script_id=int(sid),
+                            status="ready",
+                            created_by=2,
+                            created_at=utcnow(),
+                            updated_at=utcnow(),
+                        )
+                    )
+        with pytest.raises(WorkflowError) as error:
+            AIGenerationService(session, settings).create("text", request, "invalid-source")
+        assert (
+            error.value.code
+            == {
+                "version": "writing_version_conflict",
+                "noncurrent": "script_not_current",
+                "empty": "script_empty",
+                "agent_candidate": "agent_artifact_adoption_required",
+            }[invalid]
+        )
+        with session.begin():
+            assert session.scalar(select(func.count()).select_from(AsyncTask)) == 0
+
+
+@pytest.mark.parametrize("scene", ["script_assets", "script_shots"])
+def test_internal_script_admission_retains_confirmation_and_unmarked_snapshot(scene):
+    from generation_fixtures import config, generation_session, settings
+    from sqlalchemy import select
+    from test_episode_writing import setup
+
+    from short_drama.core.exceptions import WorkflowError
+    from short_drama.domain import AIGenerationRecord
+    from short_drama.service.ai_generation_service import AIGenerationService
+
+    with generation_session() as session:
+        config(session, "text")
+        p, e, writing = setup(session)
+        saved = writing.save_script(
+            p, e, {"script_id": None, "content": "旧合同正文", "content_version": "1"}
+        )
+        sid = saved["script"]["id"]
+        service = AIGenerationService(session, settings)
+        with pytest.raises(WorkflowError) as error, session.begin():
+            service.create_locked("text", saved_script_request(p, e, sid, scene), "internal")
+        assert error.value.code == "script_not_confirmed"
+        writing.confirm(p, e, sid, {"content_version": "2"})
+        with session.begin():
+            service.create_locked("text", saved_script_request(p, e, sid, scene, "3"), "internal")
+            record = session.scalar(select(AIGenerationRecord))
+            assert "script_source_policy" not in record.request_data["source_snapshot"]
+
+
+@pytest.mark.parametrize("placement", ["request", "source"])
+def test_script_source_policy_cannot_be_supplied_by_clients(placement):
+    request = saved_script_request(1, 2, "3", "script_shots")
+    target = request if placement == "request" else request["source"]
+    target["script_source_policy"] = "current_saved_v1"
+    with pytest.raises(ValidationError):
+        TextGenerationCreate.model_validate(request)
+
+
+@pytest.mark.parametrize("scene", ["script_assets", "script_shots"])
+def test_saved_script_admission_supports_prompt_only_database_without_agent_tables(scene):
+    from generation_fixtures import config, generation_session, settings
+    from test_episode_writing import setup
+
+    from short_drama.domain import AgentArtifact
+    from short_drama.service.ai_generation_service import AIGenerationService
+
+    with generation_session() as session:
+        config(session, "text")
+        p, e, writing = setup(session)
+        AgentArtifact.__table__.drop(session.get_bind())
+        saved = writing.save_script(
+            p, e, {"script_id": None, "content": "普通剧本", "content_version": "1"}
+        )
+        _, created = AIGenerationService(session, settings).create(
+            "text", saved_script_request(p, e, saved["script"]["id"], scene), "prompt-only"
+        )
+        assert created
+
+
+@contextmanager
+def saved_storyboard_result(*, legacy=False):
+    from generation_fixtures import config, generation_session, settings
+    from sqlalchemy import select
+    from test_episode_writing import setup
+
+    from short_drama.dao.task_runtime_dao import finish
+    from short_drama.domain import AIGenerationRecord, AsyncTask
+    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.generation_business_service import GenerationBusinessService
+
+    with generation_session() as session:
+        config(session, "text")
+        p, e, writing = setup(session)
+        saved = writing.save_script(
+            p, e, {"script_id": None, "content": "正文", "content_version": "1"}
+        )
+        sid = saved["script"]["id"]
+        service = AIGenerationService(session, settings)
+        if legacy:
+            writing.confirm(p, e, sid, {"content_version": "2"})
+            with session.begin():
+                task, _ = service.create_locked(
+                    "text", saved_script_request(p, e, sid, "script_shots", "3"), "storyboard"
+                )
+        else:
+            task, _ = service.create(
+                "text", saved_script_request(p, e, sid, "script_shots"), "storyboard"
+            )
+        tid = int(task["generation_id"])
+        with session.begin():
+            record = session.scalar(select(AIGenerationRecord))
+            record.text_content = json.dumps(
+                {
+                    "shots": [
+                        {
+                            "title": "镜头",
+                            "source_excerpt": "正文",
+                            "story_beat": "故事开场",
+                            "script": "镜头正文",
+                            "duration_ms": 3000,
+                            "asset_ids": [],
+                        }
+                    ]
+                }
+            )
+            record.response_data = {"finish_reason": "stop"}
+            GenerationBusinessService(session).save_text_result(tid, record.id)
+            finish(session.get(AsyncTask, tid), "succeeded")
+        yield session, p, e, writing, sid, tid
+
+
+@pytest.mark.parametrize("change", ["none", "format", "body", "noncurrent"])
+def test_current_saved_storyboard_checks_actual_source_when_adopting(change):
+    from short_drama.core.exceptions import WorkflowError
+    from short_drama.domain import Episode
+    from short_drama.service.generation_business_service import GenerationBusinessService
+
+    with saved_storyboard_result() as (session, p, e, writing, sid, tid):
+        if change in {"format", "body"}:
+            content = "正文" if change == "format" else "新正文"
+            writing.save_script(
+                p,
+                e,
+                {
+                    "script_id": sid,
+                    "content_version": "2",
+                    "content": content,
+                    "editor_document": {
+                        "ops": [
+                            {"insert": content, "attributes": {"bold": True}},
+                            {"insert": "\n"},
+                        ]
+                    },
+                },
+            )
+        elif change == "noncurrent":
+            with session.begin():
+                session.get(Episode, e).editing_script_id = None
+        request = {
+            "mode": "append",
+            "content_version": writing.get(p, e)["content_version"],
+            "storyboard_version": "1",
+        }
+        business = GenerationBusinessService(session)
+        if change in {"body", "noncurrent"}:
+            with pytest.raises(WorkflowError) as error:
+                business.apply_storyboard(p, e, tid, request)
+            assert error.value.code == "source_changed"
+        else:
+            adopted = business.apply_storyboard(p, e, tid, request)
+            assert len(adopted["shot_ids"]) == 1
+
+
+def test_unmarked_storyboard_keeps_legacy_confirmation_requirement():
+    from short_drama.core.exceptions import WorkflowError
+    from short_drama.domain import EpisodeScript
+    from short_drama.service.generation_business_service import GenerationBusinessService
+
+    with saved_storyboard_result(legacy=True) as (session, p, e, _, sid, tid):
+        with session.begin():
+            session.get(EpisodeScript, int(sid)).state = "unconfirmed"
+        with pytest.raises(WorkflowError) as error:
+            GenerationBusinessService(session).apply_storyboard(
+                p, e, tid, {"mode": "append", "content_version": "3", "storyboard_version": "1"}
+            )
+        assert error.value.code == "source_changed"
 
 
 def test_business_text_accepts_saved_source_without_client_messages():

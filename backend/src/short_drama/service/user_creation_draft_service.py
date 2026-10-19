@@ -220,15 +220,15 @@ class UserCreationDraftService(BaseService):
             merged = UserCreationDraftCreate.model_validate(merged).model_dump()
             merged["source_version"] = self._source_version(obj, purpose)
             changed = {key: value for key, value in merged.items() if getattr(row, key) != value}
-            if changed:
-                if row.row_version >= UINT64_MAX or row.draft_version >= UINT64_MAX:
-                    raise Conflict("私人草稿版本已耗尽")
-                changed.update(
-                    row_version=row.row_version + 1,
-                    draft_version=row.draft_version + 1,
-                    updated_at=utcnow(),
-                )
-                self.dao.update(row, changed)
+            if row.row_version >= UINT64_MAX or changed and row.draft_version >= UINT64_MAX:
+                raise Conflict("私人草稿版本已耗尽")
+            draft_version = row.draft_version + 1 if changed else row.draft_version
+            changed.update(
+                row_version=row.row_version + 1,
+                draft_version=draft_version,
+                updated_at=utcnow(),
+            )
+            self.dao.update(row, changed)
             return self._read(row)
 
     def delete_for_scope(self, project_id, episode_id, object_id, purpose):

@@ -169,10 +169,10 @@ class EpisodeWritingService(BaseService):
             novel = self.dao.novel(episode.id)
             if novel is None:
                 novel = self._create_document(EpisodeNovel, episode.id, data["content"])
-                self._changed(episode)
             elif novel.content != data["content"]:
                 novel.content, novel.updated_at, novel.updated_by = data["content"], utcnow(), None
-                self._changed(episode)
+            # An accepted save also fences older in-flight writes when content is unchanged.
+            self._changed(episode)
             return NovelSaved(content_version=episode.content_version, novel=novel).model_dump(
                 mode="json"
             )
@@ -201,14 +201,14 @@ class EpisodeWritingService(BaseService):
                     editor_document=data.get("editor_document"),
                 )
                 episode.editing_script_id = script.id
-                self._changed(episode)
             elif script.content != data["content"] or script.editor_document != data.get(
                 "editor_document"
             ):
-                script.content, script.state = data["content"], "unconfirmed"
+                if script.content != data["content"]:
+                    script.content, script.state = data["content"], "unconfirmed"
                 script.editor_document = data.get("editor_document")
                 script.updated_at, script.updated_by = utcnow(), None
-                self._changed(episode)
+            self._changed(episode)
             return ScriptSaved(content_version=episode.content_version, script=script).model_dump(
                 mode="json"
             )

@@ -187,3 +187,22 @@
   .generation-composer-send.ant-btn { width: 38px; min-width: 38px; height: 38px; min-height: 38px; }
 }
 @media (prefers-reduced-motion: reduce) { .creation-image-preview img { transition: none; } }
+.web-episode .episode-top .standard-save-status.ant-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; max-width: none; height: 30px; padding-inline: 5px; color: var(--sub); font-size: 11px; }
+.web-episode .standard-save-status::before { content: none; }
+.web-episode .episode-top .standard-save-status.has-issues.ant-btn { color: var(--warning, #f1c376); }
+.standard-save-details { width: min(352px, calc(100vw - 48px)); max-height: min(560px, 70dvh); overflow-y: auto; font-size: 12px; }
+.standard-save-details p { margin: 6px 0; line-height: 1.6; overflow-wrap: anywhere; }
+.standard-save-entry { display: flex; justify-content: space-between; gap: 12px; padding-block: 10px; border-bottom: 1px solid var(--line); }
+.standard-save-entry strong, .standard-save-entry span { display: block; }
+.standard-save-entry span, .standard-save-entry p { color: var(--sub); }
+.standard-save-entry-actions { display: flex; align-items: center; flex-shrink: 0; }
+.standard-writing-review { margin-top: 12px; }
+.standard-writing-review > summary { cursor: pointer; }
+.standard-writing-review .ant-btn { margin: 4px 4px 0 0; }
+.standard-writing-review pre { max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .web-episode .episode-top .standard-save-status.ant-btn { min-width: 40px; height: 40px; max-width: 100px; }
+  .standard-save-status.ant-btn > span:not(.ant-btn-icon) { overflow: hidden; text-overflow: ellipsis; }
+  .web-episode .episode-top .episode-assistant-entry { width: 36px; padding-inline: 0; }
+  .web-episode .episode-top .episode-assistant-entry > span:not(.ant-btn-icon) { display: none; }
+}

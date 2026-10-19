@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Alert, Button, Input, Pagination, Skeleton, Spin } from 'antd';
 import { Image as ImageIcon, Plus, Search, Sparkles, TriangleAlert, Upload } from 'lucide-react';
 import { assetLibraries, type AssetKind, type AssetScope, type LibraryAssetRead } from '../../api/modules/assets';
@@ -13,7 +13,10 @@ import type { NavigationBarrier } from '../projects/writing-navigation';
 import { useAssetLibrary } from './useAssetLibrary';
 import { StandardEpisodeAssetCard } from './EpisodeAssetCard';
 import { EpisodeAssetEditor, LocalAssetEditor } from './EpisodeAssetEditor';
-import { assetCreationAttempt, assetCreationUnknown, assetDraftHasInput, blankAssetDraft, localAssetDraftKey, mergeCreatedAsset, readLocalAssetDrafts, type LocalAssetDraft } from './episode-asset-drafts';
+import { blankAssetDraft, localAssetDraftKey, type LocalAssetDraft } from './episode-asset-drafts';
+import { LocalAssetSession } from './local-asset-session';
+import { AssetEditingSession, assetRecoveryKey, assetRecoveryStorage, assetFields } from './asset-editing-session';
+import { releaseStandardSession, retainStandardSession } from '../projects/standard-session-registry';
 import './episode-assets.css';
 
 const labels = { all: '全部', character: '角色', scene: '场景', prop: '道具' };
@@ -56,8 +59,23 @@ function ScopedEpisodeAssets({ scope, title, readOnly, importFrom, shareTo, tool
     return () => controller.abort();
   }, [scope.projectId, scope.episodeId, countRevision]);
   const recoveryKey = localAssetDraftKey(actor, scope.projectId, scope.episodeId);
-  const [recoveryError, setRecoveryError] = useState('');
-  const [drafts, setDrafts] = useState<LocalAssetDraft[]>([]);
+  const localResource = `asset-new:${scope.projectId}:${scope.episodeId}`;
+  const localSession = useMemo(() => retainStandardSession(actor, localResource, () => new LocalAssetSession(recoveryKey, {
+    create: (body, key) => assetLibraries.create(scope, body, key),
+    preserveCreated: (saved, current) => {
+      if (current.generation) saveRecovery(creationScope(`generation-draft:${scope.projectId}:${scope.episodeId}:${saved.id}:asset_image`, actor), { row_version: null, value: current.generation });
+      const storage = assetRecoveryStorage(assetRecoveryKey(actor, scope.projectId, scope.episodeId, saved.id));
+      if (JSON.stringify(assetFields(saved)) !== JSON.stringify(assetFields({ ...current, kind: current.kind ?? saved.kind }))) {
+        storage.save({ base: saved, fields: assetFields({ ...current, kind: current.kind ?? saved.kind }) });
+        const resource = `asset:${saved.id}`;
+        retainStandardSession(actor, resource, () => new AssetEditingSession(saved, assetLibraries.update, storage, 1000, assetLibraries.detail), { label: `素材 · ${current.name}`, projectId: scope.projectId, episodeId: scope.episodeId });
+        releaseStandardSession(actor, resource);
+      }
+    },
+  }, readOnly), { label: '新素材', projectId: scope.projectId, episodeId: scope.episodeId }), [actor, localResource, recoveryKey, readOnly, scope.projectId, scope.episodeId]);
+  const localState = useSyncExternalStore(localSession.subscribe, localSession.getSnapshot);
+  const { drafts, recoveryError } = localState;
+  useEffect(() => () => releaseStandardSession(actor, localResource), [localSession, actor, localResource]);
   const draftsRef = useRef(drafts); draftsRef.current = drafts;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selection = useRef(selectedId); selection.current = selectedId;
@@ -76,47 +94,25 @@ function ScopedEpisodeAssets({ scope, title, readOnly, importFrom, shareTo, tool
   const [linking, setLinking] = useState<string | null>(null);
   const entries = useRef(new Map<string, HTMLButtonElement>());
   const requests = useRef<{ detail?: AbortController; import?: AbortController }>({});
-  const creating = useRef(new Set<string>());
   const alive = useRef(true);
   const switching = useRef(false);
   const requestedSubject = useRef<string | null>(null);
   const editorBarrier = useRef<NavigationBarrier | null>(null);
   const registerEditor = useCallback((barrier: NavigationBarrier | null) => { editorBarrier.current = barrier; }, []);
-  const [uploadBusy, setUploadBusy] = useState(false);
 
   useEffect(() => {
     alive.current = true;
-    try { const recovered = readLocalAssetDrafts(recoveryKey); setDrafts(recovered); draftsRef.current = recovered; }
-    catch { setRecoveryError('本机素材草稿无法读取。请下载备份后明确清除恢复记录。'); }
     return () => { alive.current = false; requests.current.detail?.abort(); requests.current.import?.abort(); };
   }, [recoveryKey]);
   useEffect(() => { if (refreshToken) refresh(); }, [refreshToken, refresh]);
   useEffect(() => {
-    registerBarrier?.({
-      hasUnsettled: () => !!editorBarrier.current?.hasUnsettled() || draftsRef.current.some(assetDraftHasInput) || !!creating.current.size || !!recoveryError,
-      flush: async () => {
-        if (recoveryError || creating.current.size) return false;
-        if (editorBarrier.current?.hasUnsettled() && !await editorBarrier.current.flush()) return false;
-        if (draftsRef.current.some(assetDraftHasInput)) { setNotice('新素材仍是本机草稿，请补齐名称和类型后再离开。'); return false; }
-        return true;
-      },
-    });
+    registerBarrier?.({ hasUnsettled: () => !!editorBarrier.current?.hasUnsettled() || localSession.hasUnsettled(),
+      hasMemoryOnlyChanges: () => localSession.hasMemoryOnlyChanges() || !!editorBarrier.current?.hasMemoryOnlyChanges?.(),
+      flush: async () => { void editorBarrier.current?.flush(); return localSession.flush(); } });
     return () => registerBarrier?.(null);
-  }, [registerBarrier, recoveryError]);
-  useEffect(() => {
-    const status = creating.current.size ? 'saving' : drafts.some(assetDraftHasInput) ? 'local' : null;
-    window.dispatchEvent(new CustomEvent('creation-save-state', { detail: { key: `asset-new:${recoveryKey}`, status, message: status === 'local' ? '本机草稿已保留' : '' } }));
-    return () => { window.dispatchEvent(new CustomEvent('creation-save-state', { detail: { key: `asset-new:${recoveryKey}`, status: null } })); };
-  }, [drafts, recoveryKey]);
-
-  function keepDrafts(next: LocalAssetDraft[]) {
-    draftsRef.current = next; setDrafts(next);
-    try { if (next.length) localStorage.setItem(recoveryKey, JSON.stringify(next)); else localStorage.removeItem(recoveryKey); }
-    catch { setRecoveryError('浏览器无法保留素材草稿，请保持本页打开并下载备份。'); }
-  }
-  function editDraft(id: string, patch: Partial<LocalAssetDraft>) {
-    keepDrafts(draftsRef.current.map(draft => draft.id === id ? { ...draft, ...patch } : draft));
-  }
+  }, [registerBarrier, localSession]);
+  function keepDrafts(next: LocalAssetDraft[]) { localSession.replace(next); draftsRef.current = next; }
+  function editDraft(id: string, patch: Partial<LocalAssetDraft>) { localSession.edit(id, patch); draftsRef.current = localSession.getSnapshot().drafts; }
   const localSelected = drafts.find(draft => draft.id === selectedId);
   const known = items.map(item => overrides[item.id] ?? item);
 
@@ -137,7 +133,7 @@ function ScopedEpisodeAssets({ scope, title, readOnly, importFrom, shareTo, tool
     if (switching.current || id === selection.current) return;
     switching.current = true;
     try {
-      if (editorBarrier.current?.hasUnsettled() && !await editorBarrier.current.flush()) return;
+      if (editorBarrier.current?.hasUnsettled()) void editorBarrier.current.flush();
       requests.current.detail?.abort();
       selection.current = id; setSelectedId(id); setNotice(''); setDetailError('');
       creation.revealPanel?.();
@@ -176,50 +172,25 @@ function ScopedEpisodeAssets({ scope, title, readOnly, importFrom, shareTo, tool
 
   async function addDraft() {
     if (readOnly || recoveryError || switching.current) return;
-    if (editorBarrier.current?.hasUnsettled() && !await editorBarrier.current.flush()) return;
+    if (editorBarrier.current?.hasUnsettled()) void editorBarrier.current.flush();
     const draft = blankAssetDraft(kind);
     keepDrafts([...draftsRef.current, draft]); setQuery('');
     selection.current = draft.id; setSelectedId(draft.id); setDetail(null); setDetailError(''); setDetailLoading(false);
     creation.selectSubject?.(null); creation.revealPanel?.();
     requestAnimationFrame(() => entries.current.get(draft.id)?.scrollIntoView({ block: 'nearest' }));
   }
-  async function createDraft(id: string) {
-    const draft = draftsRef.current.find(item => item.id === id);
-    if (!draft || creating.current.has(id) || readOnly || recoveryError) return false;
-    if (selection.current === id && editorBarrier.current?.hasUnsettled()) return false;
-    const attempt = assetCreationAttempt(draft);
-    if (!attempt) return false;
-    creating.current.add(id); editDraft(id, { attempt, status: 'saving', message: '正在保存到服务端…' });
-    try {
-      const saved = await assetLibraries.create(scope, attempt.body, attempt.key);
-      if (!alive.current) return false;
-      const current = draftsRef.current.find(item => item.id === id) ?? draft;
-      const edited = mergeCreatedAsset(saved, current);
-      if (current.generation) {
-        saveRecovery(creationScope(`generation-draft:${scope.projectId}:${scope.episodeId}:${saved.id}:asset_image`), { row_version: null, value: current.generation });
-        setPrivateInitial(value => ({ ...value, [saved.id]: current.generation! }));
-      }
-      setOverrides(value => ({ ...value, [saved.id]: edited }));
-      // Seed a shared editing recovery for keystrokes entered after the create request.
-      if (JSON.stringify(attempt.body) !== JSON.stringify({ kind: edited.kind, name: edited.name.trim(), label: edited.label, description: edited.description, prompt: edited.prompt, tags: edited.tags, scene_time: edited.scene_time })) {
-        const { assetRecoveryKey, assetRecoveryStorage, assetFields } = await import('./asset-editing-session');
-        assetRecoveryStorage(assetRecoveryKey(actor, scope.projectId, scope.episodeId, saved.id)).save({ base: saved, fields: assetFields(edited) });
-      }
-      keepDrafts(draftsRef.current.filter(item => item.id !== id));
-      if (selection.current === id) { selection.current = saved.id; setSelectedId(saved.id); setDetail(saved); receiveArtwork(edited); }
-      refresh(); return true;
-    } catch (cause) {
-      if (alive.current) editDraft(id, { status: assetCreationUnknown(cause) ? 'unknown' : 'error',
-        message: assetCreationUnknown(cause) ? '创建受理结果待核对。草稿和原请求已保留，请核对原创建请求。' : `创建素材失败：${errorMessage(cause)}` });
-      return false;
-    } finally { creating.current.delete(id); }
-  }
+  const createdSeen = useRef(new Set<string>());
   useEffect(() => {
-    if (!localSelected || localSelected.status !== 'local' || !localSelected.name.trim() || !localSelected.kind || uploadBusy) return;
-    const timer = setTimeout(() => { void createDraft(localSelected.id); }, 1000);
-    return () => clearTimeout(timer);
-  }, [localSelected, readOnly, recoveryError, uploadBusy]);
-
+    for (const [id, result] of Object.entries(localState.created)) {
+      if (createdSeen.current.has(id)) continue;
+      createdSeen.current.add(id);
+      if (result.generation) setPrivateInitial(value => ({ ...value, [result.asset.id]: result.generation! }));
+      setOverrides(value => ({ ...value, [result.asset.id]: result.asset }));
+      if (selection.current === id) { selection.current = result.asset.id; setSelectedId(result.asset.id); setDetail(result.asset); receiveArtwork(result.asset); }
+      refresh();
+    }
+  }, [localState.created, receiveArtwork, refresh]);
+  const createDraft = (id: string) => localSession.create(id);
   async function openImports() {
     if (!importFrom || readOnly) return;
     requests.current.import?.abort(); const controller = new AbortController(); requests.current.import = controller;
@@ -245,7 +216,7 @@ function ScopedEpisodeAssets({ scope, title, readOnly, importFrom, shareTo, tool
     finally { setLinking(null); }
   }
   async function removeDraft(id: string) {
-    if (creating.current.has(id) || !await confirmAction('明确放弃这张本机素材草稿？')) return;
+    if (draftsRef.current.find(item => item.id === id)?.status === 'saving' || !await confirmAction('明确放弃这张本机素材草稿？')) return;
     keepDrafts(draftsRef.current.filter(item => item.id !== id));
     if (selection.current === id) { selection.current = null; setSelectedId(null); }
   }
@@ -257,7 +228,10 @@ function ScopedEpisodeAssets({ scope, title, readOnly, importFrom, shareTo, tool
   }
 
   const visibleDrafts = drafts.filter(item => (kind === 'all' || item.kind === kind) && (!query.trim() || `${item.name}${item.description}`.includes(query.trim())));
-  const editor = localSelected ? <LocalAssetEditor draft={localSelected} readOnly={readOnly || !!recoveryError} registerBarrier={registerEditor} onUploadBusyChange={setUploadBusy} onChange={patch => editDraft(localSelected.id, patch)} onRetry={() => void createDraft(localSelected.id)} onRemove={() => void removeDraft(localSelected.id)}/>
+  const editor = localSelected ? <LocalAssetEditor draft={localSelected} readOnly={readOnly || !!recoveryError} registerBarrier={registerEditor} onUploadBusyChange={busy => localSession.setUploadBusy(localSelected.id, busy)} onChange={patch => editDraft(localSelected.id, patch)} onReferencesChange={ids => {
+    const current = localSession.getSnapshot().drafts.find(item => item.id === localSelected.id);
+    if (current) editDraft(current.id, { generation: { model_config_id: null, input_text: '', image_settings: null, video_settings: null, ...current.generation, reference_media_ids: ids } });
+  }} onRetry={() => void createDraft(localSelected.id)} onRemove={() => void removeDraft(localSelected.id)}/>
     : detail && detail.id === selectedId ? <EpisodeAssetEditor key={detail.id} asset={detail} scope={scope} actor={actor} readOnly={readOnly} initialGeneration={privateInitial[detail.id]}
       registerBarrier={registerEditor} onArtwork={receiveArtwork} onRemove={() => void removeSaved(overrides[detail.id] ?? detail)} onShare={shareTo ? async () => { try { await assetLibraries.link(shareTo, detail.id); setNotice('素材已共享到项目库。'); } catch (cause) { setNotice(errorMessage(cause)); } } : undefined}/>
     : <section className="standard-object-panel standard-asset-empty" aria-label="素材工作区">{detailLoading ? <div className="standard-asset-workspace-state" role="status"><Spin/><strong>正在加载作品</strong></div> : detailError ? <div className="standard-asset-workspace-state" role="alert"><TriangleAlert size={30}/><strong>作品加载失败</strong><p>{detailError}</p><Button onClick={() => selectedId && void readDetail(selectedId)}>重新读取素材</Button></div> : <div className="standard-asset-workspace-state"><ImageIcon size={30}/><strong>选择一个对象开始制作</strong>{!readOnly && <Button onClick={() => void addDraft()}>新增素材</Button>}</div>}</section>;
@@ -274,12 +248,12 @@ function ScopedEpisodeAssets({ scope, title, readOnly, importFrom, shareTo, tool
       const link = document.createElement('a'); link.href = url; link.download = `episode-${scope.episodeId}-asset-drafts.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     }}>下载本机恢复记录</Button><Button onClick={async () => {
       if (!await confirmAction('明确清除本机素材恢复记录？此操作不会删除服务端素材。')) return;
-      try { localStorage.removeItem(recoveryKey); setRecoveryError(''); keepDrafts([]); } catch { setRecoveryError('浏览器存储仍不可用，请下载草稿备份。'); }
+      localSession.discardRecovery();
     }}>清除本机恢复记录</Button></>}/>}
     <div className="standard-assets-scroll" aria-busy={loading}>{error && (known.length ? <Alert type="error" showIcon message={error} action={<Button onClick={refresh}>重新加载素材</Button>}/> : <div className="standard-assets-list-state" role="alert"><TriangleAlert size={30}/><strong>列表加载失败</strong><p>{error}</p><Button onClick={refresh}>重新加载素材</Button></div>)}
       {loading && !known.length ? <div role="status" aria-label="正在加载素材列表">{[0, 1, 2].map(index => <div className="standard-asset-skeleton" key={index}><Skeleton.Image active/><Skeleton active title={false} paragraph={{ rows: 1 }}/></div>)}</div> : known.map(item => <StandardEpisodeAssetCard key={item.id} asset={item} selected={selectedId === item.id} disabled={false} entryRef={node => { if (node) entries.current.set(item.id, node); else entries.current.delete(item.id); }} onOpen={() => void selectAsset(item.id, item)}/>)}
       {visibleDrafts.map(item => <StandardEpisodeAssetCard key={item.id} asset={item} selected={selectedId === item.id} disabled={false} entryRef={node => { if (node) entries.current.set(item.id, node); else entries.current.delete(item.id); }} onOpen={() => void selectAsset(item.id)}/>)}
-      {!loading && !error && !known.length && !visibleDrafts.length && <div className="standard-assets-list-state"><ImageIcon size={30}/><strong>{query ? '没有匹配的条目' : '还没有素材'}</strong><p>{query ? '试试其他关键词或分类。' : '从已确认剧本提取，或手动新增。'}</p>{!readOnly && !query && <Button onClick={() => void addDraft()}>新增素材</Button>}</div>}
+      {!loading && !error && !known.length && !visibleDrafts.length && <div className="standard-assets-list-state"><ImageIcon size={30}/><strong>{query ? '没有匹配的条目' : '还没有素材'}</strong><p>{query ? '试试其他关键词或分类。' : '从剧本提取，或手动新增。'}</p>{!readOnly && !query && <Button onClick={() => void addDraft()}>新增素材</Button>}</div>}
       <Pagination size="small" current={Math.floor(offset / 20) + 1} pageSize={20} total={total} hideOnSinglePage showSizeChanger={false} onChange={page => setOffset((page - 1) * 20)}/>
     </div>
     <EpisodeEditorSlot stage="assets">{editor}</EpisodeEditorSlot>

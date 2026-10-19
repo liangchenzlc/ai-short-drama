@@ -4,6 +4,12 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { ApiError, errorMessage, http } from '../../api/http';
 import { Dialog } from '../../components/ui/Dialog';
 import { setAttemptAccount } from '../generations/attempt';
+import { setStandardSessionAccount } from '../projects/standard-session-registry';
+
+function setEditingAccount(id: string | null) {
+  setAttemptAccount(id);
+  setStandardSessionAccount(id ?? 'anonymous');
+}
 
 export interface Account { id: string; username: string; display_name: string; email: string; email_verified: boolean }
 interface Session { enabled: boolean; user: Account | null; loading: boolean; error: string; expired: boolean; refresh: () => Promise<void>; login: (username: string, password: string) => Promise<void>; logout: () => Promise<void> }
@@ -21,26 +27,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const capability = (await http.get<{ enabled: boolean }>('/auth/capabilities')).data;
       setEnabled(capability.enabled);
       if (capability.enabled) {
-        try { const current = (await http.get<{ user: Account }>('/auth/me')).data.user; setAttemptAccount(current.id); setUser(current); setExpired(false); }
-        catch (cause) { if (cause instanceof ApiError && cause.status === 401) { setAttemptAccount(null); setUser(null); setExpired(false); } else throw cause; }
-      } else { setAttemptAccount(null); setUser(null); setExpired(false); }
+        try { const current = (await http.get<{ user: Account }>('/auth/me')).data.user; setEditingAccount(current.id); setUser(current); setExpired(false); }
+        catch (cause) { if (cause instanceof ApiError && cause.status === 401) { setEditingAccount(null); setUser(null); setExpired(false); } else throw cause; }
+      } else { setEditingAccount(null); setUser(null); setExpired(false); }
     } catch (cause) { setError(errorMessage(cause)); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
-    const handler = () => { if (user) setExpired(true); };
+    const handler = () => { if (user) { setStandardSessionAccount(null); setExpired(true); } };
     window.addEventListener('session-expired', handler);
     return () => window.removeEventListener('session-expired', handler);
   }, [user]);
   async function login(username: string, password: string) {
+    setStandardSessionAccount(null);
     const result = (await http.post<{ user: Account }>('/auth/login', { username, password })).data;
-    setAttemptAccount(result.user.id);
+    setEditingAccount(result.user.id);
     setUser(result.user); setExpired(false);
   }
   async function logout() {
-    await http.post('/auth/logout');
-    setAttemptAccount(null); setUser(null); setExpired(false);
+    setStandardSessionAccount(null);
+    try { await http.post('/auth/logout'); }
+    catch (cause) { setStandardSessionAccount(user?.id ?? (enabled ? null : 'anonymous')); throw cause; }
+    setEditingAccount(null); setUser(null); setExpired(false);
   }
   return <Context.Provider value={{ enabled, user, loading, error, expired, refresh, login, logout }}>{children}</Context.Provider>;
 }

@@ -1,7 +1,7 @@
 import type { Navigator } from 'react-router-dom';
 import type { WritingSession, WritingSnapshot } from './writing-session';
 
-export interface NavigationBarrier { hasUnsettled(): boolean; flush(): Promise<boolean> }
+export interface NavigationBarrier { hasUnsettled(): boolean; flush(): Promise<boolean>; hasMemoryOnlyChanges?(): boolean }
 
 // An uncertain save can have committed even when the current draft equals our stale
 // acknowledged snapshot. Errors therefore remain a discard risk until reconciled.
@@ -9,72 +9,13 @@ export function hasUnsettledWriting(state: WritingSnapshot) {
   return state.loaded && (state.dirty || state.busy || state.recoverable || state.recoveryBlocked || state.status === 'conflict' || state.status === 'error');
 }
 
-/** Guard BrowserRouter's navigator and capture POP before its history listener.
- * Keep the current entry mounted while saving, then replay an accepted transition. */
-export function installWritingNavigationGuard(navigator: Navigator, session: WritingSession, browser: Window = window, extraBarrier?: () => NavigationBarrier | null, confirmLeave: (message: string) => Promise<boolean> = async () => false) {
-  let active = true;
-  let index: number = browser.history.state?.idx ?? 0;
-  let reverting = false;
-  let replaying = false;
-  let pending: { action: () => void; allowed?: boolean } | null = null;
-  const requiresGuard = () => hasUnsettledWriting(session.getSnapshot()) || !!extraBarrier?.()?.hasUnsettled();
-  const finish = () => {
-    if (!active || reverting || !pending || pending.allowed === undefined) return;
-    const transition = pending; pending = null;
-    if (transition.allowed) { transition.action(); index = browser.history.state?.idx ?? index; }
-  };
-  const request = (action: () => void) => {
-    if (pending || replaying) return;
-    pending = { action };
-    void session.flush().then(async writingSaved => {
-      const barrier = extraBarrier?.();
-      const saved = writingSaved && (!barrier?.hasUnsettled() || await barrier.flush());
-      if (!active || !pending) return;
-      const allowed = saved || await confirmLeave('内容尚未全部保存。离开会丢失当前页面的未保存草稿。确定离开？');
-      if (!active || !pending) return;
-      pending.allowed = allowed;
-      finish();
-    });
-  };
-  const push = navigator.push;
-  const replace = navigator.replace;
-  const keepsPage = (to: Parameters<Navigator['push']>[0]) => {
-    if (!browser.location?.href) return false;
-    const target = typeof to === 'string' ? to : to.pathname ?? browser.location.pathname;
-    return new URL(target, browser.location.href).pathname === browser.location.pathname;
-  };
-  const guard = (action: () => void, viewOnly = false) => {
-    if (pending || replaying) return;
-    if (viewOnly || !requiresGuard()) { action(); index = browser.history.state?.idx ?? index; }
-    else request(action);
-  };
-  navigator.push = (...args) => guard(() => push.apply(navigator, args), keepsPage(args[0]));
-  navigator.replace = (...args) => guard(() => replace.apply(navigator, args), keepsPage(args[0]));
-  const onPop = (event: PopStateEvent) => {
-    const next: number | undefined = event.state?.idx;
-    if (replaying) { replaying = false; index = next ?? index; return; }
-    if (reverting) {
-      event.stopImmediatePropagation();
-      if (next !== index) { if (next !== undefined) browser.history.go(index - next); return; }
-      reverting = false; finish(); return;
-    }
-    if (!requiresGuard() && !pending) { index = next ?? index; return; }
-    // BrowserRouter owns indexed same-document entries; document exits use beforeunload.
-    if (next === undefined || next === index) return;
-    event.stopImmediatePropagation();
-    reverting = true;
-    browser.history.go(index - next);
-    request(() => { replaying = true; browser.history.go(next - index); });
-  };
+/** Queues are retained outside routes. Only a genuine document exit can lose memory-only input. */
+export function installWritingNavigationGuard(_navigator: Navigator, session: WritingSession, browser: Window = window, extraBarrier?: () => NavigationBarrier | null, _confirmLeave?: (message: string) => Promise<boolean>) {
   const onUnload = (event: BeforeUnloadEvent) => {
-    if (requiresGuard()) { event.preventDefault(); event.returnValue = ''; }
+    const barrier = extraBarrier?.();
+    const memoryOnly = session.hasMemoryOnlyChanges?.() ?? hasUnsettledWriting(session.getSnapshot());
+    if (memoryOnly || barrier?.hasMemoryOnlyChanges?.()) { event.preventDefault(); event.returnValue = ''; }
   };
-  browser.addEventListener('popstate', onPop, true);
   browser.addEventListener('beforeunload', onUnload);
-  return () => {
-    active = false;
-    navigator.push = push; navigator.replace = replace;
-    browser.removeEventListener('popstate', onPop, true);
-    browser.removeEventListener('beforeunload', onUnload);
-  };
+  return () => browser.removeEventListener('beforeunload', onUnload);
 }

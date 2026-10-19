@@ -99,6 +99,8 @@
 .web-episode .shot-settings-drawer-heading > .ant-btn { width: 32px; height: 32px; padding: 0; }
 .web-episode .shot-settings-scroll { flex: 1; min-height: 0; min-width: 0; padding: 14px; overflow-y: auto; overscroll-behavior: contain; }
 .web-episode .standard-shot-media .storyboard-shot-information { display: grid; gap: 12px; }
+.web-episode .storyboard-shot-feedback { display: block; }
+.web-episode .storyboard-shot-feedback .ant-alert-action { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
 .web-episode .standard-shot-media .storyboard-shot-information .writing-control { display: flex; flex-direction: column; gap: 7px; margin: 0; min-width: 0; }
 .web-episode .standard-shot-media .storyboard-shot-information .writing-control > span { color: #d3d3d8; font-size: 12px; line-height: normal; }
 .web-episode .standard-shot-media .storyboard-shot-information input { height: 34px; min-height: 34px; padding: 8px 9px; }
@@ -185,9 +187,9 @@
   .web-episode .standard-shot-media > .standard-object-preview,
   .web-episode .creation-main-panel.is-compact-preview .standard-storyboard-media:not(.is-settings-collapsed) .standard-object-preview { flex: 1; min-height: 0; }
   .web-episode .standard-shot-media > .standard-object-settings,
-  .web-episode .creation-main-panel.is-compact-preview .standard-storyboard-media:not(.is-settings-collapsed) .standard-object-settings { position: fixed; top: 51px; right: 0; bottom: 0; width: min(366.667px, 100vw); flex: 0 0 auto; border: 1px solid var(--hair); border-radius: 10px 0 0 10px; z-index: 35; overflow: hidden; }
+  .web-episode .creation-main-panel.is-compact-preview .standard-storyboard-media:not(.is-settings-collapsed) .standard-object-settings { position: fixed; top: 60px; right: 0; bottom: 0; width: min(366.667px, 100vw); flex: 0 0 auto; border: 1px solid var(--hair); border-radius: 10px 0 0 10px; z-index: 35; overflow: hidden; }
   .web-episode .creation-main-panel.is-compact-preview .standard-storyboard-media:not(.is-settings-collapsed) .shot-settings-scroll { flex: 1; overflow-y: auto; }
-  .shot-settings-backdrop { position: fixed; inset: 51px 0 0; z-index: 34; background: rgb(0 0 0 / 60%); border: 0; }
+  .shot-settings-backdrop { position: fixed; inset: 60px 0 0; z-index: 34; background: rgb(0 0 0 / 60%); border: 0; }
   .web-episode .storyboard-workspace .standard-storyboard-list .storyboard-editor-heading { padding: 12px 12px 8px; height: 52px; flex-basis: 52px; }
   .web-episode .standard-storyboard-list .storyboard-heading-actions { gap: 4px; }
   .web-episode .standard-storyboard-list .storyboard-heading-actions > .ant-btn { width: 32px; height: 32px; min-height: 32px; }

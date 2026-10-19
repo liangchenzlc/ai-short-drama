@@ -289,7 +289,7 @@ class AIGenerationService(BaseService):
             require_project(self.session, scope[1])
         set_scope(self.session, scope)
 
-    def _prepare(self, kind, payload):
+    def _prepare(self, kind, payload, *, use_current_saved_script=False):
         source = payload.get("source")
         if source and source["scene"] == "character_voice_design":
             from .native_voice_service import NativeVoiceService
@@ -307,7 +307,9 @@ class AIGenerationService(BaseService):
         elif source and kind == "text":
             from .generation_context_service import GenerationContextService
 
-            payload = GenerationContextService(self.session, self.settings).prepare_text(payload)
+            payload = GenerationContextService(self.session, self.settings).prepare_text(
+                payload, use_current_saved_script=use_current_saved_script
+            )
         elif source and kind == "video" and source["scene"] == "shot_video":
             from .generation_context_service import GenerationContextService
 
@@ -582,7 +584,9 @@ class AIGenerationService(BaseService):
         digest = self._hash(kind, parsed.model_dump(mode="json", exclude_unset=True), "create")
         try:
             with self._transaction():
-                return self.create_locked(kind, parsed, key, request_hash=digest)
+                return self.create_locked(
+                    kind, parsed, key, request_hash=digest, use_current_saved_script=True
+                )
         except Conflict:
             with self._transaction():
                 existing = self._existing(key, digest)
@@ -591,12 +595,20 @@ class AIGenerationService(BaseService):
             raise
 
     def create_locked(
-        self, kind, payload, idempotency_key, *, request_hash=None, prepare_transform=None
+        self,
+        kind,
+        payload,
+        idempotency_key,
+        *,
+        request_hash=None,
+        prepare_transform=None,
+        use_current_saved_script=False,
     ):
         """Admission core for an already authorized caller holding the project lock.
 
         Agent callers reserve budget and link the parent Tool in this same transaction.
         The public create method retains its own transaction and conflict replay contract.
+        Saved-script policy is selected by trusted callers, never by request fields.
         """
         if not self.session.in_transaction() or kind not in GENERATION_SCHEMAS:
             raise BusinessError("Generation admission requires an active transaction")
@@ -617,7 +629,7 @@ class AIGenerationService(BaseService):
 
             request = UserCreationDraftService(self.session).freeze_for_generation(request)
         config = self._config(kind, request.get("config_id"))
-        request = self._prepare(kind, request)
+        request = self._prepare(kind, request, use_current_saved_script=use_current_saved_script)
         if prepare_transform is not None:
             request = prepare_transform(request)
         return self._insert(kind, request, key, request_hash, config)
