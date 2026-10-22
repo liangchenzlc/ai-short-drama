@@ -263,7 +263,8 @@ try {
     report.provider_storage_key = providerResult.storageKey;
     report.output_storage_key = derived.metadata.storageKey;
     report.final_nodes = final.nodes;
-    const shared = await member.request.get(`${origin}${resources}/${derived.metadata.storageKey.slice(9)}/file`);
+    const shared = await owner.request.get(`${origin}${resources}/${derived.metadata.storageKey.slice(9)}/file`);
+    assert.equal((await member.request.get(`${origin}${resources}/${derived.metadata.storageKey.slice(9)}/file`)).status(), 404);
     assert.ok(shared.ok());
     report.output_sha256 = createHash("sha256").update(await shared.body()).digest("hex");
     owner = await fresh(owner, 1440);

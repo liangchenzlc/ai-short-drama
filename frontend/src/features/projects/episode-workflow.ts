@@ -1,4 +1,3 @@
-import { readEpisodeDraft, readProjectDetails } from "./project-detail-model";
 import {
   isImageSettings,
   isVideoSettings,
@@ -84,11 +83,7 @@ export type EpisodeWorkflow = {
   scriptCandidates: Candidate<string>[];
   approvedScript: {
     text: string;
-    aspect: "16:9" | "9:16";
-    style: string;
   } | null;
-  aspect: "16:9" | "9:16";
-  style: string;
   models: {
     script: string;
     analysis: string;
@@ -111,10 +106,8 @@ export type EpisodeWorkflow = {
   };
 };
 
-const staleWhenPresent = (review: Review, hasResult: boolean): Review =>
-  hasResult ? "stale" : "not_started";
-const staleStageWhenAffected = (review: Review, hasResult: boolean): Review =>
-  hasResult ? "stale" : review;
+const staleWhenPresent = (review: Review, _hasResult: boolean): Review => review;
+const staleStageWhenAffected = (review: Review, _hasResult: boolean): Review => review;
 
 const hasStoryboardResult = (shot: ShotItem) =>
   shot.firstFrames.length > 0 || shot.endFrames.length > 0;
@@ -143,9 +136,7 @@ export function isScriptCurrent(value: EpisodeWorkflow) {
   return (
     value.reviews.script === "confirmed" &&
     !!value.approvedScript?.text.trim() &&
-    value.approvedScript.text === value.scriptDraft &&
-    value.approvedScript.aspect === value.aspect &&
-    value.approvedScript.style === value.style
+    value.approvedScript.text === value.scriptDraft
   );
 }
 export const assetText = (asset: AssetItem) => ({
@@ -488,35 +479,13 @@ export function nearestPendingStage(state: EpisodeWorkflow): StageId {
 }
 
 export function stageStatus(state: EpisodeWorkflow, id: StageId): Review {
-  if (id === "assets" && state.assets.some((asset) => asset.review === "stale"))
-    return "stale";
-  if (
-    id === "storyboard" &&
-    (state.shots.some(
-      (shot) => shot.review === "stale" || shot.frameReview === "stale",
-    ) ||
-      state.gridBatches.some((batch) =>
-        batch.cells.some((cell) => cell.review === "stale"),
-      ))
-  )
-    return "stale";
-  if (
-    id === "video" &&
-    state.shots.some((shot) => shot.videoReview === "stale")
-  )
-    return "stale";
   return state.reviews[id];
 }
 
 type ReadStore = Pick<Storage, "getItem">;
 type WriteStore = Pick<Storage, "setItem">;
-export type WorkflowDefaults = {
-  aspect?: "16:9" | "9:16";
-  style?: string;
-};
-
-const workflowKey = (projectId: string, episodeId: string) =>
-  `avi-episode-workflow-v2-${projectId}-${episodeId}`;
+const workflowKey = (projectId: string) =>
+  `avi-creation-workflow-v3-${projectId}`;
 const reviews = (): Record<StageId, Review> => ({
   source: "not_started",
   script: "not_started",
@@ -533,27 +502,13 @@ const models = () => ({
   video: "",
 });
 
-function resolvedDefaults(
-  projectId: string,
-  defaults: WorkflowDefaults,
-  storage: ReadStore,
-) {
-  const project = readProjectDetails(projectId, storage);
-  return {
-    aspect: defaults.aspect ?? project.aspect ?? "16:9",
-    style: defaults.style ?? project.style,
-  };
-}
-
-export function emptyWorkflow(defaults: WorkflowDefaults): EpisodeWorkflow {
+export function emptyWorkflow(): EpisodeWorkflow {
   return {
     version: 2,
     novel: "",
     scriptDraft: "",
     scriptCandidates: [],
     approvedScript: null,
-    aspect: defaults.aspect ?? "16:9",
-    style: defaults.style ?? "",
     models: models(),
     assets: [],
     shots: [],
@@ -582,10 +537,6 @@ function isReview(value: unknown): value is Review {
   return ["not_started", "review", "confirmed", "stale"].includes(
     value as string,
   );
-}
-
-function isAspect(value: unknown): value is "16:9" | "9:16" {
-  return value === "16:9" || value === "9:16";
 }
 
 function isMediaRef(value: unknown): value is MediaRef {
@@ -750,11 +701,7 @@ function isWorkflow(value: unknown): value is EpisodeWorkflow {
     ) &&
     (state.approvedScript === null ||
       (typeof state.approvedScript === "object" &&
-        typeof state.approvedScript.text === "string" &&
-        isAspect(state.approvedScript.aspect) &&
-        typeof state.approvedScript.style === "string")) &&
-    isAspect(state.aspect) &&
-    typeof state.style === "string" &&
+        typeof state.approvedScript.text === "string")) &&
     hasModels(state.models) &&
     Array.isArray(state.assets) &&
     state.assets.every(isAsset) &&
@@ -780,13 +727,8 @@ function freshWorkflow(state: EpisodeWorkflow): EpisodeWorkflow {
   return JSON.parse(JSON.stringify(state)) as EpisodeWorkflow;
 }
 
-export function readWorkflow(
-  projectId: string,
-  episodeId: string,
-  defaults: WorkflowDefaults,
-  storage: ReadStore = localStorage,
-): EpisodeWorkflow {
-  const saved = parseWorkflow(storage, workflowKey(projectId, episodeId));
+export function readWorkflow(projectId: string, storage: ReadStore = localStorage): EpisodeWorkflow {
+  const saved = parseWorkflow(storage, workflowKey(projectId));
   if (isWorkflow(saved)) {
     const result = freshWorkflow(saved);
     result.shots = result.shots.map((shot) => ({
@@ -797,53 +739,21 @@ export function readWorkflow(
     return result;
   }
 
-  const resolved = resolvedDefaults(projectId, defaults, storage);
-  const legacy = readEpisodeDraft(projectId, episodeId, storage);
-  const state = emptyWorkflow(resolved);
-  return {
-    ...state,
-    scriptDraft: legacy.script,
-    shots: legacy.shots.map((shot) => ({
-      id: shot.id,
-      title: shot.title,
-      description: shot.description,
-      action: "",
-      dialogue: "",
-      plannedMs: 0,
-      assetIds: [],
-      review: "not_started",
-      firstFrames: [],
-      selectedFirstId: null,
-      endFrames: [],
-      selectedEndId: null,
-      videos: [],
-      selectedVideoId: null,
-      frameReview: "not_started",
-      videoReview: "not_started",
-    })),
-    legacyNotes: {
-      characters: legacy.characters,
-      props: legacy.props,
-      scenes: legacy.scenes,
-      imagePrompt: legacy.imagePrompt,
-      videoPrompt: legacy.videoPrompt,
-    },
-  };
+  return emptyWorkflow();
 }
 
 export function saveWorkflow(
   projectId: string,
-  episodeId: string,
   value: EpisodeWorkflow,
   storage: WriteStore = localStorage,
 ) {
   if (!isWorkflow(value)) {
-    return { ok: false, error: "本集内容无效，未保存。" } as const;
+    return { ok: false, error: "作品内容无效，未保存。" } as const;
   }
   try {
-    storage.setItem(workflowKey(projectId, episodeId), JSON.stringify(value));
+    storage.setItem(workflowKey(projectId), JSON.stringify(value));
     return { ok: true } as const;
   } catch {
-    return { ok: false, error: "本集内容未能保存，请检查本地空间。" } as const;
+    return { ok: false, error: "作品内容未能保存，请检查本地空间。" } as const;
   }
 }

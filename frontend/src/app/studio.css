@@ -2712,9 +2712,6 @@ select {
   .project-overview {
     padding: 24px;
   }
-  .episode-top {
-    padding: 15px 24px;
-  }
   .episode-layout {
     grid-template-columns: 180px minmax(0, 1fr);
   }
@@ -2808,17 +2805,6 @@ select {
   .episode-page {
     --episode-header-height: 104px;
     --episode-nav-height: 82px;
-  }
-  .episode-top {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    align-content: center;
-    padding: 12px 18px;
-    gap: 4px;
-  }
-  .episode-top > div {
-    padding-left: 0;
-    border: 0;
   }
   .episode-top-status {
     display: none;

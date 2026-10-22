@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { App, Input, Modal, Spin } from "antd";
+import { Button, Input, Modal, Spin } from "antd";
 import { FileAudio, FileVideo, Image as ImageIcon, Search } from "lucide-react";
 
 import { CachedResourceImage } from "@/components/cached-resource-image";
+import { useResourceVideoPlayback } from "@/hooks/use-resource-video-playback";
 import {
     awaitCanvasGenerationHistoryDetailIfValid,
+    assertCanvasGenerationHistoryTaskForInsert,
     canvasGenerationHistorySelectStillValid,
     insertableCanvasGenerationHistoryTasks,
     type CanvasGenerationHistorySelectGate,
 } from "@/lib/canvas/canvas-generation-history";
 import { generationTaskMode } from "@/lib/canvas/canvas-generation-task-sync";
 import { captureUserScopeEpoch, getActiveUserScope } from "@/lib/user-scope";
+import { captureUserScope, userScopeMatches } from "@/lib/user-scope-guard";
 import { ownedResourceIdFromMediaRef, resourceIdFromStorageKey, resourceStorageKey } from "@/services/api/resources";
 import { listGenerationTasks, queryGenerationTask, type GenerationTask } from "@/services/api/task-center";
 
@@ -19,12 +22,13 @@ type CanvasGenerationHistoryPickerProps = {
     open: boolean;
     projectId: string;
     onClose: () => void;
-    onSelect: (task: GenerationTask) => void;
+    onSelect: (task: GenerationTask) => Promise<void>;
 };
 
 export function CanvasGenerationHistoryPicker({ open, projectId, onClose, onSelect }: CanvasGenerationHistoryPickerProps) {
-    const { message } = App.useApp();
     const [keyword, setKeyword] = useState("");
+    const [selectingId, setSelectingId] = useState<string | null>(null);
+    const [selectionError, setSelectionError] = useState("");
     const selectionRequest = useRef<AbortController | null>(null);
     const selectionEpoch = useRef(0);
     const openRef = useRef(open);
@@ -45,13 +49,15 @@ export function CanvasGenerationHistoryPicker({ open, projectId, onClose, onSele
         selectionEpoch.current += 1;
         selectionRequest.current?.abort();
         selectionRequest.current = null;
+        setSelectingId(null);
     };
-    useEffect(() => () => cancelSelection(), [open, projectId, scope]);
+    useEffect(() => { setSelectionError(""); return () => cancelSelection(); }, [open, projectId, scope]);
     const query = useQuery({
         queryKey: ["canvas-generation-history", scope, projectId],
         queryFn: ({ signal }) => listGenerationTasks(100, { projectId, activeOnly: false }, undefined, signal),
         enabled: open && Boolean(projectId.trim()),
         staleTime: 15_000,
+        refetchInterval: open ? 5_000 : false,
     });
     const tasks = useMemo(
         () => insertableCanvasGenerationHistoryTasks(query.data || [], { projectId, keyword }),
@@ -72,6 +78,8 @@ export function CanvasGenerationHistoryPicker({ open, projectId, onClose, onSele
         if (!canvasGenerationHistorySelectStillValid(captured, captured)) return;
         const request = new AbortController();
         selectionRequest.current = request;
+        setSelectingId(task.id);
+        setSelectionError("");
         try {
             const resolved = await awaitCanvasGenerationHistoryDetailIfValid({
                 detail: queryGenerationTask(task.id, { signal: request.signal }),
@@ -80,22 +88,27 @@ export function CanvasGenerationHistoryPicker({ open, projectId, onClose, onSele
                 expectedId: task.id,
             });
             if (!resolved) return;
-            onSelectRef.current(resolved);
+            await onSelectRef.current(resolved);
         } catch (error) {
             if (!canvasGenerationHistorySelectStillValid(captured, liveSelectGate())) return;
-            message.error(error instanceof Error ? error.message : "生成结果无法插入画布");
+            setSelectionError(error instanceof Error ? error.message : "生成结果无法插入画布，请重试");
         } finally {
-            if (selectionRequest.current === request) selectionRequest.current = null;
+            if (selectionRequest.current === request) {
+                selectionRequest.current = null;
+                setSelectingId(null);
+            }
         }
     };
 
     return (
         <Modal open={open} title="从生成历史选择" footer={null} onCancel={() => { cancelSelection(); onClose(); }} width={720} destroyOnHidden>
             <Input allowClear prefix={<Search className="size-3.5" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索提示词或模型" aria-label="搜索生成历史" />
+            {selectionError && <p role="alert" className="mt-2 text-xs text-destructive">{selectionError}</p>}
+            {query.isError && tasks.length > 0 && <p role="alert" className="mt-2 text-xs text-destructive">生成历史刷新失败，请稍后重试。</p>}
             <div className="mt-3 max-h-[min(560px,65vh)] overflow-y-auto pr-1">
                 {query.isLoading ? <div className="grid min-h-40 place-items-center"><Spin /></div> : tasks.length ? (
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                        {tasks.map((task) => <HistoryTaskCard key={task.id} task={task} onSelect={() => void selectSummary(task)} />)}
+                        {tasks.map((task) => <HistoryTaskCard key={`${scope}:${projectId}:${task.id}`} task={task} active={open} selecting={selectingId === task.id} disabled={selectingId !== null} onSelect={() => void selectSummary(task)} />)}
                     </div>
                 ) : (
                     <div className="grid min-h-24 place-items-center rounded-lg border border-dashed border-border/70 text-sm text-foreground/55">
@@ -107,25 +120,70 @@ export function CanvasGenerationHistoryPicker({ open, projectId, onClose, onSele
     );
 }
 
-function HistoryTaskCard({ task, onSelect }: { task: GenerationTask; onSelect: () => void }) {
+function HistoryTaskCard({ task, active, onSelect, selecting, disabled }: { task: GenerationTask; active: boolean; onSelect: () => void; selecting: boolean; disabled: boolean }) {
     const mode = generationTaskMode(task);
     const preview = generationHistoryPreviewImageSrc(task);
     const storageKey = generationHistoryPreviewStorageKey(task);
+    const [hovered, setHovered] = useState(false);
+    const [focused, setFocused] = useState(false);
     const Icon = mode === "video" ? FileVideo : mode === "audio" ? FileAudio : ImageIcon;
     const iconFallback = <div className="grid size-full place-items-center text-foreground/45"><Icon className="size-7" /></div>;
     return (
-        <button type="button" className="group overflow-hidden rounded-lg border border-border/70 bg-surface text-left transition hover:border-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={onSelect} aria-label={`插入${modeLabel(mode)}：${task.prompt.slice(0, 40)}`}>
+        <article role="button" tabIndex={0} aria-disabled={disabled} aria-busy={selecting} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setFocused(true)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }} className={`group overflow-hidden rounded-lg border border-border/70 bg-surface text-left transition hover:border-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${disabled ? "cursor-wait" : "cursor-pointer"}`} onClick={() => { if (!disabled) onSelect(); }} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); if (!disabled) onSelect(); } }} aria-label={`插入${modeLabel(mode)}：${task.prompt.slice(0, 40)}`}>
             <div className="relative aspect-video overflow-hidden bg-surface-tertiary">
                 {storageKey ? (
                     <CachedResourceImage storageKey={storageKey} alt="生成结果预览" loading="lazy" className="size-full object-cover" fallback={iconFallback} loadingFallback={iconFallback} />
                 ) : preview ? (
                     <img src={preview} alt="生成结果预览" loading="lazy" className="size-full object-cover" />
                 ) : iconFallback}
+                {mode === "video" && active && (hovered || focused) && <HistoryVideoPreview task={task} />}
                 <span className="absolute bottom-1 left-1 rounded bg-black/65 px-1.5 py-0.5 text-[10px] text-white">{modeLabel(mode)}</span>
+                {selecting && <div className="absolute inset-0 grid place-items-center bg-black/35"><Spin size="small" /></div>}
             </div>
             <div className="truncate px-2 py-2 text-xs text-foreground/80" title={task.prompt}>{task.prompt || "无提示词"}</div>
-        </button>
+        </article>
     );
+}
+
+function HistoryVideoPreview({ task }: { task: GenerationTask }) {
+    const [storageKey, setStorageKey] = useState("");
+    const [error, setError] = useState("");
+    const [retry, setRetry] = useState(0);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    useEffect(() => {
+        let cancelled = false;
+        const controller = new AbortController();
+        const expectedScope = captureUserScope();
+        setStorageKey("");
+        setError("");
+        void queryGenerationTask(task.id, { signal: controller.signal, expectedScope }).then(detail => {
+            if (cancelled || !userScopeMatches(expectedScope)) return;
+            const checked = assertCanvasGenerationHistoryTaskForInsert(detail, { expectedId: task.id, projectId: task.projectId || "" });
+            const key = generationHistoryVideoStorageKey(checked);
+            if (!key) throw new Error("缺少可读取的视频资源");
+            setStorageKey(key);
+        }).catch(error => {
+            if (!cancelled && userScopeMatches(expectedScope)) setError(error instanceof Error ? error.message : "预览加载失败，请重新加载");
+        });
+        return () => { cancelled = true; controller.abort(); };
+    }, [task.id, task.projectId, retry]);
+    const playback = useResourceVideoPlayback(storageKey, "", Boolean(storageKey));
+    useEffect(() => {
+        const video = videoRef.current;
+        return () => video?.pause();
+    }, [playback.url]);
+    if (error || playback.error) return <div role="status" className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/75 p-2 text-xs text-white"><span>{error || playback.error}</span><Button size="small" type="text" className="text-white" onClick={(event) => { event.stopPropagation(); if (error) setRetry((value) => value + 1); else playback.retry(); }}>重新加载</Button></div>;
+    if (!playback.url) return <div role="status" className="absolute inset-0 grid place-items-center bg-black/25"><Spin size="small" /></div>;
+    return <video ref={videoRef} src={playback.url} aria-label="生成视频预览" muted playsInline autoPlay loop preload="metadata" className="absolute inset-0 size-full object-cover" onError={() => { if (!playback.requestCompatible()) playback.fail(); }} />;
+}
+
+export function generationHistoryVideoStorageKey(task: GenerationTask) {
+    if (generationTaskMode(task) !== "video") return "";
+    try {
+        const result = JSON.parse(task.resultJson || "{}") as { video?: { storageKey?: string; url?: string; dataUrl?: string } };
+        const id = resourceIdFromStorageKey(result.video?.storageKey) || ownedResourceIdFromMediaRef(result.video?.storageKey, result.video?.url || result.video?.dataUrl || task.previewUrl);
+        return id ? resourceStorageKey(id) : "";
+    } catch { return ""; }
 }
 
 function modeLabel(mode: string) {

@@ -29,7 +29,7 @@ class MediaRecycleBin(Base):
         comment="应用雪花算法生成；本次进入回收站的记录标识",
     )
     shot_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), nullable=False, comment="来源镜头；分集、项目通过镜头联查"
+        BIGINT(unsigned=True), nullable=False, comment="来源镜头；作品通过镜头联查"
     )
     media_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, comment="被废弃的图片或视频；进入回收站不删除文件"
@@ -58,7 +58,7 @@ class MediaRecycleBin(Base):
         VARCHAR(8, collation="utf8mb4_0900_bin"),
         nullable=True,
         server_default=text("NULL"),
-        comment="图片请求画幅：16:9、9:16、1:1、4:3或3:4；视频为空",
+        comment="图片请求画幅：16:9、9:16、1:1、4:3或3:4；自动画幅及视频为空",
     )
     duration: Mapped[int | None] = mapped_column(
         BIGINT(unsigned=True),
@@ -122,7 +122,7 @@ class MediaRecycleBin(Base):
         ),
         CheckConstraint("`duration` IS NULL OR `duration` > 0", name="ck_recycle_duration"),
         CheckConstraint(
-            "(`layout` IS NOT NULL AND `aspect` IS NOT NULL AND `duration` IS NULL) "
+            "(`layout` IS NOT NULL AND `duration` IS NULL) "
             "OR (`layout` IS NULL AND `aspect` IS NULL AND `duration` IS NOT NULL)",
             name="ck_recycle_parameter_shape",
         ),

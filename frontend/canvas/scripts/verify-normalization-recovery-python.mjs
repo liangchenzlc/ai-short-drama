@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 export async function verifyNormalizationRecovery({ browser, context, origin, read, saved, resource, report, recordFailure }) {
     const project = await read(await context.request.post(`${origin}/api/v1/projects`, {
         headers: { "Idempotency-Key": "browser-normalization-recovery" },
-        data: { name: "资源映射草稿恢复", aspect: "16:9", workspace_mode: "infinite_canvas" },
+        data: { name: "资源映射草稿恢复", workspace_mode: "infinite_canvas" },
     }));
     const path = `${origin}/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
     const initial = await read(await context.request.get(`${path}/my-document`));

@@ -7,10 +7,7 @@ from short_drama.api.v1.ai_model_configs import router as ai_model_configs_route
 from short_drama.api.v1.assets import router as assets_router
 from short_drama.api.v1.assistant import router as assistant_router
 from short_drama.api.v1.auth import router as auth_router
-from short_drama.api.v1.canvas_beefapi import router as canvas_beefapi_router
 from short_drama.api.v1.canvas_catalog import router as canvas_catalog_router
-from short_drama.api.v1.canvas_character_catalog import router as canvas_character_catalog_router
-from short_drama.api.v1.canvas_character_images import router as canvas_character_images_router
 from short_drama.api.v1.canvas_depth import router as canvas_depth_router
 from short_drama.api.v1.canvas_drawings import router as canvas_drawings_router
 from short_drama.api.v1.canvas_folders import router as canvas_folders_router
@@ -19,37 +16,35 @@ from short_drama.api.v1.canvas_library import router as canvas_library_router
 from short_drama.api.v1.canvas_model_tests import router as canvas_model_tests_router
 from short_drama.api.v1.canvas_provider_tasks import router as canvas_provider_tasks_router
 from short_drama.api.v1.canvas_resources import router as canvas_resources_router
-from short_drama.api.v1.canvas_source_project import router as canvas_source_project_router
+from short_drama.api.v1.canvas_styles import router as canvas_styles_router
 from short_drama.api.v1.canvas_tasks import router as canvas_tasks_router
 from short_drama.api.v1.canvas_timeline import router as canvas_timeline_router
 from short_drama.api.v1.canvas_tool_runs import router as canvas_tool_runs_router
 from short_drama.api.v1.canvases import router as canvases_router
-from short_drama.api.v1.collaboration import router as collaboration_router
-from short_drama.api.v1.episode_assembly import router as episode_assembly_router
-from short_drama.api.v1.episode_generation import router as episode_generation_router
-from short_drama.api.v1.episode_sound import router as episode_sound_router
-from short_drama.api.v1.episode_storyboard import router as episode_storyboard_router
-from short_drama.api.v1.episode_writing import router as episode_writing_router
 from short_drama.api.v1.generation_batches import router as generation_batches_router
 from short_drama.api.v1.generation_references import router as generation_references_router
+from short_drama.api.v1.image_groups import router as image_groups_router
 from short_drama.api.v1.media_library import router as media_library_router
 from short_drama.api.v1.native_voice import router as native_voice_router
+from short_drama.api.v1.personal_resources import router as personal_resources_router
+from short_drama.api.v1.project_assembly import router as project_assembly_router
+from short_drama.api.v1.project_generation import router as project_generation_router
+from short_drama.api.v1.project_sound import router as project_sound_router
+from short_drama.api.v1.project_storyboard import router as project_storyboard_router
+from short_drama.api.v1.project_writing import router as project_writing_router
 from short_drama.api.v1.projects import router as projects_router
 from short_drama.api.v1.test import router as test_router
 from short_drama.api.v1.user_creation_drafts import router as user_creation_drafts_router
 
 router = APIRouter(prefix="/api/v1")
-router.include_router(canvas_beefapi_router)
 router.include_router(canvas_catalog_router)
-router.include_router(canvas_character_catalog_router)
-router.include_router(canvas_character_images_router)
 router.include_router(canvases_router)
 router.include_router(canvas_drawings_router)
 router.include_router(canvas_folders_router)
 router.include_router(canvas_resources_router)
-router.include_router(canvas_source_project_router)
 router.include_router(canvas_tasks_router)
 router.include_router(canvas_timeline_router)
+router.include_router(canvas_styles_router)
 router.include_router(canvas_depth_router)
 router.include_router(canvas_tool_runs_router)
 router.include_router(canvas_provider_tasks_router)
@@ -59,23 +54,25 @@ router.include_router(canvas_library_folders_router)
 router.include_router(agent_router)
 router.include_router(assistant_router)
 router.include_router(agent_artifacts_router)
-router.include_router(episode_assembly_router)
-router.include_router(episode_sound_router)
+router.include_router(project_assembly_router)
+router.include_router(project_sound_router)
 router.include_router(test_router)
 router.include_router(ai_model_configs_router)
 router.include_router(ai_generations_router)
 router.include_router(media_library_router)
 router.include_router(projects_router)
 router.include_router(native_voice_router)
-router.include_router(episode_writing_router)
+router.include_router(project_writing_router)
 router.include_router(assets_router)
-router.include_router(episode_storyboard_router)
-router.include_router(episode_generation_router)
+router.include_router(project_storyboard_router)
+router.include_router(project_generation_router)
 
 router.include_router(generation_references_router)
 router.include_router(generation_batches_router)
 
 router.include_router(auth_router)
 
-router.include_router(collaboration_router)
 router.include_router(user_creation_drafts_router)
+router.include_router(image_groups_router)
+
+router.include_router(personal_resources_router)

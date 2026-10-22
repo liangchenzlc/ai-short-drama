@@ -136,6 +136,26 @@ class MinioStorage:
         with self._errors():
             self.client.remove_object(bucket, key, version_id=version_id)
 
+    def iter_objects(
+        self, bucket: str, prefix: str, *, include_versions: bool = False
+    ) -> Iterator[StoredObject]:
+        with self._errors():
+            for item in self.client.list_objects(
+                bucket, prefix=prefix, recursive=True, include_version=include_versions
+            ):
+                if item.is_dir:
+                    continue
+                yield StoredObject(
+                    bucket=bucket,
+                    object_name=item.object_name,
+                    storage_locator=ObjectLocation(bucket, item.object_name).locator,
+                    size=item.size or 0,
+                    content_type="application/octet-stream",
+                    etag=item.etag,
+                    version_id=item.version_id,
+                    last_modified=item.last_modified,
+                )
+
     def presigned_get(self, bucket: str, key: str, expires_seconds: int) -> str:
         with self._errors():
             return self.client.presigned_get_object(

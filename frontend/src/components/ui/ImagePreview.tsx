@@ -10,6 +10,7 @@ export interface ImagePreviewProps {
   onClose: () => void;
   canClose?: boolean;
   footer?: ReactNode;
+  presentation?: 'standard-creation';
 }
 
 /** Mount while open. Native dialog keeps previews above drawers and other dialogs. */
@@ -22,7 +23,7 @@ export function ImagePreview(props: ImagePreviewProps) {
   );
 }
 
-function ImagePreviewContent({ src, alt, title = '图片预览', onClose, canClose = true, footer }: ImagePreviewProps) {
+function ImagePreviewContent({ src, alt, title = '图片预览', onClose, canClose = true, footer, presentation }: ImagePreviewProps) {
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [originalSize, setOriginalSize] = useState(false);
   const [dimensions, setDimensions] = useState('');
@@ -76,7 +77,7 @@ function ImagePreviewContent({ src, alt, title = '图片预览', onClose, canClo
     });
   }
 
-  return <Dialog title={title} className="media-preview-dialog image-preview-dialog" canClose={canClose} onClose={onClose}>
+  return <Dialog title={title} className={`media-preview-dialog image-preview-dialog${presentation ? ' standard-creation-dialog' : ''}`} canClose={canClose} onClose={onClose}>
     <div className="image-preview-toolbar">
       <span className="image-preview-caption" title={alt}>{alt}</span>
       <div className="image-preview-controls">
@@ -86,6 +87,7 @@ function ImagePreviewContent({ src, alt, title = '图片预览', onClose, canClo
           放大镜
         </Button>
         {magnifying && <Select size="small" aria-label="放大镜倍率" value={zoom} className="image-magnifier-zoom"
+          classNames={presentation ? { popup: { root: 'standard-creation-popup' } } : undefined}
           options={[{ value: 2, label: '2 倍' }, { value: 3, label: '3 倍' }, { value: 4, label: '4 倍' }]}
           onChange={(value) => { setZoom(value); setLens(null); }}/>}
         <Button size="small" disabled={status !== 'loaded'} aria-pressed={originalSize} onClick={() => { setOriginalSize((value) => !value); setLens(null); }}>
@@ -134,10 +136,11 @@ interface PreviewImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 's
   /** Class for the thumbnail button; className and style apply to the image. */
   triggerClassName?: string;
   previewTitle?: string;
+  presentation?: 'standard-creation';
 }
 
 /** Drop-in thumbnail with keyboard-accessible preview; do not nest in a button/link. */
-export function PreviewImage({ src, alt, triggerClassName, previewTitle, loading = 'lazy', onError, onLoad, ...imageProps }: PreviewImageProps) {
+export function PreviewImage({ src, alt, triggerClassName, previewTitle, presentation, loading = 'lazy', onError, onLoad, ...imageProps }: PreviewImageProps) {
   const [openSrc, setOpenSrc] = useState<string | null>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   return <>
@@ -148,6 +151,6 @@ export function PreviewImage({ src, alt, triggerClassName, previewTitle, loading
         onLoad={(event) => { setFailedSrc(null); onLoad?.(event); }}
         onError={(event) => { setFailedSrc(src); onError?.(event); }}/>}
     </button>
-    {openSrc === src && !!src && <ImagePreview src={src} alt={alt} title={previewTitle} onClose={() => setOpenSrc(null)}/>}
+    {openSrc === src && !!src && <ImagePreview src={src} alt={alt} title={previewTitle} presentation={presentation} onClose={() => setOpenSrc(null)}/>}
   </>;
 }

@@ -61,11 +61,6 @@ class PasswordReset(Proof):
     password: Annotated[str, Field(min_length=12, max_length=128)]
 
 
-class InvitationCreate(InputModel):
-    target_user_id: Identifier | None = None
-    target_email: str | None = None
-
-
 class PreferenceUpdate(InputModel):
     context_key: Annotated[str, Field(min_length=1, max_length=128)]
     config_id: Identifier | None = None

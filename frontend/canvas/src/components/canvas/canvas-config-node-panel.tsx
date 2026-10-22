@@ -46,7 +46,6 @@ import { resolveCanvasWorkflowProvider } from "@/lib/canvas/canvas-workflow";
 import type { CanvasAudioSettingKey } from "./canvas-audio-settings-popover";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { workflowProviderPluginEnabled } from "@/lib/plugins/builtin/workflows";
-import { usePluginStore } from "@/stores/use-plugin-store";
 import type { CanvasGenerationMode, CanvasNodeData, CanvasNodeMetadata, CanvasVideoEditOperation, CanvasWorkspaceMode } from "@/types/canvas";
 
 type CanvasConfigNodePanelProps = {
@@ -95,7 +94,6 @@ function runningHubWorkflowEntryKey(workflow: RunningHubWorkflow): string {
 
 export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigChange, onGenerate, onComposerToggle, workspaceMode = "professional" }: CanvasConfigNodePanelProps) {
     const globalConfig = useEffectiveConfig();
-    const runtimeStatuses = usePluginStore((state) => state.runtimeStatuses);
     const theme = canvasThemes[useActiveTheme()];
     const mode = node.metadata?.generationMode === "video" || node.metadata?.generationMode === "audio" ? node.metadata.generationMode : "image";
     const simpleMode = workspaceMode === "simple";
@@ -193,9 +191,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const capabilityError =
         workflowParameterError ||
         (workflowProvider === "runninghub"
-            ? !workflowProviderPluginEnabled(runtimeStatuses, "runninghub")
-                ? "RunningHub 工作流插件未启用"
-                : !globalConfig.runningHub.enabled
+            ? !globalConfig.runningHub.enabled
                   ? "请先在设置中启用 RunningHub"
                   : !node.metadata?.runningHubWorkflowId
                     ? `请选择${capabilityLabel(workflowCapability)}工作流或 App`
@@ -340,7 +336,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                             size="small"
                             className="canvas-config-provider min-w-0 flex-1"
                             value={workflowProvider}
-                            options={[{ label: "模型", value: "model" }, ...(workflowProviderPluginEnabled(runtimeStatuses, "runninghub") ? [{ label: "RunningHub", value: "runninghub" }] : [])]}
+                            options={[{ label: "模型", value: "model" }, ...(workflowProviderPluginEnabled("runninghub") ? [{ label: "RunningHub", value: "runninghub" }] : [])]}
                             onChange={(value) => {
                                 const nextProvider = value as "model" | "runninghub";
                                 if (nextProvider === "model") {

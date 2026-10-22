@@ -18,7 +18,7 @@ ShotTitle = Annotated[str, Field(max_length=255)]
 
 
 class ShotScriptCreate(InputModel):
-    episode_id: Identifier
+    project_id: Identifier
     position: PositiveUInt32
     script: MediumText = ""
     duration_ms: int = Field(default=3000, strict=True, ge=1000, le=10000)
@@ -37,7 +37,7 @@ class ShotScriptUpdate(InputModel):
 
 class ShotScriptRead(ReadModel):
     id: Identifier
-    episode_id: Identifier
+    project_id: Identifier
     position: PositiveUInt32
     script: MediumText
     duration_ms: int = 3000

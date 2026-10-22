@@ -71,25 +71,6 @@ class CanvasModelTestService(BaseService):
                     "canvas_model_test_address_changed", "宿主模型地址已改变，请重新读取配置", 409
                 )
             return self._saved_host_test_locked(config)
-        elif channel.source_key == "beefapi":
-            catalog = self.catalog.catalog_dao.catalog(self.catalog.actor_id)
-            stored = next(
-                (
-                    item
-                    for item in (catalog.channels_json if catalog else [])
-                    if item["id"] == "beefapi"
-                ),
-                None,
-            )
-            if stored is None or payload.model not in stored["models"]:
-                raise NotFound("本人 BeefAPI 模型不存在")
-            selected = next(
-                (item for item in stored["modelProfiles"] if item["model"] == payload.model), None
-            )
-            if selected is None or selected.get("capability") != payload.mode:
-                raise NotFound("本人 BeefAPI 模型能力不存在")
-            previous = self.catalog._beefapi_credentials_locked(channel.base_url)
-            public = stored
         else:
             if channel.credential_ref:
                 raise WorkflowError(
@@ -98,12 +79,7 @@ class CanvasModelTestService(BaseService):
                     409,
                 )
             previous = {}
-            public = None
         sanitized, secret = self.catalog._channel(channel, previous)
-        if public is not None:
-            sanitized["baseUrl"] = public["baseUrl"]
-            if channel.source_key == "beefapi":
-                sanitized["modelProfiles"] = public["modelProfiles"]
         if not secret["apiKey"]:
             raise WorkflowError("canvas_model_test_credential_required", "请先填写 API Key", 422)
         profile = next(

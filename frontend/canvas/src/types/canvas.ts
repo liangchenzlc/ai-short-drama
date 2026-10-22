@@ -99,8 +99,7 @@ export type StoryboardAssetBinding = {
 
 export type StoryboardCharacterReference = {
     characterName: string;
-    characterAssetId?: string;
-    characterVersionId?: string;
+    characterNodeId?: string;
     characterDescription?: string;
     characterImageNodeId?: string;
 };
@@ -315,9 +314,6 @@ export type CanvasNodeMetadata = {
     characterPrompt?: string;
     characterAliases?: string[];
     characterDefinition?: Record<string, unknown>;
-    characterAssetId?: string;
-    characterVersionId?: string;
-    characterVersionPolicy?: "current" | "pinned";
     characterVisualStatus?: string;
     characterVoiceStatus?: string;
     characterVoiceName?: string;

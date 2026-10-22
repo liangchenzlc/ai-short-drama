@@ -8,17 +8,17 @@ from short_drama.core.exceptions import WorkflowError
 from short_drama.dao.base import BaseDAO
 from short_drama.domain import (
     AIGenerationRecord,
+    Asset,
     AsyncTask,
-    Episode,
-    EpisodeAsset,
-    EpisodeNovel,
-    EpisodeScript,
     NovelScriptRecord,
+    Project,
+    ProjectNovel,
+    ProjectScript,
     ScriptShotRecord,
 )
 from short_drama.schemas.asset_extraction import parse_extraction_result
 from short_drama.schemas.base import parse_identifier
-from short_drama.schemas.episode_storyboard import StoryboardResultPage
+from short_drama.schemas.project_storyboard import StoryboardResultPage
 from short_drama.schemas.storyboard_apply import StoryboardApply
 from short_drama.schemas.storyboard_result import parse_storyboard_result
 
@@ -70,22 +70,21 @@ class GenerationBusinessService(BaseService):
         else:
             if len(content.encode("utf-8")) > 1048576:
                 raise WorkflowError("invalid_structured_output", "剧本正文超过1 MiB", 422)
-            episode = self.session.scalar(
-                select(Episode)
+            creation = self.session.scalar(
+                select(Project)
                 .where(
-                    Episode.id == int(source["episode_id"]),
-                    Episode.project_id == int(source["project_id"]),
+                    Project.id == int(source["project_id"]),
                 )
                 .with_for_update()
             )
-            novel = self.session.get(EpisodeNovel, int(source["novel_id"]))
-            if episode is None or novel is None or novel.episode_id != episode.id:
+            novel = self.session.get(ProjectNovel, int(source["novel_id"]))
+            if creation is None or novel is None or novel.project_id != creation.id:
                 raise WorkflowError("source_missing", "生成来源已不存在", 404)
             maximum = (
                 self.session.scalar(
-                    select(EpisodeScript.position)
-                    .where(EpisodeScript.episode_id == episode.id)
-                    .order_by(EpisodeScript.position.desc())
+                    select(ProjectScript.position)
+                    .where(ProjectScript.project_id == creation.id)
+                    .order_by(ProjectScript.position.desc())
                     .limit(1)
                 )
                 or 0
@@ -96,9 +95,9 @@ class GenerationBusinessService(BaseService):
             task = self.session.get(AsyncTask, task_id)
             creator = task.initiated_by if task else None
             # This creates a candidate, not the current editing document.
-            script = BaseDAO(self.session, EpisodeScript).create(
+            script = BaseDAO(self.session, ProjectScript).create(
                 {
-                    "episode_id": episode.id,
+                    "project_id": creation.id,
                     "position": maximum + 1,
                     "content": content,
                     "state": "unconfirmed",
@@ -125,11 +124,9 @@ class GenerationBusinessService(BaseService):
         self.session.flush()
         return result
 
-    def storyboard_result_page(self, project_id, episode_id, generation_id, offset=0, limit=20):
+    def storyboard_result_page(self, project_id, generation_id, offset=0, limit=20):
         self.dao.validate_pagination(offset, limit)
-        project_id, episode_id, generation_id = map(
-            parse_identifier, (project_id, episode_id, generation_id)
-        )
+        project_id, generation_id = map(parse_identifier, (project_id, generation_id))
         with self._transaction():
             task = self._require(AsyncTask, generation_id, for_update=False)
             record = self.session.scalar(
@@ -142,9 +139,9 @@ class GenerationBusinessService(BaseService):
             if (
                 source.get("scene") != "script_shots"
                 or str(source.get("project_id")) != str(project_id)
-                or str(source.get("episode_id")) != str(episode_id)
+                or str(source.get("project_id")) != str(project_id)
             ):
-                raise WorkflowError("not_found", "此生成结果不属于当前分集", 404)
+                raise WorkflowError("not_found", "此生成结果不属于当前作品", 404)
             result = (record.response_data or {}).get("business_result") or {}
             if task.status != "succeeded" or result.get("kind") != "script_shots":
                 raise WorkflowError("result_not_ready", "分镜结果尚不可用")
@@ -155,7 +152,9 @@ class GenerationBusinessService(BaseService):
             }
             current_asset_ids = set(
                 self.session.scalars(
-                    select(EpisodeAsset.asset_id).where(EpisodeAsset.episode_id == episode_id)
+                    select(Asset.id).where(
+                        Asset.project_id == project_id, Asset.deleted_at.is_(None)
+                    )
                 )
             )
             items = []
@@ -195,23 +194,21 @@ class GenerationBusinessService(BaseService):
                 }
             ).model_dump(mode="json")
 
-    def apply_storyboard(self, project_id, episode_id, generation_id, payload):
+    def apply_storyboard(self, project_id, generation_id, payload):
         with self._transaction():
-            return self.apply_storyboard_locked(project_id, episode_id, generation_id, payload)
+            return self.apply_storyboard_locked(project_id, generation_id, payload)
 
-    def apply_storyboard_locked(self, project_id, episode_id, generation_id, payload):
+    def apply_storyboard_locked(self, project_id, generation_id, payload):
         """Caller owns the project lock and transaction; adoption and receipt are atomic."""
         from short_drama.core.exceptions import BusinessError
 
         if not self.session.in_transaction():
             raise BusinessError("Native adoption requires an active transaction")
-        from .episode_storyboard_service import EpisodeStoryboardService
         from .generation_context_service import script_source_is_current
+        from .project_storyboard_service import ProjectStoryboardService
 
         parsed = StoryboardApply.model_validate(payload)
-        project_id, episode_id, generation_id = map(
-            parse_identifier, (project_id, episode_id, generation_id)
-        )
+        project_id, generation_id = map(parse_identifier, (project_id, generation_id))
         task = self._require(AsyncTask, generation_id)
         record = self.session.scalar(
             select(AIGenerationRecord)
@@ -223,11 +220,11 @@ class GenerationBusinessService(BaseService):
         if (
             source.get("scene") != "script_shots"
             or str(source.get("project_id")) != str(project_id)
-            or str(source.get("episode_id")) != str(episode_id)
+            or str(source.get("project_id")) != str(project_id)
         ):
-            raise WorkflowError("not_found", "此生成结果不属于当前分集", 404)
-        storyboard = EpisodeStoryboardService(self.session)
-        episode = storyboard.lock_episode(project_id, episode_id)
+            raise WorkflowError("not_found", "此生成结果不属于当前作品", 404)
+        storyboard = ProjectStoryboardService(self.session)
+        creation = storyboard.lock_project(project_id)
         data = deepcopy(record.response_data or {})
         result = data.get("business_result") or {}
         if task.status != "succeeded" or result.get("kind") != "script_shots":
@@ -240,28 +237,28 @@ class GenerationBusinessService(BaseService):
                 "generation_id": str(generation_id),
                 "mode": applied["mode"],
                 "shot_ids": applied["shot_ids"],
-                "storyboard_version": str(episode.storyboard_version),
+                "storyboard_version": str(creation.storyboard_version),
                 "already_applied": True,
             }
-        if episode.content_version != parsed.content_version:
+        if creation.content_version != parsed.content_version:
             raise WorkflowError("writing_version_conflict", "剧本版本已变化，请重新核对")
-        storyboard.lock_episode(project_id, episode_id, parsed.storyboard_version)
+        storyboard.lock_project(project_id, parsed.storyboard_version)
         script = self.session.scalar(
-            select(EpisodeScript)
+            select(ProjectScript)
             .where(
-                EpisodeScript.id == int(source["script_id"]),
-                EpisodeScript.episode_id == episode_id,
+                ProjectScript.id == int(source["script_id"]),
+                ProjectScript.project_id == project_id,
             )
             .with_for_update()
             .execution_options(populate_existing=True)
         )
         if not script_source_is_current(
-            self.session, episode, script, record.request_data["source_snapshot"]
+            self.session, creation, script, record.request_data["source_snapshot"]
         ):
             raise WorkflowError("source_changed", "来源剧本已变化，请基于当前剧本重新生成")
         if parsed.mode == "replace":
-            storyboard.archive_active_locked(storyboard.list_active_for_update(episode.id))
-        rows = storyboard.create_generated_locked(episode, result["shots"])
+            storyboard.archive_active_locked(storyboard.list_active_for_update(creation.id))
+        rows = storyboard.create_generated_locked(creation, result["shots"])
         records = BaseDAO(self.session, ScriptShotRecord)
         now = utcnow()
         for row in rows:
@@ -275,12 +272,12 @@ class GenerationBusinessService(BaseService):
                     "created_by": task.initiated_by,
                 }
             )
-        storyboard.advance_storyboard_version(episode)
+        storyboard.advance_storyboard_version(creation)
         result["applied"] = {
             "mode": parsed.mode,
             "shot_ids": [str(row.id) for row in rows],
             "applied_at": now.isoformat() + "Z",
-            "storyboard_version": str(episode.storyboard_version),
+            "storyboard_version": str(creation.storyboard_version),
         }
         data["business_result"] = result
         record.response_data = data
@@ -289,6 +286,6 @@ class GenerationBusinessService(BaseService):
             "generation_id": str(generation_id),
             "mode": parsed.mode,
             "shot_ids": result["applied"]["shot_ids"],
-            "storyboard_version": str(episode.storyboard_version),
+            "storyboard_version": str(creation.storyboard_version),
             "already_applied": False,
         }

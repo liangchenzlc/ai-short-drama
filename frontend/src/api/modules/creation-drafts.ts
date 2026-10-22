@@ -9,7 +9,7 @@ export interface CreationDraftValue {
   reference_media_ids: string[];
 }
 export interface UserCreationDraft extends CreationDraftValue {
-  id: string; project_id: string; episode_id: string; object_id: string;
+  id: string; project_id: string;  object_id: string;
   purpose: CreationPurpose; row_version: string; draft_version: string;
   source_version: string | null;
   reference_images?: { media_id: string; url: string | null; width?: number | null; height?: number | null }[];
@@ -19,8 +19,8 @@ export interface CreationDraftTransport {
   create(value: CreationDraftValue): Promise<UserCreationDraft>;
   update(version: string, value: CreationDraftValue): Promise<UserCreationDraft>;
 }
-export function creationDraftsApi(projectId: string, episodeId: string, objectId: string, purpose: CreationPurpose): CreationDraftTransport {
-  const root = `/projects/${encodeURIComponent(projectId)}/episodes/${encodeURIComponent(episodeId)}/drafts`;
+export function creationDraftsApi(projectId: string, objectId: string, purpose: CreationPurpose): CreationDraftTransport {
+  const root = `/projects/${encodeURIComponent(projectId)}/drafts`;
   const target = `${root}/${encodeURIComponent(objectId)}/${purpose}`;
   return {
     async get() { return (await http.get<UserCreationDraft | null>(target)).data; },

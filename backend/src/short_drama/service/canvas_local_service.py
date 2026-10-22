@@ -60,6 +60,19 @@ class CanvasLocalService(BaseService):
         request["language"] = go_trim(payload.language)
         return self._create(payload, "timeline_transcription", request, key)
 
+    def transcription_models(self) -> dict[str, Any]:
+        from .canvas_cloud_transcription import supports_cloud_transcription
+
+        with self._transaction(read_only=True):
+            configs = self.jobs.transcription_models(self.canvases.actor_id)
+            return {
+                "models": [
+                    {"id": str(config.id), "displayName": config.name}
+                    for config in configs
+                    if supports_cloud_transcription(config)
+                ]
+            }
+
     def create_depth_capture(
         self, payload: CanvasDepthCaptureCreate, key: str | None = None
     ) -> tuple[dict[str, Any], bool]:
@@ -90,6 +103,14 @@ class CanvasLocalService(BaseService):
                         "canvas_local_operation_conflict", "此标识已用于其他本地执行请求", 409
                     )
                 return self._project(previous, canvas), False
+            if task_type == "timeline_transcription" and payload.model_config_id is not None:
+                from .canvas_cloud_transcription import require_cloud_transcription
+
+                config = require_cloud_transcription(
+                    self.jobs.transcription_model(payload.model_config_id, actor_id)
+                )
+                request["modelConfigVersion"] = str(config.row_version)
+                request["modelKey"] = config.model_key
             source = self.jobs.source(payload.resource_id)
             if source is None:
                 raise NotFound("无法读取待处理媒体，可能已被删除")
@@ -100,12 +121,12 @@ class CanvasLocalService(BaseService):
                 or (canvas is not None and source.project_id == canvas.project_id)
             ):
                 raise NotFound("待处理媒体不属于当前画布范围")
-            if task_type == "depth_capture":
+            if task_type in {"depth_capture", "resource_playback"}:
                 if not source.format_code.startswith("video/"):
                     raise WorkflowError(
                         "canvas_depth_media_type", "深度动作捕捉仅支持视频资源", 400
                     )
-                if (source.duration_ms or 0) > 15100:
+                if task_type == "depth_capture" and (source.duration_ms or 0) > 15100:
                     raise WorkflowError(
                         "canvas_depth_video_too_long", "视频超过 15 秒，请先使用视频剪辑缩短", 400
                     )
@@ -199,6 +220,16 @@ class CanvasLocalService(BaseService):
                 if job.status == "queued":
                     job.status, job.stage, job.finished_at = "cancelled", "已取消", utcnow()
             elif action == "resume":
+                if (job.error_json or {}).get(
+                    "code"
+                ) == "canvas_transcription_submission_unknown" or (job.result_json or {}).get(
+                    "cloud_submission_started"
+                ):
+                    raise WorkflowError(
+                        "canvas_transcription_submission_unknown",
+                        "云端提交结果待核实，不能恢复或自动重发",
+                        409,
+                    )
                 if job.status not in {"failed", "cancelled"}:
                     raise WorkflowError(
                         "canvas_local_resume_unavailable", "此本地任务当前不能恢复", 409
@@ -224,10 +255,15 @@ class CanvasLocalService(BaseService):
             "status": job.status,
             "progress": job.progress,
             "stage": job.stage,
-            "prompt": "字幕转写" if job.task_type == "timeline_transcription" else "深度动作捕捉",
-            "provider": "local",
-            "model": "whisper.cpp"
+            "prompt": {
+                "timeline_transcription": "字幕转写",
+                "resource_playback": "兼容视频预览",
+            }.get(job.task_type, "深度动作捕捉"),
+            "provider": "cloud" if job.request_json.get("modelConfigId") else "local",
+            "model": job.request_json.get("modelKey", "whisper.cpp")
             if job.task_type == "timeline_transcription"
+            else "h264-aac-v1"
+            if job.task_type == "resource_playback"
             else "video-depth-anything-small",
             "clientOperationId": job.client_operation_id,
             "clientContext": {},
@@ -238,8 +274,12 @@ class CanvasLocalService(BaseService):
             if job.status == "succeeded" and not disposed
             else "NOT_AVAILABLE",
             "outputs": [],
-            "canRetry": job.status in {"failed", "cancelled"} and not disposed,
-            "canResume": job.status in {"failed", "cancelled"} and not disposed,
+            "canRetry": job.status in {"failed", "cancelled"}
+            and not disposed
+            and not (job.result_json or {}).get("cloud_submission_started"),
+            "canResume": job.status in {"failed", "cancelled"}
+            and not disposed
+            and not (job.result_json or {}).get("cloud_submission_started"),
             "canCancel": job.status in {"queued", "running"} and not job.cancel_requested,
             "attempts": job.attempts,
             "createdAt": iso(job.created_at),

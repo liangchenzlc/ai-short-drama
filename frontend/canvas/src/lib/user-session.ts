@@ -44,7 +44,7 @@ async function hydrateLocalWorkspace(payload: WorkspaceBootstrapPayload) {
         const persistedConfig = scopedLocalStorage.getItem(CONFIG_STORE_KEY);
         const persistedCreationPreferences = scopedLocalStorage.getItem(CREATION_PREFERENCES_STORE_KEY);
 
-        usePluginStore.setState({ hydrated: false, runtimeStatuses: {}, pluginStates: {} });
+        usePluginStore.setState({ hydrated: false });
         useUserStore.getState().setUser(payload.user);
         useUserStore.getState().setStorageMode(payload.storageMode);
         useUserStore.getState().setRuntimeLimits(payload.runtimeLimits);
@@ -75,7 +75,7 @@ async function hydrateLocalWorkspace(payload: WorkspaceBootstrapPayload) {
                 // 查询失败不能当成「库是空的」。素材页会单独展示读取失败。
             }
         }
-        if (!persistedPlugins) usePluginStore.setState({ installations: [], runtimeStatuses: {}, pluginStates: {} });
+        if (!persistedPlugins) usePluginStore.setState({ installations: [] });
         if (!persistedCreationPreferences) useCreationPreferencesStore.setState({ preferences: {} });
         if (!persistedConfig) useConfigStore.getState().replaceConfig(localWorkspaceConfig(defaultConfig));
     } finally {

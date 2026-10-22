@@ -41,17 +41,6 @@ class ProjectCanvas(CanvasAudit, Base):
     project_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), ForeignKey("projects.id", ondelete="RESTRICT", onupdate="RESTRICT")
     )
-    source_project_id: Mapped[int | None] = mapped_column(
-        BIGINT(unsigned=True),
-        ForeignKey(
-            "projects.id",
-            name="fk_canvas_source_project",
-            ondelete="RESTRICT",
-            onupdate="RESTRICT",
-        ),
-        nullable=True,
-        active_history=True,
-    )
     # A client creates its stable key before the first successful server response.
     source_key: Mapped[str] = mapped_column(VARCHAR(64, collation="utf8mb4_0900_bin"))
     title: Mapped[str] = mapped_column(VARCHAR(255))
@@ -64,7 +53,6 @@ class ProjectCanvas(CanvasAudit, Base):
         UniqueConstraint("project_id", "id", name="uk_canvas_project_id"),
         UniqueConstraint("source_key", name="uk_canvas_source_key"),
         Index("idx_canvas_project_order", "project_id", "archived_at", "position", "id"),
-        Index("idx_canvas_source_project", "source_project_id"),
         CheckConstraint("row_version > 0 AND schema_version > 0", name="ck_canvas_version"),
         CheckConstraint("CHAR_LENGTH(TRIM(title)) > 0", name="ck_canvas_title"),
         OPTIONS,
@@ -401,6 +389,7 @@ class CanvasWorkspaceUserState(CanvasAudit, Base):
 
 CANVAS_PRIVATE_TABLES = frozenset(
     {
+        "canvas_style_preferences",
         "canvas_task_bindings",
         "canvas_task_media_references",
         "canvas_task_text_deltas",
@@ -418,7 +407,6 @@ CANVAS_PRIVATE_TABLES = frozenset(
         "canvas_workspace_user_states",
         "canvas_model_catalogs",
         "canvas_channel_models",
-        "canvas_beefapi_connections",
         "canvas_resource_uploads",
         "canvas_resource_chunks",
         "canvas_resource_copy_sources",
@@ -437,6 +425,8 @@ CANVAS_PRIVATE_TABLES = frozenset(
 )
 CANVAS_TABLES = CANVAS_PRIVATE_TABLES | frozenset(
     {
+        "canvas_style_profiles",
+        "canvas_style_media_references",
         "project_canvases",
         "project_canvas_settings",
         "canvas_nodes",

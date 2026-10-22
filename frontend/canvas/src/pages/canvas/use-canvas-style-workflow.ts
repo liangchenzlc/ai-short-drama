@@ -1,17 +1,14 @@
-import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { App } from "antd";
 
 import type { CanvasStylePreset } from "@/components/canvas/canvas-style-picker-modal";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { createStyleProfileSnapshot, serializeStyleProfile } from "@/lib/canvas/style-profile";
-import { updateProject as updateDomainProject } from "@/services/api/projects";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeMetadata, type Position } from "@/types/canvas";
 import { getActiveUserScope } from "@/lib/user-scope";
 
 type UseCanvasStyleWorkflowOptions = {
     canvasId: string;
-    domainProjectId?: string;
     nodesRef: { current: CanvasNodeData[] };
     selectedNodeIdsRef: { current: Set<string> };
     getCanvasCenter: () => Position;
@@ -22,12 +19,12 @@ type UseCanvasStyleWorkflowOptions = {
     setStylePickerOpen: Dispatch<SetStateAction<boolean>>;
 };
 
-export function useCanvasStyleWorkflow({ canvasId, domainProjectId, nodesRef, selectedNodeIdsRef, getCanvasCenter, setNodes, setSelectedNodeIds, setSelectedConnectionId, setDialogNodeId, setStylePickerOpen }: UseCanvasStyleWorkflowOptions) {
+export function useCanvasStyleWorkflow({ canvasId, nodesRef, selectedNodeIdsRef, getCanvasCenter, setNodes, setSelectedNodeIds, setSelectedConnectionId, setDialogNodeId, setStylePickerOpen }: UseCanvasStyleWorkflowOptions) {
     const { message } = App.useApp();
-    const queryClient = useQueryClient();
-    const liveContext = useRef({ canvasId, domainProjectId, mounted: true });
-    liveContext.current = { canvasId, domainProjectId, mounted: liveContext.current.mounted };
+    const liveContext = useRef({ canvasId, mounted: true });
+    liveContext.current = { canvasId, mounted: liveContext.current.mounted };
     const applyingRef = useRef(false);
+    const [styleApplying, setStyleApplying] = useState(false);
     useEffect(() => { liveContext.current.mounted = true; return () => { liveContext.current.mounted = false; }; }, []);
 
     const applyCanvasStyle = useCallback(
@@ -67,27 +64,18 @@ export function useCanvasStyleWorkflow({ canvasId, domainProjectId, nodesRef, se
         [getCanvasCenter, message, nodesRef, selectedNodeIdsRef, setDialogNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds, setStylePickerOpen],
     );
 
-    const persistStyleMutation = useMutation({
-        mutationFn: ({ preset, profileJson }: { preset: CanvasStylePreset; profileJson: string }) => {
-            if (!domainProjectId) throw new Error("画布尚未关联项目");
-            return updateDomainProject(domainProjectId, { stylePresetId: preset.id, styleProfileJson: profileJson });
-        },
-    });
-
     const applyCanvasStyleAsync = useCallback(async (preset: CanvasStylePreset) => {
         if (applyingRef.current) throw new Error("画风正在保存，请稍后重试");
         const scope = getActiveUserScope();
         applyingRef.current = true;
+        setStyleApplying(true);
         try {
-            const profileJson = serializeStyleProfile(preset.profile || createStyleProfileSnapshot(preset));
-            if (domainProjectId) {
-                await persistStyleMutation.mutateAsync({ preset, profileJson });
-                void queryClient.invalidateQueries({ queryKey: ["project", domainProjectId] });
-            }
-            if (!liveContext.current.mounted || liveContext.current.canvasId !== canvasId || liveContext.current.domainProjectId !== domainProjectId || getActiveUserScope() !== scope) throw new Error("页面或账号已变化，未向当前画布应用画风；如项目保存已完成，请回原项目查看");
+            const profile = preset.profile || createStyleProfileSnapshot(preset);
+            const profileJson = serializeStyleProfile(profile);
+            if (!liveContext.current.mounted || liveContext.current.canvasId !== canvasId || getActiveUserScope() !== scope) throw new Error("页面或账号已变化，未向当前画布应用画风");
             applyCanvasStyle(preset, profileJson);
-        } finally { applyingRef.current = false; }
-    }, [canvasId, domainProjectId, persistStyleMutation.mutateAsync, queryClient, applyCanvasStyle]);
+        } finally { applyingRef.current = false; if (liveContext.current.mounted) setStyleApplying(false); }
+    }, [canvasId, applyCanvasStyle]);
 
     const selectCanvasStyle = useCallback(
         (preset: CanvasStylePreset) => {
@@ -96,5 +84,6 @@ export function useCanvasStyleWorkflow({ canvasId, domainProjectId, nodesRef, se
         [applyCanvasStyleAsync, message],
     );
 
-    return { selectCanvasStyle, applyCanvasStyleAsync, styleApplying: persistStyleMutation.isPending };
+    const syncCanvasStyle = useCallback((preset: CanvasStylePreset) => applyCanvasStyle(preset, serializeStyleProfile(preset.profile || createStyleProfileSnapshot(preset))), [applyCanvasStyle]);
+    return { selectCanvasStyle, applyCanvasStyleAsync, syncCanvasStyle, styleApplying };
 }

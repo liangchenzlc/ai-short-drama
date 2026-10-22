@@ -1,6 +1,6 @@
 name: ai-short-drama-deps
 
-# Local development dependencies. See docs/docker.md for backend settings.
+# Local development dependencies. See docs/instruction/Docker一键启动后端依赖.md for backend settings.
 services:
   mysql:
     image: mysql:8.4
@@ -21,7 +21,7 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
       - type: bind
-        source: ./docs/数据库模型/schema.mysql8.sql
+        source: ./docs/database/schema/schema.mysql8.sql
         target: /docker-entrypoint-initdb.d/001-schema.sql
         read_only: true
         bind:

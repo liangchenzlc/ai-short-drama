@@ -1,6 +1,6 @@
 import { normalizeVideoDuration } from "@/lib/video-generation-options";
 import { modelCapabilityConfigFor, videoDurationAllowed } from "@/lib/model-capabilities";
-import { channelHasGenerationCredential, isBuiltinBeefAPIChannel, resolveModelChannel } from "@/stores/use-config-store";
+import { channelHasGenerationCredential, resolveModelChannel } from "@/stores/use-config-store";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import type { ReferenceImage } from "@/types/image";
 
@@ -103,7 +103,7 @@ export function assertVideoConfig(config: ResolvedAiConfig, selectedModel: strin
     if (!config.baseUrl.trim()) throw new Error("请先配置 Base URL");
     const channel = resolveModelChannel(config, selectedModel || config.model);
     if (!channelHasGenerationCredential(channel)) {
-        throw new Error(isBuiltinBeefAPIChannel(channel) ? "请先连接 BeefAPI" : "请先配置 API Key");
+        throw new Error("请先配置 API Key");
     }
     if (config.apiFormat === "gemini" && config.interfaceType !== "gemini-veo") throw new Error("当前 Gemini 文本协议不支持视频生成，请为该模型选择 Gemini Veo 协议");
 }

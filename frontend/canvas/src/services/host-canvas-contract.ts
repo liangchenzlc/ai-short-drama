@@ -20,7 +20,7 @@ export function createHostCanvasContract(transport: CanvasTransport, observeAlia
         return transport<CanvasReadDto>({ method: "get", url: `${path(canvas)}/my-document` });
     };
     const summary = (canvas: CanvasSummaryDto) => ({
-        id: canvas.source_key, workspaceProjectId: canvas.project_id, projectId: canvas.source_project_id ?? undefined,
+        id: canvas.source_key, workspaceProjectId: canvas.project_id,
         title: canvas.title, revision: canvas.row_version,
         createdAt: canvas.created_at, updatedAt: canvas.updated_at,
     });

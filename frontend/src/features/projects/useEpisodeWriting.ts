@@ -9,13 +9,13 @@ import { creationScope, readRecovery, readRecoveryText, saveRecovery, clearRecov
 import { documentText, isEditorDocument } from './script-document';
 import { useAuth } from '../auth/AuthSession';
 
-export function useEpisodeWriting(projectId: string, episodeId: string, extraBarrier?: () => NavigationBarrier | null) {
+export function useEpisodeWriting(projectId: string, extraBarrier?: () => NavigationBarrier | null) {
   const { user, enabled } = useAuth();
   const actor = user?.id ?? (enabled ? 'signed-out' : 'anonymous');
-  const resourceKey = `writing:${projectId}:${episodeId}`;
+  const resourceKey = `writing:${projectId}`;
   const session = useMemo(() => {
     const scope = creationScope(resourceKey, actor);
-    return retainStandardSession(actor, resourceKey, () => new WritingSession(episodeWritingApi(projectId, episodeId), {
+    return retainStandardSession(actor, resourceKey, () => new WritingSession(episodeWritingApi(projectId), {
       read: () => {
         const stored = readRecovery(scope, isStoredDraft);
         if (!stored) return null;
@@ -28,8 +28,8 @@ export function useEpisodeWriting(projectId: string, episodeId: string, extraBar
       save: ({ base_version, ...document }) => saveRecovery(scope, { format: 1, base_version, document }),
       clear: () => clearRecovery(scope),
       export: () => readRecoveryText(scope),
-    }), { label: '剧本', projectId, episodeId });
-  }, [projectId, episodeId, actor, resourceKey]);
+    }), { label: '剧本', projectId });
+  }, [projectId, actor, resourceKey]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const { navigator } = useContext(UNSAFE_NavigationContext);
   useEffect(() => {

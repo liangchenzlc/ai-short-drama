@@ -5,25 +5,26 @@ export interface Page<T> { items: T[]; total: number; offset: number; limit: num
 export type ImageLayout = 'single' | 'four' | 'five' | 'nine';
 interface DraftSourceReference { draft_id?: string; draft_version?: string }
 export type GenerationSource = (
+  | { scene: 'image_operation'; operation_id: string }
   | { scene: 'character_voice_design'; project_id: string; asset_id: string; voice_prompt: string; preview_text: string }
-  | { scene: 'dialogue_extract'; project_id: string; episode_id: string }
-  | { scene: 'dialogue_audio'; project_id: string; episode_id: string; row_version: string; line_id: string }
+  | { scene: 'dialogue_extract'; project_id: string }
+  | { scene: 'dialogue_audio'; project_id: string;  row_version: string; line_id: string }
   | { scene: 'shot_video'; shot_id: string; row_version: string; context_hash: string; reference_media_id: string }
   | { scene: 'shot_image'; shot_id: string; layout: ImageLayout; context_mode?: 'saved'; row_version?: string; context_hash?: string }
-  | { scene: 'asset_image'; asset_id: string; row_version: string; project_id?: string; episode_id?: string }
-  | { scene: 'novel_script'; project_id: string; episode_id: string; content_version: string }
-  | { scene: 'script_shots' | 'script_assets'; project_id: string; episode_id: string; script_id: string; content_version: string }) & DraftSourceReference;
+  | { scene: 'asset_image'; asset_id: string; row_version: string; project_id?: string }
+  | { scene: 'novel_script'; project_id: string;  content_version: string }
+  | { scene: 'script_shots' | 'script_assets'; project_id: string;  script_id: string; content_version: string }) & DraftSourceReference;
 interface CreateBase { config_id?: string }
 export interface TextGenerationRequest extends CreateBase {
   input?: { messages: { role: 'system' | 'user' | 'assistant'; content: string }[] };
-  source?: Extract<GenerationSource, { scene: 'novel_script' | 'script_shots' | 'script_assets' | 'dialogue_extract' }>;
+  source?: Extract<GenerationSource, { scene: 'novel_script' | 'script_shots' | 'script_assets' | 'dialogue_extract' | 'image_operation' }>;
   extraction?: { kinds: ('character' | 'scene' | 'prop')[] };
   storyboard?: { average_shot_duration_ms: number };
   instructions?: string;
   parameters: { temperature?: number; max_output_tokens?: number };
 }
 export interface ImageGenerationRequest extends CreateBase {
-  source?: Extract<GenerationSource, { scene: 'shot_image' | 'asset_image' }>;
+  source?: Extract<GenerationSource, { scene: 'shot_image' | 'asset_image' | 'image_operation' }>;
   input: { prompt: string; reference_media_ids: string[] };
   parameters: { aspect?: string; resolution?: string; count: number };
 }
@@ -32,7 +33,7 @@ export interface VideoGenerationRequest extends CreateBase {
   source?: Extract<GenerationSource, { scene: 'shot_video' }>;
   parameters: { aspect?: string; resolution?: string; duration_ms?: number };
 }
-export interface GenerationReceipt { generation_id: string; service_type: GenerationKind; status: TaskStatus }
+export interface GenerationReceipt { generation_id: string; service_type: GenerationKind; status: TaskStatus; image_group_id?: string | null }
 export interface AudioGenerationRequest extends CreateBase {
   input?: { text: string }; parameters?: { voice: string };
   source?: Extract<GenerationSource, { scene: 'dialogue_audio' }>;
@@ -45,7 +46,7 @@ export interface GenerationSummary extends GenerationReceipt {
   created_at: string;
   updated_at?: string | null;
   next_action?: 'submit' | 'poll' | 'save' | null;
-  source?: (GenerationSource & { project_id?: string; episode_id?: string }) | null;
+  source?: (GenerationSource & { project_id?: string }) | null;
   error?: SafeTaskError | null;
   can_cancel: boolean;
   can_retry: boolean;
@@ -74,7 +75,7 @@ export interface GenerationRecord {
   error?: SafeTaskError | null; usage?: Record<string, unknown> | null; finish_reason?: string | null;
 }
 export interface GenerationFilters {
-  service_type: GenerationKind; status?: string; config_id?: string; source_scene?: string; project_id?: string; episode_id?: string;
+  service_type: GenerationKind; status?: string; config_id?: string; source_scene?: string; project_id?: string;
   source_id?: string; created_after?: string; created_before?: string; offset: number; limit: number;
 }
 export interface AssetFilters { media_type: 'image' | 'video' | 'audio'; resource_scope?: 'all' | 'personal' | 'project'; project_id?: string; name?: string; source_scene?: string; source_id?: string; created_after?: string; created_before?: string; offset: number; limit: number }
@@ -85,5 +86,4 @@ export interface ApplyAssetRequest {
   expected_context_hash?: string;
   acknowledge_stale_source?: boolean;
   parameters?: { layout?: ImageLayout; aspect?: string; resolution?: string; duration?: number };
-  confirm_shared?: boolean;
 }

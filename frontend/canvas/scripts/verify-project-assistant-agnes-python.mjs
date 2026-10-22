@@ -18,7 +18,7 @@ await server.listen();
 let browser;
 let page;
 let owner;
-let currentUrl = config.surface === "standard" ? origin + "/projects/" + config.projectId + "/episodes/" + config.sourceKey + "/source" : origin + "/canvas-app/canvas/" + config.sourceKey;
+let currentUrl = config.surface === "standard" ? origin + "/projects/" + config.projectId + "/source" : origin + "/canvas-app/canvas/" + config.sourceKey;
 
 async function read(response) {
     assert.ok(response.ok(), "HTTP " + response.status() + " " + new URL(response.url()).pathname);

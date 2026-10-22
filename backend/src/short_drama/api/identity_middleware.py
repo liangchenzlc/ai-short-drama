@@ -43,11 +43,7 @@ def install_identity(app, settings):
             request.state.actor = None
             request.state.resource_scope = None
             path = request.url.path.rstrip("/")
-            anonymous_invite = (
-                bool(re.fullmatch(r"/api/v1/invitations/[A-Za-z0-9_-]{43}", path))
-                and request.method == "GET"
-            )
-            public = path in PUBLIC or anonymous_invite
+            public = path in PUBLIC
             if request.method not in {"GET", "HEAD", "OPTIONS"}:
                 if request.headers.get("origin") != settings.public_origin.rstrip("/"):
                     raise WorkflowError("csrf_failed", "Request origin is invalid", 403)

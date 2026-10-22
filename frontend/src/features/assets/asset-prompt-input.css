@@ -1,0 +1,25 @@
+.asset-prompt-input { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 160px; }
+.asset-prompt-editor { position: relative; flex: 1; min-width: 0; min-height: 160px; overflow: auto; padding: 4px 2px 10px; border: 0; outline: none; background: transparent; color: var(--ink, #f3f3f5); font: inherit; font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; caret-color: var(--ink, #f3f3f5); scrollbar-width: thin; scrollbar-color: #484848 transparent; }
+.asset-prompt-editor[data-empty="true"]::before { position: absolute; color: var(--placeholder, #9797a1); content: attr(data-placeholder); pointer-events: none; }
+.asset-prompt-editor[aria-disabled="true"] { color: var(--sub, #b4b4bc); cursor: not-allowed; }
+.asset-prompt-editor::selection, .asset-prompt-editor ::selection { background: #565656; color: #fff; }
+.asset-prompt-chip { display: inline-flex; height: 22px; max-width: 100%; align-items: center; gap: 2px; margin-inline: 1px; padding-inline: 3px; overflow: hidden; border-radius: 4px; background: #2b2b2b; color: inherit; font-size: 0.92em; font-weight: 500; line-height: 1; vertical-align: middle; user-select: all; }
+.asset-prompt-chip > span { flex: 0 0 auto; }
+.asset-prompt-chip > img, .asset-prompt-chip-fallback { display: block; width: 18px; min-width: 18px; height: 18px; flex: 0 0 18px; border-radius: 3px; object-fit: cover; }
+.asset-prompt-chip-fallback { display: grid; place-items: center; color: var(--sub, #b4b4bc); background: #373737; }
+.asset-prompt-help { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.asset-prompt-menu { position: fixed; z-index: 2600; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #484848; border-radius: 10px; background: var(--surface-raised, #1f1f20); color: var(--ink, #f3f3f5); font-family: inherit; }
+.asset-prompt-menu-heading { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 6px 10px; color: var(--sub, #b4b4bc); font-size: 11px; }
+.asset-prompt-menu-heading small { font-size: 11px; font-variant-numeric: tabular-nums; }
+.asset-prompt-menu-items { min-height: 0; overflow: auto; padding: 0 5px 5px; scrollbar-width: thin; scrollbar-color: #484848 transparent; }
+.asset-prompt-menu-items > button { display: flex; width: 100%; min-width: 0; min-height: 42px; align-items: center; gap: 8px; padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.asset-prompt-menu-items > button:hover, .asset-prompt-menu-items > button.is-active { background: #353535; }
+.asset-prompt-menu-items > button:focus-visible { outline: 2px solid var(--ink, #f3f3f5); outline-offset: -2px; }
+.asset-prompt-thumbnail { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; overflow: hidden; border-radius: 4px; background: #303030; color: var(--sub, #b4b4bc); }
+.asset-prompt-thumbnail img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.asset-prompt-menu-items > button > span:last-child { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 1px; }
+.asset-prompt-menu-items strong, .asset-prompt-menu-items small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-prompt-menu-items strong { font-size: 12px; font-weight: 500; line-height: 1.4; }
+.asset-prompt-menu-items small { color: var(--sub, #b4b4bc); font-size: 11px; line-height: 1.4; }
+.asset-prompt-menu-empty { margin: 0; padding: 12px 6px; color: var(--sub, #b4b4bc); font-size: 12px; }
+@media (max-width: 700px) { .asset-prompt-menu-items > button { min-height: 44px; } }

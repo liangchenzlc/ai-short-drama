@@ -95,14 +95,7 @@
   .detail-header-actions { grid-column: 2; grid-row: 1; gap: 8px; margin: 0; }
   .detail-header-inner .detail-back { justify-self: start; min-height: 44px; }
   .detail-header-actions .detail-close { min-height: 44px; }
-  .web-episode { --episode-header-height: 112px; }
-  .web-episode .episode-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 44px minmax(0, 1fr); height: var(--episode-header-height); gap: 4px 12px; padding: 10px 16px; }
-  .web-episode .episode-top .detail-back { grid-column: 1; grid-row: 1; width: fit-content; height: auto; min-height: 44px; }
-  .web-episode .episode-top > .episode-heading { grid-column: 1; grid-row: 2; }
-  .web-episode .episode-top > .episode-heading > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .web-episode .episode-top > .account-controls { grid-column: 2; grid-row: 1; justify-self: end; }
-  .web-episode .episode-top .episode-save-state { grid-column: 2; grid-row: 2; max-width: 120px; margin-left: 0; }
-  .web-episode .episode-sidebar { top: var(--episode-header-height); }
+
 }
 @media (pointer: coarse) {
   .identity-form .ant-btn { min-height: 44px; }

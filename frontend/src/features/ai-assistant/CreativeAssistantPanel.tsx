@@ -1,96 +1,114 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Skeleton, Tooltip } from 'antd';
-import { History, MessageSquarePlus, Plus, X } from 'lucide-react';
+import { XProvider } from '@ant-design/x';
+import { BookOpen, History, MessageSquarePlus, Plus, X } from 'lucide-react';
 import { assistantApi } from '../../api/modules/assistant';
 import { ApiError, errorMessage } from '../../api/http';
-import type { AssistantConversation } from '../../api/types/assistant';
+import type { GlobalAssistantConversation, TaskExecutionTarget } from '../../api/types/assistant';
+import { accountStorage } from '../auth/account-storage';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import { AssistantConversationBody, type AssistantContextProps } from './AssistantConversationBody';
+import { StudioFeedback } from '../../components/ui/StudioFeedback';
 import { AssistantHistory } from './AssistantHistory';
+import { AssistantMemory } from './AssistantMemory';
 import { LegacyAssistantMessages } from './LegacyAssistantMessages';
 import './ai-assistant.css';
+import './standard-assistant.css';
 
 export interface CreativeAssistantPanelProps extends AssistantContextProps {
-  accountId?: string;
-  layout?: 'standard';
-  projectId: string;
-  projectTitle: string;
-  open?: boolean;
-  readOnly?: boolean;
-  onClose: () => void;
-  selectedConversationId?: string | null;
-  onConversationChange?: (id: string) => void;
-  onOpenModelSettings: () => void;
-  onOpenLegacy?: (id: string) => void;
-  legacyConversationId?: string | null;
-  onCloseLegacy?: () => void;
+  accountId?: string; layout?: 'standard'; projectId: string; projectTitle: string;
+  executionTarget?: TaskExecutionTarget;
+  open?: boolean; readOnly?: boolean; onClose: () => void;
+  selectedConversationId?: string | null; onConversationChange?: (id: string) => void;
+  onOpenModelSettings: () => void; onOpenLegacy?: (id: string) => void;
+  legacyConversationId?: string | null; onCloseLegacy?: () => void;
 }
 
-/** 共用会话与消息状态，标题及输入几何按工作区布局适配。 */
+/** Conversation selection belongs to the account; page context is an explicit task input. */
 export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
-  const { accountId, projectId, projectTitle, layout, open = true, readOnly = false, onClose, selectedConversationId, onOpenModelSettings } = props;
-  const [conversation, setConversation] = useState<AssistantConversation | null>(null);
+  const { accountId, projectId, layout, open = true, readOnly = false, onClose, selectedConversationId } = props;
+  const [conversation, setConversation] = useState<GlobalAssistantConversation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [history, setHistory] = useState(false);
-  const [legacyId, setLegacyId] = useState<string | null>(null);
+  const [memory, setMemory] = useState(false);
+  const [legacy, setLegacy] = useState<{ id: string; projectId: string } | null>(null);
   const alive = useRef(true);
   const request = useRef(0);
-  const loadController = useRef<AbortController | null>(null);
-  const loadedScope = useRef('');
+  const controller = useRef<AbortController | null>(null);
   const latest = useRef(props); latest.current = props;
-  useEffect(() => { alive.current = true; return () => { alive.current = false; loadController.current?.abort(); }; }, []);
+  const loadedSelection = useRef<{ accountId: string; id: string } | null>(null);
+  const remember = (item: GlobalAssistantConversation) => {
+    setConversation(item);
+    loadedSelection.current = accountId ? { accountId, id: item.id } : null;
+    if (accountId) { try { accountStorage(accountId).setItem('assistant-conversation:v3', item.id); } catch { /* Server history remains authoritative. */ } }
+    latest.current.onConversationChange?.(item.id);
+  };
+  useEffect(() => { alive.current = true; return () => { alive.current = false; controller.current?.abort(); }; }, []);
   useEffect(() => {
-    const scope = `${accountId ?? ''}:${projectId}`;
-    const scopeChanged = loadedScope.current !== scope;
-    if (scopeChanged) { loadedScope.current = scope; setConversation(null); setLegacyId(null); setHistory(false); }
-    if (!accountId || !open) { ++request.current; loadController.current?.abort(); setLoading(false); return; }
-    if (!scopeChanged && !revision && conversation && (selectedConversationId === conversation.id || !selectedConversationId)) return;
+    setConversation(null); setLegacy(null); setHistory(false);
+  }, [accountId]);
+  useEffect(() => {
+    if (!accountId || !open) { ++request.current; controller.current?.abort(); setLoading(false); return; }
+    if (selectedConversationId && loadedSelection.current?.accountId === accountId && loadedSelection.current.id === selectedConversationId && conversation?.id === selectedConversationId) {
+      setLoading(false); return;
+    }
     const generation = ++request.current;
-    loadController.current?.abort();
-    const controller = new AbortController(); loadController.current = controller; setLoading(true); setError('');
-    const promise = selectedConversationId ? assistantApi.conversation(selectedConversationId, controller.signal) : assistantApi.resolveConversation(projectId, controller.signal);
-    promise.then(item => {
-      if (controller.signal.aborted || generation !== request.current) return;
-      if (item.project_id !== projectId || item.scope_version !== 2) throw new ApiError('这条对话不属于当前项目助手。', 'assistant_scope_invalid');
-      setConversation(item); latest.current.onConversationChange?.(item.id);
-    }).catch(cause => { if (!controller.signal.aborted) { setConversation(null); setError(errorMessage(cause)); } })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [accountId, projectId, selectedConversationId, open, revision]);
+    controller.current?.abort(); const read = new AbortController(); controller.current = read;
+    setLoading(true); setError('');
+    (async () => {
+      let preferred = selectedConversationId;
+      if (!preferred) { try { preferred = accountStorage(accountId).getItem('assistant-conversation:v3'); } catch { preferred = null; } }
+      let item: GlobalAssistantConversation | null = null;
+      if (preferred) {
+        try {
+          const candidate = await assistantApi.globalConversation(preferred, read.signal);
+          if (candidate.scope_version === 3) item = candidate;
+        } catch (cause) { if (!(cause instanceof ApiError) || cause.status !== 404) throw cause; }
+      }
+      if (!item) item = (await assistantApi.globalConversations(0, read.signal)).items[0] ?? null;
+      if (read.signal.aborted || generation !== request.current) return;
+      if (item) remember(item); else setConversation(null);
+    })().catch(cause => { if (!read.signal.aborted && generation === request.current) setError(errorMessage(cause)); })
+      .finally(() => { if (!read.signal.aborted && generation === request.current) setLoading(false); });
+    return () => read.abort();
+  }, [accountId, selectedConversationId, open, revision]);
   async function create() {
-    if (busy || sending || readOnly || !accountId) return;
-    setBusy(true); setError('');
-    const generation = ++request.current; loadController.current?.abort();
-    const scope = `assistant-new:${projectId}`;
+    if (busy || sending || !accountId) return;
+    setBusy(true); setError(''); const generation = ++request.current; controller.current?.abort();
+    const scope = 'assistant-global-new';
     try {
-      const key = await requestAttempt(scope, { project_id: projectId }, attemptStorage());
-      const item = await assistantApi.createConversation(projectId, key); clearAttempt(scope, attemptStorage());
-      if (!alive.current || generation !== request.current) return;
-      setConversation(item); latest.current.onConversationChange?.(item.id);
-    } catch (cause) { if (alive.current) { setError(errorMessage(cause)); throw cause; } }
+      const key = await requestAttempt(scope, {}, attemptStorage());
+      const item = await assistantApi.createGlobalConversation(key); clearAttempt(scope, attemptStorage());
+      if (alive.current && generation === request.current) remember(item);
+    } catch (cause) { if (alive.current) setError(errorMessage(cause)); throw cause; }
     finally { if (alive.current) { setBusy(false); setLoading(false); } }
   }
-  const fallbackLegacy = props.legacyConversationId ?? legacyId;
-  return <section className={`ai-assistant-panel${layout === 'standard' ? ' ai-assistant-standard' : ''}`} aria-label="AI 创作助手" style={open ? undefined : { display: 'none' }}>
-    <header className="ai-assistant-header"><div className="ai-assistant-heading"><h2>AI 创作助手</h2>{layout !== 'standard' && <span title={projectTitle}>{projectTitle}</span>}</div>
-      <Tooltip title="新对话"><Button type="text" size="small" aria-label="新对话" disabled={readOnly || busy || sending || loading || !accountId} loading={busy} icon={layout === 'standard' ? <Plus size={18}/> : <MessageSquarePlus size={16}/>} onClick={() => { void create().catch(() => {}); }}/></Tooltip>
-      <Tooltip title="对话记录"><Button type="text" size="small" aria-label="对话记录" disabled={!conversation || busy || sending} icon={<History size={layout === 'standard' ? 18 : 16}/>} onClick={() => setHistory(true)}/></Tooltip>
-      <Tooltip title="关闭助手"><Button type="text" size="small" aria-label="关闭助手" icon={<X size={layout === 'standard' ? 18 : 16}/>} onClick={() => { ++request.current; loadController.current?.abort(); onClose(); }}/></Tooltip>
+  const legacyId = props.legacyConversationId ?? legacy?.id;
+  return <XProvider theme={{ token: { fontSize: 13 } }}><section className={`ai-assistant-panel${layout === 'standard' ? ' ai-assistant-standard' : ''}`} aria-label="AI 创作助手" style={open ? undefined : { display: 'none' }}>
+    <header className="ai-assistant-header"><div className="ai-assistant-heading"><h2>AI 创作助手</h2>{layout !== 'standard' && <span>{conversation?.title ?? '账号对话'}</span>}</div>
+      <Tooltip title="新对话"><Button type="text" size="small" aria-label="新对话" disabled={busy || sending || loading || !accountId} loading={busy} icon={layout === 'standard' ? <Plus size={18}/> : <MessageSquarePlus size={16}/>} onClick={() => { void create().catch(() => {}); }}/></Tooltip>
+      <Tooltip title="对话记录"><Button type="text" size="small" aria-label="对话记录" disabled={!accountId || busy || sending} icon={<History size={layout === 'standard' ? 18 : 16}/>} onClick={() => setHistory(true)}/></Tooltip>
+      <Tooltip title="记忆管理"><Button type="text" size="small" aria-label="记忆管理" disabled={!accountId || busy} icon={<BookOpen size={layout === 'standard' ? 18 : 16}/>} onClick={() => setMemory(true)}/></Tooltip>
+      <Tooltip title="关闭助手"><Button type="text" size="small" aria-label="关闭助手" icon={<X size={layout === 'standard' ? 18 : 16}/>} onClick={onClose}/></Tooltip>
     </header>
-    {error ? <div className="ai-assistant-notice" role="alert"><span>{error}</span><Button size="small" onClick={() => setRevision(value => value + 1)}>重新读取</Button></div> : null}
+    {error && (layout === 'standard' ? <StudioFeedback type="error" title="AI 创作助手" message={error} noticeKey={`assistant-panel:${accountId}`} actions={<Button size="small" onClick={() => setRevision(value => value + 1)}>重新读取</Button>}/>
+      : <div className="ai-assistant-notice" role="alert"><span>{error}</span><Button size="small" onClick={() => setRevision(value => value + 1)}>重新读取</Button></div>)}
     {!accountId ? <p className="ai-assistant-meta">登录后可以使用 AI 创作助手。</p>
       : loading ? <div className="ai-assistant-log"><Skeleton active paragraph={{ rows: 5 }}/></div>
-        : conversation ? <AssistantConversationBody key={`${accountId}:${conversation.id}`} conversation={conversation} accountId={accountId} layout={layout} readOnly={readOnly || conversation.archived}
-          contextPreview={props.contextPreview} mentionReferences={props.mentionReferences} prepareContext={props.prepareContext} onOpenModelSettings={onOpenModelSettings} onSendingChange={setSending}/>
-          : !error ? <p className="ai-assistant-meta">暂无对话，点击“新对话”开始。</p> : null}
-    {history && conversation ? <AssistantHistory projectId={projectId} currentId={conversation.id} readOnly={readOnly} onNew={create} onUpdated={item => setConversation(old => old?.id === item.id ? item : old)} onClose={() => setHistory(false)} onSelect={id => {
-      if (latest.current.onConversationChange) latest.current.onConversationChange(id);
-      else { setConversation(null); assistantApi.conversation(id).then(item => { if (alive.current && item.project_id === projectId) setConversation(item); }).catch(cause => { if (alive.current) setError(errorMessage(cause)); }); }
-    }} onLegacy={id => { if (props.onOpenLegacy) props.onOpenLegacy(id); else setLegacyId(id); }}/> : null}
-    {fallbackLegacy ? <LegacyAssistantMessages key={fallbackLegacy} id={fallbackLegacy} projectId={projectId} onClose={() => { setLegacyId(null); props.onCloseLegacy?.(); }}/> : null}
-  </section>;
+        : conversation ? <AssistantConversationBody key={`${accountId}:${conversation.id}`} conversation={conversation} accountId={accountId} projectId={projectId} executionTarget={props.executionTarget} layout={layout} readOnly={conversation.status !== 'active'}
+          contextPreview={props.contextPreview} mentionReferences={readOnly ? [] : props.mentionReferences} prepareContext={props.prepareContext} onOpenModelSettings={props.onOpenModelSettings} onSendingChange={setSending}/>
+          : !error ? <div className="ai-assistant-empty"><p>对话独立于作品，选入需要的主体后开始创作。</p><Button type="primary" loading={busy} onClick={() => void create().catch(() => {})}>新建对话</Button></div> : null}
+    {history && accountId && <AssistantHistory key={accountId} accountId={accountId} layout={layout} currentId={conversation?.id ?? ''} onNew={create} onClose={() => setHistory(false)} onUpdated={item => setConversation(old => old?.id === item.id ? item : old)} onDeleted={id => {
+      if (id === conversation?.id) { setConversation(null); try { if (accountId) accountStorage(accountId).removeItem('assistant-conversation:v3'); } catch { /* A deleted selection is rechecked on reload. */ } setRevision(value => value + 1); }
+    }} onSelect={id => { assistantApi.globalConversation(id).then(item => { if (alive.current) remember(item); }).catch(cause => { if (alive.current) setError(errorMessage(cause)); }); }} onLegacy={(id, sourceProjectId) => setLegacy({ id, projectId: sourceProjectId })}/>}
+    {legacyId && <LegacyAssistantMessages key={legacyId} layout={layout} id={legacyId} projectId={legacy?.projectId ?? projectId} onClose={() => { setLegacy(null); props.onCloseLegacy?.(); }}/>}
+    {memory && accountId && <AssistantMemory key={accountId} accountId={accountId} conversationId={conversation?.id} projectId={projectId} layout={layout} onClose={() => setMemory(false)} onSource={async id => {
+      const item = await assistantApi.globalConversation(id);
+      if (alive.current) { remember(item); setMemory(false); }
+    }}/>}
+  </section></XProvider>;
 }

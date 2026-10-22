@@ -26,10 +26,10 @@ class MediaRecycleBinCreate(InputModel):
 
     @model_validator(mode="after")
     def validate_parameter_shape(self):
-        image = self.layout is not None and self.aspect is not None and self.duration is None
+        image = self.layout is not None and self.duration is None
         video = self.layout is None and self.aspect is None and self.duration is not None
         if not (image or video):
-            raise ValueError("provide either image layout/aspect or video duration")
+            raise ValueError("provide either image layout or video duration")
         return self
 
 

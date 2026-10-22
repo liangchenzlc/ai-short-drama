@@ -17,9 +17,7 @@ from short_drama.schemas.base import Identifier
 from short_drama.schemas.common import PageResponse
 from short_drama.service.agent_artifact_service import AgentArtifactService
 
-router = APIRouter(
-    prefix="/projects/{project_id}/episodes/{episode_id}/agent-artifacts", tags=["Agent artifacts"]
-)
+router = APIRouter(prefix="/projects/{project_id}/agent-artifacts", tags=["Agent artifacts"])
 ScopedId = Annotated[Identifier, Path(description="Decimal Snowflake identifier")]
 
 
@@ -37,7 +35,6 @@ Artifacts = Annotated[AgentArtifactService, Depends(get_artifact_service)]
 @router.get("", response_model=PageResponse[ArtifactSummary])
 def list_artifacts(
     project_id: ScopedId,
-    episode_id: ScopedId,
     service: Artifacts,
     scope: ExpectedScope,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -45,29 +42,25 @@ def list_artifacts(
     kind: ArtifactKind | None = None,
     status: ArtifactStatus | None = None,
 ):
-    return service.list(
-        project_id, episode_id, offset, limit, kind=kind, status=status, expected_scope=scope
-    )
+    return service.list(project_id, offset, limit, kind=kind, status=status, expected_scope=scope)
 
 
 @router.get("/{artifact_id}", response_model=ArtifactRead)
 def get_artifact(
     project_id: ScopedId,
-    episode_id: ScopedId,
     artifact_id: ScopedId,
     service: Artifacts,
     scope: ExpectedScope,
 ):
-    return service.get(project_id, episode_id, artifact_id, expected_scope=scope)
+    return service.get(project_id, artifact_id, expected_scope=scope)
 
 
 @router.post("/{artifact_id}/adopt", response_model=ArtifactRead)
 def adopt_artifact(
     project_id: ScopedId,
-    episode_id: ScopedId,
     artifact_id: ScopedId,
     payload: ArtifactAdopt,
     service: Artifacts,
     scope: ExpectedScope,
 ):
-    return service.adopt(project_id, episode_id, artifact_id, payload, expected_scope=scope)
+    return service.adopt(project_id, artifact_id, payload, expected_scope=scope)

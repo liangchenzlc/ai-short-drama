@@ -1,5 +1,9 @@
+import { aspectRatio } from './assembly-document';
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { Button } from 'antd';
+import { Button, Tooltip } from 'antd';
+import { Download, Info, RefreshCw } from 'lucide-react';
+import { AssemblyAction } from './AssemblyAction';
+import { AssemblyPlaybackControls } from './AssemblyPlaybackControls';
 import type { AssemblyCurrentWork, RenderJob } from '../../api/modules/assembly';
 import { FPS } from './assembly-editing';
 
@@ -13,6 +17,8 @@ export function AssemblyResultPlayer<T extends RenderJob | AssemblyCurrentWork>(
 }) {
   const initial = job.url ? 'loading' : 'error';
   const [phase, setPhase] = useState<Phase>(initial);
+  const [position, setPosition] = useState(0), [muted, setMuted] = useState(false);
+  const surface = useRef<HTMLElement>(null);
   const phaseRef = useRef<Phase>(initial);
   const [error, setError] = useState(job.url ? '' : '成片地址不可用，请刷新后重试。');
   // Explicit retries replace the decoder, isolating old events. Layout changes do not.
@@ -43,14 +49,14 @@ export function AssemblyResultPlayer<T extends RenderJob | AssemblyCurrentWork>(
   function remember(video: HTMLVideoElement) {
     if (!current(video) || video.error || target.current !== null || ['error', 'refreshing', 'restoring'].includes(phaseRef.current)) return;
     if (video.readyState >= 1 && Number.isFinite(video.currentTime)) saved.current.time = video.currentTime;
-    callbacks.current.onFrame(Math.round(saved.current.time * FPS));
+    setPosition(Math.round(saved.current.time * FPS)); callbacks.current.onFrame(Math.round(saved.current.time * FPS));
   }
   function ready(video: HTMLVideoElement) {
     if (!current(video) || ['error', 'refreshing'].includes(phaseRef.current) || video.error || video.readyState < 2 || video.seeking) return;
     if (target.current !== null) {
       if (Math.abs(video.currentTime - target.current) > 1 / FPS) return;
       saved.current.time = target.current; target.current = null;
-      video.pause(); callbacks.current.onFrame(Math.round(saved.current.time * FPS));
+      video.pause(); setPosition(Math.round(saved.current.time * FPS)); callbacks.current.onFrame(Math.round(saved.current.time * FPS));
     }
     setError(''); transition(video.paused ? 'ready' : 'playing');
   }
@@ -75,16 +81,17 @@ export function AssemblyResultPlayer<T extends RenderJob | AssemblyCurrentWork>(
       if (mounted.current && revision === attempt.current && !controller.signal.aborted) fail('刷新成片失败，播放位置已保留。请检查网络后重试。');
     } finally { if (request.current === controller) request.current = null; }
   }
-  return <section aria-label="实际成片播放" data-playback-state={phase}>
-    <div className={`assembly-screen assembly-result-screen${aspect === '9:16' ? ' is-portrait' : ''}`}>
-      <video key={source.attempt} ref={videoRef} src={source.url ?? undefined} controls playsInline
+  return <section className="assembly-player assembly-result-player" ref={surface} aria-label="实际成片播放" data-playback-state={phase}>
+    <div style={{ aspectRatio: aspectRatio(aspect) }} className={`assembly-screen assembly-result-screen${aspectRatio(aspect) < 1 ? ' is-portrait' : ''}`}>
+      <video className="is-active" key={source.attempt} ref={videoRef} src={source.url ?? undefined} playsInline preload="auto"
         onTimeUpdate={event => remember(event.currentTarget)} onSeeking={event => remember(event.currentTarget)}
-        onVolumeChange={event => { const v = event.currentTarget; if (current(v) && v.readyState >= 1 && ['ready', 'playing', 'buffering'].includes(phaseRef.current)) { saved.current.volume = v.volume; saved.current.muted = v.muted; } }}
+        onVolumeChange={event => { const v = event.currentTarget; if (current(v) && v.readyState >= 1 && ['ready', 'playing', 'buffering'].includes(phaseRef.current)) { saved.current.volume = v.volume; saved.current.muted = v.muted; setMuted(v.muted); } }}
         onRateChange={event => { const v = event.currentTarget; if (current(v) && v.readyState >= 1 && ['ready', 'playing', 'buffering'].includes(phaseRef.current)) saved.current.rate = v.playbackRate; }}
         onPlay={event => {
           if (!current(event.currentTarget) || ['error', 'refreshing', 'restoring'].includes(phaseRef.current)) { event.currentTarget.pause(); return; }
           transition('playing'); callbacks.current.onPlaying(true);
         }}
+        onEnded={() => { transition('ready'); callbacks.current.onPlaying(false); }}
         onPause={event => { if (current(event.currentTarget)) { callbacks.current.onPlaying(false); if (phaseRef.current === 'playing') transition('ready'); } }}
         onLoadedMetadata={event => {
           const video = event.currentTarget;
@@ -108,7 +115,14 @@ export function AssemblyResultPlayer<T extends RenderJob | AssemblyCurrentWork>(
       {waiting && !error && <div className="assembly-player-message" role="status">{busy ? '正在恢复播放位置…' : '正在加载成片…'}</div>}
       {error && <div className="assembly-player-message" role="alert"><p>{error}</p><Button aria-label="刷新成片并重试" loading={busy} onClick={() => { void retry(); }}>刷新成片并重试</Button></div>}
     </div>
-    <div className="assembly-result-caption"><span>{'kind' in job ? job.kind === 'preview' ? '已合成预览' : '实际导出成片' : '当前采用成片'}{stale ? ' · 草稿已有修改，此处显示导出时的版本' : ' · 当前保存版本'}</span>
-      <Button type="link" loading={busy} onClick={() => { void retry(); }}>刷新成片地址</Button><a href={download}>下载 MP4</a></div>
+    <AssemblyPlaybackControls playing={phase === 'playing' || phase === 'buffering'} disabled={waiting || !!error} position={position} total={Math.round((job.duration_ms ?? 0) / 1000 * FPS)} muted={muted}
+      onToggle={() => { const video = videoRef.current; if (!video) return; if (!video.paused) video.pause(); else void video.play().catch(() => fail('无法开始播放，请刷新成片地址后重试。')); }}
+      onStep={delta => { const video = videoRef.current; if (video && Number.isFinite(video.duration)) { video.pause(); video.currentTime = Math.max(0, Math.min(video.duration, (position + delta) / FPS)); } }}
+      onMute={() => { const video = videoRef.current; if (video) video.muted = !video.muted; }}
+      onFullscreen={() => { const request = document.fullscreenElement ? document.exitFullscreen() : surface.current?.requestFullscreen(); void request?.catch(() => fail('当前浏览器不支持全屏播放。')); }}>
+      <Tooltip title={`${'kind' in job ? job.kind === 'preview' ? '合成预览' : '实际导出成片' : '当前采用成片'}：${stale ? '草稿已有修改，此处显示导出时的版本' : '当前保存版本'}`} trigger={['hover', 'focus']}><Button type="text" size="small" className="assembly-icon-action" icon={<Info size={16}/>} aria-label="成片版本信息"/></Tooltip>
+      <AssemblyAction label="刷新成片地址" icon={<RefreshCw size={16}/>} loading={busy} onClick={() => { void retry(); }}/>
+      <AssemblyAction label="下载 MP4" icon={<Download size={16}/>} href={download}/>
+    </AssemblyPlaybackControls>
   </section>;
 }

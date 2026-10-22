@@ -69,7 +69,6 @@ class AssistantService(AgentRunService):
                 id=next_id(),
                 owner_user_id=actor.user_id,
                 **values,
-                episode_id=None,
                 stage=None,
                 subject_type=None,
                 subject_id=None,

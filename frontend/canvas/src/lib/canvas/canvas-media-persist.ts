@@ -21,7 +21,6 @@ function isPersistStop(error: unknown) {
 
 export type PersistOwnedCanvasMediaNodesInput = {
     canvasId: string;
-    domainProjectId?: string;
     mediaNodes: CanvasNodeData[];
     mediaConnections?: CanvasConnection[];
     expectedScope?: CapturedUserScope;
@@ -36,8 +35,7 @@ export type PersistOwnedCanvasMediaNodesStore = {
 export type PersistOwnedCanvasMediaNodesDeps = {
     ensureCanvasNodeAsset: (options: {
         canvasId: string;
-        domainProjectId?: string;
-        node: CanvasNodeData;
+            node: CanvasNodeData;
         source: "canvas-manual";
         signal?: AbortSignal;
         expectedScope?: CapturedUserScope;
@@ -93,7 +91,7 @@ export async function persistOwnedCanvasMediaNodes(
         try {
             const result = await deps.ensureCanvasNodeAsset({
                 canvasId: originalProjectId,
-                domainProjectId: input.domainProjectId,
+
                 node,
                 source: "canvas-manual",
                 signal: input.signal,

@@ -10,7 +10,7 @@ export const imageLayouts = [
 export type ImageAspect = (typeof imageAspects)[number];
 export type ShotImageSettings = {
   resolution: (typeof imageResolutions)[number];
-  aspect: ImageAspect | "inherit";
+  aspect: ImageAspect | null;
   layout: (typeof imageLayouts)[number]["value"];
 };
 export type ShotVideoSettings = {
@@ -23,7 +23,7 @@ export function isImageSettings(value: unknown): value is ShotImageSettings {
   const item = value as ShotImageSettings;
   return (
     imageResolutions.includes(item.resolution) &&
-    (item.aspect === "inherit" || imageAspects.includes(item.aspect)) &&
+    (item.aspect === null || imageAspects.includes(item.aspect)) &&
     imageLayouts.some((layout) => layout.value === item.layout)
   );
 }

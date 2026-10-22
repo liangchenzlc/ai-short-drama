@@ -27,5 +27,15 @@ class CanvasTranscriptionResult(InputModel):
 class CanvasTranscriptionCreate(CanvasGenerationProtocol):
     resource_id: Identifier
     language: StrictStr = Field(default="", max_length=128)
+    model_config_id: Identifier | None = None
     project_id: CanvasKey | None = None
     client_operation_id: OperationId
+
+
+class CanvasTranscriptionModelRead(InputModel):
+    id: Identifier
+    display_name: str = Field(alias="displayName")
+
+
+class CanvasTranscriptionModelsRead(InputModel):
+    models: list[CanvasTranscriptionModelRead]

@@ -4,8 +4,8 @@ from sqlalchemy import select
 
 from short_drama.core.exceptions import BusinessError, Conflict
 from short_drama.dao.base import BaseDAO
-from short_drama.dao.episode_storyboard_dao import advance_shot_version, advance_storyboard_version
-from short_drama.domain import AIModelConfig, Episode, MediaFile, MediaRecycleBin, ShotScript
+from short_drama.dao.project_storyboard_dao import advance_shot_version, advance_storyboard_version
+from short_drama.domain import AIModelConfig, MediaFile, MediaRecycleBin, Project, ShotScript
 
 from .base import BaseService, utcnow
 from .publication import publish
@@ -69,8 +69,8 @@ class ShotMediaService(BaseService):
         return result
 
     def _check_values(self, values, shot, historical=False, previous=None):
-        if values["episode_id"] != shot.episode_id:
-            raise BusinessError("Media and shot must belong to the same episode")
+        if values["project_id"] != shot.project_id:
+            raise BusinessError("Media and shot must belong to the same creation")
         media = self._validate_media(values["media_id"], self.media_kind)
         publish(media)
         model_id = values.get("model_id")
@@ -123,10 +123,10 @@ class ShotMediaService(BaseService):
             result = self.dao.create(self._creation_audit(values))
         else:
             result = self._apply_update(existing, values)
-        episode = self._require(Episode, shot.episode_id)
+        creation = self._require(Project, shot.project_id)
         shot.updated_at, shot.updated_by = utcnow(), None
         advance_shot_version(shot)
-        advance_storyboard_version(episode)
+        advance_storyboard_version(creation)
         self.session.flush()
         return result
 
@@ -160,8 +160,8 @@ class ShotMediaService(BaseService):
             shot = self._require(ShotScript, entity.shot_id)
             recycle_snapshot(self.session, entity, "discarded")
             self.dao.delete(entity)
-            episode = self._require(Episode, shot.episode_id)
+            creation = self._require(Project, shot.project_id)
             shot.updated_at, shot.updated_by = utcnow(), None
             advance_shot_version(shot)
-            advance_storyboard_version(episode)
+            advance_storyboard_version(creation)
             self.session.flush()

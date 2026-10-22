@@ -73,7 +73,6 @@ class UserCreationDraftRead(ReadModel):
     id: Identifier
     user_id: Identifier
     project_id: Identifier
-    episode_id: Identifier
     object_id: Identifier
     purpose: DraftPurpose
     model_config_id: Identifier | None

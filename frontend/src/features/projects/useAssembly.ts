@@ -1,34 +1,41 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { assemblyApi, type AssemblyClip, type AssemblyState } from '../../api/modules/assembly';
+import { assemblyApi, type AssemblyClip, type AssemblyMaterial, type AssemblyState } from '../../api/modules/assembly';
 import { errorMessage } from '../../api/http';
 import { useAuth } from '../auth/AuthSession';
 import type { NavigationBarrier } from './writing-navigation';
 import { creationScope, readRecovery, readRecoveryText, saveRecovery, clearRecovery } from './creation-recovery';
-import { assemblyDraft, restoreAssemblyDraft, validAssemblyDraft, type AssemblyDraftDocument } from './assembly-recovery';
+import { assemblyDraft, assemblyVersion, normalizeAssemblyRecovery, restoreAssemblyDraft, validAssemblyDraft, type AssemblyDraftDocument } from './assembly-recovery';
 import { ResourceEditingSession } from './resource-editing-session';
 import { retainStandardSession, releaseStandardSession } from './standard-session-registry';
+import { followClips, normalizeEditor, normalizeSound } from './assembly-document';
 
-export function useAssembly(projectId: string, episodeId: string, registerBarrier: (barrier: NavigationBarrier | null) => void) {
+export function useAssembly(projectId: string, registerBarrier: (barrier: NavigationBarrier | null) => void) {
   const { user } = useAuth();
   const account = user?.id ?? 'anonymous';
-  const key = `assembly:${projectId}:${episodeId}`;
-  const api = useMemo(() => assemblyApi(projectId, episodeId), [projectId, episodeId]);
+  const key = `assembly:${projectId}`;
+  const api = useMemo(() => assemblyApi(projectId), [projectId]);
   const session = useMemo(() => retainStandardSession(account, key, () => {
     const scope = creationScope(`${key}:draft`, account);
+    const readDraft = () => { const stored = readRecovery(scope, validAssemblyDraft); return stored ? normalizeAssemblyRecovery(stored) : null; };
     return new ResourceEditingSession<AssemblyState, AssemblyDraftDocument>({
-      read: () => api.get(), save: (base, document) => api.save(restoreAssemblyDraft(base, { format: 1, base_version: base.assembly!.row_version, document })),
-      version: value => value.assembly?.row_version ?? '0',
-      document: value => value.assembly ? assemblyDraft(value).document : { assembly_id: '0', resolution: '1080p', clips: [] },
+      read: async () => {
+        let recovered: AssemblyDraftDocument | undefined;
+        try { recovered = readDraft()?.document; } catch { /* The session surfaces damaged recovery separately, retaining its original bytes. */ }
+        const ids = [...recovered?.clips.map(c => c.media_id) ?? [], ...recovered?.sound?.audio_clips?.map(c => c.media_id) ?? []].filter((id): id is string => !!id);
+        return normalizeEditor(await api.get(undefined, ids));
+      }, save: async (base, document) => normalizeEditor(await api.save(restoreAssemblyDraft(base, { format: 1, base_version: base.assembly!.row_version, document }))),
+      version: assemblyVersion,
+      document: value => value.assembly ? assemblyDraft(value).document : { assembly_id: '0', aspect: 'auto', resolution: '1080p', clips: [] },
       apply: (value, document) => value.assembly ? restoreAssemblyDraft(value, { format: 1, base_version: value.assembly.row_version, document }) : value,
-      recovery: { read: () => readRecovery(scope, validAssemblyDraft), save: draft => saveRecovery(scope, draft), clear: () => clearRecovery(scope), export: () => readRecoveryText(scope), previous: () => readRecoveryText(`${scope}:previous`), backup: raw => localStorage.setItem(`${scope}:previous`, raw) },
+      recovery: { read: readDraft, save: draft => saveRecovery(scope, draft), clear: () => clearRecovery(scope), export: () => readRecoveryText(scope), previous: () => readRecoveryText(`${scope}:previous`), backup: raw => localStorage.setItem(`${scope}:previous`, raw) },
       pauseMs: 650,
     });
-  }, { label: '成片剪辑', projectId, episodeId }), [account, key, api, projectId, episodeId]);
+  }, { label: '成片剪辑', projectId }), [account, key, api, projectId]);
   const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const value = snapshot.value;
   const [connectionError, setConnectionError] = useState('');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
-  const past = useRef<AssemblyClip[][]>([]), future = useRef<AssemblyClip[][]>([]);
+  const past = useRef<AssemblyState[]>([]), future = useRef<AssemblyState[]>([]);
   const latestLoad = useRef(0);
   async function load() {
     const request = ++latestLoad.current;
@@ -38,35 +45,42 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
     });
     if (!fresh) throw new Error(session.getSnapshot().message || '成片读取失败');
     if (request !== latestLoad.current) return fresh;
-    session.updateMetadata(current => ({ ...current, jobs: fresh.jobs, current_work: fresh.current_work }));
+    session.updateMetadata(current => ({ ...current, jobs: fresh.jobs, current_work: fresh.current_work, materials: fresh.materials, voice_context_hash: fresh.voice_context_hash, sound: current.sound && fresh.sound ? { ...current.sound, media: { ...current.sound.media, ...fresh.sound.media } } : current.sound }));
     setConnectionError(''); setLastSyncedAt(Date.now()); return fresh;
   }
   function edit(transform: (value: AssemblyState) => AssemblyState, record = true) {
     const before = session.getSnapshot().value;
     if (!before?.assembly) return;
-    const next = transform(before);
+    let next = transform(before);
     if (next === before) return;
-    if (record && next.clips !== before.clips) { past.current = [...past.current.slice(-99), before.clips ?? []]; future.current = []; }
+    if (next.clips !== before.clips && before.sound && next.sound?.document === before.sound.document) next = { ...next, sound: { ...before.sound, document: followClips(before.clips ?? [], next.clips ?? [], normalizeSound(before.sound.document, before.clips ?? [], before.sound.media)) } };
+    if (record) { past.current = [...past.current.slice(-99), before]; future.current = []; }
     session.edit(assemblyDraft(next).document);
   }
   function undo() {
-    const clips = past.current.pop(), current = session.getSnapshot().value;
-    if (!clips || !current) return;
-    future.current.push(current.clips ?? []); edit(before => ({ ...before, clips }), false);
+    const previous = past.current.pop(), current = session.getSnapshot().value;
+    if (!previous || !current) return;
+    future.current.push(current); retainMedia(previous); session.edit(assemblyDraft(previous).document);
   }
   function redo() {
-    const clips = future.current.pop(), current = session.getSnapshot().value;
-    if (!clips || !current) return;
-    past.current.push(current.clips ?? []); edit(before => ({ ...before, clips }), false);
+    const next = future.current.pop(), current = session.getSnapshot().value;
+    if (!next || !current) return;
+    past.current.push(current); retainMedia(next); session.edit(assemblyDraft(next).document);
+  }
+  function retainMedia(previous: AssemblyState) {
+    session.updateMetadata(current => ({ ...current, materials: [...new Map([...(previous.materials ?? []), ...(current.materials ?? [])].map(m => [m.media_id, m])).values()], sound: current.sound ? { ...current.sound, media: { ...previous.sound?.media, ...current.sound.media } } : current.sound }));
   }
   async function refreshMedia() {
-    const fresh = await api.get(), sources = [...fresh.clips ?? [], ...fresh.sources ?? []];
+    const history = [...past.current, ...future.current, session.getSnapshot().value].filter((s): s is AssemblyState => !!s);
+    const ids = history.flatMap(s => [...(s.clips ?? []).map(c => c.media_id), ...(s.sound?.document.audio_clips ?? []).map(c => c.media_id)]).filter((id): id is string => !!id);
+    const fresh = await api.get(undefined, ids), sources = [...fresh.clips ?? [], ...fresh.sources ?? [], ...(fresh.materials ?? []).filter(m => m.kind !== 'audio').map(m => ({ media_id: m.media_id, url: m.url, poster: m.poster, filmstrip: null }))];
     const hydrate = (clips: AssemblyClip[]) => clips.map(clip => {
       const source = sources.find(item => item.media_id === clip.media_id);
       return source ? { ...clip, url: source.url, poster: source.poster, filmstrip: source.filmstrip } : clip;
     });
-    session.updateMetadata(current => ({ ...current, clips: hydrate(current.clips ?? []), sources: hydrate(fresh.sources ?? []), jobs: fresh.jobs, current_work: fresh.current_work }));
-    past.current = past.current.map(hydrate); future.current = future.current.map(hydrate);
+    session.updateMetadata(current => ({ ...current, clips: hydrate(current.clips ?? []), sources: hydrate(fresh.sources ?? []), materials: fresh.materials, sound: current.sound && fresh.sound ? { ...current.sound, media: fresh.sound.media } : current.sound, jobs: fresh.jobs, current_work: fresh.current_work }));
+    const refreshed = (state: AssemblyState) => ({ ...state, clips: hydrate(state.clips ?? []), materials: fresh.materials, sound: state.sound ? { ...state.sound, media: { ...state.sound.media, ...fresh.sound?.media } } : state.sound });
+    past.current = past.current.map(refreshed); future.current = future.current.map(refreshed);
   }
   useEffect(() => {
     let cancelled = false, pollTimer: ReturnType<typeof setTimeout>;
@@ -91,7 +105,8 @@ export function useAssembly(projectId: string, episodeId: string, registerBarrie
   return {
     api, value, status: snapshot.status, error: snapshot.message, connectionError, lastSyncedAt,
     recoveredDraft: snapshot.recovered, recoveryError: snapshot.recoveryBlocked ? snapshot.message : '', recoveryBlocked: snapshot.recoveryBlocked,
-    edit, flush: session.flush, load, replace: session.accept, reload: () => session.getSnapshot().loaded ? session.reload(false) : session.load(true), undo, redo, refreshMedia,
+    edit, flush: session.flush, load, replace: (state: AssemblyState) => session.accept(normalizeEditor(state)), reload: () => session.getSnapshot().loaded ? session.reload(false) : session.load(true), undo, redo, refreshMedia,
+    registerMaterial: (material: AssemblyMaterial) => session.updateMetadata(current => ({ ...current, materials: [material, ...(current.materials ?? []).filter(m => m.media_id !== material.media_id)], sound: current.sound ? { ...current.sound, media: { ...current.sound.media, [material.media_id]: { url: material.url, duration_ms: material.duration_ms ?? 0 } } } : current.sound })),
     exportRecovered: session.exportRecovered, hasPrevious: session.hasPrevious, discardRecovered: () => session.reload(false), restoreRecovered: () => session.reload(true),
     canUndo: past.current.length > 0, canRedo: future.current.length > 0,
     clearHistory: () => { past.current = []; future.current = []; }, latest: () => session.getSnapshot().value,

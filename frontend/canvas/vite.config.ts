@@ -44,7 +44,7 @@ export default defineConfig(({ mode }) => {
         // FFmpeg从import.meta.url定位其Worker；预打包会移到deps目录并丢失相邻Worker。
         optimizeDeps: { exclude: ["@ffmpeg/ffmpeg"] },
         resolve: {
-            dedupe: ["axios", "react", "react-dom", "antd"],
+            dedupe: ["axios", "react", "react-dom", "antd", "@ant-design/x"],
             alias: {
                 "@": resolve(root, "src"),
                 "@host": resolve(root, "../src"),
@@ -53,6 +53,19 @@ export default defineConfig(({ mode }) => {
         server: {
             port: canvasPort,
             strictPort: true,
+            // 启动后台预热：把约 600 个源码模块的转换从「打开页面时」挪到「启动后台」（dev 首开约 20s → ~2s，2026-10-15 实测）。
+            // glob 覆盖画布全部源码；末尾 5 条为画布经 @host 引用的宿主文件（glob 触达不到 root 之外，新增 @host 引用需补入）。
+            warmup: {
+                clientFiles: [
+                    "index.html",
+                    "src/**/*.{ts,tsx,css}",
+                    "../src/api/http.ts",
+                    "../src/api/types/assistant.ts",
+                    "../src/api/types/canvases.ts",
+                    "../src/app/paths.ts",
+                    "../src/features/ai-assistant/CreativeAssistantPanel.tsx",
+                ],
+            },
             watch: { ignored: ["**/.runtime/**"] },
             fs: { allow: [root, resolve(root, "..")] },
             proxy: { "/api": { target: env.API_PROXY_TARGET || "http://127.0.0.1:8000", changeOrigin: true } },

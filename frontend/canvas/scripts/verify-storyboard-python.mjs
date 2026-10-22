@@ -322,25 +322,7 @@ try {
     await owner.close();
     page = undefined;
 
-    report.step = "成员读取共享分镜作品";
-    const shared = await graph(member);
-    const sharedScript = shared.nodes.find(node => node.id === "existing-script");
-    assert.deepEqual(sharedScript.metadata.storyboard.rows, report.final_rows);
-    assert.deepEqual(shared.connections, final.connections);
-    for (const key of ["composerContent", "storyboardShotCount", "storyboardShotDuration", "storyboardVideoInputMode"]) assert.equal(sharedScript.metadata[key], undefined);
-    for (const item of report.media_associations) {
-        const node = shared.nodes.find(node => node.id === item.nodeId);
-        assert.equal(node?.type, item.type);
-        assert.equal(node.metadata.shotIndex, item.shotNumber);
-        for (const key of ["prompt", "composerContent", "model", "seconds"]) assert.equal(node.metadata[key], undefined);
-    }
-    await open(member);
-    await fit();
-    assert.equal(await script().getByRole("textbox", { name: "分镜剧情与项目设定", exact: true }).inputValue(), "");
-    await checkRows(report.final_rows);
-    assert.ok(await dialog().getByRole("button", { name: "生成视频", exact: true }).isVisible());
-    report.member_shared_rows_private_settings_hidden = true;
-    await captureEditor("storyboard-member.png");
+
     assert.deepEqual(report.page_errors, []);
     assert.deepEqual(report.http_errors, []);
     assert.equal(report.task_posts, 0);

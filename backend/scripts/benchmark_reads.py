@@ -55,6 +55,10 @@ def seed(engine: Engine, settings: Settings) -> dict[str, int]:
 
     def put(name: str, rows: Iterable[dict[str, Any]]) -> None:
         rows = list(rows)
+        for row in rows:
+            for field in ("created_by", "updated_by"):
+                if field in tables[name].c:
+                    row.setdefault(field, 1)
         if rows:
             with engine.begin() as connection:
                 connection.execute(tables[name].insert(), rows)
@@ -80,39 +84,12 @@ def seed(engine: Engine, settings: Settings) -> dict[str, int]:
             id=1000 + i,
             owner_user_id=1,
             name=f"Project {i:03}",
-            aspect="16:9",
             created_at=now,
             updated_at=now,
         )
         for i in range(120)
     ]
     put("projects", projects)
-    episodes = [
-        dict(
-            id=2000 + i,
-            project_id=1000,
-            position=i + 1,
-            title=f"Episode {i:03}",
-            aspect="16:9",
-            created_at=now,
-            updated_at=now,
-        )
-        for i in range(120)
-    ]
-    episodes += [
-        dict(
-            id=3000 + p * 4 + e,
-            project_id=1000 + p,
-            position=e + 1,
-            title=f"Episode {p}/{e}",
-            aspect="16:9",
-            created_at=now,
-            updated_at=now,
-        )
-        for p in range(1, 120)
-        for e in range(4)
-    ]
-    put("episodes", episodes)
     configs = [
         dict(
             id=5000 + i,
@@ -151,6 +128,7 @@ def seed(engine: Engine, settings: Settings) -> dict[str, int]:
             dict(
                 id=7000 + i,
                 project_id=1000,
+                position=i + 1,
                 kind=["character", "scene", "prop"][i % 3],
                 name=f"Asset {i:03}",
                 media_id=6000 + i,
@@ -164,19 +142,11 @@ def seed(engine: Engine, settings: Settings) -> dict[str, int]:
         ],
     )
     put(
-        "project_assets",
-        [dict(id=8000 + i, project_id=1000, asset_id=7000 + i, position=i + 1) for i in range(120)],
-    )
-    put(
-        "episode_assets",
-        [dict(id=9000 + i, episode_id=2000, asset_id=7000 + i, position=i + 1) for i in range(120)],
-    )
-    put(
         "shot_scripts",
         [
             dict(
                 id=10000 + i,
-                episode_id=2000,
+                project_id=1000,
                 position=i + 1,
                 script="Storyboard scene " * 20,
                 image_settings={"aspect": "16:9", "resolution": "2K", "layout": "single"},
@@ -192,7 +162,7 @@ def seed(engine: Engine, settings: Settings) -> dict[str, int]:
         [
             dict(
                 id=11000 + i * 3 + j,
-                episode_id=2000,
+                project_id=1000,
                 shot_id=10000 + i,
                 asset_id=7000 + (i + j) % 120,
             )
@@ -205,10 +175,9 @@ def seed(engine: Engine, settings: Settings) -> dict[str, int]:
         [
             dict(
                 id=12000 + i,
-                episode_id=2000,
+                project_id=1000,
                 shot_id=10000 + i,
                 media_id=6000 + i,
-                aspect="16:9",
                 context_hash="a" * 64,
                 created_at=now,
                 updated_at=now,
@@ -236,16 +205,13 @@ def seed(engine: Engine, settings: Settings) -> dict[str, int]:
     )
     records = []
     for i in range(300):
-        source = dict(
-            scene="shot_image", project_id="1000", episode_id="2000", shot_id=str(10000 + i % 120)
-        )
+        source = dict(scene="shot_image", project_id="1000", shot_id=str(10000 + i % 120))
         request = dict(source=source, parameters={}, input={})
         if i % 3:
             request["display_context"] = dict(
-                project_name="Project 000",
-                episode_title="Episode 000",
-                shot_position=i % 120 + 1,
-                source_name=f"Shot {i % 120 + 1}",
+                project="Project 000",
+                subject=f"Shot {i % 120 + 1}",
+                scope="分镜制作",
             )
         records.append(
             dict(
@@ -285,7 +251,6 @@ def seed(engine: Engine, settings: Settings) -> dict[str, int]:
                 id=30000 + i,
                 owner_user_id=1,
                 project_id=1000,
-                episode_id=2000,
                 title=f"Conversation {i:03}",
                 next_message_seq=121,
                 created_at=now,
@@ -344,15 +309,20 @@ def extra_seed(engine: Engine, settings: Settings) -> None:
     now = utcnow()
 
     def put(name: str, rows: Iterable[dict[str, Any]]) -> None:
+        rows = list(rows)
+        for row in rows:
+            for field in ("created_by", "updated_by"):
+                if field in Base.metadata.tables[name].c:
+                    row.setdefault(field, 1)
         with engine.begin() as connection:
             connection.execute(Base.metadata.tables[name].insert(), rows)
 
     put(
-        "episode_novels",
+        "project_novels",
         [
             dict(
                 id=65000,
-                episode_id=2000,
+                project_id=1000,
                 content="Novel passage " * 5000,
                 created_at=now,
                 updated_at=now,
@@ -360,11 +330,11 @@ def extra_seed(engine: Engine, settings: Settings) -> None:
         ],
     )
     put(
-        "episode_scripts",
+        "project_scripts",
         [
             dict(
                 id=64000,
-                episode_id=2000,
+                project_id=1000,
                 position=1,
                 content="Script passage " * 4000,
                 created_at=now,
@@ -374,9 +344,9 @@ def extra_seed(engine: Engine, settings: Settings) -> None:
     )
     with engine.begin() as connection:
         connection.execute(
-            Base.metadata.tables["episodes"]
+            Base.metadata.tables["projects"]
             .update()
-            .where(Base.metadata.tables["episodes"].c.id == 2000)
+            .where(Base.metadata.tables["projects"].c.id == 1000)
             .values(editing_script_id=64000)
         )
     media = []
@@ -409,7 +379,7 @@ def extra_seed(engine: Engine, settings: Settings) -> None:
         [
             dict(
                 id=62000 + i,
-                episode_id=2000,
+                project_id=1000,
                 shot_id=10000 + i,
                 media_id=61000 + i,
                 duration=3000,
@@ -422,11 +392,11 @@ def extra_seed(engine: Engine, settings: Settings) -> None:
         ],
     )
     put(
-        "episode_assemblies",
-        [dict(id=63000, episode_id=2000, aspect="16:9", created_at=now, updated_at=now)],
+        "project_assemblies",
+        [dict(id=63000, project_id=1000, aspect="auto", created_at=now, updated_at=now)],
     )
     put(
-        "episode_assembly_clips",
+        "project_assembly_clips",
         [
             dict(
                 id=66000 + i,
@@ -457,6 +427,8 @@ def native_seed(engine: Engine, settings: Settings) -> None:
             dict(
                 id=67000,
                 project_id=1000,
+                created_by=1,
+                updated_by=1,
                 format_code="audio/wav",
                 storage_locator=f"minio://{settings.minio_audio_bucket}/voice/sample.wav",
                 duration_ms=3100,
@@ -471,7 +443,7 @@ def native_seed(engine: Engine, settings: Settings) -> None:
         connection.execute(
             tables["shot_assets"].insert(),
             [
-                dict(id=68000 + i, episode_id=2000, shot_id=10000 + i, asset_id=7000)
+                dict(id=68000 + i, project_id=1000, shot_id=10000 + i, asset_id=7000)
                 for i in range(1, 118)
             ],
         )
@@ -500,30 +472,27 @@ def native_seed(engine: Engine, settings: Settings) -> None:
 
 LIST_ENDPOINTS = [
     ("projects", "/projects"),
-    ("episodes", "/projects/1000/episodes"),
-    ("project_assets", "/projects/1000/assets"),
-    ("episode_assets", "/projects/1000/episodes/2000/assets"),
-    ("storyboard", "/projects/1000/episodes/2000/shots"),
+    ("assets", "/projects/1000/assets"),
+    ("storyboard", "/projects/1000/shots"),
     ("tasks", "/ai/generations"),
     ("media", "/media-library/items"),
     ("ai_configs", "/ai-model-configs"),
-    ("agent_conversations", "/agent/conversations?project_id=1000&episode_id=2000"),
+    ("agent_conversations", "/agent/conversations?project_id=1000"),
     ("agent_messages", "/agent/conversations/30000/messages"),
 ]
 DETAIL_ENDPOINTS = [
     ("auth_me", "/auth/me"),
     ("project_detail", "/projects/1000"),
-    ("episode_detail", "/projects/1000/episodes/2000"),
-    ("writing", "/projects/1000/episodes/2000/writing"),
+    ("writing", "/projects/1000/writing"),
     ("asset_detail", "/assets/7000"),
-    ("shot_detail", "/projects/1000/episodes/2000/shots/10000"),
+    ("shot_detail", "/projects/1000/shots/10000"),
     ("task_detail", "/ai/generations/20000"),
     ("media_detail", "/media-library/items/22000"),
     ("config_detail", "/ai-model-configs/5001"),
     ("agent_conversation_detail", "/agent/conversations/30000"),
     ("agent_run_detail", "/agent/runs/33000"),
-    ("assembly", "/projects/1000/episodes/2000/assembly"),
-    ("assembly_source", "/projects/1000/episodes/2001/assembly"),
+    ("assembly", "/projects/1000/assembly"),
+    ("assembly_source", "/projects/1001/assembly"),
 ]
 
 
@@ -747,7 +716,7 @@ def main() -> None:
                             output,
                             args.output,
                             "native_storyboard",
-                            f"/projects/1000/episodes/2000/shots?limit={limit}",
+                            f"/projects/1000/shots?limit={limit}",
                             samples,
                             args.native_warmups,
                             limit,

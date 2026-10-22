@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 export async function verifyNormalization({ browser, context, origin, read, saved, resource, report, recordFailure }) {
     const project = await read(await context.request.post(`${origin}/api/v1/projects`, {
         headers: { "Idempotency-Key": "browser-normalization-project" },
-        data: { name: "素材插入与保存验证", aspect: "16:9", workspace_mode: "infinite_canvas" },
+        data: { name: "素材插入与保存验证", workspace_mode: "infinite_canvas" },
     }));
     const path = `${origin}/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
     const initial = await read(await context.request.get(`${path}/my-document`));

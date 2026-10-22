@@ -19,7 +19,6 @@ export type PersistOwnedCanvasUploadNodeInput = {
     getLiveLifetime?: () => number;
     mounted?: () => boolean;
     canvasId: string;
-    domainProjectId?: string;
     node: CanvasNodeData;
     signal?: AbortSignal;
     source?: EnsureCanvasNodeAssetOptions["source"];
@@ -131,7 +130,7 @@ export async function persistOwnedCanvasUploadNode(
     try {
         const result = await deps.ensureCanvasNodeAsset({
             canvasId: input.owner.canvasId,
-            domainProjectId: input.domainProjectId,
+
             node: input.node,
             source: input.source ?? "canvas-upload",
             category: input.category,
@@ -147,10 +146,6 @@ export async function persistOwnedCanvasUploadNode(
                     : item
             ));
         });
-        if (result.confirmed && input.domainProjectId) {
-            await deps.invalidateProject?.(input.domainProjectId);
-            if (!stillOwned()) return { applied: true, confirmed: false, assetId: result.assetId, linkedToProject: result.linkedToProject };
-        }
         return { applied: true, confirmed: result.confirmed, assetId: result.assetId, linkedToProject: result.linkedToProject };
     } catch (error) {
         if (shouldSuppressOwnedCanvasCallback(error, {

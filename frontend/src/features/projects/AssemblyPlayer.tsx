@@ -1,7 +1,9 @@
+import { aspectRatio } from './assembly-document';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Button } from 'antd';
 import type { AssemblyClip } from '../../api/modules/assembly';
-import { buildTimeline, FPS, framecode, locateFrame, toFrame, type TimelineEntry } from './assembly-editing';
+import { buildTimeline, FPS, locateFrame, toFrame, type TimelineEntry } from './assembly-editing';
+import { AssemblyPlaybackControls } from './AssemblyPlaybackControls';
 
 export interface AssemblyPlayerHandle {
   seek: (frame: number) => void;
@@ -41,6 +43,8 @@ export const AssemblyPlayer = forwardRef<AssemblyPlayerHandle, {
   const [retrying, setRetrying] = useState(false), [retryEpoch, setRetryEpoch] = useState(0);
   const refreshPending = useRef(false);
   const [position, setPosition] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const previewMuted = useRef(false);
   const total = entries.current.at(-1)?.end ?? 0;
   const update = (at: number) => { frame.current = at; setPosition(at); callbacks.current.onFrame(at); };
   function setPlayback(value: boolean) {
@@ -89,7 +93,7 @@ export const AssemblyPlayer = forwardRef<AssemblyPlayerHandle, {
       active.current = { slot: index, id: entry.clip.id };
       setSlot(index);
       videos.current.forEach(v => { if (v) v.muted = true; });
-      video.muted = entry.clip.muted;
+      video.muted = entry.clip.muted || previewMuted.current;
       if (resume) await video.play();
       if (generation !== sequence.current) return;
       setBuffering(false); switching.current = false;
@@ -160,23 +164,24 @@ export const AssemblyPlayer = forwardRef<AssemblyPlayerHandle, {
     return () => { document.removeEventListener('visibilitychange', hide); cancelAnimationFrame(animation); ++sequence.current; controllers.current.forEach(c => c?.abort()); videos.current.forEach(v => v?.pause()); };
   }, []);
   return <section className="assembly-player" aria-label="时间轴成片预览" ref={surface}>
-    <div className={`assembly-screen${aspect === '9:16' ? ' is-portrait' : ''}`}>
+    <div style={{ aspectRatio: aspectRatio(aspect) }} className={`assembly-screen${aspectRatio(aspect) < 1 ? ' is-portrait' : ''}`}>
       {[0, 1].map(index => <video key={index} ref={element => { videos.current[index] = element; }}
         className={slot === index && total ? 'is-active' : ''} playsInline preload="auto"
         aria-hidden={slot !== index} onWaiting={() => { if (active.current?.slot === index) setBuffering(true); }}
         onError={() => { if (active.current?.slot === index && !switching.current) { pause(); setBuffering(false); setError('视频播放中断，请刷新播放地址后重试。'); } }}
         onCanPlay={() => { if (active.current?.slot === index && !switching.current) setBuffering(false); }}
         onPlaying={() => { if (active.current?.slot === index) setBuffering(false); }} />)}
-      {!total && <div className="assembly-no-video"><strong>从分镜开始剪辑</strong><p>将分镜视频添加到下方轨道，在这里观看完整故事。</p></div>}
+      {!total && <div className="assembly-no-video">还没有添加视频</div>}
       {!!total && buffering && !error && <div className="assembly-player-message" role="status">正在准备画面…</div>}
       {error && <div className="assembly-player-message" role="alert"><p>{error}</p><Button loading={retrying} onClick={() => { void retry(); }}>刷新视频并重试</Button></div>}
     </div>
-    <div className="assembly-player-controls">
-      <Button disabled={!total} onClick={() => { pause(); void seek(frame.current - 1, false); }} aria-label="上一帧">上一帧</Button>
-      <Button type="primary" disabled={!total} onClick={toggle}>{isPlaying ? '暂停' : '播放'}</Button>
-      <Button disabled={!total} onClick={() => { pause(); void seek(frame.current + 1, false); }} aria-label="下一帧">下一帧</Button>
-      <output aria-label="播放位置">{framecode(position)} <span>/ {framecode(total)}</span></output>
-      <Button type="text" onClick={() => { const request = document.fullscreenElement ? document.exitFullscreen() : surface.current?.requestFullscreen(); void request?.catch(() => setError('当前浏览器不支持全屏播放。')); }}>全屏</Button>
-    </div>
+    <AssemblyPlaybackControls playing={isPlaying} disabled={!total} position={position} total={total} muted={muted} onToggle={toggle}
+      onStep={delta => { pause(); void seek(frame.current + delta, false); }}
+      onMute={() => {
+        const next = !previewMuted.current; previewMuted.current = next; setMuted(next);
+        const current = active.current;
+        if (current) { const video = videos.current[current.slot]; if (video) video.muted = next || !!entries.current.find(e => e.clip.id === current.id)?.clip.muted; }
+      }}
+      onFullscreen={() => { const request = document.fullscreenElement ? document.exitFullscreen() : surface.current?.requestFullscreen(); void request?.catch(() => setError('当前浏览器不支持全屏播放。')); }}/>
   </section>;
 });

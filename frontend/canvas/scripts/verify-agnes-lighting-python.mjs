@@ -154,7 +154,7 @@ async function fit() {
 try {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
     let owner = await login(config.username);
-    const member = await login(config.memberUsername);
+    const foreign = await login(config.foreignUsername);
     page = await owner.newPage();
     observe(page);
     await page.goto(`${origin}/canvas-app/canvas/${config.sourceKey}`);
@@ -266,7 +266,7 @@ try {
     report.target_node_id = prepared.id;
     await eventually(async () => read(await owner.request.get(`${origin}${tasks}/${task.id}`)), row => row.status === "running");
     await graph(owner, document => document.nodes.some(node => node.id === prepared.id && node.metadata?.taskId === task.id));
-    assert.equal((await member.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
+    assert.equal((await foreign.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
     if (config.scenario === "recovery") {
         owner = await fresh(owner, config.width);
         await page.locator(`[data-node-id="${prepared.id}"]`).waitFor();
@@ -292,7 +292,8 @@ try {
     assert.equal(final.connections[0].toNodeId, prepared.id);
     report.output_storage_key = result.storageKey;
     report.final_nodes = final.nodes;
-    const shared = await member.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`);
+    assert.equal((await foreign.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`)).status(), 404);
+    const shared = await owner.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`);
     assert.ok(shared.ok());
     report.output_sha256 = createHash("sha256").update(await shared.body()).digest("hex");
     owner = await fresh(owner, config.width);

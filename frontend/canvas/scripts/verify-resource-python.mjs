@@ -61,7 +61,7 @@ try {
     await read(await context.request.post(`${origin}/api/v1/auth/login`, { headers: { Origin: origin }, data: { username: config.username, password: config.password } }));
     const csrf = (await context.cookies()).find(cookie => cookie.name === "sd_csrf");
     await context.setExtraHTTPHeaders({ Origin: origin, "X-CSRF-Token": csrf.value });
-    const project = await read(await context.request.post(`${origin}/api/v1/projects`, { headers: { "Idempotency-Key": "browser-resource-project" }, data: { name: "真实媒体上传", aspect: "16:9", workspace_mode: "infinite_canvas" } }));
+    const project = await read(await context.request.post(`${origin}/api/v1/projects`, { headers: { "Idempotency-Key": "browser-resource-project" }, data: { name: "真实媒体上传", workspace_mode: "infinite_canvas" } }));
     const path = `${origin}/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
     const initial = await read(await context.request.get(`${path}/my-document`));
     page = await context.newPage();

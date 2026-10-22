@@ -114,7 +114,6 @@ export type ToolContext = {
     selectedVideoCount: number;
     canvasTool: CanvasToolMode;
     workspaceMode: CanvasWorkspaceMode;
-    isProjectLinked: boolean;
     canUndo: boolean;
     canRedo: boolean;
     /** 节点悬停工具栏专用——当前悬停/选中的节点 */
@@ -138,7 +137,6 @@ export type ToolContext = {
 /** 添加节点菜单只依赖创建动作，避免右键菜单为工具栏状态补无意义字段。 */
 export type AddNodeMenuContext = {
     workspaceMode: CanvasWorkspaceMode;
-    isProjectLinked: boolean;
     /** 内置应用插件的启用状态；未声明时视为未提供 gating 信息。 */
     enabledPluginIds?: ReadonlySet<string>;
     handlers: Pick<ToolbarHandlers,

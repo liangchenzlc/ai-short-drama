@@ -110,8 +110,13 @@ class AssetImageService(BaseService):
 
     def _ensure_asset_exists(self, asset_id):
         with self._transaction():
-            if self.assets.get(parse_identifier(asset_id)) is None:
-                raise NotFound("Asset does not exist")
+            self._active_asset(parse_identifier(asset_id))
+
+    def _active_asset(self, asset_id, *, for_update=False):
+        asset = self.assets.get(asset_id, for_update=for_update)
+        if asset is None or asset.deleted_at is not None:
+            raise NotFound("Asset does not exist")
+        return asset
 
     def _candidate_read(self, candidate, media, asset=None, generated=None):
         return AssetImageCandidateRead(
@@ -147,9 +152,7 @@ class AssetImageService(BaseService):
         asset_id = parse_identifier(asset_id)
         self.candidates.validate_pagination(offset, limit)
         with self._transaction(read_only=True):
-            asset = self.assets.get(asset_id)
-            if asset is None:
-                raise NotFound("Asset does not exist")
+            asset = self._active_asset(asset_id)
             rows = self.candidates.list_with_media(asset_id, offset, limit)
             total = self.session.scalar(
                 select(func.count())
@@ -181,16 +184,14 @@ class AssetImageService(BaseService):
         )
         target_projects = self.library.project_ids(asset_id)
         return any(
-            self.library.is_global(source_id)
-            or bool(target_projects & self.library.project_ids(source_id))
-            for source_id in source_ids
+            bool(target_projects & self.library.project_ids(source_id)) for source_id in source_ids
         )
 
     def add_candidate(self, asset_id, media_id):
         asset_id, media_id = parse_identifier(asset_id), parse_identifier(media_id)
         with self._transaction():
             candidate, media, created = self.ensure_candidate_locked(asset_id, media_id)
-            asset = self.assets.get(asset_id)
+            asset = self._active_asset(asset_id)
             generated_row = self._generated_image(media_id)
             generated = generated_row[1] if generated_row is not None else None
             result = self._candidate_read(candidate, media, asset, generated)
@@ -199,8 +200,7 @@ class AssetImageService(BaseService):
     def ensure_candidate_locked(self, asset_id, media_id):
         """Ensure a generated image candidate while the caller owns the transaction."""
         asset_id, media_id = parse_identifier(asset_id), parse_identifier(media_id)
-        if self.assets.get(asset_id, for_update=True) is None:
-            raise NotFound("Asset does not exist")
+        self._active_asset(asset_id, for_update=True)
         existing = self.candidates.get_for_asset(asset_id, media_id, for_update=True)
         media = self.media.get(media_id)
         if media is None:
@@ -223,21 +223,19 @@ class AssetImageService(BaseService):
 
     def _persist_upload(self, asset_id, inspected, stored, original_name):
         with self._transaction():
-            if self.assets.get(asset_id, for_update=True) is None:
-                raise NotFound("Asset does not exist")
+            asset = self._active_asset(asset_id, for_update=True)
             duplicate = self.candidates.duplicate_upload(
                 asset_id, inspected.checksum_sha256, inspected.byte_size
             )
             if duplicate is not None:
                 candidate, media = duplicate
-                asset = self.assets.get(asset_id)
                 result = self._candidate_read(candidate, media, asset, None)
                 return result, False
             now = utcnow()
             if self.session.info.get("actor"):
                 from short_drama.db.access import scope_of, set_scope
 
-                set_scope(self.session, scope_of(self.session, self.assets.get(asset_id)))
+                set_scope(self.session, scope_of(self.session, asset))
             media = self.media.create(
                 {
                     "format_code": inspected.content_type,
@@ -255,7 +253,6 @@ class AssetImageService(BaseService):
                 }
             )
             candidate = self.candidates.create({"asset_id": asset_id, "media_id": media.id})
-            asset = self.assets.get(asset_id)
             result = self._candidate_read(candidate, media, asset, None)
             return result, True
 
@@ -332,9 +329,7 @@ class AssetImageService(BaseService):
         parsed = AssetConfirm.model_validate(payload)
         if add_generated_candidate:
             self.ensure_candidate_locked(asset_id, parsed.media_id)
-        asset = self.assets.get(asset_id, for_update=True)
-        if asset is None:
-            raise NotFound("Asset does not exist")
+        asset = self._active_asset(asset_id, for_update=True)
         if asset.row_version != parsed.row_version:
             raise WorkflowError(
                 "asset_version_conflict",
@@ -349,10 +344,10 @@ class AssetImageService(BaseService):
         media = self.media.get(parsed.media_id)
         if candidate is None or media is None or not media.format_code.startswith("image/"):
             raise WorkflowError("invalid_image", "Selected image is not an asset candidate", 422)
-        if not asset.name.strip() or not (asset.description.strip() or asset.prompt.strip()):
+        if not asset.name.strip():
             raise WorkflowError(
                 "asset_content_required",
-                "Provide a name and either description or prompt before confirming",
+                "Provide a name before confirming",
                 400,
             )
         if asset.state == "confirmed" and asset.media_id == parsed.media_id:
@@ -368,13 +363,6 @@ class AssetImageService(BaseService):
                     "This image was generated from different or older asset content",
                     details={"reason": stale_reason},
                 )
-        references = self.library.reference_count(asset.id)
-        if references > 1 and not parsed.confirm_shared:
-            raise WorkflowError(
-                "shared_asset_confirmation_required",
-                "Confirm updating every reference to this shared asset",
-                details={"reference_count": references},
-            )
         generated = self._generated_image(parsed.media_id)
         model_id = generated[1].config_id if generated is not None else None
         self.assets.update(

@@ -1,5 +1,5 @@
 import { http } from '../http';
-import type { BeefAPIConnectionDto, ModelTestDto, ProtocolProviderDto } from '../types/ai-config-tools';
+import type { ModelTestDto, ProtocolProviderDto } from '../types/ai-config-tools';
 import type { AiConfig, ServiceType } from '../../features/ai-config/config-model';
 import type { RunningHubWorkflowDto } from '../types/ai-model-configs';
 
@@ -34,20 +34,5 @@ export const aiConfigTools = {
   },
   async cancelTest(id: string) {
     return checkedTestReceipt((await http.post<ModelTestDto>(`${runtime}/model-tests/${encodeURIComponent(id)}/cancel`)).data, id);
-  },
-  async connection(signal?: AbortSignal) {
-    return (await http.get<BeefAPIConnectionDto>(`${runtime}/beefapi/connection`, { signal })).data;
-  },
-  async connect() {
-    return (await http.post<BeefAPIConnectionDto>(`${runtime}/beefapi/connection/start`)).data;
-  },
-  async cancelConnection() {
-    return (await http.post<BeefAPIConnectionDto>(`${runtime}/beefapi/connection/cancel`)).data;
-  },
-  async disconnect() {
-    return (await http.post<BeefAPIConnectionDto>(`${runtime}/beefapi/connection/disconnect`)).data;
-  },
-  async wallet() {
-    return (await http.post<{ enterpriseOrigin: string; walletUrl: string }>(`${runtime}/beefapi/connection/open-wallet`)).data;
   },
 };

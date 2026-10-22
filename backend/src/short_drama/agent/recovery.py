@@ -40,6 +40,19 @@ def recover(factory, settings, limit=100):
             project, conversation, run = rows
             if run.status in TERMINAL or (run.lease_until and run.lease_until > now):
                 continue
+            if run.task_id is not None:
+                from short_drama.dao.agent_task_dao import AgentTaskDAO
+
+                operation = AgentTaskDAO(session).active_operation(run.task_id)
+                if operation is not None:
+                    if operation.status in {"waiting_media", "reconciling"}:
+                        from short_drama.agent.state import wait_locked
+
+                        wait_locked(session, conversation, run, "waiting_generation")
+                    else:
+                        mark_scheduled(run, phase="tools")
+                    count += 1
+                    continue
             if run.cancel_requested or not may_decide(session, project, conversation, run):
                 finish_locked(session, conversation, run, "cancelled", {"code": "access_revoked"})
             elif run.message_status in {"publishing", "published"}:

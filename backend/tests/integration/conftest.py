@@ -121,6 +121,10 @@ def db_session(mysql_engine):
         # Disposable test database only: release the cycle before deleting any table.
         assets = Base.metadata.tables["assets"]
         connection.execute(assets.update().values(current_version_id=None))
+        conversations = Base.metadata.tables["agent_conversations"]
+        connection.execute(conversations.update().values(active_summary_id=None))
+        summaries = Base.metadata.tables["agent_conversation_summaries"]
+        connection.execute(summaries.update().values(base_summary_id=None))
         for table in reversed(Base.metadata.sorted_tables):
             if table.name == "async_tasks":
                 # MySQL checks RESTRICT per row, including rows deleted in this statement.

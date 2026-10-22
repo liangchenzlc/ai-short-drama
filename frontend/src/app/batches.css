@@ -6,3 +6,7 @@
 .batch-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .batch-item-select { padding: 8px 12px; }
 @media (max-width: 600px) { .batch-fields { grid-template-columns: 1fr; } }
+
+.standard-creation-drawer .batch-form, .standard-creation-drawer .batch-fields { gap: 12px; }
+.standard-creation-drawer .batch-toolbar { gap: 8px; padding-block: 8px; }
+.standard-creation-drawer .batch-form > label, .standard-creation-drawer .batch-fields label { gap: 6px; }

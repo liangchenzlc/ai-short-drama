@@ -51,6 +51,7 @@ class CanvasModelRead(InputModel):
     enabled: bool
     has_api_key: bool
     runtime_profile: ModelRuntimeProfile | None = None
+    default_capability_config: dict[str, JsonValue] | None = None
     credential_source: Literal["manual", "beefapi"] = "manual"
     has_secret_key: bool = False
     headers: list[ModelRuntimeHeaderRead] = Field(default_factory=list)

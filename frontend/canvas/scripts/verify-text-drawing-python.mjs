@@ -232,15 +232,15 @@ try {
     assert.equal(restored.origin, "canonical");
     assert.equal(restored.shapeCount, 1);
     await page.screenshot({ path: resolve(output, "restored.png") });
-    await fresh.close();
     page = undefined;
     report.fresh_context_restored = true;
 
     report.step = "共享绘图正文及私人任务权限";
-    assert.deepEqual((await read(await member.request.get(`${origin}${drawingPath}`))).drawing, current);
-    const shared = (await read(await member.request.get(`${origin}${path}/my-document`))).source_document;
+    assert.equal((await member.request.get(`${origin}${drawingPath}`)).status(), 404);
+    assert.equal((await member.request.get(`${origin}${path}/my-document`)).status(), 404);
+    const shared = (await read(await fresh.request.get(`${origin}${path}`))).source_document;
     assert.equal(shared.nodes.find(node => node.id === text.id).metadata.content, config.first + config.second);
-    assert.deepEqual(await (await member.request.get(`${origin}${resources}/${current.render.resourceId}/file`)).body(), bytes);
+    assert.equal((await member.request.get(`${origin}${resources}/${current.render.resourceId}/file`)).status(), 404);
     assert.equal((await member.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
     assert.equal((await outsider.request.get(`${origin}${drawingPath}`)).status(), 404);
     assert.equal((await outsider.request.get(`${origin}${resources}/${current.render.resourceId}/file`)).status(), 404);

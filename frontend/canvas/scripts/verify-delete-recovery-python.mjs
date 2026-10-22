@@ -27,7 +27,7 @@ try {
     const csrf = (await context.cookies()).find(cookie => cookie.name === "sd_csrf");
     await context.setExtraHTTPHeaders({ Origin: origin, "X-CSRF-Token": csrf.value });
     const project = await read(await context.request.post(`${origin}/api/v1/projects`, {
-        headers: { "Idempotency-Key": "delete-recovery-project" }, data: { name: "未知删除回执作品", aspect: "16:9", workspace_mode: "infinite_canvas" },
+        headers: { "Idempotency-Key": "delete-recovery-project" }, data: { name: "未知删除回执作品", workspace_mode: "infinite_canvas" },
     }));
     const path = `/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
     const initial = await read(await context.request.get(origin + path + "/my-document"));

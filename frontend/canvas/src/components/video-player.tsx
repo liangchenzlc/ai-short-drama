@@ -24,6 +24,7 @@ type VideoPlayerProps = {
     hasAudio?: boolean;
     onCanPlay?: MediaPlayerProps["onCanPlay"];
     onPlay?: MediaPlayerProps["onPlay"];
+    onError?: () => void;
     onFirstFramePresented?: () => void;
 };
 
@@ -93,6 +94,7 @@ export function VideoPlayer({
     hasAudio,
     onCanPlay,
     onPlay,
+    onError,
     onFirstFramePresented,
 }: VideoPlayerProps) {
     const [detectedHasAudio, setDetectedHasAudio] = useState<boolean | undefined>(undefined);
@@ -100,6 +102,24 @@ export function VideoPlayer({
     const audioProbeGenerationRef = useRef(0);
     const mediaPlayerRef = useRef<MediaPlayerInstance>(null);
     const firstFrameRequestedRef = useRef(false);
+    const onErrorRef = useRef(onError);
+    onErrorRef.current = onError;
+    const failedSourceRef = useRef("");
+    const reportPlaybackError = () => {
+        if (failedSourceRef.current === src) return;
+        failedSourceRef.current = src;
+        onErrorRef.current?.();
+    };
+    useEffect(() => {
+        failedSourceRef.current = "";
+        const player = mediaPlayerRef.current?.el;
+        // <source> 加载失败不会冒泡到 video；捕获它才能启动兼容预览。
+        const nativeError = (event: Event) => {
+            if (event.target instanceof HTMLSourceElement || event.target instanceof HTMLVideoElement) reportPlaybackError();
+        };
+        player?.addEventListener("error", nativeError, true);
+        return () => player?.removeEventListener("error", nativeError, true);
+    }, [src]);
     // Match LibTV's conservative rule: only explicit/container-confirmed
     // silence mutes the player. Runtime probes are used to confirm audio and
     // correct stale persisted `false`, but a negative/unknown probe never
@@ -219,6 +239,7 @@ export function VideoPlayer({
             style={{ "--video-brand": brandColor }}
             onCanPlay={handleCanPlay}
             onPlay={onPlay}
+            onError={reportPlaybackError}
             onLoadedMetadata={(event) => {
                 const provider = event.target.provider;
                 const media = isVideoProvider(provider) ? provider.media : undefined;

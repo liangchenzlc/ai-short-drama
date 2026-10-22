@@ -26,7 +26,7 @@ from short_drama.agent.state import (
     wait_locked,
 )
 from short_drama.ai.model_identity import model_credential_identity
-from short_drama.domain import AIModelConfig, Episode, Project
+from short_drama.domain import AIModelConfig, Project
 from short_drama.domain.agent import (
     AgentConversation,
     AgentMessage,
@@ -34,7 +34,7 @@ from short_drama.domain.agent import (
     AgentToolCall,
     AgentTurn,
 )
-from short_drama.domain.collaboration import ProjectMember, User
+from short_drama.domain.collaboration import User
 from short_drama.service.base import utcnow
 from short_drama.utils.snowflake import next_id
 
@@ -52,12 +52,16 @@ def lock_run(session, run_id, *, skip_locked=False):
     ).first()
     if parent is None:
         return None
-    project = session.scalar(
-        select(Project)
-        .where(Project.id == parent.project_id)
-        .with_for_update(skip_locked=skip_locked)
+    project = (
+        session.scalar(
+            select(Project)
+            .where(Project.id == parent.project_id)
+            .with_for_update(skip_locked=skip_locked)
+        )
+        if parent.project_id is not None
+        else None
     )
-    if project is None:
+    if project is None and parent.project_id is not None:
         return None
     conversation = session.scalar(
         select(AgentConversation)
@@ -67,6 +71,12 @@ def lock_run(session, run_id, *, skip_locked=False):
     )
     if conversation is None:
         return None
+    task_id = session.scalar(select(AgentRun.task_id).where(AgentRun.id == run_id))
+    if task_id is not None:
+        from short_drama.dao.agent_task_dao import AgentTaskDAO
+
+        if AgentTaskDAO(session).task(task_id, conversation_id=conversation.id, lock=True) is None:
+            return None
     run = session.scalar(
         select(AgentRun)
         .where(AgentRun.id == run_id)
@@ -84,24 +94,23 @@ def may_decide(session, project, conversation, run):
         user is None
         or user.status != "active"
         or not user.email_verified_at
-        or project.archived_at
+        or (project is not None and project.archived_at)
         or conversation.status != "active"
         or conversation.owner_user_id != run.initiated_by
     ):
         return False
-    if (
-        project.owner_user_id != user.id
-        and session.scalar(
-            select(ProjectMember.id)
-            .where(
-                ProjectMember.project_id == project.id,
-                ProjectMember.user_id == user.id,
-                ProjectMember.status == "active",
-            )
-            .with_for_update()
+    if conversation.scope_version == 3:
+        from short_drama.agent.task_state import task_for_run
+
+        task = task_for_run(session, run)
+        return (
+            project is None
+            and task is not None
+            and task.conversation_id == conversation.id
+            and task.status in {"queued", "running", "waiting_media"}
+            and (run.checkpoint or {}).get("purpose") == "global_assistant"
         )
-        is None
-    ):
+    if project is None or project.owner_user_id != user.id:
         return False
     authorization = (run.checkpoint or {}).get("authorization")
     if conversation.scope_version == 2:
@@ -114,10 +123,10 @@ def may_decide(session, project, conversation, run):
         return True
     if (run.checkpoint or {}).get("purpose") == "assistant_chat":
         return False
-    episode = session.scalar(select(Episode).where(Episode.id == conversation.episode_id))
+    creation = session.scalar(select(Project).where(Project.id == conversation.project_id))
     return (
-        episode is not None
-        and episode.project_id == project.id
+        creation is not None
+        and creation.id == project.id
         and isinstance(authorization, dict)
         and authorization.get("mode") in {"auto", "discuss", "single", "workflow"}
     )
@@ -217,7 +226,10 @@ def _json_copy(value):
 def freeze_input(values, run):
     values = dict(values)
     values["tools"] = [asdict(tool) for tool in values.get("tools", ())]
-    if (run.checkpoint or {}).get("purpose") == "assistant_chat" and (
+    if (
+        (run.checkpoint or {}).get("purpose") == "assistant_chat"
+        or (run.checkpoint or {}).get("discussion_revision")
+    ) and (
         values["tools"] or values.get("deferred_results") or values.get("max_tool_calls", 0) != 0
     ):
         raise AgentGatewayError("assistant_tools_forbidden")
@@ -242,7 +254,25 @@ def freeze_input(values, run):
         120,
         max(1, budget["active_seconds"] - active_seconds(run)),
     )
-    return {"codec": "agent.segment-input", "version": 1, "kwargs": _json_copy(values)}
+    context_budget = None
+    if (run.checkpoint or {}).get("purpose") == "global_assistant":
+        from short_drama.agent.context_budget import segment_budget
+
+        context_budget = segment_budget(values)
+    return {
+        "codec": "agent.segment-input",
+        "version": 1,
+        "kwargs": _json_copy(values),
+        "task_input_revision": (run.checkpoint or {}).get("task_input_revision"),
+        "memory_epoch": (run.checkpoint or {}).get("memory_epoch", 0),
+        "task_compaction_id": (run.checkpoint or {}).get("task_compaction_id"),
+        "generation_policy_version": (run.checkpoint or {}).get("generation_policy_version"),
+        "subject_access_keys": (run.checkpoint or {}).get("available_subject_keys"),
+        "attachment_access_ids": (run.checkpoint or {}).get("available_attachment_ids"),
+        "result_access_keys": (run.checkpoint or {}).get("available_result_keys"),
+        "image_content_access_keys": (run.checkpoint or {}).get("available_image_content_keys"),
+        **({"context_budget": context_budget} if context_budget is not None else {}),
+    }
 
 
 def thaw_input(envelope):
@@ -264,6 +294,7 @@ class Claim:
     inputs: dict | None
     request: dict | None
     raw: dict | None
+    task_id: int | None = None
 
 
 class AgentRuntimeStore:
@@ -351,6 +382,13 @@ class AgentRuntimeStore:
             if rows is None:
                 return None
             project, conversation, run = rows
+            from short_drama.dao.agent_task_dao import AgentTaskDAO
+
+            active_operation = (
+                AgentTaskDAO(session).active_operation(run.task_id)
+                if run.task_id is not None
+                else None
+            )
             if (
                 run.status not in {"queued", "running"}
                 or run.message_version != version
@@ -368,13 +406,31 @@ class AgentRuntimeStore:
                 except AgentGatewayError as error:
                     finish_locked(session, conversation, run, "failed", {"code": error.code})
                     return None
-            if run.cancel_requested or not may_decide(session, project, conversation, run):
+            if active_operation is None and (
+                run.cancel_requested or not may_decide(session, project, conversation, run)
+            ):
                 finish_locked(session, conversation, run, "cancelled", {"code": "access_revoked"})
                 return None
             if preceding_execution(session, run) is not None:
                 run.message_status = "pending"
                 run.lease_token = run.lease_until = None
                 return None
+            if run.task_id is not None:
+                from short_drama.agent.task_state import (
+                    apply_controls_locked,
+                    apply_inputs_locked,
+                    task_for_run,
+                )
+
+                task = task_for_run(session, run)
+                apply_controls_locked(session, conversation, task, run)
+                if run.status in TERMINAL or run.message_version != version:
+                    return None
+                apply_inputs_locked(session, conversation, task, run)
+                task.status = "running"
+                task.phase = active_operation.phase if active_operation else "deciding"
+                task.row_version += 1
+                task.updated_at = now
             from short_drama.core.exceptions import BusinessError
             from short_drama.service.agent_conversation_service import validate_conversation_subject
 
@@ -401,18 +457,40 @@ class AgentRuntimeStore:
             turn = latest_turn(session, run.id)
             if run.phase == "tools":
                 try:
-                    if active_seconds(run) >= checked_budget(run)["active_seconds"]:
+                    if (
+                        active_operation is None
+                        and active_seconds(run) >= checked_budget(run)["active_seconds"]
+                    ):
                         raise AgentGatewayError("agent_budget_exhausted")
                 except AgentGatewayError as error:
                     finish_locked(session, conversation, run, "failed", {"code": error.code})
                     return None
-                return Claim(run.id, version, run.lease_token, "tools", None, {}, None, None, None)
+                return Claim(
+                    run.id,
+                    version,
+                    run.lease_token,
+                    "tools",
+                    None,
+                    {},
+                    None,
+                    None,
+                    None,
+                    task_id=run.task_id,
+                )
             if turn is None or (
                 turn.status == "succeeded" and (turn.response or {}).get("applied") is True
             ):
                 try:
                     inputs = freeze_input(prepare_decision(session, conversation, run), run)
                 except AgentGatewayError as error:
+                    waiting = error.code == "agent_memory_waiting"
+                    if error.code == "agent_context_budget_exhausted" and run.task_id is not None:
+                        from short_drama.agent.task_compaction import task_compaction_waiting_locked
+
+                        waiting = task_compaction_waiting_locked(session, conversation, run)
+                    if waiting and run.task_id is not None:
+                        mark_scheduled(run, phase="model", when=now + timedelta(seconds=3))
+                        return None
                     finish_locked(session, conversation, run, "failed", {"code": error.code})
                     return None
                 number = (turn.turn_no if turn else 0) + 1
@@ -459,6 +537,7 @@ class AgentRuntimeStore:
                 deepcopy(turn.request_messages[0]),
                 deepcopy(turn.request_messages[1]) if len(turn.request_messages) > 1 else None,
                 deepcopy(raw),
+                task_id=run.task_id,
             )
 
     def before_send(self, claim, request):
@@ -467,6 +546,83 @@ class AgentRuntimeStore:
                 session, claim.run_id, claim.version, claim.token
             )
             turn = session.get(AgentTurn, claim.turn_id)
+            if run.task_id is not None:
+                from short_drama.agent.task_state import task_for_run
+
+                task = task_for_run(session, run)
+                if claim.inputs.get("task_input_revision") != task.input_revision:
+                    raise AgentGatewayError("assistant_input_superseded")
+                if claim.inputs.get("task_compaction_id") is not None:
+                    from short_drama.agent.task_compaction import active_compaction_locked
+
+                    current = active_compaction_locked(session, task)
+                    if current is None:
+                        raise AgentGatewayError("assistant_memory_superseded")
+                from short_drama.service.assistant_policy_service import policy_state_locked
+
+                session.scalar(
+                    select(User.id).where(User.id == conversation.owner_user_id).with_for_update()
+                )
+                _enabled, policy_version = policy_state_locked(
+                    session,
+                    conversation.owner_user_id,
+                    lock=True,
+                )
+                if claim.inputs.get("generation_policy_version") != policy_version:
+                    raise AgentGatewayError("assistant_policy_superseded")
+                if claim.inputs.get("memory_epoch", 0) != (run.checkpoint or {}).get(
+                    "memory_epoch", 0
+                ):
+                    raise AgentGatewayError("assistant_memory_superseded")
+                if claim.inputs.get("subject_access_keys") is not None:
+                    from short_drama.service.assistant_subject_service import selection_metadata
+
+                    available = sorted(
+                        item["subject_key"]
+                        for item in selection_metadata(
+                            session, conversation.owner_user_id, task.context_snapshot
+                        )
+                        if item["availability"] != "unavailable"
+                    )
+                    if available != claim.inputs["subject_access_keys"]:
+                        raise AgentGatewayError("assistant_subjects_superseded")
+                if claim.inputs.get("result_access_keys") is not None:
+                    from short_drama.agent.canvas_tools import canvas_result_keys
+                    from short_drama.agent.image_tools import image_result_keys
+                    from short_drama.agent.standard_tools import standard_result_keys
+
+                    available = sorted(
+                        standard_result_keys(session, conversation.owner_user_id, task)
+                        | canvas_result_keys(session, conversation.owner_user_id, task)
+                        | image_result_keys(session, conversation.owner_user_id, task)
+                    )
+                    if available != claim.inputs["result_access_keys"]:
+                        raise AgentGatewayError("assistant_subjects_superseded")
+                if claim.inputs.get("attachment_access_ids") is not None:
+                    from short_drama.agent.attachment_context import (
+                        available_attachment_ids,
+                        task_attachments,
+                    )
+                    from short_drama.agent.memory_context import restricted_messages
+
+                    restricted_ids, _ = restricted_messages(session, conversation.id)
+                    available = sorted(
+                        available_attachment_ids(
+                            session,
+                            conversation,
+                            task_attachments(session, task, restricted_ids=restricted_ids),
+                        )
+                    )
+                    if available != claim.inputs["attachment_access_ids"]:
+                        raise AgentGatewayError("assistant_attachments_superseded")
+                if claim.inputs.get("image_content_access_keys") is not None:
+                    from short_drama.agent.image_tools import available_image_contents_locked
+
+                    available = sorted(
+                        available_image_contents_locked(session, conversation, task, run)
+                    )
+                    if available != claim.inputs["image_content_access_keys"]:
+                        raise AgentGatewayError("assistant_subjects_superseded")
             if (
                 not self.settings.agent_enabled
                 or run.cancel_requested
@@ -485,6 +641,11 @@ class AgentRuntimeStore:
             budget = checked_budget(run)
             usage = {**initial_usage(), **(run.usage or {})}
             amount = claim.inputs["kwargs"]["max_output_tokens"]
+            context_budget = None
+            if run.task_id is not None:
+                from short_drama.agent.context_budget import provider_budget
+
+                context_budget = provider_budget(request.get("body", request), amount)
             if (
                 usage["decision_calls"] >= budget["decision_calls"]
                 or usage["output_tokens"] + usage["reserved_output_tokens"] + amount
@@ -494,10 +655,14 @@ class AgentRuntimeStore:
                 raise AgentGatewayError("agent_budget_exhausted")
             usage["decision_calls"] += 1
             usage["reserved_output_tokens"] += amount
+            if context_budget is not None:
+                usage["last_context_budget"] = context_budget
             run.usage, run.updated_at = usage, utcnow()
             turn.request_messages = [deepcopy(claim.inputs), _json_copy(request)]
             turn.status, turn.started_at, turn.updated_at = "sent", utcnow(), utcnow()
             turn.usage = {"reserved_output_tokens": amount, "settled": False}
+            if context_budget is not None:
+                turn.usage = {**turn.usage, "context_budget": context_budget}
             append_event(
                 session,
                 conversation,
@@ -513,6 +678,8 @@ class AgentRuntimeStore:
             if rows is None:
                 raise LeaseLost()
             _project, _conversation, _run = rows
+            if _conversation.status == "deleted":
+                raise LeaseLost()
             turn = session.get(AgentTurn, claim.turn_id)
             if turn is None or turn.status == "prepared":
                 raise LeaseLost()
@@ -534,6 +701,16 @@ class AgentRuntimeStore:
                 return False
             if run.cancel_requested:
                 return False
+            if run.task_id is not None:
+                from short_drama.agent.task_state import task_for_run
+
+                task = task_for_run(session, run)
+                if task.input_revision != (run.checkpoint or {}).get("task_input_revision"):
+                    return False
+                if claim.inputs.get("memory_epoch", 0) != (run.checkpoint or {}).get(
+                    "memory_epoch", 0
+                ):
+                    return False
             append_event(
                 session,
                 conversation,
@@ -568,6 +745,8 @@ class AgentRuntimeStore:
                 raise LeaseLost()
             project, conversation, run = rows
             turn = session.get(AgentTurn, claim.turn_id)
+            if conversation.status == "deleted" or turn is None:
+                raise LeaseLost()
             response = deepcopy(turn.response or {})
             if not response.get("raw"):
                 raise AgentGatewayError("agent_response_not_durable", accepted_unknown=True)
@@ -615,6 +794,19 @@ class AgentRuntimeStore:
             if run.cancel_requested or not may_decide(session, project, conversation, run):
                 finish_locked(session, conversation, run, "cancelled", {"code": "access_revoked"})
                 return False
+            if run.task_id is not None:
+                from short_drama.agent.task_state import task_for_run
+
+                task = task_for_run(session, run)
+                if claim.inputs.get(
+                    "task_input_revision"
+                ) != task.input_revision or claim.inputs.get("memory_epoch", 0) != (
+                    run.checkpoint or {}
+                ).get("memory_epoch", 0):
+                    response.update(applied=True, superseded=True)
+                    turn.response = response
+                    mark_scheduled(run, phase="model")
+                    return False
             budget = checked_budget(run)
             if usage["output_tokens"] + usage["reserved_output_tokens"] > budget["output_tokens"]:
                 finish_locked(
@@ -653,13 +845,32 @@ class AgentRuntimeStore:
                         },
                     )
                     return False
+                if checkpoint.get("discussion_revision"):
+                    from short_drama.agent.discussion_revision import replace_reply_locked
+
+                    try:
+                        replace_reply_locked(session, conversation, run, normalized["output"])
+                    except AgentGatewayError as error:
+                        finish_locked(session, conversation, run, "failed", {"code": error.code})
+                        return False
+                    finish_locked(session, conversation, run, "succeeded")
+                    return False
                 message = AgentMessage(
                     id=next_id(),
                     conversation_id=conversation.id,
+                    task_id=run.task_id,
                     seq=conversation.next_message_seq,
                     role="assistant",
                     content=normalized["output"],
-                    references=[],
+                    references=[
+                        {
+                            "type": "subject_scope",
+                            "keys": checkpoint.get("subject_scope_keys", []),
+                            "includes_attachments": True,
+                        }
+                    ]
+                    if run.task_id is not None
+                    else [],
                     artifacts=run_artifact_references(session, conversation, run),
                     created_at=utcnow(),
                 )
@@ -680,6 +891,11 @@ class AgentRuntimeStore:
                     run_id=run.id,
                 )
                 finish_locked(session, conversation, run, "succeeded")
+                return False
+            if checkpoint.get("discussion_revision"):
+                finish_locked(
+                    session, conversation, run, "failed", {"code": "assistant_tools_forbidden"}
+                )
                 return False
             calls = normalized["output"].get("calls", [])
             if usage["tool_calls"] + len(calls) > budget["tool_calls"]:
@@ -749,6 +965,21 @@ class AgentRuntimeStore:
             ):
                 return
             turn = session.get(AgentTurn, claim.turn_id)
+            if (
+                error.code
+                in {
+                    "assistant_input_superseded",
+                    "assistant_memory_superseded",
+                    "assistant_subjects_superseded",
+                    "assistant_attachments_superseded",
+                    "assistant_policy_superseded",
+                }
+                and run.task_id is not None
+            ):
+                turn.status, turn.response = "succeeded", {"applied": True, "superseded": True}
+                turn.updated_at = turn.finished_at = utcnow()
+                mark_scheduled(run, phase="model")
+                return
             if turn is not None and turn.status != "succeeded":
                 turn.status = (
                     "unknown" if turn.status == "sent" and error.accepted_unknown else "failed"
@@ -816,7 +1047,7 @@ class AgentRuntime:
         if claim is None:
             return
         if claim.phase == "tools":
-            self.execute_tools(self.factory, self.settings, claim.run_id)
+            self._tools(claim)
             return
         try:
             asyncio.run(self._decision(claim))
@@ -827,6 +1058,17 @@ class AgentRuntime:
         except Exception:
             # The wrapper/recovery owns crashes. Never expose private exception text.
             raise RuntimeError("Agent action interrupted; database recovery required") from None
+
+    def _tools(self, claim):
+        if claim.task_id is None:
+            self.execute_tools(self.factory, self.settings, claim.run_id)
+        else:
+            self.execute_tools(
+                self.factory,
+                self.settings,
+                claim.run_id,
+                fence=(claim.version, claim.token),
+            )
 
     async def _decision(self, claim):
         from short_drama.agent.input_media import materialize_prompt
@@ -897,7 +1139,7 @@ class AgentRuntime:
             delta.add("", final=True)
         normalized = serialize_segment_result(result)
         if self.store.save_result(claim, normalized):
-            self.execute_tools(self.factory, self.settings, claim.run_id)
+            self._tools(claim)
 
 
 # The public locked helpers are re-exported for the API/tool coordinator.

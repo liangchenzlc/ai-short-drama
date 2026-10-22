@@ -175,7 +175,8 @@ try {
         return image instanceof HTMLImageElement && image.complete && image.naturalWidth === 37 && image.naturalHeight === 19;
     }, source.id);
     assert.deepEqual(await (await fresh.request.get(`${origin}/api/v1/canvas-runtime/resources/${report.resource_id}/file`)).body(), original);
-    const shared = await read(await member.request.get(`${origin}${path}/my-document`));
+    assert.equal((await member.request.get(`${origin}${path}/my-document`)).status(), 404);
+    const shared = await read(await fresh.request.get(`${origin}${path}`));
     assert.ok(!JSON.stringify(shared).includes(config.originalPrompt));
     assert.equal((await outsider.request.get(`${origin}${path}/my-document`)).status(), 404);
     assert.equal((await outsider.request.get(`${origin}/api/v1/canvas-runtime/resources/${report.resource_id}/file`)).status(), 404);

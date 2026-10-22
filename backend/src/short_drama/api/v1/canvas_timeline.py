@@ -1,4 +1,4 @@
-"""画布时间线的认证只读编译入口；原字段保留 camelCase。"""
+"""画布时间线的编译、渲染与字幕转写入口；原字段保留 camelCase。"""
 
 from typing import Annotated
 
@@ -12,12 +12,20 @@ from short_drama.schemas.canvas_timeline import (
     CanvasTimelinePlanRequest,
     CanvasTimelineRenderRequest,
 )
-from short_drama.schemas.canvas_transcription import CanvasTranscriptionCreate
+from short_drama.schemas.canvas_transcription import (
+    CanvasTranscriptionCreate,
+    CanvasTranscriptionModelsRead,
+)
 from short_drama.service.canvas_local_service import CanvasLocalService
 from short_drama.service.canvas_render_service import CanvasRenderService
 from short_drama.service.canvas_timeline_compile import compile_timeline_plan
 
 router = APIRouter(prefix="/canvas-runtime/timeline", tags=["Canvas timeline"])
+
+
+@router.get("/transcription-models", response_model=CanvasTranscriptionModelsRead)
+def list_canvas_transcription_models(request: Request, service: Canvases):
+    return CanvasLocalService(service.session, request.app.state.settings).transcription_models()
 
 
 @router.post(

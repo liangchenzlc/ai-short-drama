@@ -1,7 +1,6 @@
 export interface CanvasSummaryDto {
   id: string;
   project_id: string;
-  source_project_id?: string | null;
   source_key: string;
   title: string;
   row_version: string;

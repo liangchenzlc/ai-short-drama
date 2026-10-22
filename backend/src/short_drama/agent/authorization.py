@@ -8,7 +8,7 @@ from copy import deepcopy
 from sqlalchemy import select
 
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.domain import AIModelConfig, Asset, Episode, EpisodeAsset, ProjectAsset, ShotScript
+from short_drama.domain import AIModelConfig, Asset, Project, ShotScript
 from short_drama.schemas.agent_runtime import TaskSpec
 from short_drama.service.agent_model_service import model_snapshot
 
@@ -40,13 +40,13 @@ def scoped_task(conversation, payload):
         return spec
     subject = conversation.subject_type
     allowed = {
-        ("source", "episode"): {"novel", "script"},
-        ("assets", "episode"): {"extract"},
+        ("source", "project"): {"novel", "script"},
+        ("assets", "project"): {"extract"},
         ("assets", "asset"): {"asset_patch", "image"},
-        ("storyboard", "episode"): {"storyboard"},
+        ("storyboard", "project"): {"storyboard"},
         ("storyboard", "shot"): {"shot_patch", "image", "video"},
     }.get((conversation.stage, subject), set())
-    if conversation.task_type == "batch" and subject == "episode":
+    if conversation.task_type == "batch" and subject == "project":
         allowed = (
             {"asset_patch", "image"}
             if conversation.stage == "assets"
@@ -58,7 +58,7 @@ def scoped_task(conversation, payload):
         raise WorkflowError(
             "agent_scope_mismatch", "该任务不属于当前流程会话，请打开对应对象的会话", 409
         )
-    if subject != "episode" or spec.kind in {"novel", "script", "extract", "storyboard"}:
+    if subject != "project" or spec.kind in {"novel", "script", "extract", "storyboard"}:
         if spec.target_id is not None and spec.target_id != conversation.subject_id:
             raise WorkflowError("agent_scope_mismatch", "该任务对象不属于当前会话", 409)
         spec = spec.model_copy(
@@ -74,13 +74,13 @@ def scoped_task(conversation, payload):
         and spec.kind == "image"
         and (spec.parameters.get("target_kind") != "asset")
     ):
-        raise WorkflowError("agent_scope_mismatch", "素材会话只能生成本集素材图片", 409)
+        raise WorkflowError("agent_scope_mismatch", "素材会话只能生成当前作品素材图片", 409)
     if (
         conversation.stage == "storyboard"
         and spec.kind == "image"
         and (spec.parameters.get("target_kind") == "asset")
     ):
-        raise WorkflowError("agent_scope_mismatch", "分镜会话只能生成本集镜头图片", 409)
+        raise WorkflowError("agent_scope_mismatch", "分镜会话只能生成当前作品镜头图片", 409)
     return spec
 
 
@@ -89,52 +89,43 @@ def freeze_task(session, conversation, payload, *, step_id, owner_user_id):
 
     validate_conversation_subject(session, conversation, lock=True)
     spec = scoped_task(conversation, payload)
-    episode = session.scalar(
-        select(Episode)
-        .where(Episode.id == conversation.episode_id)
+    creation = session.scalar(
+        select(Project)
+        .where(Project.id == conversation.project_id)
         .with_for_update()
         .execution_options(populate_existing=True)
     )
-    if episode is None or episode.project_id != conversation.project_id:
-        raise NotFound("Episode does not exist")
+    if creation is None or creation.id != conversation.project_id:
+        raise NotFound("Project does not exist")
     source = {
-        "episode_id": str(episode.id),
-        "content_version": episode.content_version,
-        "storyboard_version": episode.storyboard_version,
-        "episode_row_version": episode.row_version,
+        "project_id": str(creation.id),
+        "content_version": creation.content_version,
+        "storyboard_version": creation.storyboard_version,
+        "project_row_version": creation.row_version,
     }
     target = spec.target_id
     target_kind = spec.parameters.get("target_kind")
-    target_label = f"本集作品：{episode.title}"
+    target_label = f"当前作品：{creation.name}"
     if spec.kind in {"novel", "script", "extract", "storyboard"}:
-        if target is not None and target != episode.id:
-            raise NotFound("Task target is outside this episode")
-        target, target_kind = episode.id, "episode"
+        if target is not None and target != creation.id:
+            raise NotFound("Task target is outside this creation")
+        target, target_kind = creation.id, "project"
     else:
         if target is None:
             raise WorkflowError("agent_target_required", "请明确要修改或生成的素材、镜头", 422)
         if spec.kind == "asset_patch" or spec.kind == "image" and target_kind == "asset":
             asset = session.scalar(
                 select(Asset)
-                .join(ProjectAsset, ProjectAsset.asset_id == Asset.id)
                 .where(
                     Asset.id == target,
-                    ProjectAsset.project_id == conversation.project_id,
                     Asset.project_id == conversation.project_id,
+                    Asset.deleted_at.is_(None),
                 )
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
             if asset is None:
                 raise NotFound("Asset is outside this project")
-            linked = session.scalar(
-                select(EpisodeAsset)
-                .where(EpisodeAsset.episode_id == episode.id, EpisodeAsset.asset_id == target)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-            if linked is None:
-                raise NotFound("Asset is outside this episode")
             source.update(target_row_version=asset.row_version)
             target_kind = "asset"
             target_label = f"素材：{asset.name}"
@@ -143,14 +134,14 @@ def freeze_task(session, conversation, payload, *, step_id, owner_user_id):
                 select(ShotScript)
                 .where(
                     ShotScript.id == target,
-                    ShotScript.episode_id == episode.id,
+                    ShotScript.project_id == creation.id,
                     ShotScript.deleted_at.is_(None),
                 )
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
             if shot is None:
-                raise NotFound("Shot is outside this episode")
+                raise NotFound("Shot is outside this creation")
             source.update(target_row_version=shot.row_version)
             target_kind = "shot"
             target_label = f"第 {shot.position} 个镜头：{shot.script[:80]}"
@@ -196,20 +187,20 @@ def public_step(step):
 
 def check_source(session, step):
     source = step["source"]
-    episode = session.scalar(
-        select(Episode)
-        .where(Episode.id == int(source["episode_id"]))
+    creation = session.scalar(
+        select(Project)
+        .where(Project.id == int(source["project_id"]))
         .with_for_update()
         .execution_options(populate_existing=True)
     )
-    if episode is None or episode.content_version != source["content_version"]:
+    if creation is None or creation.content_version != source["content_version"]:
         raise WorkflowError("agent_source_changed", "正文已变更，请重新核对任务范围", 409)
     if (
         step["kind"] in {"storyboard", "shot_patch", "image", "video"}
-        and episode.storyboard_version != source["storyboard_version"]
+        and creation.storyboard_version != source["storyboard_version"]
     ):
         raise WorkflowError("agent_source_changed", "分镜已变更，请重新核对任务范围", 409)
-    if step["target_kind"] != "episode":
+    if step["target_kind"] != "project":
         model = Asset if step["target_kind"] == "asset" else ShotScript
         target = session.scalar(
             select(model)

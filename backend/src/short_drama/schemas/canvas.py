@@ -80,6 +80,20 @@ class CanvasNodeDocument(SourceModel):
     updated_at: str | None = Field(default=None, alias="updatedAt", max_length=64)
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def reject_retired_character_bindings(self):
+        pending = [self.metadata]
+        retired = {"characterAssetId", "characterVersionId", "characterVersionPolicy"}
+        while pending:
+            value = pending.pop()
+            if isinstance(value, dict):
+                if retired.intersection(value):
+                    raise ValueError("Standard character bindings are retired")
+                pending.extend(value.values())
+            elif isinstance(value, list):
+                pending.extend(value)
+        return self
+
 
 class CanvasEdgeDocument(SourceModel):
     id: SourceKey
@@ -101,7 +115,6 @@ class CanvasDocument(SourceModel):
     revision: NonnegativeVersion = 0
     remote_content_hash: str | None = Field(default=None, alias="remoteContentHash")
     workspace_project_id: CanvasKey | None = Field(default=None, alias="workspaceProjectId")
-    project_id: str | None = Field(default=None, alias="projectId")
     folder_id: Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)] | None = (
         Field(default=None, alias="folderId")
     )
@@ -289,7 +302,6 @@ class CanvasViewportRequest(InputModel):
 class CanvasSummaryRead(InputModel):
     id: Identifier
     project_id: Identifier
-    source_project_id: Identifier | None = None
     source_key: CanvasKey
     title: CanvasTitle
     row_version: Identifier

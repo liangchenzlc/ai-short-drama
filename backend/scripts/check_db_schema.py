@@ -30,7 +30,7 @@ def main():
         engine.dispose()
     if missing:
         print("\n".join(missing))
-        print("Apply the matching migrations in docs/数据库模型/migrations before deployment.")
+        print("Apply the matching migrations in docs/database/migrations before deployment.")
         return 1
     print("Schema check passed: all ORM tables and columns exist (types/defaults not checked).")
     return 0

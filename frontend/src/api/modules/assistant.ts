@@ -1,12 +1,90 @@
 import { http } from '../http';
 import type { AgentAttachment, AgentConversationPage, AgentMessagePage, AgentRun, AgentRunPage, AgentSendResult, ConversationRuntimeState, UpdateAgentConversation } from '../types/agents';
-import type { AssistantConversation, AssistantConversationPage, AssistantSendInput } from '../types/assistant';
+import type { AssistantConversation, AssistantConversationPage, AssistantSendInput, AssistantTaskSendInput, AssistantTaskAccepted, AssistantTaskSnapshot, AssistantControlInput, AssistantControlAccepted, GlobalAssistantConversation, AssistantOperation } from '../types/assistant';
 import type { Page } from '../types/generations';
+import type { AssistantDeletionPreview, AssistantMemorySelection } from '../types/assistant';
+import type { AssistantSubjectKind, AssistantSubjectMetadata, AssistantSubjectOption, AssistantSubjectReference } from '../types/assistant';
+import type { AssistantAttachmentMetadata, AssistantGenerationPolicy } from '../types/assistant';
+import type { DiscussionEligibility, DiscussionRevision, DiscussionRevisionInput } from '../types/assistant';
+import type { AssistantUndoInput, AssistantUndoPreview, AssistantUndoReceipt } from '../types/assistant';
 
 const root = '/assistant';
 const conversationPath = (id: string) => `${root}/conversations/${encodeURIComponent(id)}`;
+const globalPath = (id: string) => `${root}/global/conversations/${encodeURIComponent(id)}`;
 
 export const assistantApi = {
+  async undoPreview(id: string, signal?: AbortSignal) {
+    return (await http.get<AssistantUndoPreview>(`${root}/operations/${encodeURIComponent(id)}/undo-preview`, { signal })).data;
+  },
+  async undoBatch(id: string, body: AssistantUndoInput, key: string) {
+    return (await http.post<AssistantUndoReceipt>(`${root}/operations/${encodeURIComponent(id)}/undo`, body, { headers: { 'Idempotency-Key': key } })).data;
+  },
+  async discussionEligibility(id: string, messageId: string, signal?: AbortSignal) {
+    return (await http.get<DiscussionEligibility>(`${globalPath(id)}/messages/${encodeURIComponent(messageId)}/revision-eligibility`, { signal })).data;
+  },
+  async reviseDiscussion(id: string, messageId: string, body: DiscussionRevisionInput, key: string) {
+    return (await http.post<AssistantTaskAccepted>(`${globalPath(id)}/messages/${encodeURIComponent(messageId)}/revisions`, body, { headers: { 'Idempotency-Key': key } })).data;
+  },
+  async discussionRevisions(id: string, messageId: string, offset = 0, signal?: AbortSignal) {
+    return (await http.get<Page<DiscussionRevision>>(`${globalPath(id)}/messages/${encodeURIComponent(messageId)}/revisions`, { params: { offset, limit: 30 }, signal })).data;
+  },
+  async generationPolicy(signal?: AbortSignal) {
+    return (await http.get<AssistantGenerationPolicy>(`${root}/generation-policy`, { signal })).data;
+  },
+  async updateGenerationPolicy(media_generation_enabled: boolean, policy_version: string) {
+    return (await http.patch<AssistantGenerationPolicy>(`${root}/generation-policy`, { media_generation_enabled, policy_version })).data;
+  },
+  async globalConversations(offset = 0, signal?: AbortSignal, query = '') {
+    return (await http.get<Page<GlobalAssistantConversation>>(`${root}/global/conversations`, { params: { offset, limit: 20, query: query.trim() || undefined }, signal })).data;
+  },
+  async globalHistory(offset = 0, signal?: AbortSignal, query = '') {
+    return (await http.get<AgentConversationPage>(`${root}/global/history`, { params: { offset, limit: 20, query: query.trim() || undefined }, signal })).data;
+  },
+  async createGlobalConversation(key: string) {
+    return (await http.post<GlobalAssistantConversation>(`${root}/global/conversations`, {}, { headers: { 'Idempotency-Key': key } })).data;
+  },
+  async globalConversation(id: string, signal?: AbortSignal) {
+    return (await http.get<GlobalAssistantConversation>(globalPath(id), { signal })).data;
+  },
+  async renameGlobalConversation(id: string, row_version: string, title: string) {
+    return (await http.patch<GlobalAssistantConversation>(globalPath(id), { row_version, title })).data;
+  },
+  async deletionMemory(id: string, offset = 0, signal?: AbortSignal) {
+    return (await http.get<AssistantDeletionPreview>(`${globalPath(id)}/deletion-memory`, { params: { offset, limit: 30 }, signal })).data;
+  },
+  async deleteGlobalConversation(id: string, row_version: string, clear_derived_memory: boolean, key: string, memory_selections?: AssistantMemorySelection[]) {
+    return (await http.delete<GlobalAssistantConversation>(globalPath(id), { data: { row_version, clear_derived_memory, ...(memory_selections ? { memory_selections } : {}) }, headers: { 'Idempotency-Key': key } })).data;
+  },
+  async taskState(id: string, signal?: AbortSignal, beforeTaskId?: string) {
+    return (await http.get<AssistantTaskSnapshot>(`${globalPath(id)}/state`, { params: { before_task_id: beforeTaskId, limit: 20 }, signal })).data;
+  },
+  async taskMessages(id: string, offset = 0, signal?: AbortSignal) {
+    return (await http.get<AgentMessagePage>(`${globalPath(id)}/messages`, { params: { offset, limit: 50 }, signal })).data;
+  },
+  async sendTask(id: string, body: AssistantTaskSendInput, key: string) {
+    return (await http.post<AssistantTaskAccepted>(`${globalPath(id)}/messages`, body, { headers: { 'Idempotency-Key': key } })).data;
+  },
+  async controlTask(id: string, body: AssistantControlInput, key: string) {
+    return (await http.post<AssistantControlAccepted>(`${root}/tasks/${encodeURIComponent(id)}/control`, body, { headers: { 'Idempotency-Key': key } })).data;
+  },
+  async subjects(taskId: string, signal?: AbortSignal) {
+    return (await http.get<AssistantSubjectMetadata>(`${root}/tasks/${encodeURIComponent(taskId)}/subjects`, { signal })).data;
+  },
+  async taskAttachments(taskId: string, signal?: AbortSignal) {
+    return (await http.get<AssistantAttachmentMetadata>(`${root}/tasks/${encodeURIComponent(taskId)}/attachments`, { signal })).data;
+  },
+  async subjectDirectory(projectId: string, kind: AssistantSubjectKind, query = '', offset = 0, signal?: AbortSignal) {
+    return (await http.get<Page<AssistantSubjectOption>>(`${root}/subjects`, { params: { project_id: projectId, kind, query, offset, limit: 20 }, signal })).data;
+  },
+  async inspectSubjects(subjects: AssistantSubjectReference[]) {
+    return (await http.post<AssistantSubjectReference[]>(`${root}/subjects/metadata`, { subjects })).data;
+  },
+  async operations(taskId: string, afterId?: string, signal?: AbortSignal) {
+    return (await http.get<{ items: AssistantOperation[]; has_more: boolean; next_after_id: string | null; snapshot_cursor: number }>(`${root}/tasks/${encodeURIComponent(taskId)}/operations`, { params: { after_id: afterId, limit: 50 }, signal })).data;
+  },
+  async operation(id: string, signal?: AbortSignal) {
+    return (await http.get<AssistantOperation & { result: Record<string, unknown> | null }>(`${root}/operations/${encodeURIComponent(id)}`, { signal })).data;
+  },
   async conversations(projectId: string, offset = 0, includeArchived = false, signal?: AbortSignal, query = '') {
     return (await http.get<AssistantConversationPage>(`${root}/conversations`, { params: { project_id: projectId, offset, limit: 20, include_archived: includeArchived, query: query.trim() || undefined }, signal })).data;
   },

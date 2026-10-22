@@ -21,7 +21,6 @@ from short_drama.domain import (
     AIGenerationRecord,
     AIModelConfig,
     AsyncTask,
-    Episode,
     MediaAsset,
     Project,
     ShotScript,
@@ -56,7 +55,7 @@ ERROR_MESSAGES = {
         "模型服务或中转站返回了服务器错误（HTTP 5xx）。"
         "当前无法确认生成结果，生成请求未自动重发；请核对服务商调用记录。"
     ),
-    "partial_result": "Some results could not be saved.",
+    "partial_result": "部分生成结果未完成，已保存的结果仍可使用。",
     "text_truncated": "The model stopped at its output limit.",
     "message_delivery_unknown": "Message delivery needs verification.",
     "acceptance_unknown": "Model acceptance needs verification.",
@@ -67,6 +66,7 @@ ERROR_MESSAGES = {
     "invalid_structured_output": "模型返回的结构不正确，原文已保留。请调整要求后重新生成。",
     "unknown_asset_reference": "模型引用了不存在于输入清单的素材，原文已保留。",
     "source_missing": "生成来源已不存在，原始结果已保留。",
+    "shot_video_auto_apply_skipped": "视频已生成并保存，未替换当前确定视频。",
     "empty_result": "模型未返回有效正文。",
 }
 
@@ -81,10 +81,39 @@ def safe_error(error):
         "code": code,
         "message": ERROR_MESSAGES.get(code, "Generation could not be completed."),
     }
+    if code == "shot_video_auto_apply_skipped":
+        reason = {
+            "shot_video_superseded": "已有更新生成的视频，本次结果仅保留在生成记录中。",
+            "shot_version_conflict": "分镜、提示词、参考图或声音已变化，请核对生成记录。",
+            "generation_access_revoked": "生成者已无权更新此分镜，结果仅保留在生成记录中。",
+            "generation_cancelled": "任务已取消，已保存的结果仅保留在生成记录中。",
+            "native_audio_invalid": "视频没有通过原生音轨检查，请核对生成记录。",
+            "shot_archived": "分镜已归档，结果仅保留在生成记录中。",
+            "not_found": "生成来源已不存在，结果仅保留在生成记录中。",
+            "source_mismatch": "生成结果的作品归属不一致，请核对生成记录。",
+        }.get(error.get("reason"), "请核对当前分镜和生成记录。")
+        result["message"] += reason
     http_status = error.get("http_status")
     if type(http_status) is int and 100 <= http_status <= 599:
         result["http_status"] = http_status
         result["message"] = result["message"].replace("HTTP 5xx", f"HTTP {http_status}")
+    if code == "partial_result":
+        expected, returned, saved = (
+            error.get("expected_count"),
+            error.get("returned_count"),
+            error.get("saved_count"),
+        )
+        if (
+            all(type(count) is int for count in (expected, returned, saved))
+            and expected > 0
+            and 0 <= saved <= min(expected, returned)
+        ):
+            result["message"] = (
+                f"请求 {expected} 个结果，模型服务仅返回 {returned} 个，已保存 {saved} 个。"
+                "其余结果未生成成功，已保存的结果仍可使用。"
+                if returned < expected
+                else f"已保存 {saved}/{expected} 个结果，其余结果保存失败，可尝试恢复保存。"
+            )
     return result
 
 
@@ -148,10 +177,19 @@ def resume_action(task, record):
     if getattr(record, "adapter", None) in RUNNINGHUB_ADAPTERS:
         expected_count -= sum(bool(item.get("ignored")) for item in entries)
         entries = [item for item in entries if not item.get("ignored")]
+    request = getattr(record, "request_data", None) or {}
+    image_group = (
+        bool(request.get("image_group_id"))
+        or (request.get("source") or {}).get("scene") == "image_operation"
+    )
     recoverable_media = bool(entries) and (
         any(
             not item.get("saved")
             and (item.get("source_cipher") or item.get("locator") or item.get("inline_cipher"))
+            for item in entries
+        )
+        or any(
+            image_group and item.get("saved") and not item.get("image_group_saved")
             for item in entries
         )
         or (all(item.get("saved") for item in entries) and len(entries) >= expected_count)
@@ -263,19 +301,26 @@ class AIGenerationService(BaseService):
 
     def _lock_payload_scope(self, payload):
         actor = self.session.info.get("actor")
-        if not actor:
-            return
         from short_drama.db.access import require_project, scope_of, set_scope
-        from short_drama.domain import Asset, EpisodeNovel, EpisodeScript
+        from short_drama.domain import Asset, ProjectNovel, ProjectScript
 
         source = payload.get("source") or {}
+        if source.get("scene") == "image_operation":
+            from short_drama.domain import ImageOperation
+
+            operation = self._require(ImageOperation, source["operation_id"], for_update=False)
+            scope = scope_of(self.session, operation)
+            if scope[1]:
+                require_project(self.session, scope[1])
+            set_scope(self.session, scope)
+            return
         project_id = source.get("project_id") or payload.get("project_id")
-        scope = (None, int(project_id)) if project_id else (actor.user_id, None)
+        scope = (None, int(project_id)) if project_id else (actor.user_id, None) if actor else None
         for field, model in [
             ("asset_id", Asset),
             ("shot_id", ShotScript),
-            ("novel_id", EpisodeNovel),
-            ("script_id", EpisodeScript),
+            ("novel_id", ProjectNovel),
+            ("script_id", ProjectScript),
         ]:
             if source.get(field):
                 actual = scope_of(
@@ -285,20 +330,31 @@ class AIGenerationService(BaseService):
                     raise WorkflowError("not_found", "Source does not belong to this project", 404)
                 scope = actual
                 break
+        if scope is None:
+            return
         if scope[1]:
             require_project(self.session, scope[1])
         set_scope(self.session, scope)
 
-    def _prepare(self, kind, payload, *, use_current_saved_script=False):
+    def _prepare(
+        self, kind, payload, *, use_current_saved_script=False, include_saved_references=True
+    ):
+        explicit_references = copy.deepcopy(
+            (payload.get("input") or {}).get("reference_media_ids", [])
+        )
         source = payload.get("source")
-        if source and source["scene"] == "character_voice_design":
+        if source and source["scene"] == "image_operation":
+            from .image_operation_service import ImageOperationService
+
+            payload = ImageOperationService(self.session).prepare_generation(kind, payload)
+        elif source and source["scene"] == "character_voice_design":
             from .native_voice_service import NativeVoiceService
 
             payload = NativeVoiceService(self.session, self.settings).prepare_design(payload)
         elif source and source["scene"] in {"dialogue_audio", "dialogue_extract"}:
-            from .episode_sound_service import EpisodeSoundService
+            from .project_sound_service import ProjectSoundService
 
-            sound = EpisodeSoundService(self.session, self.settings)
+            sound = ProjectSoundService(self.session, self.settings)
             payload = (
                 sound.prepare_speech(payload)
                 if kind == "audio"
@@ -326,12 +382,16 @@ class AIGenerationService(BaseService):
             elif source.get("context_mode") == "saved":
                 from .generation_context_service import GenerationContextService
 
-                payload = GenerationContextService(self.session).prepare_shot_image(payload)
+                payload = GenerationContextService(self.session).prepare_shot_image(
+                    payload, include_saved_references=include_saved_references
+                )
             else:
                 shot = self._require(ShotScript, source["shot_id"])
-                episode = self._require(Episode, shot.episode_id)
-                source.update(episode_id=str(episode.id), project_id=str(episode.project_id))
+                creation = self._require(Project, shot.project_id)
+                source.update(project_id=str(creation.id))
                 payload["source_snapshot"] = {"script": shot.script, "position": shot.position}
+        if kind == "image" and not include_saved_references:
+            payload["input"]["reference_media_ids"] = explicit_references
         from .generation_presentation import generation_display_context
 
         payload["display_context"] = generation_display_context(self.session, payload)
@@ -376,6 +436,7 @@ class AIGenerationService(BaseService):
             error["message"] = "已保留的模型原文现可解析，请使用安全恢复保存结果，无需重新生成。"
         return {
             "generation_id": str(task.id),
+            "image_group_id": record.request_data.get("image_group_id"),
             "service_type": task.service_type,
             "status": task.status,
             "next_action": task.next_action,
@@ -419,7 +480,18 @@ class AIGenerationService(BaseService):
             return self._summary(task), False
         return None
 
-    def _insert(self, kind, payload, key, digest, config, retry_of_id=None):
+    def _insert(
+        self,
+        kind,
+        payload,
+        key,
+        digest,
+        config,
+        retry_of_id=None,
+        *,
+        agent_managed=False,
+        assistant_managed=False,
+    ):
         if getattr(config, "runtime_profile", None) is not None:
             from .canvas_model_catalog_service import CanvasModelCatalogService
 
@@ -456,8 +528,10 @@ class AIGenerationService(BaseService):
             references += [
                 inputs[k] for k in ("first_frame_media_id", "last_frame_media_id") if inputs.get(k)
             ]
-            if source.get("scene") == "canvas_node":
-                parameters = payload.get("canvas_parameters") or {}
+            if source.get("scene") in {"canvas_node", "image_operation"}:
+                parameters = (
+                    payload.get("canvas_parameters") or payload.get("image_edit_parameters") or {}
+                )
                 if parameters.get("mode") == "image" and parameters.get("mask_media_id"):
                     references.append(parameters["mask_media_id"])
             for identifier in references:
@@ -494,6 +568,7 @@ class AIGenerationService(BaseService):
             "canvas_node",
             "canvas_model_test",
             "canvas_tool",
+            "image_operation",
         }:
             capability = config.capability_cache or {}
             for field in (
@@ -508,6 +583,38 @@ class AIGenerationService(BaseService):
             ):
                 if field in capability:
                     snapshot[field] = copy.deepcopy(capability[field])
+        operation = None
+        if (payload.get("source") or {}).get("scene") == "image_operation":
+            from short_drama.ai import capabilities
+            from short_drama.domain import ImageOperation
+
+            operation = self._require(ImageOperation, payload["source"]["operation_id"])
+            support = capabilities(snapshot)
+            if kind == "text" and not support.get("vision"):
+                raise WorkflowError(
+                    "vision_not_supported",
+                    "当前文字模型未声明图片理解能力，请选择支持看图的模型",
+                    422,
+                )
+            if kind == "text":
+                from short_drama.ai.image_operations import validate_operation_vision
+                from short_drama.domain import MediaFile
+
+                media = self._require(MediaFile, operation.source_media_id, for_update=False)
+                try:
+                    validate_operation_vision(
+                        snapshot, media.byte_size, payload["input"]["messages"][-1]["content"]
+                    )
+                except GenerationError as error:
+                    raise GenerationRequestError(error.code) from None
+            if kind == "image" and operation.mask_media_id and support.get("mask"):
+                payload["image_edit_parameters"]["mask_media_id"] = str(operation.mask_media_id)
+            if operation.operation_type == "mask" and not support.get("mask"):
+                raise WorkflowError(
+                    "mask_not_supported",
+                    "当前模型不支持蒙版局部重绘，请切换支持蒙版的图片模型",
+                    422,
+                )
         try:
             validated = validate_request(
                 snapshot,
@@ -519,6 +626,10 @@ class AIGenerationService(BaseService):
         except GenerationError as error:
             raise GenerationRequestError(error.code) from None
         payload["resolved_parameters"] = validated["resolved_parameters"]
+        if agent_managed:
+            snapshot["agent_managed"] = True
+        if assistant_managed:
+            snapshot["assistant_managed"] = True
         task = self.dao.create(
             dict(
                 service_type=kind,
@@ -574,6 +685,12 @@ class AIGenerationService(BaseService):
                     **decrypt_runtime_credentials(config, catalog.configs._key_cipher()),
                 }
             freeze_model_credentials(record, secrets, catalog.configs._key_cipher())
+        from .image_group_service import ImageGroupService
+
+        ImageGroupService(self.session).admit(task, record, assistant_managed=assistant_managed)
+        if operation is not None:
+            operation.task_id, operation.status = task.id, "running"
+            self.session.flush()
         return self._summary(task, record), True
 
     def create(self, kind, payload, idempotency_key):
@@ -603,6 +720,8 @@ class AIGenerationService(BaseService):
         request_hash=None,
         prepare_transform=None,
         use_current_saved_script=False,
+        agent_managed=False,
+        assistant_managed=False,
     ):
         """Admission core for an already authorized caller holding the project lock.
 
@@ -629,10 +748,23 @@ class AIGenerationService(BaseService):
 
             request = UserCreationDraftService(self.session).freeze_for_generation(request)
         config = self._config(kind, request.get("config_id"))
-        request = self._prepare(kind, request, use_current_saved_script=use_current_saved_script)
+        request = self._prepare(
+            kind,
+            request,
+            use_current_saved_script=use_current_saved_script,
+            include_saved_references=not assistant_managed,
+        )
         if prepare_transform is not None:
             request = prepare_transform(request)
-        return self._insert(kind, request, key, request_hash, config)
+        return self._insert(
+            kind,
+            request,
+            key,
+            request_hash,
+            config,
+            agent_managed=agent_managed,
+            assistant_managed=assistant_managed,
+        )
 
     create_generation = create
 
@@ -830,6 +962,9 @@ class AIGenerationService(BaseService):
                     task.message_version += 1
                     task.message_status = "idle"
                     task.next_action = task.next_run_at = task.lock_token = task.locked_until = None
+                    from .image_group_service import ImageGroupService
+
+                    ImageGroupService(self.session).task_state(task)
                 self.session.flush()
             return self._summary(task, record)
 
@@ -850,6 +985,9 @@ class AIGenerationService(BaseService):
             task.publish_count = 0
             task.next_run_at = task.updated_at = utcnow()
             task.finished_at = task.lock_token = task.locked_until = task.error = None
+            from .image_group_service import ImageGroupService
+
+            ImageGroupService(self.session).task_state(task)
             if action == "save":
                 response = copy.deepcopy(record.response_data or {})
                 response["archive_started_at"] = utcnow().isoformat()

@@ -63,7 +63,7 @@ function incompleteCanvasProjection(id: string, scope: string, identity: string 
 }
 
 type LocalCanvasContent = Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId">>;
-type CanvasSaveSummary = Pick<CanvasProject, "id" | "title" | "createdAt" | "updatedAt" | "revision" | "workspaceProjectId" | "projectId"> & {
+type CanvasSaveSummary = Pick<CanvasProject, "id" | "title" | "createdAt" | "updatedAt" | "revision" | "workspaceProjectId"> & {
     resource_map?: Record<string, string>;
     resource_aliases?: Record<string, string[]>;
 };
@@ -405,9 +405,9 @@ async function applyBackendCanvasRead(
  * Desktop ongoing saves commit through the operations registry. IndexedDB is
  * the offline cache, so a stopped backend never prevents opening a project.
  */
-export async function createLocalCanvasProject(title: string, projectId?: string, initialContent?: LocalCanvasContent, workspaceProjectId?: string, sourceCanvas?: CanvasSourceOrigin) {
+export async function createLocalCanvasProject(title: string, initialContent?: LocalCanvasContent, workspaceProjectId?: string, sourceCanvas?: CanvasSourceOrigin) {
     const expected = captureUserScope();
-    const id = useCanvasStore.getState().createProject(title, projectId, workspaceProjectId);
+    const id = useCanvasStore.getState().createProject(title, workspaceProjectId);
     if (initialContent) useCanvasStore.getState().updateProject(id, initialContent);
     // The in-memory project is already usable. Do not make navigation depend
     // on an IndexedDB/localForage flush completing successfully; the store
@@ -454,7 +454,7 @@ export async function duplicateLocalCanvasWorkspaceProject(title: string, source
     const identifiers: string[] = [];
     const createdAt = Date.now();
     for (const [index, source] of snapshots.entries()) {
-        const id = store.createProject(index === 0 ? title : source.title, source.projectId, identifiers[0]);
+        const id = store.createProject(index === 0 ? title : source.title, identifiers[0]);
         store.updateProject(id, {
             nodes: drawings[index].nodes, connections: structuredClone(source.connections),
             chatSessions: structuredClone(source.chatSessions), activeChatId: source.activeChatId,
@@ -564,8 +564,7 @@ function syncLocalCanvasProject(id: string, includeGeneratedAssets: boolean, exp
 
 async function applyAcceptedCanvasSave(id: string, submitted: CanvasProject, saved: CanvasSaveSummary, bindAssets: Asset[] | undefined, expected: CapturedUserScope, ackOperationId?: string) {
     const scope = expected.userScope;
-    const hasBinding = Object.hasOwn(saved, "projectId");
-    const confirmed = saved.revision != null ? { ...submitted, workspaceProjectId: saved.workspaceProjectId ?? submitted.workspaceProjectId, projectId: hasBinding ? saved.projectId : submitted.projectId, revision: saved.revision, updatedAt: saved.updatedAt ?? submitted.updatedAt } : submitted;
+    const confirmed = saved.revision != null ? { ...submitted, workspaceProjectId: saved.workspaceProjectId ?? submitted.workspaceProjectId, revision: saved.revision, updatedAt: saved.updatedAt ?? submitted.updatedAt } : submitted;
     const pendingExternal = canvasExternalRevisionConflict(scope, id);
     const journal = await recordConfirmedCanvasCommit(confirmed, scope, ackOperationId ? { ackOperationId } : {});
     recordServerConfirmedCanvas(journal.confirmedSnapshot ?? confirmed, scope);
@@ -577,7 +576,6 @@ async function applyAcceptedCanvasSave(id: string, submitted: CanvasProject, sav
             ? {
                 ...(bindAssets ? bindCanvasGenerationCommitAssets(current, bindAssets) : current),
                 workspaceProjectId: saved.workspaceProjectId ?? current.workspaceProjectId,
-                projectId: hasBinding ? saved.projectId : current.projectId,
                 revision: saved.revision == null ? current.revision : maxCanvasRevision(current.revision ?? "0", saved.revision),
                 ...(current.updatedAt === submitted.updatedAt ? { updatedAt: saved.updatedAt } : {}),
             }

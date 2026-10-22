@@ -61,7 +61,7 @@ class ScriptShotRecord(Base):
         Index("idx_script_shot_records_model_id", "model_id"),
         ForeignKeyConstraint(
             ["script_id"],
-            ["episode_scripts.id"],
+            ["project_scripts.id"],
             name="fk_script_shot_records_script_id",
             ondelete="RESTRICT",
             onupdate="RESTRICT",

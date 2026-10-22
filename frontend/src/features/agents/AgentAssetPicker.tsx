@@ -8,8 +8,8 @@ import { errorMessage } from '../../api/http';
 import type { MediaAsset } from '../../api/types/generations';
 
 type Kind = 'asset' | 'image' | 'video' | 'audio';
-export function AgentAssetPicker({ projectId, disabled, onSelect, onClose, dialogClassName }: {
-  projectId: string; disabled: boolean; dialogClassName?: string;
+export function AgentAssetPicker({ projectId, disabled, onSelect, onClose, dialogClassName, layout }: {
+  projectId: string; disabled: boolean; dialogClassName?: string; layout?: 'standard';
   onSelect: (type: 'media' | 'asset', id: string) => Promise<void>; onClose: () => void;
 }) {
   const [kind, setKind] = useState<Kind>('asset');
@@ -51,13 +51,13 @@ export function AgentAssetPicker({ projectId, disabled, onSelect, onClose, dialo
             const media = 'asset_id' in item ? item : null;
             const url = asset?.image?.url ?? media?.url;
             return <article key={asset?.id ?? media?.asset_id}>
-              {url && (asset || media?.media_type === 'image') ? <PreviewImage src={url} alt={item.name}/>
+              {url && (asset || media?.media_type === 'image') ? <PreviewImage src={url} alt={item.name} presentation={layout === 'standard' ? 'standard-creation' : undefined}/>
                 : url && media?.media_type === 'video' ? <video src={url} controls preload="metadata" aria-label={`${item.name}预览`}/>
                   : url && media?.media_type === 'audio' ? <audio src={url} controls preload="metadata" aria-label={`${item.name}试听`}/> : null}
               <div><strong>{item.name}</strong>{asset && <p>{asset.description || '暂无描述'}</p>}</div>
               <Button disabled={disabled} onClick={() => void onSelect(asset ? 'asset' : 'media', asset?.id ?? media!.media_id)}>添加</Button>
             </article>;
-          })}</div> : <p className="agent-context-empty">没有可添加的资产，先创建素材或生成媒体。</p>}
+          })}</div> : <p className="agent-context-empty">{layout === 'standard' && search ? '没有匹配的资产，请调整名称后搜索。' : '没有可添加的资产，先创建素材或生成媒体。'}</p>}
       {total > 20 && <div className="agent-context-pagination"><Button disabled={disabled || loading || offset === 0} onClick={() => setOffset(value => Math.max(0, value - 20))}>上一页</Button><span>{offset + 1}-{Math.min(offset + 20, total)} / {total}</span><Button disabled={disabled || loading || offset + 20 >= total} onClick={() => setOffset(value => value + 20)}>下一页</Button></div>}
     </div>
   </Dialog>;

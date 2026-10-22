@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, model_validator
 
 from .base import Identifier, InputModel, nonblank
+from .image_group import ImageOperationSource
 from .native_voice import VoiceDesignSource
 
 Prompt = Annotated[str, Field(min_length=1, max_length=1048576), AfterValidator(nonblank)]
@@ -47,11 +48,10 @@ class AssetImageSource(CreationDraftSource):
     asset_id: Identifier
     row_version: Identifier
     project_id: Identifier | None = None
-    episode_id: Identifier | None = None
 
     @model_validator(mode="after")
     def scoped_draft(self):
-        if self.draft_id is not None and (self.project_id is None or self.episode_id is None):
+        if self.draft_id is not None and (self.project_id is None or self.project_id is None):
             raise ValueError("私人素材草稿生成须指定项目和分集")
         return self
 
@@ -59,14 +59,12 @@ class AssetImageSource(CreationDraftSource):
 class NovelScriptSource(CreationDraftSource):
     scene: Literal["novel_script"]
     project_id: Identifier
-    episode_id: Identifier
     content_version: Identifier
 
 
 class ScriptShotsSource(InputModel):
     scene: Literal["script_shots"]
     project_id: Identifier
-    episode_id: Identifier
     script_id: Identifier
     content_version: Identifier
 
@@ -106,7 +104,6 @@ class TextParameters(InputModel):
 class DialogueExtractSource(InputModel):
     scene: Literal["dialogue_extract"]
     project_id: Identifier
-    episode_id: Identifier
 
 
 class TextGenerationCreate(InputModel):
@@ -116,7 +113,11 @@ class TextGenerationCreate(InputModel):
     parameters: TextParameters = Field(default_factory=TextParameters)
     source: (
         Annotated[
-            NovelScriptSource | ScriptShotsSource | ScriptAssetsSource | DialogueExtractSource,
+            NovelScriptSource
+            | ScriptShotsSource
+            | ScriptAssetsSource
+            | DialogueExtractSource
+            | ImageOperationSource,
             Field(discriminator="scene"),
         ]
         | None
@@ -161,13 +162,16 @@ class ImageGenerationCreate(InputModel):
     config_id: Identifier | None = None
     input: ImageInput
     parameters: ImageParameters = Field(default_factory=ImageParameters)
-    source: Annotated[ShotImageSource | AssetImageSource, Field(discriminator="scene")] | None = (
-        None
-    )
+    source: (
+        Annotated[
+            ShotImageSource | AssetImageSource | ImageOperationSource, Field(discriminator="scene")
+        ]
+        | None
+    ) = None
 
     @model_validator(mode="after")
     def business_prompt(self):
-        if self.source and self.source.scene == "asset_image":
+        if self.source and self.source.scene in {"asset_image", "image_operation"}:
             if len(self.input.prompt) > 4000:
                 raise ValueError("Supplement must be at most 4000 characters")
         elif self.source and self.source.context_mode == "saved":
@@ -230,7 +234,6 @@ class AudioParameters(InputModel):
 class DialogueAudioSource(InputModel):
     scene: Literal["dialogue_audio"]
     project_id: Identifier
-    episode_id: Identifier
     row_version: Identifier
     line_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
 

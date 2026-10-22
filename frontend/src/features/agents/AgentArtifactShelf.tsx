@@ -11,20 +11,21 @@ import type { AgentArtifact, AgentArtifactDetail, AgentArtifactKind, AgentArtifa
 import type { GenerationDetail, MediaAsset } from '../../api/types/generations';
 import type { WritingSession } from '../projects/writing-session';
 import { Dialog } from '../../components/ui/Dialog';
+import { StudioFeedback } from '../../components/ui/StudioFeedback';
 import { confirmAction } from '../../components/ui/confirm';
 import { PreviewImage } from '../../components/ui/ImagePreview';
 import { StoryboardResultPreview } from '../projects/StoryboardResultPreview';
 import { reviewParameterLabels } from './agent-events';
 import { artifactEffect, artifactFieldLabels, artifactKindLabels, artifactStatusLabels, artifactTarget, artifactVersion, diffValue, nativeArtifact } from './agent-artifact-presentation';
 
-export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly, writingSession, beforeAdopt, onApplied, request, canContinue, onContinue, onOpenExtraction, dialogOnly = false }: {
-  projectId: string; episodeId: string; schemaReady: boolean; readOnly: boolean; writingSession: WritingSession;
+export function AgentArtifactShelf({ projectId, schemaReady, readOnly, writingSession, beforeAdopt, onApplied, request, canContinue, onContinue, onOpenExtraction, dialogOnly = false }: {
+  projectId: string; schemaReady: boolean; readOnly: boolean; writingSession: WritingSession;
   beforeAdopt: () => Promise<boolean>; onApplied: () => Promise<boolean>;
   request: AgentArtifactOpenRequest | null; canContinue: (conversationId?: string) => boolean;
   onContinue: () => void; onOpenExtraction: (artifact: AgentArtifactDetail) => void;
   dialogOnly?: boolean;
 }) {
-  const shots = useMemo(() => storyboardApi(projectId, episodeId), [projectId, episodeId]);
+  const shots = useMemo(() => storyboardApi(projectId), [projectId]);
   const [items, setItems] = useState<AgentArtifact[]>([]);
   const [total, setTotal] = useState(0);
   const [kind, setKind] = useState<AgentArtifactKind>();
@@ -35,7 +36,7 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AgentArtifactDetail | null>(null);
   const [context, setContext] = useState<AgentArtifactOpenRequest | null>(null);
-  const api = useMemo(() => agentArtifactsApi(projectId, episodeId, context?.scope), [projectId, episodeId, context?.scope]);
+  const api = useMemo(() => agentArtifactsApi(projectId, context?.scope), [projectId, context?.scope]);
   const [media, setMedia] = useState<MediaAsset | null>(null);
   const [generation, setGeneration] = useState<GenerationDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -75,7 +76,7 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
     try {
       const next = await api.detail(id);
       if (!alive.current || intent !== sequence.current) return;
-      if (next.project_id !== projectId || next.episode_id !== episodeId) throw new Error('候选不属于当前分集。');
+      if (next.project_id !== projectId) throw new Error('候选不属于当前作品。');
       setDetail(next);
       if ((next.kind === 'image_candidate' || next.kind === 'video_candidate') && next.media_asset_id) {
         const [asset, task] = await Promise.all([mediaLibrary.detail(next.media_asset_id), next.generation_task_id ? generations.detail(next.generation_task_id) : Promise.resolve(null)]);
@@ -152,10 +153,7 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
       assertAdoptionScope();
       try { next = await api.adopt(artifact.id, body); }
       catch (cause) {
-        if (!(cause instanceof ApiError) || cause.code !== 'shared_asset_confirmation_required') throw cause;
-        if (!alive.current || !await confirmAction(`此素材被 ${cause.details?.reference_count ?? '多'} 处引用。采用会同时影响共享引用，确认继续？`, { title: '确认共享影响', confirmText: '确认共享修改' })) return;
-        assertAdoptionScope();
-        next = await api.adopt(artifact.id, { ...body, confirm_shared: true });
+        throw cause;
       }
       await completed(next, resume);
     });
@@ -179,10 +177,10 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
       const versions = await prepare();
       const target = artifact.target_asset_id ? await assetLibraries.detail(artifact.target_asset_id) : artifact.target_shot_id ? (await shots.shot(artifact.target_shot_id)).shot : null;
       if (!target) throw new Error('候选缺少采用对象，请核对来源。');
-      const references = 'reference_count' in target && target.reference_count > 1 ? ` 此素材被 ${target.reference_count} 处引用，采用会影响共享引用。` : ' 采用会更新项目共享作品。';
+      const references = ' 采用会更新当前作品。';
       if (!await confirmAction(`${artifactEffect(artifact.kind)}${references}${resume ? ' 采用后会继续当前对话，可能产生模型费用。' : ''}`, { title: '确认采用媒体', confirmText: resume ? '采用并继续' : '确认采用' })) return;
       assertAdoptionScope();
-      const next = await api.adopt(artifact.id, { row_version: artifactVersion(artifact.row_version), ...versions, target_row_version: artifactVersion(target.row_version), confirm_shared: true });
+      const next = await api.adopt(artifact.id, { row_version: artifactVersion(artifact.row_version), ...versions, target_row_version: artifactVersion(target.row_version) });
       await completed(next, resume);
     });
   }
@@ -191,11 +189,11 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
   const mediaLabels = generation ? reviewParameterLabels({ ...generation.parameters, layout: generation.source?.scene === 'shot_image' ? generation.source.layout : undefined }) : [];
   if (!schemaReady) return null;
   return <>
-    {dialogOnly && accessEnded && <Alert type="warning" message="候选暂不可访问，请核对当前项目权限。"/>}
+    {dialogOnly && accessEnded && <StudioFeedback type="warning" title="创作候选" message="候选暂不可访问，请核对当前项目权限。" noticeKey={`agent-artifact-access:${projectId}`}/>}
     {!dialogOnly && <section className="agent-artifact-shelf" aria-label="我的创作候选">
       <button className="agent-artifact-toggle" type="button" aria-expanded={open} aria-controls="agent-artifact-list" onClick={() => setOpen(value => !value)}><strong>创作候选{total > 0 ? `（${total}）` : ''}</strong><span>仅你可见 · {open ? '收起' : '展开'}</span></button>
       {open && <div id="agent-artifact-list"><div className="agent-artifact-filters"><Select aria-label="候选类型" value={kind} allowClear placeholder="全部类型" disabled={busy} options={Object.entries(artifactKindLabels).map(([value, label]) => ({ value, label }))} onChange={value => { setKind(value); setOffset(0); }}/><Select aria-label="候选状态" value={status} allowClear placeholder="全部状态" disabled={busy} options={Object.entries(artifactStatusLabels).map(([value, label]) => ({ value, label }))} onChange={value => { setStatus(value); setOffset(0); }}/><Button loading={loading} disabled={busy} onClick={() => refresh(true)}>刷新候选</Button></div>
-        <p className="agent-artifact-help">候选仅你可见，采用后的作品与项目成员共享。</p>
+        <p className="agent-artifact-help">候选仅你可见，采用后会更新当前作品。</p>
         {error && <Alert type="error" message={error}/>} {loading && !items.length ? <Skeleton active paragraph={{ rows: 2 }}/> : items.length ? <div className="agent-artifact-rows">{items.map(item => <article key={item.id} data-artifact-id={item.id}><div><h3>{artifactKindLabels[item.kind]} <span className={`artifact-status is-${item.status}`}>{artifactStatusLabels[item.status]}</span></h3><p>{item.preview || artifactTarget(item)}</p><span>{item.source_snapshot.model_name || '创作模型'} · {new Date(item.created_at).toLocaleString('zh-CN')}</span></div><Button onClick={() => show(item.id)}>核对候选</Button></article>)}</div> : !error && <p className="agent-artifact-help">生成的候选会保留在这里，核对后再采用。</p>}
         {items.length < total && <Button loading={loading} onClick={() => setOffset(items.length)}>更多候选（{items.length}/{total}）</Button>}
       </div>}
@@ -209,7 +207,7 @@ export function AgentArtifactShelf({ projectId, episodeId, schemaReady, readOnly
         {textStale && <Alert type="warning" message="正文已变化，这份候选基于旧版本。请保留候选并重新生成，当前作品不会被覆盖。"/>}
         {detail.content && <pre className="agent-artifact-text" aria-label={detail.content_origin === 'snapshot' ? '原始生成候选正文' : '候选正文'}>{detail.content}</pre>}
         {!!detail.diff.length && <div className="agent-artifact-diff" role="region" aria-label="候选修改比较">{detail.diff.filter(item => artifactFieldLabels[item.field]).map(item => <section key={item.field}><h4>{artifactFieldLabels[item.field]}</h4><div><p><span>当前来源</span>{diffValue(item.field, item.before)}</p><p><span>建议修改</span>{diffValue(item.field, item.after)}</p></div></section>)}</div>}
-        {detail.kind === 'storyboard_candidate' && detail.generation_task_id && <StoryboardResultPreview projectId={projectId} episodeId={episodeId} generationId={detail.generation_task_id} busy={busy} disabled={readOnly || detail.status !== 'ready'} onApply={mode => void adoptStoryboard(mode)}/>}
+        {detail.kind === 'storyboard_candidate' && detail.generation_task_id && <StoryboardResultPreview projectId={projectId} generationId={detail.generation_task_id} busy={busy} disabled={readOnly || detail.status !== 'ready'} onApply={mode => void adoptStoryboard(mode)}/>}
         {media && <div className="agent-artifact-media">{media.url ? media.media_type === 'video' ? <video controls preload="metadata" src={media.url} aria-label="候选视频预览"/> : <PreviewImage src={media.url} alt="候选图片"/> : <p>预览链接不可用，请重新核对候选。</p>}{!!mediaLabels.length && <p>{mediaLabels.join(' · ')}</p>}</div>}
         {detail.kind === 'extraction_candidate' && <p>将打开现有素材审核，逐项选择新建或复用。审核完成后，回到指定对话明确继续。</p>}
         {canResume && <p className="agent-artifact-help">继续当前对话可能产生模型费用；其他对话不会自动继续。</p>}

@@ -9,13 +9,12 @@ from short_drama.agent.authorization import check_source, scoped_task
 from short_drama.agent.state import append_event, wait_locked
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.base import BaseDAO
-from short_drama.dao.episode_writing_dao import EpisodeWritingDAO
+from short_drama.dao.project_writing_dao import ProjectWritingDAO
 from short_drama.domain import (
     AgentArtifact,
     Asset,
-    Episode,
-    EpisodeAsset,
-    EpisodeScript,
+    Project,
+    ProjectScript,
     ShotScript,
 )
 from short_drama.schemas.agent_artifacts import CandidateAssetPatch, CandidateShotPatch
@@ -53,10 +52,10 @@ def candidate_secret(run, settings):
 def source_snapshot(step, run, now):
     source = step["source"]
     return {
-        "episode_id": str(source["episode_id"]),
+        "project_id": str(source["project_id"]),
         "content_version": source["content_version"],
         "storyboard_version": source["storyboard_version"],
-        "episode_row_version": source["episode_row_version"],
+        "project_row_version": source["project_row_version"],
         "target_kind": step["target_kind"],
         "target_id": str(step["target_id"]),
         "target_row_version": source.get("target_row_version"),
@@ -65,29 +64,28 @@ def source_snapshot(step, run, now):
     }
 
 
-def asset_in_episode(session, project_id, episode_id, asset_id):
+def asset_in_creation(session, project_id, asset_id):
     asset = session.scalar(
         select(Asset)
-        .join(EpisodeAsset, EpisodeAsset.asset_id == Asset.id)
         .where(
             Asset.id == asset_id,
+            Asset.deleted_at.is_(None),
             Asset.project_id == project_id,
-            EpisodeAsset.episode_id == episode_id,
         )
         .with_for_update()
         .execution_options(populate_existing=True)
     )
     if asset is None:
-        raise NotFound("Asset is outside this episode")
+        raise NotFound("Asset is outside this creation")
     return asset
 
 
 def candidate_patch(kind, patch, *, version=None):
     if kind == "asset_patch":
-        if {"row_version", "confirm_shared"} & set(patch):
+        if {"row_version"} & set(patch):
             raise ValueError("Authorization is not a proposed field")
         return CandidateAssetPatch.model_validate({**patch, "row_version": version}).model_dump(
-            exclude_unset=True, exclude={"row_version", "confirm_shared"}
+            exclude_unset=True, exclude={"row_version"}
         )
     return CandidateShotPatch.model_validate(patch).model_dump(exclude_unset=True)
 
@@ -147,18 +145,17 @@ def create_candidate_locked(session, conversation, run, tool, args, *, settings)
     if step["kind"] not in {"novel", "script", "asset_patch", "shot_patch"}:
         raise ValueError("Unsupported candidate kind")
     check_source(session, step)
-    episode = session.scalar(
-        select(Episode)
-        .where(Episode.id == conversation.episode_id, Episode.project_id == conversation.project_id)
+    creation = session.scalar(
+        select(Project)
+        .where(Project.id == conversation.project_id)
         .with_for_update()
         .execution_options(populate_existing=True)
     )
-    if episode is None:
-        raise NotFound("Episode does not exist")
+    if creation is None:
+        raise NotFound("Project does not exist")
     now, secret = utcnow(), candidate_secret(run, settings)
     values = {
         "project_id": conversation.project_id,
-        "episode_id": conversation.episode_id,
         "tool_call_id": tool.id,
         "result_index": 1,
         "kind": {"novel": "novel_proposal", "script": "script_candidate"}.get(
@@ -173,15 +170,15 @@ def create_candidate_locked(session, conversation, run, tool, args, *, settings)
         content = public_content(args.content, secret)
         if not content.strip() or args.patch or len(content.encode("utf-8")) > 1048576:
             raise ValueError("Provide only a nonblank candidate body within the size limit")
-        values["parent_script_id"] = episode.editing_script_id
+        values["parent_script_id"] = creation.editing_script_id
         if step["kind"] == "novel":
             values["source_content"] = content
         else:
             values["source_content"] = content
-            script = BaseDAO(session, EpisodeScript).create(
+            script = BaseDAO(session, ProjectScript).create(
                 {
-                    "episode_id": episode.id,
-                    "position": EpisodeWritingDAO(session).next_position(episode.id),
+                    "project_id": creation.id,
+                    "position": ProjectWritingDAO(session).next_position(creation.id),
                     "state": "unconfirmed",
                     "content": content,
                     "created_at": now,
@@ -200,9 +197,7 @@ def create_candidate_locked(session, conversation, run, tool, args, *, settings)
             version=step["source"]["target_row_version"],
         )
         if step["kind"] == "asset_patch":
-            target = asset_in_episode(
-                session, conversation.project_id, episode.id, int(step["target_id"])
-            )
+            target = asset_in_creation(session, creation.id, int(step["target_id"]))
             AssetService(session)._validate_update(target, patch)
             values["target_asset_id"] = target.id
         else:
@@ -210,14 +205,13 @@ def create_candidate_locked(session, conversation, run, tool, args, *, settings)
                 select(ShotScript)
                 .where(
                     ShotScript.id == int(step["target_id"]),
-                    ShotScript.episode_id == episode.id,
-                    ShotScript.deleted_at.is_(None),
+                    ShotScript.project_id == creation.id,
                 )
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
             if target is None:
-                raise NotFound("Shot is outside this episode")
+                raise NotFound("Shot is outside this creation")
             values["target_shot_id"] = target.id
         values["proposed_patch"] = patch
         values["metadata_json"] = {

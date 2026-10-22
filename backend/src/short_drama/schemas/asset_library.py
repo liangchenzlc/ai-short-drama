@@ -22,11 +22,10 @@ class AssetLibraryCreate(AssetCreate):
 
 
 class LibraryAssetRead(AssetRead):
-    link_id: Identifier | None = None
     position: PositiveUInt32 | None = None
 
 
 class AssetLibraryScope(InputModel):
-    kind: Literal["global", "project", "episode"]
+    kind: Literal["project"]
     parent_id: Identifier | None = None
     project_id: Identifier | None = None

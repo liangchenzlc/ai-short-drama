@@ -12,7 +12,7 @@ def main():
     engine = build_engine(Settings())
     migration = (
         Path(__file__).resolve().parents[2]
-        / "docs/数据库模型/migrations/2026-09-28-shot-video/001_shot_video.sql"
+        / "docs/database/migrations/2026-09-28-shot-video/001_shot_video.sql"
     )
     source = "\n".join(
         line

@@ -28,17 +28,9 @@ from .canvas_recycle_access import CanvasRecycleScope, recycle_scope
 
 def project_ids(user_id, *, include_archived=False):
     projects = Base.metadata.tables["projects"].alias("allowed_projects")
-    members = Base.metadata.tables["project_members"].alias("allowed_members")
     return select(projects.c.id).where(
         True if include_archived else projects.c.archived_at.is_(None),
-        or_(
-            projects.c.owner_user_id == user_id,
-            projects.c.id.in_(
-                select(members.c.project_id).where(
-                    members.c.user_id == user_id, members.c.status == "active"
-                )
-            ),
-        ),
+        projects.c.owner_user_id == user_id,
     )
 
 
@@ -50,6 +42,15 @@ def allowed_ids(name, user_id):
 def condition(table, user_id):
     name = table.original.name if hasattr(table, "original") else table.name
     c = table.c
+    if name == "image_group_items":
+        return c.group_id.in_(allowed_ids("image_groups", user_id))
+    if name == "image_operations":
+        return and_(
+            c.created_by == user_id,
+            c.item_id.in_(allowed_ids("image_group_items", user_id)),
+        )
+    if name == "canvas_style_media_references":
+        return c.style_id.in_(allowed_ids("canvas_style_profiles", user_id))
     if name == "canvas_local_jobs":
         return and_(
             c.user_id == user_id,
@@ -57,9 +58,9 @@ def condition(table, user_id):
         )
     if name in {
         "canvas_workspace_user_states",
+        "canvas_style_preferences",
         "canvas_model_catalogs",
         "canvas_channel_models",
-        "canvas_beefapi_connections",
         "canvas_library_folders",
         "canvas_project_folders",
         "canvas_project_folder_items",
@@ -102,14 +103,57 @@ def condition(table, user_id):
         return and_(c.user_id == user_id, c.project_id.in_(project_ids(user_id)))
     # Private execution data never inherits the ordinary shared-project predicate.
     if name == "agent_conversations":
-        return and_(c.owner_user_id == user_id, c.project_id.in_(project_ids(user_id)))
-    if name in {"agent_messages", "agent_runs", "agent_events"}:
+        return and_(
+            c.owner_user_id == user_id,
+            c.status != "deleted",
+            or_(
+                and_(c.scope_version == 3, c.project_id.is_(None)),
+                c.project_id.in_(project_ids(user_id)),
+            ),
+        )
+    if name == "agent_tasks":
+        return c.conversation_id.in_(allowed_ids("agent_conversations", user_id))
+    if name == "agent_memory_items":
+        return and_(
+            c.owner_user_id == user_id,
+            or_(
+                c.scope_type == "user",
+                and_(
+                    c.scope_type == "conversation",
+                    c.conversation_id.in_(allowed_ids("agent_conversations", user_id)),
+                ),
+                and_(c.scope_type == "project", c.project_id.in_(project_ids(user_id))),
+            ),
+        )
+    if name in {"agent_memory_revisions", "agent_memory_sources", "agent_memory_forget_rules"}:
+        return c.memory_id.in_(allowed_ids("agent_memory_items", user_id))
+    if name in {"agent_conversation_summaries", "agent_memory_jobs"}:
+        return and_(
+            c.owner_user_id == user_id,
+            c.conversation_id.in_(allowed_ids("agent_conversations", user_id)),
+        )
+    if name in {
+        "agent_task_inputs",
+        "agent_task_controls",
+        "agent_operations",
+        "agent_media_requests",
+    }:
+        return c.task_id.in_(allowed_ids("agent_tasks", user_id))
+    if name in {
+        "agent_messages",
+        "agent_runs",
+        "agent_events",
+        "agent_discussion_revisions",
+        "agent_batch_undos",
+    }:
         return c.conversation_id.in_(allowed_ids("agent_conversations", user_id))
     if name in {"agent_turns", "agent_tool_calls"}:
         return c.run_id.in_(allowed_ids("agent_runs", user_id))
     if name == "agent_artifacts":
         return and_(c.created_by == user_id, c.project_id.in_(project_ids(user_id)))
-    if name == "agent_skills":
+    if name == "agent_skill_versions":
+        return or_(c.owner_user_id == user_id, c.owner_user_id.is_(None))
+    if name in {"agent_skills", "agent_preferences", "agent_skill_settings"}:
         return c.owner_user_id == user_id
     if name == "agent_attachments":
         return and_(
@@ -121,19 +165,21 @@ def condition(table, user_id):
             c.initiated_by == user_id,
             or_(c.scope_user_id == user_id, c.project_id.in_(project_ids(user_id))),
         )
-    if name == "episode_render_jobs":
+    if name == "project_render_jobs":
         return and_(
             c.initiated_by == user_id,
-            c.assembly_id.in_(allowed_ids("episode_assemblies", user_id)),
+            c.assembly_id.in_(allowed_ids("project_assemblies", user_id)),
         )
-    if name == "episode_scripts":
+    if name == "project_assembly_clips":
+        return c.assembly_id.in_(allowed_ids("project_assemblies", user_id))
+    if name == "project_scripts":
         return and_(
             or_(c.created_by == user_id, c.published_at.is_not(None)),
-            c.episode_id.in_(allowed_ids("episodes", user_id)),
+            c.project_id.in_(allowed_ids("projects", user_id)),
         )
     if name in {"novel_script_records", "script_shot_records"}:
         return and_(
-            c.created_by == user_id, c.script_id.in_(allowed_ids("episode_scripts", user_id))
+            c.created_by == user_id, c.script_id.in_(allowed_ids("project_scripts", user_id))
         )
     if name == "asset_image_candidates":
         return and_(c.created_by == user_id, c.asset_id.in_(allowed_ids("assets", user_id)))
@@ -146,27 +192,19 @@ def condition(table, user_id):
             ),
         )
     if name == "projects":
-        members = Base.metadata.tables["project_members"].alias("project_access_members")
-        return and_(
-            c.archived_at.is_(None),
-            or_(
-                c.owner_user_id == user_id,
-                c.id.in_(
-                    select(members.c.project_id).where(
-                        members.c.user_id == user_id,
-                        members.c.status == "active",
-                    )
-                ),
-            ),
-        )
+        return and_(c.archived_at.is_(None), c.owner_user_id == user_id)
+    if name == "assets":
+        return and_(c.project_id.in_(project_ids(user_id)), c.deleted_at.is_(None))
     if name == "ai_model_configs":
         return c.owner_user_id == user_id
     if "scope_user_id" in c:
-        return or_(c.scope_user_id == user_id, c.project_id.in_(project_ids(user_id)))
+        return (
+            or_(c.scope_user_id == user_id, c.project_id.in_(project_ids(user_id)))
+            if "project_id" in c
+            else c.scope_user_id == user_id
+        )
     if name == "users":
         return c.id == user_id
-    if name == "global_assets":
-        return c.user_id == user_id
     if name in {
         "user_sessions",
         "email_challenges",
@@ -190,13 +228,14 @@ def condition(table, user_id):
                             "agent_artifacts",
                             "asset_image_candidates",
                             "media_assets",
-                            "episode_render_jobs",
-                            "episode_scripts",
+                            "project_render_jobs",
+                            "project_scripts",
                             "media_files",
                             "canvas_binary_resources",
                             "novel_script_records",
                             "script_shot_records",
                             "user_creation_drafts",
+                            "image_operations",
                         ]
                     ),
                     c.action.in_(["publish", "work_update"]),
@@ -209,14 +248,13 @@ def condition(table, user_id):
     if "project_id" in c:
         return c.project_id.in_(project_ids(user_id))
     for field, parent in [
-        ("episode_id", "episodes"),
         ("shot_id", "shot_scripts"),
-        ("assembly_id", "episode_assemblies"),
+        ("assembly_id", "project_assemblies"),
         ("asset_id", "assets"),
         ("task_id", "async_tasks"),
         ("record_id", "ai_generation_records"),
-        ("script_id", "episode_scripts"),
-        ("novel_id", "episode_novels"),
+        ("script_id", "project_scripts"),
+        ("novel_id", "project_novels"),
         ("batch_id", "generation_batches"),
     ]:
         if field in c:
@@ -242,8 +280,6 @@ def _recycle_condition(table, user_id: int, scope: CanvasRecycleScope | None):
             table.c.id == scope.canvas_id,
             table.c.project_id.in_(allowed),
         )
-    elif table.name == "project_members":
-        archived = and_(table.c.project_id == scope.project_id, table.c.project_id.in_(allowed))
     elif scope.include_document and table.name in {
         "canvas_nodes",
         "canvas_edges",
@@ -272,14 +308,36 @@ def _recycle_condition(table, user_id: int, scope: CanvasRecycleScope | None):
 
 @lru_cache(maxsize=128)
 def _scope_options(
-    user_id: int, mappers: tuple[Mapper, ...], restore: CanvasRecycleScope | None = None
+    user_id: int,
+    mappers: tuple[Mapper, ...],
+    restore: CanvasRecycleScope | None = None,
+    deletion_receipt_id: int | None = None,
+    undo_asset_ids: tuple[int, ...] = (),
 ) -> tuple[ORMOption, ...]:
     # Reuse immutable SQL expressions, never membership or query results. The
     # database still checks current ownership, membership and archive state.
     return tuple(
         with_loader_criteria(
             mapper.class_,
-            _recycle_condition(mapper.local_table, user_id, restore),
+            or_(
+                _recycle_condition(mapper.local_table, user_id, restore),
+                and_(
+                    mapper.local_table.c.id == deletion_receipt_id,
+                    mapper.local_table.c.owner_user_id == user_id,
+                    mapper.local_table.c.scope_version == 3,
+                    mapper.local_table.c.project_id.is_(None),
+                ),
+            )
+            if deletion_receipt_id is not None and mapper.local_table.name == "agent_conversations"
+            else or_(
+                _recycle_condition(mapper.local_table, user_id, restore),
+                and_(
+                    mapper.local_table.c.id.in_(undo_asset_ids),
+                    mapper.local_table.c.project_id.in_(project_ids(user_id)),
+                ),
+            )
+            if undo_asset_ids and mapper.local_table.name == "assets"
+            else _recycle_condition(mapper.local_table, user_id, restore),
             include_aliases=True,
         )
         for mapper in mappers
@@ -288,8 +346,10 @@ def _scope_options(
 
 @event.listens_for(Session, "do_orm_execute")
 def restrict_queries(state):
+    from short_drama.db.agent_skill_access import guard_skill_bulk
     from short_drama.db.asset_version_access import guard_version_bulk
 
+    guard_skill_bulk(state)
     guard_version_bulk(state)
     actor = state.session.info.get("actor")
     if not actor:
@@ -310,6 +370,11 @@ def restrict_queries(state):
         raise WorkflowError(
             "guarded_agent_bulk_write", "Agent records require checked entity writes", 403
         )
+    if (state.is_update or state.is_delete) and any(
+        mapper.local_table.name in {"image_groups", "image_group_items", "image_operations"}
+        for mapper in state.all_mappers
+    ):
+        raise WorkflowError("guarded_image_bulk_write", "图片组必须通过版本检查后逐条修改", 403)
     if state.is_update:
         protected = {
             "owner_user_id",
@@ -336,16 +401,58 @@ def restrict_queries(state):
                 "guarded_bulk_write", "Ownership and references require checked writes", 403
             )
     if state.is_select or state.is_update or state.is_delete:
+        undo_id = state.execution_options.get("assistant_undo_operation_id")
+        undo_asset_ids = ()
+        if undo_id is not None:
+            if (
+                not state.is_select
+                or type(undo_id) is not int
+                or undo_id <= 0
+                or {mapper.local_table.name for mapper in state.all_mappers} != {"assets"}
+            ):
+                raise WorkflowError("invalid_undo_query", "撤销只允许回查原批次的本人素材", 403)
+            from short_drama.domain.agent_task import AgentOperation
+
+            operation = state.session.scalar(
+                select(AgentOperation).where(AgentOperation.id == undo_id)
+            )
+            if (
+                operation is None
+                or operation.tool_name != "apply_standard_patch"
+                or operation.status != "succeeded"
+            ):
+                raise NotFound("原撤销批次不存在")
+            undo_asset_ids = tuple(
+                int(item["id"])
+                for item in operation.changes
+                if item["kind"] == "asset"
+                and item.get("before")
+                and item["after"]["deleted"]
+                and not item["before"]["deleted"]
+            )
+        receipt_id = state.execution_options.get("assistant_deletion_receipt_id")
+        if receipt_id is not None and (
+            not state.is_select
+            or type(receipt_id) is not int
+            or receipt_id <= 0
+            or {mapper.local_table.name for mapper in state.all_mappers} != {"agent_conversations"}
+        ):
+            raise WorkflowError(
+                "invalid_deletion_receipt_query", "删除回执只允许查询本人指定的全局会话", 403
+            )
         state.statement = state.statement.options(
             *_scope_options(
-                actor.user_id, tuple(Base.registry.mappers), recycle_scope(state.session)
+                actor.user_id,
+                tuple(Base.registry.mappers),
+                recycle_scope(state.session),
+                receipt_id,
+                undo_asset_ids,
             )
         )
 
 
 def require_project(session, project_id, *, owner=False, lock=True):
     from short_drama.domain import Project
-    from short_drama.domain.collaboration import ProjectMember
 
     actor = session.info.get("actor")
     if not actor:
@@ -359,21 +466,26 @@ def require_project(session, project_id, *, owner=False, lock=True):
     ):
         raise NotFound("Project does not exist")
     if project.owner_user_id != actor.user_id:
-        membership = select(ProjectMember).where(
-            ProjectMember.project_id == project.id,
-            ProjectMember.user_id == actor.user_id,
-            ProjectMember.status == "active",
-        )
-        member = session.scalar(membership.with_for_update() if lock else membership)
-        if not member:
-            raise NotFound("Project does not exist")
-        if owner:
-            raise WorkflowError("project_owner_required", "Only the project owner can do this", 403)
+        raise NotFound("Project does not exist")
 
 
 def scope_of(session, entity):
     """Resolve the actual ownership path, independent of the caller's entry point."""
     table = inspect(type(entity)).local_table
+    if table.name == "image_group_items":
+        from short_drama.domain import ImageGroup
+
+        parent = session.get(ImageGroup, entity.group_id)
+        if parent is None:
+            raise NotFound("图片组不存在")
+        return scope_of(session, parent)
+    if table.name == "canvas_style_media_references":
+        from short_drama.domain import CanvasStyleProfile
+
+        parent = session.get(CanvasStyleProfile, entity.style_id)
+        if parent is None:
+            raise NotFound("画风原件不存在或无权访问")
+        return scope_of(session, parent)
     if table.name == "canvas_local_jobs":
         return (None, entity.project_id) if entity.project_id else (entity.user_id, None)
     name = table.name
@@ -392,41 +504,56 @@ def scope_of(session, entity):
         return (entity.user_id, None)
     if name == "canvas_library_assets":
         return (None, entity.project_id) if entity.project_id else (entity.user_id, None)
-    if name == "agent_skills":
+    if name in {
+        "agent_skills",
+        "agent_preferences",
+        "agent_skill_settings",
+        "agent_skill_versions",
+    }:
         return (entity.owner_user_id, None)
+    if name in {"agent_memory_items", "agent_memory_jobs", "agent_conversation_summaries"}:
+        return (entity.owner_user_id, None)
+    if name in {"agent_memory_revisions", "agent_memory_sources", "agent_memory_forget_rules"}:
+        return (_agent_parent(session, "agent_memory_items", entity.memory_id).owner_user_id, None)
     if name == "agent_attachments":
+        conversation = _agent_parent(session, "agent_conversations", entity.conversation_id)
         return (
-            None,
-            _agent_parent(session, "agent_conversations", entity.conversation_id).project_id,
+            (conversation.owner_user_id, None)
+            if conversation.scope_version == 3
+            else (None, conversation.project_id)
         )
     if name in AGENT_PRIVATE_TABLES:
         conversation = _agent_conversation(session, entity)
-        return (None, conversation.project_id)
+        return (
+            (conversation.owner_user_id, None)
+            if conversation.scope_version == 3
+            else (None, conversation.project_id)
+        )
     if name == "projects":
         return (None, entity.id)
+    if name == "canvas_style_profiles":
+        return (entity.scope_user_id, None)
     if isinstance(entity, ResourceScope):
         return (entity.scope_user_id, entity.project_id)
     if name == "ai_model_configs":
         return (entity.owner_user_id, None)
     if name in {
-        "global_assets",
+        "canvas_style_preferences",
         "canvas_workspace_user_states",
         "canvas_model_catalogs",
         "canvas_channel_models",
-        "canvas_beefapi_connections",
     }:
         return (entity.user_id, None)
     if "project_id" in table.c and entity.project_id:
         return (None, entity.project_id)
     for field, parent in [
-        ("episode_id", "episodes"),
         ("shot_id", "shot_scripts"),
-        ("assembly_id", "episode_assemblies"),
+        ("assembly_id", "project_assemblies"),
         ("asset_id", "assets"),
         ("task_id", "async_tasks"),
         ("record_id", "ai_generation_records"),
-        ("script_id", "episode_scripts"),
-        ("novel_id", "episode_novels"),
+        ("script_id", "project_scripts"),
+        ("novel_id", "project_novels"),
         ("batch_id", "generation_batches"),
     ]:
         if field in table.c and getattr(entity, field, None):
@@ -462,25 +589,108 @@ def _agent_conversation(session, entity):
     name = inspect(type(entity)).local_table.name
     if name == "agent_conversations":
         return entity
-    if name in {"agent_messages", "agent_runs", "agent_events"}:
+    if name in {
+        "agent_messages",
+        "agent_runs",
+        "agent_events",
+        "agent_tasks",
+        "agent_discussion_revisions",
+        "agent_batch_undos",
+    }:
         return _agent_parent(session, "agent_conversations", entity.conversation_id)
+    if name in {
+        "agent_task_inputs",
+        "agent_task_controls",
+        "agent_operations",
+        "agent_media_requests",
+    }:
+        task = _agent_parent(session, "agent_tasks", entity.task_id)
+        return _agent_parent(session, "agent_conversations", task.conversation_id)
     if name == "agent_turns" or name == "agent_tool_calls":
         run = _agent_parent(session, "agent_runs", entity.run_id)
         return _agent_parent(session, "agent_conversations", run.conversation_id)
     raise NotFound("Agent parent does not exist")
 
 
+def _guard_memory_write(session, entity, actor, new):
+    name = inspect(type(entity)).local_table.name
+    if hasattr(entity, "owner_user_id"):
+        if new:
+            entity.owner_user_id = actor.user_id
+        if entity.owner_user_id != actor.user_id:
+            raise NotFound("记忆不存在")
+    if hasattr(entity, "memory_id"):
+        item = _agent_parent(session, "agent_memory_items", entity.memory_id)
+        if item.owner_user_id != actor.user_id:
+            raise NotFound("记忆不存在")
+        if name == "agent_memory_forget_rules" and any(
+            getattr(entity, field) != getattr(item, field)
+            for field in ("scope_type", "scope_key", "kind", "memory_key")
+        ):
+            raise NotFound("遗忘规则不属于此记忆")
+    if getattr(entity, "conversation_id", None) is not None:
+        conversation = _agent_parent(session, "agent_conversations", entity.conversation_id)
+        if conversation.owner_user_id != actor.user_id or conversation.scope_version != 3:
+            raise NotFound("记忆来源会话不存在")
+    if getattr(entity, "project_id", None) is not None:
+        require_project(session, entity.project_id)
+    if name == "agent_memory_sources" and entity.message_id is not None:
+        message = _agent_parent(session, "agent_messages", entity.message_id)
+        if message.conversation_id != entity.conversation_id or message.seq != entity.source_seq:
+            raise NotFound("记忆来源不属于此会话")
+    if name == "agent_memory_jobs" and entity.run_id is not None:
+        run = _agent_parent(session, "agent_runs", entity.run_id)
+        if run.conversation_id != entity.conversation_id:
+            raise NotFound("记忆任务来源无效")
+    immutable = name in {"agent_memory_revisions", "agent_memory_sources"}
+    frozen = {
+        "owner_user_id",
+        "memory_id",
+        "scope_type",
+        "scope_key",
+        "conversation_id",
+        "project_id",
+        "memory_key",
+        "kind",
+    }
+    if not new and any(
+        (immutable or field in frozen) and attr.history.has_changes()
+        for field, attr in inspect(entity).attrs.items()
+    ):
+        raise WorkflowError("memory_source_immutable", "记忆身份及历史来源不能改写", 403)
+
+
 def _guard_agent_write(session, entity, actor, new):
     name = inspect(type(entity)).local_table.name
+    if name in {
+        "agent_memory_items",
+        "agent_memory_revisions",
+        "agent_memory_sources",
+        "agent_memory_forget_rules",
+        "agent_conversation_summaries",
+        "agent_memory_jobs",
+    }:
+        _guard_memory_write(session, entity, actor, new)
+        return
+    if name == "agent_preferences":
+        if entity.owner_user_id != actor.user_id:
+            raise NotFound("Resource does not exist")
+        return
     if name in AGENT_PRIVATE_TABLES:
         if new and name == "agent_conversations":
             entity.owner_user_id = actor.user_id
         conversation = _agent_conversation(session, entity)
         if conversation.owner_user_id != actor.user_id:
             raise NotFound("Resource does not exist")
-        require_project(session, conversation.project_id)
-        if conversation.scope_version == 2:
-            if conversation.episode_id is not None or any(
+        if conversation.scope_version == 3:
+            if conversation.project_id is not None or any(
+                getattr(conversation, field) is not None
+                for field in ("stage", "subject_type", "subject_id", "task_type")
+            ):
+                raise WorkflowError("assistant_scope_invalid", "账号对话范围无效", 403)
+        elif conversation.scope_version == 2:
+            require_project(session, conversation.project_id)
+            if any(
                 getattr(conversation, field) is not None
                 for field in ("stage", "subject_type", "subject_id", "task_type")
             ):
@@ -488,9 +698,10 @@ def _guard_agent_write(session, entity, actor, new):
             if name == "agent_tool_calls":
                 raise WorkflowError("assistant_tools_forbidden", "创作助手只提供对话建议", 403)
         else:
-            episode = _agent_parent(session, "episodes", conversation.episode_id)
-            if episode.project_id != conversation.project_id:
-                raise NotFound("Episode does not belong to this project")
+            require_project(session, conversation.project_id)
+            creation = _agent_parent(session, "projects", conversation.project_id)
+            if creation.id != conversation.project_id:
+                raise NotFound("Project does not belong to this project")
         if name == "agent_runs":
             if new and entity.initiated_by is None:
                 entity.initiated_by = actor.user_id
@@ -498,10 +709,82 @@ def _guard_agent_write(session, entity, actor, new):
                 raise NotFound("Run initiator does not own this conversation")
             if new:
                 _agent_parent(session, "ai_model_configs", entity.model_config_id)
+        if name in {"agent_messages", "agent_runs"} and entity.task_id is not None:
+            task = _agent_parent(session, "agent_tasks", entity.task_id)
+            if task.conversation_id != conversation.id or conversation.scope_version != 3:
+                raise NotFound("Task does not belong to this conversation")
+        if name == "agent_runs" and conversation.scope_version == 3:
+            trigger = _agent_parent(session, "agent_messages", entity.trigger_message_id)
+            if entity.task_id is None or trigger.task_id != entity.task_id:
+                raise NotFound("Run trigger does not belong to this task")
+        if name in {"agent_task_inputs", "agent_task_controls"}:
+            message_id = (
+                entity.message_id if name == "agent_task_inputs" else entity.source_message_id
+            )
+            if message_id is not None:
+                message = _agent_parent(session, "agent_messages", message_id)
+                if message.task_id != entity.task_id:
+                    raise NotFound("Input does not belong to this task")
+        if name == "agent_operations":
+            run = _agent_parent(session, "agent_runs", entity.run_id)
+            call = _agent_parent(session, "agent_tool_calls", entity.tool_call_id)
+            if run.task_id != entity.task_id or call.run_id != run.id:
+                raise NotFound("Operation does not belong to this task and run")
+        if name == "agent_batch_undos":
+            operation = _agent_parent(session, "agent_operations", entity.operation_id)
+            task = _agent_parent(session, "agent_tasks", entity.task_id)
+            if operation.task_id != task.id or task.conversation_id != conversation.id:
+                raise NotFound("Undo does not belong to this task and operation")
+            if not new and any(attr.history.has_changes() for attr in inspect(entity).attrs):
+                raise WorkflowError("agent_record_immutable", "撤销回执不能改写", 403)
+        if name == "agent_discussion_revisions":
+            source = _agent_parent(session, "agent_messages", entity.source_message_id)
+            reply = _agent_parent(session, "agent_messages", entity.reply_message_id)
+            run = _agent_parent(session, "agent_runs", entity.run_id)
+            if (
+                source.conversation_id != conversation.id
+                or reply.conversation_id != conversation.id
+                or run.conversation_id != conversation.id
+                or source.role != "user"
+                or reply.role != "assistant"
+                or source.task_id != run.task_id
+                or reply.task_id != run.task_id
+            ):
+                raise NotFound("Discussion revision does not belong to this task")
+            if not new and any(attr.history.has_changes() for attr in inspect(entity).attrs):
+                raise WorkflowError("agent_record_immutable", "历史修订不能改写", 403)
+        if name == "agent_media_requests":
+            operation = _agent_parent(session, "agent_operations", entity.operation_id)
+            if (
+                operation.task_id != entity.task_id
+                or operation.tool_name != "submit_generation_batch"
+            ):
+                raise NotFound("Media intent does not belong to this operation")
+            if entity.generation_task_id is not None:
+                generation = _agent_parent(session, "async_tasks", entity.generation_task_id)
+                if generation.initiated_by != actor.user_id or str(generation.project_id) != str(
+                    entity.frozen_target.get("project_id")
+                ):
+                    raise NotFound("Media generation does not belong to this intent")
+            history = inspect(entity).attrs.generation_task_id.history
+            if (
+                not new
+                and history.has_changes()
+                and any(value is not None for value in history.deleted)
+            ):
+                raise WorkflowError(
+                    "agent_record_immutable", "Media task identity cannot be replaced", 403
+                )
+        if name == "agent_task_controls":
+            for field in ("requested_after_operation_id", "applied_after_operation_id"):
+                operation_id = getattr(entity, field)
+                if operation_id is not None:
+                    operation = _agent_parent(session, "agent_operations", operation_id)
+                    if operation.task_id != entity.task_id:
+                        raise NotFound("Control boundary does not belong to this task")
         immutable = {
             "owner_user_id",
             "project_id",
-            "episode_id",
             "stage",
             "subject_type",
             "subject_id",
@@ -511,8 +794,10 @@ def _guard_agent_write(session, entity, actor, new):
             "run_id",
             "turn_id",
             "trigger_message_id",
+            "trigger_revision",
             "initiated_by",
             "model_config_id",
+            "task_id",
         }
         if not new and any(
             field in inspect(type(entity)).local_table.c
@@ -521,6 +806,15 @@ def _guard_agent_write(session, entity, actor, new):
         ):
             raise WorkflowError("ownership_immutable", "Agent ownership cannot be changed", 403)
         frozen = {
+            "agent_media_requests": {
+                "operation_id",
+                "item_index",
+                "media_kind",
+                "requested_count",
+                "frozen_target",
+                "frozen_request",
+                "created_at",
+            },
             "agent_messages": {
                 "content",
                 "role",
@@ -530,6 +824,7 @@ def _guard_agent_write(session, entity, actor, new):
                 "idempotency_key",
                 "request_hash",
                 "created_at",
+                "row_version",
             },
             "agent_tool_calls": {
                 "arguments",
@@ -541,29 +836,55 @@ def _guard_agent_write(session, entity, actor, new):
                 "created_at",
             },
             "agent_events": {"seq", "event_type", "payload", "created_at"},
+            "agent_task_inputs": {"message_id", "input_revision", "payload", "created_at"},
+            "agent_task_controls": {
+                "seq",
+                "kind",
+                "request_key",
+                "request_hash",
+                "expected_control_seq",
+                "source_message_id",
+                "requested_after_operation_id",
+                "created_at",
+            },
+            "agent_operations": {
+                "tool_call_id",
+                "tool_name",
+                "tool_version",
+                "plan_revision",
+                "input_revision",
+                "payload_hash",
+                "arguments",
+                "created_at",
+            },
         }.get(name, set())
+        if name == "agent_messages" and session.info.get("assistant_discussion_edit") == entity.id:
+            version = inspect(entity).attrs.row_version.history
+            if (
+                entity.role == "user"
+                and version.deleted
+                and version.added
+                and version.added[0] == version.deleted[0] + 1
+            ):
+                frozen = frozen - {"content", "row_version"}
         if not new and any(inspect(entity).attrs[field].history.has_changes() for field in frozen):
             raise WorkflowError("agent_record_immutable", "Append a new Agent record", 403)
     elif name == "agent_artifacts":
         if not new and entity.created_by != actor.user_id:
             raise NotFound("Resource does not exist")
         require_project(session, entity.project_id)
-        episode = _agent_parent(session, "episodes", entity.episode_id)
-        if episode.project_id != entity.project_id:
-            raise NotFound("Episode does not belong to this project")
+        creation = _agent_parent(session, "projects", entity.project_id)
+        if creation.id != entity.project_id:
+            raise NotFound("Project does not belong to this project")
         if new:
             tool = _agent_parent(session, "agent_tool_calls", entity.tool_call_id)
             conversation = _agent_conversation(session, tool)
-            if (conversation.project_id, conversation.episode_id) != (
-                entity.project_id,
-                entity.episode_id,
-            ):
-                raise NotFound("Artifact origin does not belong to this episode")
+            if conversation.project_id != entity.project_id:
+                raise NotFound("Artifact origin does not belong to this creation")
             _guard_artifact_references(session, entity)
         else:
             immutable = {
                 "project_id",
-                "episode_id",
                 "tool_call_id",
                 "result_index",
                 "kind",
@@ -587,15 +908,15 @@ def _guard_agent_write(session, entity, actor, new):
 
 def _guard_artifact_references(session, artifact):
     for field, table in (
-        ("script_id", "episode_scripts"),
-        ("parent_script_id", "episode_scripts"),
+        ("script_id", "project_scripts"),
+        ("parent_script_id", "project_scripts"),
         ("target_shot_id", "shot_scripts"),
     ):
         identifier = getattr(artifact, field)
         if identifier:
             parent = _agent_parent(session, table, identifier)
-            if parent.episode_id != artifact.episode_id:
-                raise NotFound("Artifact reference is outside this episode")
+            if parent.project_id != artifact.project_id:
+                raise NotFound("Artifact reference is outside this creation")
     for field, table in (
         ("target_asset_id", "assets"),
         ("generation_task_id", "async_tasks"),
@@ -607,28 +928,6 @@ def _guard_artifact_references(session, artifact):
             parent = _agent_parent(session, table, identifier)
             if scope_of(session, parent) != (None, artifact.project_id):
                 raise NotFound("Artifact reference is outside this project")
-    if artifact.target_asset_id:
-        from short_drama.domain import EpisodeAsset
-
-        linked = next(
-            (
-                x
-                for x in session.new
-                if isinstance(x, EpisodeAsset)
-                and x.episode_id == artifact.episode_id
-                and x.asset_id == artifact.target_asset_id
-            ),
-            None,
-        )
-        if linked is None:
-            linked = session.scalar(
-                select(EpisodeAsset).where(
-                    EpisodeAsset.episode_id == artifact.episode_id,
-                    EpisodeAsset.asset_id == artifact.target_asset_id,
-                )
-            )
-        if linked is None:
-            raise NotFound("Artifact asset is not linked to this episode")
     if artifact.media_asset_id:
         media = _agent_parent(session, "media_assets", artifact.media_asset_id)
         record = _agent_parent(session, "ai_generation_records", media.record_id)
@@ -648,9 +947,9 @@ def _guard_artifact_references(session, artifact):
             .limit(1)
         )
         if record:
-            episode_id = (record.request_data.get("source") or {}).get("episode_id")
-            if episode_id and str(artifact.episode_id) != str(episode_id):
-                raise NotFound("Artifact generation is outside this episode")
+            project_id = (record.request_data.get("source") or {}).get("project_id")
+            if project_id and str(artifact.project_id) != str(project_id):
+                raise NotFound("Artifact generation is outside this creation")
 
 
 def set_scope(session, scope):
@@ -705,7 +1004,6 @@ def _canvas_snapshot_reads(session, actor):
         MediaFile,
         Project,
         ProjectCanvas,
-        ProjectMember,
     )
     from short_drama.domain.canvas import CanvasUserMediaReference
 
@@ -721,7 +1019,7 @@ def _canvas_snapshot_reads(session, actor):
         return set(), {}
     # Mixed parent/resource edits retain the original per-entity checks. The
     # maps below exist only for this flush, never as cached authorization.
-    related = (Project, ProjectCanvas, ProjectMember, MediaFile, CanvasBinaryResource)
+    related = (Project, ProjectCanvas, MediaFile, CanvasBinaryResource)
     if (
         any(isinstance(entity, Project) for entity in session.new)
         or any(isinstance(entity, related) for entity in session.deleted)
@@ -778,6 +1076,15 @@ def _guard_canvas_write(session, entity, actor, new, *, snapshot_reads=None):
     from short_drama.domain import Project, ProjectCanvas
 
     name = inspect(type(entity)).local_table.name
+    if name in {
+        "canvas_style_profiles",
+        "canvas_style_media_references",
+        "canvas_style_preferences",
+    }:
+        from .canvas_style_access import guard_canvas_style
+
+        guard_canvas_style(session, entity, actor, new)
+        return
     if name == "canvas_local_jobs":
         from .canvas_local_access import guard_canvas_local
 
@@ -888,7 +1195,6 @@ def _guard_canvas_write(session, entity, actor, new, *, snapshot_reads=None):
         "canvas_workspace_user_states",
         "canvas_model_catalogs",
         "canvas_channel_models",
-        "canvas_beefapi_connections",
         "canvas_library_folders",
         "canvas_resource_deletions",
     }:
@@ -929,25 +1235,6 @@ def _guard_canvas_write(session, entity, actor, new, *, snapshot_reads=None):
             project = session.scalar(select(Project).where(Project.id == entity.project_id))
     if project is None or project.workspace_mode != "infinite_canvas":
         raise NotFound("Infinite canvas project does not exist")
-    if name == "project_canvases":
-        if not new and inspect(entity).attrs.source_project_id.history.has_changes():
-            raise WorkflowError("canvas_binding_immutable", "可信业务绑定不能通过普通写入改变", 403)
-        if new and entity.source_project_id is not None:
-            business = next(
-                (
-                    row
-                    for row in session.new
-                    if isinstance(row, Project) and row.id == entity.source_project_id
-                ),
-                None,
-            )
-            if business is None:
-                business = session.scalar(
-                    select(Project).where(Project.id == entity.source_project_id)
-                )
-            if business is None or business.archived_at or business.workspace_mode != "standard":
-                raise NotFound("可信业务项目不存在或当前账号无权访问")
-            require_project(session, business.id)
     canvas_id = getattr(entity, "canvas_id", None) or getattr(entity, "primary_canvas_id", None)
     if canvas_id:
         if snapshot_reads is not None:
@@ -978,10 +1265,12 @@ def _guard_canvas_write(session, entity, actor, new, *, snapshot_reads=None):
 
 @event.listens_for(Session, "before_flush")
 def guard_writes(session, _context, _instances):
+    from short_drama.db.agent_skill_access import guard_skill_versions
     from short_drama.db.asset_version_access import guard_version_writes
     from short_drama.service.base import utcnow
 
     guard_version_writes(session)
+    guard_skill_versions(session)
     actor = session.info.get("actor")
     legacy_user = session.info.get("legacy_user_id")
     if not actor and not legacy_user:
@@ -1007,8 +1296,6 @@ def guard_writes(session, _context, _instances):
             "email_challenges",
             "email_outbox",
             "auth_rate_limits",
-            "project_invitations",
-            "project_members",
             "audit_events",
             "user_model_preferences",
             "user_project_states",
@@ -1020,7 +1307,7 @@ def guard_writes(session, _context, _instances):
                 raise NotFound("私人创作草稿不存在")
             if not new and any(
                 inspect(entity).attrs[field].history.has_changes()
-                for field in ("user_id", "episode_id", "object_id", "purpose")
+                for field in ("user_id", "project_id", "object_id", "purpose")
             ):
                 raise WorkflowError("ownership_immutable", "私人草稿所属和用途不可修改", 403)
         if actor and name in {"agent_skills", "agent_attachments"}:
@@ -1054,8 +1341,6 @@ def guard_writes(session, _context, _instances):
         if new:
             if name in {"projects", "ai_model_configs"}:
                 entity.owner_user_id = user_id
-            elif name == "global_assets":
-                entity.user_id = user_id
             elif (
                 isinstance(entity, ResourceScope)
                 and entity.scope_user_id is None
@@ -1070,16 +1355,17 @@ def guard_writes(session, _context, _instances):
             "async_tasks",
             "generation_batches",
             "generation_batch_items",
-            "episode_render_jobs",
+            "project_render_jobs",
             "ai_generation_records",
             "media_assets",
             "novel_script_records",
             "script_shot_records",
             "asset_image_candidates",
-            "episode_scripts",
+            "project_scripts",
             "media_files",
             "agent_artifacts",
             "canvas_binary_resources",
+            "image_operations",
         }:
             # Session.get may return an object already in the identity map. Verify
             # the stored ownership before accepting writes to private resources.
@@ -1088,7 +1374,7 @@ def guard_writes(session, _context, _instances):
                 query = query.with_for_update()
             if session.scalar(query) is None:
                 raise NotFound("Resource does not exist")
-        if name in {"episode_scripts", "media_files", "canvas_binary_resources"} and not new:
+        if name in {"project_scripts", "media_files", "canvas_binary_resources"} and not new:
             publication = inspect(entity).attrs.published_at.history
             if publication.has_changes() and publication.deleted and publication.deleted[0]:
                 raise WorkflowError(
@@ -1120,6 +1406,21 @@ def guard_writes(session, _context, _instances):
                 raise WorkflowError(
                     "ownership_immutable", "Resource ownership cannot be changed", 403
                 )
+        frozen = {
+            "image_groups": {"asset_id", "shot_id", "task_id", "source_context", "expected_count"},
+            "image_group_items": {"group_id", "output_index"},
+            "image_operations": {
+                "item_id",
+                "source_media_id",
+                "source_version",
+                "operation_type",
+                "parameters",
+                "request_key",
+                "request_hash",
+            },
+        }.get(name, set())
+        if not new and any(inspect(entity).attrs[field].history.has_changes() for field in frozen):
+            raise WorkflowError("image_source_immutable", "图片处理来源不可改写", 403)
         for field, target_name in [
             ("media_id", "media_files"),
             ("first_frame_media_id", "media_files"),
@@ -1129,6 +1430,19 @@ def guard_writes(session, _context, _instances):
             ("proxy_media_id", "media_files"),
             ("asset_id", "assets"),
             ("binary_id", "canvas_binary_resources"),
+            *([("shot_id", "shot_scripts")] if name == "image_groups" else []),
+            *([("group_id", "image_groups")] if name == "image_group_items" else []),
+            *(
+                [
+                    ("item_id", "image_group_items"),
+                    ("source_media_id", "media_files"),
+                    ("result_media_id", "media_files"),
+                    ("mask_media_id", "media_files"),
+                    ("result_group_id", "image_groups"),
+                ]
+                if name == "image_operations"
+                else []
+            ),
         ]:
             if field not in table.c or not getattr(entity, field, None):
                 continue
@@ -1149,6 +1463,12 @@ def guard_writes(session, _context, _instances):
                         select(model).where(model.id == identifier).with_for_update(read=True)
                     )
             allowed_scopes = {entity_scope}
+            if (
+                name == "canvas_style_media_references"
+                and entity_scope[0] == actor.user_id
+                and target is not None
+            ):
+                allowed_scopes.add(scope_of(session, target))
             if name == "agent_attachments" and field == "media_id":
                 allowed_scopes.add((actor.user_id, None))
             if name == "canvas_user_media_references" and field == "media_id":
@@ -1208,12 +1528,15 @@ def guard_writes(session, _context, _instances):
         if name in AGENT_PRIVATE_TABLES | CANVAS_PRIVATE_TABLES or name in {
             "agent_attachments",
             "agent_skills",
+            "agent_skill_versions",
+            "agent_skill_settings",
             "user_creation_drafts",
+            "image_operations",
         }:
             continue
         action = "create" if new else "delete" if entity in session.deleted else "update"
         if (
-            name in {"episode_scripts", "media_files", "canvas_binary_resources"}
+            name in {"project_scripts", "media_files", "canvas_binary_resources"}
             and entity.published_at is not None
         ):
             action = (

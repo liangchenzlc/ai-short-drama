@@ -548,7 +548,7 @@ export function useCanvasProjectLifecycle({
             if (!parent || !projectLoaded || editorProjectIdRef.current !== projectId) throw new Error("来源画布尚未完成加载，请重试");
             if (localMode && hasUnconfirmedCanvasEdits(parent.id)) throw new Error("来源画布仍有未确认编辑，请保存后再新建");
             const sourceCanvas = localMode ? initialCanvasSource(parent) : undefined;
-            const { id, syncError } = await createWorkspaceCanvasProject("未命名画布", parent.projectId, undefined, canvasWorkspaceProjectId(parent), sourceCanvas);
+            const { id, syncError } = await createWorkspaceCanvasProject("未命名画布", undefined, canvasWorkspaceProjectId(parent), sourceCanvas);
             if (syncError && !isExpectedLocalOnlySyncError(syncError)) message.warning(syncError instanceof Error ? `画布已在本地创建，云端同步失败：${syncError.message}` : "画布已在本地创建，云端同步失败");
             navigate(`/canvas/${id}`);
         })().catch((error) => message.error(error instanceof Error ? `新建画布失败：${error.message}` : "新建画布失败，请稍后重试"));

@@ -59,17 +59,13 @@ class CanvasGenerationService(BaseService):
         canvas = self.runtime.canvas(source_key)
         if canvas is None:
             raise NotFound("活动画布不存在或无权访问")
-        return self.canvases.require_canvas(
-            canvas.project_id, canvas.id, lock=True, include_existing_characters=True
-        )
+        return self.canvases.require_canvas(canvas.project_id, canvas.id, lock=True)
 
     def _owned(self, identifier: int) -> tuple[ProjectCanvas, AsyncTask, CanvasTaskBinding]:
         binding = self.runtime.binding(identifier, self.canvases.actor_id)
         if binding is None:
             raise NotFound("本人画布任务不存在")
-        canvas = self.canvases.require_canvas(
-            binding.project_id, binding.canvas_id, lock=True, include_existing_characters=True
-        )
+        canvas = self.canvases.require_canvas(binding.project_id, binding.canvas_id, lock=True)
         task = self.tasks.tasks.task(identifier)
         if task is None or task.initiated_by != self.canvases.actor_id:
             raise NotFound("本人画布任务不存在")
@@ -95,6 +91,7 @@ class CanvasGenerationService(BaseService):
         key: str | None = None,
         *,
         tool_submission: CanvasToolSubmission | None = None,
+        assistant_managed: bool = False,
     ) -> tuple[dict, bool]:
         if not self.session.in_transaction():
             raise BusinessError("Canvas admission requires an active transaction")
@@ -121,14 +118,6 @@ class CanvasGenerationService(BaseService):
         if existing:
             canvas, task, binding = self._owned(int(existing[0]["generation_id"]))
             return self._project(canvas, task, binding), False
-        if tool is not None:
-            from .canvas_editor_tool_service import CanvasEditorToolService
-
-            CanvasEditorToolService(self.session).require_enabled_locked(
-                "prompt-optimizer"
-                if tool.canonical.tools[0].function.name == "optimize_prompt"
-                else "ai-art-critique"
-            )
         document = self.canvases._document(canvas, private=True, lock=True)
         source_key = metadata.source_node_id or metadata.node_id
         source = next((node for node in document["nodes"] if node["id"] == source_key), None)
@@ -137,23 +126,11 @@ class CanvasGenerationService(BaseService):
             raise WorkflowError(
                 "canvas_generation_source_not_saved", "请先保存生成来源、目标节点与连线", 409
             )
-        from .canvas_character_generation import freeze_canvas_characters
-
-        frozen_characters = freeze_canvas_characters(
-            self.canvases,
-            canvas,
-            document,
-            metadata,
-            settings=self.generation.settings,
-            audio_references=payload.input.reference_audios,
-        )
         old_task_id = metadata.retry_of
         storyboard_source = None
         if payload.operation == "storyboard":
-            from .canvas_character_publication_service import CanvasCharacterPublicationService
             from .canvas_storyboard import check_storyboard_context, storyboard_snapshot
 
-            CanvasCharacterPublicationService(self.canvases).validate(canvas, document)
             storyboard_source = storyboard_snapshot(document, metadata.node_id)
             check_storyboard_context(
                 payload.model_dump(mode="json", by_alias=True, exclude_none=True), storyboard_source
@@ -174,6 +151,7 @@ class CanvasGenerationService(BaseService):
                 old_canvas.id != canvas.id
                 or old_binding.node_key != metadata.node_id
                 or not records
+                or records[0].config_snapshot.get("agent_managed")
                 or not can_retry(old_task, records[-1])
             ):
                 raise WorkflowError("canvas_task_retry_not_allowed", "该任务不能安全重试", 409)
@@ -213,9 +191,11 @@ class CanvasGenerationService(BaseService):
                 "source_node_key": source_key,
                 "context_hash": content_hash(source),
             }
-            prepared["source_snapshot"] = {"source_node": deepcopy(source)}
-            if frozen_characters:
-                prepared["canvas_character_references"] = deepcopy(frozen_characters)
+            prepared["source_snapshot"] = (
+                {"context_hash": content_hash(source)}
+                if assistant_managed
+                else {"source_node": deepcopy(source)}
+            )
             if storyboard_source is not None:
                 prepared["canvas_storyboard_source"] = deepcopy(storyboard_source)
             if tool_submission is not None:
@@ -262,7 +242,12 @@ class CanvasGenerationService(BaseService):
             return prepared
 
         summary, fresh = self.generation.create_locked(
-            payload.input.mode, request, key, request_hash=digest, prepare_transform=freeze
+            payload.input.mode,
+            request,
+            key,
+            request_hash=digest,
+            prepare_transform=freeze,
+            agent_managed=assistant_managed,
         )
         if secret is not None:
             record = self.generation.record_dao.for_task(int(summary["generation_id"]))[0]
@@ -296,29 +281,15 @@ class CanvasGenerationService(BaseService):
         return self._project(canvas, task, binding), fresh
 
     def detail(self, identifier: int) -> dict:
-        from .canvas_character_publication_service import (
-            CanvasCharacterPublicationService,
-            CanvasPreflightRevisionChanged,
-        )
-
-        failures = 0
-        while True:
-            try:
-                with self._transaction(lock_request_project=False):
-                    binding = self.runtime.binding(identifier, self.canvases.actor_id)
-                    if binding is None:
-                        return self.model_tests.runtime_locked(identifier)
-                    canvas = self.canvases.canvas_dao.canvas(binding.project_id, binding.canvas_id)
-                    if canvas is None:
-                        raise NotFound("活动画布不存在或无权访问")
-                    CanvasCharacterPublicationService(self.canvases).lock_existing_canvases(
-                        [canvas]
-                    )
-                    return self._project(*self._owned(identifier))
-            except CanvasPreflightRevisionChanged:
-                failures += 1
-                if failures >= 2:
-                    raise
+        with self._transaction(lock_request_project=False):
+            binding = self.runtime.binding(identifier, self.canvases.actor_id)
+            if binding is None:
+                return self.model_tests.runtime_locked(identifier)
+            canvas = self.canvases.canvas_dao.canvas(binding.project_id, binding.canvas_id)
+            if canvas is None:
+                raise NotFound("活动画布不存在或无权访问")
+            self.canvases.lock_existing_canvases([canvas])
+            return self._project(*self._owned(identifier))
 
     def list(
         self,
@@ -329,62 +300,46 @@ class CanvasGenerationService(BaseService):
         client_operation_id: str | None = None,
         source_node_id: str | None = None,
     ) -> list[dict]:
-        from .canvas_character_publication_service import (
-            CanvasCharacterPublicationService,
-            CanvasPreflightRevisionChanged,
-        )
-
-        failures = 0
-        while True:
-            try:
-                with self._transaction(lock_request_project=False):
-                    selected = self.runtime.canvas(project_id) if project_id is not None else None
-                    if project_id is not None and selected is None:
-                        raise NotFound("活动画布不存在或无权访问")
-                    canvas_id = selected.id if selected is not None else None
-                    identifiers = self.runtime.task_ids(
+        with self._transaction(lock_request_project=False):
+            selected = self.runtime.canvas(project_id) if project_id is not None else None
+            if project_id is not None and selected is None:
+                raise NotFound("活动画布不存在或无权访问")
+            canvas_id = selected.id if selected is not None else None
+            identifiers = self.runtime.task_ids(
+                self.canvases.actor_id,
+                canvas_id,
+                active_only,
+                limit,
+                client_operation_id,
+                source_node_id,
+            )
+            originals = {selected.id: selected} if selected is not None else {}
+            for identifier in identifiers:
+                binding = self.runtime.binding(identifier, self.canvases.actor_id)
+                if binding is None:
+                    raise NotFound("本人画布任务不存在")
+                canvas = self.canvases.canvas_dao.canvas(binding.project_id, binding.canvas_id)
+                if canvas is None:
+                    raise NotFound("活动画布不存在或无权访问")
+                originals[canvas.id] = canvas
+            self.canvases.lock_existing_canvases(list(originals.values()))
+            # 空正文的当前读会锁住相邻任务的索引间隙。先按稳定顺序锁全部任务，
+            # 避免列表持有前项的正文范围，再与后项 Worker 的任务锁形成循环。
+            owned = [self._owned(identifier) for identifier in sorted(identifiers)]
+            items = [self._project(*item) for item in owned]
+            if canvas_id is None and source_node_id is None:
+                items.extend(
+                    self.model_tests.runtime_locked(identifier)
+                    for identifier in CanvasModelTestDAO(self.session).task_ids(
                         self.canvases.actor_id,
-                        canvas_id,
-                        active_only,
-                        limit,
-                        client_operation_id,
-                        source_node_id,
+                        active_only=active_only,
+                        limit=limit,
+                        client_operation_id=client_operation_id,
                     )
-                    originals = {selected.id: selected} if selected is not None else {}
-                    for identifier in identifiers:
-                        binding = self.runtime.binding(identifier, self.canvases.actor_id)
-                        if binding is None:
-                            raise NotFound("本人画布任务不存在")
-                        canvas = self.canvases.canvas_dao.canvas(
-                            binding.project_id, binding.canvas_id
-                        )
-                        if canvas is None:
-                            raise NotFound("活动画布不存在或无权访问")
-                        originals[canvas.id] = canvas
-                    CanvasCharacterPublicationService(self.canvases).lock_existing_canvases(
-                        list(originals.values())
-                    )
-                    # 空正文的当前读会锁住相邻任务的索引间隙。先按稳定顺序锁全部任务，
-                    # 避免列表持有前项的正文范围，再与后项 Worker 的任务锁形成循环。
-                    owned = [self._owned(identifier) for identifier in sorted(identifiers)]
-                    items = [self._project(*item) for item in owned]
-                    if canvas_id is None and source_node_id is None:
-                        items.extend(
-                            self.model_tests.runtime_locked(identifier)
-                            for identifier in CanvasModelTestDAO(self.session).task_ids(
-                                self.canvases.actor_id,
-                                active_only=active_only,
-                                limit=limit,
-                                client_operation_id=client_operation_id,
-                            )
-                        )
-                    return sorted(
-                        items, key=lambda item: (item["updatedAt"], int(item["id"])), reverse=True
-                    )[:limit]
-            except CanvasPreflightRevisionChanged:
-                failures += 1
-                if failures >= 2:
-                    raise
+                )
+            return sorted(
+                items, key=lambda item: (item["updatedAt"], int(item["id"])), reverse=True
+            )[:limit]
 
     def action(self, identifier: int, action: str) -> dict:
         with self._transaction(lock_request_project=False):
@@ -484,7 +439,8 @@ class CanvasGenerationService(BaseService):
             "error": error["message"] if error else None,
             "errorCode": error["code"] if error else None,
             "providerRequestId": latest.provider_task_id,
-            "canRetry": can_retry(task, latest),
+            "canRetry": not records[0].config_snapshot.get("agent_managed")
+            and can_retry(task, latest),
             "canResume": bool(resume_action(task, latest)),
             "canCancel": task.status in {"queued", "running"} and not task.cancel_requested,
             "attempts": len(records),

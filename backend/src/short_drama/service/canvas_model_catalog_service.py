@@ -25,11 +25,6 @@ from .model_runtime_config import (
 
 
 def protocol_adapter(channel: dict, profile: dict) -> str | None:
-    if channel.get("id") == "beefapi" and profile.get("capability") == "video":
-        from short_drama.ai.canvas_video_adapters import is_seedance_model
-
-        if is_seedance_model(profile["model"]):
-            return "canvas_beefapi_seedance_video.v1"
     return PROTOCOL_ADAPTERS.get(profile.get("protocol") or channel.get("interfaceType"))
 
 
@@ -84,49 +79,6 @@ class CanvasModelCatalogService(BaseService):
             raise WorkflowError("authentication_required", "请先登录", 401)
         return actor.user_id
 
-    def read_locked(self) -> list[dict]:
-        catalog = self.catalog_dao.catalog(self.actor_id)
-        channels = deepcopy(catalog.channels_json) if catalog else []
-        if not any(item["id"] == "beefapi" for item in channels):
-            from short_drama.ai.canvas_beefapi_client import canonical_origin
-
-            channels.append(
-                {
-                    "id": "beefapi",
-                    "name": "BeefAPI",
-                    "baseUrl": canonical_origin(
-                        getattr(self.configs.settings, "canvas_beefapi_test_origin", "")
-                    ),
-                    "apiFormat": "openai",
-                    "scope": "user",
-                    "pinned": True,
-                    "presetVersion": 1,
-                    "models": [],
-                    "modelProfiles": [],
-                    "apiKey": "",
-                    "secretKey": "",
-                    "headers": [],
-                    "enabled": True,
-                    "hasApiKey": False,
-                    "hasSecretKey": False,
-                }
-            )
-        bindings = self.catalog_dao.bindings(self.actor_id)
-        ids = {(item.channel_key, item.model_key): item.model_config_id for item in bindings}
-        models = self.catalog_dao.models(list(ids.values()))
-        for channel in channels:
-            channel.pop("_assistantAuthorizationId", None)
-            for profile in channel["modelProfiles"]:
-                if profile["model"] not in channel["models"] or not profile.get("capability"):
-                    profile.pop("logicalModelId", None)
-                    continue
-                identifier = ids.get((channel["id"], profile["model"]))
-                config = models.get(identifier)
-                if config is None:
-                    raise ConfigurationError("画布模型目录的执行配置缺失")
-                profile["logicalModelId"] = str(identifier)
-        return [item for item in channels if item["id"] == "beefapi"]
-
     def _credentials(self, catalog: CanvasModelCatalog | None) -> dict:
         if catalog is None or catalog.credentials_cipher is None:
             return {}
@@ -139,13 +91,6 @@ class CanvasModelCatalogService(BaseService):
         from .model_discovery_service import ModelDiscoveryError, normalize_base_url
 
         with self._transaction(read_only=True):
-            if channel_id == "beefapi" or credential_ref == "beefapi-enterprise":
-                if channel_id not in {None, "beefapi"} or credential_ref not in {
-                    None,
-                    "beefapi-enterprise",
-                }:
-                    raise NotFound("本人 BeefAPI 连接不存在")
-                return self._beefapi_credentials_locked(base_url)
             if credential_ref and not credential_ref.startswith("host:"):
                 raise NotFound("本人渠道凭据不存在")
             referenced = credential_ref.removeprefix("host:") if credential_ref else None
@@ -163,13 +108,6 @@ class CanvasModelCatalogService(BaseService):
                     raise NotFound("本人模型配置不存在")
                 if normalize_base_url(config.base_url) != normalize_base_url(base_url):
                     raise ModelDiscoveryError("key_address_changed", 400)
-                binding = self.catalog_dao.binding(config.id)
-                if binding is not None and binding.channel_key == "beefapi":
-                    credential = self._beefapi_credentials_locked(config.base_url)
-                    credential["headers"] = decrypt_runtime_credentials(
-                        config, self.configs._key_cipher()
-                    )["headers"]
-                    return credential
                 try:
                     return {
                         "apiKey": self.configs._key_cipher().decrypt(config.apikey)
@@ -228,7 +166,7 @@ class CanvasModelCatalogService(BaseService):
 
     def _update_model(self, channel, profile, secret, config):
         existing = config is not None
-        if existing and channel["id"] != "beefapi":
+        if existing:
             return config
         changed = False
         values = {
@@ -256,19 +194,6 @@ class CanvasModelCatalogService(BaseService):
                 **values,
             )
             self.session.add(config)
-        else:
-            if config.owner_user_id != self.actor_id:
-                raise NotFound("本人渠道执行配置不存在")
-            old_service_type = config.service_type
-            if channel["id"] == "beefapi":
-                values["name"] = config.name
-                values["enabled"] = config.enabled
-                values["is_deleted"] = config.is_deleted
-            changed = any(getattr(config, key) != value for key, value in values.items())
-            for key, value in values.items():
-                setattr(config, key, value)
-            if not config.enabled or old_service_type != profile["capability"]:
-                config.is_default = 0
         plaintext = None
         if config.apikey:
             try:
@@ -304,48 +229,19 @@ class CanvasModelCatalogService(BaseService):
     def save_locked(self, channels: list[CanvasModelChannelInput]) -> bool:
         catalog = self.catalog_dao.catalog(self.actor_id, lock=True)
         previous = self._credentials(catalog)
-        managed = next(
-            (
-                deepcopy(item)
-                for item in (catalog.channels_json if catalog else [])
-                if item["id"] == "beefapi"
-            ),
-            None,
-        )
         public_channels, credentials = [], {}
         for channel in channels:
-            if channel.source_key == "beefapi":
-                if managed is None:
-                    managed = next(item for item in self.read_locked() if item["id"] == "beefapi")
-                _, secret = self._channel(channel, previous.get("beefapi", {}))
-                managed["enabled"] = channel.enabled
-                managed["headers"] = [{"name": item.name, "value": ""} for item in channel.headers]
-                public_channels.append(managed)
-                if secret["headers"]:
-                    credentials["beefapi"] = {
-                        "apiKey": "",
-                        "secretKey": "",
-                        "headers": secret["headers"],
-                    }
-            else:
-                public, secret = self._channel(channel, previous.get(channel.source_key, {}))
-                public_channels.append(public)
-                credentials[channel.source_key] = secret
-        if managed is not None and not any(item["id"] == "beefapi" for item in public_channels):
-            public_channels.insert(0, managed)
-            if "beefapi" in previous:
-                credentials["beefapi"] = previous["beefapi"]
+            public, secret = self._channel(channel, previous.get(channel.source_key, {}))
+            public_channels.append(public)
+            credentials[channel.source_key] = secret
         return self._persist_locked(public_channels, credentials)
 
-    def _persist_locked(
-        self, public_channels: list[dict], credentials: dict, *, managed_secret=None
-    ) -> bool:
+    def _persist_locked(self, public_channels: list[dict], credentials: dict) -> bool:
         catalog = self.catalog_dao.catalog(self.actor_id, lock=True)
         previous = self._credentials(catalog)
         bindings = self.catalog_dao.bindings(self.actor_id, lock=True)
         bound = {(item.channel_key, item.model_key): item for item in bindings}
         configs = self.catalog_dao.models([item.model_config_id for item in bindings], lock=True)
-        active = set()
         for public in public_channels:
             secret = credentials.get(public["id"])
             for profile in public["modelProfiles"]:
@@ -354,17 +250,10 @@ class CanvasModelCatalogService(BaseService):
                     continue
                 key = (public["id"], profile["model"])
                 binding = bound.get(key)
-                if public["id"] == "beefapi" and managed_secret is None:
-                    config = configs.get(binding.model_config_id) if binding else None
-                    if config is None:
-                        raise ConfigurationError("本人 BeefAPI 执行配置缺失")
-                    profile["logicalModelId"] = str(config.id)
-                    active.add(key)
-                    continue
                 config = self._update_model(
                     public,
                     profile,
-                    managed_secret if public["id"] == "beefapi" else secret,
+                    secret,
                     configs.get(binding.model_config_id) if binding else None,
                 )
                 if binding is None:
@@ -382,7 +271,6 @@ class CanvasModelCatalogService(BaseService):
                     )
                     self.session.add(binding)
                 profile["logicalModelId"] = str(config.id)
-                active.add(key)
         merged_size = len(
             json.dumps(
                 {"channels": public_channels, "credentials": credentials},
@@ -392,13 +280,6 @@ class CanvasModelCatalogService(BaseService):
         )
         if merged_size > MAX_CATALOG_BYTES:
             raise WorkflowError("canvas_model_catalog_too_large", "保存后的模型目录超过 2 MiB", 422)
-        for key, binding in bound.items():
-            if binding.channel_key == "beefapi" and key not in active:
-                config = configs.get(binding.model_config_id)
-                if config is not None and not config.is_deleted:
-                    config.is_deleted, config.enabled, config.is_default = 1, 0, 0
-                    config.row_version += 1
-                    config.updated_at = utcnow()
         changed = (
             catalog is None
             and bool(public_channels)
@@ -427,139 +308,6 @@ class CanvasModelCatalogService(BaseService):
                 catalog.channels_json, catalog.credentials_cipher = public_channels, ciphertext
                 catalog.updated_at, catalog.updated_by = utcnow(), self.actor_id
         return bool(changed)
-
-    def _beefapi_credentials_locked(
-        self, base_url=None, *, catalog: CanvasModelCatalog | None = None
-    ) -> dict:
-        from .canvas_beefapi_service import CanvasBeefAPIService
-
-        service = CanvasBeefAPIService(
-            self.session, settings=self.configs.settings, cipher=self.configs._key_cipher()
-        )
-        credential = service.credentials_locked(base_url=base_url)
-        if catalog is None:
-            catalog = self.catalog_dao.catalog(self.actor_id)
-        credential["headers"] = self._credentials(catalog).get("beefapi", {}).get("headers", {})
-        return credential
-
-    def _advance_workspace_locked(self, *, authorization_id=None, preferred="") -> None:
-        from short_drama.dao.canvas_workspace_dao import CanvasWorkspaceDAO
-        from short_drama.domain.canvas import CanvasWorkspaceUserState
-
-        dao = CanvasWorkspaceDAO(self.session)
-        state = dao.preferences(self.actor_id, lock=True)
-        if state is None:
-            state = CanvasWorkspaceUserState(
-                id=next_id(),
-                user_id=self.actor_id,
-                preferences_json={},
-                row_version=1,
-                created_at=utcnow(),
-                updated_at=utcnow(),
-                created_by=self.actor_id,
-                updated_by=self.actor_id,
-            )
-            self.session.add(state)
-        else:
-            state.row_version += 1
-            state.updated_at, state.updated_by = utcnow(), self.actor_id
-        if authorization_id and preferred:
-            state.preferences_json = {**state.preferences_json, "assistantModel": preferred}
-
-    def apply_beefapi_catalog_locked(
-        self,
-        models: list[dict],
-        credential: dict,
-        *,
-        account_changed: bool,
-        authorization_id: str | None,
-    ) -> None:
-        from .canvas_beefapi_catalog import catalog_profile, merge_catalog
-
-        catalog = self.catalog_dao.catalog(self.actor_id, lock=True)
-        channels = deepcopy(catalog.channels_json) if catalog else []
-        current = next((item for item in channels if item["id"] == "beefapi"), None)
-        base_url = credential["baseUrl"].removesuffix("/v1")
-        if current is None:
-            current = {
-                "id": "beefapi",
-                "name": "BeefAPI",
-                "scope": "user",
-                "pinned": True,
-                "presetVersion": 1,
-                "enabled": True,
-                "apiFormat": "openai",
-                "baseUrl": base_url,
-                "apiKey": "",
-                "secretKey": "",
-                "hasApiKey": True,
-                "hasSecretKey": False,
-                "credentialRef": "beefapi-enterprise",
-                "headers": [],
-                "models": [],
-                "modelProfiles": [],
-            }
-            channels.insert(0, current)
-        next_channel = merge_catalog(current, models, replace=account_changed)
-        next_channel.update(
-            baseUrl=base_url,
-            apiKey="",
-            secretKey="",
-            hasApiKey=True,
-            hasSecretKey=False,
-            credentialRef="beefapi-enterprise",
-        )
-        new_authorization = bool(
-            authorization_id and current.get("_assistantAuthorizationId") != authorization_id
-        )
-        preferred = next_channel.get("modelAliases", {}).get("gpt-6-astra", "gpt-6-astra")
-        fresh_available = any(
-            item["id"] == preferred
-            and catalog_profile(item)["capability"] == "text"
-            and catalog_profile(item)["protocol"]
-            in {"chat-completion", "claude-api", "responses", "openai-response"}
-            for item in models
-        )
-        if new_authorization:
-            next_channel["_assistantAuthorizationId"] = authorization_id
-        channels = [next_channel if item["id"] == "beefapi" else item for item in channels]
-        secrets = self._credentials(catalog)
-        changed = self._persist_locked(
-            channels,
-            secrets,
-            managed_secret={
-                "apiKey": credential["apiKey"],
-                "headers": secrets.get("beefapi", {}).get("headers", {}),
-                "secretKey": "",
-            },
-        )
-        if changed or new_authorization and fresh_available:
-            self._advance_workspace_locked(
-                authorization_id=authorization_id
-                if new_authorization and fresh_available
-                else None,
-                preferred="beefapi::" + preferred,
-            )
-
-    def clear_beefapi_locked(self) -> None:
-        catalog = self.catalog_dao.catalog(self.actor_id, lock=True)
-        if catalog is None:
-            return
-        channels = deepcopy(catalog.channels_json)
-        for channel in channels:
-            if channel["id"] == "beefapi":
-                channel.update(
-                    models=[],
-                    modelProfiles=[],
-                    apiKey="",
-                    secretKey="",
-                    hasApiKey=False,
-                    hasSecretKey=False,
-                )
-                channel.pop("credentialRef", None)
-        secrets = self._credentials(catalog)
-        if self._persist_locked(channels, secrets):
-            self._advance_workspace_locked()
 
     def refresh_runtime_model_locked(self, config: AIModelConfig) -> bool:
         """新准入只读取宿主真值；旧目录不能复活用户清除的运行配置。"""
@@ -622,10 +370,6 @@ class CanvasModelCatalogService(BaseService):
         if config is not None:
             cipher = self.configs._key_cipher()
             extended = decrypt_runtime_credentials(config, cipher)
-            if binding is not None and binding.channel_key == "beefapi":
-                credential = self._beefapi_credentials_locked(config.base_url)
-                credential["headers"] = extended["headers"]
-                return credential
             try:
                 key = cipher.decrypt(config.apikey) if config.apikey else ""
             except ValueError:

@@ -32,7 +32,6 @@ class Settings(BaseSettings):
     encryption_key: SecretStr | None = None
     snowflake_worker_id: int = Field(default=1, ge=0, le=1023)
     model_discovery_allowed_hosts: list[str] = Field(default_factory=list)
-    canvas_beefapi_test_origin: str = ""
     canvas_whisper_base_url: str = ""
     beeftv_depth_python: str = ""
     beeftv_depth_tool_dir: str = ""
@@ -182,20 +181,6 @@ class Settings(BaseSettings):
             self.minio_public_endpoint is not None
             and self.minio_provider_presign_expiry is not None
         )
-
-    @field_validator("canvas_beefapi_test_origin")
-    @classmethod
-    def loopback_beefapi_test_origin(cls, value):
-        from short_drama.ai.canvas_beefapi_client import CanvasBeefAPIError, canonical_origin
-
-        if not value:
-            return ""
-        try:
-            return canonical_origin(value)
-        except CanvasBeefAPIError:
-            raise ValueError(
-                "CANVAS_BEEFAPI_TEST_ORIGIN must be an explicit loopback origin"
-            ) from None
 
     @model_validator(mode="after")
     def agent_requires_identity(self):

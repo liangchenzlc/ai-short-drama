@@ -8,12 +8,12 @@ export const artifactFieldLabels: Record<string, string> = { name: '名称', lab
 export const nativeArtifact = (kind: AgentArtifactKind) => ['extraction_candidate', 'storyboard_candidate', 'image_candidate', 'video_candidate'].includes(kind);
 export function artifactTarget(artifact: AgentArtifact) {
   const source = artifact.source_snapshot;
-  return source.target_kind === 'episode' ? '本集作品' : `${source.target_kind === 'asset' ? '素材' : '镜头'} ${source.target_id ?? ''}`.trim();
+  return source.target_kind === 'project' ? '当前作品' : `${source.target_kind === 'asset' ? '素材' : '镜头'} ${source.target_id ?? ''}`.trim();
 }
 export function artifactEffect(kind: AgentArtifactKind) {
   return kind === 'novel_proposal' || kind === 'text_proposal' ? '采用会替换本集小说正文，原候选和来源快照保留。'
     : kind === 'script_candidate' ? '采用会设为当前编辑剧本，仍需单独确认定稿。'
-    : kind === 'asset_patch' ? '采用会修改这个素材的所列字段，共享引用也可能受到影响。'
+    : kind === 'asset_patch' ? '采用会修改这个素材的所列字段。'
     : kind === 'shot_patch' ? '采用会修改这个镜头的所列字段。'
     : kind === 'extraction_candidate' ? '先核对每项素材及同名复用，再加入本集素材库。'
     : kind === 'storyboard_candidate' ? '先核对完整分镜，再选择追加或替换。'

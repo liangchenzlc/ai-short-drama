@@ -438,26 +438,7 @@ try {
     if (videoOutput) await checkVideo("restored");
     report.cookie_only_recovery = true;
 
-    report.step = "成员原导演台恢复共享作品";
-    const member = await context(config.memberUsername);
-    await open(member);
-    await openExisting();
-    await checkGallery();
-    if (multitrackScene) await checkMultitrackPreview("member");
-    const memberDocument = (await read(await member.request.get(origin + path))).source_document;
-    if (actorScene) {
-        assert.equal(scene(memberDocument).objects[0].actorPreset, "standard_male");
-        assert.equal(scene(memberDocument).objects[0].motionPath.kind, "line");
-    } else assert.equal(scene(memberDocument).objects[0].primitive, "box");
-    assert.equal(scene(memberDocument).shots[0].screenshots.at(-1).storageKey, screenshot.storageKey);
-    await page.screenshot({ path: resolve(output, "director-member.png"), fullPage: true });
-    if (videoOutput) {
-        await page.getByRole("button", { name: "关闭导演台", exact: true }).click();
-        await workbench().waitFor({ state: "hidden" });
-        await checkVideo("member");
-    }
-    await member.close();
-    report.member_result_seen = true;
+
     assert.equal(report.resource_posts, uploadsBeforeRecovery, "恢复不应重复上传截图或封面");
     assert.equal(report.resource_posts, videoOutput ? 5 : renderViews ? 4 : 3);
     assert.equal(report.task_posts, 0);

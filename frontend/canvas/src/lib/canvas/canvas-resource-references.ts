@@ -519,7 +519,7 @@ function isResourceNode(node: CanvasNodeData) {
 
 function resourceKind(node: CanvasNodeData): CanvasResourceKind | null {
     // 角色卡是跨类型覆盖：任何节点带上角色元数据都按角色处理，故先于按类型判定。
-    if (node.metadata?.workflowKind === "character" && node.metadata.characterAssetId) return "character";
+    if (node.metadata?.workflowKind === "character" && node.metadata.characterDefinition) return "character";
     return getNodeResourceKind(node);
 }
 

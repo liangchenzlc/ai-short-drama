@@ -28,6 +28,6 @@ export function CreationImagePreview({ src, alt, loading = false, empty, onRefre
       <Button type="text" aria-label="适合窗口" icon={<PictureOutlined/>} onClick={() => setZoom(100)}/>
       <Button type="text" aria-label="全屏预览" icon={<FullscreenOutlined/>} onClick={openPreview}/>
     </div>}
-    {previewOpen && src && <ImagePreview src={src} alt={alt} onClose={() => setPreviewOpen(false)}/>}
+    {previewOpen && src && <ImagePreview src={src} alt={alt} presentation="standard-creation" onClose={() => setPreviewOpen(false)}/>}
   </div>;
 }

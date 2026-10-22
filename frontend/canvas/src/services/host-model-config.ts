@@ -22,7 +22,8 @@ export type HostModelConfig = {
         service_type: "text" | "image" | "video" | "audio";
         enabled: boolean; has_api_key: boolean; is_default?: boolean;
         runtime_profile?: HostRuntimeProfile | null;
-        credential_source?: "manual" | "beefapi";
+        default_capability_config?: ModelProfile["capabilityConfig"] | null;
+        credential_source?: "manual";
         has_secret_key?: boolean;
         headers?: Array<{ name: string; has_value: boolean }>;
         selection_aliases?: string[];
@@ -55,7 +56,7 @@ export function sourceModelConfig(value: HostModelConfig): AiConfig {
             models: [model.model_key],
             modelProfiles: [{ model: model.model_key, displayName: model.name, capability: model.service_type,
                 logicalModelId: model.id, protocol: runtime?.protocol,
-                capabilityConfig: runtime?.capability_config, defaultOptions: runtime?.default_options,
+                capabilityConfig: runtime?.capability_config ?? model.default_capability_config ?? undefined, defaultOptions: runtime?.default_options,
                 logicalCapabilitySpec: runtime?.logical_capability_spec,
                 logicalCapabilityProfiles: runtime?.logical_capability_profiles,
                 videoCapabilitiesVersion: runtime?.video_capabilities_version,

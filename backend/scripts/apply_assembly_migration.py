@@ -4,7 +4,7 @@ from sqlalchemy import inspect
 
 from short_drama.core.config import Settings
 from short_drama.db.session import build_engine
-from short_drama.domain import EpisodeAssembly, EpisodeAssemblyClip, EpisodeRenderJob
+from short_drama.domain import ProjectAssembly, ProjectAssemblyClip, ProjectRenderJob
 
 
 def main():
@@ -23,7 +23,7 @@ def main():
                 "ALTER TABLE media_files ADD CONSTRAINT ck_media_video_metadata "
                 "CHECK (video_metadata IS NULL OR JSON_TYPE(video_metadata) = 'OBJECT')"
             )
-        for model in (EpisodeAssembly, EpisodeAssemblyClip, EpisodeRenderJob):
+        for model in (ProjectAssembly, ProjectAssemblyClip, ProjectRenderJob):
             model.__table__.create(connection, checkfirst=True)
     engine.dispose()
     print("Assembly migration complete: additive columns and tables only.")

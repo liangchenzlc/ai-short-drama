@@ -130,23 +130,3 @@ export function safeCanvasReturn(value: string | null): string | null {
   const url = new URL(value, 'https://host.invalid');
   return url.origin === 'https://host.invalid' && url.pathname === rawPath ? `${url.pathname}${url.search}${url.hash}` : null;
 }
-
-export function beefAPITestOrigin(mode: string, value: string): string {
-  if (mode !== 'test') throw new Error('BeefAPI 本机测试源站仅可用于显式 test 模式。');
-  const url = new URL(value);
-  if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.origin !== value) {
-    throw new Error('BeefAPI 测试源站必须是纯本机 HTTP origin。');
-  }
-  return url.origin;
-}
-
-export function trustedBeefAPIPage(value: string, kind: 'authorization' | 'wallet', test?: { mode: string; origin: string }): string {
-  const origin = test ? beefAPITestOrigin(test.mode, test.origin) : 'https://enterprise.beefapi.com';
-  const url = new URL(value);
-  const rawPath = /^[a-z][a-z\d+.-]*:\/\/[^/?#]*([^?#]*)/i.exec(value)?.[1];
-  const allowed = kind === 'wallet' ? url.pathname === '/console/topup' && !value.includes('?') : url.pathname === '/desktop-auth' || url.pathname.startsWith('/desktop-auth/');
-  if (url.origin !== origin || url.username || url.password || value.includes('#') || value.includes('\\') || !rawPath || rawPath.includes('%') || rawPath.split('/').some(part => part === '.' || part === '..') || !allowed) {
-    throw new Error('BeefAPI 返回的企业页面地址无法核验，请重新连接。');
-  }
-  return url.href;
-}

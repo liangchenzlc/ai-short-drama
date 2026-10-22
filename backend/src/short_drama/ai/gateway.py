@@ -2,9 +2,11 @@
 
 import base64
 import json
+import logging
 import mimetypes
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from io import BytesIO
 from urllib.parse import urlsplit
@@ -39,7 +41,6 @@ from .canvas_gemini_adapters import GEMINI_GENERATE_CONTENT
 from .canvas_image_references import (
     CANVAS_REFERENCE_IMAGE_BYTES,
     inline_saved_image_references,
-    is_canvas_image_request,
     saved_mask_bytes,
     uses_canvas_inline_images,
 )
@@ -65,9 +66,7 @@ from .canvas_runninghub_workflow import RUNNINGHUB_WORKFLOW
 from .canvas_seedance_preupload import (
     JSON_LIMIT,
     inline_canvas_references,
-    prepare_beefapi_seedance_references,
     read_canvas_reference,
-    validate_beefapi_snapshot,
 )
 from .canvas_tool_adapters import (
     is_canvas_tool_choice_rejection,
@@ -77,8 +76,6 @@ from .canvas_tool_adapters import (
 from .canvas_tool_stream import decode_canvas_tool_stream
 from .canvas_tool_submission import canvas_tool_resolved_parameters, is_canvas_tool_request
 from .canvas_video_adapters import (
-    BEEFAPI_SEEDANCE,
-    NEWAPI_VIDEO_GENERATIONS,
     OPENAI_VIDEOS,
     VIDEO_ADAPTERS,
     canvas_video_resolved_parameters,
@@ -90,6 +87,7 @@ from .types import GenerationError, GenerationResult
 
 MAX_REFERENCE_IMAGE_BYTES = 50 * 1024**2
 MAX_REFERENCE_TOTAL_BYTES = 100 * 1024**2
+log = logging.getLogger(__name__)
 
 
 def _credential(value):
@@ -148,6 +146,16 @@ class GenerationGateway:
         agnes_reference_guard_writer=None,
     ):
         adapter = adapter or select_adapter(snapshot)
+        count = request_data.get("parameters", {}).get("count", 1)
+        if (
+            adapter in {"openai_images.v1", "ark_images.v1"}
+            and type(count) is int
+            and count > 1
+            and "canvas_request" not in request_data
+        ):
+            return self._submit_image_batch(
+                snapshot, request_data, credential, adapter, reference_loader, mask_reference_loader
+            )
         if adapter in RUNNINGHUB_ADAPTERS:
             return self._submit_runninghub(
                 snapshot,
@@ -172,7 +180,9 @@ class GenerationGateway:
                 agnes_reference_guard_writer,
             )
         url, headers, body = build_submission(snapshot, request_data, adapter)
-        canvas_image = adapter == "openai_images.v1" and is_canvas_image_request(
+        from .canvas_image_references import is_stored_image_edit_request
+
+        canvas_image = adapter == "openai_images.v1" and is_stored_image_edit_request(
             snapshot, request_data
         )
         if (
@@ -273,8 +283,101 @@ class GenerationGateway:
             result = self._sanitize(result, value, submitted=True)
         return result
 
+    def _submit_image_batch(self, snapshot, request, credential, adapter, loader, mask_loader):
+        # Validate the entire request before starting any paid submission. Like the
+        # canvas executor, use one independent single-image request per fixed slot.
+        resolved = self.validate(snapshot, request, adapter)
+        count = request["parameters"]["count"]
+        deadline = time.monotonic() + float(snapshot.get("budget_seconds", 180))
+
+        def submit_one(index):
+            single = deepcopy(request)
+            single["parameters"]["count"] = 1
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise GenerationError("timeout")
+            try:
+                result = self.submit(
+                    {**snapshot, "budget_seconds": remaining},
+                    single,
+                    credential,
+                    adapter,
+                    reference_loader=loader,
+                    mask_reference_loader=mask_loader,
+                )
+                if result.status != "succeeded" or not result.outputs:
+                    raise GenerationError("invalid_response", accepted_unknown=True)
+                return result
+            except GenerationError:
+                raise
+            except Exception:
+                log.warning("Image request interrupted; adapter=%s output_index=%s", adapter, index)
+                raise GenerationError("generation_interrupted", accepted_unknown=True) from None
+
+        def add_usage(total, usage):
+            for key, value in usage.items():
+                if isinstance(value, dict):
+                    add_usage(total.setdefault(key, {}), value)
+                elif type(value) in {int, float}:
+                    total[key] = total.get(key, 0) + value
+
+        outputs, usage, failures = [], {}, []
+        with ThreadPoolExecutor(max_workers=count, thread_name_prefix="image-generation") as pool:
+            futures = [pool.submit(submit_one, index) for index in range(1, count + 1)]
+            for index, future in enumerate(futures, start=1):
+                try:
+                    result = future.result()
+                except GenerationError as error:
+                    failures.append((index, error))
+                    continue
+                # A provider may ignore n=1 as well; each request owns exactly one slot.
+                outputs.append({**result.outputs[0], "output_index": index})
+                add_usage(usage, result.usage)
+        if not outputs:
+            error = next((error for _, error in failures if error.accepted_unknown), failures[0][1])
+            raise GenerationError(
+                error.code,
+                accepted_unknown=any(error.accepted_unknown for _, error in failures),
+                retryable=all(error.retryable for _, error in failures),
+                http_status=error.http_status,
+            ) from None
+        return GenerationResult(
+            status="succeeded",
+            adapter=adapter,
+            outputs=outputs,
+            usage=usage,
+            resolved_parameters=resolved,
+            error={
+                "code": "partial_result",
+                "output_errors": [
+                    {
+                        "output_index": index,
+                        "code": error.code,
+                        "accepted_unknown": error.accepted_unknown,
+                        **({"http_status": error.http_status} if error.http_status else {}),
+                    }
+                    for index, error in failures
+                ],
+            }
+            if failures
+            else None,
+        )
+
     def validate(self, snapshot, request_data, adapter=None):
-        return validate_request(snapshot, request_data, adapter)["resolved_parameters"]
+        validated = validate_request(snapshot, request_data, adapter)
+        count = request_data.get("parameters", {}).get("count", 1)
+        if (
+            validated["adapter"] in {"openai_images.v1", "ark_images.v1"}
+            and count > 1
+            and "canvas_request" not in request_data
+        ):
+            single = deepcopy(request_data)
+            single["parameters"]["count"] = 1
+            return {
+                **validate_request(snapshot, single, adapter)["resolved_parameters"],
+                "request_count": count,
+            }
+        return validated["resolved_parameters"]
 
     def _submit_runninghub(self, snapshot, request, credential, adapter, loader, mask_loader):
         descriptor = runninghub_descriptor(snapshot, request, adapter)
@@ -533,18 +636,7 @@ class GenerationGateway:
                         reference_urls.append(url)
                         item.pop("storageKey")
                         item["url"] = url
-        elif adapter == BEEFAPI_SEEDANCE:
-            prepare_beefapi_seedance_references(
-                self.transport, snapshot, prepared, headers, loader, deadline
-            )
         elif adapter == RUNNINGHUB_WORKFLOW:
-            inline_canvas_references(self.transport, prepared, loader, deadline)
-        elif (
-            adapter == NEWAPI_VIDEO_GENERATIONS
-            and snapshot.get("canvas_channel_key") == "beefapi"
-            and snapshot.get("model_key", "").lower() == "wan3.0-video"
-        ):
-            validate_beefapi_snapshot(snapshot, self.settings)
             inline_canvas_references(self.transport, prepared, loader, deadline)
         url, _, body = build_submission(snapshot, prepared, adapter)
         if reference_urls:
@@ -564,19 +656,9 @@ class GenerationGateway:
                 )
                 fields.append(("input_reference", ("input-reference.png", data, mime)))
             body = MultipartBody(fields)
-        if adapter in {BEEFAPI_SEEDANCE, RUNNINGHUB_WORKFLOW}:
+        if adapter == RUNNINGHUB_WORKFLOW:
             if len(json.dumps(body, ensure_ascii=False).encode()) > JSON_LIMIT:
                 raise GenerationError("reference_inline_too_large")
-        if adapter == BEEFAPI_SEEDANCE:
-            key = snapshot.get("submission_key")
-            if key:
-                if (
-                    not isinstance(key, str)
-                    or len(key) > 128
-                    or any(ord(c) < 33 or ord(c) > 126 for c in key)
-                ):
-                    raise GenerationError("invalid_submission_key")
-                headers["Idempotency-Key"] = key
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise GenerationError("timeout")
@@ -633,8 +715,6 @@ class GenerationGateway:
         if adapter in VIDEO_ADAPTERS:
             if not isinstance(credential, CanvasCredentials):
                 raise GenerationError("invalid_credential")
-            if adapter == BEEFAPI_SEEDANCE:
-                validate_beefapi_snapshot(snapshot, self.settings)
         url = poll_endpoint(snapshot, provider_task_id, adapter)
         _, headers, secrets = _authentication(snapshot, credential, {})
         body = self._json_request(
@@ -1017,7 +1097,7 @@ class GenerationGateway:
         if origin(target) != origin(base):
             # CDN or signed external artifacts never inherit provider credentials.
             return self.transport.download_media(url, max_bytes, canvas_video=canvas_video)
-        if adapter in {OPENAI_VIDEOS, BEEFAPI_SEEDANCE} and target.path.endswith("/content"):
+        if adapter == OPENAI_VIDEOS and target.path.endswith("/content"):
             headers["Accept"] = "video/mp4"
         if adapter == ASYNC_AUDIO and target.path.endswith("/content"):
             headers["Accept"] = "audio/*"

@@ -1,5 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, Slider, Tooltip } from 'antd';
+import { CircleHelp, Magnet, Maximize2, Minus, Plus, SkipBack, SkipForward } from 'lucide-react';
+import { AssemblyAction } from './AssemblyAction';
 import { Timeline, type TimelineState } from '@xzdarcy/react-timeline-editor';
 import type { TimelineRow } from '@xzdarcy/timeline-engine';
 import '@xzdarcy/react-timeline-editor/dist/react-timeline-editor.css';
@@ -33,6 +35,8 @@ export function AssemblyTimeline({ clips, selected, frame, playing, disabled, on
   const total = entries.at(-1)?.end ?? 0;
   const starts = entries.map(entry => entry.start);
   const previous = adjacentStart(starts, frame, -1), next = adjacentStart(starts, frame, 1);
+  const feedbackText = snapAt !== null ? `已吸附片段边界 ${framecode(snapAt)}` : feedback;
+  const shortcuts = 'S 分割 · Delete 删除 · Ctrl / ⌘ Z 撤销 · 选中片段后，Alt + 左右键逐帧调整出点，加 Shift 调整入点。缩放围绕播放位置。';
   function seekPointer(time: number) {
     const raw = Math.max(0, Math.min(total, time * FPS));
     const at = snapping ? snapFrame(raw, [...starts, total], scaleWidth) : Math.round(raw);
@@ -97,13 +101,14 @@ export function AssemblyTimeline({ clips, selected, frame, playing, disabled, on
   }
   return <section id={id} className="assembly-timeline" aria-label="视频时间轴">
     <div className="assembly-timeline-heading"><div><strong>视频轨道</strong><span>{entries.length} 个片段 · {framecode(total)} · 30 fps</span></div>
-      <div className="assembly-zoom"><Button size="small" disabled={previous === undefined} onClick={() => { setSnapAt(null); onSeek(previous!); }}>上一段</Button>
-        <Button size="small" disabled={next === undefined} onClick={() => { setSnapAt(null); onSeek(next!); }}>下一段</Button>
-        <Button size="small" aria-pressed={snapping} onClick={() => { setSnapping(!snapping); setSnapAt(null); }}>{snapping ? '吸附已开启' : '吸附已关闭'}</Button>
-        <Button size="small" onClick={() => zoom((viewport.width - 60) / Math.max(1, total / FPS), true)}>适应全部</Button>
-        <Button size="small" aria-label="缩小时间轴" onClick={() => zoom(scaleWidth / 1.5)} disabled={scaleWidth <= MIN_ZOOM}>−</Button>
-        <label htmlFor={zoomId}>缩放</label><Slider id={zoomId} aria-label="时间轴缩放" min={0} max={100} value={Math.log(scaleWidth / MIN_ZOOM) / Math.log(MAX_ZOOM / MIN_ZOOM) * 100} onChange={v => zoom(MIN_ZOOM * (MAX_ZOOM / MIN_ZOOM) ** (v / 100))}/>
-        <Button size="small" aria-label="放大时间轴" onClick={() => zoom(scaleWidth * 1.5)} disabled={scaleWidth >= MAX_ZOOM}>+</Button></div>
+      <div className="assembly-zoom"><Tooltip title={shortcuts} trigger={['hover', 'focus']}><Button type="text" size="small" className="assembly-icon-action" icon={<CircleHelp size={15}/>} aria-label="剪辑快捷键"/></Tooltip>
+        <AssemblyAction label="上一段" icon={<SkipBack size={15}/>} disabled={previous === undefined} onClick={() => { setSnapAt(null); onSeek(previous!); }}/>
+        <AssemblyAction label="下一段" icon={<SkipForward size={15}/>} disabled={next === undefined} onClick={() => { setSnapAt(null); onSeek(next!); }}/>
+        <AssemblyAction label={snapping ? '吸附已开启' : '吸附已关闭'} icon={<Magnet size={15}/>} aria-pressed={snapping} onClick={() => { setSnapping(!snapping); setSnapAt(null); }}/>
+        <AssemblyAction label="适应全部" icon={<Maximize2 size={15}/>} onClick={() => zoom((viewport.width - 60) / Math.max(1, total / FPS), true)}/>
+        <AssemblyAction label="缩小时间轴" icon={<Minus size={15}/>} onClick={() => zoom(scaleWidth / 1.5)} disabled={scaleWidth <= MIN_ZOOM}/>
+        <Slider id={zoomId} aria-label="时间轴缩放" min={0} max={100} value={Math.log(scaleWidth / MIN_ZOOM) / Math.log(MAX_ZOOM / MIN_ZOOM) * 100} onChange={v => zoom(MIN_ZOOM * (MAX_ZOOM / MIN_ZOOM) ** (v / 100))}/>
+        <AssemblyAction label="放大时间轴" icon={<Plus size={15}/>} onClick={() => zoom(scaleWidth * 1.5)} disabled={scaleWidth >= MAX_ZOOM}/></div>
     </div>
     <div className="assembly-timeline-canvas" ref={container}
       onDragOver={e => { if (!disabled && e.dataTransfer.types.includes('application/x-assembly-source')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDropFrame(dropTime(e.clientX)); } }}
@@ -158,7 +163,7 @@ export function AssemblyTimeline({ clips, selected, frame, playing, disabled, on
             }}
             onFocus={() => onSelect(c.id)}>
             <AssemblyFilmstrip clip={c} start={20 + entry.start / FPS * scaleWidth} width={(entry.end - entry.start) / FPS * scaleWidth} height={height - 72} viewport={viewport}/>
-            <span className="assembly-track-label">{selected === c.id && <span className="assembly-track-selected" aria-hidden="true">已选中 · </span>}镜头 {String(c.shot_position).padStart(2, '0')}{c.muted ? ' · 静音' : ''}</span>
+            <span className="assembly-track-label">镜头 {String(c.shot_position).padStart(2, '0')}{c.muted ? ' · 静音' : ''}</span>
             <span className="assembly-track-time">{c.issue ? '需处理' : framecode(entry.end - entry.start)}</span>
           </button></Tooltip>;
         }}/>
@@ -167,7 +172,6 @@ export function AssemblyTimeline({ clips, selected, frame, playing, disabled, on
       {snapAt !== null && <div className="assembly-snap-marker" style={{ left: 20 + snapAt / FPS * scaleWidth - viewport.left }} aria-hidden="true"/>}
       {!entries.length && <p className="assembly-track-empty">把左侧分镜拖到这里，或点击“添加”</p>}
     </div>
-    <p className="assembly-timeline-feedback" role="status">{snapAt !== null ? `已吸附片段边界 ${framecode(snapAt)}` : feedback || '拖动片段排序，拖动两端裁剪；悬停或聚焦片段查看详情。缩放围绕播放位置。'}</p>
-    <p className="assembly-timeline-help">S 分割 · Delete 删除 · Ctrl / ⌘ Z 撤销 · 选中片段后，Alt + 左右键逐帧调整出点，加 Shift 调整入点。</p>
+    <p className={`assembly-timeline-feedback${feedbackText ? ' is-active' : ''}`} role="status">{feedbackText}</p>
   </section>;
 }

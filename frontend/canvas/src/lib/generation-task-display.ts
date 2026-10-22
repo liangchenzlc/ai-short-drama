@@ -23,15 +23,29 @@ export function generationTaskStageLabel(task: GenerationTaskDisplayTarget) {
     if (isGenerationTaskSubmissionUncertain(task)) return "为避免重复创建上游任务，未自动重试";
     if (task.stage === "generating") return "生成中";
     if (task.stage === "queued") return "排队中";
+    if (task.stage === "submitting") return "正在提交生成任务";
+    if (task.stage === "saving" || task.stage === "downloading") return "生成已完成，正在取回并保存结果";
+    if (task.stage === "materializing") return "正在处理并关联画布资源";
+    if (task.stage === "processing") return "正在处理结果";
     return task.stage || generationTaskStatusLabel(task);
 }
 
 export function generationTaskShowsProgress(task: GenerationTaskDisplayTarget) {
     if (isGenerationTaskSubmissionUncertain(task)) return false;
+    if (["queued", "submitting", "saving", "downloading", "materializing", "processing"].includes(task.stage || "")) return false;
     // 排队、后端接管和连接供应商都没有真实百分比。只有上游状态响应
     // 已经写回任务后才显示进度，避免所有图片/视频长期停在同一个假数值。
     if (["等待队列调度", "后端接管任务", "正在连接上游", "调用生成模型"].includes(task.stage || "")) return false;
     return true;
+}
+
+export function generationTaskStallHint(task: GenerationTaskDisplayTarget & { updatedAt?: string }, now = Date.now()) {
+    if (task.status !== "running" || !task.updatedAt) return "";
+    const updated = Date.parse(task.updatedAt);
+    if (!Number.isFinite(updated) || now - updated < 90_000) return "";
+    if (["saving", "downloading", "materializing", "processing"].includes(task.stage || "")) return "结果交付较长时间未更新，可查看详情。请勿重复生成。";
+    if (task.stage === "submitting") return "提交状态较长时间未更新，请先查看详情确认结果。";
+    return "";
 }
 
 export const operationOptions = [

@@ -30,7 +30,7 @@ def _review(schema, values):
         ) from None
 
 
-def adopt_native_locked(session, episode, artifact, values, *, settings=None, storage=None):
+def adopt_native_locked(session, creation, artifact, values, *, settings=None, storage=None):
     if artifact.kind == "extraction_candidate":
         if values.get("native_review") is None:
             raise WorkflowError(
@@ -40,8 +40,7 @@ def adopt_native_locked(session, episode, artifact, values, *, settings=None, st
         if review.content_version != values["content_version"]:
             raise WorkflowError("agent_source_changed", "审核的正文版本不一致", 409)
         receipt = AssetExtractionService(session).apply_locked(
-            episode.project_id,
-            episode.id,
+            creation.id,
             artifact.generation_task_id,
             review.model_dump(mode="json"),
             f"agent-artifact:{artifact.id}",
@@ -56,8 +55,7 @@ def adopt_native_locked(session, episode, artifact, values, *, settings=None, st
         ] or review.storyboard_version != values.get("storyboard_version"):
             raise WorkflowError("agent_source_changed", "审核的正文或分镜版本不一致", 409)
         receipt = GenerationBusinessService(session).apply_storyboard_locked(
-            episode.project_id,
-            episode.id,
+            creation.id,
             artifact.generation_task_id,
             review.model_dump(mode="json"),
         )
@@ -78,7 +76,7 @@ def adopt_native_locked(session, episode, artifact, values, *, settings=None, st
     if artifact.target_asset_id:
         target = session.scalar(
             select(Asset)
-            .where(Asset.id == artifact.target_asset_id, Asset.project_id == episode.project_id)
+            .where(Asset.id == artifact.target_asset_id, Asset.project_id == creation.id)
             .with_for_update()
             .execution_options(populate_existing=True)
         )
@@ -90,7 +88,7 @@ def adopt_native_locked(session, episode, artifact, values, *, settings=None, st
             select(ShotScript)
             .where(
                 ShotScript.id == artifact.target_shot_id,
-                ShotScript.episode_id == episode.id,
+                ShotScript.project_id == creation.id,
                 ShotScript.deleted_at.is_(None),
             )
             .with_for_update()
@@ -106,8 +104,8 @@ def adopt_native_locked(session, episode, artifact, values, *, settings=None, st
         target_type = "shot_video" if artifact.kind == "video_candidate" else "shot_image"
         context_hash = (record.request_data.get("source_snapshot") or {}).get("context_hash")
         if (
-            episode.storyboard_version != source["storyboard_version"]
-            or values.get("storyboard_version") != episode.storyboard_version
+            creation.storyboard_version != source["storyboard_version"]
+            or values.get("storyboard_version") != creation.storyboard_version
         ):
             raise WorkflowError("agent_source_changed", "分镜集合已变化，请核对新的来源", 409)
     if target is None:
@@ -116,10 +114,15 @@ def adopt_native_locked(session, episode, artifact, values, *, settings=None, st
         target.row_version != source["target_row_version"]
         or values.get("target_row_version") != target.row_version
     ):
-        raise WorkflowError("agent_source_changed", "候选对象已变化，请核对后重新生成", 409)
-    if values.get("confirm_shared") is not True:
         raise WorkflowError(
-            "shared_confirmation_required", "采用媒体会更新共享作品，请明确确认", 409
+            "agent_source_changed",
+            "候选对象已变化，请核对后重新生成",
+            409,
+            details={
+                "source_version": source["target_row_version"],
+                "expected_version": values.get("target_row_version"),
+                "current_version": target.row_version,
+            },
         )
     before = target.row_version
     parsed = MediaAssetApply.model_validate(
@@ -128,7 +131,6 @@ def adopt_native_locked(session, episode, artifact, values, *, settings=None, st
             "expected_media_id": expected_media,
             "expected_row_version": target.row_version,
             "expected_context_hash": context_hash,
-            "confirm_shared": True,
         }
     )
     result = MediaAssetService(session, settings or Settings(), storage).apply_locked(

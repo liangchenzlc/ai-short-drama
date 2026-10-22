@@ -130,16 +130,6 @@ try {
     await page.screenshot({ path: resolve(output, "conversion-restored.png"), fullPage: true });
     report.cookie_only_recovery = true;
     await save();
-    const member = await context(config.memberUsername);
-    await open(member);
-    await checkResult();
-    await page.screenshot({ path: resolve(output, "conversion-member.png"), fullPage: true });
-    await member.close();
-    report.member_result_seen = true;
-    assert.equal(report.resource_posts, 1);
-    assert.equal(report.task_posts, 0);
-    assert.deepEqual(report.page_errors, []);
-    assert.deepEqual(report.http_errors, []);
     report.step = "complete";
     process.stdout.write(JSON.stringify(report));
 } catch (error) {

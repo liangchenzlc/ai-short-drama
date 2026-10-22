@@ -103,7 +103,6 @@ class AssetPatch(InputModel):
     prompt: MediumText = None
     tags: list[Annotated[str, Field(max_length=40)]] = Field(default=None, max_length=20)
     scene_time: SceneTime = None
-    confirm_shared: bool = False
 
     @field_validator("label", "scene_time")
     @classmethod
@@ -128,7 +127,7 @@ class AssetPatch(InputModel):
     @classmethod
     def reject_empty_patch(cls, values):
         if isinstance(values, dict):
-            changed = set(values) - {"row_version", "confirm_shared"}
+            changed = set(values) - {"row_version"}
             if not changed:
                 raise ValueError("provide at least one field to update")
         return values

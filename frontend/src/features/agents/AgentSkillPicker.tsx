@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, Input, Segmented, Skeleton } from 'antd';
+import { Alert, Button, Checkbox, Dropdown, Input, Segmented, Skeleton } from 'antd';
+import { Ellipsis } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import { confirmAction } from '../../components/ui/confirm';
 import { agentsApi } from '../../api/modules/agents';
 import { ApiError, errorMessage } from '../../api/http';
-import type { AgentSkill } from '../../api/types/agents';
+import type { AgentSkill, AgentSkillDetail } from '../../api/types/agents';
 
-export function AgentSkillPicker({ selected, disabled, onChange, onClose, dialogClassName }: {
-  selected: AgentSkill[]; disabled: boolean; dialogClassName?: string; onChange: (skills: AgentSkill[]) => void; onClose: () => void;
+export function AgentSkillPicker({ selected, disabled, onChange, onClose, dialogClassName, layout }: {
+  selected: AgentSkill[]; disabled: boolean; dialogClassName?: string; layout?: 'standard'; onChange: (skills: AgentSkill[]) => void; onClose: () => void;
 }) {
   const [items, setItems] = useState<AgentSkill[]>([]);
   const [tab, setTab] = useState<'builtin' | 'personal'>('builtin');
@@ -15,7 +16,7 @@ export function AgentSkillPicker({ selected, disabled, onChange, onClose, dialog
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
-  const [editing, setEditing] = useState<AgentSkill | null>(null);
+  const [editing, setEditing] = useState<AgentSkillDetail | null>(null);
   const [name, setName] = useState('');
   const [instructions, setInstructions] = useState('');
   const upload = useRef<HTMLInputElement>(null);
@@ -36,8 +37,8 @@ export function AgentSkillPicker({ selected, disabled, onChange, onClose, dialog
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [revision]);
-  async function mutate(operation: () => Promise<void>) {
-    if (lock.current || disabled) return;
+  async function mutate(operation: () => Promise<void>, readOnly = false) {
+    if (lock.current || disabled && !readOnly) return;
     lock.current = true; setBusy(true); setError('');
     try { await operation(); }
     catch (cause) { if (alive.current) setError(errorMessage(cause)); }
@@ -51,9 +52,15 @@ export function AgentSkillPicker({ selected, disabled, onChange, onClose, dialog
   const visible = items.filter(item => item.builtin === (tab === 'builtin'));
   const dirty = !!editing && !editing.builtin && (name !== editing.name || instructions !== editing.instructions);
   async function discardEditor() {
-    return !dirty || await confirmAction('技能修改尚未保存，放弃本次编辑？', { title: '未保存的 Skill', confirmText: '放弃编辑' });
+    return !dirty || await confirmAction('技能修改尚未保存，放弃本次编辑？', { title: '未保存的 Skill', confirmText: '放弃编辑', className: layout === 'standard' ? 'standard-creation-dialog' : undefined });
   }
   async function close() { if (!busy && await discardEditor()) onClose(); }
+  async function deleteSkill(skill: AgentSkill) {
+    if (!await confirmAction(`删除“${skill.name}”？已发送消息和已开始任务仍保留原技能版本。`, { title: '删除 Skill', confirmText: '删除', className: layout === 'standard' ? 'standard-creation-dialog' : undefined })) return;
+    await agentsApi.deleteSkill(skill.id, skill.row_version!);
+    if (alive.current) { setItems(previous => previous.filter(item => item.id !== skill.id)); onChange(selected.filter(item => item.id !== skill.id)); if (editing?.id === skill.id) setEditing(null); }
+  }
+  const done = <Button type="primary" disabled={busy} onClick={() => void close()}>完成</Button>;
   return <Dialog title="加载 Skill" className={["agent-context-dialog", dialogClassName].filter(Boolean).join(" ")} canClose={!busy} onClose={() => void close()}>
     <div className="agent-context-dialog-body">
       <div className="agent-skill-heading"><Segmented aria-label="技能来源" value={tab} disabled={busy} options={[{ value: 'builtin', label: '内置技能' }, { value: 'personal', label: '我的技能' }]} onChange={value => setTab(value as typeof tab)}/><span>已加载 {selected.length} / 8</span></div>
@@ -72,14 +79,13 @@ export function AgentSkillPicker({ selected, disabled, onChange, onClose, dialog
         : visible.length ? <div className="agent-skill-list">{visible.map(skill => <article key={skill.id}>
           <Checkbox checked={selected.some(item => item.id === skill.id)} disabled={disabled || busy || !skill.enabled || selected.length >= 8 && !selected.some(item => item.id === skill.id)} onChange={event => onChange(event.target.checked ? [...selected, skill] : selected.filter(item => item.id !== skill.id))}>{skill.name}</Checkbox>
           <span>版本 {skill.content_version}{skill.enabled ? '' : '（已停用）'}</span>
-          <div><Button size="small" disabled={busy} onClick={async () => { if (await discardEditor()) { setEditing(skill); setName(skill.name); setInstructions(skill.instructions); } }}>{skill.builtin ? '查看' : '编辑'}</Button>{!skill.builtin && <>
+          <div><Button size="small" disabled={busy} onClick={() => void mutate(async () => { if (!await discardEditor()) return; const detail = await agentsApi.skill(skill.id); if (alive.current) { setEditing(detail); setName(detail.name); setInstructions(detail.instructions); } }, true)}>{skill.builtin ? '查看' : '编辑'}</Button>{!skill.builtin && (layout === 'standard' ? <Dropdown trigger={['click']} getPopupContainer={trigger => trigger.closest('dialog') ?? trigger.parentElement ?? document.body} overlayClassName="standard-assistant-menu standard-creation-menu standard-creation-popup" disabled={disabled || busy} menu={{ items: [
+            { key: 'enabled', label: skill.enabled ? '停用' : '启用', onClick: () => void mutate(async () => replace(await agentsApi.updateSkill(skill.id, { row_version: skill.row_version!, enabled: !skill.enabled }))) },
+            { key: 'delete', label: '删除', danger: true, onClick: () => void mutate(() => deleteSkill(skill)) },
+          ] }}><Button size="small" type="text" aria-label={`管理技能${skill.name}`} disabled={disabled || busy} icon={<Ellipsis size={16}/>}/></Dropdown> : <>
             <Button size="small" disabled={disabled || busy} onClick={() => void mutate(async () => replace(await agentsApi.updateSkill(skill.id, { row_version: skill.row_version!, enabled: !skill.enabled })))}>{skill.enabled ? '停用' : '启用'}</Button>
-            <Button size="small" danger disabled={disabled || busy} onClick={() => void mutate(async () => {
-              if (!await confirmAction(`删除“${skill.name}”？已发送消息和已开始任务仍保留原技能版本。`, { title: '删除 Skill', confirmText: '删除' })) return;
-              await agentsApi.deleteSkill(skill.id, skill.row_version!);
-              if (alive.current) { setItems(previous => previous.filter(item => item.id !== skill.id)); onChange(selected.filter(item => item.id !== skill.id)); if (editing?.id === skill.id) setEditing(null); }
-            })}>删除</Button>
-          </>}</div>
+            <Button size="small" danger disabled={disabled || busy} onClick={() => void mutate(() => deleteSkill(skill))}>删除</Button>
+          </>)}</div>
         </article>)}</div> : !error && <p className="agent-context-empty">{tab === 'personal' ? '还没有自定义技能，上传一份创作规范开始使用。' : '暂无内置技能。'}</p>}
       {editing && <form className="agent-skill-editor" onSubmit={event => { event.preventDefault(); void mutate(async () => {
         const next = await agentsApi.updateSkill(editing.id, { row_version: editing.row_version!, name: name.trim(), instructions });
@@ -89,7 +95,8 @@ export function AgentSkillPicker({ selected, disabled, onChange, onClose, dialog
         <label>Markdown 指令<Input.TextArea value={instructions} rows={9} maxLength={65536} readOnly={editing.builtin} disabled={busy} onChange={event => setInstructions(event.target.value)}/></label>
         <div>{!editing.builtin && <Button htmlType="submit" type="primary" aria-label="保存新版本" loading={busy} disabled={disabled || !dirty || !name.trim() || !instructions.trim()}>保存新版本</Button>}<Button disabled={busy} onClick={async () => { if (await discardEditor()) setEditing(null); }}>{editing.builtin ? '关闭查看' : '取消编辑'}</Button></div>
       </form>}
-      <div className="agent-context-dialog-actions"><Button type="primary" disabled={busy} onClick={() => void close()}>完成</Button></div>
+      {layout !== 'standard' && <div className="agent-context-dialog-actions">{done}</div>}
     </div>
+    {layout === 'standard' && <footer className="standard-assistant-dialog-footer"><span>已加载 {selected.length} / 8</span>{done}</footer>}
   </Dialog>;
 }

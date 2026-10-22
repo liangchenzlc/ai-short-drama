@@ -35,9 +35,7 @@ from short_drama.schemas.canvas_tool_runs import (
 )
 
 from .base import BaseService, utcnow
-from .canvas_character_publication_service import CanvasCharacterPublicationService
 from .canvas_document import content_hash
-from .canvas_editor_tool_service import CanvasEditorToolService
 from .canvas_generation_inputs import generation_payload
 from .canvas_generation_service import CanvasGenerationService
 from .canvas_model_catalog_service import CanvasModelCatalogService
@@ -60,11 +58,8 @@ class CanvasToolRunService(BaseService):
         self.runtime = CanvasToolRunDAO(session)
         self.generation = CanvasGenerationService(session, settings)
         self.canvases = self.generation.canvases
-        self.editor_tools = CanvasEditorToolService(session)
 
-    def _owned(
-        self, identifier: int, *, include_existing_characters=False
-    ) -> tuple[CanvasToolRun, ProjectCanvas]:
+    def _owned(self, identifier: int) -> tuple[CanvasToolRun, ProjectCanvas]:
         original = self.runtime.run(identifier)
         if original is None:
             raise NotFound("本人分析执行记录不存在")
@@ -72,7 +67,6 @@ class CanvasToolRunService(BaseService):
             original.project_id,
             original.canvas_id,
             lock=True,
-            include_existing_characters=include_existing_characters,
         )
         run = self.runtime.run(identifier, lock=True)
         if run is None or run.user_id != self.canvases.actor_id:
@@ -190,11 +184,9 @@ class CanvasToolRunService(BaseService):
             state = payload.state.model_dump(mode="json", by_alias=True)
             if state["kind"] == "storyboard":
                 document = self.canvases._document(canvas, private=True, lock=True)
-                CanvasCharacterPublicationService(self.canvases).validate(canvas, document)
                 snapshot = storyboard_snapshot(document, state["nodeId"])
                 media_id = None
             else:
-                self.editor_tools.require_enabled_locked("ai-art-critique")
                 media, snapshot = self._image(canvas, state)
                 media_id = media.id
             _config, _adapter, signature = self._model(payload.state.logical_model_id)
@@ -270,10 +262,8 @@ class CanvasToolRunService(BaseService):
     ) -> tuple[AIModelConfig, str]:
         if run.state_json["kind"] == "storyboard":
             document = self.canvases._document(canvas, private=True, lock=True)
-            CanvasCharacterPublicationService(self.canvases).validate(canvas, document)
             snapshot = storyboard_snapshot(document, run.state_json["nodeId"])
         else:
-            self.editor_tools.require_enabled_locked("ai-art-critique")
             _media, snapshot = self._image(canvas, run.state_json)
         if content_hash(snapshot) != run.source_hash:
             raise WorkflowError(
@@ -332,7 +322,7 @@ class CanvasToolRunService(BaseService):
     def prepare(self, identifier: int, command: CanvasToolPrepare) -> dict:
         command = CanvasToolPrepare.model_validate(command.model_dump(by_alias=True))
         with tool_run_write(self.session), self._transaction(lock_request_project=False):
-            run, canvas = self._owned(identifier, include_existing_characters=True)
+            run, canvas = self._owned(identifier)
             self._guard(run, command)
             payload = self._check_stage(run, canvas, command)
             request = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -377,7 +367,7 @@ class CanvasToolRunService(BaseService):
 
     def approve(self, identifier: int, command: CanvasToolApprove) -> dict:
         with tool_run_write(self.session), self._transaction(lock_request_project=False):
-            run, canvas = self._owned(identifier, include_existing_characters=True)
+            run, canvas = self._owned(identifier)
             self._guard(run, command)
             items = {item.id: item for item in self.runtime.submissions(run.id)}
             if any(identifier not in items for identifier in command.submission_ids):
@@ -392,7 +382,7 @@ class CanvasToolRunService(BaseService):
 
     def execute(self, identifier: int, command: CanvasToolExecute) -> tuple[dict, bool]:
         with tool_run_write(self.session), self._transaction(lock_request_project=False):
-            run, canvas = self._owned(identifier, include_existing_characters=True)
+            run, canvas = self._owned(identifier)
             self._guard(run, command)
             item = next(
                 (

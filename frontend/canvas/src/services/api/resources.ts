@@ -22,6 +22,7 @@ export type RemoteResource = {
 	playbackStatus?: string;
 	playbackObjectKey?: string;
 	playbackError?: string;
+    playbackTaskId?: string;
 	error?: string;
     createdAt: string;
     updatedAt: string;
@@ -361,7 +362,7 @@ export function resolveResourceUrl(storageKey?: string, fallback = "") {
 }
 
 // playbackVariantUrl 返回浏览器兼容播放副本 URL（H.265→H.264 转码结果）。
-// 副本就绪前由后端回退原件，调用方再按需降级。
+// 副本未就绪时返回 409；调用方先观察准备状态，原件仍通过无 variant 地址读取。
 export function playbackVariantUrl(id: string) {
     const base = String(apiBaseURL).replace(/\/+$/, "");
     return `${base}/resources/${encodeURIComponent(id)}/file?variant=playback`;
@@ -372,14 +373,32 @@ export function playbackVariantUrl(id: string) {
  * media elements cannot attach the desktop launch token, and large videos must
  * not inherit the API client's short JSON-request timeout.
  */
-export async function getResourcePlaybackBlob(storageKey: string) {
+export type ResourcePlayback = { blob: Blob; compatible: boolean };
+
+export async function prepareResourcePlayback(id: string, config?: HttpRequestConfig) {
+    const expectedScope = config?.expectedScope ?? captureUserScope();
+    const data = await http.post<{ resource: RemoteResource }>(`/resources/${encodeURIComponent(id)}/playback`, {}, {
+        ...config, expectedScope, headers: { ...resourceUploadHeaders(undefined, canvasKeyFromPath(window.location.pathname)), ...config?.headers },
+    });
+    assertUserScope(expectedScope);
+    rememberResource(data.resource, expectedScope);
+    return data.resource;
+}
+
+export async function getResourcePlayback(storageKey: string, config?: HttpRequestConfig): Promise<ResourcePlayback | null> {
     const id = resourceIdFromStorageKey(storageKey);
     if (!id) return null;
-    const response = await http.raw<Blob>({ method: "get", url: `/resources/${encodeURIComponent(id)}/file?variant=playback&proxy=1`,
+    const expectedScope = config?.expectedScope ?? captureUserScope();
+    const response = await http.raw<Blob>({ ...config, expectedScope, method: "get", url: `/resources/${encodeURIComponent(id)}/file?variant=playback&proxy=1`,
         responseType: "blob",
         timeout: 0,
     });
-    return response.data instanceof Blob ? response.data : new Blob([response.data]);
+    assertUserScope(expectedScope);
+    return { blob: response.data instanceof Blob ? response.data : new Blob([response.data]), compatible: String(response.headers.etag || "").endsWith(':pb"') };
+}
+
+export async function getResourcePlaybackBlob(storageKey: string, config?: HttpRequestConfig) {
+    return (await getResourcePlayback(storageKey, config))?.blob ?? null;
 }
 
 export async function getResourceBlob(storageKey: string) {

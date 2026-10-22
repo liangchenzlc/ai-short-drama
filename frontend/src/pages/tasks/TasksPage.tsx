@@ -4,7 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { generations } from '../../api/modules/generations';
 import { assetLibraries } from '../../api/modules/assets';
 import type { GenerationFilters, GenerationKind, GenerationReceipt, GenerationSummary } from '../../api/types/generations';
-import { episodePath, projectPath } from '../../app/paths';
+import { projectPath } from '../../app/paths';
 import { Icon } from '../../components/ui/Icon';
 import { ListToolbar, PageHeader } from '../../components/ui/Workspace';
 import { BatchHistory } from '../../features/generations/BatchGeneration';
@@ -46,10 +46,8 @@ function TaskResultAction({ task, onOpen }: { task: GenerationSummary; onOpen: (
   </div>;
   if (task.status !== 'succeeded') return task.can_cancel
     ? <Button onClick={() => onOpen(task.generation_id)}>请求取消</Button> : null;
-  if (target?.kind === 'episode') return <Link className="task-source-link"
-    to={episodePath(target.project_id, target.episode_id, target.stage)}>打开来源</Link>;
   if (target?.kind === 'project') return <Link className="task-source-link"
-    to={`${projectPath(target.project_id)}?section=resources`}>打开来源</Link>;
+    to={projectPath(target.project_id, target.stage)}>打开来源</Link>;
   if (target?.kind === 'asset') return <div className="task-result-actions">
     <Button loading={opening} onClick={() => void openPersonalAsset(target.asset_id)}>打开来源</Button>
     {error && <span className="task-failure-reason" role="alert">{error}</span>}

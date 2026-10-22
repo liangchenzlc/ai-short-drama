@@ -17,10 +17,7 @@ from .types import GenerationError, GenerationResult
 
 OPENAI_VIDEOS = "canvas_openai_videos.v1"
 NEWAPI_VIDEO_GENERATIONS = "canvas_newapi_video_generations.v1"
-BEEFAPI_SEEDANCE = "canvas_beefapi_seedance_video.v1"
-VIDEO_ADAPTERS = frozenset(
-    {OPENAI_VIDEOS, NEWAPI_VIDEO_GENERATIONS, BEEFAPI_SEEDANCE, RUNNINGHUB_WORKFLOW}
-)
+VIDEO_ADAPTERS = frozenset({OPENAI_VIDEOS, NEWAPI_VIDEO_GENERATIONS, RUNNINGHUB_WORKFLOW})
 REFERENCE_GROUPS = (
     ("image", "referenceImages"),
     ("video", "referenceVideos"),
@@ -245,8 +242,6 @@ def normalize_canvas_video_config(snapshot: dict, request: dict) -> dict:
         not isinstance(value, str) for value in resolutions
     ):
         _invalid()
-    if snapshot.get("canvas_channel_key") == "beefapi" and len(resolutions) == 1:
-        raw = _resolution_name(profile, resolutions[0])
     declared = _resolution_name(profile, raw)
     if (
         resolutions
@@ -392,12 +387,6 @@ def _profile(snapshot: dict, adapter: str) -> dict:
             ):
                 _invalid()
             operations = set(saved["operations"])
-    if (
-        snapshot.get("canvas_channel_key") == "beefapi"
-        and snapshot.get("model_key", "").lower() == "wan3.0-video"
-    ):
-        refs.update(maxImages=1, maxVideos=0, maxAudios=0)
-        operations = {"text_to_video", "image_to_video"}
     return {
         "references": refs,
         "operations": operations,
@@ -408,11 +397,6 @@ def _profile(snapshot: dict, adapter: str) -> dict:
 def validate_canvas_video_input(snapshot: dict, request: dict, adapter: str) -> dict:
     value = frozen_video_input(snapshot, request)
     if adapter not in VIDEO_ADAPTERS:
-        _invalid("unsupported_protocol")
-    if adapter == BEEFAPI_SEEDANCE and (
-        snapshot.get("canvas_channel_key") != "beefapi"
-        or not is_seedance_model(snapshot.get("model_key", ""))
-    ):
         _invalid("unsupported_protocol")
     profile = _profile(snapshot, adapter)
     if value["operation"] not in profile["operations"]:
@@ -604,10 +588,7 @@ def build_canvas_video_submission(
             body["input_reference"] = value["referenceImages"][0]
         path = "/v1/videos"
     elif adapter == NEWAPI_VIDEO_GENERATIONS:
-        managed_inline = (
-            snapshot.get("canvas_channel_key") == "beefapi" and model.lower() == "wan3.0-video"
-        )
-        if not managed_inline and any(
+        if any(
             item.get("storageKey")
             or item.get("dataUrl")
             or item.get("url", "").startswith("asset://")
@@ -714,13 +695,7 @@ def canvas_video_poll_endpoint(snapshot: dict, task_id: str, adapter: str) -> st
         return canvas_video_endpoint(snapshot["base_url"], "/task/openapi/status")
     if not isinstance(task_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,512}", task_id):
         _invalid("invalid_provider_task")
-    route = (
-        "/v1/video/generations"
-        if adapter == NEWAPI_VIDEO_GENERATIONS
-        else "/videos"
-        if adapter == BEEFAPI_SEEDANCE
-        else "/v1/videos"
-    )
+    route = "/v1/video/generations" if adapter == NEWAPI_VIDEO_GENERATIONS else "/v1/videos"
     return canvas_video_endpoint(snapshot["base_url"], route + "/" + quote(task_id, safe=""))
 
 
@@ -748,9 +723,6 @@ def parse_canvas_video_result(
         raise GenerationError(
             "invalid_response", accepted_unknown=submitted, retryable=not submitted
         )
-    seedance = adapter == BEEFAPI_SEEDANCE
-    if seedance and isinstance(body.get("data"), dict):
-        body = body["data"]
     id_paths = (
         ("data.task_id", "data.taskId", "task_id", "taskId", "data.id", "id")
         if adapter == NEWAPI_VIDEO_GENERATIONS
@@ -765,45 +737,41 @@ def parse_canvas_video_result(
         raise GenerationError(
             "invalid_response", accepted_unknown=submitted, retryable=not submitted
         )
-    status = (
-        _first(body, ("metadata.generation_status", "status"))
-        if seedance
-        else _first(body, ("status", "state", "data.status"))
-    )
+    status = _first(body, ("status", "state", "data.status"))
     status = status.strip().lower() if isinstance(status, str) else "pending"
     urls = (
-        ("video_url", "metadata.url")
-        if seedance
-        else (
-            (
-                "data.result_url",
-                "data.video_url",
-                "data.output_url",
-                "data.url",
-                "data.metadata.url",
-                "data.data.video_url",
-                "data.data.output_url",
-                "data.data.result_url",
-                "data.data.url",
-                "data.data.metadata.url",
-                "video_url",
-                "videoUrl",
-                "result_url",
-                "output_url",
-                "url",
-                "metadata.url",
-                "output.url",
-            )
-            if adapter == NEWAPI_VIDEO_GENERATIONS
-            else ("url", "video_url", "output.url")
+        (
+            "data.result_url",
+            "data.video_url",
+            "data.output_url",
+            "data.url",
+            "data.metadata.url",
+            "data.data.video_url",
+            "data.data.output_url",
+            "data.data.result_url",
+            "data.data.url",
+            "data.data.metadata.url",
+            "video_url",
+            "videoUrl",
+            "result_url",
+            "output_url",
+            "url",
+            "metadata.url",
+            "output.url",
         )
+        if adapter == NEWAPI_VIDEO_GENERATIONS
+        else ("url", "video_url", "output.url")
     )
     result_url = _first(body, urls)
-    failed = status in (
-        {"failed", "cancelled", "expired"}
-        if seedance
-        else {"failed", "failure", "error", "expired", "cancelled", "canceled", "aborted"}
-    ) or bool(_path(body, "error.code"))
+    failed = status in {
+        "failed",
+        "failure",
+        "error",
+        "expired",
+        "cancelled",
+        "canceled",
+        "aborted",
+    } or bool(_path(body, "error.code"))
     if failed:
         return GenerationResult(
             "failed",
@@ -814,17 +782,21 @@ def parse_canvas_video_result(
                 "message": "The provider could not complete generation.",
             },
         )
-    completed = status in (
-        {"completed", "succeeded"}
-        if seedance
-        else {"succeeded", "success", "completed", "complete", "done", "task_status_succeed"}
-    )
-    if (
-        not seedance
-        and result_url
-        and status
-        not in {"running", "processing", "in_progress", "executing", "task_status_running"}
-    ):
+    completed = status in {
+        "succeeded",
+        "success",
+        "completed",
+        "complete",
+        "done",
+        "task_status_succeed",
+    }
+    if result_url and status not in {
+        "running",
+        "processing",
+        "in_progress",
+        "executing",
+        "task_status_running",
+    }:
         completed = True
     if completed:
         if result_url:
@@ -854,11 +826,10 @@ def parse_canvas_video_result(
 
 
 def complete_video_urls(snapshot: dict, result: GenerationResult) -> GenerationResult:
-    base = urlsplit(snapshot["base_url"])
     for output in result.outputs:
         if "canvas_content_task_id" in output:
             identity = output.pop("canvas_content_task_id")
-            route = "/videos/" if result.adapter == BEEFAPI_SEEDANCE else "/v1/videos/"
+            route = "/v1/videos/"
             output["url"] = canvas_video_endpoint(
                 snapshot["base_url"], route + quote(identity, safe="") + "/content"
             )
@@ -867,13 +838,7 @@ def complete_video_urls(snapshot: dict, result: GenerationResult) -> GenerationR
         raw = output["url"]
         if raw.startswith("/") and not raw.startswith("//"):
             raw = urljoin(snapshot["base_url"], raw)
-        target = urlsplit(validated_url(raw, query=True))
-        if (
-            base.scheme == target.scheme == "https"
-            and snapshot.get("canvas_channel_key") == "beefapi"
-            and (target.hostname == "beefapi.com" or target.hostname.endswith(".beefapi.com"))
-        ):
-            raw = urlunsplit((base.scheme, base.netloc, target.path, target.query, ""))
+        validated_url(raw, query=True)
         output["url"] = raw
     return result
 

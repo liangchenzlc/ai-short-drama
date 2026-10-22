@@ -29,8 +29,8 @@ class ShotVideo(Base):
         nullable=False,
         comment="应用雪花算法生成；稳定且不可变的记录标识",
     )
-    episode_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), nullable=False, comment="所属分集，与镜头一致"
+    project_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), nullable=False, comment="所属项目，与镜头一致"
     )
     shot_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), nullable=False, comment="所属镜头")
     resolution: Mapped[str] = mapped_column(
@@ -93,11 +93,11 @@ class ShotVideo(Base):
 
     __table_args__ = (
         UniqueConstraint("shot_id", name="uk_shot_videos_shot"),
-        Index("idx_shot_videos_episode", "episode_id", "shot_id"),
+        Index("idx_shot_videos_creation", "project_id", "shot_id"),
         Index("idx_shot_videos_media_id", "media_id"),
         Index("idx_shot_videos_first_frame", "first_frame_media_id"),
         Index("idx_shot_videos_model_id", "model_id"),
-        Index("idx_shot_videos_shot_id_episode_id", "shot_id", "episode_id"),
+        Index("idx_shot_videos_shot_id_project_id", "shot_id", "project_id"),
         ForeignKeyConstraint(
             ["media_id"],
             ["media_files.id"],
@@ -120,9 +120,9 @@ class ShotVideo(Base):
             onupdate="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ["shot_id", "episode_id"],
-            ["shot_scripts.id", "shot_scripts.episode_id"],
-            name="fk_shot_videos_shot_episode",
+            ["shot_id", "project_id"],
+            ["shot_scripts.id", "shot_scripts.project_id"],
+            name="fk_shot_videos_shot_creation",
             ondelete="RESTRICT",
             onupdate="RESTRICT",
         ),

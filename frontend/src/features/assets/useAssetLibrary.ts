@@ -17,6 +17,6 @@ export function useAssetLibrary(scope: AssetScope, kind: AssetKind | 'all', quer
       .catch((cause) => { if (!controller.signal.aborted) setError(errorMessage(cause)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [scope.kind, scope.kind === 'global' ? '' : scope.projectId, scope.kind === 'episode' ? scope.episodeId : '', kind, query, offset, revision]);
+  }, [scope.kind, scope.projectId, kind, query, offset, revision]);
   return { items, total, loading, error, refresh };
 }

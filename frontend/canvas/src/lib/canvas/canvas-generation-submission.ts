@@ -22,7 +22,7 @@ export type CanvasGenerationRequestFingerprintInput = {
     audioInstructions?: string;
     promptTemplateOperation?: string;
     promptTemplateVariables?: Record<string, string>;
-    context: Pick<NodeGenerationContext, "referenceImages" | "referenceVideos" | "referenceAudios" | "characterReferences" | "resolvedCharacterVersions" | "resolvedCharacterVoices">;
+    context: Pick<NodeGenerationContext, "referenceImages" | "referenceVideos" | "referenceAudios" | "characterReferences">;
 };
 
 /**
@@ -52,8 +52,6 @@ export function canvasGenerationRequestFingerprint(input: CanvasGenerationReques
             videos: input.context.referenceVideos.map(referenceIdentity),
             audios: input.context.referenceAudios.map(referenceIdentity),
             characters: input.context.characterReferences,
-            resolvedCharacterVersions: input.context.resolvedCharacterVersions,
-            resolvedCharacterVoices: input.context.resolvedCharacterVoices,
         },
     });
     return `canvas-generation:v1:${generationPromptFingerprint(serialized)}`;

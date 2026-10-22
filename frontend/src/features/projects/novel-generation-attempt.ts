@@ -13,8 +13,8 @@ export function isNovelGenerationAttempt(value: unknown): value is NovelGenerati
   if (!body || !keys(body, ['config_id', 'source', 'instructions', 'parameters'])) return false;
   if (body.config_id !== undefined && !decimal(body.config_id)) return false;
   if (typeof body.instructions !== 'string' || body.instructions.length > 4000) return false;
-  const source = body.source as { scene?: unknown; project_id?: unknown; episode_id?: unknown; content_version?: unknown; draft_id?: unknown; draft_version?: unknown } | undefined;
-  if (!source || !keys(source, ['scene', 'project_id', 'episode_id', 'content_version', 'draft_id', 'draft_version'])) return false;
-  if (source.scene !== 'novel_script' || ![source.project_id, source.episode_id, source.content_version, source.draft_id, source.draft_version].every(decimal)) return false;
+  const source = body.source as { scene?: unknown; project_id?: unknown; content_version?: unknown; draft_id?: unknown; draft_version?: unknown } | undefined;
+  if (!source || !keys(source, ['scene', 'project_id', 'content_version', 'draft_id', 'draft_version'])) return false;
+  if (source.scene !== 'novel_script' || ![source.project_id, source.content_version, source.draft_id, source.draft_version].every(decimal)) return false;
   return !!body.parameters && keys(body.parameters, ['max_output_tokens']) && body.parameters.max_output_tokens === 8192;
 }

@@ -60,15 +60,15 @@ export function AuthGate() {
   if (session.loading) return <div className="identity-page" role="status"><Spin /> 正在确认登录状态…</div>;
   if (session.error) return <div className="identity-page"><Alert type="error" message={session.error} /><Button onClick={() => void session.refresh()}>重新连接</Button></div>;
   if (session.enabled && !session.user) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
-  return <><Outlet />{session.expired && <ExpiredSession />}</>;
+  return <><Outlet />{session.expired && <ExpiredSession presentation={/^\/projects\/[^/]+(?:\/(source|assets|storyboard|assembly))?\/?$/.test(location.pathname) ? 'standard-creation' : undefined}/>}</>;
 }
 
-function ExpiredSession() {
+function ExpiredSession({ presentation }: { presentation?: 'standard-creation' }) {
   const session = useAuth();
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  return <Dialog title="重新登录，继续创作" canClose={false} onClose={() => {}}><form className="identity-form identity-form-embedded" onSubmit={async e => { e.preventDefault(); if (busy) return; setBusy(true); setError(''); try { await session.login(session.user!.username, password); setPassword(''); } catch (cause) { setError(errorMessage(cause)); } finally { setBusy(false); } }}>
+  return <Dialog title="重新登录，继续创作" className={presentation ? 'standard-creation-dialog' : undefined} canClose={false} onClose={() => {}}><form className="identity-form identity-form-embedded" onSubmit={async e => { e.preventDefault(); if (busy) return; setBusy(true); setError(''); try { await session.login(session.user!.username, password); setPassword(''); } catch (cause) { setError(errorMessage(cause)); } finally { setBusy(false); } }}>
     <p>当前页面的编辑仍保留。请登录账号 {session.user?.username} 后继续保存。</p>
     <label htmlFor="resume-password">密码<Input.Password id="resume-password" autoFocus autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /></label>
     {error && <Alert type="error" message={error} />}<Button type="primary" htmlType="submit" loading={busy}>登录并返回编辑</Button>

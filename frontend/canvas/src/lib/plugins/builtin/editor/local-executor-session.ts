@@ -170,6 +170,7 @@ export async function runOwnedTimelineTranscription(input: {
     resourceId: string;
     projectId?: string;
     language?: string;
+    modelConfigId?: string;
     clientOperationId: string;
     onCreated?: (task: GenerationTask) => void;
     onTaskUpdate?: (task: GenerationTask) => void;
@@ -182,6 +183,7 @@ export async function runOwnedTimelineTranscription(input: {
             resourceId: input.resourceId,
             projectId: input.projectId,
             language: input.language,
+            model_config_id: input.modelConfigId,
             clientOperationId: input.clientOperationId,
         },
         { signal: input.session.controller.signal, expectedScope: input.session.expectedScope },

@@ -21,10 +21,9 @@ from short_drama.domain import (
     AIGenerationRecord,
     AIModelConfig,
     Asset,
-    Episode,
-    EpisodeScript,
     MediaAsset,
     Project,
+    ProjectScript,
     ShotImage,
     User,
 )
@@ -70,9 +69,9 @@ def freeze_native_context(session, step):
     """No I/O or writes: the same object/hash/parameters are shown in plan review."""
     kind = step["kind"]
     source, options = step["source"], deepcopy(step["parameters"])
-    episode = session.scalar(
-        select(Episode)
-        .where(Episode.id == int(source["episode_id"]))
+    creation = session.scalar(
+        select(Project)
+        .where(Project.id == int(source["project_id"]))
         .with_for_update()
         .execution_options(populate_existing=True)
     )
@@ -81,8 +80,8 @@ def freeze_native_context(session, step):
         defaults = {"kinds": ["character", "scene", "prop"]} if kind == "extract" else {}
         step["parameters"] = _parameters(schema, {**defaults, **options})
         script = session.scalar(
-            select(EpisodeScript)
-            .where(EpisodeScript.id == episode.editing_script_id)
+            select(ProjectScript)
+            .where(ProjectScript.id == creation.editing_script_id)
             .with_for_update()
             .execution_options(populate_existing=True)
         )
@@ -98,7 +97,7 @@ def freeze_native_context(session, step):
         params = _parameters(
             ImageParameters,
             {
-                "aspect": episode.aspect,
+                "aspect": None,
                 "resolution": "2K",
                 **{
                     k: v
@@ -108,7 +107,7 @@ def freeze_native_context(session, step):
             },
         )
         params.pop("count", None)
-        step["parameters"] = {**options, **params, "aspect": params.get("aspect", episode.aspect)}
+        step["parameters"] = {**options, **params, "aspect": params.get("aspect")}
         asset = session.scalar(
             select(Asset)
             .where(Asset.id == int(step["target_id"]))
@@ -124,12 +123,12 @@ def freeze_native_context(session, step):
             allowed = {"target_kind", "aspect", "resolution", "layout", "reference_media_ids"}
             settings = shot.image_settings or {
                 "resolution": "2K",
-                "aspect": "inherit",
+                "aspect": None,
                 "layout": "single",
             }
             defaults = {
                 "resolution": settings["resolution"],
-                "aspect": episode.aspect if settings["aspect"] == "inherit" else settings["aspect"],
+                "aspect": settings["aspect"],
             }
             params = _parameters(
                 ImageParameters,
@@ -186,7 +185,7 @@ def freeze_native_context(session, step):
             step["parameters"] = {
                 **options,
                 **params,
-                "aspect": params.get("aspect", episode.aspect),
+                "aspect": params.get("aspect"),
                 "reference_media_ids": [str(image.media_id)],
             }
     if set(options) - allowed:
@@ -195,7 +194,7 @@ def freeze_native_context(session, step):
 
 def _payload(session, conversation, run, step, quantity):
     kind, source, options = step["kind"], step["source"], step["parameters"]
-    scope = {"project_id": str(conversation.project_id), "episode_id": str(conversation.episode_id)}
+    scope = {"project_id": str(conversation.project_id)}
     if kind in {"extract", "storyboard"}:
         payload = {
             "project_id": scope["project_id"],
@@ -240,10 +239,9 @@ def _payload(session, conversation, run, step, quantity):
             raise Conflict("Image context changed after approval")
         settings = shot.image_settings or {
             "resolution": "2K",
-            "aspect": "inherit",
+            "aspect": None,
             "layout": "single",
         }
-        episode = session.get(Episode, conversation.episode_id)
         payload.update(
             source={
                 "scene": "shot_image",
@@ -254,7 +252,7 @@ def _payload(session, conversation, run, step, quantity):
                 "context_hash": current_hash,
             },
             parameters={
-                "aspect": episode.aspect if settings["aspect"] == "inherit" else settings["aspect"],
+                "aspect": settings["aspect"],
                 "resolution": settings["resolution"],
                 "count": quantity,
             },
@@ -282,12 +280,8 @@ def _payload(session, conversation, run, step, quantity):
             prepared["input"]["prompt"] += "\n创作要求：" + step["instructions"]
             prepared["business_intent"] = {"instructions": step["instructions"]}
         else:
-            from short_drama.ai.business_prompts import image_prompt
-
             prepared["source"]["layout"] = options["layout"]
-            prepared["input"]["prompt"] = image_prompt(
-                prepared["source_snapshot"], step["instructions"], options["layout"]
-            )
+            prepared["input"]["prompt"] = step["instructions"]
         return prepared
 
     return kind, payload, transform
@@ -361,15 +355,9 @@ def admit_native_locked(session, conversation, run, tool, step, *, settings):
             }
         ),
         prepare_transform=transform,
+        agent_managed=True,
     )
     task_id = int(summary["generation_id"])
-    record = session.scalar(
-        select(AIGenerationRecord)
-        .where(AIGenerationRecord.task_id == task_id)
-        .order_by(AIGenerationRecord.call_no)
-        .limit(1)
-    )
-    record.config_snapshot = {**record.config_snapshot, "agent_managed": True}
     tool.generation_task_id, tool.status = task_id, "waiting_generation"
     tool.result = {
         "generation_id": str(task_id),
@@ -477,7 +465,6 @@ def collect_native_results(factory, settings, limit=100):
                 artifact = AgentArtifact(
                     id=next_id(),
                     project_id=conversation.project_id,
-                    episode_id=conversation.episode_id,
                     tool_call_id=tool.id,
                     result_index=index,
                     kind=kind,

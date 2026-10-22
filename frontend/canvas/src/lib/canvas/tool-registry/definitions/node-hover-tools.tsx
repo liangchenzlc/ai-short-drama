@@ -17,7 +17,7 @@ function hasMediaPayload(ctx: ToolContext) {
 function hasImage(ctx: ToolContext) { return isImage(ctx) && hasMediaPayload(ctx); }
 function hasVideo(ctx: ToolContext) { return isVideo(ctx) && hasMediaPayload(ctx); }
 function hasAudio(ctx: ToolContext) { return isAudio(ctx) && Boolean(ctx.nodeMetadata?.content || ctx.nodeMetadata?.storageKey); }
-function isCharacterReference(ctx: ToolContext) { return isText(ctx) && ctx.nodeMetadata?.workflowKind === "character" && Boolean(ctx.nodeMetadata?.characterAssetId); }
+function isCharacterReference(ctx: ToolContext) { return isText(ctx) && ctx.nodeMetadata?.workflowKind === "character" && Boolean(ctx.nodeMetadata?.characterDefinition); }
 function isEditableText(ctx: ToolContext) { return isText(ctx) && !isCharacterReference(ctx); }
 function canOpenDialog(ctx: ToolContext) { return isEditableText(ctx) || ((isImage(ctx) || isVideo(ctx) || isAudio(ctx)) && canOpenCanvasNodePromptPanel(ctx.node)); }
 function simpleMode(ctx: ToolContext) { return ctx.workspaceMode === "simple"; }
@@ -291,7 +291,7 @@ export const nodeHoverToolbarTools: ToolDefinition[] = [
         defaultVisible: true,
         defaultOrder: 145,
         nodeToolbar: { group: "primary", order: 20 },
-        applicable: (ctx) => hasVideo(ctx),
+        applicable: (ctx) => hasVideo(ctx) || hasAudio(ctx),
         run: (ctx) => ctx.handlers.onNodeSubtitles(ctx.node!),
     },
     {

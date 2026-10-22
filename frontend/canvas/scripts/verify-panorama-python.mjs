@@ -185,16 +185,7 @@ try {
     await page.screenshot({ path: resolve(output, "panorama-restored.png"), fullPage: true });
     report.cookie_only_recovery = true;
 
-    report.step = "成员原全景UI查看共享结果";
-    const member = await context(config.memberUsername);
-    await open(member);
-    await checkOutputs("成员");
-    const shared = await graph(() => true, member);
-    assert.equal(shared.nodes.find(node => node.id === "panorama-source").metadata.storageKey, `resource:${config.sourceResourceId}`);
-    await panorama().getByRole("button", { name: "进入环视", exact: true }).click();
-    await readyCanvas(panorama());
-    await page.screenshot({ path: resolve(output, "panorama-member.png"), fullPage: true });
-    report.member_result_seen = true;
+
     assert.equal(report.resource_posts, uploads, "恢复全景和结果不得重复上传");
     assert.equal(report.task_posts, 0);
     assert.deepEqual(report.page_errors, []);

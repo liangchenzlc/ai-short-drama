@@ -1040,15 +1040,16 @@ try {
     await server.listen();
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     owner = await context(config.username);
-    const member = await context(config.memberUsername);
+    const foreign = await context(config.foreignUsername);
     const outsider = await context(config.outsideUsername);
     await open(owner);
     await fit();
     await authorRows();
     await runStage("image");
     await runStage("video");
-    report.step = "成员共享四作品及私人任务隔离";
-    const shared = await graph(member);
+    report.step = "作品仅本人可读，跨账号访问返回404";
+    assert.equal((await foreign.request.get(origin + canvasPath + "/my-document")).status(), 404);
+    const shared = (await read(await owner.request.get(origin + canvasPath))).source_document;
     assert.equal(source(shared).metadata.generationBatches, undefined);
     assert.deepEqual(rows(shared).map(row => row.id), report.row_ids);
     checkUnselected(shared);
@@ -1072,7 +1073,7 @@ try {
             assert.equal(asset.id, item.asset_id);
             assert.equal(asset.data.storageKey, item.storage_key);
             report.private_access.push({ actor: "owner", asset_id: item.asset_id, status: assetResponse.status(), storage_key: asset.data.storageKey });
-            for (const [actor, current] of [["member", member], ["outside", outsider]]) {
+            for (const [actor, current] of [["foreign", foreign], ["outside", outsider]]) {
                 const response = await current.request.get(origin + tasksPath + "/" + item.task_id);
                 report.private_access.push({ actor, task_id: item.task_id, status: response.status() });
                 assert.equal(response.status(), 404);
@@ -1085,11 +1086,15 @@ try {
             assert.equal(denied.status(), 404);
         }
     }
-    await open(member);
-    await fit();
-    for (const stage of Object.values(report.stages)) await verifyMedia(member, stage, "member_shared");
-    report.member_shared_works_private_batch_hidden = true;
-    await page.screenshot({ path: resolve(output, "member-shared.png") });
+    for (const current of [foreign, outsider]) {
+        assert.equal((await current.request.get(origin + canvasPath + "/my-document")).status(), 404);
+        for (const stage of Object.values(report.stages)) {
+            for (const item of stage.outputs) {
+                assert.equal((await current.request.get(origin + resourcesPath + "/" + item.storage_key.slice(9) + "/file")).status(), 404);
+            }
+        }
+    }
+    report.foreign_owner_denied = true;
     await finishTraces();
     const allIds = Object.values(report.stages).flatMap(allTaskIds);
     const retries = Object.values(report.stages).flatMap(stage => stage.retry_lineage);

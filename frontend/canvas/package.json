@@ -10,8 +10,9 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs",
-    "test:e2e": "node --test e2e/*.test.mjs",
+    "test": "node ../../scripts/test.mjs --scope canvas --runner canvas-node",
+    "test:e2e": "node ../../scripts/test.mjs --scope canvas --runner canvas-browser --level browser",
+    "test:performance": "node ../../scripts/test.mjs --scope canvas --runner canvas-browser --level performance --feature canvas.performance",
     "test:parity": "node scripts/compare-source.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "source:check": "node scripts/check-source.mjs"

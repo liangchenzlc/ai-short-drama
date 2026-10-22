@@ -145,6 +145,7 @@ try {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
     const owner = await login(config.username);
     const member = await login(config.memberUsername);
+    const peer = await login(config.username);
     page = await owner.newPage();
     page.on("pageerror", error => report.page_errors.push(error.message));
     page.on("request", request => {
@@ -223,7 +224,7 @@ try {
         const final = await graph(owner, document => document.nodes.length === 2 && document.connections.length === 1 && document.nodes.every(node => node.metadata.assetId));
         assert.deepEqual(final.nodes.find(node => node.id === source.id), source);
         const child = final.nodes.find(node => node.id !== source.id);
-        const bytes = await member.request.get(`${origin}${resources}/${child.metadata.storageKey.slice(9)}/file`);
+        const bytes = await owner.request.get(`${origin}${resources}/${child.metadata.storageKey.slice(9)}/file`);
         assert.ok(bytes.ok());
         report.children = [{ id: child.id, title: child.title, storageKey: child.metadata.storageKey, sha256: createHash("sha256").update(await bytes.body()).digest("hex") }];
         report.final_nodes = final.nodes;
@@ -320,22 +321,22 @@ try {
         return;
     }
     let failedHash;
-    let memberAdvance;
+    let peerAdvance;
     const failureUrl = config.scenario === "upload_failure" ? `${origin}${resources}` : `${origin}${commitPath}`;
     await page.route(failureUrl, async route => {
         if (route.request().method() !== "POST") return route.continue();
         if (config.scenario === "conflict") {
-            memberAdvance ??= (async () => {
-                const latest = await read(await member.request.get(`${origin}${path}/my-document`));
-                latest.source_document.nodes[0].title = "成员的新版原图";
-                await read(await member.request.post(`${origin}${commitPath}`, {
-                    headers: { "Idempotency-Key": "grid-recovery-member-advance" },
+            peerAdvance ??= (async () => {
+                const latest = await read(await peer.request.get(`${origin}${path}/my-document`));
+                latest.source_document.nodes[0].title = "另一窗口的新版原图";
+                await read(await peer.request.post(`${origin}${commitPath}`, {
+                    headers: { "Idempotency-Key": "grid-recovery-owner-peer-advance" },
                     data: { expected_row_version: latest.row_version, source_document: latest.source_document },
                 }));
                 report.server_document = (await read(await owner.request.get(`${origin}${path}/my-document`))).source_document;
-                report.failure_injections.push({ path: commitPath, status: 409, real_member_commit: true });
+                report.failure_injections.push({ path: commitPath, status: 409, real_owner_peer_commit: true });
             })();
-            await memberAdvance;
+            await peerAdvance;
             return route.continue();
         }
         if (config.scenario === "upload_failure") {
@@ -376,7 +377,7 @@ try {
         assert.equal(report.commits.length, before, "409后不得自动覆盖或重新提交");
         await page.getByRole("button", { name: "画布保存状态：版本冲突 · 未同步", exact: true }).click();
         await page.getByRole("button", { name: "加载云端最新版本", exact: true }).click();
-        await page.getByRole("button", { name: "编辑节点名称：成员的新版原图", exact: true }).waitFor({ state: "visible" });
+        await page.getByRole("button", { name: "编辑节点名称：另一窗口的新版原图", exact: true }).waitFor({ state: "visible" });
         const drafts = await page.evaluate(async key => {
             const { readCanvasSyncDrafts } = await import("/canvas-app/src/services/canvas-sync-drafts.ts");
             return readCanvasSyncDrafts(key);
@@ -408,7 +409,7 @@ try {
     report.same_children_recovered = true;
     for (const child of final.nodes.filter(item => item.id !== source.id)) {
         const resourceId = child.metadata.storageKey.slice(9);
-        const downloaded = await member.request.get(`${origin}${resources}/${resourceId}/file`);
+        const downloaded = await owner.request.get(`${origin}${resources}/${resourceId}/file`);
         assert.ok(downloaded.ok());
         report.children.find(item => item.id === child.id).sha256 = createHash("sha256").update(await downloaded.body()).digest("hex");
     }

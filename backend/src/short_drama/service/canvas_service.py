@@ -113,131 +113,54 @@ class CanvasService(BaseService):
             raise WorkflowError("canvas_mode_required", "This project uses standard mode", 409)
         return project
 
-    def require_canvas(
-        self,
-        project_id: int,
-        canvas_id: int,
-        *,
-        lock=False,
-        publish_characters=False,
-        include_existing_characters=False,
-        refresh=False,
-    ):
-        if lock and (publish_characters or include_existing_characters):
-            from .canvas_character_publication_service import CanvasCharacterPublicationService
-            from .canvas_document import character_node
-
-            original = self.canvas_dao.canvas(project_id, canvas_id)
-            if original is None:
-                raise NotFound("Canvas does not exist")
-            initial_identity = (original.id, original.project_id, original.source_project_id)
-            if (
-                publish_characters
-                or include_existing_characters
-                and any(
-                    character_node(node.content_json)
-                    for node in self.canvas_dao.children(CanvasNode, original.id, active=True)
-                )
-            ):
-                return CanvasCharacterPublicationService(self).lock_canvas(original)
+    def require_canvas(self, project_id: int, canvas_id: int, *, lock=False, refresh=False):
         self.require_project(project_id, lock=lock)
         canvas = self.canvas_dao.canvas(project_id, canvas_id, lock=lock, refresh=refresh)
         if canvas is None:
             raise NotFound("Canvas does not exist")
-        if lock and include_existing_characters:
-            if (canvas.id, canvas.project_id, canvas.source_project_id) != initial_identity:
-                raise WorkflowError(
-                    "canvas_binding_changed", "画布可信业务绑定已变化，请重新读取", 409
-                )
-            # 普通作品允许采用持锁后的最新图；新增角色必须重新按双项目顺序预检。
-            current_nodes = self.canvas_dao.children(CanvasNode, canvas.id, active=True, lock=True)
-            if any(character_node(node.content_json) for node in current_nodes):
-                raise WorkflowError("canvas_binding_changed", "加锁期间画布已变化，请重新读取", 409)
         return canvas
 
-    @staticmethod
-    def project_source_binding(document: dict, canvas) -> dict:
-        """在所有共享、私人、历史投影完成后，仅以可信列解释业务项目。"""
-        if canvas.source_project_id is None:
-            document.pop("projectId", None)
-        else:
-            document["projectId"] = str(canvas.source_project_id)
-        return document
+    def lock_existing_canvases(self, canvases):
+        for project_id in sorted({canvas.project_id for canvas in canvases}):
+            self.require_project(project_id, lock=True)
+        for original in sorted(canvases, key=lambda item: (item.project_id, item.id)):
+            if self.canvas_dao.canvas(original.project_id, original.id, lock=True) is None:
+                raise NotFound("Canvas does not exist")
 
     def require_creation_result(self, result: dict):
-        canvas = self.require_canvas(int(result["project_id"]), int(result["id"]))
-        identity = (canvas.id, canvas.project_id, canvas.source_project_id)
-        identifiers = {canvas.project_id}
-        if canvas.source_project_id is not None:
-            identifiers.add(canvas.source_project_id)
-        for identifier in sorted(identifiers):
-            project = self.canvas_dao.project(identifier, lock=True)
-            if project is None:
-                raise NotFound("创建结果的所属或业务项目不存在或当前账号无权访问")
-            require_project_access(self.session, identifier, lock=True)
-            mode = "standard" if identifier == canvas.source_project_id else "infinite_canvas"
-            if project.workspace_mode != mode:
-                raise WorkflowError("canvas_binding_invalid", "创建结果的项目模式不匹配", 409)
-        canvas = self.canvas_dao.canvas(identity[1], identity[0], lock=True)
-        if canvas is None or (canvas.id, canvas.project_id, canvas.source_project_id) != identity:
-            raise NotFound("创建结果已不存在或当前账号无权访问")
-        return canvas
+        return self.require_canvas(int(result["project_id"]), int(result["id"]), lock=True)
 
-    def inherited_source_binding(
+    def validate_creation_source(
         self, request, *, project_id: int | None = None, extra_project_ids: set[int] | None = None
     ) -> dict | None:
-        """锁定明确父图及相关项目，返回只由服务端生成的不可变来源事实。"""
         parent = (
             self.canvas_dao.source_canvas(request.source_canvas_key)
             if request.source_canvas_key is not None
             else None
         )
         if request.source_canvas_key is not None and parent is None:
-            raise NotFound("来源画布不存在或当前账号无权访问")
+            raise NotFound("Source canvas does not exist")
         projects = set(extra_project_ids or ())
         if project_id is not None:
             projects.add(project_id)
         if parent is not None:
-            identity = (parent.id, parent.project_id, parent.source_project_id)
+            identity = (parent.id, parent.project_id)
             projects.add(parent.project_id)
-            if parent.source_project_id is not None:
-                projects.add(parent.source_project_id)
         for identifier in sorted(projects):
-            project = self.canvas_dao.project(identifier, lock=True)
-            if project is None:
-                raise NotFound("来源或目标项目不存在或当前账号无权访问")
             require_project_access(self.session, identifier, lock=True)
             if identifier == project_id or parent is not None and identifier == parent.project_id:
-                if project.workspace_mode != "infinite_canvas":
-                    raise WorkflowError("canvas_mode_required", "来源或目标不是无限画布项目", 409)
-            if parent is not None and identifier == parent.source_project_id:
-                if project.workspace_mode != "standard":
-                    raise WorkflowError("canvas_binding_invalid", "来源不是可绑定的业务项目", 422)
+                self.require_project(identifier, lock=True)
         if parent is None:
-            if request.source_document and request.source_document.project_id:
-                raise WorkflowError(
-                    "canvas_binding_invalid", "未提供可信父画布，不能声明业务绑定", 422
-                )
             return None
         parent = self.canvas_dao.source_canvas(request.source_canvas_key, lock=True)
-        if parent is None:
-            raise NotFound("来源画布不存在或当前账号无权访问")
-        if (parent.id, parent.project_id, parent.source_project_id) != identity:
-            raise WorkflowError("canvas_source_changed", "父画布可信来源已变化，原请求已保留", 409)
+        if parent is None or (parent.id, parent.project_id) != identity:
+            raise NotFound("Source canvas does not exist")
         self._check_version(parent, int(request.source_canvas_row_version))
-        expected = str(parent.source_project_id) if parent.source_project_id is not None else None
-        if request.source_document and request.source_document.project_id not in {
-            None,
-            "",
-            expected,
-        }:
-            raise WorkflowError("canvas_binding_invalid", "画布声明与可信父绑定不一致", 422)
         return {
             "canvas_id": str(parent.id),
             "owning_project_id": str(parent.project_id),
             "source_canvas_key": parent.source_key,
             "source_canvas_row_version": str(parent.row_version),
-            "source_project_id": expected,
         }
 
     def begin_write(self, key: str, operation: str, payload: dict, *, lock: bool = False):
@@ -275,14 +198,11 @@ class CanvasService(BaseService):
         )
         self.session.flush()
 
-    def initialize_project(
-        self, project, *, source_key=None, title="未命名画布", source_project_id=None
-    ):
+    def initialize_project(self, project, *, source_key=None, title="未命名画布"):
         """Called inside the owning ProjectService transaction."""
         canvas = ProjectCanvas(
             **self.audit(),
             project_id=project.id,
-            source_project_id=source_project_id,
             source_key=source_key or uuid4().hex,
             title=title,
             position=0,
@@ -309,9 +229,6 @@ class CanvasService(BaseService):
         return {
             "id": str(canvas.id),
             "project_id": str(canvas.project_id),
-            "source_project_id": str(canvas.source_project_id)
-            if canvas.source_project_id is not None
-            else None,
             "source_key": canvas.source_key,
             "title": canvas.title,
             "row_version": str(canvas.row_version),
@@ -376,7 +293,7 @@ class CanvasService(BaseService):
         # Pre-upgrade documents may contain an unverified private classification.
         # Only the owning account's canonical membership may expose this field.
         document.pop("folderId", None)
-        return self.project_source_binding(document, canvas)
+        return document
 
     def _private_state(self, canvas, *, children=None, lock=False, refresh=False):
         def rows(model):
@@ -414,9 +331,7 @@ class CanvasService(BaseService):
             document.setdefault("activeChatId", None)
             document.setdefault("backgroundMode", "dots")
             document.setdefault("showImageInfo", False)
-        return self.project_source_binding(
-            canonicalize_canvas_media(document, strict=False), canvas
-        )
+        return canonicalize_canvas_media(document, strict=False)
 
     def read(self, project_id, canvas_id, *, private=False):
         with self._transaction(read_only=True):
@@ -549,17 +464,13 @@ class CanvasService(BaseService):
         if receipt:
             self.require_creation_result(receipt.result_json)
             return receipt.result_json
-        binding = self.inherited_source_binding(request, project_id=project_id)
-        source_project_id = (
-            int(binding["source_project_id"]) if binding and binding["source_project_id"] else None
-        )
+        self.validate_creation_source(request, project_id=project_id)
         document = request.source_document
         if project_id is not None:
             existing = self.canvas_dao.canvases(project_id)
             canvas = ProjectCanvas(
                 **self.audit(),
                 project_id=project_id,
-                source_project_id=source_project_id,
                 source_key=source_key or request.source_key or uuid4().hex,
                 title=request.title,
                 position=max((x.position for x in existing), default=-1) + 1,
@@ -579,9 +490,6 @@ class CanvasService(BaseService):
                 **self.audit(),
                 owner_user_id=self.actor_id,
                 name=request.title[:120],
-                aspect="16:9",
-                synopsis="",
-                style="",
                 workspace_mode="infinite_canvas",
                 last_opened_at=utcnow(),
                 row_version=1,
@@ -592,7 +500,6 @@ class CanvasService(BaseService):
                 project,
                 source_key=source_key or request.source_key,
                 title=request.title,
-                source_project_id=source_project_id,
             )
             if document:
                 document = document.model_copy(update={"workspace_project_id": str(project.id)})
@@ -601,7 +508,6 @@ class CanvasService(BaseService):
             document, extra = prepare_document(canvas, document)
         if document is not None:
             self._validate_identity(canvas, document)
-            self._validate_character_publications(canvas, document)
             self._bind_library_copies(document)
             shared, private = split_document(document)
             self._replace_graph(canvas, shared)
@@ -617,13 +523,6 @@ class CanvasService(BaseService):
         }:
             raise WorkflowError(
                 "canvas_identity_mismatch", "Document belongs to another canvas", 422
-            )
-        expected_binding = (
-            str(canvas.source_project_id) if canvas.source_project_id is not None else None
-        )
-        if document.project_id not in {None, "", expected_binding}:
-            raise WorkflowError(
-                "canvas_binding_invalid", "客户端不能创建、替换或解除可信业务绑定", 422
             )
 
     @staticmethod
@@ -660,13 +559,10 @@ class CanvasService(BaseService):
             canvas_folder_write_lock(self.session),
             self._transaction(lock_request_project=False),
         ):
-            from .canvas_document import has_character_nodes
-
             canvas = self.require_canvas(
                 project_id,
                 canvas_id,
                 lock=True,
-                publish_characters=has_character_nodes(request.source_document),
             )
             self._validate_identity(canvas, request.source_document)
             digest, receipt = self.begin_write(
@@ -716,7 +612,6 @@ class CanvasService(BaseService):
         )
 
     def _apply_document(self, canvas, document, *, reason="automatic"):
-        self._validate_character_publications(canvas, document)
         shared, private = split_document(document)
         # Viewport saves are independent of graph commits. An older graph request must not
         # rewind a position already acknowledged by the personal viewport endpoint.
@@ -752,13 +647,7 @@ class CanvasService(BaseService):
         self._save_private(canvas, private)
         self.session.flush()
 
-    def _validate_character_publications(self, canvas, document, *, shared=False):
-        from .canvas_character_publication_service import CanvasCharacterPublicationService
-
-        CanvasCharacterPublicationService(self).validate(canvas, document, shared=shared)
-
     def _replace_graph(self, canvas, document):
-        self._validate_character_publications(canvas, document, shared=True)
 
         now = utcnow()
         nodes = {x.node_key: x for x in self.canvas_dao.children(CanvasNode, canvas.id, lock=True)}
@@ -1160,9 +1049,7 @@ class CanvasService(BaseService):
             project_document(shared, private.state_json if private else None),
             strict=False,
         )
-        return self.project_source_binding(
-            freeze_drawings(self, revision.canvas_id, document)[0], canvas
-        )
+        return freeze_drawings(self, revision.canvas_id, document)[0]
 
     def read_revision(self, project_id, canvas_id, revision_id):
         with self._transaction(read_only=True):
@@ -1182,15 +1069,12 @@ class CanvasService(BaseService):
             canvas_folder_write_lock(self.session),
             self._transaction(lock_request_project=False),
         ):
-            from .canvas_document import has_character_nodes
-
             original = self.require_canvas(project_id, canvas_id)
-            historical = self._revision(original.id, revision_id)
+            self._revision(original.id, revision_id)
             canvas = self.require_canvas(
                 project_id,
                 canvas_id,
                 lock=True,
-                publish_characters=has_character_nodes(historical.snapshot_json),
             )
             payload = {
                 "project_id": str(project_id),

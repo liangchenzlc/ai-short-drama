@@ -28,7 +28,7 @@ export async function verifyConcurrentDrawingCopy({ context, origin, key, node, 
         await stroke(editor, 120);
         const destination = await read(await context.request.post(`${origin}/api/v1/projects`, {
             headers: { "Idempotency-Key": "drawing-copy-concurrent-source" },
-            data: { name: "来源并发编辑复制", aspect: "16:9", workspace_mode: "infinite_canvas" },
+            data: { name: "来源并发编辑复制", workspace_mode: "infinite_canvas" },
         }));
         const destinationPath = `/api/v1/projects/${destination.id}/canvases/${destination.primary_canvas_id}`;
         const initial = await read(await context.request.get(`${origin}${destinationPath}/my-document`));

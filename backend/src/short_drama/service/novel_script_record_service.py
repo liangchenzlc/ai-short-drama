@@ -5,10 +5,10 @@ from sqlalchemy import select
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound
 from short_drama.domain import (
     AIModelConfig,
-    Episode,
-    EpisodeNovel,
-    EpisodeScript,
     NovelScriptRecord,
+    Project,
+    ProjectNovel,
+    ProjectScript,
 )
 from short_drama.schemas.novel_script_record import NovelScriptRecordCreate, NovelScriptRecordRead
 
@@ -22,12 +22,12 @@ class GenerationRecordService(BaseService):
     output_field = None
 
     def _lock_source(self, identifier):
-        episode_id = self.session.scalar(
-            select(self.source_model.episode_id).where(self.source_model.id == identifier)
+        project_id = self.session.scalar(
+            select(self.source_model.project_id).where(self.source_model.id == identifier)
         )
-        if episode_id is None:
+        if project_id is None:
             raise NotFound("Generation source does not exist")
-        self._require(Episode, episode_id)
+        self._require(Project, project_id)
         return self._require(self.source_model, identifier)
 
     def _batch_payloads(self, payloads):
@@ -69,7 +69,7 @@ class GenerationRecordService(BaseService):
         return [by_output[value[self.output_field]] for value in values]
 
     def _validate_source(self, source):
-        if self.source_model is EpisodeNovel and not source.content.strip():
+        if self.source_model is ProjectNovel and not source.content.strip():
             raise BusinessError("Novel content is required to generate scripts")
 
     def _persist_batch(self, values, source, created_at=None):
@@ -85,8 +85,10 @@ class GenerationRecordService(BaseService):
                 raise BusinessError("Generation provenance requires a text model")
         for value in sorted(values, key=lambda value: value[self.output_field]):
             output = self._require(self.output_model, value[self.output_field])
-            if output.episode_id != source.episode_id:
-                raise BusinessError("Generation source and outputs must belong to the same episode")
+            if output.project_id != source.project_id:
+                raise BusinessError(
+                    "Generation source and outputs must belong to the same creation"
+                )
         now = created_at or utcnow()
         return [
             self.dao.create({**value, "created_at": now, "created_by": None}) for value in values
@@ -113,7 +115,7 @@ class NovelScriptRecordService(GenerationRecordService):
     model = NovelScriptRecord
     create_schema = NovelScriptRecordCreate
     read_schema = NovelScriptRecordRead
-    source_model = EpisodeNovel
-    output_model = EpisodeScript
+    source_model = ProjectNovel
+    output_model = ProjectScript
     source_field = "novel_id"
     output_field = "script_id"

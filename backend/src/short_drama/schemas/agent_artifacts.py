@@ -28,11 +28,11 @@ ArtifactStatus = Literal["ready", "applied", "rejected", "archived"]
 
 
 class ArtifactSource(ReadModel):
-    episode_id: Identifier
+    project_id: Identifier
     content_version: Identifier
     storyboard_version: Identifier
-    episode_row_version: Identifier
-    target_kind: Literal["episode", "asset", "shot"] = "episode"
+    project_row_version: Identifier
+    target_kind: Literal["project", "asset", "shot"] = "project"
     target_id: Identifier | None = None
     target_row_version: Identifier | None = None
     model_name: str | None = None
@@ -48,7 +48,6 @@ class PatchDifference(ReadModel):
 class ArtifactSummary(ReadModel):
     id: Identifier
     project_id: Identifier
-    episode_id: Identifier
     kind: ArtifactKind
     status: ArtifactStatus
     row_version: Identifier
@@ -81,7 +80,6 @@ class ArtifactAdopt(InputModel):
     content_version: Identifier
     storyboard_version: Identifier | None = None
     target_row_version: Identifier | None = None
-    confirm_shared: bool = False
     native_review: dict | None = None
 
 

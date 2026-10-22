@@ -1,12 +1,12 @@
 # 无限画布独立前端
 
-本包从 BeefTV 固定 commit `4ca2a65a7780a8dfcaaa86c33679f84fb04e055c` 迁入，现位于 `frontend/canvas/`。独立 React root、依赖锁、HTML、Provider、CSS、字体与媒体构建保留源编辑器结构，通过 `/canvas-app/` 与标准工作台同源部署。按用户后续调整，共同声明但版本不同的直接依赖采用宿主版本，源独有依赖继续独立锁定；来源清单仍保留原版版本信息。完整迁移仍在进行，阶段状态见[实施记录](../../docs/plans/2026-10-05-beeftv-implementation-log.md)。
+本包从 BeefTV 固定 commit `4ca2a65a7780a8dfcaaa86c33679f84fb04e055c` 迁入，现位于 `frontend/canvas/`。独立 React root、依赖锁、HTML、Provider、CSS、字体与媒体构建保留源编辑器结构，通过 `/canvas-app/` 与标准工作台同源部署。按用户后续调整，共同声明但版本不同的直接依赖采用宿主版本，源独有依赖继续独立锁定；来源清单仍保留原版版本信息。完整迁移仍在进行，阶段状态见[实施记录](../../docs/plans/2026-10/2026-10-05-BeefTV画布迁移实施记录.md)。
 
-根 `.gitattributes` 将本包文本固定为 LF，防止 Windows `core.autocrlf=true` 签出改变原始来源摘要；二进制保持原字节。`vendor/lobehub-icons/` 使用 `-text` 例外，保留 npm 包原始字节（包括 CRLF），由独立的 649 项第三方图标清单核对，不改原清单摘要。已有签出若仅有 CRLF 差异，先核对规范字节与登记摘要，再规范换行；不要通过批量重登记源码来隐藏真正内容差异。2026-10-08 的环境与接续证据见[剩余工作台账](../../docs/plans/2026-10-08-beeftv-remaining-work.md)。
+根 `.gitattributes` 将本包文本固定为 LF，防止 Windows `core.autocrlf=true` 签出改变原始来源摘要；二进制保持原字节。`vendor/lobehub-icons/` 使用 `-text` 例外，保留 npm 包原始字节（包括 CRLF），由独立的 649 项第三方图标清单核对，不改原清单摘要。已有签出若仅有 CRLF 差异，先核对规范字节与登记摘要，再规范换行；不要通过批量重登记源码来隐藏真正内容差异。2026-10-08 的环境与接续证据见[剩余工作台账](../../docs/plans/2026-10/2026-10-08-BeefTV剩余工作台账.md)。
 
 ## 产品边界
 
-Skill 节点正文和模板快照只在本人文档中恢复，普通 text 作品仍按项目权限共享。后端也遮蔽旧共享 Skill 正文；归属未确认的旧记录保存/恢复返回 `canvas_legacy_skill_body_private` 并保留原数据，历史恢复透传作者确认说明，保存409仍保留草稿并暂停自动提交。2026-10-09 两宽度原 UI 拖动、关闭旧窗口仅cookies恢复与成员移动后的作者模板恢复已在独立 Python/MySQL 环境验证；已有快照由 API 预置，源创建入口继续隐藏，没有供应商调用。该隔离回归不代表 Skill 管理入口、旧数据缓存清理或全部引用生成已经验收，详见[接口说明](../../docs/api/canvases.md)和[剩余台账](../../docs/plans/2026-10-08-beeftv-remaining-work.md)。
+Skill 节点正文和模板快照只在本人文档中恢复，普通 text 作品仍按项目权限共享。后端也遮蔽旧共享 Skill 正文；归属未确认的旧记录保存/恢复返回 `canvas_legacy_skill_body_private` 并保留原数据，历史恢复透传作者确认说明，保存409仍保留草稿并暂停自动提交。2026-10-09 两宽度原 UI 拖动、关闭旧窗口仅cookies恢复与成员移动后的作者模板恢复已在独立 Python/MySQL 环境验证；已有快照由 API 预置，源创建入口继续隐藏，没有供应商调用。该隔离回归不代表 Skill 管理入口、旧数据缓存清理或全部引用生成已经验收，详见[接口说明](../../docs/api/canvases.md)和[剩余台账](../../docs/plans/2026-10/2026-10-08-BeefTV剩余工作台账.md)。
 
 本包仅提供 `/canvas-app/canvas/:source_key` 无限画布编辑器。2026-10-06 按用户要求物理删除源首页、项目库及详情、资产管理、设置、外部 Agent、独立创作页、任务管理页和整站侧栏、搜索面板、品牌组件；这些页面不再作为源代码或构建入口存在。项目、资产、模型配置和任务管理使用当前工作台。
 
@@ -53,7 +53,7 @@ Skill 节点正文和模板快照只在本人文档中恢复，普通 text 作�
 - `@react-three/fiber` 从 9.6.1 调整到支持 React 19.3 的最小稳定版本 9.8.0；`@react-three/drei@10.7.7` 保留，其 `^9.0.0` peer 范围兼容该版本。
 - Excalidraw 0.18.1 内部固定的 Radix Tabs 1.0.2 仅声明 React 16–18，通过限定在 Excalidraw 内的 override 使用支持 React 19 的 `@radix-ui/react-tabs@1.1.13`，不改变绘图业务代码。
 
-最终锁文件已通过正常 `npm ci` 和 `npm ls --all`，没有使用 `--force` 或 `--legacy-peer-deps`。`tests/model-logo-integrity.test.mjs` 核对 321 项、649 个原始文件与许可；`e2e/dependency-compat.test.mjs` 使用真实组件和浏览器验证长对话滚动、Sender 输入/两种发送、页脚菜单/采用回填、全部 321 项 Logo 列表及 Nano Banana 按需加载。可分别执行 `node --test tests/model-logo-integrity.test.mjs`、`node --test e2e/dependency-compat.test.mjs`；后者可设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`。这些验证使用受控优化供应商替身，不代表真实模型或完整原版视觉验收。
+最终锁文件已通过正常 `npm ci` 和 `npm ls --all`，没有使用 `--force` 或 `--legacy-peer-deps`。`tests/models/model-logo-integrity.test.mjs` 核对 321 项、649 个原始文件与许可；`e2e/compat/dependency-compat.test.mjs` 使用真实组件和浏览器验证长对话滚动、Sender 输入/两种发送、页脚菜单/采用回填、全部 321 项 Logo 列表及 Nano Banana 按需加载。可分别执行 `node --test tests/models/model-logo-integrity.test.mjs`、`node --test e2e/compat/dependency-compat.test.mjs`；后者可设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`。这些验证使用受控优化供应商替身，不代表真实模型或完整原版视觉验收。
 
 ## 提示词优化与审美工具
 
@@ -63,7 +63,7 @@ Skill 节点正文和模板快照只在本人文档中恢复，普通 text 作�
 
 审美持久creation-run已接通45秒租约、15秒heartbeat、epoch CAS及九阶段准备/批准/原子任务关联；运行、阶段、报告和reasoning仅本人可见，直接`/tasks`仍409拒绝。保存来源后才准备阶段，受理回执重放使用原任务，unknown不能重提交供应商；旧助手与独立创作路由不恢复。服务端先显式部署011迁移，本机业务库已完成两表及作者索引DDL。
 
-工具/状态/模型偏好44项和原画布开关/仅cookies恢复1项已有证据；持久租约/四协议九阶段及迁移native-b27项通过，受控HTTP读取原MinIO字节。卡片服务端有效开关3项红转绿，画布Node251、统一build-b与source832/186/91通过。原审美UI art-ui-g/h/i各1项通过，最终i为67.50s、概览与详情截图已实际核验，覆盖五阶段受理后取消观察、释放租约、仅cookies恢复原run/任务、九阶段终态、再次fresh报告及原SVG定位/复制提示词；零重复供应商调用、零作品、原图不变及三方权限后置断言均执行。对应`backend/tests/integration/test_canvas_art_critique_browser.py`调用`scripts/verify-art-critique-python.mjs`，需统一生产产物、隔离MySQL与`RUN_CANVAS_RESOURCE_MINIO=1`、`RUN_CANVAS_BROWSER_INTEGRATION=1`，临时端口4199。完整动态资源政策/配额保留R22；收费供应商按用户要求暂缓，不将受控供应商或构建等同完整工具迁移。
+工具/状态/模型偏好44项和原画布开关/仅cookies恢复1项已有证据；持久租约/四协议九阶段及迁移native-b27项通过，受控HTTP读取原MinIO字节。卡片服务端有效开关3项红转绿，画布Node251、统一build-b与source832/186/91通过。原审美UI art-ui-g/h/i各1项通过，最终i为67.50s、概览与详情截图已实际核验，覆盖五阶段受理后取消观察、释放租约、仅cookies恢复原run/任务、九阶段终态、再次fresh报告及原SVG定位/复制提示词；零重复供应商调用、零作品、原图不变及三方权限后置断言均执行。对应`backend/tests/integration/canvas/tools/test_canvas_art_critique_browser.py`调用`scripts/verify-art-critique-python.mjs`，需统一生产产物、隔离MySQL与`RUN_CANVAS_RESOURCE_MINIO=1`、`RUN_CANVAS_BROWSER_INTEGRATION=1`，临时端口4199。完整动态资源政策/配额保留R22；收费供应商按用户要求暂缓，不将受控供应商或构建等同完整工具迁移。
 
 ## 图片本地工具
 
@@ -75,7 +75,7 @@ Skill 节点正文和模板快照只在本人文档中恢复，普通 text 作�
 “调整尺寸”。该工具是本地插值，读取37×19源图后默认1K、高质量插值，输出1024×526；
 保留双线性、最近邻、2K/4K选择及已达4K的禁用状态，不新增AI超分服务或桌面入口。
 
-现行专项为 `backend/tests/integration/test_canvas_image_upscale_browser.py`，复用
+现行专项为 `backend/tests/integration/canvas/image/test_canvas_image_upscale_browser.py`，复用
 `scripts/verify-image-grid-recovery-python.mjs` 的原上传、菜单和六类异常操作。除隔离MySQL、
 `RUN_CANVAS_RESOURCE_MINIO=1`、`RUN_CANVAS_BROWSER_INTEGRATION=1` 与Chrome外，
 设置 `BEEFTV_ROOT` 为只读源仓库；测试通过 `git show` 读取固定commit的插值代码，核对清单
@@ -86,7 +86,7 @@ conflict、navigation、account_switch、source_deleted；临时端口4199，随
 
 ## 图片局部重绘
 
-原蒙版UI专项为 `backend/tests/integration/test_canvas_image_mask_browser.py` 与
+原蒙版UI专项为 `backend/tests/integration/canvas/image/test_canvas_image_mask_browser.py` 与
 `scripts/verify-image-mask-python.mjs`，临时画布端口4199。除上述MySQL、MinIO和浏览器开关外，
 设置 `RUN_CANVAS_BROKER_INTEGRATION=1`、`SNOWFLAKE_WORKER_ID=1022`；独立Worker使用1023。
 测试复用随机namespace的真实Publisher/RabbitMQ/Celery，图片响应由受控本机HTTP门禁延迟，
@@ -99,20 +99,20 @@ conflict、navigation、account_switch、source_deleted；临时端口4199，随
 延迟加载；不改变产品加载或批次规则。四场景与七项蒙版/三项AMQP相邻回归同版14项已通过，
 Python冻结/字节/权限后置断言均执行，产品修复后画布e2e5项通过。
 固定源CSS隐藏全局Toast，能力拒绝专项只证明提示已挂载和零提交，不宣称可见反馈。运行结果与
-尚未完成的异常/完整视觉范围见[当前台账](../../docs/plans/2026-10-08-beeftv-remaining-work.md)。
+尚未完成的异常/完整视觉范围见[当前台账](../../docs/plans/2026-10/2026-10-08-BeefTV剩余工作台账.md)。
 
 ## 图片多角度
 
-多角度专项使用 `backend/tests/integration/test_canvas_image_angle_browser.py` 与
+多角度专项使用 `backend/tests/integration/canvas/image/test_canvas_image_angle_browser.py` 与
 `scripts/verify-image-angle-python.mjs`，环境开关、4199端口和Worker节点与上述蒙版专项相同。
 桌面从原“视角调整”菜单、600px从“工具”菜单进入。默认值/六预设、键盘、两模式拖拽、
 取消及个人份数为3时强制单份均已核对；旧窗口和仅cookies恢复均绑定任务原永久产物，
 不再次上传生成图片。两场景与四项蒙版/三项AMQP同版9项及画布e2e5项通过。完整异常、
-成对视觉和供应商效果仍按[台账](../../docs/plans/2026-10-08-beeftv-remaining-work.md)后续核验。
+成对视觉和供应商效果仍按[台账](../../docs/plans/2026-10/2026-10-08-BeefTV剩余工作台账.md)后续核验。
 
 ## 图片打光
 
-打光专项使用 `backend/tests/integration/test_canvas_image_lighting_browser.py` 与
+打光专项使用 `backend/tests/integration/canvas/image/test_canvas_image_lighting_browser.py` 与
 `scripts/verify-image-lighting-python.mjs`，环境开关、4199端口和独立Worker与蒙版专项相同。
 保留六光位、八风格、球面拖拽、亮度边界、光色、轮廓光、智能文字、模板现场修改和真实剪贴板。
 “生成打光效果”只创建单份idle提示词节点，关闭旧窗口后可恢复；之后原“生成”按钮才提交任务。
@@ -123,7 +123,7 @@ final-c曾出现一次视口PUT 409，未降低失败请求断言或修改产品
 
 ## 图片表情
 
-表情专项使用 `backend/tests/integration/test_canvas_image_emotion_browser.py` 与
+表情专项使用 `backend/tests/integration/canvas/image/test_canvas_image_emotion_browser.py` 与
 `scripts/verify-image-emotion-python.mjs`，环境开关、4199端口和独立Worker与蒙版专项相同。
 实际加载MediaPipe JS/WASM、检测模型与3D人头，图案图片无脸时使用原手工框选；覆盖25个
 情绪预设、键盘/二维拖拽、取消重开和两个人物切换，个人份数3仍只提交一份。
@@ -136,11 +136,11 @@ final-f **3 passed/0 skipped，135.24s**，正常1440px、运行中关闭窗口�
 全像素不变、来源冻结、单任务/记录/绑定与三方权限。支持蒙版时uploads=5，否则4。
 两宽度默认/选定和最终恢复截图已查看；11项隔离消费者回归覆盖保存失败、来源删除、
 未永久保存、任务/输入变化和账号切换，不代表真实断网或真人检测验收。
-完整异常、固定源成对视觉及供应商效果继续见[台账](../../docs/plans/2026-10-08-beeftv-remaining-work.md)。
+完整异常、固定源成对视觉及供应商效果继续见[台账](../../docs/plans/2026-10/2026-10-08-BeefTV剩余工作台账.md)。
 
 ## 图片肤质
 
-肤质专项为 `backend/tests/integration/test_canvas_image_portrait_texture_browser.py` 与
+肤质专项为 `backend/tests/integration/canvas/image/test_canvas_image_portrait_texture_browser.py` 与
 `scripts/verify-image-portrait-texture-python.mjs`，开关、4199端口和独立Worker同上述蒙版专项。
 固定源桌面“人像调整”只显示表情，600px“工具”菜单仍能创建质感节点；创建动作只添加
 空图片与一条原图引用。创作标题栏的源CSS隐藏质感参数入口，保持隐藏，不强制点击或放开。
@@ -152,7 +152,7 @@ ui-d **3 passed/0 skipped，134.72s**：桌面恢复、600px仅cookies中断恢�
 MinIO字节、原图不变及私人任务/共享产物权限通过。桌面创建先经原窄屏入口，再恢复1440px。
 ui-e只补菜单截图的入场等待，正常场景 **1 passed/2 deselected，42.21s**；菜单、两宽度
 默认画布和全部终态恢复截图已查看。没有产品/接口/DDL/依赖变化；完整异常、参数可见性
-的源限制、成对视觉和供应商效果仍按[台账](../../docs/plans/2026-10-08-beeftv-remaining-work.md)记录。
+的源限制、成对视觉和供应商效果仍按[台账](../../docs/plans/2026-10/2026-10-08-BeefTV剩余工作台账.md)记录。
 
 ## 共用 AI 创作助手
 
@@ -160,20 +160,22 @@ ui-e只补菜单截图的入场等待，正常场景 **1 passed/2 deselected，4
 
 对话按本人和项目归属，切换同项目画布不会拆分对话。自动作品上下文可移除，节点通过 `@` 显式引用；发送前必须完成模型偏好和画布远端保存，使用服务端确认的十进制版本。409 或准备期间变更会保留消息与作品草稿。附件、资产引用和个人 Skill 复用宿主功能。新 `/api/v1/assistant` 仅聊天与建议，禁止创作工具、改图、付费生成提议和助手回合撤销；节点自身生成和手动撤销保持原流程。旧 Agent 深链转为只读历史入口，已有任务与候选仍按原许可处理。
 
-接口与协议限制见[助手 API](../../docs/api/assistant.md)，本次助手进度只更新[交接文档第 6.5 节](../../docs/plans/2026-10-06-beeftv-resume-handoff.md#65-m5画布助手工作流与最终验收)，不能据此宣称 M5 或完整画布迁移完成。共享代码使用宿主的 BigInt 版本保护，画布 TypeScript 编译目标与宿主对齐为 ES2022。
+接口与协议限制见[助手 API](../../docs/api/assistant.md)，本次助手进度只更新[交接文档第 6.5 节](../../docs/plans/2026-10/2026-10-06-BeefTV画布迁移接续文档.md#65-m5画布助手工作流与最终验收)，不能据此宣称 M5 或完整画布迁移完成。共享代码使用宿主的 BigInt 版本保护，画布 TypeScript 编译目标与宿主对齐为 ES2022。
 
 ## 验证与来源
 
-- `npm test`：覆盖版本、路径、首次请求重试、HTTP 适配、启动顺序、个人视口/外观串行与冲突、撤权会话隔离、上传范围捕获及幂等身份合同；实际数量以当前执行结果为准。
+测试已按功能归档，`npm test` 和 `test:e2e` 必须追加功能或文件；用 `node ../../scripts/test.mjs --list` 查看编号，目录和级别规则见[测试规范](../../docs/instruction/按功能执行测试.md)。
+
+- `npm test -- --feature canvas.document`：示例运行文档功能的 Node 测试。其他功能按编号选择；整体覆盖版本、路径、首次请求重试、HTTP 适配、启动顺序、个人视口/外观串行与冲突、撤权会话隔离、上传范围捕获及幂等身份合同，实际数量以当前执行结果为准。
 - `npm run build`：完整画布类型检查与生产构建，包括 wasm/Worker。
-- `npm run test:e2e`：真实浏览器与 API 夹具验证打开、拖拽、保存、视口/外观刷新恢复与撤权阻断，以及依赖兼容组件。两份e2e及个人偏好服务器分别使用忽略的独立Vite缓存，保留原并行命令，避免与其他测试或开发进程共用预构建文件。可设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 使用本机 Chromium；`CANVAS_BROWSER_BASE_URL` 可让原编辑器测试复用已启动的统一生产 preview，未设置时仍启动独立开发服务。该测试不代表 Python、媒体或供应商验收。
-- Python 联调：在 `backend/` 设置隔离的 `TEST_DATABASE_URL`（库名以 `_test` 结尾，有临时建库权限）和 `RUN_CANVAS_BROWSER_INTEGRATION=1`，运行 `uv run pytest tests/integration/test_canvas_browser.py -q`。测试随机建库、真实登录后调用 `scripts/verify-python.mjs`，临时前端端口 4186，API 端口由系统分配，结束后清理。不拦截 HTTP；覆盖拖拽落库、刷新、外观恢复和跨窗口冲突。报告在 `.runtime/python-browser/report.json`，明确记录尚未迁移模块的真实 404；不代表媒体/供应商/助手验收。
+- `npm run test:e2e -- --feature canvas.document`：真实浏览器与 API 夹具验证打开、拖拽、保存、视口/外观刷新恢复与撤权阻断；依赖兼容组件选择 `canvas.compat`。两份e2e及个人偏好服务器分别使用忽略的独立Vite缓存，保留原并行命令，避免与其他测试或开发进程共用预构建文件。可设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 使用本机 Chromium；`CANVAS_BROWSER_BASE_URL` 可让原编辑器测试复用已启动的统一生产 preview，未设置时仍启动独立开发服务。该测试不代表 Python、媒体或供应商验收。
+- Python 联调：在 `backend/` 设置隔离的 `TEST_DATABASE_URL`（库名以 `_test` 结尾，有临时建库权限）和 `RUN_CANVAS_BROWSER_INTEGRATION=1`，运行 `uv run pytest tests/integration/canvas/document/test_canvas_browser.py -q`。测试随机建库、真实登录后调用 `scripts/verify-python.mjs`，临时前端端口 4186，API 端口由系统分配，结束后清理。不拦截 HTTP；覆盖拖拽落库、刷新、外观恢复和跨窗口冲突。报告在 `.runtime/python-browser/report.json`，明确记录尚未迁移模块的真实 404；不代表媒体/供应商/助手验收。
 - `npm run test:parity`：读取固定、干净的 BeefTV 源仓库，在已运行的原版开发服务与本包之间执行相同操作、截图和几何比较。默认源路径 `D:/code/BeefTV`、源 URL `http://127.0.0.1:3000`，可由 `BEEFTV_ROOT`/`BEEFTV_BASE_URL` 覆盖；目标临时端口 4184，退出后关闭。所有业务请求被测试夹具拦截，不写源工作区。截图、差异图与报告写入忽略目录 `.runtime/parity`。当前覆盖 17 个场景，包括基础画布、深浅/自定义外观、素材托盘、窄屏、历史预览和绘图；捕获前等待几何与控件颜色/阴影过渡稳定。报告差异不等于完整验收，真实媒体、生成和助手须另验。
 - `npm run source:check`：核对固定源文件哈希与 `source-adaptations.json` 的显式适配记录；物理删除文件使用 `action: removed`，保留删除原因和上游哈希，检查已删除文件没有被重新引入。
 
 资源 API、MySQL、MinIO 和真实 ffprobe/FFmpeg 样本测试继续使用隔离测试数据库与随机 `canvas-test-*` buckets，结束后清理。旧 `scripts/verify-resource-python.mjs` 包含已删除的源资产分类页与源项目库操作，整段浏览器 harness 已移出当前验收范围；过去选图、上传、登记、刷新下载及分类操作的报告只记录当时实现，不能证明当前宿主管理流程通过。GLB 字节存取不代表导演台模型验收，故障注入不代表真实断网实测。
 
-以下旧浏览器 harness 依赖源 `/canvas-app/canvas` 项目库或 `/canvas-app/assets`，不再作为当前版本验收命令：`verify-creation-python.mjs`、`verify-creation-recovery-python.mjs`、`verify-creation-session-python.mjs`、`verify-resource-python.mjs`、`verify-recycle-python.mjs`、`verify-delete-recovery-python.mjs`、`verify-folders-python.mjs`、`verify-archive-python.mjs`、`verify-drawing-creation-python.mjs`，以及调用绘图创建旧流程的 `verify-drawing-python.mjs` 和 `compare-recycle-source.mjs`。脚本保留作历史测试资料，未改成跳过后宣称通过；对应项目/资产/回收/文件夹浏览器场景需要围绕宿主入口重新编写。独立编辑器的现行浏览器回归为 `verify-python.mjs` 和 `e2e/host-canvas.test.mjs`；媒体、生成和助手专项须核对自身入口后分别执行，不能用旧整站报告代替当前验收。
+以下旧浏览器 harness 依赖源 `/canvas-app/canvas` 项目库或 `/canvas-app/assets`，不再作为当前版本验收命令：`verify-creation-python.mjs`、`verify-creation-recovery-python.mjs`、`verify-creation-session-python.mjs`、`verify-resource-python.mjs`、`verify-recycle-python.mjs`、`verify-delete-recovery-python.mjs`、`verify-folders-python.mjs`、`verify-archive-python.mjs`、`verify-drawing-creation-python.mjs`，以及调用绘图创建旧流程的 `verify-drawing-python.mjs` 和 `compare-recycle-source.mjs`。脚本保留作历史测试资料，未改成跳过后宣称通过；对应项目/资产/回收/文件夹浏览器场景需要围绕宿主入口重新编写。独立编辑器的现行浏览器回归为 `verify-python.mjs` 和 `e2e/document/host-canvas.test.mjs`；媒体、生成和助手专项须核对自身入口后分别执行，不能用旧整站报告代替当前验收。
 
 固定源版本的历史已知问题：`styles/workspace-product.css` 的减少动画规则把所有后代的 transition-duration 设为 1ms，会干扰 AntD 菜单同步测量。过去在 Chrome 154、1440×900、`reducedMotion=reduce` 下，源资产管理菜单实际定位到屏幕外。源资产页现已删除，该报告不属于当前宿主资产管理验收；共享画布 CSS 仍保留，上述画布对照范围也未覆盖这一旧整站菜单。
 
@@ -181,7 +183,7 @@ ui-e只补菜单截图的入场等待，正常场景 **1 passed/2 deselected，4
 
 视频已增加原 OpenAI Videos multipart、NewAPI Channel 2 JSON 与官方 BeefAPI Seedance 预上传三条 Python 合同。参考资源使用永久身份和服务端真实元信息；Channel 2 本地参考保持原 HTTPS 替换弹窗，受理前失败可沿用原操作键，刷新后绑定同一真实任务。源全局 Ark 上传默认项在这些非 Ark 协议中不启动上传；未知收费提交显示 `submission_unknown`，原节点不提供重试。规范参数、原 ID 查询、30 秒轮询和有界下载恢复见[视频合同](../../docs/api/canvases.md#画布视频协议)。完整 M2 与收费供应商验收仍须继续。
 
-生成真实联调测试位于 `backend/tests/integration/test_canvas_generation_runtime.py`、`test_canvas_generation_media_runtime.py`、`test_canvas_text_stream.py`、`test_canvas_generation_browser.py`。在隔离 MySQL 环境显式设置 `RUN_CANVAS_RESOURCE_MINIO=1`、`RUN_CANVAS_BROWSER_INTEGRATION=1` 后运行对应 pytest；原 UI 浏览器脚本 `scripts/verify-generation-python.mjs` 临时使用 4188。测试采用真实执行器、存储、媒体工具及浏览器，但模型供应商为受控替身；不能作为付费供应商、真实消息队列或完整一比一验收。008 增量需要部署同版 API/Worker/scheduler 才能提供实时草稿，应用不自动建表。
+生成真实联调测试位于 `backend/tests/integration/canvas/generation/test_canvas_generation_runtime.py`、`test_canvas_generation_media_runtime.py`、`test_canvas_text_stream.py`、`test_canvas_generation_browser.py`。在隔离 MySQL 环境显式设置 `RUN_CANVAS_RESOURCE_MINIO=1`、`RUN_CANVAS_BROWSER_INTEGRATION=1` 后运行对应 pytest；原 UI 浏览器脚本 `scripts/verify-generation-python.mjs` 临时使用 4188。测试采用真实执行器、存储、媒体工具及浏览器，但模型供应商为受控替身；不能作为付费供应商、真实消息队列或完整一比一验收。008 增量需要部署同版 API/Worker/scheduler 才能提供实时草稿，应用不自动建表。
 
 视频专项为 `test_canvas_video_protocols.py`、`test_canvas_video_policy_runtime.py` 和 `test_canvas_video_options_runtime.py`，使用同一隔离 MySQL/MinIO 开关；原视频按钮的实际 UI 脚本为 `scripts/verify-video-protocols-python.mjs`，临时端口 4194。测试按原播放按钮激活播放器，核对真实 MP4 解码、刷新与全新缓存恢复，unknown 与 HTTPS 决策保留原入口和断言。此专项使用直接执行器与受控供应商，真实消息队列证据由独立 broker 测试提供，不能合并声称正式供应商验收。
 
@@ -197,12 +199,12 @@ MP3/WAV/Opus/AAC/FLAC，容器经真实FFmpeg解码；PCM仅保留原字节、`a
 并发归档404已用两协议确定时序复现并修复引用当前读；修复后音频/AMQP/素材库/账号
 批次78项通过、1项既有MinIO导入已随机桶隔离补跑，完整unit/API2068项通过。
 原UI69项早于该并发修复，未宣称已重做同版UI对照。收费供应商与企业授权按用户指示暂缓，
-完整音频质量、其他协议/批次及完整R07仍待验收，最新证据见[剩余工作台账](../../docs/plans/2026-10-08-beeftv-remaining-work.md)。
+完整音频质量、其他协议/批次及完整R07仍待验收，最新证据见[剩余工作台账](../../docs/plans/2026-10/2026-10-08-BeefTV剩余工作台账.md)。
 
 内置RunningHub三个协议与Workflow/App公开描述使用宿主`/ai_config`保存。画布恢复
 稳定`logicalModelId`及保存标记，清除旧浏览器地址和积分/钱包/上传Key；就绪检查使用
 宿主启用及凭据存在标记。读取公开字段后仍须保存。
-专项为`backend/tests/integration/test_canvas_runninghub_runtime.py`、
+专项为`backend/tests/integration/canvas/runninghub/test_canvas_runninghub_runtime.py`、
 `test_canvas_runninghub_browser.py`与本包`scripts/verify-runninghub-python.mjs`。
 需组合生产产物、隔离MySQL/随机MinIO桶及`RUN_CANVAS_RESOURCE_MINIO=1`、
 `RUN_CANVAS_BROWSER_INTEGRATION=1`，原UI独占4199。固定源list菜单隐藏工作流创建，
@@ -241,10 +243,10 @@ Claude使用本人保存的 `api_format=claude / protocol=claude-api`，支持�
 Gemini普通任务使用源可达的 `api_format=openai / protocol=gemini-generate-content` 非流路径，
 `api_format=gemini` 的custom gate仍明确拒绝。reasoning/thought只进本人任务记录，
 普通节点终态只共享正文。原UI恢复已经实际验证，其他引用/工具不由纯文字通过推断。
-详细限制见[Claude合同](../../docs/api/canvases.md#画布-claude-普通纯文字)与
+详细限制见[Claude合同](../../docs/api/canvases.md#画布-claude-普通文字与图片引用)与
 [Gemini合同](../../docs/api/canvases.md#画布-gemini-普通纯文字)。
 
-图片裁切原 UI 专项位于 `backend/tests/integration/test_canvas_image_tools_browser.py`，
+图片裁切原 UI 专项位于 `backend/tests/integration/canvas/image/test_canvas_image_tools_browser.py`，
 对应 `scripts/verify-image-tools-python.mjs`，临时端口 4199；需同时设置上述 MinIO 与浏览器开关。
 该片已完成原上传/inline 裁切、取消、派生图、刷新、两处 503 草稿恢复、真实字节与权限验收；
 裁切默认选区的奇数图像素导出沿源 ceil 算法，不能用 UI round 标签替代真实输出尺寸。
@@ -252,7 +254,7 @@ Gemini普通任务使用源可达的 `api_format=openai / protocol=gemini-genera
 
 模型管理统一进入宿主 `/ai_config`；`/canvas-app/settings` 兼容深链直接转宿主，不再渲染 BeefTV 设置页。画布模型列表只读本人宿主配置及完整运行 profile，旧 `channel::model` 别名恢复原稳定 ID，明确失效的选择提示不可用。画布偏好 PUT 只提交个人默认与生成参数，任何带 channels 的旧写入明确拒绝。进入配置前等待偏好 ACK 和作品远端保存，失败或 409 保留草稿并阻止离开；宿主返回只接受具体同源画布路径。
 
-宿主“测试模型”复用独立 `/canvas-runtime/model-tests`，不依赖画布或虚构节点，固定操作键重放未知回执，只有实际任务结果才成功。结果媒体保持本人权限；普通停用配置不能借测试标记执行。旧渠道绑定保留作选择别名；新增宿主运行 profile、加密扩展凭据及绑定迁移标记，升级见[统一模型迁移](../../docs/数据库模型/migrations/2026-10-06-host-model-runtime/README.md)。当前完整 SQL 为 93 表，部署必须同步 API/Worker/scheduler，旧 Worker 不能解析新的标准 `model_auth_*` 或画布凭据信封。完整接口见[画布 API](../../docs/api/canvases.md#独立模型测试)。
+宿主“测试模型”复用独立 `/canvas-runtime/model-tests`，不依赖画布或虚构节点，固定操作键重放未知回执，只有实际任务结果才成功。结果媒体保持本人权限；普通停用配置不能借测试标记执行。旧渠道绑定保留作选择别名；新增宿主运行 profile、加密扩展凭据及绑定迁移标记，升级见[统一模型迁移](../../docs/database/migrations/2026-10-06-host-model-runtime/README.md)。当前完整 SQL 为 93 表，部署必须同步 API/Worker/scheduler，旧 Worker 不能解析新的标准 `model_auth_*` 或画布凭据信封。完整接口见[画布 API](../../docs/api/canvases.md#独立模型测试)。
 
 BeefAPI 连接、状态和钱包入口统一在宿主提供。托管目录的地址/profile/模型身份由服务端维护，名称、启停及本人 headers 可保存并脱敏恢复；普通 CRUD 不能伪造托管凭据。授权由 scheduler 后台继续，关闭页面不会取消。真实企业登录与收费供应商仍需单独验收。本轮仅完成模型管理统一，项目、资产和其余整站入口的收敛仍是后续切片。
 
@@ -260,4 +262,4 @@ BeefAPI 连接、状态和钱包入口统一在宿主提供。托管目录的地
 
 `scripts/import-source.mjs` 用于固定基线首次迁入，不要在已经适配的目录强制重导覆盖；它明确拒绝重新写入已登记物理删除的文件。每次确需修改源文件，要核对实际差异并通过 `scripts/check-source.mjs --record <文件> <原因>` 更新记录；明确删除后使用 `--record-removal <文件> <原因>`，不得删掉固定来源清单来掩盖变化。哈希通过只证明差异可追踪，不证明交互与视觉一致。新增适配文件、测试与独立路由不属于上游文件哈希清单。
 
-统一静态产物的完整生产部署验收、完整资源服务、模型执行、助手和原版逐项视觉/操作对照仍需完成。共同依赖调整后的视觉和行为要重新对照，不能沿用调整前的截图或构建结果。最终一比一判定以[迁移方案](../../docs/plans/2026-10-05-beeftv-infinite-canvas-migration.md)的验收门禁为准。
+统一静态产物的完整生产部署验收、完整资源服务、模型执行、助手和原版逐项视觉/操作对照仍需完成。共同依赖调整后的视觉和行为要重新对照，不能沿用调整前的截图或构建结果。最终一比一判定以[迁移方案](../../docs/plans/2026-10/2026-10-05-BeefTV无限画布一比一迁移方案.md)的验收门禁为准。

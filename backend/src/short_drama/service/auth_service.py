@@ -79,15 +79,14 @@ class AuthService:
             key.get_secret_value().encode(), f"{identifier}:{code}".encode(), hashlib.sha256
         ).hexdigest()
 
-    def issue(self, session, user, purpose, invitation_id=None):
-        """Caller locks user (and invitation, when applicable) before issuance."""
+    def issue(self, session, user, purpose):
+        """Caller locks the user before issuing a proof."""
         now = utcnow()
         latest = session.scalar(
             select(EmailChallenge)
             .where(
                 EmailChallenge.user_id == user.id,
                 EmailChallenge.purpose == purpose,
-                EmailChallenge.invitation_id == invitation_id,
             )
             .order_by(EmailChallenge.created_at.desc())
             .limit(1)
@@ -99,7 +98,6 @@ class AuthService:
             .where(
                 EmailChallenge.user_id == user.id,
                 EmailChallenge.purpose == purpose,
-                EmailChallenge.invitation_id == invitation_id,
                 EmailChallenge.consumed_at.is_(None),
             )
             .values(consumed_at=now)
@@ -109,7 +107,6 @@ class AuthService:
             id=identifier,
             user_id=user.id,
             purpose=purpose,
-            invitation_id=invitation_id,
             email=user.email,
             proof_hash=self.proof_hash(identifier, code),
             attempts=0,
@@ -133,17 +130,16 @@ class AuthService:
         )
         return {"challenge_id": str(identifier), "expires_in": 600}
 
-    def check_proof(self, session, proof, purpose, user_id=None, invitation_id=None):
+    def check_proof(self, session, proof, purpose, user_id=None):
         query = select(EmailChallenge).where(EmailChallenge.id == proof.challenge_id)
         challenge = session.scalar(query)
         if (
             not challenge
             or challenge.purpose != purpose
             or (user_id is not None and challenge.user_id != user_id)
-            or challenge.invitation_id != invitation_id
         ):
             return None
-        # Issuance/reset/login and invitation acceptance all lock user first.
+        # Issuance, password reset and login all lock the user first.
         # Re-read the proof under its lock so parallel consumes cannot both pass.
         user = session.scalar(select(User).where(User.id == challenge.user_id).with_for_update())
         challenge = session.scalar(

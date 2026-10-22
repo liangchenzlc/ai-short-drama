@@ -1,4 +1,3 @@
-import { linkProjectAsset, moveProjectAsset, updateProjectAssetCategory } from "@/services/api/projects";
 import { ApiError } from "@/services/api/request";
 import { listWorkspaceAssetsPage } from "@/services/api/workspace-assets";
 import { deleteWorkspaceAssetRecord, putWorkspaceAsset } from "@/services/api/workspace-data";
@@ -22,7 +21,6 @@ import {
 
 export type WorkspaceAssetLinkOptions = {
     asset: Asset;
-    domainProjectId?: string;
     category?: AssetCategory;
     folderId?: string;
     source?: "uploaded" | "canvas";
@@ -71,11 +69,6 @@ export function resetWorkspaceAssetCommitStateForTests() {
     assetCommitChains.clear();
 }
 
-function linkedProjectIds(asset: Asset, domainProjectId?: string) {
-    const projectIds = Array.isArray(asset.metadata?.projectIds) ? asset.metadata.projectIds.filter((id): id is string => typeof id === "string") : [];
-    return domainProjectId ? [...new Set([...projectIds, domainProjectId])] : projectIds;
-}
-
 /** Keep later local edits. Only copy receipt fields the user has not changed since submit. */
 type AssetWriteReceipt = {
     id?: string;
@@ -107,21 +100,12 @@ export function mergeWorkspaceAssetReceipt(submitted: Asset, live: Asset, receip
     return patch;
 }
 
-function projectLinkedMetadata(live: Asset, domainProjectId: string | undefined) {
-    if (!domainProjectId) return live.metadata;
-    return { ...live.metadata, projectIds: linkedProjectIds(live, domainProjectId) };
-}
-
-function applyReceiptProjection(id: string, submitted: Asset, receipt: AssetWriteReceipt, domainProjectId?: string) {
+function applyReceiptProjection(id: string, submitted: Asset, receipt: AssetWriteReceipt) {
     const live = useAssetStore.getState().assets.find((item) => item.id === id);
     if (!live) return false;
     const patch = mergeWorkspaceAssetReceipt(submitted, live, receipt);
-    const metadata = projectLinkedMetadata(live, domainProjectId);
-    const metadataChanged = JSON.stringify(metadata ?? null) !== JSON.stringify(live.metadata ?? null);
-    if (!Object.keys(patch).length && !metadataChanged) return true;
-    runAssetStoreProjection(() => {
-        useAssetStore.getState().updateAsset(id, metadataChanged ? { ...patch, metadata } : patch);
-    });
+    if (!Object.keys(patch).length) return true;
+    runAssetStoreProjection(() => useAssetStore.getState().updateAsset(id, patch));
     return true;
 }
 
@@ -163,8 +147,8 @@ async function commitTrackedAssetDraft(id: string, expected: CapturedUserScope, 
     applyReceiptProjection(id, submitted, saved.asset);
 }
 
-/** Single boundary for local asset persistence and optional project linking. */
-export async function persistWorkspaceAssetLink({ asset, domainProjectId, category, folderId, source, signal, expectedScope }: WorkspaceAssetLinkOptions) {
+/** Single boundary for private canvas asset persistence. */
+export async function persistWorkspaceAssetLink({ asset, category, folderId, signal, expectedScope }: WorkspaceAssetLinkOptions) {
     const expected = expectedScope ?? captureUserScope();
     throwIfAborted(signal);
     assertUserScope(expected);
@@ -175,11 +159,11 @@ export async function persistWorkspaceAssetLink({ asset, domainProjectId, catego
         throw new WorkspaceAssetMediaPendingError();
     }
 
+    if (category || folderId !== undefined) {
+        useAssetStore.getState().updateAsset(asset.id, { ...(category ? { category } : {}), ...(folderId !== undefined ? { folderId: folderId || undefined } : {}) });
+    }
+
     if (usesBrowserLocalResourceStore()) {
-        if (domainProjectId) {
-            const projectIds = linkedProjectIds(asset, domainProjectId);
-            useAssetStore.getState().updateAsset(asset.id, { metadata: { ...asset.metadata, projectIds } });
-        }
         const submittedVersion = peekAssetStoreDraft(expected.userScope, asset.id)?.version;
         await flushAssetStorePersistence(expected);
         assertUserScope(expected);
@@ -210,29 +194,12 @@ export async function persistWorkspaceAssetLink({ asset, domainProjectId, catego
         }
         if (!useAssetStore.getState().assets.some((item) => item.id === live.id)) return;
 
-        let receipt: AssetWriteReceipt = saved.asset;
-        if (domainProjectId) {
-            const { asset: linkedAsset } = await linkProjectAsset(
-                domainProjectId,
-                { assetId: live.id, category: normalizeAssetCategory(category || live.category), folderId, source },
-                signal,
-                expected,
-            );
-            throwIfAborted(signal);
-            assertUserScope(expected);
-            let linked = category && linkedAsset.category !== category ? (await updateProjectAssetCategory(domainProjectId, live.id, category, signal, expected)).asset : linkedAsset;
-            throwIfAborted(signal);
-            assertUserScope(expected);
-            if (folderId !== undefined && (linked.folderId || "") !== folderId) linked = (await moveProjectAsset(domainProjectId, live.id, folderId, signal, expected)).asset;
-            throwIfAborted(signal);
-            assertUserScope(expected);
-            receipt = linked;
-        }
+        const receipt: AssetWriteReceipt = saved.asset;
         if (peekAssetStoreDraft(expected.userScope, live.id)?.kind === "delete") {
             await commitTrackedAssetDraft(live.id, expected, signal);
             return;
         }
-        applyReceiptProjection(live.id, submitted, receipt, domainProjectId);
+        applyReceiptProjection(live.id, submitted, receipt);
     });
 }
 

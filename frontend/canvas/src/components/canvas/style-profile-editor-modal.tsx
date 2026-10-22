@@ -12,11 +12,12 @@ type StyleProfileEditorModalProps = {
     open: boolean;
     initialProfile: StyleProfileSnapshot | null;
     saving?: boolean;
+    notice?: ReactNode;
     onClose: () => void;
     onSave: (profile: StyleProfileSnapshot, applyToProject: boolean) => void;
 };
 
-export function StyleProfileEditorModal({ open, initialProfile, saving = false, onClose, onSave }: StyleProfileEditorModalProps) {
+export function StyleProfileEditorModal({ open, initialProfile, saving = false, notice, onClose, onSave }: StyleProfileEditorModalProps) {
     const { message, modal } = App.useApp();
     const [section, setSection] = useState<EditorSection>("identity");
     const [draft, setDraft] = useState<StyleProfileSnapshot | null>(initialProfile);
@@ -76,6 +77,7 @@ export function StyleProfileEditorModal({ open, initialProfile, saving = false, 
                         </div>
                     </header>
 
+                    {notice}
                     <nav className="style-profile-editor-tabs grid shrink-0 grid-cols-3 border-b border-border px-2 sm:flex sm:px-4" role="tablist" aria-label="风格编辑器分区">
                         <EditorTab id="style-profile-tab-identity" panelId="style-profile-panel-identity" active={section === "identity"} icon={<Image className="size-3.5" />} label="基本信息" onClick={() => setSection("identity")} />
                         <EditorTab id="style-profile-tab-prompt" panelId="style-profile-panel-prompt" active={section === "prompt"} icon={<Braces className="size-3.5" />} label="Prompt 规则" onClick={() => setSection("prompt")} />

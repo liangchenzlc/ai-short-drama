@@ -6,8 +6,6 @@ import { captureVideoPoster, detectVideoAudioTrackFromBlob } from "@/lib/video-p
 import { resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, ResourceUploadError, uploadResourceFile } from "@/services/api/resources";
 import { apiBaseURL } from "@/services/api/request";
 import { uploadImage, type UploadedImage } from "@/services/image-storage";
-import { createChannelTransport } from "@/services/api/channel-transport";
-import { isBuiltinBeefAPIChannel, useConfigStore } from "@/stores/use-config-store";
 import { cacheResourceObjectUrl, getCachedResourceBlob, getCachedResourceObjectUrl, primeResourceBlobCache } from "@/services/resource-blob-cache";
 import { cleanupLocalMedia, deleteLocalMedia, getLocalMediaBlob, resolveLocalMediaUrl, saveLocalMedia, setLocalMediaBlob } from "@/services/local-media-repository";
 import { usesBrowserLocalResourceStore } from "@/services/workspace-resource-storage";
@@ -166,7 +164,7 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "") {
             const suffix = fallback.slice(legacyResource[0].indexOf("/file") + "/file".length);
             return `${String(apiBaseURL).replace(/\/+$/u, "")}/resources/${encodeURIComponent(legacyResource[1])}/file${suffix}`;
         }
-        return await materializeExternalMedia(fallback);
+        return fallback;
     }
     const resourceId = resourceIdFromStorageKey(storageKey);
     if (resourceId) {
@@ -179,63 +177,6 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "") {
         return hydrated || resourceFileUrl(resourceId);
     }
     return resolveLocalMediaUrl(storageKey, fallback);
-}
-
-// MCP-created generation nodes may contain a provider URL instead of a local
-// resource key. Native media elements cannot attach the provider Bearer token,
-// so materialize that URL once through the configured channel and play the
-// resulting local/blob resource. This also makes old canvases self-healing.
-const externalMediaInflight = new Map<string, Promise<string>>();
-async function materializeExternalMedia(url: string) {
-    if (!/^https?:\/\//i.test(url) || !/enterprise\.beefapi\.com/i.test(url)) return url;
-    const existing = externalMediaInflight.get(url);
-    if (existing) return existing;
-    const pending = (async () => {
-        const expected = captureUserScope();
-        const config = useConfigStore.getState().config;
-        const channel = config.hostModelDirectory
-            ? config.channels.find((item) => item.enabled !== false && isBuiltinBeefAPIChannel(item))
-            : config.channels.find((item) => {
-                try {
-                    return new URL(item.baseUrl).hostname === new URL(url).hostname;
-                } catch {
-                    return false;
-                }
-            }) || config.channels.find((item) => /beefapi/i.test(`${item.id} ${item.name} ${item.baseUrl}`));
-        if (!channel) return url;
-        const blob = await createChannelTransport(
-            {
-                baseUrl: channel.baseUrl,
-                apiKey: channel.credentialRef ? "" : channel.apiKey,
-                apiFormat: channel.apiFormat,
-                headers: channel.headers,
-                credentialRef: channel.credentialRef || (channel.id === "beefapi" ? "beefapi-enterprise" : undefined),
-            },
-            "video",
-        ).getBlob(url);
-        const key = `external-video:${expected.userScope}:${nanoid()}`;
-        assertUserScope(expected);
-        if (usesBrowserLocalResourceStore()) {
-            const objectUrl = URL.createObjectURL(blob);
-            await saveLocalMedia(key, blob, objectUrl);
-            return objectUrl;
-        }
-        const resource = await uploadResourceFile(blob, "video", { fileName: "generated-video.mp4", idempotencyKey: key, expectedScope: expected });
-        assertUserScope(expected);
-        const storageKey = resourceStorageKey(resource.id);
-        try {
-            await primeResourceBlobCache(storageKey, blob, expected);
-        } catch (error) {
-            if (isUserScopeAbandonedError(error)) throw error;
-        }
-        return (await getCachedResourceObjectUrl(storageKey).catch(() => "")) || resourceFileUrl(resource.id);
-    })();
-    externalMediaInflight.set(url, pending);
-    try {
-        return await pending;
-    } finally {
-        externalMediaInflight.delete(url);
-    }
 }
 
 export async function getMediaBlob(storageKey: string) {

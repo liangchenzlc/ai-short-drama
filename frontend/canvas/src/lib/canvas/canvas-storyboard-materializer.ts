@@ -12,10 +12,7 @@ export function storyboardRowReferenceNodeIds(
     includeFirstFrame: boolean,
     targetNodeId?: string,
 ) {
-    const characterAssetIds = new Set((row.characters || []).map((character) => character.characterAssetId).filter((assetId): assetId is string => Boolean(assetId)));
-    const characterNodeIds = nodes
-        .filter((node) => node.metadata?.workflowKind === "character" && Boolean(node.metadata.characterAssetId) && characterAssetIds.has(node.metadata.characterAssetId!))
-        .map((node) => node.id);
+    const characterNodeIds = (row.characters || []).flatMap(character => character.characterNodeId ? [character.characterNodeId] : []);
     const referenceIds = new Set([
         ...(scriptNode.metadata?.storyboard?.referenceNodeIds || []),
         ...(row.assetBindings || []).map((binding) => binding.nodeId),

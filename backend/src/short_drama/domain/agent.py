@@ -25,13 +25,33 @@ AGENT_PRIVATE_TABLES = frozenset(
     {
         "agent_conversations",
         "agent_messages",
+        "agent_discussion_revisions",
+        "agent_batch_undos",
         "agent_runs",
         "agent_turns",
         "agent_tool_calls",
         "agent_events",
+        "agent_tasks",
+        "agent_task_inputs",
+        "agent_task_controls",
+        "agent_operations",
+        "agent_memory_items",
+        "agent_memory_revisions",
+        "agent_memory_sources",
+        "agent_memory_forget_rules",
+        "agent_conversation_summaries",
+        "agent_memory_jobs",
+        "agent_preferences",
+        "agent_media_requests",
     }
 )
-AGENT_TABLES = AGENT_PRIVATE_TABLES | {"agent_artifacts", "agent_attachments", "agent_skills"}
+AGENT_TABLES = AGENT_PRIVATE_TABLES | {
+    "agent_artifacts",
+    "agent_attachments",
+    "agent_skills",
+    "agent_skill_versions",
+    "agent_skill_settings",
+}
 
 
 def _id():
@@ -56,7 +76,7 @@ def _time(*, nullable=False):
 
 def _json(*, nullable=False, array=False):
     return mapped_column(
-        JSON(),
+        JSON(none_as_null=nullable),
         nullable=nullable,
         server_default=None if nullable else text("(JSON_ARRAY())" if array else "(JSON_OBJECT())"),
     )
@@ -81,8 +101,7 @@ class AgentConversation(Base):
 
     id: Mapped[int] = _id()
     owner_user_id: Mapped[int] = _number()
-    project_id: Mapped[int] = _number()
-    episode_id: Mapped[int | None] = _number(nullable=True)
+    project_id: Mapped[int | None] = _number(nullable=True)
     stage: Mapped[str | None] = mapped_column(
         VARCHAR(16, collation="utf8mb4_0900_bin"), nullable=True
     )
@@ -102,6 +121,9 @@ class AgentConversation(Base):
     next_message_seq: Mapped[int] = _number(1)
     next_event_seq: Mapped[int] = _number(1)
     fixed_requirements: Mapped[dict] = _json()
+    summary_covers_until_seq: Mapped[int] = _number(0)
+    active_summary_id: Mapped[int | None] = _number(nullable=True)
+    summary_generation: Mapped[int] = _number(0)
     create_key: Mapped[str | None] = mapped_column(
         VARCHAR(64, charset="ascii", collation="ascii_bin"), nullable=True
     )
@@ -110,14 +132,21 @@ class AgentConversation(Base):
     updated_at: Mapped[datetime] = _time()
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["active_summary_id", "id"],
+            ["agent_conversation_summaries.id", "agent_conversation_summaries.conversation_id"],
+            name="fk_agent_conversations_summary",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+            use_alter=True,
+        ),
         _fk(["owner_user_id"], "users", name="fk_agent_conversations_owner"),
         _fk(["project_id"], "projects", name="fk_agent_conversations_project"),
-        _fk(["episode_id"], "episodes", name="fk_agent_conversations_episode"),
         UniqueConstraint("owner_user_id", "create_key", name="uk_agent_conversation_create"),
         Index(
-            "idx_agent_conversations_owner_episode",
+            "idx_agent_conversations_owner_creation",
             "owner_user_id",
-            "episode_id",
+            "project_id",
             "updated_at",
             "id",
         ),
@@ -134,7 +163,7 @@ class AgentConversation(Base):
         Index(
             "idx_agent_conversations_scope",
             "owner_user_id",
-            "episode_id",
+            "project_id",
             "scope_version",
             "stage",
             "subject_type",
@@ -145,27 +174,33 @@ class AgentConversation(Base):
             "id",
         ),
         CheckConstraint(
-            "(scope_version = 2 AND episode_id IS NULL AND stage IS NULL "
+            "(scope_version = 3 AND project_id IS NULL AND stage IS NULL "
             "AND subject_type IS NULL AND subject_id IS NULL AND task_type IS NULL) OR "
-            "(scope_version = 0 AND episode_id IS NOT NULL AND stage IS NULL "
+            "(scope_version = 2 AND project_id IS NOT NULL AND stage IS NULL "
+            "AND subject_type IS NULL AND subject_id IS NULL AND task_type IS NULL) OR "
+            "(scope_version = 0 AND project_id IS NOT NULL AND stage IS NULL "
             "AND subject_type IS NULL "
             "AND subject_id IS NULL AND task_type IS NULL) OR "
-            "(scope_version = 1 AND episode_id IS NOT NULL AND stage IS NOT NULL "
+            "(scope_version = 1 AND project_id IS NOT NULL AND stage IS NOT NULL "
             "AND subject_type IS NOT NULL "
             "AND subject_id IS NOT NULL AND subject_id > 0 AND task_type IS NOT NULL AND ("
-            "(stage = 'source' AND subject_type = 'episode' AND subject_id = episode_id "
+            "(stage = 'source' AND subject_type = 'project' AND subject_id = project_id "
             "AND task_type = 'writing') OR "
-            "(stage = 'assets' AND subject_type = 'episode' AND subject_id = episode_id "
+            "(stage = 'assets' AND subject_type = 'project' AND subject_id = project_id "
             "AND task_type IN ('extraction','batch')) OR "
             "(stage = 'assets' AND subject_type = 'asset' "
             "AND task_type IN ('creation','image')) OR "
-            "(stage = 'storyboard' AND subject_type = 'episode' AND subject_id = episode_id "
+            "(stage = 'storyboard' AND subject_type = 'project' AND subject_id = project_id "
             "AND task_type IN ('planning','batch')) OR "
             "(stage = 'storyboard' AND subject_type = 'shot' "
             "AND task_type IN ('creation','image','video'))))",
             name="ck_agent_conversations_scope",
         ),
-        CheckConstraint("status IN ('active','archived')", name="ck_agent_conversations_status"),
+        CheckConstraint(
+            "status IN ('active','archived','deleting','deleted')",
+            name="ck_agent_conversations_status",
+        ),
+        Index("idx_agent_conversations_account", "owner_user_id", "status", "updated_at", "id"),
         CheckConstraint(
             "row_version > 0 AND next_message_seq > 0 AND next_event_seq > 0",
             name="ck_agent_conversations_numbers",
@@ -193,7 +228,9 @@ class AgentMessage(Base):
 
     id: Mapped[int] = _id()
     conversation_id: Mapped[int] = _number()
+    task_id: Mapped[int | None] = _number(nullable=True)
     seq: Mapped[int] = _number()
+    row_version: Mapped[int] = _number(1)
     role: Mapped[str] = mapped_column(VARCHAR(16, collation="utf8mb4_0900_bin"))
     content: Mapped[str] = mapped_column(MEDIUMTEXT(), server_default=text("('')"))
     references: Mapped[list] = _json(array=True)
@@ -204,10 +241,18 @@ class AgentMessage(Base):
 
     __table_args__ = (
         _fk(["conversation_id"], "agent_conversations", name="fk_agent_messages_conversation"),
+        _fk(
+            ["task_id", "conversation_id"],
+            "agent_tasks",
+            ["id", "conversation_id"],
+            name="fk_agent_messages_task",
+        ),
+        Index("idx_agent_messages_task", "task_id", "seq"),
         UniqueConstraint("conversation_id", "seq", name="uk_agent_messages_seq"),
         UniqueConstraint("conversation_id", "idempotency_key", name="uk_agent_messages_request"),
         UniqueConstraint("id", "conversation_id", name="uk_agent_messages_parent"),
         CheckConstraint("seq > 0", name="ck_agent_messages_seq"),
+        CheckConstraint("row_version > 0", name="ck_agent_messages_version"),
         CheckConstraint("role IN ('user','assistant')", name="ck_agent_messages_role"),
         CheckConstraint(
             "JSON_TYPE(`references`) = 'ARRAY' AND JSON_TYPE(artifacts) = 'ARRAY'",
@@ -237,7 +282,9 @@ class AgentRun(Base):
 
     id: Mapped[int] = _id()
     conversation_id: Mapped[int] = _number()
+    task_id: Mapped[int | None] = _number(nullable=True)
     trigger_message_id: Mapped[int] = _number()
+    trigger_revision: Mapped[int] = _number(0)
     initiated_by: Mapped[int] = _number()
     model_config_id: Mapped[int] = _number()
     status: Mapped[str] = mapped_column(
@@ -282,6 +329,13 @@ class AgentRun(Base):
     __table_args__ = (
         _fk(["conversation_id"], "agent_conversations", name="fk_agent_runs_conversation"),
         _fk(
+            ["task_id", "conversation_id"],
+            "agent_tasks",
+            ["id", "conversation_id"],
+            name="fk_agent_runs_task",
+        ),
+        Index("idx_agent_runs_task", "task_id", "id"),
+        _fk(
             ["trigger_message_id", "conversation_id"],
             "agent_messages",
             ["id", "conversation_id"],
@@ -289,7 +343,10 @@ class AgentRun(Base):
         ),
         _fk(["initiated_by"], "users", name="fk_agent_runs_initiator"),
         _fk(["model_config_id"], "ai_model_configs", name="fk_agent_runs_model"),
-        UniqueConstraint("trigger_message_id", name="uk_agent_runs_trigger"),
+        UniqueConstraint("trigger_message_id", "trigger_revision", name="uk_agent_runs_trigger"),
+        CheckConstraint(
+            "trigger_revision = 0 OR task_id IS NOT NULL", name="ck_agent_runs_trigger_revision"
+        ),
         Index("idx_agent_runs_active", "active_conversation_id"),
         UniqueConstraint("id", "conversation_id", name="uk_agent_runs_parent"),
         Index("idx_agent_runs_schedule", "message_status", "next_run_at", "id"),
@@ -507,7 +564,6 @@ class AgentArtifact(Base):
 
     id: Mapped[int] = _id()
     project_id: Mapped[int] = _number()
-    episode_id: Mapped[int] = _number()
     tool_call_id: Mapped[int] = _number()
     result_index: Mapped[int] = mapped_column(INTEGER(unsigned=True))
     kind: Mapped[str] = mapped_column(VARCHAR(32, collation="utf8mb4_0900_bin"))
@@ -535,10 +591,9 @@ class AgentArtifact(Base):
 
     __table_args__ = (
         _fk(["project_id"], "projects", name="fk_agent_artifacts_project"),
-        _fk(["episode_id"], "episodes", name="fk_agent_artifacts_episode"),
         _fk(["tool_call_id"], "agent_tool_calls", name="fk_agent_artifacts_tool"),
-        _fk(["script_id"], "episode_scripts", name="fk_agent_artifacts_script"),
-        _fk(["parent_script_id"], "episode_scripts", name="fk_agent_artifacts_parent_script"),
+        _fk(["script_id"], "project_scripts", name="fk_agent_artifacts_script"),
+        _fk(["parent_script_id"], "project_scripts", name="fk_agent_artifacts_parent_script"),
         _fk(["generation_task_id"], "async_tasks", name="fk_agent_artifacts_generation"),
         _fk(["media_asset_id"], "media_assets", name="fk_agent_artifacts_media_asset"),
         _fk(["media_id"], "media_files", name="fk_agent_artifacts_media"),
@@ -548,7 +603,7 @@ class AgentArtifact(Base):
         _fk(["applied_by"], "users", name="fk_agent_artifacts_adopter"),
         UniqueConstraint("tool_call_id", "result_index", name="uk_agent_artifacts_result"),
         UniqueConstraint("script_id", name="uk_agent_artifacts_script"),
-        Index("idx_agent_artifacts_episode", "episode_id", "kind", "status", "created_at", "id"),
+        Index("idx_agent_artifacts_creation", "project_id", "kind", "status", "created_at", "id"),
         Index("idx_agent_artifacts_generation", "generation_task_id", "id"),
         CheckConstraint(
             "kind IN ('novel_proposal','text_proposal','script_candidate','asset_patch',"

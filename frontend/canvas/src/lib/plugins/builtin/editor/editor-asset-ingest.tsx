@@ -1,7 +1,7 @@
-// 展示项目资产库，按来源区分「本地上传」与「项目素材」；点击资产 → makeClipFromAsset
+// 展示项目资产库，按来源区分「本地上传」与「画布素材」；点击资产 → makeClipFromAsset
 // → dispatch addClip 加入时间线（添加到匹配 kind 的轨道末尾）。资产是
 // "仅时间线作用域"直连媒体（nodeId=asset:<id>）。导入链路：uploadResourceFile →
-// linkProjectAsset（后端按资源元数据合成资产记录）→ refreshAssets。
+// putWorkspaceAsset（私人媒体记录）→ refreshAssets。
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Boxes, Check, ChevronDown, ChevronRight, Clapperboard, Film, FolderOpen, HardDrive, Image as ImageIcon, Loader2, Music2, Plus, X } from "lucide-react";
@@ -13,8 +13,9 @@ import { makeClipFromAsset } from "@/lib/timeline/asset-ingest";
 import { DEFAULT_AUDIO_TRACK_ID, DEFAULT_SUBTITLE_TRACK_ID, DEFAULT_VIDEO_TRACK_ID } from "@/lib/timeline/timeline-tracks";
 import { assertUserScope, captureUserScope, isUserScopeAbandonedError } from "@/lib/user-scope-guard";
 import { getActiveUserScopeEpoch, subscribeUserScope } from "@/lib/user-scope";
-import { linkProjectAsset } from "@/services/api/projects";
-import { uploadResourceFile, type ResourceUploadMeta } from "@/services/api/resources";
+import { putWorkspaceAsset } from "@/services/api/workspace-data";
+import type { Asset } from "@/stores/use-asset-store";
+import { uploadResourceFile, resourceFileUrl, resourceStorageKey, type ResourceUploadMeta, type RemoteResource } from "@/services/api/resources";
 import { resolveMediaUrl } from "@/services/file-storage";
 import type { ProjectAsset } from "@/services/api/projects";
 import type { TimelineProject } from "@/types/timeline";
@@ -54,7 +55,7 @@ type AssetFilter = "all" | "project" | "uploaded";
 
 const FILTER_TABS: { id: AssetFilter; label: string }[] = [
     { id: "all", label: "全部" },
-    { id: "project", label: "项目素材" },
+    { id: "project", label: "画布素材" },
     { id: "uploaded", label: "本地上传" },
 ];
 
@@ -357,7 +358,6 @@ function EditorAssetIngestSession() {
             return;
         }
         const expectedScope = captureUserScope();
-        const originalProjectId = projectId;
         const startedMountedGeneration = mountedGenerationRef.current;
         const assertImportOwner = () => {
             assertUserScope(expectedScope);
@@ -389,11 +389,14 @@ function EditorAssetIngestSession() {
             const skipped = media.length - toImport.length;
             // 逐文件导入：单文件失败不中断整批，汇总失败数提示。
             const linkedIds: string[] = [];
-            const linkInput = (file: File, kind: "image" | "video" | "audio", assetId: string) => ({
-                assetId,
-                category: defaultAssetCategoryForKind(kind),
-                title: file.name,
-            });
+            const privateAsset = (file: File, kind: "image" | "video" | "audio", resource: RemoteResource): Asset => {
+                const common = { id: resource.id, title: file.name, category: defaultAssetCategoryForKind(kind), coverUrl: "", tags: [], status: "confirmed" as const, source: SOURCE_UPLOADED, createdAt: resource.createdAt, updatedAt: resource.updatedAt };
+                const media = { storageKey: resourceStorageKey(resource.id), bytes: resource.size, mimeType: resource.mimeType };
+                if (kind === "audio") return { ...common, kind, data: { ...media, url: resourceFileUrl(resource.id), durationMs: resource.durationMs } };
+                const dimensions = { width: resource.width || 0, height: resource.height || 0 };
+                if (kind === "video") return { ...common, kind, data: { ...media, ...dimensions, url: resourceFileUrl(resource.id), durationMs: resource.durationMs } };
+                return { ...common, kind, data: { ...media, ...dimensions, dataUrl: resourceFileUrl(resource.id) } };
+            };
             for (const { file, kind } of toImport) {
                 try {
                     assertImportOwner();
@@ -412,14 +415,14 @@ function EditorAssetIngestSession() {
                     let linked = false;
                     try {
                         assertImportOwner();
-                        await linkProjectAsset(originalProjectId, linkInput(file, kind, resource.id), undefined, expectedScope);
+                        await putWorkspaceAsset(resource.id, privateAsset(file, kind, resource), { expectedScope });
                         linked = true;
                     } catch (error) {
                         if (isAbandonedImportError(error)) throw error;
                         // 链接偶发失败（网络抖动/后端竞态）时重试一次，避免资源已入库却未挂到项目下。
                         assertImportOwner();
                         try {
-                            await linkProjectAsset(originalProjectId, linkInput(file, kind, resource.id), undefined, expectedScope);
+                            await putWorkspaceAsset(resource.id, privateAsset(file, kind, resource), { expectedScope });
                             linked = true;
                         } catch (retryError) {
                             if (isAbandonedImportError(retryError)) throw retryError;
@@ -430,7 +433,7 @@ function EditorAssetIngestSession() {
                     if (!linked) {
                         // 两次挂载都失败（asset 可能已创建但未挂上项目）：不删除，提示重试——重试走幂等路径可补挂。
                         failedNames.push(file.name);
-                        if (!firstErrorMsg) firstErrorMsg = `「${file.name}」已上传但挂载到项目失败，请重试`;
+                        if (!firstErrorMsg) firstErrorMsg = `「${file.name}」已上传但保存素材记录失败，请重试`;
                         continue;
                     }
                     okCount += 1;
@@ -491,11 +494,11 @@ function EditorAssetIngestSession() {
     };
 
     const uploadedAssets = assets.filter((a) => a.source === SOURCE_UPLOADED);
-    // 画布产物已自动同步为普通项目素材：并入「项目素材」，不再按来源单列分组。
+    // 画布产物已自动同步为普通画布素材：并入「画布素材」，不再按来源单列分组。
     const projectAssets = assets.filter((a) => a.source !== SOURCE_UPLOADED);
     const groups: { id: "uploaded" | "project"; label: string; icon: typeof HardDrive; items: ProjectAsset[] }[] = [
         { id: "uploaded", label: "本地上传", icon: HardDrive, items: uploadedAssets },
-        { id: "project", label: "项目素材", icon: Boxes, items: projectAssets },
+        { id: "project", label: "画布素材", icon: Boxes, items: projectAssets },
     ];
     const visibleGroups = groups.filter((g) => filter === "all" || g.id === filter);
     const totalCount = assets.length;
@@ -542,7 +545,7 @@ function EditorAssetIngestSession() {
                 </button>
             </div>
 
-            {/* 来源筛选：全部 / 项目素材 / 本地上传 */}
+            {/* 来源筛选：全部 / 画布素材 / 本地上传 */}
             <div className="flex items-center gap-0.5 px-2 pb-1">
                 {FILTER_TABS.map((tab) => (
                     <button
@@ -574,7 +577,7 @@ function EditorAssetIngestSession() {
                 ) : visibleGroups.every((g) => g.items.length === 0) ? (
                     <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
                         <p className="text-xs text-[var(--director-dock-fg)]/60">
-                            {filter === "uploaded" ? "暂无本地上传的媒体" : filter === "project" ? "暂无项目素材" : "项目暂无资产"}
+                            {filter === "uploaded" ? "暂无本地上传的媒体" : filter === "project" ? "暂无画布素材" : "项目暂无资产"}
                         </p>
                         <p className="max-w-[180px] text-[11px] leading-relaxed text-[var(--director-dock-fg)]/45">点击上方导入媒体，或将文件拖入此区域</p>
                     </div>

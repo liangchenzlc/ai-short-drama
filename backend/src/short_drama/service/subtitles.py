@@ -2,7 +2,7 @@
 
 import re
 
-from short_drama.schemas.episode_sound import SoundDocument, Subtitle
+from short_drama.schemas.project_sound import SoundDocument, Subtitle
 
 
 def parse_srt(value: str):

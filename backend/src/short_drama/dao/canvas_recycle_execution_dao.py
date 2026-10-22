@@ -270,7 +270,18 @@ class CanvasRecycleExecutionDAO:
                 ):
                     continue
                 job.request_json = job.source_snapshot = {}
-                job.result_json = {} if job.result_json is not None else None
+                staging = (
+                    (job.result_json or {}).get("playback_staging")
+                    if isinstance(job, CanvasLocalJob)
+                    else None
+                )
+                job.result_json = (
+                    {"playback_staging": staging}
+                    if staging
+                    else {}
+                    if job.result_json is not None
+                    else None
+                )
                 job.error_json = dict(DISPOSED_ERROR)
                 job.disposal_receipt_id = disposal.id
                 job.output_media_id = None

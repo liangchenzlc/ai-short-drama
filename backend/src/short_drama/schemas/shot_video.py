@@ -14,7 +14,7 @@ from .base import (
 
 
 class ShotVideoCreate(InputModel):
-    episode_id: Identifier
+    project_id: Identifier
     shot_id: Identifier
     resolution: Annotated[str, Field(max_length=32), AfterValidator(nonblank)] = "1080p"
     duration: PositiveUInt64
@@ -37,7 +37,7 @@ class ShotVideoRead(ReadModel):
     context_hash: str | None = None
     first_frame_media_id: Identifier | None = None
     id: Identifier
-    episode_id: Identifier
+    project_id: Identifier
     shot_id: Identifier
     resolution: Annotated[str, Field(max_length=32), AfterValidator(nonblank)]
     duration: PositiveUInt64

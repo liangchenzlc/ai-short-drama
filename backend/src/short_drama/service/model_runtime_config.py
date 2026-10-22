@@ -107,18 +107,42 @@ def model_runtime_public(config, cipher, binding=None) -> dict:
         "headers": [
             {"name": name, "has_value": bool(value)} for name, value in values["headers"].items()
         ],
-        "credential_source": "beefapi"
-        if binding is not None and binding.channel_key == "beefapi"
-        else "manual",
+        "credential_source": "manual",
+    }
+
+
+def canvas_model_default_capability_config(config) -> dict | None:
+    """画布复用普通模型的本地适配能力，不回写或替代显式运行配置。"""
+    if getattr(config, "runtime_profile", None) is not None or config.service_type != "video":
+        return None
+    from short_drama.ai.adapters import select_adapter, video_input_capabilities
+
+    snapshot = {key: getattr(config, key) for key in ("base_url", "model_key", "service_type")}
+    try:
+        adapter = select_adapter(snapshot)
+    except GenerationError:
+        return None
+    if adapter != "modelhub_video.v1":
+        return None
+    inputs = video_input_capabilities(snapshot, adapter)
+    if not inputs["reference_images"]:
+        return None
+    return {
+        "version": 1,
+        "video": {
+            "references": {"maxImages": 9},
+            "duration": {"selection": "enum", "values": inputs["duration_seconds"], "default": 5},
+            "ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+            "defaultRatio": "16:9",
+            "resolutions": inputs["resolutions"],
+            "defaultResolution": inputs["resolutions"][0],
+            "operations": ["text_to_video", "image_to_video", "reference_to_video"],
+            "defaultOperation": "text_to_video",
+        },
     }
 
 
 def runtime_protocol_adapter(profile: dict, channel_key: str, model_key: str, kind: str):
-    if channel_key == "beefapi" and kind == "video":
-        from short_drama.ai.canvas_video_adapters import is_seedance_model
-
-        if is_seedance_model(model_key):
-            return "canvas_beefapi_seedance_video.v1"
     return PROTOCOL_ADAPTERS.get(profile.get("protocol"))
 
 

@@ -33,9 +33,7 @@ import { useCanvasStoryboard } from "./use-canvas-storyboard";
 type UseCanvasGenerationOrchestrationOptions = {
     projectId: string;
     /** 生成任务查询与 live 绑定：短剧关闭时为空。 */
-    linkedProjectId?: string;
     /** 执行器 / 重试 / 历史插入的素材归属，沿用当前画布项目 id。 */
-    domainProjectId?: string;
     projectLoaded: boolean;
     localOnly: boolean;
     addedSkills: Skill[];
@@ -55,8 +53,6 @@ type UseCanvasGenerationOrchestrationOptions = {
 
 export function useCanvasGenerationOrchestration({
     projectId,
-    linkedProjectId,
-    domainProjectId,
     projectLoaded,
     localOnly,
     addedSkills,
@@ -98,7 +94,7 @@ export function useCanvasGenerationOrchestration({
         taskDetailLogs,
     } = useCanvasGeneration({
         projectId,
-        domainProjectId: linkedProjectId,
+
         projectLoaded,
         nodes,
         nodesRef,
@@ -107,8 +103,7 @@ export function useCanvasGenerationOrchestration({
 
     const handleGenerateNode = useCanvasGenerationExecutor({
         projectId,
-        domainProjectId,
-        addedSkills,
+            addedSkills,
         assets,
         nodesRef,
         connectionsRef,
@@ -196,8 +191,7 @@ export function useCanvasGenerationOrchestration({
 
     const handleRetryNode = useCanvasGenerationRetry({
         projectId,
-        domainProjectId,
-        addedSkills,
+            addedSkills,
         assets,
         nodesRef,
         connectionsRef,
@@ -245,8 +239,7 @@ export function useCanvasGenerationOrchestration({
                     getLiveLifetime: () => lifetime.current(),
                     task,
                     projectId: owner.canvasId,
-                    domainProjectId,
-                    center: getCanvasCenter(),
+                                    center: getCanvasCenter(),
                     nodes: nodesRef.current,
                     assets: useAssetStore.getState().assets,
                     readLiveNodes: () => readOwnedCanvasNodes({
@@ -257,7 +250,7 @@ export function useCanvasGenerationOrchestration({
                         storedNodes: useCanvasStore.getState().openProject(owner.canvasId)?.nodes,
                     }),
                     persist: (persisted) => persistCanvasDocument(owner.canvasId, { nodes: persisted }),
-                    ensureAsset: (item) => ensureCanvasNodeAsset({ canvasId: owner.canvasId, domainProjectId, node: item, source: "canvas-generation", taskId: task.id }),
+                    ensureAsset: (item) => ensureCanvasNodeAsset({ canvasId: owner.canvasId, node: item, source: "canvas-generation", taskId: task.id }),
                     onCommit: (node) => {
                         setNodes((current) => rebaseInsertedCanvasNode(current, node));
                         setSelectedNodeIds(new Set([node.id]));
@@ -265,13 +258,11 @@ export function useCanvasGenerationOrchestration({
                         message.success("已从生成历史插入到画布");
                     },
                 });
-            } catch (error) {
-                message.error(error instanceof Error ? error.message : "生成结果无法插入画布");
             } finally {
                 insertingHistory.current.exit();
             }
         },
-        [domainProjectId, getCanvasCenter, lifetime, message, nodesRef, projectId, setGenerationHistoryOpen, setNodes, setSelectedNodeIds],
+        [getCanvasCenter, lifetime, message, nodesRef, projectId, setGenerationHistoryOpen, setNodes, setSelectedNodeIds],
     );
 
     const reconcileImageBatchRootNode = useCallback(

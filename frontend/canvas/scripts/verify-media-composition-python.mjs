@@ -207,16 +207,6 @@ try {
         report.clear_persisted_without_save = true;
     }
     const final = await graph();
-    const member = await context(config.memberUsername);
-    const shared = await graph(member);
-    for (const node of final.nodes) {
-        const memberNode = shared.nodes.find(item => item.id === node.id);
-        assert.equal(memberNode.metadata.storageKey, node.metadata.storageKey);
-        const response = await member.request.get(`${origin}/api/v1/canvas-runtime/resources/${node.metadata.storageKey.slice("resource:".length)}/file`);
-        assert.ok(response.ok());
-        if (node.id === outputNode?.id) assert.equal(createHash("sha256").update(await response.body()).digest("hex"), report.output_checksum);
-        if (!outputNode) assert.deepEqual(memberNode.metadata.subtitleEntries, []);
-    }
     report.cookie_only_recovery = true;
     assert.equal(report.resource_posts, uploads, "Cookies 恢复不能重复上传媒体或预览");
     assert.equal(report.task_posts, 0);

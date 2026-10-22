@@ -1,0 +1,14 @@
+[
+  {"key":"planning.v1","content_version":1,"capability":"planning","directory":"planning","upstream":"drama-skills"},
+  {"key":"novel.v1","content_version":2,"capability":"writing","directory":"novel","upstream":"drama-skills"},
+  {"key":"script.v1","content_version":2,"capability":"writing","directory":"script","upstream":"drama-skills"},
+  {"key":"extract.v1","content_version":2,"capability":"assets","directory":"assets","upstream":"drama-skills"},
+  {"key":"asset_patch.v1","content_version":2,"capability":"assets","directory":"asset-revision","upstream":"drama-skills"},
+  {"key":"storyboard.v1","content_version":2,"capability":"storyboard","directory":"storyboard","upstream":"drama-skills"},
+  {"key":"shot_patch.v1","content_version":2,"capability":"storyboard","directory":"shot-revision","upstream":"drama-skills"},
+  {"key":"image.v1","content_version":2,"capability":"image_prompts","directory":"image-prompts","upstream":"drama-skills"},
+  {"key":"video.v1","content_version":2,"capability":"video_prompts","directory":"video-prompts","upstream":"drama-skills"},
+  {"key":"voice.v1","content_version":1,"capability":"voice","directory":"voice","upstream":"drama-skills"},
+  {"key":"canvas.v1","content_version":1,"capability":"canvas","directory":"canvas"},
+  {"key":"continuity.v1","content_version":1,"capability":"continuity","directory":"continuity","upstream":"drama-skills"}
+]

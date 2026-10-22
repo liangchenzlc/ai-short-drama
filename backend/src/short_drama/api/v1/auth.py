@@ -1,7 +1,5 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Query, Request, Response
-from sqlalchemy import or_, select, update
+from fastapi import APIRouter, Request, Response
+from sqlalchemy import update
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain.collaboration import User, UserSession
@@ -107,35 +105,3 @@ def reset_password(payload: PasswordReset, request: Request):
     return limit(request, "password_proof", str(payload.challenge_id), 10).verify(
         payload, "password_reset"
     )
-
-
-@router.get("/users/search")
-def search_users(request: Request, q: Annotated[str, Query(min_length=2, max_length=254)]):
-    actor = getattr(request.state, "actor", None)
-    if actor is None:
-        raise WorkflowError("authentication_required", "Please sign in", 401)
-    auth(request).limit("user_search", str(actor.user_id), 30, 60)
-    value = q.strip().casefold()
-    with request.app.state.session_factory() as session:
-        escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        rows = session.scalars(
-            select(User)
-            .where(
-                User.status == "active",
-                User.email_verified_at.is_not(None),
-                or_(
-                    User.username == value,
-                    User.email == value,
-                    User.id == int(value) if value.isdecimal() and len(value) <= 20 else False,
-                    User.display_name.like(escaped + "%", escape="\\"),
-                ),
-            )
-            .order_by(User.username)
-            .limit(5)
-        )
-        return {
-            "items": [
-                {"id": str(u.id), "username": u.username, "display_name": u.display_name}
-                for u in rows
-            ]
-        }

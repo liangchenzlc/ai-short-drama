@@ -3,7 +3,8 @@
 from datetime import timedelta
 from uuid import uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import inspect, select, update
+from sqlalchemy.orm import object_session
 
 from short_drama.domain import AIGenerationRecord, AsyncTask
 from short_drama.service.base import utcnow
@@ -48,6 +49,15 @@ def schedule(task, action, delay=0, *, status="running"):
     task.publish_count = 0
     task.lock_token = task.locked_until = None
     task.updated_at = now
+    _image_task_state(task)
+
+
+def _image_task_state(task):
+    session = object_session(task) if inspect(task, raiseerr=False) is not None else None
+    if session is not None and task.service_type in {"image", "text"}:
+        from short_drama.service.image_group_service import ImageGroupService
+
+        ImageGroupService(session).task_state(task)
 
 
 def finish(task, status, error=None):
@@ -59,6 +69,7 @@ def finish(task, status, error=None):
     task.message_version += 1
     task.lock_token = task.locked_until = None
     task.updated_at = utcnow()
+    _image_task_state(task)
 
 
 def publication_failed(task):
@@ -70,6 +81,7 @@ def publication_failed(task):
         task.error = {"code": "message_delivery_unknown", "message": "消息投递待核对，可恢复投递"}
         task.message_status = "idle"
         task.next_run_at = None
+        _image_task_state(task)
     else:
         task.message_status = "pending"
         task.next_run_at = utcnow() + timedelta(seconds=2**task.publish_count)
@@ -134,7 +146,11 @@ class TaskRuntimeDAO:
     def claim_execution(self, task_id, version):
         now = utcnow()
         with self.factory.begin() as session:
-            from short_drama.service.task_access import lock_resource_project, may_submit
+            from short_drama.service.task_access import (
+                lock_resource_project,
+                may_submit,
+                submission_error,
+            )
 
             lock_resource_project(session, AsyncTask, task_id)
             task = session.scalar(
@@ -157,9 +173,9 @@ class TaskRuntimeDAO:
             if (
                 record.status == "prepared"
                 and task.next_action == "submit"
-                and not may_submit(session, task)
+                and not may_submit(session, task, settings=self.settings)
             ):
-                finish(task, "cancelled", {"code": "access_revoked"})
+                finish(task, "cancelled", submission_error(session, task))
                 return None
             if task.cancel_requested and record.status == "prepared":
                 finish(task, "cancelled")

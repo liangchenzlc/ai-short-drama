@@ -10,14 +10,13 @@ import { NotFoundPage } from './NotFoundPage';
 import './generations.css';
 import { AuthGate, useAuth } from '../features/auth/AuthSession';
 import { AccountControls } from '../features/auth/AccountControls';
-import { LoginPage, RegisterPage, EmailProofPage, InvitationPage } from '../features/auth/AccountPages';
+import { LoginPage, RegisterPage, EmailProofPage } from '../features/auth/AccountPages';
 import { ModelPreferencesProvider } from '../features/auth/ModelPreferences';
 import { ConfigCatalogProvider } from '../features/ai-config/ConfigCatalogProvider';
 import { preloadable } from '../components/ui/preloadable';
 import { accountPath, aiConfigPath } from './paths';
 import { hasStandardUnpersistedChanges, retryStandardSessions } from '../features/projects/standard-session-registry';
 
-const AssetsPage = lazy(() => import('../pages/assets/AssetsPage').then(module => ({ default: module.AssetsPage })));
 const AiConfigPage = lazy(() => import('../pages/ai-config/AiConfigPage').then(module => ({ default: module.AiConfigPage })));
 const AccountCenterPage = lazy(() => import('../features/auth/AccountCenter').then(module => ({ default: module.AccountCenterPage })));
 const loadProjectRoute = () => import('../pages/projects/ProjectRoute');
@@ -25,11 +24,6 @@ const ProjectRoute = preloadable(() => loadProjectRoute().then(module => ({ defa
 const TasksPage = lazy(() => import('../pages/tasks/TasksPage').then(module => ({ default: module.TasksPage })));
 const MediaLibraryPage = lazy(() => import('../pages/media-library/MediaLibraryPage').then(module => ({ default: module.MediaLibraryPage })));
 
-function AssetRoute() {
-  const { kind } = useParams();
-  if (kind !== 'character' && kind !== 'scene' && kind !== 'prop') return <NotFoundPage message="素材分类不存在。" />;
-  return <AssetsPage key={kind} kind={kind} />;
-}
 function TaskRoute() {
   const { kind } = useParams();
   if (kind !== 'text' && kind !== 'image' && kind !== 'video' && kind !== 'audio') return <NotFoundPage message="任务类型不存在。" />;
@@ -43,12 +37,11 @@ function MediaLibraryRoute() {
 function StudioLayout() {
   const { pathname } = useLocation();
   const auth = useAuth();
-  const episode = useMatch('/projects/:projectId/episodes/:episodeId/:stage?');
+  const episode = useMatch('/projects/:projectId/:stage');
   const project = useMatch('/projects/:projectId');
-  const asset = useMatch('/assets/:kind');
   const canvas = useMatch('/projects/:projectId/canvases/:canvasId');
-  const page: MainPage = asset ? 'assets' : pathname.startsWith('/tasks') ? 'tasks' : pathname.startsWith('/media-library') ? 'media-library' : pathname === aiConfigPath ? 'ai' : pathname === accountPath ? 'account' : 'projects';
-  const pageLabels: Record<MainPage, string> = { projects: '项目管理', assets: '素材库', tasks: '任务管理', 'media-library': '资产库', ai: 'AI 配置', account: '账号中心' };
+  const page: MainPage = pathname.startsWith('/tasks') ? 'tasks' : pathname.startsWith('/media-library') ? 'media-library' : pathname === aiConfigPath ? 'ai' : pathname === accountPath ? 'account' : 'projects';
+  const pageLabels: Record<MainPage, string> = { projects: '项目管理', tasks: '任务管理', 'media-library': '资产库', ai: 'AI 配置', account: '账号中心' };
   const detail = !!(episode || project || canvas);
   useLayoutEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [pathname]);
   return <div className={detail ? `studio studio-detail studio-${episode ? 'episode' : 'detail'}` : 'studio'}>
@@ -63,13 +56,10 @@ function StudioLayout() {
 function ProjectLayout() { return <div className="studio-projects"><Outlet /></div>; }
 export function App() {
   const auth = useAuth();
-  const location = useLocation();
-  const episode = useMatch('/projects/:projectId/episodes/:episodeId/:stage?');
+  const episode = useMatch('/projects/:projectId/:stage');
   const project = useMatch('/projects/:projectId');
-  const episodeId = episode?.params.episodeId;
   const stage = episode?.params.stage;
   const projectId = project?.params.projectId;
-  const section = new URLSearchParams(location.search).get('section') ?? undefined;
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (hasStandardUnpersistedChanges()) { event.preventDefault(); event.returnValue = ''; }
@@ -80,18 +70,18 @@ export function App() {
     return () => { window.removeEventListener('beforeunload', beforeUnload); window.removeEventListener('online', online); };
   }, []);
   useEffect(() => {
-    if (!episodeId && !projectId) return;
+    if (!episode && !projectId) return;
     // Load the requested view's code during authentication; AuthGate still owns data access.
-    void Promise.all([ProjectRoute.preload(), loadProjectRoute().then(module => module.preloadProjectView(episodeId, stage, section))]).catch(() => {
+    void Promise.all([ProjectRoute.preload(), loadProjectRoute().then(module => module.preloadProjectView(stage))]).catch(() => {
       // RouteBoundary presents a failed optional preload when the route is rendered.
     });
-  }, [episodeId, stage, projectId, section]);
+  }, [stage, projectId]);
   return <AiConfigSessionProvider key={auth.user?.id ?? 'anonymous'}><ModelPreferencesProvider><ConfigCatalogProvider><Routes>
     <Route path="login" element={<LoginPage />} />
     <Route path="register" element={<RegisterPage />} />
     <Route path="verify-email" element={<EmailProofPage />} />
     <Route path="reset-password" element={<EmailProofPage reset />} />
-    <Route path="invite/:token" element={<InvitationPage />} />
+    <Route path="invite/:token" element={<NotFoundPage message="协作邀请已停用，请返回项目列表。" />} />
     <Route element={<AuthGate />}>
     <Route element={<StudioLayout />}>
       <Route index element={<Navigate to="/projects" replace />} />
@@ -99,10 +89,9 @@ export function App() {
         <Route index element={<ProjectsPage />} />
         <Route path=":projectId" element={<ProjectRoute />} />
         <Route path=":projectId/canvases/:canvasId" element={<ProjectRoute />} />
-        <Route path=":projectId/episodes/:episodeId/:stage?" element={<ProjectRoute />} />
+        <Route path=":projectId/episodes/*" element={<NotFoundPage message="分集功能已停用，请返回项目列表。" />} /><Route path=":projectId/:stage" element={<ProjectRoute />} />
       </Route>
-      <Route path="assets" element={<Navigate to="/assets/character" replace />} />
-      <Route path="assets/:kind" element={<AssetRoute />} />
+      <Route path="assets/*" element={<NotFoundPage message="全局素材库已停用，素材请在当前项目创作流程中管理。" />} />
       <Route path="ai" element={<Navigate to={aiConfigPath} replace />} />
       <Route path="ai_config" element={<AiConfigPage />} />
       <Route path="account" element={<AccountCenterPage />} />

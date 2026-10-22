@@ -1,6 +1,3 @@
-import { ownedResourceIdFromMediaRef, resourceFileUrl } from "@/services/api/resources";
-import type { CanvasProjectCharacterCard } from "@/services/host-character-catalog";
-import type { CanvasNodeData } from "@/types/canvas";
 
 export type CharacterBreakdown = {
     name: string;
@@ -17,74 +14,6 @@ export type CharacterBreakdown = {
     voiceAge: string;
     voiceTimbre: string;
 };
-
-export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], assets: CanvasProjectCharacterCard[], options: {
-    expectedNodes?: Map<string, CanvasNodeData>;
-    coverEquivalent?: (left?: string, right?: string) => boolean;
-    preservePrivateVoice?: boolean;
-    preservePrivatePrompt?: boolean;
-    refreshPinned?: boolean;
-} = {}) {
-    const characters = new Map(assets.filter((asset) => asset.category === "character" && asset.character).map((asset) => [asset.id, asset]));
-    let changed = false;
-    const next = nodes.map((node) => {
-        const metadata = node.metadata;
-        const assetId = metadata?.workflowKind === "character" ? metadata.characterAssetId : "";
-        const asset = assetId ? characters.get(assetId) : undefined;
-        if (!metadata || !asset?.character || metadata.characterVersionPolicy === "pinned" && (!options.refreshPinned || metadata.characterVersionId !== asset.character.versionId)) return node;
-        const expected = options.expectedNodes?.get(node.id);
-        if (options.expectedNodes && (!expected || expected.title !== node.title
-            || ["characterAssetId", "characterVersionId", "characterVersionPolicy", "characterName", "characterPrompt", "characterAliases", "characterDefinition"].some(key => JSON.stringify(expected.metadata?.[key as keyof typeof metadata]) !== JSON.stringify(metadata[key as keyof typeof metadata]))
-            || expected.metadata?.characterCoverUrl !== metadata.characterCoverUrl && !options.coverEquivalent?.(expected.metadata?.characterCoverUrl, metadata.characterCoverUrl))) return node;
-        const card = asset.character;
-        const cover = card.representations.find((item) => item.role === "turnaround_sheet") || card.representations.find((item) => item.role === "primary") || card.representations.find((item) => item.role === "front");
-        const aliases = Array.isArray(card.definition.aliases) ? card.definition.aliases.filter((value): value is string => typeof value === "string") : [];
-        const patch: Partial<NonNullable<CanvasNodeData["metadata"]>> = {
-            characterVersionId: card.versionId,
-            characterName: asset.title,
-            characterPrompt: compileCharacterReferencePrompt(asset.title, card.definition),
-            characterAliases: aliases,
-            characterDefinition: card.definition,
-            characterCoverUrl: cover ? resourceFileUrl(cover.resourceId) : undefined,
-            characterVisualStatus: card.visualStatus,
-            characterVoiceStatus: card.voiceStatus,
-            characterVoiceName: card.voice?.profile.name,
-            characterVoiceProfile: card.voice ? {
-                name: card.voice.profile.name,
-                provider: card.voice.profile.provider,
-                language: card.voice.profile.language,
-                timbre: card.voice.profile.timbre,
-            } : undefined,
-            characterVoiceInstructions: card.voice?.instructions,
-        };
-        const persistedCoverId = ownedResourceIdFromMediaRef(undefined, metadata.characterCoverUrl);
-        // 同版本已核验的共享封面不依赖作者私人的复制来源链；新版本仍重新解析。
-        if (metadata.characterVersionId === card.versionId && cover && persistedCoverId
-            && metadata.characterCoverUrl === resourceFileUrl(persistedCoverId)) patch.characterCoverUrl = metadata.characterCoverUrl;
-        if (options.preservePrivatePrompt && metadata.characterPrompt !== undefined
-            && metadata.characterPrompt !== compileCharacterReferencePrompt(metadata.characterName || node.title, metadata.characterDefinition || {})) patch.characterPrompt = metadata.characterPrompt;
-        if (options.preservePrivateVoice && (metadata.characterVoiceName || metadata.characterVoiceProfile || metadata.characterVoiceInstructions)) {
-            patch.characterVoiceStatus = metadata.characterVoiceStatus;
-            patch.characterVoiceName = metadata.characterVoiceName;
-            patch.characterVoiceProfile = metadata.characterVoiceProfile;
-            patch.characterVoiceInstructions = metadata.characterVoiceInstructions;
-        }
-        if (node.title === asset.title
-            && metadata.characterVersionId === patch.characterVersionId
-            && metadata.characterPrompt === patch.characterPrompt
-            && metadata.characterCoverUrl === patch.characterCoverUrl
-            && metadata.characterVisualStatus === patch.characterVisualStatus
-            && metadata.characterVoiceStatus === patch.characterVoiceStatus
-            && metadata.characterVoiceName === patch.characterVoiceName
-            && JSON.stringify(metadata.characterDefinition) === JSON.stringify(patch.characterDefinition)
-            && JSON.stringify(metadata.characterVoiceProfile) === JSON.stringify(patch.characterVoiceProfile)
-            && metadata.characterVoiceInstructions === patch.characterVoiceInstructions
-            && (metadata.characterAliases || []).join("\u0000") === aliases.join("\u0000")) return node;
-        changed = true;
-        return { ...node, title: asset.title, metadata: { ...metadata, ...patch } };
-    });
-    return changed ? next : nodes;
-}
 
 export function compileCharacterReferencePrompt(name: string, definition: Record<string, unknown>) {
     const parts = [definition.role, definition.appearance, definition.physique, definition.clothing, definition.personality, definition.props, definition.consistencyPrompt]

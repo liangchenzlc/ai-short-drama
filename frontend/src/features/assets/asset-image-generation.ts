@@ -14,7 +14,7 @@ export interface AssetImageOptions {
 export function buildAssetImageRequest(asset: Pick<LibraryAssetRead, 'id' | 'row_version'>, options: AssetImageOptions): ImageGenerationRequest {
   return {
     ...(options.configId ? { config_id: options.configId } : {}),
-    source: { scene: 'asset_image', asset_id: asset.id, row_version: asset.row_version, ...(options.scope && options.scope.kind !== 'global' ? { project_id: options.scope.projectId } : {}), ...(options.scope?.kind === 'episode' ? { episode_id: options.scope.episodeId } : {}), ...(options.draft ? { draft_id: options.draft.id, draft_version: options.draft.draft_version } : {}) },
+    source: { scene: 'asset_image', asset_id: asset.id, row_version: asset.row_version, ...(options.scope ? { project_id: options.scope.projectId } : {}), ...(options.draft ? { draft_id: options.draft.id, draft_version: options.draft.draft_version } : {}) },
     input: { prompt: options.draft ? '' : options.supplement, reference_media_ids: [] },
     parameters: {
       count: options.count,
@@ -65,7 +65,6 @@ export function assetImageGenerationBlockReason(
 ): string | null {
   if (!configId) return '请选择可用的生图模型。';
   if (!asset.name.trim()) return '请先填写素材名称。';
-  if (!asset.description.trim() && !asset.prompt.trim()) return '请先填写素材描述或提示词。';
   return null;
 }
 

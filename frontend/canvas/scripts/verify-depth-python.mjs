@@ -227,12 +227,8 @@ try {
     await page.screenshot({ path: resolve(output, "depth-restored.png"), fullPage: true });
     const member = await context(config.memberUsername);
     assert.equal((await member.request.get(`${origin}/api/v1/canvas-runtime/tasks/${taskId}`)).status(), 404);
-    const shared = await graph(member);
-    assert.equal(child(shared).metadata.storageKey, `resource:${resourceId}`);
-    assert.equal(child(shared).metadata.taskId, undefined);
-    assert.equal(child(shared).title, report.live_edits.title);
-    assert.deepEqual(child(shared).position, report.live_edits.position);
-    assert.equal(createHash("sha256").update(await (await member.request.get(`${origin}/api/v1/canvas-runtime/resources/${resourceId}/file`)).body()).digest("hex"), report.checksum);
+    assert.equal((await member.request.get(`${origin}${documentPath}`)).status(), 404);
+    assert.equal((await member.request.get(`${origin}/api/v1/canvas-runtime/resources/${resourceId}/file`)).status(), 404);
     assert.equal(report.task_posts, 1);
     assert.deepEqual(report.page_errors, []);
     assert.deepEqual(report.http_errors, []);

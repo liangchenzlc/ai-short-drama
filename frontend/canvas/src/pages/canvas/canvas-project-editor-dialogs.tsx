@@ -11,7 +11,6 @@ import { CanvasGenerationHistoryPicker } from "@/components/canvas/canvas-genera
 import { CanvasNodeInfoModal } from "@/components/canvas/canvas-node-toolbar";
 import { CanvasNodeSearchModal } from "@/components/canvas/canvas-node-search-modal";
 import { CanvasPanoramaConfigModal, type PanoramaGenerateConfig } from "@/components/canvas/canvas-panorama-config-modal";
-import type { CanvasProjectCharacterCard } from "@/services/host-character-catalog";
 import { CanvasProjectAssetModal } from "@/components/canvas/canvas-project-asset-modal";
 import { CanvasScriptEditor } from "@/components/canvas/canvas-script-node";
 import { CanvasStylePickerModal } from "@/components/canvas/canvas-style-picker-modal";
@@ -26,7 +25,6 @@ import { WorkspaceState } from "@/components/layout/workspace-state";
 import type { CanvasDrawingEngine } from "@/lib/canvas/canvas-drawing-engine";
 import type { CanvasStylePreset } from "@/lib/canvas/canvas-style-system";
 import { canvasThemes } from "@/lib/canvas-theme";
-import type { ProjectDetail } from "@/services/api/projects";
 import type { GenerationTask, TaskLog } from "@/services/api/task-center";
 import type { AiConfig } from "@/stores/use-config-store";
 import {
@@ -65,7 +63,7 @@ export type CanvasProjectEditorDialogsProps = {
     generationHistory: {
         open: boolean;
         onClose: () => void;
-        onSelect: (task: GenerationTask) => void;
+        onSelect: (task: GenerationTask) => Promise<void>;
     };
     imports: {
         libTVOpen: boolean;
@@ -202,16 +200,6 @@ export type CanvasProjectEditorDialogsProps = {
         onInsertLibrary: (payloads: InsertAssetPayload[], expectedScope: CapturedUserScope) => void | Promise<void>;
         onClosePicker: () => void;
         projectOpen: boolean;
-        detail?: ProjectDetail;
-        sourceLinked?: boolean;
-        sourceLoading?: boolean;
-        sourceError?: string;
-        onRetrySource?: () => void;
-        characters?: CanvasProjectCharacterCard[];
-        characterLoading?: boolean;
-        characterError?: string;
-        onRetryCharacters?: () => void;
-        readCharacter?: (assetId: string, expectedScope: CapturedUserScope) => Promise<CanvasProjectCharacterCard>;
         initialCategory?: string;
         initialFolderId?: string;
         onCloseProject: () => void;
@@ -367,16 +355,6 @@ export function CanvasProjectEditorDialogs({
             <AssetPickerModal open={assets.pickerOpen} multiple={assets.multiple} onInsert={assets.onInsertLibrary} onClose={assets.onClosePicker} />
             <CanvasProjectAssetModal
                 open={assets.projectOpen}
-                detail={assets.detail}
-                sourceLinked={assets.sourceLinked}
-                sourceLoading={assets.sourceLoading}
-                sourceError={assets.sourceError}
-                onRetrySource={assets.onRetrySource}
-                characters={assets.characters}
-                characterLoading={assets.characterLoading}
-                characterError={assets.characterError}
-                onRetryCharacters={assets.onRetryCharacters}
-                readCharacter={assets.readCharacter}
                 initialCategory={assets.initialCategory}
                 initialFolderId={assets.initialFolderId}
                 onClose={assets.onCloseProject}

@@ -374,11 +374,11 @@ try {
     for (const media of report.media) assert.ok(downloaded.has(`${resources}/${media.resource_id}/file`));
     await save(restored);
     await restored.screenshot({ path: resolve(output, "restored.png") });
-    await fresh.close();
     report.fresh_context_restored = true;
 
     report.step = "共享最终正文与私人任务权限";
-    const shared = await read(await member.request.get(`${origin}${path}/my-document`));
+    assert.equal((await member.request.get(`${origin}${path}/my-document`)).status(), 404);
+    const shared = await read(await fresh.request.get(`${origin}${path}`));
     for (const item of report.tasks) {
         assert.equal(shared.source_document.nodes.find(node => node.id === item.target_node_id).metadata.content, config.first + config.second);
         assert.equal((await member.request.get(`${origin}${tasks}/${item.task_id}`)).status(), 404);
@@ -386,7 +386,7 @@ try {
     }
     assert.equal((await outsider.request.get(`${origin}${path}/my-document`)).status(), 404);
     for (const [index, image] of report.media.entries()) {
-        assert.deepEqual(await (await member.request.get(`${origin}${resources}/${image.resource_id}/file`)).body(), originals[index]);
+        assert.equal((await member.request.get(`${origin}${resources}/${image.resource_id}/file`)).status(), 404);
         assert.equal((await member.request.get(`${origin}/api/v1/canvas-runtime/assets/${image.asset_id}`)).status(), 404);
         assert.equal((await outsider.request.get(`${origin}${resources}/${image.resource_id}/file`)).status(), 404);
     }

@@ -36,7 +36,6 @@ FOLDER_SQL_PATH = SQL_PATH.with_name("006-canvas-project-folders.sql")
 TASK_SQL_PATH = SQL_PATH.with_name("007-canvas-task-bindings.sql")
 TEXT_SQL_PATH = SQL_PATH.with_name("008-canvas-text-stream.sql")
 MODEL_SQL_PATH = SQL_PATH.with_name("009-canvas-model-catalog.sql")
-BEEFAPI_SQL_PATH = SQL_PATH.with_name("010-canvas-beefapi-connection.sql")
 TOOL_RUN_SQL_PATH = SQL_PATH.with_name("011-canvas-tool-runs.sql")
 STORYBOARD_SQL_PATH = SQL_PATH.with_name("012-canvas-storyboard-run.sql")
 RENDER_SQL_PATH = SQL_PATH.with_name("013-canvas-render-jobs.sql")
@@ -44,11 +43,6 @@ LOCAL_SQL_PATH = SQL_PATH.with_name("014-canvas-local-jobs.sql")
 GENERATION_DELETE_SQL_PATH = SQL_PATH.with_name("015-canvas-generation-media-deletions.sql")
 LOCAL_DISPOSAL_SQL_PATH = SQL_PATH.with_name("016-canvas-local-disposal.sql")
 CREATION_DELETE_SQL_PATH = SQL_PATH.with_name("017-canvas-creation-media-deletions.sql")
-SOURCE_BINDING_SQL_PATH = SQL_PATH.with_name("018-canvas-source-project-binding.sql")
-SOURCE_BINDING_COLUMN = "project_canvases.source_project_id"
-SOURCE_BINDING_FOREIGN = "project_canvases.source_project_foreign_key"
-SOURCE_BINDING_INDEX = "idx_canvas_source_project"
-SOURCE_BINDING_FK = "fk_canvas_source_project"
 CREATION_DELETE_UPGRADE = "canvas_resource_deletions.creation"
 CREATION_DELETE_FIELDS = {"upload_id", "idempotency_hash", "request_hash"}
 CREATION_DELETE_ADDITIONS = {"creation_resource_id", "disposal_receipt_id"}
@@ -163,29 +157,6 @@ def legacy_creation_deletion(name: str, columns: dict, checks: dict) -> bool:
     )
 
 
-def source_binding_statements() -> list[tuple[str, str, str]]:
-    table = Base.metadata.tables["project_canvases"]
-    foreign = next(item for item in table.foreign_key_constraints if item.name == SOURCE_BINDING_FK)
-    original_rule = foreign._create_rule
-    foreign_sql = str(AddConstraint(foreign).compile(dialect=dialect()))
-    foreign._create_rule = original_rule
-    index = next(item for item in table.indexes if item.name == SOURCE_BINDING_INDEX)
-    return [
-        (
-            "upgrade",
-            SOURCE_BINDING_COLUMN,
-            "ALTER TABLE project_canvases ADD COLUMN "
-            + str(CreateColumn(table.c.source_project_id).compile(dialect=dialect())),
-        ),
-        (
-            "index",
-            "project_canvases." + SOURCE_BINDING_INDEX,
-            str(CreateIndex(index).compile(dialect=dialect())),
-        ),
-        ("upgrade", SOURCE_BINDING_FOREIGN, foreign_sql),
-    ]
-
-
 def statements():
     projects = Base.metadata.tables["projects"]
     check = next(x for x in projects.constraints if x.name == MODE_CHECK)
@@ -201,7 +172,6 @@ def statements():
         ),
         ("check", MODE_CHECK, check_ddl),
     ]
-    result.append(source_binding_statements()[0])
     for table in Base.metadata.sorted_tables:
         if table.name not in CANVAS_TABLES:
             continue
@@ -222,7 +192,6 @@ def statements():
         ("upgrade", name + ".disposal", disposal_upgrade_sql(name)) for name in DISPOSAL_TABLES
     )
     result.append(("upgrade", CREATION_DELETE_UPGRADE, creation_deletion_upgrade_sql()))
-    result.append(source_binding_statements()[2])
     return result
 
 
@@ -330,9 +299,6 @@ def inspect_schema(connection):
             ):
                 missing.append("upgrade:" + STORYBOARD_UPGRADE)
                 continue
-            if name == "project_canvases" and column.name == "source_project_id" and actual is None:
-                missing.append("upgrade:" + SOURCE_BINDING_COLUMN)
-                continue
             if actual is None or (
                 _type_signature(actual["type"]) != _type_signature(column.type)
                 or actual["nullable"] != column.nullable
@@ -383,18 +349,7 @@ def inspect_schema(connection):
             )
             for x in inspector.get_foreign_keys(name)
         }
-        if name == "project_canvases":
-            for key, signature in foreign_keys.items():
-                if "source_project_id" in signature[0] and key != SOURCE_BINDING_FK:
-                    changed.append(f"{name}.{key}:unexpected_source_foreign_key")
         for foreign in table.foreign_key_constraints:
-            if (
-                name == "project_canvases"
-                and foreign.name == SOURCE_BINDING_FK
-                and foreign.name not in foreign_keys
-            ):
-                missing.append("upgrade:" + SOURCE_BINDING_FOREIGN)
-                continue
             if (
                 old_creation_deletion
                 and foreign.name
@@ -577,16 +532,6 @@ def main():
             + "\n",
             encoding="utf-8",
         )
-        BEEFAPI_SQL_PATH.write_text(
-            "-- 本人 BeefAPI 设备授权与加密凭据；用 canvas_migration.py --apply 安全重入。\n"
-            + "\n\n".join(
-                "\n".join(line.rstrip() for line in sql.splitlines()) + ";"
-                for _, target, sql in statements()
-                if target.split(".")[0] == "canvas_beefapi_connections"
-            )
-            + "\n",
-            encoding="utf-8",
-        )
         TOOL_RUN_SQL_PATH.write_text(
             "-- 本人审美执行租约与阶段批准；用 canvas_migration.py --apply 安全重入。\n"
             + "\n\n".join(
@@ -615,7 +560,7 @@ def main():
             encoding="utf-8",
         )
         LOCAL_SQL_PATH.write_text(
-            "-- 本人本地转写与深度捕捉；用canvas_migration.py --apply核验并安全重入。\n"
+            "-- 本人媒体转写、深度捕捉与兼容播放；用canvas_migration.py --apply核验并安全重入。\n"
             + "\n\n".join(
                 "\n".join(line.rstrip() for line in sql.splitlines()) + ";"
                 for kind, target, sql in statements()
@@ -641,13 +586,6 @@ def main():
             + "\n",
             encoding="utf-8",
         )
-        SOURCE_BINDING_SQL_PATH.write_text(
-            "-- 仅新增 nullable 可信业务引用；不从旧 JSON 或数值推断 backfill。\n"
-            "-- 部分DDL与重复执行使用canvas_migration.py --apply逐项核验，不直接重跑本SQL。\n"
-            + "\n\n".join(sql + ";" for _, _, sql in source_binding_statements())
-            + "\n",
-            encoding="utf-8",
-        )
         CREATION_DELETE_SQL_PATH.write_text(
             "-- 早期创建媒体以原准备记录与本人处置回执回收；"
             "用canvas_migration.py --apply精确核验旧结构。\n"
@@ -658,6 +596,15 @@ def main():
         return
     engine = build_engine(Settings())
     try:
+        with engine.connect() as connection:
+            legacy = {"episodes", "project_members", "project_assets"} & set(
+                inspect(connection).get_table_names()
+            )
+            if legacy:
+                raise RuntimeError(
+                    "旧分集／协作版本不可叠加画布增量，"
+                    "请按 docs/instruction/创作模式维护说明.md 离线备份、预演并切换。"
+                )
         if args.apply:
             state = apply(engine)
         else:

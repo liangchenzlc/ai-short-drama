@@ -5,21 +5,20 @@ import hashlib
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from short_drama.ai.business_prompts import asset_image_prompt, image_prompt, text_messages
+from short_drama.ai.business_prompts import text_messages
 from short_drama.ai.prompts.registry import PROMPT_VERSIONS
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import (
     Asset,
-    Episode,
-    EpisodeAsset,
-    EpisodeNovel,
-    EpisodeScript,
     MediaAsset,
+    Project,
+    ProjectNovel,
+    ProjectScript,
     ShotAsset,
     ShotScript,
 )
 
-from .episode_writing_service import EpisodeWritingService
+from .project_writing_service import ProjectWritingService
 
 CURRENT_SAVED_SCRIPT_SOURCE_POLICY = "current_saved_v1"
 
@@ -30,19 +29,19 @@ def content_hash(content):
 
 def script_source_is_current(
     session: Session,
-    episode: Episode,
-    script: EpisodeScript | None,
+    creation: Project,
+    script: ProjectScript | None,
     snapshot: dict[str, object],
 ) -> bool:
     """新标准任务按正文判断来源；无策略标记的历史任务保留确认合同。"""
     if (
         script is None
-        or script.id != episode.editing_script_id
+        or script.id != creation.editing_script_id
         or content_hash(script.content) != snapshot.get("content_hash")
     ):
         return False
     if snapshot.get("script_source_policy") == CURRENT_SAVED_SCRIPT_SOURCE_POLICY:
-        return not EpisodeWritingService(session)._requires_agent_adoption(script.id)
+        return not ProjectWritingService(session)._requires_agent_adoption(script.id)
     return script.state == "confirmed"
 
 
@@ -68,48 +67,47 @@ class GenerationContextService:
 
     def prepare_text(self, request, *, use_current_saved_script=False):
         source = request["source"]
-        episode = self.session.scalar(
-            select(Episode)
+        creation = self.session.scalar(
+            select(Project)
             .where(
-                Episode.id == int(source["episode_id"]),
-                Episode.project_id == int(source["project_id"]),
+                Project.id == int(source["project_id"]),
             )
             .with_for_update()
             .execution_options(populate_existing=True)
         )
-        if episode is None:
-            raise NotFound("分集不存在")
-        if episode.content_version != int(source["content_version"]):
+        if creation is None:
+            raise NotFound("作品不存在")
+        if creation.content_version != int(source["content_version"]):
             raise WorkflowError("writing_version_conflict", "正文已变化，请刷新后生成")
         scene = source["scene"]
         if scene == "novel_script":
             document = self.session.scalar(
-                select(EpisodeNovel).where(EpisodeNovel.episode_id == episode.id).with_for_update()
+                select(ProjectNovel).where(ProjectNovel.project_id == creation.id).with_for_update()
             )
             if document is None or not document.content.strip():
                 raise WorkflowError("novel_empty", "请先保存小说正文", 422)
         elif scene in {"script_shots", "script_assets"}:
             document = self.session.scalar(
-                select(EpisodeScript)
+                select(ProjectScript)
                 .where(
-                    EpisodeScript.id == int(source["script_id"]),
-                    EpisodeScript.episode_id == episode.id,
+                    ProjectScript.id == int(source["script_id"]),
+                    ProjectScript.project_id == creation.id,
                 )
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
             if document is None:
-                raise NotFound("剧本不存在于当前分集")
+                raise NotFound("剧本不存在于当前作品")
             if use_current_saved_script:
-                if document.id != episode.editing_script_id:
+                if document.id != creation.editing_script_id:
                     raise WorkflowError("script_not_current", "请基于当前编辑剧本生成")
-                if EpisodeWritingService(self.session)._requires_agent_adoption(document.id):
+                if ProjectWritingService(self.session)._requires_agent_adoption(document.id):
                     raise WorkflowError(
                         "agent_artifact_adoption_required",
                         "此剧本是尚未采用的 Agent 候选，请在原会话的创作候选中核对并采用。",
                         422,
                     )
-            elif document.id != episode.editing_script_id or document.state != "confirmed":
+            elif document.id != creation.editing_script_id or document.state != "confirmed":
                 raise WorkflowError("script_not_confirmed", "请先确认当前剧本")
             if not document.content.strip():
                 message = "请先保存剧本正文" if use_current_saved_script else "请先填写并确认剧本"
@@ -119,17 +117,14 @@ class GenerationContextService:
         snapshot = {
             "content": document.content,
             "content_hash": content_hash(document.content),
-            "content_version": str(episode.content_version),
-            "aspect": episode.aspect,
-            "style": episode.style,
+            "content_version": str(creation.content_version),
         }
         if use_current_saved_script and scene in {"script_shots", "script_assets"}:
             snapshot["script_source_policy"] = CURRENT_SAVED_SCRIPT_SOURCE_POLICY
         if scene == "script_shots":
             assets = self.session.scalars(
                 select(Asset)
-                .join(EpisodeAsset, EpisodeAsset.asset_id == Asset.id)
-                .where(EpisodeAsset.episode_id == episode.id)
+                .where(Asset.project_id == creation.id, Asset.deleted_at.is_(None))
                 .order_by(Asset.id)
                 .with_for_update()
             )
@@ -139,7 +134,7 @@ class GenerationContextService:
             max_chars = getattr(self.settings, "extraction_max_script_chars", 30000)
             if len(document.content) > max_chars:
                 raise WorkflowError(
-                    "script_too_long", f"素材提取支持最多 {max_chars} 字，请拆分分集后重试", 422
+                    "script_too_long", f"素材提取支持最多 {max_chars} 字，请精简剧本后重试", 422
                 )
             snapshot["extraction"] = request["extraction"]
             snapshot["max_candidates"] = getattr(self.settings, "extraction_max_candidates", 100)
@@ -174,37 +169,13 @@ class GenerationContextService:
             raise WorkflowError(
                 "asset_version_conflict", "Asset changed; refresh before generating"
             )
-        if source.get("episode_id"):
-            episode = self.session.get(Episode, int(source["episode_id"]))
-            linked = self.session.scalar(
-                select(EpisodeAsset.id).where(
-                    EpisodeAsset.episode_id == int(source["episode_id"]),
-                    EpisodeAsset.asset_id == asset.id,
-                )
-            )
-            if (
-                episode is None
-                or str(episode.project_id) != str(source.get("project_id"))
-                or not linked
-            ):
-                raise WorkflowError("source_mismatch", "素材不属于所选分集", 422)
-        elif source.get("project_id"):
-            from short_drama.domain import ProjectAsset
-
-            if not self.session.scalar(
-                select(ProjectAsset.id).where(
-                    ProjectAsset.project_id == int(source["project_id"]),
-                    ProjectAsset.asset_id == asset.id,
-                )
-            ):
-                raise WorkflowError("source_mismatch", "素材不属于所选项目", 422)
+        if str(asset.project_id) != str(source.get("project_id")) or asset.deleted_at is not None:
+            raise WorkflowError("source_mismatch", "素材不属于当前作品", 422)
         content = asset_image_content(asset)
-        if not content["name"].strip() or not (
-            content["description"].strip() or content["prompt"].strip()
-        ):
+        if not content["name"].strip():
             raise WorkflowError(
                 "asset_content_required",
-                "Provide a name and either description or prompt before generating",
+                "Provide a name before generating",
                 400,
             )
         supplement = request["input"].get("prompt", "")
@@ -218,7 +189,7 @@ class GenerationContextService:
         if request.get("creation_draft_snapshot"):
             request["source_snapshot"]["creation_draft"] = request["creation_draft_snapshot"]
         request["input"] = {
-            "prompt": asset_image_prompt(content, supplement),
+            "prompt": supplement,
             "reference_media_ids": list(
                 dict.fromkeys(
                     map(
@@ -236,14 +207,14 @@ class GenerationContextService:
     def locked_shot_context(self, shot_id):
         from .shot_context import compute_shot_context_hash, normalize_shot_context
 
-        episode_id = self.session.scalar(
-            select(ShotScript.episode_id).where(ShotScript.id == int(shot_id))
+        project_id = self.session.scalar(
+            select(ShotScript.project_id).where(ShotScript.id == int(shot_id))
         )
-        if episode_id is None:
+        if project_id is None:
             raise NotFound("分镜不存在")
-        episode = self.session.scalar(
-            select(Episode)
-            .where(Episode.id == episode_id)
+        creation = self.session.scalar(
+            select(Project)
+            .where(Project.id == project_id)
             .with_for_update()
             .execution_options(populate_existing=True)
         )
@@ -253,7 +224,7 @@ class GenerationContextService:
             .with_for_update()
             .execution_options(populate_existing=True)
         )
-        if episode is None or shot is None:
+        if creation is None or shot is None:
             raise NotFound("分镜不存在")
         if shot.deleted_at is not None:
             raise WorkflowError("shot_archived", "此分镜已归档")
@@ -272,31 +243,27 @@ class GenerationContextService:
             "reference_media_ids": getattr(shot, "reference_media_ids", None) or [],
             "script": shot.script,
             "duration_ms": shot.duration_ms,
-            "episode_aspect": episode.aspect,
-            "episode_style": episode.style,
             "assets": assets,
         }
         return (
-            episode,
+            creation,
             shot,
             assets,
             normalize_shot_context(**values),
             compute_shot_context_hash(**values),
         )
 
-    def prepare_shot_image(self, request):
+    def prepare_shot_image(self, request, *, include_saved_references=True):
         source = request["source"]
-        episode, shot, assets, snapshot, digest = self.locked_shot_context(source["shot_id"])
+        creation, shot, assets, snapshot, digest = self.locked_shot_context(source["shot_id"])
         if shot.row_version != int(source["row_version"]) or source["context_hash"] != digest:
             raise WorkflowError("shot_version_conflict", "分镜内容已变化，请刷新后生成")
-        if not shot.script.strip():
-            raise WorkflowError("shot_empty", "请先保存分镜正文", 422)
         settings = shot.image_settings or {
             "resolution": "2K",
-            "aspect": "inherit",
+            "aspect": None,
             "layout": "single",
         }
-        aspect = episode.aspect if settings["aspect"] == "inherit" else settings["aspect"]
+        aspect = settings["aspect"]
         private_draft = request.get("creation_draft_snapshot")
         if source["layout"] != settings["layout"] or (
             not private_draft
@@ -309,14 +276,16 @@ class GenerationContextService:
         if private_draft:
             personal = private_draft.get("image_settings") or {}
             request["parameters"].update(
-                aspect=personal.get("aspect") or aspect,
+                aspect=personal.get("aspect", aspect),
                 resolution=personal.get("resolution") or settings["resolution"],
                 count=personal.get("count", 1),
             )
-        references = [str(a.media_id) for a in assets if a.media_id and a.state == "confirmed"]
-        references.extend(map(str, getattr(shot, "reference_media_ids", None) or []))
+        references = []
+        if include_saved_references:
+            references = [str(a.media_id) for a in assets if a.media_id and a.state == "confirmed"]
+            references.extend(map(str, getattr(shot, "reference_media_ids", None) or []))
         extra = request["input"].get("reference_media_ids", [])
-        for identifier in [] if private_draft else extra:
+        for identifier in [] if private_draft or not include_saved_references else extra:
             if str(identifier) not in references and not self.session.scalar(
                 select(MediaAsset.id).where(
                     MediaAsset.media_id == int(identifier), MediaAsset.media_type == "image"
@@ -329,9 +298,7 @@ class GenerationContextService:
         if len(references) > 16:
             raise WorkflowError("reference_limit_exceeded", "参考图片不能超过16张", 422)
         supplement = request["input"].get("prompt", "")
-        source.update(
-            project_id=str(episode.project_id), episode_id=str(episode.id), source_id=str(shot.id)
-        )
+        source.update(project_id=str(creation.id), source_id=str(shot.id))
         request["source_snapshot"] = {
             **snapshot,
             "context_hash": digest,
@@ -342,7 +309,7 @@ class GenerationContextService:
         request["business_intent"] = {"instructions": supplement}
         request["template_version"] = PROMPT_VERSIONS["shot_image"]
         request["input"] = {
-            "prompt": image_prompt(snapshot, supplement, source["layout"]),
+            "prompt": supplement,
             "reference_media_ids": references,
         }
         return request
@@ -354,16 +321,12 @@ class GenerationContextService:
         from .shot_video_context import DEFAULT_VIDEO_SETTINGS, video_context_hash
 
         source = request["source"]
-        episode, shot, _assets, snapshot, image_hash = self.locked_shot_context(source["shot_id"])
+        creation, shot, _assets, snapshot, image_hash = self.locked_shot_context(source["shot_id"])
         image = self.session.scalar(
             select(ShotImage).where(ShotImage.shot_id == shot.id).with_for_update()
         )
         if image is None:
             raise WorkflowError("video_reference_required", "请先采用一张分镜参考图", 422)
-        if image.context_hash != image_hash:
-            raise WorkflowError(
-                "video_reference_stale", "分镜图已过期，请先核对并采用当前内容的图片"
-            )
         settings = shot.video_settings or DEFAULT_VIDEO_SETTINGS
         digest = video_context_hash(
             image_hash, image.media_id, shot.video_prompt, settings, session=self.session, shot=shot
@@ -374,11 +337,11 @@ class GenerationContextService:
             or int(source["reference_media_id"]) != image.media_id
         ):
             raise WorkflowError("shot_version_conflict", "分镜、提示词或参考图已变化，请刷新后生成")
-        if not shot.script.strip():
-            raise WorkflowError("shot_empty", "请先保存分镜正文", 422)
         duration = settings.get("duration_ms") or shot.duration_ms
         expected = {"duration_ms": duration, "resolution": settings["resolution"]}
-        supplied = {k: v for k, v in request["parameters"].items() if v is not None}
+        supplied = {
+            k: v for k, v in request["parameters"].items() if k in expected and v is not None
+        }
         private_draft = request.get("creation_draft_snapshot")
         if not private_draft and supplied and supplied != expected:
             raise WorkflowError("generation_settings_changed", "请先保存视频时长和清晰度", 422)
@@ -392,11 +355,11 @@ class GenerationContextService:
             }
             prompt = private_draft["input_text"]
         snapshot = {**snapshot, "video_duration_ms": duration}
-        effective_aspect = episode.aspect
+        effective_aspect = request["parameters"].get("aspect")
         if private_draft:
             effective_aspect = (private_draft.get("video_settings") or {}).get(
-                "aspect"
-            ) or episode.aspect
+                "aspect", effective_aspect
+            )
             actual_prompt = (
                 (
                     "已保存分镜脚本（创作依据）：\n"
@@ -408,14 +371,12 @@ class GenerationContextService:
                 else prompt
             )
             parts = video_prompt_parts(
-                {**snapshot, "episode": {**snapshot["episode"], "aspect": effective_aspect}},
+                {**snapshot, "output": {"aspect": effective_aspect}},
                 actual_prompt,
             )
         else:
             parts = video_prompt_parts(snapshot, prompt)
-        source.update(
-            project_id=str(episode.project_id), episode_id=str(episode.id), source_id=str(shot.id)
-        )
+        source.update(project_id=str(creation.id), source_id=str(shot.id))
         request["source_snapshot"] = {
             **snapshot,
             "context_hash": digest,

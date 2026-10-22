@@ -68,12 +68,16 @@ class AgentSkill(Base):
     checksum_sha256: Mapped[str] = _hash()
     row_version: Mapped[int] = _number(1)
     enabled: Mapped[int] = _number(1)
+    create_key: Mapped[str | None] = _hash(nullable=True)
+    create_hash: Mapped[str | None] = _hash(nullable=True)
     deleted_at: Mapped[datetime | None] = _time(nullable=True)
     created_at: Mapped[datetime] = _time()
     updated_at: Mapped[datetime] = _time()
 
     __table_args__ = (
         _fk(["owner_user_id"], "users", name="fk_agent_skill_owner"),
+        UniqueConstraint("id", "owner_user_id", name="uk_agent_skill_owner_identity"),
+        UniqueConstraint("owner_user_id", "create_key", name="uk_agent_skill_create"),
         Index("idx_agent_skill_owner", "owner_user_id", "deleted_at", "id"),
         CheckConstraint("enabled IN (0,1)", name="ck_agent_skill_enabled"),
         CheckConstraint("row_version > 0 AND content_version > 0", name="ck_agent_skill_versions"),
@@ -82,5 +86,8 @@ class AgentSkill(Base):
             name="ck_agent_skill_content",
         ),
         CheckConstraint("updated_at >= created_at", name="ck_agent_skill_time"),
+        CheckConstraint(
+            "(create_key IS NULL) = (create_hash IS NULL)", name="ck_agent_skill_create_pair"
+        ),
         OPTIONS,
     )

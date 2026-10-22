@@ -97,7 +97,7 @@ async function localState(drawingId) {
             other_deletion: await readCanvasDeletion(localForageStorageForScope(otherScope), otherScope, key),
             other_cache: await documents.getItem(`${otherScope}:${key}:${drawingId}`),
         };
-    }, { key: config.sourceKey, drawingId, scope: config.userId, otherScope: config.ownerId });
+    }, { key: config.sourceKey, drawingId, scope: config.userId, otherScope: config.otherUserId });
 }
 
 function assertDraftsPreserved(before, after) {
@@ -218,16 +218,11 @@ try {
             headers: { "Idempotency-Key": "delete-drafts-peer-restore" }, data: { archive_key: frozen.deletion.archiveKey },
         }));
         await peer.close();
-    } else if (config.scenario === "revoked") {
-        const owner = await login(config.ownerUsername);
-        const removed = await owner.request.delete(`${origin}/api/v1/projects/${config.projectId}/members/${config.userId}`);
-        assert.ok([200, 204].includes(removed.status()), await removed.text());
-        await owner.close();
     }
 
     report.step = "reload and reconcile through reads without replaying writes";
     await page.goto(`${origin}/canvas-app/canvas/${config.siblingKey}`);
-    if (config.scenario !== "revoked") await page.locator("[data-canvas-viewport]").waitFor({ timeout: 60000 });
+    await page.locator("[data-canvas-viewport]").waitFor({ timeout: 60000 });
     await page.evaluate(async () => {
         const { hydrateLocalCanvasProjectsFromBackend } = await import("/canvas-app/src/services/local-workspace-repository.ts");
         try { await hydrateLocalCanvasProjectsFromBackend({ strict: true }); }
@@ -239,7 +234,7 @@ try {
     assert.equal(draftPuts, 1, "刷新不能重发未知绘图提交");
     assert.equal(report.drawing_deletes, 0, "独立草稿引用的绘图不能被整图删除清理");
     assert.ok(report.status_reads.length > 0);
-    if (["before_dispatch", "revoked"].includes(config.scenario)) {
+    if (config.scenario === "before_dispatch") {
         assert.deepEqual(afterReload.deletion, frozen.deletion);
         assert.ok(report.status_reads.includes(404));
     } else {

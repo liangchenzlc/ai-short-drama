@@ -39,7 +39,7 @@ export function AssetImageGeneration({
       <label>画面比例<Select allowClear value={aspect} options={aspectOptions} disabled={submitting || disabled} placeholder="模型默认" onChange={setAspect}/></label>
       <label>分辨率<Input allowClear value={resolution} disabled={submitting || disabled} placeholder="模型默认，如 1024x1024" onChange={(event) => setResolution(event.target.value)}/></label>
       <div className="asset-generation-submit">
-        <Button type="primary" loading={submitting} disabled={disabled || submitting || uncertain || !!blockReason} onClick={() => void submit({ configId, supplement: '', count, aspect, resolution, scope })}>保存并生成图片</Button>
+        <Button type="primary" loading={submitting} disabled={disabled || submitting || uncertain || !!blockReason} onClick={() => void submit({ configId, supplement: asset.prompt, count, aspect, resolution, scope })}>保存并生成图片</Button>
         <span>{blockReason ?? '生成任务不会自动采用图片；请在候选区明确确认。'}</span>
       </div>
     </div>}

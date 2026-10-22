@@ -28,7 +28,6 @@ type CanvasGenerationRequest = {
 
 type UseCanvasGenerationOptions = {
     projectId: string;
-    domainProjectId?: string;
     projectLoaded: boolean;
     nodes: CanvasNodeData[];
     nodesRef: { current: CanvasNodeData[] };
@@ -172,7 +171,7 @@ export async function recoverCanvasGenerationTaskNode(input: {
     }
 }
 
-export function useCanvasGeneration({ projectId, domainProjectId, projectLoaded, nodes, nodesRef, setNodes }: UseCanvasGenerationOptions) {
+export function useCanvasGeneration({ projectId, projectLoaded, nodes, nodesRef, setNodes }: UseCanvasGenerationOptions) {
     const { message } = App.useApp();
     const queryClient = useQueryClient();
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
@@ -246,11 +245,10 @@ export function useCanvasGeneration({ projectId, domainProjectId, projectLoaded,
 
     const saveGeneratedAsset = useCallback(
         async (node: CanvasNodeData, taskId: string, signal?: AbortSignal) => {
-            const result = await retryCanvasAssetSyncAfterRateLimit(() => ensureCanvasNodeAsset({ canvasId: projectId, domainProjectId, node, source: "canvas-generation", taskId, signal }), { signal });
+            const result = await retryCanvasAssetSyncAfterRateLimit(() => ensureCanvasNodeAsset({ canvasId: projectId, node, source: "canvas-generation", taskId, signal }), { signal });
             setNodes((current) => current.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, assetId: result.assetId } } : item)));
-            if (domainProjectId) await queryClient.invalidateQueries({ queryKey: ["project", domainProjectId] });
         },
-        [domainProjectId, projectId, queryClient, setNodes],
+        [projectId, queryClient, setNodes],
     );
 
     const applyGenerationTaskResult = useCallback(
@@ -531,7 +529,7 @@ export function useCanvasGeneration({ projectId, domainProjectId, projectLoaded,
         nodes.forEach((node) => {
             const taskId = node.metadata?.taskId;
             if (!taskId || !node.metadata?.content || node.metadata.status !== NODE_STATUS_SUCCESS || (node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio)) return;
-            const saveKey = `${taskId}:${node.id}:${domainProjectId || "personal"}`;
+            const saveKey = `${taskId}:${node.id}`;
             if (autoSavedTaskIdsRef.current.has(saveKey)) return;
             autoSavedTaskIdsRef.current.add(saveKey);
             void runGenerationConsumer(consumerControllerRef.current.signal, async (signal) => {
@@ -546,7 +544,7 @@ export function useCanvasGeneration({ projectId, domainProjectId, projectLoaded,
                 });
             });
         });
-    }, [domainProjectId, localMode, message, nodes, projectId, projectLoaded, saveGeneratedAsset]);
+    }, [localMode, message, nodes, projectId, projectLoaded, saveGeneratedAsset]);
 
     return {
         applyGenerationTaskResult,

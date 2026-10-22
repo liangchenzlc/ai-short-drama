@@ -189,26 +189,11 @@ class CanvasModelChannelInput(InputModel):
     def channel_invariants(self):
         if self.source_key.startswith("host-"):
             raise ValueError("host channels are managed by the host model configuration")
-        if self.source_key == "beefapi":
-            if (
-                self.scope != "user"
-                or not self.pinned
-                or self.credential_ref not in {None, "beefapi-enterprise"}
-                or self.clear_credentials
-                or any(
-                    secret and secret.get_secret_value()
-                    for secret in (self.api_key, self.secret_key)
-                )
-            ):
-                raise ValueError("BeefAPI is a server-managed redacted channel")
-            return self.validate_channel_fields()
         if self.scope != "user" or self.pinned:
             raise ValueError("a custom channel cannot impersonate a managed channel")
         if len(self.models) > 512 or len(self.model_profiles) > 512:
             raise ValueError("custom channels support up to 512 models")
-        if self.credential_ref == "beefapi-enterprise" or any(
-            not item.capability for item in self.model_profiles
-        ):
+        if any(not item.capability for item in self.model_profiles):
             raise ValueError("a custom channel requires explicit generation capabilities")
         return self.validate_channel_fields()
 

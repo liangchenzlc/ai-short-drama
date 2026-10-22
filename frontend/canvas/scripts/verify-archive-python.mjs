@@ -106,7 +106,7 @@ try {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
     const owner = await login(config.username);
     const project = await read(await owner.request.post(`${origin}/api/v1/projects`, {
-        headers: { "Idempotency-Key": "archive-browser" }, data: { name: "归档绘图验证", aspect: "16:9", workspace_mode: "infinite_canvas" },
+        headers: { "Idempotency-Key": "archive-browser" }, data: { name: "归档绘图验证", workspace_mode: "infinite_canvas" },
     }));
     const path = `${origin}/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
     const initial = await read(await owner.request.get(`${path}/my-document`));

@@ -2,17 +2,17 @@ import { assertUserScope, type CapturedUserScope } from "@/lib/user-scope-guard"
 import { loadWorkspaceAssetLibraryPage, usesWorkspaceAssetLibraryApi } from "@/services/workspace-asset-read";
 import { readAssetStoreDrafts, runAssetStoreProjection, useAssetStore } from "@/stores/use-asset-store";
 
-/** 原托盘对完整图片库搜索；逐页恢复规范记录，不把缓存缺失当作空库。 */
+/** 托盘逐页恢复完整素材库，不把缓存缺失当作空库。 */
 export async function loadCanvasTrayLibrary(expected: CapturedUserScope, signal: AbortSignal) {
     if (!usesWorkspaceAssetLibraryApi()) return;
     assertUserScope(expected);
     const before = new Map(useAssetStore.getState().assets.map(asset => [asset.id, asset]));
     const found = new Set<string>();
     for (let page = 1; ; page += 1) {
-        const result = await loadWorkspaceAssetLibraryPage({ page, pageSize: 100, kind: "image", status: "active", expectedScope: expected, signal });
+        const result = await loadWorkspaceAssetLibraryPage({ page, pageSize: 100, status: "active", expectedScope: expected, signal });
         assertUserScope(expected);
         signal.throwIfAborted();
-        if (result.page !== page) throw new Error("图片素材分页读取异常，请重试");
+        if (result.page !== page) throw new Error("素材分页读取异常，请重试");
         for (const asset of result.assets) found.add(asset.id);
         if (!result.canonicalHasMore) break;
     }
@@ -21,7 +21,7 @@ export async function loadCanvasTrayLibrary(expected: CapturedUserScope, signal:
     const pending = new Set(drafts.upserts.map(draft => draft.id));
     runAssetStoreProjection(() => {
         useAssetStore.setState(state => ({
-            assets: state.assets.filter(asset => asset.kind !== "image" || asset.status === "archived"
+            assets: state.assets.filter(asset => asset.status === "archived"
                 || found.has(asset.id) || pending.has(asset.id) || before.get(asset.id) !== asset),
         }));
     });

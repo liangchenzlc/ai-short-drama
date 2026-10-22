@@ -9,10 +9,11 @@ from short_drama.tasks.celery_app import agent_queue, make_celery, topology
 
 
 class AgentRabbitSender:
-    def __init__(self, settings):
+    def __init__(self, settings, *, task_name="short_drama.execute_agent"):
         self.app = make_celery(settings)
         self.exchange, self.dead_exchange, _queues = topology(settings)
         self.queue = agent_queue(settings)
+        self.task_name = task_name
 
     def __call__(self, run_id, version):
         returned = []
@@ -28,13 +29,13 @@ class AgentRabbitSender:
             producer = Producer(channel, on_return=lambda *args: returned.append(True))
             message = self.app.amqp.create_task_message(
                 uuid4().hex,
-                "short_drama.execute_agent",
+                self.task_name,
                 args=[str(run_id), str(version)],
                 kwargs={},
             )
             self.app.amqp.send_task_message(
                 producer,
-                "short_drama.execute_agent",
+                self.task_name,
                 message,
                 exchange=self.exchange.name,
                 routing_key="agent",

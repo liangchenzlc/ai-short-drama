@@ -33,5 +33,4 @@ class AssetConfirm(InputModel):
     row_version: Identifier
     media_id: Identifier
     expected_media_id: Identifier | None
-    confirm_shared: bool = False
     acknowledge_stale_source: bool = False

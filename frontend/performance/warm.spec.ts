@@ -1,4 +1,4 @@
-﻿import { expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { assetSizes, latencyMs, origin, record } from './measurement';
 import { fixture, root } from '../e2e/studio-fixture';
 

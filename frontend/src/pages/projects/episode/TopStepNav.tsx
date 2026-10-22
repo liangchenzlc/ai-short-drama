@@ -20,7 +20,7 @@ export function TopStepNav({ currentStage, onStageChange }: {
     reveal(); window.addEventListener('resize', reveal);
     return () => window.removeEventListener('resize', reveal);
   }, [currentStage]);
-  return <nav ref={navigation} className="episode-top-step-nav" aria-label="分集制作流程">{steps.map((step, index) => {
+  return <nav ref={navigation} className="episode-top-step-nav" aria-label="创作流程">{steps.map((step, index) => {
     return <Fragment key={step.id}>{index > 0 && <span className="episode-step-connector" aria-hidden="true"/>}<button type="button" className={`episode-step-button${currentStage === step.id ? ' active' : ''}`}
       aria-current={currentStage === step.id ? 'step' : undefined} onClick={() => onStageChange(step.id)} aria-label={step.label}>
       <span className="episode-step-number">{String(index + 1).padStart(2, '0')}</span><span className="episode-step-text"><strong className="episode-step-name">{step.label}</strong>

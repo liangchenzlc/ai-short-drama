@@ -38,8 +38,8 @@ export function mergeCreatedAsset(created: LibraryAssetRead, draft: LocalAssetDr
   return { ...created, ...(draft.kind ? { kind: draft.kind } : {}), name: draft.name,
     label: draft.label, description: draft.description, prompt: draft.prompt, tags: draft.tags, scene_time: draft.scene_time };
 }
-export function localAssetDraftKey(actorId: string, projectId: string, episodeId: string) {
-  return `short-drama:asset-drafts:v1:${actorId}:${projectId}:${episodeId}`;
+export function localAssetDraftKey(actorId: string, projectId: string) {
+  return `short-drama:asset-drafts:v1:${actorId}:${projectId}`;
 }
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const identifier = (value: unknown) => typeof value === 'string' && /^\d+$/.test(value);

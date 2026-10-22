@@ -1,20 +1,22 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { CircleUserRound, Crosshair, FolderOpen, ImageIcon, Images, PanelLeftClose, Plus, Search, X } from "lucide-react";
+import { CircleUserRound, Crosshair, FileText, FolderOpen, ImageIcon, Images, Music2, PanelLeftClose, Plus, Search, X } from "lucide-react";
 
 import { FloatingDock, type FloatingDockEntry } from "@/components/ui/aceternity/floating-dock";
 import { useCanvasAssetLibrary } from "./use-canvas-asset-library";
 import { CachedResourceImage } from "@/components/cached-resource-image";
+import { useResourceVideoPlayback } from "@/hooks/use-resource-video-playback";
 import { useCanvasOverlayLayer } from "@/components/canvas/canvas-overlay-layer";
 import { aceternityMotion } from "@/lib/aceternity-motion";
 import { canvasDockStyle } from "@/lib/canvas/canvas-aceternity-style";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { cn } from "@/lib/utils";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
-import type { ImageAsset } from "@/stores/use-asset-store";
+import type { Asset } from "@/stores/use-asset-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 export const CANVAS_IMAGE_ASSET_DND_TYPE = "application/x-infinite-canvas-image-asset";
+export type CanvasTrayAsset = Extract<Asset, { kind: "image" | "video" | "audio" | "text" }>;
 
 type TrayTab = "library" | "canvas";
 
@@ -42,11 +44,11 @@ function clampTrayHeight(height: number) {
 }
 
 type CanvasAssetTrayProps = {
-    assetImages: ImageAsset[];
+    assetImages: Asset[];
     canvasImages: CanvasNodeData[];
     showLibrary?: boolean;
     activeNodeId?: string | null;
-    onInsertAssetImage: (asset: ImageAsset) => void;
+    onInsertAssetImage: (asset: CanvasTrayAsset) => void;
     onFocusCanvasImage: (nodeId: string) => void;
     libtvReadonlyDense?: boolean;
 };
@@ -67,8 +69,9 @@ export function CanvasAssetTray({ assetImages, canvasImages, showLibrary = true,
     const resizeCleanupRef = useRef<(() => void) | null>(null);
     const resizeHandleRef = useRef<{ element: HTMLButtonElement; pointerId: number } | null>(null);
     const query = keyword.trim().toLowerCase();
-    const filteredAssets = useMemo(() => assetImages.filter((asset) => !query || [asset.title, ...(asset.tags || [])].join(" ").toLowerCase().includes(query)), [assetImages, query]);
+    const filteredAssets = useMemo(() => assetImages.filter((asset): asset is CanvasTrayAsset => ["image", "video", "audio", "text"].includes(asset.kind) && asset.status !== "archived" && (!query || [asset.title, ...(asset.tags || []), asset.kind === "text" ? asset.data.content : ""].join(" ").toLowerCase().includes(query))), [assetImages, query]);
     const filteredNodes = useMemo(() => canvasImages.filter((node) => {
+        if (!(Array<string>(CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Audio, CanvasNodeType.Text)).includes(node.type)) return false;
         if (!query) return true;
         // Generated nodes can expose their useful search text through workflowTitle
         // or prompt even when the compact card title is only “S01/S02”.
@@ -83,7 +86,7 @@ export function CanvasAssetTray({ assetImages, canvasImages, showLibrary = true,
     }, []);
     const motionEnabled = !reducedMotion;
 
-    const startAssetDrag = (event: DragEvent<HTMLElement>, asset: ImageAsset) => {
+    const startAssetDrag = (event: DragEvent<HTMLElement>, asset: CanvasTrayAsset) => {
         event.dataTransfer.effectAllowed = "copy";
         event.dataTransfer.setData(CANVAS_IMAGE_ASSET_DND_TYPE, asset.id);
         event.dataTransfer.setData("text/plain", asset.title);
@@ -226,34 +229,34 @@ export function CanvasAssetTray({ assetImages, canvasImages, showLibrary = true,
 
                         <label className="mt-2 flex h-8 items-center gap-1.5 rounded-[11px] px-2.5 focus-within:ring-2" style={{ background: theme.spatial.surface }}>
                             <Search className="size-3.5 shrink-0" style={{ color: theme.node.muted }} />
-                            <input type="search" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索图片素材..." className="min-w-0 flex-1 bg-transparent text-[var(--fs-tiny)] outline-none placeholder:opacity-55" aria-label="搜索图片素材" />
+                            <input type="search" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索素材..." className="min-w-0 flex-1 bg-transparent text-[var(--fs-tiny)] outline-none placeholder:opacity-55" aria-label="搜索素材" />
                             {keyword ? <button type="button" className="grid size-6 shrink-0 place-items-center rounded-full opacity-55 hover:opacity-100" onClick={() => setKeyword("")} aria-label="清空搜索"><X className="size-3" /></button> : null}
                         </label>
 
                         <div className="thin-scrollbar mt-2.5 min-h-0 flex-1 overflow-y-auto pr-1">
                             {showLibrary && tab === "library" ? (
-                                library.loading ? <TrayEmpty text="正在读取图片素材…" theme={theme} /> : library.error ? (
+                                library.loading ? <TrayEmpty text="正在读取素材…" theme={theme} /> : library.error ? (
                                     <div className="grid min-h-[200px] place-content-center gap-2 text-center" role="alert">
                                         <span className="text-xs" style={{ color: theme.node.muted }}>{library.error}</span>
-                                        <button type="button" className="rounded-[var(--r-lg)] px-2 py-1 text-xs" style={{ background: theme.node.panel, color: theme.node.text }} onClick={library.reload}>重新读取图片素材</button>
+                                        <button type="button" className="rounded-[var(--r-lg)] px-2 py-1 text-xs" style={{ background: theme.node.panel, color: theme.node.text }} onClick={library.reload}>重新读取素材</button>
                                     </div>
                                 ) : filteredAssets.length ? (
                                     <div className="space-y-1.5">
                                         {filteredAssets.map((asset) => (
-                                            <AssetTrayRow key={asset.id} title={asset.title} imageUrl={asset.coverUrl || asset.data.dataUrl} storageKey={asset.data.storageKey} draggable motionEnabled={motionEnabled} onDragStart={(event) => startAssetDrag(event, asset)} onClick={() => onInsertAssetImage(asset)} icon={<Plus className="size-3.5" />} />
+                                            <AssetTrayRow key={asset.id} title={asset.title} mediaKind={asset.kind} imageUrl={asset.kind === "image" ? asset.coverUrl || asset.data.dataUrl : asset.kind === "video" || asset.kind === "audio" ? asset.data.url : asset.data.content} storageKey={asset.kind === "text" ? undefined : asset.data.storageKey} draggable motionEnabled={motionEnabled} onDragStart={(event) => startAssetDrag(event, asset)} onClick={() => onInsertAssetImage(asset)} icon={<Plus className="size-3.5" />} />
                                         ))}
                                     </div>
                                 ) : (
-                                    <TrayEmpty text="没有匹配的图片素材" theme={theme} />
+                                    <TrayEmpty text="没有匹配的素材" theme={theme} />
                                 )
                             ) : filteredNodes.length ? (
                                 <div className="space-y-1.5">
                         {filteredNodes.map((node) => (
-                            <AssetTrayRow key={node.id} title={canvasImageTitle(node)} imageUrl={node.metadata?.content || node.metadata?.previewContent || ""} storageKey={node.metadata?.storageKey} active={activeNodeId === node.id} motionEnabled={motionEnabled} onClick={() => onFocusCanvasImage(node.id)} icon={<Crosshair className="size-3.5" />} />
+                            <AssetTrayRow key={node.id} title={canvasImageTitle(node)} mediaKind={node.type} imageUrl={node.metadata?.content || node.metadata?.previewContent || ""} storageKey={node.metadata?.storageKey} active={activeNodeId === node.id} motionEnabled={motionEnabled} onClick={() => onFocusCanvasImage(node.id)} icon={<Crosshair className="size-3.5" />} />
                                     ))}
                                 </div>
                             ) : (
-                                <TrayEmpty text="当前画布没有匹配图片" theme={theme} />
+                                <TrayEmpty text="当前画布没有匹配素材" theme={theme} />
                             )}
                         </div>
 
@@ -290,7 +293,7 @@ function TrayTabButton({ active, label, theme, onClick }: { active: boolean; lab
     );
 }
 
-function AssetTrayRow({ title, imageUrl, storageKey, icon, active = false, draggable = false, motionEnabled, onClick, onDragStart }: { title: string; imageUrl: string; storageKey?: string; icon: ReactNode; active?: boolean; draggable?: boolean; motionEnabled: boolean; onClick: () => void; onDragStart?: (event: DragEvent<HTMLElement>) => void }) {
+function AssetTrayRow({ title, imageUrl, storageKey, mediaKind = "image", icon, active = false, draggable = false, motionEnabled, onClick, onDragStart }: { title: string; imageUrl: string; storageKey?: string; mediaKind?: string; icon: ReactNode; active?: boolean; draggable?: boolean; motionEnabled: boolean; onClick: () => void; onDragStart?: (event: DragEvent<HTMLElement>) => void }) {
     const theme = canvasThemes[useActiveTheme()];
     return (
         <motion.button
@@ -306,7 +309,7 @@ function AssetTrayRow({ title, imageUrl, storageKey, icon, active = false, dragg
             onDragStartCapture={onDragStart}
         >
             <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-[var(--dock-item-radius)]" style={{ background: theme.node.fill }}>
-                {imageUrl || storageKey ? <CachedResourceImage storageKey={storageKey} src={imageUrl} alt="" width={36} height={36} className="size-full object-cover" draggable={false} fallback={<ImageIcon className="size-3.5 opacity-55" />} /> : <ImageIcon className="size-3.5 opacity-55" />}
+                {mediaKind === "text" ? <FileText className="size-4 opacity-55" /> : mediaKind === "audio" ? <Music2 className="size-4 opacity-55" /> : mediaKind === "video" ? <TrayVideoPreview storageKey={storageKey || ""} url={imageUrl} /> : imageUrl || storageKey ? <CachedResourceImage storageKey={storageKey} src={imageUrl} alt="" width={36} height={36} className="size-full object-cover" draggable={false} fallback={<ImageIcon className="size-3.5 opacity-55" />} /> : <ImageIcon className="size-3.5 opacity-55" />}
             </span>
             <span className="min-w-0">
                 <span className="block truncate text-[var(--fs-tiny)] font-semibold">{title}</span>
@@ -315,6 +318,12 @@ function AssetTrayRow({ title, imageUrl, storageKey, icon, active = false, dragg
             <span className="grid size-6 place-items-center rounded-full opacity-45 transition-opacity group-hover:opacity-90" style={{ background: theme.node.panel }}>{icon}</span>
         </motion.button>
     );
+}
+
+function TrayVideoPreview({ storageKey, url }: { storageKey: string; url: string }) {
+    const playback = useResourceVideoPlayback(storageKey, url);
+    if (!playback.url || playback.error) return <ImageIcon className="size-3.5 opacity-55" />;
+    return <video src={playback.url} muted playsInline preload="metadata" className="size-full object-cover" onError={() => { if (!playback.requestCompatible()) playback.fail(); }} />;
 }
 
 function TrayEmpty({ text, theme }: { text: string; theme: CanvasTheme }) {

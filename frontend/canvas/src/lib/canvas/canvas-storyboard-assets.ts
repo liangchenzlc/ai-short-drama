@@ -7,8 +7,6 @@ export type StoryboardAssetCatalogItem = {
     category?: string;
     tags: string[];
     prompt: string;
-    characterAssetId?: string;
-    characterVersionId?: string;
 };
 
 const OUTPUT_WORKFLOW_KINDS = new Set(["shot", "action_board", "final"]);
@@ -27,8 +25,6 @@ export function buildStoryboardAssetCatalog(nodes: CanvasNodeData[]): Storyboard
             category: node.metadata?.assetCategory,
             tags: Array.from(new Set((node.metadata?.assetTags || []).map((tag) => compactStoryboardAssetText(tag, 64)).filter(Boolean))).slice(0, 12),
             prompt,
-            characterAssetId: node.metadata?.characterAssetId,
-            characterVersionId: node.metadata?.characterVersionId,
         }];
     }).slice(0, 60);
 }
@@ -55,7 +51,7 @@ export function normalizeStoryboardAssetBindings(bindings: StoryboardAssetBindin
 }
 
 function storyboardAssetType(node: CanvasNodeData): StoryboardAssetCatalogItem["type"] | null {
-    if (node.metadata?.workflowKind === "character" && node.metadata.characterAssetId && node.metadata.characterVersionId) return "character";
+    if (node.metadata?.workflowKind === "character" && node.metadata.characterDefinition) return "character";
     if (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Drawing) return "image";
     if (node.type === CanvasNodeType.Video) return "video";
     if (node.type === CanvasNodeType.Audio) return "audio";

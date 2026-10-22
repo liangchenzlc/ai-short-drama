@@ -3,10 +3,10 @@
 from sqlalchemy import CheckConstraint, ForeignKeyConstraint, UniqueConstraint
 from sqlalchemy.dialects.mysql import dialect
 
-from short_drama.domain import EpisodeAssembly, EpisodeAssemblyClip, EpisodeRenderJob
+from short_drama.domain import ProjectAssembly, ProjectAssemblyClip, ProjectRenderJob
 
 
-def tables_ddl(models=(EpisodeAssembly, EpisodeAssemblyClip, EpisodeRenderJob)):
+def tables_ddl(models=(ProjectAssembly, ProjectAssemblyClip, ProjectRenderJob)):
     statements = []
     for model in models:
         table = model.__table__
@@ -52,23 +52,4 @@ def tables_ddl(models=(EpisodeAssembly, EpisodeAssemblyClip, EpisodeRenderJob)):
 
 
 if __name__ == "__main__":
-    from pathlib import Path
-
-    canonical = next((Path(__file__).resolve().parents[2] / "docs").glob("*/schema.mysql8.sql"))
-    source = canonical.read_text(encoding="utf-8")
-    start = (
-        source.index("CREATE TABLE episode_assemblies")
-        if "CREATE TABLE episode_assemblies" in source
-        else source.index("CREATE TABLE `episode_assemblies`")
-    )
-    canonical.write_text(source[:start] + tables_ddl() + "\n", encoding="utf-8")
-    migration = canonical.parent / "migrations/2026-09-28-episode-assembly/001_episode_assembly.sql"
-    migration.write_text(
-        "-- Additive upgrade, use the Python runner to resume partial application.\n"
-        "ALTER TABLE media_files ADD COLUMN video_metadata JSON NULL "
-        "COMMENT 'ffprobe actual video metadata', ADD CONSTRAINT ck_media_video_metadata "
-        "CHECK (video_metadata IS NULL OR JSON_TYPE(video_metadata) = 'OBJECT');\n\n"
-        + tables_ddl()
-        + "\n",
-        encoding="utf-8",
-    )
+    print(tables_ddl())

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { Icon } from './Icon';
 import { ConfigProvider } from "antd";
+import { StudioFeedbackIndicator, StudioMessageProvider } from './StudioFeedback';
 
 export function Dialog({
   title,
@@ -45,7 +46,7 @@ export function Dialog({
           if (event.shiftKey && document.activeElement === first && last) { event.preventDefault(); last.focus(); }
           else if (!event.shiftKey && document.activeElement === last && first) { event.preventDefault(); first.focus(); }
         }
-        if (event.key === 'Escape' && ref.current?.querySelector('.ant-select-open, .ant-dropdown:not(.ant-dropdown-hidden)')) {
+        if (event.key === 'Escape' && ref.current?.querySelector('.ant-select-open, .ant-dropdown:not(.ant-dropdown-hidden), .ant-popover:not(.ant-popover-hidden)')) {
           event.preventDefault();
         }
       }}
@@ -56,8 +57,11 @@ export function Dialog({
       aria-label={title}
       aria-labelledby={titleId}
     >
+      <StudioMessageProvider local getContainer={() => ref.current ?? document.body}>
+      <ConfigProvider getPopupContainer={() => ref.current ?? document.body}>
       <header>
         <h2 id={titleId}>{title}</h2>
+        <StudioFeedbackIndicator/>
         <button
           type="button"
           className="icon-button"
@@ -68,9 +72,9 @@ export function Dialog({
           <Icon name="close" size={18} />
         </button>
       </header>
-      <ConfigProvider getPopupContainer={(trigger) => trigger?.parentElement ?? ref.current ?? document.body}>
         {children}
       </ConfigProvider>
+      </StudioMessageProvider>
     </dialog>
   );
 }

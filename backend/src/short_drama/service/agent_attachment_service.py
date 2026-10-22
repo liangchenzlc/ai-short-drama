@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 
 from short_drama.agent.input_media import MAX_INPUT_BYTES, inspect_attachment
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
+from short_drama.db.access import require_project
 from short_drama.domain import Asset, MediaFile
 from short_drama.domain.agent_context import AgentAttachment
 from short_drama.schemas.agent_context import AttachmentRead, AttachmentReference
@@ -273,9 +274,13 @@ class AgentAttachmentService(AgentConversationService):
             if values.source_type == "asset":
                 asset = self.session.get(Asset, values.source_id)
                 if asset is None or (
-                    asset.project_id and asset.project_id != conversation.project_id
+                    conversation.scope_version != 3
+                    and asset.project_id
+                    and asset.project_id != conversation.project_id
                 ):
                     raise NotFound("Asset does not exist in the current scope")
+                if asset.project_id:
+                    require_project(self.session, asset.project_id)
                 name = asset.name
                 text_content = json.dumps(
                     {
@@ -293,9 +298,16 @@ class AgentAttachmentService(AgentConversationService):
                 name = "媒体附件"
             media = self.session.get(MediaFile, media_id) if media_id else None
             if media_id and (
-                media is None or (media.project_id and media.project_id != conversation.project_id)
+                media is None
+                or (
+                    conversation.scope_version != 3
+                    and media.project_id
+                    and media.project_id != conversation.project_id
+                )
             ):
                 raise NotFound("Media does not exist in the current scope")
+            if media is not None and media.project_id:
+                require_project(self.session, media.project_id)
             kind = media.format_code.split("/")[0] if media else "text"
             if kind not in MAX_INPUT_BYTES:
                 raise WorkflowError("invalid_agent_attachment", "该媒体格式不支持作为对话输入", 422)

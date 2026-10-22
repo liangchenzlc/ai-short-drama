@@ -35,7 +35,6 @@ def main():
             "canvas_generation_media_deletions"
         )
         canvas_text_available = inspect(connection).has_table("canvas_task_text_deltas")
-        canvas_beefapi_available = inspect(connection).has_table("canvas_beefapi_connections")
         canvas_render_available = inspect(connection).has_table("canvas_render_jobs")
         canvas_local_available = inspect(connection).has_table("canvas_local_jobs")
     factory = session_factory(engine)
@@ -44,10 +43,13 @@ def main():
     canvas_renders = CanvasRenderPublisher(factory, settings) if canvas_render_available else None
     canvas_locals = CanvasLocalPublisher(factory, settings) if canvas_local_available else None
     if settings.agent_enabled:
+        from short_drama.agent.memory_runtime import AgentMemoryPublisher, AgentMemoryStore
         from short_drama.agent.publisher import AgentPublisher
         from short_drama.agent.recovery import recover as recover_agent
 
         agents = AgentPublisher(factory, settings)
+        memories = AgentMemoryPublisher(factory, settings)
+        memory_store = AgentMemoryStore(factory, settings)
     from short_drama.storage.minio import MinioStorage
 
     storage = MinioStorage(settings)
@@ -57,16 +59,8 @@ def main():
     next_canvas_cleanup = 0
     try:
         while True:
-            if canvas_beefapi_available:
-                from short_drama.service.canvas_beefapi_service import tick_beefapi_connections
-
-                try:
-                    tick_beefapi_connections(factory, settings)
-                except Exception as error:
-                    log.warning(
-                        "Canvas BeefAPI recovery unavailable: error=%s", type(error).__name__
-                    )
             if canvas_cleanup_available and time.monotonic() >= next_canvas_cleanup:
+                from short_drama.service.canvas_playback_cleanup import cleanup_canvas_playback
                 from short_drama.service.canvas_recycle_cleanup import cleanup_canvas_recycle
                 from short_drama.service.canvas_resource_cleanup import cleanup_canvas_resources
 
@@ -82,6 +76,13 @@ def main():
                     log.warning(
                         "Canvas resource cleanup unavailable: error=%s", type(error).__name__
                     )
+                if canvas_local_available:
+                    try:
+                        cleanup_canvas_playback(factory, settings, storage)
+                    except Exception as error:
+                        log.warning(
+                            "Canvas playback cleanup unavailable: error=%s", type(error).__name__
+                        )
                 if canvas_generation_cleanup_available:
                     from short_drama.service.canvas_generation_media_cleanup import (
                         cleanup_canvas_generation_media,
@@ -106,12 +107,20 @@ def main():
                 process_import(factory, storage, settings)
                 recover(factory, settings)
                 dispatch_batches(factory, settings)
+                if agent_schema_available:
+                    from short_drama.agent.session_purge import purge_one
+                    from short_drama.service.storage_service import StorageService
+
+                    purge_one(factory, StorageService(storage, settings))
                 if settings.agent_enabled:
                     recover_agent(factory, settings)
+                    memory_store.recover()
                 if agent_schema_available and time.monotonic() >= next_agent_poll:
+                    from short_drama.agent.media_runtime import collect_media_results
                     from short_drama.agent.native_tasks import collect_native_results
 
                     collect_native_results(factory, settings)
+                    collect_media_results(factory, settings)
                     next_agent_poll = time.monotonic() + settings.agent_poll_seconds
                 if time.monotonic() >= next_cleanup:
                     from short_drama.tasks.email import prune_limits
@@ -152,6 +161,9 @@ def main():
                 if settings.agent_enabled:
                     for _ in range(50):
                         if not agents.tick():
+                            break
+                    for _ in range(10):
+                        if not memories.tick():
                             break
             except Exception:
                 log.warning(

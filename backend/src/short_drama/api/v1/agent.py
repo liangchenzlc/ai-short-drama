@@ -42,6 +42,14 @@ from short_drama.schemas.agent_runtime import (
     RunContinue,
     RunRead,
 )
+from short_drama.schemas.agent_skill import (
+    SkillCopy,
+    SkillCreate,
+    SkillImportPreview,
+    SkillResourceContent,
+    SkillSettingsPatch,
+    SkillSummary,
+)
 from short_drama.schemas.base import Identifier
 from short_drama.schemas.common import PageResponse
 from short_drama.service.agent_attachment_service import AgentAttachmentService
@@ -98,7 +106,9 @@ def attachment_service(request: Request, session: Session = Depends(get_session)
 
 
 def skill_service(request: Request, session: Session = Depends(get_session)):
-    return AgentSkillService(session, request.app.state.settings)
+    return AgentSkillService(
+        session, request.app.state.settings, getattr(request.app.state, "storage", None)
+    )
 
 
 Runs = Annotated[AgentRunService, Depends(run_service)]
@@ -119,7 +129,6 @@ def agent_status(request: Request):
 def list_conversations(
     service: Conversations,
     project_id: Identifier,
-    episode_id: Identifier,
     scope: ExpectedScope,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -127,7 +136,7 @@ def list_conversations(
     query: Annotated[str | None, Query(max_length=120)] = None,
 ):
     return service.list_conversations(
-        project_id, episode_id, offset, limit, include_archived, scope=scope, search=query
+        project_id, offset, limit, include_archived, scope=scope, search=query
     )
 
 
@@ -180,13 +189,42 @@ def patch_model_inputs(model_id: Identifier, payload: ModelInputsPatch, service:
     return service.patch_inputs(model_id, payload)
 
 
-@router.get("/skills", response_model=PageResponse[SkillRead])
+@router.get("/skills", response_model=PageResponse[SkillSummary])
 def list_skills(
     service: Skills,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    query: Annotated[str | None, Query(max_length=120)] = None,
+    source: Annotated[str | None, Query(pattern="^(builtin|personal)$")] = None,
+    enabled: bool | None = None,
+    invocation_mode: Annotated[str | None, Query(pattern="^(auto|manual)$")] = None,
+    mode: Annotated[str | None, Query(pattern="^(standard|infinite_canvas)$")] = None,
 ):
-    return service.list(offset, limit)
+    return service.list(
+        offset,
+        limit,
+        query=query,
+        source=source,
+        enabled=enabled,
+        invocation_mode=invocation_mode,
+        mode=mode,
+    )
+
+
+@router.post("/skills", response_model=SkillRead, status_code=201)
+def create_skill(
+    payload: SkillCreate,
+    service: Skills,
+    idempotency_key: Annotated[
+        str, Header(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_:-]+$")
+    ],
+):
+    return service.create(payload, idempotency_key)
+
+
+@router.post("/skills/imports/preview", response_model=SkillImportPreview)
+def preview_skill_import(service: Skills, file: Annotated[UploadFile, File()]):
+    return service.preview_import(file.file, file.filename or "")
 
 
 @router.post("/skills/uploads", response_model=SkillRead, status_code=201)
@@ -199,13 +237,54 @@ def get_skill(skill_id: str, service: Skills):
     return service.detail(skill_id)
 
 
+@router.post("/skills/{skill_id}/copy", response_model=SkillRead, status_code=201)
+def copy_skill(
+    skill_id: str,
+    payload: SkillCopy,
+    service: Skills,
+    idempotency_key: Annotated[
+        str, Header(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_:-]+$")
+    ],
+):
+    return service.copy(skill_id, payload, idempotency_key)
+
+
+@router.patch("/skills/{skill_id}/settings", response_model=SkillRead)
+def patch_skill_settings(skill_id: str, payload: SkillSettingsPatch, service: Skills):
+    return service.patch_settings(skill_id, payload)
+
+
+@router.get(
+    "/skills/{skill_id}/versions/{content_version}/resources", response_model=SkillResourceContent
+)
+def read_skill_resource(
+    skill_id: str,
+    content_version: Identifier,
+    service: Skills,
+    path: Annotated[str, Query(min_length=1, max_length=255)],
+    offset: Annotated[int, Query(ge=0, le=131072)] = 0,
+    limit: Annotated[int, Query(ge=1, le=6000)] = 6000,
+):
+    return service.resource_content(skill_id, content_version, path, offset=offset, limit=limit)
+
+
+@router.get("/skills/{skill_id}/export")
+def export_skill(skill_id: str, content_version: Identifier, service: Skills):
+    data, filename = service.export(skill_id, content_version)
+    return Response(
+        data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.patch("/skills/{skill_id}", response_model=SkillRead)
-def patch_skill(skill_id: Identifier, payload: SkillPatch, service: Skills):
+def patch_skill(skill_id: str, payload: SkillPatch, service: Skills):
     return service.patch(skill_id, payload)
 
 
 @router.delete("/skills/{skill_id}", status_code=204)
-def delete_skill(skill_id: Identifier, payload: SkillDelete, service: Skills):
+def delete_skill(skill_id: str, payload: SkillDelete, service: Skills):
     service.delete(skill_id, payload)
     return Response(status_code=204)
 
@@ -395,9 +474,17 @@ async def conversation_events(
             await asyncio.sleep(1)
             try:
                 rows = await run_in_threadpool(read, after)
-            except BusinessError:
-                # No private payload after logout, expiry, removal or feature shutdown.
-                yield 'event: access-ended\ndata: {"code":"agent_access_ended"}\n\n'
+            except BusinessError as error:
+                if error.code == "agent_event_resync_required":
+                    yield 'event: resync\ndata: {"code":"agent_event_resync_required"}\n\n'
+                elif error.status_code in {401, 403, 404} or error.code in {
+                    "agent_disabled",
+                    "agent_scope_mismatch",
+                }:
+                    # No private payload after logout, removal or feature shutdown.
+                    yield 'event: access-ended\ndata: {"code":"agent_access_ended"}\n\n'
+                else:
+                    yield 'event: retry\ndata: {"code":"agent_stream_unavailable"}\n\n'
                 return
 
     return StreamingResponse(

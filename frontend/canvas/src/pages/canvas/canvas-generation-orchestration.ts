@@ -145,7 +145,6 @@ export function rebaseInsertedCanvasNode(live: CanvasNodeData[], inserted: Canva
 export async function insertCanvasGenerationHistoryTask(input: {
     task: GenerationTask;
     projectId: string;
-    domainProjectId?: string;
     center: Position;
     nodes: CanvasNodeData[];
     assets: Asset[];
@@ -194,7 +193,6 @@ export async function runOwnedCanvasHistoryInsert(input: {
     getLiveLifetime?: () => number;
     task: GenerationTask;
     projectId: string;
-    domainProjectId?: string;
     center: Position;
     nodes: CanvasNodeData[];
     assets: Asset[];

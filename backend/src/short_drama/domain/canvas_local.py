@@ -70,7 +70,8 @@ class CanvasLocalJob(CanvasAudit, Base):
         Index("idx_canvas_local_schedule", "status", "next_run_at", "id"),
         Index("idx_canvas_local_disposal", "disposal_receipt_id"),
         CheckConstraint(
-            "task_type IN ('timeline_transcription','depth_capture')", name="ck_canvas_local_type"
+            "task_type IN ('timeline_transcription','depth_capture','resource_playback')",
+            name="ck_canvas_local_type",
         ),
         CheckConstraint(
             "status IN ('queued','running','succeeded','failed','cancelled')",
@@ -89,7 +90,8 @@ class CanvasLocalJob(CanvasAudit, Base):
         ),
         CheckConstraint(
             "status <> 'succeeded' OR (result_json IS NOT NULL AND finished_at IS NOT NULL "
-            "AND (task_type <> 'depth_capture' OR output_media_id IS NOT NULL "
+            "AND (task_type NOT IN ('depth_capture','resource_playback') "
+            "OR output_media_id IS NOT NULL "
             "OR disposal_receipt_id IS NOT NULL))",
             name="ck_canvas_local_output",
         ),
@@ -118,5 +120,5 @@ class CanvasLocalJob(CanvasAudit, Base):
             "CHAR_LENGTH(client_operation_id) >= 8 AND CHAR_LENGTH(request_hash) = 64",
             name="ck_canvas_local_identity",
         ),
-        {**OPTIONS, "comment": "本人本地转写与深度捕捉的冻结来源及执行回执"},
+        {**OPTIONS, "comment": "本人媒体转写、深度捕捉与兼容播放的冻结来源及执行回执"},
     )

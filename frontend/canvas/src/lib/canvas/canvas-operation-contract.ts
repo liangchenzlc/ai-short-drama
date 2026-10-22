@@ -17,7 +17,6 @@ export type CanvasOperation =
 
 export type CanvasSnapshot = {
     projectId: string;
-    domainProjectId?: string;
     title: string;
     nodes: CanvasNodeData[];
     connections: CanvasConnection[];
@@ -377,7 +376,7 @@ export function applyCanvasOperations(snapshot: CanvasSnapshot, ops?: CanvasOper
 
 export function hashCanvasSnapshot(snapshot: CanvasSnapshot) {
     let hash = 2166136261;
-    const text = JSON.stringify({ projectId: snapshot.projectId, domainProjectId: snapshot.domainProjectId, title: snapshot.title, nodes: snapshot.nodes, connections: snapshot.connections, selectedNodeIds: snapshot.selectedNodeIds, viewport: snapshot.viewport });
+    const text = JSON.stringify({ projectId: snapshot.projectId, title: snapshot.title, nodes: snapshot.nodes, connections: snapshot.connections, selectedNodeIds: snapshot.selectedNodeIds, viewport: snapshot.viewport });
     for (let index = 0; index < text.length; index += 1) hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);
     return (hash >>> 0).toString(16).padStart(8, "0");
 }

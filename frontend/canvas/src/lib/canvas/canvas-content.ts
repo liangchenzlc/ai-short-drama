@@ -5,7 +5,7 @@ import { canonicalizeCanvasMedia } from "@/services/canvas-media-locators";
 // These fields describe local viewing / synchronization, not an edit to the document.
 export function canvasContentSnapshot(project: CanvasProject) {
     const { viewport: _viewport, updatedAt: _updatedAt, revision: _revision, remoteContentHash: _hash, ...content } = project;
-    return canonicalizeCanvasMedia({ ...content, projectId: content.projectId || undefined }, false);
+    return canonicalizeCanvasMedia(content, false);
 }
 
 export function sameCanvasContent(left: CanvasProject | undefined, right: CanvasProject | undefined) {
@@ -31,7 +31,7 @@ export async function canvasContentHash(project: CanvasProject) {
  *
  * 复用 `canvasContentSnapshot` 的同一套「非文档字段」规则（它已经排除视口、时间戳、
  * revision 与远端哈希），而不是另立一份字段白名单：白名单会静默漏掉没列进去的文档
- * 字段（例如 folderId、projectId、canvasTitle），让用户未确认的编辑被当成「本地干净」。
+ * 字段（例如 folderId、workspaceProjectId、canvasTitle），让用户未确认的编辑被当成「本地干净」。
  *
  * 两处刻意容忍的不对称，都不代表用户编辑过文档：
  * 1. 画布外观偏好（appearance/backgroundMode/showImageInfo）：服务端由客户端决定是否写入，
@@ -39,7 +39,7 @@ export async function canvasContentHash(project: CanvasProject) {
  *    （见 canvas-external-revision.ts）。
  * 2. 一侧缺失、另一侧为空值：应用自己会给 nodes/connections/chatSessions/activeChatId
  *    这类字段补默认空值。只有「缺失 vs 非空值」才算差异，因此 folderId 从无到有、
- *    projectId/canvasTitle 被设置、节点被删除都会如实识别。
+ *    workspaceProjectId/canvasTitle 被设置、节点被删除都会如实识别。
  */
 const CANVAS_VIEW_PREFERENCE_KEYS = new Set(["appearance", "backgroundMode", "showImageInfo"]);
 

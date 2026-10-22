@@ -74,7 +74,7 @@ export async function executeTextGeneration({
                     referenceImages: generationContext.referenceImages,
                     referenceVideos: generationContext.referenceVideos,
                     signal: controller.signal,
-                    metadata: { sourceNodeId: nodeId, batchIndex, batchCount: textTargetIds.length, ...taskContext, resolvedCharacterVersions: generationContext.resolvedCharacterVersions, ...skillMetadata },
+                    metadata: { sourceNodeId: nodeId, batchIndex, batchCount: textTargetIds.length, ...taskContext, ...skillMetadata },
                 },
                 {
                     bindTask: (task) => bindGenerationTask(targetNodeId, task),

@@ -33,7 +33,10 @@ class CanvasWorkspaceDAO:
             value.model_config_id: value
             for value in self.session.scalars(select(CanvasChannelModel))
         }
-        from short_drama.service.model_runtime_config import model_runtime_public
+        from short_drama.service.model_runtime_config import (
+            canvas_model_default_capability_config,
+            model_runtime_public,
+        )
 
         return [
             {
@@ -45,6 +48,7 @@ class CanvasWorkspaceDAO:
                 "enabled": bool(value.enabled),
                 "has_api_key": bool(value.apikey),
                 "is_default": bool(value.is_default),
+                "default_capability_config": canvas_model_default_capability_config(value),
                 "selection_aliases": [
                     f"{bindings[value.id].channel_key}::{bindings[value.id].model_key}"
                 ]

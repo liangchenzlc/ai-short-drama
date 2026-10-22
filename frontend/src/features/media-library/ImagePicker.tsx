@@ -5,11 +5,13 @@ import { mediaLibrary } from '../../api/modules/media-library';
 import { errorMessage, http } from '../../api/http';
 import type { MediaAsset } from '../../api/types/generations';
 import { Dialog } from '../../components/ui/Dialog';
+import { StudioFeedback } from '../../components/ui/StudioFeedback';
 import { useAuth } from '../auth/AuthSession';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 
-export function ImagePicker({ busy, onClose, onSelect, projectId }: {
+export function ImagePicker({ busy, onClose, onSelect, projectId, purpose = 'candidate', presentation }: {
   busy: boolean; onClose: () => void; onSelect: (mediaId: string, asset: MediaAsset) => Promise<boolean>; projectId?: string;
+  purpose?: 'candidate' | 'artwork' | 'reference' | 'generation-input'; presentation?: 'standard-creation';
 }) {
   const auth = useAuth();
   const [items, setItems] = useState<MediaAsset[]>([]);
@@ -54,14 +56,15 @@ export function ImagePicker({ busy, onClose, onSelect, projectId }: {
     catch (cause) { setError(errorMessage(cause)); }
     finally { setChoosing(null); }
   }
-  return <Dialog title="从图片资产库选择" className="media-picker-dialog" canClose={!busy && !choosing} onClose={onClose}>
+  const purposeText = { candidate: '加入候选后，采用才会更新素材。', artwork: '选择后更新当前素材主图。', reference: '仅用于你的生成参考，不会更换作品主图。', 'generation-input': '选择后填入本次生成参数。' }[purpose];
+  return <Dialog title="从图片资产库选择" className={`media-picker-dialog${presentation ? ' standard-creation-dialog' : ''}`} canClose={!busy && !choosing} onClose={onClose}>
     <div className="media-picker-body">
-      <p>点击图片查看大图，点击“选择此图片”添加。确认采用后才会更新素材。</p>
+      <p>{purposeText}</p>
       {auth.enabled && projectId && <p>其他范围的图片会先复制成独立项目文件；本项目内的图片可直接引用。</p>}
       <Input.Search aria-label="搜索图片名称" placeholder="搜索图片名称" allowClear disabled={busy || !!choosing} onSearch={name => { setQuery(name.trim()); setOffset(0); }}/>
-      {error && <Alert type="error" showIcon message={error} action={<Button onClick={() => setRevision(value => value + 1)}>重试</Button>}/>}
+      {error && (presentation === 'standard-creation' && items.length ? <StudioFeedback type="error" title="图片资产库" message={error} actions={<Button onClick={() => setRevision(value => value + 1)}>重试</Button>}/> : <Alert type="error" showIcon message={error} action={<Button onClick={() => setRevision(value => value + 1)}>重试</Button>}/>)}
       {loading ? <Skeleton paragraph={{ rows: 4 }}/> : items.length ? <div className="media-picker-grid">{items.map(item => <article className="media-picker-item" key={item.asset_id}>
-        {item.url ? <PreviewImage src={item.url} alt={item.name}/> : <span className="media-picker-unavailable">预览暂不可用</span>}<strong>{item.name}</strong>
+        {item.url ? <PreviewImage src={item.url} alt={item.name} presentation={presentation}/> : <span className="media-picker-unavailable">预览暂不可用</span>}<strong>{item.name}</strong>
         <div className="media-picker-actions"><Button block disabled={busy || !!choosing || !item.url} loading={choosing === item.asset_id} onClick={() => void choose(item)}>选择此图片</Button></div>
       </article>)}</div> : !error && <div className="studio-empty"><h3>{query ? '没有找到图片' : '图片资产库还是空的'}</h3><p>{query ? '试试其他名称，或清空搜索。' : '可以关闭此窗口，直接上传本地图片。'}</p></div>}
       <Pagination current={offset / 12 + 1} total={total} pageSize={12} hideOnSinglePage showSizeChanger={false} disabled={busy || !!choosing || loading} onChange={page => setOffset((page - 1) * 12)}/>

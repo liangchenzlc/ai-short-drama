@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import { aiConfigPath } from '../../app/paths';
 
-export type MainPage = "projects" | "assets" | "tasks" | "media-library" | "ai" | "account";
+export type MainPage = "projects" | "tasks" | "media-library" | "ai" | "account";
 export function Sidebar({ page }: { page: MainPage }) {
   return (
     <aside className="studio-sidebar">
@@ -20,11 +20,6 @@ export function Sidebar({ page }: { page: MainPage }) {
           aria-current={page === "projects" ? "page" : undefined}
         >
           <Icon name="folder" />项目管理
-        </Link>
-        <Link to="/assets/character"
-          className={page === "assets" ? "studio-nav active" : "studio-nav"}
-          aria-current={page === "assets" ? "page" : undefined}>
-          <Icon name="library" />素材库
         </Link>
         <Link to="/tasks/text" className={page === 'tasks' ? 'studio-nav active' : 'studio-nav'} aria-current={page === 'tasks' ? 'page' : undefined}>
           <Icon name="tasks" />任务管理

@@ -94,7 +94,6 @@ input, textarea { caret-color: var(--accent); }
 .web-project-picker span { font-size: 12px; color: var(--sub); }
 /* Each production step owns the available canvas; there are no empty stacked stages. */
 .web-episode { --episode-header-height: 65px; min-height: 100dvh; }
-.web-episode .episode-top { height: 65px; padding: 10px 28px; }
 .web-episode .episode-top h1 { font-size: 19px; }
 .web-episode .episode-top-status { background: var(--pale); color: var(--accent); padding: 5px 10px; font-size: 11px; }
 .web-episode .episode-layout { grid-template-columns: 210px minmax(0, 1fr); width: 100%; max-width: none; margin: 0; min-height: calc(100dvh - 65px); align-items: start; }
@@ -208,7 +207,6 @@ input, textarea { caret-color: var(--accent); }
   .advanced-fields, .scene-settings { grid-template-columns: 1fr; }
   .settings-section { padding: 16px; }
   .web-episode { --episode-header-height: 92px; }
-  .web-episode .episode-top { height: 92px; display: flex; flex-wrap: wrap; padding: 9px 16px; gap: 5px 12px; }
   .web-episode .episode-top .detail-back { width: 100%; justify-content: flex-start; padding: 0; height: 25px; }
   .web-episode .episode-top > div { padding: 0; border: 0; flex: 1; }
   .web-episode .episode-top > div > span { font-size: 10px; }
@@ -312,7 +310,6 @@ input, textarea { caret-color: var(--accent); }
 .asset-card-meta span { font-size: 12px; }
 
 /* The production rail stays quiet; the editor owns the canvas. */
-.web-episode .episode-top { padding-inline: 28px; background: var(--surface); gap: 20px; }
 .web-episode .episode-top h1 { max-width: 64ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .web-episode .episode-top > div { min-width: 0; }
 .web-episode .episode-layout { grid-template-columns: 224px minmax(0, 1fr); }
@@ -492,7 +489,6 @@ input, textarea { caret-color: var(--accent); }
   .project-search-hint { display: none; }
   .project-row-tail { min-width: 18px; }
   .project-overview .overview-info .form-row { grid-template-columns: 1fr; }
-  .web-episode .episode-top { padding: 8px 16px; gap: 4px 12px; }
   .web-episode .episode-top .detail-back { min-height: 28px; }
   .web-episode .episode-top h1 { font-size: 16px; }
   .episode-save-state { max-width: 45%; white-space: normal; font-size: 11px; }

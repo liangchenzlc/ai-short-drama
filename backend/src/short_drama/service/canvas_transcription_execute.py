@@ -120,6 +120,8 @@ def prepare_transcription_wav(
 
 
 class CanvasTranscriptionExecutor:
+    timeout_message = "无法连接本地转写服务(whisper.cpp): 转写请求超时"
+
     def __init__(
         self,
         settings: Settings,
@@ -162,7 +164,7 @@ class CanvasTranscriptionExecutor:
                         return await request
                     self.progress("正在转写…", 40)
         except TimeoutError as error:
-            raise RuntimeError("无法连接本地转写服务(whisper.cpp): 转写请求超时") from error
+            raise RuntimeError(self.timeout_message) from error
         finally:
             if not request.done():
                 request.cancel()

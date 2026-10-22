@@ -32,11 +32,11 @@ class ShotScript(Base):
         nullable=False,
         comment="应用雪花算法生成；稳定且不可变的记录标识",
     )
-    episode_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), nullable=False, comment="所属分集"
+    project_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), nullable=False, comment="所属项目"
     )
     position: Mapped[int] = mapped_column(
-        INTEGER(unsigned=True), nullable=False, comment="分集内镜头顺序"
+        INTEGER(unsigned=True), nullable=False, comment="项目内镜头顺序"
     )
     script: Mapped[str] = mapped_column(
         MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="分镜脚本正文"
@@ -123,20 +123,20 @@ class ShotScript(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("episode_id", "active_position", name="uk_shots_episode_active_position"),
+        UniqueConstraint("project_id", "active_position", name="uk_shots_creation_active_position"),
         UniqueConstraint("creation_key", name="uk_shots_creation_key"),
-        UniqueConstraint("id", "episode_id", name="uk_shots_id_episode"),
+        UniqueConstraint("id", "project_id", name="uk_shots_id_creation"),
         Index(
-            "idx_shots_episode_deleted_position",
-            "episode_id",
+            "idx_shots_creation_deleted_position",
+            "project_id",
             "deleted_at",
             "position",
             "id",
         ),
         ForeignKeyConstraint(
-            ["episode_id"],
-            ["episodes.id"],
-            name="fk_shot_scripts_episode_id",
+            ["project_id"],
+            ["projects.id"],
+            name="fk_shot_scripts_project_id",
             ondelete="RESTRICT",
             onupdate="RESTRICT",
         ),

@@ -227,20 +227,6 @@ class AIModelConfigService(BaseService):
             entity = self._active(identifier)
             if entity.row_version != expected:
                 raise Conflict("Model configuration version is stale")
-            binding = self.session.scalar(
-                select(CanvasChannelModel).where(CanvasChannelModel.model_config_id == entity.id)
-            )
-            if binding is not None and binding.channel_key == "beefapi":
-                for key in ("base_url", "model_key", "runtime_profile"):
-                    proposed = values.get(key)
-                    if key == "runtime_profile" and proposed is not None:
-                        proposed = ModelRuntimeProfile.model_validate(proposed).model_dump(
-                            mode="json", exclude_none=True
-                        )
-                    if key in values and proposed != getattr(entity, key):
-                        raise BusinessError("BeefAPI 模型连接与协议由企业授权目录维护")
-                if any(key in values for key in ("apikey", "secret_key")):
-                    raise BusinessError("BeefAPI 凭据由企业授权维护")
             values = self._runtime_values(values, entity)
             if "apikey" in values:
                 secret = values.pop("apikey")

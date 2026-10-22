@@ -14,8 +14,8 @@ import { dateLabel, generationError } from '../generations/presentation';
 interface ApplyValues {
   type: ApplyAssetRequest['target']['type']; id: string; expected_media_id?: string;
   expected_row_version?: string; expected_context_hash?: string; acknowledge_stale_source?: boolean;
-  project_id?: string; episode_id?: string;
-  layout?: 'single' | 'four' | 'five' | 'nine'; aspect?: string; resolution?: string; duration?: number; confirm_shared?: boolean;
+  project_id?: string;
+  layout?: 'single' | 'four' | 'five' | 'nine'; aspect?: string; resolution?: string; duration?: number;
 }
 const idRule = { validator: (_: unknown, value?: string) => !value || isServerId(value.trim()) ? Promise.resolve() : Promise.reject(new Error('请输入真实服务端的正整数 ID')) };
 export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
@@ -77,7 +77,7 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
       const request: ApplyAssetRequest = { target: { type: values.type, id: values.id.trim() }, expected_media_id: values.expected_media_id?.trim() || null,
         ...(values.type === 'shot_image' || values.type === 'shot_video' || values.type === 'asset_image' ? { expected_row_version: values.expected_row_version?.trim() } : {}),
         ...(values.type !== 'asset_image' ? { expected_context_hash: values.expected_context_hash?.trim(), acknowledge_stale_source: acknowledgeStaleSource } : {}),
-        ...(Object.keys(parameters).length ? { parameters } : {}), ...(values.type === 'asset_image' ? { confirm_shared: values.confirm_shared === true } : {}),
+        ...(Object.keys(parameters).length ? { parameters } : {}),
       };
       await mediaLibrary.apply(id, request);
       if (active.current) { setNotice('已确认采用到指定目标。生成任务和资产仍保留。'); setApplyOpen(false); setConfirmed(false); onChanged(); }
@@ -99,8 +99,8 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
     mutation.current = true; setBusy('apply'); setApplyError(''); setTargetLoaded(false); setTargetPreview(null);
     try {
       if (values.type === 'shot_image' || values.type === 'shot_video') {
-        if (!values.project_id?.trim() || !values.episode_id?.trim()) { setApplyError('读取分镜目标需要项目编号 和分集编号。'); return; }
-        const result = await storyboardApi(values.project_id.trim(), values.episode_id.trim()).shot(values.id.trim());
+        if (!values.project_id?.trim()) { setApplyError('读取分镜目标需要项目编号。'); return; }
+        const result = await storyboardApi(values.project_id.trim()).shot(values.id.trim());
         const target = values.type === 'shot_video' ? result.shot.video : result.shot.image;
         form.setFieldsValue({ expected_media_id: target?.media_id ?? undefined, expected_row_version: result.shot.row_version, expected_context_hash: values.type === 'shot_video' ? result.shot.video_context_hash : result.shot.context_hash });
         setTargetPreview({ name: `分镜 ${result.shot.position}`, url: values.type === 'shot_video' ? null : result.shot.image?.url }); setTargetLoaded(true);
@@ -130,12 +130,12 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
         {nameError && <Alert type="error" showIcon message={nameError} action={nameConflict ? <Button onClick={() => { savedName.current = false; setNameConflict(false); setNameError(''); refresh(); }}>重新加载名称</Button> : undefined} />}
         <dl className="generation-facts"><div><dt>媒体 ID</dt><dd className="generation-id">{asset.media_id}</dd></div><div><dt>尺寸</dt><dd>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : '未提供'}</dd></div>{asset.media_type === 'video' && <div><dt>时长</dt><dd>{asset.duration_ms != null ? `${asset.duration_ms / 1000} 秒` : '未提供'}</dd></div>}<div><dt>入库时间</dt><dd>{dateLabel(asset.created_at)}</dd></div><div><dt>来源任务</dt><dd><Link to={`/tasks/${asset.media_type}?task=${asset.generation_id}`}>查看生成任务</Link></dd></div>{asset.source?.scene === 'shot_image' && <div><dt>来源分镜</dt><dd className="generation-id">{asset.source.shot_id}</dd></div>}</dl>
       </section>
-      <section className="generation-section"><h3>用于创作</h3><p className="generation-hint">可在分集分镜或素材编辑中选择这张图片。也可以在这里指定目标，核对后采用。</p>
+      <section className="generation-section"><h3>用于创作</h3><p className="generation-hint">可在作品分镜或素材编辑中选择这张图片。也可以在这里指定目标，核对后采用。</p>
         {!applyOpen ? <Button type="primary" disabled={!!busy} onClick={() => { setApplyOpen(true); setConfirmed(false); setApplyError(''); form.setFieldsValue({ type: asset.media_type === 'video' ? 'shot_video' : 'shot_image' }); }}>指定创作目标</Button> :
-          <Form form={form} layout="vertical" onFinish={apply} disabled={!!busy} onValuesChange={(changed) => { setConfirmed(false); setApplyConflict(false); if (Object.keys(changed).some((key) => ['type', 'id', 'project_id', 'episode_id'].includes(key))) { setTargetLoaded(false); setTargetPreview(null); } }}>
+          <Form form={form} layout="vertical" onFinish={apply} disabled={!!busy} onValuesChange={(changed) => { setConfirmed(false); setApplyConflict(false); if (Object.keys(changed).some((key) => ['type', 'id', 'project_id'].includes(key))) { setTargetLoaded(false); setTargetPreview(null); } }}>
             <div className="generation-form-grid"><Form.Item name="type" label="目标类型" rules={[{ required: true }]}><Select options={asset.media_type === 'video' ? [{ value: 'shot_video', label: '分镜视频' }] : [{ value: 'shot_image', label: '分镜图片' }, { value: 'asset_image', label: '角色 / 场景 / 道具素材图片' }]} /></Form.Item>
               <Form.Item name="id" label="目标编号" rules={[{ required: true, message: '请输入目标 ID' }, idRule]}><Input placeholder="分镜 ID 或素材 ID" /></Form.Item></div>
-            {targetType !== 'asset_image' && <div className="generation-form-grid"><Form.Item name="project_id" label="项目编号" rules={[{ required: true, message: '请输入项目编号' }, idRule]}><Input/></Form.Item><Form.Item name="episode_id" label="分集编号" rules={[{ required: true, message: '请输入分集编号' }, idRule]}><Input/></Form.Item></div>}
+            {targetType !== 'asset_image' && <div className="generation-form-grid"><Form.Item name="project_id" label="项目编号" rules={[{ required: true, message: '请输入项目编号' }, idRule]}><Input/></Form.Item></div>}
             {(targetType === 'shot_image' || targetType === 'shot_video' || targetType === 'asset_image') && <><Button onClick={() => void inspectTarget()} loading={busy === 'apply'}>读取并核对目标详情</Button>{targetLoaded && targetPreview && <Alert type="success" showIcon message={`已读取目标：${targetPreview.name}`} description={targetPreview.url ? <PreviewImage src={targetPreview.url} alt="目标当前图片" style={{ maxWidth: 280, maxHeight: 180, objectFit: 'contain' }}/> : '目标当前没有图片'}/>}</>}
             <Form.Item name="expected_media_id" hidden><Input /></Form.Item>
             {(targetType === 'shot_image' || targetType === 'shot_video' || targetType === 'asset_image') && <Form.Item name="expected_row_version" hidden rules={[{ required: true }]}><Input /></Form.Item>}
@@ -145,7 +145,6 @@ export function AssetDetail({ id, onClose, onChanged }: { id: string; onClose: (
               <Form.Item name="aspect" label="画面比例（按需补充）"><Select allowClear placeholder="沿用生成快照" options={['16:9', '9:16', '1:1', '4:3', '3:4'].map((value) => ({ value, label: value }))} /></Form.Item><Form.Item name="resolution" label="分辨率（按需补充）"><Input maxLength={32} placeholder="例如 2K / 1080p" /></Form.Item>
               {targetType === 'shot_video' && <Form.Item name="duration" label="时长（毫秒，按需补充）"><InputNumber min={1} precision={0} step={1000} /></Form.Item>}
             </div></>}
-            {targetType === 'asset_image' && <Form.Item name="confirm_shared" valuePropName="checked"><Checkbox>我确认共享素材的图片变化会影响引用此素材的项目。</Checkbox></Form.Item>}
             {applyError && <Alert type="error" showIcon message={applyError} />}
             <Checkbox checked={confirmed} disabled={!!busy || applyConflict || !targetLoaded} onChange={(event) => setConfirmed(event.target.checked)}>我已核对真实目标和当前媒体，确认采用此资产。</Checkbox>
             <div className="generation-form-actions"><Button onClick={() => setApplyOpen(false)} disabled={!!busy}>收起</Button><Button type="primary" htmlType="submit" loading={busy === 'apply'} disabled={!!busy || !confirmed || applyConflict}>确认采用</Button></div>

@@ -117,8 +117,6 @@ export async function executeVideoGeneration({
                 metadata: {
                     sourceNodeId: nodeId,
                     ...taskContext,
-                    resolvedCharacterVersions: generationContext.resolvedCharacterVersions,
-                    resolvedCharacterVoices: generationContext.resolvedCharacterVoices,
                     promptTemplateOperation: sourceNode?.metadata?.promptTemplateOperation,
                     promptTemplateVariables: sourceNode?.metadata?.promptTemplateVariables,
                     ...videoGenerationMetadata,
@@ -189,7 +187,7 @@ export async function executeAudioGeneration({
                 prompt: effectivePrompt,
                 config: generationConfig,
                 signal: controller.signal,
-                metadata: { sourceNodeId: nodeId, ...taskContext, resolvedCharacterVersions: generationContext.resolvedCharacterVersions, resolvedCharacterVoiceKey: generationContext.resolvedCharacterVoices[0]?.voiceKey, ...skillMetadata },
+                metadata: { sourceNodeId: nodeId, ...taskContext, ...skillMetadata },
             },
             {
                 bindTask: (task) => bindGenerationTask(audioId, task),

@@ -7,7 +7,7 @@ export type AgentRunStatus = 'queued' | 'running' | 'waiting_generation' | 'wait
 
 export interface ConversationScope {
   stage: 'source' | 'assets' | 'storyboard';
-  subject_type: 'episode' | 'asset' | 'shot';
+  subject_type: 'project' | 'asset' | 'shot';
   subject_id: string;
   task_type: 'writing' | 'extraction' | 'planning' | 'batch' | 'creation' | 'image' | 'video';
 }
@@ -15,7 +15,7 @@ export interface ConversationScope {
 export interface AgentConversation {
   id: string;
   project_id: string;
-  episode_id: string;
+
   title: string;
   row_version: string;
   archived: boolean;
@@ -39,7 +39,7 @@ export interface AgentConversationPage {
 
 export interface CreateAgentConversation extends ConversationScope {
   project_id: string;
-  episode_id: string;
+
   title?: string;
 }
 
@@ -60,13 +60,15 @@ export interface AgentModel {
 export interface AgentModelPage { items: AgentModel[]; preferred_id: string | null }
 export type AgentMessageMode = 'auto' | 'discuss' | 'generate';
 export interface AgentMessage {
+  task_id?: string | null;
   id: string; seq: number; role: string; content: string;
+  row_version?: string;
   references: Record<string, unknown>[]; artifacts: Record<string, unknown>[]; created_at: string;
 }
 export interface AgentMessagePage { items: AgentMessage[]; total: number; offset: number; limit: number }
 export type AgentTaskKind = 'novel' | 'script' | 'extract' | 'storyboard' | 'asset_patch' | 'shot_patch' | 'image' | 'video';
 export interface AgentReviewStep {
-  id: string; kind: AgentTaskKind; target_id: string | null; target_kind?: 'episode' | 'asset' | 'shot'; target_label?: string | null; instructions: string; count: number;
+  id: string; kind: AgentTaskKind; target_id: string | null; target_kind?: 'project' | 'asset' | 'shot'; target_label?: string | null; instructions: string; count: number;
   model_config_id: string | null; model_name: string | null; source: Record<string, unknown>; parameters: Record<string, unknown>;
 }
 export interface AgentReview {
@@ -74,6 +76,7 @@ export interface AgentReview {
   title: string; summary: string; steps: AgentReviewStep[];
 }
 export interface AgentRun {
+  task_id?: string | null;
   id: string; conversation_id: string; status: AgentRunStatus; phase: string; row_version: string;
   mode: 'auto' | 'discuss' | 'single' | 'workflow'; model_config_id: string; model_name: string; error: { code: string; message?: string } | null;
   usage: Record<string, unknown>; budget: Record<string, unknown>; review: AgentReview | null;
@@ -102,7 +105,34 @@ export interface AgentAttachment {
 export interface AgentSkill {
   id: string; name: string; filename: string | null; builtin: boolean;
   content_version: string; row_version: string | null; enabled: boolean;
-  instructions: string; checksum_sha256: string;
+  checksum_sha256: string; package_checksum: string;
+  slug: string; description: string; tags: string[]; modes: ('standard' | 'infinite_canvas')[];
+  exclusions: string; required_tools: string[]; source: string;
+  invocation_mode: 'auto' | 'manual'; settings_version: string;
+  compatible: boolean; issues: string[]; resource_count: number; updated_at: string | null;
+}
+export interface AgentSkillResource {
+  path: string; kind: 'reference' | 'template'; byte_size: number; checksum_sha256: string;
+}
+export interface AgentSkillDetail extends AgentSkill {
+  instructions: string; resources: AgentSkillResource[];
+}
+export interface AgentSkillContent {
+  name: string; slug: string; description: string; instructions: string;
+  tags?: string[]; modes?: ('standard' | 'infinite_canvas')[]; exclusions?: string;
+  required_tools?: string[]; source?: string; enabled?: boolean; invocation_mode?: 'auto' | 'manual';
+  resources?: { path: string; kind: 'reference' | 'template'; content: string }[];
+}
+export interface AgentSkillImportPreview {
+  filename: string; draft: AgentSkillContent; compatible: boolean; issues: string[];
+  files: { path: string; byte_size: number; supported: boolean }[]; byte_size: number;
+}
+export interface AgentSkillResourceContent extends AgentSkillResource {
+  skill_id: string; content_version: string; offset: number; content: string; next_offset: number | null;
+}
+export interface AgentSkillFilters {
+  query?: string; source?: 'builtin' | 'personal'; enabled?: boolean;
+  invocation_mode?: 'auto' | 'manual'; mode?: 'standard' | 'infinite_canvas';
 }
 export interface AgentSendResult { message: AgentMessage; run: AgentRun; cursor: number }
 export interface AgentEvent {

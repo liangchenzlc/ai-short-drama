@@ -204,22 +204,7 @@ try {
     await owner.close();
     page = undefined;
 
-    report.step = "成员仅见共享成品、模板和过程仍私人";
-    await open(member);
-    await fit();
-    await page.locator('[data-node-id="skill-input"]').getByText("未配置技能模板", { exact: true }).waitFor({ state: "visible" });
-    await page.locator(`[data-node-id="${text.id}"]`).getByText(config.first + config.second, { exact: true }).waitFor({ state: "visible" });
-    const visible = await page.locator("body").innerText();
-    for (const metadata of [config.privateMetadata, config.updatedPrivateMetadata]) {
-        for (const value of [metadata.content, metadata.skillSnapshot?.name, metadata.skillSnapshot?.template].filter(Boolean)) assert.ok(!visible.includes(value), value);
-    }
-    const shared = await graph(member);
-    assert.deepEqual(shared.nodes.find(node => node.id === "skill-input").metadata, {});
-    assert.deepEqual(shared.nodes.find(node => node.id === text.id).metadata, { content: config.first + config.second, fontSize: 14, generatedFromNodeId: text.id });
-    assert.equal((await member.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
-    assert.equal((await outsider.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
-    await page.screenshot({ path: resolve(output, "skill-generation-member.png") });
-    report.member_private_input_hidden = true;
+
     assert.equal(report.task_post_count, 1);
     assert.equal(report.resource_post_count, 0);
     assert.deepEqual(report.page_errors, []);

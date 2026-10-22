@@ -1,6 +1,6 @@
 import { PreviewImage } from '../../components/ui/ImagePreview';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Drawer, Empty, Modal, Skeleton, Tag } from 'antd';
+import { Alert, Button, ConfigProvider, Drawer, Empty, Modal, Skeleton, Tag } from 'antd';
 import { Link } from 'react-router-dom';
 import { generations } from '../../api/modules/generations';
 import type { GenerationDetail, GenerationReceipt, GenerationRecord } from '../../api/types/generations';
@@ -8,7 +8,8 @@ import { attemptStorage, clearAttempt, isServerId, requestAttempt } from './atte
 import { ConfigSelect } from './ConfigSelect';
 import { dateLabel, generationError, kindLabels, statusLabels, taskLabel } from './presentation';
 import { taskOrigin, taskPrompts } from './task-content';
-import { episodePath } from '../../app/paths';
+import { projectPath } from '../../app/paths';
+import { StudioFeedback, StudioFeedbackIndicator, StudioMessageProvider } from '../../components/ui/StudioFeedback';
 
 type Action = 'cancel' | 'retry' | 'resume';
 
@@ -21,10 +22,10 @@ function BusinessResult({ detail }: { detail: GenerationDetail }) {
     {business?.kind === 'novel_script' && <p>已保存候选剧本 <strong>{business.script_id}</strong>，需在本集页面预览并明确设为当前编辑。</p>}
     {business?.kind === 'script_shots' && <p>结构化分镜候选共 <strong>{business.shots.length}</strong> 镜。{business.applied ? `已${business.applied.mode === 'append' ? '追加' : '替换'}应用。` : '尚未应用。'}</p>}
     {business?.kind === 'script_assets' && <p>已提取 <strong>{business.items.length}</strong> 项文字素材，已采用 {business.items.filter(item => item.applied).length} 项。请在素材准备中核对名称、描述与图片生成提示词。</p>}
-    {episodeSource && <Link to={episodePath(episodeSource.project_id, episodeSource.episode_id, episodeSource.scene === 'novel_script' ? 'source' : episodeSource.scene === 'script_assets' ? 'assets' : 'storyboard')}>打开来源分集页面</Link>}
+    {episodeSource && <Link to={projectPath(episodeSource.project_id, episodeSource.scene === 'novel_script' ? 'source' : episodeSource.scene === 'script_assets' ? 'assets' : 'storyboard')}>打开来源作品页面</Link>}
   </div>;
 }
-export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; onClose: () => void; onChanged: () => void; onCreated: (value: GenerationReceipt) => void }) {
+export function TaskDetail({ id, onClose, onChanged, onCreated, presentation }: { id: string; onClose: () => void; onChanged: () => void; onCreated: (value: GenerationReceipt) => void; presentation?: 'standard-creation' }) {
   const [detail, setDetail] = useState<GenerationDetail | null>(null);
   const [records, setRecords] = useState<GenerationRecord[]>([]);
   const [error, setError] = useState('');
@@ -39,6 +40,8 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
   const active = useRef(true);
   const mutation = useRef(false);
   const request = useRef<AbortController | null>(null);
+  const drawerHost = useRef<HTMLDivElement>(null);
+  const modalHost = useRef<HTMLDivElement>(null);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   useEffect(() => {
     const controller = new AbortController(); request.current = controller;
@@ -79,17 +82,19 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
     } catch (cause) { if (active.current) setActionError(generationError(cause)); }
     finally { mutation.current = false; if (active.current) { setBusy(false); refresh(); } }
   }
+  const confirmationTitle = action === 'retry' ? '确认重新生成' : action === 'cancel' ? '确认请求取消' : '确认安全恢复';
   return <>
-    <Drawer open title="任务详情" width={760} onClose={() => !busy && onClose()} closable={!busy} keyboard={!busy} maskClosable={!busy} rootClassName="generation-drawer">
+    <Drawer open title={presentation ? <>任务详情<StudioFeedbackIndicator/></> : '任务详情'} width={760} onClose={() => !busy && onClose()} closable={!busy} keyboard={!busy} maskClosable={!busy} rootClassName={`generation-drawer${presentation ? ' standard-creation-drawer' : ''}`} getContainer={presentation ? () => document.body : undefined}
+      drawerRender={presentation ? node => <StudioMessageProvider local getContainer={() => drawerHost.current ?? document.body}><ConfigProvider getPopupContainer={() => drawerHost.current ?? document.body}><div ref={drawerHost} className="studio-feedback-host" style={{ height: '100%', position: 'relative', pointerEvents: 'auto' }}>{node}</div></ConfigProvider></StudioMessageProvider> : undefined}>
       <div className="generation-detail-toolbar"><span className="generation-id" title={id}>任务编号 {id}</span><Button onClick={refresh} disabled={busy} loading={loading}>刷新</Button></div>
       {error && <Alert type="error" showIcon message={error} description={detail ? '保留上次已知状态，请刷新核对。' : undefined} />}
-      {notice && <Alert type="success" showIcon message={notice} />}
+      {notice && (presentation ? <StudioFeedback type="success" title="任务操作" message={notice}/> : <Alert type="success" showIcon message={notice} />)}
       {loading && !detail ? <div className="generation-loading"><Skeleton title paragraph={{ rows: 5 }}/></div> : detail && <>
         <div className="generation-task-heading"><h2>{taskOrigin(detail)}</h2><Tag className={`generation-status status-${detail.status}`}>{taskLabel(detail)}</Tag></div>
         <dl className="generation-facts"><div><dt>模型配置</dt><dd>{detail.config?.name ?? '—'} · {detail.config?.model_key ?? '—'}</dd></div><div><dt>创建时间</dt><dd>{dateLabel(detail.created_at)}</dd></div><div><dt>开始时间</dt><dd>{dateLabel(detail.started_at)}</dd></div><div><dt>完成时间</dt><dd>{dateLabel(detail.finished_at)}</dd></div></dl>
         {detail.error && <Alert type="warning" showIcon message={detail.error.message} description={`错误代码：${detail.error.code}`} />}
         <div className="generation-action-row">
-          {(detail.source?.scene === 'dialogue_audio' || detail.source?.scene === 'dialogue_extract') && <Link to={episodePath(detail.source.project_id, detail.source.episode_id, 'assembly')}>打开本集声音面板</Link>}
+          {(detail.source?.scene === 'dialogue_audio' || detail.source?.scene === 'dialogue_extract') && <Link to={projectPath(detail.source.project_id, 'assembly')}>打开当前作品声音面板</Link>}
           {detail.batch_id && <Link to={`/tasks/${detail.service_type}?batch=${detail.batch_id}`}>查看来源批次／重试失败项</Link>}
           {detail.can_cancel && <Button disabled={busy} onClick={() => { setAction('cancel'); setActionError(''); }}>请求取消</Button>}
           {detail.can_resume && <Button type="primary" disabled={busy} onClick={() => { setAction('resume'); setActionError(''); }}>安全恢复</Button>}
@@ -99,7 +104,7 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
           {detail.result.partial && <Alert type="warning" showIcon message={`未全部完成，已保留 ${detail.result.assets.length} 个媒体结果。`} />}
           {detail.result.text && <><pre className="generation-text-result">{detail.result.text.content}</pre>{detail.result.text.finish_reason === 'length' && <p className="generation-hint">正文已达到输出长度限制，以上内容已保留。</p>}</>}
           {!!detail.result.assets.length && <div className="generation-result-assets">{detail.result.assets.map((asset) => <article key={asset.asset_id} className="generation-result-asset">
-            {asset.media_type === 'image' && asset.url ? <PreviewImage src={asset.url} alt={asset.name}/> : <span className="generation-media-placeholder">{asset.media_type === 'video' ? '视频' : '图片'}</span>}
+            {asset.media_type === 'image' && asset.url ? <PreviewImage presentation={presentation} src={asset.url} alt={asset.name}/> : <span className="generation-media-placeholder">{asset.media_type === 'video' ? '视频' : '图片'}</span>}
             <span>{asset.name}</span>{asset.media_type === 'audio' ? <><audio controls preload="metadata" src={asset.url ?? undefined}/><p>在本集“配音、字幕和配乐”面板中核对并采用。</p></> : <Link to={`/media-library/${asset.media_type}?asset=${asset.asset_id}`}>查看资产与确认采用</Link>}
           </article>)}</div>}
           {!detail.result.text && !detail.result.assets.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={detail.status === 'queued' || detail.status === 'running' ? '结果将在完成后显示' : '暂无已保存结果'} />}
@@ -113,10 +118,11 @@ export function TaskDetail({ id, onClose, onChanged, onCreated }: { id: string; 
         </details>
       </>}
     </Drawer>
-    <Modal open={!!action} title={action === 'retry' ? '确认重新生成' : action === 'cancel' ? '确认请求取消' : '确认安全恢复'} onCancel={() => !busy && setAction(null)} onOk={perform} confirmLoading={busy} closable={!busy} maskClosable={!busy} keyboard={!busy} cancelButtonProps={{ disabled: busy }} okText={action === 'retry' ? '新建生成任务' : action === 'cancel' ? '提交取消请求' : '恢复任务'}>
+    <Modal rootClassName={presentation ? 'standard-creation-popup' : undefined} open={!!action} title={presentation ? <>{confirmationTitle}<StudioFeedbackIndicator/></> : confirmationTitle} onCancel={() => !busy && setAction(null)} onOk={perform} confirmLoading={busy} closable={!busy} maskClosable={!busy} keyboard={!busy} cancelButtonProps={{ disabled: busy }} okText={action === 'retry' ? '新建生成任务' : action === 'cancel' ? '提交取消请求' : '恢复任务'} getContainer={presentation ? () => document.body : undefined}
+      modalRender={presentation ? node => <StudioMessageProvider local getContainer={() => modalHost.current ?? document.body}><ConfigProvider getPopupContainer={() => modalHost.current ?? document.body}><div ref={modalHost} className="studio-feedback-host" style={{ position: 'relative' }}>{node}</div></ConfigProvider></StudioMessageProvider> : undefined}>
       <p>{action === 'retry' ? '将创建一个新任务，重新执行整次生成，可能再次产生费用。原任务和已保存资产会保留。' : action === 'cancel' ? '已发送给模型服务的请求可能无法取消，也可能已产生费用。任务状态会在确认后更新。' : '服务端将根据已保存的调用状态恢复查询、提交或结果保存。受理不明的请求不会被盲目重新提交。'}</p>
-      {action === 'retry' && detail && <div className="generation-retry-config"><label>重新选择模型配置（选填）</label><ConfigSelect kind={detail.service_type} autoDefault={false} value={configId} onChange={(value) => { setConfigId(value); clearAttempt(`retry:${id}`, attemptStorage()); }} disabled={busy} /><p className="generation-hint">留空沿用原任务配置；配置已更改或停用时请选择可用配置。</p></div>}
-      {actionError && <Alert type="error" message={actionError} />}
+      {action === 'retry' && detail && <div className="generation-retry-config"><label>重新选择模型配置（选填）</label><ConfigSelect presentation={presentation} kind={detail.service_type} autoDefault={false} value={configId} onChange={(value) => { setConfigId(value); clearAttempt(`retry:${id}`, attemptStorage()); }} disabled={busy} /><p className="generation-hint">留空沿用原任务配置；配置已更改或停用时请选择可用配置。</p></div>}
+      {actionError && (presentation ? <StudioFeedback type="error" title="任务操作" noticeKey={`task-action:${id}:${action}`} message={actionError}/> : <Alert type="error" message={actionError} />)}
     </Modal>
   </>;
 }

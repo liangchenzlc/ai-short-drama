@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Clock3, Copy, Eye, Palette, Pencil, Plus, Search, SlidersHorizontal, Star, Trash2, UserRound } from "lucide-react";
-import { App, Button, Input } from "antd";
+import { App, Button, Checkbox, Input } from "antd";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { nanoid } from "nanoid";
 
@@ -15,9 +15,11 @@ import {
     type CanvasStylePreset,
     type ProjectStyleSelection,
 } from "@/lib/canvas/canvas-style-system";
-import { createStyleProfile, deleteStyleProfile, listStyleProfiles, setStyleProfileFavorite, touchStyleProfile, updateStyleProfile, type UserStyleProfile } from "@/services/api/style-profiles";
+import { createStyleProfile, deleteStyleProfile, getStylePreferences, listStyleProfiles, writeStylePreference, setStyleProfileFavorite, touchStyleProfile, updateStyleProfile, type UserStyleProfile } from "@/services/api/style-profiles";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
-import { isLocalWorkspaceMode } from "@/services/workspace-mode";
+import { getActiveUserScopeEpoch, subscribeUserScope } from "@/lib/user-scope";
+import { assertUserScope, captureUserScope, userScopeMatches } from "@/lib/user-scope-guard";
+import { ApiError } from "@/services/api/request";
 
 export type { CanvasStylePreset } from "@/lib/canvas/canvas-style-system";
 
@@ -418,18 +420,17 @@ export function resolveProjectCanvasStyle(presetId?: string, profileJson?: strin
     };
 }
 
-const STYLE_FAVORITES_KEY = "canvas:style-library:favorites";
-const STYLE_RECENT_KEY = "canvas:style-library:recent";
 const LOCAL_STYLE_PROFILES_KEY = "canvas:style-library:profiles";
 
 type StyleCenterTab = "system" | "mine" | "favorites" | "recent";
 type SystemStyleLibraryItem = { kind: "system"; preset: CanvasStylePreset };
 type UserStyleLibraryItem = { kind: "user"; preset: CanvasStylePreset; entity: UserStyleProfile };
 type StyleLibraryItem = SystemStyleLibraryItem | UserStyleLibraryItem;
-type StyleEditorState = { profile: StyleProfileSnapshot; entityId?: string };
+type StyleEditorState = { profile: StyleProfileSnapshot; entityId?: string; expectedRowVersion?: string };
 
-export function CanvasStylePickerModal({ open, value, currentProfile, startInEditor = false, applying = false, onClose, onSelect }: {
+export function CanvasStylePickerModal({ open, value, currentProfile, startInEditor = false, applying = false, onClose, onSelect, notice }: {
     open: boolean;
+    notice?: ReactNode;
     value?: string;
     currentProfile?: StyleProfileSnapshot | null;
     startInEditor?: boolean;
@@ -440,28 +441,41 @@ export function CanvasStylePickerModal({ open, value, currentProfile, startInEdi
     const { message, modal } = App.useApp();
     const queryClient = useQueryClient();
     const theme = canvasThemes[useActiveTheme()];
-    const localMode = isLocalWorkspaceMode();
+    useSyncExternalStore(subscribeUserScope, getActiveUserScopeEpoch);
+    const scope = captureUserScope();
+    const profilesKey = ["style-profiles", scope.userScope, scope.epoch];
+    const preferencesKey = [...profilesKey, "preferences"];
+    const scopeKey = `${scope.userScope}:${scope.epoch}`;
     const [detailPreset, setDetailPreset] = useState<CanvasStylePreset | null>(null);
     const [tab, setTab] = useState<StyleCenterTab>("system");
     const [query, setQuery] = useState("");
     const [category, setCategory] = useState("全部");
-    const [systemFavoriteIds, setSystemFavoriteIds] = useState<string[]>([]);
-    const [recentIds, setRecentIds] = useState<string[]>([]);
     const [editor, setEditor] = useState<StyleEditorState | null>(null);
-    const [localProfiles, setLocalProfiles] = useState<UserStyleProfile[]>(readLocalStyleProfiles);
-    const profilesQuery = useQuery({ queryKey: ["style-profiles"], queryFn: listStyleProfiles, enabled: open && !localMode });
-    const profileEntities = localMode ? localProfiles : profilesQuery.data?.profiles || [];
+    const [saveConflict, setSaveConflict] = useState(false);
+    const [saveAsCopy, setSaveAsCopy] = useState(false);
+    const [actionError, setActionError] = useState("");
+    const [legacyProfiles] = useState(readLocalStyleProfiles);
+    const [importOpen, setImportOpen] = useState(false);
+    const [importIds, setImportIds] = useState<string[]>([]);
+    const importing = useRef(false);
+    useEffect(() => { setActionError(""); }, [open, scopeKey, editor, importOpen]);
+    useEffect(() => { setSaveConflict(false); setSaveAsCopy(false); }, [editor, scopeKey]);
+    const profilesQuery = useQuery({ queryKey: profilesKey, queryFn: () => listStyleProfiles(scope), enabled: open, retry: false });
+    const preferencesQuery = useQuery({ queryKey: preferencesKey, queryFn: () => getStylePreferences(scope), enabled: open, retry: false });
+    const profileEntities = profilesQuery.data?.profiles || [];
+    const systemFavoriteIds = preferencesQuery.data?.favorites || [];
+    const recentIds = preferencesQuery.data?.recent || [];
 
     useEffect(() => {
         if (!open) return;
         setTab("system");
         setQuery("");
         setCategory("全部");
-        setSystemFavoriteIds(readStyleIds(STYLE_FAVORITES_KEY));
-        setRecentIds(readStyleIds(STYLE_RECENT_KEY));
-        if (localMode) setLocalProfiles(readLocalStyleProfiles());
+        setDetailPreset(null);
+        setImportOpen(false);
+        setImportIds([]);
         setEditor(startInEditor && currentProfile?.source !== "user" && currentProfile ? { profile: editableCopy(currentProfile) } : null);
-    }, [currentProfile, localMode, open, startInEditor]);
+    }, [currentProfile, scopeKey, open, startInEditor]);
 
     const userItems = useMemo<UserStyleLibraryItem[]>(() => profileEntities.flatMap((entity) => {
         const preset = userStylePreset(entity);
@@ -471,16 +485,16 @@ export function CanvasStylePickerModal({ open, value, currentProfile, startInEdi
     const categories = useMemo(() => ["全部", ...Array.from(new Set(canvasStylePresets.map((preset) => preset.category)))], []);
 
     useEffect(() => {
-        if (!open || !startInEditor || !currentProfile || currentProfile.source !== "user" || editor || (!localMode && (profilesQuery.isFetching || profilesQuery.isError))) return;
+        if (!open || !startInEditor || !currentProfile || currentProfile.source !== "user" || editor || (profilesQuery.isFetching || profilesQuery.isError)) return;
         const sourceId = currentProfile.sourceProfileId || currentProfile.presetId;
         const sourceEntity = profileEntities.find((profile) => profile.id === sourceId);
         const sourceProfile = sourceEntity ? parseStyleProfile(sourceEntity.profileJson) : null;
         if (sourceEntity && sourceProfile) {
-            setEditor({ profile: editableCopy(sourceProfile, sourceEntity.id), entityId: sourceEntity.id });
+            setEditor({ profile: editableCopy(sourceProfile, sourceEntity.id), entityId: sourceEntity.id, expectedRowVersion: sourceEntity.rowVersion });
             return;
         }
-        if (localMode || profilesQuery.isFetched) setEditor({ profile: editableCopy(currentProfile) });
-    }, [currentProfile, editor, localMode, open, profileEntities, profilesQuery.isError, profilesQuery.isFetched, profilesQuery.isFetching, startInEditor]);
+        if (profilesQuery.isFetched) setEditor({ profile: editableCopy(currentProfile) });
+    }, [currentProfile, editor, open, profileEntities, profilesQuery.isError, profilesQuery.isFetched, profilesQuery.isFetching, startInEditor]);
 
     const visibleItems = useMemo(() => {
         const keyword = query.trim().toLocaleLowerCase("zh-CN");
@@ -492,93 +506,73 @@ export function CanvasStylePickerModal({ open, value, currentProfile, startInEdi
         return source;
     }, [category, query, recentIds, systemFavoriteIds, systemItems, tab, userItems]);
 
+    const refreshProfiles = (owner = scope) => queryClient.invalidateQueries({ queryKey: ["style-profiles", owner.userScope, owner.epoch] });
+    const showError = (error: unknown, owner = scope) => { if (userScopeMatches(owner)) setActionError(error instanceof Error ? error.message : "风格操作失败，请重试"); };
     const saveMutation = useMutation({
-        mutationFn: ({ profile, apply }: { profile: StyleProfileSnapshot; apply: boolean }) => {
-            if (localMode) {
-                const id = editor?.entityId || nanoid();
-                const now = new Date().toISOString();
-                const existing = localProfiles.find((item) => item.id === id);
-                const entity: UserStyleProfile = {
-                    id,
-                    userId: "local",
-                    name: profile.title || "未命名风格",
-                    description: profile.description || "",
-                    coverUrl: profile.coverUrl || "",
-                    tagsJson: JSON.stringify(profile.tags || []),
-                    profileJson: serializeStyleProfile(profile),
-                    favorite: existing?.favorite ?? false,
-                    lastUsedAt: existing?.lastUsedAt,
-                    revision: (existing?.revision || 0) + 1,
-                    createdAt: existing?.createdAt || now,
-                    updatedAt: now,
-                };
-                const next = [entity, ...localProfiles.filter((item) => item.id !== id)];
-                setLocalProfiles(next);
-                persistLocalStyleProfiles(next);
-                return Promise.resolve({ profile: entity, apply });
-            }
-            return editor?.entityId
-                ? updateStyleProfile(editor.entityId, serializeStyleProfile(profile)).then((result) => ({ ...result, apply }))
-                : createStyleProfile(serializeStyleProfile(profile)).then((result) => ({ ...result, apply }));
+        onMutate: () => setActionError(""),
+        mutationFn: async ({ profile, apply, owner, target, asCopy }: { profile: StyleProfileSnapshot; apply: boolean; owner: ReturnType<typeof captureUserScope>; target: StyleEditorState | null; asCopy: boolean }) => {
+            assertUserScope(owner);
+            const result = target?.entityId && !asCopy
+                ? await updateStyleProfile(target.entityId, serializeStyleProfile(profile), target.expectedRowVersion!, owner)
+                : await createStyleProfile(serializeStyleProfile(profile), owner);
+            assertUserScope(owner);
+            return { ...result, apply, scope: owner };
         },
-        onSuccess: async ({ profile, apply }) => {
-            await queryClient.invalidateQueries({ queryKey: ["style-profiles"] });
+        onSuccess: async ({ profile, apply, scope: owner }) => {
+            await queryClient.invalidateQueries({ queryKey: ["style-profiles", owner.userScope, owner.epoch] });
+            if (!userScopeMatches(owner)) return;
             const preset = userStylePreset(profile);
-            setEditor(null);
-            setTab("mine");
-            message.success("风格已保存到“我的风格”");
+            setEditor(null); setTab("mine"); message.success("风格已保存到“我的风格”");
             if (apply && preset) selectItem({ kind: "user", preset, entity: profile });
         },
-        onError: (error) => message.error(error instanceof Error ? error.message : "风格保存失败"),
+        onError: (error, variables) => { if (userScopeMatches(variables.owner)) { setSaveConflict(error instanceof ApiError && error.status === 409); showError(error, variables.owner); } },
     });
     const favoriteMutation = useMutation({
-        mutationFn: ({ id, favorite }: { id: string; favorite: boolean }) => {
-            if (localMode) {
-                const next = localProfiles.map((item) => item.id === id ? { ...item, favorite, updatedAt: new Date().toISOString() } : item);
-                setLocalProfiles(next);
-                persistLocalStyleProfiles(next);
-                return Promise.resolve({ id, favorite });
-            }
-            return setStyleProfileFavorite(id, favorite);
-        },
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ["style-profiles"] }),
-        onError: (error) => message.error(error instanceof Error ? error.message : "收藏状态更新失败"),
+        mutationFn: ({ entity, favorite, owner }: { entity: UserStyleProfile; favorite: boolean; owner: typeof scope }) => setStyleProfileFavorite(entity.id, favorite, entity.rowVersion, owner),
+        onSuccess: (_result, { owner }) => refreshProfiles(owner), onError: (error, { owner }) => showError(error, owner),
     });
     const deleteMutation = useMutation({
-        mutationFn: (id: string) => {
-            if (localMode) {
-                const next = localProfiles.filter((item) => item.id !== id);
-                setLocalProfiles(next);
-                persistLocalStyleProfiles(next);
-                return Promise.resolve({ id });
-            }
-            return deleteStyleProfile(id);
+        mutationFn: ({ entity, owner }: { entity: UserStyleProfile; owner: typeof scope }) => deleteStyleProfile(entity.id, entity.rowVersion, owner),
+        onSuccess: async (_result, { owner }) => { await refreshProfiles(owner); if (userScopeMatches(owner)) message.success("风格已删除"); }, onError: (error, { owner }) => showError(error, owner),
+    });
+    const preferenceMutation = useMutation({
+        mutationFn: ({ id, action, favorite, owner }: { id: string; action: "favorite" | "use"; favorite?: boolean; owner: typeof scope }) => writeStylePreference(id, action, favorite, owner),
+        onSuccess: (_result, { owner }) => queryClient.invalidateQueries({ queryKey: ["style-profiles", owner.userScope, owner.epoch, "preferences"] }), onError: (error, { owner }) => showError(error, owner),
+    });
+    const importMutation = useMutation({
+        mutationFn: async ({ owner, ids }: { owner: typeof scope; ids: string[] }) => {
+            if (importing.current) return 0;
+            importing.current = true;
+            let count = 0;
+            try {
+                for (const item of legacyProfiles.filter(item => ids.includes(item.id))) {
+                    assertUserScope(owner);
+                    const profile = parseStyleProfile(item.profileJson);
+                    if (!profile) throw new Error(`本机风格“${item.name || item.id}”格式无效；已成功导入的风格会保留`);
+                    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(item.id));
+                    const importKey = "legacy:" + Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
+                    assertUserScope(owner);
+                    await createStyleProfile(serializeStyleProfile(profile), owner, importKey);
+                    count++;
+                }
+                return count;
+            } finally { importing.current = false; }
         },
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["style-profiles"] }); message.success("风格已删除"); },
-        onError: (error) => message.error(error instanceof Error ? error.message : "风格删除失败"),
+        onSuccess: async (count, { owner }) => { await refreshProfiles(owner); if (userScopeMatches(owner)) { setImportOpen(false); setTab("mine"); message.success(`已导入 ${count} 个本机风格`); } },
+        onError: (error, { owner }) => { void refreshProfiles(owner); showError(error, owner); },
     });
 
     function selectItem(item: StyleLibraryItem) {
         if (applying) return;
-        const { preset } = item;
-        const next = [preset.id, ...recentIds.filter((id) => id !== preset.id)].slice(0, 12);
-        setRecentIds(next);
-        localStorage.setItem(STYLE_RECENT_KEY, JSON.stringify(next));
         if (item.kind === "user") {
-            if (localMode) {
-                const nextProfiles = localProfiles.map((entity) => entity.id === item.entity.id ? { ...entity, lastUsedAt: new Date().toISOString(), updatedAt: new Date().toISOString() } : entity);
-                setLocalProfiles(nextProfiles);
-                persistLocalStyleProfiles(nextProfiles);
-            } else {
-                void touchStyleProfile(item.entity.id).then(() => queryClient.invalidateQueries({ queryKey: ["style-profiles"] })).catch((error) => message.warning(error instanceof Error ? error.message : "最近使用记录更新失败"));
-            }
+            void touchStyleProfile(item.entity.id, item.entity.rowVersion, scope).then(() => refreshProfiles(scope)).catch(error => showError(error, scope));
+        } else {
+            preferenceMutation.mutate({ id: item.preset.id, action: "use", owner: scope });
         }
-        onSelect(preset);
+        onSelect(item.preset);
     }
     function toggleSystemFavorite(presetId: string) {
-        const next = systemFavoriteIds.includes(presetId) ? systemFavoriteIds.filter((id) => id !== presetId) : [presetId, ...systemFavoriteIds];
-        setSystemFavoriteIds(next);
-        localStorage.setItem(STYLE_FAVORITES_KEY, JSON.stringify(next));
+        preferenceMutation.mutate({ id: presetId, action: "favorite", favorite: !systemFavoriteIds.includes(presetId), owner: scope });
     }
     function createNewStyle() {
         setEditor({ profile: blankUserStyle() });
@@ -587,7 +581,8 @@ export function CanvasStylePickerModal({ open, value, currentProfile, startInEdi
         setEditor({ profile: editableCopy(preset.profile || createStyleProfileSnapshot(preset), undefined, `${preset.title} 副本`, preset.imageUrl) });
     }
     function confirmDelete(entity: UserStyleProfile) {
-        modal.confirm({ title: `删除“${entity.name}”？`, content: "项目中已经保存的快照不会被删除，但该风格将从“我的风格”中移除。", okText: "删除", cancelText: "取消", okButtonProps: { danger: true }, onOk: () => deleteMutation.mutateAsync(entity.id) });
+        const owner = scope;
+        modal.confirm({ title: `删除“${entity.name}”？`, content: "项目中已经保存的快照不会被删除，但该风格将从“我的风格”中移除。", okText: "删除", cancelText: "取消", okButtonProps: { danger: true }, onOk: () => deleteMutation.mutateAsync({ entity, owner }) });
     }
 
     return (
@@ -601,9 +596,13 @@ export function CanvasStylePickerModal({ open, value, currentProfile, startInEdi
                         </div>
                         <div className="flex min-w-0 gap-2 sm:items-center">
                             <Input allowClear className="style-center-search min-w-0 flex-1" prefix={<Search className="size-3.5 text-foreground/35" />} value={query} placeholder="搜索风格、题材或媒介" onChange={(event) => setQuery(event.target.value)} />
+                            {legacyProfiles.length > 0 && <Button onClick={() => setImportOpen(true)}>导入本机风格</Button>}
                             <Button type="primary" className="shrink-0" icon={<Plus className="size-3.5" />} onClick={createNewStyle}>新建风格</Button>
                         </div>
                     </header>
+                    {notice}
+                    {actionError && !editor && !importOpen && <p role="alert" className="px-4 py-2 text-xs text-destructive">{actionError}</p>}
+                    {(profilesQuery.isError || preferencesQuery.isError) && <div role="alert" className="px-4 py-2 text-xs text-red-400">风格库或收藏读取失败。<Button size="small" onClick={() => { void profilesQuery.refetch(); void preferencesQuery.refetch(); }}>重试读取</Button></div>}
                     <div className="style-center-workspace grid min-h-0 flex-1">
                         <aside className="style-center-sidebar thin-scrollbar min-h-0 overflow-auto border-b p-2 sm:p-3 lg:border-b-0 lg:border-r" style={{ borderColor: theme.node.stroke }}>
                             <nav className="style-center-primary-nav flex gap-1 lg:flex-col" aria-label="风格中心视图">
@@ -632,52 +631,40 @@ export function CanvasStylePickerModal({ open, value, currentProfile, startInEdi
                                     key={`${item.kind}-${item.preset.id}`}
                                     item={item}
                                     active={item.preset.id === value}
-                                    applying={applying}
+                                    applying={applying || favoriteMutation.isPending || deleteMutation.isPending || preferenceMutation.isPending}
                                     favorite={item.kind === "user" ? item.entity.favorite : systemFavoriteIds.includes(item.preset.id)}
                                     theme={theme}
                                     onApply={() => selectItem(item)}
                                     onDetail={() => setDetailPreset(item.preset)}
-                                    onFavorite={() => item.kind === "user" ? favoriteMutation.mutate({ id: item.entity.id, favorite: !item.entity.favorite }) : toggleSystemFavorite(item.preset.id)}
+                                    onFavorite={() => item.kind === "user" ? favoriteMutation.mutate({ entity: item.entity, favorite: !item.entity.favorite, owner: scope }) : toggleSystemFavorite(item.preset.id)}
                                     onCopy={() => copyPreset(item.preset)}
-                                    onEdit={item.kind === "user" ? () => setEditor({ profile: editableCopy(item.preset.profile!, item.entity.id), entityId: item.entity.id }) : undefined}
+                                    onEdit={item.kind === "user" ? () => setEditor({ profile: editableCopy(item.preset.profile!, item.entity.id), entityId: item.entity.id, expectedRowVersion: item.entity.rowVersion }) : undefined}
                                     onDelete={item.kind === "user" ? () => confirmDelete(item.entity) : undefined}
                                 />
                             ))}
-                            {!visibleItems.length ? <EmptyStyleCenter tab={tab} loading={!localMode && profilesQuery.isLoading} failed={!localMode && profilesQuery.isError} color={theme.node.muted} onCreate={createNewStyle} onBrowse={() => { setTab("system"); setQuery(""); }} /> : null}
+                            {!visibleItems.length ? <EmptyStyleCenter tab={tab} loading={profilesQuery.isLoading} failed={profilesQuery.isError} color={theme.node.muted} onCreate={createNewStyle} onBrowse={() => { setTab("system"); setQuery(""); }} /> : null}
                             </div>
                         </main>
                     </div>
                 </div>
             </AppModal>
+            <AppModal open={importOpen} title="选择导入本机风格" onCancel={() => { if (!importMutation.isPending) setImportOpen(false); }} onOk={() => importMutation.mutate({ owner: scope, ids: [...importIds] })} confirmLoading={importMutation.isPending} okButtonProps={{ disabled: !importIds.length }} okText="导入到当前账号">
+                {actionError && <p role="alert" className="mb-3 text-xs text-destructive">{actionError}</p>}
+                <p className="mb-3 text-xs text-foreground/60">这些风格保存在此浏览器中。仅导入勾选的风格；重复导入不会覆盖账号中的风格。</p>
+                <Checkbox.Group value={importIds} onChange={values => setImportIds(values as string[])} className="flex flex-col gap-2">{legacyProfiles.map(item => <Checkbox key={item.id} value={item.id} disabled={importMutation.isPending}>{item.name || item.id}</Checkbox>)}</Checkbox.Group>
+            </AppModal>
             <CanvasStyleDetailModal open={Boolean(detailPreset)} preset={detailPreset} selected={detailPreset?.id === value} onClose={() => setDetailPreset(null)} onSelect={(preset) => { setDetailPreset(null); const item = [...systemItems, ...userItems].find((candidate) => candidate.preset.id === preset.id); if (item) selectItem(item); }} />
-            <StyleProfileEditorModal open={Boolean(editor)} initialProfile={editor?.profile || null} saving={saveMutation.isPending} onClose={() => setEditor(null)} onSave={(profile, apply) => saveMutation.mutate({ profile, apply })} />
+            <StyleProfileEditorModal open={Boolean(editor)} initialProfile={editor?.profile || null} saving={saveMutation.isPending} onClose={() => { if (!saveMutation.isPending) setEditor(null); }} onSave={(profile, apply) => saveMutation.mutate({ profile, apply, owner: scope, target: editor, asCopy: saveAsCopy })} notice={saveConflict || saveAsCopy || actionError ? <div role="alert" className="border-b border-border px-4 py-2 text-xs text-destructive"><p>{saveAsCopy ? "将当前草稿保存为新风格，原风格保持当前版本。" : saveConflict ? "风格已在其他会话修改，当前草稿已保留。可取消后重新打开最新版本，或另存为新风格。" : actionError}</p>{saveConflict && !saveAsCopy && <Button size="small" onClick={() => { setSaveAsCopy(true); setSaveConflict(false); setActionError(""); }}>另存为新风格</Button>}</div> : undefined} />
         </>
     );
 }
 
-function readStyleIds(key: string) {
-    try {
-        const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-        return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string").slice(0, 100) : [];
-    } catch {
-        return [];
-    }
-}
-
-function readLocalStyleProfiles(): UserStyleProfile[] {
+function readLocalStyleProfiles(): Pick<UserStyleProfile, "id" | "name" | "profileJson">[] {
     try {
         const parsed = JSON.parse(localStorage.getItem(LOCAL_STYLE_PROFILES_KEY) || "[]") as unknown;
-        return Array.isArray(parsed) ? parsed.filter((value): value is UserStyleProfile => Boolean(value && typeof value === "object" && typeof (value as UserStyleProfile).id === "string" && typeof (value as UserStyleProfile).profileJson === "string")) : [];
+        return Array.isArray(parsed) ? parsed.filter((value): value is Pick<UserStyleProfile, "id" | "name" | "profileJson"> => Boolean(value && typeof value === "object" && typeof (value as UserStyleProfile).id === "string" && typeof (value as UserStyleProfile).profileJson === "string")) : [];
     } catch {
         return [];
-    }
-}
-
-function persistLocalStyleProfiles(profiles: UserStyleProfile[]) {
-    try {
-        localStorage.setItem(LOCAL_STYLE_PROFILES_KEY, JSON.stringify(profiles));
-    } catch {
-        // Private browsing or a full local quota should not make system styles unusable.
     }
 }
 

@@ -148,13 +148,17 @@ def failure_message(code, *, accepted_unknown=False):
             "模型输出超过了长度限制，本次结果未完成。请缩小创作范围后继续。"
         ),
         "agent_budget_exhausted": "本次任务已达到执行上限，请缩小范围后继续。已有候选仍然保留。",
+        "agent_context_budget_exhausted": (
+            "任务输入、历史、方法或工具结果超过了本次上下文预算。"
+            "原输入和完整回执已保留，请查看整理详情、缩小范围或拆分新任务后明确继续。"
+        ),
         "agent_attachment_unavailable": (
             "当前任务的附件无法读取，请检查附件后继续。你的输入已保留。"
         ),
         "agent_source_changed": (
             "创作来源已经变化，请重新核对当前对象与要求后继续。已有候选仍然保留。"
         ),
-        "agent_subject_unavailable": "当前创作对象已删除或脱离本集，请切换对象后继续。",
+        "agent_subject_unavailable": "当前创作对象已删除或脱离当前作品，请切换对象后继续。",
         "agent_task_not_executed": (
             "模型返回了文字说明，但尚未执行当前创作任务，也没有生成候选。"
             "可以换模型或调整要求后继续。"
@@ -178,7 +182,7 @@ def run_artifact_references(session, conversation, run):
                 AgentArtifact.created_by == run.initiated_by,
                 AgentArtifact.created_by == conversation.owner_user_id,
                 AgentArtifact.project_id == conversation.project_id,
-                AgentArtifact.episode_id == conversation.episode_id,
+                AgentArtifact.project_id == conversation.project_id,
             )
             .order_by(AgentArtifact.id)
         ).all()
@@ -288,6 +292,10 @@ def finish_locked(session, conversation, run, status, error=None):
         raise ValueError("Invalid Agent terminal state")
     if run.status in TERMINAL:
         return False
+    if getattr(run, "task_id", None) is not None:
+        from short_drama.agent.task_state import finish_task_attempt_locked
+
+        finish_task_attempt_locked(session, conversation, run, status, error)
     now = utcnow()
     charge_active(run, now)
     run.status = status
@@ -314,6 +322,10 @@ def finish_locked(session, conversation, run, status, error=None):
         append_failure_message(session, conversation, run, error)
     elif status == "cancelled":
         append_late_artifact_message(session, conversation, run)
+    if getattr(run, "task_id", None) is not None and conversation.status == "active":
+        from short_drama.agent.memory_context import schedule_maintenance_locked
+
+        schedule_maintenance_locked(session, conversation, run)
     return True
 
 

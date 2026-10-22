@@ -12,15 +12,15 @@ AgentRunStatus = Literal[
 ]
 Title = Annotated[str, Field(min_length=1, max_length=120)]
 ConversationStage = Literal["source", "assets", "storyboard"]
-ConversationSubject = Literal["episode", "asset", "shot"]
+ConversationSubject = Literal["project", "asset", "shot"]
 ConversationTask = Literal[
     "writing", "extraction", "planning", "batch", "creation", "image", "video"
 ]
 SCOPE_TASKS = {
-    ("source", "episode"): {"writing"},
-    ("assets", "episode"): {"extraction", "batch"},
+    ("source", "project"): {"writing"},
+    ("assets", "project"): {"extraction", "batch"},
     ("assets", "asset"): {"creation", "image"},
-    ("storyboard", "episode"): {"planning", "batch"},
+    ("storyboard", "project"): {"planning", "batch"},
     ("storyboard", "shot"): {"creation", "image", "video"},
 }
 
@@ -41,7 +41,6 @@ class ConversationScope(InputModel):
 
 class ConversationCreate(InputModel):
     project_id: Identifier
-    episode_id: Identifier
     title: Title = "新对话"
     stage: ConversationStage | None = None
     subject_type: ConversationSubject | None = None
@@ -58,8 +57,8 @@ class ConversationCreate(InputModel):
         ConversationScope.model_validate(
             self.model_dump(include={"stage", "subject_type", "subject_id", "task_type"})
         )
-        if self.subject_type == "episode" and self.subject_id != self.episode_id:
-            raise ValueError("Episode subject must match this episode")
+        if self.subject_type == "project" and self.subject_id != self.project_id:
+            raise ValueError("Project subject must match this creation")
         return self
 
     @field_validator("title")
@@ -93,11 +92,11 @@ class ConversationPatch(InputModel):
 
 class ConversationRead(ReadModel):
     id: Identifier
-    project_id: Identifier
-    episode_id: Identifier | None
+    project_id: Identifier | None
     title: str
     row_version: Identifier
     archived: bool
+    status: Literal["active", "archived", "deleting", "deleted"] = "active"
     created_at: datetime
     updated_at: datetime
     last_run_status: AgentRunStatus | None = None
@@ -106,7 +105,7 @@ class ConversationRead(ReadModel):
     subject_type: ConversationSubject | None = None
     subject_id: Identifier | None = None
     task_type: ConversationTask | None = None
-    scope_version: Literal[0, 1, 2] = 0
+    scope_version: Literal[0, 1, 2, 3] = 0
 
 
 class AgentStatus(ReadModel):

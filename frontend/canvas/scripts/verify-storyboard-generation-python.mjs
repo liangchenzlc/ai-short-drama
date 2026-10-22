@@ -156,14 +156,7 @@ try {
     await editorScreenshot("storyboard-generated-restored.png", report.final_rows);
     report.stable_rows_restored = true;
     await owner.close();
-    owner = await context(config.memberUsername);
-    await open(owner);
-    const shared = await graph();
-    const metadata = shared.nodes.find(node => node.id === "runtime-node").metadata;
-    assert.deepEqual(metadata.storyboard.rows, report.final_rows);
-    for (const key of ["taskId", "composerContent", "storyboardShotCount", "storyboardShotDuration"]) assert.equal(metadata[key], undefined);
-    await editorScreenshot("storyboard-generated-member.png", report.final_rows);
-    report.member_shared_rows_private_task_hidden = true;
+
     assert.equal(report.run_posts, 1);
     assert.equal(report.execute_posts, 1);
     assert.equal(report.task_posts, 0);

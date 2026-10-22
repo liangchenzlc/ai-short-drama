@@ -312,12 +312,15 @@ class CanvasResourceService(BaseService):
         return self.read_model(resource)
 
     def read_model(self, resource):
+        from .canvas_playback_service import playback_projection
+
         mime = (
             resource.mime_type
             if isinstance(resource, CanvasBinaryResource)
             else resource.format_code
         )
         return CanvasResourceRead(
+            **playback_projection(self.session, resource, self.actor_id),
             id=resource.id,
             user_id=resource.created_by,
             kind="file" if isinstance(resource, CanvasBinaryResource) else mime.partition("/")[0],

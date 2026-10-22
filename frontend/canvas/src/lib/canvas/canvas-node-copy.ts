@@ -39,6 +39,7 @@ function copyStoryboardRow(row: StoryboardRow, idMap: ReadonlyMap<string, string
         ...row,
         characters: (row.characters || []).map((character) => ({
             ...character,
+            characterNodeId: remapReferenceId(character.characterNodeId, idMap),
             characterImageNodeId: remapReferenceId(character.characterImageNodeId, idMap),
         })),
         assetBindings: (row.assetBindings || []).map((binding) => ({ ...binding, nodeId: remapReferenceId(binding.nodeId, idMap)! })),

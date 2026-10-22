@@ -7,7 +7,6 @@ type CanvasProjectContextMenuProps = {
     menu: ContextMenuState | null;
     node: CanvasNodeData | null;
     workspaceMode: CanvasWorkspaceMode;
-    isProjectLinked: boolean;
     canUndo: boolean;
     canRedo: boolean;
     canPaste: boolean;
@@ -53,7 +52,6 @@ export function CanvasProjectContextMenu({ menu, node, screenToCanvas, ...props 
             menu={menu}
             node={node}
             workspaceMode={props.workspaceMode}
-            isProjectLinked={props.isProjectLinked}
             canUndo={props.canUndo}
             canRedo={props.canRedo}
             canPaste={props.canPaste}

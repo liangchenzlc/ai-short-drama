@@ -160,12 +160,7 @@ try {
     assert.ok(measured.duration >= 1 && measured.duration < 1.1);
     report.cookie_only_recovery = true;
     await page.screenshot({ path: resolve(output, "timeline-assembled-restored.png"), fullPage: true });
-    const member = await context(config.memberUsername);
-    const memberGraph = await graph(member);
-    assert.ok(memberGraph.nodes.some(node => node.id === assembled.id && node.metadata.storageKey === assembled.metadata.storageKey));
-    const shared = await member.request.get(`${origin}/api/v1/canvas-runtime/resources/${resourceId}/file`);
-    assert.equal(createHash("sha256").update(await shared.body()).digest("hex"), report.assembled_checksum);
-    report.assembled_shared = true;
+
     assert.equal(report.resource_posts, posts, "Fresh context must not upload the existing output again");
     assert.equal(report.render_posts, 0);
     assert.deepEqual(report.page_errors, []);

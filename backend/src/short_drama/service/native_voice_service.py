@@ -5,21 +5,19 @@ from copy import deepcopy
 from sqlalchemy import select
 
 from short_drama.core.config import Settings
-from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
+from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
 from short_drama.domain import (
     AIGenerationRecord,
     Asset,
     AsyncTask,
-    Episode,
-    EpisodeAsset,
     MediaAsset,
     MediaFile,
     Project,
-    ProjectAsset,
     ShotAsset,
     ShotScript,
 )
 from short_drama.domain.native_voice import CharacterVoice, ProjectSoundMode, ShotDialogue
+from short_drama.schemas.base import UINT64_MAX
 from short_drama.schemas.native_voice import (
     NativeDialogueEdit,
     NativeVoiceRead,
@@ -28,7 +26,7 @@ from short_drama.schemas.native_voice import (
 )
 
 from .base import BaseService, utcnow
-from .episode_assembly_service import digest
+from .project_assembly_service import digest
 from .publication import public_voice_context, publish
 from .storage_service import StorageService
 
@@ -43,11 +41,11 @@ def project_mode(session, project_id, settings=None):
 def native_context(session, shot, *, strict=False, settings=None, _lookups=None):
     if not getattr(settings or Settings(), "native_video_enabled", False):
         return None
-    episode = _lookups["episode"] if _lookups is not None else session.get(Episode, shot.episode_id)
+    creation = (
+        _lookups["creation"] if _lookups is not None else session.get(Project, shot.project_id)
+    )
     mode = (
-        _lookups["mode"]
-        if _lookups is not None
-        else project_mode(session, episode.project_id, settings)
+        _lookups["mode"] if _lookups is not None else project_mode(session, creation.id, settings)
     )
     if mode != "native":
         return None
@@ -77,7 +75,7 @@ def native_context(session, shot, *, strict=False, settings=None, _lookups=None)
         binding = (
             _lookups["bindings"].get(int(cid))
             if _lookups is not None
-            else session.get(CharacterVoice, (episode.project_id, int(cid)))
+            else session.get(CharacterVoice, (creation.id, int(cid)))
         )
         linked = (
             (shot.id, int(cid)) in _lookups["linked"]
@@ -88,13 +86,19 @@ def native_context(session, shot, *, strict=False, settings=None, _lookups=None)
                 )
             )
         )
-        if strict and (asset is None or asset.kind != "character" or not linked):
+        if strict and (
+            asset is None
+            or asset.deleted_at is not None
+            or asset.project_id != creation.id
+            or asset.kind != "character"
+            or not linked
+        ):
             raise WorkflowError("native_character_scope", "说话角色必须关联到当前分镜", 422)
         media = (
             _lookups["media"].get(binding.media_id)
-            if binding and _lookups is not None
+            if binding and binding.media_id is not None and _lookups is not None
             else session.get(MediaFile, binding.media_id)
-            if binding
+            if binding and binding.media_id is not None
             else None
         )
         if strict and (
@@ -113,7 +117,7 @@ def native_context(session, shot, *, strict=False, settings=None, _lookups=None)
                 "character_id": cid,
                 "name": asset.name if asset else "",
                 "version": binding.row_version if binding else 0,
-                "record_id": str(binding.record_id) if binding else None,
+                "record_id": str(binding.record_id) if binding and binding.record_id else None,
                 "media_id": str(media.id) if media else None,
                 "checksum": media.checksum_sha256 if media else None,
                 "duration_ms": media.duration_ms if media else None,
@@ -122,7 +126,7 @@ def native_context(session, shot, *, strict=False, settings=None, _lookups=None)
     return result
 
 
-def native_contexts(session, episode, shots, *, settings=None):
+def native_contexts(session, creation, shots, *, settings=None):
     """Prefetch this page's native metadata; single-shot validation/serialization is shared."""
     shots = list(shots)
     contexts = {shot.id: None for shot in shots}
@@ -131,7 +135,7 @@ def native_contexts(session, episode, shots, *, settings=None):
     settings = settings or Settings()
     if not getattr(settings, "native_video_enabled", False):
         return contexts
-    mode = project_mode(session, episode.project_id, settings)
+    mode = project_mode(session, creation.id, settings)
     if mode != "native":
         return contexts
     shot_ids = [shot.id for shot in shots]
@@ -145,13 +149,20 @@ def native_contexts(session, episode, shots, *, settings=None):
     assets, bindings, linked, media = {}, {}, set(), {}
     if character_ids:
         assets = {
-            row.id: row for row in session.scalars(select(Asset).where(Asset.id.in_(character_ids)))
+            row.id: row
+            for row in session.scalars(
+                select(Asset).where(
+                    Asset.id.in_(character_ids),
+                    Asset.project_id == creation.id,
+                    Asset.deleted_at.is_(None),
+                )
+            )
         }
         bindings = {
             row.asset_id: row
             for row in session.scalars(
                 select(CharacterVoice).where(
-                    CharacterVoice.project_id == episode.project_id,
+                    CharacterVoice.project_id == creation.id,
                     CharacterVoice.asset_id.in_(character_ids),
                 )
             )
@@ -164,14 +175,14 @@ def native_contexts(session, episode, shots, *, settings=None):
                 )
             ).all()
         )
-        media_ids = {row.media_id for row in bindings.values()}
+        media_ids = {row.media_id for row in bindings.values() if row.media_id is not None}
         if media_ids:
             media = {
                 row.id: row
                 for row in session.scalars(select(MediaFile).where(MediaFile.id.in_(media_ids)))
             }
     lookups = {
-        "episode": episode,
+        "creation": creation,
         "mode": mode,
         "dialogues": dialogues,
         "assets": assets,
@@ -220,18 +231,11 @@ class NativeVoiceService(BaseService):
     def _character(self, pid, cid, *, for_update=True):
         self._project(pid, for_update=for_update)
         asset = self._require(Asset, cid, for_update=for_update)
-        linked = self.session.scalar(
-            select(ProjectAsset.id).where(
-                ProjectAsset.project_id == int(pid), ProjectAsset.asset_id == int(cid)
-            )
-        )
-        if not linked:
-            linked = self.session.scalar(
-                select(EpisodeAsset.id)
-                .join(Episode, Episode.id == EpisodeAsset.episode_id)
-                .where(Episode.project_id == int(pid), EpisodeAsset.asset_id == int(cid))
-            )
-        if asset.kind != "character" or not linked:
+        if (
+            asset.kind != "character"
+            or asset.project_id != int(pid)
+            or asset.deleted_at is not None
+        ):
             raise NotFound("角色不属于当前项目")
         return asset
 
@@ -340,8 +344,14 @@ class NativeVoiceService(BaseService):
                     ),
                 }
             )
-        current_media = self.session.get(MediaFile, binding.media_id) if binding else None
-        own_record = self.session.get(AIGenerationRecord, binding.record_id) if binding else None
+        current_media = (
+            self.session.get(MediaFile, binding.media_id) if binding and binding.media_id else None
+        )
+        own_record = (
+            self.session.get(AIGenerationRecord, binding.record_id)
+            if binding and binding.record_id
+            else None
+        )
         return NativeVoiceRead.model_validate(
             {
                 "row_version": binding.row_version if binding else 0,
@@ -368,50 +378,60 @@ class NativeVoiceService(BaseService):
             return self._voices(pid, cid)
 
     def adopt(self, pid, cid, payload):
-        data = VoiceAdopt.model_validate(payload)
         with self._transaction():
-            self._character(pid, cid)
-            current = self._voices(pid, cid)
-            candidate = next(
-                (c for c in current["candidates"] if c["record_id"] == str(data.record_id)), None
-            )
-            if not candidate or not candidate["adoptable"]:
-                raise Conflict("请采用当前角色已归档的 3～7.5 秒声音候选")
-            if current["record_id"] == str(data.record_id):
-                return current
-            if current["row_version"] != data.row_version:
-                raise Conflict("角色音色已变化，请刷新后采用")
-            row = self.session.get(CharacterVoice, (int(pid), int(cid)), with_for_update=True)
-            if row is None:
-                row = CharacterVoice(project_id=int(pid), asset_id=int(cid), row_version=0)
-                self.session.add(row)
-            row.record_id, row.media_id = int(data.record_id), int(candidate["media_id"])
-            publish(self._require(MediaFile, row.media_id))
-            row.row_version += 1
-            self.session.flush()
-            return self._voices(pid, cid)
+            return self.adopt_locked(pid, cid, payload)
 
-    def _shot(self, pid, eid, sid, *, for_update=True):
-        self._project(pid, for_update=for_update)
-        episode = self._require(Episode, eid, for_update=for_update)
+    def adopt_locked(self, pid, cid, payload):
+        if not self.session.in_transaction():
+            raise BusinessError("Voice adoption requires the caller's transaction")
+        data = VoiceAdopt.model_validate(payload)
+        self._character(pid, cid)
+        row = self.session.get(CharacterVoice, (int(pid), int(cid)), with_for_update=True)
+        current = self._voices(pid, cid)
+        candidate = next(
+            (c for c in current["candidates"] if c["record_id"] == str(data.record_id)), None
+        )
+        if not candidate or not candidate["adoptable"]:
+            raise Conflict("请采用当前角色已归档的 3～7.5 秒声音候选")
+        if current["record_id"] == str(data.record_id):
+            return current
+        if current["row_version"] != data.row_version:
+            raise Conflict("角色音色已变化，请刷新后采用")
+        if current["row_version"] == UINT64_MAX:
+            raise Conflict("角色音色版本已达到上限，无法采用新音色")
+        if row is None:
+            row = CharacterVoice(project_id=int(pid), asset_id=int(cid), row_version=0)
+            self.session.add(row)
+        row.record_id, row.media_id = int(data.record_id), int(candidate["media_id"])
+        publish(self._require(MediaFile, row.media_id))
+        row.row_version += 1
+        self.session.flush()
+        return self._voices(pid, cid)
+
+    def _shot(self, pid, sid, *, for_update=True):
+        creation = self._project(pid, for_update=for_update)
         shot = self._require(ShotScript, sid, for_update=for_update)
-        if episode.project_id != int(pid) or shot.episode_id != episode.id or shot.deleted_at:
+        if creation.id != int(pid) or shot.project_id != creation.id or shot.deleted_at:
             raise NotFound("分镜不属于当前项目分集")
         return shot
 
     def _dialogue(self, shot):
-        episode = self.session.get(Episode, shot.episode_id)
+        creation = self.session.get(Project, shot.project_id)
         row = self.session.get(ShotDialogue, shot.id)
         context = public_voice_context(native_context(self.session, shot, settings=self.settings))
         characters = list(
             self.session.scalars(
                 select(Asset)
                 .join(ShotAsset, ShotAsset.asset_id == Asset.id)
-                .where(ShotAsset.shot_id == shot.id, Asset.kind == "character")
+                .where(
+                    ShotAsset.shot_id == shot.id,
+                    Asset.kind == "character",
+                    Asset.deleted_at.is_(None),
+                )
             )
         )
         return {
-            "mode": project_mode(self.session, episode.project_id, self.settings),
+            "mode": project_mode(self.session, creation.id, self.settings),
             "row_version": row.row_version if row else 0,
             "document": row.document if row else {"lines": [], "reviewed": False},
             "characters": [{"id": str(a.id), "name": a.name} for a in characters],
@@ -428,39 +448,55 @@ class NativeVoiceService(BaseService):
             else None
         )
 
-    def dialogue(self, pid, eid, sid):
+    def dialogue(self, pid, sid):
         with self._transaction(read_only=True):
-            return self._dialogue(self._shot(pid, eid, sid, for_update=False))
+            return self._dialogue(self._shot(pid, sid, for_update=False))
 
-    def save_dialogue(self, pid, eid, sid, payload):
+    def save_dialogue(self, pid, sid, payload):
         data = NativeDialogueEdit.model_validate(payload)
         with self._transaction():
-            shot = self._shot(pid, eid, sid)
-            row = self.session.get(ShotDialogue, shot.id, with_for_update=True)
-            receipt = {"id": data.request_id, "hash": digest(data.model_dump(mode="json"))}
-            if row and (row.receipt or {}).get("id") == data.request_id:
-                if row.receipt != receipt:
-                    raise Conflict("保存标识已用于其他对白")
-                return self._dialogue(shot)
-            if data.row_version != (row.row_version if row else 0):
-                raise Conflict("对白已变化，请刷新")
-            for line in data.document.lines:
-                self._character(pid, line.character_id)
-                if not self.session.scalar(
-                    select(ShotAsset.id).where(
-                        ShotAsset.shot_id == shot.id, ShotAsset.asset_id == int(line.character_id)
-                    )
-                ):
-                    raise Conflict("说话角色必须关联到当前分镜")
-            if row is None:
-                row = ShotDialogue(shot_id=shot.id, row_version=0)
-                self.session.add(row)
-            row.document, row.receipt = data.document.model_dump(mode="json"), receipt
-            row.row_version += 1
-            shot.row_version += 1
-            shot.updated_at = utcnow()
-            from short_drama.dao.episode_storyboard_dao import advance_storyboard_version
+            row = self.save_dialogue_locked(pid, sid, data)
+            return self._dialogue(self.session.get(ShotScript, row.shot_id))
 
-            advance_storyboard_version(self.session.get(Episode, shot.episode_id))
-            self.session.flush()
-            return self._dialogue(shot)
+    def save_dialogue_locked(self, pid, sid, payload, *, skip_unchanged=False):
+        """调用者持有事务；保留功能准入、本人范围、角色关联及原生对白版本规则。"""
+        if not self.session.in_transaction():
+            raise BusinessError("Dialogue save requires the caller's transaction")
+        data = NativeDialogueEdit.model_validate(payload)
+        shot = self._shot(pid, sid)
+        row = self.session.get(ShotDialogue, shot.id, with_for_update=True)
+        receipt = {"id": data.request_id, "hash": digest(data.model_dump(mode="json"))}
+        if row and (row.receipt or {}).get("id") == data.request_id:
+            if row.receipt != receipt:
+                raise Conflict("保存标识已用于其他对白")
+            return row
+        if data.row_version != (row.row_version if row else 0):
+            raise Conflict("对白已变化，请刷新")
+        for line in data.document.lines:
+            self._character(pid, line.character_id)
+            if not self.session.scalar(
+                select(ShotAsset.id).where(
+                    ShotAsset.shot_id == shot.id, ShotAsset.asset_id == int(line.character_id)
+                )
+            ):
+                raise Conflict("说话角色必须关联到当前分镜")
+        document = data.document.model_dump(mode="json")
+        if row is not None and skip_unchanged and row.document == document:
+            return row
+        if row is not None and row.row_version >= UINT64_MAX:
+            raise Conflict("Dialogue version exhausted")
+        if row is None:
+            row = ShotDialogue(shot_id=shot.id, row_version=0)
+            self.session.add(row)
+        row.document, row.receipt = document, receipt
+        row.row_version += 1
+        from short_drama.dao.project_storyboard_dao import (
+            advance_shot_version,
+            advance_storyboard_version,
+        )
+
+        advance_shot_version(shot)
+        shot.updated_at = utcnow()
+        advance_storyboard_version(self.session.get(Project, shot.project_id))
+        self.session.flush()
+        return row

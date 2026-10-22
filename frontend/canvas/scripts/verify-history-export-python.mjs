@@ -79,11 +79,11 @@ async function openCanvas(target = page) {
 }
 
 async function draftState(target = page) {
-    return target.evaluate(async ({ key, owner, member }) => {
+    return target.evaluate(async ({ key, owner, other }) => {
         const { readCanvasSyncDrafts } = await import("/canvas-app/src/services/canvas-sync-drafts.ts");
         const { getActiveUserScope } = await import("/canvas-app/src/lib/user-scope.ts");
-        return { scope: getActiveUserScope(), own: await readCanvasSyncDrafts(key, owner), other: await readCanvasSyncDrafts(key, member) };
-    }, { key: config.sourceKey, owner: config.ownerId, member: config.memberId });
+        return { scope: getActiveUserScope(), own: await readCanvasSyncDrafts(key, owner), other: await readCanvasSyncDrafts(key, other) };
+    }, { key: config.sourceKey, owner: config.ownerId, other: config.otherId });
 }
 
 async function visiblePanel() {
@@ -227,7 +227,6 @@ try {
     const projectText = JSON.stringify(item.project);
     assert.ok(!projectText.includes("resource:" + config.currentResourceId));
     assert.ok(!projectText.includes("blob:") && !projectText.includes("X-Amz-") && !projectText.includes("minio://"));
-    if (config.actor === "member") assert.ok(!projectText.includes("OWNER_"), "成员导出不能包含主人的私人参数");
     assert.ok(config.failureIds.every(id => report.media_reads.filter(item => item.id === id && item.status === 503).length === 1));
     assert.ok(config.failureIds.every(id => report.media_reads.filter(item => item.id === id && item.status === 200).length === 1));
     report.frozen_media_bytes = true;
@@ -247,20 +246,20 @@ try {
         assert.deepEqual(previous.project, config.draftDocument);
         await page.goto("about:blank");
         await read(await context.request.post(origin + "/api/v1/auth/logout"));
-        await authenticate(context, config.memberUsername);
-        await openCanvas();
+        await authenticate(context, config.otherUsername);
+        await page.goto(`${origin}/canvas-app/`);
+        await page.waitForFunction(async scope => {
+            const { getActiveUserScope } = await import("/canvas-app/src/lib/user-scope.ts");
+            return getActiveUserScope() === scope;
+        }, config.otherId);
+        assert.equal((await context.request.get(origin + config.path + "/my-document")).status(), 404);
         const switched = await draftState();
-        assert.equal(switched.scope, config.memberId);
+        assert.equal(switched.scope, config.otherId);
         assert.deepEqual(switched.other, []);
         assert.deepEqual(switched.own.find(draft => draft.id === previous.id), previous, "账号切换不能清除原作者草稿");
-        await page.getByRole("button", { name: "版本记录", exact: true }).click();
-        await (await visiblePanel()).getByRole("tab", { name: /^本机草稿/ }).click();
-        const fallback = page.locator(".canvas-version-draft:visible");
-        await fallback.filter({ hasText: `基于 v${config.currentRevision}` }).waitFor();
-        assert.equal(await fallback.count(), 1, "源本地模式仅显示当前项目的默认草稿，不显示另一作者的独立草稿");
-        assert.ok(!(await fallback.textContent()).includes(`基于 v${config.historyRevision}`));
-        report.account_switch_draft_fallback = "current local snapshot only; previous author's draft is absent";
-        await page.screenshot({ path: resolve(output, "member-draft-fallback.png") });
+        assert.equal(await page.locator("[data-canvas-viewport]").count(), 0);
+        report.account_switch_draft_fallback = "independent account cannot open the canvas or read the author's draft";
+        await page.screenshot({ path: resolve(output, "independent-account.png") });
     } else {
         const cookies = await context.cookies();
         await context.close();

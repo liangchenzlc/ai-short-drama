@@ -138,7 +138,7 @@ async function checkHiddenTexturePanel(id) {
 try {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
     let owner = await login(config.username);
-    const member = await login(config.memberUsername);
+    const foreign = await login(config.foreignUsername);
     page = await owner.newPage();
     observe(page);
     await page.goto(`${origin}/canvas-app/canvas/${config.sourceKey}`);
@@ -231,7 +231,7 @@ try {
     assert.deepEqual(targetIds, [prepared.id]);
     assert.equal(pending.nodes.length, 2);
     assert.equal(pending.connections.length, 1);
-    for (const task of report.admissions) assert.equal((await member.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
+    for (const task of report.admissions) assert.equal((await foreign.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
     await eventually(async () => Promise.all(report.admissions.map(task => readTask(owner, task.id))), rows => rows.some(row => row.status === "running"));
     if (config.scenario !== "normal") {
         owner = await fresh(owner, config.width);
@@ -243,7 +243,7 @@ try {
         await inspectSource(owner, source, "running-fresh");
     }
     await writeFile(config.imageReleaseFile, "browser-ready");
-    report.step = "永久结果与共享权限";
+    report.step = "永久结果与跨账号隔离";
     const terminal = await eventually(() => readTask(owner, report.task_id), row => ["succeeded", "failed", "cancelled"].includes(row.status), 360000);
     report.terminal_status = terminal.status;
     report.terminal_error_code = terminal.errorCode;
@@ -258,7 +258,8 @@ try {
         assert.equal(task.status, "succeeded");
         const result = JSON.parse(task.resultJson).images[0];
         assert.equal(node.metadata.storageKey, result.storageKey);
-        const shared = await member.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`);
+        assert.equal((await foreign.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`)).status(), 404);
+        const shared = await owner.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`);
         assert.ok(shared.ok());
         report.results.push({ node_id: nodeId, task_id: task.id, storage_key: result.storageKey, sha256: createHash("sha256").update(await shared.body()).digest("hex") });
     }

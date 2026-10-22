@@ -7,7 +7,7 @@ from typing import Any
 
 from short_drama.schemas.base import parse_identifier
 
-SHOT_CONTEXT_VERSION = "shot-context-v1"
+SHOT_CONTEXT_VERSION = "shot-context-v2"
 
 
 def _value(asset: Mapping[str, Any] | object, name: str, default=None):
@@ -21,8 +21,6 @@ def normalize_shot_context(
     shot_id: int,
     script: str,
     duration_ms: int,
-    episode_aspect: str,
-    episode_style: str,
     assets: Iterable[Mapping[str, Any] | object],
     reference_media_ids: Iterable[str] = (),
 ) -> dict[str, Any]:
@@ -51,7 +49,6 @@ def normalize_shot_context(
         "version": SHOT_CONTEXT_VERSION,
         "shot_id": str(parse_identifier(shot_id)),
         "shot": {"script": script, "duration_ms": duration_ms},
-        "episode": {"aspect": episode_aspect, "style": episode_style},
         "assets": normalized_assets,
         **(
             {"reference_media_ids": list(map(str, reference_media_ids))}

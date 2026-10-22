@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.base import BaseDAO
-from short_drama.domain import Asset, Episode, MediaFile, ShotScript
+from short_drama.domain import Asset, MediaFile, Project, ShotScript
 from short_drama.schemas.base import parse_identifier
 
 from .asset_image_service import AssetImageService
@@ -20,14 +20,14 @@ class GenerationReferenceService(AssetImageService):
         self.expected_version = parse_identifier(version) if version is not None else None
 
     def _owner(self, identifier, *, lock=False):
-        episode = None
+        creation = None
         if lock and self.owner_model is ShotScript:
-            episode_id = self.session.scalar(
-                select(ShotScript.episode_id).where(ShotScript.id == identifier)
+            project_id = self.session.scalar(
+                select(ShotScript.project_id).where(ShotScript.id == identifier)
             )
-            if episode_id is None:
+            if project_id is None:
                 raise NotFound("分镜不存在")
-            episode = self._require(Episode, episode_id)
+            creation = self._require(Project, project_id)
         owner = self.assets.get(identifier, for_update=lock)
         if owner is None or getattr(owner, "deleted_at", None) is not None:
             raise NotFound("参考图片所属内容不存在")
@@ -37,7 +37,7 @@ class GenerationReferenceService(AssetImageService):
             from short_drama.db.access import scope_of, set_scope
 
             set_scope(self.session, scope_of(self.session, owner))
-        return owner, episode
+        return owner, creation
 
     def _read_references(self, owner):
         ids = [int(value) for value in owner.reference_media_ids or []]
@@ -71,12 +71,12 @@ class GenerationReferenceService(AssetImageService):
         with self._transaction():
             self._owner(asset_id, lock=True)
 
-    def _advance(self, owner, episode):
+    def _advance(self, owner, creation):
         owner.row_version += 1
         owner.updated_at = utcnow()
-        if episode is not None:
-            episode.storyboard_version += 1
-            episode.updated_at = utcnow()
+        if creation is not None:
+            creation.storyboard_version += 1
+            creation.updated_at = utcnow()
         self.session.flush()
 
         if isinstance(owner, Asset):
@@ -86,7 +86,7 @@ class GenerationReferenceService(AssetImageService):
 
     def _persist_upload(self, asset_id, inspected, stored, original_name):
         with self._transaction():
-            owner, episode = self._owner(asset_id, lock=True)
+            owner, creation = self._owner(asset_id, lock=True)
             ids = list(owner.reference_media_ids or [])
             existing = (
                 list(
@@ -122,16 +122,16 @@ class GenerationReferenceService(AssetImageService):
             )
             owner.reference_media_ids = [*ids, str(media.id)]
             publish(media)
-            self._advance(owner, episode)
+            self._advance(owner, creation)
             return self._read_references(owner), True
 
     def remove_reference(self, identifier, media_id):
         with self._transaction():
-            owner, episode = self._owner(parse_identifier(identifier), lock=True)
+            owner, creation = self._owner(parse_identifier(identifier), lock=True)
             media_id = str(parse_identifier(media_id))
             ids = [str(value) for value in owner.reference_media_ids or []]
             if media_id in ids:
                 owner.reference_media_ids = [value for value in ids if value != media_id]
-                self._advance(owner, episode)
+                self._advance(owner, creation)
             # Keep the file: historical generation requests may still reference it.
             return self._read_references(owner)

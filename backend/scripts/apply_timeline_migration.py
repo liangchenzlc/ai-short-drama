@@ -12,12 +12,12 @@ from short_drama.db.session import build_engine
 
 def migrate(connection):
     if "last_edit_receipt" not in {
-        c["name"] for c in inspect(connection).get_columns("episode_assemblies")
+        c["name"] for c in inspect(connection).get_columns("project_assemblies")
     }:
         connection.exec_driver_sql(
-            "ALTER TABLE episode_assemblies ADD COLUMN last_edit_receipt JSON NULL"
+            "ALTER TABLE project_assemblies ADD COLUMN last_edit_receipt JSON NULL"
         )
-    table = "episode_assembly_clips"
+    table = "project_assembly_clips"
     columns = {c["name"] for c in inspect(connection).get_columns(table)}
     if "client_key" not in columns:
         connection.exec_driver_sql(
@@ -45,15 +45,15 @@ def migrate(connection):
         )
     checks = {
         c["name"]: c["sqltext"]
-        for c in inspect(connection).get_check_constraints("episode_render_jobs")
+        for c in inspect(connection).get_check_constraints("project_render_jobs")
     }
     if "preview" not in checks.get("ck_render_jobs_kind", ""):
         if "ck_render_jobs_kind" in checks:
             connection.exec_driver_sql(
-                "ALTER TABLE episode_render_jobs DROP CHECK ck_render_jobs_kind"
+                "ALTER TABLE project_render_jobs DROP CHECK ck_render_jobs_kind"
             )
         connection.exec_driver_sql(
-            "ALTER TABLE episode_render_jobs ADD CONSTRAINT ck_render_jobs_kind "
+            "ALTER TABLE project_render_jobs ADD CONSTRAINT ck_render_jobs_kind "
             "CHECK (kind IN ('probe','export','preview'))"
         )
 
@@ -62,7 +62,7 @@ def main():
     engine = build_engine(Settings())
     with engine.connect() as connection:
         active = connection.scalar(
-            text("SELECT COUNT(*) FROM episode_render_jobs WHERE status IN ('queued','running')")
+            text("SELECT COUNT(*) FROM project_render_jobs WHERE status IN ('queued','running')")
         )
         if active:
             raise SystemExit("Wait for active renders before applying the timeline migration.")
@@ -70,7 +70,7 @@ def main():
         backup.mkdir(parents=True, exist_ok=True)
         rows = {
             table: [dict(r) for r in connection.execute(text(f"SELECT * FROM {table}")).mappings()]
-            for table in ("episode_assemblies", "episode_assembly_clips", "episode_render_jobs")
+            for table in ("project_assemblies", "project_assembly_clips", "project_render_jobs")
         }
         path = backup / f"timeline-{datetime.now():%Y%m%d-%H%M%S-%f}.json"
         path.write_text(json.dumps(rows, ensure_ascii=False, default=str), encoding="utf-8")

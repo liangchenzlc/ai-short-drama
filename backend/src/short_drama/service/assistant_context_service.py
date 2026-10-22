@@ -139,34 +139,34 @@ def freeze_assistant_context(session, project_id, context):
         "truncated": [],
     }
     frozen_media = []
-    if context.kind == "episode":
-        episode = dao.episode(project_id, parse_identifier(context.id))
-        if episode is None:
-            raise NotFound("Episode does not belong to this project")
-        _revision(episode.content_version, context.revision)
-        _revision(episode.storyboard_version, context.storyboard_revision)
+    if context.kind == "project":
+        creation = dao.creation(project_id, parse_identifier(context.id))
+        if creation is None:
+            raise NotFound("Project does not belong to this project")
+        _revision(creation.content_version, context.revision)
+        _revision(creation.storyboard_version, context.storyboard_revision)
         snapshot.update(
-            title=episode.title,
+            title=creation.name,
             stage=context.stage,
-            storyboard_revision=str(episode.storyboard_version),
+            storyboard_revision=str(creation.storyboard_version),
         )
         if context.include_document:
-            novel, script = dao.writing(episode)
+            novel, script = dao.writing(creation)
             snapshot.update(
                 novel=novel.content if novel else "", script=script.content if script else ""
             )
         for selected in context.selected:
             row = (
-                dao.asset(project_id, episode.id, parse_identifier(selected.id))
+                dao.asset(project_id, parse_identifier(selected.id))
                 if selected.kind == "asset"
-                else dao.shot(episode.id, parse_identifier(selected.id))
+                else dao.shot(creation.id, parse_identifier(selected.id))
             )
             if row is None:
-                raise NotFound("Selected object does not belong to this episode")
+                raise NotFound("Selected object does not belong to this creation")
             _revision(row.row_version, selected.revision)
             snapshot["selected"].append(_asset(row) if selected.kind == "asset" else _shot(row))
         if context.include_document:
-            assets, shots = dao.assets(episode.id), dao.shots(episode.id)
+            assets, shots = dao.assets(creation.id), dao.shots(creation.id)
             snapshot["assets"] = [_asset(row) for row in assets[:100]]
             snapshot["shots"] = [_shot(row) for row in shots[:100]]
             if len(assets) > 100:
@@ -205,10 +205,6 @@ def freeze_assistant_context(session, project_id, context):
             snapshot["nodes"] = [node_data(row) for row in rows[:200]]
             if len(rows) > 200:
                 snapshot["truncated"].append("source.nodes")
-    if context.include_document:
-        snapshot["project"].update(
-            synopsis=project.synopsis, style=project.style, aspect=project.aspect
-        )
     snapshot = _bounded(snapshot)
     reference = {
         "type": "source",

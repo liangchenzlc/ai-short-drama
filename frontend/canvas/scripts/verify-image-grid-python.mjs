@@ -167,7 +167,7 @@ try {
             assert.ok(response.ok());
             const bytes = await response.body();
             group.pieces.push({ row, column, node: child, resource_id: id, asset_id: child.metadata.assetId, bytes_base64: bytes.toString("base64"), sha256: createHash("sha256").update(bytes).digest("hex") });
-            assert.deepEqual(await (await member.request.get(`${origin}${resources}/${id}/file`)).body(), bytes);
+            assert.equal((await member.request.get(`${origin}${resources}/${id}/file`)).status(), 404);
             assert.equal((await member.request.get(`${origin}/api/v1/canvas-runtime/assets/${child.metadata.assetId}`)).status(), 404);
             assert.equal((await outsider.request.get(`${origin}${resources}/${id}/file`)).status(), 404);
         }

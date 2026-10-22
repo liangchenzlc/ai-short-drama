@@ -25,7 +25,6 @@ export type CanvasProject = {
     remoteContentHash?: string;
     /** Stable owner for the 1:N workspace-project -> canvases relationship. */
     workspaceProjectId?: string;
-    projectId?: string;
     folderId?: string;
     title: string;
     /** Optional user-facing name for this canvas inside its workspace project. */
@@ -60,7 +59,7 @@ type CanvasStore = {
     hydrated: boolean;
     projects: CanvasProject[];
     folders: CanvasFolder[];
-    createProject: (title?: string, projectId?: string, workspaceProjectId?: string) => string;
+    createProject: (title?: string, workspaceProjectId?: string) => string;
     createFolder: (name?: string) => string;
     renameFolder: (id: string, name: string) => void;
     deleteFolder: (id: string) => void;
@@ -73,7 +72,7 @@ type CanvasStore = {
     deleteProjects: (ids: string[]) => void;
     restoreProject: (project: CanvasProject) => void;
     replaceProjects: (projects: CanvasProject[]) => void;
-    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "workspaceProjectId" | "projectId" | "folderId" | "title" | "canvasTitle" | "nodes" | "connections" | "chatSessions" | "activeChatId" | "starterMode" | "appearance" | "backgroundMode" | "showImageInfo" | "viewport" | "directorScenes" | "timeline">>) => void;
+    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "workspaceProjectId" | "folderId" | "title" | "canvasTitle" | "nodes" | "connections" | "chatSessions" | "activeChatId" | "starterMode" | "appearance" | "backgroundMode" | "showImageInfo" | "viewport" | "directorScenes" | "timeline">>) => void;
 };
 
 export const CANVAS_FOLDERS_KEY = "infinite-canvas:canvas_folders";
@@ -754,7 +753,7 @@ export const useCanvasStore = create<CanvasStore>()(
             hydrated: false,
             projects: [],
             folders: [],
-            createProject: (title = "未命名画布", projectId, workspaceProjectId) => {
+            createProject: (title = "未命名画布", workspaceProjectId) => {
                 const now = new Date().toISOString();
                 const id = nanoid();
                 const appearanceDefault = readCanvasAppearanceDefault();
@@ -762,7 +761,6 @@ export const useCanvasStore = create<CanvasStore>()(
                     id,
                     revision: "0",
                     workspaceProjectId: workspaceProjectId || id,
-                    projectId,
                     title,
                     createdAt: now,
                     updatedAt: now,
@@ -818,7 +816,6 @@ export const useCanvasStore = create<CanvasStore>()(
                     id: nanoid(),
                     revision: "0",
                     workspaceProjectId: undefined,
-                    projectId: source.projectId,
                     folderId: source.folderId,
                     title: source.title || "导入画布",
                     canvasTitle: source.canvasTitle,

@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     CheckConstraint,
+    ForeignKey,
     ForeignKeyConstraint,
     Index,
     text,
@@ -10,6 +11,7 @@ from sqlalchemy.dialects.mysql import (
     BIGINT,
     CHAR,
     DATETIME,
+    INTEGER,
     JSON,
     MEDIUMTEXT,
     VARCHAR,
@@ -17,10 +19,9 @@ from sqlalchemy.dialects.mysql import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
-from .collaboration import ResourceScope
 
 
-class Asset(ResourceScope, Base):
+class Asset(Base):
     __tablename__ = "assets"
 
     id: Mapped[int] = mapped_column(
@@ -30,6 +31,13 @@ class Asset(ResourceScope, Base):
         nullable=False,
         comment="应用雪花算法生成；稳定且不可变的记录标识",
     )
+    project_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True),
+        ForeignKey("projects.id", ondelete="RESTRICT", onupdate="RESTRICT"),
+        nullable=False,
+    )
+    position: Mapped[int] = mapped_column(INTEGER(unsigned=True), nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DATETIME(fsp=6), nullable=True)
     kind: Mapped[str] = mapped_column(
         VARCHAR(16, collation="utf8mb4_0900_bin"), nullable=False, comment="角色 / 场景 / 道具"
     )
@@ -114,7 +122,8 @@ class Asset(ResourceScope, Base):
     )
 
     __table_args__ = (
-        CheckConstraint("(scope_user_id IS NULL) <> (project_id IS NULL)", name="ck_asset_scope"),
+        CheckConstraint("position > 0", name="ck_assets_position"),
+        Index("idx_assets_project_order", "project_id", "deleted_at", "position", "id"),
         Index("idx_assets_kind_name", "kind", "name"),
         Index("idx_assets_model_id", "model_id"),
         Index("idx_assets_media_id", "media_id"),

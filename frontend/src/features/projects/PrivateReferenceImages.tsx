@@ -1,16 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Checkbox, Spin, Upload } from 'antd';
+import { StudioFeedback } from '../../components/ui/StudioFeedback';
 import { Plus, X } from 'lucide-react';
 import { uploadTaskReference, type ReferenceImage } from '../../api/modules/generation-references';
 import { errorMessage } from '../../api/http';
 import { Dialog } from '../../components/ui/Dialog';
 import { PreviewImage } from '../../components/ui/ImagePreview';
 import type { useCreationDraft } from './useCreationDraft';
+import { combineAssetPromptReferences, remapAssetPromptReferences, type AssetPromptReference } from '../assets/asset-prompt-references';
 
-export function PrivateReferenceImages({ draft, disabled, onBusy, readonlyReferences = [], availableReferences = [], availableLoading = false, availableError = '', onRefreshAvailable }: {
+export function PrivateReferenceImages({ draft, disabled, onBusy, readonlyReferences = [], referencesReady = true, availableReferences = [], availableLoading = false, availableError = '', onRefreshAvailable, onImagesChange }: {
   draft: ReturnType<typeof useCreationDraft>; disabled: boolean; onBusy?: (value: boolean) => void;
-  readonlyReferences?: ReferenceImage[]; availableReferences?: ReferenceImage[]; availableLoading?: boolean;
+  readonlyReferences?: AssetPromptReference[]; referencesReady?: boolean; availableReferences?: ReferenceImage[]; availableLoading?: boolean;
   availableError?: string; onRefreshAvailable?: () => void;
+  onImagesChange?: (images: AssetPromptReference[]) => void;
 }) {
   const [uploads, setUploads] = useState<ReferenceImage[]>([]);
   const [busy, setBusy] = useState(false);
@@ -20,28 +23,59 @@ export function PrivateReferenceImages({ draft, disabled, onBusy, readonlyRefere
   const lock = useRef(false);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  const readonly = [...new Map(readonlyReferences.map(item => [item.media_id, item])).values()];
-  const readonlyIds = new Set(readonly.map(item => item.media_id));
-  const privateIds = [...new Set(draft.value.reference_media_ids)].filter(id => !readonlyIds.has(id));
-  const count = new Set([...readonlyIds, ...draft.value.reference_media_ids]).size;
-  const urls = new Map([...availableReferences, ...(draft.saved?.reference_images ?? []), ...uploads].map(item => [item.media_id, item.url]));
+  const readonly = useMemo(() => combineAssetPromptReferences(readonlyReferences, []), [readonlyReferences]);
+  const readonlyIds = useMemo(() => new Set(readonly.map(item => item.media_id)), [readonly]);
+  const known = useMemo(() => new Map([
+    ...availableReferences,
+    ...(draft.saved?.reference_images ?? []).map(item => ({ ...item, name: '个人参考' })),
+    ...uploads,
+  ].map(item => [item.media_id, item])), [availableReferences, draft.saved?.reference_images, uploads]);
+  const images = useMemo(() => combineAssetPromptReferences(readonly, draft.value.reference_media_ids.map(id => ({
+    media_id: id, url: known.get(id)?.url ?? null, name: known.get(id)?.name || '个人参考',
+  }))), [readonly, draft.value.reference_media_ids, known]);
+  const count = images.length;
+  const current = useRef({ draft, readonly, known, referencesReady }); current.current = { draft, readonly, known, referencesReady };
+  const loadedReadonly = useRef<{ session: typeof draft.session; references: AssetPromptReference[] } | null>(null);
+  useEffect(() => {
+    if (!draft.loaded || !referencesReady) return;
+    const previous = loadedReadonly.current;
+    if (previous?.session === draft.session && previous.references.map(item => item.media_id).join(',') !== readonly.map(item => item.media_id).join(',')) {
+      const value = draft.session.getSnapshot().value;
+      const privateImages = value.reference_media_ids.map(id => ({ media_id: id, url: known.get(id)?.url ?? null, name: known.get(id)?.name || '个人参考' }));
+      draft.edit({ reference_media_ids: value.reference_media_ids, input_text: remapAssetPromptReferences(value.input_text,
+        combineAssetPromptReferences(previous.references, privateImages), combineAssetPromptReferences(readonly, privateImages)) });
+    }
+    loadedReadonly.current = { session: draft.session, references: readonly };
+  }, [draft.loaded, draft.session, referencesReady, readonly, known]);
+  useEffect(() => { if (referencesReady) onImagesChange?.(images); }, [images, referencesReady, onImagesChange]);
   const options = [...new Map(availableReferences.map(item => [item.media_id, item])).values()];
-  const unavailable = disabled || busy || !draft.loaded || count >= 16;
+  const unavailable = disabled || busy || !draft.loaded || !referencesReady || count >= 16;
+  function updateReferences(nextIds: string[], added?: ReferenceImage) {
+    const latest = current.current;
+    const value = latest.draft.session.getSnapshot().value;
+    const metadata = new Map(latest.known);
+    if (added) metadata.set(added.media_id, added);
+    const resolve = (ids: string[]) => combineAssetPromptReferences(latest.readonly, ids.map(id => ({
+      media_id: id, url: metadata.get(id)?.url ?? null, name: metadata.get(id)?.name || '个人参考',
+    })));
+    latest.draft.edit({ reference_media_ids: nextIds, input_text: remapAssetPromptReferences(value.input_text, resolve(value.reference_media_ids), resolve(nextIds)) });
+  }
   function openPicker() {
     if (unavailable) return;
-    setPicked([...draft.value.reference_media_ids]); setPickerOpen(true);
+    setPicked([...draft.session.getSnapshot().value.reference_media_ids]); setPickerOpen(true);
   }
   async function upload(file: File) {
-    if (disabled || lock.current || count >= 16) return false;
+    if (unavailable || lock.current) return false;
     if (file.size > 20 * 1024 * 1024) { setError('参考图片不能超过 20 MiB。'); return false; }
     lock.current = true; setBusy(true); onBusy?.(true); setError('');
+    const session = draft.session;
     try {
       const image = await uploadTaskReference(file);
-      if (!alive.current) return false;
-      const next = [...new Set([...draft.session.getSnapshot().value.reference_media_ids, image.media_id])];
-      if (new Set([...readonlyIds, ...next]).size > 16) { setError('最多使用 16 张参考图片，请先移除一张个人参考图。'); return false; }
+      if (!alive.current || session !== current.current.draft.session) return false;
+      const next = [...new Set([...session.getSnapshot().value.reference_media_ids, image.media_id])];
+      if (new Set([...current.current.readonly.map(item => item.media_id), ...next]).size > 16) { setError('最多使用 16 张参考图片，请先移除一张个人参考图。'); return false; }
       setUploads(items => [...items, image]);
-      draft.edit({ reference_media_ids: next });
+      updateReferences(next, image);
       setPickerOpen(false);
     } catch (cause) { if (alive.current) setError(errorMessage(cause)); }
     finally { lock.current = false; if (alive.current) { setBusy(false); onBusy?.(false); } }
@@ -49,31 +83,29 @@ export function PrivateReferenceImages({ draft, disabled, onBusy, readonlyRefere
   }
   return <section className="standard-private-references" aria-label="个人参考图片">
     <div className="standard-reference-heading"><h4>参考图片</h4><small className="standard-reference-count">{count} / 16</small></div>
-    {error && <Alert type="error" message={error}/>}
+    {error && <StudioFeedback type="error" message={error}/>}
     <div className="standard-reference-strip">
-      {readonly.map(item => <figure key={item.media_id} title={`${item.name} · 作品参考`}>
-        <PreviewImage src={item.url} alt={item.name || '作品参考图'}/>
+      {images.map((item, index) => <figure key={item.media_id} title={`${readonlyIds.has(item.media_id) ? '作品参考' : '个人参考'} · 图片${index + 1}`}>
+        {item.url ? <PreviewImage presentation="standard-creation" src={item.url} alt={`图片${index + 1} · ${item.name}`}/> : <span className="standard-reference-unavailable">预览待刷新</span>}
+        <figcaption>图片{index + 1}</figcaption>
+        {!readonlyIds.has(item.media_id) && <Button className="standard-reference-remove" type="text" size="small" disabled={disabled || busy || !referencesReady} aria-label={`移除个人参考图片 ${item.media_id}`} title="移除个人参考图片" icon={<X size={12}/>} onClick={() => updateReferences(draft.session.getSnapshot().value.reference_media_ids.filter(id => id !== item.media_id))}/>}
       </figure>)}
-      {privateIds.map(id => <figure key={id}>
-        {urls.get(id) ? <PreviewImage src={urls.get(id)!} alt="个人生成参考图"/> : <span className="standard-reference-unavailable">预览待刷新</span>}
-        <Button className="standard-reference-remove" type="text" size="small" disabled={disabled || busy} aria-label="移除个人参考图片" title="移除个人参考图片" icon={<X size={12}/>} onClick={() => draft.edit({ reference_media_ids: draft.value.reference_media_ids.filter(item => item !== id) })}/>
-      </figure>)}
-      <Button className={count ? 'standard-reference-add-tile' : 'standard-reference-empty'} type="text" aria-label="添加参考图片" title="添加参考图片" disabled={unavailable} icon={<Plus size={16}/>} onClick={openPicker}>{!count && '添加参考图片'}</Button>
+      <Button className="standard-reference-add-tile" type="text" aria-label="添加参考图片" title="添加参考图片" disabled={unavailable} icon={<Plus size={16}/>} onClick={openPicker}/>
     </div>
-    {pickerOpen && <Dialog title="选择已采用的参考素材" className="standard-shot-reference-dialog" canClose={!busy} onClose={() => setPickerOpen(false)}>
+    {pickerOpen && <Dialog title="选择素材主图作为参考" className="standard-shot-reference-dialog storyboard-reference-dialog standard-creation-dialog" canClose={!busy} onClose={() => setPickerOpen(false)}>
       <div className="standard-shot-reference-picker">
-        {availableLoading ? <div role="status" className="standard-reference-picker-loading"><Spin/><span>正在载入已采用素材…</span></div> : availableError ? <Alert type="error" message={availableError} action={onRefreshAvailable && <Button loading={availableLoading} onClick={onRefreshAvailable}>重新加载素材</Button>}/> : options.length ? <div className="standard-reference-picker-grid">{options.map(item => {
+        {availableLoading ? <div role="status" className="standard-reference-picker-loading"><Spin/><span>正在载入素材主图…</span></div> : availableError ? <Alert type="error" message={availableError} action={onRefreshAvailable && <Button loading={availableLoading} onClick={onRefreshAvailable}>重新加载素材</Button>}/> : options.length ? <div className="standard-reference-picker-grid">{options.map(item => {
           const selected = readonlyIds.has(item.media_id) || picked.includes(item.media_id);
           const full = new Set([...readonlyIds, ...picked]).size >= 16;
-          return <article key={item.media_id}><PreviewImage src={item.url} alt={item.name}/><Checkbox aria-label={item.name} checked={selected} disabled={busy || readonlyIds.has(item.media_id) || !selected && full}
+          return <article key={item.media_id}><PreviewImage presentation="standard-creation" src={item.url} alt={item.name}/><Checkbox aria-label={item.name} checked={selected} disabled={busy || readonlyIds.has(item.media_id) || !selected && full}
             onChange={event => setPicked(ids => event.target.checked ? [...new Set([...ids, item.media_id])] : ids.filter(id => id !== item.media_id))}>{item.name}</Checkbox></article>;
-        })}</div> : <div className="studio-empty"><p>还没有已采用的素材图片。</p></div>}
+        })}</div> : <div className="studio-empty"><p>还没有素材主图。</p></div>}
         <p className="episode-help">最多 16 张；选择仅保存在你的生成设置中。</p>
         <Upload accept="image/png,image/jpeg,image/webp" showUploadList={false} beforeUpload={file => upload(file)} disabled={unavailable}>
           <Button loading={busy} disabled={unavailable} aria-label="上传本地参考图片">上传本地图片</Button>
         </Upload>
       </div>
-      <div className="production-dialog-footer"><Button disabled={busy} onClick={() => setPickerOpen(false)}>取消</Button><Button type="primary" disabled={disabled || busy || availableLoading || !!availableError || !draft.loaded || new Set([...readonlyIds, ...picked]).size > 16} onClick={() => { draft.edit({ reference_media_ids: picked }); setPickerOpen(false); }}>确认选择</Button></div>
+      <div className="production-dialog-footer"><Button disabled={busy} onClick={() => setPickerOpen(false)}>取消</Button><Button type="primary" disabled={disabled || busy || availableLoading || !!availableError || !draft.loaded || !referencesReady || new Set([...readonlyIds, ...picked]).size > 16} onClick={() => { updateReferences(picked); setPickerOpen(false); }}>确认选择</Button></div>
     </Dialog>}
   </section>;
 }

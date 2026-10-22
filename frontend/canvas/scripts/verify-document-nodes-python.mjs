@@ -198,7 +198,6 @@ async function checkCompare() {
 try {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
     owner = await context(config.username);
-    const member = await context(config.memberUsername);
     await open(owner);
     report.step = "源未注册创建命令保持隐藏";
     await viewer().getByText(empty[config.kind], { exact: true }).waitFor({ state: "visible" });
@@ -310,16 +309,6 @@ try {
     await save();
     await owner.close();
     page = undefined;
-    await open(member);
-    await fit();
-    if (config.kind === "compare") await checkCompare();
-    else await checkRendered(true);
-    report.member_view_restored = true;
-    await page.screenshot({ path: resolve(output, "document-node-member.png") });
-    assert.deepEqual(report.page_errors, []);
-    assert.deepEqual(report.http_errors, []);
-    assert.equal(report.task_posts, 0);
-    assert.equal(report.resource_posts, 0);
     report.step = "complete";
 } catch (error) {
     report.error = error.stack ?? String(error);

@@ -1,4 +1,4 @@
-"""Validate and archive individual generated media; adoption is a separate service."""
+"""归档媒体并回填标准图片组；画布与视频保留各自的应用流程。"""
 
 import base64
 import hashlib
@@ -67,12 +67,33 @@ class GenerationArchive:
             else None
         )
 
+    def _processed(self, record, data):
+        if (record.request_data.get("source_snapshot") or {}).get(
+            "operation_type"
+        ) == "emotion" and (record.request_data.get("source") or {}).get(
+            "scene"
+        ) == "image_operation":
+            from .image_operation_service import ImageOperationService
+
+            with self.factory() as session:
+                return ImageOperationService(session, self.settings, self.storage).composite(
+                    record, data
+                )
+        return data
+
     def prepare(self, task, record, outputs):
         """Build recoverable identities BEFORE any object write, without storing inline bytes."""
         manifest = []
         for index, output in enumerate(outputs, start=1):
+            output_index = output.get("output_index", index)
+            if (
+                type(output_index) is not int
+                or output_index < 1
+                or any(item["output_index"] == output_index for item in manifest)
+            ):
+                raise GenerationError("invalid_response", accepted_unknown=True)
             entry = {
-                "output_index": index,
+                "output_index": output_index,
                 "asset_id": str(next_id()),
                 "media_type": output.get("media_type", task.service_type)
                 if record.adapter in RUNNINGHUB_ADAPTERS
@@ -88,7 +109,9 @@ class GenerationArchive:
                     manifest.append(entry)
                     continue
                 try:
-                    data = base64.b64decode(output["base64"], validate=True)
+                    data = self._processed(
+                        record, base64.b64decode(output["base64"], validate=True)
+                    )
                     entry.update(self._describe(task.id, record.id, entry, data))
                 except Exception:
                     # The provider has completed; no fresh model request is safe here.
@@ -105,7 +128,7 @@ class GenerationArchive:
         for output, entry in zip(outputs, manifest, strict=True):
             if not output.get("base64") or not entry.get("locator"):
                 continue
-            data = base64.b64decode(output["base64"], validate=True)
+            data = self._processed(record, base64.b64decode(output["base64"], validate=True))
             for attempt in range(3):
                 if not still_owned():
                     raise LeaseLost()
@@ -150,7 +173,8 @@ class GenerationArchive:
                 record = session.get(AIGenerationRecord, record_id)
                 native = (record.request_data.get("source_snapshot") or {}).get("native_speech")
                 canvas_video = "canvas_request" in record.request_data
-            if canvas_video:
+                assistant_video = record.config_snapshot.get("assistant_managed") is True
+            if canvas_video or assistant_video:
                 from .canvas_resource_io import probe_resource
 
                 meta.update(probe_resource(BytesIO(data), "video", self.settings))
@@ -212,6 +236,8 @@ class GenerationArchive:
         self, session, request: dict, media_id: int, created_by: int | None
     ) -> str | None:
         source = request.get("source") or {}
+        if request.get("image_group_id") or source.get("scene") == "image_operation":
+            return None
         if source.get("scene") != "asset_image":
             return None
         asset = session.get(Asset, int(source["asset_id"]), with_for_update=True)
@@ -231,6 +257,7 @@ class GenerationArchive:
         if entry.get("ignored"):
             return False
         with self.factory.begin() as session:
+            lock_resource_project(session, AsyncTask, task.id)
             ownership_check(session, task.id, version, token)
             current_record = session.get(AIGenerationRecord, record.id)
             existing = session.scalar(
@@ -245,11 +272,22 @@ class GenerationArchive:
                 candidate_status = self._link_asset_candidate(
                     session, current_record.request_data, existing.media_id, task.initiated_by
                 )
+                from .image_group_service import ImageGroupService
+
+                ImageGroupService(session).attach(
+                    task, current_record, existing.media_id, entry["output_index"]
+                )
                 data = dict(current_record.response_data or {})
                 manifest = [dict(item) for item in data.get("media_manifest", [])]
                 for item in manifest:
                     if item["output_index"] == entry["output_index"]:
                         item["saved"] = True
+                        if (
+                            current_record.request_data.get("image_group_id")
+                            or (current_record.request_data.get("source") or {}).get("scene")
+                            == "image_operation"
+                        ):
+                            item["image_group_saved"] = True
                         if candidate_status is not None:
                             item["candidate_status"] = candidate_status
                 data["media_manifest"] = manifest
@@ -258,7 +296,10 @@ class GenerationArchive:
                 return True
         if entry.get("inline_cipher"):
             data = base64.b64decode(self._cipher().decrypt(entry["inline_cipher"]), validate=True)
-            entry = {**entry, **self._store(task.id, record.id, entry, data)}
+            entry = {
+                **entry,
+                **self._store(task.id, record.id, entry, self._processed(record, data)),
+            }
         elif not entry.get("locator"):
             if not entry.get("source_cipher"):
                 return False
@@ -308,7 +349,10 @@ class GenerationArchive:
                         current_record.updated_at = utcnow()
                     return False
                 entry = {**entry, "media_type": kind}
-            entry = {**entry, **self._store(task.id, record.id, entry, data)}
+            entry = {
+                **entry,
+                **self._store(task.id, record.id, entry, self._processed(record, data)),
+            }
         location = ObjectLocation.parse(
             entry["locator"],
             {
@@ -384,6 +428,9 @@ class GenerationArchive:
             candidate_status = self._link_asset_candidate(
                 session, current_record.request_data, media.id, task.initiated_by
             )
+            from .image_group_service import ImageGroupService
+
+            ImageGroupService(session).attach(task, current_record, media.id, entry["output_index"])
             data = dict(current_record.response_data or {})
             manifest = [dict(item) for item in data.get("media_manifest", [])]
             for item in manifest:
@@ -393,6 +440,12 @@ class GenerationArchive:
                     item.pop("inline_cipher", None)
                     item.pop("save_error", None)
                     item["saved"] = True
+                    if (
+                        current_record.request_data.get("image_group_id")
+                        or (current_record.request_data.get("source") or {}).get("scene")
+                        == "image_operation"
+                    ):
+                        item["image_group_saved"] = True
                     if candidate_status is not None:
                         item["candidate_status"] = candidate_status
             data["media_manifest"] = manifest

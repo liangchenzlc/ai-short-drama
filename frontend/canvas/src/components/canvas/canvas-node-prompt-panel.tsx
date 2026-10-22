@@ -74,7 +74,8 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
     const themeName = useActiveTheme();
     const theme = canvasThemes[themeName];
     const promptOptimizerInstallation = usePluginStore((state) => state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID));
-    const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled ?? Boolean(state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID)?.enabled));
+    // 提示词优化器已不再受个人开关控制，注册即默认可用。
+    const promptOptimizerEnabled = Boolean(promptOptimizerInstallation);
     const simpleMode = workspaceMode === "simple";
     const mode = defaultMode(node.type);
     const autoLinkLabel = mode === "image" || mode === "video" || mode === "audio" ? "AutoLink" : "引用";
@@ -476,6 +477,11 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
                         aria-label={`${modeDisplayName(mode)}提示词`}
                     />
                 </div>
+                {node.metadata?.errorDetails && !isRunning ? (
+                    <p role="alert" className="mx-2.5 my-1 max-h-24 overflow-y-auto break-words text-[var(--fs-body)] leading-5" style={{ color: theme.accent.danger }}>
+                        {node.metadata.errorDetails}
+                    </p>
+                ) : null}
                 {!expanded && <PromptResizeHandle
                     height={height}
                     min={bounds.min}

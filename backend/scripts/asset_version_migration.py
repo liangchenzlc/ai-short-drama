@@ -24,7 +24,7 @@ POINTER_FK = "fk_assets_current_version"
 POINTER_CHECK = "ck_assets_character_version"
 SQL_PATH = (
     Path(__file__).resolve().parents[2]
-    / "docs/数据库模型/migrations/2026-10-05-infinite-canvas/019-asset-versions.sql"
+    / "docs/database/migrations/2026-10-05-infinite-canvas/019-asset-versions.sql"
 )
 
 

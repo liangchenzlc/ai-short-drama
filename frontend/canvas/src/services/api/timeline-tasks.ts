@@ -9,9 +9,15 @@ import type { TimelineProject } from "@/types/timeline";
 export type TimelineTranscriptionCreateRequest = {
     resourceId: string;
     language?: string;
+    model_config_id?: string;
     projectId?: string;
     clientOperationId: string;
 };
+
+export async function getTranscriptionModels(config?: HttpRequestConfig): Promise<Array<{ id: string; displayName: string }>> {
+    const result = await http.get<{ models: Array<{ id: string; displayName: string }> }>("/timeline/transcription-models", config);
+    return result.models;
+}
 
 export type TimelineTranscriptionResult = {
     segments: TimelineTranscriptionSegment[];

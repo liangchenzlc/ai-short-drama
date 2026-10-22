@@ -5,12 +5,9 @@ export const RUNNINGHUB_PLUGIN_ID = "runninghub-workflow-provider";
 
 export type WorkflowProvider = "runninghub";
 
-export function workflowPluginId(provider: WorkflowProvider) {
-	return RUNNINGHUB_PLUGIN_ID;
-}
-
-export function workflowProviderPluginEnabled(statuses: Record<string, string>, provider: WorkflowProvider) {
-    return statuses[workflowPluginId(provider)] === "enabled";
+// 画布工具已不再受个人开关控制，RunningHub 工作流默认可用。
+export function workflowProviderPluginEnabled(_provider: WorkflowProvider) {
+    return true;
 }
 
 function workflowContributions(providerId: string, label: string) {

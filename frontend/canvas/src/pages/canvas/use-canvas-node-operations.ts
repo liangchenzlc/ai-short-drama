@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { App } from "antd";
 import copyToClipboard from "copy-to-clipboard";
 import { nanoid } from "nanoid";
@@ -20,9 +20,11 @@ import type { CanvasDrawingEngine } from "@/lib/canvas/canvas-drawing-engine";
 import { resourceFileUrl } from "@/services/api/resources";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { workflowProviderPluginEnabled } from "@/lib/plugins/builtin/workflows";
-import { usePluginStore } from "@/stores/use-plugin-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import type { DirectorScene } from "@/types/director";
+import { isCanvasNodeGenerating } from "@/lib/canvas/canvas-node-task-state";
+import { cancelGenerationTask } from "@/services/api/task-center";
+import { canvasTaskConfirmation } from "./canvas-task-confirmation";
 
 type CanvasClipboard = {
     sourceProjectId?: string;
@@ -68,9 +70,29 @@ export function useCanvasNodeOperations({
     setDialogNodeId,
     onNodesDeleted,
 }: UseCanvasNodeOperationsOptions) {
-    const { message } = App.useApp();
+    const { message, modal } = App.useApp();
+    const deletionContext = useRef({ projectId });
+    if (deletionContext.current.projectId !== projectId) deletionContext.current = { projectId };
+    const mounted = useRef(true);
+    const deleteConfirmation = useRef<{ destroy?: () => void } | null>(null);
+    const [deleteWarning, setDeleteWarning] = useState("");
+    const dismissDeleteWarning = useCallback(() => setDeleteWarning(""), []);
+    useLayoutEffect(() => {
+        mounted.current = true;
+        setDeleteWarning("");
+        const dismiss = () => {
+            const pending = deleteConfirmation.current;
+            deleteConfirmation.current = null;
+            pending?.destroy?.();
+        };
+        const unsubscribe = subscribeUserScope(() => { dismiss(); setDeleteWarning(""); });
+        return () => {
+            mounted.current = false;
+            unsubscribe();
+            dismiss();
+        };
+    }, [projectId]);
     const effectiveConfig = useEffectiveConfig();
-    const runtimeStatuses = usePluginStore((state) => state.runtimeStatuses);
     const clipboardRef = useRef<CanvasClipboard | null>(null);
     const clipboardScopeRef = useRef<CapturedUserScope | null>(null);
     const preferCopiedNodesRef = useRef(false);
@@ -166,12 +188,8 @@ export function useCanvasNodeOperations({
             return;
         }
         const selectedWorkflowProvider = type === CanvasNodeType.Config
-            ? workflowProvider || (workflowProviderPluginEnabled(runtimeStatuses, "runninghub") ? "runninghub" : undefined)
+            ? workflowProvider || (workflowProviderPluginEnabled("runninghub") ? "runninghub" : undefined)
             : undefined;
-        if (selectedWorkflowProvider && !workflowProviderPluginEnabled(runtimeStatuses, selectedWorkflowProvider)) {
-            message.error("RunningHub 工作流插件未启用");
-            return;
-        }
         const workflowTitle = type === CanvasNodeType.Config && selectedWorkflowProvider === "runninghub" ? "RunningHub 工作流" : undefined;
         const metadata: CanvasNodeMetadata | undefined = type === CanvasNodeType.Drawing
             ? { drawingEngine: defaultDrawingEngine }
@@ -200,7 +218,7 @@ export function useCanvasNodeOperations({
         selectNodes(new Set([node.id]));
         if (type === CanvasNodeType.Script) setDialogNodeId(null);
         if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Script && type !== CanvasNodeType.BatchTable && type !== CanvasNodeType.Frame && type !== CanvasNodeType.Drawing && type !== CanvasNodeType.MediaConversion) setDialogNodeId(node.id);
-    }, [commitNodes, defaultDrawingEngine, effectiveConfig.runningHub.enabled, effectiveConfig.runningHub.workflows.length, getCanvasCenter, message, nodesRef, runtimeStatuses, selectNodes, setDialogNodeId, viewportScale]);
+    }, [commitNodes, defaultDrawingEngine, effectiveConfig.runningHub.enabled, effectiveConfig.runningHub.workflows.length, getCanvasCenter, message, nodesRef, selectNodes, setDialogNodeId, viewportScale]);
 
     const createFolder = useCallback((position?: Position, linked?: { id: string; projectId: string; title: string; style: CanvasFolderStyle; theme: CanvasFolderTheme; createdAt: string }) => {
         const folder = createCanvasNode(CanvasNodeType.Frame, position || getCanvasCenter(), {
@@ -383,7 +401,7 @@ export function useCanvasNodeOperations({
         message.success(locked ? "节点已锁定位置和尺寸" : "节点已解锁");
     }, [commitNodes, message, nodesRef]);
 
-    const deleteNodes = useCallback((ids: Set<string>) => {
+    const removeNodes = useCallback((ids: Set<string>) => {
         if (!ids.size) return;
         const previousNodes = nodesRef.current;
         const previousConnections = connectionsRef.current;
@@ -396,6 +414,50 @@ export function useCanvasNodeOperations({
         selectNodes(new Set());
         onNodesDeleted(result.removedIds, nextNodes, removedNodes);
     }, [commitConnections, commitNodes, connectionsRef, nodesRef, onNodesDeleted, selectNodes]);
+
+    const deleteNodes = useCallback((ids: Set<string>) => {
+        if (!ids.size || deleteConfirmation.current || !mounted.current) return;
+        setDeleteWarning("");
+        const requestedIds = new Set(ids);
+        const removedIds = removeCanvasNodes(nodesRef.current, requestedIds).removedIds;
+        const removedNodes = nodesRef.current.filter((node) => removedIds.has(node.id));
+        const activeBatchItems = removedNodes.flatMap((node) => node.metadata?.generationBatches?.flatMap((batch) =>
+            batch.items.filter((item) => ["waiting", "submitting", "queued", "running"].includes(item.status))) || []);
+        if (!removedNodes.some((node) => isCanvasNodeGenerating(node)) && !activeBatchItems.length) {
+            removeNodes(requestedIds);
+            return;
+        }
+        const context = deletionContext.current;
+        const expectedScope = captureUserScope();
+        const pending: { destroy?: () => void } = {};
+        deleteConfirmation.current = pending;
+        const isCurrent = () => mounted.current && deletionContext.current === context && userScopeMatches(expectedScope);
+        const confirmation = modal.confirm({
+            ...canvasTaskConfirmation,
+            title: "删除正在生成的节点？",
+            content: "任务已提交后可能产生费用。",
+            okText: "确认删除",
+            cancelText: "取消",
+            afterClose: () => { if (deleteConfirmation.current === pending) deleteConfirmation.current = null; },
+            onOk: async () => {
+                if (deleteConfirmation.current !== pending || !isCurrent()) return;
+                const currentRemovedIds = removeCanvasNodes(nodesRef.current, requestedIds).removedIds;
+                const currentRemovedNodes = nodesRef.current.filter((node) => currentRemovedIds.has(node.id));
+                const taskIds = new Set([
+                    ...currentRemovedNodes.filter((node) => isCanvasNodeGenerating(node)).map((node) => node.metadata?.taskId),
+                    ...currentRemovedNodes.flatMap((node) => node.metadata?.generationBatches?.flatMap((batch) =>
+                        batch.items.filter((item) => ["submitting", "queued", "running"].includes(item.status)).map((item) => item.taskId)) || []),
+                ].filter((id): id is string => Boolean(id)));
+                const cancellations = [...taskIds].map((id) => cancelGenerationTask(id));
+                removeNodes(requestedIds);
+                const results = await Promise.allSettled(cancellations);
+                if (isCurrent() && results.some((result) => result.status === "rejected")) {
+                    setDeleteWarning("节点已删除，未能取消的任务将继续运行。");
+                }
+            },
+        });
+        pending.destroy = confirmation.destroy;
+    }, [modal, nodesRef, removeNodes]);
 
     const deleteConnection = useCallback((connectionId: string) => {
         const previousNodes = nodesRef.current;
@@ -615,6 +677,8 @@ export function useCanvasNodeOperations({
         createStoryboardGroup,
         deleteConnection,
         deleteNodes,
+        deleteWarning,
+        dismissDeleteWarning,
         duplicateNode,
         hasCopiedNodes,
         pasteCopiedNodes,

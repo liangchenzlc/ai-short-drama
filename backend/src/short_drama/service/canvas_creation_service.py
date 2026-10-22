@@ -34,7 +34,7 @@ from .canvas_media_locators import canonicalize_canvas_media
 from .canvas_resource_copy import CanvasResourceCopyService, canvas_copy_lock
 
 logger = logging.getLogger(__name__)
-SOURCE_BINDING_KEY = "$source_project_binding"
+SOURCE_ORIGIN_KEY = "$source_canvas_origin"
 
 
 class CanvasCreationService(CanvasResourceCopyService):
@@ -137,14 +137,14 @@ class CanvasCreationService(CanvasResourceCopyService):
             sources = self.resources.resource_map(identifiers)
             if set(sources) != identifiers:
                 raise NotFound("Canvas creation source does not exist")
-            binding = self.canvases.inherited_source_binding(
+            binding = self.canvases.validate_creation_source(
                 request,
                 project_id=project_id,
                 extra_project_ids={row.project_id for row in sources.values() if row.project_id},
             )
             frozen_request = deepcopy(original)
             if binding is not None:
-                frozen_request[SOURCE_BINDING_KEY] = binding
+                frozen_request[SOURCE_ORIGIN_KEY] = binding
             attempt = CanvasCreationAttempt(
                 **self.canvases.audit(),
                 user_id=self.actor_id,
@@ -233,7 +233,7 @@ class CanvasCreationService(CanvasResourceCopyService):
         else:
             frozen = attempt.request_json
             request = CanvasCreateRequest.model_validate(
-                {field: value for field, value in frozen.items() if field != SOURCE_BINDING_KEY}
+                {field: value for field, value in frozen.items() if field != SOURCE_ORIGIN_KEY}
             )
             pending_ids = {
                 row.source_resource_id
@@ -243,14 +243,14 @@ class CanvasCreationService(CanvasResourceCopyService):
             pending_sources = self.resources.resource_map(pending_ids)
             if set(pending_sources) != pending_ids:
                 raise NotFound("Canvas creation source does not exist")
-            binding = self.canvases.inherited_source_binding(
+            binding = self.canvases.validate_creation_source(
                 request,
                 project_id=attempt.target_project_id,
                 extra_project_ids={
                     row.project_id for row in pending_sources.values() if row.project_id
                 },
             )
-            if binding != frozen.get(SOURCE_BINDING_KEY):
+            if binding != frozen.get(SOURCE_ORIGIN_KEY):
                 raise WorkflowError(
                     "canvas_source_changed", "父画布可信来源与首次冻结记录不一致，原请求已保留", 409
                 )

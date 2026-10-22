@@ -37,7 +37,7 @@ async function freshContext(context) {
     return fresh;
 }
 async function seed(context, kind) {
-    const project = await read(await context.request.post(`${origin}/api/v1/projects`, { headers: { "Idempotency-Key": `browser-broker-${kind}-project` }, data: { name: `真实消息队列 ${kind}`, aspect: "16:9", workspace_mode: "infinite_canvas" } }));
+    const project = await read(await context.request.post(`${origin}/api/v1/projects`, { headers: { "Idempotency-Key": `browser-broker-${kind}-project` }, data: { name: `真实消息队列 ${kind}`, workspace_mode: "infinite_canvas" } }));
     const path = `${origin}/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
     const initial = await read(await context.request.get(`${path}/my-document`));
     const document = initial.source_document;

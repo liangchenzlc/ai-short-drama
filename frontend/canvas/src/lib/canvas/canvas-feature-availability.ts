@@ -7,6 +7,7 @@ const developingNodeTypes = new Set<CanvasNodeTypeId>([
     CanvasNodeType.MediaConversion,
     CanvasNodeType.Frame,
     CanvasNodeType.Script,
+    CanvasNodeType.Director,
 ]);
 
 export function getCanvasNodeCreationDisabledReason(type: CanvasNodeTypeId) {

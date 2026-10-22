@@ -73,7 +73,7 @@ try {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
     const owner = await login();
     const project = await read(await owner.request.post(`${origin}/api/v1/projects`, {
-        headers: { "Idempotency-Key": "recycle-browser-project" }, data: { name: "回收站双画布", aspect: "16:9", workspace_mode: "infinite_canvas" },
+        headers: { "Idempotency-Key": "recycle-browser-project" }, data: { name: "回收站双画布", workspace_mode: "infinite_canvas" },
     }));
     const path = `${origin}/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
     const initial = await read(await owner.request.get(`${path}/my-document`));

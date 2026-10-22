@@ -74,7 +74,9 @@ class MessageCreate(InputModel):
 
 class MessageRead(ReadModel):
     id: Identifier
+    task_id: Identifier | None = None
     seq: int
+    row_version: Identifier = 1
     role: Literal["user", "assistant"]
     content: str
     references: list[dict]
@@ -99,6 +101,7 @@ class PlanReviewRead(ReadModel):
 
 class RunRead(ReadModel):
     id: Identifier
+    task_id: Identifier | None = None
     conversation_id: Identifier
     status: AgentRunStatus
     phase: Literal["model", "tools", "wait"]

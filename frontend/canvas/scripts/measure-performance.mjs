@@ -89,10 +89,6 @@ async function fixture(page, count, kind) {
             else if (path === "/workspace/model-config" && method === "GET") body = kind === "source" ? { config: { channels: [] }, revision: 0, health: "ready", source: "builtin+local" } : { row_version: "0", preferences: {}, models: [] };
             else if (path === "/assets" && method === "GET") body = kind === "source" ? { assets: [], page: 1, pageSize: 100, total: 0, hasMore: false } : [];
             else if (path === "/tasks" && method === "GET") body = kind === "source" ? { tasks: [], page: 1, pageSize: 50, total: 0, hasMore: false } : [];
-            else if (path === "/plugins/status" && method === "GET") {
-                const ids = ["prompt-optimizer", "ai-art-critique", "runninghub-workflow-provider"];
-                body = { statuses: Object.fromEntries(ids.map(id => [id, "disabled"])), states: Object.fromEntries(ids.map(pluginId => [pluginId, { pluginId, platformAvailable: true, userEnabled: false, userConfigured: false, effectiveEnabled: false, canToggle: true, canConfigure: false }])) };
-            }
             else if (kind === "source" && path === "/assistant/status") body = { available: false, reason: "model_not_configured" };
             else if (kind === "source" && path === "/assistant/ui-session" && method === "POST") body = { token: "performance-fixture-only", expiresAt: "2100-01-01T00:00:00Z" };
             else if (kind === "source" && path === "/assistant/sessions") body = { currentSessionId: null, sessions: [] };

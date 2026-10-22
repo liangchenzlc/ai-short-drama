@@ -207,12 +207,12 @@ try {
         assert.ok(downloads.has(`${resources}/${item.resource_id}/file`));
         const originalRead = await owner.request.get(`${origin}${resources}/${item.resource_id}/file`);
         const sharedRead = await member.request.get(`${origin}${resources}/${item.resource_id}/file`);
-        assert.ok(sharedRead.ok());
-        assert.deepEqual(await sharedRead.body(), await originalRead.body());
+        assert.ok(originalRead.ok());
+        assert.equal(sharedRead.status(), 404);
         assert.equal((await member.request.get(`${origin}/api/v1/canvas-runtime/assets/${item.asset_id}`)).status(), 404);
         assert.equal((await outsider.request.get(`${origin}${resources}/${item.resource_id}/file`)).status(), 404);
     }
-    assert.deepEqual((await read(await member.request.get(`${origin}${path}/my-document`))).source_document.nodes.map(node => node.id), [source.id, child.id]);
+    assert.equal((await member.request.get(`${origin}${path}/my-document`)).status(), 404);
     assert.equal((await outsider.request.get(`${origin}${path}/my-document`)).status(), 404);
     await restored.screenshot({ path: resolve(output, "annotation-restored.png") });
     await fresh.close();

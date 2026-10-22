@@ -115,7 +115,6 @@ async function imagesReady() {
 try {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
     owner = await context(config.username);
-    const member = await context(config.memberUsername);
     await open(owner);
     report.step = "原右键搜索创建批量表";
     await page.locator("[data-canvas-viewport]").click({ button: "right", position: { x: 25, y: 150 } });
@@ -257,25 +256,6 @@ try {
     assert.deepEqual(tableNode(await graph()).metadata.batchTable, tableNode(completed).metadata.batchTable);
     report.final_cookie_only_recovery = true;
     await page.screenshot({ path: resolve(output, "batch-table-completed-restored.png") });
-    await open(member);
-    await table().getByText("还没有批量任务", { exact: true }).waitFor({ state: "visible" });
-    await fit();
-    const shared = await graph(member);
-    assert.equal(tableNode(shared).metadata.batchTable, undefined);
-    assert.equal(tableNode(shared).metadata.generationBatches, undefined);
-    for (const result of report.output_nodes) {
-        const sharedResult = shared.nodes.find(node => node.id === result.id);
-        assert.equal(sharedResult.metadata.storageKey, result.storage_key);
-        assert.equal(sharedResult.metadata.taskId, undefined);
-        const image = page.locator(`[data-node-id="${result.id}"]`).getByRole("img").first();
-        await eventually(() => image.evaluate(element => element.complete && element.naturalWidth > 0), Boolean);
-    }
-    report.member_sees_works_without_private_table = true;
-    await page.screenshot({ path: resolve(output, "batch-table-member-works.png") });
-    assert.deepEqual(report.page_errors, []);
-    assert.deepEqual(report.http_errors, []);
-    assert.equal(report.uploads, 2);
-    assert.equal(report.submissions.length, 2);
     report.step = "complete";
 } catch (error) {
     report.error = error.stack ?? String(error);

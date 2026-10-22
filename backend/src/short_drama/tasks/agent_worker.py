@@ -4,6 +4,7 @@ from functools import lru_cache
 
 from celery.exceptions import Reject
 
+from short_drama.agent.memory_runtime import AgentMemoryRuntime
 from short_drama.agent.model_gateway import AgentModelGateway
 from short_drama.agent.runtime import AgentRuntime
 from short_drama.core.config import Settings
@@ -30,4 +31,25 @@ def execute_agent(run_id, message_version):
     except Exception:
         raise Reject(
             "Agent action interrupted; database recovery will reconcile", requeue=False
+        ) from None
+
+
+@lru_cache(maxsize=1)
+def memory_runtime():
+    execution = runtime()
+    return AgentMemoryRuntime(execution.factory, execution.settings, execution.gateway)
+
+
+@app.task(
+    name="short_drama.maintain_agent_memory",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    ignore_result=True,
+)
+def maintain_agent_memory(job_id, message_version):
+    try:
+        memory_runtime().execute_one(job_id, message_version)
+    except Exception:
+        raise Reject(
+            "Memory maintenance interrupted; database recovery will reconcile", requeue=False
         ) from None

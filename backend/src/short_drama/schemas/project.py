@@ -6,7 +6,6 @@ from pydantic import AfterValidator, Field, field_serializer
 from .base import (
     Identifier,
     InputModel,
-    MediumText,
     ReadModel,
     nonblank,
 )
@@ -15,21 +14,14 @@ from .base import (
 class ProjectCreate(InputModel):
     workspace_mode: Literal["standard", "infinite_canvas"] = "standard"
     name: Annotated[str, Field(max_length=120), AfterValidator(nonblank)]
-    synopsis: MediumText = ""
-    style: Annotated[str, Field(max_length=255)] = ""
-    aspect: Literal["16:9", "9:16"]
-    last_opened_at: datetime | None = None
 
 
 class ProjectUpdate(InputModel):
     name: Annotated[str, Field(max_length=120), AfterValidator(nonblank)] = None
-    synopsis: MediumText = None
-    style: Annotated[str, Field(max_length=255)] = None
-    aspect: Literal["16:9", "9:16"] = None
-    last_opened_at: datetime | None = None
 
 
 class ProjectRead(ReadModel):
+    cover_url: str | None = None
     workspace_mode: Literal["standard", "infinite_canvas"] = "standard"
     primary_canvas_id: Identifier | None = None
     canvas_count: int = 0
@@ -38,9 +30,9 @@ class ProjectRead(ReadModel):
     capabilities: dict[str, bool] = Field(default_factory=dict)
     id: Identifier
     name: Annotated[str, Field(max_length=120), AfterValidator(nonblank)]
-    synopsis: MediumText
-    style: Annotated[str, Field(max_length=255)]
-    aspect: Literal["16:9", "9:16"]
+    editing_script_id: Identifier | None = None
+    content_version: Identifier = 1
+    storyboard_version: Identifier = 1
     last_opened_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -56,4 +48,4 @@ class ProjectRead(ReadModel):
 
 
 class ProjectSummary(ProjectRead):
-    episode_count: int
+    pass

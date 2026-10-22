@@ -359,7 +359,7 @@ try {
     assert.equal(config.protocol, "chat-completion");
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
     owner = await context(config.username);
-    const member = await context(config.memberUsername);
+    const foreign = await context(config.foreignUsername);
     const outsider = await context(config.outsideUsername);
     await open(owner);
     await script().waitFor({ state: "visible" });
@@ -436,7 +436,7 @@ try {
     assert.equal(report.execute_posts, 1);
     assert.equal(report.task_posts, 0);
     report.running_cookie_only_recovery = true;
-    for (const other of [member, outsider]) {
+    for (const other of [foreign, outsider]) {
         assert.equal((await other.request.get(api(taskRoute(task.id)))).status(), 404);
         assert.equal((await other.request.get(api(taskRoute(task.id) + "/text-deltas"))).status(), 404);
         assert.equal((await other.request.get(api(runRoute(report.run_id)))).status(), 404);
@@ -557,25 +557,16 @@ try {
     await owner.close();
     page = undefined;
 
-    report.step = "成员原编辑器显示共享分镜，私人过程不可读";
-    await open(member);
-    await script().waitFor({ state: "visible" });
-    await fit();
-    const shared = await graph(member);
-    const metadata = shared.nodes.find(node => node.id === config.nodeId).metadata;
-    assert.equal(shared.nodes.find(node => node.id === config.nodeId).title, report.title);
-    assert.equal(metadata.content, report.canonical_text);
-    assert.deepEqual(metadata.storyboard.rows, report.final_rows);
-    for (const key of ["taskId", "composerContent", "storyboardShotCount", "storyboardShotDuration", "prompt"]) assert.equal(metadata[key], undefined);
-    await editorScreenshot("storyboard-generated-member.png", report.final_rows, report.title);
-    for (const other of [member, outsider]) {
+    report.step = "分镜与私人任务均拒绝跨账号访问";
+    for (const other of [foreign, outsider]) {
         assert.equal((await other.request.get(api(taskRoute(task.id)))).status(), 404);
         assert.equal((await other.request.get(api(taskRoute(task.id) + "/text-deltas"))).status(), 404);
         assert.equal((await other.request.get(api(runRoute(report.run_id)))).status(), 404);
         assert.equal((await other.request.get(api("/api/v1/ai-model-configs/" + config.modelId))).status(), 404);
     }
     assert.equal((await outsider.request.get(api(path + "/my-document"))).status(), 404);
-    report.member_shared_rows_private_task_hidden = true;
+    assert.equal((await foreign.request.get(api(path + "/my-document"))).status(), 404);
+    report.foreign_owner_denied = true;
     assert.equal(report.run_posts, 1);
     assert.equal(report.prepare_posts, 1);
     assert.equal(report.approve_posts, 1);
@@ -586,7 +577,7 @@ try {
     assert.deepEqual(report.page_errors, []);
     assert.deepEqual(report.http_errors, []);
     if (config.width === 390) assert.equal(report.narrow_editor_scroll.length, 3);
-    report.content_verdict = "requires manual inspection of actual provider JSON and generated/restored/member screenshots";
+    report.content_verdict = "requires manual inspection of actual provider JSON and generated/restored owner screenshots";
     report.wire_messages_mime_raw_sse = "logical request body and decoded supplier SSE collected by dedicated observer; not a network packet capture";
     if (!config.naturalMidstream) report.natural_midstream_loading = "not claimed; provider is held before POST";
     report.character_support = "zero-character case only; project character binding not exercised";

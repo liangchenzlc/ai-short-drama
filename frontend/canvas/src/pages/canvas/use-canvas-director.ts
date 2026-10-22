@@ -3,6 +3,7 @@ import { App } from "antd";
 import { nanoid } from "nanoid";
 
 import { imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
+import { getCanvasNodeCreationDisabledReason } from "@/lib/canvas/canvas-feature-availability";
 import { directorClayVideoMetadata } from "@/lib/canvas/director/director-clay-output";
 import { fitNodeSize } from "@/lib/canvas/canvas-node-size";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
@@ -21,7 +22,6 @@ import type { DirectorScene, DirectorSceneOutput } from "@/types/director";
 
 type UseCanvasDirectorOptions = {
     projectId: string;
-    domainProjectId?: string;
     directorNodeId: string | null;
     directorScenes: DirectorScene[];
     nodesRef: { current: CanvasNodeData[] };
@@ -47,7 +47,6 @@ function currentDirectorScenes(projectId: string, fallback: DirectorScene[]) {
 }
 export function useCanvasDirector({
     projectId,
-    domainProjectId,
     directorNodeId,
     directorScenes,
     nodesRef,
@@ -74,6 +73,11 @@ export function useCanvasDirector({
 
     /** 新建空导演台；演员、道具和机位由用户进入工作台后自行添加。 */
     const createDirectorShot = useCallback((position?: Position) => {
+        const disabledReason = getCanvasNodeCreationDisabledReason(CanvasNodeType.Director);
+        if (disabledReason) {
+            message.info(disabledReason);
+            return;
+        }
         const shotIndex = nextDirectorNodeIndex(nodesRef.current);
         const directorTitle = `导演台 ${shotIndex}`;
         let scene = createDirectorSceneFromTemplate("empty", `镜头 ${shotIndex}`);
@@ -95,9 +99,14 @@ export function useCanvasDirector({
         setSelectedConnectionId(null);
         updateProject(projectId, { directorScenes: upsertDirectorSceneById(currentDirectorScenes(projectId, directorScenes), scene) });
         setDirectorNodeId(node.id);
-    }, [directorScenes, getCanvasCenter, nodesRef, projectId, setDirectorNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds, updateProject]);
+    }, [directorScenes, getCanvasCenter, message, nodesRef, projectId, setDirectorNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds, updateProject]);
 
     const openDirectorWorkbench = useCallback((nodeId: string) => {
+        const disabledReason = getCanvasNodeCreationDisabledReason(CanvasNodeType.Director);
+        if (disabledReason) {
+            message.info(disabledReason);
+            return;
+        }
         const node = nodesRef.current.find((item) => item.id === nodeId);
         if (!node || node.metadata?.workflowKind !== "shot") return;
         let scene = currentDirectorScenes(projectId, directorScenes).find((item) => item.id === node.metadata?.directorSceneId);
@@ -115,7 +124,7 @@ export function useCanvasDirector({
         }
         if (sceneNeedsPersistence) updateProject(projectId, { directorScenes: upsertDirectorSceneById(currentDirectorScenes(projectId, directorScenes), scene) });
         setDirectorNodeId(nodeId);
-    }, [directorScenes, nodesRef, projectId, setDirectorNodeId, setNodes, updateProject]);
+    }, [directorScenes, message, nodesRef, projectId, setDirectorNodeId, setNodes, updateProject]);
 
     /** 每次保存都基于 store 中最新 directorScenes upsert，避免旧闭包数组覆盖并发保存。 */
     const saveDirectorScene = useCallback((scene: DirectorScene) => {
@@ -227,7 +236,7 @@ export function useCanvasDirector({
         const assetIds = new Map<string, string>();
         let confirmed = true;
         for (const mediaNode of mediaNodes) {
-            const result = await ensureCanvasNodeAsset({ canvasId: projectId, domainProjectId, node: mediaNode, source: "canvas-manual", expectedScope });
+            const result = await ensureCanvasNodeAsset({ canvasId: projectId, node: mediaNode, source: "canvas-manual", expectedScope });
             assetIds.set(mediaNode.id, result.assetId);
             if (!result.confirmed) confirmed = false;
         }
@@ -277,7 +286,7 @@ export function useCanvasDirector({
         setConnections(committedConnections);
         saveDirectorScene(committedScene);
         return { confirmed };
-    }, [connectionsRef, directorNodeId, domainProjectId, nodesRef, projectId, saveDirectorScene, setConnections, setNodes]);
+    }, [connectionsRef, directorNodeId, nodesRef, projectId, saveDirectorScene, setConnections, setNodes]);
 
     return { applyDirectorOutput, captureDirectorCover, createDirectorShot, openDirectorWorkbench, saveDirectorScene, shouldCaptureCover };
 }

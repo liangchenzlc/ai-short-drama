@@ -2,19 +2,19 @@
 
 from sqlalchemy import func, select
 
-from short_drama.agent.artifacts import asset_in_episode, candidate_patch
+from short_drama.agent.artifacts import asset_in_creation, candidate_patch
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.base import BaseDAO
-from short_drama.dao.episode_writing_dao import EpisodeWritingDAO, bump_writing_version
+from short_drama.dao.project_writing_dao import ProjectWritingDAO, bump_writing_version
 from short_drama.db.access import require_project
 from short_drama.domain import (
     AgentArtifact,
     AgentConversation,
     AgentRun,
     AgentToolCall,
-    EpisodeNovel,
-    EpisodeScript,
     Project,
+    ProjectNovel,
+    ProjectScript,
     ShotScript,
 )
 from short_drama.schemas.agent import ConversationScope
@@ -59,8 +59,8 @@ class AgentArtifactService(BaseService):
         )
         return AgentArtifact.tool_call_id.in_(tool_ids)
 
-    def _scope(self, project_id, episode_id, *, for_update=True):
-        project_id, episode_id = parse_identifier(project_id), parse_identifier(episode_id)
+    def _scope(self, project_id, *, for_update=True):
+        project_id = parse_identifier(project_id)
         statement = (
             select(Project)
             .where(Project.id == project_id)
@@ -72,17 +72,15 @@ class AgentArtifactService(BaseService):
         if project is None or project.archived_at is not None:
             raise NotFound("Project does not exist")
         require_project(self.session, project_id, lock=for_update)
-        return EpisodeWritingDAO(self.session).scoped_episode(
-            project_id, episode_id, for_update=for_update
-        )
+        return ProjectWritingDAO(self.session).scoped_project(project_id, for_update=for_update)
 
-    def _artifact(self, episode, artifact_id, *, for_update=True, expected_scope=None):
+    def _artifact(self, creation, artifact_id, *, for_update=True, expected_scope=None):
         statement = (
             select(AgentArtifact)
             .where(
                 AgentArtifact.id == parse_identifier(artifact_id),
-                AgentArtifact.project_id == episode.project_id,
-                AgentArtifact.episode_id == episode.id,
+                AgentArtifact.project_id == creation.id,
+                AgentArtifact.project_id == creation.id,
             )
             .execution_options(populate_existing=True)
         )
@@ -92,7 +90,7 @@ class AgentArtifactService(BaseService):
             statement = statement.with_for_update()
         artifact = self.session.scalar(statement)
         if artifact is None:
-            raise NotFound("Artifact does not exist in this episode")
+            raise NotFound("Artifact does not exist in this creation")
         return artifact
 
     def _view(self, artifact, *, detail=True, script=_UNSET):
@@ -106,9 +104,9 @@ class AgentArtifactService(BaseService):
         if script is _UNSET:
             script = (
                 self.session.scalar(
-                    select(EpisodeScript).where(
-                        EpisodeScript.id == artifact.script_id,
-                        EpisodeScript.episode_id == artifact.episode_id,
+                    select(ProjectScript).where(
+                        ProjectScript.id == artifact.script_id,
+                        ProjectScript.project_id == artifact.project_id,
                     )
                 )
                 if artifact.script_id
@@ -146,7 +144,6 @@ class AgentArtifactService(BaseService):
     def list(
         self,
         project_id,
-        episode_id,
         offset=0,
         limit=20,
         *,
@@ -156,10 +153,10 @@ class AgentArtifactService(BaseService):
     ):
         self.dao.validate_pagination(offset, limit)
         with self._transaction(read_only=True):
-            episode = self._scope(project_id, episode_id, for_update=False)
+            creation = self._scope(project_id, for_update=False)
             conditions = [
-                AgentArtifact.project_id == episode.project_id,
-                AgentArtifact.episode_id == episode.id,
+                AgentArtifact.project_id == creation.id,
+                AgentArtifact.project_id == creation.id,
             ]
             if kind is not None:
                 conditions.append(AgentArtifact.kind == kind)
@@ -182,8 +179,9 @@ class AgentArtifactService(BaseService):
                 {
                     script.id: script
                     for script in self.session.scalars(
-                        select(EpisodeScript).where(
-                            EpisodeScript.id.in_(script_ids), EpisodeScript.episode_id == episode.id
+                        select(ProjectScript).where(
+                            ProjectScript.id.in_(script_ids),
+                            ProjectScript.project_id == creation.id,
                         )
                     )
                 }
@@ -199,50 +197,50 @@ class AgentArtifactService(BaseService):
                 "limit": limit,
             }
 
-    def get(self, project_id, episode_id, artifact_id, *, expected_scope=None):
+    def get(self, project_id, artifact_id, *, expected_scope=None):
         with self._transaction(read_only=True):
-            episode = self._scope(project_id, episode_id, for_update=False)
+            creation = self._scope(project_id, for_update=False)
             return self._view(
                 self._artifact(
-                    episode, artifact_id, for_update=False, expected_scope=expected_scope
+                    creation, artifact_id, for_update=False, expected_scope=expected_scope
                 )
             )
 
-    def _require_source(self, episode, artifact, values):
+    def _require_source(self, creation, artifact, values):
         source = artifact.source_snapshot
         if (
-            episode.content_version != source["content_version"]
-            or values["content_version"] != episode.content_version
+            creation.content_version != source["content_version"]
+            or values["content_version"] != creation.content_version
         ):
             raise WorkflowError(
                 "agent_source_changed",
                 "正文已变化，请重新审查候选",
                 409,
-                details={"current_version": episode.content_version},
+                details={"current_version": creation.content_version},
             )
         if artifact.kind == "shot_patch":
             if (
-                episode.storyboard_version != source["storyboard_version"]
-                or values.get("storyboard_version") != episode.storyboard_version
+                creation.storyboard_version != source["storyboard_version"]
+                or values.get("storyboard_version") != creation.storyboard_version
             ):
                 raise WorkflowError(
                     "agent_source_changed",
                     "分镜已变化，请重新审查候选",
                     409,
-                    details={"current_version": episode.storyboard_version},
+                    details={"current_version": creation.storyboard_version},
                 )
 
-    def _apply_text(self, episode, artifact):
-        dao = EpisodeWritingDAO(self.session)
+    def _apply_text(self, creation, artifact):
+        dao = ProjectWritingDAO(self.session)
         actor_id = getattr(self.session.info.get("actor"), "user_id", None)
         if artifact.kind == "novel_proposal":
-            novel = dao.novel(episode.id)
+            novel = dao.novel(creation.id)
             changed = novel is None or novel.content != artifact.source_content
             if novel is None:
                 now = utcnow()
-                novel = BaseDAO(self.session, EpisodeNovel).create(
+                novel = BaseDAO(self.session, ProjectNovel).create(
                     {
-                        "episode_id": episode.id,
+                        "project_id": creation.id,
                         "content": artifact.source_content,
                         "created_at": now,
                         "updated_at": now,
@@ -257,44 +255,40 @@ class AgentArtifactService(BaseService):
                     actor_id,
                 )
             if changed:
-                bump_writing_version(episode)
+                bump_writing_version(creation)
             return {"novel_id": str(novel.id), "changed": changed, "action": "replace_novel"}
-        script = dao.script(episode.id, artifact.script_id)
+        script = dao.script(creation.id, artifact.script_id)
         publish(script)
-        changed = episode.editing_script_id != script.id
+        changed = creation.editing_script_id != script.id
         if changed:
-            episode.editing_script_id = script.id
-            bump_writing_version(episode)
+            creation.editing_script_id = script.id
+            bump_writing_version(creation)
         return {"script_id": str(script.id), "changed": changed, "action": "select_script"}
 
-    def _apply_patch(self, episode, artifact, values):
+    def _apply_patch(self, creation, artifact, values):
         expected = artifact.source_snapshot["target_row_version"]
         if values.get("target_row_version") != expected:
             raise WorkflowError("agent_source_changed", "候选对象版本未匹配，请刷新", 409)
         patch = candidate_patch(artifact.kind, artifact.proposed_patch, version=expected)
         if artifact.kind == "asset_patch":
-            target = asset_in_episode(
-                self.session, episode.project_id, episode.id, artifact.target_asset_id
-            )
+            target = asset_in_creation(self.session, creation.id, artifact.target_asset_id)
             before = target.row_version
-            AssetService(self.session).apply_patch_locked(
-                target, patch, expected, confirm_shared=values.get("confirm_shared", False)
-            )
+            AssetService(self.session).apply_patch_locked(target, patch, expected)
             reference = {"asset_id": str(target.id)}
         else:
             target = self.session.scalar(
                 select(ShotScript)
                 .where(
                     ShotScript.id == artifact.target_shot_id,
-                    ShotScript.episode_id == episode.id,
+                    ShotScript.project_id == creation.id,
                 )
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
             if target is None:
-                raise NotFound("Shot does not exist in this episode")
+                raise NotFound("Shot does not exist in this creation")
             before = target.row_version
-            ShotScriptService(self.session).apply_patch_locked(episode, target, patch, expected)
+            ShotScriptService(self.session).apply_patch_locked(creation, target, patch, expected)
             reference = {"shot_id": str(target.id)}
         return {
             **reference,
@@ -303,11 +297,11 @@ class AgentArtifactService(BaseService):
             "action": "apply_patch",
         }
 
-    def adopt(self, project_id, episode_id, artifact_id, payload, *, expected_scope=None):
+    def adopt(self, project_id, artifact_id, payload, *, expected_scope=None):
         values = self._payload(ArtifactAdopt, payload)
         with self._transaction():
-            episode = self._scope(project_id, episode_id)
-            artifact = self._artifact(episode, artifact_id, expected_scope=expected_scope)
+            creation = self._scope(project_id)
+            artifact = self._artifact(creation, artifact_id, expected_scope=expected_scope)
             # A committed receipt is stable even after later manual edits. It must
             # win before optimistic/source checks to make duplicate delivery safe.
             if artifact.status == "applied":
@@ -331,17 +325,17 @@ class AgentArtifactService(BaseService):
                 raise WorkflowError(
                     "agent_native_review_required", "请通过原有候选审核流程采用", 409
                 )
-            self._require_source(episode, artifact, values)
+            self._require_source(creation, artifact, values)
             if artifact.kind in {"novel_proposal", "script_candidate"}:
-                receipt = self._apply_text(episode, artifact)
+                receipt = self._apply_text(creation, artifact)
             elif artifact.kind in {"asset_patch", "shot_patch"}:
-                receipt = self._apply_patch(episode, artifact, values)
+                receipt = self._apply_patch(creation, artifact, values)
             else:
                 from short_drama.agent.native_adoption import adopt_native_locked
 
                 receipt = adopt_native_locked(
                     self.session,
-                    episode,
+                    creation,
                     artifact,
                     values,
                     settings=self.settings,
@@ -358,10 +352,10 @@ class AgentArtifactService(BaseService):
             artifact.apply_receipt = {
                 **receipt,
                 "artifact_id": str(artifact.id),
-                "episode_id": str(episode.id),
-                "content_version": episode.content_version,
-                "storyboard_version": episode.storyboard_version,
-                "episode_row_version": episode.row_version,
+                "project_id": str(creation.id),
+                "content_version": creation.content_version,
+                "storyboard_version": creation.storyboard_version,
+                "project_row_version": creation.row_version,
                 "applied_at": now.isoformat(),
             }
             self.session.flush()

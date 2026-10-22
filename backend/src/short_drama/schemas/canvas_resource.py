@@ -51,6 +51,11 @@ class CanvasResourceRead(InputModel):
     height: int = 0
     duration_ms: int = Field(default=0, alias="durationMs")
     etag: str = ""
+    playback_status: Literal["processing", "ready", "failed"] | None = Field(
+        default=None, alias="playbackStatus"
+    )
+    playback_error: str = Field(default="", alias="playbackError")
+    playback_task_id: Identifier | None = Field(default=None, alias="playbackTaskId")
     created_at: str = Field(alias="createdAt")
     updated_at: str = Field(alias="updatedAt")
 

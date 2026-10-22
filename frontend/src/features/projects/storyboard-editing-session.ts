@@ -22,7 +22,7 @@ export class StoryboardEditingSession {
   private state = { status: 'saved', message: '', dirty: false, busy: false, revision: 0, savedRevision: 0 };
   private savedRevision = 0;
   private active = true;
-  constructor(private projectId: string, private episodeId: string, private account = 'anonymous') {}
+  constructor(private projectId: string, private account = 'anonymous') {}
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish = () => {
@@ -34,8 +34,8 @@ export class StoryboardEditingSession {
   ensure(shot: ShotRead, storyboardVersion = '0') {
     let session = this.sessions.get(shot.id);
     if (!session) {
-      const api = storyboardApi(this.projectId, this.episodeId), id = shot.id;
-      const scope = creationScope(`shot-edit:${this.projectId}:${this.episodeId}:${id}`, this.account);
+      const api = storyboardApi(this.projectId), id = shot.id;
+      const scope = creationScope(`shot-edit:${this.projectId}:${id}`, this.account);
       session = new ResourceEditingSession<Resource, ShotDraftValue>({
         read: () => api.shot(id), save: async (base, document, assertActive) => {
           const saved = await api.update(id, { row_version: base.shot.row_version, ...document });
@@ -67,6 +67,11 @@ export class StoryboardEditingSession {
   reload = (id: string, keepLocal = false) => this.sessions.get(id)?.reload(keepLocal) ?? Promise.resolve(null);
   exportRecovered = (id: string) => this.sessions.get(id)?.exportRecovered() ?? null;
   hasPrevious = (id: string) => this.sessions.get(id)?.hasPrevious() ?? false;
+  forget(id: string) {
+    this.sessions.get(id)?.dispose();
+    this.sessions.delete(id);
+    this.publish();
+  }
   suspend() { this.active = false; this.sessions.forEach(session => session.suspend()); }
   resume() { this.active = true; this.sessions.forEach(session => session.resume()); }
   dispose() { this.sessions.forEach(session => session.dispose()); this.listeners.clear(); }

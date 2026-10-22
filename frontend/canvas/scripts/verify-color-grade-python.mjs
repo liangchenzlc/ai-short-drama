@@ -200,14 +200,7 @@ try {
     await page.screenshot({ path: resolve(output, "color-grade-restored.png"), fullPage: true });
     report.cookie_only_task_recovery = true;
 
-    report.step = "成员原调色预览和共享终态";
-    await open(member);
-    await checkPreview("color-grade-member-preview.png");
-    const shared = await graph(() => true, member);
-    assert.equal(shared.nodes.find(node => node.id === report.text_node_id).metadata.content, config.first + config.second);
-    assert.equal((await member.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
-    await page.screenshot({ path: resolve(output, "color-grade-member.png"), fullPage: true });
-    report.member_result_seen = true;
+
 
     report.step = "源未注册调色创建菜单保持隐藏";
     await page.locator("[data-canvas-viewport]").click({ button: "right", position: { x: 25, y: 150 } });

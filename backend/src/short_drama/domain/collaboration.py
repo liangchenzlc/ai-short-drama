@@ -53,11 +53,6 @@ class EmailChallenge(Base):
         BIGINT(unsigned=True), ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT")
     )
     purpose: Mapped[str] = mapped_column(VARCHAR(24))
-    invitation_id: Mapped[int | None] = mapped_column(
-        BIGINT(unsigned=True),
-        ForeignKey("project_invitations.id", ondelete="RESTRICT", onupdate="RESTRICT"),
-        nullable=True,
-    )
     email: Mapped[str] = mapped_column(VARCHAR(254))
     proof_hash: Mapped[str] = mapped_column(CHAR(64, charset="ascii"))
     attempts: Mapped[int] = mapped_column(INTEGER(unsigned=True), default=0)
@@ -67,66 +62,8 @@ class EmailChallenge(Base):
     __table_args__ = (
         Index("idx_challenges_user", "user_id", "purpose", "created_at"),
         CheckConstraint(
-            "purpose IN ('registration','invitation','password_reset')", name="ck_challenge_purpose"
+            "purpose IN ('registration','password_reset')", name="ck_challenge_purpose"
         ),
-        CheckConstraint(
-            "(purpose = 'invitation') = (invitation_id IS NOT NULL)", name="ck_challenge_invitation"
-        ),
-        OPTIONS,
-    )
-
-
-class ProjectMember(Base):
-    __tablename__ = "project_members"
-    id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True, autoincrement=False)
-    project_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), ForeignKey("projects.id", ondelete="RESTRICT", onupdate="RESTRICT")
-    )
-    user_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT")
-    )
-    status: Mapped[str] = mapped_column(VARCHAR(16), default="active")
-    joined_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6))
-    removed_at: Mapped[datetime | None] = mapped_column(DATETIME(fsp=6), nullable=True)
-    __table_args__ = (
-        UniqueConstraint("project_id", "user_id", name="uk_project_member"),
-        Index("idx_members_user", "user_id", "status", "project_id"),
-        CheckConstraint("status IN ('active','removed','left')", name="ck_member_status"),
-        OPTIONS,
-    )
-
-
-class ProjectInvitation(Base):
-    __tablename__ = "project_invitations"
-    id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True, autoincrement=False)
-    project_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), ForeignKey("projects.id", ondelete="RESTRICT", onupdate="RESTRICT")
-    )
-    invited_by: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT")
-    )
-    target_user_id: Mapped[int | None] = mapped_column(
-        BIGINT(unsigned=True),
-        ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT"),
-        nullable=True,
-    )
-    target_email: Mapped[str | None] = mapped_column(VARCHAR(254), nullable=True)
-    token_hash: Mapped[str] = mapped_column(CHAR(64, charset="ascii"), unique=True)
-    status: Mapped[str] = mapped_column(VARCHAR(16), default="pending")
-    expires_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6))
-    accepted_by: Mapped[int | None] = mapped_column(
-        BIGINT(unsigned=True),
-        ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT"),
-        nullable=True,
-    )
-    created_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6))
-    accepted_at: Mapped[datetime | None] = mapped_column(DATETIME(fsp=6), nullable=True)
-    __table_args__ = (
-        Index("idx_invitations_project", "project_id", "status"),
-        CheckConstraint(
-            "(target_user_id IS NULL) <> (target_email IS NULL)", name="ck_invitation_target"
-        ),
-        CheckConstraint("status IN ('pending','accepted','revoked')", name="ck_invitation_status"),
         OPTIONS,
     )
 
@@ -246,7 +183,7 @@ class ResourceImport(Base):
     cleanup_at: Mapped[datetime | None] = mapped_column(DATETIME(fsp=6), nullable=True)
     __table_args__ = (
         Index("idx_import_schedule", "status", "created_at"),
-        CheckConstraint("source_type IN ('asset','media')", name="ck_import_type"),
+        CheckConstraint("source_type = 'media'", name="ck_import_type"),
         CheckConstraint(
             "status IN ('pending','copying','succeeded','failed','cancelled')",
             name="ck_import_status",

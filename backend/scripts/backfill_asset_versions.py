@@ -56,7 +56,7 @@ def _validate_media(session: Session, asset: Asset, snapshot: dict) -> None:
         media = session.get(MediaFile, int(slot["media_id"]))
         if media is None:
             raise ValueError("missing_media")
-        if (media.scope_user_id, media.project_id) != (asset.scope_user_id, asset.project_id):
+        if (media.scope_user_id, media.project_id) != (None, asset.project_id):
             raise ValueError("media_scope_mismatch")
         if not (media.format_code.startswith("image/") or media.format_code == "demo:image"):
             raise ValueError("media_type_mismatch")

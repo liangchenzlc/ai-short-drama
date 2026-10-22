@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 export async function verifyCopyIdentity({ browser, context, origin, read, saved, resource, report, recordFailure }) {
     const project = await read(await context.request.post(`${origin}/api/v1/projects`, {
         headers: { "Idempotency-Key": "browser-copy-identity-project" },
-        data: { name: "副本身份刷新验证", aspect: "16:9", workspace_mode: "infinite_canvas" },
+        data: { name: "副本身份刷新验证", workspace_mode: "infinite_canvas" },
     }));
     const path = `${origin}/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
     const initial = await read(await context.request.get(`${path}/my-document`));

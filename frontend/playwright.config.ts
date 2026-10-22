@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: './e2e',
   workers: 1,
   timeout: 30000,
-  outputDir: '.runtime/browser-results',
+  outputDir: process.env.PLAYWRIGHT_OUTPUT_DIR ?? '.runtime/browser-results',
   reporter: [['list']],
   use: { baseURL: 'http://127.0.0.1:4175', viewport: { width: 1440, height: 1000 },
     launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH },

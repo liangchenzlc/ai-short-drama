@@ -45,41 +45,6 @@ def _list(service, kind, parent_id, project_id, asset_kind, q, offset, limit):
     )
 
 
-@router.get("/libraries/global/assets", response_model=PageResponse[LibraryAssetRead])
-def list_global_assets(
-    service: Libraries,
-    kind: Annotated[Literal["character", "scene", "prop"] | None, Query()] = None,
-    q: Annotated[str, Query(max_length=120)] = "",
-    offset: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
-):
-    return _list(service, "global", None, None, kind, q, offset, limit)
-
-
-@router.post("/libraries/global/assets", response_model=LibraryAssetRead)
-def create_global_asset(
-    payload: AssetLibraryCreate, key: CreationKey, response: Response, service: Libraries
-):
-    result, created = service.create("global", None, None, payload, key)
-    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-    return result
-
-
-@router.put("/libraries/global/assets/{asset_id}", response_model=LibraryAssetRead)
-def link_global_asset(asset_id: AssetId, service: Libraries):
-    return service.link("global", None, None, asset_id)
-
-
-@router.delete("/libraries/global/assets/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
-def unlink_global_asset(
-    asset_id: AssetId,
-    service: Libraries,
-    if_match: Annotated[str, Header(alias="If-Match")],
-):
-    service.unlink("global", None, None, asset_id, _version(if_match))
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
 @router.get("/projects/{project_id}/assets", response_model=PageResponse[LibraryAssetRead])
 def list_project_assets(
     project_id: ScopedId,
@@ -105,11 +70,6 @@ def create_project_asset(
     return result
 
 
-@router.put("/projects/{project_id}/assets/{asset_id}", response_model=LibraryAssetRead)
-def link_project_asset(project_id: ScopedId, asset_id: AssetId, service: Libraries):
-    return service.link("project", project_id, project_id, asset_id)
-
-
 @router.delete("/projects/{project_id}/assets/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
 def unlink_project_asset(
     project_id: ScopedId,
@@ -118,61 +78,6 @@ def unlink_project_asset(
     if_match: Annotated[str, Header(alias="If-Match")],
 ):
     service.unlink("project", project_id, project_id, asset_id, _version(if_match))
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get(
-    "/projects/{project_id}/episodes/{episode_id}/assets",
-    response_model=PageResponse[LibraryAssetRead],
-)
-def list_episode_assets(
-    project_id: ScopedId,
-    episode_id: ScopedId,
-    service: Libraries,
-    kind: Annotated[Literal["character", "scene", "prop"] | None, Query()] = None,
-    q: Annotated[str, Query(max_length=120)] = "",
-    offset: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
-):
-    return _list(service, "episode", episode_id, project_id, kind, q, offset, limit)
-
-
-@router.post("/projects/{project_id}/episodes/{episode_id}/assets", response_model=LibraryAssetRead)
-def create_episode_asset(
-    project_id: ScopedId,
-    episode_id: ScopedId,
-    payload: AssetLibraryCreate,
-    key: CreationKey,
-    response: Response,
-    service: Libraries,
-):
-    result, created = service.create("episode", episode_id, project_id, payload, key)
-    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-    return result
-
-
-@router.put(
-    "/projects/{project_id}/episodes/{episode_id}/assets/{asset_id}",
-    response_model=LibraryAssetRead,
-)
-def link_episode_asset(
-    project_id: ScopedId, episode_id: ScopedId, asset_id: AssetId, service: Libraries
-):
-    return service.link("episode", episode_id, project_id, asset_id)
-
-
-@router.delete(
-    "/projects/{project_id}/episodes/{episode_id}/assets/{asset_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-def unlink_episode_asset(
-    project_id: ScopedId,
-    episode_id: ScopedId,
-    asset_id: AssetId,
-    service: Libraries,
-    if_match: Annotated[str, Header(alias="If-Match")],
-):
-    service.unlink("episode", episode_id, project_id, asset_id, _version(if_match))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

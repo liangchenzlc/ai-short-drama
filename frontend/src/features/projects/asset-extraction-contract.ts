@@ -5,8 +5,7 @@ import type { GenerationSummary } from '../../api/types/generations';
 export class ExtractionReviewError extends Error {}
 
 export function extractionDraftError(draft: Pick<AssetDraft, 'name' | 'description' | 'prompt'>): string {
-  const missing = [!draft.name.trim() && '名称', !draft.description.trim() && '描述', !draft.prompt.trim() && '图片生成提示词'].filter(Boolean);
-  return missing.length ? `请补充${missing.join('、')}，或明确放弃此项修改。` : '';
+  return draft.name.trim() ? '' : '请补充名称，或明确放弃此项修改。';
 }
 
 export function missingExtractionTaskIds(previous: readonly GenerationSummary[], incoming: readonly GenerationSummary[]): string[] {
@@ -14,10 +13,10 @@ export function missingExtractionTaskIds(previous: readonly GenerationSummary[],
   return previous.filter(task => (task.status === 'queued' || task.status === 'running') && !visible.has(task.generation_id)).map(task => task.generation_id);
 }
 
-export function scriptAssetsRequest(projectId: string, episodeId: string, scriptId: string, contentVersion: string, kinds: AssetKind[], instructions: string) {
+export function scriptAssetsRequest(projectId: string, scriptId: string, contentVersion: string, kinds: AssetKind[], instructions: string) {
   if (!kinds.length) throw new ExtractionReviewError('请至少选择一种提取范围。');
   return {
-    source: { scene: 'script_assets' as const, project_id: projectId, episode_id: episodeId, script_id: scriptId, content_version: contentVersion },
+    source: { scene: 'script_assets' as const, project_id: projectId, script_id: scriptId, content_version: contentVersion },
     extraction: { kinds: [...new Set(kinds)] }, instructions, parameters: {},
   };
 }

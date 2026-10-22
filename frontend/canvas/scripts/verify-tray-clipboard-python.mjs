@@ -41,7 +41,7 @@ async function createEmpty(context, key, projectId) {
         }));
     } else {
         const project = await read(await context.request.post(`${origin}/api/v1/projects`, {
-            headers: { "Idempotency-Key": key }, data: { name: key, aspect: "16:9", workspace_mode: "infinite_canvas" },
+            headers: { "Idempotency-Key": key }, data: { name: key, workspace_mode: "infinite_canvas" },
         }));
         canvas = { project_id: project.id, id: project.primary_canvas_id };
     }

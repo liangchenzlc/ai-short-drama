@@ -82,7 +82,6 @@ export const mainToolbarTools: ToolDefinition[] = [
         icon: <Cable />,
         defaultVisible: true,
         defaultOrder: 30,
-        applicable: (ctx) => !ctx.isProjectLinked,
         run: (ctx) => ctx.handlers.onOpenMyAssets(),
     },
     {

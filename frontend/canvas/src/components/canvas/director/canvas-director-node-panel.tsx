@@ -2,14 +2,16 @@ import { useEffect, useState } from "react";
 import { Clapperboard, Move3d } from "lucide-react";
 
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
+import { getCanvasNodeCreationDisabledReason } from "@/lib/canvas/canvas-feature-availability";
 import { resolveDirectorActiveShot, resolveDirectorPreviewSource, type DirectorNodeContentReader } from "@/lib/canvas/director/director-preview";
 import { resolveImageUrl } from "@/services/image-storage";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
-import type { CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import type { DirectorScene } from "@/types/director";
 
 export function CanvasDirectorNodePanel({ node, scene, readNodeContent, readNodeStorageKey, onOpen, professional = true }: { node: CanvasNodeData; scene: DirectorScene | null; readNodeContent: DirectorNodeContentReader; readNodeStorageKey?: DirectorNodeContentReader; onOpen: () => void; professional?: boolean }) {
     const theme = canvasThemes[useActiveTheme()];
+    const disabledReason = getCanvasNodeCreationDisabledReason(CanvasNodeType.Director);
     const shot = resolveDirectorActiveShot(scene, node.metadata?.directorShotId);
     // 记录「失败的那个 URL」而非布尔量：同一个坏 URL 不再反复渲染，换成另一个 URL 时自动重试。
     const [failedUrl, setFailedUrl] = useState<string | null>(null);
@@ -45,14 +47,15 @@ export function CanvasDirectorNodePanel({ node, scene, readNodeContent, readNode
                     data-canvas-no-zoom
                     className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-xl px-6 py-4 text-base font-semibold shadow-lg transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 disabled:cursor-default disabled:opacity-60"
                     style={{ background: theme.accent.primary, color: theme.accent.onPrimary, border: `1px solid ${theme.toolbar.border}` }}
-                    aria-label={professional ? "打开导演台" : "切换到专业模式后编辑导演台"}
-                    disabled={!professional}
+                    aria-label={disabledReason ? `导演台${disabledReason}` : professional ? "打开导演台" : "切换到专业模式后编辑导演台"}
+                    title={disabledReason ? `导演台${disabledReason}，暂未开放` : undefined}
+                    disabled={Boolean(disabledReason) || !professional}
                     onMouseDown={(event) => event.stopPropagation()}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => { event.stopPropagation(); onOpen(); }}
                 >
                     <Clapperboard className="size-8" aria-hidden />
-                    {professional ? "打开导演台" : "专业模式可编辑"}
+                    {disabledReason || (professional ? "打开导演台" : "专业模式可编辑")}
                 </button>
             </div>
         </div>

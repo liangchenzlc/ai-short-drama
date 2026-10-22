@@ -256,20 +256,7 @@ try {
     report.final_cookie_only_recovery = true;
     await page.screenshot({ path: resolve(output, "storyboard-media-completed-restored.png") });
 
-    report.step = "成员读取共享作品、私人任务和批次隔离";
-    const shared = await graph(member);
-    assert.equal(scriptData(shared).metadata.generationBatches, undefined);
-    assert.deepEqual(scriptData(shared).metadata.storyboard.rows.map(row => row.id), rowIds);
-    for (const node of report.output_nodes) {
-        const publicNode = shared.nodes.find(item => item.id === node.id);
-        assert.equal(publicNode.metadata.storageKey, node.storage_key);
-        for (const key of ["prompt", "composerContent", "model", "taskId"]) assert.equal(publicNode.metadata[key], undefined);
-    }
-    await open(member);
-    await fit();
-    await imagesReady(targets);
-    report.member_shared_works_private_batch_hidden = true;
-    await page.screenshot({ path: resolve(output, "storyboard-media-member.png") });
+
     assert.deepEqual(report.page_errors, []);
     assert.deepEqual(report.http_errors, []);
     assert.equal(report.resource_posts, config.kind === "video" ? 3 : 0);

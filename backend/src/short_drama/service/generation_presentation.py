@@ -1,16 +1,15 @@
 """Human-readable, frozen task origin without request parameter dumps."""
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import aliased
+from sqlalchemy import select
 
-from short_drama.domain import Asset, Episode, Project, ShotScript
+from short_drama.domain import Asset, Project, ShotScript
 
 
 def generation_display_context(session, request, *, lookups=None):
     source = request.get("source") or {}
     scene = source.get("scene")
     snapshot = request.get("source_snapshot") or {}
-    project_id, episode_id = source.get("project_id"), source.get("episode_id")
+    project_id = source.get("project_id")
     subject = {
         "character_voice_design": f"角色声音：{snapshot.get('name') or source.get('asset_id', '')}",
         "dialogue_audio": "台词配音",
@@ -27,7 +26,7 @@ def generation_display_context(session, request, *, lookups=None):
             else session.get(ShotScript, int(source["shot_id"]))
         )
         if shot is not None:
-            episode_id = str(shot.episode_id)
+            project_id = str(shot.project_id)
             subject = f"分镜 {shot.position:02d} {action}"
         else:
             subject = f"分镜 {source['shot_id']} {action}"
@@ -45,28 +44,6 @@ def generation_display_context(session, request, *, lookups=None):
             asset.get("kind"), "素材"
         )
         subject = f"{label}：{asset.get('name') or source['asset_id']}"
-    episode_label = None
-    if episode_id:
-        episode = (
-            lookups["episodes"].get(int(episode_id))
-            if lookups is not None
-            else session.get(Episode, int(episode_id))
-        )
-        if episode is not None:
-            project_id = str(episode.project_id)
-            number = (
-                lookups["episode_numbers"][episode.id]
-                if lookups is not None
-                else session.scalar(
-                    select(func.count())
-                    .select_from(Episode)
-                    .where(
-                        Episode.project_id == episode.project_id,
-                        Episode.position <= episode.position,
-                    )
-                )
-            )
-            episode_label = f"第 {number} 集：{episode.title}"
     project = (
         lookups["projects"].get(int(project_id))
         if project_id and lookups is not None
@@ -76,9 +53,8 @@ def generation_display_context(session, request, *, lookups=None):
     )
     return {
         "project": project.name if project else None,
-        "episode": episode_label,
         "subject": subject,
-        "scope": "素材库" if scene == "asset_image" else "通用任务",
+        "scope": "素材生成" if scene == "asset_image" else "通用任务",
     }
 
 
@@ -110,25 +86,8 @@ def generation_display_contexts(session, requests):
         if asset_ids
         else {}
     )
-    episode_ids = {int(source["episode_id"]) for source in sources if source.get("episode_id")} | {
-        shot.episode_id for shot in shots.values()
-    }
-    episodes, numbers = {}, {}
-    if episode_ids:
-        earlier = aliased(Episode)
-        number = (
-            select(func.count())
-            .select_from(earlier)
-            .where(earlier.project_id == Episode.project_id, earlier.position <= Episode.position)
-            .correlate(Episode)
-            .scalar_subquery()
-        )
-        for episode, count in session.execute(
-            select(Episode, number).where(Episode.id.in_(episode_ids))
-        ):
-            episodes[episode.id], numbers[episode.id] = episode, count
     project_ids = {int(source["project_id"]) for source in sources if source.get("project_id")} | {
-        episode.project_id for episode in episodes.values()
+        shot.project_id for shot in shots.values()
     }
     projects = (
         {row.id: row for row in session.scalars(select(Project).where(Project.id.in_(project_ids)))}
@@ -138,8 +97,6 @@ def generation_display_contexts(session, requests):
     lookups = {
         "shots": shots,
         "assets": assets,
-        "episodes": episodes,
-        "episode_numbers": numbers,
         "projects": projects,
     }
     return [generation_display_context(session, request, lookups=lookups) for request in requests]

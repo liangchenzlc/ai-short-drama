@@ -473,6 +473,13 @@ class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
             return
         try:
             await callback(payload)
+        except AgentGatewayError as error:
+            self.last_error = AgentGatewayError(
+                error.code,
+                requests=self.requests,
+                accepted_unknown=bool(self.requests) or error.accepted_unknown,
+            )
+            raise self.last_error from None
         except Exception:
             self.last_error = AgentGatewayError(
                 code, requests=self.requests, accepted_unknown=bool(self.requests)

@@ -8,13 +8,11 @@ from sqlalchemy import inspect, or_, select
 
 from short_drama.core.exceptions import Conflict, NotFound
 from short_drama.db.access import require_project, scope_of, scoped_key
-from short_drama.domain import Asset, MediaFile, ProjectAsset
+from short_drama.domain import MediaFile
 from short_drama.domain.collaboration import AuditEvent, ResourceImport
-from short_drama.schemas.asset_version import snapshot_media_references, validate_snapshot
 from short_drama.storage.models import ObjectLocation
 from short_drama.utils.snowflake import next_id
 
-from .asset_version_service import AssetVersionService, canonical_current
 from .base import BaseService, utcnow
 from .storage_service import StorageService
 
@@ -40,6 +38,8 @@ class ResourceImportService(BaseService):
     model = ResourceImport
 
     def create(self, project_id, source_type, source_id, key):
+        if source_type != "media":
+            raise NotFound("Asset library import is retired")
         with self._transaction():
             require_project(self.session, project_id)
             actor = self.session.info["actor"]
@@ -55,8 +55,8 @@ class ResourceImportService(BaseService):
                 ):
                     raise Conflict("Idempotency-Key belongs to another import")
                 return dto(old)
-            model = Asset if source_type == "asset" else MediaFile
-            source = self._require(model, source_id, for_update=source_type == "asset")
+            model = MediaFile
+            source = self._require(model, source_id, for_update=False)
             source_scope = scope_of(self.session, source)
             if source_scope == (None, int(project_id)):
                 raise Conflict("Resource already belongs to this project")
@@ -78,39 +78,13 @@ class ResourceImportService(BaseService):
                     "current_version_id",
                 }
             }
-            if source_type == "media":
-                fields["published_at"] = _publication_json(source.published_at)
-            media_ids = (
-                {source.id}
-                if source_type == "media"
-                else set(map(int, source.reference_media_ids or []))
-                | ({source.media_id} if source.media_id else set())
-            )
-            character_version = None
-            if isinstance(source, Asset) and source.kind == "character":
-                character_snapshot = AssetVersionService(self.session).snapshot_for_copy_locked(
-                    source
-                )
-                character_version = {
-                    "snapshot": character_snapshot,
-                    "source_asset_id": str(source.id),
-                    "source_version_id": (
-                        str(source.current_version_id) if source.current_version_id else None
-                    ),
-                    "source_row_version": str(source.row_version),
-                }
-                media_ids.update(
-                    int(slot["media_id"]) for slot in snapshot_media_references(character_snapshot)
-                )
+            fields["published_at"] = _publication_json(source.published_at)
+            media_ids = {source.id}
             media = []
             for identifier in sorted(media_ids):
                 row = self._require(MediaFile, identifier, for_update=False)
                 if scope_of(self.session, row) != source_scope:
                     raise NotFound("Reference media is outside the source scope")
-                if character_version is not None and not (
-                    row.format_code.startswith("image/") or row.format_code == "demo:image"
-                ):
-                    raise Conflict("角色版本引用的媒体必须是图片")
                 values = {
                     c.key: copy.deepcopy(getattr(row, c.key))
                     for c in inspect(MediaFile).columns
@@ -138,8 +112,6 @@ class ResourceImportService(BaseService):
                 snapshot={
                     "resource": fields,
                     "media": media,
-                    "asset_id": next_id(),
-                    **({"character_version": character_version} if character_version else {}),
                 },
                 status="pending",
                 attempts=0,
@@ -280,71 +252,7 @@ def _complete_import(session, job, snapshot, copied):
             )
         )
     session.flush()
-    if job.source_type == "asset":
-        values = {
-            k: v for k, v in snapshot["resource"].items() if k not in {"id", "current_version_id"}
-        }
-        values["media_id"] = copied[values["media_id"]][0] if values["media_id"] else None
-        values["reference_media_ids"] = [
-            str(copied[int(mid)][0]) for mid in values.get("reference_media_ids", [])
-        ]
-        values["row_version"] = 1
-        asset_id = snapshot["asset_id"]
-        asset = Asset(
-            id=asset_id,
-            **values,
-            model_id=None,
-            project_id=job.project_id,
-            scope_user_id=None,
-            created_by=job.initiated_by,
-            updated_by=job.initiated_by,
-            created_at=now,
-            updated_at=now,
-        )
-        session.add(asset)
-        session.flush()
-        if asset.kind == "character":
-            envelope = snapshot.get("character_version")
-            version_snapshot = (
-                _remap_character_snapshot(envelope, snapshot["resource"], copied)
-                if envelope is not None
-                else canonical_current(asset)
-            )
-            AssetVersionService(session).append_locked(
-                asset,
-                snapshot=version_snapshot,
-                source_audit={
-                    "operation": "resource_import",
-                    "source_asset_id": str(job.source_id),
-                    "source_version_id": envelope["source_version_id"] if envelope else None,
-                    "source_row_version": envelope["source_row_version"] if envelope else None,
-                    "source_media_map": {str(mid): str(entry[0]) for mid, entry in copied.items()},
-                    "import_id": str(job.id),
-                    "snapshot_origin": "version_envelope" if envelope else "legacy_frozen_job",
-                },
-            )
-        last = (
-            session.scalar(
-                select(ProjectAsset.position)
-                .where(ProjectAsset.project_id == job.project_id)
-                .order_by(ProjectAsset.position.desc())
-                .limit(1)
-            )
-            or 0
-        )
-        session.add(
-            ProjectAsset(
-                id=next_id(),
-                project_id=job.project_id,
-                asset_id=asset_id,
-                position=last + 1,
-                created_by=job.initiated_by,
-                created_at=now,
-            )
-        )
-        job.result_id = asset_id
-    else:
-        job.result_id = copied[job.source_id][0]
+    job.result_id = copied[job.source_id][0]
     job.status, job.lease_token, job.lease_until = "succeeded", None, None
     session.add(
         AuditEvent(
@@ -358,38 +266,6 @@ def _complete_import(session, job, snapshot, copied):
             created_at=now,
         )
     )
-
-
-def _remap_character_snapshot(envelope, frozen_resource, copied):
-    """只映射已知媒体槽；definition 中相同的普通字符串保持原值。"""
-    snapshot = validate_snapshot(envelope["snapshot"]).model_dump(mode="json")
-    if envelope["source_asset_id"] != str(frozen_resource["id"]):
-        raise Conflict("角色导入版本与冻结资源所属不一致")
-    for field, value in snapshot["asset"].items():
-        frozen = frozen_resource.get(field)
-        if field == "media_id":
-            frozen = str(frozen) if frozen is not None else None
-        if value != frozen:
-            raise Conflict("角色导入版本与冻结平面内容不一致")
-    if snapshot["generation_reference_ids"] != [
-        str(mid) for mid in frozen_resource.get("reference_media_ids", [])
-    ]:
-        raise Conflict("角色导入版本与冻结生成参考不一致")
-
-    def remap(identifier):
-        entry = copied.get(int(identifier))
-        if entry is None:
-            raise Conflict("角色导入缺少完整媒体副本")
-        return str(entry[0])
-
-    if snapshot["asset"]["media_id"] is not None:
-        snapshot["asset"]["media_id"] = remap(snapshot["asset"]["media_id"])
-    for slot in snapshot["representations"]:
-        slot["media_id"] = remap(slot["media_id"])
-    snapshot["generation_reference_ids"] = [
-        remap(mid) for mid in snapshot["generation_reference_ids"]
-    ]
-    return validate_snapshot(snapshot).model_dump(mode="json")
 
 
 def cleanup_imports(factory, storage, settings):

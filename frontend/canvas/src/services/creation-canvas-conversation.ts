@@ -58,7 +58,7 @@ export async function continueCreationConversationOnCanvas(source: SourceConvers
         }
     } else {
         const session: CanvasAssistantSession = { id: sessionId, title: source.title, createdAt: source.messages[0].createdAt, updatedAt: source.updatedAt, messages };
-        const created = await createWorkspaceCanvasProject(source.title || "创作画布", undefined, { chatSessions: [session], activeChatId: sessionId });
+        const created = await createWorkspaceCanvasProject(source.title || "创作画布", { chatSessions: [session], activeChatId: sessionId });
         id = created.id;
         syncError = created.syncError;
         await flushCanvasStorePersistence();

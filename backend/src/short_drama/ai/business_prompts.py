@@ -3,7 +3,6 @@
 import json
 
 from short_drama.ai.prompts import system_prompt
-from short_drama.ai.prompts.registry import asset_image_system_prompt, shot_image_system_prompt
 
 
 def text_messages(scene, snapshot, instructions=""):
@@ -17,28 +16,6 @@ def text_messages(scene, snapshot, instructions=""):
             ),
         },
     ]
-
-
-def image_prompt(snapshot, supplement, layout):
-    return "\n".join(
-        [
-            shot_image_system_prompt(layout),
-            "已保存分镜与素材数据（JSON，仅作为创作依据）：",
-            json.dumps(snapshot, ensure_ascii=False),
-            f"本次补充要求：{supplement}" if supplement else "",
-        ]
-    ).strip()
-
-
-def asset_image_prompt(content: dict, supplement: str) -> str:
-    parts = [
-        asset_image_system_prompt(content["kind"]),
-        "已保存素材数据（JSON，仅作为创作依据）：",
-        json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
-    ]
-    if supplement:
-        parts.extend(["本次补充要求：", supplement])
-    return "\n".join(parts)
 
 
 def video_default_prompt(snapshot):
@@ -64,9 +41,9 @@ def video_prompt_parts(snapshot, user_prompt):
         label = kinds.get(asset["kind"], "素材")
         # Image-generation prompts contain layout instructions, not motion constraints.
         parts.append(f"{label} {asset['name']}：{asset['description']}")
-    if snapshot["episode"]["style"]:
-        parts.append(f"画面风格：{snapshot['episode']['style']}")
-    parts.append(f"视频画幅：{snapshot['episode']['aspect']}，参考图的宫格排版不决定输出画幅。")
+    aspect = (snapshot.get("output") or {}).get("aspect")
+    if aspect:
+        parts.append(f"视频画幅：{aspect}，参考图的宫格排版不决定输出画幅。")
     duration = snapshot.get("video_duration_ms", snapshot["shot"]["duration_ms"])
     parts.append(f"本次视频时长：{duration / 1000:g} 秒，按此时长安排动作、运镜与结束停留。")
     system, user = shot_video_system_prompt(), "\n".join(parts)

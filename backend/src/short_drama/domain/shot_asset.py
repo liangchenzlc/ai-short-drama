@@ -26,8 +26,8 @@ class ShotAsset(Base):
         nullable=False,
         comment="应用雪花算法生成；稳定且不可变的记录标识",
     )
-    episode_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), nullable=False, comment="必须等于镜头所属分集"
+    project_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), nullable=False, comment="必须等于镜头所属项目"
     )
     asset_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, comment="镜头引用的素材"
@@ -60,9 +60,9 @@ class ShotAsset(Base):
 
     __table_args__ = (
         UniqueConstraint("shot_id", "asset_id", name="uk_shot_assets_asset"),
-        Index("idx_shot_assets_episode", "episode_id", "shot_id"),
+        Index("idx_shot_assets_creation", "project_id", "shot_id"),
         Index("idx_shot_assets_asset_id", "asset_id"),
-        Index("idx_shot_assets_shot_id_episode_id", "shot_id", "episode_id"),
+        Index("idx_shot_assets_shot_id_project_id", "shot_id", "project_id"),
         ForeignKeyConstraint(
             ["asset_id"],
             ["assets.id"],
@@ -71,9 +71,9 @@ class ShotAsset(Base):
             onupdate="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ["shot_id", "episode_id"],
-            ["shot_scripts.id", "shot_scripts.episode_id"],
-            name="fk_shot_assets_shot_episode",
+            ["shot_id", "project_id"],
+            ["shot_scripts.id", "shot_scripts.project_id"],
+            name="fk_shot_assets_shot_creation",
             ondelete="RESTRICT",
             onupdate="RESTRICT",
         ),

@@ -24,7 +24,7 @@ from .base import Base
 class UserCreationDraft(Base):
     """C5: Personal generation draft storage.
 
-    Scope: user, project, episode, object_id, purpose.
+    Scope: user, project, creation, object_id, purpose.
     Contains personal model configuration, input supplements, and settings for next generation.
     Visible only to the owner (user_id).
     """
@@ -44,13 +44,10 @@ class UserCreationDraft(Base):
     project_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, comment="Project scope"
     )
-    episode_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), nullable=False, comment="Episode scope"
-    )
     object_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True),
         nullable=False,
-        comment="分集、素材或镜头的稳定对象ID",
+        comment="项目、素材或镜头的稳定对象ID",
     )
     purpose: Mapped[str] = mapped_column(
         VARCHAR(32, collation="utf8mb4_0900_bin"),
@@ -119,13 +116,11 @@ class UserCreationDraft(Base):
         UniqueConstraint(
             "user_id",
             "project_id",
-            "episode_id",
             "object_id",
             "purpose",
             name="uk_user_creation_drafts_scope",
         ),
         Index("idx_user_creation_drafts_user_project", "user_id", "project_id"),
-        Index("idx_user_creation_drafts_user_episode", "user_id", "episode_id"),
         ForeignKeyConstraint(
             ["user_id"],
             ["users.id"],
@@ -137,13 +132,6 @@ class UserCreationDraft(Base):
             ["project_id"],
             ["projects.id"],
             name="fk_user_creation_drafts_project_id",
-            ondelete="RESTRICT",
-            onupdate="RESTRICT",
-        ),
-        ForeignKeyConstraint(
-            ["episode_id"],
-            ["episodes.id"],
-            name="fk_user_creation_drafts_episode_id",
             ondelete="RESTRICT",
             onupdate="RESTRICT",
         ),
@@ -172,6 +160,6 @@ class UserCreationDraft(Base):
             "mysql_row_format": "DYNAMIC",
             "mysql_charset": "utf8mb4",
             "mysql_collate": "utf8mb4_0900_ai_ci",
-            "comment": "本人、项目、分集、对象和用途独立的生成草稿",
+            "comment": "本人、项目、对象和用途独立的生成草稿",
         },
     )

@@ -14,8 +14,17 @@ def _font_checksum(path, size, modified):
 
 def font_metadata(settings):
     path = Path(settings.render_subtitle_font_path)
+    family = settings.render_subtitle_font_family
+    if not settings.render_subtitle_font_path:
+        for candidate, name in (
+            ("C:/Windows/Fonts/msyh.ttc", "Microsoft YaHei"),
+            ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "Noto Sans CJK SC"),
+        ):
+            if Path(candidate).is_file():
+                path, family = Path(candidate), name
+                break
     result = {
-        "font": settings.render_subtitle_font_family,
+        "font": family,
         "font_file": str(path.resolve()),
         "font_checksum": None,
     }
@@ -35,7 +44,7 @@ def ass_text(value):
     )
 
 
-def write_ass(path, subtitles, size, family, width, height):
+def write_ass(path, subtitles, size, family, width, height, settings=None):
     def stamp(ms):
         centis = ms // 10
         seconds, centis = divmod(centis, 100)
@@ -52,6 +61,26 @@ def write_ass(path, subtitles, size, family, width, height):
         f"Style: Default,{family},{size * height / 720},&H00FFFFFF,&H00FFFFFF,"
         "&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,24,24,30,1"
     )
+    if settings:
+
+        def color(value, opacity=1):
+            return f"&H{round((1 - opacity) * 255):02X}{value[5:7]}{value[3:5]}{value[1:3]}"
+
+        margin = round(min(width, height) * settings["margin_percent"] / 100)
+        style = (
+            f"Style: Default,{family},{size * height / 720},{color(settings['color'])},&H00FFFFFF,"
+            f"{color(settings['outline_color'])},&H80000000,{-1 if settings['bold'] else 0},"
+            "0,0,0,100,100,0,0,1,"
+            f"{settings['outline_width'] * height / 720},0,{settings['alignment']},"
+            f"{margin},{margin},{margin},1"
+        )
+        if settings["background"]:
+            style += (
+                f"\nStyle: Box,{family},{size * height / 720},&HFFFFFFFF,&HFFFFFFFF,"
+                f"{color(settings['background_color'], settings['background_opacity'])},&HFF000000,"
+                f"{-1 if settings['bold'] else 0},0,0,0,100,100,0,0,3,5,0,"
+                f"{settings['alignment']},{margin},{margin},{margin},1"
+            )
     text = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -64,8 +93,13 @@ WrapStyle: 0
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     for entry in subtitles:
+        if settings and settings["background"]:
+            text += (
+                f"Dialogue: 0,{stamp(entry['start_ms'])},{stamp(entry['end_ms'])},"
+                f"Box,,0,0,0,,{ass_text(entry['text'])}\n"
+            )
         text += (
-            f"Dialogue: 0,{stamp(entry['start_ms'])},{stamp(entry['end_ms'])},"
+            f"Dialogue: 1,{stamp(entry['start_ms'])},{stamp(entry['end_ms'])},"
             f"Default,,0,0,0,,{ass_text(entry['text'])}\n"
         )
     path.write_text(text, encoding="utf-8")
@@ -118,7 +152,8 @@ def group_dialogue(renderer, lines, volume, seconds, sources, directory):
 def mix_sound(renderer, source, sound, sources, directory, total_ms, width, height):
     doc = sound["document"]
     seconds = total_ms / 1000
-    dialogue = doc["dialogue"]
+    multi = doc.get("schema_version", 1) >= 2
+    dialogue = [] if multi else doc["dialogue"]
     dialogue_volume = doc["dialogue_volume"]
     if len(dialogue) > 16:
         dialogue, sources = group_dialogue(
@@ -150,7 +185,7 @@ def mix_sound(renderer, source, sound, sources, directory, total_ms, width, heig
         voices.append(f"[{tag}]")
         inputs += 1
     channels = ["[original]"]
-    music = doc["music"]
+    music = None if multi else doc["music"]
     duck = bool(music and music["ducking"] and voices)
     if voices:
         graph.append(
@@ -261,7 +296,12 @@ def mix_sound(renderer, source, sound, sources, directory, total_ms, width, heig
         "auto",
         str(soundtrack),
     ]
-    renderer.run(args, directory, stage="mixing", progress=91)
+    if multi:
+        from .assembly_audio import audible_clips, render_audio
+
+        soundtrack = render_audio(renderer, audible_clips(doc), sources, directory, total_ms, doc)
+    else:
+        renderer.run(args, directory, stage="mixing", progress=91)
     # 音轨已完整输出后再编码字幕画面，避免音频分支与视频编码相互等待。
     args = [
         executable(renderer.settings.render_ffmpeg_path),
@@ -285,7 +325,10 @@ def mix_sound(renderer, source, sound, sources, directory, total_ms, width, heig
         "-t",
         str(seconds),
     ]
-    if doc["burn_subtitles"] and doc["subtitles"]:
+    subtitles_enabled = not any(
+        t["id"] == "subtitles" and t["muted"] for t in doc.get("tracks", [])
+    )
+    if doc["burn_subtitles"] and doc["subtitles"] and subtitles_enabled:
         font = Path(sound["font_file"])
         if not font.is_file() or checksum(font) != sound["font_checksum"]:
             raise RuntimeError("字幕字体已变化，无法复现本次导出，请重新提交")
@@ -293,7 +336,15 @@ def mix_sound(renderer, source, sound, sources, directory, total_ms, width, heig
         fonts.mkdir(exist_ok=True)
         shutil.copyfile(font, fonts / ("subtitle" + font.suffix))
         subtitle = directory / "subtitles.ass"
-        write_ass(subtitle, doc["subtitles"], doc["font_size"], sound["font"], width, height)
+        write_ass(
+            subtitle,
+            doc["subtitles"],
+            doc["font_size"],
+            sound["font"],
+            width,
+            height,
+            doc.get("subtitle_style") if multi else None,
+        )
 
         def escaped(path):
             return str(path.resolve()).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
@@ -316,6 +367,8 @@ def mix_sound(renderer, source, sound, sources, directory, total_ms, width, heig
         args += ["-c:v", "copy"]
     output = directory / "mixed.part.mp4"
     args += [
+        "-af",
+        "alimiter=limit=0.891251:level=0:latency=1" if multi else "anull",
         "-c:a",
         "aac",
         "-ar",

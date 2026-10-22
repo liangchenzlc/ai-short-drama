@@ -41,7 +41,6 @@ import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
 import { CanvasActiveTaskPanel } from "@/components/canvas/canvas-active-task-panel";
 import { CanvasAssetTray } from "@/components/canvas/canvas-asset-tray";
-import { CanvasProjectSidebar } from "@/components/canvas/canvas-project-sidebar";
 import { CanvasCharacterReferenceNodeContent } from "@/components/canvas/canvas-character-reference-node";
 import { CanvasNodeToolbar } from "@/components/canvas/canvas-node-toolbar";
 import { CanvasVideoInlineTrimOverlay } from "@/components/canvas/canvas-video-inline-trim";
@@ -74,7 +73,7 @@ import {
 import { CanvasConnectionCreateMenu, CanvasNodePanelOverlay, type PendingConnectionCreate } from "@/components/canvas/canvas-workspace-overlays";
 import { CanvasOverlayLayerContainer, CanvasOverlayLayerProvider } from "@/components/canvas/canvas-overlay-layer";
 import { CanvasLeaferGraphicsLayer } from "@/components/canvas/canvas-leafer-graphics-layer";
-import { CanvasFreeformEmptyState, CanvasLinkedProjectEmptyState, CanvasShortDramaEmptyState, CanvasShortDramaGuide, CanvasStoryInputNodeContent, CanvasStylePlaceholderNodeContent } from "@/components/canvas/canvas-short-drama-entry";
+import { CanvasFreeformEmptyState, CanvasShortDramaEmptyState, CanvasShortDramaGuide, CanvasStoryInputNodeContent, CanvasStylePlaceholderNodeContent } from "@/components/canvas/canvas-short-drama-entry";
 import { resolveCanvasEmptyStateKind } from "@/lib/canvas/canvas-starter";
 import { createCanvasNode, getInputSummary } from "@/lib/canvas/canvas-project-domain";
 import { connectDirectorReferenceNodes } from "@/lib/canvas/director/director-reference-assets";
@@ -118,6 +117,7 @@ import { useCanvasRenderModel } from "./use-canvas-render-model";
 import { useCanvasSelectionController } from "./use-canvas-selection-controller";
 import { useCanvasShortDrama } from "./use-canvas-short-drama";
 import { useCanvasUpload } from "./use-canvas-upload";
+import { CanvasUploadModal } from "@/components/canvas/canvas-upload-modal";
 import { useCanvasTimelineAssetInsert } from "./use-canvas-timeline-asset-insert";
 import { useCanvasViewportController } from "./use-canvas-viewport-controller";
 import { copyImageToSystemClipboard } from "./canvas-project-clipboard";
@@ -129,9 +129,6 @@ import { useCanvasNodeContent } from "./use-canvas-node-content";
 import { useCanvasPointerSelectionChrome, useCanvasNodeToolbarHover } from "./use-canvas-pointer-chrome";
 import { useCanvasProjectDialogs } from "./use-canvas-project-dialogs";
 import { useCanvasResourceHandoff } from "./use-canvas-resource-handoff";
-import { useCanvasCharacterCatalog } from "./use-canvas-character-catalog";
-import { useCanvasSourceProject } from "./use-canvas-source-project";
-import { sourceEpisodeChapter } from "@/services/host-source-project";
 import {
     CanvasNodeType,
     type CanvasAssistantSession,
@@ -867,9 +864,6 @@ function InfiniteCanvasPage() {
         },
         [saveCanvasProject, setConnections, setNodes],
     );
-    const linkedProjectId = shortDramaEnabled ? currentProject?.projectId || "" : "";
-    const sourceProject = useCanvasSourceProject({ canvasKey: projectId, owningProjectId: currentProject?.workspaceProjectId || "", sourceProjectId: linkedProjectId, rowVersion: currentProject?.revision || "0", projectLoaded });
-    const refetchLinkedProject = sourceProject.refreshSourceProject;
     // 助手只接受属于当前画布的选中项：切画布那一帧仍可能残留旧 id，这里做硬约束，
     // 不让跨画布的 id 进入请求（后端会按画布校验并拒绝整个回合）。
     const assistantSelectedNodeIds = useMemo(() => {
@@ -1019,6 +1013,24 @@ function InfiniteCanvasPage() {
         setToolbarNodeId,
     });
 
+    const sourceFocusRef = useRef<string | null>(null);
+    const [sourceMissing, setSourceMissing] = useState(false);
+    const sourceNodeId = searchParams.get("node");
+    useEffect(() => {
+        if (!projectLoaded || !sourceNodeId || sourceNodeId.length > 128 || size.width <= 0 || size.height <= 0) return;
+        const bounds = containerRef.current?.getBoundingClientRect();
+        if (!bounds || bounds.width !== size.width || bounds.height !== size.height) return;
+        const key = JSON.stringify([projectId, sourceNodeId]);
+        if (sourceFocusRef.current === key) return;
+        sourceFocusRef.current = key;
+        if (!nodesRef.current.some(node => node.id === sourceNodeId)) {
+            setSourceMissing(true);
+            return;
+        }
+        setSourceMissing(false);
+        focusCanvasNode(sourceNodeId);
+    }, [containerRef, focusCanvasNode, nodesRef, projectId, projectLoaded, size.height, size.width, sourceNodeId]);
+
     // Pan only the viewport (never the node) when a newly connected target
     // crosses the visible canvas safe area, including under the Agent dock.
     const keepConnectedNodeVisible = useCanvasConnectedNodeVisibility({
@@ -1079,8 +1091,6 @@ function InfiniteCanvasPage() {
         generateImageFromTextNode,
     } = useCanvasGenerationOrchestration({
         projectId,
-        linkedProjectId,
-        domainProjectId: currentProject?.projectId,
         projectLoaded,
         localOnly,
         addedSkills,
@@ -1112,10 +1122,12 @@ function InfiniteCanvasPage() {
         handleFileDragOver,
         handleImageInputChange,
         handleProjectAssetsInsert,
-        handleProjectChapterInsert,
-        sourceChapterStatus,
         handleUploadFiles,
         handleUploadRequest,
+        uploadModalOpen,
+        pendingUploadFiles,
+        closeUploadModal,
+        handleImportUrl,
         handleUploadReferenceRequest,
         imageInputRef,
         openAssetsAtPosition,
@@ -1126,9 +1138,6 @@ function InfiniteCanvasPage() {
         uploadTimelineMedia,
     } = useCanvasUpload({
         canvasId: projectId,
-        domainProjectId: linkedProjectId,
-        readSourceEpisode: sourceProject.readEpisode,
-        sourceContextKey: sourceProject.contextKey,
         nodesRef,
         connectionsRef,
         selectedNodeIdsRef,
@@ -1144,8 +1153,6 @@ function InfiniteCanvasPage() {
     const replaceCanvasNodeMedia = useCallback((node: CanvasNodeData) => handleUploadRequest(node.id), [handleUploadRequest]);
     const { archiveNodesToLinkedFolder, reloadCanvasNodeResource } = useCanvasResourceHandoff({
         projectId,
-        linkedProjectId,
-        refetchLinkedProject,
         projectLoaded,
         assets,
         assetsHydrated,
@@ -1157,12 +1164,7 @@ function InfiniteCanvasPage() {
         createHandoffNodes: createAssetPayloadNodes,
         applyGenerationTaskResult,
     });
-    const characterCatalog = useCanvasCharacterCatalog({
-        canvasKey: projectId, sourceProjectId: currentProject?.projectId || "", rowVersion: currentProject?.revision || "0",
-        projectLoaded, detailNode: characterReferenceNodeId ? nodes.find(node => node.id === characterReferenceNodeId) || null : null,
-        nodesRef, setNodes,
-    });
-    const canvasContext = useMemo(() => summarizeCanvasContext(nodes, selectedNodeIds, sourceProject.overview?.episodes), [sourceProject.overview?.episodes, nodes, selectedNodeIds]);
+    const canvasContext = useMemo(() => summarizeCanvasContext(nodes, selectedNodeIds), [nodes, selectedNodeIds]);
     const directorReferenceTargetRef = useRef<{ projectId: string; nodeId: string | null; scope: string } | null>(null);
     directorReferenceTargetRef.current = { projectId, nodeId: directorNodeId, scope: canvasStorageScope };
     useEffect(() => {
@@ -1185,7 +1187,7 @@ function InfiniteCanvasPage() {
         setSelectedNodeIds(new Set([node.id]));
         setSelectedConnectionId(null);
         try {
-            const result = await ensureCanvasNodeAsset({ canvasId: projectId, domainProjectId: currentProject?.projectId, node, source: "canvas-upload", expectedScope: expected });
+            const result = await ensureCanvasNodeAsset({ canvasId: projectId, node, source: "canvas-upload", expectedScope: expected });
             if (!current()) throw new DOMException("导演台会话已结束", "AbortError");
             setNodes((currentNodes) => currentNodes.map((item) => item.id === node.id ? { ...item, metadata: { ...item.metadata, assetId: result.assetId } } : item));
             return { assetId: result.assetId, persisted: result.confirmed };
@@ -1194,7 +1196,7 @@ function InfiniteCanvasPage() {
             message.warning(error instanceof Error ? `图片已加入画布，但素材同步失败：${error.message}` : "图片已加入画布，但素材同步失败");
             return { assetId: findWorkspaceAssetIdByStorageKey(image.storageKey) };
         }
-    }, [canvasCapturedScope.epoch, canvasCapturedScope.userScope, connectionsRef, currentProject?.projectId, directorNodeId, getCanvasCenter, message, nodesRef, projectId, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds]);
+    }, [canvasCapturedScope.epoch, canvasCapturedScope.userScope, connectionsRef, directorNodeId, getCanvasCenter, message, nodesRef, projectId, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds]);
     const {
         timelineAddNodeRef,
         timelineMediaAddRef,
@@ -1209,9 +1211,6 @@ function InfiniteCanvasPage() {
         openTimelineAssetLibrary,
         closeProjectAssets,
     } = useCanvasTimelineAssetInsert({
-        linkedProjectId,
-        refetchLinkedProject,
-        refetchCharacters: characterCatalog.refreshCharacters,
         handleAssetsInsert,
         handleProjectAssetsInsert,
         openAssetsAtPosition,
@@ -1273,7 +1272,6 @@ function InfiniteCanvasPage() {
         upscaleNodeId,
     } = useCanvasMediaTools({
         projectId,
-        domainProjectId: linkedProjectId,
         nodesRef,
         connectionsRef,
         selectedNodeIdsRef,
@@ -1365,6 +1363,8 @@ function InfiniteCanvasPage() {
         createStoryboardGroup,
         deleteConnection,
         deleteNodes,
+        deleteWarning,
+        dismissDeleteWarning,
         duplicateNode,
         hasCopiedNodes,
         pasteCopiedNodes,
@@ -1650,7 +1650,6 @@ function InfiniteCanvasPage() {
     } = useCanvasNodeEditor({
         canvasId: projectId,
         canvasTitle: currentProject?.title || "未命名画布",
-        domainProjectId: linkedProjectId,
         nodesRef,
         setNodes,
         setSelectedNodeIds,
@@ -1733,13 +1732,11 @@ function InfiniteCanvasPage() {
         emotionNode,
         batchChildCountById,
         batchMotionById,
-        canvasImageNodes,
         configInputsById,
         connectionLayerBounds,
         contextMenuNode,
         displayConnections,
         frameChildrenById,
-        imageAssets,
         infoNode,
         maskEditNode,
         mentionReferencesByNodeId,
@@ -1818,7 +1815,7 @@ function InfiniteCanvasPage() {
         setContextMenu(null);
         setDialogNodeId(null);
         setToolbarNodeId(null);
-        if (node.metadata?.workflowKind === "character" && node.metadata.characterAssetId) {
+        if (node.metadata?.workflowKind === "character" && node.metadata.characterDefinition) {
             setCharacterReferenceNodeId(node.id);
             return;
         }
@@ -1866,7 +1863,6 @@ function InfiniteCanvasPage() {
     );
     const { selectCanvasStyle, applyCanvasStyleAsync, styleApplying } = useCanvasStyleWorkflow({
         canvasId: projectId,
-        domainProjectId: currentProject?.projectId,
         nodesRef,
         selectedNodeIdsRef,
         getCanvasCenter,
@@ -1879,7 +1875,6 @@ function InfiniteCanvasPage() {
 
     const { applyDirectorOutput, captureDirectorCover, createDirectorShot, openDirectorWorkbench, saveDirectorScene, shouldCaptureCover } = useCanvasDirector({
         projectId,
-        domainProjectId: currentProject?.projectId,
         directorNodeId,
         directorScenes: currentProject?.directorScenes || [],
         nodesRef,
@@ -1918,7 +1913,7 @@ function InfiniteCanvasPage() {
         openTextEditor: openTextNodeEditor,
     });
 
-    const shortDramaGuide = shortDramaEnabled && !currentProject?.projectId && shortDramaProgress.active ? { progress: shortDramaProgress, collapsed: shortDramaGuideCollapsed, onToggle: () => setShortDramaGuideCollapsed((value) => !value) } : undefined;
+    const shortDramaGuide = shortDramaEnabled && shortDramaProgress.active ? { progress: shortDramaProgress, collapsed: shortDramaGuideCollapsed, onToggle: () => setShortDramaGuideCollapsed((value) => !value) } : undefined;
 
     const clearCanvas = useCallback(() => {
         const drawingIds = nodesRef.current.flatMap((node) => (node.type === CanvasNodeType.Drawing && node.metadata?.drawingId ? [node.metadata.drawingId] : []));
@@ -2093,7 +2088,7 @@ function InfiniteCanvasPage() {
                     handleConfigNodeChange(node.id, imageMetadata(uploaded));
                     persistedNode = { ...node, metadata: { ...node.metadata, ...imageMetadata(uploaded) } };
                 }
-                const asset = await ensureCanvasNodeAsset({ canvasId: projectId, domainProjectId: currentProject?.projectId, node: persistedNode, source: "canvas-manual" });
+                const asset = await ensureCanvasNodeAsset({ canvasId: projectId, node: persistedNode, source: "canvas-manual" });
                 handleConfigNodeChange(node.id, { assetId: asset.assetId });
                 await syncResourceToArkPrivateAsset(resourceID);
                 message.success({ key: feedbackKey, content: "已同步到方舟素材库，Seedance 将自动复用该素材", duration: 4 });
@@ -2103,7 +2098,7 @@ function InfiniteCanvasPage() {
                 setArkPrivateAssetUploadNodeId((current) => (current === node.id ? null : current));
             }
         },
-        [arkPrivateAssetUploadNodeId, currentProject?.projectId, handleConfigNodeChange, localOnly, message, projectId],
+        [arkPrivateAssetUploadNodeId, handleConfigNodeChange, localOnly, message, projectId],
     );
 
     const confirmUploadNodeImageToArkPrivateAsset = useCallback(
@@ -2231,7 +2226,7 @@ function InfiniteCanvasPage() {
 
     const renderCanvasNodeContent = useCallback(
         (contentNode: CanvasNodeData) => {
-            if (contentNode.metadata?.workflowKind === "character" && contentNode.metadata.characterAssetId) {
+            if (contentNode.metadata?.workflowKind === "character" && contentNode.metadata.characterDefinition) {
                 return <CanvasCharacterReferenceNodeContent node={contentNode} />;
             }
             if (contentNode.metadata?.workflowKind === "styleboard" && !contentNode.metadata.content) {
@@ -2451,7 +2446,6 @@ function InfiniteCanvasPage() {
     }, [message, nodesRef, selectedNodeIds, setFrameDialogNodeId]);
     const freeformCreateCommands = useCanvasCreateCommands({
         workspaceMode,
-        isProjectLinked: Boolean(shortDramaEnabled && currentProject?.projectId),
         handlers: {
             onAddText: () => createNode(CanvasNodeType.Text),
             onAddImage: () => createNode(CanvasNodeType.Image),
@@ -2474,27 +2468,11 @@ function InfiniteCanvasPage() {
     const emptyStateKind = resolveCanvasEmptyStateKind({
         nodeCount: nodes.length,
         shortDramaEnabled,
-        isProjectLinked: Boolean(currentProject?.projectId),
         starterMode: currentProject?.starterMode,
     });
     const emptyCanvasState =
         emptyStateKind === "freeform" ? (
             <CanvasFreeformEmptyState commands={freeformCreateCommands} onOpenAssistant={openAssistant} />
-        ) : emptyStateKind === "linked" ? (
-            <CanvasLinkedProjectEmptyState
-                projectName={sourceProject.overview?.project.name || workspaceProject?.title || "项目画布"}
-                hasChapter={!sourceProject.loading && Boolean(sourceProject.overview?.episodes.length)}
-                sourceLoading={sourceProject.loading}
-                sourceError={sourceProject.error}
-                chapterStatus={sourceChapterStatus}
-                onRefreshSource={() => void sourceProject.refreshSourceProject()}
-                onAddFirstChapter={() => {
-                    const first = sourceProject.overview?.episodes.slice().sort((left, right) => left.position - right.position)[0];
-                    if (first && !sourceProject.loading) void handleProjectChapterInsert(sourceEpisodeChapter(first, linkedProjectId));
-                }}
-                onOpenAssets={() => openProjectAssets()}
-                onAddText={() => createNode(CanvasNodeType.Text)}
-            />
         ) : emptyStateKind === "guided" ? (
             <CanvasShortDramaEmptyState
                 onCreatePipeline={createShortDramaPipeline}
@@ -2517,6 +2495,9 @@ function InfiniteCanvasPage() {
 
     return (
         <>
+            <AppModal open={sourceMissing} centered title="引用来源已移除" onCancel={() => setSourceMissing(false)} footer={<Button onClick={() => setSourceMissing(false)}>返回画布</Button>}>
+                <p>引用来源节点已移除，仍可查看原画布。</p>
+            </AppModal>
             <a
                 href="#canvas-main"
                 onClick={(event) => {
@@ -2528,9 +2509,7 @@ function InfiniteCanvasPage() {
                 跳转到画布主内容
             </a>
             <main ref={canvasMainRef} id="canvas-main" data-canvas-readonly={readOnly ? "true" : "false"} data-libtv-readonly-dense={searchParams.get("fixture") === "libtv-readonly-dense" ? "true" : "false"} tabIndex={-1} className="flex h-full min-h-0 overflow-hidden outline-none" style={{ background: resolvedCanvasAppearance.background, color: theme.node.text }}>
-                {!focusMode && !versions.preview && shortDramaEnabled && currentProject?.projectId ? (
-                    <CanvasProjectSidebar projectId={currentProject.projectId} source={sourceProject} chapterStatus={sourceChapterStatus} characterCount={characterCatalog.characters.length} hasCanvasStyle={nodes.some(node => node.type === CanvasNodeType.Text && node.metadata?.workflowKind === "styleboard")} onAddChapter={handleProjectChapterInsert} onLocateStyle={locateProjectStyleNode} onOpenAssets={() => openProjectAssets()} />
-                ) : null}
+
                 <CanvasOverlayLayerProvider>
                     <div className="canvas-editor-shell relative flex min-w-0 flex-1" data-canvas-editor-panel-open={dialogNode || textEditorNodeId ? "true" : "false"} data-canvas-toolbar-node={toolbarNode?.id || undefined}>
                     <section data-canvas-editor inert={Boolean(versions.preview)} style={{ visibility: versions.preview ? "hidden" : undefined, opacity: versions.preview ? 0 : undefined }} className="relative min-w-0 flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -2593,20 +2572,13 @@ function InfiniteCanvasPage() {
                                 mediaPerformanceMode={mediaPerformanceMode}
                                 onMediaPerformanceModeChange={setMediaPerformanceMode}
                                 onOpenSearch={() => setNodeSearchOpen(true)}
-                                projectContext={
-                                    shortDramaEnabled && currentProject?.projectId
-                                        ? {
-                                              ...canvasContext,
-                                              projectId: currentProject.projectId,
-                                              projectName: sourceProject.overview?.project.name || workspaceProject?.title || currentProject.title,
-                                          }
-                                        : undefined
-                                }
+                                projectContext={shortDramaEnabled ? { ...canvasContext, projectId: currentProject?.workspaceProjectId || "", projectName: workspaceProject?.title || currentProject?.title || "画布" } : undefined}
                                 onEnterFocusMode={enterFocusMode}
                                 shortDramaGuide={shortDramaGuide}
                             />
                         ) : null}
 
+                        {deleteWarning && <div role="alert" data-canvas-no-zoom className="absolute inset-x-3 top-[calc(var(--canvas-topbar-h)+8px)] z-[var(--z-toast)] flex max-w-xl items-center justify-between gap-3 rounded-md border border-border bg-surface px-3 py-2 text-xs"><span>{deleteWarning}</span><Button size="small" className="shrink-0" onClick={dismissDeleteWarning}>关闭提示</Button></div>}
                         {!focusMode && shortDramaGuide ? (
                             <CanvasShortDramaGuide progress={shortDramaGuide.progress} collapsed={shortDramaGuide.collapsed} onToggle={shortDramaGuide.onToggle} onSkip={skipShortDramaGuide} onStepClick={activateShortDramaStep} />
                         ) : null}
@@ -2773,7 +2745,6 @@ function InfiniteCanvasPage() {
                                         workspaceMode={workspaceMode}
                                         canvasTool={canvasTool}
                                         onToolChange={setCanvasTool}
-                                        isProjectLinked={Boolean(shortDramaEnabled && currentProject?.projectId)}
                                         canUndo={historyState.canUndo}
                                         canRedo={historyState.canRedo}
                                         appearance={canvasAppearance}
@@ -2949,7 +2920,7 @@ function InfiniteCanvasPage() {
                             containerRef={containerRef}
                             onKeep={keepNodeToolbar}
                             onLeave={hideNodeToolbar}
-                            onInfo={(node) => (node.metadata?.workflowKind === "character" && node.metadata.characterAssetId ? openTextNodeEditor(node) : setInfoNodeId(node.id))}
+                            onInfo={(node) => (node.metadata?.workflowKind === "character" && node.metadata.characterDefinition ? openTextNodeEditor(node) : setInfoNodeId(node.id))}
                             onEditText={openTextNodeEditor}
                             onDecreaseFont={(node) => handleFontSizeChange(node.id, Math.max(10, (node.metadata?.fontSize || 14) - 2))}
                             onIncreaseFont={(node) => handleFontSizeChange(node.id, Math.min(32, (node.metadata?.fontSize || 14) + 2))}
@@ -3011,9 +2982,9 @@ function InfiniteCanvasPage() {
                                 onWheel={(event) => event.stopPropagation()}
                             >
                                 <CanvasAssetTray
-                                    assetImages={imageAssets}
-                                    canvasImages={canvasImageNodes}
-                                    showLibrary={!currentProject?.projectId}
+                                    assetImages={assets}
+                                    canvasImages={nodes}
+                                    showLibrary
                                     activeNodeId={selectedNodeIds.size === 1 ? Array.from(selectedNodeIds)[0] : null}
                                     onInsertAssetImage={(asset) => void createImageAssetNode(asset)}
                                     onFocusCanvasImage={focusCanvasImageNode}
@@ -3063,7 +3034,6 @@ function InfiniteCanvasPage() {
                             menu={contextMenu}
                             node={contextMenuNode}
                             workspaceMode={workspaceMode}
-                            isProjectLinked={Boolean(currentProject?.projectId)}
                             canUndo={historyState.canUndo}
                             canRedo={historyState.canRedo}
                             canPaste={hasCopiedNodes || Boolean(navigator.clipboard)}
@@ -3108,6 +3078,7 @@ function InfiniteCanvasPage() {
                         />
 
                         <input ref={imageInputRef} type="file" accept="image/*,video/*,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav,.txt,.md,.markdown" multiple className="hidden" onChange={handleImageInputChange} />
+                        <CanvasUploadModal open={uploadModalOpen} initialFiles={pendingUploadFiles} onClose={closeUploadModal} onUpload={handleUploadFiles} onImportUrl={handleImportUrl} />
 
                         <CanvasProjectEditorDialogs
                             projectId={projectId}
@@ -3135,7 +3106,7 @@ function InfiniteCanvasPage() {
                             generationHistory={{
                                 open: generationHistoryOpen,
                                 onClose: () => setGenerationHistoryOpen(false),
-                                onSelect: (task) => void insertGenerationHistoryTask(task),
+                                onSelect: insertGenerationHistoryTask,
                             }}
                             imports={{
                                 libTVOpen: libTVImportOpen,
@@ -3200,9 +3171,6 @@ function InfiniteCanvasPage() {
                             }}
                             character={{
                                 node: characterReferenceNode,
-                                loading: characterCatalog.detailLoading,
-                                error: characterCatalog.detailError,
-                                onRetry: characterCatalog.retryDetail,
                                 onClose: () => setCharacterReferenceNodeId(null),
                             }}
                             text={{
@@ -3344,15 +3312,6 @@ function InfiniteCanvasPage() {
                                 onInsertLibrary: handleLibraryAssetsInsert,
                                 onClosePicker: closeAssetPicker,
                                 projectOpen: projectAssetOpen,
-                                sourceLinked: Boolean(linkedProjectId),
-                                sourceLoading: sourceProject.loading,
-                                sourceError: sourceProject.error,
-                                onRetrySource: sourceProject.refreshSourceProject,
-                                characters: linkedProjectId || projectAssetInitialCategory === "character" ? characterCatalog.characters : undefined,
-                                characterLoading: characterCatalog.loading,
-                                characterError: characterCatalog.error,
-                                onRetryCharacters: characterCatalog.refreshCharacters,
-                                readCharacter: characterCatalog.readSelectedCharacter,
                                 initialCategory: projectAssetInitialCategory,
                                 initialFolderId: projectAssetInitialFolderId,
                                 onCloseProject: closeProjectAssets,
@@ -3370,6 +3329,7 @@ function InfiniteCanvasPage() {
                         visible={rightPanel === "assistant" && !focusMode && !versions.preview}
                         accountId={user?.id}
                         projectId={assistantWorkspaceProjectId}
+                        executionTarget={{ mode: "infinite_canvas", project_id: assistantWorkspaceProjectId, canvas_id: projectId }}
                         projectTitle={workspaceProject?.title || "未命名项目"}
                         dockable={assistantDockable}
                         readOnly={readOnly || Boolean(accessError) || !projectLoaded}

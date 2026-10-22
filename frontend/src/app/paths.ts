@@ -1,7 +1,6 @@
-import type { EpisodeNavigationStage as StageId } from '../features/projects/episode-workflow';
-
+export type CreationStage = 'source' | 'assets' | 'storyboard' | 'assembly';
+export const creationStages: readonly CreationStage[] = ['source', 'assets', 'storyboard', 'assembly'];
 export const aiConfigPath = '/ai_config';
 export const accountPath = '/account';
-export const projectPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}`;
-export const episodePath = (projectId: string, episodeId: string, stage?: StageId) =>
-  `${projectPath(projectId)}/episodes/${encodeURIComponent(episodeId)}${stage ? `/${stage}` : ''}`;
+export const projectPath = (projectId: string, stage?: CreationStage) =>
+  `/projects/${encodeURIComponent(projectId)}${stage ? `/${stage}` : ''}`;

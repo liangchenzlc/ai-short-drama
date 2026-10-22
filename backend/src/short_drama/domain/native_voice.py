@@ -5,7 +5,7 @@ from sqlalchemy.dialects.mysql import BIGINT, JSON, VARCHAR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
-from .episode_assembly import TABLE_OPTIONS
+from .project_assembly import TABLE_OPTIONS
 
 
 class ProjectSoundMode(Base):
@@ -32,8 +32,8 @@ class CharacterVoice(Base):
     project_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     asset_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     row_version: Mapped[int] = mapped_column(BIGINT(unsigned=True), nullable=False)
-    record_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), nullable=False)
-    media_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), nullable=False)
+    record_id: Mapped[int | None] = mapped_column(BIGINT(unsigned=True), nullable=True)
+    media_id: Mapped[int | None] = mapped_column(BIGINT(unsigned=True), nullable=True)
     __table_args__ = (
         ForeignKeyConstraint(
             ["project_id"],
@@ -64,6 +64,11 @@ class CharacterVoice(Base):
             onupdate="RESTRICT",
         ),
         CheckConstraint("row_version > 0", name="ck_character_voice_version"),
+        CheckConstraint(
+            "(record_id IS NULL AND media_id IS NULL) OR "
+            "(record_id IS NOT NULL AND media_id IS NOT NULL)",
+            name="ck_character_voice_binding_pair",
+        ),
         TABLE_OPTIONS,
     )
 

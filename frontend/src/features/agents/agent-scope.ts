@@ -2,10 +2,10 @@ import type { AgentConversation, ConversationScope } from '../../api/types/agent
 
 export interface AgentSubject { type: 'asset' | 'shot'; id: string; label: string; revision?: string }
 
-export function episodeConversationScope(stage: ConversationScope['stage'], episodeId: string, subject?: AgentSubject | null): ConversationScope {
+export function episodeConversationScope(stage: ConversationScope['stage'], projectId: string, subject?: AgentSubject | null): ConversationScope {
   const scoped = stage === 'assets' && subject?.type === 'asset' || stage === 'storyboard' && subject?.type === 'shot';
   return {
-    stage, subject_type: scoped ? subject.type : 'episode', subject_id: scoped ? subject.id : episodeId,
+    stage, subject_type: scoped ? subject.type : 'project', subject_id: scoped ? subject.id : projectId,
     task_type: scoped ? 'creation' : stage === 'source' ? 'writing' : stage === 'assets' ? 'extraction' : 'planning',
   };
 }
@@ -21,7 +21,7 @@ export function conversationMatchesScope(conversation: AgentConversation, scope:
 
 export function scopeConversation(search: string, scope: ConversationScope): string | undefined {
   const parameters = new URLSearchParams(search);
-  return parameters.get(`conversation_${conversationScopeKey(scope)}`) || (scope.subject_type === 'episode'
+  return parameters.get(`conversation_${conversationScopeKey(scope)}`) || (scope.subject_type === 'project'
     ? parameters.get(`conversation_${scope.stage}`) || ((!parameters.has('conversation_stage') || parameters.get('conversation_stage') === scope.stage) ? parameters.get('conversation') || undefined : undefined)
     : undefined);
 }

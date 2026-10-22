@@ -17,19 +17,28 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import BusinessError
+from short_drama.dao.canvas_local_dao import CanvasLocalDAO
 from short_drama.domain import CanvasLocalJob, MediaFile, Project, ProjectCanvas
 from short_drama.schemas.canvas_depth import CanvasDepthCaptureResult
 from short_drama.schemas.canvas_transcription import CanvasTranscriptionResult
 from short_drama.service.base import utcnow
+from short_drama.service.canvas_cloud_transcription import (
+    CanvasCloudTranscriptionExecutor,
+    require_cloud_transcription,
+)
 from short_drama.service.canvas_depth_archive import CanvasDepthArchiveService
 from short_drama.service.canvas_depth_execute import CanvasDepthCaptureExecutor
+from short_drama.service.canvas_playback_cleanup import cleanup_canvas_playback
+from short_drama.service.canvas_playback_execute import compatible_video
 from short_drama.service.canvas_timeline_renderer import CanvasTimelineRenderer
 from short_drama.service.canvas_transcription_execute import CanvasTranscriptionExecutor
 from short_drama.service.storage_service import StorageService
 from short_drama.service.task_access import may_submit
 from short_drama.service.video_render import RenderCancelled
 from short_drama.storage.minio import MinioStorage
+from short_drama.storage.models import ObjectLocation
 from short_drama.tasks.celery_app import make_celery, render_queue
+from short_drama.utils.snowflake import next_id
 
 logger = logging.getLogger(__name__)
 
@@ -253,16 +262,96 @@ class CanvasLocalExecutor:
                 finish_state(job, "cancelled", "已取消")
             else:
                 depth = job.task_type == "depth_capture"
-                finish_state(job, "failed", "深度处理失败" if depth else "转写失败")
+                playback = job.task_type == "resource_playback"
+                finish_state(
+                    job,
+                    "failed",
+                    "兼容预览失败" if playback else "深度处理失败" if depth else "转写失败",
+                )
                 message = (
                     str(error)
                     if isinstance(error, (RuntimeError, BusinessError))
                     else "本地媒体处理失败，请检查媒体和服务后明确恢复"
                 )
                 job.error_json = {
-                    "code": "canvas_depth_failed" if depth else "canvas_transcription_failed",
+                    "code": "canvas_playback_failed"
+                    if playback
+                    else "canvas_depth_failed"
+                    if depth
+                    else "canvas_transcription_failed",
                     "message": message[:2000],
                 }
+                if (job.result_json or {}).get("cloud_submission_started"):
+                    job.error_json = {
+                        "code": "canvas_transcription_submission_unknown",
+                        "message": message[:1600]
+                        + "；此请求可能已到达云端，未自动重发，请到渠道核实。",
+                    }
+
+    def _playback(self, job: CanvasLocalJob, token: str, heartbeat) -> None:
+        with self._source(job.source_snapshot) as source:
+            with compatible_video(source, self.settings, heartbeat) as (path, facts):
+                with path.open("rb") as stream:
+                    digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                location = ObjectLocation(
+                    self.settings.minio_video_bucket, f"canvas-playback/{job.id}/{token}.mp4"
+                )
+                heartbeat("保存兼容预览", 90, True)
+                cleanup_canvas_playback(
+                    self.factory, self.settings, self.storage, job_id=job.id, token=token
+                )
+                with self.factory.begin() as session:
+                    current = self._current(session, job.id, token)
+                    if (current.result_json or {}).get("playback_staging"):
+                        raise RuntimeError("上次兼容预览文件尚未清理，请稍后重新读取")
+                    current.result_json = {"playback_staging": [location.locator]}
+                try:
+                    with path.open("rb") as stream:
+                        self.storage.put(
+                            location.bucket,
+                            location.object_name,
+                            stream,
+                            path.stat().st_size,
+                            "video/mp4",
+                        )
+                    with self.factory.begin() as session:
+                        current = self._current(session, job.id, token)
+                        original = session.get(MediaFile, current.source_media_id)
+                        media = MediaFile(
+                            id=next_id(),
+                            project_id=original.project_id,
+                            scope_user_id=original.scope_user_id,
+                            published_at=original.published_at,
+                            format_code="video/mp4",
+                            storage_locator=location.locator,
+                            original_name="compatible-preview.mp4",
+                            byte_size=path.stat().st_size,
+                            width=facts["width"],
+                            height=facts["height"],
+                            duration_ms=facts["duration_ms"],
+                            checksum_sha256=digest,
+                            video_metadata=facts,
+                            created_at=utcnow(),
+                            updated_at=utcnow(),
+                            created_by=job.user_id,
+                            updated_by=job.user_id,
+                        )
+                        session.add(media)
+                        session.flush()
+                        current.output_media_id = media.id
+                        current.result_json = {
+                            "resourceId": str(media.id),
+                            "sourceResourceId": str(original.id),
+                            "profile": "h264-aac-v1",
+                        }
+                        current.progress = 100
+                        finish_state(current, "succeeded", "兼容预览已就绪")
+
+                except Exception:
+                    cleanup_canvas_playback(
+                        self.factory, self.settings, self.storage, job_id=job.id, token=token
+                    )
+                    raise
 
     def _depth(self, job: CanvasLocalJob, token: str, heartbeat) -> None:
         with self.factory() as session:
@@ -368,14 +457,39 @@ class CanvasLocalExecutor:
             if job.task_type == "depth_capture":
                 self._depth(job, token, heartbeat)
                 return
+            if job.task_type == "resource_playback":
+                self._playback(job, token, heartbeat)
+                return
             if job.task_type != "timeline_transcription":
                 raise RuntimeError("此本地媒体任务执行类型暂不可用")
-            if not self.settings.canvas_whisper_base_url.strip():
+            model_id = job.request_json.get("modelConfigId")
+            if model_id:
+                if (job.result_json or {}).get("cloud_submission_started"):
+                    raise RuntimeError("上一次云端转写提交结果待核实")
+
+                def before_submit():
+                    with self.factory.begin() as authority:
+                        self._current(authority, identifier, token).result_json = {
+                            "cloud_submission_started": True
+                        }
+
+                with self.factory.begin() as session:
+                    self._current(session, identifier, token)
+                    config = require_cloud_transcription(
+                        CanvasLocalDAO(session).transcription_model(int(model_id), job.user_id),
+                        job.request_json.get("modelConfigVersion"),
+                    )
+                    executor = CanvasCloudTranscriptionExecutor(
+                        self.settings, config, heartbeat, before_submit=before_submit
+                    )
+            elif not self.settings.canvas_whisper_base_url.strip():
                 raise RuntimeError(
                     "未配置本地转写服务：请设置 CANVAS_WHISPER_BASE_URL 指向 whisper.cpp 服务"
                 )
+            else:
+                executor = CanvasTranscriptionExecutor(self.settings, heartbeat)
             with self._source(job.source_snapshot) as source:
-                result = CanvasTranscriptionExecutor(self.settings, heartbeat).run(
+                result = executor.run(
                     source, job.source_snapshot["mime_type"], job.request_json.get("language", "")
                 )
             heartbeat("整理字幕…", 99, True)

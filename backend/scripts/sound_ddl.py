@@ -7,14 +7,14 @@ from sqlalchemy import text
 from short_drama.core.config import Settings
 from short_drama.db.session import build_engine
 from short_drama.domain import AIModelConfig, AsyncTask, MediaAsset, MediaFile
-from short_drama.domain.episode_sound import EpisodeSound, ProjectVoiceDefaults, SoundMediaReference
+from short_drama.domain.project_sound import ProjectSound, ProjectVoiceDefaults, SoundMediaReference
 
 try:
     from scripts.assembly_ddl import tables_ddl
 except ModuleNotFoundError:
     from assembly_ddl import tables_ddl
 
-MODELS = (EpisodeSound, ProjectVoiceDefaults, SoundMediaReference)
+MODELS = (ProjectSound, ProjectVoiceDefaults, SoundMediaReference)
 CHECKS = [
     (model.__table__.name, constraint.name, str(constraint.sqltext))
     for model in (AIModelConfig, AsyncTask, MediaAsset, MediaFile)

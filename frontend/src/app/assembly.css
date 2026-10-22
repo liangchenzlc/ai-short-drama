@@ -68,7 +68,7 @@
 .assembly-track-clip.is-selected .assembly-track-label { background: var(--accent-fill); color: var(--on-accent); }
 .assembly-track-selected { font-weight: 600; }
 .assembly-insert-marker { position: absolute; top: 34px; bottom: 10px; width: 3px; background: var(--surface-raised); pointer-events: none; z-index: 3; }
-.assembly-timeline-feedback { min-height: 24px; margin: 8px 0 0; color: var(--sub); font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.assembly-timeline-feedback { height: 24px; min-width: 0; margin: 8px 0 0; color: var(--sub); font-size: 12px; line-height: 24px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .assembly-track-label, .assembly-track-time { position: relative; display: block; width: max-content; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; line-height: 20px; color: var(--ink); background: var(--canvas); padding: 0 4px; }
 .assembly-track-time { margin-top: 6px; font-variant-numeric: tabular-nums; }
 .assembly-timeline .timeline-editor-action-left-stretch, .assembly-timeline .timeline-editor-action-right-stretch { background: var(--accent-fill); width: 8px; border-radius: 2px; opacity: .6; }
@@ -77,10 +77,8 @@
 .assembly-timeline .timeline-editor-cursor-top path { fill: var(--accent); }
 .assembly-timeline .timeline-editor-edit-area .ReactVirtualized__Grid::-webkit-scrollbar { height: 8px; }
 .assembly-timeline .timeline-editor-edit-area .ReactVirtualized__Grid::-webkit-scrollbar-thumb { background: var(--surface-muted); }
-.assembly-timeline-help { font-size: 12px; line-height: 1.6; color: var(--sub); margin: 10px 0 0; }
 .assembly-track-empty { position: absolute; top: 57px; left: 24px; color: var(--sub); pointer-events: none; font-size: 13px; }
 .assembly-drop-hint { position: absolute; bottom: 0; inset-inline: 0; text-align: center; background: var(--accent-fill); color: var(--on-accent); padding: 5px; font-size: 12px; pointer-events: none; }
-.assembly-edit-notice { color: var(--danger); font-size: 13px; }
 .assembly-result-caption { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0; font-size: 12px; }
 .assembly-result-screen video { position: static; opacity: 1; }
 @media (max-width: 1000px) { .assembly-editor-desk { grid-template-columns: 150px minmax(0, 1fr); gap: 14px; } .assembly-jump { margin-left: 0; } }
@@ -90,7 +88,7 @@
   .assembly-layout-tools { order: -1; }
   .assembly-monitor { order: 0; }
   .assembly-edit-tools { order: 1; }
-  .assembly-timeline, .assembly-edit-notice { order: 2; }
+  .assembly-timeline { order: 2; }
   .assembly-media-bin { order: 3; margin-top: 20px; }
   .assembly-editing .assembly-screen { height: auto; aspect-ratio: 16 / 9; }
   .assembly-editing .assembly-screen.is-portrait { height: 340px; aspect-ratio: auto; }
@@ -101,13 +99,12 @@
   .assembly-player-controls output { margin: 0; font-size: 12px; }
   .assembly-edit-tools { margin-top: 12px; }
   .assembly-timeline-heading { gap: 6px; }
-  .assembly-timeline-help { max-width: 40ch; }
 }
 .assembly-workspace::selection { background: var(--pale); color: var(--accent); }
 .assembly-workspace:focus-visible { outline: 2px solid var(--assembly-accent); outline-offset: 3px; }
 .assembly-workspace input { caret-color: var(--assembly-accent); }
 .assembly-workspace a { color: var(--accent); text-underline-offset: 4px; }
-.assembly-heading, .assembly-heading-actions, .assembly-context, .assembly-panel-heading, .assembly-trim-title, .assembly-export-bar, .assembly-export-actions, .assembly-current { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.assembly-heading, .assembly-heading-actions, .assembly-context, .assembly-panel-heading, .assembly-trim-title, .assembly-export-bar, .assembly-export-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .assembly-heading { margin-bottom: 26px; flex-wrap: wrap; }
 .assembly-heading-actions { flex-wrap: wrap; }
 .assembly-sound-controls { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; min-width: 0; margin-bottom: 16px; }
@@ -163,11 +160,6 @@
 .assembly-export-actions { flex-wrap: wrap; }
 .assembly-export-actions label { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .assembly-export-actions .ant-select { width: 96px; }
-.assembly-render-status { display: flex; align-items: center; gap: 20px; padding: 18px 0 0; flex-wrap: wrap; }
-.assembly-render-status > div:first-child { display: grid; gap: 4px; }
-.assembly-render-status span { font-size: 12px; color: var(--assembly-muted); }
-.assembly-render-status .ant-progress { flex: 1; min-width: 120px; }
-.assembly-current { justify-content: flex-start; flex-wrap: wrap; padding: 20px 0 0; font-size: 13px; }
 .assembly-inline-actions, .assembly-dialog-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .assembly-dialog-actions { margin-top: 24px; justify-content: flex-end; }
 .assembly-empty { min-height: 430px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 36px; text-align: center; }

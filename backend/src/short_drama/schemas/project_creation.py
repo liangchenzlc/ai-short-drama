@@ -1,8 +1,8 @@
-"""Public creation contracts; ownership, ordering and audit stay server-owned."""
+"""作品创建与重命名；归属、版本与审计信息由服务端管理。"""
 
 from typing import Annotated, Literal
 
-from pydantic import Field, StringConstraints
+from pydantic import StringConstraints
 
 from .base import Identifier, InputModel
 
@@ -10,34 +10,8 @@ from .base import Identifier, InputModel
 class ProjectCreateRequest(InputModel):
     workspace_mode: Literal["standard", "infinite_canvas"] = "standard"
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
-    aspect: Literal["16:9", "9:16"]
-    synopsis: Annotated[str, Field(max_length=2000)] = ""
-    style: Annotated[str, Field(max_length=255)] = ""
-
-
-class EpisodeCreateRequest(InputModel):
-    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
-    synopsis: Annotated[str, Field(max_length=500)] = ""
-    # An omitted field inherits the project value. Explicit null is invalid.
-    aspect: Literal["16:9", "9:16"] = None
-    style: Annotated[str, Field(max_length=255)] = None
 
 
 class ProjectPatchRequest(InputModel):
-    row_version: Identifier | None = None
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)] = (
-        None
-    )
-    aspect: Literal["16:9", "9:16"] = None
-    synopsis: Annotated[str, Field(max_length=2000)] = None
-    style: Annotated[str, Field(max_length=255)] = None
-
-
-class EpisodePatchRequest(InputModel):
-    row_version: Identifier | None = None
-    title: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
-    ] = None
-    synopsis: Annotated[str, Field(max_length=500)] = None
-    aspect: Literal["16:9", "9:16"] = None
-    style: Annotated[str, Field(max_length=255)] = None
+    row_version: Identifier
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]

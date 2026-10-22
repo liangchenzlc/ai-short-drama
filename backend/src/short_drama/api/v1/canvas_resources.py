@@ -138,12 +138,24 @@ def read_resource(resource_id: ResourceId, service: Resources):
     return {"resource": resource}
 
 
+@router.post("/{resource_id}/playback", response_model=CanvasResourceEnvelope)
+def prepare_resource_playback(
+    resource_id: ResourceId, service: Resources, canvas_key: CanvasKey = None
+):
+    from short_drama.service.canvas_playback_service import CanvasPlaybackService
+
+    CanvasPlaybackService(service.session, service.settings).prepare(resource_id, canvas_key)
+    resource, _ = service.read(resource_id)
+    return {"resource": resource}
+
+
 @router.get("/{resource_id}/file", operation_id="get_canvas_resource_file")
 @router.head("/{resource_id}/file", operation_id="head_canvas_resource_file")
 def resource_file(
     resource_id: ResourceId,
     request: Request,
     service: Resources,
+    variant: Annotated[str | None, Query(pattern="^playback$")] = None,
     recycle_source_key: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
     recycle_archive_key: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
 ):
@@ -157,6 +169,15 @@ def resource_file(
         )
     else:
         resource, locator = service.read(resource_id)
+    if variant == "playback":
+        from short_drama.service.canvas_playback_service import playback_output
+
+        with service._transaction(read_only=True):
+            source = service.resources.resource(resource_id)
+            if source is None:
+                raise WorkflowError("canvas_playback_unavailable", "视频资源不可用", 404)
+            output_id = playback_output(service.session, source, service.actor_id)
+        resource, locator = service.read(output_id)
     location = service.location(locator)
     stored = service.storage.stat(location.bucket, location.object_name)
     status, offset, length = resource_byte_range(request.headers.get("range"), stored.size)
@@ -171,7 +192,7 @@ def resource_file(
         "Content-Disposition": "attachment" if resource.kind == "file" else "inline",
     }
     if resource.etag:
-        headers["ETag"] = '"' + resource.etag + '"'
+        headers["ETag"] = '"' + resource.etag + (':pb"' if variant == "playback" else '"')
     if status == 206:
         headers["Content-Range"] = f"bytes {offset}-{offset + length - 1}/{stored.size}"
     elif status == 416:

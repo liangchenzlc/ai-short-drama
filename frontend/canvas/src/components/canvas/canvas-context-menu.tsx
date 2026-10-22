@@ -47,7 +47,6 @@ type CanvasNodeContextMenuProps = {
     menu: ContextMenuState;
     node?: CanvasNodeData | null;
     workspaceMode?: CanvasWorkspaceMode;
-    isProjectLinked?: boolean;
     canUndo: boolean;
     canRedo: boolean;
     canPaste: boolean;
@@ -87,7 +86,6 @@ export function CanvasNodeContextMenu({
     menu,
     node,
     workspaceMode = "professional",
-    isProjectLinked = false,
     canUndo,
     canRedo,
     canPaste,
@@ -157,7 +155,7 @@ export function CanvasNodeContextMenu({
     const nodeContent = typeof node?.metadata?.content === "string" ? node.metadata.content : "";
     const isImage = node?.type === CanvasNodeType.Image;
     const isText = node?.type === CanvasNodeType.Text;
-    const isCharacterReference = Boolean(isText && node?.metadata?.workflowKind === "character" && node.metadata.characterAssetId);
+    const isCharacterReference = Boolean(isText && node?.metadata?.workflowKind === "character" && node.metadata.characterDefinition);
     const isDrawing = node?.type === CanvasNodeType.Drawing;
     const isVideo = node?.type === CanvasNodeType.Video;
     const isMedia = isImage || isVideo;
@@ -210,7 +208,7 @@ export function CanvasNodeContextMenu({
                             ) : null}
                             <MenuButton icon={<Plus className="size-4" />} label="添加节点" chevron active={addOpen} onClick={() => setAddOpen((value) => !value)} />
                             <MenuButton icon={<Upload className="size-4" />} label="上传到这里" onClick={() => runAction(onUpload)} />
-                            {!isProjectLinked ? <MenuButton icon={<FolderOpen className="size-4" />} label="从素材库插入" onClick={() => runAction(onOpenAssets)} /> : null}
+                            <MenuButton icon={<FolderOpen className="size-4" />} label="从素材库插入" onClick={() => runAction(onOpenAssets)} />
                             <MenuDivider />
                             <MenuSection label="历史与剪贴板" />
                             <MenuButton icon={<Undo2 className="size-4" />} label="撤销" shortcut="⌘Z" disabled={!canUndo} onClick={() => runAction(onUndo)} />
@@ -254,6 +252,7 @@ export function CanvasNodeContextMenu({
                                             <MenuButton icon={<Copy />} label="复制节点" shortcut="⌘C" onClick={() => runAction(onCopyNode)} />
                                         </>
                                     )}
+                                    {node?.type === CanvasNodeType.Video ? <MenuButton icon={<Trash2 />} label="删除节点" danger onClick={() => runAction(onDelete)} /> : null}
                                 </>
                             ) : (
                                 <>
@@ -296,7 +295,6 @@ export function CanvasNodeContextMenu({
                         parentPosition={position}
                         createPosition={menu.position}
                         workspaceMode={workspaceMode}
-                        isProjectLinked={isProjectLinked}
                         onAddNode={(type, position) => runAction(() => onAddNode(type, position))}
                         onAddFolder={() => runAction(onAddFolder)}
                         onChooseStyle={() => runAction(onChooseStyle)}
@@ -316,7 +314,6 @@ function AddNodeContextMenu({
     parentPosition,
     createPosition,
     workspaceMode,
-    isProjectLinked,
     onAddNode,
     onAddFolder,
     onChooseStyle,
@@ -329,7 +326,6 @@ function AddNodeContextMenu({
     parentPosition: { left: number; top: number };
     createPosition: Position;
     workspaceMode: CanvasWorkspaceMode;
-    isProjectLinked: boolean;
     onAddNode: (type: CanvasNodeTypeId, position?: Position) => void;
     onAddFolder: () => void;
     onChooseStyle: () => void;
@@ -341,12 +337,10 @@ function AddNodeContextMenu({
 }) {
     const theme = canvasThemes[useActiveTheme()];
     const installations = usePluginStore((state) => state.installations);
-    const pluginStates = usePluginStore((state) => state.pluginStates);
     const left = getSubmenuLeft(parentPosition.left);
     const createContext: AddNodeMenuContext = {
         workspaceMode,
-        isProjectLinked,
-        enabledPluginIds: new Set(installations.filter((item) => pluginStates[item.manifest.id]?.effectiveEnabled ?? item.enabled).map((item) => item.manifest.id)),
+        enabledPluginIds: new Set(installations.map((item) => item.manifest.id)),
         handlers: {
             onAddText: () => onAddNode(CanvasNodeType.Text, createPosition),
             onAddImage: () => onAddNode(CanvasNodeType.Image, createPosition),

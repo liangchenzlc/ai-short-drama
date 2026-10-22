@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { AlertCircle, BookOpenCheck, Clock3, Download, FileText, Image as ImageIcon, LoaderCircle, Music2, Pencil, Play, RefreshCw, Square, Video } from "lucide-react";
 
 import { VideoPlayer } from "@/components/video-player";
+import { useResourceVideoPlayback } from "@/hooks/use-resource-video-playback";
 import { CachedResourceImage } from "@/components/cached-resource-image";
 import { GenerationFailureNotice } from "@/components/generation/generation-failure-notice";
 import { explainGenerationError } from "@/lib/generation-error";
-import { generationTaskShowsProgress, generationTaskStageLabel, generationTaskStatusLabel, isGenerationTaskSubmissionUncertain } from "@/lib/generation-task-display";
+import { generationTaskShowsProgress, generationTaskStageLabel, generationTaskStallHint, generationTaskStatusLabel, isGenerationTaskSubmissionUncertain } from "@/lib/generation-task-display";
 import { canvasRichTextHTML } from "@/lib/canvas/canvas-rich-text";
 import { fitNodeSize } from "@/lib/canvas/canvas-node-size";
 import { loadCanvasDrawingPreview } from "@/lib/canvas/canvas-drawing-storage";
@@ -76,7 +77,7 @@ export function CanvasNodeContent(props: CanvasNodeContentProps) {
         || props.node.type === CanvasNodeType.BatchTable
         || props.node.type === CanvasNodeType.Director
         || Boolean(props.node.metadata?.directorSceneId)
-        || (props.node.metadata?.workflowKind === "character" && Boolean(props.node.metadata.characterAssetId))
+        || (props.node.metadata?.workflowKind === "character" && Boolean(props.node.metadata.characterDefinition))
         || (props.node.metadata?.workflowKind === "story_input" && !props.isEditingContent)
         || (props.node.metadata?.workflowKind === "styleboard" && !props.node.metadata.content);
     if (hasCustomContent && props.renderNodeContent) return props.renderNodeContent(props.node);
@@ -203,10 +204,12 @@ function LoadingContent({ node, theme, onOpenTaskDetails, onCancelTask }: Pick<C
     const statusLabel = hasTaskIdentity ? generationTaskStatusLabel(displayTask) : "等待任务状态";
     const stageLabel = hasTaskIdentity ? generationTaskStageLabel(displayTask) : node.metadata?.processingLabel || "正在创建任务";
     const elapsed = useTaskElapsed(node.metadata?.taskCreatedAt);
+    const stallHint = generationTaskStallHint({ ...displayTask, updatedAt: node.metadata?.taskUpdatedAt });
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2.5 px-5 text-center" style={{ color: theme.node.activeStroke }}>
             {submissionUncertain ? <AlertCircle className="size-10" /> : <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />}
             <span className="text-[var(--fs-tiny)] font-semibold">{stageLabel}</span>
+            {stallHint && <span role="status" className="max-w-[230px] text-[var(--fs-micro)] leading-5" style={{ color: theme.node.muted }}>{stallHint}</span>}
             {hasTaskIdentity ? (
                 <div className="flex w-full max-w-[210px] flex-col items-center gap-1.5">
                     <div className="max-w-full truncate text-[var(--fs-label)] font-medium" style={{ color: theme.node.text }}>
@@ -446,7 +449,7 @@ function VideoNodeContent({ node, theme, mediaActive = false, onMediaPlayRequest
     }
     const playerBoxRef = useRef<HTMLDivElement>(null);
     const { updateMediaNode } = useCanvasNodeActions();
-    const { url, loading } = useVideoPlaybackUrl(node, mediaActive);
+    const { url, loading, error, requestCompatible, fail, retry, compatible } = useVideoPlaybackUrl(node, mediaActive);
     const subtitleEntries = node.metadata?.subtitleEntries || [];
     const subtitleStyle = node.metadata?.subtitleStyle || createDefaultSubtitleStyle();
     const [currentTimeMs, setCurrentTimeMs] = useState(0);
@@ -497,10 +500,11 @@ function VideoNodeContent({ node, theme, mediaActive = false, onMediaPlayRequest
             {presentation.showLoading ? <div role="status" className="pointer-events-none absolute inset-0 z-[var(--node-z-overlay)] grid place-items-center bg-black/15 text-white/75"><LoaderCircle className="size-5 animate-spin" aria-label={loading ? "正在加载视频" : "视频资源不可用"} /></div> : null}
             {mediaActive && url ? (
                 <div className={`absolute ${presentation.showVideo ? "opacity-100" : "pointer-events-none opacity-0"}`} style={{ width: fitWidth, height: Math.round(fitHeight) }}>
-                    <VideoPlayer src={url} mimeType={node.metadata?.mimeType} title={node.title || "视频"} hasAudio={inferVideoHasAudio(node.metadata)} autoPlay preload="metadata" brandColor={theme.accent.primary} className="h-full w-full rounded-[var(--node-radius)] bg-black" dataCanvasNoZoom compactControls onFirstFramePresented={() => setFirstFramePresented(true)} onPlay={() => scheduleResourceBlobCache(node.metadata?.storageKey || "")} />
+                    <VideoPlayer src={url} mimeType={compatible ? "video/mp4" : node.metadata?.mimeType} title={node.title || "视频"} hasAudio={inferVideoHasAudio(node.metadata)} autoPlay preload="metadata" brandColor={theme.accent.primary} className="h-full w-full rounded-[var(--node-radius)] bg-black" dataCanvasNoZoom compactControls onError={() => { if (!requestCompatible()) fail(); }} onFirstFramePresented={() => setFirstFramePresented(true)} onPlay={() => scheduleResourceBlobCache(node.metadata?.storageKey || "")} />
                     {activeEntry && activeEntry.text.trim() ? <CanvasSubtitleOverlay text={activeEntry.text} highlight={activeHighlight} style={subtitleStyle} /> : null}
                 </div>
             ) : null}
+            {error && mediaActive && <div role="alert" className="absolute inset-0 z-[var(--node-z-overlay)] flex flex-col items-center justify-center gap-2 bg-black/85 p-3 text-center text-xs text-white"><span>{error}</span><button type="button" className="rounded bg-white/15 px-2 py-1" onClick={retry}>重新读取预览</button></div>}
         </div>
     );
 }
@@ -626,25 +630,7 @@ function useVideoPlaybackUrl(node: CanvasNodeData, active: boolean) {
     const rawContent = node.metadata?.content || "";
     const fallback = node.metadata?.importSource?.provider === "libtv" ? buildLibTVVideoSourceUrl(rawContent) : rawContent;
     const storageKey = node.metadata?.storageKey || "";
-    const [url, setUrl] = useState("");
-    const [loading, setLoading] = useState(false);
-
-    useEffect(() => {
-        let cancelled = false;
-        if (!active) {
-            setUrl("");
-            setLoading(false);
-            return;
-        }
-        setLoading(true);
-        void resolveMediaUrl(storageKey, fallback)
-            .then((resolved) => { if (!cancelled) setUrl(resolved); })
-            .catch((error) => { console.warn("视频资源物化失败，回退到原始地址", error); if (!cancelled) setUrl(fallback); })
-            .finally(() => { if (!cancelled) setLoading(false); });
-        return () => { cancelled = true; };
-    }, [active, fallback, storageKey]);
-
-    return { url, loading };
+    return useResourceVideoPlayback(storageKey, fallback, active);
 }
 
 function InactiveMediaCard({ icon, title, hint, theme }: { icon: ReactNode; title: string; hint: string; theme: CanvasTheme }) {

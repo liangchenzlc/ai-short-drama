@@ -44,26 +44,22 @@ def _character_names(characters: list[dict]) -> dict[str, dict]:
     names = {}
     for character in characters:
         previous = names.get(character["name"])
-        if previous is not None and (previous["assetId"], previous["versionId"]) != (
-            character["assetId"],
-            character["versionId"],
-        ):
+        if previous is not None and previous["nodeId"] != character["nodeId"]:
             raise ValueError("same character name refers to different identities")
         names[character["name"]] = character
     return names
 
 
 def storyboard_characters(document: dict) -> list[dict]:
-    """从已通过真实角色发布门禁的文档构造与源前端相同的上下文。"""
+    """Build character context exclusively from saved nodes in this canvas."""
     characters = []
     for node in document["nodes"]:
         metadata = node.get("metadata") or {}
-        if metadata.get("workflowKind") != "character" or not metadata.get("characterAssetId"):
+        if metadata.get("workflowKind") != "character":
             continue
         characters.append(
             {
-                "assetId": metadata["characterAssetId"].strip(),
-                "versionId": metadata["characterVersionId"].strip(),
+                "nodeId": node["id"],
                 "name": (metadata.get("characterName") or node["title"]).strip(),
                 "definition": deepcopy(
                     metadata["characterDefinition"]
@@ -115,8 +111,6 @@ def storyboard_snapshot(document: dict, node_id: str) -> dict:
         kind = (
             "character"
             if fields.get("workflowKind") == "character"
-            and fields.get("characterAssetId")
-            and fields.get("characterVersionId")
             else "image"
             if item["type"] == "drawing"
             else item["type"]
@@ -146,11 +140,7 @@ def storyboard_snapshot(document: dict, node_id: str) -> dict:
                 600,
             ),
         }
-        for target, source in (
-            ("category", "assetCategory"),
-            ("characterAssetId", "characterAssetId"),
-            ("characterVersionId", "characterVersionId"),
-        ):
+        for target, source in (("category", "assetCategory"),):
             if fields.get(source) is not None:
                 asset[target] = fields[source]
         assets.append(asset)
@@ -269,8 +259,7 @@ def canvas_storyboard_result(text: str, request: dict, task_id: str) -> dict:
             value["characters"] = [
                 {
                     "characterName": name,
-                    "characterAssetId": names[name]["assetId"],
-                    "characterVersionId": names[name]["versionId"],
+                    "characterNodeId": names[name]["nodeId"],
                 }
                 for name in row.characters
             ]

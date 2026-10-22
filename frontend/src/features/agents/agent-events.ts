@@ -12,8 +12,12 @@ export function parseAgentEvent(frame: string): AgentEvent | null {
   try {
     const event = JSON.parse(data) as AgentEvent;
     return Number.isSafeInteger(event.seq) && event.seq > 0 && typeof event.event_type === 'string'
-      && event.payload && typeof event.payload === 'object' ? event : null;
+      && event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload) ? event : null;
   } catch { return null; }
+}
+export function sseControl(frame: string): 'resync' | 'retry' | 'access-ended' | null {
+  const kind = frame.split('\n').filter(line => line.startsWith('event:')).at(-1)?.slice(6).trim();
+  return kind === 'resync' || kind === 'retry' || kind === 'access-ended' ? kind : null;
 }
 export interface DeltaChunk { turn: string; offset: number; text: string }
 export function addDelta(chunks: DeltaChunk[], event: AgentEvent): DeltaChunk[] {

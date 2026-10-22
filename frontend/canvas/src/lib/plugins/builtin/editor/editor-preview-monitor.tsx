@@ -20,6 +20,7 @@ import {
     LoaderCircle,
     Pause,
     Play,
+    RotateCw,
     SkipBack,
     SkipForward,
     StepBack,
@@ -32,7 +33,8 @@ import {
 import { useEditorStoreContext } from "@/components/editor/editor-context";
 import { formatTimelineTime } from "@/lib/timeline/timeline-view";
 import { resolveMediaUrl } from "@/services/file-storage";
-import { playbackVariantUrl, refreshResource, resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
+import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
+import { useResourceVideoPlayback } from "@/hooks/use-resource-video-playback";
 import type { TimelineClip, TimelineProject } from "@/types/timeline";
 
 // 本地播放时钟 → store.transportMs 的回写节流（毫秒）。太密会让时间线面板每帧重渲染。
@@ -129,94 +131,15 @@ export function EditorPreviewMonitor() {
     const activeMediaUrl = useClipMediaUrl(activeClip);
     const activeTrack = project?.tracks.find((t) => t.id === activeClip?.trackId) ?? null;
 
-    // 播放回退：H.264 原件直接播放；H.265/HEVC 原件多数浏览器无法解码（黑屏），
-    // <video> onError 后切换后端 playback 转码副本（variant=playback），副本就绪前轮询。
-    const storageKey = activeClip?.directMedia?.storageKey;
-    const mediaResourceId = storageKey ? resourceIdFromStorageKey(storageKey) : null;
-    const [mediaTier, setMediaTier] = useState<"primary" | "variant">("primary");
-    const [variantReadyTick, setVariantReadyTick] = useState(0);
-    const [mediaErrorHint, setMediaErrorHint] = useState<string | null>(null);
-    // 终态护栏：none/failed/超时/不可达后禁止再回退 primary 重试或覆盖终态文案。
-    // 否则原件不可解码且后端无副本可生成时会 primary→variant→primary 无限循环。
-    const mediaTerminalRef = useRef(false);
-
-    useEffect(() => {
-        setMediaTier("primary");
-        setVariantReadyTick(0);
-        setMediaErrorHint(null);
-        mediaTerminalRef.current = false;
-    }, [activeClip?.id, storageKey, activeMediaUrl]);
-
-    useEffect(() => {
-        if (mediaTier !== "variant" || !mediaResourceId) return;
-        let cancelled = false;
-        let failures = 0;
-        let polls = 0;
-        const timer = window.setInterval(async () => {
-            try {
-                const res = await refreshResource(mediaResourceId);
-                if (cancelled) return;
-                if (res.playbackStatus === "ready") {
-                    setMediaErrorHint(null);
-                    setVariantReadyTick((n) => n + 1);
-                    window.clearInterval(timer);
-                } else if (res.playbackStatus === "failed") {
-                    mediaTerminalRef.current = true;
-                    setMediaErrorHint("兼容副本生成失败，可下载原片后用本地播放器观看。");
-                    window.clearInterval(timer);
-                } else if (res.playbackStatus === "none") {
-                    // 后端判定无播放副本可生成（远端存储/无 ffmpeg/编码不可处理）。
-                    // 原件此刻必然已 onError 失败才进入 variant 轮询，回退 primary 只会
-                    // 再次失败并切回 variant，形成无限循环 —— 直接进入终态提示并停轮询。
-                    mediaTerminalRef.current = true;
-                    setMediaErrorHint("视频编码此浏览器暂不支持，且无可生成的兼容副本；可下载原片转换格式后重新导入。");
-                    window.clearInterval(timer);
-                } else if ((polls += 1) >= 120) {
-                    // processing 上限保护（约 5 分钟）：转码异常卡死时不再无限轮询。
-                    mediaTerminalRef.current = true;
-                    setMediaErrorHint("兼容版本生成超时，可下载原片后用本地播放器观看。");
-                    window.clearInterval(timer);
-                } else {
-                    setMediaErrorHint("视频编码此浏览器暂不支持，正在生成兼容版本（H.264）…");
-                }
-                failures = 0;
-            } catch {
-                if (cancelled) return;
-                failures += 1;
-                if (failures >= 4) {
-                    mediaTerminalRef.current = true;
-                    window.clearInterval(timer);
-                    setMediaErrorHint("兼容版本生成服务暂不可达，请稍后重新打开预览重试。");
-                }
-            }
-        }, 2500);
-        return () => {
-            cancelled = true;
-            window.clearInterval(timer);
-        };
-    }, [mediaTier, mediaResourceId]);
-
-    const handleMediaError = () => {
-        // 已进入终态（副本生成失败/无副本可生成/超时/服务不可达）：保持终态文案，
-        // 不再改写为"正在生成"或回退重试 —— 副本 URL 在 failed/none 时会回退原件，
-        // 反复 onError 会把失败提示覆盖成误导性的"正在生成兼容版本"。
-        if (mediaTerminalRef.current) return;
-        // 图片/无资源：无播放副本可切，仅提示。
-        if (activeClip?.kind !== "video" || !mediaResourceId) {
-            return;
-        }
-        if (mediaTier === "primary") {
-            // 原件解码失败（大概率 H.265）：切后端 playback 副本。
-            setMediaTier("variant");
-            setMediaErrorHint("视频编码此浏览器暂不支持，正在生成兼容版本（H.264）…");
-        } else {
-            // 副本尚未就绪时后端回退原件仍会失败；轮询 effect 会在就绪后重载。
-            setMediaErrorHint("视频编码此浏览器暂不支持，正在生成兼容版本（H.264）…");
-        }
-    };
-
+    const storageKey = activeClip?.directMedia?.storageKey || "";
+    const mediaResourceId = resourceIdFromStorageKey(storageKey);
     const isVideoClip = activeClip?.kind === "video";
-    const videoSrc = isVideoClip && mediaResourceId && mediaTier === "variant" ? playbackVariantUrl(mediaResourceId) : isVideoClip ? activeMediaUrl : null;
+    const playback = useResourceVideoPlayback(storageKey, activeMediaUrl || "", isVideoClip && Boolean(activeMediaUrl));
+    const mediaTier = playback.compatible ? "variant" : "primary";
+    const variantReadyTick = playback.retryEpoch;
+    const mediaErrorHint = playback.error || (playback.loading ? "正在准备视频预览…" : null);
+    const handleMediaError = () => { if (isVideoClip && !playback.requestCompatible()) playback.fail(); };
+    const videoSrc = isVideoClip ? playback.url : null;
     const imageSrc = activeClip?.kind === "image" ? activeMediaUrl : null;
     const videoMuted = activeTrack?.muted === true;
 
@@ -430,12 +353,13 @@ export function EditorPreviewMonitor() {
                         title={mediaErrorHint}
                         className="flex min-w-0 max-w-[42%] items-center gap-1.5 rounded-md bg-[var(--director-danger)]/10 px-2 py-1 text-[11px] text-[var(--director-danger)]"
                     >
-                        {mediaErrorHint.includes("正在生成") ? (
+                        {playback.loading ? (
                             <LoaderCircle className="size-3 shrink-0 animate-spin" />
                         ) : (
                             <AlertTriangle className="size-3 shrink-0" />
                         )}
                         <span className="truncate">{mediaErrorHint}</span>
+                        {playback.error && <button type="button" onClick={playback.retry} aria-label="重新读取视频预览" title="重新读取视频预览" className="grid size-5 shrink-0 place-items-center rounded hover:bg-[var(--director-danger)]/15"><RotateCw className="size-3" /></button>}
                         {mediaResourceId && (
                             <a
                                 href={resourceFileUrl(mediaResourceId)}

@@ -9,25 +9,25 @@ from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import select
 
 from short_drama.core.exceptions import BusinessError, Conflict
-from short_drama.dao.episode_storyboard_dao import advance_storyboard_version
-from short_drama.domain import Episode, ShotScript
+from short_drama.dao.project_storyboard_dao import advance_storyboard_version
+from short_drama.domain import Project, ShotScript
 from short_drama.schemas.base import Identifier, MediumText, parse_identifier
-from short_drama.schemas.episode_script import EpisodeScriptRead
 from short_drama.schemas.novel_script_record import NovelScriptRecordRead
+from short_drama.schemas.project_script import ProjectScriptRead
 from short_drama.schemas.script_shot_record import ScriptShotRecordRead
 from short_drama.schemas.shot_script import ShotScriptRead
 from short_drama.utils.snowflake import next_id
 
 from .base import utcnow
-from .episode_script_service import EpisodeScriptService
 from .novel_script_record_service import NovelScriptRecordService
+from .project_script_service import ProjectScriptService
 from .script_shot_record_service import ScriptShotRecordService
 from .shot_script_service import ShotScriptService
 
 
 class GenerationBatch(BaseModel):
     batch_id: Identifier
-    outputs: list[EpisodeScriptRead | ShotScriptRead]
+    outputs: list[ProjectScriptRead | ShotScriptRead]
     records: list[NovelScriptRecordRead | ScriptShotRecordRead]
 
 
@@ -44,7 +44,7 @@ class GenerationService:
         """Atomically append supplied script strings and their novel provenance."""
         return self._generate(
             NovelScriptRecordService(self.session),
-            EpisodeScriptService(self.session),
+            ProjectScriptService(self.session),
             "content",
             novel_id,
             contents,
@@ -93,15 +93,15 @@ class GenerationService:
             else:
                 records._validate_source(source)
                 records._validate_model(model_id, "text")
-                storyboard_episode = (
-                    records._require(Episode, source.episode_id)
+                storyboard_creation = (
+                    records._require(Project, source.project_id)
                     if outputs.model is ShotScript
                     else None
                 )
                 maximum = (
                     self.session.scalar(
                         select(outputs.model.position)
-                        .where(outputs.model.episode_id == source.episode_id)
+                        .where(outputs.model.project_id == source.project_id)
                         .order_by(outputs.model.position.desc())
                         .limit(1)
                         .with_for_update()
@@ -114,7 +114,7 @@ class GenerationService:
                 output_rows = [
                     outputs.dao.create(
                         {
-                            "episode_id": source.episode_id,
+                            "project_id": source.project_id,
                             "position": position,
                             content_field: content,
                             "created_at": now,
@@ -135,8 +135,8 @@ class GenerationService:
                     for row in output_rows
                 ]
                 record_rows = records._persist_batch(payloads, source, created_at=now)
-                if storyboard_episode is not None:
-                    advance_storyboard_version(storyboard_episode)
+                if storyboard_creation is not None:
+                    advance_storyboard_version(storyboard_creation)
                     self.session.flush()
             return GenerationBatch(
                 batch_id=batch_id,

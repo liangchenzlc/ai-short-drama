@@ -1,7 +1,7 @@
 {
   "src/services/api/task-center.ts": {
-    "reason": "画布任务准入复用宿主HTTP与本人作用域日志，先等待来源保存回执，以冻结正文和同一Idempotency-Key处理受理不明；恢复支持clientOperationId/sourceNodeId精确查询，不改变源任务中心展示和轮询。 文本SSE以textDraftSequence初始化完整草稿游标，重连只追加新delta，旧无游标草稿从头重放；SSE沿用捕获账号请求头与epoch校验。 分镜请求补闭合DTO，沿用源字段及十进制模型身份，不改变任务中心展示。",
-    "sha256": "faceb1f79e066081859e26c3aaece4c6639b354b49bbcf2dc10f073222189d20",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "f8a10eb296dd82839f63c2a26794930a6e724e365774b75a769cc6dadc20ed9a",
     "upstream_sha256": "d1711b8707c86dae71f3b26df4ae17f935179b50287ad0f0a7265aff21a8709a"
   },
   "src/services/api/generation-task.ts": {
@@ -10,28 +10,28 @@
     "upstream_sha256": "fcb11684247b1909ede89ad0fa1faf52f48e4e797d2cafc39fc0b631281f2aea"
   },
   "src/pages/canvas/use-canvas-generation-executor.ts": {
-    "reason": "保留节点生成入口、稳定操作身份和同步图状态；移除已取消的助手批准快照与指定模型分支，恢复调用原 buildGenerationConfig，画布生成仍读取最新节点、连线、模型和附件。",
-    "sha256": "030d96fab5cfb5f32d314e652716a3b4b74b17d8d43a37976ed0ac2a465d73b5",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "1816f7412d06c592ca3c8baeb67eba7dabc127d0e7c40161d727d669b1f4300f",
     "upstream_sha256": "c8c8318ceb744d3d59705b7f0f0efc54f3f1fadcffafc28d6db6708bd0f2b925"
   },
   "src/pages/canvas/canvas-text-generation-executor.ts": {
-    "reason": "文本独立份数沿用源目标布局，透传并按批次派生稳定操作身份与batchIndex/batchCount，使刷新与幂等关联准确。",
-    "sha256": "ec9986ec234eab148d068a298655edc5134c269609fb208b0891320e1e16a3bd",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "59865e72e98cced2494536166affdd5355b6549c89d1ee17280f8f5430a3bd1c",
     "upstream_sha256": "498543a10f642e0a89c2ae9ba5f41d01afe8025dc40291f34789eb6a8de061c2"
   },
   "src/pages/canvas/canvas-image-generation-executor.ts": {
-    "reason": "原图片执行器保留布局、交互与逐项请求，补充batchIndex/batchCount用于Config来源私人批次恢复。",
-    "sha256": "ef7a58b7ac508abb3532f87edf9cd4079b3cfbcb2cab245f9d641e2294e910ca",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "14483c4279f62dcaa0d6f3d08f2f5dd3b0781956da83816fb967f40b7785292f",
     "upstream_sha256": "ca4ecdad38017bd599a1790a891cce77176c72214b2a2d1642856c797a14f761"
   },
   "src/pages/canvas/use-canvas-generation.ts": {
-    "reason": "托管Python任务恢复启用原本被localMode跳过的发现，按私人操作或不可变任务身份恢复，不覆盖新任务；Config按本批target群收尾且不绑定child任务，图片部分成功沿用源success语义；默认绑定实际首产物槽。",
-    "sha256": "542aea8734a8d044a7aaf22d5c9821837d3a03d404fe52b095a7cd777cbb10c0",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "516cd03b9cfbe23438a66994f85b6f81bd967fc3ba04fc1879d32bb4b095a828",
     "upstream_sha256": "784265b28cad95eb943995eb839d92670ccb1e3f218d926229414a35afeb6c19"
   },
   "src/services/project-asset-sync.ts": {
-    "reason": "媒体结果优先采用后端项级真实outputIndex，兼容按ordered outputs映射压缩稀疏槽，保留无字段或部分交付的源连续数组行为，避免0与2产物被重排为0与1。",
-    "sha256": "64871178231cede64b840ebc82997d9f0cdb6ea339f4b93594edf806712b15e6",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "b4361eab8d15b676b77d576a96e1451a6d9ef099f7c28a9a76ef4b8524a16fd1",
     "upstream_sha256": "9c62799250a84dbf2578590c74f8d90918d18628d15242adfc5b554bc8c78c53"
   },
   "src/components/canvas/canvas-resource-mention-textarea.tsx": {
@@ -60,8 +60,8 @@
     "upstream_sha256": "41a9b5660bb4395e7d64ac1f5a2384bee1f5d59ec1549eb6987ccbafe75ae182"
   },
   "src/lib/canvas/canvas-archive-restore.ts": {
-    "reason": "服务端画布及模型偏好版本改为十进制字符串，保留原版几何、操作和本地缓存计数。绘图数据库版本使用十进制字符串，保留原操作和布局。原版 ZIP 导入在图首次发布时原子交付笔画和派生图，账号作用域上传显式指定；校验映射后的完整回执，未知结果保留草稿及首次请求供恢复。原版 ZIP 导入在图首次发布时原子交付笔画和派生图，账号作用域上传显式指定；媒体素材绑定在画布创建后完成并可恢复，视频缩略图 sourceKey 随主文件一起映射；校验映射后的完整回执，未知结果保留草稿及首次请求供恢复。",
-    "sha256": "309b0ebcc8e83345e535b238a39cc461a340d8e5d115737c9f4d806c42c38fb4",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "6698dfc4f2862061df77bac1c648234247c0ab951e03e8808c17af22dcccd1d0",
     "upstream_sha256": "51f6f0c08dea94aa809d9c1584b48e7ab017455602ebee0f8b89dd3c519a19bf"
   },
   "src/lib/canvas/canvas-external-revision.ts": {
@@ -85,13 +85,13 @@
     "upstream_sha256": "807611a7176992868f69858c9450e987f6ffc9929ecf1b55609021520bbc08a6"
   },
   "src/pages/canvas/use-canvas-project-lifecycle.ts": {
-    "reason": "??????????????????????????????????????/????????????????????????????/?????????????????????????????????????? 新建子图先完成来源保存，再冻结当前父canvas key/row_version传入创建边界；保留原布局、入口与导航，不开放固定源已禁用的业务关联UI。",
-    "sha256": "28a57f662bcce68a8cbf2e3678c0ef561d7ee295df37e417574604d0077d736b",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "99dee100d13a793f9d5cc2b161c863a2eb996cb5f8e6bacfc97edcf19ba0ee61",
     "upstream_sha256": "0102c8ce9e1b14cf6473ada49c19459e9915da39a1fbe57845b857343a4a9fc3"
   },
   "src/pages/canvas/use-canvas-director.ts": {
-    "reason": "导演台构图回填先交给原setNodes做节点变更stamp，不预先覆盖nodesRef使比较退化；保留原布局、菜单、异步来源/账号守卫、永久素材、场景合并和单向输出连线。",
-    "sha256": "35ee7c0459d52fb548269e682ab21f6ab5d6aeda113e776b77df9a7d6ccb6b70",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "2dbfc4f45bc5906bb9fb86d7ec4309cc9daf00b6962a9ff9a98488c142585a8b",
     "upstream_sha256": "320cf020b63dab9b775d02bc15bd5017a1c84f4b1bc8eb3164dad900cb9c5498"
   },
   "src/services/api/agent-assistant.ts": {
@@ -105,8 +105,8 @@
     "upstream_sha256": "1656b04f464a22454a64db035f7c0d37e5eb427f9309f5090a441ebe1c30e88d"
   },
   "src/services/api/workspace-data.ts": {
-    "reason": "服务端画布及模型偏好版本改为十进制字符串，保留原版几何、操作和本地缓存计数。绘图数据库版本使用十进制字符串，保留原操作和布局。历史读取与恢复携带打开列表时的绘图版本/墓碑前提，字段仅在托管服务边界转换。删除响应接收托管服务已确认的绘图墓碑版本，兼容源无版本响应。",
-    "sha256": "f7bd91d8bee873ce459954aa103061dc21b7ed815ae986fefb51ac7df720e295",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "b972b50e56564979517e3ef6a8d77c609fe701aebc3731399bd6872e38f0cc71",
     "upstream_sha256": "034729f4ceae0b171a467a9ba5ff0ca9220bd895a22f0535459043e44616e528"
   },
   "src/services/canvas-generation-consumer.ts": {
@@ -120,13 +120,13 @@
     "upstream_sha256": "f95b7847bd0de21ffb3bf76e0ce24e14fbca2f87f3a3dfd90e662b481d9f9954"
   },
   "src/services/local-workspace-sync.ts": {
-    "reason": "服务端画布及模型偏好版本改为十进制字符串，保留原版几何、操作和本地缓存计数。刷新通知可携带独立资源映射，供当前编辑器保留实时内容与历史。历史恢复合同透传绘图版本前提。明确latest读取通过宿主仓库保留本人草稿并采纳服务器版本，普通打开仍保护未确认编辑。",
-    "sha256": "8004caf8aaf388ed72551b622657de33af53fca34eff3c5a0dfeaf9d60197d41",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "044963c92b9d60b87f7fa33690cf41478ef0ea13b91cc65deb36465e3941c4b6",
     "upstream_sha256": "b3dbb72d21d1c94b58668d9172cfe474168db860c24c509a9dff769a55f34ca7"
   },
   "src/stores/canvas/use-canvas-store.ts": {
-    "reason": "服务端画布及模型偏好版本改为十进制字符串，保留原版几何、操作和本地缓存计数。",
-    "sha256": "cd1a81ed41fb337b62c494cdc663a4b7c5ed9478f4b58a92d00a3cb8b9abf6da",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "66e363d86dcc1acaff1785f6c7f50bed0986f846199b4a94834b098f7d3e37e7",
     "upstream_sha256": "2b73fdfa9de0defd7c3fa1887880ddb58cf962b1f5a542cc4f750899a9412f4d"
   },
   "src/components/workspace/workspace-bootstrap-hydrator.tsx": {
@@ -136,7 +136,7 @@
   },
   "src/lib/user-session.ts": {
     "reason": "工作区 profile/storageMode 使用真实宿主账号合同，缓存按可信用户 ID 隔离。切换账号前等待回收记录写入，避免在途持久化跨账号。 保留源账号命名空间恢复及旧系统代理剔除规则；Python宿主投影host-ID且credentialRef=host:ID例外保留，避免只读scope:system模型在恢复时被删除。 宿主恢复仅保留服务端投影的host模型目录，不复活源旧个人或系统渠道。 工作区恢复保留宿主安全RunningHub条目与保存标记，清除旧浏览器地址及三种Key；非宿主旧配置继续按原适配重置。",
-    "sha256": "f7cc9ef5ec9f69755a08bd5fa5a253a7802daa36cedef01a264dab4924508f91",
+    "sha256": "ba641b355acb346077da6af3d92f3b836a8303ec26eb8cea6f7ea98688fbfc7a",
     "upstream_sha256": "06ba4534ffe54d1c9e7337c516d6072a48b2fe7a45d18a545c73a39138a7d94c"
   },
   "src/main.tsx": {
@@ -145,8 +145,8 @@
     "upstream_sha256": "197f84eeeeed43e4d5f5e36e9a88ef7ce8c581e6ea8cddd048a9c11e262bb3da"
   },
   "src/pages/canvas/project.tsx": {
-    "reason": "按最新需求接入共享 CreativeAssistantPanel，以项目纯对话替换源助手执行与改图；引用画布前等待图保存回执并冻结版本，保留原停靠、拖宽、抽屉及节点生成操作。首次图加载后建立停靠监听，窄屏助手深链退出专注模式；旧链接转换期间阻止新对话抢写地址，保留旧记录身份。局部重绘复用现有任务结果消费者，绑定Worker已归档的原产物，避免旧窗口重复上传。导演台保存回调接入画布原远端保存屏障，保留原工作台布局、菜单、保存状态与冲突草稿语义。 接独立 current 角色 hook、可信 source/revision 和原 dialogs 状态；列表/详情/选择以账号 epoch、画布 lifetime、版本与全部槽位核验，保留原三菜单与布局。 来源项目读取统一使用可信画布、双项目身份与版本上下文；接真实分集摘要、小说原文和角色目录，明确无可读来源目录或通用资产，不把标准资产标识传给私人素材接口。",
-    "sha256": "af1c846f4f49c4b2bfd5b0a5419161a21b86c01fbbc3f19e5afe4191d852d3d2",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文；共享助手为全局逻辑任务显式传入当前画布写入目标，页面切换不改变已受理任务。 助手来源链接复用原节点聚焦方法，选中并居中所指节点；不修改节点或连线。 来源已移除时使用现有局部弹窗，避免全局 Toast 被画布样式隐藏。 来源定位等待真实画布尺寸，避免初始化 1200px 占位尺寸导致手机焦点落在屏幕外。",
+    "sha256": "5eb1a9b39d3789e3b23ca094d2fe9e0f03b795c369429aef6953eaadee1e13f4",
     "upstream_sha256": "36ca409ced7f1d562a3630bd34fe3f53fdeb8cbb5831f4f0602750b5fd90a5e8"
   },
   "src/services/api/request.ts": {
@@ -155,8 +155,8 @@
     "upstream_sha256": "1e1a4915bbcacb977a54cbd82b3305fefa8ebfcc075de1c44a531688d3bbbc8a"
   },
   "src/services/api/resources.ts": {
-    "reason": "上传与URL导入在异步操作前捕获宿主画布范围；保留资源幂等键并经宿主认证客户端提交Python持久化。",
-    "sha256": "6a87fd3e6cae9acfae9d633ba3e7c23a019074373ecd1b9275a2b83b75d301f1",
+    "reason": "上传与URL导入在异步操作前捕获宿主画布范围；保留资源幂等键并经宿主认证客户端提交Python持久化。 2026-10-16：兼容预览显式准备、状态轮询及认证 Blob 读取，原文件下载保持稳定。",
+    "sha256": "0dc1ba226c79fedb388928a1827b342c2cc556e216fb744104c8c849d70a6e7f",
     "upstream_sha256": "54fa7cac64bff563e1b545f77b973c06f77960d68dc633cd228d19cdc3c4f703"
   },
   "src/services/api/workspace.ts": {
@@ -165,13 +165,13 @@
     "upstream_sha256": "bc0578c2b43dea3a516226838f4a0021f7b6ef4454df655fbb74ee0a428811f9"
   },
   "src/services/local-workspace-repository.ts": {
-    "reason": "保留原串行保存与恢复；首次创建确认后按服务端文件映射及规范媒体展示值建立基线，旧未知结果请求仍按原文重放。历史恢复保留原请求和绘图前提，服务端确认并重读后解除本次恢复涉及的本机绘图墓碑。整组复制冻结完整绘图清单并保存首次请求，图与笔画通过创建事务同时交付；资源映射验证涵盖子文档，绘图清单不进入普通共享图或实时状态。归档首次请求持久保存素材绑定意图，图与笔画确认后再创建目标画布的私人素材绑定；未知回执恢复延续同一原请求和后续绑定，不泄漏本机恢复字段。回收站恢复引用原删除版本对应的本人回执，同键重试；服务端恢复后读取规范文档并写入原日记/草稿，保留新本机编辑、账号作用域和原作品身份。回收站恢复引用原删除版本对应的本人回执，同键重试；服务端恢复后读取规范文档并写入原日记/草稿，保留新本机编辑、账号作用域和原作品身份。删除前持久保留本人原请求与快照，回收记录和活动缓存落盘后清理日记；刷新只查询删除结果，后续恢复使旧删除失效时不再删除作品，未确认请求保留草稿且仅明确重试可发写入。跨设备回收恢复接受原 archiveKey；未知删除核对包含已永久处置状态，旧请求失效时不删除当前作品，继续使用原投影与账号保护。 2026-10-08核对已提交的身份恢复、ACK与草稿恢复合同后重新登记LF规范摘要。本轮新增严格GET的loadLatestLocalCanvasProject，保留本人草稿并复用外部版本采纳；409暂停后明确加载最新不再被严格保存挡住，沿用账号作用域、投影锁、日记及基线，读取不回写服务器。 ??????????????????????????????????????????????????????????????epoch??? 旧版Skill正文归属未确认时，历史恢复保留Python具体说明，不改写为版本过期；原409草稿与暂停自动提交语义保持。 可信父来源随首次请求独立冻结；来源先完成串行保存，逐图保留明确key/version，首次请求恢复不改来源。服务端摘要最终投影业务projectId，旧普通commit缺该字段时保留已确认绑定。 保存门禁及首次创建判断使用轻量日记状态，无待恢复投影时仅读取独立资源来源；完整提交和投影仍使用原快照与原版本、账号和资源检查。",
-    "sha256": "c04181f3686c1925f094b8c65552b228f8e5682311f608e8ec396fede4016a95",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "affbafc68f861d2933374e2d4da3ad66fae9e74b5adf7f6c1a0f6cc4dcaf70c6",
     "upstream_sha256": "163df579bdd0f232637f0845e2e3bfa853ddba4b963ef20e4f8ba928954f08e3"
   },
   "src/services/model-config-repository.ts": {
     "reason": "模型偏好版本改为字符串；初读失败不启用保存，409 保留偏好草稿并停止自动覆盖。 保留源串行保存机制，接收Python脱敏配置及稳定逻辑模型ID；ACK只替换未继续编辑字段，ACK更新不触发自动保存回声，409保留草稿和原版本。 保留源串行保存机制，接收Python脱敏配置及稳定逻辑模型ID；ACK只替换未继续编辑字段，ACK更新不触发自动保存回声，409保留草稿和原版本。新增clean-only企业目录刷新，等待既有drain并在等待/GET后核验账号epoch与generation；未保存输入或冲突不能借刷新自动覆盖，clean目录按服务端真实revision静默更新，不发保存回声。 2026-10-08核对已提交的身份恢复、ACK与草稿恢复合同后重新登记LF规范摘要；不变更该模块业务行为。",
-    "sha256": "799f012db39738412422aff9d7ae82b1da07156a6e78b2dc68d5462490e8af03",
+    "sha256": "5194e282eb722f21b81488c9747cbc6cde531eb0dd122917aad3b7a4a1060b5b",
     "upstream_sha256": "ea423762a35521ea98d77ad282fc81b0245fa2e4081bcb7253a9f8896671f515"
   },
   "src/services/workspace-mode.ts": {
@@ -181,7 +181,7 @@
   },
   "src/stores/use-config-store.ts": {
     "reason": "支持 host 配置凭据引用的就绪判断，不把服务端密钥送到浏览器。 宿主模型profile保留十进制logicalModelId与能力契约，自定义渠道保留服务端hasSecretKey脱敏状态，浏览器缓存继续清除全部凭据及私密header值。 宿主模型目录保留可信能力、并发与alias；未知或禁用显式选择不可用且不回退首模型；可信企业来源保留原助手白名单，alias请求保持真实逻辑ID。 增加宿主工作流稳定身份与凭据存在标记；生成就绪检查匹配保存条目和用途，不要求浏览器持有地址或密钥。",
-    "sha256": "5fbb6f65458156531cca5087f9d5909cbd36aad9850132ab6a3c4deb886b4d2c",
+    "sha256": "c911f16e179b7bdba2d8a4dbede6c96ecbb9696668c687ef26de2c2a96c73944",
     "upstream_sha256": "ff29768f4a862917f151b0ac76384f98edd9785479a9aac04ea905c0dc42906c"
   },
   "src/pages/canvas/canvas-sync-status.tsx": {
@@ -201,7 +201,7 @@
   },
   "src/services/file-storage.ts": {
     "reason": "???????????????????????????????Blob/File?????????????????????????????????????credential_source???????",
-    "sha256": "8230a33bb4bdc8f7eeb3035fdff8d195fe0daa8d25b1c4fe8c3700305aaf6277",
+    "sha256": "026eeb5c2295d13143e9f1858b5b4fcec148a8ca9b4d07cb19ab2bb4d1b3d69c",
     "upstream_sha256": "8f0247c3ab7718130e4e63c1e4482c5f826267085b67d60b48443bacd2b455f2"
   },
   "src/lib/canvas/canvas-node-asset.ts": {
@@ -220,18 +220,18 @@
     "upstream_sha256": "8169c8740bc040f0af422a312bcf1a2766e7112a371b91a4ea6d35111c0fe88e"
   },
   "src/components/canvas/canvas-asset-tray.tsx": {
-    "reason": "托盘使用本人服务端完整图片分页恢复缓存，保留原布局及点击拖入，补充加载与失败重试反馈。",
-    "sha256": "17ba719c534aa5f901a0d05ddbf6b99dbe2ae06553471bb55a504360513f46cb",
+    "reason": "托盘使用本人服务端完整图片分页恢复缓存，保留原布局及点击拖入，补充加载与失败重试反馈。 2026-10-16：对齐 F087，托盘查询、搜索和插入覆盖图片、视频、音频与文本；视频使用认证兼容预览。",
+    "sha256": "aea75eb18ba206502700fb270d0a54d3a88295d06b053497e85ded6ef3068b5c",
     "upstream_sha256": "014fccdfaa2b9d15be8d6cdeaaa678fc37270e6b768162ac38b672f2abd6c912"
   },
   "src/pages/canvas/use-canvas-node-operations.ts": {
-    "reason": "节点剪贴板按账号隔离并核对原系统标记，账号切换清除内存副本，保留源复制与粘贴操作。绘图数据库版本使用十进制字符串，保留原操作和布局。账号隔离的节点剪贴板保存来源画布键，跨画布绘图粘贴透传来源；异步复制回填复核账号、子文档身份及版本，保存目标预览定位，保留原菜单/快捷键/位置规则。",
-    "sha256": "12e913539ee0bcb893a45329db85cfa2af14015e73540fa4d044faf7f9079d6c",
+    "reason": "节点剪贴板按账号隔离并核对原系统标记，账号切换清除内存副本，保留源复制与粘贴操作。绘图数据库版本使用十进制字符串，保留原操作和布局。账号隔离的节点剪贴板保存来源画布键，跨画布绘图粘贴透传来源；异步复制回填复核账号、子文档身份及版本，保存目标预览定位，保留原菜单/快捷键/位置规则。 2026-10-16：对齐 F050，生成或批次节点删除费用确认，先发取消再删图，取消失败就近反馈并关闭旧上下文确认。",
+    "sha256": "9bc0ad596288c67abb69c9643264a290b4aa61dce3ef474bc6792e879c8aeb7b",
     "upstream_sha256": "1bf852081b5cf2c143cc6af0b6142a87f553ad9e3884195f5a15ab0350ba79ec"
   },
   "src/lib/canvas/canvas-content.ts": {
-    "reason": "内容比较与哈希使用规范媒体快照，避免展示 Blob 与同一文件 URL 导致假未保存；保留文本、未知字段与真实媒体身份差异。",
-    "sha256": "2d440648ff7dfe696dec503b2eedf495e1af24b2b3a6f1ac27d9ec25767eff17",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "255470f3fafaf7541cdaeae1539653ef35499dafe7404fcb1e7e61b4a51dc7cc",
     "upstream_sha256": "c32d18629bbc0bc6c6a09dd3699d5eaad7e2b27dd88621331bbfad103ea0cd1e"
   },
   "src/lib/canvas/canvas-document-rebase.ts": {
@@ -245,8 +245,8 @@
     "upstream_sha256": "b1a46b1ca2718b1b01416f5bef2778a4d574be1a655080a237f5bf8812e11eaa"
   },
   "src/types/canvas.ts": {
-    "reason": "绘图数据库版本使用十进制字符串，保留原操作和布局。 Config元数据增加稳定runningHubModelId，区分同供应商工作流ID的不同本人模型配置。",
-    "sha256": "72fb7cb5c977d60af4f463cdadce117c280b63fda5ee9708dbe0b717c8ea6479",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "0e9d895f73bcd67429740b721c03a1a7a153b8c03925b8457aaf1ca821d9c7a4",
     "upstream_sha256": "8910399f5d6836a2feb09a7ddf0ef91f3034aa178a6b0e42213b4efe2b5333a1"
   },
   "src/types/image.ts": {
@@ -260,18 +260,18 @@
     "upstream_sha256": "08c38383e39730c16e31d69f87b871c50b8b4d2bfabef84b61451684f434730b"
   },
   "src/lib/canvas/canvas-resource-references.ts": {
-    "reason": "绘图数据库版本使用十进制字符串，保留原操作和布局。",
-    "sha256": "465b53d96601217a3d2e05acb152812619adfb1aa018e384990fcba752866a09",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "63807f807193061225facc31edbfc120b3ee5c9b370920200cd54e56932f1889",
     "upstream_sha256": "2056527e78b91da7d69dc4219078052ba13f7054022b97a30f8137cbeb97642e"
   },
   "src/pages/canvas/canvas-project-editor-dialogs.tsx": {
-    "reason": "保留源各编辑弹窗和触发操作；向可达审美弹窗传入当前projectId，确保私人租约、来源保存和任务准入使用同一画布身份。 原角色详情和资产 picker 仅传专用角色 card、loading/error/retry 与选择重读 callback，其他 dialogs 保持。 来源资产弹窗透传来源读取状态及重试入口；角色仍沿专用目录与原图复制流程，私人素材库入口保持原路径。",
-    "sha256": "80e6a91101e80dbacb82656a121b4e1d2f210e14a17d42ebbf5fb10c7a114ae0",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "af6e4cd6bf49b147d2920bb5b6185c2ad8e4c3121a53421a8ca21e2479d82e2b",
     "upstream_sha256": "0bb8ce026fbd3e63fcbad6de0793b1c4b08e86156676d7543167039844dd487a"
   },
   "src/components/canvas/canvas-node-generation.ts": {
-    "reason": "绘图数据库版本使用十进制字符串，保留原操作和布局。调色参考资源解析显式传入原画布身份，缓存与上传按本人epoch及画布隔离，保留原中性透传、CSS预览及生成时才落地的行为。 角色媒体引用改读可信画布角色目录／详情和stable图片resolver，显式传递pinned作品版本；保持源参考容量、封面优先级和提示词结构，不再请求已移除的整站项目角色接口。 角色参考图及已采用样音在生成前沿宿主归一化复制，任务使用画布资源；样音保留独立绑定版本，拒绝将样音冒充供应商TTS音色，重复角色冻结身份去重。",
-    "sha256": "6871304b739281dbc2ad9a12c9fa82caf1d38907890f1f7014a37a7149bb23dc",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "dc7445b1593844a1433c90426d5e8e9d2923a9ee592a7b5f6109a38a5dc537a4",
     "upstream_sha256": "adbc889e5f389167ec451364b0edc86fc11f99b73bac9b1df6f4d7cc9c73b112"
   },
   "src/lib/canvas/canvas-color-grade.ts": {
@@ -315,8 +315,8 @@
     "upstream_sha256": "9ee01b8f10365f961b895961421ae0403ca1b9a0c8b60ad12583d3b2a54309d1"
   },
   "src/components/canvas/canvas-node-prompt-panel.tsx": {
-    "reason": "按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。 提示词优化插件宿主补充当前projectId与稳定node.id，防止切换节点后使用旧上下文；不改原布局和交互。",
-    "sha256": "1bf427cd00a6db6d936d2d1c9877f4ef2a1dd2cb7b5aa67fe0a6455818c23d78",
+    "reason": "按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。 提示词优化插件宿主补充当前projectId与稳定node.id，防止切换节点后使用旧上下文；不改原布局和交互。；生成前校验失败在提示词面板就近显示原因并保留草稿",
+    "sha256": "14f20f5cf2630491019e5cb26f536361f21ab1e8080e661c9ddf75a30f32da28",
     "upstream_sha256": "64c17ccb5743730870c596deeb5d9cbee9362df3c03dcd601a76167ae592a784"
   },
   "src/components/canvas/canvas-portrait-texture-popover.tsx": {
@@ -345,8 +345,8 @@
     "upstream_sha256": "2071a5a379ce85becb3f36d5b164ef6108c589d2f3a70cd6cd850b6713727cb8"
   },
   "src/components/canvas/toolbars/toolbar-settings-modal.tsx": {
-    "reason": "按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。",
-    "sha256": "03ce743dee6d587b15f7d01c5664d75068da9c6e1e6cb04a0bf4c9428d030c94",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "779b506341ef1fe28a3138773b164bb0e7ca96686a0acb9c0e7ea1590749538c",
     "upstream_sha256": "cac287a6ce8bdd15fbeac236e65fa1b09022f5ca4b73e6b83bbaa23fd3676cd1"
   },
   "src/components/model-picker.tsx": {
@@ -421,12 +421,12 @@
   },
   "src/lib/model-connection-test.ts": {
     "reason": "保留源实际结果判定与可注入执行器，生产默认走本人独立Python模型测试任务；构造测试profile时保留宿主logicalModelId，临时草稿不依赖画布项目。",
-    "sha256": "121ab68495b763b785705416d0eeec874a2cba779c06e20e095580bb567eadb3",
+    "sha256": "d1987adbfc55125016f1a3fc3e1e0c12afae5de962b2fb2c0b9b66ab9245104b",
     "upstream_sha256": "61391f7df42bad58c973d82f04fe81eaba7e2161c0b4801f080cdfb5e41f2a2a"
   },
   "src/services/api/image-models.ts": {
     "reason": "源目录请求通过宿主HTTP携带saved/draft channelId及credentialRef，由Python本人凭据边界读取目录，临时凭据只用于本次POST。",
-    "sha256": "bbf58d3e11a65dbca9b3f937d474d1395eb00d5e07487f2d76268493e6ec8437",
+    "sha256": "f2d59fa47c80a6ab4aee92f2004b3841445f58ec8ba0b98f30e48b100312ef39",
     "upstream_sha256": "eb48d2a82422c9853afb2ebab2cf0e37c2fb0de9f9ad7e34ae534f46821278eb"
   },
   "src/lib/workspace-route-modules.ts": {
@@ -455,13 +455,13 @@
     "upstream_sha256": "c1156b611fd70e3b1c7f74d038ace5fd70c0b93ca672df8aabf1cf6bcf0913e5"
   },
   "src/services/api/beefapi-connection.ts": {
+    "action": "removed",
     "reason": "源BeefAPI设备授权与钱包请求接入Python本人状态；同步预开空页并切断opener，仅导航固定企业origin下源授权/充值路径，HTTP失败、账号变化、取消、无效地址或用户关闭页面均明确失败并关闭空页；生产忽略测试origin，DEV仅允许编译时显式loopback。钱包实际导航后才返回原opened回执，不虚构服务端已开页面。",
-    "sha256": "089f62a4e0e05ec93ab3f24e5d6396b2e58e6c8f768df8b3118a8611ff2501e1",
     "upstream_sha256": "8e4bfecc96c5364308f23affe342f347af2ec125f4141ae5a30ccc35bd7b6a97"
   },
   "src/vite-env.d.ts": {
     "reason": "保留源Vite声明，增加宿主DEV设备授权浏览器测试的显式loopback编译常量类型；生产固定企业origin且忽略此测试值。",
-    "sha256": "24d368365d216a9db5988f4b573de8df362cf21b4632e0153105675bfeb92cc7",
+    "sha256": "50bea24050ea13388e7bd0dcbfff311891563871dd7a49b412bb92c1f15ff7f8",
     "upstream_sha256": "50bea24050ea13388e7bd0dcbfff311891563871dd7a49b412bb92c1f15ff7f8"
   },
   "src/components/layout/app-top-nav.tsx": {
@@ -471,7 +471,7 @@
   },
   "src/components/layout/client-root-init.tsx": {
     "reason": "旧模型URL引导清除私密查询参数后回宿主配置，不再修改只读目录或创建源默认渠道。 已删除源整站插件页后，编辑器在本人状态完成hydration后初始化两种内置工具安装；启用仍以宿主服务端个人开关为准，保留固定源默认关闭及原工具布局。",
-    "sha256": "7ea6c5d35109932a036a5e38c479c6bcc906e2f32fb1a153bdde0f9d01c1f3ac",
+    "sha256": "76dce40fce25ea7ecd738e6e5e2ebe4d11d52fae4bfaf8e54c4bbd350cb32105",
     "upstream_sha256": "32ec5745522f325f74571454116b0575c13cf3d2e39ea3ce651fd361ef177303"
   },
   "src/components/layout/workspace-command-palette.tsx": {
@@ -900,8 +900,8 @@
     "upstream_sha256": "f04eaf840ab2e7f6ebb587a206d4066bac0ae8f324162264cc530b0c548ce88a"
   },
   "src/pages/canvas/use-canvas-media-tools.ts": {
-    "reason": "宫格、标注与本地插值放大保留固定源的工具、算法、布局和直接回填；处理Python上传及保存异常，在入口捕获账号epoch和画布会话，离开或删除来源后停止迟到结果。放大显式保存原连线，完整本人草稿由原保存链恢复并复用已上传媒体；保持桌面隐藏、窄屏可达的源菜单。局部重绘复用现有成功任务消费者绑定原永久产物，保留原蒙版、提示词及批次代表图，停止重复上传后端生成图片。；原多角度UI红批复现旧窗口重复上传Worker已归档产物，角度分支改用现有成功任务消费者绑定原永久图片，保留源单份、提示词及预设。 媒体处理保留原账号和画布会话，保存期间合并实时节点编辑与来源，永久产物由原保存链确认；全景导出复用本人epoch和画布会话，按原查看器来源优先级冻结永久身份，删除、换图或切换后停止回填；按实时位置放置结果并保存原连线，确认保存后提示成功，失败保留草稿并反馈。 深度恢复、直接生成与重新生成按实时节点、原任务ID、操作键、冻结输入、来源及媒体身份核对回填，保留位置、标题和编辑元数据；旧回执、进度、终态及旧会话失败停止写入，保存失败仍反馈原绑定任务，不自动重发未知提交。",
-    "sha256": "a01a8b943ca9b83ff13c1b4f7df0c916cd72297ee142b0e83462531e04910e0e",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "4dffae35452e56e0b8bf90753b576c5debe67a901af343a5445d2bb5a5cca5ed",
     "upstream_sha256": "f60d7d868ef3705f4304f0ac2ad402cba62e13a619e0faa8bf300f5cfe280fa6"
   },
   "src/services/plugin-host.ts": {
@@ -931,32 +931,32 @@
   },
   "src/components/canvas/art-critique/ai-art-critique-modal.tsx": {
     "reason": "原审美弹窗布局、交互、进度、报告与显式续跑保持；持久批准身份补充当前projectId及真实sourceNodeId，来源保存与本人任务回执串联，关闭观察保留已受理阶段。",
-    "sha256": "c97d53cd468573a3d534793bc61e5f63480afe5809822622f0e0bce36837965e",
+    "sha256": "fd5273a63b30480267b50f89ce849eef1fdbd74012dea3b56ca2f9ea6a4c7ca2",
     "upstream_sha256": "f521c8387f461186fc09d32c37094c3a127e9e7c34df615cfd2436d6e44a1181"
   },
   "src/components/canvas/nodes/ai-art-critique-node.tsx": {
     "reason": "审美节点卡片与原创建菜单、弹窗使用同一服务端有效插件状态；服务端关闭不能被旧本地状态复活，未接服务端时保留源本地开关，布局和原操作入口不变。",
-    "sha256": "044f526e8bcf0bcd163f82162ea6379e25bb60b14d1948aa36091d6a6234f9bf",
+    "sha256": "db16745cc1bf5ee97a18b2ee7150c5584a4a080e050f0272b806bced4d065ef9",
     "upstream_sha256": "069592586a1c458cd741db5e8bb61e7e4933f2adea01f5ca7d47aab33fd95226"
   },
   "src/components/canvas/canvas-config-node-panel.tsx": {
     "reason": "宿主RunningHub条目按稳定logicalModelId选择，同供应商ID的多条本人配置保持独立，保留源Workflow/App分组、模式、字段控件和布局；切换模式或回到普通模型清除旧身份。",
-    "sha256": "c84dbafbe11caa5c8ac93a7633639551ae652a508d90c8d0a542d6f9774e94aa",
+    "sha256": "3a5c4313327415b57cd7b73f760cc423c2edea659914d6760f54b4a744caaab9",
     "upstream_sha256": "f9bb0650b4f4efb1940ecb4225ec8c50649328d966af3b089e404db0c3a9cc69"
   },
   "src/lib/canvas/canvas-generation-task-sync.ts": {
-    "reason": "生成媒体结果移除来源工作流的私人配置身份，保留源结果节点语义。 ?????????????????????????????/?????I/O?????????????????Worker????? 已有分镜任务恢复保留Script类型、结构/列选择与标题，接服务端验证的稳定rows；普通文字及媒体交付分支保持。",
-    "sha256": "1409f9414199cd504e2ea74f59a429ccc41e27dfc709ddaf28aa7f6ef07bc7fd",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "e70b42839dc239e3043814c0d3e420ca7b24f1a773c313e146f60ca6a0d6caac",
     "upstream_sha256": "d283d8bac454c41febc10d829f510537b514ff009e6c3ce1527c020aea0259c9"
   },
   "src/lib/generation-workflow-execution.ts": {
     "reason": "RunningHub执行仅接受宿主已保存条目、用途和密钥存在标记，不以浏览器地址或本地Key授权；冻结请求传稳定模型ID。",
-    "sha256": "30739210d8286378b4418e7d891f3157a37f2b03ce6c07dc23a60c64ca440340",
+    "sha256": "ce87369e8fa4bc494fc3a74b0bf22c6b9f625c20089c0489337b70bd8b901ac3",
     "upstream_sha256": "5b20d2f338d6c53eb5b98c695c1b13820367f9eff0a00794b6f1b5d87cc28e6f"
   },
   "src/pages/canvas/use-canvas-connection-controller.ts": {
     "reason": "原连接创建分支携带所选宿主工作流稳定模型ID，不改变源隐藏或禁用入口。",
-    "sha256": "353749a556f382d8902883602bf327d9730bc640af71e992334a1bb3868097bd",
+    "sha256": "3297d81cd45d9cc756864127f91f265abe76b055128915ea9b9148e1df70cf59",
     "upstream_sha256": "31bb40b8841371b186c0e32521b5419ad2f0fcea15fb44daca27fd02f6366696"
   },
   "src/components/canvas/canvas-batch-table-node.tsx": {
@@ -980,8 +980,8 @@
     "upstream_sha256": "221d3b592a11943574bbace5ad3443905e98ca35beecc7a0c9217fb08f6f3edc"
   },
   "src/lib/canvas/canvas-project-domain.ts": {
-    "reason": "分镜任务解析复用服务端稳定镜头身份，旧文字分镜按任务/顺序稳定派生，角色名兼容转为编辑器角色对象，重复消费不重建行ID。",
-    "sha256": "620b542d2e49a8565bc5900dd4117ae7877800011bc2744eabb3a99268fed48e",
+    "reason": "分镜任务解析复用服务端稳定镜头身份，旧文字分镜按任务/顺序稳定派生，角色名兼容转为编辑器角色对象，重复消费不重建行ID。 图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
+    "sha256": "a80c9a3e0d63e0029ea73290dde17370a176f10e82b495bf080daf65f383bba5",
     "upstream_sha256": "e286f04d7109c33434ad0545b3dafa933ce4a929fcfe6db5c622f6d951a26ef1"
   },
   "src/lib/timeline/timeline-canonical-plan.ts": {
@@ -990,13 +990,13 @@
     "upstream_sha256": "226ffbe35cbeafe37adcffa5aa140027c790a9331d5358e37410778d87e8ce74"
   },
   "src/lib/canvas/canvas-media-persist.ts": {
-    "reason": "素材绑定与项目打开后重新读取当前节点，保留异步预览和编辑输入；校验媒体身份并阻止旧快照复活删除节点，flush 后同步最新快照。",
-    "sha256": "9bc613c836d16681544b1f25aa63bd26e29aefea8e1fd8adcf069bd94b4c8702",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "df290ce23ebc8aa89c34a5c3565cf6b5a9bfe7083250dfe4983236c509691824",
     "upstream_sha256": "e0465c3514fa80d440ab880509ffdb70ede49bdf3582cf46bca2f0cf3e7bafe3"
   },
   "src/services/api/timeline-tasks.ts": {
-    "reason": "本地转写DTO要求稳定clientOperationId，与宿主私人任务准入和同键恢复一致；保留源字段和观察流程，不恢复整站剪辑页或新增转写按钮。",
-    "sha256": "2af3e28897512e39f1bf159815e66a5a23ece5fcf722fa0e5d7b0c2c2f4df6ee",
+    "reason": "本地转写DTO要求稳定clientOperationId，与宿主私人任务准入和同键恢复一致；保留源字段和观察流程，不恢复整站剪辑页或新增转写按钮。 2026-10-16：默认 Whisper 之外支持宿主手动配置的云端转写模型列表和模型引用。",
+    "sha256": "ca1339f8c48457f159931124a0a589af1c5dd36a4f08c830aa339472cca8bcbd",
     "upstream_sha256": "1e8d306d36bde61595de7f24704971438082a759ea3dde3e1a0a9fb65aba677e"
   },
   "src/services/api/depth-capture.ts": {
@@ -1030,48 +1030,48 @@
     "upstream_sha256": "b5fa32c6b47677833a8a376440c0ed6d9340e6bfe32dd92e8c33787746266268"
   },
   "src/services/workspace-project-repository.ts": {
-    "reason": " 现有本地创建边界透传可选可信父canvas key/version辅助参数；自由创建与ZIP保持无来源，不改变固定源模式与UI入口。",
-    "upstream_sha256": "e8f10f2932ee5dc30ce076835d1ee5c7b0eab137d63b0583f486c6af8f057fe1",
-    "sha256": "84654dc389271b3a3cce7d0f8483979f3ce969fa7fe11b429417fe73ddaae2ad"
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "d6b954595c5f4a23d629bffb3e4f499270f11ef36929ea5e89174d9d2070c645",
+    "upstream_sha256": "e8f10f2932ee5dc30ce076835d1ee5c7b0eab137d63b0583f486c6af8f057fe1"
   },
   "src/services/api/projects.ts": {
-    "reason": "专用 current 角色目录的 version 保留十进制字符串，源显示版本的类型兼容 number | string；其余旧 API 保持。 源声音profile补可选bindingVersion用于宿主已采用样音独立版本冻结，不引入整站声音页面。",
-    "sha256": "ba5051f090c20fa61847a51e87ad6dbf3f9e80e6c4db1ed44c42361ed66a7362",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "3ad598f1eac8b06219ff0f304b6676c14d2b75e65d97b27f68f9803a4eef3a46",
     "upstream_sha256": "066c2d7509de3f0d0f3d279a48fa8336f028e123f00fff348ac0b06ca6306c45"
   },
   "src/lib/canvas/canvas-character-reference.ts": {
-    "reason": "current 刷新读取最小源角色 card，核请求起点字段；同版本规范已保存封面不依赖作者私人复制来源链，版本变更或无图片时重新解析，保留本人私人 prompt/voice 与拖动/尺寸；legacy 仅从真实 description/prompt 编译，definition 不扩造，pinned 保持。 固定版本只在详情核验同一作品版本后刷新，current目录不能更新pinned节点；在途读取同时核对版本策略，继续保留作者私人参数及已归一化封面。 无私人声音字段时可刷新真实已采用样音状态，存在私人声音输入时继续保留。",
-    "sha256": "4ebc0ed40c6ebbd0cc828c11bce81821dee7baf94cdaa93b9c57cee4b69dd0fa",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "a223315b20f92e0bd75fd8723f3d5c8fd0b63742da37c149ab2d375498c86c55",
     "upstream_sha256": "14e182a1d57097b963f2a38d1781b283b034f5905aa07292f32a46fd23d9ccf5"
   },
   "src/pages/canvas/use-canvas-resource-handoff.ts": {
-    "reason": "移除旧无 scope ProjectDetail 角色回填 effect，current 角色改用独立目录生命周期守卫；其他来源 handoff 保持。 移除无后端对应的来源详情请求；不把自由画风说明伪装成快照，不覆盖已有本人画风节点，不伪造来源目录同步；素材交接与本人作用域保存保持原流程。",
-    "sha256": "571f8159fd53427329f2d8c0608bab823d0409f447c11539c4c848bfb70eed88",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "be7b2a56a95b47f9c0f91e050b0e12e4f293b9585d0f3bcf4bb0f89c866aba36",
     "upstream_sha256": "1b82d48ce82c8c288a2474ca2e3defd3743acdb60a4a288bd7869d93954d74a4"
   },
   "src/pages/canvas/use-canvas-timeline-asset-insert.ts": {
-    "reason": "三个既有角色入口刷新专用 current 目录，其他分类沿原 refetch，插入位置和时间线拒绝角色 direct 入轨保持。",
-    "sha256": "9c180cd15a9c16416f36926c7cf96ab67d32499eb601db917a4d5afd152cf40e",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "4e241d4e014c522c1b4060b92257cddd028034cfbd26b55482368f1cff58240e",
     "upstream_sha256": "016cbf9325f3c3467d8a6bc6f21a03cc07994d70c4a1b56ba04064b36d8050ab"
   },
   "src/components/canvas/canvas-project-asset-modal.tsx": {
-    "reason": "角色路径读取最小 current card，空目录不回退个人库，确认前按所选版本重读详情与图片 resolver；复用源 payload、封面优先级和成功布局。 关联来源仅提供已采用角色，明确目录和其他资产暂不可引入并就近显示读取状态；不从来源标准资产标识回退私人素材接口，自由画布素材入口保持原流程。",
-    "sha256": "38e37ecac88798d893bff825c4312a513c69923bd62a831264667f9d6a74b4c1",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "79d97b27575fa71bb3c8dac4719e20a95202b75b62f3539112b1ad19284baec8",
     "upstream_sha256": "b21f3f0435fe2c050071868b9ccb6042a861c29209659ef54cd74c5ec54c2c6d"
   },
   "src/components/canvas/canvas-character-reference-modal.tsx": {
-    "reason": "原 current 角色详情内容区增加可选 loading/error/retry 与图片失败反馈，保留成功布局、原字段和关闭操作，不扩造 legacy 结构化设定。 固定版本角色详情使用原版同一布局，按真实版本策略显示固定版本／当前版本，避免把历史作品标成current。",
-    "sha256": "38e171a49f1314c569e462a15b83aab622e549623756cf68b61bca8180e2a76c",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "5fd1b4928a71c482eb6888699dcc69b8eb15dd5aabf3d8e85eccf68293cbf468",
     "upstream_sha256": "e7d0e03886865e1e92cb3e44b64896dd9fdc0919639905ebbdb91f56e0bd3424"
   },
   "src/pages/canvas/use-canvas-upload.ts": {
-    "reason": "来源章节每次按目录身份与版本读取；读取状态按账号epoch、画布/来源上下文及请求序号隔离，missing/409就近反馈，纯文本逐字保留且旧回执不修改图或新状态。",
-    "sha256": "80af0dc505a5607778e2d68e5c502a07f6ca973c644d41d8f2a7e9d2253ffaba",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "e164bbfdd6dd434da747a27f2b124e800bd0971b8e2b5c9f15e6f8b962e342ca",
     "upstream_sha256": "6bb2bbf0c57dc61763a22cb0ba69b19daeebb0c2449f23a5a72df325b23bc342"
   },
   "src/components/canvas/canvas-project-sidebar.tsx": {
-    "reason": "保留侧栏布局与预览正文查询；章节加号、预览插入及拖入在既有状态区显示加载和失败，失败不自动刷新来源或修改画布。",
-    "sha256": "6b97e6a97c9963b921c714fd8a4351fa09db15c21d5e60d9076ffad35ab36ba9",
+    "action": "removed",
+    "reason": "2026-10-21 创作模式单层化，移除标准来源项目、分集目录及共享角色桥；保留画布独立所有权和本图创作能力。",
     "upstream_sha256": "00376edb7805b7c4c07fef6d980779c4d73f57debd2521fef4fcabc116c5809d"
   },
   "src/lib/canvas/canvas-context-summary.ts": {
@@ -1080,8 +1080,8 @@
     "upstream_sha256": "c12c744957337484fd15a81239e676ca62dfb18519f7c4eebf892355946ee8c5"
   },
   "src/components/canvas/canvas-short-drama-entry.tsx": {
-    "reason": "保留项目空画布操作与布局；添加首章在现有区域显示来源/章节读取状态和显式重读入口，加载期间禁用重复点击，含窄屏。",
-    "sha256": "980d574a7d0a52bfe76ebacdafa259d5cbe889b6ac3222ee84549b7eb230ebcd",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "1fc219dd9339ba42c130fb3014134673688a00a4e272df027eebec6856aab7fe",
     "upstream_sha256": "0f1ebf5d1b60861de2776cb50fd6ec9834c1743a302839214aebce1fad3cd7d2"
   },
   "src/components/ui/aceternity/floating-dock.tsx": {
@@ -1125,8 +1125,8 @@
     "upstream_sha256": "06fb96c650dcd1ebd73c58e11765a3400078765eae52490d2bfba516d3a7b245"
   },
   "src/components/canvas/infinite-canvas.tsx": {
-    "reason": "捕获挂载的画布容器，在卸载时释放实时视口消费者观察器；保留原32ms通知、120ms提交及全部手势。 交互期React提交容器倍率时同步原继承值，保持世界层和浮层原变换关系。",
-    "sha256": "c7cc2d8b9e91d1c343274802c87ddc6b798d155487b905e73b695202d3f7e031",
+    "reason": "捕获挂载的画布容器，在卸载时释放实时视口消费者观察器；保留原32ms通知、120ms提交及全部手势。 交互期React提交容器倍率时同步原继承值，保持世界层和浮层原变换关系。 2026-10-16：对齐 F017，新版滚轮意图判断、二百毫秒锁定及缩放锚点。",
+    "sha256": "9e11d8db9442a9a78d02f8c3225e3e22ee937764abc44b4985c48fd9de2da40d",
     "upstream_sha256": "562da1317a05664a4a680f04ff6ff591e629351cac5afadae6c1522c555176fb"
   },
   "src/lib/canvas/director/director-scene.ts": {
@@ -1138,5 +1138,315 @@
     "reason": "同步导演数学仅导入同版Three显式导出的Color/Euler/Quaternion/Matrix4/Vector3源码入口，使完整WebGL渲染器保留在既有按需3D面板；创建时机、所有数学函数及持久坐标保持。",
     "sha256": "4323c09fe424adbe868e9d3ed113af20ff93c1be9ff2f02cfc4a645f9838b9b9",
     "upstream_sha256": "88208646ae1c8adc2279a62babf41824cec6966cb6cef276a3a4c63376ed6b73"
+  },
+  "src/lib/canvas/canvas-feature-availability.ts": {
+    "reason": "按用户要求将导演台列为正在开发，统一禁用新建及打开入口，保留既有节点与场景数据。",
+    "sha256": "85100d4c446aa5687a45e7c970f51fc7ca6032401edb87b5a3fe97acf23772a9",
+    "upstream_sha256": "317eb013f36a56abc99f3afd8603de32dafbfec37b64981fba736157738c63dd"
+  },
+  "src/lib/canvas/tool-registry/definitions/add-node-menu-tools.tsx": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "f42071706d6b0549823fe6b9408261d61bab46a7a406b83cac3db9656fae5bc3",
+    "upstream_sha256": "c45baf6b322f771e905f8efe5b622db5313ead20e3b2de4d427416739bc698f5"
+  },
+  "src/components/canvas/canvas-toolbar.tsx": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "0844ec787431086644279ed4025eb0af34910054f74177188ce7e61418ab1c29",
+    "upstream_sha256": "0aa57a0e9231f10072aeecd7161c3ef5402f118c2057a07b6413f370fd7b7150"
+  },
+  "src/components/canvas/director/canvas-director-node-panel.tsx": {
+    "reason": "按用户要求在导演台开发期间禁用已有节点的打开按钮并显示正在开发，保留节点内容与预览。",
+    "sha256": "23e6d558a36d054a6a403cdd7247fbcddfba3050663a72c3e7db255194924294",
+    "upstream_sha256": "a190ee163a7585fdd3ca2e5cbe056da5da963343b732ce750cff04fcefcee806"
+  },
+  "src/components/canvas/canvas-context-menu.tsx": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "3c7703a3ca27590b2fafbae6d207905667d3c333466b270bed69cf68c5e0e5a3",
+    "upstream_sha256": "3667107e02328dabea4296e23d61f70a4fcd73b7fb921e8d34cfccb0e2d02dcc"
+  },
+  "src/components/canvas/use-canvas-create-commands.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "365632a4de1571093cec522147389a31a423fb4587f524e51ab1cfb6ce51d261",
+    "upstream_sha256": "ebff1484ca775e15164ab97d959117b385cf0f26f43b8289f790e60693dbfe9b"
+  },
+  "src/lib/assistant-model.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "b8ca61c90307a3a13ccdc656314075104f2e036821f63f22af7cd1755568f800",
+    "upstream_sha256": "bda04553845efedb38713a4e4bf5830ab106c4b9744866bdd8598330a4e147ad"
+  },
+  "src/lib/audio-generation.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "eccae1311e260f1d0d05a270fd4de553a38ca45e6ad1dad65390c9b0b1c0b1e0",
+    "upstream_sha256": "253dcf57c0e9636a40ea99e616b5afe1b508c069833ecb1a7fb65d49e41d353c"
+  },
+  "src/lib/beefapi-video-contracts.ts": {
+    "action": "removed",
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "upstream_sha256": "731d8f14285a99fb280b993f0097d249e8e38e413d69e23b56158d26aede4018"
+  },
+  "src/lib/channel-model-catalog.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "9a1b7add9d61612dfef17e298df2fd0078aca2ef5608d638580f50a8ede82fa0",
+    "upstream_sha256": "37832ba5d038a7fb42372d9961e3a2c4a7ecbd8b9b7b34f797d35a0695b0906f"
+  },
+  "src/lib/model-capabilities.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "05938273a5f73072cd4c54cb481a449d42b263fb401f8346d2d237e5ca5b5ef2",
+    "upstream_sha256": "f397b65157a22495fec57769e4a57c96c5969dec3e48daf9178900d9da4b0b3f"
+  },
+  "src/lib/plugins/builtin/workflows.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "b0b91167b6034bf1e6178d581429ea7626d8f232dc864909d496b1853ff59347",
+    "upstream_sha256": "a6ee423edd73a8f134af95d9bf8ee37f376af5a94bb8b633158a055a79758400"
+  },
+  "src/lib/seedance-channel-warning.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "8604176c217b8ed8ac73e57cdb618a78c715b9accf0fa0f0f4b356896ce7d550",
+    "upstream_sha256": "1c0c103b70e679f290cfc210b0e0d0dcbcfb6958f251ae14e5762f577dbb1ebe"
+  },
+  "src/services/api/audio.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "904311a7a3de4f2d6ca36572982fc2f80399101a4a7450f2ec99a4c82f438e0d",
+    "upstream_sha256": "c2497c74faf594b738221c6c7fcb5d3178a5a9fed65b4e0694640ed1d92bb225"
+  },
+  "src/services/api/custom-channel-relay.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "9f18fad7abce09d46d53ba187b1a73022ab5742eccb38cf1df04edab03be76c1",
+    "upstream_sha256": "958e5820067ce60dfe2dd85839f6630f7ef265410ce94b9edbd8187e65ee0b70"
+  },
+  "src/services/api/plugins.ts": {
+    "action": "removed",
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "upstream_sha256": "7d8befa1f5a5181655459a22f94a58d66a6ca05859b222a5e1b7545c7759d6ad"
+  },
+  "src/services/api/video-provider-newapi.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "990b2fb99baffe35d8a66e8d7fe4c29bc2ee2eca13ce2a602c4fc9ee52b288e6",
+    "upstream_sha256": "ff0f370a363e481958c76d339fd6c8490597b15eb8dbb35353ed124b5c0e0e6f"
+  },
+  "src/services/api/video-validation.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "348b9dd18dd9cc3c630b95d6d41fa513c4e685ddaa195c74f8e4957ec4bc2bbe",
+    "upstream_sha256": "136d17fa1b9deb36ab950f967356895d5d603775f05cb8f2b62a65f9899a117a"
+  },
+  "src/stores/use-plugin-store.ts": {
+    "reason": "画布工具开关层与 BeefAPI 集成清理：移除个人插件开关与 BeefAPI 凭据分支，保留审美分析、RunningHub 工作流与提示词优化本体。",
+    "sha256": "e30fca926992d8cfca7f7ed9c2888f8b4be7167be9c9f9665ffb2a74a09c56cd",
+    "upstream_sha256": "94074733d40a539c7ad496418f48373b59013912ece687135c8707bcffc67332"
+  },
+  "src/components/asset-media-preview.tsx": {
+    "reason": " 2026-10-16：素材视频通过认证资源和兼容播放读取，卸载清理悬停计时器。",
+    "sha256": "c018ff619bc1b37344c39ae6c4df72be47043c119283a759d2f52f5854e12fb7",
+    "upstream_sha256": "278a067a335b7960bc5aaeff66f22987f2339c4c6bfc95c06cea2c084be17267"
+  },
+  "src/components/canvas/canvas-generation-history-picker.tsx": {
+    "reason": " 2026-10-16：对齐 F096/F097/F098，打开时每五秒刷新，插入显示加载并复核作用域，视频悬停兼容预览。 2026-10-16 逐项复核：复核修复 F097/F098：等待素材保存和画布提交后结束忙状态，失败就近显示；预览提供重新加载，重试不触发卡片插入。",
+    "sha256": "ef03a83a99d983452a352d46c742aed498610b58c2d101e6385a6645b89336ed",
+    "upstream_sha256": "3c804e6d1c2fefcd8d9a70f7a714590407fa13373f576ad6f42032e419f54e0f"
+  },
+  "src/components/canvas/canvas-node-content.tsx": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "84e3f58bb5093d96df36c1bac9d2deeb96b756267c79fd7224123c330d7283d8",
+    "upstream_sha256": "b67ad41d9bd760106323907b1c819587f05edbe3a7631b553c4c134d7d284501"
+  },
+  "src/components/canvas/canvas-node-toolbar.tsx": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "d8ead9b9dc2b905e8fc5c43fe62762534be6bf064709da1bb48efcec84ca4b27",
+    "upstream_sha256": "03b3c5eef138af62cc14a2dcefae7090ef7d78f34d854c1ed95a9b967df0cbb4"
+  },
+  "src/components/canvas/canvas-style-picker-modal.tsx": {
+    "reason": " 2026-10-16：对齐 F211，账号级 CRUD、收藏、最近使用与明确勾选的旧本机幂等导入；版本冲突保留草稿。",
+    "sha256": "7f4be7d96ab503b063f28a6ad80311716fc24ba724717f26a8eb947f3f742665",
+    "upstream_sha256": "8b424917863e7832256de4d328a72b9d262f6fc803788aed165a90104d16e061"
+  },
+  "src/components/canvas/canvas-subtitle-dialog.tsx": {
+    "reason": " 2026-10-16：对齐 F257/F258/F264/F271/F272/F273，音视频字幕、导入下拉及服务端转写控件；旧上下文不回填。",
+    "sha256": "155ca9bafca870edcd03a00152e1b111605d3867916cc9c2b8952498fa38746d",
+    "upstream_sha256": "bbe00fe7ffb242bfdc464f6ac30e45d247c0f23899302ee5ce70505d297ae34c"
+  },
+  "src/components/canvas/style-profile-editor-modal.tsx": {
+    "reason": " 2026-10-16：个人风格编辑提供版本冲突就近反馈和保留草稿另存入口。",
+    "sha256": "fc5b1f65550f590b4e3d4cd62885aa481027ae67bb73a62e9d370d5cce3bc991",
+    "upstream_sha256": "b4b64c3b4c11641a49d834d098ff22085c9b7730b36d067bcdb463d0381946ba"
+  },
+  "src/components/video-player.tsx": {
+    "reason": " 2026-10-16：向画布视频调用方传递真实媒体解码错误，触发兼容播放。",
+    "sha256": "72fecc88e250290f05e118cecd058748e368dce090df3bec2da05dcce8876b8a",
+    "upstream_sha256": "e621d2fb57dc038d8b6ca813379b5dd06f906346399679be366ed5db4ebe260b"
+  },
+  "src/lib/canvas/tool-registry/definitions/node-hover-tools.tsx": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "4ad6ee28f54b985fe5ee454a9286425fbac536bfefbdc38f453afa4951d49c4a",
+    "upstream_sha256": "1e720abe65c9754c6e11234d05b1325d719648b218c76ba0e05a7ad29ad8d919"
+  },
+  "src/lib/generation-task-display.ts": {
+    "reason": " 2026-10-16：生成与交付阶段使用真实文案，无真实百分比时显示不确定进度，九十秒无更新给出停滞反馈。",
+    "sha256": "84e68f171b1e20a894f925906ec7762f9f48eebcd51ef780b0b832f2effad1fb",
+    "upstream_sha256": "a074234cb27dfa41d56428f64fec2276d8ec2cf0b97f602a047bcb78c694697e"
+  },
+  "src/lib/plugins/builtin/editor/editor-preview-monitor.tsx": {
+    "reason": " 2026-10-16：剪辑监视器接入统一认证兼容播放及显式重试，不自行猜测副本地址。",
+    "sha256": "48d18e717e79b6490081ae3c84ff3497adfaca6f2082dc27bd303fb2a1d279d9",
+    "upstream_sha256": "13759cf1b5063c15864f4e6eeb53758caad4dbeff088377d72af3237dd462cc7"
+  },
+  "src/lib/plugins/builtin/editor/local-executor-session.ts": {
+    "reason": " 2026-10-16：字幕任务透传宿主模型配置 ID，沿用操作身份、任务观察和作用域保护。",
+    "sha256": "fde54245116c5708a8c6bd9785523170643e30226c760fa69650fef0933fb38d",
+    "upstream_sha256": "837b2220c06fe9066481f87f64a444e0a824f0adc027f75b77f74b48209b4330"
+  },
+  "src/pages/canvas/canvas-shortcuts-modal.tsx": {
+    "reason": " 2026-10-16：对齐 F028，底部快捷键浮层、Esc/外部关闭与焦点恢复。",
+    "sha256": "3ab14d5e35f898880705bed31b6e07ab573a3e01b82f7af8bba52c1852d5a73d",
+    "upstream_sha256": "1f87f0be00c29636e01a1dbc434ace6a20cb4ce8d61d71cee4e1c14eeec5b43b"
+  },
+  "src/pages/canvas/use-canvas-style-workflow.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "a47dfd6383eb61d83decc70a65061ea71854a4b11be941cefb31a46b120edfaa",
+    "upstream_sha256": "3afc56f1669a8e8526d1d812736578cb3710b9c9421eda84439e08049e9e4e8a"
+  },
+  "src/services/api/style-profiles.ts": {
+    "reason": " 2026-10-16：风格接口使用账号级服务端存储、十进制版本和预期账号作用域。",
+    "sha256": "92bf6dea1c27aadc153a799ef7135130a4c2c7851335534a724cd6741e791675",
+    "upstream_sha256": "24350487919b2eadf05c966afb60f6825af24b8e5c45c33007e6c4e8dc618f38"
+  },
+  "src/pages/canvas/use-canvas-generation-orchestration.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "5d3fb2cc32a350f71de19e5245fb75c0309d69fb0a6d5ab2f26acda5d2be9aa6",
+    "upstream_sha256": "490f92a68729366d0728f2a076a62427a33695a311b050deb3db6a7e0e0adbf1"
+  },
+  "src/lib/canvas/canvas-image-data.ts": {
+    "reason": "图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
+    "sha256": "0280d01daee87d4818a069f5a7c2bcb6a75feadd183b291be17bfacff59b2250",
+    "upstream_sha256": "a3be817944de9cb57dbb25a9d9a3a307553e4b2fce5d8763b2ea9594d4535b46"
+  },
+  "src/lib/canvas/canvas-emotion.ts": {
+    "reason": "图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
+    "sha256": "d859d814691855b12f37ac71e720b0e9a9eb3d40146f80717c65e9a4ce09c410",
+    "upstream_sha256": "fa965878d7779a91d5ed9620a003349fd0cd214390e5ad97a84e38f667ed76c8"
+  },
+  "src/lib/canvas/canvas-portrait-texture.ts": {
+    "reason": "图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
+    "sha256": "cf977251229f50cb18f2ce2e708caa3efae6971d366f3f598d679218bc558d03",
+    "upstream_sha256": "739f7939de8010f0f0f54b8a65027a877fc23a5b9f4201d3cd1c4780ace878eb"
+  },
+  "src/components/canvas/canvas-image-annotation-model.ts": {
+    "reason": "图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
+    "sha256": "f7a92bd1842ab88a56066de331d2235793abefd4e4e49f359b92234352a9ef5c",
+    "upstream_sha256": "04e593555e37549c8640b76e53458309df1239ce8ab4eec8bbc5e67af54d93d9"
+  },
+  "src/components/canvas/canvas-node-lighting-dialog.tsx": {
+    "reason": "图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
+    "sha256": "b8191582c30ce75f0093134769e175133e11686836e9c2dbe37805d8732fa38c",
+    "upstream_sha256": "07e6d6d9609855a46696ebf032c4cafa78b301ce033b5cc6d3e1ccbee507b942"
+  },
+  "src/components/canvas/canvas-node.tsx": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "ae2527329a128f03f09e161e857504cdde77c9fad0444d32ad4965c98dbf0cd3",
+    "upstream_sha256": "777847c475903f0d01123f6e79a74f951d19e0fb17c7f33cf4bcf8ccce4289dc"
+  },
+  "src/lib/canvas/canvas-generation-submission.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "55e436938901a1e5fe52f364ffc16f70bfdcfc4997c4dc785487553d67ad5ac5",
+    "upstream_sha256": "a798693c28e47c08547446c1622d0978fbc823bcebe5b82886661bb35af4ca1c"
+  },
+  "src/lib/canvas/canvas-node-copy.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "f708407d057cb035defb96e9dcb9c08a11a2b98860ffe9f72e3c406bdf3d68dd",
+    "upstream_sha256": "b7c1b36e56c5da084549482fe15be5e3ecd7a9bb8b0e441eab4b27b573c057d6"
+  },
+  "src/lib/canvas/canvas-operation-contract.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "138449769487df7ce859fa6fc768f6a5e44d4618de1402eb1e6f59397ec894df",
+    "upstream_sha256": "7bc2307af874980b0571a58e5c61f35c69b6f3beaa52293117681772492de6f7"
+  },
+  "src/lib/canvas/canvas-starter.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "38994560b81a9206ed6ae0b3be4dca078085209d6796a01550f8196e6a2f9d11",
+    "upstream_sha256": "457181120d09d136cb2e07bc39934ad7770b17b4e6ece97438c3470bbb6c2cbc"
+  },
+  "src/lib/canvas/canvas-storyboard-assets.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "a3ea9211d107606230e655263b4b93683939179d344871c5afe7ae1309c50685",
+    "upstream_sha256": "fc432d65a6719d8a26dad6526f275f274a51ab856fdad2a2778060c95a5d582f"
+  },
+  "src/lib/canvas/canvas-storyboard-context.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "ce3f1529c53991953a8740c5ed8a76239db8585f53687919b75a53cf78a449c2",
+    "upstream_sha256": "1e91bc12af54d6ea1775050ec2ec2d0fd13bdf74f42aec1300e66b99d06e23d7"
+  },
+  "src/lib/canvas/canvas-storyboard-materializer.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "19fbf35a74a8f943feb4c9105b80dff49dbf414064aaa420c3fce3e8194baf2c",
+    "upstream_sha256": "c8c46b141637614426ab839fde5df9d8d286be12384f1058fb19908fa6dd39d8"
+  },
+  "src/lib/canvas/project-chapter-storyboard.ts": {
+    "action": "removed",
+    "reason": "2026-10-21 创作模式单层化，移除标准来源项目、分集目录及共享角色桥；保留画布独立所有权和本图创作能力。",
+    "upstream_sha256": "1db701e95bf81be53b13dcc95eff53772e10523d874da94b661916267e175e73"
+  },
+  "src/lib/canvas/tool-registry/definitions/main-toolbar-tools.tsx": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "525289cd010e27fc897eb4a5038a1c5e2b7ebfc554b96c3dfdfeb9a698a4b5d3",
+    "upstream_sha256": "7ef1f98177ec0a4a818a4a0eb9143a173cfdd00fce2fb1df1831a7dc76d80c69"
+  },
+  "src/lib/canvas/tool-registry/tool-definition.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "f2637a1f95e7ef310f657bad3ce34f5b19971188822f7b0e6e96919f8d3a0b43",
+    "upstream_sha256": "c4a9dea13dda374e5cb1c7772a47ed87e153c7ed790ceb94ce9d1cbdd0a8c085"
+  },
+  "src/lib/plugins/builtin/editor/editor-asset-ingest.tsx": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "e8c6c2579f0059f9ce81e65cbf21ade2fb06a5c0ca4139c80c9967e11816b009",
+    "upstream_sha256": "3efc4ecaf8ac4aa42b6f92c4873404669d9f571dd17e07b281baf45e5664ad2d"
+  },
+  "src/lib/project-workbench.ts": {
+    "action": "removed",
+    "reason": "2026-10-21 创作模式单层化，移除标准来源项目、分集目录及共享角色桥；保留画布独立所有权和本图创作能力。",
+    "upstream_sha256": "8a315cbd2ed69bc0bdcd6191a803cc23da1be805e660fbb74f68d352e147ee9d"
+  },
+  "src/pages/canvas/canvas-generation-orchestration.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "0bca9e46af5b4fcb420bcc51e1cf6908437613453ea8d22a063ec332bede2918",
+    "upstream_sha256": "54991ab2101301b692c6c796a9e6e1c0da6c9b7141bf713faf2bc54f8cc31b84"
+  },
+  "src/pages/canvas/canvas-media-generation-executors.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "f877ca84f790a9152a54bf3a12faa836f9e958a30d792891203bc9df2e1366d1",
+    "upstream_sha256": "85f2559cd4d82455b144fecc3936286f170325e54541da8e2466fed579c60f98"
+  },
+  "src/pages/canvas/canvas-project-context-menu.tsx": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "dd6d5ad47e6a1b221057249c89a0cc168157df290483e40790b15d5cd092e756",
+    "upstream_sha256": "8b962529394808f2494d171335abb8f1ac1afc74499d7abc83f54c3ae7f2e771"
+  },
+  "src/pages/canvas/canvas-project-selection-toolbar.tsx": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "906f16bb6f9cd0e1c6ac0130ab4feed2f2fa0374e47b4aed26e0a4ea9f90e5d6",
+    "upstream_sha256": "304fe95bc02a83f318b0f06ee73df39ddf93df96977157418f6a1062916176fe"
+  },
+  "src/pages/canvas/canvas-upload-ownership.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "dd95c33bff4c04e64d58e92e5656068215a1aa10a10289989e6a87f11f3220de",
+    "upstream_sha256": "79ba93069f997bdb5bad4252cf0fe0551f76b35beb67b57908b61a9d368fd852"
+  },
+  "src/pages/canvas/use-canvas-generation-retry.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "9a303bec31da8c692e9f9845a7b8ad6a6dfcebcadbb6aa91b2eca4a6732f624e",
+    "upstream_sha256": "ec89f7ed1ae1e5c93b1d24473052402c1aa4b410ea37ad2f5e3cd177a5495986"
+  },
+  "src/pages/canvas/use-canvas-node-editor.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "3498de66ec7d2c37807bb3d8348d8c55170fcfd6c629227510eb39d7826a0a7b",
+    "upstream_sha256": "9d4c55dd45de3364a981fa70fa14bbaa5f23b3e57e60aac6a81aa8c92f149785"
+  },
+  "src/services/creation-canvas-conversation.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "f2c8408a2b215967cf3ef1958c84e074a74f91c95d0248f57242c5afc81f9817",
+    "upstream_sha256": "af93b9909fe22930789bbaeff66da84cab46454c79c5a94138c953e610a206e2"
+  },
+  "src/services/workspace-asset-repository.ts": {
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
+    "sha256": "921499eb90177fa0d14cb563e72e3369a2c9fd5aefad25ac9abfe898e63ee2f6",
+    "upstream_sha256": "c8a02c2eb02a19fbe4234b8e4e311406ff503c40609faa6a0db4487f53c000e4"
   }
 }

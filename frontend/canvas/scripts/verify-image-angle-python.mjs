@@ -251,7 +251,8 @@ try {
     assert.equal(final.connections[0].toNodeId, target.id);
     report.output_storage_key = result.storageKey;
     report.final_nodes = final.nodes;
-    const shared = await member.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`);
+    const shared = await owner.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`);
+    assert.equal((await member.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`)).status(), 404);
     assert.ok(shared.ok());
     report.output_sha256 = createHash("sha256").update(await shared.body()).digest("hex");
     const cookies = (await owner.storageState()).cookies;

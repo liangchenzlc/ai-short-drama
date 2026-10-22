@@ -324,7 +324,7 @@ async function stablePreview(label) {
 try {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
     let owner = await login(config.username);
-    const member = await login(config.memberUsername);
+    const foreign = await login(config.foreignUsername);
     page = await owner.newPage();
     observe(page);
     await page.goto(`${origin}/canvas-app/canvas/${config.sourceKey}`);
@@ -443,7 +443,7 @@ try {
     assert.equal(target.metadata.prompt, report.expected_prompt);
     assert.equal(task.prompt, report.expected_prompt);
     await eventually(() => readTask(owner, task.id), row => row.status === "running");
-    assert.equal((await member.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
+    assert.equal((await foreign.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
     owner = await fresh(owner);
     await page.locator(`[data-node-id="${targetId}"]`).waitFor();
     assert.equal((await readTask(owner, task.id)).status, "running");
@@ -488,11 +488,12 @@ try {
     const ownerOutput = await owner.request.get(`${origin}${resources}/${derived.metadata.storageKey.slice(9)}/file`);
     assert.ok(ownerOutput.ok());
     await writeFile(resolve(output, "derived-result.png"), await ownerOutput.body());
-    const shared = await member.request.get(`${origin}${resources}/${derived.metadata.storageKey.slice(9)}/file`);
+    assert.equal((await foreign.request.get(`${origin}${resources}/${derived.metadata.storageKey.slice(9)}/file`)).status(), 404);
+    const shared = await owner.request.get(`${origin}${resources}/${derived.metadata.storageKey.slice(9)}/file`);
     assert.ok(shared.ok());
     report.output_sha256 = createHash("sha256").update(await shared.body()).digest("hex");
-    assert.equal((await member.request.get(`${origin}${resources}/${providerResult.storageKey.slice(9)}/file`)).status(), 404);
-    for (const reference of submitted.input.referenceImages) assert.equal((await member.request.get(`${origin}${resources}/${reference.storageKey.slice(9)}/file`)).status(), 404);
+    assert.equal((await foreign.request.get(`${origin}${resources}/${providerResult.storageKey.slice(9)}/file`)).status(), 404);
+    for (const reference of submitted.input.referenceImages) assert.equal((await foreign.request.get(`${origin}${resources}/${reference.storageKey.slice(9)}/file`)).status(), 404);
     assert.equal(report.uploads, 4);
     await fit();
     const expectedDecodedGeometry = { position: { ...restoredTarget.position }, width: 520, height: 520 };

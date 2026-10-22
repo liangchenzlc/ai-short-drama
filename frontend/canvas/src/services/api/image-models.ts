@@ -62,10 +62,6 @@ export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKe
 export type ChannelModelFetchResult = { models: string[]; catalog: ChannelModelCatalogItem[] };
 
 export async function fetchChannelModels(channel: ModelChannel, viaBackend = false): Promise<ChannelModelFetchResult> {
-    const managed = channel.id === "beefapi" && (channel.pinned || Boolean(channel.credentialRef));
-    if (managed) {
-        viaBackend = true;
-    }
     if (!viaBackend) {
         if (channel.apiFormat !== "gemini") {
             const catalog = await fetchOpenAIModelCatalog(channel);
@@ -78,11 +74,11 @@ export async function fetchChannelModels(channel: ModelChannel, viaBackend = fal
         // 登录态由同源后端代取模型目录，避免每个 OpenAI 兼容服务分别维护浏览器 CORS 白名单。
         const result = await http.post<{ models?: Array<string | ChannelModelCatalogItem> }>("/ai/models", {
             baseUrl: channel.baseUrl,
-            apiKey: managed ? "" : channel.apiKey,
+            apiKey: channel.apiKey,
             apiFormat: channel.apiFormat,
             headers: channel.headers,
             channelId: channel.id,
-            credentialRef: managed ? "beefapi-enterprise" : channel.credentialRef,
+            credentialRef: channel.credentialRef,
         }, { timeout: 30_000 });
         const catalog = new Map<string, ChannelModelCatalogItem>();
         for (const item of result.models || []) {

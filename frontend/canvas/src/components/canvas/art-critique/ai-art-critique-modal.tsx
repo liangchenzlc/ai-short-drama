@@ -67,7 +67,7 @@ export function AiArtCritiqueModal({ projectId, node, upstreamNodes, open, onClo
     const effectiveConfig = useEffectiveConfig();
     const selectedCritiqueModel = effectiveConfig.textModel.trim();
     const configuredCritiqueModelLabel = selectedCritiqueModel ? modelOptionLabel(effectiveConfig, selectedCritiqueModel) : "未配置文本/视觉理解模型";
-    const enabled = usePluginStore((state) => state.pluginStates[ART_CRITIQUE_PLUGIN_ID]?.effectiveEnabled ?? (ART_CRITIQUE_PLUGIN_ID in state.runtimeStatuses ? state.runtimeStatuses[ART_CRITIQUE_PLUGIN_ID] === "enabled" : Boolean(state.installations.find((item) => item.manifest.id === ART_CRITIQUE_PLUGIN_ID)?.enabled)));
+    const enabled = Boolean(usePluginStore((state) => state.installations.find((item) => item.manifest.id === ART_CRITIQUE_PLUGIN_ID)?.enabled));
     const input = useMemo(() => { const images = upstreamNodes.filter(isArtCritiqueImageInput); return images.length === 1 ? images[0] : undefined; }, [upstreamNodes]);
     const state = node?.metadata?.artCritique || createDefaultArtCritiqueState();
     const currentFingerprint = input ? artCritiqueSourceFingerprint(input) : "";

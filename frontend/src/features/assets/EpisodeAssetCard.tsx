@@ -1,4 +1,4 @@
-import type { RefCallback } from 'react';
+import { useRef, type RefCallback } from 'react';
 import { Button, Checkbox, Dropdown } from 'antd';
 import { PreviewImage } from '../../components/ui/ImagePreview';
 import { Icon } from '../../components/ui/Icon';
@@ -6,12 +6,15 @@ import type { LibraryAssetRead } from '../../api/modules/assets';
 import type { LocalAssetDraft } from './episode-asset-drafts';
 import { Check, Image as ImageIcon } from 'lucide-react';
 
-export function StandardEpisodeAssetCard({ asset, selected, disabled, entryRef, onOpen }: {
+export function StandardEpisodeAssetCard({ asset, selected, disabled, readOnly, removing, entryRef, onOpen, onRemove }: {
   asset: LibraryAssetRead | LocalAssetDraft; selected: boolean; disabled: boolean;
-  entryRef: RefCallback<HTMLButtonElement>; onOpen: () => void;
+  readOnly: boolean; removing: boolean; entryRef: RefCallback<HTMLButtonElement>;
+  onOpen: () => void; onRemove: () => void;
 }) {
   const image = 'image' in asset ? asset.image : null;
   const labels = { character: '角色', scene: '场景', prop: '道具' };
+  const pendingCreation = 'status' in asset && ['saving', 'unknown'].includes(asset.status);
+  const moreTrigger = useRef<HTMLButtonElement | null>(null);
   return <article className={`standard-asset-card${selected ? ' is-selected' : ''}`}>
     <button type="button" ref={entryRef} className="standard-asset-card-button" aria-label={asset.name || '未命名素材'} aria-pressed={selected} disabled={disabled} onClick={onOpen}>
       <span className="standard-asset-card-media">{image?.url ? <img src={image.url} alt="" loading="lazy" onError={event => { event.currentTarget.hidden = true; }}/> : <ImageIcon size={27} aria-hidden="true"/>}
@@ -20,6 +23,12 @@ export function StandardEpisodeAssetCard({ asset, selected, disabled, entryRef, 
       </span>
       <span className="standard-asset-card-caption"><strong title={asset.name}>{asset.name || '未命名素材'}</strong><small>{asset.kind ? labels[asset.kind] : '选择类型'}</small></span>
     </button>
+    {!readOnly && <Dropdown trigger={['click']} menu={{
+      items: [{ key: 'remove', label: '删除素材', danger: true, disabled: pendingCreation }],
+      onClick: ({ domEvent }) => { domEvent.stopPropagation(); moreTrigger.current?.focus(); onRemove(); },
+    }}>
+      <Button ref={moreTrigger} className="standard-asset-card-more" type="text" aria-label={`${asset.name || '未命名素材'}卡片更多操作`} title={pendingCreation ? '请先核对原创建请求' : '更多操作'} disabled={disabled} loading={removing} icon={<Icon name="more" size={16}/>} onClick={event => event.stopPropagation()}/>
+    </Dropdown>}
   </article>;
 }
 

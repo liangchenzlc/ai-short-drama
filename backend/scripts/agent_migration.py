@@ -8,11 +8,33 @@ import argparse
 import json
 from pathlib import Path
 
+from sqlalchemy import inspect
 from sqlalchemy.dialects.mysql import dialect
-from sqlalchemy.schema import CreateIndex, CreateTable
+from sqlalchemy.schema import AddConstraint, CreateIndex, CreateTable
 
 from short_drama.db.readiness import inspect_agent_schema, schema_gaps
 from short_drama.domain import AGENT_TABLES, Base
+
+
+def deferred_foreign_keys():
+    return sorted(
+        (
+            constraint
+            for table in Base.metadata.tables.values()
+            if table.name in AGENT_TABLES
+            for constraint in table.foreign_key_constraints
+            if constraint.use_alter
+        ),
+        key=lambda item: (item.table.name, item.name),
+    )
+
+
+def add_constraint_sql(constraint):
+    original_rule = constraint._create_rule
+    try:
+        return str(AddConstraint(constraint).compile(dialect=dialect())).strip()
+    finally:
+        constraint._create_rule = original_rule
 
 
 def agent_schema_sql():
@@ -25,9 +47,13 @@ def agent_schema_sql():
             str(CreateIndex(index).compile(dialect=dialect())).strip() + ";"
             for index in sorted(table.indexes, key=lambda value: value.name)
         )
+    statements.extend(
+        add_constraint_sql(constraint) + ";" for constraint in deferred_foreign_keys()
+    )
     source = (
-        f"-- Additive Agent schema: {len(AGENT_TABLES)} tables, no existing-table alterations.\n"
-        "-- Generated from short_drama.domain.agent and agent_context; "
+        f"-- Additive Agent schema: {len(AGENT_TABLES)} tables; preserves existing columns/data, "
+        "adds missing named deferred foreign keys.\n"
+        "-- Generated from the current Agent domain models; "
         "select the intended database first.\n"
         "-- Use scripts/agent_migration.py --apply for safe table-level reentry.\n\n"
         + "\n\n".join(statements)
@@ -45,6 +71,12 @@ def apply(engine):
         for table in Base.metadata.sorted_tables:
             if table.name in AGENT_TABLES:
                 table.create(connection, checkfirst=True)
+        for constraint in deferred_foreign_keys():
+            if not any(
+                item["name"] == constraint.name
+                for item in inspect(connection).get_foreign_keys(constraint.table.name)
+            ):
+                connection.exec_driver_sql(add_constraint_sql(constraint))
     with engine.connect() as connection:
         state = inspect_agent_schema(connection)
     if state["status"] != "ready":

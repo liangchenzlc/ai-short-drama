@@ -22,6 +22,7 @@ export const studioTheme: ThemeConfig = {
     boxShadowSecondary: '0 16px 48px rgba(0, 0, 0, 0.45)',
   },
   components: {
+    Message: { contentBg: '#1f1f20', contentPadding: '10px 12px' },
     Button: { primaryShadow: 'none', defaultShadow: 'none', fontWeight: 500,
       primaryColor: '#171717', colorPrimary: '#f5f5f5', colorPrimaryHover: '#ffffff',
       colorPrimaryActive: '#e5e5e5', dangerColor: '#2b0808', colorError: '#f87171',

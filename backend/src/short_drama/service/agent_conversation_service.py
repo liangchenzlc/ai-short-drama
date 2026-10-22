@@ -1,4 +1,4 @@
-"""Private episode conversations, with project-first locks and optimistic edits."""
+"""Private creation conversations, with project-first locks and optimistic edits."""
 
 import hashlib
 import json
@@ -8,7 +8,7 @@ from sqlalchemy import and_, func, select
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import require_actor
 from short_drama.db.access import require_project
-from short_drama.domain import Asset, Episode, EpisodeAsset, ShotScript
+from short_drama.domain import Asset, Project, ShotScript
 from short_drama.domain.agent import AgentConversation, AgentMessage, AgentRun
 from short_drama.schemas.agent import (
     ConversationCreate,
@@ -36,26 +36,21 @@ def validate_conversation_subject(session, conversation, *, lock=False):
     """Validate current membership without altering historical conversation identity."""
     if conversation.scope_version != 1:
         return None
-    if conversation.subject_type == "episode":
-        statement = select(Episode).where(
-            Episode.id == conversation.subject_id,
-            Episode.id == conversation.episode_id,
-            Episode.project_id == conversation.project_id,
+    if conversation.subject_type == "project":
+        statement = select(Project).where(
+            Project.id == conversation.subject_id,
+            Project.id == conversation.project_id,
         )
     elif conversation.subject_type == "asset":
-        statement = (
-            select(Asset)
-            .join(EpisodeAsset, EpisodeAsset.asset_id == Asset.id)
-            .where(
-                Asset.id == conversation.subject_id,
-                Asset.project_id == conversation.project_id,
-                EpisodeAsset.episode_id == conversation.episode_id,
-            )
+        statement = select(Asset).where(
+            Asset.id == conversation.subject_id,
+            Asset.project_id == conversation.project_id,
+            Asset.deleted_at.is_(None),
         )
     else:
         statement = select(ShotScript).where(
             ShotScript.id == conversation.subject_id,
-            ShotScript.episode_id == conversation.episode_id,
+            ShotScript.project_id == conversation.project_id,
             ShotScript.deleted_at.is_(None),
         )
     if lock:
@@ -63,7 +58,7 @@ def validate_conversation_subject(session, conversation, *, lock=False):
     subject = session.scalar(statement)
     if subject is None:
         raise WorkflowError(
-            "agent_subject_unavailable", "当前创作对象已删除或脱离本集，请切换对象", 409
+            "agent_subject_unavailable", "当前创作对象已删除或脱离当前作品，请切换对象", 409
         )
     return subject
 
@@ -81,34 +76,35 @@ class AgentConversationService(BaseService):
             raise WorkflowError("agent_disabled", "Agent 模式尚未启用", 503)
         return actor
 
-    def _episode(self, project_id, episode_id, *, lock=True):
+    def _creation(self, project_id, *, lock=True):
         require_project(self.session, project_id, lock=lock)
         row = self.session.scalar(
-            select(Episode).where(Episode.id == episode_id, Episode.project_id == project_id)
+            select(Project).where(Project.id == project_id, Project.workspace_mode == "standard")
         )
         if row is None:
-            raise NotFound("Episode does not exist")
+            raise NotFound("Project does not exist")
         return row
 
     def _conversation(self, identifier, *, lock=False, expected_scope=None):
         actor = self._actor()
         identifier = parse_identifier(identifier)
         # A scoped lookup finds the parent; all locks start at Project.
-        parent = self.session.scalar(
-            select(AgentConversation.project_id).where(
+        parent = self.session.execute(
+            select(AgentConversation.project_id, AgentConversation.scope_version).where(
                 AgentConversation.id == identifier, AgentConversation.owner_user_id == actor.user_id
             )
-        )
+        ).first()
         if parent is None:
             raise NotFound("Conversation does not exist")
-        require_project(self.session, parent, lock=lock)
+        if parent.scope_version != 3:
+            require_project(self.session, parent.project_id, lock=lock)
         statement = select(AgentConversation).where(
             AgentConversation.id == identifier, AgentConversation.owner_user_id == actor.user_id
         )
         if lock:
             statement = statement.with_for_update().execution_options(populate_existing=True)
         row = self.session.scalar(statement)
-        if row is None:
+        if row is None or row.status == "deleted":
             raise NotFound("Conversation does not exist")
         self.check_expected_scope(row, expected_scope)
         return row
@@ -154,10 +150,10 @@ class AgentConversationService(BaseService):
         return ConversationRead(
             id=row.id,
             project_id=row.project_id,
-            episode_id=row.episode_id,
             title=row.title,
             row_version=row.row_version,
             archived=row.status == "archived",
+            status=row.status,
             created_at=row.created_at,
             updated_at=row.updated_at,
             last_run_status=last_status,
@@ -185,7 +181,7 @@ class AgentConversationService(BaseService):
             json.dumps(values, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
         ).hexdigest()
         with self._transaction():
-            self._episode(values["project_id"], values["episode_id"])
+            self._creation(values["project_id"])
             scope_version = 1 if values.get("stage") is not None else 0
             if key:
                 existing = self.session.scalar(
@@ -225,7 +221,7 @@ class AgentConversationService(BaseService):
         if values.get("stage") is None:
             raise WorkflowError("agent_scope_required", "进入创作对象需要完整的会话范围", 422)
         with self._transaction():
-            self._episode(values["project_id"], values["episode_id"])
+            self._creation(values["project_id"])
             candidate = AgentConversation(
                 owner_user_id=actor.user_id,
                 **values,
@@ -235,7 +231,6 @@ class AgentConversationService(BaseService):
             conditions = [
                 AgentConversation.owner_user_id == actor.user_id,
                 AgentConversation.project_id == values["project_id"],
-                AgentConversation.episode_id == values["episode_id"],
                 AgentConversation.scope_version == 1,
                 AgentConversation.status == "active",
                 *(getattr(AgentConversation, name) == values[name] for name in SCOPE_FIELDS),
@@ -262,7 +257,6 @@ class AgentConversationService(BaseService):
     def list_conversations(
         self,
         project_id,
-        episode_id,
         offset=0,
         limit=20,
         include_archived=False,
@@ -272,13 +266,12 @@ class AgentConversationService(BaseService):
     ):
         actor = self._actor()
         self.dao.validate_pagination(offset, limit)
-        project_id, episode_id = parse_identifier(project_id), parse_identifier(episode_id)
+        project_id = parse_identifier(project_id)
         with self._transaction(read_only=True):
-            self._episode(project_id, episode_id, lock=False)
+            self._creation(project_id, lock=False)
             conditions = [
                 AgentConversation.owner_user_id == actor.user_id,
                 AgentConversation.project_id == project_id,
-                AgentConversation.episode_id == episode_id,
             ]
             if scope is None:
                 # Unclassified records never enter a scoped object's history.
@@ -289,7 +282,6 @@ class AgentConversationService(BaseService):
                 )
                 candidate = AgentConversation(
                     project_id=project_id,
-                    episode_id=episode_id,
                     scope_version=1,
                     **scope.model_dump(),
                 )

@@ -19,8 +19,7 @@ nodeRole resultOrigin generatedFromNodeId content previewContent videoPreview ri
 fontSize naturalWidth naturalHeight freeResize primaryImageId imageBatchExpanded storageKey
 mimeType bytes durationMs hasAudio assetTags assetCategory workflowKind workflowTitle
 workflowDescription chapterTitle shotIndex characterName characterAliases characterDefinition
-characterAssetId characterVersionId characterCoverUrl
-characterVersionPolicy characterView characterViewNodeIds videoMergeSourceNodeIds
+characterCoverUrl characterView characterViewNodeIds videoMergeSourceNodeIds
 depthSourceNodeId videoFrameSourceNodeId videoFrameTimeMs videoSegmentSourceNodeId
 videoSegmentStartMs videoSegmentEndMs videoSegmentIndex videoSegmentAction videoTrimStartMs
 videoTrimEndMs videoTrimSourceNodeId videoTrimSource videoCrop videoCropSourceNodeId
@@ -74,9 +73,6 @@ RESOURCE_ID_FIELDS = frozenset(
 )
 PROJECTION_KEY = "$canvas_projection"
 ABSENT = object()
-CHARACTER_IDENTITY_FIELDS = frozenset(
-    {"characterAssetId", "characterVersionId", "characterCoverUrl"}
-)
 CHARACTER_UNVERIFIED_FIELDS = frozenset({"characterVoiceName", "characterVoiceProfile"})
 CHARACTER_PRIVATE_NESTED = re.compile(
     r"^(api_?key$|secret|credential|authorization$|access_?token$|model$|modelId$)", re.I
@@ -85,9 +81,7 @@ CHARACTER_PRIVATE_NESTED = re.compile(
 
 def character_node(node: dict) -> bool:
     metadata = node.get("metadata") or {}
-    return bool(CHARACTER_IDENTITY_FIELDS.intersection(metadata)) or (
-        node.get("type") == "text" and metadata.get("workflowKind") == "character"
-    )
+    return metadata.get("workflowKind") == "character" or "characterCoverUrl" in metadata
 
 
 def has_character_nodes(document: CanvasDocument | dict | None) -> bool:

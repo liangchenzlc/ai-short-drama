@@ -18,8 +18,7 @@ class CanvasStoryboardStyle(CanvasGenerationProtocol):
 
 
 class CanvasStoryboardCharacter(CanvasGenerationProtocol):
-    asset_id: SourceKey
-    version_id: SourceKey
+    node_id: SourceKey
     name: Annotated[str, Field(min_length=1, max_length=255)]
     definition: dict[str, JsonValue]
 
@@ -31,8 +30,6 @@ class CanvasStoryboardAsset(CanvasGenerationProtocol):
     category: Annotated[str, Field(max_length=128)] | None = None
     tags: Annotated[list[Annotated[str, Field(max_length=65)]], Field(max_length=12)]
     prompt: Annotated[str, Field(max_length=601)]
-    character_asset_id: SourceKey | None = None
-    character_version_id: SourceKey | None = None
 
 
 class CanvasStoryboardAssetBinding(CanvasGenerationProtocol):

@@ -20,7 +20,7 @@ from short_drama.ai.canvas_agnes_adapters import (
 from short_drama.ai.canvas_audio_adapters import ASYNC_AUDIO, ASYNC_AUDIO_POLL_SECONDS
 from short_drama.ai.canvas_credentials import decode_canvas_credentials
 from short_drama.ai.canvas_image_references import (
-    is_canvas_image_request,
+    is_stored_image_edit_request,
     uses_canvas_inline_images,
 )
 from short_drama.ai.canvas_runninghub_adapters import (
@@ -132,7 +132,7 @@ class GenerationExecutionService:
                 adapter = record.adapter or select_adapter(record.config_snapshot)
                 if uses_canvas_inline_images(record.config_snapshot, request, adapter) or (
                     adapter == "openai_images.v1"
-                    and is_canvas_image_request(record.config_snapshot, request)
+                    and is_stored_image_edit_request(record.config_snapshot, request)
                 ):
                     data["reference_urls"] = [
                         f"https://reference.invalid/{index}"
@@ -243,16 +243,19 @@ class GenerationExecutionService:
         )
         with self.factory.begin() as session:
             if task.next_action == "submit":
-                from .task_access import lock_resource_project, may_submit
+                from .task_access import lock_resource_project, may_submit, submission_error
 
                 lock_resource_project(session, AsyncTask, task.id)
             current = owned_task(session, task.id, version, token)
             call = session.get(AIGenerationRecord, record.id)
             if task.next_action == "submit":
                 if not may_submit(
-                    session, current, agent_enabled=getattr(self.settings, "agent_enabled", False)
+                    session,
+                    current,
+                    agent_enabled=getattr(self.settings, "agent_enabled", False),
+                    settings=self.settings,
                 ):
-                    finish(current, "cancelled", {"code": "access_revoked"})
+                    finish(current, "cancelled", submission_error(session, current))
                     return
                 if current.cancel_requested:
                     finish(current, "cancelled")
@@ -344,11 +347,13 @@ class GenerationExecutionService:
                 options["reference_loader"] = StoredImageReferences(
                     self.factory, self.storage, self.settings, media_ids
                 )
-            mask_id = (request.get("canvas_parameters") or {}).get("mask_media_id")
+            mask_id = (
+                request.get("canvas_parameters") or request.get("image_edit_parameters") or {}
+            ).get("mask_media_id")
             if (
                 mask_id
                 and adapter == "openai_images.v1"
-                and is_canvas_image_request(snapshot, request)
+                and is_stored_image_edit_request(snapshot, request)
             ):
                 options["mask_reference_loader"] = StoredImageReferences(
                     self.factory, self.storage, self.settings, [mask_id]
@@ -478,6 +483,13 @@ class GenerationExecutionService:
                     else {}
                 ),
                 **({"voice": result.voice} if result.voice else {}),
+                **(
+                    {"image_request_errors": result.error["output_errors"]}
+                    if task.service_type == "image"
+                    and result.error
+                    and result.error.get("output_errors")
+                    else {}
+                ),
                 **({"canvas_tool_reply": tool_reply} if tool_reply is not None else {}),
             }
             from .canvas_video_admission import VIDEO_ADAPTERS
@@ -705,11 +717,18 @@ class GenerationExecutionService:
         transient = False
         save_delay = 30
         request_source = (record.request_data.get("source") or {}).get("scene")
+        image_group = (
+            bool(record.request_data.get("image_group_id")) or request_source == "image_operation"
+        )
         for entry in data.get("media_manifest", []):
             if entry.get("ignored"):
                 continue
             if entry.get("saved") and not (
-                request_source == "asset_image" and not entry.get("candidate_status")
+                image_group
+                and not entry.get("image_group_saved")
+                or not image_group
+                and request_source == "asset_image"
+                and not entry.get("candidate_status")
             ):
                 continue
             if not archive_due(
@@ -755,6 +774,10 @@ class GenerationExecutionService:
                     call.response_data = response
                     call.updated_at = utcnow()
         with self.factory.begin() as session:
+            if request_source == "shot_video":
+                from .task_access import lock_resource_project
+
+                lock_resource_project(session, AsyncTask, task.id)
             current = owned_task(session, task.id, version, token)
             call = latest_record(session, task.id)
             data = call.response_data or {}
@@ -762,6 +785,8 @@ class GenerationExecutionService:
             source_scene = (call.request_data.get("source") or {}).get("scene")
 
             def complete(item):
+                if image_group:
+                    return bool(item.get("saved") and item.get("image_group_saved"))
                 return bool(item.get("saved")) and (
                     source_scene != "asset_image"
                     or item.get("candidate_status") in {"linked", "source_missing"}
@@ -778,7 +803,17 @@ class GenerationExecutionService:
                 and saved + ignored >= data.get("expected_count", 1)
                 and saved + ignored == len(entries)
             ):
-                finish(current, "succeeded")
+                from .media_asset_service import MediaAssetService
+
+                receipt = MediaAssetService(
+                    session, self.settings, self.storage
+                ).confirm_generated_shot_video_locked(current, call)
+                warning = (
+                    {"code": "shot_video_auto_apply_skipped", "reason": receipt["code"]}
+                    if receipt and receipt["status"] == "skipped"
+                    else None
+                )
+                finish(current, "succeeded", warning)
             elif entries and ignored == len(entries):
                 finish(
                     current,
@@ -803,20 +838,43 @@ class GenerationExecutionService:
                     and (item.get("save_error") or {}).get("code") == "download_failed"
                     for item in entries
                 )
-                finish(
-                    current,
-                    "failed",
-                    {
-                        "code": "download_failed"
-                        if download_failed
-                        else "partial_result"
-                        if saved
-                        else "archive_failed",
-                        "message": "生成结果下载失败，请取回原任务结果，不要重新提交"
-                        if download_failed
-                        else "结果未全部保存，已有资产仍可使用",
-                    },
+                expected = int(data.get("expected_count", len(entries) or 1))
+                failed_indexes = {
+                    item["output_index"]
+                    for item in entries
+                    if not complete(item) and not item.get("ignored")
+                }
+                failed_indexes.update(
+                    set(range(1, expected + 1)) - {item["output_index"] for item in entries}
                 )
+                error = {
+                    "code": "download_failed"
+                    if download_failed
+                    else "partial_result"
+                    if saved
+                    else "archive_failed",
+                    "message": "生成结果下载失败，请取回原任务结果，不要重新提交"
+                    if download_failed
+                    else (
+                        f"已保存 {saved}/{expected} 张图片，部分结果未能保存；"
+                        "已保存结果仍可使用，请检查失败位置后重试。"
+                    )
+                    if saved
+                    else "生成结果未能保存，请检查对象存储后重试。",
+                }
+                if saved:
+                    error.update(
+                        {
+                            "saved_count": saved,
+                            "expected_count": expected,
+                            "returned_count": len(entries),
+                            "failed_output_indexes": sorted(failed_indexes),
+                        }
+                    )
+                    from .ai_generation_service import safe_error
+
+                    error["message"] = safe_error(error)["message"]
+                finish(current, "failed", error)
 
     def _save_text(self, task, record, version, token):
         from .generation_business_service import GenerationBusinessService

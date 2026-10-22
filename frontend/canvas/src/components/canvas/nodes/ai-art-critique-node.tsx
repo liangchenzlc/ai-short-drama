@@ -15,7 +15,8 @@ type ArtCritiqueNodeProps = {
 
 export function ArtCritiqueNodeContent({ node }: ArtCritiqueNodeProps) {
     const theme = canvasThemes[useActiveTheme()];
-    const enabled = usePluginStore((state) => state.pluginStates[ART_CRITIQUE_PLUGIN_ID]?.effectiveEnabled ?? (ART_CRITIQUE_PLUGIN_ID in state.runtimeStatuses ? state.runtimeStatuses[ART_CRITIQUE_PLUGIN_ID] === "enabled" : Boolean(state.installations.find((item) => item.manifest.id === ART_CRITIQUE_PLUGIN_ID)?.enabled)));
+    // AI 审美批改已不再受个人开关控制，注册即默认可用。
+    const enabled = Boolean(usePluginStore((state) => state.installations.find((item) => item.manifest.id === ART_CRITIQUE_PLUGIN_ID)?.enabled));
     const { openArtCritique } = useCanvasNodeActions();
     const imageInputs = useUpstreamNodes(node.id).filter(isArtCritiqueImageInput);
     const input = imageInputs[0];

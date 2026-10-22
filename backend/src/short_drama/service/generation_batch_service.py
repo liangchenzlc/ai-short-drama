@@ -23,14 +23,11 @@ from short_drama.domain import (
     Asset,
     AssetImageCandidate,
     AsyncTask,
-    Episode,
-    EpisodeAsset,
     GenerationBatchItem,
     GenerationBatchJob,
-    GlobalAsset,
     MediaAsset,
     MediaFile,
-    ProjectAsset,
+    Project,
     ShotImage,
     ShotScript,
     ShotVideo,
@@ -91,19 +88,14 @@ class GenerationBatchService(BaseService):
 
     def _sources(self, request):
         scope = request.scope
-        if scope.episode_id:
-            episode = self._require(Episode, scope.episode_id)
-            if episode.project_id != scope.project_id:
-                raise BusinessError("分集不属于当前项目")
+        if scope.project_id:
+            creation = self._require(Project, scope.project_id)
+            if creation.id != scope.project_id:
+                raise BusinessError("作品不属于当前项目")
         if request.scene == "asset_image":
-            library = {"global": GlobalAsset, "project": ProjectAsset, "episode": EpisodeAsset}[
-                scope.library
-            ]
-            query = select(Asset).join(library, library.asset_id == Asset.id)
-            if scope.library == "episode":
-                query = query.where(library.episode_id == int(scope.episode_id))
-            elif scope.library == "project":
-                query = query.where(library.project_id == int(scope.project_id))
+            query = select(Asset).where(
+                Asset.project_id == int(scope.project_id), Asset.deleted_at.is_(None)
+            )
             if scope.asset_kind:
                 query = query.where(Asset.kind == scope.asset_kind)
             if scope.search:
@@ -119,7 +111,7 @@ class GenerationBatchService(BaseService):
         else:
             model = ShotScript
             query = select(model).where(
-                model.episode_id == int(scope.episode_id), model.deleted_at.is_(None)
+                model.project_id == int(scope.project_id), model.deleted_at.is_(None)
             )
             if scope.search:
                 query = query.where(model.script.contains(scope.search, autoescape=True))
@@ -154,11 +146,11 @@ class GenerationBatchService(BaseService):
                     **{
                         k: v
                         for k, v in request.scope.model_dump().items()
-                        if k in {"project_id", "episode_id"} and v
+                        if k in {"project_id"} and v
                     },
                 },
             }
-        episode, shot, _, _, context_hash = GenerationContextService(
+        creation, shot, _, _, context_hash = GenerationContextService(
             self.session
         ).locked_shot_context(row.id)
         source = {
@@ -184,7 +176,7 @@ class GenerationBatchService(BaseService):
             )
             return {"config_id": request.config_id, "parameters": {}, "source": source}
         settings = shot.image_settings or {
-            "aspect": "inherit",
+            "aspect": None,
             "resolution": "2K",
             "layout": "single",
         }
@@ -196,7 +188,7 @@ class GenerationBatchService(BaseService):
             "parameters": {
                 "count": request.count,
                 "resolution": settings["resolution"],
-                "aspect": episode.aspect if settings["aspect"] == "inherit" else settings["aspect"],
+                "aspect": settings["aspect"],
             },
         }
 
@@ -363,8 +355,8 @@ class GenerationBatchService(BaseService):
             actor = self.session.info.get("actor")
             if actor:
                 project_id = base.scope.project_id if hasattr(base.scope, "project_id") else None
-                if getattr(base.scope, "episode_id", None):
-                    project_id = self._require(Episode, base.scope.episode_id).project_id
+                if getattr(base.scope, "project_id", None):
+                    project_id = self._require(Project, base.scope.project_id).id
                 set_scope(
                     self.session, (None, int(project_id)) if project_id else (actor.user_id, None)
                 )

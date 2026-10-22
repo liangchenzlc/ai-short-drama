@@ -5,7 +5,6 @@ from copy import deepcopy
 
 from pydantic import ValidationError
 
-from short_drama.ai.canvas_runninghub_adapters import RUNNINGHUB_PLUGIN
 from short_drama.ai.canvas_runninghub_fields import (
     apply_parameters,
     collect_fields,
@@ -18,14 +17,12 @@ from short_drama.core.exceptions import GenerationRequestError, NotFound, Workfl
 from short_drama.db.access import scope_of
 from short_drama.schemas.canvas_runninghub import RunningHubWorkflow
 
-from .canvas_editor_tool_service import CanvasEditorToolService
 from .canvas_video_admission import _https_reference
 
 
 def freeze_runninghub_request(
     generation, prepared: dict, config, secrets: dict, project_id: int | None
 ):
-    CanvasEditorToolService(generation.session).require_enabled_locked(RUNNINGHUB_PLUGIN)
     request = prepared["canvas_request"]
     inputs = request["input"]
     try:

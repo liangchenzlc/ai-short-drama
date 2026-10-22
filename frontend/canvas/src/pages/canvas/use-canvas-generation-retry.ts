@@ -39,7 +39,6 @@ import { canvasGenerationFailureMetadata, canvasGenerationRetryBlocked, type Can
 
 type UseCanvasGenerationRetryOptions = {
     projectId: string;
-    domainProjectId?: string;
     addedSkills: Skill[];
     assets: Asset[];
     nodesRef: { current: CanvasNodeData[] };
@@ -58,7 +57,6 @@ const NODE_STATUS_ERROR = "error" as const;
 
 export function useCanvasGenerationRetry({
     projectId,
-    domainProjectId,
     addedSkills,
     assets,
     nodesRef,
@@ -118,7 +116,7 @@ export function useCanvasGenerationRetry({
                 if (useStoredSource) rawContext = null;
                 else {
                     const baseContext = buildNodeGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, retryContextPrompt, assets, promptOnly);
-                    rawContext = await hydrateNodeGenerationContext(baseContext, projectId, domainProjectId, retryMode, retryMode === "video" && supportsVideoReferenceAudio(generationConfig), !promptOnly);
+                    rawContext = await hydrateNodeGenerationContext(baseContext, projectId, retryMode, !promptOnly);
                 }
             } catch (error) {
                 const failure = generationFailureMetadata(error, retryPromptSource, sourceNodeReferenceImages(generationSourceNode));
@@ -160,18 +158,6 @@ export function useCanvasGenerationRetry({
                     message.error(error instanceof Error ? error.message : "项目画风与当前模型不兼容");
                     return;
                 }
-            }
-            if (retryMode === "audio" && context?.characterReferences.length) {
-                if (context.characterReferences.length !== 1) {
-                    message.error("角色配音一次只能引用一个角色卡");
-                    return;
-                }
-                const voice = context.resolvedCharacterVoices[0];
-                if (!voice) {
-                    message.error("角色尚未绑定可用声音，无法重试角色配音任务");
-                    return;
-                }
-                generationConfig = { ...generationConfig, audioVoice: voice.voiceKey, audioInstructions: [voice.instructions, generationConfig.audioInstructions].filter(Boolean).join("；") };
             }
             const isEmotionRetry = Boolean(node.metadata?.emotionEdit);
             if (isEmotionRetry && resolveModelRequestConfig(generationConfig, generationConfig.model).interfaceType !== "openai-image") {
@@ -254,7 +240,7 @@ export function useCanvasGenerationRetry({
                         referenceImages: context.referenceImages,
                         referenceVideos: context.referenceVideos,
                         signal: controller.signal,
-                        metadata: { retry: true, sourceNodeId: sourceNode.id, resolvedCharacterVersions: context.resolvedCharacterVersions },
+                        metadata: { retry: true, sourceNodeId: sourceNode.id,},
                     });
                     return;
                 }
@@ -296,8 +282,6 @@ export function useCanvasGenerationRetry({
                         metadata: {
                             retry: true,
                             sourceNodeId: sourceNode.id,
-                            resolvedCharacterVersions: context?.resolvedCharacterVersions || [],
-                            resolvedCharacterVoices: context?.resolvedCharacterVoices || [],
                             promptTemplateOperation: node.metadata?.promptTemplateOperation,
                             promptTemplateVariables: node.metadata?.promptTemplateVariables,
                             ...videoGenerationMetadata,
@@ -316,7 +300,7 @@ export function useCanvasGenerationRetry({
                         prompt,
                         config: generationConfig,
                         signal: controller.signal,
-                        metadata: { retry: true, sourceNodeId: sourceNode.id, resolvedCharacterVersions: context?.resolvedCharacterVersions || [], resolvedCharacterVoiceKey: context?.resolvedCharacterVoices[0]?.voiceKey },
+                        metadata: { retry: true, sourceNodeId: sourceNode.id,},
                     });
                     return;
                 }
@@ -359,7 +343,7 @@ export function useCanvasGenerationRetry({
                         referenceImages: [editReference, characterReference],
                         mask,
                         signal: controller.signal,
-                        metadata: { retry: true, sourceNodeId: emotionSource.id, edit: "emotion", emotionEditMode: editPlan.mode, emotion: nextEmotionEdit, resolvedCharacterVersions: context?.resolvedCharacterVersions || [], ...styleMetadata, ...skillMetadata },
+                        metadata: { retry: true, sourceNodeId: emotionSource.id, edit: "emotion", emotionEditMode: editPlan.mode, emotion: nextEmotionEdit, ...styleMetadata, ...skillMetadata },
                     });
                     return;
                 }
@@ -386,7 +370,6 @@ export function useCanvasGenerationRetry({
                     metadata: {
                         retry: true,
                         sourceNodeId: sourceNode.id,
-                        resolvedCharacterVersions: context?.resolvedCharacterVersions || [],
                         promptTemplateOperation: node.metadata?.promptTemplateOperation,
                         promptTemplateVariables: node.metadata?.promptTemplateVariables,
                         ...styleMetadata,
@@ -403,7 +386,7 @@ export function useCanvasGenerationRetry({
                 setRunningNodeId(null);
             }
         },
-        [addedSkills, applyGenerationTaskResult, assets, bindGenerationTask, connectionsRef, domainProjectId, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, nodesRef, projectId, setNodes, setRunningNodeId, startGenerationRequest],
+        [addedSkills, applyGenerationTaskResult, assets, bindGenerationTask, connectionsRef, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, nodesRef, projectId, setNodes, setRunningNodeId, startGenerationRequest],
     );
 }
 

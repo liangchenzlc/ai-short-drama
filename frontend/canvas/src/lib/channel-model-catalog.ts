@@ -122,21 +122,12 @@ function catalogIsSpeechOrMusic(id: string) {
     return catalogHasNameToken(id, ["speech", "tts", "music"]);
 }
 
-function isBeefAPICatalogChannel(channel: ModelChannel) {
-    if (channel.id === "beefapi" || channel.credentialRef === "beefapi-enterprise") return true;
-    try {
-        return new URL(channel.baseUrl || "").hostname.toLowerCase() === "enterprise.beefapi.com";
-    } catch {
-        return false;
-    }
-}
-
 export function mergeFetchedChannelModelProfiles(channel: ModelChannel, catalog: ChannelModelCatalogItem[]): ChannelModelProfile[] {
     const existingByModel = new Map((channel.modelProfiles || []).map((profile) => [profile.model, profile]));
     const next: ChannelModelProfile[] = [];
     for (const item of catalog) {
         const existing = existingByModel.get(item.id);
-        const mapped = catalogModelMapping(item, { providerNameFallback: isBeefAPICatalogChannel(channel) });
+        const mapped = catalogModelMapping(item);
         const inferredProtocol = mapped.protocol || protocolForModelCatalog(item.supportedEndpointTypes);
         const inferredCapability = mapped.capability || modelProtocolCapability(inferredProtocol) || item.modelType;
         if (mapped.skipGeneration) {
@@ -146,14 +137,8 @@ export function mergeFetchedChannelModelProfiles(channel: ModelChannel, catalog:
             const protocol = inferredProtocol || existing.protocol;
             const capability = inferredCapability || existing.capability;
             const capabilityChanged = capability !== existing.capability;
-            const sourcedVideo = isBeefAPICatalogChannel(channel) && capability === "video" ? sanitizeServerVideoCapability(item.videoCapabilities) : null;
-            const keepSourced = isBeefAPICatalogChannel(channel) && existing.videoCapabilitiesVersion !== undefined && !sourcedVideo;
-            const patchCapabilityConfig = !keepSourced && !sourcedVideo && hasCatalogCapabilityConfig(item) && (capability === "image" || capability === "video");
-            const capabilityConfig = sourcedVideo
-                ? { version: 1, video: sourcedVideo }
-                : keepSourced
-                  ? existing.capabilityConfig
-                  : patchCapabilityConfig
+            const patchCapabilityConfig = hasCatalogCapabilityConfig(item) && (capability === "image" || capability === "video");
+            const capabilityConfig = patchCapabilityConfig
                     ? catalogCapabilityConfig(item, protocol || channel.interfaceType, capability, capabilityChanged ? undefined : existing.capabilityConfig, false)
                     : capabilityChanged
                       ? undefined
@@ -163,8 +148,7 @@ export function mergeFetchedChannelModelProfiles(channel: ModelChannel, catalog:
                 ...(item.displayName ? { displayName: item.displayName } : {}),
                 capability,
                 ...(protocol ? { protocol } : {}),
-                ...(patchCapabilityConfig || capabilityChanged || sourcedVideo || keepSourced ? { capabilityConfig } : {}),
-                ...(sourcedVideo ? { videoCapabilitiesVersion: item.videoCapabilitiesVersion ?? "" } : {}),
+                ...(patchCapabilityConfig || capabilityChanged ? { capabilityConfig } : {}),
             });
             continue;
         }
@@ -172,10 +156,7 @@ export function mergeFetchedChannelModelProfiles(channel: ModelChannel, catalog:
         const capability = inferredCapability || modelProtocolCapability(channel.interfaceType);
         const protocol = inferredProtocol || protocolTemplateForNewCatalogModel(capability, channel.interfaceType);
         if (!protocol || !capability) continue;
-        const sourcedVideo = isBeefAPICatalogChannel(channel) && capability === "video" ? sanitizeServerVideoCapability(item.videoCapabilities) : null;
-        const capabilityConfig = sourcedVideo
-            ? { version: 1, video: sourcedVideo }
-            : capability === "image" || capability === "video"
+        const capabilityConfig = capability === "image" || capability === "video"
               ? catalogCapabilityConfig(item, protocol, capability, undefined, true)
               : undefined;
         next.push({
@@ -184,7 +165,6 @@ export function mergeFetchedChannelModelProfiles(channel: ModelChannel, catalog:
             capability,
             protocol,
             ...(capabilityConfig ? { capabilityConfig } : {}),
-            ...(sourcedVideo ? { videoCapabilitiesVersion: item.videoCapabilitiesVersion ?? "" } : {}),
         });
     }
     return next;

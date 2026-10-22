@@ -8,7 +8,7 @@ from .base import (
 
 
 class ShotAssetCreate(InputModel):
-    episode_id: Identifier
+    project_id: Identifier
     asset_id: Identifier
     shot_id: Identifier
 
@@ -19,7 +19,7 @@ class ShotAssetUpdate(InputModel):
 
 class ShotAssetRead(ReadModel):
     id: Identifier
-    episode_id: Identifier
+    project_id: Identifier
     asset_id: Identifier
     shot_id: Identifier
     created_at: datetime | None = None

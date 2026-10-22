@@ -89,7 +89,6 @@ import type { StartCanvasUploadStatus } from "./use-canvas-upload";
 
 type UseCanvasMediaToolsOptions = {
     projectId: string;
-    domainProjectId?: string;
     nodesRef: { current: CanvasNodeData[] };
     connectionsRef: { current: CanvasConnection[] };
     selectedNodeIdsRef: { current: Set<string> };
@@ -116,7 +115,6 @@ const NODE_STATUS_IDLE = "idle" as const;
 
 export function useCanvasMediaTools({
     projectId,
-    domainProjectId,
     nodesRef,
     connectionsRef,
     selectedNodeIdsRef,
@@ -189,8 +187,7 @@ export function useCanvasMediaTools({
         try {
             return await persistOwnedCanvasMediaNodes({
                 canvasId: projectId,
-                domainProjectId,
-                mediaNodes,
+                            mediaNodes,
                 mediaConnections,
                 expectedScope: options?.expectedScope ?? captureUserScope(),
                 signal: options?.signal,
@@ -227,7 +224,7 @@ export function useCanvasMediaTools({
             if (isLocalExecutorSessionStop(error)) return new Map<string, string>();
             throw error;
         }
-    }, [connectionsRef, domainProjectId, message, nodesRef, projectId, setNodes]);
+    }, [connectionsRef, message, nodesRef, projectId, setNodes]);
 
     const createImageReversePromptNodes = useCallback((node: CanvasNodeData) => {
         if (node.type !== CanvasNodeType.Image || !node.metadata?.content) {
@@ -872,7 +869,7 @@ export function useCanvasMediaTools({
             setSelectedNodeIds(outputIds);
             setSelectedConnectionId(null);
             try {
-                const results = await Promise.all(outputs.map((item) => ensureCanvasNodeAsset({ canvasId: projectId, domainProjectId, node: item, source: "canvas-manual" })));
+                const results = await Promise.all(outputs.map((item) => ensureCanvasNodeAsset({ canvasId: projectId, node: item, source: "canvas-manual" })));
                 setNodes((current) => current.map((item) => {
                     const index = outputs.findIndex((output) => output.id === item.id);
                     return index >= 0 ? { ...item, metadata: { ...item.metadata, assetId: results[index].assetId } } : item;
@@ -887,7 +884,7 @@ export function useCanvasMediaTools({
             progress.fail(details);
             message.error(details);
         }
-    }, [domainProjectId, message, projectId, setConnections, setSelectedConnectionId, setSelectedNodeIds, setNodes, startUploadStatus]);
+    }, [message, projectId, setConnections, setSelectedConnectionId, setSelectedNodeIds, setNodes, startUploadStatus]);
 
     // 音视频分离始终处理整段视频，直接生成独立音轨节点，不再打开范围选择弹窗。
     const extractAudioFromVideo = useCallback((node: CanvasNodeData) => {

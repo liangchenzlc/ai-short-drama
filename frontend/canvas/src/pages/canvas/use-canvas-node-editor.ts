@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
 
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
@@ -20,7 +19,6 @@ import { createOwnedCanvasUploadGuard, persistOwnedCanvasUploadNode } from "./ca
 type UseCanvasNodeEditorOptions = {
     canvasId: string;
     canvasTitle: string;
-    domainProjectId?: string;
     nodesRef: { current: CanvasNodeData[] };
     setNodes: Dispatch<SetStateAction<CanvasNodeData[]>>;
     setSelectedNodeIds: Dispatch<SetStateAction<Set<string>>>;
@@ -33,7 +31,6 @@ type UseCanvasNodeEditorOptions = {
 export function useCanvasNodeEditor({
     canvasId,
     canvasTitle,
-    domainProjectId,
     nodesRef,
     setNodes,
     setSelectedNodeIds,
@@ -43,7 +40,6 @@ export function useCanvasNodeEditor({
     setHoveredNodeId,
 }: UseCanvasNodeEditorOptions) {
     const { message } = App.useApp();
-    const queryClient = useQueryClient();
     const canvasIdRef = useRef(canvasId);
     canvasIdRef.current = canvasId;
     const { lifetime, mountedRef } = useCanvasOwnerLifetime(canvasId);
@@ -197,20 +193,16 @@ export function useCanvasNodeEditor({
             getLiveLifetime: () => lifetime.current(),
             mounted: () => mountedRef.current,
             canvasId,
-            domainProjectId,
-            node,
+                    node,
             signal: guard.signal,
             source: "canvas-manual",
             category,
         }, {
             ensureCanvasNodeAsset,
             setNodes,
-            invalidateProject: domainProjectId
-                ? async (projectId) => { await queryClient.invalidateQueries({ queryKey: ["project", projectId] }); }
-                : undefined,
         });
         return { guard, result };
-    }, [canvasId, domainProjectId, lifetime, mountedRef, queryClient, setNodes]);
+    }, [canvasId, lifetime, mountedRef, setNodes]);
 
     const handleConfigNodeChange = useCallback((nodeId: string, patch: Partial<CanvasNodeMetadata>) => {
         setNodes((current) => {

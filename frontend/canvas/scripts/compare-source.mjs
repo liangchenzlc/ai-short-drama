@@ -121,7 +121,6 @@ async function fixtures(page, kind) {
             body = pendingDepthTask;
         }
         else if (path === "/tasks" && request.method() === "GET") body = { tasks: depthTitleDrag ? [pendingDepthTask] : [], total: depthTitleDrag ? 1 : 0, page: 1, pageSize: 50, hasMore: false };
-        else if (path === "/plugins/status") body = { statuses: {}, states: {} };
         else if (path === "/assets" && request.method() === "GET") body = { assets: [], page: 1, pageSize: 100, total: 0, hasMore: false };
         else if (path.endsWith("/history")) body = { snapshots: [history], currentRevision: 7 };
         else if (path.endsWith("/revisions")) body = { items: [historyDto], row_version: "7", drawing_heads: {} };

@@ -5,8 +5,7 @@ import type { CanvasCreateCommand } from "./canvas-create-menu";
 
 export function useCanvasCreateCommands(context: AddNodeMenuContext, runCommand?: (command: () => void) => void): CanvasCreateCommand[] {
     const installations = usePluginStore((state) => state.installations);
-    const pluginStates = usePluginStore((state) => state.pluginStates);
-    const enabledPluginIds = new Set(installations.filter((item) => pluginStates[item.manifest.id]?.effectiveEnabled ?? item.enabled).map((item) => item.manifest.id));
+    const enabledPluginIds = new Set(installations.map((item) => item.manifest.id));
 
     return resolveAddNodeMenuCommands({ ...context, enabledPluginIds }).map((command) => ({
         id: command.id,

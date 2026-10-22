@@ -9,9 +9,18 @@ from short_drama.core.exceptions import WorkflowError
 
 
 def _guard_legacy_mapper(target: Any) -> None:
-    from short_drama.domain import Asset, AssetVersion, AssetVersionMediaReference
+    from short_drama.domain import (
+        AgentSkillVersion,
+        Asset,
+        AssetVersion,
+        AssetVersionMediaReference,
+    )
 
     model = inspect(target).mapper.class_
+    if issubclass(model, AgentSkillVersion):
+        raise WorkflowError(
+            "agent_skill_version_immutable", "Skill 内容版本禁止 legacy bulk 写入", 403
+        )
     if issubclass(model, (Asset, AssetVersion, AssetVersionMediaReference)):
         raise WorkflowError(
             "asset_version_bulk_forbidden", "角色及其历史不允许使用 legacy bulk 写入", 403

@@ -208,7 +208,7 @@ export function useAssetImageGeneration(
       const privateDraft = onSavePrivateDraft ? await onSavePrivateDraft() : null;
       if (onSavePrivateDraft && !privateDraft || !isCurrent(expectedAssetId)) return null;
       const body = buildAssetImageRequest(saved, privateDraft ? {
-        ...options, configId: privateDraft.model_config_id ?? undefined, supplement: '',
+        ...options, configId: privateDraft.model_config_id ?? undefined, supplement: asset.prompt,
         count: privateDraft.image_settings?.count ?? 1, aspect: privateDraft.image_settings?.aspect ?? undefined,
         resolution: privateDraft.image_settings?.resolution ?? undefined,
         draft: { id: privateDraft.id, draft_version: privateDraft.draft_version },
@@ -221,6 +221,7 @@ export function useAssetImageGeneration(
       pendingRequest.current = pending;
       const receipt = await generations.generateImage(body, key);
       if (!isCurrent(expectedAssetId)) return null;
+      candidatesChangedRef.current();
       pendingRequest.current = null; setUncertain(false); clearRecovery(recoveryScope);
       clearAttempt(scope, attemptStorage());
       if (isCurrent(expectedAssetId)) {

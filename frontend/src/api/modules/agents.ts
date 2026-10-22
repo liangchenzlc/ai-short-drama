@@ -2,6 +2,7 @@ import { http } from '../http';
 import type { AgentAvailability, AgentConversation, AgentConversationPage, CreateAgentConversation, UpdateAgentConversation,
   AgentModel, AgentModelPage, AgentMessagePage, AgentRun, AgentRunPage, AgentSendInput, AgentSendResult, AgentReview, AgentAttachment, AgentSkill, ConversationScope, ConversationRuntimeState } from '../types/agents';
 import type { Page } from '../types/generations';
+import type { AgentSkillContent, AgentSkillDetail, AgentSkillFilters, AgentSkillImportPreview, AgentSkillResourceContent } from '../types/agents';
 
 const root = '/agent';
 const conversationPath = (id: string) => `${root}/conversations/${encodeURIComponent(id)}`;
@@ -20,15 +21,37 @@ export const agentsApi = {
   async removeAttachment(id: string, attachmentId: string, scope?: ConversationScope) {
     await http.delete(`${conversationPath(id)}/attachments/${encodeURIComponent(attachmentId)}`, { params: scope });
   },
-  async skills(offset = 0, signal?: AbortSignal) {
-    return (await http.get<Page<AgentSkill>>(`${root}/skills`, { params: { offset, limit: 50 }, signal })).data;
+  async skills(offset = 0, signal?: AbortSignal, filters?: AgentSkillFilters) {
+    return (await http.get<Page<AgentSkill>>(`${root}/skills`, { params: { offset, limit: 50, ...filters }, signal })).data;
+  },
+  async skill(id: string, signal?: AbortSignal) {
+    return (await http.get<AgentSkillDetail>(`${root}/skills/${encodeURIComponent(id)}`, { signal })).data;
+  },
+  async createSkill(body: AgentSkillContent, key: string) {
+    return (await http.post<AgentSkillDetail>(`${root}/skills`, body, { headers: { 'Idempotency-Key': key } })).data;
+  },
+  async previewSkillImport(file: File) {
+    const body = new FormData(); body.append('file', file);
+    return (await http.post<AgentSkillImportPreview>(`${root}/skills/imports/preview`, body)).data;
+  },
+  async copySkill(id: string, content_version: string, key: string, name?: string) {
+    return (await http.post<AgentSkillDetail>(`${root}/skills/${encodeURIComponent(id)}/copy`, { content_version, ...(name ? { name } : {}) }, { headers: { 'Idempotency-Key': key } })).data;
+  },
+  async updateSkillSettings(id: string, body: { row_version: string; enabled: boolean; invocation_mode: 'auto' | 'manual' }) {
+    return (await http.patch<AgentSkillDetail>(`${root}/skills/${encodeURIComponent(id)}/settings`, body)).data;
+  },
+  async skillResource(id: string, version: string, path: string, offset = 0, signal?: AbortSignal) {
+    return (await http.get<AgentSkillResourceContent>(`${root}/skills/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/resources`, { params: { path, offset, limit: 6000 }, signal })).data;
+  },
+  async exportSkill(id: string, content_version: string) {
+    return (await http.get<Blob>(`${root}/skills/${encodeURIComponent(id)}/export`, { params: { content_version }, responseType: 'blob' })).data;
   },
   async uploadSkill(file: File) {
     const body = new FormData(); body.append('file', file);
-    return (await http.post<AgentSkill>(`${root}/skills/uploads`, body)).data;
+    return (await http.post<AgentSkillDetail>(`${root}/skills/uploads`, body)).data;
   },
-  async updateSkill(id: string, body: { row_version: string; name?: string; instructions?: string; enabled?: boolean }) {
-    return (await http.patch<AgentSkill>(`${root}/skills/${encodeURIComponent(id)}`, body)).data;
+  async updateSkill(id: string, body: { row_version: string } & Partial<AgentSkillContent>) {
+    return (await http.patch<AgentSkillDetail>(`${root}/skills/${encodeURIComponent(id)}`, body)).data;
   },
   async deleteSkill(id: string, row_version: string) {
     await http.delete(`${root}/skills/${encodeURIComponent(id)}`, { data: { row_version } });
@@ -64,9 +87,9 @@ export const agentsApi = {
   async status(signal?: AbortSignal) {
     return (await http.get<AgentAvailability>(`${root}/status`, { signal })).data;
   },
-  async conversations(projectId: string, episodeId: string, offset = 0, includeArchived = false, signal?: AbortSignal, scope?: ConversationScope, query = '') {
+  async conversations(projectId: string, offset = 0, includeArchived = false, signal?: AbortSignal, scope?: ConversationScope, query = '') {
     return (await http.get<AgentConversationPage>(`${root}/conversations`, {
-      params: { project_id: projectId, episode_id: episodeId, offset, limit: 20, include_archived: includeArchived, ...scope, ...(query.trim() ? { query: query.trim() } : {}) }, signal,
+      params: { project_id: projectId, offset, limit: 20, include_archived: includeArchived, ...scope, ...(query.trim() ? { query: query.trim() } : {}) }, signal,
     })).data;
   },
   async conversation(id: string, signal?: AbortSignal, scope?: ConversationScope) {

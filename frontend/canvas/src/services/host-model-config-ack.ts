@@ -30,20 +30,10 @@ export function reconcileHostModelConfigAck(submitted: AiConfig, current: AiConf
         next.channels = durable.channels;
         return next;
     }
-    const managed = durable.channels.filter(channel => channel.id === "beefapi").map(channel => {
-        const previous = submitted.channels.find(item => item.id === channel.id);
-        const draft = current.channels.find(item => item.id === channel.id);
-        if (!previous || !draft) return channel;
-        return {
-            ...channel,
-            enabled: equal(draft.enabled, previous.enabled) ? channel.enabled : draft.enabled,
-            headers: equal(draft.headers, previous.headers) ? channel.headers : draft.headers,
-        };
-    });
-    next.channels = [...durable.channels.filter(channel => channel.id.startsWith("host-")), ...current.channels.filter(channel => !channel.id.startsWith("host-") && channel.id !== "beefapi").map(channel => channelAcknowledgement(
+    next.channels = [...durable.channels.filter(channel => channel.id.startsWith("host-")), ...current.channels.filter(channel => !channel.id.startsWith("host-")).map(channel => channelAcknowledgement(
         submitted.channels.find(item => item.id === channel.id),
         channel,
         durable.channels.find(item => item.id === channel.id),
-    )), ...managed];
+    ))];
     return next;
 }

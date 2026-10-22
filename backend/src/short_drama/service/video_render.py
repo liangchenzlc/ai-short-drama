@@ -9,6 +9,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from .assembly_output import display_dimensions, resolve_output
+
 
 class RenderCancelled(Exception):
     pass
@@ -29,6 +31,23 @@ def executable(configured):
 def checksum(path):
     with Path(path).open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def frame_filter(transform, width, height, source_width, source_height):
+    transform = transform or {}
+    ratio = (max if transform.get("fit") == "cover" else min)(
+        width / source_width, height / source_height
+    )
+    scale = ratio * transform.get("scale", 1)
+    scaled_width, scaled_height = (
+        max(2, round(source_width * scale / 2) * 2),
+        max(2, round(source_height * scale / 2) * 2),
+    )
+    x, y = transform.get("x", 0.5), transform.get("y", 0.5)
+    return (
+        f"scale={scaled_width}:{scaled_height},pad=max(iw\\,{width}):max(ih\\,{height}):(ow-iw)*{x}:(oh-ih)*{y},"
+        f"crop={width}:{height}:(iw-ow)*{x}:(ih-oh)*{y},setsar=1"
+    )
 
 
 class VideoRenderer:
@@ -105,11 +124,22 @@ class VideoRenderer:
             or not video.get("height")
         ):
             raise RuntimeError("视频缺少有效画面或实际时长")
+        rotation = next(
+            (s["rotation"] for s in video.get("side_data_list", []) if "rotation" in s),
+            video.get("tags", {}).get("rotate", 0),
+        )
+        width, height = display_dimensions(
+            video["width"], video["height"], video.get("sample_aspect_ratio", "1:1"), rotation
+        )
         return {
-            "probe_version": 1,
+            "probe_version": 2,
             "duration_ms": round(duration * 1000),
-            "width": video["width"],
-            "height": video["height"],
+            "width": width,
+            "height": height,
+            "coded_width": video["width"],
+            "coded_height": video["height"],
+            "rotation": rotation,
+            "sample_aspect_ratio": video.get("sample_aspect_ratio", "1:1"),
             "has_audio": any(s.get("codec_type") == "audio" for s in data["streams"]),
             "fps": video.get("avg_frame_rate", "0/1"),
         }
@@ -150,12 +180,17 @@ class VideoRenderer:
         )
         if milliseconds <= 0:
             raise RuntimeError("视频缺少有效时长")
+        sar = re.search(r"SAR (\d+:\d+)", stream[0])
+        rotation = re.search(r"rotation of (-?[\d.]+)", report)
+        width, height = display_dimensions(
+            int(shape[1]), int(shape[2]), sar[1] if sar else "1:1", rotation[1] if rotation else 0
+        )
         return {
-            "probe_version": 1,
+            "probe_version": 2,
             "probe_engine": "ffmpeg",
             "duration_ms": milliseconds,
-            "width": int(shape[1]),
-            "height": int(shape[2]),
+            "width": width,
+            "height": height,
             "has_audio": bool(re.search(r"Stream[^\n]+Audio:", report)),
             "fps": fps[1] if fps else "0",
         }
@@ -274,15 +309,33 @@ class VideoRenderer:
     def render(self, snapshot, sources, directory):
         ffmpeg = executable(self.settings.render_ffmpeg_path)
         precise = snapshot.get("version", 1) >= 2
-        height = {"1080p": 1080, "preview": 360}.get(snapshot["resolution"], 720)
-        width = height * 16 // 9
-        if snapshot["aspect"] == "9:16":
-            width, height = height, width
+        dimensions = (
+            snapshot
+            if snapshot.get("output_width")
+            else resolve_output(snapshot["aspect"], snapshot["resolution"], snapshot["clips"])
+        )
+        width, height = dimensions["output_width"], dimensions["output_height"]
+        if not width or not height:
+            raise RuntimeError("成片输出尺寸缺失，请重新检测来源视频后导出")
+        if snapshot["resolution"] == "preview":
+            from .assembly_output import scaled_dimensions
+
+            width, height = scaled_dimensions(width, height, 360)
         segments = []
         total = 0
         for index, clip in enumerate(snapshot["clips"]):
             source = sources[clip["media_id"]]
-            info = self.probe(source)
+            image = clip.get("source_type") == "image"
+            info = (
+                {
+                    "duration_ms": clip["duration_ms"],
+                    "has_audio": False,
+                    "width": clip["width"],
+                    "height": clip["height"],
+                }
+                if image
+                else self.probe(source)
+            )
             start, end = clip["trim_in_ms"], clip["trim_out_ms"]
             if start < 0 or end > info["duration_ms"] or end <= start:
                 raise RuntimeError("来源实际时长已变化，裁剪范围无效，请同步视频后重试")
@@ -318,10 +371,15 @@ class VideoRenderer:
                     "-protocol_whitelist",
                     "file,pipe",
                     *([] if precise else ["-ss", str(start / 1000)]),
+                    *(["-loop", "1", "-framerate", "30"] if image else []),
                     "-i",
                     str(source),
                 ]
-                silent = clip["muted"] or not info["has_audio"]
+                silent = (
+                    clip["muted"]
+                    or not info["has_audio"]
+                    or snapshot.get("sound", {}).get("document", {}).get("schema_version", 1) >= 2
+                )
                 if silent:
                     args += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
                 args += [
@@ -343,8 +401,9 @@ class VideoRenderer:
                         else ""
                     )
                     + "setpts=PTS-STARTPTS,"
-                    + f"scale={width}:{height}:force_original_aspect_ratio=decrease:"
-                    + f"force_divisible_by=2,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1",
+                    + frame_filter(
+                        clip.get("transform"), width, height, info["width"], info["height"]
+                    ),
                     "-af",
                     "aresample=48000:async=1:first_pts=0,apad"
                     + (

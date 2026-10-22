@@ -21,7 +21,6 @@ const settingsMockContext: ToolContext = {
     selectedVideoCount: 0,
     canvasTool: "move",
     workspaceMode: "professional",
-    isProjectLinked: false,
     canUndo: false,
     canRedo: false,
     extractingVideoFrames: false,

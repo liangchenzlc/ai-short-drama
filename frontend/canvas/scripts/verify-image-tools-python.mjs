@@ -234,7 +234,7 @@ try {
     const recovered = await graph(owner, document => document.nodes.length === 3 && document.nodes.some(node => node.id === draft.child.id));
     assert.equal(report.http.filter(entry => entry.path === resources && entry.method === "POST").length, beforeRecoveryUploads, "恢复保存应沿用派生图，不重新上传/裁切");
     assert.equal(recovered.nodes.filter(node => node.id === draft.child.id).length, 1);
-    assert.equal((await member.request.get(`${origin}${resources}/${privateResource.id}/file`)).status(), 200);
+    assert.equal((await member.request.get(`${origin}${resources}/${privateResource.id}/file`)).status(), 404);
     report.commit_failure_recovered_same_child = true;
 
     report.step = "原裁切上传失败与提交失败区分";
@@ -270,7 +270,7 @@ try {
     assert.ok(!report.upload_failure_commit_responses.some(entry => entry.status < 400), "上传未确认时不能提交成功产物");
 
     report.step = "共享作品与私人资产权限";
-    assert.deepEqual(await (await member.request.get(`${origin}${resources}/${resource.id}/file`)).body(), cropBytes);
+    assert.equal((await member.request.get(`${origin}${resources}/${resource.id}/file`)).status(), 404);
     assert.equal((await member.request.get(`${origin}/api/v1/canvas-runtime/assets/${child.metadata.assetId}`)).status(), 404);
     assert.equal((await outsider.request.get(`${origin}${path}/my-document`)).status(), 404);
     assert.equal((await outsider.request.get(`${origin}${resources}/${resource.id}/file`)).status(), 404);

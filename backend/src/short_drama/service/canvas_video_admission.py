@@ -30,7 +30,6 @@ def freeze_video_references(
     generation, prepared: dict, project_id: int, adapter: str, *, channel_key="", model=""
 ) -> None:
     request = prepared["canvas_request"]["input"]
-    allows_inline = channel_key == "beefapi" and model.lower() == "wan3.0-video"
     for kind, group, field in (
         ("image", "referenceImages", "reference_media_ids"),
         ("video", "referenceVideos", "video_reference_media_ids"),
@@ -50,10 +49,8 @@ def freeze_video_references(
                         "reference_media_requires_url", "参考媒体需要有效的 HTTPS 链接", 422
                     )
                 continue
-            if (
-                adapter == "canvas_newapi_video_generations.v1"
-                and not allows_inline
-                or adapter == "canvas_openai_videos.v1"
+            if adapter == "canvas_newapi_video_generations.v1" or (
+                adapter == "canvas_openai_videos.v1"
                 and model == AGNES_VIDEO
                 and not getattr(
                     getattr(generation, "settings", None), "provider_references_enabled", False

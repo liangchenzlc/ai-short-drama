@@ -150,12 +150,6 @@ const manifest = {
     externalPackages: [...externalPackages].sort(), files, apiCalls, diagnostics,
 };
 const shouldWrite = process.argv.includes("--write");
-function sourceBytes(source, bytes) {
-    if (source === "web/src/lib/beefapi-video-contracts.ts") {
-        return Buffer.from(bytes.toString("utf8").replace(sharedContract.oldImport, sharedContract.newImport));
-    }
-    return bytes;
-}
 if (shouldWrite) {
     const adaptationsPath = resolve(packageRoot, "source-adaptations.json");
     const adaptations = existsSync(adaptationsPath) ? JSON.parse(readFileSync(adaptationsPath, "utf8")) : {};
@@ -172,7 +166,7 @@ if (shouldWrite) {
     for (const [name, metadata] of Object.entries(files)) {
         const destination = resolve(packageRoot, name);
         mkdirSync(dirname(destination), { recursive: true });
-        writeFileSync(destination, sourceBytes(metadata.source, readFileSync(resolve(sourceRoot, metadata.source))));
+        writeFileSync(destination, readFileSync(resolve(sourceRoot, metadata.source)));
     }
     writeFileSync(resolve(packageRoot, "source-manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 }

@@ -5,7 +5,7 @@ export interface EditorAttributes { bold?: boolean; italic?: boolean; header?: 1
 export interface EditorDocument { ops: { insert: string; attributes?: EditorAttributes }[] }
 export interface WritingScript extends WritingNovel { state: 'unconfirmed' | 'confirmed'; editor_document?: EditorDocument | null }
 export interface WritingResponse {
-  episode_id: string; content_version: string; novel: WritingNovel | null;
+   content_version: string; novel: WritingNovel | null;
   editing_script: WritingScript | null; confirmed_script_id: string | null;
 }
 export interface NovelBody { content_version: string; content: string }
@@ -17,8 +17,8 @@ export interface WritingTransport {
   select(id: string, body: { content_version: string }): Promise<WritingResponse>;
   confirm(id: string, body: { content_version: string }): Promise<WritingResponse>;
 }
-export function episodeWritingApi(projectId: string, episodeId: string): WritingTransport {
-  const root = `/projects/${encodeURIComponent(projectId)}/episodes/${encodeURIComponent(episodeId)}`;
+export function episodeWritingApi(projectId: string): WritingTransport {
+  const root = `/projects/${encodeURIComponent(projectId)}`;
   return {
     async get() { return (await http.get<WritingResponse>(`${root}/writing`)).data; },
     async novel(body) { return (await http.put(`${root}/novel`, body)).data; },

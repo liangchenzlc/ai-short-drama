@@ -67,7 +67,7 @@ try {
     const context = contexts[0];
     const project = await read(await context.request.post(`${origin}/api/v1/projects`, {
         headers: { "Idempotency-Key": "browser-python-project" },
-        data: { name: "真实 Python 浏览器验证", aspect: "16:9", workspace_mode: "infinite_canvas" },
+        data: { name: "真实 Python 浏览器验证", workspace_mode: "infinite_canvas" },
     }));
     const path = `${origin}/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
     const initial = await read(await context.request.get(`${path}/my-document`));
@@ -120,19 +120,23 @@ try {
         await context.addCookies([csrf]);
         await context.setExtraHTTPHeaders({ Origin: origin, "X-CSRF-Token": csrf.value });
     }
-    await page.evaluate(async ({ key, input }) => {
+    await page.evaluate(async key => {
         const { http } = await import("/canvas-app/src/services/api/request.ts");
-        await http.put(`/canvas-projects/${encodeURIComponent(key)}/viewport`, input);
-    }, { key: initial.source_key, input: viewportInput });
+        // Initial fit can save a viewport while the rejected CSRF write is being checked.
+        const { project } = await http.get(`/canvas-projects/${encodeURIComponent(key)}`);
+        await http.put(`/canvas-projects/${encodeURIComponent(key)}/viewport`, {
+            expected_viewport: project.viewport, viewport: project.viewport,
+        });
+    }, initial.source_key);
     report.valid_save_recovered_after_csrf_failure = true;
     await page.evaluate(() => document.fonts.ready);
     const before = await node.boundingBox();
     await Promise.all([
         page.waitForResponse(response => response.url().endsWith("/commits") && response.ok()),
         (async () => {
-            await page.mouse.move(before.x + 20, before.y + 8);
+            await page.mouse.move(before.x + 80, before.y + 8);
             await page.mouse.down();
-            await page.mouse.move(before.x + 130, before.y + 68, { steps: 12 });
+            await page.mouse.move(before.x + 190, before.y + 68, { steps: 12 });
             await page.mouse.up();
         })(),
     ]);

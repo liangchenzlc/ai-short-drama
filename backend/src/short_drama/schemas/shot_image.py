@@ -13,10 +13,10 @@ from .base import (
 
 
 class ShotImageCreate(InputModel):
-    episode_id: Identifier
+    project_id: Identifier
     shot_id: Identifier
     layout: Literal["single", "four", "five", "nine"] = "single"
-    aspect: Literal["16:9", "9:16", "1:1", "4:3", "3:4"]
+    aspect: Literal["16:9", "9:16", "1:1", "4:3", "3:4"] | None = None
     resolution: Annotated[str, Field(max_length=32), AfterValidator(nonblank)] = "2K"
     prompt: MediumText = ""
     media_id: Identifier
@@ -26,7 +26,7 @@ class ShotImageCreate(InputModel):
 
 class ShotImageUpdate(InputModel):
     layout: Literal["single", "four", "five", "nine"] = None
-    aspect: Literal["16:9", "9:16", "1:1", "4:3", "3:4"] = None
+    aspect: Literal["16:9", "9:16", "1:1", "4:3", "3:4"] | None = None
     resolution: Annotated[str, Field(max_length=32), AfterValidator(nonblank)] = None
     prompt: MediumText = None
     media_id: Identifier = None
@@ -36,10 +36,10 @@ class ShotImageUpdate(InputModel):
 
 class ShotImageRead(ReadModel):
     id: Identifier
-    episode_id: Identifier
+    project_id: Identifier
     shot_id: Identifier
     layout: Literal["single", "four", "five", "nine"]
-    aspect: Literal["16:9", "9:16", "1:1", "4:3", "3:4"]
+    aspect: Literal["16:9", "9:16", "1:1", "4:3", "3:4"] | None = None
     resolution: Annotated[str, Field(max_length=32), AfterValidator(nonblank)]
     prompt: MediumText
     media_id: Identifier

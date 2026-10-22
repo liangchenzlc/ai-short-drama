@@ -29,8 +29,8 @@ class ShotImage(Base):
         nullable=False,
         comment="应用雪花算法生成；稳定且不可变的记录标识",
     )
-    episode_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), nullable=False, comment="所属分集，与镜头一致"
+    project_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), nullable=False, comment="所属项目，与镜头一致"
     )
     shot_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), nullable=False, comment="所属镜头")
     layout: Mapped[str] = mapped_column(
@@ -39,9 +39,9 @@ class ShotImage(Base):
         server_default=text("'single'"),
         comment="单图 / 四格 / 五格 / 九格",
     )
-    aspect: Mapped[str] = mapped_column(
+    aspect: Mapped[str | None] = mapped_column(
         VARCHAR(8, collation="utf8mb4_0900_bin"),
-        nullable=False,
+        nullable=True,
         comment="具体画幅：16:9、9:16、1:1、4:3或3:4",
     )
     resolution: Mapped[str] = mapped_column(
@@ -101,10 +101,10 @@ class ShotImage(Base):
 
     __table_args__ = (
         UniqueConstraint("shot_id", name="uk_shot_images_shot"),
-        Index("idx_shot_images_episode", "episode_id", "shot_id"),
+        Index("idx_shot_images_creation", "project_id", "shot_id"),
         Index("idx_shot_images_media_id", "media_id"),
         Index("idx_shot_images_model_id", "model_id"),
-        Index("idx_shot_images_shot_id_episode_id", "shot_id", "episode_id"),
+        Index("idx_shot_images_shot_id_project_id", "shot_id", "project_id"),
         ForeignKeyConstraint(
             ["media_id"],
             ["media_files.id"],
@@ -120,9 +120,9 @@ class ShotImage(Base):
             onupdate="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ["shot_id", "episode_id"],
-            ["shot_scripts.id", "shot_scripts.episode_id"],
-            name="fk_shot_images_shot_episode",
+            ["shot_id", "project_id"],
+            ["shot_scripts.id", "shot_scripts.project_id"],
+            name="fk_shot_images_shot_creation",
             ondelete="RESTRICT",
             onupdate="RESTRICT",
         ),

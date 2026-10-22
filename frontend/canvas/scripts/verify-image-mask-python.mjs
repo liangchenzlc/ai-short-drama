@@ -235,7 +235,8 @@ try {
             const result = JSON.parse(completed.resultJson).images[0];
             const child = final.nodes.find(node => node.id === item.nodeId);
             assert.equal(child.metadata.storageKey, result.storageKey);
-            const shared = await member.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`);
+            const shared = await owner.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`);
+            assert.equal((await member.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`)).status(), 404);
             assert.ok(shared.ok());
             report.outputs.push({ taskId: item.id, nodeId: item.nodeId, storageKey: result.storageKey, sha256: createHash("sha256").update(await shared.body()).digest("hex") });
             assert.equal((await member.request.get(`${origin}${resources}/${item.maskResourceId}/file`)).status(), 404);

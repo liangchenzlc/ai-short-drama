@@ -1,0 +1,48 @@
+.assistant-memory-dialog { width: min(900px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); color: var(--ink); }
+.assistant-memory-body { padding: 12px 16px 16px; overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
+.assistant-memory-toolbar, .assistant-memory-search, .assistant-memory-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-block: 12px; }
+.assistant-memory-toolbar { justify-content: space-between; }
+.assistant-memory-toolbar p { margin: 0; color: var(--sub); font-size: 12px; }
+.assistant-memory-toolbar > .ant-select { min-width: 190px; }
+.assistant-memory-search > .ant-input { flex: 1; min-width: 120px; }
+.assistant-memory-columns { display: grid; grid-template-columns: minmax(180px, .75fr) minmax(0, 1.4fr); border-top: 1px solid var(--hair); }
+.assistant-memory-list { min-width: 0; padding: 12px 12px 0 0; border-right: 1px solid var(--hair); }
+.assistant-memory-entry { width: 100%; padding: 10px; margin-bottom: 4px; text-align: left; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--ink); cursor: pointer; }
+.assistant-memory-entry:hover:not(:disabled) { background: var(--surface-hover); }
+.assistant-memory-entry[aria-pressed=true] { background: var(--surface-muted); border-color: var(--border-control); }
+.assistant-memory-entry:disabled { cursor: default; opacity: .65; }
+.assistant-memory-entry span, .assistant-memory-entry small { display: block; overflow-wrap: anywhere; }
+.assistant-memory-entry span { font-weight: 550; }
+.assistant-memory-entry small, .assistant-memory-help { color: var(--sub); font-size: 12px; line-height: 1.7; }
+.assistant-memory-list nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-block: 12px; font-size: 12px; color: var(--sub); }
+.assistant-memory-editor { min-width: 0; padding: 12px 0 0 16px; }
+.assistant-memory-editor h3, .assistant-memory-context h3 { font-size: 14px; margin: 0 0 12px; }
+.assistant-memory-editor h4 { font-size: 12px; margin: 16px 0 6px; }
+.assistant-memory-editor label:not(.ant-checkbox-wrapper) { display: grid; gap: 5px; margin-bottom: 10px; font-size: 12px; color: var(--sub); }
+.assistant-memory-editor .ant-select { width: 100%; }
+.assistant-memory-content, .assistant-memory-comparison p, .assistant-memory-editor details p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.8; }
+.assistant-memory-comparison { padding: 12px; margin-top: 12px; background: var(--surface-muted); border: 1px solid var(--border-control); border-radius: 6px; }
+.assistant-memory-editor details { border-top: 1px solid var(--hair); margin-top: 14px; padding-top: 12px; }
+.assistant-memory-editor summary { cursor: pointer; font-size: 12px; color: var(--sub); }
+.assistant-memory-editor details article { margin-top: 12px; }
+.assistant-memory-context { padding-top: 8px; }
+.assistant-memory-context ul { padding: 0; list-style: none; }
+.assistant-memory-context li { padding: 12px 0; border-bottom: 1px solid var(--hair); overflow-wrap: anywhere; }
+.assistant-memory-context li p { margin: 6px 0; font-size: 12px; color: var(--sub); }
+.assistant-memory-context li small { display: block; margin-top: 6px; color: var(--sub); }
+.assistant-memory-context h3:not(:first-child) { margin-top: 20px; }
+.assistant-memory-entry:focus-visible, .assistant-memory-editor summary:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+.assistant-memory-review article { padding-block: 14px; border-bottom: 1px solid var(--hair); }
+.assistant-memory-review h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 14px; }
+.assistant-memory-review h4 { margin: 0 0 6px; color: var(--sub); font-size: 12px; }
+.assistant-memory-review-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.assistant-memory-review-comparison p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.8; }
+.assistant-memory-review-comparison small { display: block; margin-top: 8px; color: var(--sub); overflow-wrap: anywhere; }
+.assistant-memory-review nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 14px; color: var(--sub); font-size: 12px; }
+@media (max-width: 600px) {
+  .assistant-memory-review-comparison { grid-template-columns: minmax(0, 1fr); }
+  .assistant-memory-columns { grid-template-columns: minmax(0, 1fr); }
+  .assistant-memory-list { border-right: 0; border-bottom: 1px solid var(--hair); padding-right: 0; }
+  .assistant-memory-editor { padding: 14px 0 0; }
+  .assistant-memory-search > .ant-checkbox-wrapper { width: 100%; }
+}

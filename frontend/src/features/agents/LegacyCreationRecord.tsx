@@ -5,8 +5,8 @@ import { errorMessage } from '../../api/http';
 import type { AgentConversation, ConversationScope } from '../../api/types/agents';
 import { AgentConversationRuntime } from './AgentConversationRuntime';
 
-export function LegacyCreationRecord({ projectId, episodeId, id, accountId, readOnly, beforeSend, onBack, onClose, onConversation, onOpenArtifact }: {
-  projectId: string; episodeId: string; id: string; accountId: string; readOnly: boolean;
+export function LegacyCreationRecord({ projectId, id, accountId, readOnly, beforeSend, onBack, onClose, onConversation, onOpenArtifact }: {
+  projectId: string; id: string; accountId: string; readOnly: boolean;
   onBack: () => void; onClose: () => void; onConversation: (conversation: AgentConversation | null) => void;
   beforeSend: () => Promise<boolean>;
   onOpenArtifact: (id: string, runId?: string, conversationId?: string, scope?: ConversationScope) => void;
@@ -20,12 +20,12 @@ export function LegacyCreationRecord({ projectId, episodeId, id, accountId, read
     const controller = new AbortController(); setLoading(true); setError(''); setConversation(null); callback.current(null);
     agentsApi.conversation(id, controller.signal).then(item => {
       if (controller.signal.aborted) return;
-      if (item.project_id !== projectId || item.episode_id !== episodeId || item.scope_version === 2) throw new Error('这段历史记录不属于当前分集。');
+      if (item.project_id !== projectId || item.scope_version === 2) throw new Error('这段历史记录不属于当前作品。');
       setConversation(item); callback.current(item);
     }).catch(cause => { if (!controller.signal.aborted) setError(errorMessage(cause)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); callback.current(null); };
-  }, [projectId, episodeId, id, revision]);
+  }, [projectId, id, revision]);
   const scope = conversation ? conversation.scope_version === 1 && conversation.stage && conversation.subject_type && conversation.subject_id && conversation.task_type
     ? { stage: conversation.stage, subject_type: conversation.subject_type, subject_id: conversation.subject_id, task_type: conversation.task_type }
     : undefined : undefined;

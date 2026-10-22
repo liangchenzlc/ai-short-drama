@@ -20,7 +20,6 @@ def smtp_send(settings, payload):
     message["Subject"] = "短剧工作台 · 邮箱验证"
     purposes = {
         "registration": "完成账号注册",
-        "invitation": "接受项目邀请",
         "password_reset": "重置账号密码",
     }
     message.set_content(

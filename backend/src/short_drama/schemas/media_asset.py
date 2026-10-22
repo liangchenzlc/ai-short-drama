@@ -27,7 +27,6 @@ class MediaAssetApply(InputModel):
     target: MediaAssetTarget
     expected_media_id: Identifier | None
     parameters: ApplyParameters = Field(default_factory=ApplyParameters)
-    confirm_shared: bool = False
     expected_row_version: Identifier | None = None
     expected_context_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
     acknowledge_stale_source: bool = False

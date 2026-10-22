@@ -1,6 +1,6 @@
-export function taskOrigin(task: { display_context?: { project?: string | null; episode?: string | null; subject: string; scope: string }; source?: { scene: string } | null }): string {
+export function taskOrigin(task: { display_context?: { project?: string | null; subject: string; scope: string }; source?: { scene: string } | null }): string {
   const context = task.display_context;
-  if (context) return [context.project || context.scope, context.episode, context.subject].filter(Boolean).join(' / ');
+  if (context) return [context.project || context.scope, context.subject].filter(Boolean).join(' / ');
   return ({ novel_script: '小说改编', script_assets: '素材提取', script_shots: '分镜脚本', shot_image: '分镜生图', asset_image: '素材生图' } as Record<string, string>)[task.source?.scene ?? ''] || '通用任务';
 }
 

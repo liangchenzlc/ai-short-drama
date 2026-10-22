@@ -97,10 +97,9 @@ export function localSavedRemotePendingMessage(localAction: string, error: unkno
 
 export async function createCanvasProjectWithRemoteSync(
     title: string,
-    projectId?: string,
     initialContent?: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId">>,
 ): Promise<{ id: string; syncError?: unknown }> {
-    return { ...await createLocalCanvasProject(title, projectId, initialContent), syncError: undefined };
+    return { ...await createLocalCanvasProject(title, initialContent), syncError: undefined };
 }
 
 export async function deleteAssetWithRemoteSync(id: string) {

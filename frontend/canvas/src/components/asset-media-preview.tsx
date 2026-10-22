@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { CachedResourceImage } from "@/components/cached-resource-image";
-import { resolveMediaUrl } from "@/services/file-storage";
+import { useResourceVideoPlayback } from "@/hooks/use-resource-video-playback";
 import type { Asset } from "@/stores/use-asset-store";
 
 type AssetMediaPreviewProps = {
@@ -15,27 +15,18 @@ type AssetMediaPreviewProps = {
 export function AssetMediaPreview({ asset, alt, className = "", fallback = null, hoverPlayDelayMs }: AssetMediaPreviewProps) {
     const hoverTimerRef = useRef<number | null>(null);
     const [mediaFailed, setMediaFailed] = useState(false);
-    const [resolvedVideoUrl, setResolvedVideoUrl] = useState("");
     const videoStorageKey = asset?.kind === "video" ? asset.data.storageKey : undefined;
     const videoFallbackUrl = asset?.kind === "video" ? asset.data.url : "";
+    const playback = useResourceVideoPlayback(videoStorageKey || "", videoFallbackUrl, asset?.kind === "video");
+    const resolvedVideoUrl = playback.url;
     useEffect(() => {
-        let cancelled = false;
-        if (!videoFallbackUrl) {
-            setResolvedVideoUrl("");
-            return () => { cancelled = true; };
-        }
-        setResolvedVideoUrl("");
-        void resolveMediaUrl(videoStorageKey, videoFallbackUrl).then((url) => {
-            if (!cancelled) setResolvedVideoUrl(url || videoFallbackUrl);
-        }).catch(() => {
-            if (!cancelled) setResolvedVideoUrl(videoFallbackUrl);
-        });
-        return () => { cancelled = true; };
-    }, [videoStorageKey, videoFallbackUrl]);
+        setMediaFailed(false);
+        return () => { if (hoverTimerRef.current !== null) window.clearTimeout(hoverTimerRef.current); };
+    }, [asset?.id, videoStorageKey, videoFallbackUrl]);
     if (!asset) return fallback;
     if (mediaFailed) return fallback;
 
-    if (asset.kind === "video" && asset.data.url) {
+    if (asset.kind === "video" && (asset.data.url || videoStorageKey)) {
         if (!resolvedVideoUrl) return fallback;
         const clearHoverTimer = () => {
             if (hoverTimerRef.current !== null) {
@@ -51,9 +42,9 @@ export function AssetMediaPreview({ asset, alt, className = "", fallback = null,
                 aria-label={alt}
                 muted
                 playsInline
-                preload="auto"
+                preload="metadata"
                 className={className}
-                onError={() => setMediaFailed(true)}
+                onError={() => { if (!playback.requestCompatible()) setMediaFailed(true); }}
                 onMouseEnter={(event) => {
                     if (hoverPlayDelayMs === undefined) return;
                     const video = event.currentTarget;

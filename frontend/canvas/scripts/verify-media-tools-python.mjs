@@ -190,14 +190,6 @@ try {
     }
     for (const preview of report.video_previews) assert.equal(restored.nodes.find(node => node.id === preview.id).metadata.videoPreview.storageKey, preview.storageKey);
     report.cookie_only_recovery = true;
-    const member = await context(config.memberUsername);
-    const shared = await graph(member);
-    for (const result of report.outputs) {
-        assert.ok(shared.nodes.some(node => node.id === result.id && node.metadata.storageKey === `resource:${result.resource_id}`));
-        const response = await member.request.get(`${origin}/api/v1/canvas-runtime/resources/${result.resource_id}/file`);
-        assert.ok(response.ok());
-        assert.equal(createHash("sha256").update(await response.body()).digest("hex"), result.checksum);
-    }
     assert.equal(report.resource_posts, uploads, "Fresh context must preserve permanent output and preview identities");
     assert.equal(report.task_posts, 0);
     assert.deepEqual(report.page_errors, []);

@@ -27,7 +27,7 @@ class NovelScriptRecord(Base):
         comment="应用雪花算法生成；稳定且不可变的生成记录标识",
     )
     novel_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), nullable=False, comment="作为生成来源的分集小说"
+        BIGINT(unsigned=True), nullable=False, comment="作为生成来源的项目小说"
     )
     script_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True),
@@ -63,14 +63,14 @@ class NovelScriptRecord(Base):
         Index("idx_novel_script_records_model_id", "model_id"),
         ForeignKeyConstraint(
             ["novel_id"],
-            ["episode_novels.id"],
+            ["project_novels.id"],
             name="fk_novel_script_records_novel_id",
             ondelete="RESTRICT",
             onupdate="RESTRICT",
         ),
         ForeignKeyConstraint(
             ["script_id"],
-            ["episode_scripts.id"],
+            ["project_scripts.id"],
             name="fk_novel_script_records_script_id",
             ondelete="RESTRICT",
             onupdate="RESTRICT",

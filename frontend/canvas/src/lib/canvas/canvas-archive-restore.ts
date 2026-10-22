@@ -315,7 +315,6 @@ export async function restoreCanvasArchive(input: Blob | OpenCanvasArchive, host
             const sourceWorkspaceProjectId = canvasWorkspaceProjectId(item.project);
             const importedProjectId = restoreHost.importProject({
                 ...normalizeLocalCanvasProject(item.project),
-                projectId: undefined,
                 folderId: item.project.folderId ? folderIdMap.get(item.project.folderId) : undefined,
                 title: item.project.title || "导入画布",
                 nodes: remappedNodes,

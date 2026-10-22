@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.canvas_workspace_dao import CanvasWorkspaceDAO
 from short_drama.domain.canvas import CanvasWorkspaceUserState
-from short_drama.schemas.canvas_editor_tools import EDITOR_TOOL_PREFERENCES_KEY
 from short_drama.schemas.canvas_workspace import (
     PREFERENCE_FIELDS,
     CanvasWorkspacePreferencesRequest,
@@ -76,10 +75,6 @@ class CanvasWorkspaceService(BaseService):
                 )
             if state:
                 preferences = deepcopy(payload.preferences)
-                if EDITOR_TOOL_PREFERENCES_KEY in state.preferences_json:
-                    preferences[EDITOR_TOOL_PREFERENCES_KEY] = deepcopy(
-                        state.preferences_json[EDITOR_TOOL_PREFERENCES_KEY]
-                    )
                 if state.preferences_json != preferences:
                     state.preferences_json = preferences
                     state.row_version += 1

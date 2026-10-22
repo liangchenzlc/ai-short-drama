@@ -57,6 +57,11 @@ from .canvas_video_adapters import (
     canvas_video_resolved_parameters,
     parse_canvas_video_result,
 )
+from .image_operations import (
+    is_image_operation,
+    operation_text_messages,
+    operation_vision_supported,
+)
 from .transport import validated_url
 from .types import GenerationError, GenerationResult
 
@@ -418,6 +423,15 @@ def build_submission(snapshot, request, adapter):
     if kind != snapshot.get("service_type"):
         raise GenerationError("unsupported_protocol")
     canvas_parameters = None
+    if request.get("image_edit_parameters") is not None:
+        if not is_image_operation(request) or kind != "image" or "canvas_parameters" in request:
+            _unsupported()
+        try:
+            canvas_parameters = CanvasImageParameters.model_validate(
+                request["image_edit_parameters"]
+            )
+        except ValidationError:
+            raise GenerationError("unsupported_parameters") from None
     if request.get("canvas_parameters") is not None:
         if (request.get("source") or {}).get("scene") not in {"canvas_node", "canvas_model_test"}:
             _unsupported()
@@ -526,7 +540,7 @@ def build_submission(snapshot, request, adapter):
                 "video_reference_media_ids",
                 "video_reference_urls",
             }
-            if canvas_references
+            if canvas_references or is_image_operation(request)
             else {"messages"},
         )
         messages = value.get("messages")
@@ -551,6 +565,8 @@ def build_submission(snapshot, request, adapter):
                     _unsupported()
                 if instructions := config.get("systemPrompt", "").strip():
                     body["instructions"] = instructions
+        elif is_image_operation(request):
+            messages = operation_text_messages(snapshot, request, adapter, messages)
         body["input" if responses else "messages"] = messages
         # The worker collects SSE internally; the browser still uses task polling.
         body["stream"] = True
@@ -627,7 +643,11 @@ def build_submission(snapshot, request, adapter):
                 body["image"] = refs
             suffix = "/images/edits" if refs else "/images/generations"
         elif adapter == "ark_images.v1":
-            body.update(prompt=prompt, response_format="url", stream=False)
+            # Standard multi-image generation must return inline bytes. Provider URLs
+            # are short-lived and each URL requires an independent download; one
+            # expired/failed URL otherwise turns an otherwise valid 4-image result
+            # into partial_result during archive.
+            body.update(prompt=prompt, response_format="b64_json", stream=False)
             if refs:
                 body["image"] = refs
             size = _size(params, family="ark", model=model)
@@ -1180,6 +1200,8 @@ def capabilities(snapshot):
         "reference_images": False,
         "first_frame": False,
         "last_frame": False,
+        "mask": False,
+        "vision": False,
     }
     try:
         adapter = select_adapter(snapshot)
@@ -1190,6 +1212,8 @@ def capabilities(snapshot):
     edit = model.startswith("qwen-image-edit") or model == "wan2.6-image"
     return {
         "known": True,
+        "mask": adapter == "openai_images.v1" and _openai_image_references(model),
+        "vision": kind == "text" and operation_vision_supported(snapshot, adapter),
         "parameters": {
             "audio": ["voice"],
             "text": ["temperature", "max_output_tokens"],

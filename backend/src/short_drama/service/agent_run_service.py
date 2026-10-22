@@ -22,9 +22,10 @@ from short_drama.agent.state import (
     mark_scheduled,
 )
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
-from short_drama.domain import AIModelConfig, Asset, Episode, ShotScript
+from short_drama.domain import AIModelConfig, Asset, Project, ShotScript
 from short_drama.domain.agent import (
     AgentArtifact,
+    AgentConversation,
     AgentEvent,
     AgentMessage,
     AgentRun,
@@ -91,6 +92,7 @@ def read_run(session, run, *, tool=_UNSET, queue_position=None):
         )
     return RunRead(
         id=run.id,
+        task_id=getattr(run, "task_id", None),
         conversation_id=run.conversation_id,
         status=run.status,
         phase=run.phase,
@@ -139,7 +141,9 @@ class AgentRunService(AgentConversationService):
                 )
         return MessageRead(
             id=row.id,
+            task_id=row.task_id,
             seq=row.seq,
+            row_version=row.row_version,
             role=row.role,
             content=row.content,
             references=references,
@@ -201,7 +205,9 @@ class AgentRunService(AgentConversationService):
                     raise Conflict("Idempotency key was used for a different message")
                 run = self.session.scalar(
                     select(AgentRun)
-                    .where(AgentRun.trigger_message_id == existing.id)
+                    .where(
+                        AgentRun.trigger_message_id == existing.id, AgentRun.trigger_revision == 0
+                    )
                     .with_for_update()
                     .execution_options(populate_existing=True)
                 )
@@ -358,8 +364,8 @@ class AgentRunService(AgentConversationService):
                     "scope": {
                         "project_id": str(conversation.project_id),
                         **(
-                            {"episode_id": str(conversation.episode_id)}
-                            if conversation.episode_id is not None
+                            {"project_id": str(conversation.project_id)}
+                            if conversation.project_id is not None
                             else {}
                         ),
                         **(conversation_scope(conversation) or {}),
@@ -547,6 +553,10 @@ class AgentRunService(AgentConversationService):
     def stop(self, identifier):
         with self._transaction():
             conversation, run = self._run(identifier, lock=True)
+            if run.task_id is not None:
+                raise WorkflowError(
+                    "assistant_task_control_required", "请通过当前任务请求边界停止", 409
+                )
             if run.status not in TERMINAL:
                 run.cancel_requested = 1
                 tools = self.session.scalars(
@@ -698,6 +708,23 @@ class AgentRunService(AgentConversationService):
                 .order_by(AgentEvent.seq)
                 .limit(100)
             ).all()
+            if conversation.scope_version == 3:
+                ceiling = (
+                    self.session.scalar(
+                        select(AgentConversation.next_event_seq).where(
+                            AgentConversation.id == conversation.id
+                        )
+                    )
+                    - 1
+                )
+                if (
+                    cursor > ceiling
+                    or (not rows and cursor < ceiling)
+                    or any(row.seq != cursor + index + 1 for index, row in enumerate(rows))
+                ):
+                    raise WorkflowError(
+                        "agent_event_resync_required", "事件游标已失效，请重新读取会话快照", 409
+                    )
             return [EventRead.model_validate(row) for row in rows]
 
     def continue_after_adoption(self, identifier, payload):
@@ -720,7 +747,7 @@ class AgentRunService(AgentConversationService):
                 select(AgentArtifact.tool_call_id).where(
                     AgentArtifact.id == values.artifact_id,
                     AgentArtifact.project_id == conversation.project_id,
-                    AgentArtifact.episode_id == conversation.episode_id,
+                    AgentArtifact.project_id == conversation.project_id,
                 )
             )
             tool = self.session.scalar(
@@ -740,17 +767,17 @@ class AgentRunService(AgentConversationService):
             if artifact.status != "applied" or artifact.row_version != values.artifact_row_version:
                 raise Conflict("Adopt this candidate before continuing")
             receipt = artifact.apply_receipt
-            episode = self.session.scalar(
-                select(Episode)
-                .where(Episode.id == conversation.episode_id)
+            creation = self.session.scalar(
+                select(Project)
+                .where(Project.id == conversation.project_id)
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
-            for field in ("content_version", "storyboard_version", "episode_row_version"):
+            for field in ("content_version", "storyboard_version", "project_row_version"):
                 actual = (
-                    episode.row_version
-                    if field == "episode_row_version"
-                    else getattr(episode, field)
+                    creation.row_version
+                    if field == "project_row_version"
+                    else getattr(creation, field)
                 )
                 if field not in receipt or actual != int(receipt[field]):
                     raise Conflict("The work changed after adoption; review a new plan")
@@ -769,7 +796,7 @@ class AgentRunService(AgentConversationService):
             for step in checkpoint["authorization"]["steps"]:
                 if step["id"] in checkpoint["authorization"].get("consumed_steps", []):
                     continue
-                for field in ("content_version", "storyboard_version", "episode_row_version"):
+                for field in ("content_version", "storyboard_version", "project_row_version"):
                     step["source"][field] = int(receipt[field])
                 if (
                     step["target_kind"] == "asset"

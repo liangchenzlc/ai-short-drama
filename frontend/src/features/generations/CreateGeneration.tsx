@@ -163,7 +163,7 @@ export function CreateGeneration({ kind, onClose, onCreated }: { kind: Generatio
       <p className="generation-hint">可选参数需符合所选模型能力。提交生成可能产生模型调用费用，生成结果不会自动替换项目内容。</p>
       {error && <Alert type="error" showIcon message={error} description="表单已保留。保持内容不变再次提交会复用本次请求；修改内容后会作为新请求提交。" />}
     </Form>
-  </Drawer>{imageTarget && <ImagePicker busy={pending || uploading} onClose={() => setImageTarget(null)} onSelect={async (id, asset) => {
+  </Drawer>{imageTarget && <ImagePicker purpose="generation-input" busy={pending || uploading} onClose={() => setImageTarget(null)} onSelect={async (id, asset) => {
     if (inFlight.current || uploadLock.current) return false;
     if (imageTarget === 'reference_media_ids') {
       const ids = (form.getFieldValue('reference_media_ids') ?? '').split(',').filter(Boolean);

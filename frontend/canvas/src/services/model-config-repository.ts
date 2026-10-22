@@ -125,16 +125,6 @@ export function createModelConfigRepository(dependencies: ModelConfigRepositoryD
     };
 }
 
-function omitManagedBeefAPISecrets(config: AiConfig): AiConfig {
-    return {
-        ...config,
-        channels: config.channels.map((channel) => {
-            if (channel.id !== "beefapi" || !channel.pinned) return channel;
-            return { ...channel, apiKey: "", secretKey: "" };
-        }),
-    };
-}
-
 let applyingAcknowledgement = false;
 function applyAcknowledgedConfig(config: AiConfig) {
     const normalized = normalizeConfigSnapshot({ config }).config;
@@ -145,7 +135,7 @@ function applyAcknowledgedConfig(config: AiConfig) {
 }
 const repository = createModelConfigRepository({
     read: getLocalModelConfig,
-    write: (config, expectedRevision) => saveLocalModelConfig(omitManagedBeefAPISecrets(config), expectedRevision),
+    write: (config, expectedRevision) => saveLocalModelConfig(config, expectedRevision),
     acknowledge: (submitted, current, durable) => applyAcknowledgedConfig(reconcileHostModelConfigAck(submitted, current, durable)),
     applyRefresh: applyAcknowledgedConfig,
 });

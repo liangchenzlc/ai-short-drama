@@ -235,7 +235,8 @@ try {
         assert.equal(task.status, "succeeded");
         const result = JSON.parse(task.resultJson).images[0];
         assert.equal(node.metadata.storageKey, result.storageKey);
-        const shared = await member.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`);
+        const shared = await owner.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`);
+        assert.equal((await member.request.get(`${origin}${resources}/${result.storageKey.slice(9)}/file`)).status(), 404);
         assert.ok(shared.ok());
         report.results.push({ node_id: nodeId, task_id: task.id, storage_key: result.storageKey, sha256: createHash("sha256").update(await shared.body()).digest("hex") });
     }

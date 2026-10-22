@@ -181,7 +181,7 @@ try {
     assert.equal(config.protocol, "chat-completion");
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
     let owner = await context(config.username);
-    const member = await context(config.memberUsername);
+    const foreign = await context(config.foreignUsername);
     const outsider = await context(config.outsideUsername);
     await open(owner);
     report.step = "原 Skill 连接点创建文字";
@@ -221,7 +221,7 @@ try {
     await eventually(async () => read(await owner.request.get(`${origin}${tasks}/${task.id}`)), value => value.status === "running");
     await heldTask(owner, task.id, text.id);
     await providerHeld("old-window-running");
-    for (const other of [member, outsider]) {
+    for (const other of [foreign, outsider]) {
         assert.equal((await other.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
         assert.equal((await other.request.get(`${origin}${tasks}/${task.id}/text-deltas`)).status(), 404);
     }
@@ -323,26 +323,15 @@ try {
     await owner.close();
     page = undefined;
 
-    report.step = "成员仅见共享成品，模板与任务过程保持私人";
-    await open(member);
-    await fit();
-    await page.locator('[data-node-id="skill-input"]').getByText("未配置技能模板", { exact: true }).waitFor({ state: "visible" });
-    await page.locator(`[data-node-id="${text.id}"]`).getByText(actual, { exact: true }).waitFor({ state: "visible" });
-    const visible = await page.locator("body").innerText();
-    for (const metadata of [config.privateMetadata, config.updatedPrivateMetadata]) {
-        for (const value of [metadata.content, metadata.skillSnapshot.name, metadata.skillSnapshot.template]) assert.ok(!visible.includes(value), value);
-    }
-    const shared = await graph(member);
-    assert.deepEqual(shared.nodes.find(node => node.id === "skill-input").metadata, {});
-    assert.deepEqual(shared.nodes.find(node => node.id === text.id).metadata, { content: actual, fontSize: 14, generatedFromNodeId: text.id });
-    for (const other of [member, outsider]) {
+    report.step = "作品与私人任务均拒绝跨账号访问";
+    for (const other of [foreign, outsider]) {
         assert.equal((await other.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
         assert.equal((await other.request.get(`${origin}${tasks}/${task.id}/text-deltas`)).status(), 404);
         assert.equal((await other.request.get(`${origin}/api/v1/ai-model-configs/${config.modelId}`)).status(), 404);
     }
     assert.equal((await outsider.request.get(`${origin}${path}/my-document`)).status(), 404);
-    await page.screenshot({ path: resolve(output, "skill-member.png") });
-    report.member_private_input_hidden = true;
+    assert.equal((await foreign.request.get(`${origin}${path}/my-document`)).status(), 404);
+    report.foreign_owner_denied = true;
     assert.equal(report.task_post_count, 1);
     assert.equal(report.resource_post_count, 0);
     assert.equal(report.provider_prepost_checks.length, 3);

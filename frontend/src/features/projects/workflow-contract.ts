@@ -2,17 +2,17 @@ export interface WorkflowShot {
   id: string;
   row_version: string;
   context_hash: string;
-  image_settings: { layout: 'single' | 'four' | 'five' | 'nine'; aspect: 'inherit' | '16:9' | '9:16' | '1:1' | '4:3' | '3:4'; resolution: '1K' | '2K' | '4K' };
+  image_settings: { layout: 'single' | 'four' | 'five' | 'nine'; aspect: null | '16:9' | '9:16' | '1:1' | '4:3' | '3:4'; resolution: '1K' | '2K' | '4K' };
   image?: { media_id: string } | null;
 }
 
-export function novelScriptRequest(projectId: string, episodeId: string, contentVersion: string, instructions: string) {
-  return { source: { scene: 'novel_script' as const, project_id: projectId, episode_id: episodeId, content_version: contentVersion }, instructions, parameters: { max_output_tokens: 8192 } };
+export function novelScriptRequest(projectId: string, contentVersion: string, instructions: string) {
+  return { source: { scene: 'novel_script' as const, project_id: projectId, content_version: contentVersion }, instructions, parameters: { max_output_tokens: 8192 } };
 }
 
-export function scriptShotsRequest(projectId: string, episodeId: string, scriptId: string, contentVersion: string, instructions: string, averageShotDurationMs = 3000) {
+export function scriptShotsRequest(projectId: string, scriptId: string, contentVersion: string, instructions: string, averageShotDurationMs = 3000) {
   if (!Number.isInteger(averageShotDurationMs) || averageShotDurationMs < 1000 || averageShotDurationMs > 10000) throw new Error('average shot duration must be 1000..10000 ms');
-  return { source: { scene: 'script_shots' as const, project_id: projectId, episode_id: episodeId, script_id: scriptId, content_version: contentVersion }, storyboard: { average_shot_duration_ms: averageShotDurationMs }, instructions, parameters: { max_output_tokens: 8192 } };
+  return { source: { scene: 'script_shots' as const, project_id: projectId, script_id: scriptId, content_version: contentVersion }, storyboard: { average_shot_duration_ms: averageShotDurationMs }, instructions, parameters: { max_output_tokens: 8192 } };
 }
 
 export function storyboardTiming(shots: readonly { duration_ms?: number }[]) {
@@ -20,12 +20,12 @@ export function storyboardTiming(shots: readonly { duration_ms?: number }[]) {
   return { total_ms, average_ms: shots.length ? Math.round(total_ms / shots.length) : 0 };
 }
 
-export function shotImageRequest(shot: WorkflowShot, prompt: string, referenceMediaIds: readonly string[], count: number, episodeAspect: '16:9' | '9:16' = '16:9') {
+export function shotImageRequest(shot: WorkflowShot, prompt: string, referenceMediaIds: readonly string[], count: number) {
   const ids = [...new Set(referenceMediaIds)];
   return {
     source: { scene: 'shot_image' as const, shot_id: shot.id, layout: shot.image_settings.layout, context_mode: 'saved' as const, row_version: shot.row_version, context_hash: shot.context_hash },
     input: { prompt, reference_media_ids: ids },
-    parameters: { aspect: shot.image_settings.aspect === 'inherit' ? episodeAspect : shot.image_settings.aspect, resolution: shot.image_settings.resolution, count },
+    parameters: { ...(shot.image_settings.aspect ? { aspect: shot.image_settings.aspect } : {}), resolution: shot.image_settings.resolution, count },
   };
 }
 
@@ -48,17 +48,16 @@ export function moveShot<T extends { id: string }>(shots: readonly T[], id: stri
   return next;
 }
 
-export function assetPatch<T extends { row_version: string; name?: string; tags?: string[] }>(draft: T, confirmShared: boolean) {
+export function assetPatch<T extends { row_version: string; name?: string; tags?: string[] }>(draft: T) {
   return {
     ...draft,
     ...(draft.name === undefined ? {} : { name: draft.name.trim() }),
     ...(draft.tags === undefined ? {} : { tags: [...new Set(draft.tags.map((tag) => tag.trim()).filter(Boolean))] }),
-    confirm_shared: confirmShared,
   };
 }
 
-export function assetConfirmRequest(asset: { row_version: string; media_id?: string | null }, mediaId: string, confirmShared: boolean) {
-  return { row_version: asset.row_version, media_id: mediaId, expected_media_id: asset.media_id ?? null, confirm_shared: confirmShared };
+export function assetConfirmRequest(asset: { row_version: string; media_id?: string | null }, mediaId: string) {
+  return { row_version: asset.row_version, media_id: mediaId, expected_media_id: asset.media_id ?? null };
 }
 
 export function assetImagePresentation<

@@ -3,9 +3,10 @@ import { Alert, Button, Skeleton } from 'antd';
 import { storyboardApi, type StoryboardResultPage } from '../../api/modules/storyboard';
 import { errorMessage } from '../../api/http';
 import { LazyLoadMore } from '../../components/ui/LazyLoadMore';
+import { StudioFeedback } from '../../components/ui/StudioFeedback';
 
-export function StoryboardResultPreview({ projectId, episodeId, generationId, busy, disabled = false, error, onApply }: {
-  projectId: string; episodeId: string; generationId: string;
+export function StoryboardResultPreview({ projectId, generationId, busy, disabled = false, error, onApply }: {
+  projectId: string; generationId: string;
   busy: boolean; disabled?: boolean; error?: string;
   onApply: (mode: 'append' | 'replace') => void;
 }) {
@@ -19,7 +20,7 @@ export function StoryboardResultPreview({ projectId, episodeId, generationId, bu
     if (lock.current) return;
     lock.current = true; setLoading(true); setFailure('');
     try {
-      const next = await storyboardApi(projectId, episodeId).resultShots(generationId, append ? page?.items.length : 0);
+      const next = await storyboardApi(projectId).resultShots(generationId, append ? page?.items.length : 0);
       if (alive.current) setPage(previous => ({ ...next, items: append ? [...(previous?.items ?? []), ...next.items] : next.items }));
     } catch (cause) { if (alive.current) setFailure(errorMessage(cause)); }
     finally { lock.current = false; if (alive.current) setLoading(false); }
@@ -37,7 +38,7 @@ export function StoryboardResultPreview({ projectId, episodeId, generationId, bu
     </li>)}</ol>
       <LazyLoadMore hasMore={!page || page.items.length < page.total} loading={loading} error={failure} onLoad={() => void load(!!page)}/>
     </div>
-    {error && <Alert type="error" message={error}/>}
+    {error && <StudioFeedback type="error" title="采用分镜" noticeKey={`storyboard-apply:${generationId}`} message={error}/>}
     <div className="dialog-actions storyboard-apply-actions"><Button type="primary" loading={busy} disabled={disabled || !page || !!page.applied} onClick={() => onApply('append')}>追加到现有分镜</Button><Button danger loading={busy} disabled={disabled || !page || !!page.applied} onClick={() => onApply('replace')}>替换当前分镜</Button></div>
   </section>;
 }

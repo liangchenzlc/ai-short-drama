@@ -8,7 +8,7 @@ export function projectWritingWorkflow(local: EpisodeWorkflow, writing: Pick<Wri
   const confirmed = writing.loaded && writing.confirmed && !!script.trim();
   return {
     ...local, novel, scriptDraft: script, scriptCandidates: [],
-    approvedScript: confirmed ? { text: script, aspect: local.aspect, style: local.style } : null,
+    approvedScript: confirmed ? { text: script } : null,
     reviews: { ...local.reviews, source: novel.trim() || script.trim() ? 'review' : 'not_started', script: confirmed ? 'confirmed' : script.trim() ? 'review' : 'not_started' },
   };
 }

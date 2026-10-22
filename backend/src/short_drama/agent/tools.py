@@ -21,11 +21,9 @@ from short_drama.core.exceptions import BusinessError
 from short_drama.domain import (
     AIModelConfig,
     Asset,
-    Episode,
-    EpisodeAsset,
-    EpisodeNovel,
-    EpisodeScript,
-    ProjectAsset,
+    Project,
+    ProjectNovel,
+    ProjectScript,
     ShotScript,
 )
 from short_drama.domain.agent import AgentMessage, AgentToolCall, AgentTurn
@@ -35,7 +33,7 @@ from short_drama.service.base import utcnow
 
 SKILLS = {
     "novel.v1": (
-        "小说创作：保持本集风格、人物动机和情节因果。按用户要求提供完整小说候选正文，不改作品。"
+        "小说创作：保持当前作品风格、人物动机和情节因果。按用户要求提供完整小说候选正文，不改作品。"
     ),
     "script.v1": (
         "剧本创作：明确场景、人物动作、对白与节奏；忠实于小说和已确认要求。"
@@ -57,7 +55,7 @@ SKILLS = {
 
 
 class ReadContext(InputModel):
-    kind: Literal["episode", "asset", "shot"] | None = None
+    kind: Literal["project", "asset", "shot"] | None = None
     id: Identifier | None = None
 
 
@@ -79,7 +77,7 @@ def tool_manifest():
     definitions = [
         (
             "read_context",
-            "读取本分集或本项目中明确指定的素材、镜头。返回作品内容，不含私有对话。",
+            "读取本作品或本项目中明确指定的素材、镜头。返回作品内容，不含私有对话。",
             ReadContext,
         ),
         ("read_skill", "按需读取内置版本化创作规范。", ReadSkill),
@@ -111,6 +109,10 @@ def tool_manifest():
 
 
 def prepare_decision(session, conversation, run):
+    if conversation.scope_version == 3:
+        from short_drama.agent.assistant_tools import prepare_decision as prepare_global_decision
+
+        return prepare_global_decision(session, conversation, run)
     from short_drama.agent.assistant_chat import is_assistant_chat, prepare_assistant_decision
 
     if is_assistant_chat(conversation, run):
@@ -161,7 +163,7 @@ def prepare_decision(session, conversation, run):
         "任务受理不明时先read_task_status核对，禁止自动重发或换模型重做。"
         "计划批准后按步骤执行；产物始终是候选，禁止直接采用、确认、删除或任意网络/SQL/代码执行。"
         "媒体计划必须明确模型ID、对象、数量和参数；缺信息时询问，不猜测模型ID。"
-        "可通过分集上下文的media_models和targets解析已存在的模型与对象；"
+        "可通过作品上下文的media_models和targets解析已存在的模型与对象；"
         "多个对象或模型无法依据用户要求唯一确定时，先询问用户。"
         "用户拒绝计划后不得换个工具执行相同任务。"
         "本次授权及固定范围："
@@ -238,18 +240,18 @@ def _read_context(session, conversation, args):
     if spec.kind is None:
         spec = spec.model_copy(
             update={
-                "kind": getattr(conversation, "subject_type", None) or "episode",
+                "kind": getattr(conversation, "subject_type", None) or "project",
                 "id": spec.id or getattr(conversation, "subject_id", None),
             }
         )
-    if spec.kind == "episode":
-        if spec.id is not None and spec.id != conversation.episode_id:
+    if spec.kind == "project":
+        if spec.id is not None and spec.id != conversation.project_id:
             raise ValueError("scope")
-        episode = session.get(Episode, conversation.episode_id)
-        novel = session.scalar(select(EpisodeNovel).where(EpisodeNovel.episode_id == episode.id))
+        creation = session.get(Project, conversation.project_id)
+        novel = session.scalar(select(ProjectNovel).where(ProjectNovel.project_id == creation.id))
         script = (
-            session.get(EpisodeScript, episode.editing_script_id)
-            if episode.editing_script_id
+            session.get(ProjectScript, creation.editing_script_id)
+            if creation.editing_script_id
             else None
         )
         media_models = session.execute(
@@ -265,31 +267,27 @@ def _read_context(session, conversation, args):
         ).all()
         assets = session.execute(
             select(Asset.id, Asset.name, Asset.kind, Asset.row_version)
-            .join(EpisodeAsset, EpisodeAsset.asset_id == Asset.id)
             .where(
-                EpisodeAsset.episode_id == conversation.episode_id,
                 Asset.project_id == conversation.project_id,
+                Asset.deleted_at.is_(None),
             )
-            .order_by(EpisodeAsset.position, Asset.id)
+            .order_by(Asset.position, Asset.id)
             .limit(100)
         ).all()
         shots = session.execute(
             select(ShotScript.id, ShotScript.position, ShotScript.script, ShotScript.row_version)
             .where(
-                ShotScript.episode_id == conversation.episode_id,
+                ShotScript.project_id == conversation.project_id,
                 ShotScript.deleted_at.is_(None),
             )
             .order_by(ShotScript.position, ShotScript.id)
             .limit(100)
         ).all()
         return {
-            "id": str(episode.id),
-            "title": episode.title,
-            "synopsis": episode.synopsis,
-            "aspect": episode.aspect,
-            "style": episode.style,
-            "content_version": episode.content_version,
-            "storyboard_version": episode.storyboard_version,
+            "id": str(creation.id),
+            "title": creation.name,
+            "content_version": creation.content_version,
+            "storyboard_version": creation.storyboard_version,
             "novel": (novel.content if novel else "")[:48000],
             "script": (script.content if script else "")[:48000],
             "skills": list(SKILLS),
@@ -321,9 +319,11 @@ def _read_context(session, conversation, args):
         }
     if spec.kind == "asset":
         row = session.scalar(
-            select(Asset)
-            .join(ProjectAsset, ProjectAsset.asset_id == Asset.id)
-            .where(Asset.id == spec.id, ProjectAsset.project_id == conversation.project_id)
+            select(Asset).where(
+                Asset.id == spec.id,
+                Asset.project_id == conversation.project_id,
+                Asset.deleted_at.is_(None),
+            )
         )
         if row is None:
             raise ValueError("scope")
@@ -339,7 +339,7 @@ def _read_context(session, conversation, args):
     row = session.scalar(
         select(ShotScript).where(
             ShotScript.id == spec.id,
-            ShotScript.episode_id == conversation.episode_id,
+            ShotScript.project_id == conversation.project_id,
             ShotScript.deleted_at.is_(None),
         )
     )
@@ -541,8 +541,21 @@ def _execute(session, conversation, run, tool, settings):
     raise ValueError("unknown tool")
 
 
-def execute_tools(factory, settings, run_id):
+def execute_tools(factory, settings, run_id, *, fence=None):
     """Each effect and its durable result share one short transaction and scope lock."""
+    from short_drama.domain.agent import AgentConversation, AgentRun
+
+    with factory() as session:
+        scope_version = session.scalar(
+            select(AgentConversation.scope_version)
+            .join(AgentRun, AgentRun.conversation_id == AgentConversation.id)
+            .where(AgentRun.id == run_id)
+        )
+    if scope_version == 3:
+        from short_drama.agent.assistant_tools import execute_tools as execute_global_tools
+
+        execute_global_tools(factory, settings, run_id, fence=fence)
+        return
     while True:
         with factory.begin() as session:
             rows = lock_run(session, run_id)

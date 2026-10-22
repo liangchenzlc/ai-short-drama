@@ -1,6 +1,6 @@
 import type { AssetDraft, AssetRead, LibraryAssetRead } from '../../api/modules/assets';
 
-export type AssetSaveStatus = 'saved' | 'dirty' | 'saving' | 'error' | 'conflict' | 'shared';
+export type AssetSaveStatus = 'saved' | 'dirty' | 'saving' | 'error' | 'conflict';
 export interface AssetRecovery { base: LibraryAssetRead; fields: AssetDraft; pending?: AssetDraft | null }
 export interface AssetRecoveryStorage { read: () => AssetRecovery | null; save: (value: AssetRecovery) => void; clear: () => void; backup?: (value: AssetRecovery) => void }
 export interface AssetEditingSnapshot {
@@ -45,11 +45,10 @@ export class AssetEditingSession {
   private persistenceFailed = false;
   private submitted: AssetDraft | null = null;
   private changeNo = 0;
-  private approvedFields: AssetDraft | null = null;
 
   constructor(
     asset: LibraryAssetRead,
-    private update: (id: string, body: AssetDraft & { row_version: string; confirm_shared: boolean }) => Promise<AssetRead>,
+    private update: (id: string, body: AssetDraft & { row_version: string }) => Promise<AssetRead>,
     private recovery?: AssetRecoveryStorage,
     private pauseMs = 1000,
     private read?: (id: string) => Promise<AssetRead>,
@@ -98,21 +97,20 @@ export class AssetEditingSession {
     const asset = { ...this.snapshot.asset, ...patch };
     const dirty = !same(asset, this.snapshot.saved) || !!this.submitted;
     this.changeNo += 1;
-    this.approvedFields = null;
-    const paused = ['conflict', 'shared', 'error'].includes(this.snapshot.status);
+    const paused = ['conflict', 'error'].includes(this.snapshot.status);
     this.publish({ asset, dirty, status: paused ? this.snapshot.status : dirty ? 'dirty' : 'saved', message: paused ? this.snapshot.message : '' });
     this.persist();
     clearTimeout(this.timer);
     if (!paused && dirty) this.timer = setTimeout(() => { void this.flush(); }, this.pauseMs);
   }
-  hasUnsettled = () => this.snapshot.dirty || !!this.pending || ['error', 'conflict', 'shared'].includes(this.snapshot.status);
+  hasUnsettled = () => this.snapshot.dirty || !!this.pending || ['error', 'conflict'].includes(this.snapshot.status);
   hasMemoryOnlyChanges = () => (this.snapshot.dirty || !!this.submitted) && (!this.recovery || this.persistenceFailed || this.snapshot.recoveryBlocked);
   hasUnpersisted = this.hasMemoryOnlyChanges;
 
   flush = (): Promise<LibraryAssetRead | null> => {
     clearTimeout(this.timer);
     if (this.pending) return this.pending;
-    if (this.disposed || !this.active || this.snapshot.recoveryBlocked || ['conflict', 'shared', 'error'].includes(this.snapshot.status)) return Promise.resolve(null);
+    if (this.disposed || !this.active || this.snapshot.recoveryBlocked || ['conflict', 'error'].includes(this.snapshot.status)) return Promise.resolve(null);
     if (!this.snapshot.dirty) return Promise.resolve(this.snapshot.saved);
     const pending = this.saveQueue();
     this.pending = pending;
@@ -129,14 +127,13 @@ export class AssetEditingSession {
       }
       const submittedFields = assetFields(submitted);
       const sequence = this.changeNo;
-      const shared = this.approvedFields !== null && same(this.approvedFields, submittedFields);
       const baseVersion = this.snapshot.saved.row_version;
       this.submitted = { ...submittedFields, name: submitted.name.trim() }; this.persist();
       this.publish({ status: 'saving', message: '' });
       try {
         const next = await this.update(submitted.id, {
           ...submittedFields, name: submitted.name.trim(),
-          row_version: this.snapshot.saved.row_version, confirm_shared: shared,
+          row_version: this.snapshot.saved.row_version,
         });
         if (this.disposed || !this.active || epoch !== this.epoch) return null;
         const saved = { ...this.snapshot.saved, ...next };
@@ -144,7 +141,6 @@ export class AssetEditingSession {
         const asset = sequence === this.changeNo ? saved : { ...saved, ...assetFields(this.snapshot.asset) };
         const dirty = !same(asset, saved);
         this.publish({ saved, asset, dirty, status: dirty ? 'dirty' : 'saved' });
-        this.approvedFields = null;
         this.submitted = null;
         this.persist();
       } catch (cause) {
@@ -158,16 +154,14 @@ export class AssetEditingSession {
               const saved = { ...this.snapshot.saved, ...latest };
               const asset = sequence === this.changeNo ? saved : { ...saved, ...assetFields(this.snapshot.asset) };
               const dirty = !same(asset, saved);
-              this.submitted = null; this.approvedFields = null;
+              this.submitted = null;
               this.publish({ saved, asset, dirty, status: dirty ? 'dirty' : 'saved' }); this.persist(); continue;
             }
             if (latest.row_version !== baseVersion) { this.conflict(); return null; }
           } catch { /* Retain the submitted snapshot until the next safe read. */ }
         }
-        const status = error.code === 'shared_asset_confirmation_required' ? 'shared'
-          : error.code === 'asset_version_conflict' || error.status === 409 ? 'conflict' : 'error';
-        this.publish({ status, message: status === 'shared' ? '保存会同步影响此素材的其他引用。请确认本次修改。'
-          : status === 'conflict' ? '素材已在其他页面修改，草稿已保留。请核对最新版本。'
+        const status = error.code === 'asset_version_conflict' || error.status === 409 ? 'conflict' : 'error';
+        this.publish({ status, message: status === 'conflict' ? '素材已在其他页面修改，草稿已保留。请核对最新版本。'
             : `素材保存失败：${error.message || '无法连接服务端'}，草稿已保留。` });
         this.persist();
         return null;
@@ -191,12 +185,6 @@ export class AssetEditingSession {
     this.publish({ status: this.snapshot.dirty ? 'dirty' : 'saved', message: '' });
     return this.flush();
   };
-  approveShared = async () => {
-    if (this.snapshot.status !== 'shared') return null;
-    this.approvedFields = assetFields(this.snapshot.asset);
-    this.publish({ status: 'dirty', message: '' });
-    return this.flush();
-  };
   reconcile(latest: AssetRead, keepDraft: boolean) {
     if (latest.id !== this.snapshot.asset.id || this.pending || this.snapshot.recoveryBlocked) return;
     if (!keepDraft && this.snapshot.dirty) {
@@ -207,7 +195,6 @@ export class AssetEditingSession {
     const saved = { ...this.snapshot.saved, ...latest };
     const asset = keepDraft ? { ...saved, ...assetFields(this.snapshot.asset) } : saved;
     if (!keepDraft && !unresolved) this.submitted = null;
-    this.approvedFields = null;
     this.changeNo += 1;
     const dirty = !same(asset, saved) || !!this.submitted;
     this.publish({ saved, asset, dirty, status: dirty ? 'dirty' : 'saved', message: '' });
@@ -238,7 +225,7 @@ export class AssetEditingSession {
     if (this.active || this.disposed) return;
     this.active = true;
     const resume = () => {
-      if (['conflict', 'shared'].includes(this.snapshot.status) || this.snapshot.recoveryBlocked) return;
+      if (['conflict'].includes(this.snapshot.status) || this.snapshot.recoveryBlocked) return;
       if (this.submitted) this.publish({ status: 'error' });
       if (this.snapshot.status === 'error') void this.retry(); else void this.flush();
     };
@@ -247,8 +234,7 @@ export class AssetEditingSession {
   dispose() { this.disposed = true; this.suspend(); this.listeners.clear(); }
 }
 
-export function assetRecoveryKey(actorId: string, projectId: string, episodeId: string, assetId: string) {
-  void episodeId;
+export function assetRecoveryKey(actorId: string, projectId: string, assetId: string) {
   return `short-drama:asset-editor:v2:${actorId}:${projectId}:${assetId}`;
 }
 

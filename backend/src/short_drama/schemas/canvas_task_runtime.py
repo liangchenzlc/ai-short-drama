@@ -22,25 +22,6 @@ Kind = Literal["text", "image", "video", "audio"]
 OperationId = Annotated[str, Field(pattern=r"^[A-Za-z0-9:_-]{8,128}$")]
 
 
-class CanvasResolvedCharacterVersion(CanvasGenerationProtocol):
-    asset_id: Identifier
-    version_id: Identifier
-
-
-class CanvasResolvedCharacterVoice(CanvasGenerationProtocol):
-    asset_id: Identifier
-    version_id: Identifier
-    binding_version: Identifier
-    sample_resource_id: Identifier
-    voice_key: str = Field(default="", max_length=255)
-    character_name: str = Field(default="", max_length=255)
-    language: str | None = Field(default=None, max_length=255)
-    voice_age: str | None = Field(default=None, max_length=255)
-    timbre: str | None = Field(default=None, max_length=255)
-    delivery_instructions: str | None = Field(default=None, max_length=8000)
-    instructions: str = Field(default="", max_length=8000)
-
-
 class CanvasTaskMetadata(CanvasGenerationProtocol):
     model_config = ConfigDict(
         extra="allow",
@@ -52,13 +33,20 @@ class CanvasTaskMetadata(CanvasGenerationProtocol):
     source_node_id: SourceKey | None = None
     client_operation_id: OperationId
     retry_of: Identifier | None = None
-    resolved_character_versions: list[CanvasResolvedCharacterVersion] | None = Field(
-        default=None, max_length=60
-    )
-    resolved_character_voices: list[CanvasResolvedCharacterVoice] | None = Field(
-        default=None, max_length=60
-    )
     attempt_group_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_retired_bindings(cls, value):
+        retired = {
+            "resolvedCharacterVersions",
+            "resolved_character_versions",
+            "resolvedCharacterVoices",
+            "resolved_character_voices",
+        }
+        if isinstance(value, dict) and retired.intersection(value):
+            raise ValueError("Standard character bindings are retired")
+        return value
 
 
 class CanvasTaskReference(CanvasGenerationProtocol):
@@ -237,9 +225,6 @@ class CanvasRuntimeTaskRead(CanvasGenerationProtocol):
     model: str | None = None
     client_operation_id: str
     retry_of: Identifier | None = None
-    resolved_character_versions: list[CanvasResolvedCharacterVersion] | None = Field(
-        default=None, max_length=60
-    )
     attempt_group_id: str | None = None
     client_context: dict[str, JsonValue]
     input_json: str

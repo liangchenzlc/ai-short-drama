@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, ColorPicker, Input, InputNumber, Progress, Segmented } from "antd";
+import { App, Button, ColorPicker, Dropdown, Input, InputNumber, Progress, Segmented } from "antd";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { Switch } from "@/components/ui/base/switch";
 import { Captions, FileDown, FileUp, ListPlus, LoaderCircle, Plus, Scissors, Sparkles, Trash2 } from "lucide-react";
@@ -8,8 +8,8 @@ import { saveAs } from "file-saver";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { useConfigStore, type AiConfig } from "@/stores/use-config-store";
-import { resolveMediaUrl } from "@/services/file-storage";
-import { cacheResourceObjectUrl } from "@/services/resource-blob-cache";
+import { useResourceVideoPlayback } from "@/hooks/use-resource-video-playback";
+import { captureUserScope, userScopeMatches } from "@/lib/user-scope-guard";
 import { resourceIdFromStorageKey } from "@/services/api/resources";
 import { parseSrt, serializeSrtEntries } from "@/lib/timeline/srt-parser";
 import { DEFAULT_MAX_CHARS_PER_ENTRY, MAX_CHARS_PER_ENTRY_LIMIT, MIN_CHARS_PER_ENTRY, resegmentSrtEntries, splitLongEntry } from "@/lib/timeline/srt-resegment";
@@ -18,6 +18,7 @@ import { generateSubtitleHighlights, type SubtitleHighlightProgress } from "@/li
 import { createDefaultSubtitleStyle, type SrtEntry, type SubtitleHighlight, type SubtitlePosition, type SubtitleStyle } from "@/types/timeline";
 import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 import { SubtitleHighlightedText } from "./canvas-subtitle-text";
+import { CanvasTranscriptionControls } from "./canvas-transcription-controls";
 
 type CanvasSubtitleDialogProps = {
     node: CanvasNodeData;
@@ -36,18 +37,30 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
     const [highlights, setHighlights] = useState<SubtitleHighlight[]>([]);
     const [style, setStyle] = useState<SubtitleStyle>(createDefaultSubtitleStyle);
     const [running, setRunning] = useState(false);
+    const [transcribing, setTranscribing] = useState(false);
+    const busy = running || transcribing;
     const [progress, setProgress] = useState<SubtitleHighlightProgress | null>(null);
-    const [videoUrl, setVideoUrl] = useState("");
+    const playback = useResourceVideoPlayback(node.metadata?.storageKey || "", node.metadata?.content || "", open);
+    const videoUrl = playback.url;
     const [currentTimeMs, setCurrentTimeMs] = useState(0);
     const [videoSize, setVideoSize] = useState<{ width: number; height: number } | null>(null);
     const [previewBoxWidth, setPreviewBoxWidth] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
     const [videoError, setVideoError] = useState(false);
+    const [importError, setImportError] = useState("");
     const abortRef = useRef<AbortController | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const textInputRef = useRef<HTMLInputElement>(null);
     const previewBoxRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const fileReaderRef = useRef<FileReader | null>(null);
+    const importContextKey = JSON.stringify([open, projectId, node.id, node.metadata?.storageKey]);
+    const importContextRef = useRef(importContextKey);
+    importContextRef.current = importContextKey;
+    useEffect(() => () => {
+        fileReaderRef.current?.abort();
+        fileReaderRef.current = null;
+    }, [importContextKey]);
     // 打开弹窗时从节点 metadata 同步字幕数据；关闭后卸载，重开重新读取。
     useEffect(() => {
         if (!open) return;
@@ -56,45 +69,19 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
         setStyle(node.metadata?.subtitleStyle || createDefaultSubtitleStyle());
         setRunning(false);
         setProgress(null);
+        setImportError("");
     }, [open, node]);
 
     useEffect(() => {
         return () => abortRef.current?.abort();
     }, []);
 
-    // 打开弹窗时解析视频地址，用于字幕叠加预览。
-    // 远端资源优先走节点同款缓存下载（对象 URL），失败再退回资源代理地址。
     useEffect(() => {
         if (!open) return;
-        let cancelled = false;
         setCurrentTimeMs(0);
         setVideoSize(null);
         setVideoError(false);
-        const storageKey = node.metadata?.storageKey || "";
-        const fallback = node.metadata?.content || "";
-        const applyUrl = (url: string) => {
-            if (!cancelled) setVideoUrl(url);
-        };
-        if (resourceIdFromStorageKey(storageKey)) {
-            void cacheResourceObjectUrl(storageKey)
-                .then((cached) => {
-                    if (cancelled) return;
-                    if (cached) {
-                        setVideoUrl(cached);
-                    } else {
-                        void resolveMediaUrl(storageKey, fallback).then(applyUrl);
-                    }
-                })
-                .catch(() => {
-                    if (!cancelled) void resolveMediaUrl(storageKey, fallback).then(applyUrl);
-                });
-        } else {
-            void resolveMediaUrl(storageKey, fallback).then(applyUrl);
-        }
-        return () => {
-            cancelled = true;
-        };
-    }, [open, node]);
+    }, [open, node.id, node.metadata?.storageKey]);
 
     // 监听预览容器与视口尺寸，视频按分辨率等比缩放，不撑满也不变形。
     useEffect(() => {
@@ -208,32 +195,44 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
         if (dropped.length) message.info(`已移除 ${dropped.length} 条未能匹配的旧高亮`);
     };
 
-    const importSrt = (file: File) => {
+    const readSubtitleFile = (file: File, onText: (text: string) => void) => {
+        fileReaderRef.current?.abort();
+        setImportError("");
         const reader = new FileReader();
+        fileReaderRef.current = reader;
+        const owner = captureUserScope();
+        const context = importContextRef.current;
+        const alive = () => fileReaderRef.current === reader && context === importContextRef.current && userScopeMatches(owner);
         reader.onload = () => {
-            const parsed = parseSrt(String(reader.result || ""));
+            if (alive()) onText(String(reader.result || ""));
+        };
+        reader.onerror = () => { if (alive()) setImportError("读取字幕文件失败，请重新选择"); };
+        reader.readAsText(file);
+    };
+
+    const importSrt = (file: File) => {
+        readSubtitleFile(file, (text) => {
+            const parsed = parseSrt(text);
             if (!parsed.length) {
-                message.warning("未解析到有效字幕：文件需为 SRT 格式（序号 + 时间码 + 正文），纯文本请用“导入文本”");
+                setImportError("未解析到有效字幕：文件需为 SRT 格式（序号 + 时间码 + 正文），纯文本请用“导入文本”");
                 return;
             }
             const autoSegmented = style.autoResegment ? resegmentSrtEntries(parsed, style.maxCharsPerEntry || DEFAULT_MAX_CHARS_PER_ENTRY) : parsed;
             setEntries(renumber(autoSegmented));
             setHighlights([]);
             message.success(autoSegmented.length > parsed.length ? `已导入 ${parsed.length} 条字幕，按单条上限自动切分为 ${autoSegmented.length} 条` : `已导入 ${parsed.length} 条字幕`);
-        };
-        reader.readAsText(file);
+        });
     };
 
     // 纯文本导入：一行一条字幕，按视频时长平均分配起止时间；视频时长未知时按每条 4 秒估算。
     const importPlainText = (file: File) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const lines = String(reader.result || "")
+        readSubtitleFile(file, (text) => {
+            const lines = text
                 .split(/\r?\n/)
                 .map((line) => line.trim())
                 .filter(Boolean);
             if (!lines.length) {
-                message.warning("文本中没有可导入的内容");
+                setImportError("文本中没有可导入的内容，请检查文件后重新选择");
                 return;
             }
             const durationMs = node.metadata?.durationMs;
@@ -247,8 +246,7 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
             setEntries(entries);
             setHighlights([]);
             message.success(durationMs && durationMs > 0 ? `已导入 ${entries.length} 条字幕，按视频时长 ${formatDurationMs(durationMs)} 平均分配` : `已导入 ${entries.length} 条字幕（视频时长未知，按每条 4 秒估算）`);
-        };
-        reader.readAsText(file);
+        });
     };
 
     const exportSrt = () => {
@@ -335,7 +333,7 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                                     setVideoSize({ width: video.videoWidth, height: video.videoHeight });
                                 }
                             }}
-                            onError={() => setVideoError(true)}
+                            onError={() => { if (node.type !== "video" || !playback.requestCompatible()) setVideoError(true); }}
                             onTimeUpdate={(event) => setCurrentTimeMs(Math.round(event.currentTarget.currentTime * 1000))}
                         />
                         {videoError ? <div className="absolute inset-0 grid place-items-center text-xs opacity-70">视频预览加载失败，请检查素材是否仍然可用</div> : null}
@@ -348,7 +346,7 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                         ) : null}
                     </div>
                 ) : (
-                    <div className="grid h-40 w-full max-w-[640px] place-items-center px-4 text-center text-xs opacity-60">{videoError ? "视频预览加载失败，请检查素材是否仍然可用" : "暂无视频素材可预览，可先在节点上传或生成视频"}</div>
+                    <div className="grid h-40 w-full max-w-[640px] place-items-center px-4 text-center text-xs opacity-60">{playback.error || (playback.loading ? "正在准备媒体预览…" : videoError ? "预览加载失败，请检查素材是否仍然可用" : "暂无音视频素材可预览")}{playback.error && <Button size="small" onClick={playback.retry}>重新读取预览</Button>}</div>
                 )}
             </div>
             <div className="shrink-0 text-center text-xs opacity-40">点击字幕条目可跳转预览</div>
@@ -445,15 +443,15 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                                 <span className="grid size-6 shrink-0 place-items-center rounded-md text-xs font-semibold" style={{ background: theme.accent.primarySoft, color: theme.accent.primary }}>
                                     {idx + 1}
                                 </span>
-                                <InputNumber size="small" min={0} step={100} value={entry.startMs} onChange={(startMs) => updateEntry(idx, { startMs: startMs ?? 0 })} className="w-32" aria-label={`第 ${idx + 1} 条开始时间（毫秒）`} />
+                                <InputNumber size="small" disabled={busy} min={0} step={100} value={entry.startMs} onChange={(startMs) => updateEntry(idx, { startMs: startMs ?? 0 })} className="w-32" aria-label={`第 ${idx + 1} 条开始时间（毫秒）`} />
                                 <span className="text-xs opacity-40">→</span>
-                                <InputNumber size="small" min={0} step={100} value={entry.endMs} onChange={(endMs) => updateEntry(idx, { endMs: endMs ?? 0 })} className="w-32" aria-label={`第 ${idx + 1} 条结束时间（毫秒）`} />
+                                <InputNumber size="small" disabled={busy} min={0} step={100} value={entry.endMs} onChange={(endMs) => updateEntry(idx, { endMs: endMs ?? 0 })} className="w-32" aria-label={`第 ${idx + 1} 条结束时间（毫秒）`} />
                                 <button
                                     type="button"
                                     title="切分这条字幕"
                                     className="ml-auto grid size-7 place-items-center rounded-lg border transition-colors hover:opacity-75"
                                     style={{ borderColor: theme.toolbar.border }}
-                                    disabled={running}
+                                    disabled={busy}
                                     onClick={() => splitEntry(idx)}
                                 >
                                     <Scissors className="size-3.5" />
@@ -463,13 +461,13 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                                     title="删除这条字幕"
                                     className="grid size-7 place-items-center rounded-lg border text-red-500 transition-colors hover:opacity-75"
                                     style={{ borderColor: theme.toolbar.border }}
-                                    disabled={running}
+                                    disabled={busy}
                                     onClick={() => deleteEntry(idx)}
                                 >
                                     <Trash2 className="size-3.5" />
                                 </button>
                             </div>
-                            <Input.TextArea value={entry.text} autoSize={{ minRows: 1, maxRows: 3 }} placeholder="字幕文本" className="mt-2" onChange={(event) => updateEntry(idx, { text: event.target.value })} />
+                            <Input.TextArea disabled={busy} value={entry.text} autoSize={{ minRows: 1, maxRows: 3 }} placeholder="字幕文本" className="mt-2" onChange={(event) => updateEntry(idx, { text: event.target.value })} />
                             {highlight ? (
                                 <div className="mt-1.5 text-xs" style={{ color: theme.accent.primary }}>
                                     重点：{highlight.highlightText}
@@ -504,6 +502,17 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
     return (
         <AppModal className="canvas-subtitle-dialog" title={title} open={open} centered footer={null} width={1120} destroyOnHidden onCancel={onClose} flush>
             <div className="flex h-[min(72vh,680px)] min-h-[420px] flex-col text-sm" style={{ color: theme.node.text }}>
+                {open && <div className="border-b px-4 py-3" style={{ borderColor: theme.toolbar.border }}>
+                    <CanvasTranscriptionControls
+                        key={JSON.stringify([projectId, node.id, node.metadata?.storageKey])}
+                        projectId={projectId}
+                        nodeId={node.id}
+                        resourceId={resourceIdFromStorageKey(node.metadata?.storageKey || "") || null}
+                        disabled={running}
+                        onRunningChange={setTranscribing}
+                        onResult={(next) => { setEntries(next); setHighlights([]); }}
+                    />
+                </div>}
                 <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }}>
                     <input
                         ref={fileInputRef}
@@ -527,26 +536,26 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                             event.target.value = "";
                         }}
                     />
-                    <Button size="small" icon={<FileUp className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
-                        导入 SRT
-                    </Button>
-                    <Button size="small" icon={<FileUp className="size-3.5" />} onClick={() => textInputRef.current?.click()}>
-                        导入文本
-                    </Button>
+                    <Dropdown trigger={["click"]} disabled={busy} menu={{ items: [
+                        { key: "srt", label: "导入 SRT", onClick: () => fileInputRef.current?.click() },
+                        { key: "text", label: "导入文本", onClick: () => textInputRef.current?.click() },
+                    ] }}>
+                        <Button size="small" disabled={busy} icon={<FileUp className="size-3.5" />}>导入字幕</Button>
+                    </Dropdown>
                     <Button size="small" icon={<FileDown className="size-3.5" />} disabled={!entries.length} onClick={exportSrt}>
                         导出 SRT
                     </Button>
-                    <Button size="small" icon={<Scissors className="size-3.5" />} disabled={!entries.length || running} onClick={resegmentAll}>
+                    <Button size="small" icon={<Scissors className="size-3.5" />} disabled={!entries.length || busy} onClick={resegmentAll}>
                         自动切分
                     </Button>
-                    <Button size="small" icon={<Plus className="size-3.5" />} disabled={running} onClick={addEntry}>
+                    <Button size="small" icon={<Plus className="size-3.5" />} disabled={busy} onClick={addEntry}>
                         新增字幕
                     </Button>
                     <Button
                         size="small"
                         danger
                         icon={<Trash2 className="size-3.5" />}
-                        disabled={!entries.length || running}
+                        disabled={!entries.length || busy}
                         onClick={() =>
                             modal.confirm({
                                 title: "清空全部字幕",
@@ -575,13 +584,14 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                         size="small"
                         type={running ? "default" : "primary"}
                         icon={running ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-                        disabled={!entries.length}
+                        disabled={!entries.length || transcribing}
                         onClick={running ? cancelAiHighlight : () => void runAiHighlight()}
                     >
                         {running ? "取消高亮" : "AI 关键词高亮"}
                     </Button>
                 </div>
 
+                {importError && <p role="alert" className="border-b px-4 py-2 text-xs text-destructive" style={{ borderColor: theme.toolbar.border }}>{importError}</p>}
                 {progress && running ? (
                     <div className="border-b px-4 py-2" style={{ borderColor: theme.toolbar.border }}>
                         <Progress percent={progress.percent} size="small" format={() => `${progress.processedEntries}/${progress.totalEntries} 条 · 批次 ${progress.batchIndex}/${progress.batchTotal}`} />
@@ -607,7 +617,7 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                         <Button disabled={running} onClick={onClose}>
                             取消
                         </Button>
-                        <Button type="primary" disabled={running} onClick={handleSave}>
+                        <Button type="primary" disabled={busy} onClick={handleSave}>
                             保存
                         </Button>
                     </div>

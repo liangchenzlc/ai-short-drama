@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { canvasWheelIntent } from "@/lib/canvas/canvas-wheel";
 
 import { resolveCanvasAppearance, resolveCanvasGridColor, type CanvasAppearance } from "@/lib/canvas/canvas-appearance";
 import { resolveCanvasPointerIntent } from "@/lib/canvas/canvas-selection";
@@ -64,6 +65,7 @@ export function InfiniteCanvas({ interactive = true, containerRef, viewport, app
     const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastPreviewNotifyRef = useRef(0);
     const interactingRef = useRef(false);
+    const wheelGestureRef = useRef<{ intent: "pan" | "zoom"; at: number; modifiers: number } | null>(null);
     const touchPointsRef = useRef(new Map<number, TouchPoint>());
     const pinchStateRef = useRef<PinchState>({ active: false, pointerIds: [-1, -1], initialDistance: 1, worldX: 0, worldY: 0, initialScale: viewport.k });
     const spacePressedRef = useRef(false);
@@ -199,9 +201,12 @@ export function InfiniteCanvas({ interactive = true, containerRef, viewport, app
             event.preventDefault();
             interactingRef.current = true;
             const current = viewportRef.current;
-            const rawAbsY = Math.abs(event.deltaY);
-            const looksLikeMouseWheel = event.deltaMode !== 0 || (rawAbsY >= 80 && Math.abs(rawAbsY - Math.round(rawAbsY / 100) * 100) < 1);
-            const looksLikeTrackpadPan = !isPinchZoom && (event.shiftKey || absX > 0 || (!looksLikeMouseWheel && absY > 0));
+            const now = performance.now();
+            const modifiers = Number(isPinchZoom) * 2 + Number(event.shiftKey);
+            const previous = wheelGestureRef.current?.modifiers === modifiers ? wheelGestureRef.current : null;
+            const intent = canvasWheelIntent(event, previous, now);
+            wheelGestureRef.current = { intent, at: now, modifiers };
+            const looksLikeTrackpadPan = intent === "pan";
 
             if (looksLikeTrackpadPan) {
                 const panX = event.shiftKey && absX < 1 ? deltaY : deltaX;
@@ -217,7 +222,7 @@ export function InfiniteCanvas({ interactive = true, containerRef, viewport, app
             if (!rect) return;
             const mouseX = event.clientX - rect.left;
             const mouseY = event.clientY - rect.top;
-            const zoomDelta = isPinchZoom && !looksLikeMouseWheel ? TRACKPAD_PINCH_ZOOM_DELTA : WHEEL_ZOOM_DELTA;
+            const zoomDelta = isPinchZoom && event.deltaMode === 0 && absY < 40 ? TRACKPAD_PINCH_ZOOM_DELTA : WHEEL_ZOOM_DELTA;
             const factor = Math.pow(1.1, -deltaY / zoomDelta);
             const newScale = clampScale(current.k * factor);
             const worldX = (mouseX - current.x) / current.k;

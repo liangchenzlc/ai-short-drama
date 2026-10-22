@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from sqlalchemy import case, select
 
-from short_drama.domain import EpisodeRenderJob, MediaFile
+from short_drama.domain import MediaFile, ProjectAssembly, ProjectRenderJob
 from short_drama.service.base import utcnow
 from short_drama.service.storage_service import StorageService
 from short_drama.service.video_render import RenderCancelled, VideoRenderer, checksum
@@ -50,8 +50,8 @@ class RenderPublisher:
         now = utcnow()
         with self.factory.begin() as session:
             expired = session.scalars(
-                select(EpisodeRenderJob)
-                .where(EpisodeRenderJob.status == "running", EpisodeRenderJob.locked_until < now)
+                select(ProjectRenderJob)
+                .where(ProjectRenderJob.status == "running", ProjectRenderJob.locked_until < now)
                 .with_for_update(skip_locked=True)
             )
             for job in expired:
@@ -59,7 +59,7 @@ class RenderPublisher:
                     "cancelled"
                     if job.cancel_requested
                     else "failed"
-                    if job.attempts >= 3
+                    if job.attempts >= 3 or (job.manifest or {}).get("submitted")
                     else "queued"
                 )
                 job.stage = job.status
@@ -68,18 +68,22 @@ class RenderPublisher:
                 job.next_run_at = now
                 if job.status in ("failed", "cancelled"):
                     job.finished_at = now
-                    job.error = {"message": "合成服务中断，可重试此任务"}
+                    job.error = {
+                        "message": "云端转写受理结果不明，请到渠道核实，禁止自动重发"
+                        if (job.manifest or {}).get("submitted")
+                        else "媒体处理服务中断，可重新发起任务"
+                    }
             job = session.scalar(
-                select(EpisodeRenderJob)
-                .where(EpisodeRenderJob.status == "queued", EpisodeRenderJob.next_run_at <= now)
+                select(ProjectRenderJob)
+                .where(ProjectRenderJob.status == "queued", ProjectRenderJob.next_run_at <= now)
                 .order_by(
                     case(
-                        (EpisodeRenderJob.kind == "export", 0),
-                        (EpisodeRenderJob.kind == "probe", 1),
+                        (ProjectRenderJob.kind == "export", 0),
+                        (ProjectRenderJob.kind == "probe", 1),
                         else_=2,
                     ),
-                    EpisodeRenderJob.next_run_at,
-                    EpisodeRenderJob.id,
+                    ProjectRenderJob.next_run_at,
+                    ProjectRenderJob.id,
                 )
                 .limit(1)
                 .with_for_update(skip_locked=True)
@@ -113,13 +117,13 @@ class RenderExecutor:
             from short_drama.domain import Project
             from short_drama.service.task_access import may_submit
 
-            preview = session.get(EpisodeRenderJob, int(job_id))
+            preview = session.get(ProjectRenderJob, int(job_id))
             project_id = scope_of(session, preview)[1] if preview else None
             if project_id:
                 session.scalar(select(Project).where(Project.id == project_id).with_for_update())
             job = session.scalar(
-                select(EpisodeRenderJob)
-                .where(EpisodeRenderJob.id == int(job_id))
+                select(ProjectRenderJob)
+                .where(ProjectRenderJob.id == int(job_id))
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
@@ -139,6 +143,7 @@ class RenderExecutor:
             job.locked_until = utcnow() + timedelta(seconds=120)
             job.attempts += 1
             snapshot, kind, retry_of = job.snapshot, job.kind, job.retry_of_id
+            initiated_by = job.initiated_by
         # Each lease owns a separate directory. An expired process cannot corrupt its successor.
         root = Path(self.settings.render_scratch_root).resolve()
         directory = root / f"{int(job_id)}-{token}"
@@ -151,8 +156,8 @@ class RenderExecutor:
                 return
             with self.factory.begin() as session:
                 current = session.scalar(
-                    select(EpisodeRenderJob)
-                    .where(EpisodeRenderJob.id == int(job_id))
+                    select(ProjectRenderJob)
+                    .where(ProjectRenderJob.id == int(job_id))
                     .with_for_update()
                 )
                 if (
@@ -170,6 +175,7 @@ class RenderExecutor:
         stored = None
         pending_derivatives = []
         committed = False
+        media_result = None
         try:
             # Recover a verified completed file after upload failure, without encoding again.
             output, metadata = None, None
@@ -179,8 +185,10 @@ class RenderExecutor:
                     renderer, root, directory, candidates, snapshot
                 )
             if output is None:
-                entries = snapshot["media"] if kind == "probe" else snapshot["clips"]
-                if kind != "probe":
+                entries = (
+                    snapshot["media"] if kind in {"probe", "audio_analysis"} else snapshot["clips"]
+                )
+                if kind not in {"probe", "audio_analysis"}:
                     entries = entries + snapshot.get("sound", {}).get("media", [])
                 sources = {}
                 for index, entry in enumerate(entries):
@@ -228,18 +236,30 @@ class RenderExecutor:
                         heartbeat("preparing", int((index + 1) / len(entries) * 90), True)
                         with self.factory.begin() as session:
                             current = session.scalar(
-                                select(EpisodeRenderJob)
-                                .where(EpisodeRenderJob.id == int(job_id))
+                                select(ProjectRenderJob)
+                                .where(ProjectRenderJob.id == int(job_id))
                                 .with_for_update()
                             )
                             if current.lease_token != token or current.cancel_requested:
                                 raise RenderCancelled()
                             media = session.get(MediaFile, int(mid))
+                            from short_drama.service.assembly_editor_service import (
+                                AssemblyEditorService,
+                            )
+
+                            editor = AssemblyEditorService(session, self.settings, self.storage)
+                            assembly = session.get(
+                                ProjectAssembly, current.assembly_id, with_for_update=True
+                            )
+                            before = editor._video_snapshot(assembly, editor._clips(assembly))
                             quality = (media.video_metadata or {}).get("native_quality")
                             media.video_metadata = {
                                 **info,
                                 **({"native_quality": quality} if quality is not None else {}),
                             }
+                            after = editor._video_snapshot(assembly, editor._clips(assembly))
+                            if editor._sync_sound_associations(assembly, before, after):
+                                editor._touch(assembly)
                         pending_derivatives.clear()
                         path.unlink()
                 if kind in ("export", "preview"):
@@ -247,6 +267,39 @@ class RenderExecutor:
                         {**snapshot, "resolution": "preview"} if kind == "preview" else snapshot
                     )
                     output, metadata = renderer.render(render_snapshot, sources, directory)
+                elif kind in {"transcription", "audio_analysis"}:
+                    from short_drama.domain import AIModelConfig
+                    from short_drama.service.assembly_media_execute import execute_media_job
+
+                    config_id = snapshot.get("transcription", {}).get("model_config_id")
+                    config = None
+                    if config_id:
+                        with self.factory.begin() as session:
+                            config = session.get(AIModelConfig, int(config_id))
+                            if (
+                                not config
+                                or config.owner_user_id != initiated_by
+                                or not config.enabled
+                                or config.is_deleted
+                            ):
+                                raise RuntimeError("所选转写模型已不可用，请重新选择")
+                            session.expunge(config)
+
+                    def before_submit():
+                        heartbeat("transcribing", 40, True)
+                        with self.factory.begin() as session:
+                            current = session.get(
+                                ProjectRenderJob, int(job_id), with_for_update=True
+                            )
+                            if current.lease_token != token or current.cancel_requested:
+                                raise RenderCancelled()
+                            if (current.manifest or {}).get("submitted"):
+                                raise RuntimeError("云端转写已提交，不能自动重发，请到渠道核实")
+                            current.manifest = {"submitted": True}
+
+                    media_result = execute_media_job(
+                        renderer, snapshot, kind, sources, directory, config, before_submit
+                    )
             if output:
                 sha = checksum(output)
                 (directory / "completed.json").write_text(
@@ -260,8 +313,8 @@ class RenderExecutor:
                 heartbeat("uploading", 98, True)
             with self.factory.begin() as session:
                 job = session.scalar(
-                    select(EpisodeRenderJob)
-                    .where(EpisodeRenderJob.id == int(job_id))
+                    select(ProjectRenderJob)
+                    .where(ProjectRenderJob.id == int(job_id))
                     .with_for_update()
                 )
                 if job.lease_token != token or job.cancel_requested:
@@ -278,7 +331,7 @@ class RenderExecutor:
                         id=next_id(),
                         format_code="video/mp4",
                         storage_locator=stored.storage_locator,
-                        original_name=f"episode-{job.assembly_id}.mp4",
+                        original_name=f"creation-{job.assembly_id}.mp4",
                         byte_size=stored.size,
                         width=metadata["width"],
                         height=metadata["height"],
@@ -292,6 +345,8 @@ class RenderExecutor:
                     session.flush()
                     job.output_media_id = media.id
                     job.manifest = {"checksum": sha, "metadata": metadata}
+                elif media_result is not None:
+                    job.manifest = media_result
                 job.status, job.stage, job.progress, job.finished_at = (
                     "succeeded",
                     "complete",
@@ -314,8 +369,8 @@ class RenderExecutor:
                     pass
             with self.factory.begin() as session:
                 job = session.scalar(
-                    select(EpisodeRenderJob)
-                    .where(EpisodeRenderJob.id == int(job_id))
+                    select(ProjectRenderJob)
+                    .where(ProjectRenderJob.id == int(job_id))
                     .with_for_update()
                 )
                 if job.lease_token == token:
@@ -326,6 +381,11 @@ class RenderExecutor:
                         if isinstance(error, RuntimeError)
                         else "合成未完成，请检查存储和合成服务后重试"
                     }
+                    if (job.manifest or {}).get("submitted"):
+                        job.error = {
+                            "message": "云端识别已提交但未能取得结果，"
+                            "请到渠道核实原任务，禁止自动重发"
+                        }
                     job.lease_token, job.locked_until = None, None
             # Keep only a verified output for upload retry. Source media is inexpensive to fetch
             # again.

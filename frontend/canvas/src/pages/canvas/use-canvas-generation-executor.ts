@@ -31,7 +31,6 @@ import { createReferenceLinkResolver } from "./canvas-reference-links";
 
 type UseCanvasGenerationExecutorOptions = {
     projectId: string;
-    domainProjectId?: string;
     addedSkills: Skill[];
     assets: Asset[];
     nodesRef: { current: CanvasNodeData[] };
@@ -66,7 +65,6 @@ export type CanvasNodeGenerationOptions = {
 
 export function useCanvasGenerationExecutor({
     projectId,
-    domainProjectId,
     addedSkills,
     assets,
     nodesRef,
@@ -114,6 +112,18 @@ export function useCanvasGenerationExecutor({
                     const inputAssets = assets;
                     const inputSkills = addedSkills;
                     const sourceNode = inputNodes.find((node) => node.id === nodeId);
+                    const reportPreparationError = (error: unknown) => {
+                        const errorDetails = generationErrorMessage(error);
+                        message.error(errorDetails);
+                        setNodes((current) => current.map((node) => node.id === nodeId ? {
+                            ...node,
+                            metadata: {
+                                ...node.metadata,
+                                status: node.metadata?.content || node.metadata?.storageKey ? node.metadata?.status : NODE_STATUS_ERROR,
+                                errorDetails,
+                            },
+                        } : node));
+                    };
                     if (isCanvasNodeGenerating(nodesRef.current.find((node) => node.id === nodeId))) {
                         message.info("该节点的生成任务仍在进行中，请等待完成后再生成");
                         return;
@@ -126,7 +136,7 @@ export function useCanvasGenerationExecutor({
                     try {
                         generationConfig = buildGenerationConfig(inputConfig, sourceNode, mode, undefined);
                     } catch (error) {
-                        message.error(generationErrorMessage(error));
+                        reportPreparationError(error);
                         return;
                     }
                     const hasLiveBatchChildren =
@@ -182,14 +192,13 @@ export function useCanvasGenerationExecutor({
                         const compatibilityError = usesWorkflowProvider ? "" : modelCompatibilityError(generationConfig, generationConfig.model, requirements);
                         if (compatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${compatibilityError}`);
                         const referenceLimits = usesWorkflowProvider ? undefined : modelGroupReferenceLimits(inputConfig, generationConfig.model, mode, requirements);
-                        rawGenerationContext = await hydrateNodeGenerationContext(baseContext, projectId, domainProjectId, mode, mode === "video" && Boolean(referenceLimits?.maxAudios), !promptOnly, referenceLimits);
+                        rawGenerationContext = await hydrateNodeGenerationContext(baseContext, projectId, mode, !promptOnly, referenceLimits);
                         const hydratedRequirements = generationModelRequirements(mode, rawGenerationContext, sourceNode, generationConfig);
                         generationConfig = buildGenerationConfig(inputConfig, sourceNode, mode, hydratedRequirements);
                         const hydratedCompatibilityError = usesWorkflowProvider ? "" : modelCompatibilityError(generationConfig, generationConfig.model, hydratedRequirements);
                         if (hydratedCompatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${hydratedCompatibilityError}`);
                     } catch (error) {
-                        const errorDetails = generationErrorMessage(error);
-                        message.error(errorDetails);
+                        reportPreparationError(error);
                         return;
                     }
 
@@ -197,7 +206,7 @@ export function useCanvasGenerationExecutor({
                     try {
                         skillExecution = await skillRuntime.prepare({ profile: "canvas", prompt: rawGenerationContext.prompt, skills: inputSkills });
                     } catch (error) {
-                        message.error(error instanceof Error ? error.message : "技能上下文加载失败");
+                        reportPreparationError(error);
                         return;
                     }
                     let effectivePrompt = skillExecution.prompt.trim();
@@ -210,32 +219,19 @@ export function useCanvasGenerationExecutor({
                                 styleMetadata = { styleProfileJson: styleRuntime.profileJson, styleExecutionPlan: styleRuntime.plan };
                             }
                         } catch (error) {
-                            const errorDetails = generationErrorMessage(error);
-                            message.error(errorDetails);
+                            reportPreparationError(error);
                             return;
                         }
                     }
                     const promptLengthError = mode === "video" ? modelPromptLengthError(generationConfig, generationConfig.model, mode, effectivePrompt) : "";
                     if (promptLengthError) {
-                        message.error(promptLengthError);
+                        reportPreparationError(promptLengthError);
                         return;
                     }
                     const generationContext = { ...rawGenerationContext, prompt: effectivePrompt };
                     if ((options?.retryContext || sourceNode?.metadata?.failedInputFingerprint || sourceNode?.metadata?.failedPromptFingerprint) && canvasGenerationRetryBlocked(sourceNode?.metadata, { ...generationContext, mode })) {
                         message.warning(sourceNode?.metadata?.errorDetails || "请先查看失败原因并调整输入，再重新生成");
                         return;
-                    }
-                    if (mode === "audio" && generationContext.characterReferences.length) {
-                        if (generationContext.characterReferences.length !== 1) {
-                            message.error("角色配音一次只能引用一个角色卡");
-                            return;
-                        }
-                        const voice = generationContext.resolvedCharacterVoices[0];
-                        if (!voice) {
-                            message.error("角色尚未绑定可用声音，无法创建角色配音任务");
-                            return;
-                        }
-                        generationConfig = { ...generationConfig, audioVoice: voice.voiceKey, audioInstructions: [voice.instructions, generationConfig.audioInstructions].filter(Boolean).join("；") };
                     }
                     if (!effectivePrompt && (mode === "text" || mode === "audio")) {
                         return;
@@ -315,13 +311,13 @@ export function useCanvasGenerationExecutor({
                     const markSourceStatus = !sourceNode?.metadata?.content && !editingTextNode;
                     const hasPreviousResult = Boolean(sourceNode?.metadata?.content || sourceNode?.metadata?.storageKey);
                     const statusPrompt = sourceNode?.type === CanvasNodeType.Config ? effectivePrompt : prompt;
-                    if (markSourceStatus)
+                    if (markSourceStatus || sourceNode?.metadata?.errorDetails)
                         setNodes((current) =>
                             current.map((node) =>
                                 node.id === nodeId
                                     ? {
                                           ...node,
-                                          metadata: { ...node.metadata, ...canvasGenerationPromptMetadata(prompt, statusPrompt), status: NODE_STATUS_LOADING, errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined, failedPromptFingerprint: undefined, failedInputFingerprint: undefined },
+                                          metadata: { ...node.metadata, ...canvasGenerationPromptMetadata(prompt, statusPrompt), status: markSourceStatus ? NODE_STATUS_LOADING : node.metadata?.status, errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined, failedPromptFingerprint: undefined, failedInputFingerprint: undefined },
                                       }
                                     : node,
                             ),
@@ -419,8 +415,7 @@ export function useCanvasGenerationExecutor({
             applyGenerationTaskResult,
             bindGenerationTask,
             confirmDuplicateSubmission,
-            domainProjectId,
-            effectiveConfig,
+                    effectiveConfig,
             finishGenerationRequest,
             isAiConfigReady,
             message,

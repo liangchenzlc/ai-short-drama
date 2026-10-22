@@ -19,7 +19,6 @@ const report = { host_model_created: false, logical_id_acknowledged: false, defa
 const modelTestAdmissions = [];
 const expectedFailures = new Set();
 await mkdir(output, { recursive: true });
-process.env.CANVAS_BEEFAPI_TEST_ORIGIN = "";
 const server = await createServer({ root: hostRoot, configFile: resolve(hostRoot, "vite.config.ts"), mode: "test", server: { host: "127.0.0.1", port: 4194, strictPort: true, proxy: { "/api": { target: config.apiUrl, changeOrigin: true } } }, logLevel: "silent" });
 await server.listen();
 let browser;
@@ -56,8 +55,6 @@ async function openSettings(context) {
     await current.goto(`${origin}/ai_config`);
     await current.getByRole("heading", { name: "AI 配置", exact: true }).waitFor();
     await current.getByRole("button", { name: "添加文本模型", exact: true }).waitFor();
-    await current.locator("summary").filter({ hasText: /^BeefAPI 官方连接/ }).click();
-    await current.getByRole("button", { name: "连接 BeefAPI", exact: true }).waitFor();
     report.official_entry_available = true;
     return current;
 }

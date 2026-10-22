@@ -31,7 +31,6 @@ function throwIfAborted(signal?: AbortSignal) {
 
 export type EnsureCanvasNodeAssetOptions = {
     canvasId: string;
-    domainProjectId?: string;
     node: CanvasNodeData;
     source: CanvasAssetSource;
     taskId?: string;
@@ -139,7 +138,7 @@ export async function retryCanvasAssetSyncAfterRateLimit<T>(operation: () => Pro
 export function ensureCanvasNodeAsset(options: EnsureCanvasNodeAssetOptions) {
     const expected = options.expectedScope ?? captureUserScope();
     const identity = options.taskId || options.node.metadata?.taskId || options.node.metadata?.storageKey || options.node.id;
-    const key = [expected.userScope, String(expected.epoch), options.domainProjectId || "personal", options.canvasId, options.node.id, identity].join(":");
+    const key = [expected.userScope, String(expected.epoch), options.canvasId, options.node.id, identity].join(":");
     const pending = pendingAssetSyncs.get(key);
     if (pending) return pending;
     const request = runGenerationConsumer(options.signal, (signal) => persistCanvasNodeAsset({ ...options, signal, expectedScope: expected })).finally(() => pendingAssetSyncs.delete(key));
@@ -185,7 +184,7 @@ async function persistCanvasNodeAsset(options: EnsureCanvasNodeAssetOptions): Pr
     }
     await persistWorkspaceAssetLink({
         asset,
-        domainProjectId: options.domainProjectId,
+
         category: declaredCategory,
         folderId: options.folderId,
         source: "canvas",
@@ -193,7 +192,7 @@ async function persistCanvasNodeAsset(options: EnsureCanvasNodeAssetOptions): Pr
         expectedScope: expected,
     });
     assertUserScope(expected);
-    return { assetId: asset.id, created, linkedToProject: Boolean(options.domainProjectId), confirmed: true };
+    return { assetId: asset.id, created, linkedToProject: false, confirmed: true };
 }
 
 function generationTaskResult(task: GenerationTask): BackendGenerationResult {

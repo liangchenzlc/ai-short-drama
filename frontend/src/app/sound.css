@@ -15,9 +15,15 @@
 .sound-extraction pre { max-height: 220px; white-space: pre-wrap; overflow: auto; }
 .sound-file input { display: block; max-width: 240px; }
 .sound-drawer .ant-drawer-content-wrapper { max-width: 100vw; }
+.sound-drawer .ant-drawer-header, .sound-drawer-body { position: relative; }
+.sound-drawer-body > .ant-message { position: absolute; }
+.sound-drawer .studio-feedback-indicator.ant-btn { inset-inline-end: 16px; top: 14px; }
 .sound-inline { min-width: 0; }
 .sound-inline > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .sound-inline h3 { margin: 0; font-size: 15px; }
+.sound-header-actions { display: flex; align-items: center; gap: 6px; }
+.sound-help.ant-btn { flex: 0 0 28px; width: 28px; min-width: 28px; height: 28px; padding: 0; color: var(--sub); }
+.sound-help.ant-btn:hover { color: var(--ink); background: var(--surface-hover); }
 .sound-inline .sound-editor { grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .sound-inline .sound-editor nav { max-height: 200px; }
 .sound-inline .sound-subtitle { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }

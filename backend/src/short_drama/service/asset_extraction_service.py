@@ -1,4 +1,4 @@
-"""Review and atomically adopt extraction results into an episode's library."""
+"""Review and atomically adopt extraction results into an creation's library."""
 
 import hashlib
 import json
@@ -8,7 +8,7 @@ from copy import deepcopy
 from sqlalchemy import select
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.domain import AIGenerationRecord, Asset, AsyncTask, EpisodeScript
+from short_drama.domain import AIGenerationRecord, Asset, AsyncTask, ProjectScript
 from short_drama.schemas.asset_extraction import ExtractionApply, ExtractionDraft, ExtractionPatch
 from short_drama.schemas.base import parse_identifier
 
@@ -29,13 +29,11 @@ def candidate_key(item):
 class AssetExtractionService(BaseService):
     model = AsyncTask
 
-    def _load(self, project_id, episode_id, generation_id, *, for_update=True):
-        project_id, episode_id, generation_id = map(
-            parse_identifier, (project_id, episode_id, generation_id)
-        )
+    def _load(self, project_id, generation_id, *, for_update=True):
+        project_id, generation_id = map(parse_identifier, (project_id, generation_id))
         task = self._require(AsyncTask, generation_id, for_update=for_update)
         library = AssetLibraryService(self.session)
-        episode = library._validate_scope("episode", episode_id, project_id, for_update=for_update)
+        creation = library._validate_scope("project", project_id, project_id, for_update=for_update)
         statement = (
             select(AIGenerationRecord)
             .where(AIGenerationRecord.task_id == generation_id)
@@ -47,44 +45,38 @@ class AssetExtractionService(BaseService):
             statement = statement.with_for_update()
         record = self.session.scalar(statement)
         source = (record.request_data.get("source") or {}) if record else {}
-        if (
-            source.get("scene") != "script_assets"
-            or str(source.get("project_id")) != str(project_id)
-            or str(source.get("episode_id")) != str(episode_id)
+        if source.get("scene") != "script_assets" or str(source.get("project_id")) != str(
+            project_id
         ):
             raise WorkflowError("not_found", "此提取结果不属于当前分集", 404)
         result = deepcopy((record.response_data or {}).get("business_result") or {})
         if task.status != "succeeded" or result.get("kind") != "script_assets":
             raise WorkflowError("result_not_ready", "素材提取结果尚不可用")
-        return library, episode, record, result
+        return library, creation, record, result
 
-    def _stale(self, episode, record, *, for_update=True):
+    def _stale(self, creation, record, *, for_update=True):
         script_id = int(record.request_data["source"]["script_id"])
         statement = (
-            select(EpisodeScript)
-            .where(EpisodeScript.id == script_id, EpisodeScript.episode_id == episode.id)
+            select(ProjectScript)
+            .where(ProjectScript.id == script_id, ProjectScript.project_id == creation.id)
             .execution_options(populate_existing=True)
         )
         if for_update:
             statement = statement.with_for_update()
         script = self.session.scalar(statement)
         return not script_source_is_current(
-            self.session, episode, script, record.request_data["source_snapshot"]
+            self.session, creation, script, record.request_data["source_snapshot"]
         )
 
-    def _available(self, library, episode):
-        found = {}
-        for scope, parent_id in (("episode", episode.id), ("project", episode.project_id)):
-            model, parent_field = library.library.scopes[scope]
-            rows = self.session.scalars(
+    def _available(self, library, project):
+        return {
+            asset.id: (asset, "project")
+            for asset in self.session.scalars(
                 select(Asset)
-                .join(model, model.asset_id == Asset.id)
-                .where(getattr(model, parent_field) == parent_id)
+                .where(Asset.project_id == project.id, Asset.deleted_at.is_(None))
                 .order_by(Asset.id)
             )
-            for asset in rows:
-                found.setdefault(asset.id, (asset, scope))
-        return found
+        }
 
     def _matches(self, candidate, available):
         draft = candidate["draft"]
@@ -109,13 +101,13 @@ class AssetExtractionService(BaseService):
             )
         return matches
 
-    def _view(self, library, episode, record, result, *, for_update=True):
-        available = self._available(library, episode)
+    def _view(self, library, creation, record, result, *, for_update=True):
+        available = self._available(library, creation)
         return {
             "generation_id": str(record.task_id),
             "result_version": result["result_version"],
-            "content_version": str(episode.content_version),
-            "stale": self._stale(episode, record, for_update=for_update),
+            "content_version": str(creation.content_version),
+            "stale": self._stale(creation, record, for_update=for_update),
             "kinds": record.request_data["source_snapshot"]["extraction"]["kinds"],
             "items": [
                 {
@@ -149,17 +141,17 @@ class AssetExtractionService(BaseService):
                 "result_version_conflict", "提取候选已在其他页面更新，请重新载入后核对"
             )
 
-    def get(self, project_id, episode_id, generation_id):
+    def get(self, project_id, generation_id):
         with self._transaction(read_only=True):
             return self._view(
-                *self._load(project_id, episode_id, generation_id, for_update=False),
+                *self._load(project_id, generation_id, for_update=False),
                 for_update=False,
             )
 
-    def patch(self, project_id, episode_id, generation_id, payload):
+    def patch(self, project_id, generation_id, payload):
         parsed = ExtractionPatch.model_validate(payload)
         with self._transaction():
-            library, episode, record, result = self._load(project_id, episode_id, generation_id)
+            library, creation, record, result = self._load(project_id, generation_id)
             self._version(result, parsed.result_version)
             by_id = {item["candidate_id"]: item for item in result["items"]}
             for edit in parsed.items:
@@ -168,15 +160,13 @@ class AssetExtractionService(BaseService):
                     raise WorkflowError("candidate_unavailable", "候选不存在或已经采用")
                 item["draft"] = edit.draft.model_dump(mode="json")
             self._persist(record, result)
-            return self._view(library, episode, record, result)
+            return self._view(library, creation, record, result)
 
-    def apply(self, project_id, episode_id, generation_id, payload, idempotency_key):
+    def apply(self, project_id, generation_id, payload, idempotency_key):
         with self._transaction():
-            return self.apply_locked(
-                project_id, episode_id, generation_id, payload, idempotency_key
-            )
+            return self.apply_locked(project_id, generation_id, payload, idempotency_key)
 
-    def apply_locked(self, project_id, episode_id, generation_id, payload, idempotency_key):
+    def apply_locked(self, project_id, generation_id, payload, idempotency_key):
         """Caller owns the project lock and transaction; adoption and receipt are atomic."""
         from short_drama.core.exceptions import BusinessError
 
@@ -189,16 +179,16 @@ class AssetExtractionService(BaseService):
         digest = hashlib.sha256(
             json.dumps(parsed.model_dump(mode="json"), sort_keys=True, ensure_ascii=False).encode()
         ).hexdigest()
-        library, episode, record, result = self._load(project_id, episode_id, generation_id)
+        library, creation, record, result = self._load(project_id, generation_id)
         receipt = result["receipts"].get(key)
         if receipt:
             if receipt["hash"] != digest:
                 raise WorkflowError("idempotency_conflict", "此操作标识已用于另一批采用请求")
             return {**receipt["response"], "already_applied": True}
         self._version(result, parsed.result_version)
-        if episode.content_version != parsed.content_version:
+        if creation.content_version != parsed.content_version:
             raise WorkflowError("writing_version_conflict", "正文版本已变化，请刷新候选后重试")
-        if self._stale(episode, record):
+        if self._stale(creation, record):
             raise WorkflowError("source_changed", "来源剧本已变化，请基于当前剧本重新提取")
         by_id = {item["candidate_id"]: item for item in result["items"]}
         # Stable lock order for batches reusing multiple shared assets.
@@ -217,7 +207,7 @@ class AssetExtractionService(BaseService):
             if reuse_ids
             else {}
         )
-        available = self._available(library, episode)
+        available = self._available(library, creation)
         mappings = []
         created = reused = 0
         for adoption in parsed.items:
@@ -239,7 +229,7 @@ class AssetExtractionService(BaseService):
                     raise WorkflowError("invalid_asset_reference", "此素材不能在当前分集复用", 422)
                 if asset.row_version != adoption.expected_row_version:
                     raise WorkflowError("asset_version_conflict", "已有素材已变化，请刷新后核对")
-                library.link_locked("episode", episode, asset.id)
+                library.link_locked("project", creation, asset.id)
                 reused += 1
             else:
                 if self._matches(item, available) and not adoption.confirm_duplicate:
@@ -247,14 +237,14 @@ class AssetExtractionService(BaseService):
                         "duplicate_review_required", "存在同名或别名素材，请核对后明确另建"
                     )
                 asset, _ = library.create_locked(
-                    "episode",
-                    episode.id,
+                    "project",
+                    creation.id,
                     draft,
                     f"extraction:{record.task_id}:{adoption.candidate_id}",
-                    creation_fingerprint("episode", episode.id, draft),
+                    creation_fingerprint("project", creation.id, draft),
                     model_id=record.config_id,
                 )
-                available[asset.id] = (asset, "episode")
+                available[asset.id] = (asset, "project")
                 created += 1
             item["applied"] = {
                 "asset_id": str(asset.id),

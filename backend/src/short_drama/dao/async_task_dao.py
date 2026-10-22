@@ -39,7 +39,7 @@ def source_conditions(record, filters, *, scoped=False):
             "dialogue_extract": "shot_id",
         }[scene]
         conditions.append(record.request_data["source"][field].as_string() == str(identifier))
-    for field in ("project_id", "episode_id"):
+    for field in ("project_id", "project_id"):
         if scoped and field == "project_id":
             continue
         if filters.get(field) is not None:

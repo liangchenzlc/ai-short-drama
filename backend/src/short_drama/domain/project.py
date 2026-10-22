@@ -9,7 +9,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.mysql import (
     BIGINT,
     DATETIME,
-    MEDIUMTEXT,
     VARCHAR,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -37,13 +36,13 @@ class Project(Base):
     )
     archived_at: Mapped[datetime | None] = mapped_column(DATETIME(fsp=6), nullable=True)
     name: Mapped[str] = mapped_column(VARCHAR(120), nullable=False, comment="项目名称，允许重名")
-    synopsis: Mapped[str] = mapped_column(
-        MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="故事梗概"
+    editing_script_id: Mapped[int | None] = mapped_column(BIGINT(unsigned=True), nullable=True)
+    content_version: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), nullable=False, server_default=text("1")
     )
-    style: Mapped[str] = mapped_column(
-        VARCHAR(255), nullable=False, server_default=text("''"), comment="新分集默认风格"
+    storyboard_version: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), nullable=False, server_default=text("1")
     )
-    aspect: Mapped[str] = mapped_column(VARCHAR(8), nullable=False, comment="新分集默认画幅")
     workspace_mode: Mapped[str] = mapped_column(
         VARCHAR(16), nullable=False, server_default=text("'standard'")
     )
@@ -82,7 +81,8 @@ class Project(Base):
             name="ck_projects_audit_time",
         ),
         CheckConstraint("CHAR_LENGTH(TRIM(`name`)) > 0", name="ck_projects_name"),
-        CheckConstraint("`aspect` IN ('16:9', '9:16')", name="ck_projects_aspect"),
+        CheckConstraint("content_version > 0", name="ck_projects_content_version"),
+        CheckConstraint("storyboard_version > 0", name="ck_projects_storyboard_version"),
         CheckConstraint(
             "workspace_mode IN ('standard','infinite_canvas')", name="ck_projects_workspace_mode"
         ),

@@ -1,4 +1,4 @@
-"""Permanent generated media and explicit optimistic adoption into real targets."""
+"""持久媒体、显式采用及标准分镜视频完成后的自动确定。"""
 
 from sqlalchemy import select
 
@@ -6,6 +6,7 @@ from short_drama.core.exceptions import BusinessError, Conflict, WorkflowError
 from short_drama.dao.media_asset_dao import MediaAssetDAO
 from short_drama.domain import (
     AIGenerationRecord,
+    AsyncTask,
     MediaAsset,
     MediaFile,
     ShotImage,
@@ -115,6 +116,149 @@ class MediaAssetService(BaseService):
         if parsed.target.type == "shot_video":
             return self._apply_shot_video(asset, record, parsed)
 
+    def confirm_generated_shot_video_locked(
+        self, task: AsyncTask, record: AIGenerationRecord
+    ) -> dict[str, object] | None:
+        """项目锁与完成事务由调用方持有；历史任务也可在受控事务内幂等补全。"""
+        request = record.request_data
+        if (
+            task.service_type != "video"
+            or (request.get("source") or {}).get("scene") != "shot_video"
+            or "canvas_request" in request
+            or record.config_snapshot.get("agent_managed")
+        ):
+            return None
+        if not self.session.in_transaction():
+            raise BusinessError("Video completion requires an active transaction")
+        data = record.response_data or {}
+        receipt = data.get("shot_video_auto_apply")
+        if receipt is not None:
+            return receipt
+        entries = data.get("media_manifest", [])
+        if (
+            record.status != "succeeded"
+            or data.get("expected_count", 1) != 1
+            or len(entries) != 1
+            or not entries[0].get("saved")
+            or entries[0].get("ignored")
+        ):
+            return None
+        try:
+            with self.session.begin_nested():
+                result = self._confirm_generated_shot_video(task, record)
+            receipt = {
+                "status": "applied",
+                **result,
+                "source_row_version": request["source_snapshot"]["row_version"],
+            }
+        except BusinessError as error:
+            # 业务来源失效不丢弃已付费产物；数据库异常继续由任务恢复处理。
+            receipt = {"status": "skipped", "code": error.code}
+        record.response_data = {**data, "shot_video_auto_apply": receipt}
+        record.updated_at = utcnow()
+        self.session.flush()
+        return receipt
+
+    def _confirm_generated_shot_video(
+        self, task: AsyncTask, record: AIGenerationRecord
+    ) -> dict[str, object]:
+        from .generation_context_service import GenerationContextService
+        from .shot_video_context import video_context_hash
+        from .task_access import may_submit
+
+        if task.cancel_requested:
+            raise WorkflowError("generation_cancelled", "任务已取消，生成视频仅保留在历史中")
+        if not may_submit(self.session, task):
+            raise WorkflowError("generation_access_revoked", "生成者已无权更新此分镜")
+        source = record.request_data.get("source") or {}
+        captured = record.request_data.get("source_snapshot") or {}
+        creation, shot, _assets, _snapshot, shot_hash = GenerationContextService(
+            self.session
+        ).locked_shot_context(source["shot_id"])
+        if (
+            record.task_id != task.id
+            or creation.id != task.project_id
+            or str(creation.id) != str(source.get("project_id"))
+            or str(creation.id) != str(source.get("project_id"))
+        ):
+            raise WorkflowError("source_mismatch", "生成视频与当前分镜不属于同一项目和分集")
+        image = self.session.scalar(
+            select(ShotImage).where(ShotImage.shot_id == shot.id).with_for_update()
+        )
+        current = self.session.scalar(
+            select(ShotVideo).where(ShotVideo.shot_id == shot.id).with_for_update()
+        )
+        digest = video_context_hash(
+            shot_hash,
+            image.media_id if image else None,
+            shot.video_prompt,
+            shot.video_settings,
+            session=self.session,
+            shot=shot,
+        )
+        if (
+            captured.get("context_hash") != digest
+            or source.get("context_hash") != digest
+            or not image
+            or str(image.media_id) != str(captured.get("reference_media_id"))
+        ):
+            raise WorkflowError("shot_version_conflict", "分镜、参考图或声音已变化，保留原确定视频")
+        previous_record = (
+            self.session.scalar(
+                select(AIGenerationRecord)
+                .join(MediaAsset, MediaAsset.record_id == AIGenerationRecord.id)
+                .where(MediaAsset.media_id == current.media_id)
+            )
+            if current
+            else None
+        )
+        previous_task = (
+            self.session.get(AsyncTask, previous_record.task_id) if previous_record else None
+        )
+        if previous_task and (previous_task.created_at, previous_task.id) > (
+            task.created_at,
+            task.id,
+        ):
+            raise WorkflowError("shot_video_superseded", "已有更新生成的视频，旧任务仅保留历史")
+        previous_receipt = (
+            (previous_record.response_data or {}).get("shot_video_auto_apply", {})
+            if previous_record
+            else {}
+        )
+        same_automatic_source = (
+            previous_receipt.get("status") == "applied"
+            and previous_receipt.get("row_version") == str(shot.row_version)
+            and previous_receipt.get("media_id") == str(current.media_id)
+            and previous_receipt.get("source_row_version") == captured.get("row_version")
+        )
+        if source.get("row_version") != captured.get("row_version") or (
+            captured.get("row_version") != str(shot.row_version) and not same_automatic_source
+        ):
+            raise WorkflowError("shot_version_conflict", "分镜版本已变化，保留原确定视频")
+        asset = self.session.scalar(
+            select(MediaAsset).where(
+                MediaAsset.record_id == record.id, MediaAsset.output_index == 1
+            )
+        )
+        if asset is None or asset.media_type != "video":
+            raise WorkflowError("video_not_ready", "生成视频尚未完整保存")
+        media = self._require(MediaFile, asset.media_id, for_update=False)
+        if (
+            media.project_id != task.project_id
+            or media.scope_user_id is not None
+            or media.created_by != task.initiated_by
+        ):
+            raise WorkflowError("source_mismatch", "生成视频的归属与任务不一致")
+        parsed = MediaAssetApply.model_validate(
+            {
+                "target": {"type": "shot_video", "id": str(shot.id)},
+                "expected_media_id": str(current.media_id) if current else None,
+                "expected_row_version": str(shot.row_version),
+                "expected_context_hash": digest,
+            }
+        )
+        return self._apply_shot_video(asset, record, parsed)
+
     def _apply_shot_video(self, asset, record, parsed):
         from .generation_context_service import GenerationContextService
         from .shot_video_context import video_context_hash
@@ -127,7 +271,7 @@ class MediaAssetService(BaseService):
                     "native_audio_invalid", "原生视频缺少有效对白音轨，不能采用；请核对候选", 422
                 )
 
-        episode, shot, _assets, _snapshot, shot_hash = GenerationContextService(
+        creation, shot, _assets, _snapshot, shot_hash = GenerationContextService(
             self.session
         ).locked_shot_context(parsed.target.id)
         image = self.session.scalar(
@@ -150,7 +294,7 @@ class MediaAssetService(BaseService):
                 "target": parsed.target.model_dump(mode="json"),
                 "media_id": str(asset.media_id),
                 "row_version": str(shot.row_version),
-                "storyboard_version": str(episode.storyboard_version),
+                "storyboard_version": str(creation.storyboard_version),
                 "context_hash": digest,
             }
 
@@ -169,14 +313,6 @@ class MediaAssetService(BaseService):
             raise WorkflowError("shot_version_conflict", "当前视频已变化，请重新选择")
         request = record.request_data
         source, captured = request.get("source") or {}, request.get("source_snapshot") or {}
-        if (
-            source.get("scene") != "shot_video"
-            or str(source.get("shot_id")) != str(shot.id)
-            or captured.get("context_hash") != digest
-        ) and not parsed.acknowledge_stale_source:
-            raise WorkflowError(
-                "stale_generation_source", "此视频来自其他或较早的创作内容，请明确确认采用"
-            )
         original = request.get("parameters", {})
         provided = parsed.parameters.model_dump(exclude_none=True)
         for name, key in (
@@ -195,7 +331,7 @@ class MediaAssetService(BaseService):
             raise WorkflowError("missing_adoption_parameters", "请补全视频清晰度和实际时长", 422)
         values = ShotVideoService.create_schema.model_validate(
             {
-                "episode_id": shot.episode_id,
+                "project_id": shot.project_id,
                 "shot_id": shot.id,
                 "media_id": asset.media_id,
                 "model_id": record.config_id,
@@ -220,7 +356,7 @@ class MediaAssetService(BaseService):
     def _apply_shot_image(self, asset, record, parsed):
         from .generation_context_service import GenerationContextService
 
-        episode, shot, _assets, _snapshot, digest = GenerationContextService(
+        creation, shot, _assets, _snapshot, digest = GenerationContextService(
             self.session
         ).locked_shot_context(parsed.target.id)
         current = self.session.scalar(
@@ -232,7 +368,7 @@ class MediaAssetService(BaseService):
                 "target": parsed.target.model_dump(mode="json"),
                 "media_id": str(asset.media_id),
                 "row_version": str(shot.row_version),
-                "storyboard_version": str(episode.storyboard_version),
+                "storyboard_version": str(creation.storyboard_version),
                 "context_hash": digest,
             }
 
@@ -247,15 +383,6 @@ class MediaAssetService(BaseService):
             raise WorkflowError("shot_version_conflict", "当前图片已变化，请重新选择")
         request = record.request_data
         source = request.get("source") or {}
-        captured = request.get("source_snapshot") or {}
-        if (
-            source.get("scene") != "shot_image"
-            or str(source.get("shot_id")) != str(shot.id)
-            or captured.get("context_hash") != digest
-        ) and not parsed.acknowledge_stale_source:
-            raise WorkflowError(
-                "stale_generation_source", "此图来自其他或较早的创作内容，请明确确认采用"
-            )
         original = {**request.get("parameters", {})}
         if source.get("layout"):
             original["layout"] = source["layout"]
@@ -266,18 +393,18 @@ class MediaAssetService(BaseService):
                     "generation_parameters_conflict", "采用参数必须与生成记录一致", 422
                 )
         parameters = {**provided, **{k: v for k, v in original.items() if v is not None}}
-        if not all(parameters.get(k) for k in ("layout", "aspect", "resolution")):
+        if not all(parameters.get(k) for k in ("layout", "resolution")):
             raise WorkflowError("missing_adoption_parameters", "请补全图片布局、画幅和分辨率", 422)
         service = ShotImageService(self.session)
         values = service.create_schema.model_validate(
             {
-                "episode_id": shot.episode_id,
+                "project_id": shot.project_id,
                 "shot_id": shot.id,
                 "media_id": asset.media_id,
                 "model_id": record.config_id,
                 "prompt": request.get("input", {}).get("prompt", ""),
                 "layout": parameters["layout"],
-                "aspect": parameters["aspect"],
+                "aspect": parameters.get("aspect"),
                 "resolution": parameters["resolution"],
                 "context_hash": digest,
             }
@@ -296,7 +423,6 @@ class MediaAssetService(BaseService):
                 "row_version": parsed.expected_row_version,
                 "media_id": asset.media_id,
                 "expected_media_id": parsed.expected_media_id,
-                "confirm_shared": parsed.confirm_shared,
                 "acknowledge_stale_source": parsed.acknowledge_stale_source,
             },
             add_generated_candidate=True,

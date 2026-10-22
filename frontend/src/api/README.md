@@ -1,6 +1,10 @@
 # 前端 API 约定
 
+项目内创作对象直接使用 `project_id`，不存在分集身份；项目创建只提交名称和模式，设置仅保存名称。项目和全局素材库、成员及邀请入口已退役。
+
 后端公共契约见[接口说明](../../../docs/api/README.md)。本文件只说明前端请求组织与交互约束。
+
+项目卡片用独立新标签页链接打开创作流程，更多菜单与链接平级，菜单操作不触发导航。删除使用 `DELETE /projects/{id}?row_version=...`，版本仍为十进制字符串；确认后才提交，409 保留确认窗口并要求重新核对，读取新版本后仍需再次明确删除。成功后重新读取当前筛选与分页，末页为空时回到有效页。项目删除后不能继续访问其内容；已受理的生成任务与媒体记录保留，不自动取消任务。
 
 ## 分层与类型
 
@@ -11,7 +15,7 @@
 
 ## 保存、冲突与生成
 
-小说与剧本使用`writing-session.ts`串行保存共享content_version。剧本同时保存纯文本 `content` 和受限 Quill `editor_document`，格式变化也进入同一队列、恢复稿和版本校验；Delta 只移除文档结尾标记的一个换行，保留用户空行。旧纯文本读取用展示文档，旧客户端省略格式时服务端清除原格式。候选仍只读，生成、提取与导出使用纯文本。旧响应不能覆盖新输入；409暂停保存并保留输入，网络不确定时先读取服务端核实。`standard-session-registry.ts` 按账号及实际资源身份保留队列；页面卸载仅解除订阅，四步、分集、对象与应用内路由立即切换，不等待保存也不追加确认。
+小说与剧本使用`writing-session.ts`串行保存共享content_version。剧本同时保存纯文本 `content` 和受限 Quill `editor_document`，格式变化也进入同一队列、恢复稿和版本校验；Delta 只移除文档结尾标记的一个换行，保留用户空行。旧纯文本读取用展示文档，旧客户端省略格式时服务端清除原格式。候选仍只读，生成、提取与导出使用纯文本。旧响应不能覆盖新输入；409暂停保存并保留输入，网络不确定时先读取服务端核实。`standard-session-registry.ts` 按账号及实际资源身份保留队列；页面卸载仅解除订阅，四步、项目、对象与应用内路由立即切换，不等待保存也不追加确认。
 
 正文、剪辑与声音的本机恢复稿按账号和稳定对象隔离，记录服务端基准版本及未知保存回执。同基准自动恢复续存；基准变化或记录损坏保留原记录，用户按需在非模态详情选择版本，替换前持久保留副本，不追加确认。未知回执不能因 GET 恰好返回旧基准便当作保存成功；重新保存最后输入以并发版本拒绝迟到旧写。声音审核状态在版本或剪辑变化后失效。剪辑只保存稳定媒体 ID 与编辑决定，不保存签名 URL；恢复重新读取展示地址，失效来源仍需处理。只有仅在内存的输入才触发文档退出 `beforeunload`，不会阻止应用内导航。
 
@@ -21,13 +25,13 @@ Agent 待核对消息与普通输入草稿分开保存，包含原始完整请�
 
 素材与分镜使用各自版本；排序还需要storyboard_version。生成前先保存来源内容，采用时提交服务器返回的版本、当前媒体ID和上下文hash；不要在前端生成这些比较值。
 
-标准分集新增素材先保留本机临时卡片，名称与类型完整后用 `assetLibraries.create` 和原创建键保存；UUID 不发送为业务 ID，未命名占位文字不作为真实名称。请求受理不明时核对原键并保留原卡片，不能另建一张。素材 PATCH 支持 `kind`，同时保留 `row_version/confirm_shared`；转换不兼容时保留输入并展示错误，不能代替服务端删除声音、对白、历史或关联。
+创作模式新增素材先保留本机临时卡片，名称与类型完整后用 `assetLibraries.create` 和原创建键保存；UUID 不发送为业务 ID，未命名占位文字不作为真实名称。请求受理不明时核对原键并保留原卡片，不能另建一张。素材 PATCH 支持 `kind`，同时保留 `row_version`；转换不兼容时保留输入并展示错误，不能代替服务端删除声音、对白、历史或关联。
 
 镜头 `title` 与 `shot_size` 随创建、修改、详情和采用回执读取；title 默认空，界面显示“未命名镜头”，不用脚本第一行冒充名称。shot_size 可空，枚举为 `full_shot/medium_shot/close_up/extreme_close_up/wide_shot/two_shot`。名称、脚本沿同一镜头保存队列，图与视频页共用。隐藏的素材关联、脚本时长和完整 image_settings 保留服务端值，不被局部表单清空。
 
-分镜对象详情通过 `storyboardApi.shot(id)` 独立于 20 条分页恢复，额外详情不计入列表 offset；仅服务端详情的归档状态或明确 404 能证明当前对象不可用。详情先于列表返回时仍接收自动保存的行版本与上下文回执，保存后重新读取集合版本。迟到的相邻分页不能覆盖后来选择的对象；上移、下移、归档前完成保存，执行期间锁住编辑。镜头与素材列表独立加载，素材读取失败不得隐藏镜头或覆盖未保存输入。图片参考数为已确认素材图与手动图按 `media_id` 去重后的合计，最多 16 张；生成前保存读回并重新读取两类引用，不自动丢弃超限引用。
+分镜对象详情通过 `storyboardApi.shot(id)` 独立于 20 条分页恢复，额外详情不计入列表 offset；仅服务端详情的归档状态或明确 404 能证明当前对象不可用。详情先于列表返回时仍接收自动保存的行版本与上下文回执，保存后重新读取集合版本。迟到的相邻分页不能覆盖后来选择的对象；上移、下移前完成保存，执行期间锁住编辑。镜头与素材列表独立加载，素材读取失败不得隐藏镜头或覆盖未保存输入。图片参考数为已确认素材图与手动图按 `media_id` 去重后的合计，最多 16 张；生成前保存读回并重新读取两类引用，不自动丢弃超限引用。
 
-`StoryboardResultPage` 预览包含逐镜 `title/shot_size/script/duration_ms/asset_ids/assets/source_excerpt/story_beat` 和整批 `total_duration_ms`。素材名称取生成时冻结快照，`available` 标识是否仍属于本集，`snapshot_missing` 表示旧快照缺失；不得用当前名称冒充原始生成上下文。采用仍为完整批次，预览分页不限制采用范围。
+`StoryboardResultPage` 预览包含逐镜 `title/shot_size/script/duration_ms/asset_ids/assets/source_excerpt/story_beat` 和整批 `total_duration_ms`。素材名称取生成时冻结快照，`available` 标识是否仍属于本项目，`snapshot_missing` 表示旧快照缺失；不得用当前名称冒充原始生成上下文。采用仍为完整批次，预览分页不限制采用范围。
 
 `generations/attempt.ts`按操作与请求内容保存幂等标识。请求超时后同一请求复用原键，内容改变或明确新建任务使用新键；不要为了“重试”自动触发第二次付费提交。可执行操作以can_cancel/can_resume/can_retry为准。
 
@@ -35,19 +39,27 @@ Agent 待核对消息与普通输入草稿分开保存，包含原始完整请�
 
 图片/视频的asset_id、素材本体id、media_id不是同一概念。参考图提交文件media_id；候选采用接口路径使用生成媒体资产asset_id；目标id则由target.type决定。
 
-素材详情的旧来源提交 `source:{scene:"asset_image",asset_id,row_version}`，`input.prompt` 为本次补充要求；标准分集的私人来源扩展见下一节。保存回调必须返回服务端的新版本；短操作锁覆盖保存和提交，不能从尚未更新的 React state 读取版本。历史按素材 ID 查询；切换素材时取消旧请求，轮询错误不覆盖已有任务状态。
+素材详情的旧来源提交 `source:{scene:"asset_image",asset_id,row_version}`，`input.prompt` 为本次补充要求；创作模式的私人来源扩展见下一节。保存回调必须返回服务端的新版本；短操作锁覆盖保存和提交，不能从尚未更新的 React state 读取版本。历史按素材 ID 查询；切换素材时取消旧请求，轮询错误不覆盖已有任务状态。
 
-候选 `generation` 提供来源任务、版本和 `is_stale/stale_reason`。上传或通用图片候选该字段为 null。采用遇到 `stale_source` 时明确确认后提交 `acknowledge_stale_source`，共享确认标志与旧来源确认标志需同时保留，但均不能跳过目标版本冲突。
+候选 `generation` 提供来源任务、版本和 `is_stale/stale_reason`。上传或通用图片候选该字段为 null。采用遇到 `stale_source` 时明确确认后提交 `acknowledge_stale_source`，旧来源确认不能跳过目标版本冲突。
 
-## 标准模式私人生成草稿
+## 图片组与逐图工具
 
-`modules/creation-drafts.ts` 访问 `E/drafts`，按账号、项目、分集、稳定对象和 `purpose` 管理。用途为 `novel_adaptation/asset_image/storyboard_image/storyboard_video`，小说对象为分集 ID。首次 POST 创建；已有草稿用 PATCH 和 `row_version`，遇到创建或版本冲突先读取当前草稿，保留当前输入等待明确核对。草稿只保存下一次生成输入，不随共享作品保存或暴露给协作者。
+`modules/image-groups.ts` 访问共享组、固定图位、主图及私人操作；完整合同见[图片组 API](../../../docs/api/image-groups.md)。`useImageGroup` 保护对象切换和轮询顺序，主图变化后重新读取业务 DTO，不覆盖未保存草稿。尚无作品时按本人草稿的张数预留图位；已有作品按组的 `expected_count` 展示，不因下一次生成张数变化清空。受理后读取新组，各图按 `output_index` 固定回填。
 
-DTO 保留 `model_config_id/input_text/image_settings/video_settings/reference_media_ids` 及服务端 `id/draft_version/source_version/row_version`。未选模型仍可保存输入，生成前必须选择本人可用模型。小说改编和图片补充输入最多 4000 字符，视频提示词最多 16000 字符；私人图片张数为 1/2/4，参考图最多 16 张。视频时长为整秒的毫秒值，实际范围遵守模型能力。仅保存永久媒体 ID，`reference_images` 里的现签 URL 用于展示；共享来源参考图与私人参考图分别管理，生成时合并去重并重新校验合计与模型上限。
+设主图提交 `expected_item_version/expected_primary_version/expected_target_version`，409 保留输入并等待核对。单图操作先以原版本和幂等键建立私人记录，再执行本地像素处理或准备 AI 输入；AI 操作使用原公共 `generations.generateText/generateImage` 和 `source.scene=image_operation`。受理不明保留完整原请求及两个幂等键，仅查原生成回执，返回 null 也不自动重新提交。
 
-先完成作品来源保存，再等待本人草稿保存回执，最后提交来源的最新版本和 `draft_id/draft_version`。仅本机保留的输入不能显示服务端已保存，也不能引用为生成来源。`source_version` 是保存时的溯源版本，不替代当前作品许可；共享来源后来改变时重新读取最新行版本和 hash，私人输入仍保留，不自动拿缓存值拼可信最终提示词。
+图片读取经宿主鉴权同源 content API，按真实像素创建编辑面板；读取失败保留原图并提供重试。原图历史恢复仍经过版本和范围检查。共享算法位于 `src/lib/image-tools/`，画布以兼容 re-export 复用，独立布局和交互保持原入口。
 
-素材私人来源还带 project_id/episode_id；分镜图使用 `context_mode:saved` 和当前完整 layout。图像补充提示词与可见参数由服务端读取本人草稿并冻结，隐藏 layout 保留共享值。分镜视频仍携带当前未过期采用图及 video_context_hash，禁止同时传 input；私人提示词只替代本次视频提示词段，保留剧本，私人时长不改脚本时长。无私人引用的请求仍遵守共享保存设置。409、未保存、不可用模型或采用图过期时停止提交并保稿；生成成功继续展示候选，明确采用才更新作品。
+## 创作模式私人生成草稿
+
+`modules/creation-drafts.ts` 访问 `/projects/{project_id}/drafts`，按账号、项目、稳定对象和 `purpose` 管理。用途为 `novel_adaptation/asset_image/storyboard_image/storyboard_video`，小说对象为项目 ID。首次 POST 创建；已有草稿用 PATCH 和 `row_version`，遇到创建或版本冲突先读取当前草稿，保留当前输入等待明确核对。草稿只保存下一次生成输入，按账号与项目隔离。
+
+DTO 保留 `model_config_id/input_text/image_settings/video_settings/reference_media_ids` 及服务端 `id/draft_version/source_version/row_version`。未选模型仍可保存输入，生成前必须选择本人可用模型。小说改编和图片补充输入最多 4000 字符，视频提示词最多 16000 字符；私人图片张数为 1/2/4，参考图最多 16 张。视频时长为整秒的毫秒值，实际范围遵守模型能力。仅保存永久媒体 ID，`reference_images` 里的现签 URL 用于展示；作品来源参考图与私人参考图分别管理，生成时合并去重并重新校验合计与模型上限。
+
+先完成作品来源保存，再等待本人草稿保存回执，最后提交来源的最新版本和 `draft_id/draft_version`。仅本机保留的输入不能显示服务端已保存，也不能引用为生成来源。`source_version` 是保存时的溯源版本，不替代当前作品许可；作品来源后来改变时重新读取最新行版本和 hash，私人输入仍保留，不自动拿缓存值拼可信最终提示词。
+
+素材私人来源还带 project_id；分镜图使用 `context_mode:saved` 和当前完整 layout。图像补充提示词与可见参数由服务端读取本人草稿并冻结，隐藏 layout 保留来源值。分镜视频仍携带当前主图及 video_context_hash，禁止同时传 input；私人提示词只替代本次视频提示词段，保留剧本，私人时长不改脚本时长。无私人引用的请求仍遵守共享保存设置。409、未保存、不可用模型或当前主图与提交时引用不匹配时停止提交并保稿；素材图和分镜图生成后直接保存到作品图片组，默认第一张主图；分镜视频由后端成功归档时自动确定，前端重新读取 ShotRead.video，不发起媒体采用请求；文本继续明确采用。
 
 私人草稿、提交核对记录和恢复稿都按账号及稳定范围隔离。A → B → A 与图片／视频切换分别恢复各自输入，旧保存和提交响应不能覆盖新对象；切账号清除当前会话中的私人展示。
 
@@ -63,38 +75,20 @@ Key仅在当前表单内使用：编辑留空省略字段、明确清除发送nu
 
 错误按业务场景就近展示，保留未提交内容；避免把原始上游文本当成安全UI错误。版本冲突可展示当前版本/引用对象，但不能把错误details作为可信业务数据写回。
 
-临时签名URL只用于显示/下载，不作为持久化身份。过期后重新读取媒体详情。上传走FormData字段file，不手工固定multipart boundary；候选上传与确认采用是两次独立操作。
+临时签名URL只用于显示/下载，不作为持久化身份。过期后重新读取媒体详情。上传走FormData字段file，不手工固定multipart boundary；流程内兼容候选上传与确认仍是两次接口调用；创作模式的上传会连续完成并直接更新作品，不展示确认采用步骤。
 
-全部候选、生成任务及过程历史仅本人可见，项目权限不授予他人候选访问权。已采用作品通过共享业务 DTO 获取；成片使用 `assembly.current_work` 与 `/assembly/current/download`，音色使用 `current_voice`。协作者无需读取作者私有导出任务或音色记录，亦不能依赖它们恢复播放地址。
+文本候选、私人媒体历史、生成任务及过程历史仅本人可见。素材图、分镜图的完整图片组及原图历史通过作品图片组 DTO 获取，隐藏他人的 task_id、prompt 与处理记录；自动确定的分镜视频和其他已采用作品通过作品 DTO 获取；成片使用 `assembly.current_work` 与 `/assembly/current/download`，音色使用 `current_voice`。项目、任务、生成历史和作品均仅所有者可读。
 
 Agent 上下文使用 `modules/agents.ts`：附件上传/引用带幂等键，先恢复 `pending=true` 附件再允许发送；无法确认上传或引用结果时沿用原请求核对。发送冻结 `attachment_ids`、Skill 的 `id/content_version` 和 `video_audio`，未知发送结果重试复用完整请求体与原键。消息 `references` 返回附件与 Skill 的展示投影，临时 URL 每次读取重签。自定义 Skill 的 ID、内容版本及行版本为十进制字符串，详见 [Agent 上下文 API](../../../docs/api/agent.md)。
 
-分集列表及详情的 `cover_url` 是首个未归档镜头当前采用图片的临时展示地址，无图片时为 null。前端映射为 `coverUrl`，不写回分集设置；图片加载失败后重新读取分集详情，仍不可用时显示默认封面。
 
 ## 环境
 
-`.env.local`仅放公开设置：VITE_API_BASE_URL默认`/api/v1`并会进入浏览器，API_PROXY_TARGET仅供开发代理。生产同域先代理`/api/`再配置SPA fallback；跨域需要服务端额外配置CORS。资源base与深链部署限制见[运行指南](../../../docs/development.md#部署与维护)。
+`.env.local`仅放公开设置：VITE_API_BASE_URL默认`/api/v1`并会进入浏览器，API_PROXY_TARGET仅供开发代理。生产同域先代理`/api/`再配置SPA fallback；跨域需要服务端额外配置CORS。资源base与深链部署限制见[运行指南](../../../docs/instruction/开发运行与验证.md#部署与维护)。
 
-## 画布角色只读接口
+## 画布普通角色节点
 
-角色目录及图片解析使用 [画布 API 合同](../../../docs/api/canvases.md#画布角色目录与表示图读取)。读取以可信画布 `source_key` 为入口，来源由服务端列决定；客户端图 `projectId`、query 或项目权限不能替代当前双项目、实际角色及媒体权限检查。
-
-先读取 `/canvas-runtime/canvas-projects/{source_key}/character-catalog` 或 `/{asset_id}`，保留返回的画布键/行版本、来源项目、角色 ID、`current_version_id` 和全部真实表示槽位。随后以同一版本请求 `/{asset_id}/image-resources?expected_version_id=...`；默认 current；精确历史详情用 `requested_version_id`，图片用 `version_policy=pinned`，返回 `version_id` 与当前指针分别保留。current 的409 `canvas_character_version_changed` 需要重新读取并明确核对，不能静默升级或自动重试历史版本。全部 ID/版本保留十进制字符串，槽位按 `reference_id/role/ordinal/media_id` 保留，同媒体不同槽位不去重。
-
-`types/canvas-character-images.ts` 保留服务端外层 snake_case 与现有资源投影的 `userId/mimeType/createdAt` 等别名。独立画布 `host-character-images.ts` 是纯 GET bridge；调用者须注入宿主统一 HTTP 客户端适配器并返回已解包正文，同时提供可信账号/画布上下文检查回调。bridge 在请求前后重核上下文，并比较画布版本、来源项目、角色、作品版本及全部槽位；现已接入既有角色菜单、picker、详情与生成引用。
-
-使用返回的稳定 `resource_key` 和受鉴权 `file_path`，不保存临时签名 URL、Blob URL 或原 locator；MIME 使用真实响应，不硬编码 PNG。GET 不写数据库或对象，不创建版本、映射、任务或副本。resolver 不检查实际字节；下载端点重新鉴权并 stat/读取，缺对象返回404，读取失败须保留当前输入和就近反馈。
-
-`requires_canvas_copy` 只是跨项目复制提示，不能代表副本已存在，也不能授予图保存或生成准入。归一化/复制仍沿现有独立流程；此读取合同不代表角色 UI、业务回填、生成或供应商验收已完成。
-
-### 画布 current 角色 UI
-
-无限画布的既有角色菜单、项目资产 picker 和详情通过宿主 HTTP 读取专用 `character-catalog` list/detail，再按相同当前版本读取 `image-resources`。角色目录映射为最小源角色 card，ID、版本和 row-version 保留十进制字符串；不伪造完整 `ProjectAsset` 或 `ProjectDetail`。无可信关联来源时就近显示错误，空目录不回退本人素材库。
-
-查询与确认重读核账号 epoch、画布 lifetime、source、row-version、角色 current 版本和全部表示槽位。图片 resolver 提供真实稳定 resource 身份；首次图保存沿现有 normalizer 复制封面，串行 journal/CAS 回执与 reload 确认持久化。同版本刷新保留已核的复制封面和本人私人 prompt/voice，旧响应不覆盖新输入。pinned 详情与角色生成引用已接入；声音只读取宿主当前已采用样音，保留独立绑定版本，TTS 音色不由样音伪造；API 夹具与单元测试不等于真实 DB、MinIO、供应商或一比一验收。
-
-声音公共投影 `voice_status/voice_sample` 与版本冻结详见[画布角色样音合同](../../../docs/api/canvases.md#固定角色版本与已采用样音2026-10-13)。关闭原生声音功能时为 unavailable，启用而无绑定为 missing；ready 仅表示真实已采用样音存在，不表示任意TTS协议可用。
-
+画布角色直接来自本图节点，保存 `nodeId/name/definition`，生成通过 `characters` 与 `characterNodeId` 引用。详情、改名、普通图片与声音引用沿原生画布模型保存，不再请求来源项目、企业角色目录、角色版本或小说章节接口。`workspaceProjectId` 及剪贴板来源画布身份继续保留；这些身份不能用于恢复已退役的创作项目绑定。
 
 ## 画布文字 thinking 与工具范围
 

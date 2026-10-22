@@ -11,11 +11,12 @@ import { ToolbarSettingsModal } from "@/components/canvas/toolbars/toolbar-setti
 import { CanvasAppearanceControls } from "@/components/canvas/canvas-appearance-controls";
 import { aceternityMotion } from "@/lib/aceternity-motion";
 import { canvasDockStyle } from "@/lib/canvas/canvas-aceternity-style";
+import { isCanvasNodeCreationEnabled } from "@/lib/canvas/canvas-feature-availability";
 import type { CanvasAppearance } from "@/lib/canvas/canvas-appearance";
 import { canvasThemes, type CanvasBackgroundMode, type CanvasTheme } from "@/lib/canvas-theme";
 import { defaultToolbarPrefs, readToolbarPrefs, resolveToolbarEntries, type ToolContext, type ToolbarHandlers, type ToolbarPrefs } from "@/lib/canvas/tool-registry";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
-import type { CanvasNodeTypeId, CanvasToolMode, CanvasWorkspaceMode } from "@/types/canvas";
+import { CanvasNodeType, type CanvasNodeTypeId, type CanvasToolMode, type CanvasWorkspaceMode } from "@/types/canvas";
 
 export function CanvasToolbar({
     selectedCount,
@@ -23,7 +24,6 @@ export function CanvasToolbar({
     workspaceMode,
     canvasTool,
     onToolChange,
-    isProjectLinked,
     canUndo,
     canRedo,
     appearance,
@@ -66,7 +66,6 @@ export function CanvasToolbar({
     workspaceMode: CanvasWorkspaceMode;
     canvasTool: CanvasToolMode;
     onToolChange: (tool: CanvasToolMode) => void;
-    isProjectLinked: boolean;
     canUndo: boolean;
     canRedo: boolean;
     appearance: CanvasAppearance;
@@ -211,7 +210,6 @@ export function CanvasToolbar({
         selectedVideoCount: 0,
         canvasTool,
         workspaceMode,
-        isProjectLinked,
         canUndo,
         canRedo,
         extractingVideoFrames: false,
@@ -290,7 +288,7 @@ export function CanvasToolbar({
                 className="canvas-floating-dock libtv-main-dock pointer-events-auto max-w-full"
                 style={canvasDockStyle(theme)}
             />
-            {libtvChrome ? (
+            {libtvChrome && isCanvasNodeCreationEnabled(CanvasNodeType.Director) ? (
                 <button type="button" className="canvas-libtv-director-entry pointer-events-auto" onClick={onOpenDirector} aria-label="TV Director">
                     <span className="canvas-libtv-director-orb" aria-hidden="true" />
                     <span>TV Director</span>

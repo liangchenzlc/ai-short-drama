@@ -5,7 +5,6 @@ from copy import deepcopy
 from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.dao.canvas_generation_dao import CanvasGenerationDAO
 from short_drama.dao.canvas_task_dao import CanvasTaskDAO
 from short_drama.domain import (
     AsyncTask,
@@ -18,7 +17,6 @@ from short_drama.schemas.canvas import CanvasDocument
 from short_drama.schemas.canvas_generation import CanvasTaskBindOperation, CanvasTaskRegistration
 
 from .base import BaseService, utcnow
-from .canvas_character_publication_service import CanvasCharacterPublicationService
 from .canvas_document import content_hash
 from .canvas_service import CanvasService
 from .canvas_storyboard import storyboard_characters
@@ -181,168 +179,153 @@ class CanvasTaskService(BaseService):
         return [self._result(canvas, binding, task, index) for index in indices]
 
     def bind(self, operation: CanvasTaskBindOperation) -> dict:
+        with self._transaction(lock_request_project=False):
+            return self.bind_locked(operation, refresh=True)
+
+    def bind_locked(self, operation: CanvasTaskBindOperation, *, refresh=False) -> dict:
+        if not self.session.in_transaction():
+            raise WorkflowError("canvas_task_transaction_required", "节点回填需要活动事务", 409)
         operation = CanvasTaskBindOperation.model_validate(operation.model_dump())
         args = operation.params
-        with self._transaction(lock_request_project=False):
-            key = "canvas-bind:" + content_hash(operation.op_id)
-            digest, prior = self.canvases.begin_write(
-                key, "canvas.task.bind", args.model_dump(mode="json", by_alias=True)
-            )
-            canvas = self.tasks.canvas(args.canvas_id)
-            if canvas is None:
+        key = "canvas-bind:" + content_hash(operation.op_id)
+        digest, prior = self.canvases.begin_write(
+            key, "canvas.task.bind", args.model_dump(mode="json", by_alias=True)
+        )
+        canvas = self.tasks.canvas(args.canvas_id)
+        if canvas is None:
+            if prior is not None:
+                # 归档后的回执查询仍校验当前成员权限；只返回原操作事实，不能复活图。
+                prior = self.canvases.canvas_dao.receipt(self.canvases.actor_id, key, lock=True)
                 if prior is not None:
-                    # 归档后的回执查询仍校验当前成员权限；只返回原操作事实，不能复活图。
-                    prior = self.canvases.canvas_dao.receipt(self.canvases.actor_id, key, lock=True)
-                    if prior is not None:
-                        return self._response(operation, None, prior.result_json, replayed=True)
-                raise NotFound("Canvas does not exist")
-            # 冻结角色即使已从当前图删除，仍先按双项目稳定顺序持锁。
-            preflight = CanvasGenerationDAO(self.session).binding(
-                args.task_id, self.canvases.actor_id
-            )
-            frozen_characters = (
-                preflight.source_snapshot.get("request", {})
-                .get("canvas_storyboard_source", {})
-                .get("characters", [])
-                if preflight is not None
-                and (preflight.project_id, preflight.canvas_id) == (canvas.project_id, canvas.id)
-                else []
-            )
-            canvas = self.canvases.require_canvas(
-                canvas.project_id,
-                canvas.id,
-                lock=True,
-                publish_characters=bool(frozen_characters),
-                include_existing_characters=True,
-            )
-            # Admission/replay lookup can establish an older REPEATABLE READ snapshot.
-            # This operation owns a fresh transaction, so no pending graph edits are discarded.
+                    return self._response(operation, None, prior.result_json, replayed=True)
+            raise NotFound("Canvas does not exist")
+        canvas = self.canvases.require_canvas(
+            canvas.project_id,
+            canvas.id,
+            lock=True,
+        )
+        # Admission/replay lookup can establish an older REPEATABLE READ snapshot.
+        # HTTP owns a fresh transaction; locked callers retain their pending parent receipt.
+        if refresh:
             self.session.expire_all()
-            self.session.refresh(canvas, with_for_update=True)
-            # 锁顺序为项目、画布、任务；读取回执也重新验证本人任务及当前成员权限。
-            task = self.tasks.task(args.task_id)
-            binding = self.tasks.binding(args.task_id)
-            if task is None or binding is None:
-                raise NotFound("画布生成任务不存在")
-            records = self.tasks.records(task.id)
-            if records and "canvas_tool_canonical" in records[0].request_data:
-                raise WorkflowError(
-                    "canvas_tool_binding_unsupported", "编辑器工具结果不能绑定为节点作品", 422
-                )
-            if binding.canvas_id != canvas.id or task.project_id != canvas.project_id:
-                raise WorkflowError("canvas_mismatch", "任务不属于这块画布", 409)
-            if binding.node_key != args.node_id:
-                raise WorkflowError("node_mismatch", "只能绑定到任务原先指定的节点", 409)
-            if task.status != "succeeded":
-                raise WorkflowError("task_not_succeeded", "只有成功的任务才能绑定到画布", 409)
-            digest, receipt = self.canvases.begin_write(
-                key, "canvas.task.bind", args.model_dump(mode="json", by_alias=True), lock=True
+        self.session.refresh(canvas, with_for_update=True)
+        # 锁顺序为项目、画布、任务；读取回执也重新验证本人任务及当前成员权限。
+        task = self.tasks.task(args.task_id)
+        binding = self.tasks.binding(args.task_id)
+        if task is None or binding is None:
+            raise NotFound("画布生成任务不存在")
+        records = self.tasks.records(task.id)
+        if records and "canvas_tool_canonical" in records[0].request_data:
+            raise WorkflowError(
+                "canvas_tool_binding_unsupported", "编辑器工具结果不能绑定为节点作品", 422
             )
-            if receipt is not None:
-                return self._response(operation, canvas, receipt.result_json, replayed=True)
-            result = self.tasks.result(binding.id, args.output_index)
-            if result is not None and result.attachment_receipt_id is not None:
-                from short_drama.domain.canvas import CanvasWriteReceipt
+        if binding.canvas_id != canvas.id or task.project_id != canvas.project_id:
+            raise WorkflowError("canvas_mismatch", "任务不属于这块画布", 409)
+        if binding.node_key != args.node_id:
+            raise WorkflowError("node_mismatch", "只能绑定到任务原先指定的节点", 409)
+        if task.status != "succeeded":
+            raise WorkflowError("task_not_succeeded", "只有成功的任务才能绑定到画布", 409)
+        digest, receipt = self.canvases.begin_write(
+            key, "canvas.task.bind", args.model_dump(mode="json", by_alias=True), lock=True
+        )
+        if receipt is not None:
+            return self._response(operation, canvas, receipt.result_json, replayed=True)
+        result = self.tasks.result(binding.id, args.output_index)
+        if result is not None and result.attachment_receipt_id is not None:
+            from short_drama.domain.canvas import CanvasWriteReceipt
 
-                prior = self._require(CanvasWriteReceipt, result.attachment_receipt_id)
-                historical = deepcopy(prior.result_json)
-                historical["alreadyBound"] = True
-            else:
-                document = self.canvases._document(canvas, private=True, lock=True)
-                node = next(
-                    (node for node in document["nodes"] if node["id"] == args.node_id), None
-                )
-                if node is None:
-                    raise WorkflowError("node_deleted", "原任务节点已删除，未重新创建节点", 404)
-                if (node.get("metadata") or {}).get("taskId") != str(task.id):
-                    raise WorkflowError(
-                        "node_task_mismatch", "节点已绑定到其他任务，未覆盖该节点", 409
-                    )
-                result = self._result(canvas, binding, task, args.output_index)
-                storyboard_source = (
-                    records[-1].request_data.get("canvas_storyboard_source") if records else None
-                )
-                if storyboard_source is not None:
-                    frozen_roles = storyboard_source.get("characters", [])
-                    current_roles = storyboard_characters(document)
-                    if sorted(content_hash(item) for item in frozen_roles) != sorted(
-                        content_hash(item) for item in current_roles
-                    ):
-                        raise WorkflowError(
-                            "canvas_storyboard_source_changed",
-                            "原分镜角色已变化，结果保留在私人任务中，未覆盖镜头",
-                            409,
-                        )
-                    CanvasCharacterPublicationService(self.canvases).validate(canvas, document)
-                    current_rows = (
-                        (node.get("metadata") or {}).get("storyboard", {}).get("rows", [])
-                    )
-                    if node["type"] != "script" or content_hash(current_rows) != content_hash(
-                        storyboard_source["rows"]
-                    ):
-                        raise WorkflowError(
-                            "canvas_storyboard_source_changed",
-                            "原分镜已编辑，结果保留在私人任务中，未覆盖镜头",
-                            409,
-                        )
-                effect_key = f"attach-node:{task.id}:{args.node_id}:{args.output_index}"
-                node["metadata"] = generation_metadata(
-                    node.get("metadata") or {}, result, str(task.id), effect_key
-                )
-                if storyboard_source is not None:
-                    node["title"] = result.content_json["storyboardTitle"]
-                    row_ids = {row["id"] for row in result.content_json["storyboard"]["rows"]}
-                    document["connections"] = [
-                        edge
-                        for edge in document["connections"]
-                        if not (
-                            (edge["fromNodeId"] == node["id"] or edge["toNodeId"] == node["id"])
-                            and (
-                                edge.get("storyboardRowId")
-                                and edge["storyboardRowId"] not in row_ids
-                                or edge["fromNodeId"] == node["id"]
-                                and edge.get("fromHandleId", "").startswith("row:")
-                                and edge["fromHandleId"][4:] not in row_ids
-                                or edge["toNodeId"] == node["id"]
-                                and edge.get("toHandleId", "").startswith("row:")
-                                and edge["toHandleId"][4:] not in row_ids
-                            )
-                        )
-                    ]
-                self.canvases._apply_document(
-                    canvas, CanvasDocument.model_validate(document), reason="generation_bind"
-                )
-                historical = {
-                    "applied": True,
-                    "canvasId": canvas.source_key,
-                    "nodeId": args.node_id,
-                    "taskId": str(task.id),
-                    "outputIndex": args.output_index,
-                    "effectKey": effect_key,
-                    "mediaType": result.kind,
-                    "alreadyBound": False,
-                    "revision": str(canvas.row_version),
-                    **{
-                        key: deepcopy(value)
-                        for key, value in result.content_json.items()
-                        if key in {"content", "storageKey", "assetId", "resourceId"}
-                    },
-                }
-            self.canvases.record_write(
-                key=key,
-                operation="canvas.task.bind",
-                digest=digest,
-                canvas=canvas,
-                result=historical,
+            prior = self._require(CanvasWriteReceipt, result.attachment_receipt_id)
+            historical = deepcopy(prior.result_json)
+            historical["alreadyBound"] = True
+        else:
+            document = self.canvases._document(canvas, private=True, lock=True)
+            node = next((node for node in document["nodes"] if node["id"] == args.node_id), None)
+            if node is None:
+                raise WorkflowError("node_deleted", "原任务节点已删除，未重新创建节点", 404)
+            if (node.get("metadata") or {}).get("taskId") != str(task.id):
+                raise WorkflowError("node_task_mismatch", "节点已绑定到其他任务，未覆盖该节点", 409)
+            result = self._result(canvas, binding, task, args.output_index)
+            storyboard_source = (
+                records[-1].request_data.get("canvas_storyboard_source") if records else None
             )
-            if result is not None and result.attachment_receipt_id is None:
-                receipt = self.canvases.canvas_dao.receipt(self.canvases.actor_id, key, lock=True)
-                result.attachment_status = "attached"
-                result.attachment_receipt_id = receipt.id
-                result.attached_at = result.updated_at = utcnow()
-                result.row_version += 1
-                self.session.flush()
-            return self._response(operation, canvas, historical, replayed=False)
+            if storyboard_source is not None:
+                frozen_roles = storyboard_source.get("characters", [])
+                current_roles = storyboard_characters(document)
+                if sorted(content_hash(item) for item in frozen_roles) != sorted(
+                    content_hash(item) for item in current_roles
+                ):
+                    raise WorkflowError(
+                        "canvas_storyboard_source_changed",
+                        "原分镜角色已变化，结果保留在私人任务中，未覆盖镜头",
+                        409,
+                    )
+                current_rows = (node.get("metadata") or {}).get("storyboard", {}).get("rows", [])
+                if node["type"] != "script" or content_hash(current_rows) != content_hash(
+                    storyboard_source["rows"]
+                ):
+                    raise WorkflowError(
+                        "canvas_storyboard_source_changed",
+                        "原分镜已编辑，结果保留在私人任务中，未覆盖镜头",
+                        409,
+                    )
+            effect_key = f"attach-node:{task.id}:{args.node_id}:{args.output_index}"
+            node["metadata"] = generation_metadata(
+                node.get("metadata") or {}, result, str(task.id), effect_key
+            )
+            if storyboard_source is not None:
+                node["title"] = result.content_json["storyboardTitle"]
+                row_ids = {row["id"] for row in result.content_json["storyboard"]["rows"]}
+                document["connections"] = [
+                    edge
+                    for edge in document["connections"]
+                    if not (
+                        (edge["fromNodeId"] == node["id"] or edge["toNodeId"] == node["id"])
+                        and (
+                            edge.get("storyboardRowId")
+                            and edge["storyboardRowId"] not in row_ids
+                            or edge["fromNodeId"] == node["id"]
+                            and edge.get("fromHandleId", "").startswith("row:")
+                            and edge["fromHandleId"][4:] not in row_ids
+                            or edge["toNodeId"] == node["id"]
+                            and edge.get("toHandleId", "").startswith("row:")
+                            and edge["toHandleId"][4:] not in row_ids
+                        )
+                    )
+                ]
+            self.canvases._apply_document(
+                canvas, CanvasDocument.model_validate(document), reason="generation_bind"
+            )
+            historical = {
+                "applied": True,
+                "canvasId": canvas.source_key,
+                "nodeId": args.node_id,
+                "taskId": str(task.id),
+                "outputIndex": args.output_index,
+                "effectKey": effect_key,
+                "mediaType": result.kind,
+                "alreadyBound": False,
+                "revision": str(canvas.row_version),
+                **{
+                    key: deepcopy(value)
+                    for key, value in result.content_json.items()
+                    if key in {"content", "storageKey", "assetId", "resourceId"}
+                },
+            }
+        self.canvases.record_write(
+            key=key,
+            operation="canvas.task.bind",
+            digest=digest,
+            canvas=canvas,
+            result=historical,
+        )
+        if result is not None and result.attachment_receipt_id is None:
+            receipt = self.canvases.canvas_dao.receipt(self.canvases.actor_id, key, lock=True)
+            result.attachment_status = "attached"
+            result.attachment_receipt_id = receipt.id
+            result.attached_at = result.updated_at = utcnow()
+            result.row_version += 1
+            self.session.flush()
+        return self._response(operation, canvas, historical, replayed=False)
 
     def _response(
         self,

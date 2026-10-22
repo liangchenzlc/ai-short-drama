@@ -168,7 +168,8 @@ try {
     const privateTask = await read(await owner.request.get(`${origin}${tasks}/${task.id}`));
     assert.equal(JSON.parse(privateTask.resultJson).reasoning, config.reasoning);
     assert.equal((await member.request.get(`${origin}${tasks}/${task.id}`)).status(), 404);
-    const shared = await read(await member.request.get(`${origin}${path}`));
+    assert.equal((await member.request.get(`${origin}${path}/my-document`)).status(), 404);
+    const shared = await read(await owner.request.get(`${origin}${path}`));
     assert.equal(shared.source_document.nodes[0].metadata.content, config.first + config.second);
     assert.ok(!JSON.stringify(shared).includes(config.reasoning));
     assert.equal((await outsider.request.get(`${origin}${path}`)).status(), 404);

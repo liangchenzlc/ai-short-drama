@@ -13,7 +13,7 @@ class CanvasRecycleService(CanvasService):
     def _archived_document(self, receipt, canvas):
         frozen = receipt.result_json.get("$archive_document")
         if isinstance(frozen, dict):
-            return self.project_source_binding(deepcopy(frozen), canvas)
+            return deepcopy(frozen)
         # Before this upgrade deletion receipts did not carry a frozen preview.
         # Reconstruct only this exact archived canvas, retaining private predicates.
         with restoring_archived_canvas(

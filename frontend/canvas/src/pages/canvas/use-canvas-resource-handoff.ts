@@ -20,8 +20,6 @@ import { planCanvasHandoffEffect, resolveCanvasAssetHandoffPlan } from "./canvas
 
 type UseCanvasResourceHandoffOptions = {
     projectId: string;
-    linkedProjectId: string;
-    refetchLinkedProject: () => Promise<unknown>;
     projectLoaded: boolean;
     assets: Asset[];
     assetsHydrated: boolean;
@@ -36,8 +34,6 @@ type UseCanvasResourceHandoffOptions = {
 
 export function useCanvasResourceHandoff({
     projectId,
-    linkedProjectId,
-    refetchLinkedProject,
     projectLoaded,
     assets,
     assetsHydrated,
@@ -62,8 +58,7 @@ export function useCanvasResourceHandoff({
     const archiveNodesToLinkedFolder = useCallback(
         (folder: CanvasNodeData, droppedNodes: CanvasNodeData[]) => {
             const folderId = folder.metadata?.folder?.assetFolderId;
-            const domainProjectId = folder.metadata?.folder?.projectId || linkedProjectId;
-            if (!folderId || !domainProjectId || !droppedNodes.length) return;
+            if (!folderId || !droppedNodes.length) return;
             const owner = lifetime.capture(projectId);
             const folderTitle = folder.title;
             void runOwnedCanvasPageCommit({
@@ -73,7 +68,7 @@ export function useCanvasResourceHandoff({
                 work: () => runOwnedCanvasEnsureQueue({
                     owner,
                     items: droppedNodes,
-                    ensure: (node) => ensureCanvasNodeAsset({ canvasId: owner.canvasId, domainProjectId, folderId, node, source: "canvas-manual" }),
+                    ensure: (node) => ensureCanvasNodeAsset({ canvasId: owner.canvasId, folderId, node, source: "canvas-manual" }),
                 }),
                 onCommit: (results) => {
                     const archivedByNodeId = new Map(droppedNodes.flatMap((node, index) => {
@@ -82,7 +77,6 @@ export function useCanvasResourceHandoff({
                         return [[node.id, { assetId: result.assetId, content: node.metadata?.content, previousAssetId: node.metadata?.assetId }] as const];
                     }));
                     setNodes((current) => applyArchivedCanvasNodeAssets(current, archivedByNodeId));
-                    void refetchLinkedProject();
                     if (results.some((result) => !result?.confirmed)) {
                         message.warning("部分素材文件尚未保存到工作区，未完成归档，修改已保留在本机");
                     } else {
@@ -94,7 +88,7 @@ export function useCanvasResourceHandoff({
                 message.error(error instanceof Error ? error.message : "素材归档失败");
             });
         },
-        [lifetime, linkedProjectId, message, projectId, refetchLinkedProject, setNodes],
+        [lifetime, message, projectId, setNodes],
     );
 
     useEffect(() => {

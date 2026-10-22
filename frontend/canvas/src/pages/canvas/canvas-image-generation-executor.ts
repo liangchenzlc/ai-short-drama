@@ -210,7 +210,6 @@ export async function executeImageGeneration({
                             batchIndex: index,
                             batchCount: targetIds.length,
                             ...taskContext,
-                            resolvedCharacterVersions: generationContext.resolvedCharacterVersions,
                             promptTemplateOperation: sourceNode?.metadata?.promptTemplateOperation,
                             promptTemplateVariables: sourceNode?.metadata?.promptTemplateVariables,
                             ...styleMetadata,

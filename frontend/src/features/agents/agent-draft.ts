@@ -47,8 +47,8 @@ function pendingBody(value: unknown): value is AgentSendInput {
   const scope = value.expected_scope;
   if (!record(scope) || !only(scope, ['stage', 'subject_type', 'subject_id', 'task_type']) || !identifier(scope.subject_id)) return false;
   const tasks: Record<string, string[]> = {
-    'source:episode': ['writing'], 'assets:episode': ['extraction', 'batch'], 'assets:asset': ['creation', 'image'],
-    'storyboard:episode': ['planning', 'batch'], 'storyboard:shot': ['creation', 'image', 'video'],
+    'source:project': ['writing'], 'assets:project': ['extraction', 'batch'], 'assets:asset': ['creation', 'image'],
+    'storyboard:project': ['planning', 'batch'], 'storyboard:shot': ['creation', 'image', 'video'],
   };
   if (typeof scope.stage !== 'string' || typeof scope.subject_type !== 'string' || typeof scope.task_type !== 'string'
     || !tasks[`${scope.stage}:${scope.subject_type}`]?.includes(scope.task_type)) return false;

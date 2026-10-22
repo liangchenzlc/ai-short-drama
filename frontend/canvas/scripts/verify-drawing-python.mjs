@@ -260,7 +260,7 @@ async function drawingCopies(target, context, projectId, path, key, node, drawin
             destination = `/api/v1/projects/${projectId}/canvases/${canvas.id}`;
         } else {
             const project = await read(await context.request.post(`${origin}/api/v1/projects`, {
-                headers: { "Idempotency-Key": "drawing-paste-cross" }, data: { name: "绘图跨项目粘贴", aspect: "16:9", workspace_mode: "infinite_canvas" },
+                headers: { "Idempotency-Key": "drawing-paste-cross" }, data: { name: "绘图跨项目粘贴", workspace_mode: "infinite_canvas" },
             }));
             destination = `/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
         }
@@ -330,7 +330,7 @@ try {
     const csrf = (await context.cookies()).find(cookie => cookie.name === "sd_csrf");
     await context.setExtraHTTPHeaders({ Origin: origin, "X-CSRF-Token": csrf.value });
     const project = await read(await context.request.post(`${origin}/api/v1/projects`, {
-        headers: { "Idempotency-Key": "drawing-browser" }, data: { name: "绘图验证", aspect: "16:9", workspace_mode: "infinite_canvas" },
+        headers: { "Idempotency-Key": "drawing-browser" }, data: { name: "绘图验证", workspace_mode: "infinite_canvas" },
     }));
     const path = `/api/v1/projects/${project.id}/canvases/${project.primary_canvas_id}`;
     const initial = await read(await context.request.get(`${origin}${path}/my-document`));

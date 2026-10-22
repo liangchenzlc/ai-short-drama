@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRe
 import { createPortal } from 'react-dom';
 import type { AgentSubject } from '../agents/agent-scope';
 import './episode-creation.css';
+import './creation-overlays.css';
 import '../ai-assistant/standard-assistant.css';
 
 type CreationStage = 'source' | 'assets' | 'storyboard' | 'assembly';
@@ -71,6 +72,7 @@ export function EpisodeCreationWorkspace({ stage, assistantOpen, assistantPanel,
     if (!pane) return;
     const controls = () => [...pane.querySelectorAll<HTMLElement>('button:not([disabled]),textarea:not([disabled]),input:not([disabled]),[tabindex="0"]')].filter(node => node.getClientRects().length > 0);
     const handle = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || document.querySelector('dialog[open]')) return;
       if (document.querySelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')) return;
       if (event.key === 'Escape') { event.preventDefault(); changePanelOpen(false); panelTrigger.current?.focus(); }
       if (event.key !== 'Tab') return;
@@ -95,6 +97,7 @@ export function EpisodeCreationWorkspace({ stage, assistantOpen, assistantPanel,
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const controls = () => [...pane.querySelectorAll<HTMLElement>('button:not([disabled]),textarea:not([disabled]),input:not([disabled]),[tabindex="0"]')].filter(node => node.getClientRects().length > 0);
     const handle = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || document.querySelector('dialog[open], .ant-select-dropdown:not(.ant-select-dropdown-hidden), .ant-dropdown:not(.ant-dropdown-hidden)')) return;
       if (event.key === 'Escape') { event.preventDefault(); closeAssistant.current(); }
       if (event.key !== 'Tab') return;
       const first = controls()[0]; const last = controls().at(-1);

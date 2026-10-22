@@ -4,10 +4,9 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
 import { scopedLocalStorage } from "@/lib/user-scope";
-import { beefAPIVideoContract, isBeefAPIEndpoint } from "@/lib/beefapi-video-contracts";
 import { defaultProtocolForCapability, defaultProtocolForModel, modelProtocolCapability, normalizeModelProtocol, usesOpenAICompatibleProtocolDefault, type ModelProtocol } from "@/lib/model-protocols";
 import { normalizeVideoDuration, normalizeVideoResolution } from "@/lib/video-generation-options";
-import { defaultModelCapabilityConfig, workflowFieldRole, workflowFieldSafeToOverride, workflowVideoFieldsFromJson, type ModelCapabilityConfig } from "@/lib/model-capabilities";
+import { workflowFieldRole, workflowFieldSafeToOverride, workflowVideoFieldsFromJson, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import { useUserStore } from "@/stores/use-user-store";
 import type { CapabilitySpec } from "@/services/api/logical-models";
 
@@ -370,7 +369,7 @@ export type ModelChannel = {
     pinned?: boolean;
     presetVersion?: number;
     credentialRef?: string;
-    credentialSource?: "manual" | "beefapi";
+    credentialSource?: "manual";
     hasApiKey?: boolean;
     hasSecretKey?: boolean;
     concurrencyLimit?: number;
@@ -607,21 +606,9 @@ export function configuredModelMatchesCapability(config: AiConfig, model: string
     return selectableModelsByCapability(config, capability).includes(normalized);
 }
 
-export const MANAGED_BEEFAPI_CREDENTIAL_REF = "beefapi-enterprise";
-
-export function isBuiltinBeefAPIChannel(channel: Pick<ModelChannel, "id" | "pinned" | "scope" | "credentialSource">) {
-    return (channel.id === "beefapi" && channel.pinned === true)
-        || (channel.scope === "system" && channel.id.startsWith("host-") && channel.credentialSource === "beefapi");
-}
-
-export function channelHasManagedBeefAPICredential(channel: Pick<ModelChannel, "id" | "pinned" | "scope" | "credentialSource" | "credentialRef" | "hasApiKey">) {
-    if (!isBuiltinBeefAPIChannel(channel)) return false;
-    return channel.credentialRef === MANAGED_BEEFAPI_CREDENTIAL_REF || channel.hasApiKey === true;
-}
-
-export function channelHasGenerationCredential(channel: Pick<ModelChannel, "id" | "pinned" | "scope" | "credentialSource" | "credentialRef" | "hasApiKey" | "apiKey">) {
+export function channelHasGenerationCredential(channel: Pick<ModelChannel, "credentialRef" | "hasApiKey" | "apiKey">) {
     return (channel.credentialRef?.startsWith("host:") && channel.hasApiKey === true)
-        || channelHasManagedBeefAPICredential(channel) || Boolean(channel.apiKey?.trim());
+        || Boolean(channel.apiKey?.trim());
 }
 
 function isAiConfigReady(config: AiConfig, model: string) {
@@ -736,7 +723,7 @@ export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefine
     };
     const hasPersistedChannels = Array.isArray(persistedConfig.channels);
     if (!hasPersistedChannels) config.channels = [];
-    const channels = normalizeChannels(config, !hasPersistedChannels).map(enrichBeefApiMediaChannel);
+    const channels = normalizeChannels(config, !hasPersistedChannels);
     const models = modelOptionsFromChannels(config.hostModelDirectory ? channels.filter(channel => channel.enabled !== false) : channels);
     const imageModels = filterModelsByCapability(models, "image", channels);
     const videoModels = filterModelsByCapability(models, "video", channels);
@@ -779,108 +766,6 @@ export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefine
             audioModels,
         },
     };
-}
-
-function beefApiVideoProtocol(model: string, current?: ModelProtocol): ModelProtocol {
-    return (beefAPIVideoContract(model)?.protocol as ModelProtocol | undefined) || current || "newapi-channel-2";
-}
-
-function beefApiVideoCapabilityConfig(model: string, protocol: ModelProtocol, current?: ModelCapabilityConfig, sourced = false): ModelCapabilityConfig | undefined {
-    const profile = beefApiSeedanceCapabilityConfig(model, current, sourced);
-    if (sourced) return profile;
-    const contract = beefAPIVideoContract(model);
-    const limits = contract?.maxReferences;
-    if (!limits) return profile;
-    const resolved = profile || defaultModelCapabilityConfig(protocol, model);
-    if (!resolved.video) return resolved;
-    return { ...resolved, video: { ...resolved.video,
-        references: { ...resolved.video.references, maxImages: Math.min(resolved.video.references.maxImages, limits.image ?? Infinity), maxVideos: Math.min(resolved.video.references.maxVideos, limits.video ?? Infinity), maxAudios: Math.min(resolved.video.references.maxAudios, limits.audio ?? Infinity) },
-        operations: contract.operations || resolved.video.operations,
-        defaultOperation: contract.operations?.includes(resolved.video.defaultOperation) ? resolved.video.defaultOperation : contract.operations?.[0] || resolved.video.defaultOperation,
-    } };
-}
-
-function beefApiSeedanceCapabilityConfig(model: string, current?: ModelCapabilityConfig, sourced = false): ModelCapabilityConfig | undefined {
-    if (sourced) return current;
-    if (!/^seedance-2\.(?:0|5)(?:-|$)/i.test(model)) return current;
-    const video = current?.video;
-    const refs = video?.references;
-    // Older built-in profiles disabled all video/audio references on every
-    // hydration. Match that complete signature, not a user's individual limit.
-    const legacy = video?.operations?.length === 2 && video.operations.includes("text_to_video") && video.operations.includes("image_to_video") &&
-        refs?.maxImages === 9 && refs.maxVideos === 0 && refs.maxAudios === 0 &&
-        refs.maxVideoBytes === 200 * 1024 * 1024 && refs.maxAudioBytes === 15 * 1024 * 1024 &&
-        refs.maxVideoDurationSeconds === 0 && refs.maxAudioDurationSeconds === 0;
-    const defaults = defaultModelCapabilityConfig("newapi", model);
-    if (!current || !video) return defaults;
-    // The built-in BeefAPI Seedance contract supports the audio switch even
-    // when an older saved profile advertised no control. Keep its default.
-    const generateAudio = { ...video!.generateAudio, supported: true };
-    if (!legacy) return { ...current, video: { ...video!, generateAudio } };
-    const next = defaults.video!;
-    return { ...current, video: { ...video!, generateAudio, operations: next.operations, references: { ...refs!,
-        maxImages: next.references.maxImages,
-        maxVideos: next.references.maxVideos, maxAudios: next.references.maxAudios,
-        maxVideoDurationSeconds: next.references.maxVideoDurationSeconds,
-        maxAudioDurationSeconds: next.references.maxAudioDurationSeconds,
-    } } };
-}
-
-function enrichBeefApiMediaChannel(channel: ModelChannel): ModelChannel {
-    if (!isBeefAPIEndpoint(channel.baseUrl)) return channel;
-    const models = channel.models;
-    const existing = new Map((channel.modelProfiles || []).map((item) => [item.model, item]));
-    for (const model of models.filter(isImageModelName)) {
-        const current = existing.get(model);
-        existing.set(model, {
-            ...(current || {}),
-            model,
-            capability: "image",
-            protocol: current?.protocol || "openai-image",
-            capabilityConfig: current?.capabilityConfig || defaultModelCapabilityConfig("openai-image", model),
-        });
-    }
-    for (const model of models.filter(isTextModelName)) {
-        const current = existing.get(model);
-        if (current?.capability && current.capability !== "text") continue;
-        if (current?.protocol && modelProtocolCapability(current.protocol) !== "text") continue;
-        existing.set(model, {
-            ...(current || {}),
-            model,
-            capability: "text",
-            protocol: current?.protocol || "chat-completion",
-        });
-    }
-    for (const model of models.filter(isAudioModelName)) {
-        const current = existing.get(model);
-        if (current?.capability && current.capability !== "audio" && current.capability !== "text") continue;
-        existing.set(model, {
-            ...(current || {}),
-            model,
-            capability: "audio",
-            protocol: current?.protocol && current.capability === "audio" ? current.protocol : "openai-audio",
-        });
-    }
-    for (const model of models.filter(isTranscriptionModelName)) {
-        const current = existing.get(model);
-        if (!current) continue;
-        if (current.capability === "image" || current.capability === "video") continue;
-        existing.delete(model);
-    }
-    for (const model of models.filter(isVideoModelName)) {
-        const current = existing.get(model);
-        // Repair known routes using the shared contract; preserve catalog and
-        // custom protocols for models whose wire contract is not declared here.
-        const protocol = beefApiVideoProtocol(model, current?.protocol);
-        existing.set(model, {
-            ...(current || {}),
-            model,
-            capability: "video",
-            protocol,
-            capabilityConfig: beefApiVideoCapabilityConfig(model, protocol, current?.capabilityConfig, current?.videoCapabilitiesVersion !== undefined),
-        });
-    }
-    return { ...channel, models, modelProfiles: Array.from(existing.values()) };
 }
 
 function normalizeSelectedModel(value: string, channels: ModelChannel[], options: string[], preserveUnavailable = false) {
@@ -1050,7 +935,7 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         apiFormat: interfaceType ? (interfaceType === "gemini-veo" || interfaceType === "gemini-image" || interfaceType === "gemini-generate-content" ? ("gemini" as const) : interfaceType === "claude-api" ? ("claude" as const) : ("openai" as const)) : channel.apiFormat,
         interfaceType,
         channelId: channel.scope === "system" ? channel.id : "",
-        credentialRef: channel.credentialRef || (isBuiltinBeefAPIChannel(channel) ? MANAGED_BEEFAPI_CREDENTIAL_REF : undefined),
+        credentialRef: channel.credentialRef,
     };
 }
 

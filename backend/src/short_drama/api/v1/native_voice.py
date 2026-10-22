@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from short_drama.api.dependencies import get_session
-from short_drama.api.v1.episode_storyboard import ScopedId
+from short_drama.api.v1.project_storyboard import ScopedId
 from short_drama.schemas.native_voice import NativeDialogueEdit, SoundModeEdit, VoiceAdopt
 from short_drama.service.native_voice_service import NativeVoiceService
 
@@ -49,17 +49,16 @@ def adopt(project_id: ScopedId, asset_id: ScopedId, body: VoiceAdopt, svc: Servi
     return svc.adopt(project_id, asset_id, body)
 
 
-@router.get("/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}/dialogue")
-def dialogue(project_id: ScopedId, episode_id: ScopedId, shot_id: ScopedId, svc: Service):
-    return svc.dialogue(project_id, episode_id, shot_id)
+@router.get("/projects/{project_id}/shots/{shot_id}/dialogue")
+def dialogue(project_id: ScopedId, shot_id: ScopedId, svc: Service):
+    return svc.dialogue(project_id, shot_id)
 
 
-@router.put("/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}/dialogue")
+@router.put("/projects/{project_id}/shots/{shot_id}/dialogue")
 def save_dialogue(
     project_id: ScopedId,
-    episode_id: ScopedId,
     shot_id: ScopedId,
     body: NativeDialogueEdit,
     svc: Service,
 ):
-    return svc.save_dialogue(project_id, episode_id, shot_id, body)
+    return svc.save_dialogue(project_id, shot_id, body)

@@ -11,7 +11,7 @@ export interface StandardSessionController {
   flush?(): Promise<unknown>;
   retry?(): Promise<unknown>;
 }
-export interface StandardSessionDetails { label?: string; projectId?: string; episodeId?: string }
+export interface StandardSessionDetails { label?: string; projectId?: string }
 export interface StandardSaveEntry extends StandardSessionDetails {
   key: string; status: string; message: string; hasUnpersisted: boolean;
   flush?: () => Promise<unknown>; retry?: () => Promise<unknown>;
@@ -32,7 +32,7 @@ const entryKey = (actor: string, resource: string) => JSON.stringify([actor, res
 function publish() {
   const next = [...entries.values()].filter(entry => entry.accountId === account).map(entry => {
     const state = entry.controller.getSnapshot();
-    return { ...entry.details, key: entry.resourceKey, status: state.recoveryBlocked ? 'conflict' : state.status === 'loading' && !state.busy && !state.dirty ? 'idle' : state.status === 'shared' ? 'conflict' : state.status === 'dirty' ? 'unsaved' : state.status ?? (state.dirty ? 'unsaved' : 'saved'),
+    return { ...entry.details, key: entry.resourceKey, status: state.recoveryBlocked ? 'conflict' : state.status === 'loading' && !state.busy && !state.dirty ? 'idle' : state.status === 'dirty' ? 'unsaved' : state.status ?? (state.dirty ? 'unsaved' : 'saved'),
       message: state.message ?? '', hasUnpersisted: entry.controller.hasMemoryOnlyChanges?.() ?? entry.controller.hasUnpersisted?.() ?? false,
       flush: entry.controller.flush ? () => entry.controller.flush!() : undefined,
       retry: entry.controller.retry ? () => entry.controller.retry!() : undefined };
@@ -40,7 +40,7 @@ function publish() {
   if (snapshotAccount === account && next.length === snapshot.length && next.every((entry, index) => {
     const previous = snapshot[index];
     return entry.key === previous.key && entry.status === previous.status && entry.message === previous.message
-      && entry.label === previous.label && entry.projectId === previous.projectId && entry.episodeId === previous.episodeId
+      && entry.label === previous.label && entry.projectId === previous.projectId
       && entry.hasUnpersisted === previous.hasUnpersisted;
   })) return;
   snapshot = next; snapshotAccount = account;
@@ -79,8 +79,7 @@ export function retainStandardSession<T extends StandardSessionController>(accou
     clearTimeout(existing.timer); existing.timer = undefined; existing.references += 1;
     const nextDetails = { ...existing.details, ...details };
     const detailsChanged = existing.details.label !== nextDetails.label
-      || existing.details.projectId !== nextDetails.projectId
-      || existing.details.episodeId !== nextDetails.episodeId;
+      || existing.details.projectId !== nextDetails.projectId;
     existing.details = nextDetails;
     if (account === accountId) existing.controller.resume?.();
     if (detailsChanged) publish();

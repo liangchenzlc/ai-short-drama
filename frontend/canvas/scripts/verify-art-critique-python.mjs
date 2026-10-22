@@ -236,7 +236,8 @@ try {
     const privateGraph = await graph(final, document => artState(document)?.status === "completed");
     assert.deepEqual(artState(privateGraph), state);
     assert.deepEqual(privateGraph.nodes.find(node => node.id === source.id), report.original_source);
-    const shared = await read(await member.request.get(`${origin}${path}/my-document`));
+    assert.equal((await member.request.get(`${origin}${path}/my-document`)).status(), 404);
+    const shared = await read(await final.request.get(`${origin}${path}`));
     assert.ok(!shared.source_document.nodes.find(node => node.id === target.id).metadata.artCritique);
     assert.deepEqual((await read(await member.request.get(`${origin}${runs}`))).runs, []);
     for (const context of [member, outsider]) {

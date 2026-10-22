@@ -30,9 +30,17 @@ def is_canvas_image_request(snapshot: dict, request: dict) -> bool:
     )
 
 
+def is_stored_image_edit_request(snapshot: dict, request: dict) -> bool:
+    return is_canvas_image_request(snapshot, request) or (
+        snapshot.get("service_type") == "image"
+        and (request.get("source") or {}).get("scene") == "image_operation"
+        and (request.get("image_edit_parameters") or {}).get("mode") == "image"
+    )
+
+
 def uses_canvas_inline_images(snapshot: dict, request: dict, adapter: str) -> bool:
     """Ark/Qwen 与已明确保存的 Agnes 图片内联；Wanx 仍要求公网 URL。"""
-    return is_canvas_image_request(snapshot, request) and (
+    return is_stored_image_edit_request(snapshot, request) and (
         adapter == "ark_images.v1"
         or (adapter == "openai_images.v1" and snapshot.get("model_key") == AGNES_IMAGE)
         or (

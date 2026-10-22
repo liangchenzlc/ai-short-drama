@@ -34,7 +34,7 @@ class AssistantSelectedObject(InputModel):
 
 
 class AssistantSourceContext(InputModel):
-    kind: Literal["episode", "canvas"]
+    kind: Literal["project", "canvas"]
     id: Annotated[str, Field(min_length=1, max_length=128)]
     revision: Identifier
     include_document: bool = True
@@ -46,7 +46,7 @@ class AssistantSourceContext(InputModel):
 
     @model_validator(mode="after")
     def matching_source(self):
-        if self.kind == "episode":
+        if self.kind == "project":
             parse_identifier(self.id)
         if any((item.kind == "node") != (self.kind == "canvas") for item in self.selected):
             raise ValueError("Selected objects must belong to the source kind")
@@ -55,7 +55,7 @@ class AssistantSourceContext(InputModel):
         if self.kind == "canvas" and (
             self.stage is not None or self.storyboard_revision is not None
         ):
-            raise ValueError("Canvas context does not have episode stages")
+            raise ValueError("Canvas context does not have creation stages")
         return self
 
 

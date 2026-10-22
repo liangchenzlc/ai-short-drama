@@ -7,7 +7,7 @@ export interface ScriptDetail extends ScriptCandidate { content: string }
 export interface ShotImage { media_id: string; media_asset_id: string | null; url: string; width?: number | null; height?: number | null; layout: string; aspect: string; resolution: string; is_stale: boolean }
 export interface ShotVideo { media_id: string; media_asset_id: string | null; url: string | null; resolution: string; duration_ms: number; first_frame_media_id: string | null; is_stale: boolean }
 export interface ShotRead extends WorkflowShot { position: number; script: string; duration_ms: number; source_excerpt: string; asset_ids: string[]; image: ShotImage | null; deleted_at: string | null; video_prompt: string; video_default_prompt: string; video_system_prompt: string; video_settings: { resolution: '480p' | '720p' | '1080p'; duration_ms?: number | null }; video_context_hash: string; video: ShotVideo | null; native_speech?: { mode: 'native'; reviewed: boolean; voices: { character_id: string; media_id: string | null; duration_ms: number | null }[] } | null }
-export interface StoryboardPage { episode_id: string; storyboard_version: string; items: ShotRead[]; total: number; offset: number; limit: number }
+export interface StoryboardPage {  storyboard_version: string; items: ShotRead[]; total: number; offset: number; limit: number }
 export interface StoryboardResultAsset { id: string; kind: 'character' | 'prop' | 'scene' | null; name: string; available: boolean; snapshot_missing: boolean }
 export interface StoryboardResultShot { position: number; title: string; script: string; duration_ms: number; source_excerpt: string; story_beat: string; asset_ids: string[]; assets: StoryboardResultAsset[] }
 export interface StoryboardResultPage extends Page<StoryboardResultShot> { generation_id: string; total_duration_ms: number; applied: { mode: 'append' | 'replace'; shot_ids: string[]; applied_at: string | null; storyboard_version: string | null } | null }
@@ -16,16 +16,16 @@ export type ShotSize = 'full_shot' | 'medium_shot' | 'close_up' | 'extreme_close
 export interface ShotRead { title?: string; shot_size?: ShotSize | null }
 export interface StoryboardApplyResult { generation_id: string; mode: 'append' | 'replace'; shot_ids: string[]; storyboard_version: string; already_applied: boolean }
 
-export function storyboardApi(projectId: string, episodeId: string) {
-  const root = `/projects/${encodeURIComponent(projectId)}/episodes/${encodeURIComponent(episodeId)}`;
+export function storyboardApi(projectId: string) {
+  const root = `/projects/${encodeURIComponent(projectId)}`;
   return {
     async scripts(signal?: AbortSignal, offset = 0) { return (await http.get<Page<ScriptCandidate>>(`${root}/scripts`, { params: { offset, limit: 100 }, signal })).data; },
     async script(id: string, signal?: AbortSignal) { return (await http.get<ScriptDetail>(`${root}/scripts/${encodeURIComponent(id)}`, { signal })).data; },
     async shots(signal?: AbortSignal, includeArchived = false, offset = 0, limit = 20) { return (await http.get<StoryboardPage>(`${root}/shots`, { params: { offset, limit, include_archived: includeArchived }, signal })).data; },
     async shot(id: string, signal?: AbortSignal) { return (await http.get<ShotMutation>(`${root}/shots/${encodeURIComponent(id)}`, { signal })).data; },
-    async create(storyboardVersion: string, key: string) { return (await http.post<ShotMutation>(`${root}/shots`, { storyboard_version: storyboardVersion, script: '', asset_ids: [], image_settings: { resolution: '2K', aspect: 'inherit', layout: 'single' } }, { headers: { 'Idempotency-Key': key } })).data; },
+    async create(storyboardVersion: string, key: string) { return (await http.post<ShotMutation>(`${root}/shots`, { storyboard_version: storyboardVersion, script: '', asset_ids: [], image_settings: { resolution: '2K', aspect: null, layout: 'single' } }, { headers: { 'Idempotency-Key': key } })).data; },
     async update(id: string, body: { row_version: string; title?: string; shot_size?: ShotSize | null; script?: string; duration_ms?: number; asset_ids?: string[]; image_settings?: ShotRead['image_settings']; video_prompt?: string; video_settings?: ShotRead['video_settings'] }) { return (await http.patch<ShotMutation>(`${root}/shots/${encodeURIComponent(id)}`, body)).data; },
-    async remove(id: string, rowVersion: string) { await http.delete(`${root}/shots/${encodeURIComponent(id)}`, { headers: { 'If-Match': `"${rowVersion}"` } }); },
+    async remove(id: string, body: { row_version: string; storyboard_version: string }) { return (await http.delete<{ storyboard_version: string; deleted_id: string }>(`${root}/shots/${encodeURIComponent(id)}`, { data: body })).data; },
     async move(id: string, storyboardVersion: string, direction: -1 | 1) { return (await http.post(`${root}/shots/${encodeURIComponent(id)}/move`, { storyboard_version: storyboardVersion, direction })).data; },
     async order(storyboardVersion: string, shotIds: string[]) { return (await http.put<{ storyboard_version: string; ordered_ids: string[] }>(`${root}/shots/order`, { storyboard_version: storyboardVersion, shot_ids: shotIds })).data; },
     async resultShots(id: string, offset = 0, signal?: AbortSignal) { return (await http.get<StoryboardResultPage>(`${root}/storyboard-results/${encodeURIComponent(id)}/shots`, { params: { offset, limit: 20 }, signal })).data; },
