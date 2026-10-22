@@ -2,8 +2,8 @@
 
 from sqlalchemy import func, select
 
+from short_drama.core.time import utcnow
 from short_drama.domain import CanvasTaskTextDelta
-from short_drama.service.base import utcnow
 
 
 class CanvasTextDAO:

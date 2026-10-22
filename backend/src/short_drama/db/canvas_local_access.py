@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
+from short_drama.db.canvas_scope import require_canvas
 from short_drama.domain import CanvasLocalJob, MediaFile
 
 _AUTHORITY = object()
@@ -52,9 +53,7 @@ def guard_canvas_local(
             "canvas_local_snapshot_immutable", "本地任务身份、来源和回执不能改写", 403
         )
     if job.canvas_id is not None:
-        from short_drama.service.canvas_service import CanvasService
-
-        CanvasService(session).require_canvas(job.project_id, job.canvas_id, lock=True)
+        require_canvas(session, job.project_id, job.canvas_id, lock=True)
     source = session.scalar(
         select(MediaFile).where(MediaFile.id == job.source_media_id).with_for_update(read=True)
     )

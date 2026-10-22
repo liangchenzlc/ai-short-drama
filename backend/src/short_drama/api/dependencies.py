@@ -69,3 +69,9 @@ def get_user_creation_draft_service(request: Request, session: Session = Depends
     from short_drama.service.user_creation_draft_service import UserCreationDraftService
 
     return UserCreationDraftService(session, request.app.state.settings, request.app.state.storage)
+
+
+def get_model_preference_service(session: Session = Depends(get_session)):
+    from short_drama.service.model_preference_service import ModelPreferenceService
+
+    return ModelPreferenceService(session)

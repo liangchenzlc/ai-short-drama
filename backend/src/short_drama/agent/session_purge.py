@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from sqlalchemy import or_, select
 
-from short_drama.agent.authorization import digest
 from short_drama.domain import MediaFile
 from short_drama.domain.agent import (
     AgentConversation,
@@ -29,6 +28,7 @@ from short_drama.domain.agent_task import AgentOperation, AgentTask, AgentTaskIn
 from short_drama.domain.agent_undo import AgentBatchUndo
 from short_drama.domain.base import Base
 from short_drama.service.base import utcnow
+from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 logger = logging.getLogger(__name__)

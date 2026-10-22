@@ -17,6 +17,7 @@ from .canvas_gemini_adapters import API_PREFIXES, GeminiTextOptions
 from .canvas_text_adapters import text_image_limits
 from .canvas_text_thinking import thinking_parameters
 from .canvas_tool_adapters import CANVAS_TOOL_ADAPTERS, build_canvas_tool_body
+from .endpoints import endpoint
 from .transport import validated_url
 from .types import GenerationError
 
@@ -155,8 +156,6 @@ def build_canvas_tool_submission(
                     break
             path += "/v1beta/models/" + quote(model, safe=":@&=+$") + ":generateContent"
             return urlunsplit((base.scheme, base.netloc, path, "", "")), {}, body
-        # 已存在的OpenAI路径规范化与普通任务相同；调用时模块已完成初始化。
-        from .adapters import endpoint
 
         compatible = adapter == "openai_chat.v1" and is_compatible_chat(snapshot)
         saved = OpenAIToolOptions.model_validate(

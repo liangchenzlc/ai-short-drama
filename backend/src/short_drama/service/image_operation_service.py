@@ -89,9 +89,9 @@ class ImageOperationService(ImageGroupService):
     def _create_operation(self, payload, key):
         parsed = ImageOperationCreate.model_validate(payload)
         actor = require_actor(self.session)
-        from .ai_generation_service import AIGenerationService
+        from .generation_task_policy import validate_idempotency_key
 
-        key = AIGenerationService._key(key)
+        key = validate_idempotency_key(key)
         digest = self._digest(parsed)
         with self._transaction():
             existing = self.session.scalar(

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Button, Input } from 'antd';
 import { projectsApi, type RemoteProject } from '../../api/modules/projects';
 import { StudioFeedback } from '../../components/ui/StudioFeedback';
@@ -47,6 +47,8 @@ export function ProjectNameEditor({ project, readOnly, onUpdated, registerBarrie
   }, [actor, resourceKey, project.projectId]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const editingRef = useRef(false);
   const [error, setError] = useState('');
   useEffect(() => { session.initialize(project); }, [session, project]);
   useEffect(() => {
@@ -59,6 +61,14 @@ export function ProjectNameEditor({ project, readOnly, onUpdated, registerBarrie
   async function reload(keepLocal: boolean) {
     try { setError(''); await session.reload(keepLocal); } catch (cause) { setError(cause instanceof Error ? cause.message : '名称读取失败，请重试。'); }
   }
+  function beginEditing() {
+    setDraft(state.value?.name ?? project.name); editingRef.current = true; setEditing(true);
+  }
+  function finishEditing(commit: boolean) {
+    if (!editingRef.current) return;
+    editingRef.current = false; setEditing(false);
+    if (commit) { session.edit({ name: draft }); void session.flush(); }
+  }
   function download() {
     try {
       const raw = session.exportRecovered() ?? JSON.stringify({ name: state.value?.name });
@@ -68,11 +78,11 @@ export function ProjectNameEditor({ project, readOnly, onUpdated, registerBarrie
     } catch (cause) { setError(cause instanceof Error ? cause.message : '名称备份下载失败。'); }
   }
   return <>
-    {editing && !readOnly ? <Input autoFocus className="episode-project-name-input" aria-label="作品名称" maxLength={120} value={state.value?.name ?? project.name}
-      disabled={state.recoveryBlocked} onChange={event => session.edit({ name: event.target.value })}
-      onBlur={() => { setEditing(false); void session.flush(); }}
-      onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setEditing(false); void reload(false); } }}/>
-      : <button type="button" className="episode-project-name" title={readOnly ? project.name : '点击编辑作品名称'} disabled={readOnly} onClick={() => setEditing(true)}>{state.value?.name ?? project.name}</button>}
+    {editing && !readOnly ? <Input autoFocus className="episode-project-name-input" aria-label="作品名称" maxLength={120} value={draft}
+      disabled={state.recoveryBlocked} onChange={event => setDraft(event.target.value)}
+      onBlur={() => finishEditing(true)}
+      onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); finishEditing(false); } }}/>
+      : <button type="button" className="episode-project-name" title={readOnly ? project.name : '点击编辑作品名称'} disabled={readOnly} onClick={beginEditing}>{state.value?.name ?? project.name}</button>}
     {(error || state.message) && <StudioFeedback type={state.status === 'conflict' || state.recoveryBlocked ? 'warning' : 'error'} title="作品名称保存" message={error || state.message} noticeKey={`project-name:${project.projectId}`}
       actions={<><Button size="small" onClick={download}>下载本机名称</Button>{!state.recoveryBlocked && <Button size="small" disabled={state.busy} onClick={() => void reload(true)}>核对后保留本机名称</Button>}<Button size="small" disabled={state.busy} onClick={() => void reload(false)}>使用服务端名称</Button></>}/>} 
   </>;

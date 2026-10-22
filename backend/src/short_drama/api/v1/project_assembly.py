@@ -6,8 +6,6 @@ from sqlalchemy.orm import Session
 
 from short_drama.api.dependencies import get_session
 from short_drama.api.v1.project_storyboard import ScopedId
-from short_drama.core.exceptions import NotFound
-from short_drama.domain import MediaFile
 from short_drama.schemas.assembly_editor import (
     AssemblyEditorEdit,
     AudioAnalysisCreate,
@@ -205,12 +203,7 @@ def apply(
 
 @router.get("/exports/{job_id}/download")
 def download(project_id: ScopedId, job_id: ScopedId, svc: Service):
-    result = svc.job_action(project_id, job_id, "get")
-    if result["status"] != "succeeded" or not result["media_id"]:
-        raise NotFound("成片尚未完成")
-    with svc._transaction():
-        media = svc.session.get(MediaFile, int(result["media_id"]))
-        locator = media.storage_locator
+    locator = svc.export_locator(project_id, job_id)
     storage = StorageService(svc.storage, svc.settings)
 
     def chunks():

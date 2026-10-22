@@ -11,6 +11,7 @@
 - `http.ts`是统一Axios实例，默认`/api/v1`、15秒超时；将网络、HTTP和业务错误转为`ApiError`，不记录正文/凭据，不自动重试写入，不触发全局toast。
 - `types/`和`modules/`中的DTO保留服务端snake_case字段；ID与版本保持十进制字符串，不能转换成JavaScript number。
 - `modules/`封装资源请求与必要的UI映射；组件不另建Axios实例。
+- API 模块不能依赖 `features/`。模型配置的草稿序列化、业务模型映射与变更通知由 `features/ai-config/config-api.ts` 组合，底层模块只接收和返回 DTO；通用组件不直接请求 API。
 - 页面/会话负责加载、分页、错误、提交和过时响应处理。可取消的列表请求使用AbortController，取消不作为业务失败显示。
 
 ## 保存、冲突与生成

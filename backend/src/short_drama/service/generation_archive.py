@@ -56,6 +56,17 @@ def inspect_media(data, kind):
 
 
 class GenerationArchive:
+    @staticmethod
+    def _attach_image_result(session, task, record, media_id, output_index):
+        if (record.request_data.get("source") or {}).get("scene") == "image_operation":
+            from .image_operation_service import ImageOperationService
+
+            ImageOperationService(session).attach(task, record, media_id)
+        else:
+            from .image_group_service import ImageGroupService
+
+            ImageGroupService(session).attach(task, record, media_id, output_index)
+
     def __init__(self, factory, settings, gateway, storage):
         self.factory, self.settings = factory, settings
         self.gateway, self.storage = gateway, storage
@@ -272,10 +283,8 @@ class GenerationArchive:
                 candidate_status = self._link_asset_candidate(
                     session, current_record.request_data, existing.media_id, task.initiated_by
                 )
-                from .image_group_service import ImageGroupService
-
-                ImageGroupService(session).attach(
-                    task, current_record, existing.media_id, entry["output_index"]
+                self._attach_image_result(
+                    session, task, current_record, existing.media_id, entry["output_index"]
                 )
                 data = dict(current_record.response_data or {})
                 manifest = [dict(item) for item in data.get("media_manifest", [])]
@@ -428,9 +437,9 @@ class GenerationArchive:
             candidate_status = self._link_asset_candidate(
                 session, current_record.request_data, media.id, task.initiated_by
             )
-            from .image_group_service import ImageGroupService
-
-            ImageGroupService(session).attach(task, current_record, media.id, entry["output_index"])
+            self._attach_image_result(
+                session, task, current_record, media.id, entry["output_index"]
+            )
             data = dict(current_record.response_data or {})
             manifest = [dict(item) for item in data.get("media_manifest", [])]
             for item in manifest:

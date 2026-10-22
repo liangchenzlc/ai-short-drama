@@ -4,72 +4,26 @@ import json
 import re
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
 from sqlalchemy import and_, or_, select
 
-from short_drama.agent.authorization import digest
-from short_drama.agent.memory_context import restricted_messages
+from short_drama.agent.memory_sources import restricted_messages
 from short_drama.agent.subject_context import snapshot_subjects
+from short_drama.agent.tool_parameters import IMAGE_CONTENT_TOOL as IMAGE_CONTENT_TOOL
+from short_drama.agent.tool_parameters import IMAGE_PRIMARY_TOOL as IMAGE_PRIMARY_TOOL
+from short_drama.agent.tool_parameters import IMAGE_READ_TOOL as IMAGE_READ_TOOL
+from short_drama.agent.tool_parameters import ReadImageContent as ReadImageContent
+from short_drama.agent.tool_parameters import ReadImageGroup as ReadImageGroup
+from short_drama.agent.tool_parameters import SetImageGroupPrimary as SetImageGroupPrimary
+from short_drama.agent.tool_parameters import SubjectKey as SubjectKey
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
 from short_drama.domain import Asset, ImageGroup, MediaFile, Project, ShotScript
 from short_drama.domain.agent import AgentMessage, AgentRun
 from short_drama.domain.agent_media import AgentMediaRequest
 from short_drama.domain.agent_task import AgentOperation, AgentTaskInput
-from short_drama.schemas.base import Identifier, InputModel
-from short_drama.schemas.image_group import ImagePrimarySet
 from short_drama.service.assistant_image_service import AssistantImageService, freeze_image_catalog
 from short_drama.service.assistant_subject_service import selection_metadata
-
-IMAGE_READ_TOOL = "read_image_group"
-IMAGE_CONTENT_TOOL = "read_image_content"
-IMAGE_PRIMARY_TOOL = "set_image_group_primary"
-SubjectKey = Annotated[str, Field(pattern=r"^subject:[a-f0-9]{64}$")]
-
-
-class ReadImageGroup(InputModel):
-    subject_key: SubjectKey | None = None
-    operation_id: Identifier | None = None
-    view: Literal["current", "detail", "history"] = "current"
-    group_id: Identifier | None = None
-    offset: Annotated[int, Field(ge=0, le=100000)] = 0
-    limit: Annotated[int, Field(ge=1, le=10)] = 5
-    character_offset: Annotated[int, Field(ge=0, le=1048576)] = 0
-    character_limit: Annotated[int, Field(ge=1, le=6000)] = 4000
-
-    @model_validator(mode="after")
-    def one_source(self):
-        if (self.subject_key is None) == (self.operation_id is None):
-            raise ValueError("Select exactly one subject or task media operation")
-        if self.operation_id is not None and self.group_id is None:
-            raise ValueError("A generated result requires its exact image group")
-        return self
-
-
-class ReadImageContent(InputModel):
-    subject_key: SubjectKey | None = None
-    operation_id: Identifier | None = None
-    group_id: Identifier | None = None
-    item_id: Identifier | None = None
-    media_id: Identifier
-
-    @model_validator(mode="after")
-    def one_source(self):
-        if (self.subject_key is None) == (self.operation_id is None):
-            raise ValueError("Select exactly one subject or task media operation")
-        if (self.group_id is None) != (self.item_id is None):
-            raise ValueError("An image group and slot must be provided together")
-        if self.subject_key is not None and self.group_id is None:
-            raise ValueError("A selected subject requires its exact image group and slot")
-        return self
-
-
-class SetImageGroupPrimary(ImagePrimarySet):
-    request_message_id: Identifier
-    request_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    subject_key: SubjectKey
-    group_id: Identifier
+from short_drama.utils.json_digest import digest
 
 
 @dataclass(frozen=True)

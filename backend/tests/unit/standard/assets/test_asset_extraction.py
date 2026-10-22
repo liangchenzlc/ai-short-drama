@@ -6,7 +6,6 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.dao.task_runtime_dao import finish
 from short_drama.domain import AIGenerationRecord, Asset, AsyncTask
 from short_drama.schemas.ai_generation import TextGenerationCreate
 from short_drama.schemas.asset_extraction import parse_extraction_result
@@ -14,6 +13,7 @@ from short_drama.service.ai_generation_service import AIGenerationService
 from short_drama.service.asset_extraction_service import AssetExtractionService
 from short_drama.service.asset_library_service import AssetLibraryService
 from short_drama.service.generation_business_service import GenerationBusinessService
+from short_drama.service.task_runtime_service import finish
 from tests.support.generation_fixtures import config, generation_session, settings
 from tests.unit.standard.writing.test_project_writing import setup
 

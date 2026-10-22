@@ -31,19 +31,13 @@ from short_drama.ai.canvas_runninghub_adapters import (
 from short_drama.ai.model_identity import model_credential_identity
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
-from short_drama.dao.task_runtime_dao import (
-    LeaseLost,
-    TaskRuntimeDAO,
-    finish,
-    latest_record,
-    owned_task,
-    schedule,
-)
+from short_drama.dao.task_runtime_dao import LeaseLost, latest_record, owned_task
 from short_drama.domain import AIGenerationRecord, AIModelConfig, AsyncTask, MediaFile
 from short_drama.service.base import utcnow
 from short_drama.service.generation_archive import GenerationArchive
 from short_drama.service.generation_references import StoredAudioReferences, StoredImageReferences
 from short_drama.service.storage_service import StorageService
+from short_drama.service.task_runtime_service import TaskRuntimeService, finish, schedule
 from short_drama.tasks.state import archive_due, recovery_action
 from short_drama.utils.snowflake import next_id
 
@@ -54,7 +48,7 @@ class GenerationExecutionService:
     def __init__(self, factory, settings, gateway, storage):
         self.factory, self.settings = factory, settings
         self.gateway, self.storage = gateway, storage
-        self.store = TaskRuntimeDAO(factory, settings)
+        self.store = TaskRuntimeService(factory, settings)
         self.archive = GenerationArchive(factory, settings, gateway, storage)
 
     @contextmanager

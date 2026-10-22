@@ -11,7 +11,6 @@ from sqlalchemy import event, func, select
 
 from short_drama.core.exceptions import NotFound, StorageUnavailable
 from short_drama.dao.canvas_recycle_cleanup_dao import CanvasRecycleCleanupDAO
-from short_drama.dao.task_runtime_dao import finish
 from short_drama.domain import (
     AIGenerationRecord,
     AsyncTask,
@@ -28,6 +27,7 @@ from short_drama.domain.canvas import CanvasWriteReceipt
 from short_drama.service.base import utcnow
 from short_drama.service.canvas_recycle_cleanup import cleanup_canvas_recycle
 from short_drama.service.canvas_resource_cleanup import cleanup_canvas_resources
+from short_drama.service.task_runtime_service import finish
 from short_drama.storage.models import ObjectLocation
 from short_drama.utils.snowflake import next_id
 from tests.integration.canvas.document.test_canvas_workspace import actor, node

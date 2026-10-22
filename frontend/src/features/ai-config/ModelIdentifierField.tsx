@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { AutoComplete, Input } from 'antd';
-import { aiModelConfigs } from '../../api/modules/ai-model-configs';
+import { aiModelConfigs } from './config-api';
 import { errorMessage, isCancelled } from '../../api/http';
 import type { AiConfig, ConfigDraft } from './config-model';
 import { usesRuntimeModelDiscovery } from './config-form-model';

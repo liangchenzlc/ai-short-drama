@@ -1,11 +1,8 @@
 from fastapi import APIRouter, Request, Response
-from sqlalchemy import update
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.domain.collaboration import User, UserSession
 from short_drama.schemas.identity import EmailRequest, Login, PasswordReset, Proof, Registration
-from short_drama.service.auth_service import AuthService, user_dto
-from short_drama.service.base import utcnow
+from short_drama.service.auth_service import AuthService
 
 router = APIRouter(tags=["Accounts"])
 
@@ -62,20 +59,13 @@ def me(request: Request):
     actor = getattr(request.state, "actor", None)
     if actor is None:
         raise WorkflowError("authentication_required", "Please sign in", 401)
-    with request.app.state.session_factory() as session:
-        return {"user": user_dto(session.get(User, actor.user_id))}
+    return {"user": auth(request).current_user(actor)}
 
 
 @router.post("/auth/logout")
 def logout(request: Request, response: Response):
     actor = getattr(request.state, "actor", None)
-    if actor:
-        with request.app.state.session_factory.begin() as session:
-            session.execute(
-                update(UserSession)
-                .where(UserSession.id == actor.session_id)
-                .values(revoked_at=utcnow())
-            )
+    auth(request).logout(actor)
     response.delete_cookie("sd_session", path="/")
     response.delete_cookie("sd_csrf", path="/")
     return {"signed_out": True}

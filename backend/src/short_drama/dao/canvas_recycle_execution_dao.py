@@ -4,6 +4,7 @@ from sqlalchemy import delete, or_, select, union
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement
 
+from short_drama.core.time import utcnow
 from short_drama.domain import (
     AIGenerationRecord,
     AsyncTask,
@@ -18,7 +19,6 @@ from short_drama.domain import (
     ProjectCanvas,
 )
 from short_drama.domain.canvas import CanvasWriteReceipt
-from short_drama.service.base import utcnow
 
 DISPOSED_ERROR = {"code": "canvas_work_disposed", "message": "原画布作品已处置，执行载荷已回收。"}
 USAGE_FIELDS = {

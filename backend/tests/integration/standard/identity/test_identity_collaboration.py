@@ -291,7 +291,11 @@ def test_works_assets_models_and_renames_are_owner_only(identity_app):
     assert owner.patch(root, json={"name": "stale", "row_version": "1"}).status_code == 409
     for path in ("/members", "/invitations", "/episodes"):
         assert owner.post(root + path, json={"target_user_id": user["id"]}).status_code == 404
-    assert owner.delete(root).status_code == 405
+    assert owner.delete(root).status_code == 422
+    assert (
+        other.delete(root, params={"row_version": changed.json()["row_version"]}).status_code == 404
+    )
+    assert owner.get(root).status_code == 200
     assert owner.get("/api/v1/libraries/global/assets").status_code == 404
     assert owner.get("/api/v1/users/search", params={"q": "other"}).status_code == 404
     assert (

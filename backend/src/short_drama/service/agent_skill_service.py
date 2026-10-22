@@ -11,6 +11,7 @@ from sqlalchemy.orm import defer
 
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
 from short_drama.core.identity import require_actor
+from short_drama.core.skill_catalog import BUILTIN_NAMES as BUILTIN_NAMES
 from short_drama.db.access import scoped_key
 from short_drama.domain.agent_context import AgentSkill
 from short_drama.domain.agent_skill import AgentSkillSetting, AgentSkillVersion
@@ -46,21 +47,6 @@ from short_drama.service.agent_skill_resource_service import (
 from short_drama.service.base import BaseService, Page, utcnow
 from short_drama.utils.snowflake import next_id
 
-BUILTIN_NAMES = {
-    "novel.v1": "小说创作",
-    "script.v1": "剧本创作",
-    "extract.v1": "素材提取",
-    "storyboard.v1": "分镜制作",
-    "asset_patch.v1": "素材修改",
-    "shot_patch.v1": "镜头修改",
-    "image.v1": "图片创作",
-    "video.v1": "视频创作",
-    "planning.v1": "创作任务规划",
-    "voice.v1": "配音与声音规划",
-    "canvas.v1": "画布流程搭建",
-    "continuity.v1": "连续性检查",
-}
-
 
 def skill_digest(content):
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
@@ -91,7 +77,7 @@ def skill_issues(metadata: dict, instructions: str, resources: list[dict]) -> li
 
 
 def builtin_skills(session=None, *, summary=False):
-    from short_drama.agent.tools import SKILLS
+    from short_drama.agent.builtin_skills import SKILLS
 
     items = [
         SkillRead(

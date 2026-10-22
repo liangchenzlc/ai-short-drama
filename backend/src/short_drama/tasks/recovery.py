@@ -4,14 +4,10 @@ from datetime import timedelta
 
 from sqlalchemy import and_, func, or_, select, update
 
-from short_drama.dao.task_runtime_dao import (
-    finish,
-    latest_record,
-    publication_failed,
-    schedule,
-)
+from short_drama.dao.task_runtime_dao import latest_record
 from short_drama.domain import AIGenerationRecord, AsyncTask
 from short_drama.service.base import utcnow
+from short_drama.service.task_runtime_service import finish, publication_failed, schedule
 from short_drama.tasks.state import TERMINAL, archive_due, recovery_action
 
 

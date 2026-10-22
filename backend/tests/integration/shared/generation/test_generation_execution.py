@@ -66,10 +66,10 @@ def seeded(factory, kind="text"):
 
 
 def test_published_is_not_republished_and_early_consumer_wins(mysql_engine, db_session):
-    from short_drama.dao.task_runtime_dao import TaskRuntimeDAO
+    from short_drama.service.task_runtime_service import TaskRuntimeService
 
     factory = session_factory(mysql_engine)
-    store = TaskRuntimeDAO(factory, Settings(_env_file=None))
+    store = TaskRuntimeService(factory, Settings(_env_file=None))
     task_id, _ = seeded(factory)
     publication = store.claim_publish()
     assert publication["task_id"] == task_id
@@ -84,12 +84,12 @@ def test_published_is_not_republished_and_early_consumer_wins(mysql_engine, db_s
 
 
 def test_confirmed_queue_backlog_never_becomes_pending(mysql_engine, db_session):
-    from short_drama.dao.task_runtime_dao import TaskRuntimeDAO
+    from short_drama.service.task_runtime_service import TaskRuntimeService
     from short_drama.tasks.recovery import recover
 
     factory = session_factory(mysql_engine)
     settings = Settings(_env_file=None)
-    store = TaskRuntimeDAO(factory, settings)
+    store = TaskRuntimeService(factory, settings)
     task_id, _ = seeded(factory)
     publication = store.claim_publish()
     assert store.publish_result(**publication, success=True)
@@ -101,12 +101,12 @@ def test_confirmed_queue_backlog_never_becomes_pending(mysql_engine, db_session)
 
 
 def test_expired_sent_execution_becomes_unknown_without_post(mysql_engine, db_session):
-    from short_drama.dao.task_runtime_dao import TaskRuntimeDAO
+    from short_drama.service.task_runtime_service import TaskRuntimeService
     from short_drama.tasks.recovery import recover
 
     factory = session_factory(mysql_engine)
     settings = Settings(_env_file=None)
-    store = TaskRuntimeDAO(factory, settings)
+    store = TaskRuntimeService(factory, settings)
     task_id, record_id = seeded(factory)
     store.claim_execution(task_id, 1)
     with factory.begin() as session:
@@ -124,12 +124,12 @@ def test_expired_sent_execution_becomes_unknown_without_post(mysql_engine, db_se
 
 
 def test_expired_prepared_claim_creates_exactly_one_recovery_version(mysql_engine, db_session):
-    from short_drama.dao.task_runtime_dao import TaskRuntimeDAO
+    from short_drama.service.task_runtime_service import TaskRuntimeService
     from short_drama.tasks.recovery import recover
 
     factory = session_factory(mysql_engine)
     settings = Settings(_env_file=None)
-    store = TaskRuntimeDAO(factory, settings)
+    store = TaskRuntimeService(factory, settings)
     task_id, _ = seeded(factory)
     store.claim_execution(task_id, 1)
     with factory.begin() as session:

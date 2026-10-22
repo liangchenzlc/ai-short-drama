@@ -1,8 +1,5 @@
 """Versioned edit decisions and immutable local-render requests."""
 
-import hashlib
-import json
-
 from sqlalchemy import select
 
 from short_drama.core.exceptions import NotFound, WorkflowError
@@ -30,13 +27,8 @@ from short_drama.service.project_storyboard_service import (
 )
 from short_drama.service.shot_video_context import DEFAULT_VIDEO_SETTINGS, video_context_hash
 from short_drama.service.storage_service import StorageService
+from short_drama.utils.json_digest import digest as digest
 from short_drama.utils.snowflake import next_id
-
-
-def digest(value):
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-    ).hexdigest()
 
 
 class ProjectAssemblyService(BaseService):
@@ -82,7 +74,7 @@ class ProjectAssemblyService(BaseService):
         ids = [s.id for s in shots]
         assets, images = self.storyboard.dao.list_details(ids)
         videos = self.storyboard.dao.video_rows(ids)
-        from .native_voice_service import native_contexts
+        from .native_voice_context import native_contexts
 
         native = native_contexts(self.session, creation, shots, settings=self.settings)
         result = {}
@@ -160,17 +152,17 @@ class ProjectAssemblyService(BaseService):
         if getattr(self.settings, "audio_production_enabled", False) or (
             saved_sound and saved_sound.document.get("schema_version", 1) >= 2
         ):
-            from .project_sound_service import ProjectSoundService
+            from .sound_snapshot import sound_snapshot
 
-            sound = ProjectSoundService(self.session, self.settings, self.storage).snapshot(
-                assembly, snapshot, for_update=for_update
+            sound = sound_snapshot(
+                self.session, self.settings, assembly, snapshot, for_update=for_update
             )
             if sound is not None:
                 snapshot = {**snapshot, "version": 3, "sound": sound}
         return snapshot
 
     def _video_snapshot(self, assembly, clips):
-        from .native_voice_service import project_mode
+        from .native_voice_context import project_mode
 
         creation = self.session.get(Project, assembly.project_id)
         native = project_mode(self.session, creation.id, self.settings) == "native"
@@ -502,6 +494,24 @@ class ProjectAssemblyService(BaseService):
             }
         ).model_dump(mode="json")
 
+    def export_locator(self, project_id, job_id):
+        with self._transaction(read_only=True):
+            _, assembly = self._scope(project_id, for_update=False)
+            job = self.session.scalar(
+                select(ProjectRenderJob).where(
+                    ProjectRenderJob.id == int(job_id),
+                    ProjectRenderJob.assembly_id == assembly.id,
+                )
+            )
+            if job is None:
+                raise NotFound("导出任务不存在")
+            media = (
+                self.session.get(MediaFile, job.output_media_id) if job.output_media_id else None
+            )
+            if job.status != "succeeded" or media is None:
+                raise NotFound("成片尚未完成")
+            return media.storage_locator
+
     def current_media(self, project_id):
         with self._transaction(read_only=True):
             _, assembly = self._scope(project_id, for_update=False)
@@ -795,7 +805,7 @@ class ProjectAssemblyService(BaseService):
                 raise WorkflowError(
                     "assembly_output_not_ready", "视频显示尺寸尚未就绪，请完成检测后导出", 422
                 )
-            from .project_sound_service import validate_sound_snapshot
+            from .sound_snapshot import validate_sound_snapshot
 
             validate_sound_snapshot(snapshot)
             if kind == "preview":

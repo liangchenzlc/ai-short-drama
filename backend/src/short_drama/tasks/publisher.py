@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from kombu import Producer, Queue
 
-from short_drama.dao.task_runtime_dao import TaskRuntimeDAO
+from short_drama.service.task_runtime_service import TaskRuntimeService
 from short_drama.tasks.celery_app import make_celery, topology
 
 
@@ -50,7 +50,7 @@ class RabbitSender:
 
 class Publisher:
     def __init__(self, factory, settings, send=None):
-        self.store = TaskRuntimeDAO(factory, settings)
+        self.store = TaskRuntimeService(factory, settings)
         self.send = send or RabbitSender(settings)
 
     def tick(self):

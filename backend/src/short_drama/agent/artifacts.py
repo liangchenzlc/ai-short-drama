@@ -5,8 +5,10 @@ from copy import deepcopy
 
 from sqlalchemy import select
 
+from short_drama.agent.artifact_sources import source_snapshot as source_snapshot
 from short_drama.agent.authorization import check_source, scoped_task
-from short_drama.agent.state import append_event, wait_locked
+from short_drama.agent.run_events import append_event
+from short_drama.agent.state import wait_locked
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.base import BaseDAO
 from short_drama.dao.project_writing_dao import ProjectWritingDAO
@@ -47,21 +49,6 @@ def candidate_secret(run, settings):
     return [credential.api_key.get_secret_value()] + [
         header.value.get_secret_value() for header in credential.headers
     ]
-
-
-def source_snapshot(step, run, now):
-    source = step["source"]
-    return {
-        "project_id": str(source["project_id"]),
-        "content_version": source["content_version"],
-        "storyboard_version": source["storyboard_version"],
-        "project_row_version": source["project_row_version"],
-        "target_kind": step["target_kind"],
-        "target_id": str(step["target_id"]),
-        "target_row_version": source.get("target_row_version"),
-        "model_name": step.get("model_name") or run.config_snapshot.get("name"),
-        "generated_at": now.isoformat(),
-    }
 
 
 def asset_in_creation(session, project_id, asset_id):
@@ -111,7 +98,7 @@ def create_candidate_locked(session, conversation, run, tool, args, *, settings)
     step = next((s for s in authorization.get("steps", []) if s["id"] == args.step_id), None)
     if step is None:
         raise WorkflowError("agent_step_not_authorized", "Task step is not authorized", 409)
-    from short_drama.agent.tools import _pending_parent
+    from short_drama.agent.artifact_sources import _pending_parent
     from short_drama.service.agent_conversation_service import validate_conversation_subject
 
     if _pending_parent(session, run) is not None:

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 
-from short_drama.agent.authorization import digest
 from short_drama.agent.canvas_tools import (
     CanvasDirective,
 )
@@ -17,7 +16,7 @@ from short_drama.agent.canvas_tools import (
     _successful_operations as canvas_operations,
 )
 from short_drama.agent.dialogue_tools import task_sound_sources
-from short_drama.agent.memory_context import restricted_messages
+from short_drama.agent.memory_sources import restricted_messages
 from short_drama.agent.standard_tools import (
     StandardDirective,
     _primary_operations,
@@ -27,6 +26,8 @@ from short_drama.agent.standard_tools import (
     _successful_operations,
 )
 from short_drama.agent.subject_context import snapshot_subjects
+from short_drama.agent.tool_parameters import MEDIA_STATUS_TOOL as MEDIA_STATUS_TOOL
+from short_drama.agent.tool_parameters import MEDIA_TOOL as MEDIA_TOOL
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
 from short_drama.domain import Asset, Project, ProjectCanvas
 from short_drama.domain.agent import AgentRun
@@ -48,10 +49,8 @@ from short_drama.service.assistant_policy_service import policy_state_locked
 from short_drama.service.assistant_shot_video_service import prepare_shot_video_locked
 from short_drama.service.assistant_voice_service import prepare_voice_design_locked
 from short_drama.service.base import utcnow
+from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
-
-MEDIA_TOOL = "submit_generation_batch"
-MEDIA_STATUS_TOOL = "get_generation_status"
 
 
 @dataclass(frozen=True)

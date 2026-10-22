@@ -45,3 +45,36 @@ def test_service_rejects_forged_audit_identity():
 
     with Session() as session, pytest.raises(ValidationError):
         ProjectService(session).create_project({"name": "test", "created_by": 10})
+
+
+@pytest.mark.parametrize(
+    "error_kind,code", [("operational", 2006), ("operational", 1213), ("integrity", 1062)]
+)
+def test_database_errors_keep_safe_diagnostics_and_roll_back(caplog, error_kind, code):
+    from types import SimpleNamespace
+
+    from sqlalchemy.exc import IntegrityError, OperationalError
+
+    from short_drama.core.exceptions import Conflict, DatabaseUnavailable
+    from short_drama.service.project_service import ProjectService
+    from tests.support.generation_fixtures import generation_session
+
+    with generation_session() as session:
+        session.info["actor"] = SimpleNamespace(user_id=1, request_id="safe-request-id")
+        service = ProjectService(session)
+        original = Exception(code, "secret-in-driver-message")
+        database_error = IntegrityError if error_kind == "integrity" else OperationalError
+        expected = Conflict if code in (1213, 1062) else DatabaseUnavailable
+        with pytest.raises(expected), caplog.at_level("INFO"):
+            with service._transaction():
+                raise database_error(
+                    "SELECT 'secret-in-sql'", {"key": "secret-parameter"}, original
+                )
+        assert not session.in_transaction()
+        assert "ProjectService" in caplog.text
+        assert "safe-request-id" in caplog.text
+        assert str(code) in caplog.text
+        assert "write" in caplog.text
+        assert "secret-in-driver-message" not in caplog.text
+        assert "secret-in-sql" not in caplog.text
+        assert "secret-parameter" not in caplog.text

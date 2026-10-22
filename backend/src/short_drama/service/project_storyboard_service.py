@@ -190,7 +190,7 @@ class ProjectStoryboardService(BaseService):
         from short_drama.ai.business_prompts import video_default_prompt
         from short_drama.ai.prompts.registry import shot_video_system_prompt
 
-        from .native_voice_service import native_context
+        from .native_voice_context import native_context
 
         asset_ids = (
             self.dao.asset_ids(shot.id) if assets is None else [asset.id for asset in assets]
@@ -262,7 +262,7 @@ class ProjectStoryboardService(BaseService):
             rows, total = self.dao.list_rows(creation.id, offset, limit)
             assets_by_shot, images_by_shot = self.dao.list_details([row.id for row in rows])
             videos_by_shot = self.dao.video_rows([row.id for row in rows])
-            from .native_voice_service import native_contexts
+            from .native_voice_context import native_contexts
 
             speech_by_shot = native_contexts(self.session, creation, rows, settings=self.settings)
             return {

@@ -183,6 +183,91 @@ def decode_colors(path):
     return list(zip(*[iter(result.stdout)] * 3, strict=True))
 
 
+@pytest.mark.parametrize("muted", ["none", "clip", "track"])
+def test_multitrack_music_ducks_union_of_explicit_and_audible_dialogue(tmp_path, muted):
+    import math
+
+    from short_drama.schemas.project_sound import AudioClip, SoundDocument
+    from short_drama.service.assembly_audio import audible_clips, render_audio
+
+    renderer = VideoRenderer(Settings())
+    sources = {}
+    for key, frequency in (("1", 200), ("2", 600)):
+        path = tmp_path / f"{key}.wav"
+        subprocess.run(
+            [
+                executable("ffmpeg"),
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency={frequency}:sample_rate=48000:duration=2",
+                str(path),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+        sources[key] = path
+    document = SoundDocument(
+        schema_version=2,
+        native_ducking=[{"start_ms": 200, "end_ms": 600, "text": "explicit"}],
+        tracks=[{"id": "dialogue", "muted": muted == "track"}],
+        audio_clips=[
+            AudioClip(
+                id="music",
+                media_id="1",
+                kind="music",
+                duration_ms=2000,
+                trim_out_ms=2000,
+                volume=1,
+                fade_in_ms=0,
+                fade_out_ms=0,
+                ducking=True,
+            ),
+            AudioClip(
+                id="voice",
+                media_id="2",
+                kind="dialogue",
+                start_ms=1000,
+                duration_ms=400,
+                trim_out_ms=400,
+                volume=1,
+                fade_in_ms=0,
+                fade_out_ms=0,
+                muted=muted == "clip",
+            ),
+        ],
+    ).model_dump(mode="json")
+    output = render_audio(renderer, audible_clips(document), sources, tmp_path, 2000, document)
+    decoded = subprocess.run(
+        [executable("ffmpeg"), "-v", "error", "-i", str(output), "-ac", "1", "-f", "f32le", "-"],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    samples = array("f", decoded.stdout)
+
+    def music_energy(start):
+        values = samples[int(start * 48000) : int((start + 0.1) * 48000)]
+        return abs(
+            sum(
+                value
+                * complex(
+                    math.cos(2 * math.pi * 200 * i / 48000),
+                    math.sin(2 * math.pi * 200 * i / 48000),
+                )
+                for i, value in enumerate(values)
+            )
+        )
+
+    baseline = music_energy(0.75)
+    assert music_energy(0.35) / baseline == pytest.approx(0.25, abs=0.03)
+    assert music_energy(1.15) / baseline == pytest.approx(0.25 if muted == "none" else 1, abs=0.03)
+
+
 @pytest.mark.parametrize("phase", [350, 1350])
 def test_loop_split_keeps_real_audio_phase(tmp_path, phase):
     from short_drama.schemas.project_sound import AudioClip

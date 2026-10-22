@@ -1,39 +1,27 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from short_drama.api.dependencies import get_session
-from short_drama.core.identity import require_actor
-from short_drama.domain.collaboration import UserModelPreference
+from short_drama.api.dependencies import get_model_preference_service, get_session
 from short_drama.schemas.base import Identifier, InputModel
 from short_drama.schemas.identity import PreferenceUpdate
-from short_drama.service.model_preference_service import save_model_preference
+from short_drama.service.model_preference_service import ModelPreferenceService
 
 router = APIRouter(tags=["Personal resources"])
 
 
+Preferences = Annotated[ModelPreferenceService, Depends(get_model_preference_service)]
+
+
 @router.get("/users/me/model-preferences")
-def preferences(session: Session = Depends(get_session)):
-    actor = require_actor(session)
-    with session.begin():
-        return {
-            "items": [
-                {"context_key": p.context_key, "config_id": str(p.config_id)}
-                for p in session.scalars(
-                    select(UserModelPreference).where(UserModelPreference.user_id == actor.user_id)
-                )
-            ]
-        }
+def preferences(service: Preferences):
+    return service.list_preferences()
 
 
 @router.put("/users/me/model-preferences")
-def save_preference(payload: PreferenceUpdate, session: Session = Depends(get_session)):
-    require_actor(session)
-    with session.begin():
-        save_model_preference(session, payload.context_key, payload.config_id)
-    return {"saved": True}
+def save_preference(payload: PreferenceUpdate, service: Preferences):
+    return service.save_preference(payload.context_key, payload.config_id)
 
 
 class ImportRequest(InputModel):

@@ -147,6 +147,32 @@ test('名称409保留本机输入并提供明确的恢复选择', async ({ page 
   expect(state.errors).toEqual([]);
 });
 
+test('名称停顿不提交，Escape取消，Enter和失焦各只提交一次', async ({ page }) => {
+  const state = await fixture(page, true);
+  const updates = () => state.requests.filter(item => item.path === '/projects/10' && item.method === 'PATCH').map(item => item.body);
+  await page.goto('/projects/10/source');
+  await page.getByRole('button', { name: '雨夜来信', exact: true }).click();
+  const name = page.getByRole('textbox', { name: '作品名称', exact: true });
+  await name.fill('尚未确认的名称');
+  await page.waitForTimeout(1200);
+  expect(updates()).toEqual([]);
+  await name.press('Escape');
+  await expect(page.getByRole('button', { name: '雨夜来信', exact: true })).toBeVisible();
+  expect(updates()).toEqual([]);
+  await page.getByRole('button', { name: '雨夜来信', exact: true }).click();
+  await name.fill('回车确认');
+  await name.press('Enter');
+  await expect.poll(updates).toEqual([{ name: '回车确认', row_version: '1' }]);
+  await page.getByRole('button', { name: '回车确认', exact: true }).click();
+  await name.fill('失焦确认');
+  await name.press('Tab');
+  await expect.poll(updates).toEqual([{ name: '回车确认', row_version: '1' }, { name: '失焦确认', row_version: '2' }]);
+  await page.waitForTimeout(1200);
+  expect(updates()).toHaveLength(2);
+  expect(state.errors).toEqual([]);
+  expect(state.unexpected).toEqual([]);
+});
+
 test('旧分集、项目素材库、全局素材库与协作链接均为退役入口', async ({ page }) => {
   const state = await fixture(page);
   for (const path of ['/projects/10/episodes/20/source', '/projects/10?section=resources', '/assets/character', '/invite/old']) {

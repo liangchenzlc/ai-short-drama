@@ -10,14 +10,10 @@ from uuid import uuid4
 
 from sqlalchemy import and_, or_, select
 
-from short_drama.agent.memory_context import (
-    message_sources,
-    schedule_maintenance_locked,
-    settle_maintenance_locked,
-    source_hash,
-)
+from short_drama.agent.access import LeaseLost, model_unchanged
+from short_drama.agent.memory_context import schedule_maintenance_locked, settle_maintenance_locked
+from short_drama.agent.memory_sources import message_sources, source_hash
 from short_drama.agent.model_gateway import AgentGatewayError
-from short_drama.agent.runtime import LeaseLost, model_unchanged
 from short_drama.core.exceptions import BusinessError
 from short_drama.domain.agent import AgentConversation, AgentRun
 from short_drama.domain.agent_memory import AgentMemoryJob

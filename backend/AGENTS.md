@@ -33,7 +33,7 @@ Python 3.12+、FastAPI、Pydantic 2、SQLAlchemy 2、MySQL、Celery。Settings �
 - 分层 API → Service → DAO → ORM：路由不查库，DAO 不提交，Service 管事务边界。
 - 依赖通过 `api/dependencies.py` 的 `Annotated[T, Depends(...)]` 注入，不在路由里直接 new Service。
 - 事务用 `with self.session.begin():`；独立调用 Service 时传入尚未开启事务的 Session。
-- 时间统一取 `service.base.utcnow()`（与 MySQL 连接的 naive UTC 一致），不要各处写 `datetime.now()`。
+- 时间统一取 `core.time.utcnow()`（与 MySQL 连接的 naive UTC 一致）；`service.base.utcnow` 保留兼容导出，低层代码不得为取时间反向依赖 Service。
 - ID 对外十进制字符串、内部 `int`，用 `schemas.base.Identifier` 与 `parse_identifier` 转换。
 - 异常只抛 `core/exceptions.py` 的 `BusinessError` 家族：`NotFound`、`Conflict`、`WorkflowError(code, message, status_code, details)`。不把供应商原文、SQL 或堆栈细节透给前端。
 - 日志用模块级 `logger = logging.getLogger(__name__)`；I/O 与异常路径记录上下文，不吞异常、不静默失败。
@@ -44,5 +44,6 @@ Python 3.12+、FastAPI、Pydantic 2、SQLAlchemy 2、MySQL、Celery。Settings �
 ## 验证
 
 - `uv run ruff check src tests scripts`、`uv run ruff format --check src tests scripts`。
+- 在仓库根执行 `node scripts/check-quality.mjs`，结构与禁令规则见[代码质量规范](../docs/instruction/代码质量规范.md)。
 - 测试范围按根 [按功能执行测试](../docs/instruction/按功能执行测试.md) 选择；数据库行为追加 `mysql`，队列／存储追加 `infra`。
 - 只启动 API 不会执行生成任务；需要 Worker 时用 `.\scripts\start_generation.ps1 -Role <角色>`，角色与配置见[开发运行与验证](../docs/instruction/开发运行与验证.md)。

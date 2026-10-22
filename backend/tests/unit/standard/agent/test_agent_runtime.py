@@ -9,6 +9,68 @@ from short_drama.agent.state import budget_limits
 from short_drama.tasks.celery_app import agent_queue, make_celery, topology
 
 
+@pytest.mark.parametrize("task_status", ["succeeded", "failed", "cancelled"])
+@pytest.mark.parametrize("tool_status", ["waiting_generation", "cancelled"])
+def test_native_collector_selects_finished_tasks_past_active_prefix(
+    monkeypatch, task_status, tool_status
+):
+    from sqlalchemy import JSON, Column, Integer, MetaData, String, Table, create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from short_drama.agent import native_tasks
+
+    engine = create_engine("sqlite://")
+    metadata = MetaData()
+    tasks = Table(
+        "async_tasks", metadata, Column("id", Integer, primary_key=True), Column("status", String)
+    )
+    tools = Table(
+        "agent_tool_calls",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("run_id", Integer),
+        Column("generation_task_id", Integer),
+        Column("status", String),
+        Column("result", JSON),
+    )
+    metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    selected_runs = []
+
+    def skip_locked_run(_session, run_id, *, skip_locked):
+        assert skip_locked
+        selected_runs.append(run_id)
+        return None
+
+    monkeypatch.setattr(native_tasks, "lock_run", skip_locked_run)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                tasks.insert(),
+                [
+                    {"id": identifier, "status": "running" if identifier <= 100 else task_status}
+                    for identifier in range(1, 102)
+                ],
+            )
+            connection.execute(
+                tools.insert(),
+                [
+                    {
+                        "id": identifier,
+                        "run_id": identifier,
+                        "generation_task_id": identifier,
+                        "status": tool_status,
+                        "result": {"settled": False},
+                    }
+                    for identifier in range(1, 102)
+                ],
+            )
+        assert native_tasks.collect_native_results(factory, SimpleNamespace(), limit=100) == 0
+        assert selected_runs == [101]
+    finally:
+        engine.dispose()
+
+
 def test_agent_disabled_never_reads_new_tables():
     settings = SimpleNamespace(agent_enabled=False)
     assert recover(None, settings) == 0

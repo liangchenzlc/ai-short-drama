@@ -4,8 +4,7 @@ from copy import deepcopy
 
 from sqlalchemy import select
 
-from short_drama.agent.authorization import digest
-from short_drama.agent.state import ACTIVE
+from short_drama.agent.run_events import ACTIVE
 from short_drama.agent.task_state import task_event
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.agent_task_dao import AgentTaskDAO
@@ -43,6 +42,7 @@ from short_drama.service.assistant_undo_chain_service import (
 from short_drama.service.base import utcnow
 from short_drama.service.native_voice_service import NativeVoiceService
 from short_drama.service.project_storyboard_service import ProjectStoryboardService
+from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 

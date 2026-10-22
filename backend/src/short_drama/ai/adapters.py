@@ -4,7 +4,7 @@ import copy
 import hashlib
 import json
 import re
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit
 
 from pydantic import ValidationError
 
@@ -57,6 +57,7 @@ from .canvas_video_adapters import (
     canvas_video_resolved_parameters,
     parse_canvas_video_result,
 )
+from .endpoints import endpoint as endpoint
 from .image_operations import (
     is_image_operation,
     operation_text_messages,
@@ -152,34 +153,6 @@ def select_adapter(snapshot):
         if dashscope:
             return "dashscope_video.v1"
     raise GenerationError("unsupported_protocol")
-
-
-def endpoint(base_url, suffix, adapter):
-    parts = urlsplit(validated_url(base_url.strip()))
-    path = parts.path.rstrip("/")
-    if adapter.startswith("dashscope_"):
-        # Compatible-mode is a text endpoint, not the native media root.
-        for marker in ("/compatible-mode", "/api/v1"):
-            if marker in path:
-                path = path.split(marker, 1)[0]
-                break
-        path += "/api/v1"
-    else:
-        for ending in (
-            "/audio/speech",
-            "/chat/completions",
-            "/responses",
-            "/images/generations",
-            "/images/edits",
-            "/contents/generations/tasks",
-            "/videos/generations",
-        ):
-            if path.endswith(ending):
-                path = path[: -len(ending)]
-                break
-        if not path:
-            path = "/api/v3" if adapter.startswith("ark_") else "/v1"
-    return urlunsplit((parts.scheme, parts.netloc, path + suffix, "", ""))
 
 
 def _unsupported():

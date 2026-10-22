@@ -53,6 +53,10 @@ export const AssemblyEditorPlayer = forwardRef<AssemblyPlayerHandle, {
     clock.current.generation++; controller.current?.abort(); clock.current.playing = false; setPlaying(false); current.current.onPlaying(false); setBuffering(false);
     videos.current.forEach(v => v?.pause()); voices.current.forEach(v => v.element.pause());
   }
+  function clearVoices() {
+    voices.current.forEach(v => { v.element.pause(); v.source.disconnect(); v.gain.disconnect(); v.element.removeAttribute('src'); v.element.load(); });
+    voices.current.clear();
+  }
   function audioContext() {
     if (!context.current) {
       const ctx = new AudioContext(); context.current = ctx;
@@ -126,7 +130,7 @@ export const AssemblyEditorPlayer = forwardRef<AssemblyPlayerHandle, {
   function toggle() { if (clock.current.playing) stop(); else void seek(clock.current.at >= total - 1 ? 0 : clock.current.at, true); }
   useImperativeHandle(ref, () => ({ seek: at => { void seek(at); }, pause: stop, toggle }));
   const signature = JSON.stringify([props.clips.map(c => [c.id, c.media_id, c.trim_in_ms, c.trim_out_ms, c.duration_ms, c.included, c.issue]), props.sound.document]);
-  useEffect(() => { actions.current.stop(); voices.current.forEach(v => { v.source.disconnect(); v.gain.disconnect(); v.element.src = ''; }); voices.current.clear(); void actions.current.seek(clock.current.at); }, [signature]);
+  useEffect(() => { actions.current.stop(); clearVoices(); void actions.current.seek(clock.current.at); }, [signature]);
   useEffect(() => { setDraftTransform(null); }, [entry?.clip.id, entry?.clip.transform]);
   useEffect(() => {
     const observer = new ResizeObserver(([value]) => setSize({ width: value.contentRect.width, height: value.contentRect.height }));
@@ -154,7 +158,7 @@ export const AssemblyEditorPlayer = forwardRef<AssemblyPlayerHandle, {
     };
     animation = requestAnimationFrame(tick);
     const hide = () => { if (document.hidden) actions.current.stop(); }; document.addEventListener('visibilitychange', hide);
-    return () => { cancelAnimationFrame(animation); document.removeEventListener('visibilitychange', hide); actions.current.stop(); voices.current.forEach(v => { v.element.pause(); v.element.src = ''; v.source.disconnect(); v.gain.disconnect(); }); voices.current.clear(); void context.current?.close(); context.current = null; };
+    return () => { cancelAnimationFrame(animation); document.removeEventListener('visibilitychange', hide); actions.current.stop(); clearVoices(); void context.current?.close(); context.current = null; };
   }, []);
   const captions = sound.burn_subtitles && !sound.tracks.some(t => t.id === 'subtitles' && t.muted) ? sound.subtitles.filter(s => toMs(position) >= s.start_ms && toMs(position) < s.end_ms) : [];
   const style = sound.subtitle_style, column = (style.alignment - 1) % 3, row = Math.floor((style.alignment - 1) / 3);
@@ -173,7 +177,7 @@ export const AssemblyEditorPlayer = forwardRef<AssemblyPlayerHandle, {
       </div>
       {!total && <div className="assembly-no-video">添加视频或图片开始剪辑</div>}
       {buffering && !error && <div className="assembly-player-message" role="status">正在准备画面与声音…</div>}
-      {error && <div className="assembly-player-message" role="alert"><p>{error}</p><Button loading={retrying} onClick={() => { setRetrying(true); stop(); void props.onRefresh().then(() => { videos.current.forEach(v => v?.removeAttribute('data-media-id')); return seek(clock.current.at); }).catch(() => setError('刷新媒体失败，当前编辑已保留。')).finally(() => setRetrying(false)); }}>刷新媒体并重试</Button></div>}
+      {error && <div className="assembly-player-message" role="alert"><p>{error}</p><Button loading={retrying} onClick={() => { setRetrying(true); stop(); void props.onRefresh().then(() => { clearVoices(); videos.current.forEach(v => v?.removeAttribute('data-media-id')); return actions.current.seek(clock.current.at); }).catch(() => setError('刷新媒体失败，当前编辑已保留。')).finally(() => setRetrying(false)); }}>刷新媒体并重试</Button></div>}
     </div>
     <AssemblyPlaybackControls playing={playing} disabled={!total} position={position} total={total} muted={muted} onToggle={toggle} onStep={d => { void seek(clock.current.at + d); }} onMute={() => { mutedRef.current = !mutedRef.current; setMuted(mutedRef.current); voices.current.forEach(v => { if (mutedRef.current) v.gain.gain.value = 0; }); }} onFullscreen={() => { void (document.fullscreenElement ? document.exitFullscreen() : surface.current?.requestFullscreen())?.catch(() => setError('当前浏览器不支持全屏。')); }}>
       <AssemblyAction label="构图拖动" icon={<Crop size={15}/>} disabled={props.readOnly} aria-pressed={cropping} onClick={() => setCropping(!cropping)}/>

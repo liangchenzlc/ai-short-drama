@@ -8,15 +8,12 @@ from pydantic import Field, ValidationError
 from pydantic_ai.tools import ToolDefinition
 from sqlalchemy import select
 
-from short_drama.agent.authorization import digest, freeze_task, public_step
-from short_drama.agent.runtime import lock_run, may_decide
-from short_drama.agent.state import (
-    TERMINAL,
-    append_event,
-    finish_locked,
-    mark_scheduled,
-    wait_locked,
-)
+from short_drama.agent.access import lock_run, may_decide
+from short_drama.agent.artifact_sources import _pending_parent
+from short_drama.agent.authorization import freeze_task, public_step
+from short_drama.agent.builtin_skills import SKILLS as SKILLS
+from short_drama.agent.run_events import TERMINAL, append_event
+from short_drama.agent.state import finish_locked, mark_scheduled, wait_locked
 from short_drama.core.exceptions import BusinessError
 from short_drama.domain import (
     AIModelConfig,
@@ -30,28 +27,7 @@ from short_drama.domain.agent import AgentMessage, AgentToolCall, AgentTurn
 from short_drama.schemas.agent_runtime import PlanProposal, TaskSpec
 from short_drama.schemas.base import Identifier, InputModel
 from short_drama.service.base import utcnow
-
-SKILLS = {
-    "novel.v1": (
-        "小说创作：保持当前作品风格、人物动机和情节因果。按用户要求提供完整小说候选正文，不改作品。"
-    ),
-    "script.v1": (
-        "剧本创作：明确场景、人物动作、对白与节奏；忠实于小说和已确认要求。"
-        "提供可编辑剧本候选，不确认定稿。"
-    ),
-    "extract.v1": "资产提取：从当前剧本提取角色、场景、道具；匹配项目既有资产；保留创建/复用审核。",
-    "storyboard.v1": (
-        "分镜：以当前已确认剧本为依据，镜头保持连续原文依据和时长；候选需用户选择追加或替换。"
-    ),
-    "asset_patch.v1": (
-        "资产修改：仅提出允许字段的差异建议，保留来源版本和共享影响；禁止直接确认、删除或覆盖。"
-    ),
-    "shot_patch.v1": "镜头修改：仅提出脚本、时长、视频提示词的差异建议；保留原文依据及来源版本。",
-    "image.v1": "图片：固定对象、模型、画幅、数量和参考图；复用原生候选任务；图片完成不自动采用。",
-    "video.v1": (
-        "视频：固定镜头、模型、分辨率、时长、数量和参考图；按批准数量受理；视频完成不自动采用。"
-    ),
-}
+from short_drama.utils.json_digest import digest
 
 
 class ReadContext(InputModel):
@@ -353,23 +329,6 @@ def _read_context(session, conversation, args):
         "video_prompt": row.video_prompt[:24000],
         "row_version": row.row_version,
     }
-
-
-def _pending_parent(session, run):
-    from short_drama.domain.agent import AgentRun
-
-    # Earlier queued supplements may still point at a plan replaced by a prior
-    # supplement. Always follow the current pending plan in this conversation.
-    query = select(AgentRun).where(
-        AgentRun.conversation_id == run.conversation_id,
-        AgentRun.id < run.id,
-        AgentRun.status == "waiting_review",
-    )
-    parents = session.scalars(query.order_by(AgentRun.id.desc()).with_for_update()).all()
-    return next(
-        (parent for parent in parents if not (parent.checkpoint or {}).get("awaiting_artifacts")),
-        None,
-    )
 
 
 def _execute(session, conversation, run, tool, settings):

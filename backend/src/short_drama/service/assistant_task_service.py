@@ -9,15 +9,9 @@ from short_drama.agent.attachment_context import (
     task_attachments,
     validate_attachment_budget,
 )
-from short_drama.agent.authorization import digest
 from short_drama.agent.model_gateway import AgentGatewayError, select_agent_protocol
-from short_drama.agent.task_state import (
-    apply_controls_locked,
-    new_attempt_locked,
-    read_operations,
-    read_task,
-    task_event,
-)
+from short_drama.agent.task_controls import apply_controls_locked
+from short_drama.agent.task_state import new_attempt_locked, read_operations, read_task, task_event
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.agent_task_dao import RESUMABLE_TASKS, AgentTaskDAO
 from short_drama.db.access import require_project
@@ -44,7 +38,7 @@ from short_drama.schemas.assistant_task import (
 )
 from short_drama.schemas.base import parse_identifier
 from short_drama.service.agent_attachment_service import attachment_key, freeze_attachments
-from short_drama.service.agent_memory_service import (
+from short_drama.service.agent_memory_store import (
     deletion_memory_query,
     deletion_memory_read,
     lock_owner_conversations,
@@ -62,6 +56,7 @@ from short_drama.service.assistant_subject_service import (
     subject_directory,
 )
 from short_drama.service.base import Page, utcnow
+from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 
@@ -204,8 +199,8 @@ class AssistantTaskService(AgentRunService):
             }
 
     def delete_global_conversation(self, identifier, payload, idempotency_key):
+        from short_drama.agent.run_events import append_event
         from short_drama.agent.session_lifecycle import finalize_deletion_locked
-        from short_drama.agent.state import append_event
 
         values = self._payload(GlobalConversationDelete, payload)
         key, request_hash = attachment_key(idempotency_key), digest(values)
@@ -414,7 +409,7 @@ class AssistantTaskService(AgentRunService):
         return message
 
     def _freeze_task_skills(self, conversation, task, selections):
-        from short_drama.agent.skill_runtime import activations
+        from short_drama.agent.skill_contracts import activations
 
         automatic = [
             item["skill"]

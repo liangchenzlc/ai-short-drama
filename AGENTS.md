@@ -17,6 +17,8 @@ AI 短剧工作台：账号认证、小说与剧本、素材、分镜、异步�
 | 装环境、起后端 / 前端 / Worker | [开发运行与验证](docs/instruction/开发运行与验证.md) |
 | 选测试、判断改动影响哪些功能 | [按功能执行测试](docs/instruction/按功能执行测试.md)、[测试文件清单](docs/instruction/测试文件清单.md) |
 | 写代码：分层、接口契约、保存与反馈 | [实现约定](docs/instruction/实现约定.md) |
+| 交付前确认结构门禁 | [代码质量规范](docs/instruction/代码质量规范.md) |
+| 做代码审查 | 指定 `code-review-skill` 执行，分级与流程见[代码质量规范](docs/instruction/代码质量规范.md) |
 | 改表结构、写增量迁移 | [表设计说明](docs/database/README.md)、[迁移索引](docs/database/migrations/README.md) |
 | 加改接口 | [接口约定](docs/api/README.md)、[前端 API 约定](frontend/src/api/README.md) |
 | 改界面与交互 | [产品范围](frontend/PRODUCT.md)、[设计约定](frontend/DESIGN.md)、[创作反馈规则](docs/design/创作反馈规则.md) |
@@ -89,6 +91,7 @@ AI 短剧工作台：账号认证、小说与剧本、素材、分镜、异步�
 - 不确定的 API 或库用法查文档，不凭记忆臆造。
 - 改完先用 `node scripts/test.mjs --changed --dry-run` 预览影响范围，再跑对应级别；纯文档变更核对内容、命令和链接即可。
 - 代码改动后执行 `node scripts/check-docs.mjs`，按上一节同步受影响的维护文档。
+- 提交前执行 `node scripts/check-quality.mjs`；禁令、结构门禁与基线规则见[代码质量规范](docs/instruction/代码质量规范.md)。
 - 报错贴关键 stack trace 和复现步骤，不要只说"报错了"。
 - 调试输出走项目统一 logger，不留 `console.log`/`print`。
 - 报告验证结果要实事求是：测试替身、跳过或未执行的部分，不得描述为真实供应商验收。

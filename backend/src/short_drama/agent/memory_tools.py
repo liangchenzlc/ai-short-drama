@@ -2,51 +2,28 @@
 
 import re
 from dataclasses import dataclass
-from typing import Annotated
 
-from pydantic import Field
 from sqlalchemy import or_, select
 
-from short_drama.agent.authorization import digest
-from short_drama.agent.memory_context import restricted_messages
+from short_drama.agent.memory_sources import restricted_messages
+from short_drama.agent.tool_parameters import MEMORY_WRITE_TOOLS as MEMORY_WRITE_TOOLS
+from short_drama.agent.tool_parameters import ChangeMemory as ChangeMemory
+from short_drama.agent.tool_parameters import MemoryRequest as MemoryRequest
+from short_drama.agent.tool_parameters import RememberMemory as RememberMemory
 from short_drama.core.exceptions import Conflict, WorkflowError
 from short_drama.dao.agent_memory_dao import AgentMemoryDAO
 from short_drama.domain.agent import AgentMessage
 from short_drama.domain.agent_memory import AgentMemoryItem
 from short_drama.domain.agent_task import AgentOperation, AgentTaskInput
-from short_drama.schemas.agent_memory import MemoryCreate, MemoryKind, normalize_memory_key
-from short_drama.schemas.base import Identifier, InputModel
-from short_drama.service.agent_memory_service import (
+from short_drama.schemas.agent_memory import MemoryCreate, normalize_memory_key
+from short_drama.service.agent_memory_store import (
     apply_memory_command_locked,
     blocked_extraction,
     checked_scope,
     create_memory_locked,
     source_rows,
 )
-
-
-class MemoryRequest(InputModel):
-    request_message_id: Identifier
-    request_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-
-
-class RememberMemory(MemoryRequest):
-    kind: MemoryKind
-    memory_key: Annotated[str, Field(min_length=1, max_length=160)]
-    title: Annotated[str, Field(min_length=1, max_length=200)]
-
-
-class ChangeMemory(MemoryRequest):
-    memory_id: Identifier
-    content_version: Identifier
-
-
-MEMORY_WRITE_TOOLS = {
-    "remember_memory": (RememberMemory, "remember"),
-    "update_memory": (ChangeMemory, "update"),
-    "forget_memory": (ChangeMemory, "forget"),
-    "restore_memory": (ChangeMemory, "restore"),
-}
+from short_drama.utils.json_digest import digest
 
 
 @dataclass(frozen=True)

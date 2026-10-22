@@ -59,7 +59,7 @@ def _parent(session, model, identifier):
 
 
 def guard_version_writes(session) -> None:
-    from short_drama.db.access import scope_of
+    from short_drama.db.resource_scope import scope_of
     from short_drama.schemas.asset_version import snapshot_content_hash, validate_snapshot
 
     changed = list(session.new) + list(session.dirty) + list(session.deleted)

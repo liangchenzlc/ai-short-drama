@@ -10,6 +10,27 @@ from short_drama.service.auth_service import AuthService
 from short_drama.tasks.email import smtp_send
 
 
+def test_model_preferences_keep_service_transaction_and_actor_scope():
+    from short_drama.core.identity import ActorContext
+    from short_drama.service.model_preference_service import ModelPreferenceService
+    from tests.support.generation_fixtures import config, generation_session
+
+    with generation_session() as session:
+        model = config(session)
+        model.owner_user_id = 1
+        session.commit()
+        session.info["actor"] = ActorContext(
+            1, "legacy_fixture", "legacy@example.test", True, 1, "", "test"
+        )
+        service = ModelPreferenceService(session)
+        assert service.list_preferences() == {"items": []}
+        assert service.save_preference("image", 1) == {"saved": True}
+        assert not session.in_transaction()
+        assert service.list_preferences() == {"items": [{"context_key": "image", "config_id": "1"}]}
+        assert service.save_preference("image", None) == {"saved": True}
+        assert service.list_preferences() == {"items": []}
+
+
 def test_retired_invitation_does_not_bypass_authentication(monkeypatch):
     app = FastAPI()
     app.state.session_factory = None

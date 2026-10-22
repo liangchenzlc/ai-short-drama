@@ -1,10 +1,5 @@
-export interface WorkflowShot {
-  id: string;
-  row_version: string;
-  context_hash: string;
-  image_settings: { layout: 'single' | 'four' | 'five' | 'nine'; aspect: null | '16:9' | '9:16' | '1:1' | '4:3' | '3:4'; resolution: '1K' | '2K' | '4K' };
-  image?: { media_id: string } | null;
-}
+import type { WorkflowShot } from '../../api/modules/storyboard';
+export type { WorkflowShot } from '../../api/modules/storyboard';
 
 export function novelScriptRequest(projectId: string, contentVersion: string, instructions: string) {
   return { source: { scene: 'novel_script' as const, project_id: projectId, content_version: contentVersion }, instructions, parameters: { max_output_tokens: 8192 } };

@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from short_drama.agent.authorization import digest
+from short_drama.utils.json_digest import digest
 
 
 def subject_key(project_id, source_kind, source_id, kind, identifier):

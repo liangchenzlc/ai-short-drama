@@ -6,9 +6,9 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.core.exceptions import Conflict, WorkflowError
-from short_drama.dao.task_runtime_dao import finish
 from short_drama.domain import AIGenerationRecord, Asset, AsyncTask
 from short_drama.service.generation_batch_service import GenerationBatchService, dispatch_batches
+from short_drama.service.task_runtime_service import finish
 from tests.integration.standard.assets.test_asset_image_generation import create_asset, drain
 from tests.integration.standard.assets.test_asset_image_generation import flow as flow
 

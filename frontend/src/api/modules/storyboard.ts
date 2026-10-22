@@ -1,6 +1,13 @@
 import { http } from '../http';
 import type { Page } from '../types/generations';
-import type { WorkflowShot } from '../../features/projects/workflow-contract';
+
+export interface WorkflowShot {
+  id: string;
+  row_version: string;
+  context_hash: string;
+  image_settings: { layout: 'single' | 'four' | 'five' | 'nine'; aspect: null | '16:9' | '9:16' | '1:1' | '4:3' | '3:4'; resolution: '1K' | '2K' | '4K' };
+  image?: { media_id: string } | null;
+}
 
 export interface ScriptCandidate { id: string; position: number; state: 'unconfirmed' | 'confirmed'; preview: string; is_editing: boolean; is_confirmed: boolean; generation_id: string | null; created_at: string; updated_at: string }
 export interface ScriptDetail extends ScriptCandidate { content: string }

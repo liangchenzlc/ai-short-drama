@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
+from short_drama.db.canvas_scope import require_canvas
 from short_drama.domain import CanvasTaskBinding, CanvasToolRun, CanvasToolSubmission
 from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
 
@@ -17,8 +18,8 @@ _AUTHORITY = object()
 def require_approved_tool_submission(
     session: Session, payload: CanvasRuntimeTaskCreate, item: CanvasToolSubmission
 ) -> None:
-    from short_drama.service.base import utcnow
-    from short_drama.service.canvas_document import content_hash
+    from short_drama.core.time import utcnow
+    from short_drama.utils.canvas_document import content_hash
 
     actor = session.info.get("actor")
     state = inspect(item)
@@ -89,9 +90,7 @@ def guard_canvas_tool_run(
         run.canvas_id,
     ):
         raise NotFound("分析阶段不属于此作者与画布")
-    from short_drama.service.canvas_service import CanvasService
-
-    CanvasService(session).require_canvas(run.project_id, run.canvas_id, lock=True)
+    require_canvas(session, run.project_id, run.canvas_id, lock=True)
     if isinstance(entity, CanvasToolSubmission):
         if new and (entity.approved_at is not None or entity.async_task_id is not None):
             raise WorkflowError("canvas_tool_approval_required", "新阶段必须先准备再批准", 403)

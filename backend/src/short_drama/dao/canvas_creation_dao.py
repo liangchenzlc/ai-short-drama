@@ -4,6 +4,7 @@ from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement, Select
 
+from short_drama.core.time import utcnow
 from short_drama.domain import (
     CanvasBinaryResource,
     CanvasCreationAttempt,
@@ -13,7 +14,6 @@ from short_drama.domain import (
     ProjectCanvas,
 )
 from short_drama.domain.canvas import CanvasWriteReceipt
-from short_drama.service.base import utcnow
 
 
 class CanvasCreationDAO:

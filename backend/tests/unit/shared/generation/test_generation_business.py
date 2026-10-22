@@ -203,10 +203,10 @@ def test_saved_script_admission_supports_prompt_only_database_without_agent_tabl
 def saved_storyboard_result(*, legacy=False):
     from sqlalchemy import select
 
-    from short_drama.dao.task_runtime_dao import finish
     from short_drama.domain import AIGenerationRecord, AsyncTask
     from short_drama.service.ai_generation_service import AIGenerationService
     from short_drama.service.generation_business_service import GenerationBusinessService
+    from short_drama.service.task_runtime_service import finish
     from tests.support.generation_fixtures import config, generation_session, settings
     from tests.unit.standard.writing.test_project_writing import setup
 
@@ -591,11 +591,11 @@ def test_media_adoption_requires_editor_and_context_tokens():
 def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archived_history(mode):
     from sqlalchemy import select
 
-    from short_drama.dao.task_runtime_dao import finish
     from short_drama.domain import AIGenerationRecord, AsyncTask, ScriptShotRecord, ShotScript
     from short_drama.service.ai_generation_service import AIGenerationService
     from short_drama.service.generation_business_service import GenerationBusinessService
     from short_drama.service.project_storyboard_service import ProjectStoryboardService
+    from short_drama.service.task_runtime_service import finish
     from tests.support.generation_fixtures import config, generation_session, settings
     from tests.unit.standard.writing.test_project_writing import setup
 

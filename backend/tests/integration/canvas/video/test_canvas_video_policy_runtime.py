@@ -11,10 +11,10 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.ai.canvas_video_adapters import OPENAI_VIDEOS
-from short_drama.dao.task_runtime_dao import finish
 from short_drama.domain import AIGenerationRecord, AsyncTask
 from short_drama.service.base import utcnow
 from short_drama.service.canvas_video_policy import POLL_STATE_KEY
+from short_drama.service.task_runtime_service import finish
 from tests.integration.canvas.generation.test_canvas_generation_runtime import TASKS, admit, records
 from tests.integration.canvas.resources.test_canvas_resources import resource_app as resource_app
 from tests.integration.canvas.video.test_canvas_video_protocols import (

@@ -2,7 +2,7 @@ import { Button, Skeleton } from 'antd';
 import { Icon } from '../../components/ui/Icon';
 import { ListToolbar, PageHeader } from '../../components/ui/Workspace';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { aiModelConfigs } from '../../api/modules/ai-model-configs';
+import { aiModelConfigs } from '../../features/ai-config/config-api';
 import { ApiError, errorMessage, isCancelled } from '../../api/http';
 import { Dialog } from '../../components/ui/Dialog';
 import { aiConfigTabs, configTabs, useAiConfigSession, type AiConfigTab } from '../../features/ai-config/AiConfigSession';

@@ -5,8 +5,7 @@ from copy import deepcopy
 
 from sqlalchemy import select
 
-from short_drama.agent.authorization import digest
-from short_drama.agent.memory_context import (
+from short_drama.agent.memory_sources import (
     MAX_SOURCE_BYTES,
     SOFT_HISTORY_BYTES,
     message_sources,
@@ -18,6 +17,7 @@ from short_drama.domain.agent_memory import AgentMemoryJob
 from short_drama.domain.agent_task import AgentTask, AgentTaskInput
 from short_drama.schemas.agent_memory import TaskConstraintResult
 from short_drama.service.base import utcnow
+from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 RECENT_INPUT_BYTES = 8000

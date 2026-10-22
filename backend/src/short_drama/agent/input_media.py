@@ -13,8 +13,9 @@ from PIL import Image, ImageOps
 from short_drama.core.exceptions import WorkflowError
 from short_drama.service.asset_image_service import inspect_image_upload
 from short_drama.service.audio_media import inspect_audio
+from short_drama.service.render_tools import executable
 from short_drama.service.storage_service import StorageService
-from short_drama.service.video_render import VideoRenderer, executable
+from short_drama.service.video_render import VideoRenderer
 from short_drama.storage.minio import MinioStorage
 
 MAX_INPUT_BYTES = {

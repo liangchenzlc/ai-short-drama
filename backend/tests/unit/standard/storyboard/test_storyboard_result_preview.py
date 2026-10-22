@@ -4,12 +4,12 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.dao.task_runtime_dao import finish
 from short_drama.domain import AIGenerationRecord, AsyncTask
 from short_drama.service.ai_generation_service import AIGenerationService
 from short_drama.service.asset_library_service import AssetLibraryService
 from short_drama.service.asset_service import AssetService
 from short_drama.service.generation_business_service import GenerationBusinessService
+from short_drama.service.task_runtime_service import finish
 from tests.support.generation_fixtures import config, generation_session, settings
 from tests.unit.standard.writing.test_project_writing import setup
 

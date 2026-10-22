@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
-import { aiModelConfigs } from '../../api/modules/ai-model-configs';
+import { aiModelConfigs } from './config-api';
 import { generationError } from '../generations/presentation';
 import { useAuth } from '../auth/AuthSession';
 import type { ServiceType } from './config-model';

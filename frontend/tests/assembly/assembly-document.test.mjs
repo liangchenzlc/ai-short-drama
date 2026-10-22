@@ -84,6 +84,18 @@ test('preview mix uses trim loops, fades, gain and the same voice ducking envelo
   assert.deepEqual(frameGeometry({ fit: 'cover', scale: 1, x: 1, y: .5 }, 100, 100, 200, 100), { width: 200, height: 100, left: -100, top: 0 });
 });
 
+test('music ducking combines native speech and audible dialogue without double attenuation', () => {
+  const music = { ...sourceAudio(clip, 0, 6000), id: 'music', kind: 'music', ducking: true };
+  const dialogue = { ...sourceAudio(clip, 2000, 1000), id: 'dialogue', kind: 'dialogue' };
+  const sound = { ...emptySound(), audio_clips: [music, dialogue], native_ducking: [{ start_ms: 0, end_ms: 1000, text: '原生对白' }] };
+  assert.equal(audioGain(music, 500, sound), .25);
+  assert.equal(audioGain(music, 2500, sound), .25);
+  assert.equal(audioGain(music, 3500, sound), 1);
+  assert.equal(audioGain(music, 2500, { ...sound, native_ducking: [{ start_ms: 2000, end_ms: 3000 }] }), .25);
+  assert.equal(audioGain(music, 2500, { ...sound, audio_clips: [music, { ...dialogue, muted: true }] }), 1);
+  assert.equal(audioGain(music, 2500, { ...sound, tracks: [{ id: 'dialogue', muted: true, locked: false }] }), 1);
+});
+
 test('waveforms show the trimmed source and repeat its selected range for loops', () => {
   const source = sourceAudio(clip, 0, 6000);
   const trimmed = { ...source, trim_in_ms: 2000, trim_out_ms: 4000, duration_ms: 2000 };

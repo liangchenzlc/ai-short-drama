@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import re
 import secrets
 from datetime import timedelta
 
@@ -15,6 +16,8 @@ from sqlalchemy.exc import IntegrityError
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import ConfigurationError, WorkflowError
 from short_drama.core.identity import ActorContext, token_hash
+from short_drama.dao.identity_dao import IdentityDAO
+from short_drama.db.resource_scope import scope_of
 from short_drama.domain.collaboration import (
     AuthRateLimit,
     EmailChallenge,
@@ -44,6 +47,39 @@ def user_dto(user):
 class AuthService:
     def __init__(self, factory, settings):
         self.factory, self.settings = factory, settings
+
+    def current_user(self, actor: ActorContext) -> dict[str, str | bool]:
+        with self.factory() as session:
+            user = IdentityDAO(session).user(actor.user_id)
+            if user is None:
+                raise WorkflowError("authentication_required", "Please sign in", 401)
+            return user_dto(user)
+
+    def logout(self, actor: ActorContext | None) -> None:
+        if actor is not None:
+            with self.factory.begin() as session:
+                IdentityDAO(session).revoke_session(actor.session_id, utcnow())
+
+    def resource_scope(
+        self, actor: ActorContext, path: str
+    ) -> tuple[int | None, int | None] | None:
+        for expression, kind in (
+            (r"/projects/(\d+)", "project"),
+            (r"/assets/(\d+)", "asset"),
+            (r"/ai/generations/(\d+)", "generation"),
+            (r"/ai/generation-batches/(\d+)", "generation_batch"),
+            (r"/generation-references/asset/(\d+)", "asset"),
+            (r"/generation-references/shot/(\d+)", "shot"),
+        ):
+            match = re.search(r"^/api/v1" + expression + r"(?:/|$)", path)
+            if match:
+                with self.factory() as session:
+                    session.info["actor"] = actor
+                    row = IdentityDAO(session).resource(kind, int(match.group(1)))
+                    if row is None:
+                        raise WorkflowError("not_found", "Resource does not exist", 404)
+                    return scope_of(session, row)
+        return None
 
     def limit(self, action, identity, maximum=10, seconds=600):
         """Atomic cross-process counter. Commit independently from rejected operations."""

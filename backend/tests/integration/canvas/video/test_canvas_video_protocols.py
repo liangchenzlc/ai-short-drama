@@ -27,7 +27,6 @@ from short_drama.ai.canvas_video_adapters import (
     OPENAI_VIDEOS,
 )
 from short_drama.core.crypto import KeyCipher
-from short_drama.dao.task_runtime_dao import finish
 from short_drama.domain import (
     AIGenerationRecord,
     AIModelConfig,
@@ -42,6 +41,7 @@ from short_drama.service.base import utcnow
 from short_drama.service.canvas_generation_service import CanvasGenerationService
 from short_drama.service.canvas_model_catalog_service import CanvasModelCatalogService
 from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.task_runtime_service import finish
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.document.test_canvas_workspace import actor
 from tests.integration.canvas.generation.test_canvas_generation_media_runtime import (

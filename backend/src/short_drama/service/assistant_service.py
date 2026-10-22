@@ -4,7 +4,6 @@ import hashlib
 
 from sqlalchemy import func, select
 
-from short_drama.agent.authorization import digest
 from short_drama.core.exceptions import Conflict, WorkflowError
 from short_drama.db.access import require_project
 from short_drama.domain.agent import AgentConversation
@@ -13,6 +12,7 @@ from short_drama.schemas.assistant import AssistantConversationCreate, Assistant
 from short_drama.schemas.base import parse_identifier
 from short_drama.service.agent_run_service import AgentRunService
 from short_drama.service.base import Page, utcnow
+from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 

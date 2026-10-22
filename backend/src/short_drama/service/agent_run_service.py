@@ -5,22 +5,15 @@ from copy import deepcopy
 
 from sqlalchemy import func, select
 
-from short_drama.agent.authorization import (
-    check_source,
-    digest,
-    discussion_only,
-    freeze_task,
-    public_step,
-)
-from short_drama.agent.state import (
+from short_drama.agent.authorization import check_source, discussion_only, freeze_task, public_step
+from short_drama.agent.run_events import (
     ACTIVE,
     TERMINAL,
     append_event,
     budget_limits,
-    finish_locked,
     initial_usage,
-    mark_scheduled,
 )
+from short_drama.agent.state import finish_locked, mark_scheduled
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.domain import AIModelConfig, Asset, Project, ShotScript
 from short_drama.domain.agent import (
@@ -52,6 +45,7 @@ from short_drama.service.agent_conversation_service import (
 from short_drama.service.agent_model_service import AgentModelService, model_snapshot
 from short_drama.service.agent_skill_service import freeze_skills
 from short_drama.service.base import Page, utcnow
+from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 _UNSET = object()

@@ -4,25 +4,15 @@ from copy import deepcopy
 
 from sqlalchemy import select
 
-from short_drama.agent.state import append_event, budget_limits, initial_usage
+from short_drama.agent.run_events import append_event, budget_limits, initial_usage
 from short_drama.agent.subject_context import subject_catalog, subject_memory_keys
+from short_drama.agent.task_queries import task_for_run as task_for_run
 from short_drama.dao.agent_task_dao import AgentTaskDAO
-from short_drama.domain.agent import AgentMessage, AgentRun, AgentToolCall
+from short_drama.domain.agent import AgentRun, AgentToolCall
 from short_drama.domain.agent_undo import AgentBatchUndo
 from short_drama.schemas.assistant_task import OperationRead, TaskRead
 from short_drama.service.base import utcnow
 from short_drama.utils.snowflake import next_id
-
-
-def task_for_run(session, run):
-    task_id = getattr(run, "task_id", None)
-    # lock_run already refreshed the task at transaction entry. Repeated checks
-    # must retain changes made under that lock when Session.autoflush is disabled.
-    return (
-        AgentTaskDAO(session).task(task_id, lock=True, refresh=False)
-        if task_id is not None
-        else None
-    )
 
 
 def read_operation(row, *, undo_receipts=()):
@@ -63,7 +53,7 @@ def read_operations(session, rows):
 
 
 def read_task(session, task):
-    from short_drama.agent.skill_runtime import activation_summary, activations
+    from short_drama.agent.skill_contracts import activation_summary, activations
 
     operation = AgentTaskDAO(session).active_operation(task.id, lock=False)
     selected = subject_catalog(task.context_snapshot)
@@ -249,69 +239,6 @@ def apply_inputs_locked(session, conversation, task, run):
         run=run,
         applied_input_revision=str(task.applied_input_revision),
     )
-    return True
-
-
-def apply_controls_locked(session, conversation, task, run):
-    """No current operation loses permission. Caller holds conversation -> task -> run."""
-    from short_drama.agent.state import finish_locked
-
-    dao = AgentTaskDAO(session)
-    if dao.active_operation(task.id) is not None:
-        return False
-    controls = dao.controls(task)
-    if not controls:
-        return False
-    stopped = task.status in {"stopped", "paused_error", "paused_budget"}
-    resume = None
-    for control in controls:
-        if control.kind in {"stop", "delete"}:
-            stopped = True
-            resume = None
-        elif control.kind == "resume":
-            stopped = False
-            resume = control
-    now = utcnow()
-    for control in controls:
-        if stopped and control.kind == "redirect":
-            continue
-        control.applied_at = now
-        control.applied_after_operation_id = control.requested_after_operation_id
-        task.applied_control_seq = max(task.applied_control_seq, control.seq)
-        task_event(
-            session,
-            conversation,
-            task,
-            "control.applied",
-            run=run,
-            control_id=str(control.id),
-            control_seq=str(control.seq),
-            kind=control.kind,
-        )
-    task.control_state = "none"
-    task.row_version += 1
-    task.updated_at = now
-    if stopped:
-        close_unstarted_calls(session, run)
-        task.status, task.phase = "stopped", "terminal"
-        finish_locked(session, conversation, run, "cancelled")
-        task_event(session, conversation, task, "task.stopped", run=run)
-    elif resume is not None:
-        close_unstarted_calls(session, run)
-        finish_locked(session, conversation, run, "cancelled")
-        message = session.get(AgentMessage, resume.source_message_id)
-        next_run = new_attempt_locked(
-            session, conversation, task, message, run.model_config_id, run.config_snapshot, run
-        )
-        task_event(session, conversation, task, "task.resumed", run=next_run)
-    else:
-        apply_inputs_locked(session, conversation, task, run)
-        task_event(session, conversation, task, "plan.redirected", run=run)
-    if conversation.status == "deleting":
-        from short_drama.agent.session_lifecycle import finalize_deletion_locked
-
-        session.flush()
-        finalize_deletion_locked(session, conversation)
     return True
 
 

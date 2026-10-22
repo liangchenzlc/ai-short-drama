@@ -1,6 +1,5 @@
 """标准成片的组合读取、原子保存和素材准入。"""
 
-import logging
 from copy import deepcopy
 from pathlib import Path
 from tempfile import SpooledTemporaryFile
@@ -20,9 +19,8 @@ from short_drama.service.project_assembly_service import ProjectAssemblyService,
 from short_drama.service.project_sound_service import ProjectSoundService
 from short_drama.service.publication import publish
 from short_drama.service.storage_service import StorageService
+from short_drama.service.upload_cleanup import cleanup_unreferenced_uploads
 from short_drama.utils.snowflake import next_id
-
-logger = logging.getLogger(__name__)
 
 
 def voice_context(snapshot):
@@ -318,8 +316,5 @@ class AssemblyEditorService(ProjectAssemblyService):
                     )
                 return self._material_read(media)
         except Exception:
-            try:
-                storage.delete(stored.storage_locator)
-            except Exception:
-                logger.exception("清理未入库的成片上传素材失败")
+            cleanup_unreferenced_uploads(self.session, storage, [stored])
             raise

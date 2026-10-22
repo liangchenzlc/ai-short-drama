@@ -4,26 +4,25 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import Field
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
-from short_drama.agent.authorization import digest
-from short_drama.agent.memory_context import restricted_messages
-from short_drama.agent.standard_tools import ReadTaskResults, _quantity, _rows
+from short_drama.agent.memory_sources import restricted_messages
+from short_drama.agent.standard_tools import _quantity, _rows
 from short_drama.agent.subject_context import snapshot_subjects
+from short_drama.agent.tool_parameters import CANVAS_TOOL as CANVAS_TOOL
+from short_drama.agent.tool_parameters import ApplyCanvasPatch as ApplyCanvasPatch
+from short_drama.agent.tool_parameters import ReadTaskResults
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.domain import Project, ProjectCanvas
 from short_drama.domain.agent import AgentConversation
 from short_drama.domain.agent_task import AgentOperation, AgentTask
 from short_drama.domain.canvas import CanvasNode, CanvasNodeUserState
-from short_drama.schemas.assistant_canvas import AssistantCanvasPatch
-from short_drama.schemas.base import Identifier, InputModel
 from short_drama.service.assistant_canvas_service import AssistantCanvasService
+from short_drama.utils.json_digest import digest
 
-CANVAS_TOOL = "apply_canvas_patch"
 _KINDS = {"文本": "text", "图片": "image", "视频": "video", "音频": "audio"}
 _FIELDS = {
     "名称": {"title"},
@@ -34,12 +33,6 @@ _FIELDS = {
     "参数": {"settings"},
     "设置": {"settings"},
 }
-
-
-class ApplyCanvasPatch(InputModel):
-    request_message_id: Identifier
-    request_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    patch: AssistantCanvasPatch
 
 
 @dataclass(frozen=True)

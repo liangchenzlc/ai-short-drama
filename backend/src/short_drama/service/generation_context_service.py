@@ -395,7 +395,7 @@ class GenerationContextService:
         request["template_version"] = PROMPT_VERSIONS["shot_video"]
         request["parameters"] = {**expected, "aspect": effective_aspect}
         request["input"] = {"prompt": parts["prompt"], "reference_media_ids": [str(image.media_id)]}
-        from .native_voice_service import native_context, native_prompt
+        from .native_voice_context import native_context, native_prompt
 
         native = native_context(self.session, shot, strict=True, settings=self.settings)
         if native is not None:

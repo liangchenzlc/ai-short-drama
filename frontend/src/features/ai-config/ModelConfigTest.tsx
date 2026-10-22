@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from 'antd';
 import { Dialog } from '../../components/ui/Dialog';
-import { aiConfigTools } from '../../api/modules/ai-config-tools';
+import { aiConfigTools } from './config-api';
 import { ApiError, errorMessage } from '../../api/http';
 import type { ModelTestDto } from '../../api/types/ai-config-tools';
 import type { AiConfig } from './config-model';

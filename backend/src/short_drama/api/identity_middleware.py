@@ -1,14 +1,11 @@
 import hmac
-import re
 from uuid import uuid4
 
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
 
 from short_drama.core.exceptions import BusinessError, WorkflowError
 from short_drama.core.identity import token_hash
-from short_drama.db.access import scope_of
 from short_drama.service.auth_service import AuthService
 
 PUBLIC = {
@@ -22,15 +19,6 @@ PUBLIC = {
     "/api/v1/test",
     "/api/v1/auth/capabilities",
 }
-
-
-def resource_scope(factory, actor, candidate):
-    with factory() as session:
-        session.info["actor"] = actor
-        row = session.scalar(select(candidate[0]).where(candidate[0].id == candidate[1]))
-        if row is None:
-            raise WorkflowError("not_found", "Resource does not exist", 404)
-        return scope_of(session, row)
 
 
 def install_identity(app, settings):
@@ -67,34 +55,11 @@ def install_identity(app, settings):
                         raise WorkflowError(
                             "email_verification_required", "Verify your email first", 403
                         )
-                    from short_drama.domain import (
-                        Asset,
-                        AsyncTask,
-                        GenerationBatchJob,
-                        Project,
-                        ShotScript,
+                    request.state.resource_scope = await run_in_threadpool(
+                        AuthService(app.state.session_factory, settings).resource_scope,
+                        actor,
+                        path,
                     )
-
-                    candidate = None
-                    for expression, model in [
-                        (r"/projects/(\d+)", Project),
-                        (r"/assets/(\d+)", Asset),
-                        (r"/ai/generations/(\d+)", AsyncTask),
-                        (r"/ai/generation-batches/(\d+)", GenerationBatchJob),
-                        (r"/generation-references/asset/(\d+)", Asset),
-                        (r"/generation-references/shot/(\d+)", ShotScript),
-                    ]:
-                        match = re.search(r"^/api/v1" + expression + r"(?:/|$)", path)
-                        if match:
-                            candidate = (model, int(match.group(1)))
-                            break
-                    if candidate:
-                        request.state.resource_scope = await run_in_threadpool(
-                            resource_scope,
-                            app.state.session_factory,
-                            actor,
-                            candidate,
-                        )
             response = await call_next(request)
             if response.status_code == 401:
                 response.delete_cookie("sd_session", path="/")

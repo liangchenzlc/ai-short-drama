@@ -4,8 +4,7 @@ from copy import deepcopy
 
 from sqlalchemy import func, or_, select
 
-from short_drama.agent.authorization import digest
-from short_drama.agent.state import ACTIVE
+from short_drama.agent.run_events import ACTIVE
 from short_drama.agent.task_state import new_attempt_locked, task_event
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.agent_task_dao import AgentTaskDAO
@@ -26,6 +25,7 @@ from short_drama.schemas.assistant_history import (
 from short_drama.schemas.base import UINT64_MAX, parse_identifier
 from short_drama.service.agent_attachment_service import attachment_key
 from short_drama.service.base import Page, utcnow
+from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 

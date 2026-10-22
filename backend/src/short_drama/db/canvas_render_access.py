@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
+from short_drama.db.canvas_scope import require_canvas
 from short_drama.domain import CanvasRenderJob, CanvasRenderMediaReference
 
 _AUTHORITY = object()
@@ -70,9 +71,7 @@ def guard_canvas_render(
         job.canvas_id,
     ):
         raise NotFound("渲染来源不属于此作者与画布")
-    from short_drama.service.canvas_service import CanvasService
-
-    CanvasService(session).require_canvas(job.project_id, job.canvas_id, lock=True)
+    require_canvas(session, job.project_id, job.canvas_id, lock=True)
     if (
         isinstance(entity, CanvasRenderJob)
         and new

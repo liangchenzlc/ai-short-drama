@@ -6,11 +6,11 @@ from sqlalchemy.orm import sessionmaker
 
 from short_drama.ai.types import GenerationResult
 from short_drama.core.config import Settings
-from short_drama.dao.task_runtime_dao import finish
 from short_drama.domain import AIGenerationRecord, AsyncTask
 from short_drama.schemas.storyboard_result import parse_storyboard_result
 from short_drama.service.ai_generation_service import AIGenerationService, resume_action
 from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.task_runtime_service import finish
 from tests.support.generation_fixtures import config, generation_session, settings
 from tests.unit.standard.writing.test_project_writing import setup
 

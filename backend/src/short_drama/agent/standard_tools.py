@@ -4,28 +4,26 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from short_drama.agent.authorization import digest
 from short_drama.agent.dialogue_tools import sound_write_scope
-from short_drama.agent.memory_context import restricted_messages
+from short_drama.agent.memory_sources import restricted_messages
 from short_drama.agent.subject_context import snapshot_subjects
+from short_drama.agent.tool_parameters import STANDARD_READ_TOOL as STANDARD_READ_TOOL
+from short_drama.agent.tool_parameters import STANDARD_TOOL as STANDARD_TOOL
+from short_drama.agent.tool_parameters import ApplyStandardPatch as ApplyStandardPatch
+from short_drama.agent.tool_parameters import ReadTaskResults as ReadTaskResults
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.domain import Asset, Project, ShotScript
 from short_drama.domain.agent import AgentConversation, AgentMessage
 from short_drama.domain.agent_task import AgentOperation, AgentTask, AgentTaskInput
-from short_drama.schemas.assistant_standard import StandardPatch
-from short_drama.schemas.base import Identifier, InputModel
-from short_drama.schemas.canvas import SourceKey
 from short_drama.service.assistant_dialogue_service import SOUND_ACTIONS, sound_line_state
 from short_drama.service.assistant_standard_service import AssistantStandardService
+from short_drama.utils.json_digest import digest
 
-STANDARD_TOOL = "apply_standard_patch"
-STANDARD_READ_TOOL = "read_task_results"
 _KINDS = {
     "角色": "character",
     "场景": "scene",
@@ -47,19 +45,6 @@ _FIELDS = {
     "图片设置": {"image_settings"},
     "视频设置": {"video_settings"},
 }
-
-
-class ApplyStandardPatch(InputModel):
-    request_message_id: Identifier
-    request_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    patch: StandardPatch
-
-
-class ReadTaskResults(InputModel):
-    operation_id: Identifier
-    ids: Annotated[list[SourceKey], Field(max_length=50)] = Field(default_factory=list)
-    character_offset: Annotated[int, Field(ge=0, le=1048576)] = 0
-    character_limit: Annotated[int, Field(ge=1, le=6000)] = 4000
 
 
 @dataclass(frozen=True)

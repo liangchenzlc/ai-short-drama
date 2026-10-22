@@ -7,7 +7,6 @@ from uuid import NAMESPACE_URL, uuid5
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from short_drama.agent.authorization import digest
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
@@ -23,6 +22,7 @@ from short_drama.schemas.project_sound import Dialogue, SoundDocument, SoundEdit
 from short_drama.service.native_voice_service import project_mode
 from short_drama.service.project_assembly_service import ProjectAssemblyService
 from short_drama.service.project_sound_service import ProjectSoundService, line_hash
+from short_drama.utils.json_digest import digest
 
 SOUND_FIELDS = frozenset(
     {"id", "character", "text", "voice", "config_id", "start_ms", "media_id", "adopted_hash"}

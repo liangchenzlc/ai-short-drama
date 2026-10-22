@@ -15,6 +15,8 @@ from short_drama.domain import (
 )
 from short_drama.domain.canvas import CanvasWriteReceipt
 
+from .resource_scope import require_project
+
 TABLES = frozenset(
     {
         "canvas_task_bindings",
@@ -37,8 +39,6 @@ def _parent(session: Session, model, identifier: int):
 
 
 def guard_canvas_generation(session: Session, entity, actor: ActorContext, new: bool) -> None:
-    from .access import require_project
-
     state = inspect(entity)
     name = state.mapper.local_table.name
     if not new:

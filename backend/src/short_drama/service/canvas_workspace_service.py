@@ -13,6 +13,7 @@ from short_drama.utils.snowflake import next_id
 
 from .base import BaseService, utcnow
 from .canvas_model_catalog_service import CanvasModelCatalogService
+from .model_runtime_config import canvas_model_default_capability_config, model_runtime_public
 
 
 class CanvasWorkspaceService(BaseService):
@@ -49,9 +50,38 @@ class CanvasWorkspaceService(BaseService):
     def _read_models_locked(self, state):
         return {
             **self._preferences(state),
-            "models": self.workspace_dao.models(self.catalog.configs),
+            "models": self._models(),
             "channels": [],
         }
+
+    def _models(self):
+        records, bindings = self.workspace_dao.models()
+        return [
+            {
+                "id": str(value.id),
+                "name": value.name,
+                "model_key": value.model_key,
+                "provider": value.provider,
+                "service_type": value.service_type,
+                "enabled": bool(value.enabled),
+                "has_api_key": bool(value.apikey),
+                "is_default": bool(value.is_default),
+                "default_capability_config": canvas_model_default_capability_config(value),
+                "selection_aliases": [
+                    f"{bindings[value.id].channel_key}::{bindings[value.id].model_key}"
+                ]
+                if value.id in bindings
+                else [],
+                **model_runtime_public(
+                    value,
+                    self.catalog.configs._key_cipher()
+                    if value.runtime_credentials_cipher
+                    else None,
+                    bindings.get(value.id),
+                ),
+            }
+            for value in records
+        ]
 
     def save_preferences(self, payload: CanvasWorkspacePreferencesRequest) -> dict:
         payload = CanvasWorkspacePreferencesRequest.model_validate(

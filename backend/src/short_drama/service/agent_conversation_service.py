@@ -96,7 +96,7 @@ class AgentConversationService(BaseService):
         ).first()
         if parent is None:
             raise NotFound("Conversation does not exist")
-        if parent.scope_version != 3:
+        if parent.project_id is not None:
             require_project(self.session, parent.project_id, lock=lock)
         statement = select(AgentConversation).where(
             AgentConversation.id == identifier, AgentConversation.owner_user_id == actor.user_id

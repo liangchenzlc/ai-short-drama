@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
-const root = '/projects/10/episodes/20/assembly';
-const soundRoot = '/projects/10/episodes/20/sound';
+const root = '/projects/10/assembly';
+const soundRoot = '/projects/10/sound';
 const hash = 'a'.repeat(64);
 async function feedbackTrigger(page: Page) {
   const dialog = page.locator('dialog[open] .studio-feedback-indicator').last();
@@ -180,8 +180,8 @@ test('lost export response survives refresh and checks the same receipt without 
 
 test('damaged render recovery downloads its raw record and only clears after explicit confirmation', async ({ page }) => {
   const data = await fixture(page);
-  const scope = 'creation-recovery:user:anonymous:assembly:10:20:render';
-  const otherScope = 'creation-recovery:user:anonymous:assembly:10:99:render';
+  const scope = 'creation-recovery:user:anonymous:assembly:10:render';
+  const otherScope = 'creation-recovery:user:anonymous:assembly:99:render';
   const raw = '  {damaged-render\n原请求核对依据';
   await page.addInitScript(({ scope, otherScope, raw }) => { localStorage.setItem(scope, raw); localStorage.setItem(otherScope, 'other record'); }, { scope, otherScope, raw });
   await page.goto('/e2e/assembly/fixtures/assembly-flow-fixture.html');
@@ -198,7 +198,7 @@ test('damaged render recovery downloads its raw record and only clears after exp
   expect(data.calls.filter(call => call.method === 'POST')).toHaveLength(0);
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: '下载完整合成请求记录', exact: true }).click();
-  const file = await download; expect(file.suggestedFilename()).toBe('assembly-20-render-recovery.json');
+  const file = await download; expect(file.suggestedFilename()).toBe('assembly-10-render-recovery.json');
   const stream = await file.createReadStream(); const chunks: Buffer[] = [];
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
   expect(Buffer.concat(chunks).toString('utf8')).toBe(raw);
@@ -226,7 +226,7 @@ test('damaged render recovery downloads its raw record and only clears after exp
 });
 
 test('valid unknown render recovery only reconciles the original key and has no damaged-record clear action', async ({ page }) => {
-  const data = await fixture(page); const scope = 'creation-recovery:user:anonymous:assembly:10:20:render';
+  const data = await fixture(page); const scope = 'creation-recovery:user:anonymous:assembly:10:render';
   const original = { format: 1, kind: 'preview', key: 'original-unknown-key', body: { row_version: '1', source_hash: hash, acknowledge_stale_source: true } };
   await page.addInitScript(({ scope, original }) => localStorage.setItem(scope, JSON.stringify(original)), { scope, original });
   await page.goto('/e2e/assembly/fixtures/assembly-flow-fixture.html');
@@ -471,6 +471,7 @@ test('unsaved clip edits silently recover and resume saving after refresh', asyn
 test('retrying a failed initial assembly read silently restores and saves recovery input', async ({ page }) => {
   await page.clock.install(); const data = await fixture(page);
   await page.goto('/e2e/assembly/fixtures/assembly-flow-fixture.html');
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   await page.getByRole('button', { name: '片段静音', exact: true }).click();
   data.controls.online = false;
   await page.reload();
@@ -480,7 +481,7 @@ test('retrying a failed initial assembly read silently restores and saves recove
   await closeFeedback(page);
   await expect(page.getByRole('button', { name: '恢复原声', exact: true })).toHaveAttribute('aria-pressed', 'true');
   expect(data.calls.filter(c => c.method === 'PATCH')).toHaveLength(0);
-  expect(await page.evaluate(() => localStorage.getItem('creation-recovery:user:anonymous:assembly:10:20:draft'))).toContain('"muted":true');
+  expect(await page.evaluate(() => localStorage.getItem('creation-recovery:user:anonymous:assembly:10:draft'))).toContain('"muted":true');
   await page.clock.fastForward(650);
   await expect.poll(() => data.calls.filter(c => c.method === 'PATCH').length).toBe(1);
   expect(data.errors).toEqual([]);
@@ -493,7 +494,7 @@ test('unsaved sound edits silently recover and save without implicit review or a
   await page.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
   await page.getByRole('tab', { name: /字幕/ }).click();
   await page.locator('.sound-subtitle textarea').fill('恢复字幕');
-  await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some(key => key.includes('sound:10:20:draft')))).toBe(true);
+  await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some(key => key.includes('sound:10:draft')))).toBe(true);
   await page.reload();
   await page.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
   await expect(page.getByText('发现本机未保存的声音恢复稿', { exact: true })).toHaveCount(0);
@@ -523,7 +524,7 @@ for (const backupAvailable of [true, false]) test(`subtitle replacement ${backup
   await expect(page.getByLabel('字幕文本')).toHaveValue(backupAvailable ? '采用视频的台词' : '替换前的字幕');
   await expect(page.getByRole('dialog', { name: '确认操作', exact: true })).toHaveCount(0);
   if (backupAvailable) {
-    expect(await page.evaluate(() => localStorage.getItem('creation-recovery:user:anonymous:sound:10:20:draft:previous'))).toContain('替换前的字幕');
+    expect(await page.evaluate(() => localStorage.getItem('creation-recovery:user:anonymous:sound:10:draft:previous'))).toContain('替换前的字幕');
     await page.reload();
     await page.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
     await expect(page.getByRole('button', { name: '下载本机备份', exact: true })).toBeVisible();
@@ -537,7 +538,7 @@ for (const backupAvailable of [true, false]) test(`subtitle replacement ${backup
 for (const kind of ['assembly', 'sound'] as const) {
   test(`corrupt ${kind} recovery stays available until explicit discard`, async ({ page }) => {
     const data = await fixture(page, true);
-    const scope = `creation-recovery:user:anonymous:${kind}:10:20:draft`;
+    const scope = `creation-recovery:user:anonymous:${kind}:10:draft`;
     await page.addInitScript(({ key }) => localStorage.setItem(key, '{damaged-record'), { key: scope });
     await page.goto('/e2e/assembly/fixtures/assembly-flow-fixture.html');
     if (kind === 'sound') await page.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();

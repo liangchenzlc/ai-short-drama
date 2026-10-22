@@ -359,3 +359,132 @@ def test_recovery_material_hydration_is_limited_to_published_current_project():
         hydrated = svc.get_editor(f.project, material_ids=["1000", "999999"])
         assert any(m["media_id"] == "1000" for m in hydrated["materials"])
         assert not any(m["media_id"] == "999999" for m in hydrated["materials"])
+
+
+@pytest.mark.parametrize("kind", ["material", "music"])
+@pytest.mark.parametrize("outcome", ["committed", "rolled_back", "verification_unavailable"])
+def test_upload_compensation_checks_durable_references_and_exact_versions(
+    monkeypatch, kind, outcome
+):
+    from io import BytesIO
+
+    from sqlalchemy import event
+    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.orm import Session
+
+    from short_drama.core.exceptions import DatabaseUnavailable
+    from short_drama.service import assembly_editor_service, project_sound_service
+    from short_drama.storage.models import StoredObject
+
+    with generation_session() as session:
+        f, editor, _ = setup(session)
+        editor.settings = editor.settings.model_copy(update={"audio_production_enabled": True})
+        written, deleted, verification_sessions = [], [], []
+        state = {"staged": False, "failed": False}
+
+        def upload(*_args, **_kwargs):
+            stored = StoredObject(
+                bucket=editor.settings.minio_audio_bucket,
+                object_name=f"uploaded-{len(written)}",
+                storage_locator=f"minio://{editor.settings.minio_audio_bucket}/{len(written)}",
+                size=5,
+                content_type="audio/wav",
+                version_id=f"version-{len(written)}",
+            )
+            written.append(stored)
+            return stored
+
+        def finish(*_args):
+            state["staged"] = True
+            if outcome != "committed":
+                state["failed"] = True
+                raise RuntimeError("serialization failed before commit")
+            return "https://fixture/upload"
+
+        storage = SimpleNamespace(
+            upload=upload,
+            download_url=finish,
+            delete=lambda locator, *, version_id=None: deleted.append((locator, version_id)),
+        )
+        monkeypatch.setattr(assembly_editor_service, "StorageService", lambda *_: storage)
+        monkeypatch.setattr(project_sound_service, "StorageService", lambda *_: storage)
+        monkeypatch.setattr(
+            assembly_editor_service,
+            "inspect_resource",
+            lambda *_: SimpleNamespace(
+                duration_ms=None,
+                mime_type="image/png",
+                width=1,
+                height=1,
+                checksum="0" * 64,
+                video_metadata=None,
+            ),
+        )
+        monkeypatch.setattr(editor, "_material_read", finish)
+        monkeypatch.setattr(
+            project_sound_service,
+            "inspect_audio",
+            lambda *_: {"mime": "audio/wav", "duration_ms": 1000},
+        )
+
+        def proxy(_path, directory, _settings):
+            result = directory / "proxy.m4a"
+            result.write_bytes(b"proxy")
+            return result
+
+        monkeypatch.setattr(project_sound_service, "audio_proxy", proxy)
+
+        def lose_acknowledgement(_session):
+            if state["staged"]:
+                raise OperationalError("COMMIT", {}, OSError("commit response lost"))
+
+        def fail_verification(_connection, _cursor, statement, *_args):
+            if outcome == "verification_unavailable" and state["failed"]:
+                raise OperationalError(statement, {}, OSError("database unavailable"))
+
+        def capture_verification(orm_state):
+            if state["staged"] and orm_state.is_select:
+                verification_sessions.append(
+                    (
+                        orm_state.session is session,
+                        getattr(orm_state.statement, "_for_update_arg", None) is not None,
+                        "actor" in orm_state.session.info,
+                    )
+                )
+
+        engine = session.get_bind()
+        event.listen(session, "after_commit", lose_acknowledgement)
+        event.listen(engine, "before_cursor_execute", fail_verification)
+        event.listen(Session, "do_orm_execute", capture_verification)
+        try:
+            error = DatabaseUnavailable if outcome == "committed" else RuntimeError
+            with pytest.raises(error):
+                if kind == "material":
+                    editor.upload_material(f.project, BytesIO(b"image"), "test.png", "image/png")
+                else:
+                    service = project_sound_service.ProjectSoundService(
+                        session, editor.settings, editor.storage
+                    )
+                    service.upload(f.project, BytesIO(b"audio"), "test.wav")
+        finally:
+            event.remove(session, "after_commit", lose_acknowledgement)
+            event.remove(engine, "before_cursor_execute", fail_verification)
+            event.remove(Session, "do_orm_execute", capture_verification)
+        assert len(written) == (1 if kind == "material" else 2)
+        assert verification_sessions == [(False, True, False)]
+        assert deleted == (
+            [(row.storage_locator, row.version_id) for row in written]
+            if outcome == "rolled_back"
+            else []
+        )
+        with Session(engine) as independent:
+            durable = set(
+                independent.scalars(
+                    select(MediaFile.storage_locator).where(
+                        MediaFile.storage_locator.in_([row.storage_locator for row in written])
+                    )
+                )
+            )
+        assert durable == (
+            {row.storage_locator for row in written} if outcome == "committed" else set()
+        )

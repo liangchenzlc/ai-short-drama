@@ -36,13 +36,13 @@ def guard_skill_versions(session) -> None:
         ):
             raise WorkflowError("ownership_immutable", "Skill 设置身份不能更改", 403)
         if entity.skill_id is not None:
-            from short_drama.db.access import _agent_parent
+            from short_drama.db.resource_scope import _agent_parent
 
             parent = _agent_parent(session, "agent_skills", entity.skill_id)
             if parent.owner_user_id != actor.user_id or entity.skill_key != str(parent.id):
                 raise NotFound("Skill 版本或设置不属于本人")
         elif isinstance(entity, AgentSkillSetting):
-            from short_drama.service.agent_skill_service import BUILTIN_NAMES
+            from short_drama.core.skill_catalog import BUILTIN_NAMES
 
             if entity.skill_key not in BUILTIN_NAMES:
                 raise NotFound("内置 Skill 不存在")

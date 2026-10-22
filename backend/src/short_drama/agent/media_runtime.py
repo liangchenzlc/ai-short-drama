@@ -6,11 +6,12 @@ from copy import deepcopy
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from short_drama.agent.authorization import digest
+from short_drama.agent.access import lock_run
 from short_drama.agent.media_tools import batch_receipt_locked
-from short_drama.agent.runtime import lock_run
-from short_drama.agent.state import TERMINAL, mark_scheduled
-from short_drama.agent.task_state import task_event, task_for_run
+from short_drama.agent.run_events import TERMINAL
+from short_drama.agent.state import mark_scheduled
+from short_drama.agent.task_queries import task_for_run
+from short_drama.agent.task_state import task_event
 from short_drama.domain import (
     AIGenerationRecord,
     Asset,
@@ -43,6 +44,7 @@ from short_drama.service.assistant_voice_service import (
     voice_design_changes_locked,
 )
 from short_drama.service.base import utcnow
+from short_drama.utils.json_digest import digest
 
 logger = logging.getLogger(__name__)
 SETTLED = frozenset({"succeeded", "failed", "conflict", "not_submitted"})

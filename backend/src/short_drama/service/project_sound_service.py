@@ -19,25 +19,28 @@ from short_drama.domain import (
 from short_drama.domain.project_sound import ProjectSound, ProjectVoiceDefaults, SoundMediaReference
 from short_drama.schemas.project_sound import SoundAdopt, SoundDocument, SoundEdit
 from short_drama.service.base import BaseService, utcnow
-from short_drama.service.project_assembly_service import ProjectAssemblyService, digest
+from short_drama.service.project_assembly_service import ProjectAssemblyService
 from short_drama.service.storage_service import StorageService
+from short_drama.service.upload_cleanup import cleanup_unreferenced_uploads
+from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 from .audio_media import MAX_AUDIO_BYTES, audio_proxy, inspect_audio
 from .publication import publish
+from .sound_snapshot import (
+    line_hash as line_hash,
+)
+from .sound_snapshot import (
+    sound_duration as sound_duration,
+)
+from .sound_snapshot import (
+    sound_media_rows,
+    sound_snapshot,
+)
+from .sound_snapshot import (
+    validate_sound_snapshot as validate_sound_snapshot,
+)
 from .video_render import checksum
-
-
-def line_hash(line):
-    return digest({k: line.get(k) for k in ("text", "character", "voice", "config_id")})
-
-
-def sound_duration(video):
-    return sum(
-        ((c["trim_out_ms"] * 30 + 500) // 1000 - (c["trim_in_ms"] * 30 + 500) // 1000) * 1000 / 30
-        for c in video["clips"]
-        if c["trim_out_ms"] is not None
-    )
 
 
 class ProjectSoundService(BaseService):
@@ -77,9 +80,14 @@ class ProjectSoundService(BaseService):
             raise WorkflowError("audio_unavailable", "声音来源不是可读取的音视频", 422)
         return media
 
+    def _media_rows(self, identifiers, *, for_update=True, audio_only=False):
+        return sound_media_rows(
+            self.session, identifiers, for_update=for_update, audio_only=audio_only
+        )
+
     def _read(self, creation, assembly, sound, video, *, for_update=True):
         document = deepcopy(sound.document) if sound else SoundDocument().model_dump(mode="json")
-        from .native_voice_service import project_mode
+        from .native_voice_context import project_mode
 
         mode = project_mode(self.session, creation.id, self.settings)
         if mode == "native":
@@ -105,24 +113,52 @@ class ProjectSoundService(BaseService):
             for line in document["dialogue"]:
                 if line.get("config_id") and int(line["config_id"]) not in visible_configs:
                     line["config_id"] = None
-        media = {}
-        for mid in (
+        media_ids = (
             {line["media_id"] for line in document["dialogue"] if line.get("media_id")}
             | ({document["music"]["media_id"]} if document["music"] else set())
             | {clip["media_id"] for clip in document["audio_clips"]}
-        ):
-            row = self._editor_media(mid, for_update=for_update)
-            reference = self.session.get(SoundMediaReference, (assembly.id, int(mid)))
+        )
+        rows = self._media_rows(media_ids, for_update=for_update)
+        references = (
+            {
+                ref.media_id: ref
+                for ref in self.session.scalars(
+                    select(SoundMediaReference).where(
+                        SoundMediaReference.assembly_id == assembly.id,
+                        SoundMediaReference.media_id.in_(rows),
+                    )
+                )
+            }
+            if rows
+            else {}
+        )
+        uploads = self.session.execute(
+            select(SoundMediaReference, MediaFile)
+            .join(MediaFile, MediaFile.id == SoundMediaReference.media_id)
+            .where(
+                SoundMediaReference.assembly_id == assembly.id,
+                SoundMediaReference.proxy_media_id.is_not(None),
+                *([MediaFile.created_by == actor.user_id] if actor else []),
+            )
+            .order_by(MediaFile.id.desc())
+            .limit(100)
+        ).all()
+        proxies = self._media_rows(
+            {ref.proxy_media_id for ref in references.values() if ref.proxy_media_id}
+            | {ref.proxy_media_id for ref, _ in uploads},
+            for_update=for_update,
+            audio_only=True,
+        )
+        media = {}
+        storage = StorageService(self.storage, self.settings)
+        for mid, row in rows.items():
+            reference = references.get(mid)
             preview = (
-                self._media(reference.proxy_media_id, for_update=for_update)
-                if reference and reference.proxy_media_id
-                else row
+                proxies[reference.proxy_media_id] if reference and reference.proxy_media_id else row
             )
             media[str(mid)] = {
                 "duration_ms": row.duration_ms or (row.video_metadata or {}).get("duration_ms"),
-                "url": StorageService(self.storage, self.settings).download_url(
-                    preview.storage_locator
-                ),
+                "url": storage.download_url(preview.storage_locator),
             }
         return {
             "mode": mode,
@@ -137,21 +173,9 @@ class ProjectSoundService(BaseService):
                     "media_id": str(row.id),
                     "name": row.original_name,
                     "duration_ms": row.duration_ms,
-                    "url": StorageService(self.storage, self.settings).download_url(
-                        self._media(ref.proxy_media_id, for_update=for_update).storage_locator
-                    ),
+                    "url": storage.download_url(proxies[ref.proxy_media_id].storage_locator),
                 }
-                for ref, row in self.session.execute(
-                    select(SoundMediaReference, MediaFile)
-                    .join(MediaFile, MediaFile.id == SoundMediaReference.media_id)
-                    .where(
-                        SoundMediaReference.assembly_id == assembly.id,
-                        SoundMediaReference.proxy_media_id.is_not(None),
-                        *([MediaFile.created_by == actor.user_id] if actor else []),
-                    )
-                    .order_by(MediaFile.id.desc())
-                    .limit(100)
-                ).all()
+                for ref, row in uploads
             ],
             "stale_lines": stale_lines,
             "voice_defaults": {
@@ -167,7 +191,7 @@ class ProjectSoundService(BaseService):
     def native_subtitles(self, project_id):
         with self._transaction(read_only=True):
             creation, _, _, video = self._scope(project_id, for_update=False)
-            from .native_voice_service import project_mode
+            from .native_voice_context import project_mode
 
             if project_mode(self.session, creation.id, self.settings) != "native":
                 raise WorkflowError("native_mode_required", "请先切换为原生有声视频模式", 422)
@@ -228,7 +252,7 @@ class ProjectSoundService(BaseService):
         ):
             raise Conflict("声音草稿或视频剪辑已变化，请刷新核对后保存")
         document = data.document.model_dump(mode="json")
-        from .native_voice_service import project_mode
+        from .native_voice_context import project_mode
 
         native = project_mode(self.session, creation.id, self.settings) == "native"
         if native and document["dialogue"]:
@@ -322,7 +346,7 @@ class ProjectSoundService(BaseService):
 
     def prepare_speech(self, payload):
         source = payload["source"]
-        from .native_voice_service import project_mode
+        from .native_voice_context import project_mode
 
         if project_mode(self.session, source["project_id"], self.settings) == "native":
             raise WorkflowError(
@@ -338,7 +362,7 @@ class ProjectSoundService(BaseService):
             raise WorkflowError("audio_dialogue", "请校对台词并填写音色", 422)
         if payload.get("config_id") != line["config_id"]:
             raise Conflict("请先保存当前台词的配音模型")
-        from .ai_generation_service import resume_action
+        from .generation_task_policy import resume_action
 
         previous = self.session.execute(
             select(AIGenerationRecord, AsyncTask)
@@ -465,7 +489,7 @@ class ProjectSoundService(BaseService):
                 assets = self.session.scalars(
                     select(MediaAsset).where(MediaAsset.record_id == record.id)
                 ).all()
-                from .ai_generation_service import resume_action, safe_error
+                from .generation_task_policy import resume_action, safe_error
 
                 result.append(
                     {
@@ -495,7 +519,7 @@ class ProjectSoundService(BaseService):
 
     def adopt_locked(self, project_id, payload, *, assembly_version=None, timeline_hash=None):
         """Reuse native adoption inside an existing transaction without serializing media URLs."""
-        from .native_voice_service import project_mode
+        from .native_voice_context import project_mode
 
         data = SoundAdopt.model_validate(payload)
         creation, assembly, sound, video = self._scope(project_id)
@@ -623,7 +647,7 @@ class ProjectSoundService(BaseService):
                         stored = storage.upload(
                             content, length=file.stat().st_size, content_type=mime
                         )
-                    written.append(stored.storage_locator)
+                    written.append(stored)
                     files.append(
                         MediaFile(
                             id=next_id(),
@@ -651,88 +675,8 @@ class ProjectSoundService(BaseService):
                     }
                 return result
         except Exception:
-            for locator in written:
-                try:
-                    storage.delete(locator)
-                except Exception:
-                    pass
+            cleanup_unreferenced_uploads(self.session, storage, written)
             raise
 
     def snapshot(self, assembly, video, *, for_update=True):
-        sound = self.session.get(ProjectSound, assembly.id)
-        if sound is None:
-            return None
-        document = SoundDocument.model_validate(sound.document).model_dump(mode="json")
-        from short_drama.domain import Project
-
-        from .native_voice_service import project_mode
-
-        creation = self.session.get(Project, assembly.project_id)
-        native = project_mode(self.session, creation.id, self.settings) == "native"
-        if native:
-            document["dialogue"] = []
-        else:
-            document["native_ducking"] = []
-        ids = {line["media_id"] for line in document["dialogue"] if line.get("media_id")}
-        if document["music"]:
-            ids.add(document["music"]["media_id"])
-        ids.update(clip["media_id"] for clip in document["audio_clips"])
-        entries = []
-        for mid in sorted(ids):
-            media = self._editor_media(mid, for_update=for_update)
-            entries.append(
-                {
-                    "media_id": str(mid),
-                    "locator": media.storage_locator,
-                    "checksum": media.checksum_sha256,
-                    "duration_ms": media.duration_ms
-                    or (media.video_metadata or {}).get("duration_ms"),
-                }
-            )
-        from .sound_render import font_metadata
-
-        return {
-            "version": document["schema_version"],
-            "mode": "native" if native else "legacy",
-            "mix_version": "48k-stereo-v1",
-            **(font_metadata(self.settings) if document["burn_subtitles"] else {}),
-            "needs_review": sound.reviewed_timeline_hash != digest(video),
-            "document": document,
-            "media": entries,
-        }
-
-
-def validate_sound_snapshot(snapshot):
-    sound = snapshot.get("sound")
-    if not sound:
-        return
-    if sound["needs_review"] and sound["document"].get("schema_version", 1) < 2:
-        raise WorkflowError(
-            "sound_review_required", "声音或视频剪辑已变化，请核对声音与字幕时间并确认", 409
-        )
-    doc = sound["document"]
-    if doc["burn_subtitles"] and doc["subtitles"] and not sound.get("font_checksum"):
-        raise WorkflowError("subtitle_font_missing", "请先配置可用的中文字幕字体文件", 422)
-    duration = sound_duration(snapshot)
-    media = {m["media_id"]: m for m in sound["media"]}
-    if doc.get("schema_version", 1) >= 2:
-        for clip in doc["audio_clips"]:
-            source = media.get(clip["media_id"])
-            if not source or clip["trim_out_ms"] > source["duration_ms"]:
-                raise WorkflowError("audio_timing", "声音来源或裁剪范围已失效", 422)
-        return
-    for line in doc["dialogue"]:
-        if not line["media_id"] or line["adopted_hash"] != line_hash(line):
-            raise WorkflowError("audio_dialogue_stale", "存在未采用或已过期的配音，请先处理", 422)
-        if line["start_ms"] + media[line["media_id"]]["duration_ms"] > duration + 1:
-            raise WorkflowError("audio_timing", "配音超出成片时长，请调整开始时间或台词", 422)
-    if any(s["end_ms"] > duration + 1 for s in doc["subtitles"]):
-        raise WorkflowError("subtitle_timing", "字幕超出成片时长", 422)
-    if any(s["end_ms"] > duration + 1 for s in doc.get("native_ducking", [])):
-        raise WorkflowError("audio_timing", "对白压低配乐的区间超出成片时长", 422)
-    music = doc["music"]
-    if music and (
-        music["start_ms"] >= duration
-        or music["trim_out_ms"] > media[music["media_id"]]["duration_ms"]
-    ):
-        raise WorkflowError("audio_timing", "配乐时间范围无效", 422)
+        return sound_snapshot(self.session, self.settings, assembly, video, for_update=for_update)

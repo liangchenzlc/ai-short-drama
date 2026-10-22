@@ -8,8 +8,8 @@ from sqlalchemy import select
 from short_drama.agent.attachment_context import available_attachment_ids, task_attachments
 from short_drama.agent.memory_context import history_projection_locked
 from short_drama.agent.model_gateway import AgentGatewayError
-from short_drama.agent.state import append_event
-from short_drama.agent.task_state import task_for_run
+from short_drama.agent.run_events import append_event
+from short_drama.agent.task_queries import task_for_run
 from short_drama.domain.agent import AgentMessage
 from short_drama.domain.agent_task import AgentTaskInput
 from short_drama.service.assistant_policy_service import policy_state_locked

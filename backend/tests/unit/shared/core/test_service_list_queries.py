@@ -58,6 +58,117 @@ def workspace(session):
     return int(project.id)
 
 
+@pytest.mark.parametrize("size", [3, 20])
+def test_sound_reads_and_snapshots_batch_media_and_preserve_actor_scope(size):
+    from short_drama.core.config import Settings
+    from short_drama.core.exceptions import NotFound
+    from short_drama.domain import ProjectAssembly
+    from short_drama.domain.project_sound import ProjectSound, SoundMediaReference
+    from short_drama.schemas.project_sound import SoundDocument
+    from short_drama.service.project_sound_service import ProjectSoundService
+
+    cfg = Settings(_env_file=None, native_video_enabled=False)
+    with generation_session() as session:
+        project_id = workspace(session)
+        session.add(
+            ProjectAssembly(
+                id=500,
+                project_id=project_id,
+                aspect="auto",
+                resolution="720p",
+                row_version=1,
+                created_at=utcnow(),
+                updated_at=utcnow(),
+            )
+        )
+        for index in range(size):
+            session.add_all(
+                [
+                    MediaFile(
+                        id=1000 + index,
+                        project_id=project_id,
+                        format_code="audio/wav",
+                        duration_ms=1000,
+                        storage_locator=f"minio://{cfg.minio_audio_bucket}/{index}",
+                        original_name=str(index),
+                        created_by=1,
+                        published_at=utcnow(),
+                    ),
+                    MediaFile(
+                        id=2000 + index,
+                        project_id=project_id,
+                        format_code="audio/mp4",
+                        duration_ms=1000,
+                        storage_locator=f"minio://{cfg.minio_audio_bucket}/proxy-{index}",
+                        original_name=str(index),
+                        created_by=1,
+                        published_at=utcnow(),
+                    ),
+                    SoundMediaReference(
+                        assembly_id=500, media_id=1000 + index, proxy_media_id=2000 + index
+                    ),
+                ]
+            )
+        session.add(
+            MediaFile(
+                id=3000,
+                scope_user_id=2,
+                format_code="audio/wav",
+                duration_ms=1000,
+                storage_locator=f"minio://{cfg.minio_audio_bucket}/private",
+                original_name="private",
+            )
+        )
+        session.commit()
+        session.expunge_all()
+        session.info["actor"] = SimpleNamespace(user_id=1, request_id="sound-batch")
+        service = ProjectSoundService(
+            session, cfg, SimpleNamespace(presigned_get=lambda *_: "https://fixture/audio")
+        )
+        document = SoundDocument(
+            schema_version=2,
+            audio_clips=[
+                {
+                    "id": f"clip-{index}",
+                    "media_id": str(1000 + index),
+                    "trim_out_ms": 1000,
+                    "duration_ms": 1000,
+                }
+                for index in range(size)
+            ],
+        ).model_dump(mode="json")
+        sound = ProjectSound(
+            assembly_id=500,
+            row_version=1,
+            document=document,
+            reviewed_timeline_hash="0" * 64,
+            updated_at=utcnow(),
+        )
+        creation, assembly = SimpleNamespace(id=project_id), SimpleNamespace(id=500)
+        with session.begin(), select_queries(session) as statements:
+            result = service._read(creation, assembly, sound, {"clips": []}, for_update=False)
+        assert len(result["media"]) == len(result["uploads"]) == size
+        assert len(statements) <= 7
+        session.add(sound)
+        session.commit()
+        with session.begin(), select_queries(session) as statements:
+            snapshot = service.snapshot(
+                SimpleNamespace(id=500, project_id=project_id), {"clips": []}, for_update=False
+            )
+        assert len(snapshot["media"]) == size
+        assert len(statements) <= 4
+        sound = SimpleNamespace(
+            row_version=1,
+            reviewed_timeline_hash="0" * 64,
+            document={
+                **document,
+                "audio_clips": [{**document["audio_clips"][0], "media_id": "3000"}],
+            },
+        )
+        with session.begin(), pytest.raises(NotFound):
+            service._read(creation, assembly, sound, {"clips": []}, for_update=False)
+
+
 def test_native_prefetch_preserves_disabled_settings_without_database_reads():
     shot = SimpleNamespace(id=1)
     assert native_context(None, shot, settings=SimpleNamespace()) is None
@@ -236,7 +347,7 @@ def test_authenticated_task_list_batches_records_owners_and_legacy_origins(size)
 @pytest.mark.parametrize("size", [3, 20])
 def test_authenticated_native_storyboard_batches_missing_dialogue(monkeypatch, size):
     cfg = SimpleNamespace(native_video_enabled=True, audio_production_enabled=True)
-    monkeypatch.setattr("short_drama.service.native_voice_service.Settings", lambda: cfg)
+    monkeypatch.setattr("short_drama.service.native_voice_context.Settings", lambda: cfg)
     with generation_session() as session:
         project_id = workspace(session)
         now = utcnow()
@@ -433,7 +544,7 @@ def test_native_storyboard_reuses_shared_voice_sample_and_preserves_strict_valid
     from short_drama.core.exceptions import WorkflowError
 
     cfg = SimpleNamespace(native_video_enabled=True, audio_production_enabled=True)
-    monkeypatch.setattr("short_drama.service.native_voice_service.Settings", lambda: cfg)
+    monkeypatch.setattr("short_drama.service.native_voice_context.Settings", lambda: cfg)
     with generation_session() as session:
         project_id = workspace(session)
         character = AssetService(session).create(

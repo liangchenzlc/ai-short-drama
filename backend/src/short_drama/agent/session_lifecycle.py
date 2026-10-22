@@ -2,7 +2,7 @@
 
 from sqlalchemy import select
 
-from short_drama.agent.state import append_event
+from short_drama.agent.run_events import append_event
 from short_drama.domain.agent_context import AgentAttachment
 from short_drama.domain.agent_task import AgentOperation, AgentTask
 from short_drama.service.base import utcnow

@@ -43,5 +43,6 @@ React 19 + TypeScript strict + Vite 7 + Ant Design，无路径别名、无 ESLin
 ## 验证
 
 - `npm run typecheck` 快速检查；`npm run build` 含两包类型检查与生产构建。
+- 在仓库根执行 `node scripts/check-quality.mjs`，结构与禁令规则见[代码质量规范](../docs/instruction/代码质量规范.md)。
 - 功能测试 `npm test -- --feature <编号>`；浏览器测试 `npm run test:e2e -- --feature <编号>`，范围选择见根 [按功能执行测试](../docs/instruction/按功能执行测试.md)。
 - 改画布另跑 `cd canvas && npm run source:check`，并对照[画布迁移边界](../docs/instruction/画布迁移边界.md)。

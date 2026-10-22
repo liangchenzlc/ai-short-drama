@@ -1,7 +1,8 @@
 """Service-owned atomic operations and shared ownership/reference invariants."""
 
+import logging
 from contextlib import contextmanager, nullcontext
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel
@@ -10,14 +11,12 @@ from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import BusinessError, Conflict, DatabaseUnavailable, NotFound
+from short_drama.core.time import utcnow
 from short_drama.dao.base import BaseDAO
 from short_drama.domain import AIModelConfig, MediaFile
 from short_drama.schemas.base import parse_identifier
 
-
-def utcnow():
-    """MySQL DATETIME values are naive UTC, consistently with connection time_zone."""
-    return datetime.now(UTC).replace(tzinfo=None)
+logger = logging.getLogger(__name__)
 
 
 class Page(BaseModel):
@@ -60,15 +59,38 @@ class BaseService:
                         self.session, project_id, lock=not read_only and lock_request_project
                     )
                 yield
-        except IntegrityError:
+        except IntegrityError as error:
+            self._log_database_failure(error, read_only=read_only, expected=True)
             raise Conflict("Operation conflicts with an existing or referenced record") from None
         except OperationalError as error:
-            code = getattr(error.orig, "args", (None,))[0]
+            code = (getattr(error.orig, "args", ()) or (None,))[0]
+            self._log_database_failure(
+                error, read_only=read_only, expected=code in (1205, 1213, 3572)
+            )
             if code in (1205, 1213, 3572):
                 raise Conflict("Concurrent operation conflict; retry operation") from None
             raise DatabaseUnavailable("Database operation unavailable") from None
-        except DBAPIError:
+        except DBAPIError as error:
+            self._log_database_failure(error, read_only=read_only)
             raise DatabaseUnavailable("Database operation unavailable") from None
+
+    def _log_database_failure(self, error, *, read_only, expected=False):
+        actor = self.session.info.get("actor")
+        args = getattr(error.orig, "args", ())
+        code = args[0] if args and type(args[0]) is int else "unknown"
+        # DBAPIError's message, SQL, parameters and even its driver exception may
+        # contain credentials or user content. Record only allowlisted diagnostics.
+        logger.log(
+            logging.WARNING if expected else logging.ERROR,
+            "Database transaction failed service=%s operation=%s request_id=%s project_id=%s "
+            "error=%s code=%s",
+            type(self).__name__,
+            "read" if read_only else "write",
+            getattr(actor, "request_id", None),
+            self.session.info.get("request_project"),
+            type(error).__name__,
+            code,
+        )
 
     @contextmanager
     def _global_order_lock(self):

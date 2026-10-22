@@ -5,10 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from short_drama.core.config import Settings
-from short_drama.dao.task_runtime_dao import TaskRuntimeDAO
 from short_drama.domain import AIGenerationRecord, AsyncTask
 from short_drama.service.ai_generation_service import AIGenerationService
 from short_drama.service.base import utcnow
+from short_drama.service.task_runtime_service import TaskRuntimeService
 from short_drama.tasks.celery_app import topology
 from short_drama.tasks.recovery import recover
 from tests.support.generation_fixtures import config, generation_session
@@ -60,7 +60,7 @@ def test_lost_save_is_republished_once_and_old_or_duplicate_delivery_cannot_clai
         record = session.get(AIGenerationRecord, record_id)
         assert record.status == "succeeded"
         assert record.response_data["media_manifest"][0]["asset_id"] == "123"
-    store = TaskRuntimeDAO(factory, settings)
+    store = TaskRuntimeService(factory, settings)
     assert store.claim_execution(task_id, 1) is None
     claimed, record, _token = store.claim_execution(task_id, 2)
     assert claimed.next_action == "save" and record.status == "succeeded"

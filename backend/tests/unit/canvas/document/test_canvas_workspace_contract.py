@@ -39,8 +39,8 @@ def test_workspace_projects_legacy_modelhub_video_capabilities(model_key, durati
     from types import SimpleNamespace
     from unittest.mock import Mock
 
-    from short_drama.dao.canvas_workspace_dao import CanvasWorkspaceDAO
     from short_drama.schemas.canvas_workspace import CanvasModelRead
+    from short_drama.service.canvas_workspace_service import CanvasWorkspaceService
 
     config = SimpleNamespace(
         id=17,
@@ -58,7 +58,7 @@ def test_workspace_projects_legacy_modelhub_video_capabilities(model_key, durati
     before = deepcopy(vars(config))
     session = Mock()
     session.scalars.side_effect = [[config], []]
-    projected = CanvasWorkspaceDAO(session).models(Mock())[0]
+    projected = CanvasWorkspaceService(session)._models()[0]
     defaults = projected.get("default_capability_config")
     assert defaults is not None, "无高级 profile 的 ModelHub 也必须向画布声明参考视频能力"
     video = defaults["video"]
@@ -92,7 +92,7 @@ def test_workspace_does_not_infer_modelhub_capabilities_from_name_or_override_pr
     from types import SimpleNamespace
     from unittest.mock import Mock
 
-    from short_drama.dao.canvas_workspace_dao import CanvasWorkspaceDAO
+    from short_drama.service.canvas_workspace_service import CanvasWorkspaceService
 
     config = SimpleNamespace(
         id=17,
@@ -109,6 +109,6 @@ def test_workspace_does_not_infer_modelhub_capabilities_from_name_or_override_pr
     )
     session = Mock()
     session.scalars.side_effect = [[config], []]
-    projected = CanvasWorkspaceDAO(session).models(Mock())[0]
+    projected = CanvasWorkspaceService(session)._models()[0]
     assert projected.get("default_capability_config") is None
     assert projected["runtime_profile"] == runtime_profile

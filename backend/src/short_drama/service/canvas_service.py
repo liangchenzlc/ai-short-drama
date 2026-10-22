@@ -4,7 +4,7 @@ import json
 import re
 from contextlib import nullcontext
 from copy import deepcopy
-from datetime import UTC, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
 from sqlalchemy import JSON, cast, literal, select
@@ -14,6 +14,7 @@ from short_drama.dao.canvas_dao import CanvasDAO
 from short_drama.dao.canvas_drawing_dao import CanvasDrawingDAO
 from short_drama.dao.canvas_resource_dao import CanvasResourceDAO
 from short_drama.db.access import require_project as require_project_access
+from short_drama.db.canvas_scope import require_canvas, require_canvas_project
 from short_drama.domain import Project, ProjectCanvas, ProjectCanvasSettings
 from short_drama.domain.canvas import (
     CanvasDirectorScene,
@@ -47,7 +48,9 @@ from short_drama.schemas.canvas import (
 from short_drama.schemas.canvas_creation import canvas_creation_payload
 from short_drama.utils.snowflake import next_id
 
-from .base import BaseService, utcnow
+from .base import utcnow
+from .canvas_audit import CanvasAuditService
+from .canvas_audit import iso as iso
 from .canvas_document import (
     SKILL_BODY_METADATA,
     content_hash,
@@ -66,10 +69,6 @@ from .canvas_media_locators import canonicalize_canvas_media
 from .publication import publish
 
 
-def iso(value):
-    return value.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
-
-
 def validate_key(key: str | None) -> str:
     if not key or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", key):
         raise WorkflowError(
@@ -78,47 +77,18 @@ def validate_key(key: str | None) -> str:
     return key
 
 
-class CanvasService(BaseService):
+class CanvasService(CanvasAuditService):
     model = ProjectCanvas
 
     def __init__(self, session):
         super().__init__(session)
         self.canvas_dao = CanvasDAO(session)
 
-    @property
-    def actor_id(self) -> int:
-        actor = self.session.info.get("actor")
-        if actor is None:
-            raise WorkflowError("authentication_required", "Sign in to use canvases", 401)
-        return actor.user_id
-
-    def audit(self) -> dict:
-        now = utcnow()
-        return dict(
-            id=next_id(),
-            created_at=now,
-            updated_at=now,
-            created_by=self.actor_id,
-            updated_by=self.actor_id,
-        )
-
-    def child(self, canvas) -> dict:
-        return {**self.audit(), "project_id": canvas.project_id, "canvas_id": canvas.id}
-
     def require_project(self, project_id: int, *, lock=False):
-        project = self.canvas_dao.project(project_id, lock=lock)
-        if project is None:
-            raise NotFound("Project does not exist")
-        if project.workspace_mode != "infinite_canvas":
-            raise WorkflowError("canvas_mode_required", "This project uses standard mode", 409)
-        return project
+        return require_canvas_project(self.session, project_id, lock=lock)
 
     def require_canvas(self, project_id: int, canvas_id: int, *, lock=False, refresh=False):
-        self.require_project(project_id, lock=lock)
-        canvas = self.canvas_dao.canvas(project_id, canvas_id, lock=lock, refresh=refresh)
-        if canvas is None:
-            raise NotFound("Canvas does not exist")
-        return canvas
+        return require_canvas(self.session, project_id, canvas_id, lock=lock, refresh=refresh)
 
     def lock_existing_canvases(self, canvases):
         for project_id in sorted({canvas.project_id for canvas in canvases}):

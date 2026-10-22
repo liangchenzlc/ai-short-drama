@@ -1,4 +1,4 @@
-import type { AiModelConfigCreateDto, AiRuntimeProfileDto, ConfigJson, ConfigJsonObject, RunningHubFieldDto } from '../../api/types/ai-model-configs';
+import type { AiModelConfigCreateDto, AiRuntimeProfileDto, ConfigJson, ConfigJsonObject, RunningHubFieldDto, RuntimeModelDiscoveryRequestDto } from '../../api/types/ai-model-configs';
 import type { AiConfig, ConfigDraft, RuntimeDraft, ServiceType } from './config-model';
 
 const secretFields = new Set(['apikey', 'secretkey', 'authorization', 'cookie', 'password', 'token', 'runninghubuploadapikey', 'runninghubwalletapikey']);
@@ -112,7 +112,7 @@ export function usesRuntimeModelDiscovery(draft: ConfigDraft): boolean {
   return draft.runtime.enabled || draft.headersChanged || draft.headers.length > 0;
 }
 
-export function runtimeModelDiscoveryBody(draft: ConfigDraft, existing: AiConfig | null) {
+export function runtimeModelDiscoveryBody(draft: ConfigDraft, existing: AiConfig | null): RuntimeModelDiscoveryRequestDto {
   const fields = serializeConfigDraft({ ...draft, headersChanged: true });
   const sameAddress = existing?.baseUrl.trim().replace(/\/+$/, '') === fields.base_url.replace(/\/+$/, '');
   if (existing && !sameAddress && draft.headers.some(header => header.hasValue && !header.value)) {

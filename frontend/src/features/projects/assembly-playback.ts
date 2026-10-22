@@ -11,7 +11,7 @@ export function audioGain(clip: AudioClip, at: number, sound: EditorSound) {
   if (offset < 0 || offset >= clip.duration_ms) return 0;
   const fade = Math.min(1, clip.fade_in_ms ? offset / Math.min(clip.duration_ms, clip.fade_in_ms) : 1,
     clip.fade_out_ms ? (clip.duration_ms - offset) / Math.min(clip.duration_ms, clip.fade_out_ms) : 1);
-  const voices = sound.native_ducking?.length ? sound.native_ducking : audibleAudio(sound).filter(c => c.kind === 'dialogue').map(c => ({ start_ms: c.start_ms, end_ms: c.start_ms + c.duration_ms }));
+  const voices = [...(sound.native_ducking ?? []), ...audibleAudio(sound).filter(c => c.kind === 'dialogue').map(c => ({ start_ms: c.start_ms, end_ms: c.start_ms + c.duration_ms }))];
   const duck = clip.kind === 'music' && clip.ducking && voices.some(v => at >= v.start_ms && at <= v.end_ms) ? .25 : 1;
   return clip.volume * 10 ** (clip.gain_db / 20) * fade * duck * (clip.kind === 'original' ? sound.original_volume : clip.kind === 'dialogue' ? sound.dialogue_volume : 1);
 }

@@ -576,7 +576,10 @@
         "frontend/canvas/src/types/image.ts",
         "frontend/canvas/src/types/media.ts",
         "frontend/canvas/src/vite-env.d.ts",
-        "frontend/src/features/projects/CanvasLaunch.tsx"
+        "frontend/src/features/projects/CanvasLaunch.tsx",
+        "backend/src/short_drama/db/canvas_scope.py",
+        "backend/src/short_drama/service/canvas_audit.py",
+        "backend/src/short_drama/utils/canvas_document.py"
       ],
       "depends_on": [
         "canvas.compat",
@@ -988,7 +991,9 @@
         "frontend/canvas/src/services/workspace-resource-storage.ts",
         "frontend/canvas/src/stores/use-asset-store.ts",
         "frontend/src/api/modules/canvas-archives.ts",
-        "frontend/src/features/projects/CanvasArchiveDialog.tsx"
+        "frontend/src/features/projects/CanvasArchiveDialog.tsx",
+        "backend/src/short_drama/db/canvas_resource_scope.py",
+        "backend/src/short_drama/utils/canvas_media_locators.py"
       ],
       "depends_on": [
         "canvas.compat",
@@ -1435,7 +1440,10 @@
         "compose.yaml",
         "docker/**",
         "docs/database/**/*.sql",
-        "docs/database/*.sql"
+        "docs/database/*.sql",
+        "backend/src/short_drama/core/time.py",
+        "backend/src/short_drama/db/resource_scope.py",
+        "backend/src/short_drama/utils/json_digest.py"
       ],
       "depends_on": []
     },
@@ -1541,7 +1549,11 @@
         "frontend/src/features/projects/GenerationComposer.tsx",
         "frontend/src/features/projects/ShotGenerationSettings.tsx",
         "frontend/src/features/projects/shot-generation-settings.ts",
-        "frontend/src/features/projects/shot-generation-submission.ts"
+        "frontend/src/features/projects/shot-generation-submission.ts",
+        "backend/src/short_drama/ai/endpoints.py",
+        "backend/src/short_drama/service/generation_task_policy.py",
+        "backend/src/short_drama/service/task_runtime_service.py",
+        "backend/src/short_drama/service/shot_video_admission.py"
       ],
       "depends_on": [
         "shared.core"
@@ -1568,7 +1580,8 @@
         "backend/src/short_drama/storage/__init__.py",
         "backend/src/short_drama/storage/minio.py",
         "backend/src/short_drama/storage/models.py",
-        "frontend/src/api/modules/media-library.ts"
+        "frontend/src/api/modules/media-library.ts",
+        "backend/src/short_drama/service/upload_cleanup.py"
       ],
       "depends_on": [
         "shared.core"
@@ -1609,7 +1622,8 @@
         "frontend/src/features/ai-config/provider-presets.ts",
         "frontend/src/features/projects/EpisodeModelSelect.tsx",
         "frontend/src/pages/ai-config/**",
-        "frontend/src/pages/ai-config/AiConfigPage.tsx"
+        "frontend/src/pages/ai-config/AiConfigPage.tsx",
+        "backend/src/short_drama/dao/model_preference_dao.py"
       ],
       "depends_on": [
         "shared.core"
@@ -1774,7 +1788,8 @@
         "frontend/src/features/ai-config/SkillManager.tsx",
         "frontend/src/features/ai-config/SkillResources.tsx",
         "frontend/src/features/ai-config/skill-draft.ts",
-        "frontend/src/features/ai-config/skill-manager.css"
+        "frontend/src/features/ai-config/skill-manager.css",
+        "backend/src/short_drama/core/skill_catalog.py"
       ],
       "depends_on": [
         "shared.core",
@@ -1837,7 +1852,8 @@
         "frontend/src/features/projects/useAssembly.ts",
         "frontend/src/features/projects/useAssemblyAnalysis.ts",
         "frontend/src/features/projects/useAssemblyLayout.ts",
-        "frontend/src/pages/projects/episode/AssemblyStage.tsx"
+        "frontend/src/pages/projects/episode/AssemblyStage.tsx",
+        "backend/src/short_drama/service/render_tools.py"
       ],
       "depends_on": [
         "shared.core",
@@ -1992,16 +2008,16 @@
         "frontend/src/features/ai-assistant/AssistantConversationBody.tsx",
         "frontend/src/features/ai-assistant/AssistantDeleteDialog.tsx",
         "frontend/src/features/ai-assistant/AssistantHistory.tsx",
+        "frontend/src/features/ai-assistant/AssistantMentionTextarea.tsx",
         "frontend/src/features/ai-assistant/AssistantMemory.tsx",
         "frontend/src/features/ai-assistant/AssistantMemoryReview.tsx",
-        "frontend/src/features/ai-assistant/AssistantMentionTextarea.tsx",
         "frontend/src/features/ai-assistant/AssistantMessage.tsx",
         "frontend/src/features/ai-assistant/AssistantSubjects.tsx",
         "frontend/src/features/ai-assistant/AssistantAttachments.tsx",
-        "frontend/src/features/ai-assistant/AssistantTaskSettings.tsx",
         "frontend/src/features/ai-assistant/AssistantSkillPicker.tsx",
         "frontend/src/features/ai-assistant/assistant-source-link.ts",
         "frontend/src/features/ai-assistant/AssistantTaskTrace.tsx",
+        "frontend/src/features/ai-assistant/AssistantTaskSettings.tsx",
         "frontend/src/features/ai-assistant/CreativeAssistantPanel.tsx",
         "frontend/src/features/ai-assistant/LegacyAssistantMessages.tsx",
         "frontend/src/features/ai-assistant/ai-assistant.css",
@@ -2031,7 +2047,8 @@
         "backend/src/short_drama/agent/media_tools.py",
         "backend/src/short_drama/agent/dialogue_tools.py",
         "backend/src/short_drama/agent/media_runtime.py",
-        "backend/src/short_drama/agent/skill_runtime.py"
+        "backend/src/short_drama/agent/skill_runtime.py",
+        "backend/src/short_drama/service/agent_memory_store.py"
       ],
       "depends_on": [
         "shared.core",
@@ -2068,7 +2085,8 @@
         "frontend/src/features/auth/ModelPreferences.tsx",
         "frontend/src/features/auth/account-center.css",
         "frontend/src/features/auth/account-storage.ts",
-        "frontend/src/features/projects/ProjectCollaboration.tsx"
+        "frontend/src/features/projects/ProjectCollaboration.tsx",
+        "backend/src/short_drama/dao/identity_dao.py"
       ],
       "depends_on": [
         "shared.core",
@@ -2200,7 +2218,9 @@
         "frontend/src/api/modules/sound.ts",
         "frontend/src/features/projects/NativeVoicePanel.tsx",
         "frontend/src/features/projects/SoundPanel.tsx",
-        "frontend/src/features/projects/standard-assembly.css"
+        "frontend/src/features/projects/standard-assembly.css",
+        "backend/src/short_drama/service/native_voice_context.py",
+        "backend/src/short_drama/service/sound_snapshot.py"
       ],
       "depends_on": [
         "shared.core",
@@ -2323,7 +2343,8 @@
         "backend/src/short_drama/service/image_processing.py",
         "frontend/src/api/modules/image-groups.ts",
         "frontend/src/features/image-tools/**",
-        "frontend/src/lib/image-tools/**"
+        "frontend/src/lib/image-tools/**",
+        "backend/src/short_drama/service/image_adoption_state.py"
       ],
       "depends_on": [
         "shared.generation",
@@ -13048,6 +13069,16 @@
         "backend/tests/support/integration/legacy_identity.py",
         "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py"
       ]
+    },
+    {
+      "path": "scripts/tests/check-quality.test.mjs",
+      "features": [
+        "shared.test_runner"
+      ],
+      "runner": "tooling",
+      "level": "fast",
+      "requires": [],
+      "support": []
     }
   ],
   "auxiliary": [

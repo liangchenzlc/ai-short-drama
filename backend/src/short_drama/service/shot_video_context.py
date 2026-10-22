@@ -28,7 +28,7 @@ def video_context_hash(
         },
     }
     if native_speech is _UNSET and session is not None and shot is not None:
-        from .native_voice_service import native_context
+        from .native_voice_context import native_context
 
         native_speech = native_context(session, shot)
     if native_speech is not _UNSET and native_speech is not None:

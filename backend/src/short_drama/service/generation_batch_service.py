@@ -15,7 +15,7 @@ from short_drama.core.exceptions import (
     WorkflowError,
 )
 from short_drama.dao.async_task_dao import source_conditions
-from short_drama.dao.task_runtime_dao import finish, latest_record
+from short_drama.dao.task_runtime_dao import latest_record
 from short_drama.db.access import scoped_key
 from short_drama.domain import (
     AIGenerationRecord,
@@ -33,6 +33,7 @@ from short_drama.domain import (
     ShotVideo,
 )
 from short_drama.schemas.generation_batch import BatchCreate, BatchPreflight, BatchRetry
+from short_drama.service.task_runtime_service import finish
 from short_drama.utils.snowflake import next_id
 
 from .ai_generation_service import AIGenerationService, can_retry, resume_action
@@ -763,7 +764,7 @@ def dispatch_batches(factory, settings):
                     )
                     native_changed = False
                     if source is not None and batch.scene == "shot_video":
-                        from .native_voice_service import native_context
+                        from .native_voice_context import native_context
 
                         frozen = (record.request_data.get("source_snapshot") or {}).get(
                             "native_speech"

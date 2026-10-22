@@ -168,7 +168,7 @@ def test_storyboard_history_pages_only_requested_shots_and_checks_episode_scope(
                 ],
             }
         }
-        from short_drama.dao.task_runtime_dao import finish
+        from short_drama.service.task_runtime_service import finish
 
         finish(session.get(AsyncTask, int(task["generation_id"])), "succeeded")
         session.commit()

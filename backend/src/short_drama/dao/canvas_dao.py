@@ -1,6 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, defer
 
+from short_drama.db.canvas_scope import canvas_project, canvas_record
 from short_drama.domain import Project, ProjectCanvas, ProjectCanvasSettings
 from short_drama.domain.canvas import CanvasRevision, CanvasWriteReceipt
 from short_drama.domain.collaboration import User
@@ -14,22 +15,10 @@ class CanvasDAO:
         return self.session.scalar(select(User).where(User.id == user_id).with_for_update())
 
     def project(self, project_id: int, *, lock: bool = False):
-        query = select(Project).where(Project.id == project_id, Project.archived_at.is_(None))
-        return self.session.scalar(
-            query.with_for_update().execution_options(populate_existing=True) if lock else query
-        )
+        return canvas_project(self.session, project_id, lock=lock)
 
     def canvas(self, project_id: int, canvas_id: int, *, lock: bool = False, refresh: bool = False):
-        query = select(ProjectCanvas).where(
-            ProjectCanvas.project_id == project_id,
-            ProjectCanvas.id == canvas_id,
-            ProjectCanvas.archived_at.is_(None),
-        )
-        if refresh:
-            query = query.execution_options(populate_existing=True)
-        return self.session.scalar(
-            query.with_for_update().execution_options(populate_existing=True) if lock else query
-        )
+        return canvas_record(self.session, project_id, canvas_id, lock=lock, refresh=refresh)
 
     def source_canvas(self, source_key: str, *, lock: bool = False):
         """来源只能精确匹配稳定 key，不与数值数据库 ID 混用。"""

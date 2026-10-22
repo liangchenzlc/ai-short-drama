@@ -8574,7 +8574,6 @@ def test_assistant_media_primary_waits_for_first_output_then_falls_back_only_aft
     undo,
 ):
     from short_drama.agent.media_runtime import collect_media_results
-    from short_drama.dao.task_runtime_dao import finish
     from short_drama.domain import (
         AIGenerationRecord,
         Asset,
@@ -8585,6 +8584,7 @@ def test_assistant_media_primary_waits_for_first_output_then_falls_back_only_aft
     )
     from short_drama.domain.agent_media import AgentMediaRequest
     from short_drama.service.image_group_service import ImageGroupService
+    from short_drama.service.task_runtime_service import finish
     from short_drama.utils.snowflake import next_id
 
     flow = media_tool_run(task_workspace, count=2)

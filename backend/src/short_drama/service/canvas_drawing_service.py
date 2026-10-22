@@ -5,31 +5,31 @@ from copy import deepcopy
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.canvas_drawing_dao import CanvasDrawingDAO
 from short_drama.dao.canvas_resource_dao import CanvasResourceDAO
+from short_drama.db.canvas_scope import require_canvas
 from short_drama.domain import CanvasDrawing, CanvasDrawingMediaReference, CanvasDrawingVersion
 from short_drama.domain.media_file import MediaFile
 from short_drama.schemas.canvas_drawing import CanvasDrawingWrite
 
-from .base import BaseService, utcnow
+from .base import utcnow
+from .canvas_audit import CanvasAuditService, iso
 from .canvas_document import content_hash
 from .canvas_drawing_document import drawing_document, drawing_resource_ids, stored_drawing_document
-from .canvas_service import CanvasService, iso
 from .publication import publish
 
 
-class CanvasDrawingService(BaseService):
+class CanvasDrawingService(CanvasAuditService):
     model = CanvasDrawing
 
     def __init__(self, session):
         super().__init__(session)
         self.drawings = CanvasDrawingDAO(session)
-        self.canvases = CanvasService(session)
         self.resources = CanvasResourceDAO(session)
 
     def _canvas(self, key, *, lock=False):
         canvas = self.drawings.canvas(key)
         if canvas is None:
             raise NotFound("画布不存在或已无权访问")
-        return self.canvases.require_canvas(canvas.project_id, canvas.id, lock=lock)
+        return require_canvas(self.session, canvas.project_id, canvas.id, lock=lock)
 
     @staticmethod
     def _read(drawing, version, *, include_snapshot=True):
@@ -89,7 +89,7 @@ class CanvasDrawingService(BaseService):
                 not isinstance(resource, MediaFile)
                 or resource.project_id != canvas.project_id
                 or resource.published_at is None
-                and resource.created_by != self.canvases.actor_id
+                and resource.created_by != self.actor_id
             ):
                 raise NotFound("绘图资源不存在或不属于当前项目")
             if not resource.format_code.startswith("image/") or not resource.byte_size:
@@ -135,7 +135,7 @@ class CanvasDrawingService(BaseService):
             resources = self._resources(canvas, document)
             if drawing is None:
                 drawing = CanvasDrawing(
-                    **self.canvases.child(canvas),
+                    **self.child(canvas),
                     source_key=drawing_key,
                     row_version=1,
                     archived_at=None,
@@ -145,14 +145,14 @@ class CanvasDrawingService(BaseService):
             else:
                 drawing.row_version += 1
                 drawing.updated_at = utcnow()
-                drawing.updated_by = self.canvases.actor_id
+                drawing.updated_by = self.actor_id
             version = self.append_version(canvas, drawing, document, resources)
             return {"drawing": self._read(drawing, version)}
 
     def append_version(self, canvas, drawing, document, resources):
         """调用方须持有项目锁并管理事务；历史恢复与普通保存使用相同版本写入。"""
         version = CanvasDrawingVersion(
-            **self.canvases.child(canvas),
+            **self.child(canvas),
             drawing_id=drawing.id,
             row_version=drawing.row_version,
             document_json=stored_drawing_document(document),
@@ -163,7 +163,7 @@ class CanvasDrawingService(BaseService):
             publish(resource)
             self.session.add(
                 CanvasDrawingMediaReference(
-                    **self.canvases.child(canvas),
+                    **self.child(canvas),
                     drawing_version_id=version.id,
                     media_id=resource.id,
                 )
@@ -179,5 +179,5 @@ class CanvasDrawingService(BaseService):
                 raise NotFound("绘图不存在")
             if drawing.archived_at is None:
                 drawing.archived_at = drawing.updated_at = utcnow()
-                drawing.updated_by = self.canvases.actor_id
+                drawing.updated_by = self.actor_id
             return {"id": drawing_key, "revision": str(drawing.row_version)}

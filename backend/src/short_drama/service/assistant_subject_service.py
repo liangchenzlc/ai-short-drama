@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 from sqlalchemy import select
 
-from short_drama.agent.authorization import digest
 from short_drama.agent.subject_context import snapshot_subjects, subject_catalog, subject_key
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.assistant_context_dao import AssistantContextDAO
@@ -18,6 +17,7 @@ from short_drama.service.assistant_context_service import _asset, _freeze_node_m
 from short_drama.service.assistant_dialogue_service import sound_line_state
 from short_drama.service.assistant_image_service import freeze_image_catalog
 from short_drama.service.assistant_voice_service import voice_binding_state
+from short_drama.utils.json_digest import digest
 
 NODE_FIELDS = frozenset(
     "content richText storageKey mimeType durationMs nodeRole characterName characterAliases "

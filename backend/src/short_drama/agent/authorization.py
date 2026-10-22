@@ -1,7 +1,5 @@
 """Freeze reviewed scope, source versions, quantities and models before execution."""
 
-import hashlib
-import json
 import re
 from copy import deepcopy
 
@@ -11,14 +9,7 @@ from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import AIModelConfig, Asset, Project, ShotScript
 from short_drama.schemas.agent_runtime import TaskSpec
 from short_drama.service.agent_model_service import model_snapshot
-
-
-def digest(value):
-    return hashlib.sha256(
-        json.dumps(
-            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
-        ).encode()
-    ).hexdigest()
+from short_drama.utils.json_digest import digest as digest
 
 
 def discussion_only(content):
@@ -175,7 +166,7 @@ def freeze_task(session, conversation, payload, *, step_id, owner_user_id):
     elif spec.model_config_id is not None:
         raise WorkflowError("agent_task_model_unexpected", "文本候选使用本轮决策模型", 422)
     if spec.kind in {"extract", "storyboard", "image", "video"}:
-        from short_drama.agent.native_tasks import freeze_native_context
+        from short_drama.agent.native_context import freeze_native_context
 
         freeze_native_context(session, values)
     return values

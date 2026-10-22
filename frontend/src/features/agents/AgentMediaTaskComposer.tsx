@@ -3,7 +3,7 @@ import { Alert, Button, InputNumber, Select } from 'antd';
 import { assetLibraries, type AssetRead, type LibraryAssetRead } from '../../api/modules/assets';
 import { storyboardApi, type ShotRead } from '../../api/modules/storyboard';
 import { projectsApi } from '../../api/modules/projects';
-import { aiModelConfigs } from '../../api/modules/ai-model-configs';
+import { aiModelConfigs } from '../ai-config/config-api';
 import { generationReferences } from '../../api/modules/generation-references';
 import type { AiModelCapabilitiesDto } from '../../api/types/ai-model-configs';
 import type { AgentConversation, AgentTaskSpec } from '../../api/types/agents';

@@ -173,7 +173,7 @@ def test_text_payload_is_erased_but_identity_public_binding_and_audit_survive(id
 
 @pytest.mark.parametrize("status", ["failed", "cancelled"])
 def test_disposal_disables_generic_recovery_and_preserves_original_key(identity_app, status):
-    from short_drama.dao.task_runtime_dao import finish
+    from short_drama.service.task_runtime_service import finish
 
     client, _, project, path, request = seed(identity_app, "recycle_execution_" + status)
     keep_project_active(client, project)
@@ -209,7 +209,7 @@ def test_disposal_disables_generic_recovery_and_preserves_original_key(identity_
 def test_unbound_retry_descendants_defer_then_retire_without_reviving_original_keys(
     identity_app, state
 ):
-    from short_drama.dao.task_runtime_dao import finish
+    from short_drama.service.task_runtime_service import finish
 
     client, _, project, path, request = seed(identity_app, "recycle_chain_" + state)
     keep_project_active(client, project)

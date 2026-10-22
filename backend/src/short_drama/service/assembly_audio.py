@@ -4,7 +4,7 @@ import json
 import math
 from array import array
 
-from .video_render import executable
+from .render_tools import executable
 
 
 def audible_clips(document, *, voices_only=False):
@@ -23,10 +23,13 @@ def render_audio(renderer, clips, sources, directory, duration_ms, document=None
     seconds = duration_ms / 1000
     binary = executable(renderer.settings.render_ffmpeg_path)
     paths = []
-    voice_ranges = document.get("native_ducking", []) or [
-        {"start_ms": c["start_ms"], "end_ms": c["start_ms"] + c["duration_ms"]}
-        for c in clips
-        if c["kind"] == "dialogue"
+    voice_ranges = [
+        *document.get("native_ducking", []),
+        *[
+            {"start_ms": c["start_ms"], "end_ms": c["start_ms"] + c["duration_ms"]}
+            for c in audible_clips({**document, "audio_clips": clips})
+            if c["kind"] == "dialogue"
+        ],
     ]
     for index, clip in enumerate(clips):
         length = min(clip["duration_ms"], duration_ms - clip["start_ms"]) / 1000

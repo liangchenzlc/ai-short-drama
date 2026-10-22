@@ -264,7 +264,7 @@ class ImageGroupService(BaseService):
         group.notice = None
         self.session.flush()
         if not manual and group.source_context.get("target_version") is not None:
-            from .assistant_image_service import image_adoption_state
+            from .image_adoption_state import image_adoption_state
 
             group.source_context = {
                 **group.source_context,
@@ -285,11 +285,6 @@ class ImageGroupService(BaseService):
         return True
 
     def attach(self, task, record, media_id, index):
-        if (record.request_data.get("source") or {}).get("scene") == "image_operation":
-            from .image_operation_service import ImageOperationService
-
-            ImageOperationService(self.session).attach(task, record, media_id)
-            return
         identifier = record.request_data.get("image_group_id")
         if not identifier:
             return

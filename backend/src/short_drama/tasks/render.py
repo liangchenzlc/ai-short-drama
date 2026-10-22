@@ -11,8 +11,9 @@ from sqlalchemy import case, select
 
 from short_drama.domain import MediaFile, ProjectAssembly, ProjectRenderJob
 from short_drama.service.base import utcnow
+from short_drama.service.render_tools import checksum
 from short_drama.service.storage_service import StorageService
-from short_drama.service.video_render import RenderCancelled, VideoRenderer, checksum
+from short_drama.service.video_render import RenderCancelled, VideoRenderer
 from short_drama.tasks.celery_app import make_celery, render_queue
 from short_drama.utils.snowflake import next_id
 

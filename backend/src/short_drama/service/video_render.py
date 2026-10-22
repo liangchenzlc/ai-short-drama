@@ -4,33 +4,16 @@ import hashlib
 import json
 import math
 import re
-import shutil
 import subprocess
 import time
-from pathlib import Path
 
 from .assembly_output import display_dimensions, resolve_output
+from .render_tools import checksum as checksum
+from .render_tools import executable as executable
 
 
 class RenderCancelled(Exception):
     pass
-
-
-def executable(configured):
-    found = shutil.which(configured)
-    if found:
-        return found
-    # Portable development tools are intentionally untracked.
-    name = Path(configured).name
-    if name in ("ffmpeg", "ffprobe"):
-        for candidate in Path(".tools/ffmpeg").glob(f"*/bin/{name}.exe"):
-            return str(candidate.resolve())
-    raise RuntimeError("未找到 FFmpeg 或 ffprobe，请配置合成服务后重试")
-
-
-def checksum(path):
-    with Path(path).open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
 def frame_filter(transform, width, height, source_width, source_height):

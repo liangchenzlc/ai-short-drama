@@ -364,3 +364,68 @@ def test_timeline_migration_is_repeatable_and_preserves_existing_edits(flow):
     flow.session.expire_all()
     restored = svc.get(flow.project.id)
     assert restored["clips"][0]["id"] == state["clips"][0]["id"]
+
+
+@pytest.mark.parametrize("outcome", ["commit", "rollback"])
+def test_upload_compensation_waits_for_mysql_transaction_outcome(mysql_engine, db_session, outcome):
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from threading import Event
+
+    from sqlalchemy import event
+
+    from short_drama.service.upload_cleanup import cleanup_unreferenced_uploads
+    from short_drama.storage.models import StoredObject
+    from short_drama.utils.snowflake import next_id
+    from tests.support.integration.legacy_identity import session_factory
+
+    key = f"compensation/{uuid4().hex}.png"
+    stored = StoredObject(
+        bucket="fixture",
+        object_name=key,
+        storage_locator=f"minio://fixture/{key}",
+        size=1,
+        content_type="image/png",
+        version_id="uploaded-version",
+    )
+    deleted = []
+
+    class Storage:
+        def delete(self, locator, *, version_id):
+            deleted.append((locator, version_id))
+
+    verification_started = Event()
+
+    def observe_verification(_connection, _cursor, statement, *_args):
+        if statement.lstrip().startswith("SELECT media_files.storage_locator"):
+            verification_started.set()
+
+    writer = session_factory(mysql_engine)()
+    try:
+        writer.add(
+            MediaFile(
+                id=next_id(),
+                format_code="image/png",
+                storage_locator=stored.storage_locator,
+            )
+        )
+        writer.flush()
+        event.listen(mysql_engine, "before_cursor_execute", observe_verification)
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(cleanup_unreferenced_uploads, db_session, Storage(), [stored])
+                try:
+                    assert verification_started.wait(timeout=10)
+                    with pytest.raises(TimeoutError):
+                        pending.result(timeout=0.2)
+                    assert deleted == []
+                finally:
+                    if outcome == "commit":
+                        writer.commit()
+                    else:
+                        writer.rollback()
+                pending.result(timeout=10)
+        finally:
+            event.remove(mysql_engine, "before_cursor_execute", observe_verification)
+    finally:
+        writer.close()
+    assert deleted == ([] if outcome == "commit" else [(stored.storage_locator, stored.version_id)])

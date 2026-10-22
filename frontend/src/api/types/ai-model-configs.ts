@@ -59,6 +59,14 @@ export interface AiModelConfigCreateDto {
 export type AiModelConfigUpdateDto = Partial<Omit<AiModelConfigCreateDto, 'service_type'>> & { row_version: string };
 export interface AiModelConfigListDto { items: AiModelConfigDto[]; total: number; offset: number; limit: number }
 export interface ModelDiscoveryRequestDto { base_url: string; apikey?: string | null; config_id?: string }
+export interface RuntimeModelDiscoveryRequestDto {
+  baseUrl: string;
+  apiFormat: AiRuntimeProfileDto['api_format'];
+  channelId?: string;
+  credentialRef?: string;
+  apiKey?: string | null;
+  headers?: ConfigHeaderWriteDto[];
+}
 export interface ModelDiscoveryDto { items: { id: string }[]; truncated: boolean }
 export interface AiModelCapabilitiesDto {
   known: boolean;

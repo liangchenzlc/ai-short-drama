@@ -1,7 +1,6 @@
 import { http } from '../http';
-import type { ModelTestDto, ProtocolProviderDto } from '../types/ai-config-tools';
-import type { AiConfig, ServiceType } from '../../features/ai-config/config-model';
-import type { RunningHubWorkflowDto } from '../types/ai-model-configs';
+import type { ModelTestDto, ModelTestRequestDto, ProtocolProviderDto } from '../types/ai-config-tools';
+import type { RunningHubWorkflowDto, ServiceTypeDto } from '../types/ai-model-configs';
 
 const runtime = '/canvas-runtime';
 function checkedTestReceipt(value: ModelTestDto, expectedId?: string): ModelTestDto {
@@ -16,17 +15,10 @@ export const aiConfigTools = {
   async runningHubSchema(id: string, rowVersion: string, signal?: AbortSignal) {
     return (await http.post<RunningHubWorkflowDto>(`${runtime}/ai/models/${encodeURIComponent(id)}/runninghub-schema`, { row_version: rowVersion }, { signal })).data;
   },
-  async protocols(kind: ServiceType, signal?: AbortSignal) {
+  async protocols(kind: ServiceTypeDto, signal?: AbortSignal) {
     return (await http.get<{ providers: ProtocolProviderDto[] }>(`${runtime}/plugins/catalog`, { params: { scope: 'user.custom-channel', capability: kind }, signal })).data.providers;
   },
-  async startTest(config: AiConfig, operationId: string) {
-    const profile = config.runtimeProfile;
-    const protocol = profile?.protocol ?? ({ text: 'chat-completion', image: 'openai-image', video: 'newapi', audio: 'openai-audio' } as const)[config.serviceType];
-    const body = { channel: { id: `host-${config.id}`, name: config.name,
-      baseUrl: `/api/v1/canvas-runtime/ai/models/${config.id}`, apiFormat: profile?.api_format ?? 'openai',
-      scope: 'system', models: [config.modelKey], modelProfiles: [{ model: config.modelKey, capability: config.serviceType, protocol }] },
-      model: config.modelKey, mode: config.serviceType, prompt: config.serviceType === 'text' ? '请只回复 OK。' : 'A simple blue circle on a white background.',
-      config: {}, textOptions: { stream: false, thinking: false }, clientOperationId: operationId };
+  async startTest(body: ModelTestRequestDto, operationId: string) {
     return checkedTestReceipt((await http.post<ModelTestDto>(`${runtime}/model-tests`, body, { headers: { 'Idempotency-Key': operationId } })).data);
   },
   async readTest(id: string, signal?: AbortSignal) {
