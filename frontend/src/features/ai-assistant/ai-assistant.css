@@ -269,6 +269,7 @@
 .ai-assistant-chip { overflow-wrap: anywhere; }
 .ai-assistant-chip button { flex: 0 0 auto; padding: 0; background: none; border: 0; cursor: pointer; }
 .ai-assistant-connection { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--assistant-secondary); }
+.ai-assistant-stalled { color: var(--assistant-danger); }
 .ai-assistant-loading { margin: 0; }
 .ai-assistant-new-content { margin: 0 24px 8px; align-self: center; }
 .ai-assistant-queued > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--assistant-secondary); }

@@ -35,6 +35,13 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
   onOpenModelSettings: () => void; onSendingChange: (sending: boolean) => void;
 }) {
   const runtime = useAssistantRuntime(conversation.id);
+  const [queuedStalled, setQueuedStalled] = useState(false);
+  const queuedRunId = runtime.run?.status === 'queued' ? runtime.run.id : null;
+  useEffect(() => {
+    if (!queuedRunId) { setQueuedStalled(false); return; }
+    const timer = setTimeout(() => setQueuedStalled(true), 20_000);
+    return () => { clearTimeout(timer); setQueuedStalled(false); };
+  }, [queuedRunId]);
   const [historyRequest, setHistoryRequest] = useState<HistoryRequest | null>(null);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyPending, setHistoryPending] = useState(false);
@@ -321,6 +328,7 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
         }),
         ...(active && runtime.run && (runtime.delta || !reconnecting && !stopping) ? [{ key: `stream:${runtime.run.id}`, role: 'assistant', placement: 'start' as const, variant: 'borderless' as const, className: 'ai-assistant-bubble-reply', content: <article className="ai-assistant-turn ai-assistant-streaming" data-run-id={runtime.run.id}>{runtime.delta ? <AssistantReply text={runtime.delta}/> : <AssistantLoading label={runtime.run.status === 'queued' ? '等待回复' : '正在回复'}/>}</article> }] : []),
       ]}/> : null}
+      {queuedStalled && runtime.connection === 'live' && <div className="ai-assistant-connection ai-assistant-stalled" role="status"><span>消息已提交，但迟迟未被调度。请确认后端调度进程正在运行，然后核对状态。</span><Button size="small" onClick={() => runtime.reconnect()}>核对状态</Button></div>}
       {runtime.run?.status === 'failed' ? <p className="ai-assistant-failed" role="status">{runtime.run.error?.message || '这次回复未完成，已有消息仍保留。请核对模型和输入后继续。'}</p> : null}
       {stopping && <AssistantLoading label="当前工具完整结束后停止"/>}
       {reconnecting && <div className="ai-assistant-connection"><AssistantLoading label="正在恢复连接"/><Button type="text" size="small" onClick={() => runtime.reconnect()}>重新连接</Button></div>}
