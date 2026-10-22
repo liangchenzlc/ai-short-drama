@@ -14,7 +14,7 @@ npm run dev
 开发地址 `http://127.0.0.1:8080`。`dev` 在一个 Node 进程内创建标准工作台和画布两台独立 Vite 服务器，画布默认监听 8082，通过宿主 `/canvas-app/` 同源访问；退出时关闭这两台服务器。可用 `CANVAS_DEV_PORT` 调整画布端口；`dev` 接受 `--port`、`--host`、`--mode`、`--open`、`--force`、`--strictPort`。API 默认代理至 `http://127.0.0.1:8000`。修改代理时使用 `.env.local`，参照 [.env.example](.env.example)，禁止在 VITE 变量放凭据。只运行一个包时使用 `npm run dev:standard` 或 `npm run dev:canvas`。
 
 ```powershell
-npm test
+npm test -- --feature standard.assets
 npm run typecheck
 npm run build
 npm run test:frontends
@@ -25,38 +25,39 @@ npm run preview
 
 `build` 依次完成两包类型检查和生产构建，再将独立画布产物复制到 `dist/canvas-app/`；画布自己的 `canvas/dist/` 仍可单独构建。`preview` 只启动宿主 Vite preview，使用统一 `dist/`，对画布页面回退到 `/canvas-app/index.html`，对标准页面回退到 `/index.html`，API 沿用代理配置，不需要额外画布 preview 进程。静态文件本身不含 API 代理能力，正式部署仍需配置反向代理和两套 HTML 回退。
 
-`npm test` 和 `npm run test:e2e` 保持标准工作台的测试范围；画布检查可从本目录运行 `npm run test:canvas`、`npm run test:e2e:canvas`、`npm run source:check`，也可在 `canvas/` 独立执行。`test:frontends` 需要先完成统一构建，使用临时端口验证双服务启动/退出、端口占用时清理、独立 HTML 与深链接、资源和 API 代理。Node 测试覆盖保存队列、导航、版本冲突、模型选择、生成契约和部分 UI 源码约定。浏览器 API 夹具测试不调用真实模型。
+`npm test` 和 `npm run test:e2e` 保持标准工作台的测试范围，必须追加功能或文件参数；画布检查可从本目录运行 `npm run test:canvas -- --feature canvas.models`、`npm run test:e2e:canvas -- --feature canvas.characters`、`npm run source:check`，也可在 `canvas/` 独立执行。目录、功能编号及选测规则见[测试规范](../docs/instruction/按功能执行测试.md)。`test:frontends` 需要先完成统一构建，使用临时端口验证双服务启动/退出、端口占用时清理、独立 HTML 与深链接、资源和 API 代理。Node 测试覆盖保存队列、导航、版本冲突、模型选择、生成契约和部分 UI 源码约定。浏览器 API 夹具测试不调用真实模型。
 
 ```powershell
 npx playwright install chromium
-npm run test:e2e
+npm run test:e2e -- --feature standard.assets
 # 已有本地 Chromium 时可通过 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH 指定路径
 ```
 
 浏览器测试启动独立 Vite 端口 4175，覆盖桌面与 390px 窄屏、TXT 导入、抽屉、参考图持久化、懒加载、历史采用与任务提示词。失败截图与 trace 保存在忽略的 `.runtime/browser-results/`。
+
+新建只填写名称与模式；名称最多 120 字符，允许重名。创作工作台顶部提供名称原位改名、阶段导航、保存状态、助手和返回；没有项目梗概、画幅、风格或归档设置。
 
 ## 路由
 
 | 路径 | 页面 |
 | --- | --- |
 | `/projects` | 项目搜索、分页和继续创作 |
-| `/projects/:projectId` | 项目信息、分集、项目资源库 |
-| `/projects/:projectId/episodes/:episodeId/:stage?` | 四步分集制作；stage 为 source/assets/storyboard/assembly，旧 script 链接打开定稿标签 |
-| `/assets/:kind` | character/scene/prop 三类个人素材 |
+| `/projects/:projectId` | 创作项目转入 source 阶段，画布项目进入原生画布 |
+| `/projects/:projectId/:stage` | 四步创作，stage 为 source/assets/storyboard/assembly |
+| 旧分集、素材库和邀请链接 | 显示已停用，不能恢复退役入口 |
 | `/ai` | 文本、图片、视频模型配置 |
 | `/tasks/:kind` | text/image/video生成任务 |
 | `/media-library/:kind` | image/video生成媒体资产 |
 | `/login`、`/register`、`/verify-email`、`/reset-password` | 登录、注册、邮箱验证和密码找回 |
-| `/invite/:token` | 定向邀请预览、指定账号登录及本次邮箱验证 |
 
-旧video和无效步骤链接按当前待处理阶段规范化；旧快照算出的video阶段映射到storyboard。BrowserRouter使用真实路径；生产部署要配置API代理、SPA fallback及正确的Vite资源base，详见[部署限制](../docs/development.md#部署与维护)。
+旧video和无效步骤链接按当前待处理阶段规范化；旧快照算出的video阶段映射到storyboard。BrowserRouter使用真实路径；生产部署要配置API代理、SPA fallback及正确的Vite资源base，详见[部署限制](../docs/instruction/开发运行与验证.md#部署与维护)。
 
 ## 模块职责
 
 - `src/app`：应用入口、路由、主题和样式。
-- `src/pages`：项目、分集、素材、任务、资产和配置页面。
+- `src/pages`：项目、创作阶段、任务、媒体和配置页面。
 - `src/features/projects`：正文保存会话、导航保护、素材提取、分镜候选与图片采用；成片的帧编辑模型、双视频播放器、单轨时间轴、会话内撤销重做和串行自动保存。
-- `src/features/assets`：三层素材库共用UI和请求状态。
+- `src/features/assets`：当前项目流程素材的UI和请求状态。
 - `src/features/auth`：账号会话、过期时保留编辑、账号草稿隔离与个人模型偏好。
 - `src/features/generations`：通用生成、任务详情、轮询与幂等请求标识。
 - `src/features/media-library`：媒体详情与图片选择器。
@@ -71,8 +72,8 @@ npm run test:e2e
 
 AI 设置栏与正文并列，小说/定稿合并为标签页；分镜每批 20 条按需加载，历史候选放在弹窗。素材和分镜的参考图通过专用接口持久化，独立于生成候选及当前采用图。AI结果先预览后采用。素材上传不自动确认，分镜生成不直接覆盖镜头，任务页成功不等于项目已采用。详情页与任务列表刷新使用当前服务器状态；临时媒体URL失效时重新读取。
 
-账号模式只读取本人命名空间下的浏览器草稿。未归属的旧版正文/素材仅在受控兼容模式提供显式导入或 JSON 下载，不自动上传或覆盖任何账号数据。保留兼容读取不代表浏览器存储仍是业务数据源。设计与部署见[共同创作方案](../docs/plans/2026-10-02-project-collaboration.md)和[迁移说明](../docs/collaboration-deployment.md)。
+账号模式只读取本人命名空间下的浏览器草稿。未归属的旧版正文/素材仅在受控兼容模式提供显式导入或 JSON 下载，不自动上传或覆盖任何账号数据。保留兼容读取不代表浏览器存储仍是业务数据源。产品与离线切换见[创作模式维护说明](../docs/instruction/创作模式维护说明.md)。
 
 产品边界见[PRODUCT.md](PRODUCT.md)，界面约定见[DESIGN.md](DESIGN.md)，后端契约见[接口说明](../docs/api/README.md)。
 
-时间轴验收与运行条件见[实施验收记录](../docs/reviews/2026-09-29-assembly-timeline.md)，依赖与上游参考见[时间轴依赖](docs/timeline-dependencies.md)。`scripts/timeline-*.mjs` 为 Playwright CLI 的浏览器验收函数，使用隔离 API 测试替身和真实本地视频，不是 `test:e2e` 自动收集的测试。旧 `scripts/assembly-acceptance.mjs` 对应已替换的列表式剪辑界面，停止用于当前版本验收。
+时间轴验收与运行条件见[实施验收记录](../docs/reviews/2026-09-29-成片时间轴验收.md)，依赖与上游参考见[时间轴依赖](docs/timeline-dependencies.md)。`scripts/timeline-*.mjs` 为 Playwright CLI 的浏览器验收函数，使用隔离 API 测试替身和真实本地视频，不是 `test:e2e` 自动收集的测试。旧 `scripts/assembly-acceptance.mjs` 对应已替换的列表式剪辑界面，停止用于当前版本验收。

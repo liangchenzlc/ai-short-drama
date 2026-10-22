@@ -31,9 +31,12 @@ coverage/
 *.tsbuildinfo
 
 # Local processes, logs, browser captures and temporary outputs
+# Root layout rule (see AGENTS.md "文件存放规范"): logs, screenshots and one-off
+# artefacts never live in the repository root. Write them under .runtime/ instead.
 .runtime/
 *.log
 *.pid
+/output/
 .playwright-cli/
 playwright-report/
 test-results/
@@ -53,3 +56,38 @@ Thumbs.db
 Desktop.ini
 *.swp
 *.swo
+
+# ---------------------------------------------------------------------------
+# codebase-memory-mcp code index
+# ---------------------------------------------------------------------------
+# The knowledge graph itself stays local. Full re-index of this repository
+# takes ~30s, so every machine rebuilds it via scripts/cbm/bootstrap.* instead
+# of carrying a binary through git history.
+#
+# Why not commit .codebase-memory/graph.db.zst?
+#   It is ~16 MB and is rewritten on every index, including the file watcher's
+#   incremental refreshes during normal editing. Git stores each rewrite as a
+#   full new blob; upstream documents a team reaching ~6 GB of history on this
+#   single path. Re-indexing is far cheaper than that history.
+#
+# To opt in (instant cold start on a fresh clone, at the cost of history size):
+#   1. delete the next line
+#   2. run:  scripts/cbm/bootstrap.ps1   (or bootstrap.sh)
+#   3. commit .codebase-memory/ deliberately at milestones, not every save
+#   For frequent updates, track it with Git LFS from the repo-root
+#   .gitattributes instead:
+#     .codebase-memory/graph.db.zst filter=lfs diff=lfs merge=lfs -text
+.codebase-memory/
+
+# Machine-specific MCP configuration written by scripts/cbm/bootstrap.*
+# Absolute paths differ per machine, so these are regenerated, never shared.
+# Committed AGENTS.md is what makes a fresh clone work before bootstrap runs.
+.mcp.json
+.cursor/mcp.json
+.codex/config.toml
+
+.claude
+.codex
+.cursor
+.workbuddy
+

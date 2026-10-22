@@ -1,0 +1,30 @@
+-- Explicit offline migration for the account assistant.
+
+CREATE TABLE `agent_media_requests` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `task_id` BIGINT UNSIGNED NOT NULL,
+  `operation_id` BIGINT UNSIGNED NOT NULL,
+  `item_index` BIGINT UNSIGNED NOT NULL,
+  `media_kind` VARCHAR(16) NOT NULL,
+  `requested_count` BIGINT UNSIGNED NOT NULL,
+  `generation_task_id` BIGINT UNSIGNED NULL,
+  `frozen_target` JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  `frozen_request` JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  `reservation_state` VARCHAR(16) NOT NULL,
+  `status` VARCHAR(24) NOT NULL,
+  `result` JSON NULL,
+  `error` JSON NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_agent_media_kind CHECK (media_kind IN ('image','video','audio')),
+  CONSTRAINT ck_agent_media_quantity CHECK (item_index > 0 AND requested_count BETWEEN 1 AND 4),
+  CONSTRAINT ck_agent_media_reservation CHECK (reservation_state IN ('reserved','committed','released')),
+  CONSTRAINT ck_agent_media_status CHECK (status IN ('reserved','accepted','unknown','succeeded','failed','conflict','not_submitted')),
+  CONSTRAINT fk_agent_media_requests_generation FOREIGN KEY (generation_task_id) REFERENCES async_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_agent_media_requests_operation FOREIGN KEY (operation_id) REFERENCES agent_operations (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_agent_media_requests_task FOREIGN KEY (task_id) REFERENCES agent_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_agent_media_requests_generation` (generation_task_id),
+  UNIQUE KEY `uk_agent_media_requests_item` (operation_id, item_index),
+  KEY `idx_agent_media_requests_task` (`task_id`, `id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;

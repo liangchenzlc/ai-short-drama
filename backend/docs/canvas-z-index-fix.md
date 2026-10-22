@@ -13,7 +13,7 @@
 在 `canvas_service.py:770` 中，节点的 z-index 简单地使用数组索引：
 
 ```python
-z_index=index  # 0, 1, 2, 3, ...
+z_index = index  # 0, 1, 2, 3, ...
 ```
 
 这导致：
@@ -87,6 +87,6 @@ def _calculate_node_z_index(index: int, node_data: dict) -> int:
 
 ## 参考
 
-- 交接文档：`docs/2026-10-12-beeftv-functional-progress-handoff.md` U01 部分
+- 交接文档：`docs/plans/2026-10/2026-10-12-BeefTV功能进度交接清单.md` U01 部分
 - 探索计划：`.claude/plans/elegant-booping-waffle-agent-a1f17a12a3fbe53ea.md`
 - 相关代码：`backend/src/short_drama/service/canvas_service.py:758-785`

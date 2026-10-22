@@ -1,0 +1,58 @@
+-- 本人媒体转写、深度捕捉与兼容播放；用canvas_migration.py --apply核验并安全重入。
+CREATE TABLE canvas_local_jobs (
+	user_id BIGINT UNSIGNED NOT NULL,
+	project_id BIGINT UNSIGNED,
+	canvas_id BIGINT UNSIGNED,
+	task_type VARCHAR(32) COLLATE utf8mb4_0900_bin NOT NULL,
+	client_operation_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	request_json JSON NOT NULL,
+	source_media_id BIGINT UNSIGNED,
+	source_snapshot JSON NOT NULL,
+	canvas_version BIGINT UNSIGNED NOT NULL,
+	status VARCHAR(16) NOT NULL,
+	stage VARCHAR(64) NOT NULL,
+	progress INTEGER UNSIGNED NOT NULL,
+	attempts INTEGER UNSIGNED NOT NULL,
+	message_version BIGINT UNSIGNED NOT NULL,
+	next_run_at DATETIME(6) NOT NULL,
+	lease_token CHAR(32) CHARACTER SET ascii COLLATE ascii_bin,
+	locked_until DATETIME(6),
+	cancel_requested INTEGER UNSIGNED NOT NULL,
+	output_media_id BIGINT UNSIGNED,
+	disposal_receipt_id BIGINT UNSIGNED,
+	result_json JSON,
+	error_json JSON,
+	started_at DATETIME(6),
+	finished_at DATETIME(6),
+	id BIGINT UNSIGNED NOT NULL,
+	created_at DATETIME(6) NOT NULL,
+	updated_at DATETIME(6) NOT NULL,
+	created_by BIGINT UNSIGNED NOT NULL,
+	updated_by BIGINT UNSIGNED NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT fk_canvas_local_jobs_project_id FOREIGN KEY(project_id, canvas_id) REFERENCES project_canvases (project_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT uk_canvas_local_operation UNIQUE (user_id, client_operation_id),
+	CONSTRAINT ck_canvas_local_type CHECK (task_type IN ('timeline_transcription','depth_capture','resource_playback')),
+	CONSTRAINT ck_canvas_local_status CHECK (status IN ('queued','running','succeeded','failed','cancelled')),
+	CONSTRAINT ck_canvas_local_numbers CHECK (progress <= 100 AND cancel_requested IN (0,1) AND message_version > 0 AND ((project_id IS NULL AND canvas_id IS NULL AND canvas_version = 0) OR (project_id IS NOT NULL AND canvas_id IS NOT NULL AND canvas_version > 0))),
+	CONSTRAINT ck_canvas_local_lease CHECK ((status = 'running' AND lease_token IS NOT NULL AND locked_until IS NOT NULL) OR (status <> 'running' AND lease_token IS NULL AND locked_until IS NULL)),
+	CONSTRAINT ck_canvas_local_output CHECK (status <> 'succeeded' OR (result_json IS NOT NULL AND finished_at IS NOT NULL AND (task_type NOT IN ('depth_capture','resource_playback') OR output_media_id IS NOT NULL OR disposal_receipt_id IS NOT NULL))),
+	CONSTRAINT ck_canvas_local_source CHECK (source_media_id IS NOT NULL OR disposal_receipt_id IS NOT NULL),
+	CONSTRAINT ck_canvas_local_disposal CHECK (disposal_receipt_id IS NULL OR (project_id IS NOT NULL AND canvas_id IS NOT NULL AND status IN ('succeeded','failed','cancelled') AND lease_token IS NULL AND locked_until IS NULL AND JSON_LENGTH(request_json) = 0 AND JSON_LENGTH(source_snapshot) = 0 AND 0 <> COALESCE(JSON_UNQUOTE(JSON_EXTRACT(error_json, '$.code')) = 'canvas_work_disposed', FALSE))),
+	CONSTRAINT ck_canvas_local_snapshot CHECK (JSON_TYPE(request_json) = 'OBJECT' AND JSON_TYPE(source_snapshot) = 'OBJECT'),
+	CONSTRAINT ck_canvas_local_result CHECK ((result_json IS NULL OR JSON_TYPE(result_json) = 'OBJECT') AND (error_json IS NULL OR JSON_TYPE(error_json) = 'OBJECT')),
+	CONSTRAINT ck_canvas_local_identity CHECK (CHAR_LENGTH(client_operation_id) >= 8 AND CHAR_LENGTH(request_hash) = 64),
+	CONSTRAINT fk_canvas_local_jobs_user_id FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_local_source FOREIGN KEY(source_media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_local_jobs_output_media_id FOREIGN KEY(output_media_id) REFERENCES media_files (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_local_disposal FOREIGN KEY(disposal_receipt_id) REFERENCES canvas_write_receipts (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_local_jobs_created_by FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_canvas_local_jobs_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='本人媒体转写、深度捕捉与兼容播放的冻结来源及执行回执' COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_canvas_local_author ON canvas_local_jobs (user_id, updated_at, id);
+
+CREATE INDEX idx_canvas_local_disposal ON canvas_local_jobs (disposal_receipt_id);
+
+CREATE INDEX idx_canvas_local_schedule ON canvas_local_jobs (status, next_run_at, id);

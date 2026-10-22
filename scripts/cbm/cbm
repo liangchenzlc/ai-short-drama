@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# codebase-memory-mcp CLI wrapper for this repository (macOS / Linux).
+#
+# Lets ANY agent query the code knowledge graph from the command line,
+# even when MCP is not available in that agent.
+#
+# Usage:
+#   scripts/cbm/cbm cli list_projects
+#   scripts/cbm/cbm cli search_graph --project <name> --query loginUser
+#   scripts/cbm/cbm cli get_architecture --project <name> --aspects overview
+#
+# Binary resolution order:
+#   1. $CBM_BIN                      (explicit override)
+#   2. $HOME/.codebase-memory-mcp/bin/
+#   3. codebase-memory-mcp on PATH
+#
+set -euo pipefail
+
+EXE=""
+CBM_ROOT=""
+
+if [ -n "${CBM_BIN:-}" ] && [ -x "${CBM_BIN}" ]; then
+  EXE="$CBM_BIN"
+elif [ -x "$HOME/.codebase-memory-mcp/bin/codebase-memory-mcp" ]; then
+  EXE="$HOME/.codebase-memory-mcp/bin/codebase-memory-mcp"
+  CBM_ROOT="$HOME/.codebase-memory-mcp"
+elif command -v codebase-memory-mcp >/dev/null 2>&1; then
+  EXE="$(command -v codebase-memory-mcp)"
+fi
+
+if [ -z "$EXE" ]; then
+  echo "[cbm] codebase-memory-mcp not found." >&2
+  echo "[cbm] Run the bootstrap first:" >&2
+  echo "[cbm]   bash $(dirname "$0")/bootstrap.sh" >&2
+  exit 1
+fi
+
+# Only apply the overrides when we resolved the canonical location, so an
+# existing CBM installation keeps its own cache root (two different roots
+# cannot be active at the same time).
+if [ -n "$CBM_ROOT" ]; then
+  export CBM_RUNTIME_DIR="$CBM_ROOT/runtime"
+  export CBM_CACHE_DIR="$CBM_ROOT/data"
+fi
+
+exec "$EXE" "$@"

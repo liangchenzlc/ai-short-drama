@@ -1,0 +1,37 @@
+{
+  "upstream_commit": "c596a342244ceeb674633b6a9bf974ef860310f6",
+  "original_manifest_commit": "4ca2a65a7780a8dfcaaa86c33679f84fb04e055c",
+  "note": "新版增量来源；适配宿主权限、数据库、Ant Design 5 与服务端媒体任务，不代表视觉或供应商验收。",
+  "files": [
+    {
+      "upstream_path": "web/src/lib/canvas/canvas-wheel.ts",
+      "upstream_sha256": "9cc11a3199d666abdcca7c53fd3ca47a8f20d3934e855b075073e6ecbc883a37",
+      "target_path": "frontend/canvas/src/lib/canvas/canvas-wheel.ts",
+      "target_sha256": "9cc11a3199d666abdcca7c53fd3ca47a8f20d3934e855b075073e6ecbc883a37"
+    },
+    {
+      "upstream_path": "web/src/components/canvas/canvas-shortcuts-popover.tsx",
+      "upstream_sha256": "042b650241b24dbee093a7d91d4b9b740f9b51f349c38f89c2999b533a5503cc",
+      "target_path": "frontend/canvas/src/components/canvas/canvas-shortcuts-popover.tsx",
+      "target_sha256": "f1195efc6fad4ec1843b910d89a2397ce1efe8c3f209f4b5ca4fd4b8a89e4525"
+    },
+    {
+      "upstream_path": "web/src/components/canvas/canvas-shortcuts-popover.css",
+      "upstream_sha256": "a8ba27968aa9ecabfdf82aeb1ccfbe9d42cf98a29b954ac91a84b8f21f8d8a4a",
+      "target_path": "frontend/canvas/src/components/canvas/canvas-shortcuts-popover.css",
+      "target_sha256": "a8ba27968aa9ecabfdf82aeb1ccfbe9d42cf98a29b954ac91a84b8f21f8d8a4a"
+    },
+    {
+      "upstream_path": "web/src/components/canvas/canvas-upload-modal.tsx",
+      "upstream_sha256": "9fe6f79723c8ad2d359b09aace442af9cfa581daf485f22517df657335534e8c",
+      "target_path": "frontend/canvas/src/components/canvas/canvas-upload-modal.tsx",
+      "target_sha256": "7f0c917d782d567da7dbc5e38ab33212555f64fa5f3fb73059f6a401a90f94d5"
+    },
+    {
+      "upstream_path": "web/src/components/canvas/canvas-transcription-controls.tsx",
+      "upstream_sha256": "eb55112f5039a1fa6558b7e8850f88d718a74fff8cbfc494be1fbacc70138db0",
+      "target_path": "frontend/canvas/src/components/canvas/canvas-transcription-controls.tsx",
+      "target_sha256": "49d5ddfabebe4a51d970cc7ed09cfb58202675449aab40241a7b5d4d3ff85f9a"
+    }
+  ]
+}

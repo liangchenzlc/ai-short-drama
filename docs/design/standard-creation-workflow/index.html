@@ -73,10 +73,12 @@ input, textarea { caret-color: var(--ink); }
 .text-button { border-color: transparent; color: var(--sub); }
 .text-button:hover { color: var(--ink); }
 .muted { color: var(--sub); }
-.project-bar { position: relative; z-index: 30; height: 53px; flex: 0 0 53px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; gap: 15px; background: var(--navigation); border-bottom: 1px solid var(--hair); }
+.project-bar { position: relative; z-index: 30; height: 60px; min-height: 60px; flex: 0 0 60px; padding: 0 20px; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,auto) minmax(0,1fr); align-items: center; gap: 12px; background: var(--navigation); border-bottom: 1px solid var(--hair); }
 .project-location, .project-actions { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .brand-mark { width: 22px; height: 22px; }
-.project-name { font-size: 14px; font-weight: 650; }
+.project-name { font-size: 14px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-location { overflow: hidden; }
+.project-actions { justify-self: end; }
 .breadcrumb-separator { color: var(--quiet); }
 .episode-switch { display: flex; gap: 10px; align-items: center; border: 0; padding: 6px 0; background: transparent; }
 .mode-label, .prototype-label { color: var(--sub); font-size: 11px; white-space: nowrap; }
@@ -87,19 +89,16 @@ input, textarea { caret-color: var(--ink); }
 .avatar { display: grid; place-items: center; height: 27px; width: 27px; color: #ddd; background: #373737; font-size: 11px; border-radius: 50%; }
 .assistant-button { height: 30px; font-size: 12px; }
 .assistant-button[aria-expanded=true] { background: #353535; border-color: #aaa; }
-.workflow { flex: 0 0 52px; height: 52px; display: flex; align-items: center; padding: 0 20px; gap: 10px; border-bottom: 1px solid var(--hair); overflow-x: auto; }
-.workflow-step { display: flex; flex-shrink: 0; align-items: center; gap: 9px; padding: 7px 12px; min-width: 171px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; text-align: left; color: var(--sub); }
+.workflow { height: 100%; min-width: 0; display: flex; align-items: center; justify-content: safe center; gap: 10px; overflow-x: auto; scrollbar-width: none; }
+.workflow-step { display: flex; flex-shrink: 0; align-items: center; gap: 9px; padding: 7px 12px; min-width: 0; border: 1px solid transparent; border-radius: var(--radius); background: transparent; text-align: left; color: var(--sub); }
 .workflow-step:hover { background: #1c1c1c; }
 .workflow-step[aria-current=step] { background: #232323; border-color: #474747; color: var(--ink); }
 .step-number { font-size: 11px; width: 24px; height: 24px; display: grid; place-items: center; background: #222; color: #b4b4bc; border: 1px solid #3c3c3c; border-radius: 50%; font-variant-numeric: tabular-nums; }
 .workflow-step[aria-current=step] .step-number { background: #f5f5f5; color: #151515; border-color: #f5f5f5; }
 .step-text { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
 .step-text strong { font-size: 13px; font-weight: 550; }
-.step-text small { font-size: 11px; color: var(--quiet); }
-.step-check { color: var(--success); width: 13px; margin-left: 0; }
 .step-connector { height: 1px; width: 24px; background: #414141; flex-shrink: 0; }
 .future-step { color: #aaaab3; }
-.episode-context { display: flex; margin-left: auto; gap: 15px; font-size: 11px; color: var(--sub); padding-left: 12px; white-space: nowrap; }
 .studio { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px 20px; }
 .work-area { --settings-size: calc(var(--settings-base) * 10 / 9); display: grid; grid-template-columns: var(--list-size) minmax(0,1fr); gap: 12px; flex: 1; min-height: 0; }
 .work-area.source-stage { grid-template-columns: var(--adaptation-size) minmax(0,1fr); }
@@ -224,6 +223,7 @@ input::placeholder, textarea::placeholder { color: var(--quiet); opacity: 1; }
 .generation-composer.source-composer:focus-within { border-color: #505050; }
 .script-editor-host .ql-editor:focus, .source-composer textarea:focus, .source-text-model select:focus { outline: 0; box-shadow: none; }
 .generation-composer.source-composer textarea { height: 180px; }
+@media (max-width: 1000px) { .adaptation-panel { row-gap: 12px; } }
 .source-composer-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 7px; }
 .source-text-model { position: relative; display: flex; align-items: center; min-width: 0; max-width: calc(100% - 42px); border: 1px solid #393939; border-radius: 7px; background: #202020; }
 .source-text-model > .icon { position: absolute; left: 6px; width: 12px; height: 12px; pointer-events: none; }
@@ -318,10 +318,9 @@ dialog::backdrop { background: rgb(0 0 0 / 72%); }
   .work-area { --list-size: 220px; --settings-base: 268px; --adaptation-size: 282px; --assistant-size: 288px; }
 }
 @media (max-width: 1279px) {
-  .workflow { padding: 0 18px; gap: 8px; }
-  .workflow-step { min-width: 153px; padding: 9px 12px; }
+  .workflow { gap: 8px; }
+  .workflow-step { min-width: 0; padding: 7px 10px; }
   .step-connector { width: 16px; }
-  .episode-context { gap: 9px; }
   .work-area { --list-size: 208px; --settings-base: 252px; --adaptation-size: 270px; --assistant-size: 264px; gap: 10px; }
   .prototype-label, .mode-label { display: none; }
   .script-scroll { padding: 22px 30px; }
@@ -330,34 +329,32 @@ dialog::backdrop { background: rgb(0 0 0 / 72%); }
 }
 @media (max-width: 1099px) {
   .work-area { --list-size: 200px; --adaptation-size: 260px; }
-  .episode-context { display: none; }
-  .workflow-step { min-width: 149px; }
+  .workflow-step { min-width: 0; padding-inline: 8px; }
   .project-bar { padding: 0 12px; }
   .project-location { gap: 9px; }
   .save-state { display: none; }
 }
 @media (max-width: 999px) {
+  .workflow { max-width: calc(100vw - 400px); }
   .work-area.assistant-open { grid-template-columns: var(--list-size) minmax(0,1fr); }
   .work-area.source-stage.assistant-open { grid-template-columns: var(--adaptation-size) minmax(0,1fr); }
   .work-area.source-stage.settings-hidden.assistant-open { grid-template-columns: minmax(0,1fr); }
-  .inspector { position: fixed; top: 53px; bottom: 0; right: 0; width: 330px; border-radius: 10px 0 0 10px; z-index: 20; }
-  .panel-scrim { position: fixed; inset: 53px 0 0; background: rgb(0 0 0 / 60%); z-index: 19; }
+  .inspector { position: fixed; top: 60px; bottom: 0; right: 0; width: 330px; border-radius: 10px 0 0 10px; z-index: 20; }
+  .panel-scrim { position: fixed; inset: 60px 0 0; background: rgb(0 0 0 / 60%); z-index: 19; }
 }
 @media (max-width: 700px) {
   body { height: auto; min-height: 100dvh; overflow: auto; }
-  .project-bar { position: sticky; top: 0; z-index: 30; height: 51px; min-height: 51px; flex-basis: 51px; }
+  .project-bar { position: sticky; top: 0; z-index: 30; height: 60px; min-height: 60px; flex-basis: 60px; padding: 0 12px; gap: 7px; }
   .project-name, .breadcrumb-separator, .brand-mark, .avatar { display: none; }
   .project-location, .project-actions { gap: 7px; }
   .episode-switch { font-size: 12px; gap: 5px; }
   .assistant-button { font-size: 11px; padding: 0 8px; }
-  .workflow { flex-basis: 48px; height: 48px; padding: 0 9px; gap: 5px; scroll-padding: 10px; }
-  .workflow-step { min-width: 127px; padding: 7px 8px; gap: 8px; }
+  .workflow { max-width: calc(100vw - 272px); gap: 5px; scroll-padding: 10px; }
+  .workflow-step { min-width: 0; padding: 7px 8px; gap: 8px; }
   .step-text { gap: 8px; }
   .step-text strong { font-size: 12px; }
-  .step-text small { font-size: 10px; }
   .step-number { width: 24px; height: 24px; }
   .step-connector { width: 7px; }
-  .step-check { display: none; }
   .studio { padding: 10px; overflow: visible; }
   .work-area { display: flex; flex-direction: column; min-height: 0; gap: 12px; }
   .object-panel { height: 332px; flex: 0 0 332px; }
@@ -377,12 +374,12 @@ dialog::backdrop { background: rgb(0 0 0 / 72%); }
   .view-tabs { padding: 0 14px; }
   .view-label { font-size: 10px; }
   .result-bar { flex-wrap: wrap; padding: 13px; }
-  .inspector { top: 51px; bottom: 0; width: min(340px,100vw); }
-  .settings-panel { position: fixed; top: 51px; bottom: 0; right: 0; width: min(440px,100vw); border: 1px solid var(--hair); border-radius: 10px 0 0 10px; background: var(--surface); z-index: 20; }
+  .inspector { top: 60px; bottom: 0; width: min(340px,100vw); }
+  .settings-panel { position: fixed; top: 60px; bottom: 0; right: 0; width: min(440px,100vw); border: 1px solid var(--hair); border-radius: 10px 0 0 10px; background: var(--surface); z-index: 20; }
   .main-panel.compact-preview .generation-settings { overflow: hidden; }
   .main-panel.compact-preview .generation-settings .inspector-scroll { flex: 1; overflow: auto; }
   .assistant-open .settings-panel { display: none; }
-  .panel-scrim { inset: 51px 0 0; }
+  .panel-scrim { inset: 60px 0 0; }
   .script-scroll { height: 460px; flex: 0 0 460px; padding: 17px 18px 30px; }
   .script-document { font-size: 13px; }
   .script-document .dialogue { padding-left: 12px; }
@@ -419,7 +416,7 @@ summary:focus-visible { outline: 2px solid #d9d9df; outline-offset: 3px; }
 .review-settings select { height: 34px; background: #111; color: var(--ink); border: 1px solid var(--control); border-radius: 6px; padding: 0 8px; }
 .inspector-heading .heading-actions { gap: 2px; }
 @media (max-width: 700px) {
-  .source-stage .main-panel { height: calc(100dvh - 119px); }
+  .source-stage .main-panel { height: calc(100dvh - 80px); }
   .source-stage .script-scroll { height: auto; flex: 1; min-height: 0; }
   .object-title-actions { gap: 4px; }
   .object-title-actions .icon-button { width: 32px; height: 32px; }
@@ -539,6 +536,15 @@ summary:focus-visible { outline: 2px solid #d9d9df; outline-offset: 3px; }
       <button class="episode-switch" type="button" data-action="episodes">第 01 集 · 雨夜来信<svg class="icon small"><use href="#i-down"/></svg></button>
       <span class="mode-label">标准模式</span>
     </div>
+  <nav class="workflow" aria-label="分集创作流程">
+    <button class="workflow-step" type="button" data-stage="source"><span class="step-number">01</span><span class="step-text"><strong>剧本创作</strong></span></button>
+    <span class="step-connector" aria-hidden="true"></span>
+    <button class="workflow-step" type="button" data-stage="assets"><span class="step-number">02</span><span class="step-text"><strong>素材生成</strong></span></button>
+    <span class="step-connector" aria-hidden="true"></span>
+    <button class="workflow-step" type="button" data-stage="storyboard"><span class="step-number">03</span><span class="step-text"><strong>分镜制作</strong></span></button>
+    <span class="step-connector" aria-hidden="true"></span>
+    <button class="workflow-step future-step" type="button" data-action="assembly"><span class="step-number">04</span><span class="step-text"><strong>成片合成</strong></span></button>
+  </nav>
     <div class="project-actions">
       <span class="prototype-label">静态原型 V7</span>
       <span class="save-state" id="saveState" role="status"><span class="status-dot"></span>演示 · 已保存</span>
@@ -551,16 +557,7 @@ summary:focus-visible { outline: 2px solid #d9d9df; outline-offset: 3px; }
     </div>
   </header>
 
-  <nav class="workflow" aria-label="分集创作流程">
-    <button class="workflow-step" type="button" data-stage="source"><span class="step-number">01</span><span class="step-text"><strong>小说改编</strong><small id="sourceProgress">剧本已确认</small></span><svg class="icon step-check"><use href="#i-check"/></svg></button>
-    <span class="step-connector" aria-hidden="true"></span>
-    <button class="workflow-step" type="button" data-stage="assets"><span class="step-number">02</span><span class="step-text"><strong>素材生成</strong><small id="assetsProgress">5 / 8 已采用</small></span></button>
-    <span class="step-connector" aria-hidden="true"></span>
-    <button class="workflow-step" type="button" data-stage="storyboard"><span class="step-number">03</span><span class="step-text"><strong>分镜制作</strong><small id="storyboardProgress">4 / 8 图已采用</small></span></button>
-    <span class="step-connector" aria-hidden="true"></span>
-    <button class="workflow-step future-step" type="button" data-action="assembly"><span class="step-number">04</span><span class="step-text"><strong>成片合成</strong><small>下一阶段</small></span></button>
-    <div class="episode-context"><span>16:9</span><span>写实悬疑</span></div>
-  </nav>
+
 
   <main class="studio">
     <div id="conflictNotice" class="notice warning" role="alert" hidden></div>
@@ -727,12 +724,6 @@ function field(label, name, value, options, help = '') {
 }
 function textField(label, name, value, type = 'text') { return `<label class="field"><span>${label}</span><input type="${type}" data-param="${name}" aria-label="${label}" placeholder="${label}" value="${esc(value)}"></label>`; }
 
-function renderProgress() {
-  $('sourceProgress').textContent = state.confirmed ? '剧本已确认' : '剧本待确认';
-  document.querySelector('.step-check').style.visibility = state.confirmed ? 'visible' : 'hidden';
-  $('assetsProgress').textContent = `${assets.filter((a) => a.adopted).length} / ${assets.length} 已采用`;
-  $('storyboardProgress').textContent = `${shots.filter((s) => s.adopted).length} / ${shots.length} 图已采用`;
-}
 
 function settingsHost() { return state.stage === 'source' ? $('adaptationPanel') : $('generationSettings'); }
 function modalPanel() {
@@ -784,7 +775,7 @@ function showCurrentStep() {
 function render() {
   $('mainPanel').setAttribute('aria-label', stageInfo[state.stage] + '工作区');
   document.querySelectorAll('[data-stage]').forEach((el) => { if (el.dataset.stage === state.stage) el.setAttribute('aria-current', 'step'); else el.removeAttribute('aria-current'); });
-  renderProgress(); renderList(); renderMain(); renderInspector();
+  renderList(); renderMain(); renderInspector();
   if (state.assistant) renderAssistant(); else $('inspector').innerHTML = '';
   syncPanels(); renderConflict(); showCurrentStep();
 }
@@ -864,7 +855,7 @@ function renderScript() {
   scriptQuill.on('text-change', (delta, previous, source) => {
     if (source !== 'user') return;
     state.scriptHtml = scriptQuill.getSemanticHTML(); state.confirmed = false;
-    renderProgress(); saveFeedback();
+    saveFeedback();
     const status = $('mainPanel').querySelector('.heading-actions .badge');
     if (status) { status.className = 'badge'; status.textContent = '草稿 · 待确认'; }
     updateScriptMetrics(); updateConfirmationBar();
@@ -1063,7 +1054,7 @@ function adopt() {
   if (pending.source) { state.source.records.push({ type: 'script', html: state.scriptHtml, version: '原稿', params: { ...state.source.params } }); state.scriptHtml = pending.result.html; state.source.showLatest = false; state.confirmed = false; }
   else if (pending.video) { pending.a.video = true; pending.a.showLatestVideo = false; }
   else { pending.a.image = pending.result.image; pending.a.adopted = true; pending.a.showLatest = false; }
-  pending.result.adopted = true; state.adoption = null; $('modal').close(); renderProgress(); renderList(); renderMain(); renderInspector(); toast('已采用此结果。');
+  pending.result.adopted = true; state.adoption = null; $('modal').close(); renderList(); renderMain(); renderInspector(); toast('已采用此结果。');
 }
 
 function history() {
@@ -1148,7 +1139,7 @@ document.addEventListener('click', (event) => {
     case 'history-preview': { const a = state.stage === 'source' ? state.source : item(); const r = a.records[Number(target.dataset.index)]; if (r.type === 'video') { a.latestVideo = r; a.showLatestVideo = true; state.mediaTab = 'video'; } else { a.latest = r; a.showLatest = true; if (state.stage === 'storyboard') state.mediaTab = 'image'; } $('modal').close(); renderMain(); renderInspector(); break; }
     case 'zoom-in': case 'zoom-out': case 'zoom-fit': state.zoom = action === 'zoom-fit' ? 100 : Math.max(50, Math.min(200, state.zoom + (action === 'zoom-in' ? 10 : -10))); if ($('previewImage')) $('previewImage').style.transform = `scale(${state.zoom / 100})`; if ($('zoomLabel')) $('zoomLabel').textContent = `${state.zoom}%`; break;
     case 'fullscreen': $('fullImage').src = $('previewImage').src; $('imageDialog').showModal(); break;
-    case 'confirm-script': state.confirmed = true; renderProgress(); renderMain(); toast('当前剧本已确认。'); break;
+    case 'confirm-script': state.confirmed = true; renderMain(); toast('当前剧本已确认。'); break;
     case 'scene': scriptQuill?.root.querySelectorAll('h3')[Number(target.dataset.value) - 1]?.scrollIntoView({ block: 'start' }); break;
     case 'editor-undo': scriptQuill?.history.undo(); break;
     case 'editor-redo': scriptQuill?.history.redo(); break;
@@ -1210,7 +1201,6 @@ document.addEventListener('change', (event) => {
       if (state.assistant) renderAssistant();
       updateObjectControls();
     } else a.params[key] = el.value;
-    if (state.stage === 'source' && ['aspect', 'style'].includes(key)) { const context = document.querySelector('.episode-context'); context.innerHTML = `<span>${esc(a.params.aspect)}</span><span>${esc(a.params.style)}</span>`; }
     saveFeedback();
   }
 });

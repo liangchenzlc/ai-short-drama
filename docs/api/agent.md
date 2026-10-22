@@ -46,6 +46,8 @@
 
 `GET /agent/conversations/{id}/state` 返回 `conversation_id/cursor/resume_cursor/active_run/queued_runs`。active_run 优先真实执行或媒体等待，再是待审核运行；queued_runs 按队列顺序返回。Run 新增 `queue_position/waiting_reason`。首次先读取 state，再读消息分页，最后从 resume_cursor 订阅 SSE；无活动运行时该值等于当前 cursor，有活动运行时从最早相关事件之前恢复，保留在途回复 delta。断线恢复使用已消费的事件 cursor，不能跳到最新位置丢失文字。客户端不能以最新创建的 Run 覆盖前序执行状态。201 只表示已受理，生成成功以实际候选和任务归档为准。未知受理结果不自动换键重新发送。
 
+共享 SSE 输出区分 `retry`（暂时故障，保留历史并重连）与 `access-ended`（访问终止，停止读取私人内容）；V3 另有游标失效的 HTTP 409／`resync` 控制，按[全局助手协议](assistant.md#全局会话逻辑任务与恢复)重新读取快照。控制帧没有业务事件序号，不当作工具回执或可消费事件水位。
+
 最终回复及失败反馈消息的 `artifacts` 仅包含当前 Run、本人、当前项目与分集的候选引用，格式为 `{"artifact_id":"十进制ID","kind":"候选类型"}`，不包含原始工具参数、供应商响应或其他 Run 的候选。已落库候选在最后一段模型回复失败后仍可核对，不重发制作。消息引用提供核对入口，不代表自动采用。纯问答成功表示回复完成；明确单项任务或已批准计划存在未执行步骤时，不能仅凭文字回复标记制作成功，分别返回 `agent_task_not_executed` 或 `agent_plan_not_completed`。
 
 停止时已有但尚未出现在本次回复消息中的候选，会在取消事务内补一条私有消息引用；已受理媒体的延迟结果归档后沿用相同去重规则。去重在持有会话锁后读取当前消息，避免旧数据库快照造成重复；只补当前 Run 的候选，不把历史回复引用误认为本次已展示。Run 保持停止终态，不再调模型、继续计划或自动采用。
@@ -121,21 +123,33 @@
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| GET | `/agent/skills` | 标准分页，先列内置 Skill，再列本人未删除 Skill；停用项仍可管理 |
+| GET | `/agent/skills` | 摘要分页，不返回正文或资源 manifest；支持 `query/source/enabled/invocation_mode/mode` 筛选 |
+| POST | `/agent/skills` | 在线新建或保存导入草稿；必带 `Idempotency-Key`，返回 201 |
+| POST | `/agent/skills/imports/preview` | multipart `file`，解析 Markdown／ZIP；仅预览，不创建 Skill |
 | POST | `/agent/skills/uploads` | multipart `file`；单个最多 64 KiB 的 UTF-8 `.md`，返回 201 |
-| GET | `/agent/skills/{skill_id}` | 查看内置 ID 或本人自定义十进制 ID |
-| PATCH | `/agent/skills/{skill_id}` | 管理本人 Skill：必带 `row_version`，可更新 `name`、`instructions`、`enabled` |
+| GET | `/agent/skills/{skill_id}` | 按需读取主指令及资源目录；不一次返回所有资料正文 |
+| PATCH | `/agent/skills/{skill_id}` | 本人内容发布：必带 `row_version`，元数据／正文／资源变更产生不可变新版本 |
+| PATCH | `/agent/skills/{skill_id}/settings` | 本人的 `enabled/invocation_mode` 设置，带独立设置 `row_version` |
+| POST | `/agent/skills/{skill_id}/copy` | 固定 `content_version` 复制为个人新身份；必带 `Idempotency-Key` |
+| GET | `/agent/skills/{skill_id}/export` | 带 `content_version` 导出 ZIP；来源已更新返回 409 |
+| GET | `/agent/skills/{skill_id}/versions/{version}/resources` | 按 manifest 的 `path` 读取资料；`offset/limit` 按字符分段，limit 最多 6000，返回 `next_offset` |
 | DELETE | `/agent/skills/{skill_id}` | JSON body 必带 `row_version`；软删除并停用，返回 204 |
 
-内置 ID：`novel.v1`、`script.v1`、`extract.v1`、`storyboard.v1`、`asset_patch.v1`、`shot_patch.v1`、`image.v1`、`video.v1`，只能查看和加载。
+内置 ID：`planning.v1`、`novel.v1`、`script.v1`、`extract.v1`、`storyboard.v1`、`asset_patch.v1`、`shot_patch.v1`、`image.v1`、`video.v1`、`voice.v1`、`canvas.v1`、`continuity.v1`，覆盖九类能力。ID 是稳定身份，其中 `.v1` 不表示当前内容版本；原八项已发布内容版本 2，新增四项为版本 1，历史八项版本 1 保留。系统原件不可修改／删除（403），可以复制及更改本人启停／调用设置。目录读取数据库中已发布的最新版本，部署包须经显式发布才生效，见[内置方法维护](../instruction/内置创作方法维护.md)；V3 按需激活与任务资源读取见[助手 API](assistant.md#任务创作方法与资料)。
 
-输出为 `id/name/filename/builtin/content_version/row_version/enabled/instructions/checksum_sha256`。内置 `row_version` 和 `filename` 为 null；所有 Skill 的 `content_version` 及自定义 Skill 的 `row_version` 输出十进制字符串。管理修改增加 `row_version`；只有正文变化增加 `content_version`。同版本内容校验值稳定，加载旧内容版本返回 409，加载停用 Skill 返回 422。
+摘要包含身份、名称、`slug/description/tags/modes/exclusions/required_tools/source`、`content_version/row_version`、`enabled/invocation_mode/settings_version`、`compatible/issues`、正文与包校验值、资源数量和更新时间。详情另含 `instructions/resources`；资源目录仅含相对路径、reference／template 类型、字节数与 checksum，不暴露存储地址。
+
+内容版本覆盖元数据、主指令和资料；设置修改不发布内容版本。内置 `row_version/filename` 为 null，尚未保存的内置个人设置版本为 `"0"`；个人 ID 和所有版本对外均为十进制字符串，内置 ID 使用上述稳定键。个人内容保存校验内容行版本，设置接口校验 `settings_version`。兼容 PATCH 的启停字段仍可使用，但新客户端优先使用独立设置接口。旧输入全文快照保持原样，新冻结记录增加不可变 `version_id`。新加载使用过期内容版本返回 409，停用／不兼容项不能新加载；原任务仍选用的精确冻结版本继续有效。
 
 ```json
 {"row_version":"1","instructions":"# 对白要求\n控制单句长度。","enabled":true}
 ```
 
-正文非空、无 NUL，UTF-8 编码后最多 64 KiB；所选 Skill 全文合计最多 128 KiB。客户端提交 409 后须让用户核对新内容，不能自动覆盖。
+在线创建必填 `name/slug/description/instructions`，默认启用且允许按需自动。`modes` 为 `standard/infinite_canvas`，资料以 `resources=[{path,kind,content}]` 整包提交。更新未提供的字段保持原值，发布内容不重置个人设置。创建／复制受理不明须使用原请求体及原幂等键核对，不换键创建副本。
+
+正文非空、无 NUL，UTF-8 最多 64 KiB；单资料最多 128 KiB、最多 31 份，包总量最多 1 MiB。导入文件最多 4 MiB，解压后总量最多 1 MiB／32 文件；主文件含元数据最多 128 KiB、frontmatter 最多 64 KiB。只支持 md/txt/json/csv/yaml/yml，路径最多六段，拒绝路径穿越、符号链接、重复路径和危险 YAML；脚本及未知工具在预览中列为不兼容。普通 Markdown 可在预览后补齐用途。预览成功不等于发布或执行。
+
+资料先在 MinIO 独立暂存键中保存并读回核验，再由短 MySQL 事务发布 ready manifest；同批相同内容可以复用新上传，不能复用无版本引用的旧暂存对象。新上传须在一小时内、持有账号／内置目录锁时发布，超时返回 `agent_skill_upload_expired`；已发布旧资源继续有效。这不是跨存储原子事务。显式回收脚本默认预览，仅回收至少 24 小时且未被任何历史版本引用的已知对象，按精确对象版本删除；详见[资料回收维护](../instruction/内置创作方法维护.md#未引用资料回收)。历史内容版本不可修改，目录软删除不立即删除版本及资料。目录管理支持按账号查看未删除 Skill 的旧资料版本；V3 原任务通过已持久激活的身份读取冻结资料，更新、停用、删除或明确继续均不换成新版本。所选正文累计仍限 128 KiB。409 保留草稿，明确核对后再操作，不自动覆盖。
 
 ## 模型选择与运行反馈
 

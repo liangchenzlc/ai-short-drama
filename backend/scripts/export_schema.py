@@ -52,9 +52,16 @@ def schema_sql():
                 declarations.append("  " + value)
         for index in sorted(table.indexes, key=lambda item: item.name):
             fields = ", ".join(f"`{c.name}`" for c in index.columns)
-            declarations.append(
-                f"  {'UNIQUE ' if index.unique else ''}KEY `{index.name}` ({fields})"
+            mysql = index.dialect_options["mysql"]
+            prefix = (
+                "FULLTEXT "
+                if mysql.get("prefix") == "FULLTEXT"
+                else "UNIQUE "
+                if index.unique
+                else ""
             )
+            parser = f" WITH PARSER `{mysql['with_parser']}`" if mysql.get("with_parser") else ""
+            declarations.append(f"  {prefix}KEY `{index.name}` ({fields}){parser}")
         source = f"CREATE TABLE `{table.name}` (\n" + ",\n".join(declarations) + "\n) " + options
         statements.append(source + ";")
     table_count = len(statements)
@@ -70,7 +77,7 @@ def schema_sql():
         f"-- Canonical MySQL 8 schema: {table_count} tables.\n"
         "-- Generated from short_drama.domain by backend/scripts/export_schema.py.\n"
         "-- Initialize an empty database; upgrade existing databases with versioned migrations.\n"
-        "-- Collaboration upgrades require explicit historical ownership backfill and finalize.\n\n"
+        "-- Creation-mode upgrades use the explicit offline reset and preservation workflow.\n\n"
         + "\n\n".join(statements)
         + "\n"
     )
@@ -82,7 +89,9 @@ def main():
         "--check", action="store_true", help="Verify the canonical SQL matches current models"
     )
     args = parser.parse_args()
-    path = Path(__file__).resolve().parents[2] / "docs" / "数据库模型" / "schema.mysql8.sql"
+    path = (
+        Path(__file__).resolve().parents[2] / "docs" / "database" / "schema" / "schema.mysql8.sql"
+    )
     source = schema_sql()
     if args.check:
         if not path.exists() or path.read_text(encoding="utf-8") != source:

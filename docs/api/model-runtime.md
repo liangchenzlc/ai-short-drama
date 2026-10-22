@@ -31,7 +31,7 @@
 
 保留旧遮罩值并新增请求头后再次验证总量；合并超限返回 `422 model_runtime_credentials_invalid`，不改原配置或加密信封。
 
-读取新增 `runtime_profile`、`has_secret_key`、`headers:[{name,has_value}]`、只读 `credential_source: manual|beefapi`。读取响应不含 `secret_key`、header 值或任何加密信封。托管配置的来源、地址、模型身份、协议与企业密钥由服务端控制；普通 CRUD 不能冒充或替换企业授权。
+读取新增 `runtime_profile`、`has_secret_key`、`headers:[{name,has_value}]`、只读 `credential_source: manual`。读取响应不含 `secret_key`、header 值或任何加密信封。
 
 ## 画布目录和偏好
 
@@ -55,6 +55,12 @@ App查询`/api/webapp/apiCallDemo`，均不提交生成、不改保存配置；�
 
 `GET /api/v1/canvas-runtime/workspace/model-config` 保留 `{models,channels,preferences,row_version}` 外形。`models` 是全部本人可见、未删除宿主模型的安全投影，包括已迁移旧绑定；附带完整运行 profile、默认、扩展凭据存在标记及 `selection_aliases`。`channels` 不再提供独立可编辑的模型目录。
 
+模型条目的只读 `default_capability_config` 补充未保存高级 profile 时的本地适配能力；
+当前用于 ModelHub 的 `seedance-2.0-mini`、`minimax-h3`，声明最多九张参考图及各自的时长、分辨率范围。
+它由已保存地址对应的后端适配器推导，不按供应商名称或模型名称单独猜测，不修改数据库配置。
+显式 `runtime_profile.capability_config` 优先；未知协议和模型不因此取得参考生成能力。
+这份本地能力描述不代表真实供应商验收。生成前校验失败会在节点及提示词面板显示，保留原草稿和已有作品。
+
 画布将其投影为只读 `host-<config_id>` 渠道，每个 profile 的 `logicalModelId` 为稳定宿主 ID。旧绑定提供原 `channel::model` 到该 ID 的别名；改模型编码后仍可恢复原逻辑选择，不按同名模型猜测。无法恢复或已停用/删除的明确选择提示不可用，不自动更换供应商。
 
 `PUT /api/v1/canvas-runtime/workspace/model-config` 只提交 `{expected_row_version,preferences}`。保留本人画布默认、助手模型与生成参数，不与标准业务 `context_key` 偏好混成同一个默认。任何带 `channels` 的旧客户端请求都明确拒绝，包括空数组；不能据此清空或覆盖宿主模型。
@@ -67,7 +73,7 @@ App查询`/api/webapp/apiCallDemo`，均不提交生成、不改保存配置；�
 
 模型发现不保存、不生成；发现到模型 ID 不代表该协议全部生成能力已经验收。仅在用户主动点击“获取模型”时，向当前填写的服务地址发送 API Key 和自定义请求头，第二密钥不参与发现。普通模式含请求头或明确删除请求头时使用 OpenAI 兼容发现合同，高级模式使用所选 API 格式；不因打开表单或修改字段自动探测。保存凭据仅能按本人的确切 `host:<ID>` 与同地址引用；旧普通渠道引用返回 `409 canvas_model_legacy_credential_reference`，不能恢复旧目录密钥。换地址不附旧凭据引用，且仍有遮罩请求头时阻止探测；清除 API Key 时显式 null，删除所有请求头时显式空数组，不复用旧值。
 
-宿主模型测试复用本人独立画布模型测试任务，冻结已保存配置，不采用浏览器伪造的协议或凭据；测试影子配置在同事务中隐藏，不显示为新增模型，也不改变原模型的版本和派生缓存。原 BeefAPI 连接、取消、重连、断开与钱包入口在宿主提供，保留原服务端授权和恢复机制；不再要求打开 BeefTV 整站设置页。
+宿主模型测试复用本人独立画布模型测试任务，冻结已保存配置，不采用浏览器伪造的协议或凭据；测试影子配置在同事务中隐藏，不显示为新增模型，也不改变原模型的版本和派生缓存。
 
 扩展凭据变更会失效派生能力缓存；凭据身份同时包含 API Key 与扩展信封，标准生成、画布、模型测试及 Agent 的能力证据不能跨请求头账户复用。配置读取使用当前应用的 Settings 和加密主密钥，不改现有主密钥。
 
@@ -75,9 +81,9 @@ Agent 按保存的 profile 选择 OpenAI Chat Completions 或 Responses；未知
 
 无高级 profile 的既有 ModelHub 视频配置仍沿原适配器运行；画布鉴权范围包含原已可执行的 `modelhub_video.v1`，未因此开放其他音频、插件或未知协议。
 
-标准配置 `runtime_profile=null` 保留原行为；显式高级协议按当前已接通的 Python 适配器运行。画布普通纯文字及独立模型测试已接通 `api_format=claude / protocol=claude-api` 的 `claude_messages.v1`，范围见[画布 Claude 合同](canvases.md#画布-claude-普通纯文字)。Gemini 普通纯文字接通 `api_format=openai / protocol=gemini-generate-content|google-gemini-generate-content` 的非流 `gemini_generate_content.v1`，对应固定源 hosted 派生格式；`api_format=gemini` 保留 custom gate，节点受理和宿主测试分别返回 422 与 400，详见[画布 Gemini 合同](canvases.md#画布-gemini-普通纯文字)。标准生成和 Agent 不开放这些画布专用适配器；尚未完成的多模态、thinking、工具和签名协议分支仍按各自准入边界拒绝。配置表单存在不等于完整协议接通或真实供应商验收通过。最新授权允许下述 Agnes 三种免费模型真实调用；Claude、Gemini 供应商本身仍未验。
+标准配置 `runtime_profile=null` 保留原行为；显式高级协议按当前已接通的 Python 适配器运行。画布普通纯文字及独立模型测试已接通 `api_format=claude / protocol=claude-api` 的 `claude_messages.v1`，范围见[画布 Claude 合同](canvases.md#画布-claude-普通文字与图片引用)。Gemini 普通纯文字接通 `api_format=openai / protocol=gemini-generate-content|google-gemini-generate-content` 的非流 `gemini_generate_content.v1`，对应固定源 hosted 派生格式；`api_format=gemini` 保留 custom gate，节点受理和宿主测试分别返回 422 与 400，详见[画布 Gemini 合同](canvases.md#画布-gemini-普通纯文字)。标准生成和 Agent 不开放这些画布专用适配器；尚未完成的多模态、thinking、工具和签名协议分支仍按各自准入边界拒绝。配置表单存在不等于完整协议接通或真实供应商验收通过。最新授权允许下述 Agnes 三种免费模型真实调用；Claude、Gemini 供应商本身仍未验。
 
-数据库部署顺序见[统一模型迁移](../数据库模型/migrations/2026-10-06-host-model-runtime/README.md)。
+数据库部署顺序见[统一模型迁移](../database/migrations/2026-10-06-host-model-runtime/README.md)。
 
 画布音频现支持本人保存的 `api_format=openai / protocol=async-audio`，
 使用 `canvas_async_audio.v1` 的创建、原 ID 轮询及 content 下载合同；
@@ -130,7 +136,7 @@ API Key 沿既有服务端加密配置保存，公开目录和浏览器仅接收
 消费者持久化分类后二次解释仍保留原因，受理未知阶段始终禁止重提。
 
 真实应用验收、红批、媒体字节、运行方式和未验范围见
-[Agnes 验收审计](../plans/2026-10-10-beeftv-agnes-live-audit.md)。
+[Agnes 验收审计](../plans/2026-10/2026-10-10-Agnes免费模型验收.md)。
 当前文字、文生图、图生图×两屏宽六场完整通过；视频390px已通过真实生成、归档、
 原UI播放/fresh恢复及可见无文字内容，实际1280×720/4.48秒。桌面仍队列满未通过；
 视频存在音频流，听觉内容未验，明确队列满不记为成功。
@@ -139,7 +145,7 @@ API Key 沿既有服务端加密配置保存，公开目录和浏览器仅接收
 画布和标准Chat图片/Skill四场分批完整通过；Agnes Responses图片输入实测HTTP400，
 普通文字Responses通过不能当图片通过。当前图片上下文优先使用已验Chat配置。
 实际范围与供应商拒绝原因见
-[助手真实审计](../plans/2026-10-10-beeftv-assistant-agnes-live-audit.md)。
+[助手真实审计](../plans/2026-10/2026-10-10-共用助手Agnes运行验收.md)。
 两端/两协议/两屏宽的真实停止和完整回执后的进程中断恢复16场已分批通过，原SDK
 仅本地重放原回执、供应商POST仍一次；受理未知八场也分批完整通过，共24个独立
 生命周期场。真实200响应头后中断保留unknown/raw空、精确系统失败提示和零模型

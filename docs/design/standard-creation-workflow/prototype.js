@@ -88,12 +88,6 @@ function field(label, name, value, options, help = '') {
 }
 function textField(label, name, value, type = 'text') { return `<label class="field"><span>${label}</span><input type="${type}" data-param="${name}" aria-label="${label}" value="${esc(value)}"></label>`; }
 
-function renderProgress() {
-  $('sourceProgress').textContent = state.confirmed ? '剧本已确认' : '剧本待确认';
-  document.querySelector('.step-check').style.visibility = state.confirmed ? 'visible' : 'hidden';
-  $('assetsProgress').textContent = `${assets.filter((a) => a.adopted).length} / ${assets.length} 已采用`;
-  $('storyboardProgress').textContent = `${shots.filter((s) => s.adopted).length} / ${shots.length} 图已采用`;
-}
 
 function settingsHost() { return state.stage === 'source' ? $('adaptationPanel') : $('generationSettings'); }
 function modalPanel() {
@@ -131,7 +125,7 @@ function render() {
   if (state.stage === 'source') $('stageActions').innerHTML = btn(`${icon('book', true)}查看原文`, 'source') + btn(`${icon('history', true)}生成记录`, 'history') + '<span class="toolbar-divider"></span>' + toggle;
   else if (state.stage === 'assets') $('stageActions').innerHTML = btn(`${icon('spark', true)}从剧本提取`, 'extract') + btn(`${icon('plus', true)}新增素材`, 'add') + '<span class="toolbar-divider"></span>' + toggle;
   else $('stageActions').innerHTML = btn(`${icon('spark', true)}提取分镜`, 'extract') + btn(`${icon('plus', true)}新增镜头`, 'add') + '<span class="toolbar-divider"></span>' + toggle;
-  renderProgress(); renderList(); renderMain(); renderInspector();
+  renderList(); renderMain(); renderInspector();
   if (state.assistant) renderAssistant(); else $('inspector').innerHTML = '';
   syncPanels(); renderConflict();
 }
@@ -283,7 +277,7 @@ function adopt() {
   if (pending.source) { state.source.records.push({ type: 'script', html: state.scriptHtml, version: '原稿', params: { ...state.source.params } }); state.scriptHtml = pending.result.html; state.source.showLatest = false; state.confirmed = false; }
   else if (pending.video) { pending.a.video = true; pending.a.showLatestVideo = false; }
   else { pending.a.image = pending.result.image; pending.a.adopted = true; pending.a.showLatest = false; }
-  pending.result.adopted = true; state.adoption = null; $('modal').close(); renderProgress(); renderList(); renderMain(); renderInspector(); toast('已采用此结果。');
+  pending.result.adopted = true; state.adoption = null; $('modal').close(); renderList(); renderMain(); renderInspector(); toast('已采用此结果。');
 }
 
 function history() {
@@ -353,7 +347,7 @@ document.addEventListener('click', (event) => {
     case 'history-preview': { const a = state.stage === 'source' ? state.source : item(); const r = a.records[Number(target.dataset.index)]; if (r.type === 'video') { a.latestVideo = r; a.showLatestVideo = true; state.mediaTab = 'video'; } else { a.latest = r; a.showLatest = true; if (state.stage === 'storyboard') state.mediaTab = 'image'; } $('modal').close(); renderMain(); renderInspector(); break; }
     case 'zoom-in': case 'zoom-out': case 'zoom-fit': state.zoom = action === 'zoom-fit' ? 100 : Math.max(50, Math.min(200, state.zoom + (action === 'zoom-in' ? 10 : -10))); if ($('previewImage')) $('previewImage').style.transform = `scale(${state.zoom / 100})`; if ($('zoomLabel')) $('zoomLabel').textContent = `${state.zoom}%`; break;
     case 'fullscreen': $('fullImage').src = $('previewImage').src; $('imageDialog').showModal(); break;
-    case 'confirm-script': state.confirmed = true; renderProgress(); renderMain(); toast('当前剧本已确认。'); break;
+    case 'confirm-script': state.confirmed = true; renderMain(); toast('当前剧本已确认。'); break;
     case 'scene': $('scriptEditor').querySelector(`#scene-${target.dataset.value}`)?.scrollIntoView({ block: 'start' }); break;
     case 'download': downloadDraft(); break;
     case 'add': newObject(); break;
@@ -392,7 +386,7 @@ document.addEventListener('input', (event) => {
   else if (el.id === 'novelEditor') { state.novel = el.value; $('novelWordCount').textContent = `${el.value.length} 字`; saveFeedback(); }
   else if (el.id === 'assistantInput') state.assistantDraft = el.value;
   else if (el.id === 'scriptEditor' || el.closest('#scriptEditor')) {
-    state.scriptHtml = $('scriptEditor').innerHTML; state.confirmed = false; renderProgress(); saveFeedback();
+    state.scriptHtml = $('scriptEditor').innerHTML; state.confirmed = false; saveFeedback();
     const status = $('mainPanel').querySelector('.heading-actions .badge'); if (status) { status.className = 'badge'; status.textContent = '草稿 · 待确认'; }
     const wordCount = $('mainPanel').querySelector('.script-toolbar > span'); if (wordCount) wordCount.textContent = `${$('scriptEditor').textContent.replace(/\s/g, '').length} 字`;
     if ($('scriptConfirmTitle')) $('scriptConfirmTitle').textContent = '草稿待确认';
@@ -412,7 +406,6 @@ document.addEventListener('change', (event) => {
       else a[key] = el.value;
       a.version += 1; renderList();
     } else a.params[key] = el.value;
-    if (state.stage === 'source' && ['aspect', 'style'].includes(key)) { const context = document.querySelector('.episode-context'); context.innerHTML = `<span>${esc(a.params.aspect)}</span><span>${esc(a.params.style)}</span>`; }
     saveFeedback();
   }
 });

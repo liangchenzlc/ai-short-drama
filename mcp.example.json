@@ -1,0 +1,14 @@
+{
+    "mcpServers":  {
+                       "codebase-memory-mcp":  {
+                                                   "command":  "C:\\Users\\<你的用户名>\\.codebase-memory-mcp\\bin\\codebase-memory-mcp.exe",
+                                                   "args":  [
+
+                                                            ],
+                                                   "env":  {
+                                                               "CBM_RUNTIME_DIR":  "C:\\Users\\<你的用户名>\\.codebase-memory-mcp\\runtime",
+                                                               "CBM_CACHE_DIR":  "C:\\Users\\<你的用户名>\\.codebase-memory-mcp\\data"
+                                                           }
+                                               }
+                   }
+}

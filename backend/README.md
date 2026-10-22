@@ -1,10 +1,10 @@
 # 后端
 
-Python 3.12+ / FastAPI / SQLAlchemy 2 / MySQL 8。负责账号与项目权限、共同创作数据、个人 AI 配置、异步生成、媒体存储与候选采用。账号模式默认启用；已有库先按[协作部署说明](../docs/collaboration-deployment.md)完成归属迁移和邮件配置。
+Python 3.12+ / FastAPI / SQLAlchemy 2 / MySQL 8。负责账号与项目权限、作品内容、个人 AI 配置、异步生成、媒体存储与候选采用。账号模式默认启用；已有分集/协作版本按[创作模式说明](../docs/instruction/创作模式维护说明.md)离线备份、预演并重建；成员、邀请与跨库素材共享均已退役。
 
 ## 开发入口
 
-MySQL、RabbitMQ 和 MinIO 可在仓库根目录执行 `docker compose up -d` 一键准备，包含新库建表和 bucket 初始化；连接配置见 [Docker 依赖指南](../docs/docker.md)。
+MySQL、RabbitMQ 和 MinIO 可在仓库根目录执行 `docker compose up -d` 一键准备，包含新库建表和 bucket 初始化；连接配置见 [Docker 依赖指南](../docs/instruction/Docker一键启动后端依赖.md)。
 
 在本目录执行：
 
@@ -16,7 +16,7 @@ Copy-Item .env.example .env
 uv run uvicorn short_drama.main:app --host 127.0.0.1 --port 8000
 ```
 
-API 文档：`http://127.0.0.1:8000/docs`，机器可读契约：`/openapi.json`。数据库初始化、scheduler 与各类独立 Worker 的启动见[开发与运行](../docs/development.md)。只启动 API 不能执行生成任务。
+API 文档：`http://127.0.0.1:8000/docs`，机器可读契约：`/openapi.json`。数据库初始化、scheduler 与各类独立 Worker 的启动见[开发与运行](../docs/instruction/开发运行与验证.md)。只启动 API 不能执行生成任务。
 
 `uv.cmd` 是可选的本地工具包装器，仅在 `backend/.tools/uv/uv.exe` 已存在时可用；它不会安装 uv。标准开发流程使用系统安装的 `uv`。
 
@@ -28,7 +28,7 @@ src/short_drama/
   schemas/      Pydantic 输入/输出模型及结构化模型结果验证
   service/      业务规则、事务边界、版本检查与采用
   dao/          SQLAlchemy 查询与持久化操作
-  domain/       全部 50 张表的 ORM 映射
+  domain/       全部 101 张表的 ORM 映射
   db/           连接池、Session、资源范围过滤与迁移就绪检查
   ai/           提示词模板、协议适配、受限网络传输
   agent/        持久决策段、延迟工具、候选、授权与安全恢复
@@ -38,41 +38,41 @@ src/short_drama/
   utils/        雪花 ID
 ```
 
-入口为 `main:create_app`、`tasks.runtime` 和 `tasks.celery_app:app`。HTTP 服务通过依赖注入共享请求 Session；Service 拥有事务，DAO 不自行提交。独立使用 Service 时传入尚未开启事务的 Session，详见[系统架构](../docs/architecture.md)。
+入口为 `main:create_app`、`tasks.runtime` 和 `tasks.celery_app:app`。HTTP 服务通过依赖注入共享请求 Session；Service 拥有事务，DAO 不自行提交。独立使用 Service 时传入尚未开启事务的 Session，详见[系统架构](../docs/instruction/系统架构与数据流.md)。
 
 通用 CRUD Service、来源记录、回收恢复服务有内部调用与测试用途，不代表每个操作都已开放 HTTP 路由。公开接口以[接口约定](../docs/api/README.md)及 OpenAPI 为准。
 
 ## 验证
 
 ```powershell
-uv run pytest tests/unit tests/api -q
+node ../scripts/test.mjs --scope backend --feature standard.assets --level fast
 uv run ruff check src tests scripts
 uv run ruff format --check src tests scripts
 ```
 
-数据库结构由[完整 SQL](../docs/数据库模型/schema.mysql8.sql)定义。`tests/unit/test_domain.py` 校验 ORM 和 SQL；真实 MySQL 约束与迁移需单独验证：
+数据库结构由[完整 SQL](../docs/database/schema/schema.mysql8.sql)定义。`tests/unit/shared/core/test_domain.py` 校验 ORM 和 SQL；真实 MySQL 约束与迁移需单独验证：
 
 ```powershell
-uv run python scripts/run_integration.py
+node ../scripts/test.mjs --scope backend --feature standard.assets --level mysql
 ```
 
-该脚本复用 `.env` 中的服务器连接配置，在服务器创建随机 `_test` 数据库，结束后仅删除该临时库；需要 CREATE/DROP DATABASE 权限。不会以应用库作为测试库。RabbitMQ/MinIO 测试另需显式启用，详见[测试分层](../docs/development.md#测试与验证)。
+该脚本复用 `.env` 中的服务器连接配置，在服务器创建随机 `_test` 数据库，结束后仅删除该临时库；需要 CREATE/DROP DATABASE 权限。不会以应用库作为测试库。RabbitMQ/MinIO 测试另需显式启用，详见[测试分层](../docs/instruction/开发运行与验证.md#测试与验证)。
 
-Agent 模式默认开启，启动需显式七表迁移、账号认证及独立 Agent Worker；尚未升级的环境须显式设置 `AGENT_ENABLED=false`。迁移、节点/队列命名、SSE 代理、unknown 处理和关闭步骤见 [Agent 部署](../docs/agent-deployment.md)。
+Agent 模式默认开启，启动需显式七表迁移、账号认证及独立 Agent Worker；尚未升级的环境须显式设置 `AGENT_ENABLED=false`。迁移、节点/队列命名、SSE 代理、unknown 处理和关闭步骤见 [Agent 部署](../docs/instruction/Agent模式部署与排障.md)。
 
 ## 修改约定
 
 ### 成片合成运行
 
-第四步使用独立的本地合成队列，不调用 AI 模型。旧库先执行 `scripts/apply_assembly_migration.py`，再执行 `scripts/apply_timeline_migration.py`；后者升级独立片段、保存回执与预览任务，先备份成片表并拒绝在有待处理渲染任务时执行。新库使用最新完整建表 SQL，无需历史迁移。再启动 `scripts/start_generation.ps1 -Role render`（单并发，独立雪花节点 5）。调度器仍为 `short_drama.tasks.runtime`。
+第四步使用独立的本地合成队列，不调用 AI 模型。旧分集库只使用 `scripts/creation_mode_reset.py` 的离线备份、预演和重建流程；新库使用最新完整 SQL，不叠加历史成片增量脚本。再启动 `scripts/start_generation.ps1 -Role render`（单并发，独立雪花节点 5）。调度器仍为 `short_drama.tasks.runtime`。
 
 安装 FFmpeg（含 libx264）和 ffprobe 并加入 PATH，或配置 `RENDER_FFMPEG_PATH` / `RENDER_FFPROBE_PATH`。开发环境也支持 `backend/.tools/ffmpeg/*/bin` 中的便携版本。缺少 ffprobe 时使用 FFmpeg 解码首帧并读取实际容器信息。工具二进制不纳入 Git。
 
 临时文件默认写入 `backend/.runtime/renders`。`RENDER_MAX_SOURCE_BYTES` 默认 2 GiB，`RENDER_MAX_SCRATCH_BYTES` 默认每任务 20 GiB，`RENDER_TIMEOUT_SECONDS` 默认每次编码 3600 秒，`RENDER_MAX_DURATION_MS` 默认 1 小时。输出上传失败保留校验后的成片用于重试，成功任务清理临时目录，7 天后的尝试目录由调度器清理。取消只终止该任务自己的子进程。数据库租约防止重复执行和过期进程写回。
 
-探测同时缓存 360p/30fps 预览代理、代表缩略图及最多 24 格的采样拼图（每格 160×90）。拼图地址、格数和采样间隔保存在媒体 JSON 元数据，无需新增数据库迁移。已有草稿打开时通过幂等初始化补齐预览素材，不修改剪辑或来源选择；生成前仍使用已有缩略图。合成预览使用 360p，正式导出读取原素材。新增编辑快照为 v2，按 30fps 边界裁剪，拼接 PCM 中间音频后统一编码 AAC。旧 v1 任务可继续读取和重试。任务优先投递正式导出，已运行的预览不会被抢占。
+探测同时缓存 360p/30fps 预览代理、代表缩略图及最多 24 格的采样拼图（每格 160×90）。拼图地址、格数和采样间隔保存在媒体 JSON 元数据，无需新增数据库迁移。已有草稿打开时通过幂等初始化补齐预览素材，不修改剪辑或来源选择；生成前仍使用已有缩略图。合成预览短边为 360，正式导出读取原素材。输出比例默认跟随实际分镜视频，支持手动 16:9 / 9:16；导出快照冻结探测后的宽高。新增编辑快照为 v2，按 30fps 边界裁剪，拼接 PCM 中间音频后统一编码 AAC。旧 v1 任务可继续读取和重试。任务优先投递正式导出，已运行的预览不会被抢占。
 
-完整接口见 [成片 API](../docs/api/episode-assembly.md)，数据升级见 [时间轴迁移](../docs/数据库模型/migrations/2026-09-29-assembly-timeline/README.md)。
+完整接口见 [成片 API](../docs/api/episode-assembly.md)，数据切换见 [创作模式维护](../docs/instruction/创作模式维护说明.md)。
 
 - 表结构变更同时修改 ORM、完整 SQL、旧库迁移和数据库说明。
 - HTTP 变更同步 Pydantic、前端 DTO 和接口说明；不得绕过 Service 修改正文、排序、确认或采用状态。

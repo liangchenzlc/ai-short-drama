@@ -10,10 +10,10 @@ from short_drama.domain import AGENT_TABLES, Base
 OWNERS = {
     "projects": "owner_user_id",
     "ai_model_configs": "owner_user_id",
-    "global_assets": "user_id",
+    "assets": "project_id",
 }
-ROOTS = {"assets", "media_files", "async_tasks", "generation_batches"}
-INITIATORS = {"async_tasks", "generation_batches", "episode_render_jobs"}
+ROOTS = {"media_files", "async_tasks", "generation_batches"}
+INITIATORS = {"async_tasks", "generation_batches", "project_render_jobs"}
 
 
 def schema_gaps(connection, *, include_agent=False):
@@ -247,20 +247,22 @@ def assert_identity_ready(engine, settings):
         gaps = schema_gaps(connection)
         if gaps:
             raise RuntimeError(
-                "Collaboration schema incomplete. Run collaboration_migration.py --expand, "
-                "explicit --backfill and --finalize before starting services."
+                "Creation schema incomplete. Follow docs/instruction/创作模式维护说明.md and run "
+                "scripts/creation_mode_reset.py backup, rehearse and apply "
+                "before starting services."
             )
         if ownership_gaps(connection):
             raise RuntimeError(
-                "Historical ownership is unresolved. Explicitly assign the legacy owner "
-                "with collaboration_migration.py; registration never assigns historical data."
+                "Creation ownership is invalid. Follow docs/instruction/创作模式维护说明.md "
+                "to restore or rebuild the creation schema before starting services."
             )
         inspector = inspect(connection)
         for name, field in OWNERS.items():
             if next(c for c in inspector.get_columns(name) if c["name"] == field)["nullable"]:
                 raise RuntimeError(
-                    "Collaboration migration is not finalized. "
-                    "Run --finalize before starting services."
+                    "Creation ownership columns are incomplete. "
+                    "Follow docs/instruction/创作模式维护说明.md "
+                    "to rebuild the schema before starting services."
                 )
         for name in ROOTS:
             checks = {c["name"]: c["sqltext"] for c in inspector.get_check_constraints(name)}
@@ -288,8 +290,9 @@ def assert_identity_ready(engine, settings):
                 for key, expression in required.items()
             ):
                 raise RuntimeError(
-                    "Collaboration scope constraints missing, changed or disabled. "
-                    "Run --finalize before starting services."
+                    "Resource scope constraints missing, changed or disabled. "
+                    "Follow docs/instruction/创作模式维护说明.md "
+                    "to rebuild the schema before starting services."
                 )
         for name in ROOTS | set(OWNERS) | INITIATORS:
             present = {
@@ -309,14 +312,15 @@ def assert_identity_ready(engine, settings):
                 for fk in Base.metadata.tables[name].foreign_key_constraints
             }
             if any(present.get(key) != signature for key, signature in expected.items()):
-                raise RuntimeError("Collaboration foreign keys missing. Run --finalize.")
+                raise RuntimeError(
+                    "Resource foreign keys missing. Follow docs/instruction/创作模式维护说明.md "
+                    "to rebuild the schema before starting services."
+                )
         for name in {
             "users",
-            "project_members",
             "user_model_preferences",
             "user_project_states",
             "ai_model_configs",
-            "global_assets",
         }:
             expected = {
                 tuple(column.name for column in constraint.columns)
@@ -329,4 +333,8 @@ def assert_identity_ready(engine, settings):
                 if index["unique"]
             }
             if not expected <= present:
-                raise RuntimeError("Collaboration uniqueness constraints missing. Run --finalize.")
+                raise RuntimeError(
+                    "Resource uniqueness constraints missing. "
+                    "Follow docs/instruction/创作模式维护说明.md "
+                    "to rebuild the schema before starting services."
+                )

@@ -1,0 +1,85 @@
+-- 标准模式共享图片组、固定图位及私人处理记录。先备份，再于现有业务库显式执行。
+CREATE TABLE image_groups (
+	id BIGINT UNSIGNED NOT NULL, 
+	asset_id BIGINT UNSIGNED, 
+	shot_id BIGINT UNSIGNED, 
+	active_slot INTEGER UNSIGNED, 
+	kind VARCHAR(24) NOT NULL, 
+	status VARCHAR(24) NOT NULL, 
+	expected_count INTEGER UNSIGNED NOT NULL, 
+	task_id BIGINT UNSIGNED, 
+	primary_index INTEGER UNSIGNED, 
+	primary_mode VARCHAR(16) NOT NULL, 
+	primary_version BIGINT UNSIGNED NOT NULL, 
+	source_context JSON NOT NULL, 
+	notice VARCHAR(255), 
+	created_by BIGINT UNSIGNED, 
+	created_at DATETIME(6) NOT NULL, 
+	scope_user_id BIGINT UNSIGNED, 
+	project_id BIGINT UNSIGNED, 
+	PRIMARY KEY (id), 
+	CONSTRAINT ck_image_groups_target CHECK ((asset_id IS NULL) <> (shot_id IS NULL)), 
+	CONSTRAINT ck_image_groups_active CHECK (active_slot IS NULL OR active_slot = 1), 
+	CONSTRAINT ck_image_groups_count CHECK (expected_count BETWEEN 1 AND 25), 
+	CONSTRAINT uk_image_groups_asset_current UNIQUE (asset_id, active_slot), 
+	CONSTRAINT uk_image_groups_shot_current UNIQUE (shot_id, active_slot), 
+	CONSTRAINT uk_image_groups_task UNIQUE (task_id), 
+	CONSTRAINT fk_image_groups_asset_id FOREIGN KEY(asset_id) REFERENCES assets (id), 
+	CONSTRAINT fk_image_groups_shot_id FOREIGN KEY(shot_id) REFERENCES shot_scripts (id), 
+	CONSTRAINT fk_image_groups_task_id FOREIGN KEY(task_id) REFERENCES async_tasks (id), 
+	CONSTRAINT fk_image_groups_scope_user_id FOREIGN KEY(scope_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_image_groups_project_id FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_image_groups_scope ON image_groups (project_id, scope_user_id, created_at);
+
+CREATE TABLE image_group_items (
+	id BIGINT UNSIGNED NOT NULL, 
+	group_id BIGINT UNSIGNED NOT NULL, 
+	output_index INTEGER UNSIGNED NOT NULL, 
+	media_id BIGINT UNSIGNED, 
+	item_version BIGINT UNSIGNED NOT NULL, 
+	origin JSON NOT NULL, 
+	created_at DATETIME(6) NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uk_image_group_items_position UNIQUE (group_id, output_index), 
+	CONSTRAINT ck_image_group_items_position CHECK (output_index BETWEEN 1 AND 25), 
+	CONSTRAINT ck_image_group_items_version CHECK (item_version > 0), 
+	CONSTRAINT fk_image_group_items_group_id FOREIGN KEY(group_id) REFERENCES image_groups (id), 
+	CONSTRAINT fk_image_group_items_media_id FOREIGN KEY(media_id) REFERENCES media_files (id)
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE image_operations (
+	id BIGINT UNSIGNED NOT NULL, 
+	item_id BIGINT UNSIGNED NOT NULL, 
+	source_media_id BIGINT UNSIGNED NOT NULL, 
+	source_version BIGINT UNSIGNED NOT NULL, 
+	operation_type VARCHAR(24) NOT NULL, 
+	parameters JSON NOT NULL, 
+	prepared_data JSON NOT NULL, 
+	upload_checksum VARCHAR(64), 
+	mask_media_id BIGINT UNSIGNED, 
+	result_media_id BIGINT UNSIGNED, 
+	result_group_id BIGINT UNSIGNED, 
+	task_id BIGINT UNSIGNED, 
+	request_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL, 
+	request_hash VARCHAR(64) NOT NULL, 
+	status VARCHAR(24) NOT NULL, 
+	created_by BIGINT UNSIGNED NOT NULL, 
+	created_at DATETIME(6) NOT NULL, 
+	scope_user_id BIGINT UNSIGNED, 
+	project_id BIGINT UNSIGNED, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uk_image_operations_request UNIQUE (created_by, request_key), 
+	CONSTRAINT fk_image_operations_item_id FOREIGN KEY(item_id) REFERENCES image_group_items (id), 
+	CONSTRAINT fk_image_operations_source_media_id FOREIGN KEY(source_media_id) REFERENCES media_files (id), 
+	CONSTRAINT fk_image_operations_mask_media_id FOREIGN KEY(mask_media_id) REFERENCES media_files (id), 
+	CONSTRAINT fk_image_operations_result_media_id FOREIGN KEY(result_media_id) REFERENCES media_files (id), 
+	CONSTRAINT fk_image_operations_result_group_id FOREIGN KEY(result_group_id) REFERENCES image_groups (id), 
+	CONSTRAINT fk_image_operations_task_id FOREIGN KEY(task_id) REFERENCES async_tasks (id), 
+	CONSTRAINT fk_image_operations_created_by FOREIGN KEY(created_by) REFERENCES users (id), 
+	CONSTRAINT fk_image_operations_scope_user_id FOREIGN KEY(scope_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT, 
+	CONSTRAINT fk_image_operations_project_id FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE INDEX idx_image_operations_item ON image_operations (item_id, created_at);

@@ -1,8 +1,8 @@
 # 无限画布接口
 
-当前已接通双模式项目、画布文档、历史、个人状态、宿主统一模型配置与独立模型测试、资源上传下载、私人素材、绘图基础、本人项目文件夹及生成任务准入/基本回填。完整媒体加工、生成参数与协议、绘图工具、导演、助手和插件执行仍在迁移中，不能把本文列出的接口视为完整 BeefTV 功能验收。进度见[实施记录](../plans/2026-10-05-beeftv-implementation-log.md)。
+当前已接通双模式项目、画布文档、历史、个人状态、宿主统一模型配置与独立模型测试、资源上传下载、私人素材、绘图基础、本人项目文件夹及生成任务准入/基本回填。完整媒体加工、生成参数与协议、绘图工具、导演、助手和插件执行仍在迁移中，不能把本文列出的接口视为完整 BeefTV 功能验收。进度见[实施记录](../plans/2026-10/2026-10-05-BeefTV画布迁移实施记录.md)。
 
-统一前缀 `/api/v1`。认证、Origin、CSRF、项目成员检查沿用现有中间件。`X-Canvas-Actor` 是画布打开时的账号 ID，仅用于校验当前会话是否发生切换，不能授予身份或权限；不匹配返回 `409 canvas_actor_changed`，不撤销其他窗口刚登录的有效会话。
+统一前缀 `/api/v1`。认证、Origin、CSRF、项目所有者检查沿用现有中间件。`X-Canvas-Actor` 是画布打开时的账号 ID，仅用于校验当前会话是否发生切换，不能授予身份或权限；不匹配返回 `409 canvas_actor_changed`，不撤销其他窗口刚登录的有效会话。
 
 独立画布 HTML 只渲染 `/canvas-app/canvas/{source_key}` 编辑器；整站首页、画布库、项目、资产、设置和外部 Agent 页面源码已移除，旧管理 URL 转宿主。编辑器退出回 `/projects`，模型配置进入 `/ai_config` 并携带安全画布返回地址；正常导航先等偏好和作品保存回执，409 保留草稿。当前 Python 将画布不存在、归档和无访问权限隐藏为 `404 not_found`；CSRF 或其他写规则 403 不表示整张画布撤权。自定义前端端口须与后端 `PUBLIC_ORIGIN` 一致，不能停用 CSRF 修复来源不匹配。
 
@@ -22,7 +22,7 @@
 | GET | `C/my-document` | 共享作品叠加本人私人编辑字段 |
 | POST | `C/commits` | `{expected_row_version,schema_version:1,source_document}`，要求写入幂等键；冲突保留客户端草稿 |
 | DELETE | `C` | 请求体 `{expected_row_version}`，要求写入幂等键；归档主画布后选择剩余画布，归档最后一个画布时归档项目 |
-| GET | `/canvas-write-receipts/{key}` | 本人操作回执；归档后的删除回执仍可恢复，撤销成员权限后不可读取 |
+| GET | `/canvas-write-receipts/{key}` | 本人操作回执；归档后的删除回执仍可恢复，非所有者不可读取 |
 | POST | `/canvas-runtime/canvas-projects/{source_key}/recycle-restore` | `{archive_key}` 和写入幂等键；本人删除回执限定作品、项目和已归档版本，返回 `CanvasSummaryRead`，原子恢复原项目与画布 |
 | GET | `/canvas-runtime/recycle-bin` | 本人仍有权限且处于当前归档代次的删除记录，最多 200 条；每项含 `source_key/project_id/archive_key/deleted_at/source_document` |
 | POST | `/canvas-runtime/canvas-projects/{source_key}/recycle-purge` | `{archive_key}` 和写入幂等键；不可恢复地处置确切归档代次，返回 `source_key/archive_key/state=purged`；不等于立即擦除全部物理字节 |
@@ -35,7 +35,7 @@
 | POST | `C/revisions/{revision_id}/restore` | `{expected_row_version,expected_drawing_heads?}` 和幂等键；恢复产生新版本并保留恢复前快照，绘图与图在同一事务恢复 |
 | GET | `/canvas-runtime/canvas-projects/{source_key}/events?actor_id=...` | Cookie 鉴权的短连接 SSE，发出 canvas.updated；会话失效或账号变化发出 session.expired，画布撤权/归档发出 canvas.unavailable 并结束；data 仅含错误 code，不含作品 |
 
-规范画布 ID 与所有数据库版本均为十进制字符串；源 `source_key`、节点键、边键保持原版不透明字符串。`source_document` 内使用源 camelCase 合同，外层 DTO 使用 snake_case。`workspaceProjectId` 是宿主项目归属；源 `projectId` 是另一个短剧绑定语义，尚未验证的非空绑定会拒绝，二者不得混用。
+规范画布 ID 与所有数据库版本均为十进制字符串；源 `source_key`、节点键、边键保持原版不透明字符串。`source_document` 内使用源 camelCase 合同，外层 DTO 使用 snake_case。`workspaceProjectId` 是宿主项目归属；退役的源 `projectId` 绑定字段不再接受；`workspaceProjectId` 继续用于原生画布归属。
 
 本人文档与历史读取增加信封字段 `resource_aliases: {"副本资源ID":["来源资源ID", ...]}`。只返回当前请求者本人已完成、仍有访问权限的副本来源关系，且仅包含该文档实际引用的副本；共享 `GET C` 返回 `{}`，其他成员不会获得作者的来源链。工作区 `include_documents=true` 按页批量查询并分发到各文档，不逐画布查询；摘要列表省略此字段。所有键和值均为十进制字符串，来源关系不写入 `source_document`、共享节点或素材 payload。
 
@@ -111,7 +111,7 @@
 
 成功时在同一事务清除画布归档标记、推进图版本，必要时恢复原项目并建立主画布关系；项目已有主画布时保持它。节点、绘图笔画及其版本、时间线/导演记录、媒体稳定 ID、个人参数和历史保持原记录，不从浏览器复制作品。已被删除的项目文件夹不会复活；分类以当前本人归属表为准。回执写入或任一后续步骤失败，项目和画布恢复一起回滚。
 
-前端重新读取本人规范文档，写入原提交日记和本机草稿后才移除回收卡片。服务器已恢复但响应丢失时，当前弹窗保留卡片；明确重试仍使用原键，重新打开或刷新目录会移除已恢复记录，不自动重发恢复。如果本机已经出现未保存编辑，保留编辑并提示处理，不用旧回收快照覆盖新内容。验证结果和范围见[实施记录](../plans/2026-10-05-beeftv-implementation-log.md)。
+前端重新读取本人规范文档，写入原提交日记和本机草稿后才移除回收卡片。服务器已恢复但响应丢失时，当前弹窗保留卡片；明确重试仍使用原键，重新打开或刷新目录会移除已恢复记录，不自动重发恢复。如果本机已经出现未保存编辑，保留编辑并提示处理，不用旧回收快照覆盖新内容。验证结果和范围见[实施记录](../plans/2026-10/2026-10-05-BeefTV画布迁移实施记录.md)。
 
 彻底删除使用 `canvas-recycle-purge:{source_key}:{revision}` 固定键，服务端先锁项目、画布，再核对回执和当前归档代次，写入私人 `canvas.recycle.purge` 回执。与恢复竞争只允许一方成功：恢复先成功时旧处置返回 409，处置先成功时恢复返回 `410 canvas_recycle_purged`。同键重放返回原处置结果，没有再次修改作品的副作用；失败回滚回执，并释放窄归档作用域。带 Actor 的业务 Session 禁止改写或删除既有画布写回执，批量写同样受保护。前端移除卡片落盘失败时恢复原列表，保留原快照与 `archiveKey`；如果期间已有新列表，则不以旧列表覆盖。这一接口提交不可恢复处置，物理回收由后台分阶段执行，响应不表示全部数据或 MinIO 字节已擦除。
 
@@ -212,7 +212,7 @@ DELETE 尚无 CAS 前提或独立幂等回执，不能将重复删除已删除�
 
 ## 画布生成任务与文本流
 
-`T=/canvas-runtime/tasks`。任务接口返回源 camelCase 裸对象，列表返回裸数组；不再包一层 `code/data/msg`。所有读取与操作都要求本人任务、当前项目权限和活动无限画布。项目成员不能查询另一成员的参数、草稿或未绑定产物。
+`T=/canvas-runtime/tasks`。任务接口返回源 camelCase 裸对象，列表返回裸数组；不再包一层 `code/data/msg`。所有读取与操作都要求本人任务、当前项目权限和活动无限画布。非所有者不能访问该项目、任务或产物。
 
 任务列表和本人任务详情遇到合法保存引起的画布版本竞争时，最多执行两次完整事务尝试。只有项目与可信来源均未变化、仅画布版本变化时才重新读取；首轮事务完全回滚后，列表重新查询全部任务与画布，详情重新查询本人任务绑定与画布，均核验当前权限并重新规划项目的排序锁，不复用旧预检。第二轮仍有版本竞争则返回 `409 canvas_binding_changed`。来源变化、撤权和其他错误不被自动忽略；该重读不会重新提交生成任务或调用供应商。
 
@@ -430,11 +430,11 @@ Responses 流使用 `response.output_text.delta` 与完成事件；非流解析�
 
 任务为`type="canvas_text",operation="storyboard"`，`input`携带`mode="text"`、相同`prompt`、`canvasAssets`、`requirements`、`projectStyle={presetId,title,prompt,profileJson?}`、`characters`、`shotCount`和`shotDurationSeconds`。镜数范围0–100、每镜秒数0–60，0表示自动；引用媒体、history、工具canonical等不能混入该请求。服务端从本人已保存文档重建上下文，拒绝客户端伪造的目录或画风。项目角色使用已保存角色卡的`assetId/versionId/name/definition`，创建、准备、批准和最终准入均校验可信来源、两侧项目权限、素材关系、当前版本及封面来源；`canvasAssets`保留角色节点身份和`type="character"`。同一真实角色重复卡保留，同名不同素材或版本返回422 `canvas_storyboard_character_ambiguous`，不会按名称静默覆盖身份。
 
-模型只可返回闭合`{title,rows}` JSON，镜号从1顺序递增、每镜1–60秒，指定镜数/时长必须一致；字段类型、角色名及资产绑定均验证，不能注入节点ID、图片/视频关联或状态。非法结果使私人任务failed，保留本人正文，零作品回填。成功`resultJson`包含服务端验证的`title/rows`和原`text`；行ID固定为`shot:<十进制任务ID>:<顺序>`，角色名转为冻结素材和版本的编辑器角色对象。绑定复核冻结的原行与角色上下文，并再次校验真实角色来源；删卡、刷新角色版本或来源当前版本变化时保留私人结果，拒绝覆盖镜头。合法绑定在同一图事务更新原Script、标题及分镜，删除失效逐镜连线并保留旧媒体节点。绑定回执、仅cookies恢复及重复消费复用原行身份；共享分镜作品，运行/正文/生成偏好仅本人可读。该合同与标准模式候选采用分开，遵循无限画布直接回填边界。
+模型只可返回闭合`{title,rows}` JSON，镜号从1顺序递增、每镜1–60秒，指定镜数/时长必须一致；字段类型、角色名及资产绑定均验证，不能注入节点ID、图片/视频关联或状态。非法结果使私人任务failed，保留本人正文，零作品回填。成功`resultJson`包含服务端验证的`title/rows`和原`text`；行ID固定为`shot:<十进制任务ID>:<顺序>`，角色名映射为当前画布的 `characterNodeId`。绑定复核冻结的原行与已保存角色定义；删卡或角色内容变化时保留私人结果，拒绝覆盖镜头。合法绑定在同一图事务更新原Script、标题及分镜，删除失效逐镜连线并保留旧媒体节点。绑定回执、仅cookies恢复及重复消费复用原行身份；共享分镜作品，运行/正文/生成偏好仅本人可读。该合同与标准模式候选采用分开，遵循无限画布直接回填边界。
 
 批准核对、任务创建及阶段任务关联在同一事务内完成；事务提交后重新读取任务详情，避免并发等待锁时的旧快照。阶段请求、批准时间及任务回执不能替换，普通HTTP作用域ORM写入不能伪造授权。已受理阶段在停用工具后仍可观察原回执；unknown恢复只查询原任务，不重新调用供应商。运行、阶段、报告及reasoning保持本人隔离，项目成员权限不能代替作者权限。
 
-部署先补[011-canvas-tool-runs.sql](../数据库模型/migrations/2026-10-05-infinite-canvas/011-canvas-tool-runs.sql)，应用不自动迁移。本机业务库`short_drama`已实际创建`canvas_tool_runs`、作者更新时间索引及`canvas_tool_submissions`，迁移检查为ready/无缺项/无漂移；没有修改既有业务记录。
+部署先补[011-canvas-tool-runs.sql](../database/migrations/2026-10-05-infinite-canvas/011-canvas-tool-runs.sql)，应用不自动迁移。本机业务库`short_drama`已实际创建`canvas_tool_runs`、作者更新时间索引及`canvas_tool_submissions`，迁移检查为ready/无缺项/无漂移；没有修改既有业务记录。
 
 个人工具状态使用GET `/canvas-runtime/plugins/status`与PUT `/canvas-runtime/plugins/{plugin_id}/activation`，写入`{ "enabled": true|false }`，保留源camelCase状态合同。仅支持`prompt-optimizer`、`ai-art-critique`，默认关闭，复用本人偏好JSON；成员不读取或修改他人状态，模型偏好保存不会清除它。停用拒绝新的优化请求，原受理同键重放仍返回原任务。
 
@@ -483,11 +483,10 @@ MiniMax Speech的空音色、OpenAI音色别名或“中文”按可信模型解
 | --- | --- |
 | `newapi`、`openai-video`、`openai-videos` | `canvas_openai_videos.v1`；`POST /v1/videos` multipart，只将排序后的首张非蒙版图片作为 `input_reference` |
 | `newapi-channel-2` | `canvas_newapi_video_generations.v1`；`POST /v1/video/generations` JSON，按合同传递图片、视频和音频参考 |
-| 官方 BeefAPI + Seedance 模型 | `canvas_beefapi_seedance_video.v1` 优先于旧协议字段；`POST /videos` flat JSON，参考媒体先完成受控预上传 |
 
-视频请求仍使用上述任务接口。客户端提交稳定 `resource:<id>`；服务端读取当前项目内媒体的真实类型、字节、尺寸和时长，不采用客户端伪造元信息，不把临时 URL 作为媒体身份。画布视频请求最多容纳 30 张图片；实际准入取协议与冻结能力上限，Seedance 2.0 为 9 图/3 视频/3 音频，2.5 为 30 图/10 视频/10 音频，标准 `VideoInput` 仍最多 9 图。编辑、延长等操作须由明确的元数据意图与模型能力共同允许，不能从提示词推断。
+视频请求仍使用上述任务接口。客户端提交稳定 `resource:<id>`；服务端读取当前项目内媒体的真实类型、字节、尺寸和时长，不采用客户端伪造元信息，不把临时 URL 作为媒体身份。画布视频请求最多容纳 30 张图片；实际准入取协议与冻结能力上限，标准 `VideoInput` 最多 9 图。编辑、延长等操作须由明确的元数据意图与模型能力共同允许，不能从提示词推断。
 
-自定义 Channel 2 的本地参考在创建任务前返回 `422/reference_media_requires_url`，此时没有任务、执行记录或供应商请求；原界面替换为有效 HTTPS 链接后可用原操作键重新提交。该准入只校验 HTTPS 语法，供应商获取链接；后端实际读取远程媒体时仍使用既有受限 transport。官方 `wan3.0-video` 保留单图 inline 例外，不因协议元数据扩大其他参考类型。
+自定义 Channel 2 的本地参考在创建任务前返回 `422/reference_media_requires_url`，此时没有任务、执行记录或供应商请求；原界面替换为有效 HTTPS 链接后可用原操作键重新提交。该准入只校验 HTTPS 语法，供应商获取链接；后端实际读取远程媒体时仍使用既有受限 transport。
 
 `agnes-video-2.5-flash` 使用 `canvas_openai_videos.v1`，稳定参考仅在服务端同时配置
 `MINIO_PUBLIC_ENDPOINT` 与显式 `MINIO_PROVIDER_PRESIGN_EXPIRY` 时开放；缺失配置仍在
@@ -506,9 +505,9 @@ POST 后仍保留安全供应商 ID 与未知受理状态，轮询拒绝回显�
 
 选定服务器目录模型后，视频配置与合法能力选项按规范冻结；`duration/aspectRatio/resolution` 对应 `videoSeconds/size/vquality`。空参数取冻结模型能力默认值；时长枚举/range step、画幅及分辨率按该快照校验，官方单规格分辨率固定到声明值。原请求正文继续决定幂等身份，规范后的 config、能力选项和私有布尔参数决定显示及实际执行；换正文不能重用原键。原全局 `videoArkPrivateAssetUpload=true` 在这三个非 Ark 协议中不触发 Ark 上传。
 
-Seedance 预上传顺序为创建上传、PUT 原字节、完成确认，再提交生成。只有首个上传创建返回 404/501 才允许 inline 降级；中途失败不会继续生成或降级。图/视频/音频分别限 30/200/15 MiB，inline 总载荷含编码开销限 64 MiB。收费 Seedance 提交键由稳定任务/执行身份生成；未知受理不重发，任务投影为 `stage=submission_unknown`，恢复已有供应商 ID 时只查询和下载，不重新上传或创建。
+参考素材内联（RunningHub 等）限图/视频/音频 30/200/15 MiB，inline 总载荷含编码开销限 64 MiB。
 
-上述三个协议默认首次及后续轮询均为 30 秒，尊重更长 `Retry-After`。连续 404/明确未就绪和损坏响应分别累计三次即停止；成功或另一类响应按源规则重置计数，计数保存在执行记录中。预算耗尽后不再发送轮询。实际下载只对暂时性错误重试，最多三次；非暂时性错误立即停止。下载终止投影为原界面可识别的 `download_failed`；已有确认生成记录和供应商 ID 的画布视频不能通过 `retryOf` 新建付费任务，仍按真实归档清单提供恢复或原 ID 查询。本地取消不补发源实际调用链未使用的供应商 DELETE。受控 HTTP、MySQL、MinIO 与原 UI 验证记录见[实施记录](../plans/2026-10-05-beeftv-implementation-log.md)；完整错误分类、视频供应商兼容与全部 M2 协议仍未验收。
+上述视频协议默认首次及后续轮询均为 30 秒，尊重更长 `Retry-After`。连续 404/明确未就绪和损坏响应分别累计三次即停止；成功或另一类响应按源规则重置计数，计数保存在执行记录中。预算耗尽后不再发送轮询。实际下载只对暂时性错误重试，最多三次；非暂时性错误立即停止。下载终止投影为原界面可识别的 `download_failed`；已有确认生成记录和供应商 ID 的画布视频不能通过 `retryOf` 新建付费任务，仍按真实归档清单提供恢复或原 ID 查询。本地取消不补发源实际调用链未使用的供应商 DELETE。受控 HTTP、MySQL、MinIO 与原 UI 验证记录见[实施记录](../plans/2026-10/2026-10-05-BeefTV画布迁移实施记录.md)；完整错误分类、视频供应商兼容与全部 M2 协议仍未验收。
 
 ## 本人模型选择与偏好
 
@@ -518,27 +517,9 @@ Seedance 预上传顺序为创建上传、PUT 原字节、完成确认，再提�
 
 `PUT /canvas-runtime/workspace/model-config` 只接受 `{expected_row_version,preferences}`，返回与 GET 一致的回执。带 `channels` 的旧请求明确拒绝，包括空数组；不能通过偏好接口创建、清空或覆盖模型。源 camelCase 偏好保留，409 停止自动覆盖并保留草稿。
 
-旧 `channel::model` 由服务器别名恢复到原配置 ID，节点、重试及个人默认不按同名模型猜测。无法恢复、停用或删除的明确选择提示不可用，不自动更换供应商。企业目录同步只更新托管配置，不覆盖普通旧绑定模型；托管模型的名称、启停、删除由本人管理，地址、身份、profile 与企业凭据由服务端维护。
+旧 `channel::model` 由服务器别名恢复到原配置 ID，节点、重试及个人默认不按同名模型猜测。无法恢复、停用或删除的明确选择提示不可用，不自动更换供应商。宿主模型的名称、启停、删除由本人管理，地址、身份与 profile 由宿主配置维护。
 
 API Key 保存在宿主原加密字段；Secret Key 和全部 header 值在服务端第二信封加密，只返回存在标记。执行仅消费服务端冻结凭据，在内存中传入受限 transport；同源媒体下载可带鉴权，跨源下载不带凭据。签名协议及未实现操作继续明确拒绝。个人画布默认与标准业务 `context_key` 偏好分开保存。
-
-## BeefAPI 企业连接
-
-`B=/canvas-runtime/beefapi/connection`，只作用于当前账号。生产固定企业源 `https://enterprise.beefapi.com`，HTTP 输入不能改企业地址。
-
-| 方法 | 路径 | 合同 |
-| --- | --- | --- |
-| GET | `B` | 返回公开状态、企业根、账户和目录状态；不调用上游、不返回 API Key/deviceCode |
-| POST | `B/start` | 开始源设备授权，或复用待完成的密文授权；pending 提供 `userCode/verificationUri/expiresAt` |
-| POST | `B/cancel` | 取消当前待授权并清设备码；已连接状态按源保留 |
-| POST | `B/disconnect` | 清本人托管 Key/模型及执行许可，尝试上游撤销；保留手工渠道、官方空入口和本人 headers |
-| POST | `B/open-wallet` | 返回 `{enterpriseOrigin,walletUrl}`；由网页校验固定根与 `/console/topup` 后打开 |
-
-公开 `state` 采用 `disconnected/pending/connected/cancelled/expired/rejected/revoked/catalog_failed/store_error`。`connected` 必须在密钥已加密落库、企业完成确认和模型目录持久化全部成功后产生；目录失败保留已确认凭据，重试不创建新的设备授权。确认最多五次短暂故障重试；pending/slow_down/拒绝/过期分开处理。设备码及 Key 分离于公开 JSON，ID 始终使用十进制字符串。
-
-必须部署并运行同版 scheduler；它按数据库租约继续授权轮询、确认和目录恢复，页面关闭及进程重启不丢失待处理状态。GET 只读立即返回，原页面两秒轮询不能承担后台授权。新的授权只对新获取目录中的可用 `gpt-6-astra` 初始化助手默认；即使该授权没有 Astra 也记录已处理，后续刷新不能覆盖用户选择。余额按固定源保持 `unknown`，不构造余额探测接口或生成错误后的自动余额变更；源余额辅助函数在该固定版本没有实际调用。目录读取及定时连接核验的 401/403 会标记 revoked，完整运行证据见实施记录。
-
-测试可通过服务端 `CANVAS_BEEFAPI_TEST_ORIGIN` 显式使用 loopback，默认空；非 loopback、路径、查询或片段会被拒绝。前端生产只允许固定官方根，开发测试根须在测试构建中显式指定。测试本机 HTTP 不代表真实企业登录或付费模型验收。
 
 ## 协议目录与模型目录读取
 
@@ -577,7 +558,17 @@ API Key 保存在宿主原加密字段；Secret Key 和全部 header 值在服�
 | POST | `R/copies` | `{source_resource_id,canvas_key}`，必须带 `X-Idempotency-Key`；创建目标画布所属项目的独立资源，返回 `{resource}` |
 | POST | `R/normalize` | `{canvas_key,resource_ids}`；1–200 个十进制资源 ID，返回 `{resource_map,resource_aliases}`；同项目直用，跨范围按稳定身份创建或恢复独立副本 |
 | GET | `R/{id}` | 按资源范围鉴权返回 `{resource}` |
+| POST | `R/{id}/playback` | 准备本人 H.264/AAC 兼容预览，可带 `X-Canvas-Key` 核对画布权限；返回 `{resource}`，不替换原件 |
 | GET / HEAD | `R/{id}/file` | 鉴权读取真实字节，支持源单 Range 的 200/206/416 语义；file 为附件 |
+
+视频资源响应可含 `playbackStatus: processing|ready|failed`、`playbackTaskId` 和 `playbackError`。
+准备任务按作者、原资源定位/校验值/字节数和编码配置 `h264-aac-v1` 去重，原资源 ID、
+storageKey 和无 variant 下载内容保持稳定。`GET/HEAD R/{id}/file?variant=playback` 只返回
+就绪副本，未就绪返回 `409 canvas_playback_not_ready`；同样鉴权并支持 Range，ETag 以
+`:pb` 区分。任务由 scheduler 和 render Worker 执行，依赖 FFmpeg/ffprobe 和 MinIO。
+写对象前持久登记 `playback_staging`，取消、租约中断或进程重启后由调度器继续清理未登记
+文件，已登记的成功输出不会误删。前端用认证客户端读取 Blob，解码失败才准备兼容副本，
+每 2.5 秒观察、最多 120 次；卸载/切换停止观察，显式重试沿原任务恢复。
 
 上传首次请求可带 `X-Idempotency-Key`；前端对原 Blob/源本地存储键保持同一个键。本人同键异参、同分片异内容返回 `409 canvas_upload_conflict`，未知结果用原键重试。超过 50 MiB 的文件走分片；会话保留 90 分钟，单人最多 32 个活跃待完成会话。上传最终对象采用预留资源 ID 构造固定路径，存储响应未知不另建资源。
 
@@ -604,9 +595,9 @@ MinIO 对象已经存在，重检原字节并沿预留 ID 完成，不重新下�
 不能据此关闭全部外部URL菜单、源动态大小/配额或H.265门禁。后续已补原画布
 音视频节点的显式保存重传：保留本人原File/声明/幂等键、素材确认后回填，16独立
 场分批通过；立即图片、时间线等其他离线媒体及全部并发仍未由节点恢复关闭，
-详见[音视频验收](../plans/2026-10-10-beeftv-pending-media-audit.md)。
+详见[音视频验收](../plans/2026-10/2026-10-10-画布音视频离线稿重传验收.md)。
 
-本人同项目资源进入共享图时直接发布，符合画布原版操作步骤；只进入私人参数不会发布。私人全局文件或其他项目文件须通过独立副本接入共享作品，不能直接放宽资源范围。已有画布的源保存流程已接入自动映射，首次整图创建接入原子准备与回执映射；原版素材选择、图片托盘点击/拖入、图片及连线的跨画布粘贴已通过真实操作验证，其它媒体和绘图子文档仍需专项验收。`variant=playback` 当前仍返回原文件，H.265 播放代理尚未迁移。
+本人同项目资源进入共享图时直接发布，符合画布原版操作步骤；只进入私人参数不会发布。私人全局文件或其他项目文件须通过独立副本接入共享作品，不能直接放宽资源范围。已有画布的源保存流程已接入自动映射，首次整图创建接入原子准备与回执映射；兼容副本只用于预览，不改变这些资源归属和发布规则。
 
 `normalize` 仅接受已存在且本人可访问的目标画布。同项目资源返回原 ID；其他资源调用既有复制服务，按当前作者、目标 source_key、输入资源 ID 使用固定键 `canvas-normalize:v1:{canvas_key}:{resource_id}`。请求顺序、批次、重试和刷新不改变该身份；已完成副本在来源撤权后仍可恢复，目标撤权仍拒绝，副本删除墓碑返回 410。中途失败可能已完成部分独立文件，但图尚未提交；重试复用这些文件。操作完成后再次检查目标及全部结果资源的可访问范围。
 
@@ -748,7 +739,7 @@ render-plan；后台renders调用位于源整站剪辑页组件，该页面按�
 ## 私人本地字幕转写
 
 `POST /api/v1/canvas-runtime/timeline/transcriptions` 使用源 camelCase 合同
-`{resourceId,language?,projectId?,clientOperationId}`。`resourceId` 为非零uint64十进制字符串，
+`{resourceId,language?,projectId?,clientOperationId,model_config_id?}`（兼容 `modelConfigId`）。`resourceId` 为非零uint64十进制字符串，
 `clientOperationId` 为8–128位字母/数字/冒号/下划线/横线。可附同值 `Idempotency-Key`；
 同一作者同键同请求返回原任务200，新任务202，改输入或请求头不一致返回409。客户端
 不能提交服务地址、凭据、租约或终态。语言去首尾Go空白，最多128字符。
@@ -759,7 +750,8 @@ render-plan；后台renders调用位于源整站剪辑页组件，该页面按�
 保护排队与历史输入，不把签名URL保存为身份。当前账号、项目、画布和来源权限在执行
 回调及完成事务内重新检查。
 
-任务的type/operation为 `timeline_transcription`，provider/model为 `local`/`whisper.cpp`；
+任务的 type/operation 为 `timeline_transcription`；默认 provider/model 为 `local`/`whisper.cpp`，
+选择云端配置时为该任务冻结的渠道模型。
 详情、列表、日志、取消和明确恢复沿现有 `/tasks` 合同，只允许作者及当前权限读取。
 queued取消立即终止，running取消停止本地预处理和HTTP观察；failed/cancelled恢复保留
 原ID/来源，仅增加消息版本。完成回执 `resultJson` 解包为 `{segments,srt,language}`，
@@ -768,9 +760,44 @@ segment字段为 `startMs/endMs/text`，毫秒按固定Go源半值远离0取整�
 
 Worker使用 `CANVAS_WHISPER_BASE_URL` 的 `/inference` 和真实16kHz单声道PCM WAV，
 配置缺失、静音/坏媒体、HTTP/解析错误会持久失败，无自动HTTP重试。成功结果仍为私人
-回执，不改共享图或自动采用字幕；固定源调用所在的整站剪辑页已按产品范围删除。
+回执。画布音视频节点的“编辑字幕”入口观察任务，成功替换当前字幕草稿，由原“保存”动作
+写入节点；关闭窗口停止观察，服务端任务继续执行。整站剪辑页保持移除。
 014 DDL已在当前 `short_drama` 执行；受控HTTP测试不代表真实ASR模型验收，完整迁移仍
 按台账逐项验证。
+
+`GET /canvas-runtime/timeline/transcription-models` 返回
+`{models:[{id,displayName}]}`，只列本人启用且声明
+`runtime_profile.protocol="openai-audio"`、`api_format="openai"` 和
+`capability_config.audio.transcriptionSupported=true` 的宿主手动配置。
+传入 `model_config_id` 时冻结模型 ID、配置版本和 modelKey；执行前再次校验配置版本，
+密钥只在服务端解密。先预处理 WAV（最大 25 MiB），再向配置基础地址的
+`/audio/transcriptions` 发一次 multipart 请求，要求有效 `verbose_json` 时间戳片段。
+不自动切换模型或重试付费提交。发 HTTP 前持久标记 `cloud_submission_started`；
+断连、进程中断等结果未知的任务禁止 resume 重发，同操作键只重读原任务，须到渠道核实。
+模型列表可显式刷新；不选择云端模型时继续使用宿主 Whisper。
+
+## 画布个人风格与完整快照
+
+`P=/canvas-runtime/style-profiles`。接口不依赖全局工作区模式，个人原件按账号隔离；
+项目作品保存独立快照，不会因个人原件修改或删除而变化。个人返回值沿源 camelCase，
+`id/userId/rowVersion` 为十进制字符串，`revision` 仅为快照内的语义版本。
+
+| 方法与路径 | 请求与结果 |
+| --- | --- |
+| `GET P` | `{profiles:[...]}`，仅本人未删除风格 |
+| `POST P` | `{profileJson,import_key?}`，返回 `{profile}`；同一本机导入键返回已有原件，不覆盖其后续修改；该键已删除时 409 |
+| `PATCH P/{id}` | `{profileJson,expected_row_version}`，返回 `{profile}`；CAS 冲突 409，不覆盖旧原件 |
+| `PATCH P/{id}/favorite` | `{favorite,expected_row_version}`，返回 `{id,rowVersion,favorite}` |
+| `POST P/{id}/use` | `{expected_row_version}`，更新最近使用并返回当前版本 |
+| `DELETE P/{id}` | `{expected_row_version}`，软删除本人原件，项目快照保留 |
+| `GET P/preferences` | `{favorites:[presetId],recent:[presetId]}`，本人系统风格偏好 |
+| `POST P/preferences` | `{preset_id,action:"favorite"|"use",favorite?}`，收藏动作须指定 favorite |
+
+`profileJson` 是经过完整结构验证的快照 JSON 字符串，含 schemaVersion、presetId、title、
+description、tags、prompt、negativePrompt、selection、assets、executionPolicy、source、revision
+等源字段（可选项按定义省略），最大 256 KiB。凭据及危险字段拒绝；资源 ID 必须可授权，
+媒体通过关系表保护。旧本机风格只由用户明确勾选导入，重名不覆盖。前端 409 保留编辑草稿，
+可重新打开最新版本或另存新风格；异步写入绑定启动时的账号及登录 epoch。
 
 ## 私人深度动作捕捉
 
@@ -799,96 +826,15 @@ Worker使用 `CANVAS_WHISPER_BASE_URL` 的 `/inference` 和真实16kHz单声道P
 `resourceId` 为十进制字符串；`fileName=depth-action-reference.mp4`，尺寸1920×1080，
 `device` 为 `cpu/cuda/mps`，`runtimeVersion=v1`。回执与未放入图的结果仅本人可见；
 原画布操作附加节点后，成品才按项目权限共享。组件部署配置见
-[开发指南](../development.md#环境准备)，验收范围和未验部分见剩余工作台账。
+[开发指南](../instruction/开发运行与验证.md#环境准备)，验收范围和未验部分见剩余工作台账。
 
-可信业务项目绑定：画布摘要增加只读 nullable `source_project_id`（十进制字符串），`project_id` 仍是所属无限画布工作区。服务端在当前图、私人叠加、历史文档及回收预览最后按可信列设置或移除源界面的 `projectId`，历史 JSON 不会成为绑定事实。
+## 已退役来源与普通角色
 
-创建子图或复制图时可成对提供 `source_canvas_key`、`source_canvas_row_version`；版本必须是正十进制字符串，超过 JavaScript 安全整数仍原样保留。服务端按精确 key 读取父图，校验当前父 owning、目标 owning（已有时）和 standard 业务项目权限，锁定并核验父版本后继承 nullable 列。未提供父图时创建 NULL；非空客户端 `projectId` 只允许匹配可信父关系，不能传入 `source_project_id` 创建或修改绑定。自由创建和 ZIP 导入不发送来源字段。
+来源项目绑定、小说章节读取、企业角色目录及来源画风同步已取消，相关路由不再注册。新文档不接受退役 `projectId` 或企业角色版本字段；携带这些关系的旧导入包需明确拒绝，不自动恢复绑定。
 
-来源身份与版本进入首次幂等请求摘要；缺省新字段不会改变旧摘要。服务端冻结的父 identity/business 事实仅保存在不可变准备记录中，不接受为公开参数。pending 恢复每一步核验冻结父关系、精确版本与当前权限，变更返回 409 并保留原请求和 key。已完成创建的回放核验当前目标 owning/business 权限，返回原 ACK，不重新创建或改绑；独立完成的媒体副本仍沿用既有撤权恢复规则。
+原生画布角色保留节点 `nodeId/name/definition`、本地图片与音频引用。分镜工具接收当前画布角色定义，返回 `characterNodeId`，只按当前画布已保存节点校验，不读取标准项目的素材或角色版本。生成参考图与样音仍通过普通媒体引用和本人媒体复制准入，不能将声音样本冒充供应商音色。
 
-普通 commit、私人偏好、history restore、archive/recycle restore 均不能改绑；省略或空 `projectId` 不解除已有可信关系，非空不匹配返回 422。Actor ORM 写入对已有列改动返回 `canvas_binding_immutable`，canvas bulk 写仍禁止。旧库必须显式执行 018 迁移；旧图保持 NULL，不自动推导业务来源。旧源项目/角色/版本映射与真实来源对照仍待独立实施。
-
-## 画布角色目录与表示图读取
-
-`R=/canvas-runtime/canvas-projects/{source_key}/character-catalog`。这组接口只读取可信业务来源的已保存角色作品；`source_key` 精确匹配画布稳定键，纯数字键也不能当作画布数据库 ID。来源只由 `ProjectCanvas.source_project_id` 决定，客户端 query 和图 JSON 的 `projectId` 不能替代它。每次读取都核对当前 Actor、所属无限画布项目与 standard 来源项目的权限、模式及归档状态，再验证真实 `ProjectAsset`、角色、当前作品版本和媒体可见性。
-
-| 方法 | 路径 | 合同 |
-| --- | --- | --- |
-| GET | `R` | 返回 `{canvas_key,canvas_row_version,source_project_id,items}`；按实际关联 position、关系 ID 排序，只列角色 |
-| GET | `R/{asset_id}` | 返回同一上下文及 `item`；未关联角色不能通过任意 asset ID 读取 |
-| GET | `R/{asset_id}/image-resources?expected_version_id=...` | 必填当前作品版本；返回 `{canvas_key,canvas_row_version,source_project_id,asset_id,version_id,images}`，不支持 pinned 历史解析 |
-
-全部数据库 ID 和版本的 JSON 输出是十进制字符串；路径、查询发送正 uint64 十进制文本，不转成 JavaScript number。现有 `Identifier` 的输入 OpenAPI 类型仍为 integer，服务端校验精确正值与 uint64 上限。`X-Canvas-Actor` 沿用账号切换校验，不能授予身份或项目权限。
-
-目录 `item` 包含 `asset_id/asset_row_version/current_version_id/version_id/version/position`、角色平面字段、完整 JSON `definition`、`definition_origin` 和 `representations`。表示槽位保留真实 `reference_id/role/ordinal/media_id` 及媒体 MIME、文件名、大小和宽高；同一媒体的不同槽位不去重，真实空表示图返回空数组。不返回私人生成参数、原始存储定位或源 `ProjectDetail`、文件夹投影。
-
-图片解析只接受目录刚读取的当前版本。当前版本不同返回 `409 canvas_character_version_changed`，不会自动升级或读取旧历史。每个图片槽位返回真实 `reference_id/role/ordinal/media_id`、`resource_key=resource:{id}`、稳定 `file_path=/api/v1/canvas-runtime/resources/{id}/file`、`requires_canvas_copy` 和现有 `CanvasResourceRead` 别名合同的 `resource`。MIME、大小、作者和时间来自真实媒体记录；响应的 `endpoint/bucket/objectKey/publicUrl` 为空，不暴露 MinIO locator 或签名 URL。
-
-这些 GET 只执行 SELECT；为一致性持有读取行锁，但不创建或修复绑定、版本、关联、媒体映射或任务，也不写对象。resolver 校验媒体范围、审计和白名单定位，不检查对象字节。随后读取 `file_path` 时，原资源端点重新鉴权并实际 stat/下载；对象缺失返回 404，不能把 resolver 成功当作文件已存在。
-
-`requires_canvas_copy=true` 仅提示当前资源项目与目标画布项目不同；读取不复制，也不授予生成或图保存准入。调用者仍须按现有归一化/复制规则独立处理，不能据此猜出副本资源或直接回填共享图。
-
-| 条件 | HTTP / code |
-| --- | --- |
-| 无可信 Actor / 账号头变化 | 401 `authentication_required` / 409 `canvas_actor_changed` |
-| 来源未绑定 / 模式不符 / 锁后来源变化 | 409 `canvas_character_source_required` / `canvas_binding_invalid` / `canvas_binding_changed` |
-| 画布、任一项目、关联、角色或媒体不可访问 | 404 `not_found` |
-| 当前指针、快照、hash 或槽位漂移 | 409 `conflict`；不自动修复 |
-| 预期作品版本已变化 | 409 `canvas_character_version_changed` |
-| 同 ID 的媒体及二进制资源都可见 | 409 `canvas_character_resource_ambiguous` |
-| 图片 MIME、审计、大小或定位合同不合格 | 409 `canvas_character_resource_invalid` |
-
-本节是专用 HTTP 读取合同；角色 UI、宿主客户端实际接线、业务数据回填和供应商验收按独立实施范围核验，不能从接口可读取推断这些工作已完成。
-
-### current 角色目录的画布界面调用
-
-现有三个角色入口接专用目录与图片 resolver，不调用标准项目 API 构造假的角色详情。列表和详情使用同一可信 source 与画布 row-version，选择确认再读取 current/detail 并核原选择版本，所有异步阶段校验账号 epoch、画布 lifetime、角色 identity 与表示槽位。未绑定来源、真实空目录和读取失败分别显示；角色路径不回退个人素材库。
-
-进入图的角色仍采用固定源 Text 卡、封面优先级和原详情布局。definition 字典原样保存，legacy description/prompt 仅有限编译提示词；不扩造结构化设定或声音事实。封面进入图保存时沿统一 normalize/copy、journal、CAS 与 reload；同版本复制封面及本人私人 prompt/voice 保持，版本/槽位变化必须重新解析。目录默认读取 current；详情可用 `requested_version_id` 读取精确 pinned 历史，图片 resolver 对应 `version_policy=pinned`，缺失历史404，不回落当前版。角色生成引用已通过可信目录读取并冻结；standalone builder 另行核验。UI/API 替身测试不构成真实供应商、MySQL/MinIO、cookie 或完整固定源验收。
-
-
-## 可信来源项目与分集小说读取
-
-`S=/canvas-runtime/canvas-projects/{canvas_key}/source-project`。`canvas_key` 是画布稳定键，数值形式的键也不会转成数据库 ID。来源只取自可信 `ProjectCanvas.source_project_id`，客户端不能用 query、分集 payload 或画布 JSON 指定其他来源。读取必须同时具有当前无限画布所属项目和 standard 来源项目权限，两项目与画布均未归档且模式有效。
-
-| 方法与路径 | 必填 query | 返回内容 |
-| --- | --- | --- |
-| `GET S` | `expected_canvas_row_version`、`expected_owning_project_id`、`expected_source_project_id` | 当前可信来源项目摘要、按 `position,id` 排序的分集目录与能力状态 |
-| `GET S/episodes/{episode_id}` | 上述三项，另加 `expected_content_version` | 该来源项目内的分集身份及已保存小说正文 |
-
-所有 ID 和版本均为十进制字符串；`position` 为数据库的一基正整数，不转换为从零开始的索引。expected 参数用于比较当前绑定和版本，不提供访问权限。服务先读取稳定画布身份，按项目 ID 顺序锁定和核验两项目，再重新锁定画布并核对绑定与 `row_version`；分集和小说按当前视图读取，不以旧 ORM 缓存或私人生成候选补数据。
-
-两响应均包含 `canvas_key/canvas_row_version/owning_project_id/source_project_id`。目录响应另含：
-
-- `project`：真实 `id,row_version,name,synopsis,aspect,style_text`。`style_text` 是标准项目的已保存自由文本，不是源画风预设或结构化快照。
-- `episodes`：真实 `id,title,position,content_version,kind:"episode"`，不混入私人创作记录。
-- `capabilities`：`source_style_snapshot:"unavailable"`、`source_asset_folders:"unavailable"`、`source_assets:"not_included"`。本接口未提供源画风快照、源共享素材文件夹或通用素材列表；角色仍由独立角色目录接口读取，不将标准素材 ID 传入私人素材库接口。
-
-正文响应另含 `episode`（与目录相同字段）以及判别联合 `novel`：
-
-```json
-{"state":"present","content_format":"plain_text","plain_text":"原样小说正文"}
-```
-
-已保存的空字符串同样是 `present`。没有 `EpisodeNovel` 记录时返回：
-
-```json
-{"state":"missing","content_format":"plain_text","plain_text":null}
-```
-
-原文中的换行、首尾空白、`<...>` 和 `&...;` 保持原值，不解析成 HTML、不 strip，不以梗概、剧本或模型候选代替小说。前端预览按纯文本展示；插入前带该分集 `content_version` 重新读取，只有 `present` 可以插入，包括空正文。旧响应不能跨账号、画布或来源版本覆盖新状态；正文冲突后刷新分集目录并由用户重新选择。
-
-缺少或非法 expected 参数返回422；不可见、归档或不属于可信来源的分集返回404。缺来源为 `canvas_source_project_required`/409，模式或自身绑定非法为 `canvas_binding_invalid`/409，读取间绑定变化为 `canvas_binding_changed`/409，expected 项目身份不符为 `canvas_source_context_conflict`/409，画布版本不符为 `canvas_revision_conflict`/409，正文版本不符为 `canvas_source_content_conflict`/409。响应不会静默改选来源、自动重试写入或创建生成任务。
-
-
-### 固定角色版本与已采用样音（2026-10-13）
-
-`GET R/{asset_id}?requested_version_id=...` 返回精确历史作品。`item.version_id` 是本次实际作品 ID，`current_version_id` 始终是角色真实当前指针；默认 list/detail 返回 current。`GET R/{asset_id}/image-resources` 继续必填 `expected_version_id`，新增可选 `version_policy=current|pinned`（默认 current）。current 版本竞争409，pinned 缺失历史404；两种策略均验证不可变 hash、真实槽位、双项目权限和媒体可见性。
-
-目录 item 新增 `voice_status=unavailable|missing|ready` 与 `voice_sample`。原生声音与音频制作关闭时不查声音表；启用后仅投影已有 `CharacterVoice` 明确采用的已发布3～7.5秒、≤10MiB样音。投影包括独立 `binding_version`、稳定 `media_id`、SHA-256、时长和受鉴权资源元数据；不读取或暴露采用者的私人 generation record、模型、凭据或供应商 voice_id。声音版本独立于角色作品版本；pinned 角色读取仍返回此项目当前已采用样音，不能称为该角色历史声音。替换期间提交会409拒绝。
-
-画布任务 metadata 的 `resolvedCharacterVersions` 与 `resolvedCharacterVoices` 为 typed 身份声明。服务端按已保存角色节点校验并冻结真实角色内容／媒体；样音声明须给实际角色版本、`bindingVersion`、`sampleResourceId`，并对应实际参考音频或可信归一化副本，绑定版本及SHA竞争拒绝。原生样音不是可用于任意独立TTS的 `voiceKey`，不进行伪造映射；独立配音请求需要对应供应商音色，客户端提前就近报错。生成冻结与复制引用仅本人可见，采用候选仍走宿主现有声音面板。
+创建或复制仍可携带成对 `source_canvas_key/source_canvas_row_version`，用于校验来源画布权限与精确版本；剪贴板 `sourceProjectId` 表示来源画布，不能据此建立创作项目绑定。
 
 <a id="canvas-compatible-chat"></a>
 

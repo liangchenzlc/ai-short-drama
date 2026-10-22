@@ -51,10 +51,12 @@ input, textarea { caret-color: var(--ink); }
 .text-button { border-color: transparent; color: var(--sub); }
 .text-button:hover { color: var(--ink); }
 .muted { color: var(--sub); }
-.project-bar { height: 53px; flex: 0 0 53px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; gap: 15px; background: var(--navigation); border-bottom: 1px solid var(--hair); }
+.project-bar { position: relative; z-index: 30; height: 60px; min-height: 60px; flex: 0 0 60px; padding: 0 20px; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,auto) minmax(0,1fr); align-items: center; gap: 12px; background: var(--navigation); border-bottom: 1px solid var(--hair); }
 .project-location, .project-actions { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .brand-mark { width: 22px; height: 22px; }
-.project-name { font-size: 14px; font-weight: 650; }
+.project-name { font-size: 14px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-location { overflow: hidden; }
+.project-actions { justify-self: end; }
 .breadcrumb-separator { color: var(--quiet); }
 .episode-switch { display: flex; gap: 10px; align-items: center; border: 0; padding: 6px 0; background: transparent; }
 .mode-label, .prototype-label { color: var(--sub); font-size: 11px; white-space: nowrap; }
@@ -65,19 +67,16 @@ input, textarea { caret-color: var(--ink); }
 .avatar { display: grid; place-items: center; height: 27px; width: 27px; color: #ddd; background: #373737; font-size: 11px; border-radius: 50%; }
 .assistant-button { height: 30px; font-size: 12px; }
 .assistant-button[aria-expanded=true] { background: #353535; border-color: #aaa; }
-.workflow { flex: 0 0 52px; height: 52px; display: flex; align-items: center; padding: 0 20px; gap: 10px; border-bottom: 1px solid var(--hair); overflow-x: auto; }
-.workflow-step { display: flex; flex-shrink: 0; align-items: center; gap: 9px; padding: 7px 12px; min-width: 171px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; text-align: left; color: var(--sub); }
+.workflow { height: 100%; min-width: 0; display: flex; align-items: center; justify-content: safe center; gap: 10px; overflow-x: auto; scrollbar-width: none; }
+.workflow-step { display: flex; flex-shrink: 0; align-items: center; gap: 9px; padding: 7px 12px; min-width: 0; border: 1px solid transparent; border-radius: var(--radius); background: transparent; text-align: left; color: var(--sub); }
 .workflow-step:hover { background: #1c1c1c; }
 .workflow-step[aria-current=step] { background: #232323; border-color: #474747; color: var(--ink); }
 .step-number { font-size: 11px; width: 24px; height: 24px; display: grid; place-items: center; background: #222; color: #b4b4bc; border: 1px solid #3c3c3c; border-radius: 50%; font-variant-numeric: tabular-nums; }
 .workflow-step[aria-current=step] .step-number { background: #f5f5f5; color: #151515; border-color: #f5f5f5; }
 .step-text { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
 .step-text strong { font-size: 13px; font-weight: 550; }
-.step-text small { font-size: 11px; color: var(--quiet); }
-.step-check { color: var(--success); width: 13px; margin-left: 0; }
 .step-connector { height: 1px; width: 24px; background: #414141; flex-shrink: 0; }
 .future-step { color: #aaaab3; }
-.episode-context { display: flex; margin-left: auto; gap: 15px; font-size: 11px; color: var(--sub); padding-left: 12px; white-space: nowrap; }
 .studio { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 20px; }
 .stage-toolbar { min-height: 52px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 15px; }
 .stage-title { display: flex; align-items: baseline; gap: 16px; min-width: 0; }
@@ -284,10 +283,9 @@ dialog::backdrop { background: rgb(0 0 0 / 72%); }
   .work-area { --list-size: 220px; --settings-size: 268px; --adaptation-size: 282px; --assistant-size: 288px; }
 }
 @media (max-width: 1279px) {
-  .workflow { padding: 0 18px; gap: 8px; }
-  .workflow-step { min-width: 153px; padding: 9px 12px; }
+  .workflow { gap: 8px; }
+  .workflow-step { min-width: 0; padding: 7px 10px; }
   .step-connector { width: 16px; }
-  .episode-context { gap: 9px; }
   .work-area { --list-size: 208px; --settings-size: 252px; --adaptation-size: 270px; --assistant-size: 264px; gap: 10px; }
   .prototype-label, .mode-label { display: none; }
   .script-scroll { padding: 22px 30px; }
@@ -296,34 +294,32 @@ dialog::backdrop { background: rgb(0 0 0 / 72%); }
 }
 @media (max-width: 1099px) {
   .work-area { --list-size: 200px; --adaptation-size: 260px; }
-  .episode-context { display: none; }
-  .workflow-step { min-width: 149px; }
+  .workflow-step { min-width: 0; padding-inline: 8px; }
   .project-bar { padding: 0 12px; }
   .project-location { gap: 9px; }
   .save-state { display: none; }
 }
 @media (max-width: 999px) {
+  .workflow { max-width: calc(100vw - 400px); }
   .work-area.assistant-open { grid-template-columns: var(--list-size) minmax(0,1fr); }
   .work-area.source-stage.assistant-open { grid-template-columns: var(--adaptation-size) minmax(0,1fr); }
   .work-area.source-stage.settings-hidden.assistant-open { grid-template-columns: minmax(0,1fr); }
-  .inspector { position: fixed; top: 53px; bottom: 31px; right: 0; width: 330px; border-radius: 10px 0 0 10px; z-index: 20; }
-  .panel-scrim { position: fixed; inset: 53px 0 31px; background: rgb(0 0 0 / 60%); z-index: 19; }
+  .inspector { position: fixed; top: 60px; bottom: 31px; right: 0; width: 330px; border-radius: 10px 0 0 10px; z-index: 20; }
+  .panel-scrim { position: fixed; inset: 60px 0 31px; background: rgb(0 0 0 / 60%); z-index: 19; }
 }
 @media (max-width: 700px) {
   body { height: auto; min-height: 100dvh; overflow: auto; }
-  .project-bar { position: sticky; top: 0; z-index: 10; height: 51px; min-height: 51px; flex-basis: 51px; }
+  .project-bar { position: sticky; top: 0; z-index: 10; height: 60px; min-height: 60px; flex-basis: 60px; padding: 0 12px; gap: 7px; }
   .project-name, .breadcrumb-separator, .brand-mark, .avatar { display: none; }
   .project-location, .project-actions { gap: 7px; }
   .episode-switch { font-size: 12px; gap: 5px; }
   .assistant-button { font-size: 11px; padding: 0 8px; }
-  .workflow { flex-basis: 48px; height: 48px; padding: 0 9px; gap: 5px; scroll-padding: 10px; }
-  .workflow-step { min-width: 127px; padding: 7px 8px; gap: 8px; }
+  .workflow { max-width: calc(100vw - 272px); gap: 5px; scroll-padding: 10px; }
+  .workflow-step { min-width: 0; padding: 7px 8px; gap: 8px; }
   .step-text { gap: 8px; }
   .step-text strong { font-size: 12px; }
-  .step-text small { font-size: 10px; }
   .step-number { width: 24px; height: 24px; }
   .step-connector { width: 7px; }
-  .step-check { display: none; }
   .studio { padding: 0 10px; overflow: visible; }
   .stage-toolbar { min-height: 91px; padding: 13px 0; flex-direction: column; align-items: stretch; gap: 11px; }
   .stage-title h1 { font-size: 17px; }
@@ -349,12 +345,12 @@ dialog::backdrop { background: rgb(0 0 0 / 72%); }
   .view-label { font-size: 10px; }
   .preview-info { padding: 14px; }
   .result-bar { flex-wrap: wrap; padding: 13px; }
-  .inspector { top: 51px; bottom: 0; width: min(340px,100vw); }
-  .settings-panel { position: fixed; top: 51px; bottom: 0; right: 0; width: min(340px,100vw); border: 1px solid var(--hair); border-radius: 10px 0 0 10px; background: var(--surface); z-index: 20; }
+  .inspector { top: 60px; bottom: 0; width: min(340px,100vw); }
+  .settings-panel { position: fixed; top: 60px; bottom: 0; right: 0; width: min(340px,100vw); border: 1px solid var(--hair); border-radius: 10px 0 0 10px; background: var(--surface); z-index: 20; }
   .main-panel.compact-preview .generation-settings { overflow: hidden; }
   .main-panel.compact-preview .generation-settings .inspector-scroll { flex: 1; overflow: auto; }
   .assistant-open .settings-panel { display: none; }
-  .panel-scrim { inset: 51px 0 0; }
+  .panel-scrim { inset: 60px 0 0; }
   .script-scroll { height: 460px; flex: 0 0 460px; padding: 17px 18px 30px; }
   .script-document { font-size: 13px; }
   .script-document .dialogue { padding-left: 12px; }
