@@ -9,12 +9,16 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-import short_drama.agent.skill_runtime as skill_runtime
+import short_drama.agent.skill.runtime as skill_runtime
 import tests.integration.standard.assistant.test_global_assistant_tasks as task_tests
-from short_drama.agent.assistant_tools import claim_operation, complete_operation, execute_tools
-from short_drama.agent.recovery import recover
-from short_drama.agent.runtime import AgentRuntimeStore
-from short_drama.agent.tools import prepare_decision
+from short_drama.agent.coordinator.assistant import (
+    claim_operation,
+    complete_operation,
+    execute_tools
+)
+from short_drama.agent.coordinator.recovery import recover
+from short_drama.agent.coordinator.runtime import AgentRuntimeStore
+from short_drama.agent.legacy.tools import prepare_decision
 from short_drama.core.exceptions import NotFound
 from short_drama.domain.agent import AgentRun
 from short_drama.domain.agent_task import AgentOperation, AgentTask

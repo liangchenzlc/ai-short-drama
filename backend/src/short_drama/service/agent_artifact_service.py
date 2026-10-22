@@ -2,7 +2,7 @@
 
 from sqlalchemy import func, select
 
-from short_drama.agent.artifacts import asset_in_creation, candidate_patch
+from short_drama.agent.legacy.artifacts import asset_in_creation, candidate_patch
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.base import BaseDAO
 from short_drama.dao.project_writing_dao import ProjectWritingDAO, bump_writing_version
@@ -331,7 +331,7 @@ class AgentArtifactService(BaseService):
             elif artifact.kind in {"asset_patch", "shot_patch"}:
                 receipt = self._apply_patch(creation, artifact, values)
             else:
-                from short_drama.agent.native_adoption import adopt_native_locked
+                from short_drama.agent.native.adoption import adopt_native_locked
 
                 receipt = adopt_native_locked(
                     self.session,

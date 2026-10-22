@@ -4,14 +4,15 @@ from copy import deepcopy
 
 from sqlalchemy import func, select
 
-from short_drama.agent.attachment_context import (
+from short_drama.agent.context.attachments import (
     available_attachment_ids,
     task_attachments,
     validate_attachment_budget,
 )
-from short_drama.agent.model_gateway import AgentGatewayError, select_agent_protocol
-from short_drama.agent.task_controls import apply_controls_locked
-from short_drama.agent.task_state import new_attempt_locked, read_operations, read_task, task_event
+from short_drama.agent.core.access import model_unchanged
+from short_drama.agent.gateway.protocol import AgentGatewayError, select_agent_protocol
+from short_drama.agent.task.controls import apply_controls_locked
+from short_drama.agent.task.state import new_attempt_locked, read_operations, read_task, task_event
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.agent_task_dao import RESUMABLE_TASKS, AgentTaskDAO
 from short_drama.db.access import require_project
@@ -210,8 +211,8 @@ class AssistantTaskService(AgentRunService):
             }
 
     def delete_global_conversation(self, identifier, payload, idempotency_key):
-        from short_drama.agent.run_events import append_event
-        from short_drama.agent.session_lifecycle import finalize_deletion_locked
+        from short_drama.agent.core.events import append_event
+        from short_drama.agent.session.lifecycle import finalize_deletion_locked
 
         values = self._payload(GlobalConversationDelete, payload)
         key, request_hash = attachment_key(idempotency_key), digest(values)
@@ -449,7 +450,7 @@ class AssistantTaskService(AgentRunService):
         return message
 
     def _freeze_task_skills(self, conversation, task, selections):
-        from short_drama.agent.skill_contracts import activations
+        from short_drama.agent.skill.contracts import activations
 
         automatic = [
             item["skill"]
@@ -677,6 +678,17 @@ class AssistantTaskService(AgentRunService):
                 if existing.request_hash != request_hash:
                     raise Conflict("此请求身份已经用于其他控制操作")
                 return self._control_accepted(conversation, task, run, existing)
+            # 恢复会复制当前 run 的模型快照；配置已变更时提前拒绝，避免生成必然失败的 run。
+            if (
+                values.kind == "resume"
+                and run is not None
+                and not model_unchanged(self.session, run)
+            ):
+                raise WorkflowError(
+                    "assistant_model_changed",
+                    "当前任务的模型配置已被修改，请新建任务后继续。已有输入和候选仍然保留。",
+                    409,
+                )
             if run.checkpoint.get("discussion_revision") and (
                 values.kind == "redirect" or values.content is not None
             ):

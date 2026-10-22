@@ -319,7 +319,6 @@ def assert_identity_ready(engine, settings):
         for name in {
             "users",
             "user_model_preferences",
-            "user_project_states",
             "ai_model_configs",
         }:
             expected = {

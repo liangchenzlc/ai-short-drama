@@ -5,15 +5,15 @@ from copy import deepcopy
 
 from sqlalchemy import func, select
 
-from short_drama.agent.authorization import check_source, discussion_only, freeze_task, public_step
-from short_drama.agent.run_events import (
+from short_drama.agent.legacy.authorization import check_source, discussion_only, freeze_task, public_step
+from short_drama.agent.core.events import (
     ACTIVE,
     TERMINAL,
     append_event,
     budget_limits,
     initial_usage,
 )
-from short_drama.agent.state import finish_locked, mark_scheduled
+from short_drama.agent.core.state import finish_locked, mark_scheduled
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.domain import AIModelConfig, Asset, Project, ShotScript
 from short_drama.domain.agent import (
@@ -232,7 +232,7 @@ class AgentRunService(AgentConversationService):
             selected_skills = freeze_skills(self.session, actor.user_id, values.skills)
             source_snapshot = None
             if assistant_input is not None:
-                from short_drama.agent.model_gateway import AgentGatewayError, select_agent_protocol
+                from short_drama.agent.gateway.protocol import AgentGatewayError, select_agent_protocol
                 from short_drama.service.assistant_context_service import freeze_assistant_context
 
                 try:

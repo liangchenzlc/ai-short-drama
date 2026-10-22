@@ -125,7 +125,7 @@ def package_digest(metadata: dict, instructions: str, resources: list[dict]) -> 
 
 
 def platform_tool_issues(names: list[str]) -> list[str]:
-    from short_drama.agent.tool_contracts import TOOL_SCHEMAS
+    from short_drama.agent.tools.contracts import TOOL_SCHEMAS
 
     return [f"平台未提供必需工具：{name}" for name in names if name not in TOOL_SCHEMAS]
 

@@ -4,9 +4,9 @@ from functools import lru_cache
 
 from celery.exceptions import Reject
 
-from short_drama.agent.memory_runtime import AgentMemoryRuntime
-from short_drama.agent.model_gateway import AgentModelGateway
-from short_drama.agent.runtime import AgentRuntime
+from short_drama.agent.memory.runtime import AgentMemoryRuntime
+from short_drama.agent.gateway.protocol import AgentModelGateway
+from short_drama.agent.coordinator.runtime import AgentRuntime
 from short_drama.core.config import Settings
 from short_drama.db.readiness import assert_agent_ready, assert_identity_ready
 from short_drama.db.session import build_engine, session_factory

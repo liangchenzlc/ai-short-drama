@@ -77,7 +77,7 @@ def skill_issues(metadata: dict, instructions: str, resources: list[dict]) -> li
 
 
 def builtin_skills(session=None, *, summary=False):
-    from short_drama.agent.builtin_skills import SKILLS
+    from short_drama.agent.skill.builtin import SKILLS
 
     items = [
         SkillRead(

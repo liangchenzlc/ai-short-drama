@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from short_drama.agent.authorization import scoped_task
+from short_drama.agent.legacy.authorization import scoped_task
 from short_drama.core.exceptions import WorkflowError
 from short_drama.schemas.agent import ConversationCreate, ConversationScope
 

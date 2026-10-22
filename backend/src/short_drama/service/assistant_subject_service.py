@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from sqlalchemy import select
 
-from short_drama.agent.subject_context import snapshot_subjects, subject_catalog, subject_key
+from short_drama.agent.context.subjects import snapshot_subjects, subject_catalog, subject_key
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.assistant_context_dao import AssistantContextDAO
 from short_drama.dao.image_group_dao import ImageGroupDAO

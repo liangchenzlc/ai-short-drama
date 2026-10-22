@@ -33,7 +33,7 @@
 
 准备 Python、uv、Node.js 22.18+ 的 22.x 或 24.x LTS，以及 MySQL、RabbitMQ 和 MinIO。按[开发与运行指南](docs/instruction/开发运行与验证.md)配置环境、初始化数据库、启动 API/调度器/Worker 和前端。
 
-**新库使用完整建表文件：[schema.mysql8.sql](docs/database/schema/schema.mysql8.sql)。** 当前包含 117 张表及延后建立的外键。旧分集/协作版本只按[创作模式离线切换说明](docs/instruction/创作模式维护说明.md)备份、预演并重建；本次不迁移旧作品。不要叠加历史协作增量脚本，应用不会自动迁移。
+**新库使用完整建表文件：[schema.mysql8.sql](docs/database/schema/schema.mysql8.sql)。** 当前包含 116 张表及延后建立的外键。旧分集/协作版本只按[创作模式离线切换说明](docs/instruction/创作模式维护说明.md)备份、预演并重建；本次不迁移旧作品。不要叠加历史协作增量脚本，应用不会自动迁移。
 
 ## 文档导航
 

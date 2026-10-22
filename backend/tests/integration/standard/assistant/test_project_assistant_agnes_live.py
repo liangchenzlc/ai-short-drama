@@ -20,9 +20,9 @@ import pytest
 import uvicorn
 from sqlalchemy import create_engine, func, select
 
-from short_drama.agent.model_gateway import AgentGatewayError, AgentModelGateway
-from short_drama.agent.recovery import recover
-from short_drama.agent.runtime import AgentRuntime
+from short_drama.agent.gateway.protocol import AgentGatewayError, AgentModelGateway
+from short_drama.agent.coordinator.recovery import recover
+from short_drama.agent.coordinator.runtime import AgentRuntime
 from short_drama.db.readiness import (
     assert_agent_ready,
     assert_identity_ready,

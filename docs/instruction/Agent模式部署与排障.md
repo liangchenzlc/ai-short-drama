@@ -30,7 +30,7 @@ AI 配置 → 创作助手提供本人媒体总开关，缺少设置默认开启
 
 ## 配置与数据库
 
-以下命令均在 `backend/` 执行。先更新代码并执行 `uv sync --locked`；已有库先按[迁移索引](../database/migrations/README.md)及[账户迁移](账号与共同创作部署说明.md)补齐原有结构和归属。备份 MySQL、MinIO 及独立保存的原 `ENCRYPTION_KEY`，迁移前显式设置 `AGENT_ENABLED=false` 并停止相关 API、scheduler 与 Worker 写入。
+以下命令均在 `backend/` 执行。先更新代码并执行 `uv sync --locked`；已有库先按[迁移索引](../database/migrations/README.md)补齐原有结构和归属。备份 MySQL、MinIO 及独立保存的原 `ENCRYPTION_KEY`，迁移前显式设置 `AGENT_ENABLED=false` 并停止相关 API、scheduler 与 Worker 写入。
 
 ```powershell
 # 只读检查；未迁移时返回非零并列出结构缺口。
@@ -60,7 +60,7 @@ uv run python -m scripts.agent_system_migration --apply
 uv run python scripts/agent_migration.py --precheck
 ```
 
-此增量增加四张任务表、六张记忆表、账号助手偏好、私人媒体请求、Skill 版本／个人设置、讨论修订及批次撤销回执表、消息／Run 的 task_id、消息版本、运行修订身份与会话摘要字段，解除 V3 会话项目强绑定，并允许角色音色成对空绑定；保留旧记录和授权。记忆索引使用 MySQL ngram；本机 `@@ngram_token_size=2`，其他环境须实际核对。完整新库 [schema.mysql8.sql](../database/schema/schema.mysql8.sql) 当前为 117 张表，包含全部二十五张 Agent 表，直接做 precheck 即可，不重复执行旧库 ALTER。
+此增量增加四张任务表、六张记忆表、账号助手偏好、私人媒体请求、Skill 版本／个人设置、讨论修订及批次撤销回执表、消息／Run 的 task_id、消息版本、运行修订身份与会话摘要字段，解除 V3 会话项目强绑定，并允许角色音色成对空绑定；保留旧记录和授权。记忆索引使用 MySQL ngram；本机 `@@ngram_token_size=2`，其他环境须实际核对。完整新库 [schema.mysql8.sql](../database/schema/schema.mysql8.sql) 当前为 116 张表，包含全部二十五张 Agent 表，直接做 precheck 即可，不重复执行旧库 ALTER。
 
 005 就绪后，另行发布当前部署携带的内置内容；不随应用启动或迁移自动发布：
 

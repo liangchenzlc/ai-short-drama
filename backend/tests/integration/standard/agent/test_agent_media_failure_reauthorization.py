@@ -8,12 +8,12 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, User
 from sqlalchemy import func, select
 
 import tests.integration.standard.agent.test_agent_conversations as conversation_tests
-from short_drama.agent import model_gateway
-from short_drama.agent.authorization import digest
-from short_drama.agent.model_gateway import serialize_history
-from short_drama.agent.native_tasks import collect_native_results
-from short_drama.agent.runtime import AgentRuntime
-from short_drama.agent.tools import execute_tools
+from short_drama.agent.gateway import protocol as model_gateway
+from short_drama.agent.legacy.authorization import digest
+from short_drama.agent.gateway.protocol import serialize_history
+from short_drama.agent.native.tasks import collect_native_results
+from short_drama.agent.coordinator.runtime import AgentRuntime
+from short_drama.agent.legacy.tools import execute_tools
 from short_drama.ai import GenerationError
 from short_drama.domain import (
     AgentArtifact,

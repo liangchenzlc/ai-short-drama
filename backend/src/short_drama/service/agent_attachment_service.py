@@ -9,7 +9,7 @@ from pathlib import PurePath
 
 from sqlalchemy import func, select
 
-from short_drama.agent.input_media import MAX_INPUT_BYTES, inspect_attachment
+from short_drama.agent.context.media import MAX_INPUT_BYTES, inspect_attachment
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.db.access import require_project
 from short_drama.domain import Asset, MediaFile

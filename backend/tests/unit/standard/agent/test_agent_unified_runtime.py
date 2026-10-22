@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from short_drama.agent.input_capabilities import input_capabilities
-from short_drama.agent.model_gateway import provider_failure_code
-from short_drama.agent.state import failure_message
-from short_drama.agent.tools import tool_manifest
+from short_drama.agent.context.capabilities import input_capabilities
+from short_drama.agent.gateway.protocol import provider_failure_code
+from short_drama.agent.core.state import failure_message
+from short_drama.agent.legacy.tools import tool_manifest
 from short_drama.schemas.agent_runtime import MessageCreate
 from short_drama.service.agent_model_service import AgentModelService
 

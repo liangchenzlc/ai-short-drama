@@ -13,7 +13,7 @@ import pytest
 from PIL import Image
 
 import tests.integration.standard.agent.test_agent_conversations as conversation_tests
-from short_drama.agent.input_media import materialize_prompt
+from short_drama.agent.context.media import materialize_prompt
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.db.readiness import assert_agent_ready, assert_identity_ready, inspect_agent_schema
@@ -157,10 +157,10 @@ def test_real_minio_attachment_upload_read_message_freeze_and_exact_version_clea
 def test_real_minio_skill_package_versions_keep_exact_resources(workspace):
     from sqlalchemy import select
 
-    from short_drama.agent.assistant_tools import claim_operation, complete_operation
-    from short_drama.agent.runtime import AgentRuntimeStore
-    from short_drama.agent.skill_runtime import activations
-    from short_drama.agent.tools import prepare_decision
+    from short_drama.agent.coordinator.assistant import claim_operation, complete_operation
+    from short_drama.agent.coordinator.runtime import AgentRuntimeStore
+    from short_drama.agent.skill.contracts import activations
+    from short_drama.agent.legacy.tools import prepare_decision
     from short_drama.domain.agent_task import AgentOperation, AgentTask
     from short_drama.service.assistant_task_service import AssistantTaskService
 
@@ -264,7 +264,7 @@ def test_real_minio_skill_package_versions_keep_exact_resources(workspace):
 )
 def test_real_minio_builtin_skill_publication_and_exact_resource_reads(workspace):
     from scripts.agent_system_migration import backfill_skill_packages
-    from short_drama.agent.builtin_skill_packages import builtin_skill_packages
+    from short_drama.agent.skill.packages import builtin_skill_packages
     from short_drama.service.agent_builtin_skill_service import publish_builtin_skills
 
     factory, _, _ = workspace

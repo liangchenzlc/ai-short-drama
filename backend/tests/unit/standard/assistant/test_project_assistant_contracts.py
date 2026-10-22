@@ -10,11 +10,11 @@ from PIL import Image
 from pydantic import ValidationError
 from pydantic_ai.tools import ToolDefinition
 
-from short_drama.agent.assistant_chat import prepare_assistant_decision
-from short_drama.agent.input_media import MAX_INPUT_BYTES, materialize_prompt
-from short_drama.agent.model_gateway import AgentGatewayError
-from short_drama.agent.runtime import checked_budget, freeze_input
-from short_drama.agent.state import budget_limits, initial_usage
+from short_drama.agent.legacy.chat import prepare_assistant_decision
+from short_drama.agent.context.media import MAX_INPUT_BYTES, materialize_prompt
+from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.coordinator.runtime import checked_budget, freeze_input
+from short_drama.agent.core.events import budget_limits, initial_usage
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.schemas.assistant import AssistantMessageCreate, AssistantSourceContext
 from short_drama.service.assistant_context_service import _bounded, _freeze_node_media

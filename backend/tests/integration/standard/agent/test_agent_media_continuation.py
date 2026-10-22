@@ -13,11 +13,11 @@ from pydantic_ai.messages import (
 from sqlalchemy import func, select
 
 import tests.integration.standard.agent.test_agent_conversations as conversation_tests
-from short_drama.agent import model_gateway
-from short_drama.agent.model_gateway import deserialize_history, serialize_history
-from short_drama.agent.native_tasks import collect_native_results
-from short_drama.agent.runtime import AgentRuntime
-from short_drama.agent.tools import execute_tools
+from short_drama.agent.gateway import protocol as model_gateway
+from short_drama.agent.gateway.protocol import deserialize_history, serialize_history
+from short_drama.agent.native.tasks import collect_native_results
+from short_drama.agent.coordinator.runtime import AgentRuntime
+from short_drama.agent.legacy.tools import execute_tools
 from short_drama.core.exceptions import Conflict
 from short_drama.domain import (
     AgentArtifact,

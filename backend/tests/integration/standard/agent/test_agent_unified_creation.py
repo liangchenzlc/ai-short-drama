@@ -10,8 +10,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 import tests.integration.standard.agent.test_agent_conversations as conversation_tests
-from short_drama.agent.model_gateway import AgentModelGateway
-from short_drama.agent.runtime import AgentRuntime, AgentRuntimeStore
+from short_drama.agent.gateway.protocol import AgentModelGateway
+from short_drama.agent.coordinator.runtime import AgentRuntime, AgentRuntimeStore
 from short_drama.core.identity import token_hash
 from short_drama.domain import AIGenerationRecord, AIModelConfig, Asset, AsyncTask, ShotScript
 from short_drama.domain.agent import AgentArtifact, AgentMessage, AgentRun, AgentToolCall
@@ -279,8 +279,8 @@ def test_active_messages_queue_and_waiting_review_accepts_question_and_revision(
     third = send(factory, conversation_id, model_id, key="plan", expected_scope=scope)
     # A scoped asset plan must target its asset, never the episode.
     with factory.begin() as session:
-        from short_drama.agent.authorization import digest, freeze_task
-        from short_drama.agent.state import wait_locked
+        from short_drama.agent.legacy.authorization import digest, freeze_task
+        from short_drama.agent.core.state import wait_locked
         from short_drama.domain.agent import AgentConversation, AgentTurn
 
         conversation = session.get(AgentConversation, conversation_id)
@@ -657,7 +657,7 @@ def test_unique_single_media_task_is_admitted_without_extra_review(
         ).all()
         from types import SimpleNamespace
 
-        from short_drama.agent.tools import _execute
+        from short_drama.agent.legacy.tools import _execute
         from short_drama.domain.agent import AgentConversation
 
         status = _execute(
@@ -711,7 +711,7 @@ def test_queued_turn_refreshes_prior_reply_without_future_user_instructions(
 
 
 def test_continued_parent_waits_for_running_supplement_without_mutual_queue_block(workspace):
-    from short_drama.agent.runtime import preceding_execution
+    from short_drama.agent.coordinator.runtime import preceding_execution
     from short_drama.domain.agent import AgentConversation
     from tests.integration.standard.agent.test_agent_services import adopted_workflow
 
@@ -739,7 +739,7 @@ def test_continued_parent_waits_for_running_supplement_without_mutual_queue_bloc
         child = session.get(AgentRun, int(supplementary.run.id))
         assert preceding_execution(session, parent) == child.id
         assert preceding_execution(session, child) is None
-        from short_drama.agent.state import finish_locked
+        from short_drama.agent.core.state import finish_locked
 
         finish_locked(session, session.get(AgentConversation, conversation_id), child, "succeeded")
     with factory.begin() as session:

@@ -223,7 +223,6 @@ def condition(table, user_id):
         "user_sessions",
         "email_challenges",
         "user_model_preferences",
-        "user_project_states",
     }:
         return c.user_id == user_id
     if name == "audit_events":
@@ -1124,7 +1123,6 @@ def guard_writes(session, _context, _instances):
             "auth_rate_limits",
             "audit_events",
             "user_model_preferences",
-            "user_project_states",
         }:
             continue
         new = entity in session.new

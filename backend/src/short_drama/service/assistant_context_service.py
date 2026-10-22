@@ -3,7 +3,7 @@
 import re
 from copy import deepcopy
 
-from short_drama.agent.input_media import MAX_DURATION_MS, MAX_INPUT_BYTES
+from short_drama.agent.context.media import MAX_DURATION_MS, MAX_INPUT_BYTES
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.assistant_context_dao import AssistantContextDAO
 from short_drama.schemas.base import parse_identifier

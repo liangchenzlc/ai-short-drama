@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import func, select
 
 import tests.integration.standard.agent.test_agent_conversations as conversation_tests
-from short_drama.agent.native_tasks import collect_native_results
+from short_drama.agent.native.tasks import collect_native_results
 from short_drama.ai import GenerationResult
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import (

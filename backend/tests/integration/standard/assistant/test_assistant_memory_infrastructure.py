@@ -15,9 +15,9 @@ from PIL import Image
 from sqlalchemy import select
 
 import tests.integration.standard.assistant.test_assistant_memory as memory_tests
-from short_drama.agent.memory_runtime import AgentMemoryPublisher, AgentMemoryRuntime
-from short_drama.agent.publisher import AgentRabbitSender
-from short_drama.agent.session_purge import purge_one
+from short_drama.agent.memory.runtime import AgentMemoryPublisher, AgentMemoryRuntime
+from short_drama.agent.coordinator.publisher import AgentRabbitSender
+from short_drama.agent.session.purge import purge_one
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import NotFound
 from short_drama.domain import MediaFile

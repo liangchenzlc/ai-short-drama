@@ -14,12 +14,14 @@ from pydantic_ai.tools import ToolDefinition
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from short_drama.agent import model_gateway
-from short_drama.agent import runtime as runtime_module
-from short_drama.agent.publisher import AgentPublisher
-from short_drama.agent.recovery import recover
-from short_drama.agent.runtime import AgentRuntime, AgentRuntimeStore, lock_run
-from short_drama.agent.state import budget_limits, finish_locked, initial_usage, mark_scheduled
+from short_drama.agent.gateway import protocol as model_gateway
+from short_drama.agent.coordinator import runtime as runtime_module
+from short_drama.agent.coordinator.publisher import AgentPublisher
+from short_drama.agent.coordinator.recovery import recover
+from short_drama.agent.coordinator.runtime import AgentRuntime, AgentRuntimeStore
+from short_drama.agent.core.access import lock_run
+from short_drama.agent.core.events import budget_limits, initial_usage
+from short_drama.agent.core.state import finish_locked, mark_scheduled
 from short_drama.domain import AIModelConfig
 from short_drama.domain.agent import (
     AgentConversation,
@@ -368,7 +370,9 @@ def test_submit_rechecks_current_model_and_identity_before_reservation(runtime_s
     AgentRuntime(factory, settings, gateway, prepare, unused_tools).execute_one(12, 1)
     with factory.begin() as session:
         run = session.get(AgentRun, 12)
-        assert run.status == "failed" and run.error == {"code": "agent_admission_denied"}
+        # 模型配置变更使用专属错误码，身份/权限变更仍是笼统准入拒绝。
+        expected = "agent_model_superseded" if change == "model" else "agent_admission_denied"
+        assert run.status == "failed" and run.error == {"code": expected}
         assert run.usage["decision_calls"] == run.usage["reserved_output_tokens"] == 0
     assert gateway.posts == 0
 
@@ -642,7 +646,7 @@ def test_admission_uses_current_model_after_an_older_mysql_read_view(runtime_set
     finally:
         proceed.set()
         thread.join(5)
-    assert not thread.is_alive() and errors == ["agent_admission_denied"]
+    assert not thread.is_alive() and errors == ["agent_model_superseded"]
     with factory.begin() as session:
         assert session.get(AgentRun, 12).usage["decision_calls"] == 0
         assert session.get(AgentTurn, claim.turn_id).status == "prepared"

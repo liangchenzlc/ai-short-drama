@@ -8,10 +8,11 @@ import pytest
 from pydantic_ai.messages import ToolReturnPart
 from sqlalchemy import select
 
-from short_drama.agent import model_gateway, tools
-from short_drama.agent.model_gateway import deserialize_history, serialize_segment_result
-from short_drama.agent.recovery import recover
-from short_drama.agent.runtime import AgentRuntime
+from short_drama.agent.gateway import protocol as model_gateway
+from short_drama.agent.legacy import tools
+from short_drama.agent.gateway.protocol import deserialize_history, serialize_segment_result
+from short_drama.agent.coordinator.recovery import recover
+from short_drama.agent.coordinator.runtime import AgentRuntime
 from short_drama.domain.agent import (
     AgentConversation,
     AgentEvent,

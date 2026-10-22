@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import pytest
 from pydantic import SecretStr
 
-from short_drama.agent.artifacts import candidate_secret, public_content
-from short_drama.agent.model_gateway import AgentCapabilityEvidence, AgentSegmentResult
-from short_drama.agent.runtime import AgentRuntime, Claim
+from short_drama.agent.legacy.artifacts import candidate_secret, public_content
+from short_drama.agent.gateway.protocol import AgentCapabilityEvidence, AgentSegmentResult
+from short_drama.agent.coordinator.runtime import AgentRuntime, Claim
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
 from short_drama.service.agent_model_service import AgentModelService, model_snapshot, read_model

@@ -157,8 +157,8 @@ class AgentMemoryService(BaseService):
             return memory_summary_read(summary)
 
     def retry_job(self, identifier, payload, idempotency_key):
-        from short_drama.agent.access import model_unchanged
-        from short_drama.agent.memory_sources import message_sources, source_hash
+        from short_drama.agent.core.access import model_unchanged
+        from short_drama.agent.memory.sources import message_sources, source_hash
 
         values = self._payload(MemoryJobRetry, payload)
         key = attachment_key(idempotency_key)
@@ -197,7 +197,7 @@ class AgentMemoryService(BaseService):
                 raise Conflict("这条记录已安排重试，请刷新查看后续整理记录")
             conversation = self.session.get(AgentConversation, job.conversation_id)
             if job.kind == "task_state":
-                from short_drama.agent.task_compaction import task_job_current_locked
+                from short_drama.agent.task.compaction import task_job_current_locked
 
                 current_source = task_job_current_locked(self.session, conversation, job)
             else:
@@ -253,7 +253,7 @@ class AgentMemoryService(BaseService):
             return memory_job_read(child)
 
     def _review_read(self, job):
-        from short_drama.agent.memory_sources import message_sources, source_hash
+        from short_drama.agent.memory.sources import message_sources, source_hash
 
         valid_source = (
             source_hash(
@@ -322,7 +322,7 @@ class AgentMemoryService(BaseService):
             )
 
     def resolve_clarification(self, identifier, index, payload, idempotency_key):
-        from short_drama.agent.memory_sources import message_sources, source_hash
+        from short_drama.agent.memory.sources import message_sources, source_hash
 
         values = self._payload(MemoryClarificationChoice, payload)
         key, request_hash = attachment_key(idempotency_key), digest(values)

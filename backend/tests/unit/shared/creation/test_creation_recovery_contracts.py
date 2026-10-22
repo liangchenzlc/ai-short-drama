@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from short_drama.agent import state
+from short_drama.agent.core import state
 from short_drama.domain import AgentEvent, AgentMessage
 from short_drama.schemas.agent import ConversationPatch
 from short_drama.schemas.agent_artifacts import ArtifactAdopt

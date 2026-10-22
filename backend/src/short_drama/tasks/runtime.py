@@ -43,9 +43,9 @@ def main():
     canvas_renders = CanvasRenderPublisher(factory, settings) if canvas_render_available else None
     canvas_locals = CanvasLocalPublisher(factory, settings) if canvas_local_available else None
     if settings.agent_enabled:
-        from short_drama.agent.memory_runtime import AgentMemoryPublisher, AgentMemoryStore
-        from short_drama.agent.publisher import AgentPublisher
-        from short_drama.agent.recovery import recover as recover_agent
+        from short_drama.agent.memory.runtime import AgentMemoryPublisher, AgentMemoryStore
+        from short_drama.agent.coordinator.publisher import AgentPublisher
+        from short_drama.agent.coordinator.recovery import recover as recover_agent
 
         agents = AgentPublisher(factory, settings)
         memories = AgentMemoryPublisher(factory, settings)
@@ -108,7 +108,7 @@ def main():
                 recover(factory, settings)
                 dispatch_batches(factory, settings)
                 if agent_schema_available:
-                    from short_drama.agent.session_purge import purge_one
+                    from short_drama.agent.session.purge import purge_one
                     from short_drama.service.storage_service import StorageService
 
                     purge_one(factory, StorageService(storage, settings))
@@ -116,8 +116,8 @@ def main():
                     recover_agent(factory, settings)
                     memory_store.recover()
                 if agent_schema_available and time.monotonic() >= next_agent_poll:
-                    from short_drama.agent.media_runtime import collect_media_results
-                    from short_drama.agent.native_tasks import collect_native_results
+                    from short_drama.agent.coordinator.media_runtime import collect_media_results
+                    from short_drama.agent.native.tasks import collect_native_results
 
                     collect_native_results(factory, settings)
                     collect_media_results(factory, settings)

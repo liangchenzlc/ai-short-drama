@@ -19,14 +19,14 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.tools import ToolDefinition
 
-from short_drama.agent.model_gateway import (
+from short_drama.agent.gateway.protocol import (
     AgentGatewayError,
     AgentModelGateway,
     _TextRedactor,
     deserialize_history,
     serialize_deferred_requests,
     serialize_history,
-    serialize_segment_result,
+    serialize_segment_result
 )
 from short_drama.ai.canvas_credentials import CanvasCredentials
 

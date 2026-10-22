@@ -1,4 +1,4 @@
--- Canonical MySQL 8 schema: 117 tables.
+-- Canonical MySQL 8 schema: 116 tables.
 -- Generated from short_drama.domain by backend/scripts/export_schema.py.
 -- Initialize an empty database; upgrade existing databases with versioned migrations.
 -- Creation-mode upgrades use the explicit offline reset and preservation workflow.
@@ -744,17 +744,6 @@ CREATE TABLE `user_model_preferences` (
   CONSTRAINT fk_user_model_preferences_config_id FOREIGN KEY (config_id) REFERENCES ai_model_configs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_user_model_preferences_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_model_preference` (user_id, context_key)
-) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
-
-CREATE TABLE `user_project_states` (
-  `id` BIGINT UNSIGNED NOT NULL,
-  `user_id` BIGINT UNSIGNED NOT NULL,
-  `project_id` BIGINT UNSIGNED NOT NULL,
-  `last_opened_at` DATETIME(6) NOT NULL,
-  PRIMARY KEY (`id`),
-  CONSTRAINT fk_user_project_states_project_id FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_user_project_states_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_user_project_state` (user_id, project_id)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `agent_conversation_summaries` (

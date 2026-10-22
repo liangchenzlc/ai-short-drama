@@ -7,10 +7,11 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai.tools import ToolDefinition
 
-from short_drama.agent.memory_context import token_estimate, validated_facts
-from short_drama.agent.model_gateway import AgentGatewayError
-from short_drama.agent.runtime import freeze_input
-from short_drama.agent.state import budget_limits, initial_usage
+from short_drama.agent.memory.context import validated_facts
+from short_drama.agent.memory.sources import token_estimate
+from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.coordinator.runtime import freeze_input
+from short_drama.agent.core.events import budget_limits, initial_usage
 from short_drama.schemas.agent_memory import MemoryMaintenanceResult
 from short_drama.schemas.assistant_task import (
     AssistantTaskMessage,
@@ -21,7 +22,7 @@ from short_drama.schemas.assistant_task import (
 
 
 def test_manual_method_availability_rechecks_target_and_required_tools_without_changing_version():
-    from short_drama.agent.skill_runtime import apply_manual_skills, refresh_skill_context
+    from short_drama.agent.skill.runtime import apply_manual_skills, refresh_skill_context
 
     task = SimpleNamespace(
         id=1,
@@ -60,7 +61,7 @@ def test_task_conversation_accepts_project_scope_and_preserves_legacy_creation()
 
 
 def test_skill_tools_are_bounded_and_never_accept_owner_storage_or_executable_inputs():
-    from short_drama.agent.assistant_tools import TOOL_SCHEMAS
+    from short_drama.agent.tools.contracts import TOOL_SCHEMAS
 
     assert {"search_skills", "load_skill", "read_skill_resource"}.issubset(TOOL_SCHEMAS)
     search = TOOL_SCHEMAS["search_skills"][0]
@@ -83,7 +84,7 @@ def test_skill_tools_are_bounded_and_never_accept_owner_storage_or_executable_in
 
 
 def test_image_content_read_requires_exact_frozen_identity_and_one_source():
-    from short_drama.agent.image_tools import ReadImageContent
+    from short_drama.agent.tools.contracts import ReadImageContent
 
     fields = {"group_id": "1", "item_id": "2", "media_id": "3"}
     key = "subject:" + "a" * 64
@@ -102,7 +103,7 @@ def test_image_content_read_requires_exact_frozen_identity_and_one_source():
 
 
 def test_generation_policy_is_versioned_and_cannot_be_changed_by_a_tool():
-    from short_drama.agent.assistant_tools import TOOL_SCHEMAS
+    from short_drama.agent.tools.contracts import TOOL_SCHEMAS
     from short_drama.schemas.assistant_policy import GenerationPolicyPatch, ReadGenerationPolicy
 
     saved = GenerationPolicyPatch(media_generation_enabled=False, policy_version="0")
@@ -131,7 +132,7 @@ def test_generation_policy_is_versioned_and_cannot_be_changed_by_a_tool():
     ],
 )
 def test_media_directive_defaults_to_one_per_explicit_target(content, kind, selector, count):
-    from short_drama.agent.media_tools import parse_media_directive
+    from short_drama.agent.tools.media import parse_media_directive
 
     directive = parse_media_directive(content)
     assert directive.kind == kind and directive.selector == selector and directive.count == count
@@ -151,13 +152,13 @@ def test_media_directive_defaults_to_one_per_explicit_target(content, kind, sele
     ],
 )
 def test_media_directive_never_grants_quoted_ambiguous_or_excessive_generation(content):
-    from short_drama.agent.media_tools import parse_media_directive
+    from short_drama.agent.tools.media import parse_media_directive
 
     assert parse_media_directive(content) is None
 
 
 def test_media_tool_schema_keeps_versions_and_rejects_private_or_unbounded_parameters():
-    from short_drama.agent.assistant_tools import TOOL_SCHEMAS
+    from short_drama.agent.tools.contracts import TOOL_SCHEMAS
     from short_drama.schemas.assistant_media import SubmitGenerationBatch
 
     item = {
@@ -195,7 +196,7 @@ def test_media_tool_schema_keeps_versions_and_rejects_private_or_unbounded_param
     ],
 )
 def test_image_primary_directive_has_one_explicit_image_choice(content, selector, index):
-    from short_drama.agent.image_tools import parse_primary_directive
+    from short_drama.agent.tools.image import parse_primary_directive
 
     directive = parse_primary_directive(content)
     assert directive is not None
@@ -218,13 +219,13 @@ def test_image_primary_directive_has_one_explicit_image_choice(content, selector
     ],
 )
 def test_image_primary_directive_does_not_infer_ambiguous_or_quoted_authority(content):
-    from short_drama.agent.image_tools import parse_primary_directive
+    from short_drama.agent.tools.image import parse_primary_directive
 
     assert parse_primary_directive(content) is None
 
 
 def test_image_tools_keep_real_identifiers_and_reject_unbounded_or_untrusted_inputs():
-    from short_drama.agent.image_tools import ReadImageGroup, SetImageGroupPrimary
+    from short_drama.agent.tools.contracts import ReadImageGroup, SetImageGroupPrimary
 
     values = {
         "request_message_id": "9007199254740993",
@@ -397,7 +398,7 @@ def test_standard_patch_resolves_typed_earlier_references_and_preserves_large_id
 
 
 def test_created_result_reader_uses_receipt_identity_and_bounded_ranges():
-    from short_drama.agent.standard_tools import ReadTaskResults
+    from short_drama.agent.tools.contracts import ReadTaskResults
 
     values = ReadTaskResults.model_validate(
         {
@@ -595,7 +596,7 @@ def test_canvas_delete_rejects_references_outside_its_increment(location):
 def test_canvas_directives_bind_only_the_explicit_effects(
     text, action, limits, selector, fields, connect
 ):
-    from short_drama.agent.canvas_tools import parse_canvas_directive
+    from short_drama.agent.tools.canvas import parse_canvas_directive
 
     value = parse_canvas_directive(text)
     assert value is not None
@@ -627,7 +628,7 @@ def test_canvas_directives_bind_only_the_explicit_effects(
     ],
 )
 def test_canvas_directives_do_not_infer_authority_from_discussion_or_data(text):
-    from short_drama.agent.canvas_tools import parse_canvas_directive
+    from short_drama.agent.tools.canvas import parse_canvas_directive
 
     assert parse_canvas_directive(text) is None
 
@@ -641,10 +642,10 @@ def test_canvas_settings_reject_non_native_audio_speed(speed):
 
 
 def test_subject_identity_distinguishes_same_node_key_in_two_canvases_and_preserves_legacy_scope():
-    from short_drama.agent.subject_context import (
+    from short_drama.agent.context.subjects import (
         snapshot_subjects,
         subject_key,
-        subject_memory_keys,
+        subject_memory_keys
     )
 
     assert subject_key("1", "canvas", "a", "node", "same") != subject_key(
@@ -667,7 +668,7 @@ def test_subject_identity_distinguishes_same_node_key_in_two_canvases_and_preser
 
 
 def test_historical_reply_keeps_its_original_selection_scope_after_removal():
-    from short_drama.agent.memory_context import message_subject_keys
+    from short_drama.agent.memory.sources import message_subject_keys
 
     message = SimpleNamespace(
         task_id=1, references=[{"type": "subject_scope", "keys": ["original"]}]
@@ -736,8 +737,8 @@ def test_task_constraint_projection_preserves_tool_pairs_and_unrelated_user_cont
         UserPromptPart,
     )
 
-    from short_drama.agent.model_gateway import deserialize_history, serialize_history
-    from short_drama.agent.task_compaction import COMPACTED_GOAL, compacted_history
+    from short_drama.agent.gateway.protocol import deserialize_history, serialize_history
+    from short_drama.agent.task.compaction import COMPACTED_GOAL, compacted_history
 
     goal = "不能丢失的早期要求" * 1000
     history = serialize_history(
@@ -759,7 +760,7 @@ def test_task_constraint_projection_preserves_tool_pairs_and_unrelated_user_cont
 
 
 def test_context_budget_preserves_a_complete_tool_pair_and_counts_tool_json_as_text():
-    from short_drama.agent.context_budget import segment_budget
+    from short_drama.agent.context.budget import segment_budget
 
     values = {
         "instructions": "边界",
@@ -786,7 +787,7 @@ def test_context_budget_preserves_a_complete_tool_pair_and_counts_tool_json_as_t
 
 
 def test_context_budget_discounts_binary_only_in_a_real_user_prompt():
-    from short_drama.agent.context_budget import provider_budget, segment_budget
+    from short_drama.agent.context.budget import provider_budget, segment_budget
 
     binary = {"kind": "binary", "media_type": "image/png", "data": "A" * 400000}
     values = {
@@ -933,7 +934,7 @@ def test_phase_summary_requires_a_real_unique_source_and_preserves_explicit_inpu
 def test_phase_summary_replays_legacy_citations_but_sends_only_indexed_prior_text():
     import json
 
-    from short_drama.agent.memory_runtime import maintenance_input
+    from short_drama.agent.memory.runtime import maintenance_input
 
     job = SimpleNamespace(
         kind="summary",
@@ -980,7 +981,7 @@ def test_phase_summary_replays_legacy_citations_but_sends_only_indexed_prior_tex
 def test_direct_memory_commands_keep_the_original_body_and_explicit_scope(
     text, action, scope, body, target
 ):
-    from short_drama.agent.memory_tools import parse_memory_directive
+    from short_drama.agent.tools.memory_ops import parse_memory_directive
 
     value = parse_memory_directive(text)
     assert value is not None
@@ -1010,7 +1011,7 @@ def test_direct_memory_commands_keep_the_original_body_and_explicit_scope(
     ],
 )
 def test_memory_commands_cannot_be_authorized_by_quoted_negated_or_ambiguous_data(text):
-    from short_drama.agent.memory_tools import parse_memory_directive
+    from short_drama.agent.tools.memory_ops import parse_memory_directive
 
     assert parse_memory_directive(text) is None
 
@@ -1052,7 +1053,7 @@ def test_memory_commands_cannot_be_authorized_by_quoted_negated_or_ambiguous_dat
 def test_standard_direct_commands_bound_effects_and_keep_large_ids(
     text, action, limits, selector, fields, associate
 ):
-    from short_drama.agent.standard_tools import parse_standard_directive
+    from short_drama.agent.tools.standard import parse_standard_directive
 
     value = parse_standard_directive(text)
     assert value is not None
@@ -1087,7 +1088,7 @@ def test_standard_direct_commands_bound_effects_and_keep_large_ids(
     ],
 )
 def test_standard_directives_cannot_come_from_data_questions_or_ambiguous_scope(text):
-    from short_drama.agent.standard_tools import parse_standard_directive
+    from short_drama.agent.tools.standard import parse_standard_directive
 
     assert parse_standard_directive(text) is None
 
@@ -1134,7 +1135,7 @@ def test_standard_dialogue_uses_typed_temporary_characters_and_native_document_r
     ],
 )
 def test_canvas_media_directive_keeps_explicit_kind_and_native_quantity(content, kind, count):
-    from short_drama.agent.media_tools import parse_media_directive
+    from short_drama.agent.tools.media import parse_media_directive
 
     directive = parse_media_directive(content)
     assert directive.kind == "node" and directive.media_kind == kind and directive.count == count
@@ -1152,7 +1153,7 @@ def test_canvas_media_directive_keeps_explicit_kind_and_native_quantity(content,
     ],
 )
 def test_canvas_media_directive_rejects_ambiguous_or_mismatched_generation(content):
-    from short_drama.agent.media_tools import parse_media_directive
+    from short_drama.agent.tools.media import parse_media_directive
 
     assert parse_media_directive(content) is None
 
@@ -1194,7 +1195,7 @@ def test_canvas_media_schema_preserves_string_keys_and_rejects_untrusted_transpo
     ],
 )
 def test_character_voice_directive_requires_one_explicit_sample(content, selector):
-    from short_drama.agent.media_tools import parse_media_directive
+    from short_drama.agent.tools.media import parse_media_directive
 
     directive = parse_media_directive(content)
     assert (directive.kind, directive.media_kind, directive.count, directive.selector) == (
@@ -1217,7 +1218,7 @@ def test_character_voice_directive_requires_one_explicit_sample(content, selecto
     ],
 )
 def test_character_voice_directive_does_not_infer_generation_authority(content):
-    from short_drama.agent.media_tools import parse_media_directive
+    from short_drama.agent.tools.media import parse_media_directive
 
     assert parse_media_directive(content) is None
 
@@ -1256,7 +1257,7 @@ def test_character_voice_schema_keeps_own_version_and_bounded_explicit_input():
 
 
 def test_native_shot_video_directive_requires_explicit_speech_authority():
-    from short_drama.agent.media_tools import parse_media_directive
+    from short_drama.agent.tools.media import parse_media_directive
 
     for text in ("为已选分镜生成一段有声视频", "为本任务分镜生成原生有声视频"):
         directive = parse_media_directive(text)
@@ -1297,7 +1298,7 @@ def test_native_shot_video_schema_bounds_dialogue_and_voice_versions():
 def test_native_video_source_refresh_keeps_newer_voice_than_earlier_task_adoption():
     from types import SimpleNamespace
 
-    from short_drama.agent.media_tools import _native_sources
+    from short_drama.agent.tools.media import _native_sources
 
     subject = {
         "subject_key": "asset:1",
@@ -1380,7 +1381,7 @@ def test_dialogue_audio_schema_accepts_only_identity_and_trusted_versions():
 
 
 def test_dialogue_audio_directives_do_not_authorize_discussion_or_unselected_sources():
-    from short_drama.agent.media_tools import parse_media_directive
+    from short_drama.agent.tools.media import parse_media_directive
 
     for content in (
         "为已选台词生成配音",
@@ -1449,8 +1450,8 @@ def test_sound_text_patch_is_incremental_and_requires_both_saved_versions():
 
 
 def test_sound_text_directive_limits_fields_and_keeps_generation_separate():
-    from short_drama.agent.media_tools import parse_media_directive
-    from short_drama.agent.standard_tools import parse_standard_directive
+    from short_drama.agent.tools.media import parse_media_directive
+    from short_drama.agent.tools.standard import parse_standard_directive
 
     directive = parse_standard_directive("请创建两条台词：雨夜敲门")
     assert directive is not None and directive.limits == {"sound_line": 2}

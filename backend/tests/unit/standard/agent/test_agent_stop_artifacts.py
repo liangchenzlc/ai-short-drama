@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import event, select
 from sqlalchemy.dialects import mysql
 
-from short_drama.agent import state
+from short_drama.agent.core import state
 from short_drama.domain.agent import AgentConversation, AgentEvent, AgentMessage, AgentRun
 from short_drama.service.base import utcnow
 from tests.support.generation_fixtures import generation_session

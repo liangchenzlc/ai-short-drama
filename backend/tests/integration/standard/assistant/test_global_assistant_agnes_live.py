@@ -9,9 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 import tests.integration.standard.assistant.test_global_assistant_tasks as task_tests
-from short_drama.agent.memory_runtime import AgentMemoryRuntime
-from short_drama.agent.model_gateway import AgentModelGateway
-from short_drama.agent.runtime import AgentRuntime
+from short_drama.agent.memory.runtime import AgentMemoryRuntime
+from short_drama.agent.gateway.protocol import AgentModelGateway
+from short_drama.agent.coordinator.runtime import AgentRuntime
 from short_drama.core.config import Settings
 from short_drama.domain import Asset, ShotScript
 from short_drama.domain.agent import AgentMessage, AgentRun

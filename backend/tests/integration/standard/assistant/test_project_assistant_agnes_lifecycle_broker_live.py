@@ -15,7 +15,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from short_drama.agent.publisher import AgentRabbitSender
+from short_drama.agent.coordinator.publisher import AgentRabbitSender
 from short_drama.domain import AsyncTask
 from short_drama.domain.agent import (
     AgentArtifact,

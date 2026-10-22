@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from short_drama.agent.builtin_skill_packages import BuiltinSkillPackage, builtin_skill_packages
+from short_drama.agent.skill.packages import BuiltinSkillPackage, builtin_skill_packages
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict
 from short_drama.domain.agent_skill import AgentSkillVersion

@@ -33,7 +33,7 @@ def lock_resource_project(session, model, identifier):
                 )
             )
             if operation_id is not None:
-                from short_drama.agent.access import lock_run
+                from short_drama.agent.core.access import lock_run
 
                 run_id = session.scalar(
                     select(AgentOperation.run_id).where(
@@ -64,7 +64,7 @@ def lock_resource_project(session, model, identifier):
                 )
                 return
             # Private linkage is never copied into project-shared generation records.
-            from short_drama.agent.access import lock_run
+            from short_drama.agent.core.access import lock_run
             from short_drama.domain.agent import AgentToolCall
 
             run_id = session.scalar(
@@ -84,7 +84,7 @@ def may_submit(session, task, *, agent_enabled=None, settings=None):
     media_parents = session.info.get("assistant_media_parents", {})
     media_owner = None
     if getattr(task, "id", None) in media_parents:
-        from short_drama.agent.run_events import TERMINAL
+        from short_drama.agent.core.events import TERMINAL
         from short_drama.service.assistant_policy_service import policy_state_locked
 
         rows, operation, intent = media_parents[task.id]
@@ -167,8 +167,8 @@ def may_submit(session, task, *, agent_enabled=None, settings=None):
     parents = session.info.get("agent_task_parents", {})
     task_id = getattr(task, "id", None)
     if task_id is not None and task_id in parents:
-        from short_drama.agent.access import may_decide
-        from short_drama.agent.run_events import TERMINAL
+        from short_drama.agent.core.access import may_decide
+        from short_drama.agent.core.events import TERMINAL
 
         rows = parents[task_id]
         if rows is None or agent_enabled is False:

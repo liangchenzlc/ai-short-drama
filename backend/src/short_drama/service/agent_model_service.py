@@ -10,8 +10,8 @@ from uuid import uuid4
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from short_drama.agent.input_capabilities import input_capabilities
-from short_drama.agent.model_gateway import (
+from short_drama.agent.context.capabilities import input_capabilities
+from short_drama.agent.gateway.protocol import (
     AgentGatewayError,
     AgentModelGateway,
     select_agent_protocol,

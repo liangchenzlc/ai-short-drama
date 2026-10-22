@@ -117,7 +117,7 @@ def builtin_workspace(workspace):
 def test_builtin_package_publication_is_idempotent_and_preserves_personal_settings(
     builtin_workspace,
 ):
-    from short_drama.agent.tools import SKILLS
+    from short_drama.agent.skill.builtin import SKILLS
     from short_drama.service.agent_builtin_skill_service import publish_builtin_skills
 
     factory, configured, storage = builtin_workspace
@@ -162,7 +162,7 @@ def test_builtin_package_publication_is_idempotent_and_preserves_personal_settin
 
 
 def test_builtin_publication_rejects_same_version_changes_and_rolls_back_batch(builtin_workspace):
-    from short_drama.agent.builtin_skill_packages import builtin_skill_packages
+    from short_drama.agent.skill.packages import builtin_skill_packages
     from short_drama.service.agent_builtin_skill_service import publish_builtin_skills
 
     factory, configured, storage = builtin_workspace

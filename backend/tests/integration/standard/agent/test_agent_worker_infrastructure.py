@@ -11,8 +11,8 @@ from celery.signals import task_postrun
 from sqlalchemy import select
 
 import tests.integration.standard.agent.test_agent_runtime as runtime_tests
-from short_drama.agent.publisher import AgentRabbitSender
-from short_drama.agent.runtime import AgentRuntime
+from short_drama.agent.coordinator.publisher import AgentRabbitSender
+from short_drama.agent.coordinator.runtime import AgentRuntime
 from short_drama.core.config import Settings
 from short_drama.db.readiness import assert_agent_ready, assert_identity_ready
 from short_drama.domain import AgentMessage, AgentRun, AgentTurn

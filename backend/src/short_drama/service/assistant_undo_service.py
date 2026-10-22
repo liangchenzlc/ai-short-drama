@@ -4,8 +4,8 @@ from copy import deepcopy
 
 from sqlalchemy import select
 
-from short_drama.agent.run_events import ACTIVE
-from short_drama.agent.task_state import task_event
+from short_drama.agent.core.events import ACTIVE
+from short_drama.agent.task.state import task_event
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.agent_task_dao import AgentTaskDAO
 from short_drama.dao.agent_undo_dao import AgentUndoDAO

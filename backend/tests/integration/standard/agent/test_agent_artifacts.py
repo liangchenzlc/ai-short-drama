@@ -12,11 +12,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, func, select
 
 import tests.integration.standard.agent.test_agent_conversations as conversation_tests
-from short_drama.agent.artifacts import create_candidate_locked
-from short_drama.agent.authorization import digest, freeze_task
-from short_drama.agent.runtime import lock_run
-from short_drama.agent.state import append_late_artifact_message
-from short_drama.agent.tools import CreateCandidate, execute_tools
+from short_drama.agent.legacy.artifacts import create_candidate_locked
+from short_drama.agent.legacy.authorization import digest, freeze_task
+from short_drama.agent.core.access import lock_run
+from short_drama.agent.core.state import append_late_artifact_message
+from short_drama.agent.legacy.tools import CreateCandidate, execute_tools
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.core.identity import token_hash

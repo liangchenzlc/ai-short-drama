@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from short_drama.agent import publisher
-from short_drama.agent.recovery import recover
-from short_drama.agent.runtime import AgentRuntimeStore, _DeltaBuffer
-from short_drama.agent.state import budget_limits
+from short_drama.agent.coordinator import publisher
+from short_drama.agent.coordinator.recovery import recover
+from short_drama.agent.coordinator.runtime import AgentRuntimeStore, _DeltaBuffer
+from short_drama.agent.core.events import budget_limits
 from short_drama.tasks.celery_app import agent_queue, make_celery, topology
 
 
@@ -17,7 +17,7 @@ def test_native_collector_selects_finished_tasks_past_active_prefix(
     from sqlalchemy import JSON, Column, Integer, MetaData, String, Table, create_engine
     from sqlalchemy.orm import sessionmaker
 
-    from short_drama.agent import native_tasks
+    from short_drama.agent.native import tasks as native_tasks
 
     engine = create_engine("sqlite://")
     metadata = MetaData()

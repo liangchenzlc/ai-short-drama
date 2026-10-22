@@ -22,9 +22,9 @@ from sqlalchemy import select
 
 import tests.integration.standard.agent.test_agent_conversations as conversation_tests
 import tests.integration.standard.agent.test_agent_unified_creation as unified_tests
-from short_drama.agent.model_gateway import AgentModelGateway
-from short_drama.agent.publisher import AgentPublisher, AgentRabbitSender
-from short_drama.agent.runtime import AgentRuntime
+from short_drama.agent.gateway.protocol import AgentModelGateway
+from short_drama.agent.coordinator.publisher import AgentPublisher, AgentRabbitSender
+from short_drama.agent.coordinator.runtime import AgentRuntime
 from short_drama.core.config import Settings
 from short_drama.core.identity import token_hash
 from short_drama.db.readiness import assert_agent_ready, assert_identity_ready

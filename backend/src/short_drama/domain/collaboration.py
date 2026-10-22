@@ -106,22 +106,6 @@ class UserModelPreference(Base):
     )
 
 
-class UserProjectState(Base):
-    __tablename__ = "user_project_states"
-    id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True, autoincrement=False)
-    user_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), ForeignKey("users.id", ondelete="RESTRICT", onupdate="RESTRICT")
-    )
-    project_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), ForeignKey("projects.id", ondelete="RESTRICT", onupdate="RESTRICT")
-    )
-    last_opened_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6))
-    __table_args__ = (
-        UniqueConstraint("user_id", "project_id", name="uk_user_project_state"),
-        OPTIONS,
-    )
-
-
 class EmailOutbox(Base):
     __tablename__ = "email_outbox"
     id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True, autoincrement=False)

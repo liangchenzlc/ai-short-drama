@@ -8,23 +8,24 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from short_drama.agent.assistant_tools import claim_operation, complete_operation
-from short_drama.agent.authorization import digest
-from short_drama.agent.memory_context import (
+from short_drama.agent.coordinator.assistant import claim_operation, complete_operation
+from short_drama.agent.legacy.authorization import digest
+from short_drama.agent.memory.context import (
     enqueue_job_locked,
     history_projection_locked,
-    message_sources,
     schedule_maintenance_locked,
-    settle_maintenance_locked,
+    settle_maintenance_locked
 )
-from short_drama.agent.memory_runtime import (
+from short_drama.agent.memory.sources import message_sources
+from short_drama.agent.memory.runtime import (
     AgentMemoryPublisher,
     AgentMemoryRuntime,
-    AgentMemoryStore,
+    AgentMemoryStore
 )
-from short_drama.agent.runtime import AgentRuntimeStore, LeaseLost
-from short_drama.agent.task_state import apply_inputs_locked
-from short_drama.agent.tools import execute_tools, prepare_decision
+from short_drama.agent.coordinator.runtime import AgentRuntimeStore
+from short_drama.agent.core.access import LeaseLost
+from short_drama.agent.task.state import apply_inputs_locked
+from short_drama.agent.legacy.tools import execute_tools, prepare_decision
 from short_drama.core.exceptions import Conflict, NotFound
 from short_drama.core.identity import ActorContext
 from short_drama.dao.agent_memory_dao import MemoryScopeContext
@@ -428,7 +429,7 @@ def test_deletion_previews_shared_memory_and_checks_selected_versions(memory_wor
 
 
 def test_deletion_default_preserves_shared_memory_and_purges_source_offline(memory_workspace):
-    from short_drama.agent.session_purge import purge_one
+    from short_drama.agent.session.purge import purge_one
 
     factory, _projects, conversations = memory_workspace
     accepted = seeded_run(memory_workspace, count=2)
@@ -515,7 +516,7 @@ def test_deletion_preview_protects_independent_sources_and_unrelated_facts(memor
 
 
 def test_purge_releases_only_owned_unreferenced_uploads_and_retries_storage(memory_workspace):
-    from short_drama.agent.session_purge import purge_one
+    from short_drama.agent.session.purge import purge_one
     from short_drama.domain.collaboration import User
 
     factory, _projects, conversations = memory_workspace
@@ -604,7 +605,7 @@ def test_purge_releases_only_owned_unreferenced_uploads_and_retries_storage(memo
 
 
 def test_late_model_receipts_cannot_restore_purged_conversation_content(memory_workspace):
-    from short_drama.agent.session_purge import purge_one
+    from short_drama.agent.session.purge import purge_one
 
     factory, _projects, conversations = memory_workspace
     accepted = seeded_run(memory_workspace, count=2)
@@ -887,7 +888,7 @@ def test_whole_context_budget_pauses_without_losing_inputs_or_open_tool_results(
 
 
 def test_provider_envelope_budget_is_checked_before_a_request_is_marked_sent(memory_workspace):
-    from short_drama.agent.model_gateway import AgentGatewayError
+    from short_drama.agent.gateway.protocol import AgentGatewayError
 
     factory, _projects, conversations = memory_workspace
     accepted = seeded_run(memory_workspace, count=2)

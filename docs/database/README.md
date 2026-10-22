@@ -2,7 +2,7 @@
 
 当前 2026-10-21 创作模式结构以[完整 SQL](schema/schema.mysql8.sql)和[本次迁移记录](migrations/2026-10-21-creation-mode/README.md)为准。单层项目移除了 `episodes`、`global_assets/project_assets/episode_assets`、成员及邀请；原 `episode_*` 内容表改为 `project_*`，`assets` 直接包含非空 `project_id/position`。项目保留正文／分镜版本和编辑指针，删除梗概／画幅／风格。下文此前表数与协作／分集描述为历史背景，不作为新结构初始化依据。
 
-当前完整结构包含 **117 张表**，[schema.mysql8.sql](schema/schema.mysql8.sql) 用于初始化空数据库，与[SQLAlchemy Domain](../../backend/src/short_drama/domain)同步。当前 `short_drama` 已执行[全局助手 001–009 迁移](migrations/2026-10-21-agent-system/README.md)和[2026-10-22 项目会话约束增量](migrations/2026-10-22-project-assistant/README.md)，Agent 共二十五表且 readiness 为 `ready`；此次只调整 CHECK，原有 1 条会话保留，仍为 117 表。历史阶段的表数不代表当前结构；字段类型、默认值、索引和 CHECK 以完整 SQL 为准，不能以 SQL 已生成代替 DDL 已执行，也不能以结构就绪代替供应商验收。
+当前完整结构包含 **116 张表**，[schema.mysql8.sql](schema/schema.mysql8.sql) 用于初始化空数据库，与[SQLAlchemy Domain](../../backend/src/short_drama/domain)同步。当前 `short_drama` 已执行[全局助手 001–009 迁移](migrations/2026-10-21-agent-system/README.md)和[2026-10-22 项目会话约束增量](migrations/2026-10-22-project-assistant/README.md)，Agent 共二十五表且 readiness 为 `ready`；[2026-10-22 退场项目级界面状态](migrations/2026-10-22-drop-user-project-states/README.md)移除 `user_project_states` 后为 116 张表。历史阶段的表数不代表当前结构；字段类型、默认值、索引和 CHECK 以完整 SQL 为准，不能以 SQL 已生成代替 DDL 已执行，也不能以结构就绪代替供应商验收。
 
 本文说明表的职责、关系及应用维护的约束，不另维护一份重复的字段清单。开发与测试见[开发说明](../instruction/开发运行与验证.md)，模块关系见[架构说明](../instruction/系统架构与数据流.md)，接口见[API 文档](../api/README.md)。旧库升级使用[迁移目录](migrations/README.md)。
 
@@ -29,7 +29,7 @@ uv run python scripts/export_schema.py --check
 
 已有数据库不能用全量脚本覆盖。根据实际字段、索引、约束和已执行记录判断缺少哪些迁移，按[迁移顺序](migrations/README.md)补齐；应用启动不会自动迁移。新库执行完整脚本后无需叠加历史迁移。
 
-账号模式启用前必须按[协作部署说明](../instruction/账号与共同创作部署说明.md)明确指定已验证的历史所有者，拆分跨范围素材和物理文件，再安装非空、外键、范围 CHECK 及账号唯一约束。注册不自动领取历史数据；结构或归属未完成时 API 与 Worker 拒绝启动。
+账号模式启用前必须明确指定已验证的历史所有者，拆分跨范围素材和物理文件，再安装非空、外键、范围 CHECK 及账号唯一约束。注册不自动领取历史数据；结构或归属未完成时 API 与 Worker 拒绝启动。
 
 ## 身份、归属与协作（11 张）
 
@@ -286,7 +286,7 @@ ORM、完整SQL、001、013、014与 [016增量](migrations/2026-10-05-infinite-
 渲染表新增处置列、外键/索引与处置 CHECK，两表更新成功输出 CHECK。
 预检仅缺两项精确旧版升级、无漂移；执行后独立回读 `ready/missing=[]/changed=[]`，
 表数99→99，两张任务表行数分别0→0。未清理业务行/字节或重启API/Worker/scheduler；
-执行报告在忽略的 `backend/.runtime/local-disposal-ddl-report.json`。应用不自动迁移。
+执行报告在忽略的 `backend/.runtime` 下（`local-disposal-ddl-report.json`）。应用不自动迁移。
 
 当前项目增加固定的 `workspace_mode`，历史项目默认 `standard`。`infinite_canvas` 使用 `project_canvas_settings` 的主画布指针和 `project_canvases` 的一对多归属。源画布稳定键 source_key 与数据库 ID 分开，源节点、连线 ID 保持原值；几何使用 DOUBLE 保留拖拽小数，数据库 ID/版本对外使用十进制字符串。
 

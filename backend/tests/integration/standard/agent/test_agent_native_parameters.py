@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 import tests.integration.standard.agent.test_agent_conversations as conversation_tests
-from short_drama.agent.authorization import freeze_task
-from short_drama.agent.tools import _read_context
+from short_drama.agent.legacy.authorization import freeze_task
+from short_drama.agent.legacy.tools import _read_context
 from short_drama.core.exceptions import WorkflowError
 from short_drama.core.identity import token_hash
 from short_drama.domain import (

@@ -28,7 +28,7 @@
 | 10 | [批量生成](2026-09-30-generation-batches/README.md) | 两张批次表和受控并发任务调度 |
 | 11 | [声音制作](2026-09-30-audio-production/README.md) | 三张声音表及音频媒体约束 |
 | 12 | [原生视频与角色音色](2026-09-30-native-video-voice/README.md) | 三张原生音色表和制作模式 |
-| 13 | [用户、权限与共同创作](../../instruction/账号与共同创作部署说明.md) | 新增 11 张表；expand → 显式指定已验证历史所有者并 backfill → finalize；跨范围共享资源与物理文件拆分 |
+| 13 | 用户与权限 | 已退役：共同创作与跨库共享已删除；相关表（user_project_states 已删除）不再维护 |
 | 14 | [Agent 创作模式](2026-10-02-agent-mode/README.md) | 新增 6 张私有对话执行表与 1 张候选表；显式预检和迁移，未升级环境显式关闭 Agent |
 | 15 | [候选与生成历史隐私](2026-10-03-private-candidates/README.md) | 作品发布标记、本人素材图片候选唯一键、可信作者及已采用作品证据回填 |
 | 16 | [Agent 附件与 Skill](20261003_agent_context.sql) | 新增私有附件和账号 Markdown 技能表；启用 Agent 前完成两表严格结构核验 |

@@ -12,9 +12,9 @@ import pytest
 from PIL import Image
 from pydantic import ValidationError
 
-from short_drama.agent.builtin_skill_packages import builtin_skill_packages
-from short_drama.agent.input_capabilities import input_capabilities
-from short_drama.agent.input_media import inspect_attachment, materialize_prompt
+from short_drama.agent.skill.packages import builtin_skill_packages
+from short_drama.agent.context.capabilities import input_capabilities
+from short_drama.agent.context.media import inspect_attachment, materialize_prompt
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
 from short_drama.schemas.agent_context import SkillPatch, SkillSelection
@@ -54,7 +54,7 @@ def test_bundled_methods_cover_nine_capabilities_with_valid_independent_packages
 
 
 def test_bundled_publication_keeps_original_eight_builtin_versions_exact():
-    from short_drama.agent.tools import SKILLS
+    from short_drama.agent.skill.builtin import SKILLS
     from short_drama.service.agent_skill_service import builtin_skills
 
     legacy = builtin_skills()

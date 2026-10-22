@@ -12,9 +12,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
-from short_drama.agent import model_gateway
-from short_drama.agent.runtime import AgentRuntime
-from short_drama.agent.tools import execute_tools
+from short_drama.agent.gateway import protocol as model_gateway
+from short_drama.agent.coordinator.runtime import AgentRuntime
+from short_drama.agent.legacy.tools import execute_tools
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import ActorContext, token_hash

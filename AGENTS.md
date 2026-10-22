@@ -40,7 +40,7 @@ AI 短剧工作台：账号认证、小说与剧本、素材、分镜、异步�
 | --- | --- |
 | 目录 | `frontend/`、`backend/`、`docs/`、`scripts/`、`docker/` |
 | 文件 | `AGENTS.md`、`PRINCIPLES.md`、`README.md`、`compose.yaml`、`test-map.json`、`mcp.example.json`、`.gitignore`、`.gitattributes`、`.env.example` |
-| MCP | `.mcp.json`、`.cursor/mcp.json`、`.codex/config.toml` 是 bootstrap 生成的本机绝对路径，不提交；共享模板为 `mcp.example.json` |
+| MCP | `.mcp.json`、`.cursor` 内的 `mcp.json`、`.codex` 内的 `config.toml` 是 bootstrap 生成的本机绝对路径，不提交；共享模板为 `mcp.example.json` |
 
 - 根目录**只放 `AGENTS.md`、`PRINCIPLES.md`、`README.md` 三个 md**，其余说明进 `docs/instruction/`。
 - 禁止 `.log`、`.txt`、`.html`、截图、导出产物和一次性脚本：临时产物写 `.runtime/`（已忽略），需长期保留的进 `docs/data/`。
