@@ -13,7 +13,7 @@ async function assistantFixture(page: Page) {
   const base = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   await page.route('**/api/v1/auth/capabilities', route => route.fulfill({ json: { enabled: true } }));
   await page.route('**/api/v1/auth/me', route => route.fulfill({ json: { user: { id: '9007199254740993', username: 'creator', display_name: '创作者', email: 'creator@example.test', email_verified: true } } }));
-  const conversation = (id: string) => ({ id, project_id: null, title: id === '301' ? '故事讨论' : '新对话', scope_version: 3, stage: null, subject_type: null, subject_id: null, task_type: null, row_version: '1', status: 'active', archived: false, last_run_status: null, created_at: time, updated_at: time });
+  const conversation = (id: string, project_id = '10') => ({ id, project_id, title: id === '301' ? '故事讨论' : '新对话', scope_version: 3, stage: null, subject_type: null, subject_id: null, task_type: null, row_version: '1', status: 'active', archived: false, last_run_status: null, created_at: time, updated_at: time });
   const conversations = [conversation('301')];
   const messages: Record<string, any[]> = { '301': [] };
   const attachments: any[] = []; const tasks: any[] = []; const operations: any[] = []; const inputs: any[] = [];
@@ -31,7 +31,7 @@ async function assistantFixture(page: Page) {
   let nextStreamStatus = 200;
   let snapshotGate: { started: () => void; wait: Promise<void> } | null = null;
   const run = (id: string, status: string, task_id = '501', queue_position = 0) => ({ id, task_id, conversation_id: '301', status, phase: status === 'succeeded' ? 'finished' : 'model', row_version: '1', mode: 'discuss', model_config_id: '71', model_name: '对话模型', error: null, usage: {}, budget: {}, review: null, awaiting_artifact_ids: [], created_at: time, updated_at: time, finished_at: status === 'succeeded' ? time : null, queue_position, waiting_reason: null });
-  const task = (id = '501', goal = '讨论故事', status = 'running', conversation_id = '301') => ({ id, conversation_id, goal, status, phase: status === 'succeeded' ? 'terminal' : 'deciding', row_version: '1', plan_revision: '1', input_revision: '1', applied_input_revision: '1', control_seq: '0', applied_control_seq: '0', control_state: 'none', execution_target: null, memory_project_ids: [], source_context: null, selected_subjects: [], skills: [], media_limits: { images: null, videos: null, audio: null }, media_usage: {}, active_operation: null, error: null, created_at: time, updated_at: time });
+  const task = (id = '501', goal = '讨论故事', status = 'running', conversation_id = '301') => ({ id, conversation_id, goal, status, phase: status === 'succeeded' ? 'terminal' : 'deciding', row_version: '1', plan_revision: '1', input_revision: '1', applied_input_revision: '1', control_seq: '0', applied_control_seq: '0', control_state: 'none', execution_target: { mode: 'standard', project_id: '10' }, memory_project_ids: ['10'], source_context: null, selected_subjects: [], skills: [], media_limits: { images: null, videos: null, audio: null }, media_usage: {}, active_operation: null, error: null, created_at: time, updated_at: time });
   const skills = [{ id: 'builtin:continuity', name: '人物连续性', builtin: true, content_version: '1', row_version: null, enabled: true, filename: null, checksum_sha256: 'a'.repeat(64), package_checksum: 'b'.repeat(64), slug: 'continuity', description: '核对人物动机与连续性。', tags: [], modes: ['standard', 'infinite_canvas'], exclusions: '', required_tools: [], source: '', invocation_mode: 'auto', settings_version: '0', compatible: true, issues: [], resource_count: 0, updated_at: time }];
   const emit = (event_type: string, payload: any, run_id = '901') => events.push({ seq: events.length + 1, event_type, run_id, payload, created_at: time });
   await page.route('**/api/v1/agent/**', route => {
@@ -58,8 +58,8 @@ async function assistantFixture(page: Page) {
       const offset = Number(url.searchParams.get('offset') ?? 0);
       return reply({ items: filtered.slice(offset, offset + 20), total: filtered.length, offset, limit: 20 });
     }
-    if (path === '/global/conversations' && method === 'POST') { const next = conversation(String(301 + conversations.length)); conversations.push(next); messages[next.id] = []; return reply(next, 201); }
-    if (path === '/global/conversations') { const items = conversations.filter(item => item.status !== 'deleted' && (!url.searchParams.get('query') || item.title.includes(url.searchParams.get('query')!))); return reply({ items, total: items.length, offset: 0, limit: 20 }); }
+    if (path === '/global/conversations' && method === 'POST') { const next = conversation(String(301 + conversations.length), body.project_id); conversations.push(next); messages[next.id] = []; return reply(next, 201); }
+    if (path === '/global/conversations') { const items = conversations.filter(item => item.status !== 'deleted' && item.project_id === url.searchParams.get('project_id') && (!url.searchParams.get('query') || item.title.includes(url.searchParams.get('query')!))); return reply({ items, total: items.length, offset: 0, limit: 20 }); }
     if (path === '/global/history') return reply({ items: [], total: 0, offset: 0, limit: 20 });
     const parts = path.split('/'); const id = path.startsWith('/global/') ? parts[3] : parts[2];
     if (/\/messages\/\d+\/revision-eligibility$/.test(path)) {
@@ -127,10 +127,17 @@ async function assistantFixture(page: Page) {
     if (/^\/operations\/\d+$/.test(path)) return reply({ ...operations.find(item => item.id === id), result: { target: null, write_authorized: false } });
     if (/^\/tasks\/\d+\/control$/.test(path)) {
       if (receipts.has(key)) return reply(receipts.get(key));
-      const item = tasks.find(item => item.id === id)!; item.control_seq = String(BigInt(item.control_seq) + 1n); item.row_version = String(BigInt(item.row_version) + 1n);
+      const item = tasks.find(item => item.id === id)!;
+      if (body.kind === 'resume' && body.expected_control_seq !== item.control_seq) return reply({ error: { code: 'CONFLICT', message: '停止或暂停状态已变化，请核对当前任务后继续' } }, 409);
+      const reused = body.message_id ? messages[item.conversation_id].find(message => message.id === body.message_id && message.task_id === id && message.role === 'user') : null;
+      if (body.message_id && !reused) return reply({ error: { code: 'NOT_FOUND' } }, 404);
+      item.control_seq = String(BigInt(item.control_seq) + 1n); item.row_version = String(BigInt(item.row_version) + 1n);
       const started = operations.find(op => op.task_id === id && ['running', 'waiting_media', 'reconciling'].includes(op.outcome));
       if (body.kind === 'stop') { item.control_state = started ? 'stop_pending' : 'none'; item.status = started ? item.status : 'stopped'; if (!started) { activeRun = null; latestRun = run('901', 'cancelled', id); } }
-      if (body.kind === 'resume') { item.status = 'queued'; item.control_state = 'none'; latestRun = run('903', 'queued', id); }
+      if (body.kind === 'resume') {
+        if (!reused) messages[item.conversation_id].push({ id: String(2001 + messages[item.conversation_id].length), task_id: id, seq: messages[item.conversation_id].length + 1, role: 'user', content: body.content || '继续任务', references: [], artifacts: [], created_at: time });
+        item.status = 'queued'; item.control_state = 'none'; latestRun = run('903', 'queued', id);
+      }
       if (body.kind === 'redirect') item.control_state = 'redirect_pending';
       const result = { task: item, run: latestRun ?? activeRun, control_id: '1101', cursor: events.length }; receipts.set(key, result);
       if (abortControl) { abortControl = false; return route.abort('failed'); }
@@ -210,19 +217,159 @@ async function assistantFixture(page: Page) {
   };
 }
 
-test('default shared assistant keeps its original skill footer and receives no standard presentation classes', async ({ page }) => {
+for (const width of [1440, 390]) test(`composer menus offer scoped attachments and multiple Skills without configuration dialogs at ${width}px`, async ({ page }, info) => {
+  await page.setViewportSize({ width, height: 1000 });
+  const state = await assistantFixture(page);
+  state.skills.push({ ...state.skills[0], id: '801', builtin: false, name: '对白节奏' });
+  await page.goto(`${root}/source?assistant=open`);
+  await page.getByRole('button', { name: '添加附件', exact: true }).click();
+  const menu = page.getByRole('menu');
+  await expect(menu.getByRole('menuitem')).toHaveCount(4);
+  await expect(menu).toContainText('图片'); await expect(menu).toContainText('文本');
+  await expect(menu.getByRole('menuitem', { name: /从当前画布选择/ })).toHaveAttribute('aria-disabled', 'true');
+  await expect(menu).toContainText('仅画布模式可用');
+  await page.keyboard.press('Escape');
+  const trigger = page.getByRole('button', { name: '选择 Skill', exact: true });
+  await trigger.click();
+  const list = page.getByRole('region', { name: '选择 Skill', exact: true });
+  await list.getByRole('checkbox', { name: '人物连续性', exact: true }).check();
+  await list.getByRole('checkbox', { name: '对白节奏', exact: true }).check();
+  await expect(list).toBeVisible(); await expect(list).toContainText('已选择 2 / 8');
+  await list.getByRole('checkbox', { name: '对白节奏', exact: true }).uncheck();
+  await expect(list).toContainText('已选择 1 / 8');
+  const bounds = (await list.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+  await page.screenshot({ path: info.outputPath(`composer-menus-${width}.png`) });
+  await expect(page.getByRole('dialog', { name: /Skill/ })).toHaveCount(0);
+  await page.keyboard.press('Escape'); await expect(trigger).toBeFocused();
+  await expect(page.getByRole('region', { name: 'AI 创作助手', exact: true })).toBeVisible();
+  await trigger.click();
+  await page.getByRole('region', { name: 'AI 创作助手', exact: true }).locator('header').click({ position: { x: 70, y: 15 } });
+  await expect(list).toHaveCount(0);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('image and text menu actions use the existing upload channel and retain the draft', async ({ page }) => {
+  const state = await assistantFixture(page);
+  const uploads: { key?: string; body: string }[] = [];
+  await page.route('**/api/v1/assistant/conversations/301/attachments/uploads', route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    uploads.push({ key: route.request().headers()['idempotency-key'], body: route.request().postData() ?? '' });
+    const image = uploads.length === 1;
+    const item = { id: String(7000 + uploads.length), name: image ? '参考图.png' : '故事资料.md', kind: image ? 'image' : 'text', mime_type: image ? 'image/png' : 'text/markdown', byte_size: 20, media_id: null, url: null, text_preview: image ? null : '故事参考', checksum_sha256: 'b'.repeat(64), pending: true, metadata: {} };
+    state.attachments.push(item); return route.fulfill({ status: 201, json: item });
+  });
+  await page.goto(`${root}/source?assistant=open`);
+  const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
+  await input.fill('保留上传时的输入');
+  for (const kind of ['image', 'text']) {
+    await page.getByRole('button', { name: '添加附件', exact: true }).click();
+    const chooserReady = page.waitForEvent('filechooser');
+    await page.getByRole('menuitem', { name: kind === 'image' ? '图片' : '文本', exact: true }).click();
+    const chooser = await chooserReady;
+    expect(await chooser.element().getAttribute('accept')).toMatch(kind === 'image' ? /image\/png/ : /text\/markdown/);
+    await chooser.setFiles({ name: kind === 'image' ? '参考图.png' : '故事资料.md', mimeType: kind === 'image' ? 'image/png' : 'text/markdown', buffer: Buffer.from(kind === 'image' ? 'fixture-png' : '# 故事参考') });
+    await expect(page.getByLabel('本次消息附件', { exact: true })).toContainText(kind === 'image' ? '参考图.png' : '故事资料.md');
+    await expect(input).toHaveValue('保留上传时的输入');
+  }
+  expect(uploads).toHaveLength(2); expect(uploads.every(item => item.key && item.body.includes('filename='))).toBe(true);
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(input).toHaveValue('');
+  expect(state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!.body.attachment_ids).toEqual(['7001', '7002']);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+for (const width of [1440, 390]) test(`attachment recovery restores clickable sending for a current project conversation at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  const state = await assistantFixture(page);
+  let restoreFails = true;
+  await page.route('**/api/v1/assistant/conversations/301/attachments**', route => {
+    if (restoreFails && route.request().method() === 'GET') return route.fulfill({ status: 409, json: { error: { code: 'assistant_legacy_readonly', message: '旧对话仅供查看' } } });
+    return route.fallback();
+  });
+  await page.goto(`${root}/source?assistant=open`);
+  const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
+  const send = page.getByRole('button', { name: '发送', exact: true });
+  await input.fill('为当前项目梳理人物关系');
+  await expect(page.getByText('旧对话仅供查看，请新建项目助手对话继续聊天。', { exact: true })).toBeVisible();
+  await expect(send).toBeDisabled();
+  restoreFails = false;
+  await openSaveDetails(page);
+  await page.getByRole('button', { name: '重新载入附件', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(send).toBeEnabled();
+  await expect(input).toHaveValue('为当前项目梳理人物关系');
+  await expect(page.getByText('旧对话仅供查看，请新建项目助手对话继续聊天。', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: '消息所属任务' })).toHaveCount(0);
+  await send.click();
+  await expect(input).toHaveValue('');
+  const sent = state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!;
+  expect(sent.path).toBe('/global/conversations/301/messages');
+  expect(sent.body.execution_target).toEqual({ mode: 'standard', project_id: '10' });
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('standard assistant width supports pointer, keyboard, viewport limits and account storage', async ({ page }) => {
+  const state = await assistantFixture(page);
+  await page.goto(`${root}/source?assistant=open`);
+  const handle = page.getByRole('separator', { name: '调整助手宽度', exact: true });
+  const sidebar = page.getByRole('complementary', { name: 'AI 创作助手区域', exact: true });
+  await expect(handle).toHaveAttribute('aria-valuenow', '380');
+  await handle.focus(); await page.keyboard.press('ArrowLeft');
+  await expect(handle).toHaveAttribute('aria-valuenow', '396');
+  const box = (await handle.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 120); await page.mouse.down();
+  await page.mouse.move(box.x - 74, box.y + 120); await page.mouse.up();
+  await expect(handle).toHaveAttribute('aria-valuenow', '476');
+  await page.reload(); await expect(handle).toHaveAttribute('aria-valuenow', '476');
+  await handle.focus(); await page.keyboard.press('End');
+  await expect(handle).toHaveAttribute('aria-valuenow', '560');
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeLessThan(380);
+  await expect(handle).toHaveAttribute('aria-valuemin', '320');
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expect(handle).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'AI 创作助手区域', exact: true })).toBeVisible();
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('project changes restore separate conversations and drafts despite a foreign conversation URL', async ({ page }) => {
+  const state = await assistantFixture(page);
+  state.conversations.push({ ...state.conversations[0], id: '401', project_id: '11', title: '项目二讨论' });
+  state.messages['401'] = [];
+  const url = '/e2e/assistant/fixtures/assistant-presentation-fixture.html?layout=standard';
+  await page.goto(url);
+  const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
+  await input.fill('项目一的草稿');
+  await page.goto(url + '&project=11&conversation=301');
+  await expect(input).toHaveValue(''); await input.fill('项目二的草稿');
+  await page.goto(url + '&project=10&conversation=401');
+  await expect(input).toHaveValue('项目一的草稿');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(input).toHaveValue('');
+  const sent = state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!;
+  expect(sent.path).toBe('/global/conversations/301/messages');
+  expect(sent.body.execution_target).toEqual({ mode: 'standard', project_id: '10' });
+  await page.goto(url + '&project=11'); await expect(input).toHaveValue('项目二的草稿');
+  await page.getByRole('button', { name: '新对话', exact: true }).click();
+  await expect(input).toHaveValue('');
+  expect(state.calls.find(call => call.method === 'POST' && call.path === '/global/conversations')!.body).toEqual({ project_id: '11' });
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('shared canvas presentation uses the same anchored Skill list without standard panel classes', async ({ page }) => {
   const state = await assistantFixture(page);
   await page.goto('/e2e/assistant/fixtures/assistant-presentation-fixture.html');
   const panel = page.getByRole('region', { name: 'AI 创作助手', exact: true });
-  await expect(panel).toBeVisible();
   await expect(panel).not.toHaveClass(/ai-assistant-standard/);
-  await panel.getByRole('button', { name: '附件与技能', exact: true }).click();
-  await panel.getByRole('button', { name: '加载 Skill', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '加载 Skill', exact: true });
-  await expect(dialog).not.toHaveClass(/standard-assistant-dialog/);
-  await expect(dialog.locator('.agent-context-dialog-body .agent-context-dialog-actions').getByRole('button', { name: '完成', exact: true })).toBeVisible();
-  await expect(dialog.locator('.standard-assistant-dialog-footer')).toHaveCount(0);
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
+  await panel.getByRole('button', { name: '选择 Skill', exact: true }).click();
+  const list = page.getByRole('region', { name: '选择 Skill', exact: true });
+  await expect(list.getByRole('checkbox', { name: '人物连续性', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: /Skill/ })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(panel.getByRole('button', { name: '选择 Skill', exact: true })).toBeFocused();
+  await panel.getByRole('button', { name: '添加附件', exact: true }).click();
+  await expect(page.getByRole('menuitem', { name: '从当前画布选择', exact: true })).not.toHaveAttribute('aria-disabled', 'true');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -234,21 +381,25 @@ for (const width of [1440, 390]) test(`lightweight methods keep frozen versions 
   state.skills.push({ ...state.skills[0], id: '801', name: '我的对白方法', builtin: false, enabled: true, content_version: '1', invocation_mode: 'manual' });
   await page.goto(`${root}/source?assistant=open`);
   const selected = page.getByLabel('已加载技能', { exact: true });
-  await expect(selected).toContainText('人物连续性 v1');
-  await page.getByRole('button', { name: '附件与技能', exact: true }).click();
-  await page.getByRole('button', { name: '加载 Skill', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '加载 Skill', exact: true });
+  await expect(selected).toContainText('人物连续性');
+  await expect(selected.locator('.assistant-skill-token')).toHaveAttribute('title', '人物连续性 · v1');
+  await page.getByRole('button', { name: '选择 Skill', exact: true }).click();
+  const dialog = page.getByRole('region', { name: '选择 Skill', exact: true });
   await expect(dialog.getByRole('textbox', { name: '搜索 Skill', exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: /上传|编辑|停用|删除/ })).toHaveCount(0);
   await expect(dialog.getByRole('link', { name: '管理 Skill', exact: true })).toHaveAttribute('href', '/ai_config?section=skills');
-  await expect(dialog.getByText('任务使用 v1；目录版本 v2', { exact: false })).toBeVisible();
+  await expect(dialog.getByText('任务使用 v1；目录 v2', { exact: false })).toBeVisible();
   await dialog.getByRole('checkbox', { name: '我的对白方法', exact: true }).check();
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
+  await page.keyboard.press('Escape');
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
+  await page.getByRole('button', { name: '停止', exact: true }).click();
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible();
   await input.fill('保留原方法，加入对白方法');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(input).toHaveValue('');
   expect(state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!.body.skills).toEqual([{ id: state.skills[0].id, content_version: '1' }, { id: '801', content_version: '1' }]);
+  await page.getByRole('button', { name: '停止', exact: true }).click();
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible();
   await selected.getByRole('button', { name: '移除方法人物连续性', exact: true }).click();
   await selected.getByRole('button', { name: '移除方法我的对白方法', exact: true }).click();
   await input.fill('清空手动方法后继续');
@@ -259,8 +410,7 @@ for (const width of [1440, 390]) test(`lightweight methods keep frozen versions 
   await expect(input).toHaveValue('');
   const sends = state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'));
   expect(sends.at(-1)!.body).toMatchObject({ task_id: '501', skills: [], content: '清空手动方法后继续' });
-  await page.getByRole('button', { name: '附件与技能', exact: true }).click();
-  await page.getByRole('button', { name: '加载 Skill', exact: true }).click();
+  await page.getByRole('button', { name: '选择 Skill', exact: true }).click();
   await expect(dialog.getByRole('checkbox', { name: '我的对白方法', exact: true })).not.toBeChecked();
   expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   await page.screenshot({ path: info.outputPath(`lightweight-methods-${width}.png`) });
@@ -272,21 +422,21 @@ test('lightweight method discovery searches all pages and keeps unavailable reas
   for (let index = 0; index < 55; index++) state.skills.push({ ...state.skills[0], id: String(800 + index), name: `个人方法 ${index}`, builtin: false });
   state.skills.at(-1)!.compatible = false; state.skills.at(-1)!.issues = ['缺少未提供的工具'];
   await page.goto(`${root}/source?assistant=open`);
-  await page.getByRole('button', { name: '附件与技能', exact: true }).click();
-  await page.getByRole('button', { name: '加载 Skill', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '加载 Skill', exact: true });
+  await page.getByRole('button', { name: '选择 Skill', exact: true }).click();
+  const dialog = page.getByRole('region', { name: '选择 Skill', exact: true });
   await expect(dialog.getByRole('checkbox', { name: '个人方法 48', exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: '下一页', exact: true }).click();
+  await dialog.getByRole('button', { name: '加载更多 Skill', exact: true }).click();
   await expect(dialog.getByRole('checkbox', { name: '个人方法 54', exact: true })).toBeDisabled();
   await expect(dialog.getByText('缺少未提供的工具', { exact: true })).toBeVisible();
   await dialog.getByRole('textbox', { name: '搜索 Skill', exact: true }).fill('个人方法 53');
   await dialog.getByRole('checkbox', { name: '个人方法 53', exact: true }).check();
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
-  await expect(page.getByLabel('已加载技能', { exact: true })).toContainText('个人方法 53 v1');
+  await page.keyboard.press('Escape');
+  await expect(page.getByLabel('已加载技能', { exact: true })).toContainText('个人方法 53');
+  await expect(page.locator('.assistant-skill-token')).toHaveAttribute('title', '个人方法 53 · v1');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`Skill mentions disambiguate same names using real identity at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 390]) test(`slash Skills confirm highlighted input tokens with real identity and restore across refresh at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.skills.splice(0, 1,
@@ -294,23 +444,32 @@ for (const width of [1440, 390]) test(`Skill mentions disambiguate same names us
   await page.goto(`${root}/source?assistant=open`);
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await input.fill('#同名');
+  await expect(page.getByRole('menuitemcheckbox').filter({ hasText: '同名对白方法' })).toHaveCount(0);
+  await input.fill('/同名');
   const choices = page.getByRole('menuitemcheckbox').filter({ hasText: '同名对白方法' });
   await expect(choices).toHaveCount(2);
   await expect(choices.nth(1)).toContainText('9007199254740995');
-  await choices.nth(1).click();
-  await expect(input).toHaveValue('#同名对白方法 ');
-  await expect(page.getByLabel('已加载技能', { exact: true })).toContainText('同名对白方法 v1');
+  await input.press('ArrowDown'); await input.press('Enter');
+  await expect(input).toHaveValue('');
+  const token = page.locator('.ai-assistant-sender .assistant-skill-token');
+  await expect(token).toContainText('同名对白方法');
+  await expect(token).toHaveAttribute('title', '同名对白方法 · v1');
+  await expect(choices).toHaveCount(0);
+  expect(state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'))).toHaveLength(0);
+  await page.screenshot({ path: info.outputPath(`skill-token-${width}.png`) });
+  await input.fill('用所选方法分析对白');
   await page.reload();
-  await expect(input).toHaveValue('#同名对白方法 ');
+  await expect(input).toHaveValue('用所选方法分析对白'); await expect(token).toBeVisible();
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(input).toHaveValue('');
   expect(state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!.body.skills).toEqual([{ id: '9007199254740995', content_version: '1' }]);
-  await input.fill('#不存在');
+  await input.fill('/不存在');
   await page.getByRole('menuitemcheckbox').filter({ hasText: '浏览全部 Skill' }).click();
-  const dialog = page.getByRole('dialog', { name: '加载 Skill', exact: true });
+  const dialog = page.getByRole('region', { name: '选择 Skill', exact: true });
   await expect(dialog.getByRole('textbox', { name: '搜索 Skill', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('textbox', { name: '搜索 Skill', exact: true })).toBeFocused();
   await page.screenshot({ path: info.outputPath(`skill-mentions-${width}.png`) });
-  await page.keyboard.press('Escape'); await expect(input).toBeFocused();
+  await page.keyboard.press('Escape'); await expect(page.getByRole('button', { name: '选择 Skill', exact: true })).toBeFocused();
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -345,11 +504,10 @@ test('global composer freezes explicitly selected subjects, Skills and safe Mark
   await input.fill('@林');
   await page.getByRole('menuitemcheckbox', { name: '林晚 素材', exact: true }).click();
   await expect(page.getByLabel('当前任务引用', { exact: true })).toContainText('林晚');
-  await page.getByRole('button', { name: '附件与技能', exact: true }).click();
-  await page.getByRole('button', { name: '加载 Skill', exact: true }).click();
-  const skillDialog = page.getByRole('dialog', { name: '加载 Skill' });
+  await page.getByRole('button', { name: '选择 Skill', exact: true }).click();
+  const skillDialog = page.getByRole('region', { name: '选择 Skill', exact: true });
   await skillDialog.getByRole('checkbox', { name: '人物连续性' }).check();
-  await skillDialog.getByRole('button', { name: '完成', exact: true }).click();
+  await page.keyboard.press('Escape');
   await expect(page.getByLabel('已加载技能')).toContainText('人物连续性');
   await input.fill('一起分析人物动机');
   await page.getByRole('button', { name: '发送', exact: true }).click();
@@ -567,13 +725,23 @@ test('a stale batch undo keeps the selection until the user adopts a fresh previ
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`discussion editing replaces one reply and exposes old revisions at ${width}px`, async ({ page }, info) => {
+async function restoreLegacyDiscussionDraft(page: Page, kind: 'edit' | 'regenerate' = 'edit') {
+  const content = await page.locator('[data-message-id="1001"]').innerText();
+  await page.evaluate(({ content, kind }) => localStorage.setItem('short-drama:user:9007199254740993:assistant-history:v1:301', JSON.stringify({
+    version: 1, messageId: '1001', key: 'legacy-discussion-draft', pending: false,
+    body: { kind, row_version: '1', ...(kind === 'edit' ? { content } : {}) },
+  })), { content, kind });
+  await page.reload();
+}
+
+for (const width of [1440, 390]) test(`legacy discussion drafts can finish while user messages expose no editing actions at ${width}px`, async ({ page }, info) => {
   const state = await assistantFixture(page); await page.setViewportSize({ width, height: 1000 });
   await page.goto(`${root}/source?assistant=open`);
   await page.getByRole('textbox', { name: '给助手的消息', exact: true }).fill('原始的纯讨论');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   const source = page.locator('[data-message-id="1001"]');
-  await source.getByRole('button', { name: '编辑这条讨论', exact: true }).click();
+  await expect(source.getByRole('button')).toHaveCount(0);
+  await restoreLegacyDiscussionDraft(page);
   const dialog = page.getByRole('dialog', { name: '编辑讨论', exact: true });
   await dialog.getByRole('textbox', { name: '修订讨论正文' }).fill('只讨论前三秒冲突，保留克制的对白');
   await expect(dialog.getByRole('button', { name: '保存并重新回答', exact: true })).toBeEnabled();
@@ -585,10 +753,11 @@ for (const width of [1440, 390]) test(`discussion editing replaces one reply and
   await expect(page.locator('.ai-assistant-turn')).toContainText('修订后的讨论回复');
   expect(state.messages['301']).toHaveLength(2);
   expect(state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'))).toHaveLength(1);
-  await source.getByRole('button', { name: '查看讨论修订记录', exact: true }).click();
+  await expect(source.getByRole('button')).toHaveCount(0);
+  await page.locator('.ai-assistant-turn').getByRole('button', { name: '查看讨论修订记录', exact: true }).click();
   const history = page.getByRole('dialog', { name: '讨论修订记录', exact: true });
   await history.getByText('版本 1 · 编辑前', { exact: true }).click();
-  await expect(history).toContainText('原始的纯讨论');
+  await expect(history).toContainText('创作建议');
   await history.getByRole('button', { name: '关闭并保留', exact: true }).click();
   await page.reload(); await expect(page.locator('[data-message-id="1001"]')).toContainText('只讨论前三秒冲突');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
@@ -598,7 +767,7 @@ test('an uncertain discussion revision survives refresh and reuses its exact ori
   const state = await assistantFixture(page); await page.goto(`${root}/source?assistant=open`);
   await page.getByRole('textbox', { name: '给助手的消息' }).fill('这是一段纯讨论');
   await page.getByRole('button', { name: '发送', exact: true }).click();
-  await page.getByRole('button', { name: '编辑这条讨论', exact: true }).click();
+  await restoreLegacyDiscussionDraft(page);
   let dialog = page.getByRole('dialog', { name: '编辑讨论', exact: true });
   await dialog.getByRole('textbox', { name: '修订讨论正文' }).fill('受理不明时保留的修订');
   state.abortNextRevision(); await dialog.getByRole('button', { name: '保存并重新回答', exact: true }).click();
@@ -618,7 +787,7 @@ test('discussion version conflicts preserve draft and require reviewing the curr
   const state = await assistantFixture(page); await page.goto(`${root}/source?assistant=open`);
   await page.getByRole('textbox', { name: '给助手的消息' }).fill('原始纯讨论');
   await page.getByRole('button', { name: '发送', exact: true }).click();
-  await page.getByRole('button', { name: '编辑这条讨论', exact: true }).click();
+  await restoreLegacyDiscussionDraft(page);
   const dialog = page.getByRole('dialog', { name: '编辑讨论', exact: true });
   const text = dialog.getByRole('textbox', { name: '修订讨论正文' }); await text.fill('本机修订不能丢失');
   state.conflictNextRevision(); await dialog.getByRole('button', { name: '保存并重新回答', exact: true }).click();
@@ -642,7 +811,7 @@ test('regenerating a discussion keeps its source text and replaces only its orig
   await page.getByRole('textbox', { name: '给助手的消息' }).fill('保留这条用户原文');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   const source = page.locator('[data-message-id="1001"]');
-  await source.getByRole('button', { name: '重新回答这段讨论', exact: true }).click();
+  await restoreLegacyDiscussionDraft(page, 'regenerate');
   const dialog = page.getByRole('dialog', { name: '重新回答', exact: true });
   await expect(dialog).toContainText('保留用户原文');
   await expect(dialog.getByRole('textbox', { name: '修订讨论正文' })).toHaveCount(0);
@@ -660,10 +829,12 @@ test('protected discussions offer a new correcting message without rewriting his
   const state = await assistantFixture(page); await page.goto(`${root}/source?assistant=open`);
   const input = page.getByRole('textbox', { name: '给助手的消息' }); await input.fill('已经成为执行依据的讨论');
   await page.getByRole('button', { name: '发送', exact: true }).click(); state.denyHistory();
-  await page.getByRole('button', { name: '编辑这条讨论', exact: true }).click();
+  await restoreLegacyDiscussionDraft(page);
   const dialog = page.getByRole('dialog', { name: '编辑讨论', exact: true });
   await expect(dialog.getByRole('button', { name: '保存并重新回答', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: /^提示详情：/ }).click();
+  await expect(dialog).toContainText('此讨论已被后续创作使用');
+  await expect(dialog).not.toContainText('记忆');
   await dialog.getByRole('button', { name: '用新消息纠正', exact: true }).click();
   await expect(dialog).not.toBeVisible(); await expect(input).toHaveValue('纠正此前讨论：已经成为执行依据的讨论');
   expect(state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/revisions'))).toHaveLength(0);
@@ -671,27 +842,21 @@ test('protected discussions offer a new correcting message without rewriting his
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`subject versions refresh explicitly and retain other sources at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 390]) test(`subject versions refresh inline and retain other saved sources at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 });
   const state = await assistantFixture(page); state.beginReply('按原引用讨论。');
   const remote = { project_id: '11', source_kind: 'project', source_id: '11', kind: 'asset', id: '601', revision: '3', name: '远方角色', project_name: '另一作品', source_name: '另一作品' };
   state.subjectOptions.push(remote); state.asset.row_version = '2';
   state.tasks[0].selected_subjects = [Object.assign(state.subject(state.subjectOptions[0]), { availability: 'changed', current_revision: '2', current_checksum: 'c'.repeat(64) }), state.subject(remote)];
   await page.goto(`${root}/source?assistant=open`);
-  await expect(page.getByLabel('当前任务引用', { exact: true })).toContainText('有新版本');
-  await page.getByRole('button', { name: '管理任务引用', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '管理任务引用', exact: true });
-  await expect(dialog.getByText('有新版本；当前仍使用原快照', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('已读取 v1', { exact: false })).toBeVisible();
-  await expect(dialog.getByLabel('可选主体').getByText('林晚', { exact: true })).toBeVisible();
-  await page.screenshot({ path: info.outputPath(`assistant-subjects-${width}.png`) });
-  expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-  await dialog.getByRole('button', { name: '刷新引用', exact: true }).click();
-  await expect(dialog.getByText('测试项目 · v2 · 待发送', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('远方角色', { exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
+  const chips = page.getByLabel('当前任务引用', { exact: true });
+  await expect(chips).toContainText('有新版本');
+  await page.getByRole('button', { name: '刷新引用林晚', exact: true }).click();
+  await expect(chips).toContainText('林晚 · 待发送');
+  await expect(chips).toContainText('远方角色');
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await input.fill('按刷新后的资料继续比较');
+  await page.getByRole('button', { name: '停止', exact: true }).click();
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(input).toHaveValue('');
   const sent = state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!;
@@ -704,26 +869,17 @@ test('cross-page image-slot selection and uncertain acceptance preserve one orig
   const state = await assistantFixture(page); state.beginReply('比较当前角色。');
   state.tasks[0].selected_subjects = [state.subject(state.subjectOptions[0])];
   state.subjectOptions.push({ project_id: '11', source_kind: 'project', source_id: '11', kind: 'image_slot', id: '777', revision: '4', name: '图片组 700 · 图位 2', project_name: '另一作品', source_name: '另一作品' });
-  await page.route('**/api/v1/projects*', route => new URL(route.request().url()).pathname === '/api/v1/projects' ? route.fulfill({ json: { items: [
-    { id: '10', name: '测试项目', workspace_mode: 'standard', row_version: '1', last_opened_at: time, created_at: time },
-    { id: '11', name: '另一作品', workspace_mode: 'standard', row_version: '1', last_opened_at: time, created_at: time },
-  ], total: 2, offset: 0, limit: 20 } }) : route.fallback());
+  await page.addInitScript(({ added, retained }) => {
+    const key = 'short-drama:user:9007199254740993:assistant-draft:v1:301';
+    if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({ version: 1, text: '', skills: [], subjectDraft: { taskId: '501', expectedInputRevision: '1', retainKeys: [retained], added: [added] } }));
+  }, { added: state.subjectOptions.at(-1), retained: state.subject(state.subjectOptions[0]).subject_key });
   await page.goto(`${root}/source?assistant=open`);
-  await page.getByRole('button', { name: '管理任务引用', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '管理任务引用', exact: true });
-  await expect(dialog.getByRole('combobox', { name: '引用来源作品' })).toBeEnabled();
-  await dialog.getByRole('combobox', { name: '引用来源作品' }).press('ArrowDown');
-  await page.locator('.ant-select-dropdown').getByText('另一作品', { exact: true }).click();
-  await dialog.getByRole('combobox', { name: '引用主体类型' }).press('ArrowDown');
-  await page.locator('.ant-select-dropdown').getByText('图位', { exact: true }).click();
-  const option = dialog.getByLabel('可选主体').locator('.ai-assistant-subject-row');
-  await expect(option).toContainText('图位 2'); await option.getByRole('button', { name: '选入', exact: true }).click();
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await input.fill('跨页比较这些参考');
   await page.goto(`${root}/storyboard?assistant=open`);
   await expect(input).toHaveValue('跨页比较这些参考');
   await expect(page.getByLabel('当前任务引用', { exact: true })).toContainText('图位 2 · 待发送');
+  await page.getByRole('button', { name: '停止', exact: true }).click();
   state.abortNextSend(); await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.getByText('发送结果尚未确认，草稿已保留。请使用原请求核对，避免重复调用。', { exact: true })).toBeVisible();
   await openSaveDetails(page);
@@ -751,8 +907,7 @@ test('image-slot source link opens only its real saved slot and rejects a mismat
     { id: '777', output_index: 2, item_version: '4', url: null, status: 'ready', width: 1024, height: 768 },
   ] } }));
   await page.goto(`${root}/source?assistant=open`);
-  await page.getByRole('button', { name: '管理任务引用', exact: true }).click();
-  const source = page.getByRole('dialog', { name: '管理任务引用', exact: true }).getByRole('link', { name: '查看来源', exact: true });
+  const source = page.getByRole('link', { name: '查看引用来源人物图位', exact: true });
   await expect(source).toHaveAttribute('target', '_blank');
   const href = await source.getAttribute('href');
   expect(href).toBe('/projects/10/assets?asset=501&source_image_group=700&source_image_slot=777');
@@ -785,6 +940,7 @@ test('task attachment removal survives navigation and replays the original selec
   await expect(page.getByLabel('当前任务附件', { exact: true })).toContainText('待移除');
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await input.fill('后续不再引用附件，保留人物卡');
+  await page.getByRole('button', { name: '停止', exact: true }).click();
   state.abortNextSend(); await page.getByRole('button', { name: '发送', exact: true }).click();
   await openSaveDetails(page);
   await expect(page.getByRole('button', { name: '使用原请求核对', exact: true })).toBeVisible();
@@ -800,47 +956,6 @@ test('task attachment removal survives navigation and replays the original selec
   const sends = state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'));
   expect(sends).toHaveLength(2); expect(sends[1].body).toEqual(original.body); expect(sends[1].key).toEqual(original.key);
   await expect(page.getByLabel('当前任务引用', { exact: true })).toContainText('林晚');
-  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
-});
-
-for (const width of [1440, 390]) test(`cross-project canvas target and memory scopes restore independently at ${width}px`, async ({ page }, info) => {
-  await page.setViewportSize({ width, height: 1000 });
-  const state = await assistantFixture(page); state.beginReply('继续原任务。');
-  const project = (id: string, name: string, workspace_mode = 'standard') => ({ id, name, workspace_mode, row_version: '1', last_opened_at: time, created_at: time, primary_canvas_id: workspace_mode === 'infinite_canvas' ? 'canvas-a' : null });
-  const projects = [project('10', '测试项目'), project('11', '记忆来源作品'), project('12', '目标画布作品', 'infinite_canvas')];
-  await page.route('**/api/v1/projects*', route => new URL(route.request().url()).pathname === '/api/v1/projects'
-    ? route.fulfill({ json: { items: projects, total: projects.length, offset: 0, limit: 20 } }) : route.fallback());
-  await page.route('**/api/v1/projects/11', route => route.fulfill({ json: projects[1] }));
-  await page.route('**/api/v1/projects/12', route => route.fulfill({ json: projects[2] }));
-  await page.route('**/api/v1/projects/12/canvases', route => route.fulfill({ json: { items: [
-    { id: '22', project_id: '12', source_key: 'canvas-a', title: '主画布', row_version: '1', schema_version: 1, created_at: time, updated_at: time },
-    { id: '23', project_id: '12', source_key: 'canvas-b', title: '第二画布', row_version: '3', schema_version: 1, created_at: time, updated_at: time },
-  ] } }));
-  await page.goto(`${root}/source?assistant=open`);
-  await page.getByRole('button', { name: '任务设置', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '任务设置', exact: true });
-  const target = dialog.getByRole('combobox', { name: '工具写入目标', exact: true });
-  await expect(target).toBeEnabled(); await target.press('ArrowDown');
-  await page.locator('.ant-select-dropdown').getByText('目标画布作品', { exact: true }).click();
-  const canvas = dialog.getByRole('combobox', { name: '写入画布', exact: true });
-  await expect(canvas).toBeEnabled(); await canvas.press('ArrowDown');
-  await page.locator('.ant-select-dropdown').getByText('第二画布', { exact: true }).click();
-  await dialog.getByRole('combobox', { name: '作品长期记忆', exact: true }).press('ArrowDown');
-  await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').getByText('记忆来源作品', { exact: true }).click();
-  await dialog.getByRole('combobox', { name: '作品长期记忆', exact: true }).press('Escape');
-  await page.screenshot({ path: info.outputPath(`assistant-target-settings-${width}.png`) });
-  expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
-  await page.reload(); await page.getByRole('button', { name: '任务设置', exact: true }).click();
-  await expect(dialog.locator('.ant-select-selection-item').filter({ hasText: '第二画布' })).toBeVisible();
-  await expect(dialog.locator('.ant-select-selection-item').filter({ hasText: '记忆来源作品' })).toBeVisible();
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
-  const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
-  await input.fill('只修改目标与记忆范围'); await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(input).toHaveValue('');
-  const sent = state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!;
-  expect(sent.body.execution_target).toEqual({ mode: 'infinite_canvas', project_id: '12', canvas_id: 'canvas-b' });
-  expect(sent.body.memory_project_ids).toEqual(['11']); expect(sent.body).not.toHaveProperty('subject_selection');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -965,7 +1080,7 @@ test('current references remain above the composer and new messages preserve the
     role: index % 2 ? 'assistant' : 'user', content: `第 ${index + 1} 条故事讨论。${'补充人物动机与故事冲突。'.repeat(12)}`, references: [], artifacts: [], created_at: time })));
   await page.goto(`${root}/source?assistant=open`);
   const log = page.getByLabel('助手消息', { exact: true });
-  const context = page.getByRole('button', { name: '任务设置', exact: true });
+  const context = page.getByRole('button', { name: '添加附件', exact: true });
   await expect(log).toBeVisible(); await expect(context).toBeVisible();
   await expect.poll(() => log.evaluate(node => node.scrollHeight - node.clientHeight)).toBeGreaterThan(500);
   const contextAtBottom = (await context.boundingBox())!;
@@ -1073,9 +1188,9 @@ test('a delayed snapshot cannot rewind a settled trace or a stopped task', async
   try {
     state.finishOperation();
     await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
-    await expect(page.getByText('任务已停止；补充会保留，明确继续才恢复', { exact: true })).toBeVisible();
+    await expect(page.getByText('已停止回复，可以继续输入新的要求。', { exact: true })).toBeVisible();
   } finally { delayed.release(); }
-  await expect(page.getByText('任务已停止；补充会保留，明确继续才恢复', { exact: true })).toBeVisible();
+  await expect(page.getByText('已停止回复，可以继续输入新的要求。', { exact: true })).toBeVisible();
   await expect(trace).toContainText('结果已保存');
   expect(state.calls.filter(call => call.method !== 'GET')).toEqual([]);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
@@ -1132,45 +1247,122 @@ test('mention keyboard selection and Chinese composition do not submit before ex
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('supplements retain the running task while independent tasks enter its queue with fresh scopes', async ({ page }) => {
+for (const width of [1440, 390]) test(`reply waiting dots animate and the Sender stops without clearing the draft at ${width}px`, async ({ page }, info) => {
+  await page.setViewportSize({ width, height: 900 });
+  const state = await assistantFixture(page); state.beginReply('');
+  state.messages['301'].push({ id: 'waiting-question', task_id: '501', seq: 1, role: 'user', content: '帮我完善人物动机', references: [], artifacts: [], created_at: time });
+  await page.goto(`${root}/source?assistant=open`);
+  const sender = page.locator('.ai-assistant-sender');
+  await expect(page.locator('.ai-assistant-loading').first()).toContainText(/正在回复|正在恢复连接/);
+  const dots = page.locator('.ai-assistant-loading-dots');
+  await expect.poll(() => dots.evaluate(element => element.getAnimations({ subtree: true }).length)).toBe(3);
+  await expect(sender.getByRole('button', { name: '停止', exact: true })).toBeEnabled();
+  await expect(page.locator('.ai-assistant-user').getByRole('button')).toHaveCount(0);
+  await expect(page.locator('.ai-assistant-composer')).not.toContainText('正在回复');
+  await expect(page.locator('.ai-assistant-composer')).not.toContainText('补充当前任务');
+  await page.screenshot({ path: info.outputPath(`waiting-sender-${width}.png`) });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect.poll(() => dots.evaluate(element => element.getAnimations({ subtree: true }).length)).toBe(0);
+  const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
+  await input.fill('下一条可以补充，也可以改方向');
+  await sender.getByRole('button', { name: '停止', exact: true }).click();
+  await expect(input).toHaveValue('下一条可以补充，也可以改方向');
+  await expect(sender.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
+  expect(state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'))).toHaveLength(0);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+for (const lost of ['message', 'resume']) test(`a message after stopping reconciles a lost ${lost} response before replying once`, async ({ page }) => {
+  const state = await assistantFixture(page); state.beginReply('原来的方向');
+  await page.goto(`${root}/source?assistant=open`);
+  await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click();
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible();
+  if (lost === 'message') state.abortNextSend(); else state.abortNextControl();
+  await page.getByRole('textbox', { name: '给助手的消息', exact: true }).fill('改成悬疑方向，保留已保存的角色');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await openSaveDetails(page);
+  const reconcile = page.getByRole('button', { name: lost === 'message' ? '使用原请求核对' : '使用原请求核对控制', exact: true });
+  await expect(reconcile).toBeEnabled();
+  if (lost === 'message') expect(state.calls.filter(call => call.path.endsWith('/control') && call.body.kind === 'resume')).toHaveLength(0);
+  await page.reload(); await openSaveDetails(page); await reconcile.click();
+  await expect(reconcile).toHaveCount(0);
+  await expect.poll(() => state.tasks[0].status).toBe('queued');
+  const sends = state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'));
+  const resumes = state.calls.filter(call => call.path.endsWith('/control') && call.body.kind === 'resume');
+  const retried = lost === 'message' ? sends : resumes;
+  expect(retried).toHaveLength(2); expect(retried[1].body).toEqual(retried[0].body); expect(retried[1].key).toBe(retried[0].key);
+  expect(state.messages['301']).toHaveLength(1); expect(state.tasks).toHaveLength(1);
+  expect(resumes[0].body).toEqual({ kind: 'resume', expected_control_seq: '1', message_id: state.messages['301'][0].id });
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('a message cannot resume over a newer stop from another tab', async ({ page }) => {
+  const state = await assistantFixture(page); state.beginReply('原来的方向');
+  await page.goto(`${root}/source?assistant=open`);
+  await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click();
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible();
+  await page.route('**/api/v1/assistant/global/conversations/301/messages', route => {
+    if (route.request().method() === 'POST') state.tasks[0].control_seq = '2';
+    return route.fallback();
+  });
+  await page.getByRole('textbox', { name: '给助手的消息', exact: true }).fill('补充人物动机');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(page.locator('.studio-message').filter({ hasText: '数据已被修改，请重新加载最新内容后再操作。' })).toBeVisible();
+  expect(state.tasks[0].status).toBe('stopped'); expect(state.tasks[0].control_seq).toBe('2');
+  expect(state.messages['301']).toHaveLength(1);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('short-drama:user:9007199254740993:assistant-pending-control:v1:301'))).toBeNull();
+  expect(state.calls.filter(call => call.path.endsWith('/control') && call.body.kind === 'resume')).toHaveLength(1);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('sending after stopping keeps task context and starts fresh after completion without a task selector', async ({ page }) => {
   const state = await assistantFixture(page); state.beginReply('正在分析当前故事。');
   await page.goto(root + '/source?assistant=open');
+  await expect(page.getByRole('combobox', { name: '消息所属任务' })).toHaveCount(0);
+  await expect(page.getByText('独立新任务', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('补充当前任务', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.ai-assistant-task-controls')).toHaveCount(0);
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await input.fill('补充：人物知道真相，但暂时不说。');
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toHaveCount(0);
+  await input.press('Enter');
+  expect(state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'))).toHaveLength(0);
+  await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click();
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(input).toHaveValue('');
+  await expect.poll(() => state.calls.filter(call => call.path.endsWith('/control') && call.body.kind === 'resume').length).toBe(1);
   const supplement = state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'))[0];
   expect(supplement.body.task_id).toBe('501'); expect(supplement.body).not.toHaveProperty('new_task');
   expect(state.tasks).toHaveLength(1);
-  await page.getByRole('combobox', { name: '消息所属任务' }).press('ArrowDown');
-  await page.locator('.ant-select-dropdown').getByText('独立新任务', { exact: true }).click();
+  state.finishReply('当前故事已经分析完毕。');
+  await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
+  await expect(page.getByText('当前故事已经分析完毕。', { exact: true })).toBeVisible();
   await input.fill('另开一个故事');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(input).toHaveValue('');
   const independent = state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'))[1];
   expect(independent.body.new_task).toBe(true); expect(independent.body).not.toHaveProperty('task_id');
   expect(independent.body).not.toHaveProperty('context'); expect(independent.body).not.toHaveProperty('skills');
-  expect(independent.body.execution_target).toBeNull(); expect(independent.body.memory_project_ids).toEqual([]);
+  expect(independent.body.execution_target).toEqual({ mode: 'standard', project_id: '10' }); expect(independent.body).not.toHaveProperty('memory_project_ids');
   expect(state.tasks).toHaveLength(2);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('stopping a claimed operation retains its pending trace until the full receipt and explicit resume', async ({ page }) => {
+test('stopping a claimed operation retains its receipt and the next direction resumes through one normal send', async ({ page }) => {
   const state = await assistantFixture(page); state.beginReply('正在核对目标。'); state.startOperation();
   state.messages['301'].push({ id: 'task-question', task_id: '501', seq: 1, role: 'user', content: '讨论故事', references: [], artifacts: [], created_at: time });
   await page.goto(root + '/source?assistant=open');
   const trace = page.getByRole('region', { name: '任务过程：讨论故事' });
   await expect(trace).toContainText('核对写入目标'); await expect(trace).toContainText('执行中');
-  await page.locator('.ai-assistant-task-controls').getByRole('button', { name: '停止', exact: true }).click();
+  await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click();
   await expect(page.getByText('当前工具完整结束后停止', { exact: true })).toBeVisible();
   await expect(trace).toContainText('执行中'); expect(state.operations[0].outcome).toBe('running');
   state.finishOperation(); await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
   await expect(trace).toContainText('结果已保存');
-  await expect(page.getByRole('button', { name: '明确继续', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '明确继续', exact: true })).toHaveCount(0);
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
-  await input.fill('保留这个补充，暂时不恢复'); await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(input).toHaveValue(''); expect(state.tasks[0].status).toBe('stopped');
-  await page.getByRole('button', { name: '明确继续', exact: true }).click();
+  await input.fill('改成悬疑方向，保留已保存内容'); await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(input).toHaveValue('');
   await expect.poll(() => state.tasks[0].status).toBe('queued');
   const resume = state.calls.find(call => call.path === '/tasks/501/control' && call.body.kind === 'resume')!;
   expect(resume.body.expected_control_seq).toBe('1'); expect(resume.key).toBeTruthy();
@@ -1281,7 +1473,7 @@ for (const width of [1440, 390]) test(`media batches retain a pending stop until
   const trace = page.getByRole('region', { name: '任务过程：讨论故事' });
   await expect(trace.getByText('生成并回填媒体', { exact: true })).toBeVisible();
   await expect(trace.getByText('生成中', { exact: true })).toBeVisible();
-  await page.locator('.ai-assistant-task-controls').getByRole('button', { name: '停止', exact: true }).click();
+  await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click();
   await expect(page.getByText('当前工具完整结束后停止', { exact: true })).toBeVisible();
   expect(state.operations[0].outcome).toBe('waiting_media');
   const ref = { kind: 'asset', id: '9007199254740993', project_id: '10', name: '图片组 9007199254740995', status: 'adopted', row_version: '2', image_group_id: '9007199254740995', primary_version: '2', generated_count: 2, requested_count: 2 };
@@ -1533,8 +1725,8 @@ test('an uncertain attachment keeps the draft and reuses the original reference 
   await page.goto(`${root}/source?assistant=open`);
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await input.fill('保留附件草稿');
-  await page.getByRole('button', { name: '附件与技能', exact: true }).click();
-  await page.getByRole('button', { name: '添加资产库', exact: true }).click();
+  await page.getByRole('button', { name: '添加附件', exact: true }).click();
+  await page.getByRole('menuitem', { name: '从资产库选择', exact: true }).click();
   await page.getByRole('dialog', { name: '添加资产上下文', exact: true }).getByRole('button', { name: '添加', exact: true }).first().click();
   await expect(page.locator('.studio-message').filter({ hasText: '无法连接服务' })).toBeVisible();
   await openSaveDetails(page);
@@ -1555,7 +1747,7 @@ test('uncertain task controls survive refresh and reuse the frozen control reque
   const state = await assistantFixture(page); state.beginReply('讨论当前故事'); state.abortNextControl();
   await page.goto(root + '/source?assistant=open');
   await expect(page).toHaveURL(/conversation=301/);
-  await page.locator('.ai-assistant-task-controls').getByRole('button', { name: '停止', exact: true }).click();
+  await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click();
   await openSaveDetails(page);
   await expect(page.getByRole('button', { name: '使用原请求核对控制', exact: true })).toBeVisible();
   await page.reload();
@@ -1574,7 +1766,6 @@ test('uncertain deletion survives refresh after the conversation is already hidd
   await expect(page).toHaveURL(/conversation=301/);
   await page.getByRole('button', { name: '对话记录', exact: true }).click();
   const history = page.getByRole('dialog', { name: '对话记录', exact: true });
-  await history.getByRole('checkbox').check();
   await history.getByRole('button', { name: '管理对话故事讨论', exact: true }).click();
   await page.getByRole('menuitem', { name: '删除', exact: true }).click();
   const confirmation = page.getByRole('dialog', { name: '删除对话', exact: true });
@@ -1588,281 +1779,67 @@ test('uncertain deletion survives refresh after the conversation is already hidd
   await expect(history.getByRole('button', { name: '使用原请求核对删除', exact: true })).toHaveCount(0);
   const calls = state.calls.filter(call => call.method === 'DELETE' && call.path === '/global/conversations/301');
   expect(calls).toHaveLength(2); expect(calls[1].body).toEqual(calls[0].body); expect(calls[1].key).toBe(calls[0].key);
-  expect(calls[1].body.clear_derived_memory).toBe(true); expect(state.conversations[0].status).toBe('deleted');
+  expect(calls[1].body.clear_derived_memory).toBe(false); expect(state.conversations[0].status).toBe('deleted');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`deletion previews and version-checks selected memory at ${width}px`, async ({ page }, info) => {
-  await page.setViewportSize({ width, height: 1000 });
+test('a legacy pending deletion keeps its exact original selection without showing memory controls', async ({ page }) => {
   const state = await assistantFixture(page);
-  state.deletionMemories.push(
-    { id: '761', content_version: '3', scope_type: 'user', project_id: null, title: '对白偏好', content_preview: '对白简短', protection_reasons: [] },
-    { id: '762', content_version: '5', scope_type: 'project', project_id: '10', title: '作品设定', content_preview: '后来修订的人物设定', protection_reasons: ['user_edited'] },
-    { id: '763', content_version: '2', scope_type: 'user', project_id: null, title: '独立来源', content_preview: '其他会话也确认的节奏', protection_reasons: ['independent_sources'] },
-  );
-  await page.goto(root + '/source?assistant=open'); await expect(page).toHaveURL(/conversation=301/);
+  state.deletionMemories.push({ id: '901', content_version: '3' });
+  await page.goto(`${root}/source?assistant=open`);
+  const pending = { version: 1, kind: 'delete', targetId: '301', key: 'legacy-delete-request', body: { row_version: '1', clear_derived_memory: true, memory_selections: [{ id: '901', content_version: '3' }] } };
+  const storageKey = 'short-drama:user:9007199254740993:assistant-pending-delete:v1:history';
+  await page.evaluate(({ storageKey, pending }) => localStorage.setItem(storageKey, JSON.stringify(pending)), { storageKey, pending });
   await page.getByRole('button', { name: '对话记录', exact: true }).click();
   const history = page.getByRole('dialog', { name: '对话记录', exact: true });
+  await history.getByRole('button', { name: /^提示详情：/ }).click();
+  await history.getByRole('button', { name: '使用原请求核对删除', exact: true }).click();
+  await expect(history.getByRole('button', { name: '使用原请求核对删除', exact: true })).toHaveCount(0);
+  const call = state.calls.find(call => call.method === 'DELETE')!;
+  expect(call.key).toBe(pending.key); expect(call.body).toEqual(pending.body);
+  expect(await page.evaluate(key => localStorage.getItem(key), storageKey)).toBeNull();
+  expect(state.calls.filter(call => call.path.includes('memory'))).toHaveLength(0);
+  await expect(history.getByRole('checkbox')).toHaveCount(0);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+for (const width of [1440, 390]) test(`memory and task configuration stay invisible including conversation deletion at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  const state = await assistantFixture(page);
+  await page.goto(`${root}/source?assistant=open`);
+  for (const name of ['记忆管理', '任务设置', '管理任务引用', '附件与技能']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
+  await expect(page.getByText('对话仅你可见', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '对话记录', exact: true }).click();
+  const history = page.getByRole('dialog', { name: '对话记录', exact: true });
+  await expect(history.getByRole('checkbox')).toHaveCount(0);
   await history.getByRole('button', { name: '管理对话故事讨论', exact: true }).click();
   await page.getByRole('menuitem', { name: '删除', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '删除对话', exact: true });
-  await expect(dialog.getByText('后来由你编辑过，默认保留。', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('还有其他会话来源，默认保留。', { exact: true })).toBeVisible();
-  await expect(dialog.getByRole('checkbox', { name: '清理记忆：作品设定', exact: true })).not.toBeChecked();
-  await dialog.getByRole('checkbox', { name: '一并清理下方勾选的账号和作品记忆', exact: true }).check();
-  await dialog.getByRole('checkbox', { name: '清理记忆：对白偏好', exact: true }).check();
-  await page.screenshot({ path: info.outputPath(`deletion-memory-${width}.png`) });
-  state.deletionMemories[0].content_version = '4';
-  await dialog.getByRole('button', { name: '永久删除', exact: true }).click();
-  await dialog.getByRole('button', { name: /^提示详情：/ }).click();
-  await dialog.getByRole('button', { name: '重新读取预览', exact: true }).click();
-  await expect(dialog.getByRole('checkbox', { name: '清理记忆：对白偏好', exact: true })).not.toBeChecked();
-  await dialog.getByRole('checkbox', { name: '清理记忆：对白偏好', exact: true }).check();
-  await dialog.getByRole('button', { name: '永久删除', exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  const calls = state.calls.filter(call => call.method === 'DELETE');
-  expect(calls.map(call => call.body.memory_selections)).toEqual([[{ id: '761', content_version: '3' }], [{ id: '761', content_version: '4' }]]);
+  const confirmation = page.getByRole('dialog', { name: '删除对话', exact: true });
+  await expect(confirmation).not.toContainText('记忆');
+  await confirmation.getByRole('button', { name: '永久删除', exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
+  expect(state.calls.find(call => call.method === 'DELETE')!.body).toEqual({ row_version: '1', clear_derived_memory: false });
+  expect(state.calls.filter(call => call.path.includes('memory'))).toHaveLength(0);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-async function memoryFixture(page: Page, abortFirst = false) {
-  const state = await assistantFixture(page);
-  const memories: any[] = [];
-  const requests: { method: string; key: string; body: any }[] = [];
-  const receipts = new Map<string, any>();
-  let conflict = false;
-  const reviews: any[] = [];
-  let abortClarification = false;
-  let abortRetry = false;
-  const jobs: any[] = [{ id: '801', kind: 'summary', status: 'failed', provider_state: 'unknown', message_version: '1', from_seq: 9, to_seq: 12,
-    attempts: 1, error: { code: 'agent_acceptance_unknown' }, usage: {}, created_at: time, finished_at: time }];
-  const currentSummary: any = { id: '701', from_seq: 1, to_seq: 8, token_estimate: 25, created_at: time,
-    facts: [{ kind: 'user_fact', text: '保留对白节奏偏好', source_message_ids: ['601'], subject_keys: [] }] };
-  const summaries = new Map<string, any>();
-  await page.route('**/api/v1/assistant/memory**', route => {
-    const request = route.request(); const url = new URL(request.url());
-    const method = request.method(); const body = method === 'GET' ? null : request.postDataJSON();
-    const key = request.headers()['idempotency-key']; requests.push({ method, key, body });
-    const reply = (json: any, status = 200) => route.fulfill({ json, status });
-    if (url.pathname.endsWith('/retry')) {
-      const original = jobs.find(item => url.pathname.includes(`/jobs/${item.id}/`));
-      const child = { ...original, id: '803', status: 'pending', provider_state: 'not_started', retry_job_id: null, error: null, attempts: 0, finished_at: null };
-      original.retry_job_id = child.id; jobs.unshift(child);
-      if (abortRetry) { abortRetry = false; return route.abort('failed'); }
-      return reply(child, 201);
-    }
-    if (url.pathname.endsWith('/reviews')) return reply({ items: reviews, total: reviews.length, offset: 0, limit: 20 });
-    const clarificationIndex = /\/clarifications\/(\d+)$/.exec(url.pathname)?.[1];
-    if (clarificationIndex !== undefined) {
-      const job = reviews[0]; const candidate = job.clarifications[Number(clarificationIndex)];
-      if (candidate.content_version !== body.content_version) return reply({ error: { code: 'conflict', message: '原记忆已变化，请刷新并对照新版本后选择' } }, 409);
-      candidate.status = 'resolved'; candidate.choice = body.choice;
-      if (body.choice === 'use_candidate') { candidate.current_content = candidate.candidate_content; candidate.content_version = String(BigInt(candidate.content_version) + 1n); }
-      if (abortClarification) { abortClarification = false; return route.abort('failed'); }
-      return reply(job);
-    }
-    const summaryId = /\/summaries\/(\d+)$/.exec(url.pathname)?.[1];
-    if (summaryId) return summaries.has(summaryId) ? reply(summaries.get(summaryId))
-      : reply({ error: { code: 'not_found', message: '摘要不存在或来源已停止使用' } }, 404);
-    if (url.pathname.endsWith('/context')) return reply({ conversation_id: '301', covers_until_seq: 8, summary_generation: '1', summary: currentSummary, jobs });
-    if (url.pathname.endsWith('/revisions')) return reply({ items: [] });
-    if (url.pathname.endsWith('/memory') && method === 'GET') return reply({ items: memories, offset: 0, limit: 30, total: memories.length });
-    if (url.pathname.endsWith('/memory') && method === 'POST') {
-      if (receipts.has(key)) return reply(receipts.get(key), 201);
-      const item = { ...body, id: '9007199254740998', conversation_id: body.conversation_id ?? null, project_id: body.project_id ?? null,
-        state: 'active', origin: 'explicit', content_version: '1', sources: [], created_at: time, updated_at: time };
-      memories.push(item); receipts.set(key, item);
-      if (abortFirst) { abortFirst = false; return route.abort('failed'); }
-      return reply(item, 201);
-    }
-    const item = memories[0];
-    if (method === 'PATCH') {
-      if (conflict) { conflict = false; Object.assign(item, { content_version: '2', content: '服务端已有新的对白设定' }); return reply({ error: { code: 'conflict', message: '记忆已变化，草稿已保留，请核对新版本' } }, 409); }
-      Object.assign(item, body, { content_version: String(BigInt(item.content_version) + 1n) });
-    }
-    if (method === 'DELETE') Object.assign(item, { state: 'forgotten', content_version: String(BigInt(item.content_version) + 1n) });
-    if (url.pathname.endsWith('/restore')) Object.assign(item, { state: 'active', content_version: String(BigInt(item.content_version) + 1n) });
-    return reply(item);
-  });
-  return { ...state, memories, requests, reviews, jobs, currentSummary, summaries, abortNextRetry: () => { abortRetry = true; }, abortNextClarification: () => { abortClarification = true; }, conflictNext: () => { conflict = true; } };
-}
-
-async function enterMemory(page: Page) {
-  await page.getByRole('button', { name: '记忆管理', exact: true }).click();
-  return page.getByRole('dialog', { name: '记忆管理', exact: true });
-}
-
-async function fillMemory(page: Page) {
-  const dialog = page.getByRole('dialog', { name: '记忆管理', exact: true });
-  await dialog.getByRole('button', { name: '新建记忆', exact: true }).click();
-  await dialog.getByRole('textbox', { name: '记忆事实键', exact: true }).fill('dialogue');
-  await dialog.getByRole('textbox', { name: '记忆标题', exact: true }).fill('对白节奏');
-  await dialog.getByRole('textbox', { name: '记忆正文', exact: true }).fill('对白简短，转折明确');
-}
-
-for (const width of [1440, 390]) test(`phase summary follows provenance and handles invalidated sources at ${width}px`, async ({ page }, info) => {
-  await page.setViewportSize({ width, height: 1000 });
-  const state = await memoryFixture(page);
-  Object.assign(state.currentSummary, { from_seq: 5, base_summary_id: '700', facts: [{ kind: 'user_fact',
-    text: '保留对白节奏偏好', source_message_ids: ['608'], subject_keys: [], prior_fact_indexes: [0], source_summary_id: '700' }] });
-  state.summaries.set('700', { id: '700', base_summary_id: null, from_seq: 1, to_seq: 4, token_estimate: 20,
-    created_at: time, facts: [{ kind: 'user_fact', text: '最初明确的对白约束', source_message_ids: ['601'], subject_keys: [] }] });
-  await page.goto(root + '/source?assistant=open'); await expect(page).toHaveURL(/conversation=301/);
-  const dialog = await enterMemory(page);
-  await dialog.getByText('摘要与整理', { exact: true }).click();
-  await expect(dialog.getByText(/此前摘要第 1 条/)).toBeVisible();
-  await dialog.getByRole('button', { name: '查看上阶段摘要', exact: true }).click();
-  await expect(dialog.getByText('最初明确的对白约束', { exact: false })).toBeVisible();
-  await expect(dialog.getByText(/来源消息：601/)).toBeVisible();
-  await page.screenshot({ path: info.outputPath(`memory-phase-summary-${width}.png`) });
-  await dialog.getByRole('button', { name: '返回最新摘要', exact: true }).click();
-  state.summaries.delete('700');
-  await dialog.getByRole('button', { name: '查看上阶段摘要', exact: true }).click();
-  await expect(dialog.getByRole('alert').filter({ hasText: '这份摘要不可用，来源可能已被纠正或遗忘。请返回最新摘要。' })).toBeVisible();
-  await expect(dialog.getByText('最初明确的对白约束', { exact: false })).toHaveCount(0);
-  await dialog.getByRole('button', { name: '返回最新摘要', exact: true }).click();
-  await expect(dialog.getByText('保留对白节奏偏好', { exact: false })).toBeVisible();
-  const bounds = (await dialog.boundingBox())!; expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
-  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
-});
-
-for (const width of [1440, 390]) test(`memory clarification checks versions and restores an uncertain choice at ${width}px`, async ({ page }, info) => {
-  await page.setViewportSize({ width, height: 1000 });
-  const state = await memoryFixture(page);
-  const candidate = { index: 0, memory_id: '761', content_version: '1', candidate_base_version: '1', title: '对白节奏',
-    current_content: '对白简短', candidate_content: '以后每句对白不超过十个字', source_message_ids: ['601'], status: 'pending', choice: null };
-  state.reviews.push({ id: '801', conversation_id: '301', from_seq: 1, to_seq: 8, clarifications: [candidate] });
-  await page.goto(root + '/source?assistant=open'); await expect(page).toHaveURL(/conversation=301/);
-  const dialog = await enterMemory(page); await dialog.getByText('待澄清', { exact: true }).click();
-  await expect(dialog.getByText('以后每句对白不超过十个字', { exact: true })).toBeVisible();
-  await page.screenshot({ path: info.outputPath(`memory-clarification-${width}.png`) });
-  const bounds = await dialog.boundingBox(); expect(bounds!.x).toBeGreaterThanOrEqual(0); expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
-  candidate.content_version = '2'; candidate.current_content = '后来人工修订的对白设定';
-  await dialog.getByRole('button', { name: '使用候选内容', exact: true }).click();
-  await dialog.getByRole('button', { name: /^提示详情：/ }).click();
-  await expect(dialog.getByRole('button', { name: '使用候选内容', exact: true })).toBeDisabled();
-  await dialog.getByRole('button', { name: '重新读取候选', exact: true }).click();
-  await expect(dialog.getByText('后来人工修订的对白设定', { exact: true })).toBeVisible();
-  state.abortNextClarification();
-  await dialog.getByRole('button', { name: '使用候选内容', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: '使用候选内容', exact: true })).toBeDisabled();
-  await page.reload(); await enterMemory(page); await dialog.getByText('待澄清', { exact: true }).click();
-  await expect(dialog.getByText('已明确使用候选，变更保存在记忆版本记录中。', { exact: true })).toBeVisible();
-  expect(state.requests.filter(request => request.method === 'POST').map(request => request.body)).toEqual([
-    { content_version: '1', choice: 'use_candidate' }, { content_version: '2', choice: 'use_candidate' },
-  ]);
-  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
-});
-
-for (const kind of ['summary', 'task_state']) test(`memory maintenance exposes explicit retry and recovers a lost response without resending unknown work: ${kind}`, async ({ page }, info) => {
-  const state = await memoryFixture(page);
-  state.jobs[0].kind = kind;
-  await page.setViewportSize({ width: kind === 'task_state' ? 390 : 1440, height: 1000 });
-  let releaseContext!: () => void;
-  const contextReady = new Promise<void>(resolve => { releaseContext = resolve; });
-  await page.route('**/api/v1/assistant/memory/conversations/301/context', async route => {
-    await contextReady; await route.fallback();
-  });
-  await page.goto(root + '/source?assistant=open'); await expect(page).toHaveURL(/conversation=301/);
-  const dialog = await enterMemory(page); await dialog.getByText('摘要与整理', { exact: true }).click();
-  const refresh = dialog.getByRole('button', { name: '刷新详情', exact: true });
-  await expect(refresh).toBeDisabled();
-  releaseContext();
-  await expect(dialog.getByText(kind === 'task_state' ? '整理任务约束' : '压缩摘要', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('受理结果不明，已停止自动重发。', { exact: true })).toBeVisible();
-  await page.screenshot({ path: info.outputPath(`memory-maintenance-${kind}.png`) });
-  await expect(dialog.getByRole('button', { name: '重新整理这段对话', exact: true })).toHaveCount(0);
-  state.jobs.push({ ...state.jobs[0], id: '802', provider_state: 'received', error: { code: 'invalid_agent_memory_result' } });
-  await refresh.click();
-  await dialog.getByRole('button', { name: '重新整理这段对话', exact: true }).click();
-  state.abortNextRetry();
-  await page.getByRole('dialog', { name: '重新整理这段对话？', exact: true }).getByRole('button', { name: '重新整理', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: '重新整理这段对话', exact: true })).toBeDisabled();
-  await page.reload(); await enterMemory(page); await dialog.getByText('摘要与整理', { exact: true }).click();
-  await expect(dialog.getByText('已安排后续整理，请刷新查看结果。', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('等待整理', { exact: true })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: '重新整理这段对话', exact: true })).toHaveCount(0);
-  const calls = state.requests.filter(request => request.method === 'POST');
-  expect(calls).toHaveLength(1); expect(calls[0].body).toEqual({ message_version: '1' });
-  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
-});
-
-test('uncertain memory creation restores the exact request across refresh', async ({ page }) => {
-  const state = await memoryFixture(page, true);
-  await page.goto(root + '/source?assistant=open');
-  await expect(page).toHaveURL(/conversation=301/);
-  await enterMemory(page); await fillMemory(page);
-  const dialog = page.getByRole('dialog', { name: '记忆管理', exact: true });
-  await dialog.getByRole('button', { name: '保存记忆', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: '使用原请求核对保存', exact: true })).toBeEnabled();
-  await page.reload(); await enterMemory(page);
-  await expect(dialog.getByRole('textbox', { name: '记忆正文', exact: true })).toHaveValue('对白简短，转折明确');
-  await expect(dialog.getByRole('textbox', { name: '记忆正文', exact: true })).toBeDisabled();
-  await dialog.getByRole('button', { name: '使用原请求核对保存', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: '编辑', exact: true })).toBeVisible();
-  const writes = state.requests.filter(request => request.method === 'POST');
-  expect(writes).toHaveLength(2); expect(writes[1]).toEqual(writes[0]); expect(state.memories).toHaveLength(1);
-  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
-});
-
-for (const width of [1440, 390]) test(`memory editing keeps conflicts and shows provenance at ${width}px`, async ({ page }, info) => {
-  await page.setViewportSize({ width, height: 1000 });
-  const state = await memoryFixture(page);
-  await page.goto(root + '/source?assistant=open'); await expect(page).toHaveURL(/conversation=301/);
-  const dialog = await enterMemory(page); await fillMemory(page);
-  await dialog.getByRole('button', { name: '保存记忆', exact: true }).click();
-  await dialog.getByRole('button', { name: '编辑', exact: true }).click();
-  await dialog.getByRole('textbox', { name: '记忆正文', exact: true }).fill('我的未提交纠正');
-  state.conflictNext();
-  await dialog.getByRole('button', { name: '保存记忆', exact: true }).click();
-  await expect(dialog.getByRole('textbox', { name: '记忆正文', exact: true })).toHaveValue('我的未提交纠正');
-  await dialog.getByRole('button', { name: '读取服务端版本', exact: true }).click();
-  await expect(dialog.getByText('服务端已有新的对白设定', { exact: true })).toBeVisible();
-  await page.screenshot({ path: info.outputPath(`memory-conflict-${width}.png`) });
-  const bounds = await dialog.boundingBox(); expect(bounds).not.toBeNull(); expect(bounds!.x).toBeGreaterThanOrEqual(0); expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
-  await dialog.getByRole('button', { name: '已核对，按此版本继续编辑草稿', exact: true }).click();
-  await dialog.getByRole('button', { name: '保存记忆', exact: true }).click();
-  await expect(dialog.getByText('我的未提交纠正', { exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: '忘掉', exact: true }).click();
-  await page.getByRole('dialog', { name: '忘掉这条记忆？', exact: true }).getByRole('button', { name: '忘掉', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: '重新记住', exact: true })).toBeVisible();
-  await dialog.getByText('摘要与整理', { exact: true }).click();
-  await expect(dialog.getByText('保留对白节奏偏好', { exact: false })).toBeVisible();
-  await expect(dialog.getByText('受理结果不明，已停止自动重发。', { exact: true })).toBeVisible();
-  await page.screenshot({ path: info.outputPath(`memory-context-${width}.png`) });
-  const edits = state.requests.filter(request => request.method === 'PATCH');
-  expect(edits.map(request => request.body.content_version)).toEqual(['1', '2']);
-  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
-});
-
-
-for (const width of [1440, 390]) test(`saved sound line selection survives refresh and sends its real identity at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 390]) test(`saved sound references remain visible and removal survives refresh at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page); state.beginReply('核对台词配音。');
   const option = { project_id: '10', source_kind: 'project', source_id: '10', kind: 'sound_line', id: 'deadbeef', revision: '9007199254740993', name: '旁白 · deadbeef', project_name: '测试项目', source_name: '测试项目' };
-  state.subjectOptions.push(option);
+  state.tasks[0].selected_subjects = [state.subject(option)];
   await page.goto(root + '/source?assistant=open');
-  await page.getByRole('button', { name: '管理任务引用', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '管理任务引用', exact: true });
-  await dialog.getByRole('combobox', { name: '引用主体类型' }).press('ArrowDown');
-  await page.locator('.ant-select-dropdown').getByText('声音台词', { exact: true }).click();
-  const row = dialog.getByLabel('可选主体').locator('.ai-assistant-subject-row');
-  await expect(row).toContainText(option.name);
-  await row.getByRole('button', { name: '选入', exact: true }).click();
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
+  await expect(page.getByRole('link', { name: '查看引用来源旁白 · deadbeef', exact: true })).toHaveAttribute('href', '/projects/10/assembly?source_line=deadbeef');
+  await page.getByRole('button', { name: '移除任务引用旁白 · deadbeef', exact: true }).click();
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
-  await input.fill('为已选台词生成配音');
-  await page.reload();
-  await expect(input).toHaveValue('为已选台词生成配音');
-  await expect(page.getByLabel('当前任务引用', { exact: true })).toContainText('旁白 · deadbeef · 待发送');
+  await input.fill('不再引用此台词'); await page.reload();
+  await expect(input).toHaveValue('不再引用此台词');
+  await expect(page.getByLabel('当前任务引用', { exact: true })).not.toContainText(option.name);
+  await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click();
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(input).toHaveValue('');
   const sent = state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!;
-  expect(sent.body.subject_selection.subjects).toEqual([{ project_id: '10', source_kind: 'project', source_id: '10', kind: 'sound_line', id: 'deadbeef', revision: '9007199254740993' }]);
-  await page.getByRole('button', { name: '管理任务引用', exact: true }).click();
-  await expect(dialog.getByRole('link', { name: '查看来源', exact: true })).toHaveAttribute('href', '/projects/10/assembly?source_line=deadbeef');
-  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
-  await page.screenshot({ path: info.outputPath(`sound-line-selection-${width}.png`) });
+  expect(sent.body.subject_selection).toEqual({ expected_input_revision: '1', retain_keys: [], subjects: [] });
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 

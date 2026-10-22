@@ -35,11 +35,11 @@
 
 ## 全局 AI 创作助手与旧创作候选
 
-创作模式和画布统一使用[全局 AI 创作助手](assistant.md)：`/assistant/global/conversations` 按账号提供 V3 会话、逻辑任务、补充及独立任务队列。参考主体、作品记忆和写入目标独立，任务不自动读取作品正文。已开放只读主体／目标／操作回执和记忆工具、后台摘要及记忆管理；结构写入、真实媒体与撤销仍在实施，不能宣称完整执行能力已上线。旧 V0/V1/V2 在新界面只读，旧 V2 项目纯聊天兼容 API 仍存在；不将旧授权转换为新任务许可。
+创作模式和画布统一使用[项目 AI 创作助手](assistant.md)：兼容路径 `/assistant/global/conversations` 按本人账号及项目提供 V3 会话、逻辑任务、补充与独立任务队列。前端创建必传 `project_id`，列表及历史按项目过滤；任务自动使用所属项目的写入目标与记忆，画布任务另绑定当前画布，已受理目标冻结。任务不自动读取作品正文。前端已移除任务、上下文和记忆管理入口，后台摘要与记忆继续运行。回复中发送按钮切换为停止，停止后发送新要求通过带 `message_id` 的 resume 复用已受理消息，不插入额外用户气泡；停止水位和原请求核对继续生效。结构、媒体与撤销的具体已开放范围及限制以助手 API 为准；旧 V0/V1/V2 在新界面只读，不将旧授权转换为新任务许可。
 
-Agent 默认开启；运行须完成基础迁移及[全局任务／记忆迁移](../database/migrations/2026-10-21-agent-system/README.md)，保持账号认证并启动 scheduler 和独立 Agent Worker。生成可通过 `AGENT_ENABLED=false` 显式关闭，删除清理仍由 scheduler 执行。附件、现有个人 Skill、模型输入能力及限制见 [Agent 上下文 API](agent.md)，配置和故障处理见[部署说明](../instruction/Agent模式部署与排障.md)。既有所选配置的真实文本、图片与视频证据见[验收记录](../reviews/Agent模式实施与真实模型验收.md)；本次系统尚未完成真实供应商验收。
+Agent 默认开启；运行须完成基础迁移、[全局任务／记忆迁移](../database/migrations/2026-10-21-agent-system/README.md)及[项目会话约束增量](../database/migrations/2026-10-22-project-assistant/README.md)，保持账号认证并启动 scheduler 和独立 Agent Worker。生成可通过 `AGENT_ENABLED=false` 显式关闭，删除清理仍由 scheduler 执行。共享附件接口接受 V2/V3 会话并继续校验本人账号与项目权限，V0/V1 保持旧会话限制。附件、现有个人 Skill、模型输入能力及限制见 [Agent 上下文 API](agent.md)，配置和故障处理见[部署说明](../instruction/Agent模式部署与排障.md)。既有所选配置的真实文本、图片与视频证据见[验收记录](../reviews/Agent模式实施与真实模型验收.md)；本次系统尚未完成真实供应商验收。
 
-新对话以[助手路由](../../backend/src/short_drama/api/v1/assistant.py)、[全局任务契约](../../backend/src/short_drama/schemas/assistant_task.py)及[记忆契约](../../backend/src/short_drama/schemas/agent_memory.py)为准。账号拥有全局会话；参考或操作作品时另外校验本人作品权限。下表为旧 `/agent` 兼容接口，其项目／候选规则不自动适用于 V3。
+新对话以[助手路由](../../backend/src/short_drama/api/v1/assistant.py)、[全局任务契约](../../backend/src/short_drama/schemas/assistant_task.py)及[记忆契约](../../backend/src/short_drama/schemas/agent_memory.py)为准。账号拥有项目内会话；创建、列表及执行另校验本人项目权限，历史未绑定 V3 保留兼容且不猜测归属。下表为旧 `/agent` 兼容接口，其项目／候选规则不自动适用于 V3。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |

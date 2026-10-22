@@ -66,6 +66,7 @@ export function saveAssistantDraft(accountId: string, conversationId: string, dr
 
 export interface AssistantPendingSend {
   version: 1; body: AssistantSendInput | AssistantTaskSendInput; key: string; draft: string;
+  resume?: Extract<AssistantPendingAction, { kind: 'control' }>;
 }
 type PendingStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 const pendingError = '待核对的发送记录无法恢复，请先核对本会话的消息与任务，暂不能发送新请求。';
@@ -170,7 +171,10 @@ function pendingBody(value: unknown): value is AssistantSendInput {
 
 function pendingRecord(value: unknown): value is AssistantPendingSend {
   return record(value) && value.version === 1 && typeof value.key === 'string' && /^[A-Za-z0-9_:-]{1,64}$/.test(value.key)
-    && typeof value.draft === 'string' && value.draft.length <= 32000 && pendingBody(value.body);
+    && typeof value.draft === 'string' && value.draft.length <= 32000 && pendingBody(value.body)
+    && (value.resume === undefined || pendingAction(value.resume) && value.resume.kind === 'control'
+      && value.resume.body.kind === 'resume' && value.resume.body.content === undefined
+      && value.resume.targetId === (value.body as AssistantTaskSendInput).task_id);
 }
 
 export function readAssistantPendingSend(accountId: string, conversationId: string, storage: PendingStorage): { pending: AssistantPendingSend | null; error: string } {
@@ -186,9 +190,10 @@ export function saveAssistantPendingSend(accountId: string, conversationId: stri
   if (!pendingRecord(pending)) return false;
   const restored = readAssistantPendingSend(accountId, conversationId, storage);
   if (restored.error || restored.pending && (restored.pending.key !== pending.key || restored.pending.draft !== pending.draft
-    || JSON.stringify(restored.pending.body) !== JSON.stringify(pending.body))) return false;
+    || JSON.stringify(restored.pending.body) !== JSON.stringify(pending.body)
+    || JSON.stringify(restored.pending.resume) !== JSON.stringify(pending.resume))) return false;
   try {
-    storage.setItem(assistantPendingSendKey(accountId, conversationId), JSON.stringify({ version: 1, body: pending.body, key: pending.key, draft: pending.draft }));
+    storage.setItem(assistantPendingSendKey(accountId, conversationId), JSON.stringify({ version: 1, body: pending.body, key: pending.key, draft: pending.draft, ...(pending.resume ? { resume: pending.resume } : {}) }));
     return true;
   } catch { return false; }
 }
@@ -216,11 +221,12 @@ function pendingAction(value: unknown): value is AssistantPendingAction {
       && body.memory_selections.every(item => record(item) && only(item, ['id', 'content_version']) && identifier(item.id) && identifier(item.content_version))
       && new Set(body.memory_selections.map(item => (item as { id: string }).id)).size === body.memory_selections.length
       && (body.clear_derived_memory || body.memory_selections.length === 0));
-  return value.kind === 'control' && only(body, ['kind', 'expected_control_seq', 'content'])
+  return value.kind === 'control' && only(body, ['kind', 'expected_control_seq', 'content', 'message_id'])
     && ['stop', 'redirect', 'resume'].includes(String(body.kind))
     && (body.expected_control_seq === undefined || nonnegativeVersion(body.expected_control_seq))
     && (body.content === undefined || typeof body.content === 'string' && body.content.length > 0 && body.content.length <= 32000)
     && (body.kind !== 'resume' || nonnegativeVersion(body.expected_control_seq))
+    && (body.message_id === undefined || body.kind === 'resume' && identifier(body.message_id) && body.content === undefined)
     && (body.kind !== 'redirect' || typeof body.content === 'string' && !!body.content.trim());
 }
 export function readAssistantPendingAction(accountId: string, conversationId: string, kind: AssistantPendingAction['kind'], storage: PendingStorage): { pending: AssistantPendingAction | null; error: string } {

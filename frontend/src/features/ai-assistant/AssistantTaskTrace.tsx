@@ -11,9 +11,6 @@ import { nativeVoiceApi, type VoiceCandidate } from '../../api/modules/native-vo
 const labels: Record<string, string> = {
   describe_creation_target: '核对写入目标', read_selected_subjects: '读取已选主体',
   read_operation_receipt: '核对操作回执', search_skills: '检索创作方法', load_skill: '加载创作方法', read_skill_resource: '读取方法资料',
-  search_memories: '检索记忆', read_memories: '读取记忆',
-  memory_catalog: '查看记忆目录', search_memory: '检索记忆', read_memory: '读取记忆', read_conversation_history: '回查对话来源',
-  remember_memory: '记住用户要求', update_memory: '修改记忆', forget_memory: '遗忘记忆', restore_memory: '重新记住',
   apply_standard_patch: '保存标准创作内容', apply_canvas_patch: '保存画布节点与连线', read_task_results: '读取本任务成果',
   read_image_group: '读取图片组目录', read_image_content: '读取指定图片', set_image_group_primary: '设置图片组主图',
   get_generation_policy: '核对媒体生成设置',
@@ -22,8 +19,9 @@ const labels: Record<string, string> = {
 const phases: Record<string, string> = {
   tool_running: '执行中', waiting_media: '生成中', settling_result: '回填中', reconciling: '正在核实结果', terminal: '已结束',
 };
+const internalTools = new Set(['search_memories', 'read_memories', 'memory_catalog', 'search_memory', 'read_memory', 'read_conversation_history', 'remember_memory', 'update_memory', 'forget_memory', 'restore_memory']);
 const resultLabel = (ref: Record<string, unknown>) => typeof ref.name === 'string' && ref.name.trim() ? ref.name
-  : ref.kind === 'memory' ? '记忆条目' : ref.kind === 'asset' ? '查看素材' : ref.kind === 'shot' ? '查看分镜' : ref.kind === 'canvas_node' ? '定位节点' : '查看成果';
+  : ref.kind === 'asset' ? '查看素材' : ref.kind === 'shot' ? '查看分镜' : ref.kind === 'canvas_node' ? '定位节点' : '查看成果';
 function resultHref(ref: Record<string, unknown>) {
   if (ref.status === 'deleted' || ref.status === 'source_unavailable') return null;
   if (typeof ref.project_id !== 'string' || !/^\d+$/.test(ref.project_id)) return null;
@@ -107,7 +105,7 @@ export function AssistantTaskTrace({ task, operations, layout, onUndo, undoDisab
   const [error, setError] = useState('');
   const receiptRequest = useRef(0);
   useEffect(() => { setDetail(null); return () => { receiptRequest.current += 1; }; }, [task.id]);
-  const items = operations.filter(item => item.task_id === task.id).sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : 1);
+  const items = operations.filter(item => item.task_id === task.id && !internalTools.has(item.tool_name)).sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : 1);
   const manual = task.skill_activations?.filter(item => item.source === 'manual') ?? [];
   async function openReceipt(item: AssistantOperation) {
     const request = ++receiptRequest.current;

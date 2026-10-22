@@ -148,11 +148,12 @@ def update_generation_policy(payload: GenerationPolicyPatch, service: Policies):
 @router.get("/global/conversations", response_model=PageResponse[ConversationRead])
 def global_conversations(
     service: Tasks,
+    project_id: Identifier | None = None,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     query: Annotated[str | None, Query(max_length=120)] = None,
 ):
-    return service.list_global_conversations(offset, limit, search=query)
+    return service.list_global_conversations(offset, limit, search=query, project_id=project_id)
 
 
 @router.post("/global/conversations", response_model=ConversationRead, status_code=201)
@@ -165,11 +166,12 @@ def create_global_conversation(
 @router.get("/global/history", response_model=PageResponse[ConversationRead])
 def global_history(
     service: Tasks,
+    project_id: Identifier | None = None,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     query: Annotated[str | None, Query(max_length=120)] = None,
 ):
-    return service.historical_conversations(offset, limit, search=query)
+    return service.historical_conversations(offset, limit, search=query, project_id=project_id)
 
 
 @router.get("/global/conversations/{conversation_id}", response_model=ConversationRead)
@@ -435,7 +437,7 @@ def attachments(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     pending: bool | None = None,
 ):
-    service.get_conversation(conversation_id)
+    service.validate_attachment_conversation(conversation_id)
     return attachments.list(conversation_id, offset, limit, pending)
 
 
@@ -451,7 +453,7 @@ def upload_attachment(
     file: Annotated[UploadFile, File()],
     idempotency_key: Key,
 ):
-    service.get_conversation(conversation_id)
+    service.validate_attachment_conversation(conversation_id)
     return attachments.upload(conversation_id, file.file, file.filename or "", idempotency_key)
 
 
@@ -467,7 +469,7 @@ def reference_attachment(
     attachments: Attachments,
     idempotency_key: Key,
 ):
-    service.get_conversation(conversation_id)
+    service.validate_attachment_conversation(conversation_id)
     return attachments.reference(conversation_id, payload, idempotency_key)
 
 
@@ -478,5 +480,5 @@ def delete_attachment(
     service: Assistants,
     attachments: Attachments,
 ):
-    service.get_conversation(conversation_id)
+    service.validate_attachment_conversation(conversation_id)
     attachments.delete(conversation_id, attachment_id)

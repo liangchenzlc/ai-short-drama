@@ -33,6 +33,7 @@ from short_drama.schemas.assistant_task import (
     OperationPage,
     TaskControlAccepted,
     TaskControlRequest,
+    TaskExecutionTarget,
     TaskMessageAccepted,
     TaskRuntimeState,
 )
@@ -65,7 +66,7 @@ class AssistantTaskService(AgentRunService):
         conversation = self._conversation(identifier, lock=True)
         if conversation.scope_version != 3:
             raise WorkflowError(
-                "assistant_legacy_readonly", "历史对话仅供查看，请新建全局对话", 409
+                "assistant_legacy_readonly", "历史对话仅供查看，请在项目中新建对话", 409
             )
         if conversation.status != "active":
             raise WorkflowError(
@@ -78,6 +79,8 @@ class AssistantTaskService(AgentRunService):
         key, request_hash = attachment_key(idempotency_key), digest(values)
         actor = self._actor()
         with self._transaction():
+            if values.get("project_id") is not None:
+                require_project(self.session, values["project_id"], lock=True)
             row = self.session.scalar(
                 select(AgentConversation)
                 .where(
@@ -94,7 +97,7 @@ class AssistantTaskService(AgentRunService):
             row = AgentConversation(
                 id=next_id(),
                 owner_user_id=actor.user_id,
-                project_id=None,
+                project_id=values.get("project_id"),
                 stage=None,
                 subject_type=None,
                 subject_id=None,
@@ -115,7 +118,7 @@ class AssistantTaskService(AgentRunService):
             self.session.flush()
             return self._read_conversation(row)
 
-    def list_global_conversations(self, offset=0, limit=20, *, search=None):
+    def list_global_conversations(self, offset=0, limit=20, *, search=None, project_id=None):
         actor = self._actor()
         self.dao.validate_pagination(offset, limit)
         conditions = [
@@ -126,6 +129,10 @@ class AssistantTaskService(AgentRunService):
         if search and search.strip():
             conditions.append(AgentConversation.title.contains(search.strip(), autoescape=True))
         with self._transaction(read_only=True):
+            if project_id is not None:
+                project_id = parse_identifier(project_id)
+                require_project(self.session, project_id)
+                conditions.append(AgentConversation.project_id == project_id)
             rows = self.session.scalars(
                 select(AgentConversation)
                 .where(*conditions)
@@ -153,7 +160,7 @@ class AssistantTaskService(AgentRunService):
             self.session.flush()
             return self._read_conversation(row)
 
-    def historical_conversations(self, offset=0, limit=20, *, search=None):
+    def historical_conversations(self, offset=0, limit=20, *, search=None, project_id=None):
         actor = self._actor()
         self.dao.validate_pagination(offset, limit)
         with self._transaction(read_only=True):
@@ -161,6 +168,10 @@ class AssistantTaskService(AgentRunService):
                 AgentConversation.owner_user_id == actor.user_id,
                 AgentConversation.scope_version < 3,
             ]
+            if project_id is not None:
+                project_id = parse_identifier(project_id)
+                require_project(self.session, project_id)
+                conditions.append(AgentConversation.project_id == project_id)
             if search and search.strip():
                 conditions.append(AgentConversation.title.contains(search.strip(), autoescape=True))
             rows = self.session.scalars(
@@ -284,6 +295,35 @@ class AssistantTaskService(AgentRunService):
             finalize_deletion_locked(self.session, conversation)
             self.session.flush()
             return self._read_conversation(conversation)
+
+    def _project_inputs(self, conversation, task, inputs):
+        """Bind new task defaults after replay lookup; accepted tasks keep their destination."""
+        if conversation.project_id is None:
+            return inputs
+        project = self.session.get(Project, conversation.project_id)
+        target = task.execution_target if task else None
+        if task:
+            for item in AgentTaskDAO(self.session).inputs(task):
+                target = item.payload.get("execution_target", target)
+        frozen = TaskExecutionTarget.model_validate(target) if target else None
+        requested = inputs.execution_target
+        if requested is not None and (
+            requested.project_id != project.id
+            or requested.mode != project.workspace_mode
+            or frozen is not None
+            and requested != frozen
+        ):
+            raise WorkflowError("scope_mismatch", "任务只能保存到所属项目及原画布", 422)
+        if any(identifier != project.id for identifier in inputs.memory_project_ids):
+            raise WorkflowError("scope_mismatch", "任务使用所属项目的创作设定", 422)
+        target = frozen or requested
+        if target is None:
+            if project.workspace_mode == "infinite_canvas":
+                raise WorkflowError("scope_mismatch", "新任务需要当前画布作为保存目标", 422)
+            target = TaskExecutionTarget(mode="standard", project_id=project.id)
+        return inputs.model_copy(
+            update={"execution_target": target, "memory_project_ids": [project.id]}
+        )
 
     def _validate_bindings(self, inputs):
         if inputs.context is not None:
@@ -521,6 +561,7 @@ class AssistantTaskService(AgentRunService):
                     )
             else:
                 task = None if inputs.new_task else dao.selected_task(conversation.id)
+            inputs = self._project_inputs(conversation, task, inputs)
             previous = dao.latest_run(task.id) if task else None
             if task is None:
                 model = AgentModelService(self.session, self.settings).select_model(
@@ -619,7 +660,10 @@ class AssistantTaskService(AgentRunService):
 
     def control_task(self, identifier, payload, idempotency_key):
         values = TaskControlRequest.model_validate(self._payload(TaskControlRequest, payload))
-        key, request_hash = attachment_key(idempotency_key), digest(values.model_dump(mode="json"))
+        serialized = values.model_dump(
+            mode="json", exclude={"message_id"} if values.message_id is None else set()
+        )
+        key, request_hash = attachment_key(idempotency_key), digest(serialized)
         dao = AgentTaskDAO(self.session)
         with self._transaction():
             conversation, task = self._task(identifier)
@@ -647,7 +691,11 @@ class AssistantTaskService(AgentRunService):
                 if task.status not in RESUMABLE_TASKS and task.control_state != "stop_pending":
                     raise WorkflowError("assistant_task_not_paused", "任务尚未停止或暂停", 409)
             source = None
-            if values.content is not None or values.kind == "resume":
+            if values.message_id is not None:
+                source = dao.input_message(task.id, values.message_id)
+                if source is None:
+                    raise NotFound("消息不存在或不属于此任务")
+            if source is None and (values.content is not None or values.kind == "resume"):
                 source = AgentMessage(
                     id=next_id(),
                     conversation_id=conversation.id,

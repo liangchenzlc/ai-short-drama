@@ -1,8 +1,8 @@
 # Agent 模式部署与排障
 
-Skill 包接口与 AI 配置管理页支持在线新建、Markdown／ZIP 预览、不可变正文与资料、复制／导出及独立启停／自动设置。V3 的 `search_skills/load_skill/read_skill_resource` 已接入任务冻结、恢复和可见轨迹，输入区支持轻量分页选择及 `#` 同名身份选择；首批九类能力已适配为 12 个独立内置包。005 必须随 API 与 Worker 同版升级；在 `short_drama` 已真实执行并回填内置八个历史版本，当前 readiness 为 `ready`，12 个新内容版本也已显式发布。资料先写 MinIO 并核验，再以短 SQL 事务发布；全部历史版本的对象引用保留，未引用资料可用[显式回收脚本](内置创作方法维护.md#未引用资料回收)清理。自由文本的广义语义消歧与真实模型效果仍待验收。运行时沿用任务 JSON 与操作账本，无额外 DDL；配额和字段见[Skill API](../api/agent.md#内置与个人-skill-管理)与[任务方法工具](../api/assistant.md#任务创作方法与资料)。
+Skill 包接口与 AI 配置管理页支持在线新建、Markdown／ZIP 预览、不可变正文与资料、复制／导出及独立启停／自动设置。V3 的 `search_skills/load_skill/read_skill_resource` 已接入任务冻结、恢复和可见轨迹，输入区使用锚定 Skill 列表搜索、加载更多及直接多选，支持 `#` 同名身份选择；首批九类能力已适配为 12 个独立内置包。005 必须随 API 与 Worker 同版升级；在 `short_drama` 已真实执行并回填内置八个历史版本，当前 readiness 为 `ready`，12 个新内容版本也已显式发布。资料先写 MinIO 并核验，再以短 SQL 事务发布；全部历史版本的对象引用保留，未引用资料可用[显式回收脚本](内置创作方法维护.md#未引用资料回收)清理。自由文本的广义语义消歧与真实模型效果仍待验收。运行时沿用任务 JSON 与操作账本，无额外 DDL；配额和字段见[Skill API](../api/agent.md#内置与个人-skill-管理)与[任务方法工具](../api/assistant.md#任务创作方法与资料)。
 
-Agent 与原生生成共用 MySQL、RabbitMQ、Celery 和 MinIO。当前入口是账号全局 V3 会话与逻辑任务，共二十五张 Agent 表（含任务四表、记忆六表、私有附件、个人 Skill、不可变 Skill 版本及个人设置、账号助手偏好、私人媒体请求、讨论修订及批次撤销回执）及独立 Agent Worker。scheduler 负责运行与记忆整理的可靠发布／恢复、原生结果归档、V3 媒体批次结算及删除清理。Compose 只启动外部依赖，不启动 Python API、scheduler 或 Worker。
+Agent 与原生生成共用 MySQL、RabbitMQ、Celery 和 MinIO。当前入口是按本人项目隔离的 V3 会话与逻辑任务，共二十五张 Agent 表（含任务四表、记忆六表、私有附件、个人 Skill、不可变 Skill 版本及个人设置、账号助手偏好、私人媒体请求、讨论修订及批次撤销回执）及独立 Agent Worker。scheduler 负责运行与记忆整理的可靠发布／恢复、原生结果归档、V3 媒体批次结算及删除清理；前端不展示记忆管理或维护状态。Compose 只启动外部依赖，不启动 Python API、scheduler 或 Worker。
 
 当前 V3 开放目标／主动主体／操作回执、本任务新建成果读取、四个记忆读取工具、四个显式记忆写工具、三个 Skill 工具、有界标准／画布结构批次、标准素材／分镜图片、普通／原生有声分镜视频、角色音色、旧声音文档台词配音及画布图片／视频／音频批次；标准素材／分镜、画布节点／连线、旧声音文本、主图及实际已采用媒体的批次撤销已接入明确预览与选择。写工具按真实用户指令裁剪，业务效果、版本和持久回执同事务结算；阶段摘要保留有界父摘要索引及来源链。标准批次复用已有素材、分镜、原生对白及声音文档表，不增加 DDL。原生分镜对白仍要求同时启用 `NATIVE_VIDEO_ENABLED` 与 `AUDIO_PRODUCTION_ENABLED`，结构工具只保存文本，不启动音频生成。画布结构批次复用原生四类节点、增量合并、保存历史和私人参数表，独立校验共享／私人版本，不新增 DDL 或发起媒体生成；明确媒体指令另走生成及完整结算。新建成果按真实回执读取保存快照，发送前复核可用性，新任务不继承正文。旧 V1 创作计划与候选、V2 项目纯聊天为兼容接口，不能据此宣称 V3 已开放同类能力。结构工具的测试替身不代表真实模型执行验收。实际范围见[助手 API](../api/assistant.md)与[实施记录](../plans/2026-10/2026-10-21-AI创作助手实施与验证记录.md)。
 
@@ -22,7 +22,7 @@ Agent 与原生生成共用 MySQL、RabbitMQ、Celery 和 MinIO。当前入口�
 
 AI 配置 → 创作助手提供本人媒体总开关，缺少设置默认开启，保存过的关闭不因升级重置。`get_generation_policy` 只读实时策略，不能由 Agent 打开开关；模型发送前版本变化会重新准备决策且不计调用。媒体在受理、Worker 领取和供应商提交前复核实时开关／本人权限，已外发继续结算。开启时 `available_media` 返回本人已配置的 image/video/audio，执行端另按目标模式限定：标准当前开放图片、普通／原生有声分镜视频、角色音色和旧声音文档台词配音，画布开放三类媒体。003 的 `agent_preferences` 与 004 的 `agent_media_requests` 必须随 API、scheduler、Agent 和对应 image/video/audio Worker 同版部署，不能只升级设置页面。画布复用原生任务、素材交付及绑定，必须保留 scheduler 完整结算；只启动 API 或 Agent Worker 不会完成媒体回填。
 
-部署本轮独立上下文时同步更新 API、Agent Worker、宿主及画布前端：任务输入新增附件保留选择，元数据新增任务附件与真实来源定位，发送前按有效主体／附件重新核对。任务设置支持跨作品目标和独立作品记忆范围。这些字段复用既有 JSON，不增加 DDL；混用旧 Worker 不能保证移除边界和来源隔离。
+部署本轮项目助手时同步更新 API、Agent Worker、宿主及画布前端：会话创建和列表携带项目，任务自动绑定所属项目的保存目标与设定，画布新任务另指定当前画布，补充保持原目标。任务设置、上下文和记忆管理入口已移除，引用、附件选择及发送前的版本核对保留。输入字段复用既有 JSON，会话 CHECK 另需下文项目增量；混用旧 Worker 不能保证项目归属和原目标冻结。
 
 批次撤销需要 007／008、API、scheduler、相关 Worker 和前端同版升级。008 允许角色音色成对空绑定，首次采用撤销后保留递增版本行；旧绑定文件及生成历史继续保留。当前业务库已真实创建 `agent_batch_undos`，完整结构为 117 表／二十五张 Agent 表，readiness `ready`、gaps=[]。原工具回执不可改写，模型和前端另读撤销回执；同会话活动执行及作品原生任务结束后才允许明确逆向。详见[007 说明](../database/migrations/2026-10-21-agent-system/README.md#批次撤销回执2026-10-22-接续)。
 
@@ -52,7 +52,7 @@ uv run python scripts/agent_migration.py --precheck
 
 本增量增加会话 stage、subject_type、subject_id、task_type、scope_version 及索引/约束，并将 Run 的活动会话唯一索引替换为普通索引以支持排队；实际执行仍由项目/会话锁和串行调度保障。保留旧记录为未分类只读，不推测对象归属。完整新库 SQL 已含这些定义，不重复执行 ALTER。
 
-上述九表／范围迁移是旧库升级的历史前置步骤。当前代码的 readiness 还要求[全局任务与记忆迁移](../database/migrations/2026-10-21-agent-system/README.md)：
+上述九表／范围迁移是旧库升级的历史前置步骤。当前代码的 readiness 还要求[全局任务与记忆迁移](../database/migrations/2026-10-21-agent-system/README.md)与[项目会话约束增量](../database/migrations/2026-10-22-project-assistant/README.md)。先执行缺失的 Agent 001–009，再执行项目增量中的单条 ALTER，最后 precheck；完整新库无需重复执行增量：
 
 ```powershell
 # 在原有基线齐全后，逐项执行缺失的 001／002／003／004／005／006／007／008 增量，并核对完整 readiness。
@@ -102,7 +102,7 @@ uv run celery -A short_drama.tasks.celery_app:app worker --pool=threads --concur
 
 Agent 队列始终是 `<GENERATION_QUEUE_NAMESPACE>.tasks.agent`，默认也保留 `short_drama.` 前缀；自定义 `studio_dev` 时用 `studio_dev.tasks.agent`。记忆摘要和抽取复用该队列、独立持久作业与租约；凭据在实际发送前解析，事务外调用模型。删除 purge 由 scheduler 本地执行，不需要模型或 RabbitMQ。它与默认原生队列 `tasks.ai.text/image/video/audio` 的命名规则不同。脚本按 Settings 自动解析。线程共用进程内雪花生成器，不要直接改成共用节点号的 prefork 或多进程；重启前确认旧进程已结束。API、scheduler、原生 Worker 的启动见[开发指南](开发运行与验证.md#启动后端)。
 
-记忆整理的完整回执优先本地重放，发送中或受理不明不换键重发。用户只可对明确失败记录安排一个独立后继；来源、摘要代次及原模型配置须仍有效，原失败与供应商回执保留。长任务约束整理使用同队列的 `task_state` 作业，需补齐 [009 迁移](../database/migrations/2026-10-21-agent-system/009-task-compaction.sql)，仅扩展作业类型 CHECK；当前业务库 `short_drama` 已执行，表数仍为117、Agent25表。作业冻结旧输入前缀，近期补充保留原文；原始前缀变化及父约束版本冲突会阻止激活，完成整理不恢复停止任务。抽取同键冲突进入本人“待澄清”，版本和来源再校验后才应用候选。总输入在冻结和实际发送前检查估算预算，超限先等待有效在途约束整理，无可推进作业或整理失败才以 `paused_budget` 保留输入暂停；平台估算不代表供应商 tokenizer 或模型窗口实测。
+记忆整理的完整回执优先本地重放，发送中或受理不明不换键重发。内部维护接口只允许对明确失败记录安排一个独立后继；来源、摘要代次及原模型配置须仍有效，原失败与供应商回执保留。长任务约束整理使用同队列的 `task_state` 作业，需补齐 [009 迁移](../database/migrations/2026-10-21-agent-system/009-task-compaction.sql)，仅扩展作业类型 CHECK；当前业务库 `short_drama` 已执行，表数仍为117、Agent25表。作业冻结旧输入前缀，近期补充保留原文；原始前缀变化及父约束版本冲突会阻止激活，完成整理不恢复停止任务。抽取同键冲突保留为后台候选，版本和来源再校验后才应用，不能自动覆盖现有事实；前端不显示澄清或维护入口。总输入在冻结和实际发送前检查估算预算，超限先等待有效在途约束整理，无可推进作业或整理失败才以 `paused_budget` 保留输入暂停；平台估算不代表供应商 tokenizer 或模型窗口实测。
 
 ## 模型与流式代理
 

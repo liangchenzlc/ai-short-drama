@@ -16,6 +16,8 @@ type ContextSnapshot = Pick<AgentSendInput, 'attachment_ids' | 'skills' | 'video
 export interface AgentContextController {
   snapshot: () => ContextSnapshot;
   openSkills: () => void;
+  openUpload: (kind: 'image' | 'text') => void;
+  openAssets: () => void;
   sent: (ids: string[]) => void;
   reference: (type: 'media' | 'asset', id: string) => Promise<boolean>;
 }
@@ -30,12 +32,13 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   presentation?: 'assistant'; toolsOpen?: boolean;
   initialSkills: { id: string; content_version: string }[];
   skillSummary?: ReactNode;
+  skillsManaged?: boolean;
   skillPicker?: (onClose: () => void) => ReactNode;
   onSkills: (skills: { id: string; content_version: string }[]) => void;
   onSkillsEdited?: () => void;
   onBusy: (busy: boolean) => void; onBlockReason: (reason: string) => void;
   input: ReactNode; modelControl: ReactNode; sendControl: ReactNode;
-}>(function AgentContextComposer({ conversation, scope, initialSkills, skillSummary, skillPicker, onSkills, onSkillsEdited, disabled, onBusy, onBlockReason, input, modelControl, sendControl, attachmentApi = agentsApi, dialogClassName, presentation, toolsOpen, layout }, ref) {
+}>(function AgentContextComposer({ conversation, scope, initialSkills, skillSummary, skillsManaged, skillPicker, onSkills, onSkillsEdited, disabled, onBusy, onBlockReason, input, modelControl, sendControl, attachmentApi = agentsApi, dialogClassName, presentation, toolsOpen, layout }, ref) {
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [skills, setSkills] = useState<AgentSkill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +51,7 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   const [showAssets, setShowAssets] = useState(false);
   const [showSkills, setShowSkills] = useState(false);
   const [videoAudio, setVideoAudio] = useState<'include' | 'visual_only'>('include');
-  const [skillsLoading, setSkillsLoading] = useState(!skillPicker && initialSkills.length > 0);
+  const [skillsLoading, setSkillsLoading] = useState(!skillsManaged && !skillPicker && initialSkills.length > 0);
   const upload = useRef<HTMLInputElement>(null);
   const uploadKind = useRef<AgentAttachment['kind']>('image');
   const lock = useRef(false);
@@ -63,7 +66,7 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
     return () => controller.abort();
   }, [conversation.id, revision, attachmentApi]);
   useEffect(() => {
-    if (skillPicker || !initialSkills.length) return;
+    if (skillsManaged || skillPicker || !initialSkills.length) return;
     const controller = new AbortController();
     (async () => {
       const all: AgentSkill[] = []; let total = 1;
@@ -86,10 +89,16 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   }
   const issue = pendingUpload || pendingReference ? '附件添加结果尚未确认，请使用原请求核对后再发送。' : '';
   const blockReason = loading ? '正在恢复本次消息附件…' : loadError ? '附件恢复失败，请重新载入后再发送。' : issue;
+  const canAdd = !disabled && !busy && !loading && !loadError && !issue && attachments.length < 16;
   useEffect(() => { onBlockReason(blockReason); }, [blockReason, onBlockReason]);
   useEffect(() => { onBusy(busy || loading || skillsLoading); return () => onBusy(false); }, [busy, loading, skillsLoading, onBusy]);
   useImperativeHandle(ref, () => ({
     openSkills: () => setShowSkills(true),
+    openUpload: kind => {
+      if (!canAdd || !upload.current) return;
+      uploadKind.current = kind; upload.current.accept = attachmentAccept[kind]; upload.current.click();
+    },
+    openAssets: () => { if (canAdd) setShowAssets(true); },
     snapshot: () => {
       if (blockReason || busy) throw new ApiError(blockReason || '附件正在处理，请稍后发送。', 'assistant_input_busy');
       return {
@@ -99,7 +108,7 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
     },
     sent: ids => setAttachments(previous => previous.filter(item => !ids.includes(item.id))),
     reference,
-  }), [attachments, skills, videoAudio, blockReason, busy, loading, loadError, disabled, scope, attachmentApi]);
+  }), [attachments, skills, videoAudio, blockReason, busy, loading, loadError, disabled, scope, attachmentApi, canAdd]);
   async function perform(operation: () => Promise<void>) {
     if (lock.current || disabled || loading || loadError) return false;
     lock.current = true; setBusy(true); setError('');
@@ -164,9 +173,13 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
         if (alive.current) setAttachments(previous => previous.filter(old => old.id !== item.id));
       })}/>
     </article>)}</div>}
-    {skillPicker ? skillSummary : skills.length > 0 && <div className="agent-loaded-skills" aria-label="已加载技能">{skills.map(skill => <Tag key={skill.id} closable={!contextDisabled} onClose={() => changeSkills(skills.filter(item => item.id !== skill.id))}>{skill.name} v{skill.content_version}</Tag>)}</div>}
+    {skillsManaged || skillPicker ? skillSummary : skills.length > 0 && <div className="agent-loaded-skills" aria-label="已加载技能">{skills.map(skill => <Tag key={skill.id} closable={!contextDisabled} onClose={() => changeSkills(skills.filter(item => item.id !== skill.id))}>{skill.name} v{skill.content_version}</Tag>)}</div>}
     {attachments.some(item => item.kind === 'video' && item.metadata.has_audio) && <Checkbox checked={videoAudio === 'visual_only'} disabled={contextDisabled} onChange={event => setVideoAudio(event.target.checked ? 'visual_only' : 'include')}>视频只理解画面（忽略声音）</Checkbox>}
     {loading && <span className="sr-only" role="status">正在恢复本次消息附件…</span>}
+    <input hidden ref={upload} type="file" aria-label="上传对话附件" onChange={event => {
+      const file = event.currentTarget.files?.[0]; event.currentTarget.value = '';
+      if (file) void uploadFile(file);
+    }}/>
     {input}
     <div className="agent-input-tools" hidden={presentation === 'assistant' && !toolsOpen}>
       <Dropdown trigger={['click']} overlayClassName={layout === 'standard' ? 'standard-assistant-menu standard-creation-menu standard-creation-popup' : undefined} menu={{ items: [
@@ -177,10 +190,6 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
       } }} disabled={addingDisabled}>
         <Tooltip title="添加图片、文本、视频或音频"><Button type="text" aria-label="添加附件" loading={busy} disabled={addingDisabled} icon={<Icon name="plus" size={18}/>}/></Tooltip>
       </Dropdown>
-      <input hidden ref={upload} type="file" aria-label="上传对话附件" onChange={event => {
-        const file = event.currentTarget.files?.[0]; event.currentTarget.value = '';
-        if (file) void uploadFile(file);
-      }}/>
       <Tooltip title="添加资产库上下文"><Button type="text" aria-label="添加资产库" disabled={addingDisabled} icon={<Icon name="folder" size={18}/>} onClick={() => setShowAssets(true)}/></Tooltip>
       {modelControl}
       <Tooltip title="加载 Skill"><Button type="text" aria-label="加载 Skill" disabled={contextDisabled} icon={<Icon name="library" size={18}/>} onClick={() => setShowSkills(true)}/></Tooltip>

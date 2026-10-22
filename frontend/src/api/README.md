@@ -96,3 +96,9 @@ Agent 上下文使用 `modules/agents.ts`：附件上传/引用带幂等键，�
 普通文字及固定编辑器工具的`input.textOptions.thinking`必须为布尔值，且本人已保存配置的`runtime_profile.capability_config.text.thinking`严格为true。Chat、Responses、Claude沿固定源转换各自参数；Gemini thinking拒绝。能力在准入冻结，配置后改和同键恢复不能改变原任务。Claude普通图片已接永久资源引用，视频拒绝；Gemini普通多模态仍拒绝。
 
 审美阶段prepare／approve／execute沿同一能力门禁；thinking不授予旧执行型助手权限。工具结果和reasoning仍本人可见，不直接改共享图。合同与实际受控测试范围见[画布文字引用及工具请求](../../../docs/api/canvases.md#画布文字图片引用)。真实生成验收按当前用户指令全部暂缓。
+
+## 项目 AI 创作助手
+
+`assistantApi.globalConversations/globalHistory` 必传当前 `projectId` 作为筛选；`createGlobalConversation` 发送 `{project_id}` 并携带幂等键，响应 `project_id` 可空以兼容旧记录。恢复 URL／本机选择前核验项目归属，当前会话选择按账号与项目隔离。`/global` 只是兼容前缀，不表示前端跨项目共用对话。
+
+停止后发送新要求时先调用 `sendTask` 保存普通消息，再以 `{kind:'resume',expected_control_seq,message_id}` 调用 `controlTask`，复用刚受理的消息，不额外生成用户气泡；控制意图随待核对发送记录冻结，消息与控制分别保留原请求及幂等键。`message_id` 是十进制字符串，只用于 resume，不能同时传 content，旧停止水位不能覆盖新的停止操作。新任务的写入目标来自当前工作区；补充省略目标，由服务端恢复原任务及待应用输入的冻结目标。项目设定范围由服务端自动限定，前端不发送手动记忆设置。受理不明保留原体原键，不以当前页面重建请求。记忆和删除预览 API 留作内部兼容，前端不展示管理入口；普通删除传 `{row_version,clear_derived_memory:false}`，旧待核对请求仍原样重放。

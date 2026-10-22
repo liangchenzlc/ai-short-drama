@@ -2,7 +2,7 @@
 
 当前 2026-10-21 创作模式结构以[完整 SQL](schema/schema.mysql8.sql)和[本次迁移记录](migrations/2026-10-21-creation-mode/README.md)为准。单层项目移除了 `episodes`、`global_assets/project_assets/episode_assets`、成员及邀请；原 `episode_*` 内容表改为 `project_*`，`assets` 直接包含非空 `project_id/position`。项目保留正文／分镜版本和编辑指针，删除梗概／画幅／风格。下文此前表数与协作／分集描述为历史背景，不作为新结构初始化依据。
 
-当前完整结构包含 **117 张表**，[schema.mysql8.sql](schema/schema.mysql8.sql) 用于初始化空数据库，与[SQLAlchemy Domain](../../backend/src/short_drama/domain)同步。当前 `short_drama` 已执行[全局助手 001–009 迁移](migrations/2026-10-21-agent-system/README.md)，Agent 共二十五表且 readiness 为 `ready`。历史阶段的表数不代表当前结构；字段类型、默认值、索引和 CHECK 以完整 SQL 为准，不能以 SQL 已生成代替 DDL 已执行，也不能以结构就绪代替供应商验收。
+当前完整结构包含 **117 张表**，[schema.mysql8.sql](schema/schema.mysql8.sql) 用于初始化空数据库，与[SQLAlchemy Domain](../../backend/src/short_drama/domain)同步。当前 `short_drama` 已执行[全局助手 001–009 迁移](migrations/2026-10-21-agent-system/README.md)和[2026-10-22 项目会话约束增量](migrations/2026-10-22-project-assistant/README.md)，Agent 共二十五表且 readiness 为 `ready`；此次只调整 CHECK，原有 1 条会话保留，仍为 117 表。历史阶段的表数不代表当前结构；字段类型、默认值、索引和 CHECK 以完整 SQL 为准，不能以 SQL 已生成代替 DDL 已执行，也不能以结构就绪代替供应商验收。
 
 本文说明表的职责、关系及应用维护的约束，不另维护一份重复的字段清单。开发与测试见[开发说明](../instruction/开发运行与验证.md)，模块关系见[架构说明](../instruction/系统架构与数据流.md)，接口见[API 文档](../api/README.md)。旧库升级使用[迁移目录](migrations/README.md)。
 
@@ -61,7 +61,7 @@ uv run python scripts/export_schema.py --check
 
 | 表 | 职责与读取范围 |
 | --- | --- |
-| `agent_conversations` | V3 按账号隔离全局会话，不绑定作品；旧项目／对象会话保留原范围与历史 |
+| `agent_conversations` | V3 按本人账号及项目隔离；历史未绑定项目的 V3 及旧项目／对象会话保留原身份 |
 | `agent_messages` | 追加的用户与助手消息、引用和幂等键；继承会话私有范围 |
 | `agent_runs` | 私有任务状态、检查点、预算、使用量和租约；会话内制作执行串行，补充消息持久化排队 |
 | `agent_turns` | 每次决策调用的私有请求、响应、状态与使用量；继承 Run 范围 |
@@ -81,7 +81,7 @@ uv run python scripts/export_schema.py --check
 
 Run 的触发消息、Tool 的 Turn、Event 的 Run 及任务操作使用复合外键保证父链一致。作品、素材、分镜和媒体由服务及 ORM 守卫校验真实归属。私人会话、记忆和账号助手偏好不进入项目共享审计。
 
-当前 AI 创作助手记录 `scope_version=3`，`project_id/stage/subject_type/subject_id/task_type` 全部为 NULL，任务的主动主体、作品记忆与写入目标分别管理。正文及私人媒体只在获准来源范围按需读取；有界标准／画布结构、图片组主图及显式记忆工具的业务效果与回执同事务。媒体生成及完整 Skill 系统仍在实施，不能以旧 V1 功能推断 V3 能力。接口和边界见[助手 API](../api/assistant.md)。
+当前 AI 创作助手记录 `scope_version=3`，新会话绑定 `project_id`，`stage/subject_type/subject_id/task_type` 保持 NULL。新任务自动使用所属项目的写入目标及项目记忆，画布任务另冻结当前画布；主动引用独立校验。历史未绑定项目的 V3 保留 NULL，不回填或猜测来源。正文及私人媒体只在获准来源范围按需读取，业务效果与回执同事务；后台记忆 API 保留，前端无管理入口。接口和边界见[助手 API](../api/assistant.md)。
 
 V0/V1 对象历史与 V2 项目纯聊天保留原身份，不合并为 V3，不继承旧授权。前端历史只读，旧兼容 API 仍须按其实际权限及来源版本处理；标题、人物名称和镜头序号不能推断范围。旧库按[Agent 系统迁移](migrations/2026-10-21-agent-system/README.md)补齐当前字段、表、CHECK、索引与外键。
 

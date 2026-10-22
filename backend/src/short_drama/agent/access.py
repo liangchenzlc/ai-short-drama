@@ -74,7 +74,13 @@ def may_decide(session, project, conversation, run):
 
         task = task_for_run(session, run)
         return (
-            project is None
+            (
+                conversation.project_id is None
+                and project is None
+                or project is not None
+                and project.id == conversation.project_id
+                and project.owner_user_id == user.id
+            )
             and task is not None
             and task.conversation_id == conversation.id
             and task.status in {"queued", "running", "waiting_media"}

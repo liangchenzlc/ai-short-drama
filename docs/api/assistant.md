@@ -1,6 +1,6 @@
 # AI 创作助手 API
 
-标准模式和无限画布共用 `/api/v1/assistant`。当前入口使用账号全局会话（`scope_version=3`）、逻辑任务与可恢复的执行尝试，不随页面切换更换对话。V3 已开放目标说明、主动主体读取、操作回执、本任务成果读取、四个只读记忆工具、四个显式记忆写工具、三个 Skill 工具、有界标准／画布结构批次、标准图片组冻结目录与主图设置，以及标准素材／分镜图片、普通／原生有声分镜视频、角色音色、旧声音文档台词配音和画布图片／视频／音频批次生成与完整结算。多批次反序撤销、Skill 广义语义消歧及真实模型验收仍在实施。工具的自动测试不代表真实模型或媒体供应商验收。进度与证据见[实施记录](../plans/2026-10/2026-10-21-AI创作助手实施与验证记录.md)。
+标准模式和无限画布共用 `/api/v1/assistant`。当前入口使用本人项目会话（`scope_version=3`、绑定 `project_id`）、逻辑任务与可恢复的执行尝试；同项目切阶段不更换会话，跨项目分别读取。`/global` 保留为兼容路径前缀，历史未绑定项目的 V3 不自动回填或并入项目。V3 已开放目标说明、主动主体读取、操作回执、本任务成果读取、四个只读记忆工具、四个显式记忆写工具、三个 Skill 工具、有界标准／画布结构批次、标准图片组冻结目录与主图设置，以及标准素材／分镜图片、普通／原生有声分镜视频、角色音色、旧声音文档台词配音和画布图片／视频／音频批次生成与完整结算。多批次反序撤销、Skill 广义语义消歧及真实模型验收仍在实施。工具的自动测试不代表真实模型或媒体供应商验收。进度与证据见[实施记录](../plans/2026-10/2026-10-21-AI创作助手实施与验证记录.md)。
 
 所有接口注入可信 Actor，禁止客户端指定 owner 或系统 Session。会话、消息、任务、操作、附件、模型和记忆仅本人可见；作品须另行校验所有权。数据库 ID、行版本、内容版本及控制水位使用十进制字符串；事件 seq/cursor、分页和消息位置使用数值。JSON 拒绝未声明字段，写请求沿用 Cookie、Origin 和 CSRF 校验。
 
@@ -12,10 +12,10 @@
 | --- | --- | --- |
 | GET | `/status` | `enabled/schema_ready`，不调用模型 |
 | GET / PATCH | `/generation-policy` | 本人媒体总开关；PATCH `{media_generation_enabled,policy_version}`，返回策略和媒体能力目录，见下文 |
-| GET / POST | `/global/conversations` | GET 按本人分页、支持 `query`；POST `{title?}`，必带 `Idempotency-Key`，不接受 project_id 或 archived |
-| GET / PATCH | `/global/conversations/{id}` | 详情；PATCH `{row_version,title}` |
-| GET | `/global/history` | 本人 V0/V1/V2 历史分页，前端只读，不继承旧授权 |
-| GET | `/global/conversations/{id}/deletion-memory` | 删除前的相关账号／作品记忆预览，见下文 |
+| GET / POST | `/global/conversations` | GET 按本人分页，支持 `project_id/query` 并校验项目所有权；POST `{title?,project_id?}`，前端必传当前项目，必带 `Idempotency-Key`；省略项目保留旧账号会话兼容，不接受 archived |
+| GET / PATCH | `/global/conversations/{id}` | 详情包含可空 `project_id`；PATCH `{row_version,title}`，不允许改绑项目 |
+| GET | `/global/history` | 本人 V0/V1/V2 历史分页，支持 `project_id` 过滤，前端只读，不继承旧授权 |
+| GET | `/global/conversations/{id}/deletion-memory` | 内部兼容的相关记忆预览，当前前端不调用，见下文 |
 | DELETE | `/global/conversations/{id}` | 稳定幂等删除，见下文；返回实际 deleting/deleted 状态 |
 | GET / POST | `/global/conversations/{id}/messages` | 分页历史；发送必带幂等键，返回 `message/task/run/cursor` |
 | GET | `/global/conversations/{id}/messages/{mid}/revision-eligibility` | 核对纯讨论是否可修订，返回 `allowed/code/reason/row_version/current_content` |
@@ -24,7 +24,7 @@
 | GET | `/global/conversations/{id}/state` | 一致快照，含任务、运行、操作、输入应用水位与 `snapshot_cursor/resume_cursor`；支持 `before_task_id/limit` |
 | GET | `/global/conversations/{id}/runtime` | 运行兼容投影 |
 | GET | `/global/conversations/{id}/events` | SSE，支持 cursor/Last-Event-ID；断线恢复不等于重新发送 |
-| POST | `/tasks/{id}/control` | `{kind:'stop'|'redirect'|'resume',content?,expected_control_seq?}`，必带幂等键 |
+| POST | `/tasks/{id}/control` | `{kind:'stop'|'redirect'|'resume',content?,expected_control_seq?,message_id?}`，必带幂等键 |
 | GET | `/tasks/{id}/operations` | `after_id/limit` 分页，返回 `has_more/next_after_id/snapshot_cursor` |
 | GET | `/tasks/{id}/subjects` | 当前或待生效引用的版本、校验值及可用性；返回输入水位、pending 和目录，不返回正文 |
 | GET | `/tasks/{id}/attachments` | 当前或待生效任务附件；返回 `task_id/input_revision/applied_input_revision/pending/items`，每项只有 `id/kind/name/checksum_sha256/available`，无正文或媒体 URL |
@@ -38,7 +38,7 @@
 
 流中的暂时数据库等故障发送 `event: retry` 后关闭连接，客户端保留私人历史并按退避重连；只有认证／权限／会话访问终止或功能关闭才发送 `event: access-ended`，清空私人状态并停止自动重连。收到删除事件也立即结束访问。迟到快照不能覆盖更新水位、控制回执或访问终止状态；历史任务分页按实体版本合并，保留当前较高水位，不能因旧分页水位丢弃整页。
 
-同会话串行执行；运行中普通新消息补充当前逻辑任务，显式 `new_task=true` 才创建独立排队任务。停止／暂停后补充仍保留，只有明确 resume 才恢复。resume 必须携带读取到的 `expected_control_seq`，新 attempt 继续原逻辑任务，不重做完成操作。stop/redirect/delete 先持久记录待生效请求，当前已开始工具完整结算后才生效，未开始的旧工具不得领取。媒体批次须等全部项生成及回填结果明确；受理不明保持核实及控制屏障，不把拿到任务 ID 当成完成。
+同会话串行执行；运行中普通新消息补充当前逻辑任务，显式 `new_task=true` 才创建独立排队任务。停止／暂停后补充仍保留，只有明确 resume 才恢复。resume 必须携带读取到的 `expected_control_seq`，可附 `message_id` 复用本任务已受理的用户输入，不追加“继续任务”消息；该字段只允许用于 resume，且不得与 content 同传，跨任务或非用户输入返回 404。省略字段保留旧调用行为及原幂等哈希。前端在停止后发送新要求，先持久化消息，再携带该消息 ID 与发起时的停止水位继续；受理不明分别核对原消息和原控制请求，不越过后续新停止。新 attempt 继续原逻辑任务，不重做完成操作。stop/redirect/delete 先持久记录待生效请求，当前已开始工具完整结算后才生效，未开始的旧工具不得领取。媒体批次须等全部项生成及回填结果明确；受理不明保持核实及控制屏障，不把拿到任务 ID 当成完成。
 
 ## 明确选择的批次撤销
 
@@ -78,7 +78,7 @@ V3 注册三个只读方法工具，与既有工具合计二十三项；它们�
 
 输入请求省略 `skills` 表示保留原选择；显式 `skills:[]` 表示清空。前端草稿保存这一区别，刷新后仍能发送空选择。原任务仍选用的精确冻结版本可与新增方法一同发送，即使该旧版已更新、停用或从个人目录删除；新选择仍按当前目录、个人设置与版本校验，已明确移除的旧版不能借历史绕过停用。待应用选择同样参与判断，切换任务不继承未发送的方法变更。受理不明的重试使用原请求体及原幂等键。
 
-轻量选择器按来源筛选、搜索并每页显示 50 项，展示不可用原因、当前手动冻结版本及自动方法。旧版与目录新版分别呈现，点“改用 vN”才升级。输入 `#` 的建议项携带真实 ID／版本，并为同名项展示来源和身份；纯文本名称不构成身份绑定。维护入口统一到 `/ai_config?section=skills`；自由文本的广义语义消歧仍待实现与真实模型验收。
+轻量选择器由模型旁 Skill 图标打开锚定列表，搜索全部内置／个人方法，每次加载 50 项并支持加载更多，多选直接生效，最多 8 项，无选择弹框。展示不可用原因与当前手动冻结版本；旧版与目录新版分别呈现，点“改用 vN”才升级。输入 `/` 的建议项携带真实 ID／版本，为同名项展示来源和身份；Enter 只确认选择并在输入框内显示可移除的高亮块，“浏览全部 Skill”打开同一列表。`#` 是普通文字，纯文本名称不构成身份绑定。维护入口统一到 `/ai_config?section=skills`，选择列表不承载管理表单。自由文本的广义语义消歧仍待实现与真实模型验收。
 
 自动激活须先在本任务成功搜索过该版本。目录更新、改成仅手动、停用或删除后首次激活会失败；已激活的任务仍可读取原指令和原资料，模型不能通过重新搜索自动切换到新版本。用户明确重新选择的新版本在工具边界应用。停止／恢复、Worker 接管及历史压缩从持久激活重新装配，事务外资源读取完成后重新验证执行代次、租约、任务和 manifest，旧 Worker 的结果不得写回。
 
@@ -152,7 +152,7 @@ AI 配置的“创作助手”标签保存一个账号级 `media_generation_enab
 
 ## 标准声音台词配音
 
-先在“管理任务引用”中明确选入声音草稿内已保存的 `sound_line`，再发送“为已选台词生成配音”或“为台词 ID line_a-9生成配音”。`id` 是真实台词字符串（1–64 个英文字母、数字、下划线或连字符），不是数据库整数或分镜 ID；`revision` 是声音文档版本。主体目录仅提供角色与条目标识，正文、音色、已保存模型及开始时间由 `read_selected_subjects` 按需读取，不装入其他台词、字幕、声音轨或成片文档。选入分镜不授予旧声音文档权限。
+任务已有或通过 API 明确选入声音草稿内已保存的 `sound_line` 后，可发送“为已选台词生成配音”或“为台词 ID line_a-9生成配音”。前端原“管理任务引用”目录已移除。`id` 是真实台词字符串（1–64 个英文字母、数字、下划线或连字符），不是数据库整数或分镜 ID；`revision` 是声音文档版本。主体目录仅提供角色与条目标识，正文、音色、已保存模型及开始时间由 `read_selected_subjects` 按需读取，不装入其他台词、字幕、声音轨或成片文档。选入分镜不授予旧声音文档权限。
 
 媒体工具使用 `target_kind:"dialogue_audio"`、`target_id:line_id`、`media_kind:"audio"`，并传 `generation_requests.targets` 的 `row_version/assembly_version/timeline_hash`、本人模型目录的 `model_config_id/model_version`。每条固定一个结果，计入音频上限；不接受 `prompt/text/voice`、媒体地址或参考图。只能使用该台词已保存的模型、正文与音色，不由模型临时改写生成来源。原生有声视频模式不接受独立配音。
 
@@ -260,7 +260,7 @@ AI 配置的“创作助手”标签保存一个账号级 `media_generation_enab
 }
 ```
 
-已有任务的补充可使用 `task_id`；不能同时设置 `task_id` 和 `new_task=true`。来源、作品记忆范围、执行目标相互独立，不因切换页面或指定写入目标就读取其他正文。新任务不继承原任务主体，不自动载入小说、剧本或整图。
+已有任务的补充可使用 `task_id`；不能同时设置 `task_id` 和 `new_task=true`。项目 V3 的新任务在幂等回执查找之后补入所属项目的 `execution_target/memory_project_ids`，默认值不改变原请求哈希；创作模式可省略目标，画布模式新任务须指定真实当前画布。补充从任务及待应用输入恢复原目标，拒绝跨项目、跨模式、改绑原画布或指定其他项目记忆。旧 `project_id=NULL` 会话保持旧兼容语义。引用不自动授予写入，设置目标不读取其他正文，新任务不继承原任务主体，不自动载入小说、剧本或整图。
 
 `subject_selection` 是本条输入希望保留的完整引用集合：`retain_keys` 仅保留本任务已存在的冻结快照；`subjects` 新选入或主动刷新指定主体；二者合计最多 16 项。省略整个字段沿用当前选择，空集合明确移除全部。`expected_input_revision` 必须等于当前任务输入水位（新任务为 `"0"`），并核对待应用输入，防止另一标签页的选择被静默覆盖；同幂等键重放先返回原回执。刷新不能同时 retain 同一主体。引用与其他补充同事务保存，在完整工具边界应用；停止时只保留输入，继续后才应用。
 
@@ -274,15 +274,17 @@ AI 配置的“创作助手”标签保存一个账号级 `media_generation_enab
 
 兼容单来源 `context` 与 `subject_selection` 互斥。V3 context 的 include_document 只能为 false，project 只选 asset/shot，canvas 只选 node；服务端转换为同一新快照，不用无关作品／整图版本替代主体校验。V2 仍沿用自己的旧冻结规则。数据库 ID 不转数值，节点与画布键保留原字符串。服务端只读取已保存内容，不接受客户端正文或图文档；失效的新引用整条输入拒绝。当前页面选入／发送前等待来源编辑保存成功，409、未确认恢复及等待期间的新编辑保留草稿并阻止发送。
 
-执行目标为 `{mode:'standard',project_id}` 或 `{mode:'infinite_canvas',project_id,canvas_id}`，仅声明任务目标，不自动授予任意业务操作。作品记忆通过 `memory_project_ids` 明确绑定，最多 16 项。`media_limits.images/videos/audio` 分别约束图片、视频和音频，当前适用于标准图片／普通及原生有声分镜视频／角色音色／旧声音台词配音及画布三类媒体。
+执行目标为 `{mode:'standard',project_id}` 或 `{mode:'infinite_canvas',project_id,canvas_id}`，仅声明任务目标，不自动授予任意业务操作。项目 V3 自动将 `memory_project_ids` 限定为所属项目；旧未绑定会话兼容原先最多 16 项的显式范围。`media_limits.images/videos/audio` 沿用默认规则，分别约束标准图片／普通及原生有声分镜视频／角色音色／旧声音台词配音及画布三类媒体。
 
-前端任务设置可搜索及分页选择跨作品写入目标，画布作品必须再明确选择对应 source_key；作品长期记忆独立多选。未发送的设置随账号／会话草稿保存，切换任务时清空，刷新后发送仍携带用户已改的设置。选择目标不读取正文，也不新增参考主体。
+前端任务设置和上下文管理入口及弹窗已移除，新任务使用当前项目／画布目标，补充不发送新目标；受理不明仍逐字重放原请求及原幂等键。引用通过 `@`、当前主体和画布选择添加，已有引用标签支持移除、主动刷新和来源定位，来源版本与任务输入水位校验保留。添加图标只列图片、文本、当前画布和资产库，创作模式禁用当前画布项；原视频／音频附件 API 为兼容保留。
 
-文本最多 32000 字，附件最多 16 项、所选 Skill 最多 8 项。附件继续使用 `/conversations/{id}/attachments`（可筛选 pending）、`/uploads`、`/references` 和 `/{attachment_id}` DELETE；上传与引用必带幂等键。多模态大小、校验和及本人媒体访问沿用[Agent 上下文](agent.md)。本次未进行新增多模态真实供应商验收。
+文本最多 32000 字，附件最多 16 项、所选 Skill 最多 8 项。附件继续使用 `/conversations/{id}/attachments`（可筛选 pending）、`/uploads`、`/references` 和 `/{attachment_id}` DELETE；上传与引用必带幂等键。共享附件路径同时支持 V2/V3 会话，继续校验本人及项目归属；V0/V1 保持只读限制，旧聊天消息接口仍仅接受 V2。前端自动衔接当前任务，完成后开始新任务，不提供“独立新任务”下拉框。多模态大小、校验和及本人媒体访问沿用[Agent 上下文](agent.md)。本次未进行新增多模态真实供应商验收。
 
 任务补充可传 `attachment_selection:{expected_input_revision:'4',retain_ids:['123']}`，仅保留此任务已有的数字附件 ID；省略沿用当前集合，显式空列表移除全部，新增附件仍使用 `attachment_ids`。水位须匹配并计入待应用选择，跨任务伪造保留拒绝。全部任务附件与主体媒体合计最多 16 项，文本附件合计最多 128 KiB，按保留后加新增的集合校验。变更在完整工具边界应用，停止后等待明确继续；移除只改变本任务引用，不删除原上传记录。发送模型前再次校验本人附件可用性，失效输入作废重装且不增加调用数。附件范围随历史回复保存，移除或失效后旧回复／摘要不能重新注入正文。受理不明保留原选择、水位、请求体及幂等键。
 
 ## 记忆管理与按需读取
+
+当前前端不提供记忆管理、抽取澄清、维护状态和摘要详情入口，不展示内部记忆工具步骤；记忆、阶段摘要及来源保护继续在后台运行。以下路由为内部与兼容契约，不代表存在用户管理页面。
 
 | 方法 | 路径 | 契约 |
 | --- | --- | --- |
@@ -321,7 +323,7 @@ AI 配置的“创作助手”标签保存一个账号级 `media_generation_enab
 
 ## 删除与记忆保护
 
-删除前 GET `deletion-memory`，返回 `conversation_id/row_version/items/total/offset/limit`。每项含真实 id、content_version、作用域、标题、有界正文预览及 protection_reasons（user_edited/independent_sources）。这些条目默认保留，用户逐条选择。
+当前前端永久删除仅确认一次，提交 `{row_version,clear_derived_memory:false}`，不请求 `deletion-memory`，也不显示记忆选项。作品成果保留。历史已持久化的待核对删除继续使用原体、原键，不能为适配新界面改变旧请求。内部兼容的 GET `deletion-memory` 返回 `conversation_id/row_version/items/total/offset/limit`；每项含真实 id、content_version、作用域、标题、有界正文预览及 protection_reasons（user_edited/independent_sources），相应显式选择契约仍保留。
 
 DELETE 请求示例：
 
@@ -347,4 +349,4 @@ memory_selections 最多 200 项、不能重复，非空选择要求 clear_deriv
 
 模型列表、本人配置、现有 Skill 管理仍复用 `/agent/models`、`/agent/skills`。V3 使用当前已接入工具清单；账号 Skill 包、按需加载和轻量选择已接入，Skill 不得扩大权限，广义语义消歧与真实模型效果仍待验收。模型 Gateway 当前支持 OpenAI Chat Completions 与 Responses；真实远端能力和计费验收必须独立记录。
 
-升级须执行[全局任务与记忆迁移](../database/migrations/2026-10-21-agent-system/README.md)，部署同版 API、scheduler 与 Agent Worker。应用不自动建表／迁移。历史真实供应商证据见[原验收记录](../reviews/Agent模式实施与真实模型验收.md)，不能替代本次系统的真实运行验收。
+升级须先执行[全局任务与记忆迁移](../database/migrations/2026-10-21-agent-system/README.md)，再执行[项目会话约束增量](../database/migrations/2026-10-22-project-assistant/README.md)，部署同版 API、scheduler 与 Agent Worker。应用不自动建表／迁移。历史真实供应商证据见[原验收记录](../reviews/Agent模式实施与真实模型验收.md)，不能替代本次系统的真实运行验收。

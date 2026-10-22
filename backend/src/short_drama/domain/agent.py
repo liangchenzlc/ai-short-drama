@@ -174,7 +174,7 @@ class AgentConversation(Base):
             "id",
         ),
         CheckConstraint(
-            "(scope_version = 3 AND project_id IS NULL AND stage IS NULL "
+            "(scope_version = 3 AND stage IS NULL "
             "AND subject_type IS NULL AND subject_id IS NULL AND task_type IS NULL) OR "
             "(scope_version = 2 AND project_id IS NOT NULL AND stage IS NULL "
             "AND subject_type IS NULL AND subject_id IS NULL AND task_type IS NULL) OR "

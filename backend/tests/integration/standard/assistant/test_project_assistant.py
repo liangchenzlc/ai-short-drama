@@ -20,7 +20,7 @@ from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import ActorContext, token_hash
 from short_drama.db.readiness import inspect_agent_schema
 from short_drama.domain import AsyncTask, MediaFile, Project
-from short_drama.domain.agent import AgentArtifact, AgentRun, AgentToolCall
+from short_drama.domain.agent import AgentArtifact, AgentConversation, AgentRun, AgentToolCall
 from short_drama.domain.collaboration import User, UserSession
 from short_drama.main import create_app
 from short_drama.service.agent_attachment_service import AgentAttachmentService
@@ -230,6 +230,113 @@ def test_project_members_never_read_other_users_chats_and_revocation_ends_access
             member.get_conversation(private.id)
         with pytest.raises(NotFound):
             member.create_project_conversation({"project_id": project})
+
+
+@pytest.mark.parametrize("scope_version", [2, 3])
+def test_shared_attachment_http_routes_allow_current_conversations_and_keep_owner_guards(
+    workspace, scope_version
+):
+    factory, _settings, project, model = workspace
+    cfg = Settings(
+        _env_file=None,
+        auth_enabled=True,
+        agent_enabled=True,
+        auth_cookie_secure=False,
+        public_origin="http://testserver",
+    )
+    app = create_app(cfg)
+    app.state.session_factory, app.state.agent_schema_ready = factory, True
+    with factory.begin() as session:
+        session.add(
+            User(
+                id=2,
+                username="attachment_other",
+                display_name="Other",
+                email="attachment_other@example.test",
+                password_hash="test",
+                status="active",
+                email_verified_at=utcnow(),
+                created_at=utcnow(),
+            )
+        )
+
+    def authenticated_client(owner):
+        token, csrf = f"attachment-http-{owner}", f"attachment-csrf-{owner}"
+        with factory.begin() as session:
+            session.add(
+                UserSession(
+                    id=next_id(),
+                    user_id=owner,
+                    token_hash=token_hash(token),
+                    csrf_hash=token_hash(csrf),
+                    created_at=utcnow(),
+                    expires_at=utcnow() + timedelta(days=1),
+                )
+            )
+        result = TestClient(app)
+        result.cookies.set("sd_session", token)
+        result.headers.update({"Origin": cfg.public_origin, "X-CSRF-Token": csrf})
+        return result
+
+    client, foreign = authenticated_client(1), authenticated_client(2)
+    root = "/api/v1/assistant"
+    conversations = root + ("/global/conversations" if scope_version == 3 else "/conversations")
+    created = client.post(
+        conversations,
+        json={"project_id": str(project)},
+        headers={"Idempotency-Key": "attachment-conversation"},
+    )
+    assert created.status_code == 201, created.text
+    identifier = created.json()["id"]
+    path = f"{root}/conversations/{identifier}/attachments"
+    restored = client.get(path, params={"pending": True})
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["items"] == []
+
+    uploaded = client.post(
+        path + "/uploads",
+        files={"file": ("reference.txt", b"character reference", "text/plain")},
+        headers={"Idempotency-Key": "attachment-upload"},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    attachment = uploaded.json()["id"]
+    assert client.get(path, params={"pending": True}).json()["items"][0]["id"] == attachment
+    reference = {"source_type": "media", "source_id": "9007199254740993"}
+    assert (
+        client.post(
+            path + "/references", json=reference, headers={"Idempotency-Key": "missing-reference"}
+        ).status_code
+        == 404
+    )
+
+    denied = [
+        foreign.get(path),
+        foreign.post(
+            path + "/uploads",
+            files={"file": ("foreign.txt", b"foreign", "text/plain")},
+            headers={"Idempotency-Key": "foreign-upload"},
+        ),
+        foreign.post(
+            path + "/references", json=reference, headers={"Idempotency-Key": "foreign-reference"}
+        ),
+        foreign.delete(path + "/" + attachment),
+    ]
+    assert [response.status_code for response in denied] == [404] * 4
+    assert client.delete(path + "/" + attachment).status_code == 204
+    assert client.get(path, params={"pending": True}).json()["items"] == []
+    accepted = client.post(
+        conversations + f"/{identifier}/messages",
+        json={"content": "讨论当前项目", "model_config_id": str(model)},
+        headers={"Idempotency-Key": "attachment-ready-message"},
+    )
+    assert accepted.status_code == 201, accepted.text
+    with factory.begin() as session:
+        session.get(AgentConversation, int(identifier)).scope_version = 0
+    legacy = client.get(path)
+    assert legacy.status_code == 409
+    assert legacy.json()["error"]["code"] == "assistant_legacy_readonly"
+    client.close()
+    foreign.close()
 
 
 def test_text_attachment_and_personal_skill_are_frozen_without_tools(workspace):

@@ -32,7 +32,11 @@
 .episode-step-text { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
 .episode-step-name { font-size: 13px; font-weight: 550; }
 .episode-step-connector { height: 1px; width: 24px; background: #414141; flex-shrink: 0; }
-.standard-creation-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--creation-gap); width: 100%; min-height: 0; min-width: 0; }
+.standard-creation-layout { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--creation-gap); width: 100%; min-height: 0; min-width: 0; }
+.episode-assistant-resize { position: absolute; z-index: 2; inset-block: 0; right: calc(var(--creation-assistant-width) - 5px); width: 12px; padding: 0; border: 0; background: transparent; cursor: col-resize; touch-action: none; }
+.episode-assistant-resize::before { content: ''; position: absolute; top: 12px; bottom: 12px; left: 5px; width: 2px; border-radius: 2px; background: transparent; }
+.episode-assistant-resize:hover::before, .episode-assistant-resize:focus-visible::before { background: var(--accent-border); }
+.episode-assistant-resize:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; border-radius: 4px; }
 .standard-creation-layout.is-assistant-open { grid-template-columns: minmax(0, 1fr) var(--creation-assistant-width); }
 .standard-creation-work { display: grid; grid-template-columns: var(--creation-list-width) minmax(0, 1fr); gap: var(--creation-gap); min-height: 0; min-width: 0; }
 .standard-creation-layout.is-source .standard-creation-work { grid-template-columns: var(--creation-novel-width) minmax(0, 1fr); }

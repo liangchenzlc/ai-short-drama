@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import { Button } from 'antd';
-import { Copy, Check, Pencil, RotateCcw, History } from 'lucide-react';
+import { Copy, Check, History } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { AgentMessage } from '../../api/types/agents';
@@ -34,9 +34,8 @@ export const AssistantMessage = memo(function AssistantMessage({ message, layout
         {reference.kind === 'text' && typeof reference.text_preview === 'string' ? <details><summary>查看文本资料</summary><p>{reference.text_preview}</p></details> : null}
       </div>;
     })}</div> : null}
-    {!user || onHistory ? <div className="ai-assistant-reply-actions">
-      {!user && <Button type="text" size="small" aria-label="复制回复" icon={copied ? <Check size={13}/> : <Copy size={13}/>} onClick={() => void copy()}>{copied ? '已复制' : '复制'}</Button>}
-      {user && onHistory && <><Button type="text" size="small" disabled={historyDisabled} aria-label="编辑这条讨论" icon={<Pencil size={13}/>} onClick={() => onHistory('edit')}>编辑</Button><Button type="text" size="small" disabled={historyDisabled} aria-label="重新回答这段讨论" icon={<RotateCcw size={13}/>} onClick={() => onHistory('regenerate')}>重新回答</Button></>}
+    {!user ? <div className="ai-assistant-reply-actions">
+      <Button type="text" size="small" aria-label="复制回复" icon={copied ? <Check size={13}/> : <Copy size={13}/>} onClick={() => void copy()}>{copied ? '已复制' : '复制'}</Button>
       {onHistory && /^\d+$/.test(message.row_version ?? '1') && BigInt(message.row_version ?? '1') > 1n && <Button type="text" size="small" disabled={historyDisabled} aria-label="查看讨论修订记录" icon={<History size={13}/>} onClick={() => onHistory('history')}>修订记录</Button>}
       {copyError ? layout === 'standard' ? <StudioFeedback type="error" title="复制助手回复" message={copyError} noticeKey={`assistant-copy:${message.id}`}/> : <span role="status">{copyError}</span> : null}
     </div> : null}

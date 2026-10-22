@@ -339,7 +339,10 @@ def _scope_options(
                     mapper.local_table.c.id == deletion_receipt_id,
                     mapper.local_table.c.owner_user_id == user_id,
                     mapper.local_table.c.scope_version == 3,
-                    mapper.local_table.c.project_id.is_(None),
+                    or_(
+                        mapper.local_table.c.project_id.is_(None),
+                        mapper.local_table.c.project_id.in_(project_ids(user_id)),
+                    ),
                 ),
             )
             if deletion_receipt_id is not None and mapper.local_table.name == "agent_conversations"
@@ -536,11 +539,13 @@ def _guard_agent_write(session, entity, actor, new):
         if conversation.owner_user_id != actor.user_id:
             raise NotFound("Resource does not exist")
         if conversation.scope_version == 3:
-            if conversation.project_id is not None or any(
+            if conversation.project_id is not None:
+                require_project(session, conversation.project_id)
+            if any(
                 getattr(conversation, field) is not None
                 for field in ("stage", "subject_type", "subject_id", "task_type")
             ):
-                raise WorkflowError("assistant_scope_invalid", "账号对话范围无效", 403)
+                raise WorkflowError("assistant_scope_invalid", "助手对话范围无效", 403)
         elif conversation.scope_version == 2:
             require_project(session, conversation.project_id)
             if any(

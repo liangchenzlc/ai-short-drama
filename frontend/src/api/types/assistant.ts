@@ -36,7 +36,7 @@ export interface AssistantSendInput extends Pick<AgentSendInput, 'content' | 'mo
 }
 
 export interface GlobalAssistantConversation extends Omit<AgentConversation, 'project_id' | 'scope_version'> {
-  project_id: null;
+  project_id: string | null;
   scope_version: 3;
   status: 'active' | 'deleting' | 'deleted';
 }
@@ -136,7 +136,7 @@ export interface AssistantDeletionPreview {
   total: number; offset: number; limit: number;
 }
 export interface AssistantControlInput {
-  kind: 'stop' | 'redirect' | 'resume'; expected_control_seq?: string; content?: string;
+  kind: 'stop' | 'redirect' | 'resume'; expected_control_seq?: string; content?: string; message_id?: string;
 }
 export interface AssistantControlAccepted { control_id: string; task: AssistantTask; run: AgentRun; cursor: number }
 export interface AssistantTaskInputState {

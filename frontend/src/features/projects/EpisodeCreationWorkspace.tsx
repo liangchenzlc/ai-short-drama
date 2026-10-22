@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { AgentSubject } from '../agents/agent-scope';
+import { accountStorage } from '../auth/account-storage';
 import './episode-creation.css';
 import './creation-overlays.css';
 import '../ai-assistant/standard-assistant.css';
@@ -28,7 +29,8 @@ export function useEpisodeCreationControls() {
   return { revealPanel: workspace?.revealPanel, subject: workspace?.subject ?? null, selectSubject: workspace?.selectSubject, panelOpen: workspace?.panelOpen ?? true, setPanelOpen: workspace?.setPanelOpen, assistantOpen: workspace?.assistantOpen ?? false };
 }
 
-export function EpisodeCreationWorkspace({ stage, assistantOpen, assistantPanel, onCloseAssistant, workRequest, children, subject, onSubject }: {
+export function EpisodeCreationWorkspace({ accountId, stage, assistantOpen, assistantPanel, onCloseAssistant, workRequest, children, subject, onSubject }: {
+  accountId?: string;
   stage: CreationStage; assistantOpen: boolean; assistantPanel: ReactNode; onCloseAssistant: () => void; workRequest: number; children: ReactNode;
   subject: AgentSubject | null; onSubject: (subject: AgentSubject | null) => void;
 }) {
@@ -40,6 +42,34 @@ export function EpisodeCreationWorkspace({ stage, assistantOpen, assistantPanel,
   const [panelOpen, changePanelOpen] = useState(() => window.innerWidth > 700);
   const [compactPreview, setCompactPreview] = useState(false);
   const frame = useRef<HTMLDivElement>(null);
+  const [assistantWidth, setAssistantWidth] = useState(380);
+  const [assistantMaxWidth, setAssistantMaxWidth] = useState(560);
+  const resize = useRef<{ pointerId: number; x: number; width: number } | null>(null);
+  const visibleWidth = Math.min(assistantWidth, assistantMaxWidth);
+  useLayoutEffect(() => {
+    resize.current = null;
+    let stored = 380;
+    if (accountId) {
+      try { const raw = accountStorage(accountId).getItem('creation:assistant-width'); if (raw) stored = Number(raw); } catch { /* Width remains usable without browser storage. */ }
+    }
+    setAssistantWidth(Number.isFinite(stored) ? Math.max(320, Math.min(560, Math.round(stored))) : 380);
+  }, [accountId]);
+  useLayoutEffect(() => {
+    const element = frame.current;
+    if (!element) return;
+    const update = () => {
+      const gap = Number.parseFloat(getComputedStyle(element).columnGap) || 0;
+      setAssistantMaxWidth(Math.max(320, Math.min(560, Math.floor(element.clientWidth - 640 - gap))));
+    };
+    update();
+    const observer = new ResizeObserver(update); observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  function changeAssistantWidth(width: number) {
+    const next = Math.max(320, Math.min(assistantMaxWidth, Math.round(width)));
+    setAssistantWidth(next);
+    if (accountId) { try { accountStorage(accountId).setItem('creation:assistant-width', String(next)); } catch { /* Keep the in-session preference. */ } }
+  }
   const mainFrame = useRef<HTMLElement>(null);
   const panelTrigger = useRef<HTMLElement | null>(null);
   const closeAssistant = useRef(onCloseAssistant); closeAssistant.current = onCloseAssistant;
@@ -97,7 +127,7 @@ export function EpisodeCreationWorkspace({ stage, assistantOpen, assistantPanel,
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const controls = () => [...pane.querySelectorAll<HTMLElement>('button:not([disabled]),textarea:not([disabled]),input:not([disabled]),[tabindex="0"]')].filter(node => node.getClientRects().length > 0);
     const handle = (event: globalThis.KeyboardEvent) => {
-      if (event.defaultPrevented || document.querySelector('dialog[open], .ant-select-dropdown:not(.ant-select-dropdown-hidden), .ant-dropdown:not(.ant-dropdown-hidden)')) return;
+      if (event.defaultPrevented || document.querySelector('dialog[open], .ant-select-dropdown:not(.ant-select-dropdown-hidden), .ant-dropdown:not(.ant-dropdown-hidden), .assistant-skill-popover:not(.ant-popover-hidden), .standard-assistant-popover:not(.ant-popover-hidden)')) return;
       if (event.key === 'Escape') { event.preventDefault(); closeAssistant.current(); }
       if (event.key !== 'Tab') return;
       const first = controls()[0]; const last = controls().at(-1);
@@ -116,11 +146,19 @@ export function EpisodeCreationWorkspace({ stage, assistantOpen, assistantPanel,
     <div ref={setEditorTarget} className="creation-editor-target" hidden={!editing}/>
   </section>;
   return <CreationContext.Provider value={workspace}>
-    <div ref={frame} className={`standard-creation-layout is-${stage}${assistantOpen ? ' is-assistant-open' : ''}${panelOpen ? ' is-panel-open' : ' is-panel-closed'}`} data-panel-request={panelRequest + workRequest}>
+    <div ref={frame} style={{ '--creation-assistant-width': `${visibleWidth}px` } as CSSProperties} className={`standard-creation-layout is-${stage}${assistantOpen ? ' is-assistant-open' : ''}${panelOpen ? ' is-panel-open' : ' is-panel-closed'}`} data-panel-request={panelRequest + workRequest}>
       <div className="standard-creation-work" inert={compact && assistantOpen ? true : undefined}>
         {stage === 'source' ? [mainPanel, workStage] : [workStage, mainPanel]}
       </div>
       {assistantOpen && compact && <button type="button" className="episode-assistant-backdrop" aria-label="关闭 AI 创作助手" tabIndex={-1} onClick={onCloseAssistant}/>}
+      {assistantOpen && !compact && <button type="button" className="episode-assistant-resize" role="separator" aria-label="调整助手宽度" aria-controls="agent-conversation-pane" aria-orientation="vertical" aria-valuemin={320} aria-valuemax={assistantMaxWidth} aria-valuenow={visibleWidth}
+        onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.currentTarget.focus(); resize.current = { pointerId: event.pointerId, x: event.clientX, width: visibleWidth }; event.currentTarget.setPointerCapture(event.pointerId); }}
+        onPointerMove={event => { const start = resize.current; if (start?.pointerId === event.pointerId) changeAssistantWidth(start.width + start.x - event.clientX); }}
+        onPointerUp={() => { resize.current = null; }} onPointerCancel={() => { resize.current = null; }} onLostPointerCapture={() => { resize.current = null; }}
+        onKeyDown={event => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault(); changeAssistantWidth(event.key === 'Home' ? 320 : event.key === 'End' ? assistantMaxWidth : visibleWidth + (event.key === 'ArrowLeft' ? 16 : -16));
+        }}/>}
       <aside id="agent-conversation-pane" className="episode-assistant-sidebar" hidden={!assistantOpen} aria-label="AI 创作助手区域" role={compact && assistantOpen ? 'dialog' : undefined} aria-modal={compact && assistantOpen ? true : undefined} tabIndex={compact && assistantOpen ? -1 : undefined}>{assistantPanel}</aside>
     </div>
   </CreationContext.Provider>;

@@ -15,12 +15,13 @@ from short_drama.agent.runtime import AgentRuntimeStore
 from short_drama.agent.tools import execute_tools, prepare_decision
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
-from short_drama.domain.agent import AgentConversation, AgentRun, AgentToolCall
-from short_drama.domain.agent_task import AgentOperation, AgentTask
+from short_drama.domain.agent import AgentConversation, AgentMessage, AgentRun, AgentToolCall
+from short_drama.domain.agent_task import AgentOperation, AgentTask, AgentTaskControl
 from short_drama.domain.collaboration import User
 from short_drama.service.ai_model_config_service import AIModelConfigService
 from short_drama.service.assistant_task_service import AssistantTaskService
 from short_drama.service.base import utcnow
+from short_drama.utils.json_digest import digest
 
 pytestmark = pytest.mark.integration
 
@@ -70,6 +71,248 @@ def new_task(workspace):
             "message",
         )
     return conversation, accepted
+
+
+def test_resume_reuses_accepted_input_without_an_extra_user_message(task_workspace):
+    conversation, accepted = new_task(task_workspace)
+    factory, settings, _model = task_workspace
+    with factory() as session:
+        service = task_service(session, settings)
+        stopped = service.control_task(accepted.task.id, {"kind": "stop"}, "stop-before-input")
+        body = {"task_id": accepted.task.id, "content": "改成雨夜悬疑，保留已经保存的内容"}
+        submitted = service.send_task_message(conversation.id, body, "new-direction")
+        assert submitted.task.status == "stopped"
+        control = {
+            "kind": "resume",
+            "expected_control_seq": stopped.task.control_seq,
+            "message_id": submitted.message.id,
+        }
+        resumed = service.control_task(accepted.task.id, control, "resume-input")
+        replay = service.control_task(accepted.task.id, control, "resume-input")
+        assert replay.run.id == resumed.run.id and replay.control_id == resumed.control_id
+        assert service.send_task_message(conversation.id, body, "new-direction").message.id == (
+            submitted.message.id
+        )
+        with pytest.raises(Conflict):
+            service.control_task(
+                accepted.task.id, {**control, "message_id": accepted.message.id}, "resume-input"
+            )
+        assert resumed.task.id == accepted.task.id and resumed.task.status == "queued"
+        assert session.get(AgentRun, resumed.run.id).trigger_message_id == submitted.message.id
+        messages = session.scalars(
+            select(AgentMessage)
+            .where(AgentMessage.conversation_id == conversation.id)
+            .order_by(AgentMessage.seq)
+        ).all()
+        assert [message.content for message in messages] == ["讨论镜头节奏", body["content"]]
+        stop = session.scalar(
+            select(AgentTaskControl).where(AgentTaskControl.id == stopped.control_id)
+        )
+        assert stop.request_hash == digest(
+            {"kind": "stop", "expected_control_seq": None, "content": None}
+        )
+
+
+def test_resume_reused_message_keeps_task_scope_and_the_original_stop_watermark(task_workspace):
+    conversation, accepted = new_task(task_workspace)
+    factory, settings, model = task_workspace
+    with factory() as session:
+        service = task_service(session, settings)
+        stopped = service.control_task(accepted.task.id, {"kind": "stop"}, "source-stop")
+        submitted = service.send_task_message(
+            conversation.id,
+            {"task_id": accepted.task.id, "content": "补充人物动机"},
+            "source-input",
+        )
+        other = service.create_global_conversation({}, "other-conversation")
+        foreign = service.send_task_message(
+            other.id, {"content": "另一段讨论", "model_config_id": model}, "foreign-input"
+        )
+        control = {"kind": "resume", "expected_control_seq": stopped.task.control_seq}
+        with pytest.raises(NotFound):
+            service.control_task(
+                accepted.task.id,
+                {**control, "message_id": foreign.message.id},
+                "foreign-source",
+            )
+        newer = service.control_task(accepted.task.id, {"kind": "stop"}, "newer-stop")
+        with pytest.raises(Conflict):
+            service.control_task(
+                accepted.task.id, {**control, "message_id": submitted.message.id}, "stale-resume"
+            )
+        current = service.control_task(
+            accepted.task.id,
+            {
+                **control,
+                "expected_control_seq": newer.task.control_seq,
+                "message_id": submitted.message.id,
+            },
+            "current-resume",
+        )
+        assert current.task.status == "queued"
+
+
+def test_project_task_conversations_isolate_creation_selection_and_idempotency(task_workspace):
+    projects = subject_assets(task_workspace)
+    first, second = (item["project_id"] for item in projects)
+    factory, settings, _model = task_workspace
+    with factory() as session:
+        service = task_service(session, settings)
+        legacy = service.create_global_conversation({}, "historical-account")
+        one = service.create_global_conversation({"project_id": first}, "project-one")
+        two = service.create_global_conversation({"project_id": second}, "project-two")
+        assert one.project_id == int(first) and two.project_id == int(second)
+        assert service.create_global_conversation({"project_id": first}, "project-one").id == one.id
+        with pytest.raises(Conflict):
+            service.create_global_conversation({"project_id": second}, "project-one")
+        assert [row.id for row in service.list_global_conversations(project_id=first).items] == [
+            one.id
+        ]
+        assert [row.id for row in service.list_global_conversations(project_id=second).items] == [
+            two.id
+        ]
+        assert service.get_conversation(legacy.id).project_id is None
+    with factory() as session:
+        service = task_service(session, settings, owner=2)
+        with pytest.raises(NotFound):
+            service.list_global_conversations(project_id=first)
+        with pytest.raises(NotFound):
+            service.create_global_conversation({"project_id": first}, "foreign-project")
+
+
+def test_project_tasks_derive_destination_memory_and_preserve_original_replay(task_workspace):
+    projects = subject_assets(task_workspace)
+    project_id, other_id = (item["project_id"] for item in projects)
+    factory, settings, model = task_workspace
+    with factory() as session:
+        service = task_service(session, settings)
+        conversation = service.create_global_conversation(
+            {"project_id": project_id}, "project-defaults"
+        )
+        body = {"content": "在本项目创建角色", "model_config_id": model, "new_task": True}
+        accepted = service.send_task_message(conversation.id, body, "project-message")
+        assert service.send_task_message(conversation.id, body, "project-message").message.id == (
+            accepted.message.id
+        )
+        with pytest.raises(WorkflowError, match="所属项目"):
+            service.send_task_message(
+                conversation.id,
+                {**body, "execution_target": {"mode": "standard", "project_id": other_id}},
+                "foreign-destination",
+            )
+        with pytest.raises(WorkflowError, match="所属项目"):
+            service.send_task_message(
+                conversation.id, {**body, "memory_project_ids": [other_id]}, "foreign-memory"
+            )
+        with pytest.raises(WorkflowError):
+            service.send_task_message(
+                conversation.id,
+                {
+                    **body,
+                    "execution_target": {
+                        "mode": "infinite_canvas",
+                        "project_id": project_id,
+                        "canvas_id": "foreign-canvas",
+                    },
+                },
+                "wrong-mode",
+            )
+    decision(task_workspace, accepted)
+    with factory() as session:
+        task = session.get(AgentTask, accepted.task.id)
+        assert task.execution_target == {
+            "mode": "standard",
+            "project_id": project_id,
+            "canvas_id": None,
+        }
+        assert task.memory_project_ids == [project_id]
+    with factory() as session:
+        service = task_service(session, settings)
+        original = service.send_task_message(conversation.id, body, "project-message")
+        assert original.message.id == accepted.message.id
+
+
+def test_project_canvas_task_keeps_accepted_canvas_on_supplement(task_workspace):
+    project_id, _canvas_id, saved = canvas_patch_workspace(task_workspace)
+    canvas_key = saved["source_document"]["id"]
+    factory, settings, model = task_workspace
+    target = {"mode": "infinite_canvas", "project_id": str(project_id), "canvas_id": canvas_key}
+    with factory() as session:
+        service = task_service(session, settings)
+        conversation = service.create_global_conversation(
+            {"project_id": str(project_id)}, "canvas-project-chat"
+        )
+        with pytest.raises(WorkflowError):
+            service.send_task_message(
+                conversation.id, {"content": "缺少画布", "model_config_id": model}, "no-canvas"
+            )
+        with pytest.raises(NotFound):
+            service.send_task_message(
+                conversation.id,
+                {
+                    "content": "画布不存在",
+                    "model_config_id": model,
+                    "execution_target": {**target, "canvas_id": "missing"},
+                },
+                "missing-canvas",
+            )
+        accepted = service.send_task_message(
+            conversation.id,
+            {"content": "创建故事节点", "model_config_id": model, "execution_target": target},
+            "canvas-message",
+        )
+        service.send_task_message(
+            conversation.id, {"content": "继续完善", "task_id": accepted.task.id}, "supplement"
+        )
+        with pytest.raises(WorkflowError, match="原画布"):
+            service.send_task_message(
+                conversation.id,
+                {
+                    "content": "不能重定向",
+                    "task_id": accepted.task.id,
+                    "execution_target": {**target, "canvas_id": "another-canvas"},
+                },
+                "redirect-canvas",
+            )
+    decision(task_workspace, accepted)
+    with factory() as session:
+        assert session.get(AgentTask, accepted.task.id).execution_target == target
+
+
+def test_project_task_workers_fence_archived_projects_and_deletion_receipts_replay(task_workspace):
+    from short_drama.agent.access import lock_run, may_decide
+    from short_drama.domain import Project
+
+    project_id = subject_assets(task_workspace)[0]["project_id"]
+    factory, settings, model = task_workspace
+    with factory() as session:
+        service = task_service(session, settings)
+        conversation = service.create_global_conversation(
+            {"project_id": project_id}, "project-lifecycle"
+        )
+        accepted = service.send_task_message(
+            conversation.id, {"content": "讨论", "model_config_id": model}, "lifecycle-message"
+        )
+    with factory.begin() as session:
+        project, row, run = lock_run(session, accepted.run.id)
+        assert may_decide(session, project, row, run)
+        project.archived_at = utcnow()
+        session.flush()
+        assert not may_decide(session, project, row, run)
+    with factory() as session:
+        service = task_service(session, settings)
+        with pytest.raises(NotFound):
+            service.get_conversation(conversation.id)
+    with factory.begin() as session:
+        session.get(Project, int(project_id)).archived_at = None
+    with factory() as session:
+        service = task_service(session, settings)
+        body = {"row_version": service.get_conversation(conversation.id).row_version}
+        deleted = service.delete_global_conversation(conversation.id, body, "project-delete")
+        assert deleted.status == "deleted"
+        assert service.delete_global_conversation(conversation.id, body, "project-delete").id == (
+            conversation.id
+        )
 
 
 def decision(workspace, accepted, *, tool_count=0):
@@ -6043,6 +6286,9 @@ def test_batch_undo_sound_keeps_a_later_native_edit(task_workspace):
     operation = operations[0]
     assert operation.status == "succeeded"
     factory, settings, _model = task_workspace
+    settings.minio_image_bucket = "test-images"
+    settings.minio_video_bucket = "test-videos"
+    settings.minio_audio_bucket = "test-audio"
     current = sound_text_revision(task_workspace, pid)
     with factory() as session:
         document = deepcopy(session.get(ProjectSound, assembly_id).document)

@@ -12,8 +12,6 @@ const historyDraftSource = readFileSync(new URL('../../src/features/ai-assistant
 const historyDrafts = await import(`data:text/javascript;base64,${Buffer.from(compile(historyDraftSource)).toString('base64')}`);
 const undoSource = readFileSync(new URL('../../src/features/ai-assistant/assistant-undo-draft.ts', import.meta.url), 'utf8');
 const undoDrafts = await import(`data:text/javascript;base64,${Buffer.from(compile(undoSource)).toString('base64')}`);
-const memorySource = readFileSync(new URL('../../src/features/ai-assistant/assistant-memory-draft.ts', import.meta.url), 'utf8');
-const memoryDrafts = await import(`data:text/javascript;base64,${Buffer.from(compile(memorySource)).toString('base64')}`);
 const linkSource = readFileSync(new URL('../../src/features/ai-assistant/assistant-source-link.ts', import.meta.url), 'utf8');
 const { assistantSourceLink } = await import(`data:text/javascript;base64,${Buffer.from(compile(linkSource)).toString('base64')}`);
 function storage() {
@@ -50,29 +48,6 @@ const pending = () => ({ version: 1, key: 'original-request', draft: '分析当�
   attachment_ids: ['301'], skills: [{ id: 'builtin:continuity', content_version: '1' }], video_audio: 'visual_only',
 } });
 
-test('memory drafts preserve the original uncertain body and remain account scoped', () => {
-  const local = storage();
-  const draft = { version: 1, item: null, key: 'original-memory', pending: true, values: {
-    scope_type: 'user', kind: 'preference', memory_key: 'dialogue', title: '对白', content: '对白要短', aliases: [], tags: [], pinned: false,
-  } };
-  assert.equal(memoryDrafts.saveMemoryDraft('1', draft, local), true);
-  assert.deepEqual(memoryDrafts.readMemoryDraft('1', local).draft, draft);
-  assert.equal(memoryDrafts.readMemoryDraft('2', local).draft, null);
-  assert.equal(memoryDrafts.saveMemoryDraft('1', { ...draft, key: 'replacement' }, local), false);
-  assert.equal(memoryDrafts.saveMemoryDraft('1', { ...draft, values: { ...draft.values, content: '换了正文' } }, local), false);
-  assert.equal(memoryDrafts.saveMemoryDraft('1', { ...draft, pending: false }, local), true);
-  assert.equal(memoryDrafts.clearMemoryDraft('1', local), true);
-});
-
-test('a damaged memory draft is retained until it is explicitly cleared', () => {
-  const local = storage();
-  local.setItem('assistant-memory-draft:v1:1', '{broken');
-  assert.ok(memoryDrafts.readMemoryDraft('1', local).error);
-  assert.equal(memoryDrafts.saveMemoryDraft('1', { version: 1 }, local), false);
-  assert.equal(local.getItem('assistant-memory-draft:v1:1'), '{broken');
-  assert.equal(memoryDrafts.clearMemoryDraft('1', local), true);
-});
-
 test('assistant drafts retain explicit references and selection removal across refresh without secrets or URLs', () => {
   const local = storage();
   const draft = { version: 1, text: '@文字1 分析它', modelId: '9007199254740993', skills: [], contextKey: 'canvas:1', includeContext: false,
@@ -97,6 +72,26 @@ test('uncertain messages retain frozen context and original key independently of
   assert.equal(drafts.clearAssistantPendingSend('1', '20', 'new-key', local), false);
   assert.equal(drafts.clearAssistantPendingSend('1', '20', original.key, local), true);
   assert.equal(drafts.readAssistantDraft('1', '20', local).text, '新的消息');
+});
+
+test('a message after stopping freezes its resume identity and control sequence with the original send', () => {
+  const local = storage();
+  const original = { version: 1, key: 'message-after-stop', draft: '改成雨夜', body: { task_id: '501', content: '改成雨夜' },
+    resume: { version: 1, kind: 'control', targetId: '501', key: 'resume-after-message', body: { kind: 'resume', expected_control_seq: '9007199254740993' } } };
+  assert.equal(drafts.saveAssistantPendingSend('1', '20', original, local), true);
+  assert.deepEqual(drafts.readAssistantPendingSend('1', '20', local).pending, original);
+  for (const resume of [undefined, { ...original.resume, key: 'different' }, { ...original.resume, body: { kind: 'resume', expected_control_seq: '9007199254740995' } }]) {
+    assert.equal(drafts.saveAssistantPendingSend('1', '20', { ...original, resume }, local), false);
+  }
+  assert.equal(drafts.readAssistantPendingSend('2', '20', local).pending, null);
+});
+
+test('a resume attached to a pending send must target the same task and include the stopped control sequence', () => {
+  const original = { version: 1, key: 'message-after-stop', draft: '补充人物动机', body: { task_id: '501', content: '补充人物动机' },
+    resume: { version: 1, kind: 'control', targetId: '501', key: 'resume-after-message', body: { kind: 'resume', expected_control_seq: '1' } } };
+  for (const resume of [{ ...original.resume, targetId: '502' }, { ...original.resume, body: { kind: 'stop' } }, { ...original.resume, body: { kind: 'resume' } }, { ...original.resume, body: { kind: 'resume', expected_control_seq: '1', content: '另一条消息' } }]) {
+    assert.equal(drafts.saveAssistantPendingSend('1', '20', { ...original, resume }, storage()), false);
+  }
 });
 
 test('explicitly clearing task methods survives refresh and stays account scoped', () => {
@@ -201,6 +196,7 @@ test('control and deletion recovery preserve the original payload, account and r
   const local = storage();
   for (const request of [
     { version: 1, kind: 'control', targetId: '9007199254740993', key: 'resume-original', body: { kind: 'resume', expected_control_seq: '0', content: '按修正继续' } },
+    { version: 1, kind: 'control', targetId: '9007199254740993', key: 'resume-message', body: { kind: 'resume', expected_control_seq: '9007199254740995', message_id: '9007199254740997' } },
     { version: 1, kind: 'delete', targetId: '9007199254740993', key: 'delete-original', body: { row_version: '7', clear_derived_memory: true } },
   ]) {
     assert.equal(drafts.saveAssistantPendingAction('1', '20', request, local), true);
@@ -208,6 +204,7 @@ test('control and deletion recovery preserve the original payload, account and r
     assert.equal(drafts.readAssistantPendingAction('2', '20', request.kind, local).pending, null);
     assert.equal(drafts.readAssistantPendingAction('1', '21', request.kind, local).pending, null);
     assert.equal(drafts.saveAssistantPendingAction('1', '20', { ...request, body: { ...request.body, content: '新请求' } }, local), false);
+    if (request.body.message_id) assert.equal(drafts.saveAssistantPendingAction('1', '20', { ...request, body: { ...request.body, message_id: '9007199254740999' } }, local), false);
     assert.equal(drafts.clearAssistantPendingAction('1', '20', request.kind, 'wrong-key', local), false);
     assert.equal(drafts.clearAssistantPendingAction('1', '20', request.kind, request.key, local), true);
   }

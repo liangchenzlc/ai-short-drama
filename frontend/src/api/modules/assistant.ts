@@ -34,14 +34,14 @@ export const assistantApi = {
   async updateGenerationPolicy(media_generation_enabled: boolean, policy_version: string) {
     return (await http.patch<AssistantGenerationPolicy>(`${root}/generation-policy`, { media_generation_enabled, policy_version })).data;
   },
-  async globalConversations(offset = 0, signal?: AbortSignal, query = '') {
-    return (await http.get<Page<GlobalAssistantConversation>>(`${root}/global/conversations`, { params: { offset, limit: 20, query: query.trim() || undefined }, signal })).data;
+  async globalConversations(projectId: string, offset = 0, signal?: AbortSignal, query = '') {
+    return (await http.get<Page<GlobalAssistantConversation>>(`${root}/global/conversations`, { params: { project_id: projectId, offset, limit: 20, query: query.trim() || undefined }, signal })).data;
   },
-  async globalHistory(offset = 0, signal?: AbortSignal, query = '') {
-    return (await http.get<AgentConversationPage>(`${root}/global/history`, { params: { offset, limit: 20, query: query.trim() || undefined }, signal })).data;
+  async globalHistory(projectId: string, offset = 0, signal?: AbortSignal, query = '') {
+    return (await http.get<AgentConversationPage>(`${root}/global/history`, { params: { project_id: projectId, offset, limit: 20, query: query.trim() || undefined }, signal })).data;
   },
-  async createGlobalConversation(key: string) {
-    return (await http.post<GlobalAssistantConversation>(`${root}/global/conversations`, {}, { headers: { 'Idempotency-Key': key } })).data;
+  async createGlobalConversation(projectId: string, key: string) {
+    return (await http.post<GlobalAssistantConversation>(`${root}/global/conversations`, { project_id: projectId }, { headers: { 'Idempotency-Key': key } })).data;
   },
   async globalConversation(id: string, signal?: AbortSignal) {
     return (await http.get<GlobalAssistantConversation>(globalPath(id), { signal })).data;

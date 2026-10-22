@@ -32,7 +32,7 @@ TaskPhase = Literal[
 ]
 
 
-class GlobalConversationCreate(InputModel):
+class ConversationTitle(InputModel):
     title: Title = "新对话"
 
     @field_validator("title")
@@ -43,7 +43,11 @@ class GlobalConversationCreate(InputModel):
         return value.strip()
 
 
-class GlobalConversationPatch(GlobalConversationCreate):
+class GlobalConversationCreate(ConversationTitle):
+    project_id: Identifier | None = None
+
+
+class GlobalConversationPatch(ConversationTitle):
     row_version: Identifier
     title: Title
 
@@ -267,6 +271,7 @@ class TaskControlRequest(InputModel):
     kind: Literal["stop", "redirect", "resume"]
     expected_control_seq: NonnegativeVersion | None = None
     content: Annotated[str, Field(min_length=1, max_length=32000)] | None = None
+    message_id: Identifier | None = None
 
     @model_validator(mode="after")
     def required_control_inputs(self):
@@ -274,6 +279,8 @@ class TaskControlRequest(InputModel):
             raise ValueError("Resume must identify the current stop or pause version")
         if self.kind == "redirect" and (self.content is None or not self.content.strip()):
             raise ValueError("Redirect requires the new user instruction")
+        if self.message_id is not None and (self.kind != "resume" or self.content is not None):
+            raise ValueError("Only resume may reuse an accepted message without new content")
         return self
 
 

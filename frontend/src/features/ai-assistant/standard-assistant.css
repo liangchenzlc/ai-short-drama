@@ -21,10 +21,8 @@
 .ai-assistant-standard .ai-assistant-sender:hover { border-color: var(--border-hover); }
 .ai-assistant-standard .ai-assistant-sender:focus-within { border-color: var(--accent-border); }
 .ai-assistant-standard .ai-assistant-sender .ant-input { line-height: 1.7; caret-color: var(--ink); }
-.ai-assistant-standard .ai-assistant-sender-footer { gap: 8px; }
+.ai-assistant-standard .ai-assistant-sender-footer { gap: 4px; }
 .ai-assistant-standard .ai-assistant-model { min-width: 0; }
-.ai-assistant-standard .standard-assistant-tools-toggle.ant-btn { padding-inline: 6px; border-radius: 6px; }
-.ai-assistant-standard .standard-assistant-tools-toggle[aria-expanded=true] { color: var(--ink); background: var(--surface-muted); }
 .ai-assistant-standard .ai-assistant-chip { border-radius: 5px; }
 .ai-assistant-standard .ai-assistant-chip button:hover:not(:disabled) { color: var(--ink); background: var(--surface-hover); border-radius: 4px; }
 .ai-assistant-standard .ai-assistant-reference-details summary { padding-block: 6px; }
@@ -32,7 +30,6 @@
 .ai-assistant-standard .agent-input-tools { gap: 6px; margin-top: 2px; padding-block: 4px; }
 .ai-assistant-standard .agent-input-tools > .ant-btn { min-width: 32px; width: 32px; height: 32px; }
 .ai-assistant-standard .ai-assistant-notice { padding: 10px 12px; gap: 6px 8px; font-size: 12px; line-height: 1.7; }
-.ai-assistant-standard .ai-assistant-run-state,
 .ai-assistant-standard .ai-assistant-queued > div { padding-block: 4px; }
 .ai-assistant-standard .ai-assistant-uncertain { padding-top: 6px; border-top: 1px solid var(--hair); }
 .ai-assistant-standard .ai-assistant-uncertain p { margin: 0 0 6px; }
@@ -84,9 +81,7 @@
 .standard-assistant-dialog .ai-assistant-history-pagination { margin-top: 12px; gap: 8px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
 .standard-assistant-dialog :is(button, summary):focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
 .standard-assistant-menu { max-width: calc(100vw - 24px); }
-.assistant-selected-skills { display: flex; flex-wrap: wrap; gap: 6px; }
 .ai-assistant-standard .ai-assistant-reply-actions { flex-wrap: wrap; }
-.ai-assistant-standard .ai-assistant-user > .ai-assistant-reply-actions { justify-content: flex-end; margin-top: 6px; }
 .assistant-discussion-body { display: grid; gap: 14px; padding: 16px 20px; min-width: 0; }
 .assistant-discussion-body label { display: grid; gap: 6px; }
 .assistant-discussion-body p { margin: 0; }
@@ -96,33 +91,26 @@
 .assistant-discussion-body summary { cursor: pointer; padding-block: 4px; }
 .assistant-discussion-body nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
 .assistant-discussion-dialog .standard-assistant-dialog-footer { flex-wrap: wrap; }
-.assistant-selected-skills > span { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding-left: 6px; font-size: 12px; overflow-wrap: anywhere; border: 1px solid var(--hair); border-radius: 4px; }
-.assistant-skill-picker .assistant-skill-search { display: flex; gap: 8px; margin-block: 12px; }
+.assistant-skill-picker .assistant-skill-search { display: flex; gap: 8px; margin-bottom: 8px; }
 .assistant-skill-search > .ant-input-affix-wrapper { flex: 1; min-width: 0; }
-.assistant-skill-search > .ant-select { min-width: 108px; }
-.assistant-skill-selected { padding-bottom: 12px; border-bottom: 1px solid var(--hair); }
-.assistant-skill-selected > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
-.assistant-skill-selected span { min-width: 0; overflow-wrap: anywhere; }
 .assistant-skill-options { display: grid; }
 .assistant-skill-options article { display: grid; gap: 4px; padding-block: 12px; border-bottom: 1px solid var(--hair); overflow-wrap: anywhere; }
 .assistant-skill-options article > .ant-btn { justify-self: start; }
-.assistant-skill-options p, .assistant-skill-automatic p { margin: 0; font-size: 12px; line-height: 1.7; color: var(--sub); }
+.assistant-skill-options p { margin: 0; font-size: 12px; line-height: 1.7; color: var(--sub); }
 .assistant-skill-version { color: var(--sub); font-size: 12px; }
 .assistant-skill-options .assistant-skill-issue { color: var(--warning); }
-.assistant-skill-automatic { margin-block: 12px; font-size: 12px; }
-.assistant-skill-automatic summary { cursor: pointer; padding-block: 6px; }
-.assistant-skill-picker .standard-assistant-dialog-footer { flex-wrap: wrap; }
 .standard-assistant-menu .ant-dropdown-menu-item { min-height: 32px; padding: 6px 10px; }
 .standard-assistant-select-popup .ant-select-item-option-content,
 .standard-assistant-suggestions .ant-suggestion-item { overflow-wrap: anywhere; white-space: normal; }
 .standard-assistant-suggestions { max-width: calc(100vw - 24px); }
 @media (max-width: 700px) {
+    .ai-assistant-composer-tools > .ant-btn { min-width: 40px; width: 40px; height: 40px; }
+    .ai-assistant-sender-footer .ai-assistant-model { max-width: calc(100% - 128px); }
+    .assistant-skill-options .ant-checkbox-wrapper { min-height: 40px; align-items: center; }
     .assistant-discussion-body { padding: 12px 14px; }
-    .ai-assistant-standard .ai-assistant-user .ai-assistant-reply-actions .ant-btn { min-height: 40px; height: auto; }
     .ai-assistant-standard .ai-assistant-header .ant-btn { min-width: 40px; width: 40px; height: 40px; }
     .ai-assistant-standard .ai-assistant-sender-footer .ai-assistant-send.ant-btn { min-width: 40px; width: 40px; height: 40px; }
     .ai-assistant-standard .ai-assistant-model.ant-select { min-height: 40px; height: 40px; }
-    .ai-assistant-standard .standard-assistant-tools-toggle.ant-btn,
     .ai-assistant-standard .agent-input-tools > .ant-btn { min-height: 40px; height: 40px; }
     .ai-assistant-standard .agent-input-tools > .ant-btn { min-width: 40px; width: 40px; }
     .ai-assistant-standard .ai-assistant-chip button { width: 32px; height: 32px; }

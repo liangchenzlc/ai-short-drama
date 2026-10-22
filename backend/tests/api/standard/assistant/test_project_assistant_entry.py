@@ -37,6 +37,94 @@ def test_assistant_status_and_disabled_creation_never_invokes_a_model(client):
 @pytest.mark.parametrize(
     "payload",
     [
+        {"kind": "stop", "message_id": "2"},
+        {"kind": "redirect", "content": "改方向", "message_id": "2"},
+        {"kind": "resume", "expected_control_seq": "1", "message_id": "0"},
+        {"kind": "resume", "expected_control_seq": "1", "message_id": "2", "content": "重复"},
+    ],
+)
+def test_resume_message_reuse_rejects_ambiguous_or_invalid_sources(client, payload):
+    response = client.post(
+        "/api/v1/assistant/tasks/1/control",
+        headers={"Idempotency-Key": "reuse-source"},
+        json=payload,
+    )
+    assert response.status_code == 422
+
+
+def test_resume_message_reuse_forwards_exact_decimal_identities(client):
+    from short_drama.api.v1.assistant import task_service
+    from short_drama.core.exceptions import Conflict
+
+    class Tasks:
+        def control_task(self, identifier, payload, key):
+            assert identifier == 9007199254740993
+            assert payload.message_id == 9007199254740995
+            assert payload.expected_control_seq == 9007199254740997
+            assert payload.kind == "resume" and payload.content is None and key == "reuse-source"
+            raise Conflict("停止状态已变化")
+
+    client.app.dependency_overrides[task_service] = Tasks
+    response = client.post(
+        "/api/v1/assistant/tasks/9007199254740993/control",
+        headers={"Idempotency-Key": "reuse-source"},
+        json={
+            "kind": "resume",
+            "expected_control_seq": "9007199254740997",
+            "message_id": "9007199254740995",
+        },
+    )
+    assert response.status_code == 409
+
+
+def test_project_task_routes_forward_project_scope_and_cannot_rebind_a_rename(client):
+    from short_drama.api.v1.assistant import task_service
+    from short_drama.core.exceptions import Conflict
+
+    class Tasks:
+        def list_global_conversations(self, offset, limit, *, search, project_id):
+            assert (offset, limit, search, project_id) == (0, 20, "故事", 9007199254740993)
+            return {"items": [], "total": 0, "offset": 0, "limit": 20}
+
+        def historical_conversations(self, offset, limit, *, search, project_id):
+            assert (offset, limit, search, project_id) == (0, 20, None, 9007199254740993)
+            return {"items": [], "total": 0, "offset": 0, "limit": 20}
+
+        def create_global_conversation(self, payload, key):
+            assert payload.project_id == 9007199254740993 and key == "project-chat"
+            raise Conflict("请求已经受理")
+
+    client.app.dependency_overrides[task_service] = Tasks
+    root = "/api/v1/assistant/global"
+    assert (
+        client.get(
+            root + "/conversations", params={"project_id": "9007199254740993", "query": "故事"}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.get(root + "/history", params={"project_id": "9007199254740993"}).status_code == 200
+    )
+    assert (
+        client.post(
+            root + "/conversations",
+            json={"project_id": "9007199254740993"},
+            headers={"Idempotency-Key": "project-chat"},
+        ).status_code
+        == 409
+    )
+    assert (
+        client.patch(
+            root + "/conversations/1",
+            json={"row_version": "1", "title": "重命名", "project_id": "2"},
+        ).status_code
+        == 422
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
         {"kind": "edit", "row_version": "1", "content": "   "},
         {"kind": "edit", "row_version": "0", "content": "讨论"},
         {"kind": "edit", "row_version": "1.5", "content": "讨论"},
@@ -233,7 +321,7 @@ def test_global_creation_does_not_require_a_project_but_honors_disabled_status(c
 @pytest.mark.parametrize(
     "extra",
     [
-        {"project_id": "1"},
+        {"project_id": "invalid"},
         {"archived": True},
         {"owner_user_id": "2"},
     ],

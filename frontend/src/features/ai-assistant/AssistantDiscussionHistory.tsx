@@ -95,7 +95,7 @@ export function AssistantDiscussionHistory({ accountId, conversationId, request,
     } catch (cause) {
       if (!alive.current) return;
       if (cause instanceof ApiError && cause.status && cause.status >= 400 && cause.status < 500) persist({ ...original, pending: false });
-      setError(errorMessage(cause));
+      setError(cause instanceof ApiError && cause.code === 'assistant_history_dependency' ? '此讨论已被后续创作使用，请发送新消息纠正。' : errorMessage(cause));
     } finally { submitting.current = false; if (alive.current) setBusy(false); }
   }
   const changed = eligibility && draft && eligibility.row_version !== draft.body.row_version;
@@ -105,9 +105,9 @@ export function AssistantDiscussionHistory({ accountId, conversationId, request,
     {target && <Dialog title={target.mode === 'history' ? '讨论修订记录' : target.mode === 'edit' ? '编辑讨论' : '重新回答'} className="standard-creation-dialog standard-assistant-dialog assistant-discussion-dialog" canClose={!busy} onClose={close}>
       {feedback}
       <div className="assistant-discussion-body">
-        <p className="assistant-discussion-help">仅更新这段纯讨论的回复，保留原修订记录。已有工具或记忆依赖的历史请用新消息纠正。</p>
+        <p className="assistant-discussion-help">仅更新这段纯讨论的回复，保留原修订记录。已被后续创作使用的历史请用新消息纠正。</p>
         {loading ? <Skeleton active paragraph={{ rows: 3 }}/> : <>
-          {target.mode !== 'history' && eligibility && !eligibility.allowed && !draft?.pending && <StudioFeedback type="warning" persistent title="保留执行依据" message={eligibility.reason ?? '此历史不能改写，请发送新消息纠正。'} noticeKey={`assistant-history-protected:${target.id}`} actions={<Button size="small" onClick={() => { onCorrect(draft?.body.content ?? request?.message.content ?? ''); discard(); }}>用新消息纠正</Button>}/>}
+          {target.mode !== 'history' && eligibility && !eligibility.allowed && !draft?.pending && <StudioFeedback type="warning" persistent title="保留执行依据" message={eligibility.code === 'assistant_history_dependency' ? '此讨论已被后续创作使用，请发送新消息纠正。' : eligibility.reason ?? '此历史不能改写，请发送新消息纠正。'} noticeKey={`assistant-history-protected:${target.id}`} actions={<Button size="small" onClick={() => { onCorrect(draft?.body.content ?? request?.message.content ?? ''); discard(); }}>用新消息纠正</Button>}/>}
           {target.mode === 'edit' && draft?.body.kind === 'edit' && <label>讨论消息<Input.TextArea aria-label="修订讨论正文" autoFocus autoSize={{ minRows: 5, maxRows: 14 }} maxLength={32000} value={draft.body.content} disabled={busy || draft.pending || damaged} onChange={event => persist({ ...draft, body: { ...draft.body, content: event.target.value } })}/></label>}
           {target.mode === 'regenerate' && <p>保留用户原文，成功后替换原回复；失败时继续保留旧回复。</p>}
           {changed && <details><summary>核对当前消息 · 版本 {eligibility.row_version}</summary><p style={{ whiteSpace: 'pre-wrap' }}>{eligibility.current_content}</p></details>}

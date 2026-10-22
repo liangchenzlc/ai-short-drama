@@ -2,7 +2,7 @@
 
 from sqlalchemy import case, select
 
-from short_drama.domain.agent import AgentRun
+from short_drama.domain.agent import AgentMessage, AgentRun
 from short_drama.domain.agent_task import (
     AgentOperation,
     AgentTask,
@@ -80,3 +80,16 @@ class AgentTaskDAO:
             .order_by(AgentTaskControl.seq)
             .with_for_update()
         ).all()
+
+    def input_message(self, task_id, message_id):
+        return self.session.scalar(
+            select(AgentMessage)
+            .join(AgentTaskInput, AgentTaskInput.message_id == AgentMessage.id)
+            .where(
+                AgentMessage.id == message_id,
+                AgentMessage.task_id == task_id,
+                AgentMessage.role == "user",
+                AgentTaskInput.task_id == task_id,
+            )
+            .with_for_update()
+        )

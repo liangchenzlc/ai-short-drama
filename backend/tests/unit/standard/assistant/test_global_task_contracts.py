@@ -51,10 +51,12 @@ def test_manual_method_availability_rechecks_target_and_required_tools_without_c
     assert ready[0]["instructions"] == skill["instructions"] and ready[0]["issue"] is None
 
 
-def test_global_conversation_has_no_project_and_uses_trimmed_title():
+def test_task_conversation_accepts_project_scope_and_preserves_legacy_creation():
     assert GlobalConversationCreate(title="  创作讨论  ").title == "创作讨论"
+    assert GlobalConversationCreate().project_id is None
+    assert GlobalConversationCreate(project_id="9007199254740993").project_id == 9007199254740993
     with pytest.raises(ValidationError):
-        GlobalConversationCreate(project_id="1")
+        GlobalConversationCreate(project_id="1.5")
 
 
 def test_skill_tools_are_bounded_and_never_accept_owner_storage_or_executable_inputs():

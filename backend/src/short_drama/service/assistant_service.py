@@ -17,6 +17,15 @@ from short_drama.utils.snowflake import next_id
 
 
 class AssistantService(AgentRunService):
+    def validate_attachment_conversation(self, identifier):
+        """Shared attachments support both project chat and logical-task conversations."""
+        with self._transaction(read_only=True):
+            row = super()._conversation(identifier)
+            if row.scope_version not in (2, 3):
+                raise WorkflowError(
+                    "assistant_legacy_readonly", "旧对话仅供查看，请新建项目对话", 409
+                )
+
     def _conversation(self, identifier, *, lock=False, expected_scope=None):
         row = super()._conversation(identifier, lock=lock, expected_scope=expected_scope)
         if row.scope_version != 2:
