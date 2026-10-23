@@ -48,12 +48,12 @@ const pending = () => ({ version: 1, key: 'original-request', draft: '分析当�
   attachment_ids: ['301'], skills: [{ id: 'builtin:continuity', content_version: '1' }], video_audio: 'visual_only',
 } });
 
-test('assistant drafts retain explicit references and selection removal across refresh without secrets or URLs', () => {
+test('assistant drafts keep only the prompt and never persist mention references or credentials', () => {
   const local = storage();
   const draft = { version: 1, text: '@文字1 分析它', modelId: '9007199254740993', skills: [], contextKey: 'canvas:1', includeContext: false,
     references: [{ kind: 'node', id: 'stable-node-uuid', name: '文字1', revision: '4', url: 'temporary', api_key: 'test-secret' }], api_key: 'test-secret' };
   assert.equal(drafts.saveAssistantDraft('1', '20', draft, local), true);
-  assert.deepEqual(drafts.readAssistantDraft('1', '20', local).references, [{ kind: 'node', id: 'stable-node-uuid', name: '文字1', revision: '4' }]);
+  assert.equal(drafts.readAssistantDraft('1', '20', local).references, undefined);
   assert.equal(drafts.readAssistantDraft('1', '20', local).includeContext, false);
   assert.equal(drafts.readAssistantDraft('2', '20', local).text, '');
   assert.equal(drafts.readAssistantDraft('1', '21', local).text, '');
@@ -123,15 +123,14 @@ test('pending sends preserve real builtin Skill identities and exact immutable v
   }
 });
 
-test('multi-source selection drafts survive page changes without body or credentials', () => {
+test('materials stay message scoped: drafts never persist the subject draft or its bodies', () => {
   const local = storage();
   const option = { project_id: '9007199254740993', source_kind: 'canvas', source_id: 'canvas-b', kind: 'node', id: 'same-key', revision: '7', content_revision: '4', checksum: 'a'.repeat(64), name: '跨页节点', project_name: '另一作品', source_name: '画布二', content: '正文不能进入引用草稿', api_key: 'secret' };
   const draft = { version: 1, text: '继续讨论', skills: [], contextKey: 'previous-page', subjectDraft: { taskId: '9007199254740995', expectedInputRevision: '3', retainKeys: ['subject:' + '1'.repeat(64)], added: [option] } };
   assert.equal(drafts.saveAssistantDraft('1', '20', draft, local), true);
-  const restored = drafts.readAssistantDraft('1', '20', local).subjectDraft;
-  assert.equal(restored.added[0].project_id, option.project_id);
-  assert.equal(restored.added[0].content_revision, '4');
-  assert.equal(restored.expectedInputRevision, '3');
+  const restored = drafts.readAssistantDraft('1', '20', local);
+  assert.equal(restored.subjectDraft, undefined);
+  assert.equal(restored.text, '继续讨论');
   assert.ok(!local.getItem(drafts.assistantDraftKey('1', '20')).includes('正文不能'));
   assert.ok(!local.getItem(drafts.assistantDraftKey('1', '20')).includes('secret'));
 });
@@ -149,18 +148,18 @@ test('uncertain multi-source requests preserve the original selection revision a
   assert.equal(drafts.saveAssistantPendingSend('1', 'other', { ...request, body: { ...request.body, context: null } }, local), false);
 });
 
-test('attachment removal drafts and uncertain requests preserve their task and exact input revision', () => {
+test('attachment selection lives in the send body and drafts no longer keep a task attachment draft', () => {
   const local = storage();
   const draft = { version: 1, text: '后续移除附件', skills: [], taskId: '9007199254740993', settingsDirty: true,
     executionTarget: { mode: 'infinite_canvas', project_id: '9007199254740995', canvas_id: 'canvas-b' },
-    memoryProjectIds: ['9007199254740997'], attachmentDraft: { taskId: '9007199254740993', expectedInputRevision: '4', retainIds: ['9007199254740999'], text_content: '不能存正文' } };
+    memoryProjectIds: ['9007199254740997'] };
   assert.equal(drafts.saveAssistantDraft('1', '20', draft, local), true);
   const restored = drafts.readAssistantDraft('1', '20', local);
-  assert.deepEqual(restored.attachmentDraft, { taskId: draft.taskId, expectedInputRevision: '4', retainIds: ['9007199254740999'] });
+  assert.equal(restored.attachmentDraft, undefined);
   assert.equal(restored.settingsDirty, true);
   assert.deepEqual(restored.executionTarget, draft.executionTarget);
   assert.deepEqual(restored.memoryProjectIds, draft.memoryProjectIds);
-  assert.ok(!local.getItem(drafts.assistantDraftKey('1', '20')).includes('不能存正文'));
+  assert.equal('attachmentDraft' in JSON.parse(local.getItem(drafts.assistantDraftKey('1', '20'))), false);
   const request = { version: 1, key: 'remove-attachment', draft: draft.text, body: { content: draft.text, task_id: draft.taskId,
     attachment_selection: { expected_input_revision: '4', retain_ids: [] } } };
   assert.equal(drafts.saveAssistantPendingSend('1', '20', request, local), true);
@@ -285,8 +284,8 @@ test('shared assistant keeps package boundaries, durable traces and safe Markdow
   assert.doesNotMatch(code, /rehypeRaw|dangerouslySetInnerHTML|onRunProposal|\.review\(|\.continue\(/);
   assert.match(code, /ReactMarkdown remarkPlugins=\{\[remarkGfm\]\}/);
   assert.match(code, /\/assistant\/global\/conversations/);
-  assert.match(code, /ThoughtChain/);
-  assert.match(code, /作品上下文已截取/);
+  assert.match(code, /timelineBubbles/);
+  assert.match(code, /内容较长，已截取/);
 });
 
 const projectionCode = readFileSync(new URL('../../src/features/ai-assistant/assistant-task-state.ts', import.meta.url), 'utf8');

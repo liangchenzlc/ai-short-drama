@@ -43,7 +43,9 @@ export function AssistantSkillPicker({ selected, activations = [], mode, disable
             const changed = !!chosen && chosen.content_version !== skill.content_version;
             return <article key={skill.id}>
               <Checkbox checked={!!chosen} disabled={disabled || !chosen && (!!reason || selected.length >= 8)} onChange={event => event.target.checked ? choose(skill) : onChange(selected.filter(item => item.id !== skill.id))}>{skill.name}</Checkbox>
-              <span className="assistant-skill-version">{skill.builtin ? '内置' : '个人'} · {changed ? `任务使用 v${chosen.content_version}；目录 v${skill.content_version}` : `v${skill.content_version}`} · ID {skill.id}{activations.some(item => item.active && item.source === 'auto' && item.skill_id === skill.id) ? ' · 自动使用中' : ''}</span>
+              {changed || activations.some(item => item.active && item.source === 'auto' && item.skill_id === skill.id)
+                ? <span className="assistant-skill-version">{changed ? `当前任务使用 v${chosen.content_version}，目录已更新到 v${skill.content_version}` : '自动使用中'}</span>
+                : null}
               <p>{skill.description}</p>
               {reason && <p className="assistant-skill-issue">{reason}</p>}
               {changed && <Button size="small" disabled={disabled || !!reason} onClick={() => choose(skill)}>改用 v{skill.content_version}</Button>}

@@ -12,8 +12,8 @@ export function AssistantDeleteDialog({ conversation, busy, pending, error, layo
     <div className="ai-assistant-delete-body">
       <p>永久删除“{conversation.title}”？删除后无法恢复。</p>
       <p className="ai-assistant-meta">当前操作结束后停止并删除对话。已创建的素材、分镜、画布节点和媒体成果会保留。</p>
-      {error && <StudioFeedback type="error" title="删除对话" message={error} noticeKey={`assistant-delete:${conversation.id}`}/>}
-      {pending && <StudioFeedback type="warning" persistent title="删除结果待核对" message="原删除请求已保留，请使用同一请求核对。" noticeKey={`assistant-delete-receipt:${conversation.id}`} actions={<Button size="small" disabled={busy} onClick={onRetry}>使用原请求核对删除</Button>}/>}
+      {error && <StudioFeedback scope="chat" type="error" title="删除对话" message={error} noticeKey={`assistant-delete:${conversation.id}`}/>}
+      {pending && <StudioFeedback scope="chat" type="warning" persistent title="删除结果待核对" message="原删除请求已保留，请使用同一请求核对。" noticeKey={`assistant-delete-receipt:${conversation.id}`} actions={<Button size="small" disabled={busy} onClick={onRetry}>使用原请求核对删除</Button>}/>}
     </div>
     <footer className="ai-assistant-history-footer"><Button disabled={busy} onClick={onClose}>取消</Button><Button danger type="primary" aria-label="永久删除" aria-busy={busy} loading={busy} disabled={busy || pending} onClick={() => onSubmit({ row_version: conversation.row_version, clear_derived_memory: false })}>永久删除</Button></footer>
   </Dialog>;

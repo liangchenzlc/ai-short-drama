@@ -4,6 +4,35 @@
 
 所有接口注入可信 Actor，禁止客户端指定 owner 或系统 Session。会话、消息、任务、操作、附件、模型和记忆仅本人可见；作品须另行校验所有权。数据库 ID、行版本、内容版本及控制水位使用十进制字符串；事件 seq/cursor、分页和消息位置使用数值。JSON 拒绝未声明字段，写请求沿用 Cookie、Origin 和 CSRF 校验。
 
+## 时间线与可见性
+
+消息与任务操作共用会话级 `item_seq`：`agent_messages` 与 `agent_operations` 在写入时领取同一发号器，客户端按该数值升序合并即可还原「叙述 → 步骤 → 叙述 → 产物」的真实顺序。历史会话已按 `(created_at, id)` 回填，缺失时前端回退到消息 `seq`。
+
+| 字段 | 位置 | 含义 |
+| --- | --- | --- |
+| `item_seq` | 消息、操作、`step.started`/`step.finished` 事件 | 会话内单调序号，唯一的排序依据 |
+| `kind` | 消息 | `reply` 正式回复、`narration` 工具前的过程叙述、`notice` 失败或迟到候选提示 |
+| `visibility` | 操作 | `silent` 不渲染、`step` 折叠成步骤组、`artifact` 独立产物卡 |
+| `label` | 操作 | 面向用户的一行文案，前端不再维护工具名映射 |
+
+`silent` 工具（方法检索、记忆读写、读回执、读生成策略）不得出现在界面；方法读取（`load_skill` / `read_skill_resource`）属于 `step`，在步骤组内折叠展示，连续同名合并为一行。原始回执、工具参数与返回值一律不进入展示层，审计数据仍保留在库内。
+
+## 上下文与用量
+
+系统提示只保留稳定策略文本，本轮状态（授权、技能、历史、回执、待审计划）作为用户消息下发，续段仅在状态变化时重发，以保持可缓存前缀。`run.usage` 在供应商返回时包含 `cached_tokens`（chat 取 `prompt_tokens_details.cached_tokens`，responses 取 `input_tokens_details.cached_tokens`）；未上报时不出现该字段，不能当作命中数为 0。
+
+## 停止与补充要求
+
+`POST /tasks/{id}/control` 的语义按运行状态区分：
+
+| 请求 | 行为 |
+| --- | --- |
+| `{kind:'stop'}` | 无在途段时立即结束；模型段进行中改为置取消标记，由 Worker 中止请求、把已流出文本落成一条 `narration` 消息并补 `run.interrupted`，再结束 Run。工具执行中仍等当前工具结束 |
+| `{kind:'redirect', content}` | 运行中补充要求：写入新的用户消息与输入版本，在同一任务内于下一段生效，不新建排队 Run |
+| `{kind:'resume', expected_control_seq}` | 任务停止或暂停后继续，复制原 Run 的模型快照，配置变更会被拒绝 |
+
+停止后已生成的候选与文本都保留；`run.interrupted` 只表示本次运行被中断，不代表失败，可以继续发送新要求。
+
 ## 全局会话、逻辑任务与恢复
 
 下表路径相对于 `/assistant`。

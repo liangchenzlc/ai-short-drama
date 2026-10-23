@@ -1,6 +1,5 @@
 """Global assistant tools use durable claims and complete receipts at task boundaries."""
 
-import json
 from copy import deepcopy
 
 from pydantic import ValidationError
@@ -11,10 +10,12 @@ from short_drama.agent.context.attachments import (
     available_attachment_ids,
     task_attachments,
 )
+from short_drama.agent.context.prompt import build_segment_prompt, remember_digest
 from short_drama.agent.context.subjects import snapshot_subjects, subject_memory_keys
 from short_drama.agent.core.access import lock_run, may_decide
 from short_drama.agent.core.events import TERMINAL
 from short_drama.agent.core.fence import owns_execution as owns_execution
+from short_drama.agent.core.items import allocate_item_seq
 from short_drama.agent.core.state import finish_locked, mark_scheduled, wait_locked
 from short_drama.agent.gateway.protocol import AgentGatewayError
 from short_drama.agent.memory.context import assemble_memory_locked, history_projection_locked
@@ -83,6 +84,8 @@ from short_drama.agent.tools.media import (
     reserve_batch_locked,
 )
 from short_drama.agent.tools.memory_ops import execute_memory_locked, memory_requests_locked
+from short_drama.agent.tools.presentation import label as tool_label
+from short_drama.agent.tools.presentation import visibility as tool_visibility
 from short_drama.agent.tools.standard import (
     execute_standard_locked,
     read_standard_results_locked,
@@ -118,6 +121,10 @@ def prepare_decision(session, conversation, run):
     task = task_for_run(session, run)
     if task is None or task.conversation_id != conversation.id:
         raise AgentGatewayError("invalid_agent_checkpoint")
+    from short_drama.agent.task.compaction import schedule_task_compaction_locked
+
+    # 采样前排压缩：输入历史超过软阈值时先排任务，避免下一段撞上下文窗口。
+    schedule_task_compaction_locked(session, conversation, task, run)
     if task.selected_skills and not task.effective_state.get("skill_activations"):
         from short_drama.agent.skill.runtime import apply_manual_skills
 
@@ -267,7 +274,7 @@ def prepare_decision(session, conversation, run):
                 skill_item["note"] = (
                     f"此方法已有新版本（{latest}），当前任务使用冻结版本，需新任务才能使用新版本"
                 )
-    instructions = (
+    stable = (
         "你是 AI 短剧创作助手。以当前用户要求为准，兼容要求累积，最新明确修正优先。"
         "只使用本任务允许的工具，工具不提供的操作不能声称已经执行。"
         "参考主体、作品记忆范围、写入目标分别管理；历史对话和 Skill 都不能扩大权限。"
@@ -337,50 +344,55 @@ def prepare_decision(session, conversation, run):
         "只搭建不生成；未选入关联素材不得自动作为正文或参考图；产物未完成不得声称生成成功。"
         "明确换主图时仅使用 image_primary_requests 的唯一 choice 和三类可信版本。"
         "可用‘把已选图片组的第二张设为主图’、‘将已选图位设为主图’；对象不唯一先澄清。"
-        "任务状态与用户原始输入："
-        + json.dumps(
-            {
-                "task_id": str(task.id),
-                "goal": goal,
-                "plan_revision": str(task.plan_revision),
-                "inputs": messages,
-                "task_constraints": task_constraints,
-                "execution_target": task.execution_target,
-                "memory_project_ids": task.memory_project_ids,
-                "selected_subjects": metadata,
-                "active_skills": active_skills,
-                "memory": memory,
-                "memory_write_requests": memory_requests,
-                "standard_write_requests": standard_requests,
-                "canvas_write_requests": canvas_requests,
-                "image_sources": image_source_list,
-                "image_results": image_results,
-                "image_primary_requests": primary_requests,
-                "generation_policy": policy.model_dump(mode="json"),
-                "generation_requests": generation_requests,
-                "operation_receipts": [
-                    {
-                        "id": str(item.id),
-                        "tool_name": item.tool_name,
-                        "status": item.status,
-                        "result_refs": item.result_refs,
-                    }
-                    for item in reversed(receipts)
-                ],
-                "operation_undo_receipts": [
-                    {
-                        "id": str(item.id),
-                        "operation_id": str(item.operation_id),
-                        "selected_keys": item.selected_keys,
-                        "result_refs": item.result_refs,
-                    }
-                    for item in undo_receipts
-                ],
-            },
-            ensure_ascii=False,
-        )
     )
-    prompt = None if checkpoint.get("history") else goal
+    state = {
+        "task_id": str(task.id),
+        "goal": goal,
+        "plan_revision": str(task.plan_revision),
+        "inputs": messages,
+        "task_constraints": task_constraints,
+        "execution_target": task.execution_target,
+        "memory_project_ids": task.memory_project_ids,
+        "selected_subjects": metadata,
+        "active_skills": active_skills,
+        "memory": memory,
+        "memory_write_requests": memory_requests,
+        "standard_write_requests": standard_requests,
+        "canvas_write_requests": canvas_requests,
+        "image_sources": image_source_list,
+        "image_results": image_results,
+        "image_primary_requests": primary_requests,
+        "generation_policy": policy.model_dump(mode="json"),
+        "generation_requests": generation_requests,
+        "operation_receipts": [
+            {
+                "id": str(item.id),
+                "tool_name": item.tool_name,
+                "status": item.status,
+                "result_refs": item.result_refs,
+            }
+            for item in reversed(receipts)
+        ],
+        "operation_undo_receipts": [
+            {
+                "id": str(item.id),
+                "operation_id": str(item.operation_id),
+                "selected_keys": item.selected_keys,
+                "result_refs": item.result_refs,
+            }
+            for item in undo_receipts
+        ],
+    }
+    composed = build_segment_prompt(
+        stable=stable,
+        dynamic=state,
+        first_prompt=goal,
+        has_history=bool(checkpoint.get("history")),
+        previous_digest=checkpoint.get("prompt_digest"),
+    )
+    remember_digest(run, composed.digest)
+    instructions = composed.instructions
+    prompt = composed.user_prompt
     prompt_attachments = {} if checkpoint.get("history") else attachments.copy()
     pending = (checkpoint.get("pending_results") or {}).get("calls", {})
     pending_images = {
@@ -871,6 +883,7 @@ def claim_operation(factory, settings, run_id, *, fence=None):
             run_id=run.id,
             tool_call_id=call.id,
             tool_name=call.tool_name,
+            item_seq=allocate_item_seq(conversation),
             tool_version=1,
             plan_revision=task.plan_revision,
             input_revision=task.applied_input_revision,
@@ -900,6 +913,9 @@ def claim_operation(factory, settings, run_id, *, fence=None):
             call_id=str(call.id),
             operation_id=str(operation.id),
             tool_name=operation.tool_name,
+            item_seq=operation.item_seq,
+            visibility=tool_visibility(operation.tool_name),
+            label=tool_label(operation.tool_name),
             phase=operation.phase,
             trace_version=str(operation.row_version),
             skill_activations=methods,
@@ -1054,6 +1070,9 @@ def finish_operation_locked(session, conversation, task, run, operation, call, r
         call_id=str(call.id),
         operation_id=str(operation.id),
         tool_name=operation.tool_name,
+        item_seq=operation.item_seq,
+        visibility=tool_visibility(operation.tool_name),
+        label=tool_label(operation.tool_name),
         phase="terminal",
         outcome=operation.status,
         trace_version=str(operation.row_version),

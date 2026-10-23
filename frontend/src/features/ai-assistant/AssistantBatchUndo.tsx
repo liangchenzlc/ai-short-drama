@@ -76,9 +76,9 @@ export function AssistantBatchUndo({ accountId, conversationId, operationId, dis
   const changed = !!draft && !!preview && draft.body.preview_hash !== preview.preview_hash;
   const selected = draft?.body.selected_keys ?? [];
   return <>
-    {!target && (draft || damaged) && <StudioFeedback type="warning" persistent noticeKey={`assistant-undo-pending:${conversationId}`} title="撤销待处理" message={damaged ? error : '原批次与撤销选择已保留。'} actions={draft ? <Button size="small" onClick={() => setTarget(draft.operationId)}>打开原撤销</Button> : <Button size="small" onClick={discard}>明确清除损坏记录</Button>}/>}
+    {!target && (draft || damaged) && <StudioFeedback scope="chat" type="warning" persistent noticeKey={`assistant-undo-pending:${conversationId}`} title="撤销待处理" message={damaged ? error : '原批次与撤销选择已保留。'} actions={draft ? <Button size="small" onClick={() => setTarget(draft.operationId)}>打开原撤销</Button> : <Button size="small" onClick={discard}>明确清除损坏记录</Button>}/>}
     {target && <Dialog title="撤销操作批次" className="standard-creation-dialog standard-assistant-dialog assistant-undo-dialog" canClose={!busy} onClose={close}>
-      {error && <StudioFeedback type="error" persistent noticeKey={`assistant-undo:${conversationId}`} title="撤销未完成" message={error} actions={<Button size="small" disabled={busy} onClick={() => setRevision(value => value + 1)}>重新核对预览</Button>}/>}
+      {error && <StudioFeedback scope="chat" type="error" persistent noticeKey={`assistant-undo:${conversationId}`} title="撤销未完成" message={error} actions={<Button size="small" disabled={busy} onClick={() => setRevision(value => value + 1)}>重新核对预览</Button>}/>}
       <div className="assistant-undo-body">
         <p>逐项选择要撤销的内容。后续编辑、引用或媒体变化受到保护；停止和改向保留成果。已发生的生成费用不会退回。</p>
         <small>原操作批次 {target}</small>
@@ -90,7 +90,7 @@ export function AssistantBatchUndo({ accountId, conversationId, operationId, dis
           </li>)}</ul>}
           {!!preview.receipts.length && <section aria-label="已保存的撤销回执"><h4>撤销记录</h4>{preview.receipts.map(item => <p key={item.id}>已撤销 {item.selected_keys.length} 项 · 回执 {item.id}</p>)}</section>}
         </> : <div role="alert"><p>未能读取撤销预览，原选择仍保留。</p><Button onClick={() => setRevision(value => value + 1)}>重新读取预览</Button></div>}
-        {changed && <StudioFeedback type="warning" persistent noticeKey={`assistant-undo-version:${target}`} title="撤销范围已有变化" message="原选择已保留，请核对当前安全项与冲突项后明确采用新预览。" actions={<Button size="small" disabled={busy || !!draft?.pending} onClick={() => { if (preview) choose(selected.filter(key => preview.items.some(item => item.key === key && item.allowed))); setError(''); }}>采用新预览</Button>}/>}
+        {changed && <StudioFeedback scope="chat" type="warning" persistent noticeKey={`assistant-undo-version:${target}`} title="撤销范围已有变化" message="原选择已保留，请核对当前安全项与冲突项后明确采用新预览。" actions={<Button size="small" disabled={busy || !!draft?.pending} onClick={() => { if (preview) choose(selected.filter(key => preview.items.some(item => item.key === key && item.allowed))); setError(''); }}>采用新预览</Button>}/>}
       </div>
       <footer className="standard-assistant-dialog-footer">
         <Button disabled={busy} onClick={close}>关闭并保留</Button>

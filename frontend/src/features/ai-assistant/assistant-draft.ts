@@ -1,17 +1,13 @@
-import type { AssistantControlInput, AssistantDeletionInput, AssistantMentionReference, AssistantSendInput, AssistantTaskSendInput, TaskExecutionTarget, TaskMediaLimits } from '../../api/types/assistant';
-import type { AssistantSubjectDraft, AssistantSubjectOption, AssistantSubjectReference } from '../../api/types/assistant';
-import type { AssistantAttachmentDraft } from '../../api/types/assistant';
+import type { AssistantControlInput, AssistantDeletionInput, AssistantSendInput, AssistantTaskSendInput, TaskExecutionTarget, TaskMediaLimits } from '../../api/types/assistant';
+import type { AssistantSubjectReference } from '../../api/types/assistant';
 
 export interface AssistantDraft {
   version: 1; text: string; modelId?: string; skills: { id: string; content_version: string; name?: string }[];
   skillsDirty?: boolean;
   contextKey?: string;
   includeContext?: boolean;
-  references?: AssistantMentionReference[];
   taskId?: string; newTask?: boolean; executionTarget?: TaskExecutionTarget | null;
   memoryProjectIds?: string[]; mediaLimits?: TaskMediaLimits;
-  subjectDraft?: AssistantSubjectDraft | null;
-  attachmentDraft?: AssistantAttachmentDraft | null;
   settingsDirty?: boolean;
 }
 type DraftStorage = Pick<Storage, 'getItem' | 'setItem'>;
@@ -37,13 +33,7 @@ export function readAssistantDraft(accountId: string, conversationId: string, st
       ...(record.executionTarget === null || validTarget(record.executionTarget) ? { executionTarget: record.executionTarget as TaskExecutionTarget | null } : {}),
       ...(Array.isArray(record.memoryProjectIds) && record.memoryProjectIds.every(identifier) ? { memoryProjectIds: record.memoryProjectIds.slice(0, 16) } : {}),
       ...(validLimits(record.mediaLimits) ? { mediaLimits: record.mediaLimits as unknown as TaskMediaLimits } : {}),
-      ...(record.subjectDraft === null || validSubjectDraft(record.subjectDraft) ? { subjectDraft: record.subjectDraft as AssistantSubjectDraft | null } : {}),
-      ...(record.attachmentDraft === null || validAttachmentDraft(record.attachmentDraft) ? { attachmentDraft: record.attachmentDraft as AssistantAttachmentDraft | null } : {}),
       ...(typeof record.settingsDirty === 'boolean' ? { settingsDirty: record.settingsDirty } : {}),
-      ...(Array.isArray(record.references) ? { references: record.references.filter((item): item is AssistantMentionReference => !!item && typeof item === 'object'
-        && ['asset', 'shot', 'node'].includes(item.kind) && typeof item.id === 'string' && item.id.length > 0 && item.id.length <= 128
-        && typeof item.name === 'string' && (item.revision === undefined || typeof item.revision === 'string' && /^\d+$/.test(item.revision)))
-        .slice(0, 100).map(({ kind, id, name, revision }) => ({ kind, id, name: name.slice(0, 200), ...(revision ? { revision } : {}) })) } : {}),
     };
   } catch { return empty(); }
 }
@@ -55,10 +45,7 @@ export function saveAssistantDraft(accountId: string, conversationId: string, dr
       contextKey: draft.contextKey, includeContext: draft.includeContext,
       taskId: draft.taskId, newTask: draft.newTask, executionTarget: draft.executionTarget,
       memoryProjectIds: draft.memoryProjectIds, mediaLimits: draft.mediaLimits,
-      subjectDraft: draft.subjectDraft ? cleanSubjectDraft(draft.subjectDraft) : draft.subjectDraft,
-      attachmentDraft: draft.attachmentDraft ? { taskId: draft.attachmentDraft.taskId, expectedInputRevision: draft.attachmentDraft.expectedInputRevision, retainIds: draft.attachmentDraft.retainIds } : draft.attachmentDraft,
       settingsDirty: draft.settingsDirty,
-      references: draft.references?.map(({ kind, id, name, revision }) => ({ kind, id, name, revision })),
     }));
     return true;
   } catch { return false; }
@@ -95,28 +82,6 @@ export function validSubjectReference(value: unknown): value is AssistantSubject
     : value.source_kind === 'project' && value.source_id === value.project_id
       && (value.kind === 'sound_line' ? /^[a-zA-Z0-9_-]{1,64}$/.test(value.id) : identifier(value.id));
 }
-function validSubjectDraft(value: unknown): value is AssistantSubjectDraft {
-  if (!record(value) || !only(value, ['taskId', 'expectedInputRevision', 'retainKeys', 'added'])
-    || value.taskId !== null && !identifier(value.taskId) || !nonnegativeVersion(value.expectedInputRevision)
-    || !Array.isArray(value.retainKeys) || !value.retainKeys.every(subjectKey)
-    || new Set(value.retainKeys).size !== value.retainKeys.length || !Array.isArray(value.added)
-    || value.added.length + value.retainKeys.length > 16) return false;
-  return value.added.every(item => record(item) && only(item, [...subjectFields, 'name', 'project_name', 'source_name'])
-    && [item.name, item.project_name, item.source_name].every(name => typeof name === 'string' && name.length <= 255)
-    && validSubjectReference(Object.fromEntries(Object.entries(item).filter(([key]) => subjectFields.includes(key)))));
-}
-function cleanSubjectDraft(value: AssistantSubjectDraft): AssistantSubjectDraft {
-  return { taskId: value.taskId, expectedInputRevision: value.expectedInputRevision, retainKeys: value.retainKeys,
-    added: value.added.map(item => Object.fromEntries(Object.entries(item).filter(([key]) => [...subjectFields, 'name', 'project_name', 'source_name'].includes(key))) as unknown as AssistantSubjectOption) };
-}
-
-function validAttachmentDraft(value: unknown): value is AssistantAttachmentDraft {
-  return record(value) && only(value, ['taskId', 'expectedInputRevision', 'retainIds'])
-    && identifier(value.taskId) && nonnegativeVersion(value.expectedInputRevision)
-    && Array.isArray(value.retainIds) && value.retainIds.length <= 16 && value.retainIds.every(identifier)
-    && new Set(value.retainIds).size === value.retainIds.length;
-}
-
 function pendingBody(value: unknown): value is AssistantSendInput {
   if (!record(value) || !only(value, ['content', 'model_config_id', 'context', 'attachment_ids', 'skills', 'video_audio', 'task_id', 'new_task', 'execution_target', 'memory_project_ids', 'media_limits', 'subject_selection', 'attachment_selection'])
     || typeof value.content !== 'string' || !value.content.trim() || value.content.length > 32000

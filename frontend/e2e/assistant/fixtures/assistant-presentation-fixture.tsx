@@ -15,7 +15,14 @@ createRoot(document.getElementById('root')!).render(<StrictMode><ConfigProvider 
   <main style={{ width: 'min(360px, 100%)', height: '100dvh' }}><CreativeAssistantPanel
     accountId="9007199254740993" projectId={projectId} projectTitle="展示兼容性" layout={standard ? 'standard' : undefined}
     selectedConversationId={parameters.get('conversation')}
+    mentionReferences={parameters.get('mentions') === 'nodes' ? [
+      { kind: 'node', id: 'rain', name: '雨夜车站' }, { kind: 'node', id: 'hero', name: 'Hero Closeup' },
+      { kind: 'node', id: 'rain', name: '雨夜车站' },
+      ...Array.from({ length: 40 }, (_, index) => ({ kind: 'node' as const, id: `node-${index}`, name: `其他节点 ${index}` })),
+    ] : undefined}
     executionTarget={standard ? { mode: 'standard', project_id: projectId } : { mode: 'infinite_canvas', project_id: projectId, canvas_id: 'canvas-key' }}
-    prepareContext={async () => null} onClose={() => {}} onOpenModelSettings={() => {}}/>
+    prepareContext={async (_include, references) => parameters.get('mentions') === 'nodes' && references?.length
+      ? { kind: 'canvas', id: 'canvas-key', revision: '1', selected: references.map(item => ({ ...item, revision: '1' })) } : null}
+    onClose={() => {}} onOpenModelSettings={() => {}}/>
   </main>
 </ConfigProvider></StrictMode>);

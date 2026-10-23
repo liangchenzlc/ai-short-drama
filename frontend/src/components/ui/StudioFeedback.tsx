@@ -62,10 +62,12 @@ export function useStudioMessage() {
 type StudioFeedbackProps = Omit<AlertProps, 'type' | 'title' | 'message'> & {
   type?: StudioFeedbackType; title?: ReactNode; message?: ReactNode; actions?: ReactNode;
   persistent?: boolean; noticeKey?: string; quiet?: boolean; children?: ReactNode;
+  /** chat 作用域只在对话内展示，不进入文档保存状态面板。 */
+  scope?: 'chat' | 'document';
 };
 
 /** Renders no layout node. Recovery actions remain in the existing save/details entry. */
-export function StudioFeedback({ type = 'info', title, message, description, children, action, actions, persistent, noticeKey, quiet = false, ...fallback }: StudioFeedbackProps) {
+export function StudioFeedback({ type = 'info', title, message, description, children, action, actions, persistent, noticeKey, quiet = false, scope, ...fallback }: StudioFeedbackProps) {
   const context = useContext(FeedbackContext);
   const id = useId();
   const heading = message ?? title;
@@ -73,8 +75,10 @@ export function StudioFeedback({ type = 'info', title, message, description, chi
   const controls = actions ?? action;
   const summary = textOf(heading) || textOf(description) || textOf(children);
   const retain = persistent ?? (type === 'error' || type === 'warning' || !!controls);
+  // chat 作用域的问题只留在对话里，不进文档保存状态面板。
+  const chat = scope === 'chat';
   useEffect(() => {
-    if (!context || !retain || !summary) return;
+    if (chat || !context || !retain || !summary) return;
     context.store.upsert({ id, type, summary, content: { body, actions: controls } });
   });
   useEffect(() => () => { context?.store.remove(id); }, [context, id]);
@@ -82,9 +86,9 @@ export function StudioFeedback({ type = 'info', title, message, description, chi
     if (!retain || !summary) context?.store.remove(id);
   }, [context, id, retain, summary]);
   useEffect(() => {
-    context?.publish({ type, message: summary, key: noticeKey, persistent: retain, quiet });
-  }, [context, type, summary, noticeKey, retain, quiet]);
-  if (!context) return <AntAlert {...fallback} type={type} message={heading} description={<>{description}{children}</>} action={controls}/>;
+    context?.publish({ type, message: summary, key: noticeKey, persistent: retain && !chat, quiet });
+  }, [context, type, summary, noticeKey, retain, quiet, chat]);
+  if (!context || chat) return <AntAlert {...fallback} type={type} message={heading} description={<>{description}{children}</>} action={controls}/>;
   return null;
 }
 

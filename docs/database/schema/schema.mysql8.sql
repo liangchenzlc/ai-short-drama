@@ -259,6 +259,7 @@ CREATE TABLE `agent_conversations` (
   `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
   `next_message_seq` BIGINT UNSIGNED NOT NULL DEFAULT 1,
   `next_event_seq` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `next_item_seq` BIGINT UNSIGNED NOT NULL DEFAULT 1,
   `fixed_requirements` JSON NOT NULL DEFAULT (JSON_OBJECT()),
   `summary_covers_until_seq` BIGINT UNSIGNED NOT NULL DEFAULT 0,
   `active_summary_id` BIGINT UNSIGNED NULL,
@@ -1523,8 +1524,10 @@ CREATE TABLE `agent_messages` (
   `conversation_id` BIGINT UNSIGNED NOT NULL,
   `task_id` BIGINT UNSIGNED NULL,
   `seq` BIGINT UNSIGNED NOT NULL,
+  `item_seq` BIGINT UNSIGNED NULL,
   `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
   `role` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL,
+  `kind` VARCHAR(16) NOT NULL DEFAULT 'reply',
   `content` MEDIUMTEXT NOT NULL DEFAULT (''),
   `references` JSON NOT NULL DEFAULT (JSON_ARRAY()),
   `artifacts` JSON NOT NULL DEFAULT (JSON_ARRAY()),
@@ -1534,6 +1537,7 @@ CREATE TABLE `agent_messages` (
   PRIMARY KEY (`id`),
   CONSTRAINT ck_agent_messages_arrays CHECK (JSON_TYPE(`references`) = 'ARRAY' AND JSON_TYPE(artifacts) = 'ARRAY'),
   CONSTRAINT ck_agent_messages_content_size CHECK (OCTET_LENGTH(content) <= 1048576),
+  CONSTRAINT ck_agent_messages_kind CHECK (kind IN ('reply','narration','notice')),
   CONSTRAINT ck_agent_messages_nonempty CHECK (CHAR_LENGTH(TRIM(content)) > 0 OR JSON_LENGTH(`references`) > 0 OR JSON_LENGTH(artifacts) > 0),
   CONSTRAINT ck_agent_messages_request_hash CHECK (idempotency_key IS NULL OR (role = 'user' AND CHAR_LENGTH(idempotency_key) = 64 AND CHAR_LENGTH(request_hash) = 64)),
   CONSTRAINT ck_agent_messages_request_pair CHECK ((idempotency_key IS NULL) = (request_hash IS NULL)),
@@ -1545,6 +1549,7 @@ CREATE TABLE `agent_messages` (
   UNIQUE KEY `uk_agent_messages_parent` (id, conversation_id),
   UNIQUE KEY `uk_agent_messages_request` (conversation_id, idempotency_key),
   UNIQUE KEY `uk_agent_messages_seq` (conversation_id, seq),
+  KEY `idx_agent_messages_item` (`conversation_id`, `item_seq`),
   KEY `idx_agent_messages_task` (`task_id`, `seq`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
@@ -2793,6 +2798,7 @@ CREATE TABLE `agent_operations` (
   `run_id` BIGINT UNSIGNED NOT NULL,
   `tool_call_id` BIGINT UNSIGNED NOT NULL,
   `tool_name` VARCHAR(80) NOT NULL,
+  `item_seq` BIGINT UNSIGNED NULL,
   `tool_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
   `plan_revision` BIGINT UNSIGNED NOT NULL,
   `input_revision` BIGINT UNSIGNED NOT NULL,
@@ -2819,6 +2825,7 @@ CREATE TABLE `agent_operations` (
   CONSTRAINT fk_agent_operations_task FOREIGN KEY (task_id) REFERENCES agent_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_agent_operations_active` (active_task_id),
   UNIQUE KEY `uk_agent_operations_call` (tool_call_id),
+  KEY `idx_agent_operations_item` (`item_seq`),
   KEY `idx_agent_operations_task` (`task_id`, `id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 

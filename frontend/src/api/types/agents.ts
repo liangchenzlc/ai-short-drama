@@ -61,7 +61,7 @@ export interface AgentModelPage { items: AgentModel[]; preferred_id: string | nu
 export type AgentMessageMode = 'auto' | 'discuss' | 'generate';
 export interface AgentMessage {
   task_id?: string | null;
-  id: string; seq: number; role: string; content: string;
+  id: string; seq: number; item_seq?: number | null; kind?: 'reply' | 'narration' | 'notice'; role: string; content: string;
   row_version?: string;
   references: Record<string, unknown>[]; artifacts: Record<string, unknown>[]; created_at: string;
 }

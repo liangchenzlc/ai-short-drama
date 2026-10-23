@@ -5,7 +5,6 @@ from copy import deepcopy
 
 from sqlalchemy import func, select
 
-from short_drama.agent.legacy.authorization import check_source, discussion_only, freeze_task, public_step
 from short_drama.agent.core.events import (
     ACTIVE,
     TERMINAL,
@@ -13,7 +12,14 @@ from short_drama.agent.core.events import (
     budget_limits,
     initial_usage,
 )
+from short_drama.agent.core.items import KIND_REPLY, allocate_item_seq
 from short_drama.agent.core.state import finish_locked, mark_scheduled
+from short_drama.agent.legacy.authorization import (
+    check_source,
+    discussion_only,
+    freeze_task,
+    public_step,
+)
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.domain import AIModelConfig, Asset, Project, ShotScript
 from short_drama.domain.agent import (
@@ -137,8 +143,10 @@ class AgentRunService(AgentConversationService):
             id=row.id,
             task_id=row.task_id,
             seq=row.seq,
+            item_seq=row.item_seq,
             row_version=row.row_version,
             role=row.role,
+            kind=row.kind,
             content=row.content,
             references=references,
             artifacts=row.artifacts,
@@ -232,7 +240,10 @@ class AgentRunService(AgentConversationService):
             selected_skills = freeze_skills(self.session, actor.user_id, values.skills)
             source_snapshot = None
             if assistant_input is not None:
-                from short_drama.agent.gateway.protocol import AgentGatewayError, select_agent_protocol
+                from short_drama.agent.gateway.protocol import (
+                    AgentGatewayError,
+                    select_agent_protocol,
+                )
                 from short_drama.service.assistant_context_service import freeze_assistant_context
 
                 try:
@@ -322,7 +333,9 @@ class AgentRunService(AgentConversationService):
                 id=next_id(),
                 conversation_id=conversation.id,
                 seq=conversation.next_message_seq,
+                item_seq=allocate_item_seq(conversation),
                 role="user",
+                kind=KIND_REPLY,
                 content=values.content,
                 references=references,
                 artifacts=[],
@@ -562,6 +575,11 @@ class AgentRunService(AgentConversationService):
                 for tool in tools:
                     if tool.status not in {"succeeded", "failed", "rejected", "cancelled"}:
                         tool.status, tool.updated_at = "cancelled", utcnow()
+                if run.status == "running" and run.lease_token is not None:
+                    # The worker owns the in-flight segment: it persists the streamed
+                    # prefix and finishes the run, so do not close it here.
+                    self.session.flush()
+                    return read_run(self.session, run)
                 finish_locked(self.session, conversation, run, "cancelled")
             self.session.flush()
             return read_run(self.session, run)

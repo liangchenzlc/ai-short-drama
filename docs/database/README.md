@@ -31,7 +31,7 @@ uv run python scripts/export_schema.py --check
 
 账号模式启用前必须明确指定已验证的历史所有者，拆分跨范围素材和物理文件，再安装非空、外键、范围 CHECK 及账号唯一约束。注册不自动领取历史数据；结构或归属未完成时 API 与 Worker 拒绝启动。
 
-## 身份、归属与协作（11 张）
+## 身份、归属与协作（8 张）
 
 详细决策、权限矩阵及 Goal 验证见[协作设计](../plans/2026-10/2026-10-02-用户权限与共同创作设计.md)。
 
@@ -40,16 +40,13 @@ uv run python scripts/export_schema.py --check
 | `users` | 唯一账号名、规范化唯一邮箱、密码摘要、验证时间和状态 |
 | `user_sessions` | 会话与 CSRF 摘要、过期和撤销 |
 | `email_challenges` | 用途、账号、邮箱与邀请绑定的证明、失败尝试和消费 |
-| `project_members` | 项目与账号唯一关系、有效/移除/退出状态 |
-| `project_invitations` | 定向受邀账号或邮箱、令牌摘要、七天有效期、撤销与接受 |
 | `audit_events` | 安全元数据审计，不记录正文、密码或密钥 |
 | `user_model_preferences` | 本人创作上下文与模型选择 |
-| `user_project_states` | 本人的项目最近打开时间 |
 | `email_outbox` | 加密验证码邮件载荷、租约、发送重试及载荷清除 |
 | `auth_rate_limits` | 多 API 进程共用的持久化限流计数 |
 | `resource_imports` | 跨范围复制的幂等收据、快照、稳定目标、租约、重试及清理时间 |
 
-项目只有一个 `owner_user_id`；有效协作者通过 `project_members` 加入。`projects.owner_user_id`、`ai_model_configs.owner_user_id` 和 `global_assets.user_id` 非空且引用用户。
+项目只有一个 `owner_user_id`；协作成员与邀请表已随单层创作模式移除，不再有跨账号加入项目的入口。`projects.owner_user_id` 和 `ai_model_configs.owner_user_id` 非空且引用用户。
 
 `assets/media_files/async_tasks/generation_batches` 用 `scope_user_id/project_id` 表示个人或项目范围，CHECK 强制恰好一个非空。其余资源通过分集、分镜、素材或任务等父链确定范围。跨表引用在服务事务与 ORM 写入守卫中校验，列表、计数、JOIN 和别名查询也经过范围过滤。
 

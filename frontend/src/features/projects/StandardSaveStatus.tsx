@@ -38,7 +38,7 @@ export function StandardSaveStatus({ children }: { children?: ReactNode }) {
     document.addEventListener('keydown', close);
     return () => document.removeEventListener('keydown', close);
   }, [open]);
-  const feedbackIssues = useStudioFeedbackIssues().filter(issue => issue.type === 'error' || issue.type === 'warning');
+  const feedbackIssues = useStudioFeedbackIssues().filter(issue => (issue.type === 'error' || issue.type === 'warning') && issue.scope !== 'chat');
   useStudioFeedbackReview(() => setOpen(true));
   const [slow, setSlow] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);

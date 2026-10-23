@@ -120,6 +120,7 @@ class AgentConversation(Base):
     row_version: Mapped[int] = _number(1)
     next_message_seq: Mapped[int] = _number(1)
     next_event_seq: Mapped[int] = _number(1)
+    next_item_seq: Mapped[int] = _number(1)
     fixed_requirements: Mapped[dict] = _json()
     summary_covers_until_seq: Mapped[int] = _number(0)
     active_summary_id: Mapped[int | None] = _number(nullable=True)
@@ -230,8 +231,10 @@ class AgentMessage(Base):
     conversation_id: Mapped[int] = _number()
     task_id: Mapped[int | None] = _number(nullable=True)
     seq: Mapped[int] = _number()
+    item_seq: Mapped[int | None] = _number(nullable=True)
     row_version: Mapped[int] = _number(1)
     role: Mapped[str] = mapped_column(VARCHAR(16, collation="utf8mb4_0900_bin"))
+    kind: Mapped[str] = mapped_column(VARCHAR(16), server_default=text("'reply'"))
     content: Mapped[str] = mapped_column(MEDIUMTEXT(), server_default=text("('')"))
     references: Mapped[list] = _json(array=True)
     artifacts: Mapped[list] = _json(array=True)
@@ -248,12 +251,16 @@ class AgentMessage(Base):
             name="fk_agent_messages_task",
         ),
         Index("idx_agent_messages_task", "task_id", "seq"),
+        Index("idx_agent_messages_item", "conversation_id", "item_seq"),
         UniqueConstraint("conversation_id", "seq", name="uk_agent_messages_seq"),
         UniqueConstraint("conversation_id", "idempotency_key", name="uk_agent_messages_request"),
         UniqueConstraint("id", "conversation_id", name="uk_agent_messages_parent"),
         CheckConstraint("seq > 0", name="ck_agent_messages_seq"),
         CheckConstraint("row_version > 0", name="ck_agent_messages_version"),
         CheckConstraint("role IN ('user','assistant')", name="ck_agent_messages_role"),
+        CheckConstraint(
+            "kind IN ('reply','narration','notice')", name="ck_agent_messages_kind"
+        ),
         CheckConstraint(
             "JSON_TYPE(`references`) = 'ARRAY' AND JSON_TYPE(artifacts) = 'ARRAY'",
             name="ck_agent_messages_arrays",

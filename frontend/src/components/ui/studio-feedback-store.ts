@@ -5,6 +5,8 @@ export interface FeedbackEntry<T = unknown> {
   type: StudioFeedbackType;
   summary: string;
   content: T;
+  /** chat=助手对话内的问题，只在对话里显示；默认 document，进入文档保存状态面板。 */
+  scope?: 'chat' | 'document';
 }
 
 /** One store per React provider: no account, dialog or application-root leakage. */

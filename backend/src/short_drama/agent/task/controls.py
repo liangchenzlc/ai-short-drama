@@ -68,8 +68,14 @@ def apply_controls_locked(session, conversation, task, run):
     if stopped:
         close_unstarted_calls(session, run)
         task.status, task.phase = "stopped", "terminal"
-        finish_locked(session, conversation, run, "cancelled")
-        task_event(session, conversation, task, "task.stopped", run=run)
+        if run.status == "running" and run.lease_token is not None:
+            # A segment is in flight. Let the worker persist what it already streamed
+            # and close the run; finishing here would discard that prefix.
+            run.cancel_requested = 1
+            task_event(session, conversation, task, "task.stopping", run=run)
+        else:
+            finish_locked(session, conversation, run, "cancelled")
+            task_event(session, conversation, task, "task.stopped", run=run)
     elif resume is not None:
         from short_drama.agent.core.access import model_unchanged
         from short_drama.agent.core.events import TERMINAL

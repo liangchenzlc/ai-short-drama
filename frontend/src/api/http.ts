@@ -116,6 +116,10 @@ const workflowMessages: Record<string, string> = {
   shot_archived: '分镜已归档，不能继续修改或采用图片。',
   result_already_applied: '此生成结果已经用另一种方式应用。',
   novel_empty: '请先填写并保存小说正文。',
+  invalid_selection: '这条消息里的素材与任务已有引用重复，请从素材行移除后重试。',
+  selection_required: '素材引用已变化，请重新用 @ 选入后再发送。',
+  assistant_selection_changed: '任务刚收到新的输入，请再次发送。',
+  assistant_context_blocked: '当前作品尚未保存成功，请处理保存提示后再发送。',
 };
 export const http = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1', timeout: 15_000 });
 
@@ -137,7 +141,10 @@ http.interceptors.response.use((response) => response, (cause: unknown) => {
     ? envelope.fields.flatMap((entry: { field?: unknown }) => typeof entry?.field === 'string' && fieldLabels[entry.field]
       ? [{ field: entry.field, message: `请检查${fieldLabels[entry.field]}的填写内容。` }] : []) : [];
   const codeMessage = typeof envelope?.code === 'string' ? (discoveryMessages[envelope.code] ?? workflowMessages[envelope.code]) : undefined;
-  const message = codeMessage || (status === 409 ? '数据已被修改，请重新加载最新内容后再操作。'
+  // 服务端业务错误自带面向用户的中文说明；校验失败与 5xx 的 detail 不回显，避免泄露内部信息。
+  const serverMessage = typeof envelope?.message === 'string' ? envelope.message.trim() : '';
+  const usableServerMessage = status && status >= 400 && status < 500 && envelope?.code !== 'validation_error' && /[\u4e00-\u9fa5]/.test(serverMessage) ? serverMessage : '';
+  const message = codeMessage || usableServerMessage || (status === 409 ? '数据已被修改，请重新加载最新内容后再操作。'
     : status === 404 ? '配置不存在或已被删除，请刷新列表。'
     : status === 422 ? '填写内容不符合要求，请检查后重试。'
     : status === 401 || status === 403 ? '没有操作权限，请检查登录状态。'

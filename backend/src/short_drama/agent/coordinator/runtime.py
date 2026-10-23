@@ -18,7 +18,9 @@ from short_drama.agent.core.access import lock_run as lock_run
 from short_drama.agent.core.access import may_decide as may_decide
 from short_drama.agent.core.access import model_unchanged as model_unchanged
 from short_drama.agent.core.events import TERMINAL, append_event, budget_limits, initial_usage
+from short_drama.agent.core.items import KIND_NARRATION, KIND_REPLY, allocate_item_seq
 from short_drama.agent.core.state import (
+    append_interrupted_message,
     finish_locked,
     mark_scheduled,
     run_artifact_references,
@@ -584,27 +586,28 @@ class AgentRuntimeStore:
             turn.response, turn.updated_at = response, utcnow()
 
     def save_delta(self, claim, delta, offset):
+        """Return ok / lost / cancelled so the stream loop can stop promptly."""
         if not delta:
-            return False
+            return "ok"
         with self.factory.begin() as session:
             try:
                 _project, conversation, run = self._owned(
                     session, claim.run_id, claim.version, claim.token
                 )
             except LeaseLost:
-                return False
+                return "lost"
             if run.cancel_requested:
-                return False
+                return "cancelled"
             if run.task_id is not None:
                 from short_drama.agent.task.queries import task_for_run
 
                 task = task_for_run(session, run)
                 if task.input_revision != (run.checkpoint or {}).get("task_input_revision"):
-                    return False
+                    return "stale"
                 if claim.inputs.get("memory_epoch", 0) != (run.checkpoint or {}).get(
                     "memory_epoch", 0
                 ):
-                    return False
+                    return "stale"
             append_event(
                 session,
                 conversation,
@@ -617,6 +620,21 @@ class AgentRuntimeStore:
                 },
                 run_id=run.id,
             )
+            return "ok"
+
+    def save_interrupted(self, claim, text):
+        """Persist the streamed prefix and close the run when the user stopped it."""
+        with self.factory.begin() as session:
+            try:
+                _project, conversation, run = self._owned(
+                    session, claim.run_id, claim.version, claim.token
+                )
+            except LeaseLost:
+                return False
+            if run.status in TERMINAL:
+                return False
+            append_interrupted_message(session, conversation, run, text)
+            finish_locked(session, conversation, run, "cancelled")
             return True
 
     def heartbeat(self, claim):
@@ -632,7 +650,7 @@ class AgentRuntimeStore:
             run.lease_until = utcnow() + timedelta(seconds=self.settings.agent_lease_seconds)
             return True
 
-    def save_result(self, claim, normalized):
+    def save_result(self, claim, normalized, partial_text=""):
         with self.factory.begin() as session:
             rows = lock_run(session, claim.run_id)
             if rows is None:
@@ -664,6 +682,11 @@ class AgentRuntimeStore:
                 usage["reserved_output_tokens"] -= turn_usage.get("reserved_output_tokens", 0)
                 usage["output_tokens"] += tokens
                 turn_usage.update({"settled": True, "output_tokens": tokens})
+            cached = reported.get("cached_tokens")
+            if type(cached) is int and cached >= 0 and not turn_usage.get("cached_settled"):
+                # Provider-reported prefix hits, summed once per settled turn.
+                usage["cached_tokens"] = usage.get("cached_tokens", 0) + cached
+                turn_usage.update({"cached_settled": True, "cached_tokens": cached})
             turn_usage["provider_usage"] = reported
             run.usage, turn.usage, run.updated_at = usage, turn_usage, utcnow()
             from short_drama.agent.legacy.chat import is_assistant_chat, validate_assistant_chat
@@ -685,7 +708,11 @@ class AgentRuntimeStore:
             )
             if not active:
                 return False
-            if run.cancel_requested or not may_decide(session, project, conversation, run):
+            if run.cancel_requested:
+                append_interrupted_message(session, conversation, run, partial_text)
+                finish_locked(session, conversation, run, "cancelled")
+                return False
+            if not may_decide(session, project, conversation, run):
                 finish_locked(session, conversation, run, "cancelled", {"code": "access_revoked"})
                 return False
             if run.task_id is not None:
@@ -721,6 +748,41 @@ class AgentRuntimeStore:
             run.checkpoint = checkpoint
             response["applied"] = True
             turn.response = response
+            if normalized["output_kind"] == "tool_requests":
+                narration = str(normalized.get("narration") or "").strip()[:4000]
+                if narration:
+                    item_seq = allocate_item_seq(conversation)
+                    message = AgentMessage(
+                        id=next_id(),
+                        conversation_id=conversation.id,
+                        task_id=run.task_id,
+                        seq=conversation.next_message_seq,
+                        item_seq=item_seq,
+                        role="assistant",
+                        kind=KIND_NARRATION,
+                        content=narration,
+                        references=[],
+                        artifacts=[],
+                        created_at=utcnow(),
+                    )
+                    conversation.next_message_seq += 1
+                    session.add(message)
+                    append_event(
+                        session,
+                        conversation,
+                        "message.created",
+                        {
+                            "id": str(message.id),
+                            "run_id": str(run.id),
+                            "seq": message.seq,
+                            "item_seq": item_seq,
+                            "kind": KIND_NARRATION,
+                            "role": "assistant",
+                            "content": message.content,
+                            "artifacts": [],
+                        },
+                        run_id=run.id,
+                    )
             if normalized["output_kind"] == "text":
                 authorization = checkpoint.get("authorization") or {}
                 if authorization.get("mode") in {"single", "workflow"} and any(
@@ -754,7 +816,9 @@ class AgentRuntimeStore:
                     conversation_id=conversation.id,
                     task_id=run.task_id,
                     seq=conversation.next_message_seq,
+                    item_seq=allocate_item_seq(conversation),
                     role="assistant",
+                    kind=KIND_REPLY,
                     content=normalized["output"],
                     references=[
                         {
@@ -778,6 +842,8 @@ class AgentRuntimeStore:
                         "id": str(message.id),
                         "run_id": str(run.id),
                         "seq": message.seq,
+                        "item_seq": message.item_seq,
+                        "kind": message.kind,
                         "role": "assistant",
                         "content": message.content,
                         "artifacts": message.artifacts,
@@ -785,6 +851,14 @@ class AgentRuntimeStore:
                     run_id=run.id,
                 )
                 finish_locked(session, conversation, run, "succeeded")
+                if run.task_id is not None:
+                    from short_drama.agent.task.compaction import schedule_task_compaction_locked
+                    from short_drama.agent.task.queries import task_for_run
+
+                    # 回合后排压缩：把已结算输入整理进摘要，控制下一段的历史体积。
+                    schedule_task_compaction_locked(
+                        session, conversation, task_for_run(session, run), run
+                    )
                 return False
             if checkpoint.get("discussion_revision"):
                 finish_locked(
@@ -901,12 +975,15 @@ class _DeltaBuffer:
     def __init__(self, store, claim):
         self.store, self.claim = store, claim
         self.pending, self.offset, self.last = "", 0, time.monotonic()
-        self.disabled = False
+        self.disabled, self.cancelled = False, False
+        self.text = ""
 
     def add(self, delta, final=False):
         if self.disabled:
             return
         self.pending += delta
+        if delta:
+            self.text = (self.text + delta)[-4000:]
         if self.pending and (
             final or len(self.pending.encode()) >= 8192 or time.monotonic() - self.last >= 0.2
         ):
@@ -914,10 +991,13 @@ class _DeltaBuffer:
 
     def flush(self):
         if self.pending and not self.disabled:
-            if not self.store.save_delta(self.claim, self.pending, self.offset):
-                self.disabled = True
+            status = self.store.save_delta(self.claim, self.pending, self.offset)
             self.offset += len(self.pending)
             self.pending, self.last = "", time.monotonic()
+            if status == "cancelled":
+                self.cancelled, self.disabled = True, True
+            elif status != "ok":
+                self.disabled = True
 
 
 class AgentRuntime:
@@ -972,6 +1052,7 @@ class AgentRuntime:
 
         # Capture the running Task so heartbeat failure can cancel the HTTP request.
         decision_task = asyncio.current_task()
+        partial_text = ""
         key = self.settings.encryption_key
         credential = model_credentials(claim.snapshot, key)
         values = thaw_input(claim.inputs)
@@ -1001,6 +1082,11 @@ class AgentRuntime:
                 while True:
                     await asyncio.sleep(0.2)
                     delta.flush()
+                    if delta.cancelled:
+                        # Stop the in-flight request as soon as the user's stop is visible.
+                        if decision_task is not None and not decision_task.done():
+                            decision_task.cancel("cancel_requested")
+                        return
                     if time.monotonic() - last_heartbeat >= max(
                         5, self.settings.agent_lease_seconds // 3
                     ):
@@ -1032,16 +1118,21 @@ class AgentRuntime:
                     **values,
                 )
             except asyncio.CancelledError:
-                # Heartbeat cancelled this task; treat as lease lost so the
-                # normal cancellation flow applies (no state mutation here).
-                raise LeaseLost() from None
+                # A user stop cancels the request; a lost lease must still surface.
+                if not delta.cancelled:
+                    raise LeaseLost() from None
+                result = None
             finally:
                 maintenance.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await maintenance
             delta.add("", final=True)
+            partial_text = delta.text
+        if result is None:
+            self.store.save_interrupted(claim, partial_text)
+            return
         normalized = serialize_segment_result(result)
-        if self.store.save_result(claim, normalized):
+        if self.store.save_result(claim, normalized, partial_text):
             self._tools(claim)
 
 

@@ -76,8 +76,10 @@ class MessageRead(ReadModel):
     id: Identifier
     task_id: Identifier | None = None
     seq: int
+    item_seq: int | None = None
     row_version: Identifier = 1
     role: Literal["user", "assistant"]
+    kind: Literal["reply", "narration", "notice"] = "reply"
     content: str
     references: list[dict]
     artifacts: list[dict]

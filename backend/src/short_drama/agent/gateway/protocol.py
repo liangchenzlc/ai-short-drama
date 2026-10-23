@@ -252,6 +252,7 @@ class AgentSegmentResult:
     protocol: str
     requests: int
     streaming: bool = False
+    narration: str = ""
 
 
 def serialize_segment_result(result: AgentSegmentResult) -> dict:
@@ -260,6 +261,7 @@ def serialize_segment_result(result: AgentSegmentResult) -> dict:
     return {
         "output_kind": "tool_requests" if deferred else "text",
         "output": serialize_deferred_requests(result.output) if deferred else result.output,
+        "narration": result.narration,
         "history": result.history,
         "usage": result.usage,
         "protocol": result.protocol,
@@ -328,12 +330,22 @@ def _usage_evidence(raw, protocol):
     except (ValueError, TypeError, KeyError, UnicodeError):
         pass
     field_name = "completion_tokens" if protocol == "openai_chat.v1" else "output_tokens"
-    return {
+    evidence = {
         "usage_reported": isinstance(usage, dict),
         "output_tokens_reported": isinstance(usage, dict)
         and type(usage.get(field_name)) is int
         and usage[field_name] >= 0,
-    }, terminal
+    }
+    cached = None
+    if isinstance(usage, dict):
+        details = usage.get(
+            "prompt_tokens_details" if protocol == "openai_chat.v1" else "input_tokens_details"
+        )
+        if isinstance(details, dict) and type(details.get("cached_tokens")) is int:
+            cached = details["cached_tokens"]
+    if cached is not None and cached >= 0:
+        evidence["cached_tokens"] = cached
+    return evidence, terminal
 
 
 class _ReplaySafeTransport:
@@ -403,6 +415,14 @@ class _CapturedStream(httpx2.AsyncByteStream):
             pass
         if self.bridge.feed_task is not None:
             await self.bridge.feed_task
+
+
+def _narration_text(response, secrets):
+    """Text the model emitted alongside tool calls, redacted and trimmed."""
+    parts = [part.content for part in response.parts if isinstance(part, TextPart) and part.content]
+    if not parts:
+        return ""
+    return _TextRedactor(secrets).add("".join(parts), final=True).strip()
 
 
 class _TextRedactor:
@@ -846,6 +866,11 @@ class AgentModelGateway:
                 )
             usage = TypeAdapter(type(result.usage)).dump_python(result.usage, mode="json")
             usage.update(usage_evidence, external_requests=bridge.requests)
+            narration = (
+                _narration_text(terminal, secrets)
+                if isinstance(output, DeferredToolRequests)
+                else ""
+            )
             return AgentSegmentResult(
                 output=output,
                 history=normalized_history,
@@ -855,6 +880,7 @@ class AgentModelGateway:
                 streaming=stream
                 and bridge.raw_response["content_type"].split(";", 1)[0].strip().lower()
                 == "text/event-stream",
+                narration=narration,
             )
         except AgentGatewayError as error:
             raise AgentGatewayError(

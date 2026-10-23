@@ -1,8 +1,8 @@
 # drop user_project_states
 
-**日期：** $(date +%Y-%m-%d)  
+**日期：** 2026-10-22  
 **类型：** 删表  
-**影响：** 仅删除废弃表，无业务代码使用，无外键被其他表引用。
+**影响：** 仅删除废弃表，无业务代码使用，无外键被其他表引用。当前 `short_drama` 已执行（删除前 0 行），执行后完整结构为 116 张表。
 
 `user_project_states` 记录用户最近打开的项目，ORM 类 `UserProjectState` 已从 `domain/collaboration.py` 移除，db/access.py 和 db/readiness.py 中的引用已同步清理。
 

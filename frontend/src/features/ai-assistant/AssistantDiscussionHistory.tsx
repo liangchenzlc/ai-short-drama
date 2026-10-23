@@ -16,6 +16,11 @@ interface Props {
   onClose: () => void; onAccepted: (value: AssistantTaskAccepted) => void; onBlocked: (value: boolean) => void;
   onBusy: (value: boolean) => void; onCorrect: (content: string) => void;
 }
+/** 修订记录只显示用户看得懂的时间，不暴露内部版本号与运行 ID。 */
+function formatRevisionTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 export function AssistantDiscussionHistory({ accountId, conversationId, request, disabled, accessEnded, onClose, onAccepted, onBlocked, onBusy, onCorrect }: Props) {
   const storage = workflowStorage();
   const [restored] = useState(() => readDiscussionDraft(accountId, conversationId, storage));
@@ -99,22 +104,22 @@ export function AssistantDiscussionHistory({ accountId, conversationId, request,
     } finally { submitting.current = false; if (alive.current) setBusy(false); }
   }
   const changed = eligibility && draft && eligibility.row_version !== draft.body.row_version;
-  const feedback = error ? <StudioFeedback type="error" persistent title="历史讨论" message={error} noticeKey={`assistant-history:${conversationId}`} actions={<Button size="small" disabled={busy} onClick={() => setRevision(value => value + 1)}>重新核对</Button>}/> : null;
+  const feedback = error ? <StudioFeedback scope="chat" type="error" persistent title="历史讨论" message={error} noticeKey={`assistant-history:${conversationId}`} actions={<Button size="small" disabled={busy} onClick={() => setRevision(value => value + 1)}>重新核对</Button>}/> : null;
   return <>
-    {!target && (draft || damaged) && <StudioFeedback type={draft?.pending || damaged ? 'warning' : 'info'} persistent title={draft?.pending ? '历史修订待核对' : '历史修订草稿'} message={damaged ? error : '原输入与请求已保留。'} noticeKey={`assistant-history-pending:${conversationId}`} actions={draft ? <Button size="small" onClick={() => setTarget({ id: draft.messageId, mode: draft.body.kind })}>打开原修订</Button> : <Button size="small" onClick={discard}>明确清除损坏记录</Button>}/>}
+    {!target && (draft || damaged) && <StudioFeedback scope="chat" type={draft?.pending || damaged ? 'warning' : 'info'} persistent title={draft?.pending ? '历史修订待核对' : '历史修订草稿'} message={damaged ? error : '原输入与请求已保留。'} noticeKey={`assistant-history-pending:${conversationId}`} actions={draft ? <Button size="small" onClick={() => setTarget({ id: draft.messageId, mode: draft.body.kind })}>打开原修订</Button> : <Button size="small" onClick={discard}>明确清除损坏记录</Button>}/>}
     {target && <Dialog title={target.mode === 'history' ? '讨论修订记录' : target.mode === 'edit' ? '编辑讨论' : '重新回答'} className="standard-creation-dialog standard-assistant-dialog assistant-discussion-dialog" canClose={!busy} onClose={close}>
       {feedback}
       <div className="assistant-discussion-body">
         <p className="assistant-discussion-help">仅更新这段纯讨论的回复，保留原修订记录。已被后续创作使用的历史请用新消息纠正。</p>
         {loading ? <Skeleton active paragraph={{ rows: 3 }}/> : <>
-          {target.mode !== 'history' && eligibility && !eligibility.allowed && !draft?.pending && <StudioFeedback type="warning" persistent title="保留执行依据" message={eligibility.code === 'assistant_history_dependency' ? '此讨论已被后续创作使用，请发送新消息纠正。' : eligibility.reason ?? '此历史不能改写，请发送新消息纠正。'} noticeKey={`assistant-history-protected:${target.id}`} actions={<Button size="small" onClick={() => { onCorrect(draft?.body.content ?? request?.message.content ?? ''); discard(); }}>用新消息纠正</Button>}/>}
+          {target.mode !== 'history' && eligibility && !eligibility.allowed && !draft?.pending && <StudioFeedback scope="chat" type="warning" persistent title="保留执行依据" message={eligibility.code === 'assistant_history_dependency' ? '此讨论已被后续创作使用，请发送新消息纠正。' : eligibility.reason ?? '此历史不能改写，请发送新消息纠正。'} noticeKey={`assistant-history-protected:${target.id}`} actions={<Button size="small" onClick={() => { onCorrect(draft?.body.content ?? request?.message.content ?? ''); discard(); }}>用新消息纠正</Button>}/>}
           {target.mode === 'edit' && draft?.body.kind === 'edit' && <label>讨论消息<Input.TextArea aria-label="修订讨论正文" autoFocus autoSize={{ minRows: 5, maxRows: 14 }} maxLength={32000} value={draft.body.content} disabled={busy || draft.pending || damaged} onChange={event => persist({ ...draft, body: { ...draft.body, content: event.target.value } })}/></label>}
           {target.mode === 'regenerate' && <p>保留用户原文，成功后替换原回复；失败时继续保留旧回复。</p>}
-          {changed && <details><summary>核对当前消息 · 版本 {eligibility.row_version}</summary><p style={{ whiteSpace: 'pre-wrap' }}>{eligibility.current_content}</p></details>}
-          {changed && !draft?.pending && <StudioFeedback type="warning" persistent title="消息已有新版本" message="修订输入已保留，请核对当前消息后明确采用新版本。" noticeKey={`assistant-history-version:${target.id}`} actions={<Button size="small" onClick={() => { if (draft && eligibility && persist({ ...draft, key: crypto.randomUUID(), body: { ...draft.body, row_version: eligibility.row_version } })) setError(''); }}>采用当前消息版本</Button>}/>}
+          {changed && <details><summary>核对当前消息</summary><p style={{ whiteSpace: 'pre-wrap' }}>{eligibility.current_content}</p></details>}
+          {changed && !draft?.pending && <StudioFeedback scope="chat" type="warning" persistent title="消息已有新版本" message="修订输入已保留，请核对当前消息后明确采用新版本。" noticeKey={`assistant-history-version:${target.id}`} actions={<Button size="small" onClick={() => { if (draft && eligibility && persist({ ...draft, key: crypto.randomUUID(), body: { ...draft.body, row_version: eligibility.row_version } })) setError(''); }}>采用当前消息版本</Button>}/>}
           <section aria-label="历史修订记录">
             <h4>修订记录</h4>
-            {!items.length ? <p className="assistant-discussion-help">尚无历史修订。</p> : items.map(item => <details key={item.id}><summary>版本 {item.row_version} · {item.kind === 'edit' ? '编辑前' : '重答前'}</summary><AssistantReply text={item.content}/><small>来源消息 {item.source_message_id} · 来源版本 {item.source_version} · 回复运行 {item.run_id}</small></details>)}
+            {!items.length ? <p className="assistant-discussion-help">尚无历史修订。</p> : items.map(item => <details key={item.id}><summary>{item.kind === 'edit' ? '编辑前' : '重答前'} · {formatRevisionTime(item.created_at)}</summary><AssistantReply text={item.content}/></details>)}
             {total > 30 && <nav aria-label="修订记录分页"><Button size="small" disabled={offset === 0} onClick={() => setOffset(value => Math.max(0, value - 30))}>上一页</Button><span>{total} 次修订</span><Button size="small" disabled={offset + items.length >= total} onClick={() => setOffset(value => value + 30)}>下一页</Button></nav>}
           </section>
         </>}

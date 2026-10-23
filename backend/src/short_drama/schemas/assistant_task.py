@@ -290,6 +290,9 @@ class OperationRead(ReadModel):
     run_id: Identifier
     call_id: Identifier
     tool_name: str
+    item_seq: int | None = None
+    visibility: Literal["silent", "step", "artifact"] = "step"
+    label: str = ""
     tool_version: Identifier
     plan_revision: Identifier
     state_version: Identifier

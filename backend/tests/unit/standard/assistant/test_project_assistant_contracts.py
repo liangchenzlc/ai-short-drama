@@ -51,8 +51,10 @@ def test_project_chat_inputs_have_no_tools_even_when_skill_requests_execution():
     inputs = prepare_assistant_decision(None, conversation, run)
     assert inputs["tools"] == []
     assert inputs["max_tool_calls"] == 0
-    assert "本集正文" in inputs["instructions"]
-    assert "立即生成图片" in inputs["instructions"]
+    # 资料与技能属于每轮状态，随用户消息下发；系统提示保持稳定以命中前缀缓存。
+    assert "本集正文" in inputs["user_prompt"]
+    assert "立即生成图片" in inputs["user_prompt"]
+    assert "本集正文" not in inputs["instructions"]
     assert "不执行" in inputs["instructions"]
     run.budget = budget_limits("assistant")
     assert checked_budget(run)["tool_calls"] == 0

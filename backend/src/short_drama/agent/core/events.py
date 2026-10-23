@@ -41,6 +41,7 @@ def initial_usage():
         "tool_calls": 0,
         "output_tokens": 0,
         "reserved_output_tokens": 0,
+        "cached_tokens": 0,
         "active_seconds": 0.0,
         "images": 0,
         "videos": 0,

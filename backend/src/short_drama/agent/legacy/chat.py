@@ -1,10 +1,10 @@
 """Project chat deliberately has no domain tools, plans or creative side effects."""
 
-import json
 from copy import deepcopy
 
 from sqlalchemy import select
 
+from short_drama.agent.context.prompt import build_segment_prompt, remember_digest
 from short_drama.agent.gateway.protocol import AgentGatewayError
 from short_drama.domain.agent import AgentMessage
 
@@ -63,7 +63,7 @@ def prepare_assistant_decision(session, conversation, run):
                 for item in reversed(rows)
             ]
             run.checkpoint = checkpoint
-    instructions = (
+    stable = (
         "你是 AI 创作助手，只提供对话、分析和建议。使用用户语言回答。"
         "不执行生成、素材提取、作品修改、候选创建、采用或任何外部操作；没有可执行工具。"
         "用户要求创作时可在回复中提供建议、示例或文本，明确这些内容尚未写入作品。"
@@ -71,19 +71,22 @@ def prepare_assistant_decision(session, conversation, run):
         "不展示隐藏思考、密钥或内部工具；不能声称已完成未经执行的操作。"
         "当前作品来自本次发送时保存的快照，切换页面不会改变它。"
         "truncated 字段记录截取范围，资料不足时说明局限并请求补充，不猜测未读取内容。"
-        "本次资料："
-        + json.dumps(
-            {
-                "source": checkpoint.get("context_snapshot"),
-                "history": checkpoint.get("conversation_context", []),
-                "skills": checkpoint.get("selected_skills", []),
-            },
-            ensure_ascii=False,
-        )
     )
+    state = {
+        "source": checkpoint.get("context_snapshot"),
+        "history": checkpoint.get("conversation_context", []),
+        "skills": checkpoint.get("selected_skills", []),
+    }
+    composed = build_segment_prompt(
+        stable=stable,
+        dynamic=state,
+        first_prompt=checkpoint["user_prompt"],
+        has_history=False,
+    )
+    remember_digest(run, composed.digest)
     return {
-        "instructions": instructions,
-        "user_prompt": checkpoint["user_prompt"],
+        "instructions": composed.instructions,
+        "user_prompt": composed.user_prompt,
         "history": None,
         "tools": [],
         "deferred_results": None,

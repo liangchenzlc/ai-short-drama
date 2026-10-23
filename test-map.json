@@ -2012,11 +2012,8 @@
         "frontend/src/features/ai-assistant/AssistantMemory.tsx",
         "frontend/src/features/ai-assistant/AssistantMemoryReview.tsx",
         "frontend/src/features/ai-assistant/AssistantMessage.tsx",
-        "frontend/src/features/ai-assistant/AssistantSubjects.tsx",
-        "frontend/src/features/ai-assistant/AssistantAttachments.tsx",
         "frontend/src/features/ai-assistant/AssistantSkillPicker.tsx",
         "frontend/src/features/ai-assistant/assistant-source-link.ts",
-        "frontend/src/features/ai-assistant/AssistantTaskTrace.tsx",
         "frontend/src/features/ai-assistant/AssistantTaskSettings.tsx",
         "frontend/src/features/ai-assistant/CreativeAssistantPanel.tsx",
         "frontend/src/features/ai-assistant/LegacyAssistantMessages.tsx",
@@ -2031,6 +2028,17 @@
         "frontend/src/features/ai-assistant/assistant-undo-draft.ts",
         "frontend/src/features/ai-assistant/assistant-history-draft.ts",
         "frontend/src/features/ai-assistant/useAssistantRuntime.ts",
+        "frontend/src/features/ai-assistant/AssistantPromptField.tsx",
+        "frontend/src/features/ai-assistant/assistant-skill-token.ts",
+        "frontend/src/features/ai-assistant/AgentTimeline.tsx",
+        "frontend/src/features/ai-assistant/ThinkBlock.tsx",
+        "frontend/src/features/ai-assistant/AgentArtifactCard.tsx",
+        "frontend/src/features/ai-assistant/AssistantOperationResults.tsx",
+        "frontend/src/features/ai-assistant/agent-timeline.ts",
+        "frontend/src/features/ai-assistant/prompt-tokens.ts",
+        "frontend/src/features/ai-assistant/assistant-materials.ts",
+        "frontend/src/features/ai-assistant/assistant-material-service.ts",
+        "frontend/src/features/agents/agent-composer-context.ts",
         "frontend/src/features/projects/assistant-navigation.ts",
         "backend/src/short_drama/domain/agent_preference.py",
         "backend/src/short_drama/schemas/assistant_policy.py",
@@ -10857,6 +10865,20 @@
       "previous_path": "backend/tests/unit/test_agent_model_runtime_settings.py"
     },
     {
+      "path": "backend/tests/unit/standard/agent/test_agent_prompt_prefix.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ],
+      "previous_path": "backend/tests/unit/standard/agent/test_agent_prompt_prefix.py"
+    },
+    {
       "path": "backend/tests/unit/standard/agent/test_agent_readiness.py",
       "features": [
         "standard.agent"
@@ -10914,6 +10936,20 @@
         "backend/tests/unit/standard/agent/test_agent_runtime_state.py"
       ],
       "previous_path": "backend/tests/unit/test_agent_stop_artifacts.py"
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_agent_tool_presentation.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ],
+      "previous_path": "backend/tests/unit/standard/agent/test_agent_tool_presentation.py"
     },
     {
       "path": "backend/tests/unit/standard/agent/test_agent_unified_runtime.py",
@@ -12655,6 +12691,17 @@
       "previous_path": "frontend/tests/assistant-contract.test.mjs"
     },
     {
+      "path": "frontend/tests/assistant/assistant-materials.test.mjs",
+      "features": [
+        "standard.assistant"
+      ],
+      "runner": "node",
+      "level": "fast",
+      "requires": [],
+      "support": [],
+      "previous_path": "frontend/tests/assistant/assistant-materials.test.mjs"
+    },
+    {
       "path": "frontend/tests/assistant/assistant-navigation.test.mjs",
       "features": [
         "standard.assistant"
@@ -12664,6 +12711,28 @@
       "requires": [],
       "support": [],
       "previous_path": "frontend/tests/assistant-navigation.test.mjs"
+    },
+    {
+      "path": "frontend/tests/assistant/assistant-skill-token.test.mjs",
+      "features": [
+        "standard.assistant"
+      ],
+      "runner": "node",
+      "level": "fast",
+      "requires": [],
+      "support": [],
+      "previous_path": "frontend/tests/assistant/assistant-skill-token.test.mjs"
+    },
+    {
+      "path": "frontend/tests/assistant/prompt-tokens.test.mjs",
+      "features": [
+        "standard.assistant"
+      ],
+      "runner": "node",
+      "level": "fast",
+      "requires": [],
+      "support": [],
+      "previous_path": "frontend/tests/assistant/prompt-tokens.test.mjs"
     },
     {
       "path": "frontend/tests/creation/creation-draft-session.test.mjs",
@@ -15140,6 +15209,27 @@
         "canvas.storyboard"
       ],
       "reason": "退役分集切换、企业角色、来源项目绑定和跨库素材功能。"
+    },
+    {
+      "path": "frontend/src/features/ai-assistant/AssistantTaskTrace.tsx",
+      "features": [
+        "standard.assistant"
+      ],
+      "reason": "助手改为按 item_seq 渲染时间线，整块轨迹组件被 AgentTimeline 取代。"
+    },
+    {
+      "path": "frontend/src/features/ai-assistant/AssistantAttachments.tsx",
+      "features": [
+        "standard.assistant"
+      ],
+      "reason": "附件改为按消息隔离，发送时由 assistant-attachment-scope 显式清空任务附件集合。"
+    },
+    {
+      "path": "frontend/src/features/ai-assistant/AssistantSubjects.tsx",
+      "features": [
+        "standard.assistant"
+      ],
+      "reason": "主体引用改为消息级素材，合并进输入框素材行，由 assistant-materials.ts 取代。"
     }
   ]
 }

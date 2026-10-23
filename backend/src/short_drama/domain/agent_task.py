@@ -130,6 +130,7 @@ class AgentOperation(Base):
     run_id: Mapped[int] = _number()
     tool_call_id: Mapped[int] = _number()
     tool_name: Mapped[str] = mapped_column(VARCHAR(80))
+    item_seq: Mapped[int | None] = _number(nullable=True)
     tool_version: Mapped[int] = _number(1)
     plan_revision: Mapped[int] = _number()
     input_revision: Mapped[int] = _number()
@@ -163,6 +164,7 @@ class AgentOperation(Base):
         UniqueConstraint("tool_call_id", name="uk_agent_operations_call"),
         UniqueConstraint("active_task_id", name="uk_agent_operations_active"),
         Index("idx_agent_operations_task", "task_id", "id"),
+        Index("idx_agent_operations_item", "item_seq"),
         CheckConstraint(
             "status IN ('running','waiting_media','reconciling','succeeded','failed','conflict')",
             name="ck_agent_operations_status",

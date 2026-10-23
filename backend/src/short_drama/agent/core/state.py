@@ -11,6 +11,7 @@ from short_drama.agent.core.events import TERMINAL as TERMINAL
 from short_drama.agent.core.events import append_event as append_event
 from short_drama.agent.core.events import budget_limits as budget_limits
 from short_drama.agent.core.events import initial_usage as initial_usage
+from short_drama.agent.core.items import KIND_NARRATION, KIND_NOTICE, allocate_item_seq
 from short_drama.domain.agent import AgentArtifact, AgentMessage, AgentToolCall
 from short_drama.service.base import utcnow
 from short_drama.utils.snowflake import next_id
@@ -147,7 +148,9 @@ def append_failure_message(session, conversation, run, error):
         id=next_id(),
         conversation_id=conversation.id,
         seq=conversation.next_message_seq,
+        item_seq=allocate_item_seq(conversation),
         role="assistant",
+        kind=KIND_NOTICE,
         content=failure_message(
             error.get("code"), accepted_unknown=error.get("accepted_unknown", False)
         ),
@@ -216,7 +219,9 @@ def append_late_artifact_message(session, conversation, run, artifact_ids=None):
         id=next_id(),
         conversation_id=conversation.id,
         seq=conversation.next_message_seq,
+        item_seq=allocate_item_seq(conversation),
         role="assistant",
+        kind=KIND_NOTICE,
         references=[],
         artifacts=references,
         created_at=utcnow(),
@@ -238,6 +243,56 @@ def append_late_artifact_message(session, conversation, run, artifact_ids=None):
         },
         run_id=run.id,
     )
+
+
+def append_interrupted_message(session, conversation, run, text):
+    """Keep what the model already streamed when the user stops the run.
+
+    The partial text is display-only: it never enters the protocol history, so the
+    next run starts from the persisted checkpoint rather than a truncated segment.
+    """
+    content = (text or "").strip()[:4000]
+    if not content:
+        return None
+    message = AgentMessage(
+        id=next_id(),
+        conversation_id=conversation.id,
+        task_id=run.task_id,
+        seq=conversation.next_message_seq,
+        item_seq=allocate_item_seq(conversation),
+        role="assistant",
+        kind=KIND_NARRATION,
+        content=content,
+        references=[],
+        artifacts=[],
+        created_at=utcnow(),
+    )
+    conversation.next_message_seq += 1
+    session.add(message)
+    append_event(
+        session,
+        conversation,
+        "message.created",
+        {
+            "id": str(message.id),
+            "run_id": str(run.id),
+            "seq": message.seq,
+            "item_seq": message.item_seq,
+            "kind": KIND_NARRATION,
+            "role": "assistant",
+            "content": message.content,
+            "artifacts": [],
+        },
+        run_id=run.id,
+    )
+    append_event(
+        session,
+        conversation,
+        "run.interrupted",
+        {"run_id": str(run.id), "preserved_chars": len(content)},
+        run_id=run.id,
+    )
+    return message
 
 
 def finish_locked(session, conversation, run, status, error=None):

@@ -217,6 +217,130 @@ async function assistantFixture(page: Page) {
   };
 }
 
+test.describe('assistant UX', () => {
+  for (const height of [844, 480]) for (const count of [1, 8, 16]) test(`keeps ${count} attachments and sending reachable at 390x${height}`, async ({ page }, info) => {
+    await page.setViewportSize({ width: 390, height });
+    const state = await assistantFixture(page);
+    state.attachments.push(...Array.from({ length: count }, (_, index) => ({ id: String(8000 + index), kind: 'text', name: `人物关系与故事背景参考文档第${index + 1}份.md`, text_preview: '参考内容', mime_type: 'text/plain', byte_size: 100, media_id: null, url: null, checksum_sha256: 'a'.repeat(64), pending: true, metadata: {} })));
+    await page.route('**/api/v1/assistant/conversations/301/attachments/*', route => {
+      if (route.request().method() !== 'DELETE') return route.fallback();
+      const id = new URL(route.request().url()).pathname.split('/').at(-1);
+      state.attachments.find(item => item.id === id)!.pending = false;
+      return route.fulfill({ status: 204 });
+    });
+    await page.goto(`${root}/source?assistant=open`);
+    const panel = page.getByRole('region', { name: 'AI 创作助手', exact: true });
+    const input = panel.getByRole('textbox', { name: '给助手的消息', exact: true });
+    const send = panel.getByRole('button', { name: '发送', exact: true });
+    await expect(panel.locator('.ai-assistant-attachment')).toHaveCount(count);
+    await input.fill('参考这些资料梳理人物动机');
+    await expect(send).toBeEnabled(); await expect(send).toBeInViewport({ ratio: 1 });
+    const last = panel.getByRole('button', { name: `移除附件人物关系与故事背景参考文档第${count}份.md`, exact: true });
+    await last.focus(); await expect(last).toBeInViewport({ ratio: 1 });
+    const hitArea = await last.boundingBox();
+    expect(hitArea!.width).toBeGreaterThanOrEqual(44); expect(hitArea!.height).toBeGreaterThanOrEqual(44);
+    await page.screenshot({ path: info.outputPath(`assistant-materials-${count}-${height}.png`) });
+    await last.press('Enter'); await expect(panel.locator('.ai-assistant-attachment')).toHaveCount(count - 1);
+    await expect(send).toBeInViewport({ ratio: 1 }); await send.click(); await expect(input).toHaveValue('');
+    const sent = state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!;
+    expect(sent.body.attachment_ids ?? []).toHaveLength(count - 1);
+    expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+  });
+
+  test('freezes the real task model through stop and reload, then allows a new task model', async ({ page }) => {
+    const state = await assistantFixture(page); state.beginReply('正在讨论人物。');
+    await page.route('**/api/v1/agent/models', route => route.fulfill({ json: { items: [{ id: '71', name: '对话模型', model_key: 'a' }, { id: '72', name: '新任务模型 B', model_key: 'b' }], preferred_id: '72' } }));
+    await page.goto(`${root}/source?assistant=open`);
+    const panel = page.getByRole('region', { name: 'AI 创作助手', exact: true });
+    const lockedModel = panel.getByRole('button', { name: '助手模型：对话模型，当前任务已锁定', exact: true });
+    await expect(lockedModel).toBeVisible(); await expect(panel.getByRole('combobox', { name: '助手模型' })).toHaveCount(0);
+    await lockedModel.focus(); await expect(page.getByRole('tooltip')).toContainText('任务结束后可切换');
+    await panel.getByRole('button', { name: '停止', exact: true }).click(); await expect(panel.getByRole('button', { name: '发送', exact: true })).toBeVisible();
+    await page.reload(); await expect(lockedModel).toBeVisible();
+    const input = panel.getByRole('textbox', { name: '给助手的消息', exact: true });
+    await input.fill('继续完善人物动机'); await panel.getByRole('button', { name: '发送', exact: true }).click(); await expect(input).toHaveValue('');
+    const continued = state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!;
+    expect(continued.body.task_id).toBe('501'); expect(continued.body.model_config_id).toBeUndefined();
+    state.finishReply('人物动机已完善。'); await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
+    await expect(panel.getByRole('combobox', { name: '助手模型' })).toBeVisible();
+    await panel.locator('.ai-assistant-model').click(); await page.getByText('新任务模型 B', { exact: true }).last().click();
+    await input.fill('开始新的创作任务'); await panel.getByRole('button', { name: '发送', exact: true }).click(); await expect(input).toHaveValue('');
+    const next = state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages')).at(-1)!;
+    expect(next.body.new_task).toBe(true); expect(next.body.model_config_id).toBe('72');
+    expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+  });
+
+  test('does not borrow a different task model when the current task has no matching run', async ({ page }) => {
+    const state = await assistantFixture(page); state.beginReply('');
+    Object.assign(state.tasks[0], { id: '502', status: 'stopped' });
+    await page.goto(`${root}/source?assistant=open`);
+    await expect(page.getByRole('button', { name: '助手模型：沿用当前任务模型，当前任务已锁定', exact: true })).toBeVisible();
+    expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+  });
+
+  for (const layout of ['standard', 'canvas']) test(`filters host mention candidates and keeps keyboard selection in ${layout}`, async ({ page }) => {
+    const state = await assistantFixture(page);
+    await page.route('**/api/v1/projects/10/assets?**', route => route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 20 } }));
+    await page.goto(`/e2e/assistant/fixtures/assistant-presentation-fixture.html?mentions=nodes${layout === 'standard' ? '&layout=standard' : ''}`);
+    const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
+    await input.fill('@没有匹配对象'); await expect(page.getByText('没有匹配的项目素材', { exact: true })).toBeVisible();
+    await expect(page.getByRole('menuitemcheckbox')).toHaveCount(0);
+    await input.press('Escape'); await input.fill('@雨夜');
+    await expect(page.getByRole('menuitemcheckbox')).toHaveCount(1); await expect(page.getByRole('menuitemcheckbox')).toContainText('雨夜车站');
+    await input.press('Escape'); await input.fill('@hero');
+    await expect(page.getByRole('menuitemcheckbox')).toHaveCount(1); await expect(page.getByRole('menuitemcheckbox')).toContainText('Hero Closeup');
+    await input.press('Escape'); await input.fill('@'); await expect(page.getByRole('menuitemcheckbox')).toHaveCount(42);
+    const matchesReady = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/v1/projects/10/assets' && url.searchParams.get('q') === '雨夜';
+    });
+    await input.fill('@雨夜'); await matchesReady;
+    await expect(input).toHaveAttribute('aria-expanded', 'true'); await expect(page.getByRole('menuitemcheckbox')).toHaveCount(1);
+    await input.press('ArrowDown'); await input.press('Enter');
+    await expect(input).toHaveValue('@雨夜车站 '); await expect(input).toBeFocused();
+    expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+  });
+
+  test('keeps different failure reasons visible and respects manual collapse', async ({ page }, info) => {
+    const state = await assistantFixture(page); state.beginReply(''); state.startOperation(); state.finishOperation();
+    state.messages['301'].push({ id: 'question', seq: 1, role: 'user', content: '生成两个镜头', references: [], artifacts: [], created_at: time });
+    Object.assign(state.operations[0], { visibility: 'step', label: '生成分镜图片', item_seq: 2, outcome: 'failed', state_version: '3', error: { code: 'timeout', message: '镜头 1 服务超时，请重试。' } });
+    state.operations.push({ ...state.operations[0], id: '802', item_seq: 3, error: { code: 'invalid_content', message: '镜头 2 内容校验未通过，请调整描述。' } });
+    await page.goto(`${root}/source?assistant=open`);
+    const group = page.getByRole('region', { name: '执行步骤', exact: true }); const head = group.getByRole('button');
+    await expect(head).toHaveAttribute('aria-expanded', 'true');
+    await expect(group.getByRole('listitem')).toHaveCount(2);
+    await expect(group).toContainText('镜头 1 服务超时'); await expect(group).toContainText('镜头 2 内容校验未通过');
+    await page.screenshot({ path: info.outputPath('assistant-failures.png') });
+    await head.click(); await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
+    await expect(head).toHaveAttribute('aria-expanded', 'false');
+    for (const operation of state.operations) Object.assign(operation, { outcome: 'succeeded', error: null, state_version: '4' });
+    await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
+    await expect(head).toHaveText('已完成 2 步'); await expect(head).toHaveAttribute('aria-expanded', 'false');
+    await head.click(); await expect(group.getByRole('listitem')).toHaveCount(1); await expect(group).toContainText('×2');
+    expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+  });
+
+  test('shows artifact icons that agree with all operation outcomes and reduced motion', async ({ page }, info) => {
+    const state = await assistantFixture(page); state.beginReply(''); state.startOperation();
+    Object.assign(state.operations[0], { visibility: 'artifact', label: '生成分镜视频' });
+    await page.goto(`${root}/source?assistant=open`);
+    const card = page.locator('.ai-assistant-artifact'); const icon = card.locator('header > svg');
+    for (const [index, [outcome, text]] of [['running', '处理中'], ['waiting_media', '生成中'], ['reconciling', '核实中'], ['succeeded', '已保存'], ['failed', '未完成'], ['conflict', '有冲突']].entries()) {
+      Object.assign(state.operations[0], { outcome, state_version: String(index + 2) });
+      await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
+      await expect(card).toContainText(text);
+      await expect(icon).toHaveClass(new RegExp(outcome === 'succeeded' ? 'lucide-check' : ['failed', 'conflict'].includes(outcome) ? 'lucide-circle-alert' : 'lucide-loader-circle'));
+      if (outcome === 'waiting_media') {
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await expect.poll(() => icon.evaluate(element => getComputedStyle(element).animationName)).toBe('none');
+        await page.screenshot({ path: info.outputPath('assistant-waiting-artifact.png') });
+      }
+    }
+    expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+  });
+});
+
 for (const width of [1440, 390]) test(`composer menus offer scoped attachments and multiple Skills without configuration dialogs at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);

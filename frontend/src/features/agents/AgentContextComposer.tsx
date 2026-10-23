@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Checkbox, Dropdown, Tag, Tooltip } from 'antd';
-import { Attachments } from '@ant-design/x';
+import { FileText, Music2, Video, X } from 'lucide-react';
 import { agentsApi } from '../../api/modules/agents';
 import { ApiError, errorMessage } from '../../api/http';
 import type { AgentAttachment, AgentConversation, AgentSendInput, AgentSkill, ConversationScope } from '../../api/types/agents';
@@ -9,6 +9,7 @@ import { PreviewImage } from '../../components/ui/ImagePreview';
 import { StudioFeedback } from '../../components/ui/StudioFeedback';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import { attachmentAccept, attachmentFileIssue } from './agent-input-context';
+import { ComposerAttachmentsContext, type ComposerMaterial } from './agent-composer-context';
 import { AgentAssetPicker } from './AgentAssetPicker';
 import { AgentSkillPicker } from './AgentSkillPicker';
 
@@ -30,6 +31,7 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   dialogClassName?: string;
   layout?: 'standard';
   presentation?: 'assistant'; toolsOpen?: boolean;
+  materials?: readonly ComposerMaterial[];
   initialSkills: { id: string; content_version: string }[];
   skillSummary?: ReactNode;
   skillsManaged?: boolean;
@@ -38,7 +40,7 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   onSkillsEdited?: () => void;
   onBusy: (busy: boolean) => void; onBlockReason: (reason: string) => void;
   input: ReactNode; modelControl: ReactNode; sendControl: ReactNode;
-}>(function AgentContextComposer({ conversation, scope, initialSkills, skillSummary, skillsManaged, skillPicker, onSkills, onSkillsEdited, disabled, onBusy, onBlockReason, input, modelControl, sendControl, attachmentApi = agentsApi, dialogClassName, presentation, toolsOpen, layout }, ref) {
+}>(function AgentContextComposer({ conversation, scope, initialSkills, skillSummary, skillsManaged, skillPicker, onSkills, onSkillsEdited, disabled, onBusy, onBlockReason, input, modelControl, sendControl, attachmentApi = agentsApi, dialogClassName, presentation, toolsOpen, layout, materials = [] }, ref) {
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [skills, setSkills] = useState<AgentSkill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,7 +90,7 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
     setSkills(next); onSkills(next.map(({ id, content_version }) => ({ id, content_version })));
   }
   const issue = pendingUpload || pendingReference ? '附件添加结果尚未确认，请使用原请求核对后再发送。' : '';
-  const blockReason = loading ? '正在恢复本次消息附件…' : loadError ? '附件恢复失败，请重新载入后再发送。' : issue;
+  const blockReason = loadError ? '附件恢复失败，请重新载入后再发送。' : issue;
   const canAdd = !disabled && !busy && !loading && !loadError && !issue && attachments.length < 16;
   useEffect(() => { onBlockReason(blockReason); }, [blockReason, onBlockReason]);
   useEffect(() => { onBusy(busy || loading || skillsLoading); return () => onBusy(false); }, [busy, loading, skillsLoading, onBusy]);
@@ -161,18 +163,37 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
   }
   const contextDisabled = disabled || busy;
   const addingDisabled = contextDisabled || loading || !!loadError || !!pendingUpload || !!pendingReference || attachments.length >= 16;
+  function remove(item: AgentAttachment) {
+    return perform(async () => {
+      await attachmentApi.removeAttachment(conversation.id, item.id, scope);
+      if (alive.current) setAttachments(previous => previous.filter(old => old.id !== item.id));
+    });
+  }
   return <>
-    {attachments.length > 0 && <div className={`agent-attached-items${presentation === 'assistant' ? ' ai-assistant-attachments' : ''}`} aria-label="本次消息附件">{attachments.map(item => <article key={item.id}>
-      {presentation === 'assistant' ? <Attachments.FileCard className="ai-assistant-attachment-card" item={{ uid: item.id, name: item.name, size: item.byte_size, status: 'done' }} type="file" icon={item.kind === 'text' ? 'default' : item.kind}/> : null}
-      {item.kind === 'image' && item.url ? <PreviewImage src={item.url} alt={item.name} presentation={layout === 'standard' ? 'standard-creation' : undefined}/>
-        : item.kind === 'audio' && item.url ? <audio src={item.url} controls preload="metadata" aria-label={`${item.name}试听`}/>
-          : item.kind === 'video' && item.url ? <video src={item.url} controls preload="metadata" aria-label={`${item.name}预览`}/> : null}
-      {presentation !== 'assistant' ? <span title={item.name}>{item.name}</span> : null}
-      <Button type="text" size="small" aria-label={`移除附件${item.name}`} icon={<Icon name="close" size={14}/>} disabled={contextDisabled} onClick={() => void perform(async () => {
-        await attachmentApi.removeAttachment(conversation.id, item.id, scope);
-        if (alive.current) setAttachments(previous => previous.filter(old => old.id !== item.id));
-      })}/>
-    </article>)}</div>}
+    {(attachments.length > 0 || materials.length > 0) && <div className={`agent-attached-items${presentation === 'assistant' ? ' ai-assistant-attachments' : ''}`} aria-label="本次消息素材">{materials.map(item => <article key={item.key} className="ai-assistant-attachment" data-kind={item.kind} title={item.name}>
+        <span className="ai-assistant-attachment-thumb">
+          {item.thumbnail ? <img src={item.thumbnail} alt="" loading="lazy" decoding="async"/> : <FileText size={14} aria-hidden="true"/>}
+        </span>
+        <span className="ai-assistant-attachment-name">{item.name}</span>
+        <Button className="ai-assistant-attachment-remove" type="text" size="small" aria-label={`移除素材${item.name}`} icon={<X size={12}/>} disabled={contextDisabled} onClick={item.onRemove}/>
+      </article>)}{attachments.map(item => presentation === 'assistant'
+      ? <article key={item.id} className="ai-assistant-attachment" data-kind={item.kind} title={item.name}>
+          <span className="ai-assistant-attachment-thumb">
+            {item.kind === 'image' && item.url ? <PreviewImage src={item.url} alt={item.name} presentation={layout === 'standard' ? 'standard-creation' : undefined}/>
+              : item.kind === 'audio' ? <Music2 size={14} aria-hidden="true"/>
+                : item.kind === 'video' ? <Video size={14} aria-hidden="true"/>
+                  : <FileText size={14} aria-hidden="true"/>}
+          </span>
+          <span className="ai-assistant-attachment-name">{item.name}</span>
+          <Button className="ai-assistant-attachment-remove" type="text" size="small" aria-label={`移除附件${item.name}`} icon={<X size={12}/>} disabled={contextDisabled} onClick={() => void remove(item)}/>
+        </article>
+      : <article key={item.id}>
+          {item.kind === 'image' && item.url ? <PreviewImage src={item.url} alt={item.name} presentation={layout === 'standard' ? 'standard-creation' : undefined}/>
+            : item.kind === 'audio' && item.url ? <audio src={item.url} controls preload="metadata" aria-label={`${item.name}试听`}/>
+              : item.kind === 'video' && item.url ? <video src={item.url} controls preload="metadata" aria-label={`${item.name}预览`}/> : null}
+          <span title={item.name}>{item.name}</span>
+          <Button type="text" size="small" aria-label={`移除附件${item.name}`} icon={<Icon name="close" size={14}/>} disabled={contextDisabled} onClick={() => void remove(item)}/>
+        </article>)}</div>}
     {skillsManaged || skillPicker ? skillSummary : skills.length > 0 && <div className="agent-loaded-skills" aria-label="已加载技能">{skills.map(skill => <Tag key={skill.id} closable={!contextDisabled} onClose={() => changeSkills(skills.filter(item => item.id !== skill.id))}>{skill.name} v{skill.content_version}</Tag>)}</div>}
     {attachments.some(item => item.kind === 'video' && item.metadata.has_audio) && <Checkbox checked={videoAudio === 'visual_only'} disabled={contextDisabled} onChange={event => setVideoAudio(event.target.checked ? 'visual_only' : 'include')}>视频只理解画面（忽略声音）</Checkbox>}
     {loading && <span className="sr-only" role="status">正在恢复本次消息附件…</span>}
@@ -180,7 +201,7 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
       const file = event.currentTarget.files?.[0]; event.currentTarget.value = '';
       if (file) void uploadFile(file);
     }}/>
-    {input}
+    <ComposerAttachmentsContext.Provider value={attachments}>{input}</ComposerAttachmentsContext.Provider>
     <div className="agent-input-tools" hidden={presentation === 'assistant' && !toolsOpen}>
       <Dropdown trigger={['click']} overlayClassName={layout === 'standard' ? 'standard-assistant-menu standard-creation-menu standard-creation-popup' : undefined} menu={{ items: [
         { key: 'image', label: '添加图片' }, { key: 'text', label: '添加文本' }, { key: 'video', label: '添加视频' }, { key: 'audio', label: '添加音频' },
@@ -195,7 +216,7 @@ export const AgentContextComposer = forwardRef<AgentContextController, {
       <Tooltip title="加载 Skill"><Button type="text" aria-label="加载 Skill" disabled={contextDisabled} icon={<Icon name="library" size={18}/>} onClick={() => setShowSkills(true)}/></Tooltip>
       <span className="agent-input-tools-spacer"/>{sendControl}
     </div>
-    {layout === 'standard' ? (error || loadError || issue) && <StudioFeedback type="warning" title="助手附件与技能" message={error || loadError || issue} noticeKey={`assistant-context:${conversation.id}`} actions={<>
+    {layout === 'standard' ? (error || loadError || issue) && <StudioFeedback scope="chat" type="warning" title="助手附件与技能" message={error || loadError || issue} noticeKey={`assistant-context:${conversation.id}`} actions={<>
       {loadError && <Button type="link" size="small" disabled={contextDisabled || loading} onClick={() => setRevision(value => value + 1)}>重新载入附件</Button>}
       {pendingUpload && <Button size="small" disabled={contextDisabled} onClick={() => void uploadFile(pendingUpload.file, pendingUpload)}>使用原请求核对上传</Button>}
       {pendingReference && <Button size="small" disabled={contextDisabled} onClick={() => void reference(pendingReference.type, pendingReference.id, pendingReference)}>使用原请求核对资产引用</Button>}

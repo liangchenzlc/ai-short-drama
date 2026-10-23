@@ -94,7 +94,7 @@ export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
       <Tooltip title="对话记录"><Button type="text" size="small" aria-label="对话记录" disabled={!accountId || busy || sending} icon={<History size={layout === 'standard' ? 18 : 16}/>} onClick={() => setHistory(true)}/></Tooltip>
       <Tooltip title="关闭助手"><Button type="text" size="small" aria-label="关闭助手" icon={<X size={layout === 'standard' ? 18 : 16}/>} onClick={onClose}/></Tooltip>
     </header>
-    {error && (layout === 'standard' ? <StudioFeedback type="error" title="AI 创作助手" message={error} noticeKey={`assistant-panel:${accountId}`} actions={<Button size="small" onClick={() => setRevision(value => value + 1)}>重新读取</Button>}/>
+    {error && (layout === 'standard' ? <StudioFeedback scope="chat" type="error" title="AI 创作助手" message={error} noticeKey={`assistant-panel:${accountId}`} actions={<Button size="small" onClick={() => setRevision(value => value + 1)}>重新读取</Button>}/>
       : <div className="ai-assistant-notice" role="alert"><span>{error}</span><Button size="small" onClick={() => setRevision(value => value + 1)}>重新读取</Button></div>)}
     {!accountId ? <p className="ai-assistant-meta">登录后可以使用 AI 创作助手。</p>
       : loading ? <div className="ai-assistant-log"><Skeleton active paragraph={{ rows: 5 }}/></div>

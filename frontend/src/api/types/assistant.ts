@@ -85,7 +85,6 @@ export interface AssistantAttachmentMetadata {
   pending: boolean; items: AssistantTaskAttachment[];
 }
 export interface AssistantAttachmentSelection { expected_input_revision: string; retain_ids: string[] }
-export interface AssistantAttachmentDraft { taskId: string; expectedInputRevision: string; retainIds: string[] }
 export type AssistantTaskStatus = 'queued' | 'running' | 'waiting_media' | 'succeeded' | 'stopped' | 'paused_error' | 'paused_budget';
 export type AssistantTaskPhase = 'deciding' | 'tool_running' | 'waiting_media' | 'settling_result' | 'reconciling' | 'at_boundary' | 'terminal';
 export interface AssistantSkillActivation {
@@ -94,6 +93,7 @@ export interface AssistantSkillActivation {
 }
 export interface AssistantOperation {
   id: string; task_id: string; run_id: string; call_id: string; tool_name: string;
+  item_seq?: number | null; visibility?: 'silent' | 'step' | 'artifact'; label?: string;
   tool_version: string; plan_revision: string; state_version: string; phase: AssistantTaskPhase;
   outcome: 'running' | 'waiting_media' | 'reconciling' | 'succeeded' | 'failed' | 'conflict';
   result_refs: Record<string, unknown>[]; error: { code: string; message?: string } | null;

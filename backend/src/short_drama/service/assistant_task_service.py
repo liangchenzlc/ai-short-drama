@@ -10,6 +10,7 @@ from short_drama.agent.context.attachments import (
     validate_attachment_budget,
 )
 from short_drama.agent.core.access import model_unchanged
+from short_drama.agent.core.items import KIND_REPLY, allocate_item_seq
 from short_drama.agent.gateway.protocol import AgentGatewayError, select_agent_protocol
 from short_drama.agent.task.controls import apply_controls_locked
 from short_drama.agent.task.state import new_attempt_locked, read_operations, read_task, task_event
@@ -412,7 +413,9 @@ class AssistantTaskService(AgentRunService):
             conversation_id=conversation.id,
             task_id=task.id,
             seq=conversation.next_message_seq,
+            item_seq=allocate_item_seq(conversation),
             role="user",
+            kind=KIND_REPLY,
             content=inputs.content,
             references=references,
             artifacts=[],
@@ -713,7 +716,9 @@ class AssistantTaskService(AgentRunService):
                     conversation_id=conversation.id,
                     task_id=task.id,
                     seq=conversation.next_message_seq,
+                    item_seq=allocate_item_seq(conversation),
                     role="user",
+                    kind=KIND_REPLY,
                     content=values.content or "继续任务",
                     references=[],
                     artifacts=[],

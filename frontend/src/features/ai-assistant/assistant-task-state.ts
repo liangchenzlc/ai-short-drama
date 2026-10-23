@@ -68,8 +68,11 @@ export function applyTaskEvent(state: TaskProjection, event: AgentEvent): TaskPr
     : event.event_type === 'step.reconciling' ? 'reconciling' : 'running';
   if (!['running', 'waiting_media', 'reconciling', 'succeeded', 'failed', 'conflict'].includes(String(outcome))) return state;
   const phase = ['tool_running', 'waiting_media', 'settling_result', 'reconciling', 'terminal'].includes(String(p.phase)) ? p.phase : 'tool_running';
+  const visibility = p.visibility === 'silent' || p.visibility === 'artifact' || p.visibility === 'step' ? p.visibility : old?.visibility ?? 'step';
   const item: AssistantOperation = {
     id: p.operation_id, task_id: p.task_id, run_id: event.run_id, call_id: p.call_id, tool_name: p.tool_name,
+    item_seq: typeof p.item_seq === 'number' ? p.item_seq : old?.item_seq ?? null,
+    visibility, label: typeof p.label === 'string' ? p.label : old?.label ?? '',
     tool_version: old?.tool_version ?? '1', plan_revision: typeof p.plan_revision === 'string' ? p.plan_revision : old?.plan_revision ?? '1',
     state_version: p.trace_version, phase: phase as AssistantOperation['phase'], outcome: outcome as AssistantOperation['outcome'],
     result_refs: Array.isArray(p.result_refs) ? p.result_refs.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item)) : old?.result_refs ?? [],

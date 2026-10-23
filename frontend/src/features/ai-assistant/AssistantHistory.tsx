@@ -88,9 +88,9 @@ export function AssistantHistory({ accountId, projectId, currentId, onSelect, on
       <Segmented aria-label="对话记录类型" value={legacy ? 'legacy' : 'chat'} disabled={busy} options={[{ value: 'chat', label: '项目对话' }, { value: 'legacy', label: '历史只读对话' }]} onChange={value => { setLegacy(value === 'legacy'); setOffset(0); setRenaming(null); }}/>
       <form className="ai-assistant-history-search" onSubmit={event => { event.preventDefault(); setSearch(query.trim()); setOffset(0); }}><Input aria-label="搜索对话" placeholder="搜索对话标题" value={query} disabled={busy} onChange={event => setQuery(event.target.value)}/><Button htmlType="submit" disabled={busy}>搜索</Button></form>
       {legacy && <p className="ai-assistant-meta">旧对话仅供查看，请新建项目对话继续创作。</p>}
-      {error && <StudioFeedback type="error" title="对话记录" message={error} noticeKey="assistant-history" actions={<Button size="small" onClick={() => setRevision(value => value + 1)}>重新读取</Button>}/>}
-      {restoredDeletion.error && <StudioFeedback type="error" persistent title="删除记录无法恢复" message={restoredDeletion.error} noticeKey="assistant-delete-corrupt"/>}
-      {pendingDeletion && !busy && <StudioFeedback type="warning" persistent title="删除结果待核对" message="删除结果尚未确认，原请求已保留。" noticeKey={`assistant-delete:${pendingDeletion.targetId}`} actions={<Button size="small" onClick={() => void mutate(() => deleteConversation(pendingDeletion, true))}>使用原请求核对删除</Button>}/>}
+      {error && <StudioFeedback scope="chat" type="error" title="对话记录" message={error} noticeKey="assistant-history" actions={<Button size="small" onClick={() => setRevision(value => value + 1)}>重新读取</Button>}/>}
+      {restoredDeletion.error && <StudioFeedback scope="chat" type="error" persistent title="删除记录无法恢复" message={restoredDeletion.error} noticeKey="assistant-delete-corrupt"/>}
+      {pendingDeletion && !busy && <StudioFeedback scope="chat" type="warning" persistent title="删除结果待核对" message="删除结果尚未确认，原请求已保留。" noticeKey={`assistant-delete:${pendingDeletion.targetId}`} actions={<Button size="small" onClick={() => void mutate(() => deleteConversation(pendingDeletion, true))}>使用原请求核对删除</Button>}/>}
       {loading ? <Skeleton active paragraph={{ rows: 4 }}/> : !items.length && !error ? <p className="ai-assistant-history-empty">{search ? '没有匹配的对话' : legacy ? '没有历史创作记录' : '还没有对话记录'}</p> : <Conversations className="ai-assistant-history-list" aria-label={legacy ? '历史创作记录列表' : '助手对话列表'} activeKey={currentId} items={items.map(item => ({
         key: item.id,
         disabled: busy,

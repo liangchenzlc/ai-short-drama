@@ -7,6 +7,8 @@ from sqlalchemy import select
 from short_drama.agent.context.subjects import subject_catalog, subject_memory_keys
 from short_drama.agent.core.events import append_event, budget_limits, initial_usage
 from short_drama.agent.task.queries import task_for_run as task_for_run
+from short_drama.agent.tools.presentation import label as tool_label
+from short_drama.agent.tools.presentation import visibility as tool_visibility
 from short_drama.dao.agent_task_dao import AgentTaskDAO
 from short_drama.domain.agent import AgentRun, AgentToolCall
 from short_drama.domain.agent_undo import AgentBatchUndo
@@ -22,6 +24,9 @@ def read_operation(row, *, undo_receipts=()):
         run_id=row.run_id,
         call_id=row.tool_call_id,
         tool_name=row.tool_name,
+        item_seq=row.item_seq,
+        visibility=tool_visibility(row.tool_name),
+        label=tool_label(row.tool_name),
         tool_version=row.tool_version,
         plan_revision=row.plan_revision,
         state_version=row.row_version,
