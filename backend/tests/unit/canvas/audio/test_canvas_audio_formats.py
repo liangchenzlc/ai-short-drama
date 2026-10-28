@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from short_drama.core.config import Settings
-from short_drama.service.audio_media import inspect_audio
-from short_drama.service.video_render import executable
+from short_drama.service.creation.assembly.rendering.renderer import executable
+from short_drama.service.media.processing.audio import inspect_audio
 
 CODECS = {
     "mp3": ["-c:a", "libmp3lame"],
@@ -57,7 +57,7 @@ def encoded_audio(tmp_path, format):
 @pytest.mark.parametrize("format", CODECS)
 def test_canvas_generated_audio_preserves_the_real_source_formats(tmp_path, format):
     file = encoded_audio(tmp_path, format)
-    from short_drama.service.generation_archive import GenerationArchive
+    from short_drama.service.generations.results.archive import GenerationArchive
 
     class Session:
         def __enter__(self):

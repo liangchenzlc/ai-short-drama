@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from short_drama.service.ai_generation_service import can_retry
-from short_drama.service.canvas_generation_service import CanvasGenerationService
-from short_drama.service.canvas_model_test_service import CanvasModelTestService
+from short_drama.service.canvas.generation.generation import CanvasGenerationService
+from short_drama.service.canvas.models.model_test import CanvasModelTestService
+from short_drama.service.generations.admission.task_policy import can_retry
 
 
 def fixture(status="unknown", task_status="failed", action="submit"):

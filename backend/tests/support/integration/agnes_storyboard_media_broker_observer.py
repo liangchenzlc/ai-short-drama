@@ -11,9 +11,9 @@ from urllib.parse import urlsplit
 
 from celery.signals import task_postrun, task_prerun
 
+import short_drama.tasks.generations.worker as worker
 from short_drama.ai import GenerationGateway
 from short_drama.ai.types import GenerationError
-from short_drama.tasks import worker
 
 directory = Path(os.environ["AGNES_STORYBOARD_MEDIA_BROKER_DIRECTORY"]).resolve()
 assert directory.is_dir()

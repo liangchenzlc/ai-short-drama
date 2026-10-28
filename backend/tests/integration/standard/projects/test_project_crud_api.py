@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
-from short_drama.domain import AsyncTask, MediaFile, Project, ProjectCanvas, ProjectNovel
-from short_drama.service.task_access import may_submit
+from short_drama.domain import AsyncTask, MediaFile, Project, ProjectCanvas, ProjectScript
+from short_drama.service.generations.runtime.access import may_submit
 from tests.integration.standard.identity.test_identity_collaboration import account, identity_app
 
 pytestmark = pytest.mark.integration
@@ -29,7 +29,8 @@ def test_project_crud_delete_permissions_versions_and_retained_history(identity_
     assert owner.get(root).json()["items"][0]["id"] == project_id
     assert (
         owner.put(
-            path + "/novel", json={"content": "preserved novel", "content_version": "1"}
+            path + "/script",
+            json={"content": "preserved script", "content_version": "1", "script_id": None},
         ).status_code
         == 200
     )
@@ -100,7 +101,7 @@ def test_project_crud_delete_permissions_versions_and_retained_history(identity_
     with db_session.begin():
         project = db_session.scalar(select(Project).where(Project.id == int(project_id)))
         assert project.archived_at is not None and project.row_version == 3
-        assert db_session.scalar(select(ProjectNovel.content)) == "preserved novel"
+        assert db_session.scalar(select(ProjectScript.content)) == "preserved script"
         assert db_session.get(AsyncTask, 8001).status == "running"
         assert db_session.get(MediaFile, 8002).storage_locator == "minio://test/keep.png"
         assert not may_submit(db_session, source)

@@ -7,8 +7,8 @@ decided without a model, and only then hands the remainder to the reviewer.
 
 from sqlalchemy import select
 
-from short_drama.domain.agent import AgentToolCall
-from short_drama.domain.agent_task import AgentOperation
+from short_drama.domain.assistant.execution.models import AgentToolCall
+from short_drama.domain.assistant.tasks.task import AgentOperation
 
 MAX_OPERATIONS = 200
 MAX_EXCERPTS = 4
@@ -129,9 +129,7 @@ def build(session, task, requirements, media, floor):
                 {
                     "status": "pass" if passed else "fail",
                     "count": count,
-                    "reason": None
-                    if passed
-                    else f"有效证据 {count}/{requirement.minimum_count}",
+                    "reason": None if passed else f"有效证据 {count}/{requirement.minimum_count}",
                 },
                 matched[0][0].id if matched else None,
             )

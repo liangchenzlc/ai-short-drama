@@ -8,7 +8,7 @@ from short_drama.schemas import ProjectCreate
 
 
 def test_services_reject_caller_owned_transaction():
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.projects.management.project import ProjectService
 
     with Session() as session, session.begin():
         with pytest.raises(BusinessError, match="transaction"):
@@ -17,7 +17,7 @@ def test_services_reject_caller_owned_transaction():
 
 
 def test_constructed_schema_does_not_bypass_validation():
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.projects.management.project import ProjectService
 
     forged = ProjectCreate.model_construct(name="", aspect="invalid")
     with Session() as session, pytest.raises(ValidationError):
@@ -34,14 +34,14 @@ def test_dao_filters_only_accept_mapped_fields(filters):
 
 @pytest.mark.parametrize("offset,limit", [(-1, 20), (0, 0), (0, 501)])
 def test_pagination_bounds_are_checked_before_database(offset, limit):
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.projects.management.project import ProjectService
 
     with Session() as session, pytest.raises(BusinessError):
         ProjectService(session).list(offset=offset, limit=limit)
 
 
 def test_service_rejects_forged_audit_identity():
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.projects.management.project import ProjectService
 
     with Session() as session, pytest.raises(ValidationError):
         ProjectService(session).create_project({"name": "test", "created_by": 10})
@@ -56,7 +56,7 @@ def test_database_errors_keep_safe_diagnostics_and_roll_back(caplog, error_kind,
     from sqlalchemy.exc import IntegrityError, OperationalError
 
     from short_drama.core.exceptions import Conflict, DatabaseUnavailable
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.projects.management.project import ProjectService
     from tests.support.generation_fixtures import generation_session
 
     with generation_session() as session:

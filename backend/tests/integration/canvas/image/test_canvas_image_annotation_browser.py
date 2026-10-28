@@ -14,8 +14,11 @@ from PIL import Image
 from sqlalchemy import select
 
 from short_drama.domain import MediaFile
-from short_drama.domain.canvas import CanvasEdge, CanvasNode
-from short_drama.domain.canvas_library import CanvasLibraryAsset, CanvasLibraryAssetReference
+from short_drama.domain.canvas.document.canvas import CanvasEdge, CanvasNode
+from short_drama.domain.canvas.library.library import (
+    CanvasLibraryAsset,
+    CanvasLibraryAssetReference,
+)
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.image.test_canvas_image_tools_browser import minio_bytes
 from tests.integration.canvas.resources.test_canvas_library import (

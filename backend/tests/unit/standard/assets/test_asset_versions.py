@@ -29,17 +29,20 @@ from short_drama.domain import (
     AssetVersionMediaReference,
     MediaFile,
 )
-from short_drama.schemas.asset_version import snapshot_content_hash
-from short_drama.service.asset_image_service import AssetImageService
-from short_drama.service.asset_service import AssetService
-from short_drama.service.asset_version_service import AssetVersionService, canonical_current
+from short_drama.schemas.creation.assets.management.version import snapshot_content_hash
 from short_drama.service.base import utcnow
-from short_drama.service.generation_reference_service import GenerationReferenceService
-from short_drama.service.project_service import ProjectService
-from short_drama.service.resource_import_service import (
+from short_drama.service.creation.assets.images.image import AssetImageService
+from short_drama.service.creation.assets.management.assets import AssetService
+from short_drama.service.creation.assets.management.version import (
+    AssetVersionService,
+    canonical_current,
+)
+from short_drama.service.generations.references.reference import GenerationReferenceService
+from short_drama.service.media.imports.resources import (
     ResourceImportService,
     _complete_import,
 )
+from short_drama.service.projects.management.project import ProjectService
 from short_drama.utils.snowflake import next_id
 from tests.support.generation_fixtures import generation_session
 
@@ -209,7 +212,7 @@ def test_history_is_immutable_even_in_system_session(session, system, operation)
     item = character(session)
     history = versions(session, item.id)[0]
     if system:
-        session.info.pop("legacy_user_id")
+        session.info.pop("actor")
     with pytest.raises(WorkflowError):
         with session.begin():
             row = session.get(AssetVersion, history.id)
@@ -233,7 +236,7 @@ def test_pointer_orm_and_bulk_changes_are_guarded(session, system):
     other = character(session, name="Other")
     other_version = versions(session, other.id)[0]
     if system:
-        session.info.pop("legacy_user_id")
+        session.info.pop("actor")
     with pytest.raises(WorkflowError):
         with session.begin():
             session.get(Asset, int(item.id)).current_version_id = other_version.id
@@ -256,7 +259,9 @@ def test_wrong_scope_or_type_rolls_back_edit_and_version_together(session):
     with session.begin():
         asset = session.get(Asset, int(item.id))
         assert asset.media_id is None and asset.row_version == 1
+    actor = session.info.pop("actor")
     foreign = media(session, owner=2)
+    session.info["actor"] = actor
     with pytest.raises(NotFound):
         AssetService(session).update(item.id, {"row_version": "1", "media_id": str(foreign.id)})
     assert len(versions(session, item.id)) == 1
@@ -330,7 +335,7 @@ def test_readonly_current_version_refuses_unversioned_legacy_without_writing(ses
 def test_media_slots_are_immutable_without_actor(session, operation):
     image = media(session)
     item = character(session, media_id=str(image.id))
-    session.info.pop("legacy_user_id")
+    session.info.pop("actor")
     with pytest.raises(WorkflowError):
         with session.begin():
             slot = session.scalar(
@@ -355,7 +360,7 @@ def test_media_slots_are_immutable_without_actor(session, operation):
 )
 def test_direct_sql_and_parameter_bulk_pointer_cannot_bypass_system_guards(session, operation):
     item = character(session)
-    session.info.pop("legacy_user_id")
+    session.info.pop("actor")
     with pytest.raises(WorkflowError):
         with session.begin():
             if operation == "raw_history":
@@ -386,7 +391,7 @@ def test_current_backfill_is_explicit_reentrant_and_does_not_invent_old_versions
                     created_by=None,
                 )
             )
-    session.info.pop("legacy_user_id")
+    session.info.pop("actor")
     with session.begin():
         dry = backfill(session)
         assert dry["counts"] == {"characters": 4, "would_create": 4}
@@ -408,6 +413,7 @@ def test_current_backfill_is_explicit_reentrant_and_does_not_invent_old_versions
 def test_backfill_missing_media_is_reported_without_pointer_or_false_history(session):
     from scripts.backfill_asset_versions import backfill
 
+    session.info.pop("actor")
     with session.begin():
         legacy = Asset(
             id=next_id(),
@@ -420,7 +426,6 @@ def test_backfill_missing_media_is_reported_without_pointer_or_false_history(ses
             updated_at=utcnow(),
         )
         session.add(legacy)
-    session.info.pop("legacy_user_id")
     with session.begin():
         result = backfill(session, apply=True)
         assert result["counts"] == {"characters": 1, "failed": 1}
@@ -493,7 +498,7 @@ def test_media_import_freezes_publication_time_and_preserves_metadata(session, p
     ],
 )
 def test_publication_json_preserves_utc_instant_microseconds_and_null(value, expected):
-    from short_drama.service.resource_import_service import _publication_json
+    from short_drama.service.media.imports.resources import _publication_json
 
     encoded = _publication_json(value)
     assert json.loads(json.dumps(encoded, allow_nan=False)) == expected
@@ -547,7 +552,7 @@ def test_factory_creates_session_with_legacy_bulk_guards(session):
 def test_additional_dml_shapes_cannot_write_pointer(session, system, core, operation):
     item = character(session)
     if system:
-        session.info.pop("legacy_user_id")
+        session.info.pop("actor")
     table = Asset.__table__ if core else Asset
     with pytest.raises(WorkflowError) as rejected:
         with session.begin():
@@ -599,7 +604,7 @@ def test_legacy_bulk_apis_cannot_bypass_version_guards(session, system, model, o
         }
         session.expunge(entity)
     if system:
-        session.info.pop("legacy_user_id")
+        session.info.pop("actor")
     with pytest.raises(WorkflowError) as rejected:
         with session.begin():
             if operation == "bulk_update_mappings":
@@ -619,8 +624,9 @@ def test_legacy_bulk_apis_cannot_bypass_version_guards(session, system, model, o
     "operation", ["bulk_update_mappings", "bulk_insert_mappings", "bulk_save_objects"]
 )
 def test_legacy_bulk_preserves_unprotected_mapper_behavior(session, operation):
-    from short_drama.domain.collaboration import User
+    from short_drama.domain.identity.accounts.user import User
 
+    session.info.pop("actor")
     row = User(
         id=22,
         username="ordinary",
@@ -654,7 +660,7 @@ def test_legacy_bulk_preserves_unprotected_mapper_behavior(session, operation):
 
 
 def test_mixed_legacy_bulk_validates_every_object_before_any_write(session):
-    from short_drama.domain.collaboration import User
+    from short_drama.domain.identity.accounts.user import User
 
     item = character(session)
     with session.begin():
@@ -717,7 +723,7 @@ def test_obscured_dml_targets_are_guarded_before_binding(session, operation):
     elif operation == "wrapped_pointer":
         statement = select(Asset).from_statement(update(Asset).values(current_version_id=None))
     elif operation in {"multitable_pointer", "multitable_history"}:
-        from short_drama.domain.collaboration import User
+        from short_drama.domain.identity.accounts.user import User
 
         target = (
             assets.c.current_version_id
@@ -799,7 +805,7 @@ def test_mapping_parameters_cannot_write_pointer(session, multiple):
     "operation", ["asset_read", "history_join_read", "wrapped_read", "ordinary_update"]
 )
 def test_reads_and_unprotected_dml_remain_allowed_before_binding(session, operation):
-    from short_drama.domain.collaboration import User
+    from short_drama.domain.identity.accounts.user import User
 
     if operation == "asset_read":
         statement = select(Asset)

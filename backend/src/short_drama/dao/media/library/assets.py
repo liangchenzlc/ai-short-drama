@@ -1,0 +1,47 @@
+from sqlalchemy import func, select
+
+from short_drama.dao.base import BaseDAO
+from short_drama.dao.generations.runtime.tasks import scope_conditions, source_conditions
+from short_drama.domain import AIGenerationRecord, AsyncTask, MediaAsset, MediaFile, Project
+
+
+class MediaAssetDAO(BaseDAO):
+    def __init__(self, session):
+        super().__init__(session, MediaAsset)
+
+    def history(self, filters, offset, limit):
+        conditions = source_conditions(
+            AIGenerationRecord, filters, scoped=bool(self.session.info.get("actor"))
+        )
+        conditions.extend(scope_conditions(MediaFile, filters, self.session))
+        if filters.get("workspace_mode"):
+            conditions.append(
+                AIGenerationRecord.task_id.in_(
+                    select(AsyncTask.id)
+                    .join(Project, Project.id == AsyncTask.project_id)
+                    .where(Project.workspace_mode == filters["workspace_mode"])
+                )
+            )
+        if filters.get("media_type"):
+            conditions.append(MediaAsset.media_type == filters["media_type"])
+        if filters.get("name"):
+            conditions.append(MediaAsset.name.contains(filters["name"], autoescape=True))
+        for key, op in (
+            ("created_after", MediaAsset.created_at.__ge__),
+            ("created_before", MediaAsset.created_at.__le__),
+        ):
+            if filters.get(key):
+                conditions.append(op(filters[key]))
+        statement = (
+            select(MediaAsset, AIGenerationRecord, MediaFile)
+            .join(AIGenerationRecord, AIGenerationRecord.id == MediaAsset.record_id)
+            .join(MediaFile, MediaFile.id == MediaAsset.media_id)
+            .where(*conditions)
+        )
+        total = self.session.scalar(select(func.count()).select_from(statement.subquery()))
+        rows = self.session.execute(
+            statement.order_by(MediaAsset.created_at.desc(), MediaAsset.id.desc())
+            .offset(offset)
+            .limit(limit)
+        ).all()
+        return rows, total

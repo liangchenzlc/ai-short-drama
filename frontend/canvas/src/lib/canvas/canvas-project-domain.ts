@@ -463,4 +463,4 @@ export function removeCanvasNodes(nodes: CanvasNodeData[], requestedIds: Set<str
     return { removedIds, nodes: nextNodes };
 }
 
-export { buildAngleLabel, buildAnglePrompt } from "../../../../src/lib/image-tools/angle.ts";
+export { buildAngleLabel, buildAnglePrompt } from "@host/integrations/canvas/image-tools/angle";

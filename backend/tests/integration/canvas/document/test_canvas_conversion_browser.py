@@ -13,7 +13,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from short_drama.domain import AsyncTask, CanvasResourceUpload, MediaFile
-from short_drama.domain.canvas import CanvasNode
+from short_drama.domain.canvas.document.canvas import CanvasNode
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.image.test_canvas_image_tools_browser import (
     minio_bytes,

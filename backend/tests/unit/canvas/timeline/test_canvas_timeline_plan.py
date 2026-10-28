@@ -8,8 +8,11 @@ import pytest
 from pydantic import ValidationError
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.canvas_timeline import CanvasTimelinePlanRequest
-from short_drama.service.canvas_timeline_compile import MAX_DURATION_MS, compile_timeline_plan
+from short_drama.schemas.canvas.timeline.timeline import CanvasTimelinePlanRequest
+from short_drama.service.canvas.timeline.timeline_compile import (
+    MAX_DURATION_MS,
+    compile_timeline_plan,
+)
 
 FIXTURES = Path(__file__).parents[3] / "fixtures" / "canvas_timeline"
 # 夹具逐字取自 BeefTV 4ca2a65a7780a8dfcaaa86c33679f84fb04e055c:fixtures/editing。

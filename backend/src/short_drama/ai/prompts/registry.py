@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable
 
-from .loader import load_prompt
+from short_drama.ai.prompts.loader import load_prompt
 
 _ASSET_RULES = {
     "character": "script_assets/character_rules.md",
@@ -11,10 +11,7 @@ _ASSET_RULES = {
 }
 
 PROMPT_VERSIONS = {
-    "assistant": "assistant-harness-v9",
-    "novel_script": "novel-script-v2",
-    "story_outline": "story-outline-v1",
-    "script_generate": "script-generate-v1",
+    "assistant": "assistant-harness-v10",
     "script_rewrite": "script-rewrite-v2",
     "script_assets": "script-assets-v2",
     "script_shots": "script-shots-v2",
@@ -48,12 +45,7 @@ def system_prompt(scene: str, *, kinds: Iterable[str] = ()) -> str:
                 )
             )
         )
-    if scene == "novel_script":
-        return _parts(
-            "novel_script/system.md",
-            "common/source_boundary.md",
-        )
-    if scene in {"story_outline", "script_generate", "script_rewrite"}:
+    if scene == "script_rewrite":
         return _parts(f"{scene}/system.md", "common/source_boundary.md")
     if scene == "script_shots":
         return _parts(

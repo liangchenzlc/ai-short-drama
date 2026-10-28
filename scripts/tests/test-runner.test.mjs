@@ -64,18 +64,45 @@ test('全量快速测试不会因继承真实模型开关而选中 live', () => 
 
 test('真实项目映射覆盖组件和跨功能测试，局部改动不扩大全部功能', () => {
   const map = JSON.parse(readFileSync(new URL('../../test-map.json', import.meta.url), 'utf8'));
-  const assembly = selectTests(map, { changedPaths: ['frontend/src/features/projects/AssemblyWorkbench.tsx'] });
+  const assembly = selectTests(map, { changedPaths: ['frontend/src/features/creation/assembly/workbench/AssemblyWorkbench.tsx'] });
   assert.ok(assembly.tests.some(row => row.path.endsWith('/assembly-editing.test.mjs')));
   assert.equal(assembly.tests.some(row => row.features.includes('canvas.models')), false);
-  const writing = selectTests(map, { changedPaths: ['frontend/src/features/projects/QuillScriptEditor.tsx'] });
+  const writing = selectTests(map, { changedPaths: ['frontend/src/features/creation/writing/editor/ScriptSceneEditor.tsx'] });
   assert.ok(writing.tests.some(row => row.path.endsWith('/writing-session.test.mjs')));
-  const projects = selectTests(map, { changedPaths: ['backend/src/short_drama/service/project_service.py'] });
+  const projects = selectTests(map, { changedPaths: ['backend/src/short_drama/service/projects/management/project.py'] });
   assert.ok(projects.tests.some(row => row.path.endsWith('/test_project_creation.py')));
   assert.ok(projects.tests.some(row => row.path.endsWith('/project-creation.test.mjs')));
   const catalog = selectTests(map, { features: ['canvas.models'] });
   assert.ok(catalog.tests.some(row => row.path.endsWith('/test_canvas_catalog.py')));
   const vendor = selectTests(map, { changedPaths: ['frontend/canvas/vendor/lobehub-icons/upstream.json'] });
   assert.ok(vendor.tests.some(row => row.path.endsWith('/model-logo-integrity.test.mjs')));
+});
+
+test('拆分源码的旧删除路径选择全部新职责，显式退役仍运行所属业务回归', () => {
+  const map = fixture();
+  map.source_migrations = { 'backend/src/old.py': ['backend/src/assets/editor.py', 'backend/src/storage/upload.py'] };
+  const moved = selectTests(map, { changedPaths: ['backend/src/old.py'], levels: ['fast', 'infra'] });
+  assert.ok(moved.features.includes('standard.assets'));
+  assert.ok(moved.features.includes('canvas.video'));
+  map.source_migrations['backend/src/retired.py'] = [];
+  map.removed_sources = [{ path: 'backend/src/retired.py', features: ['standard.assets'], reason: '小说专属链已退役' }];
+  const retired = selectTests(map, { changedPaths: ['backend/src/retired.py'] });
+  assert.equal(retired.tests.length, 2);
+  assert.equal(retired.noTestsRequired, false);
+});
+
+test('迁移映射拒绝失效目标和没有退役说明的空映射', context => {
+  const root = mkdtempSync(join(tmpdir(), 'test-map-migrations-'));
+  context.after(() => rmSync(root, { recursive: true, force: true }));
+  const map = fixture();
+  for (const row of [...map.tests, ...map.auxiliary]) {
+    mkdirSync(join(root, row.path, '..'), { recursive: true });
+    writeFileSync(join(root, row.path), '');
+  }
+  map.source_migrations = { 'backend/src/old.py': ['backend/src/missing.py'] };
+  assert.throws(() => validateMap(map, root), /迁移目标已失效/);
+  map.source_migrations['backend/src/old.py'] = [];
+  assert.throws(() => validateMap(map, root), /缺少说明/);
 });
 
 test('跳过、零用例和仅收集不能记为测试通过', () => {

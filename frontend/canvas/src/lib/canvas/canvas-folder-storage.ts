@@ -1,15 +1,12 @@
 import { nanoid } from "nanoid";
 
 import { CANVAS_FOLDER_PENDING_STORE_NAME, localForageInstance } from "@/lib/localforage-storage";
-import { scopedStorageKey } from "@/lib/user-scope";
 import { assertUserScope, captureUserScope, isUserScopeAbandonedError, type CapturedUserScope } from "@/lib/user-scope-guard";
 import { ApiError } from "@/services/api/request";
 import { resourceFileUrl, uploadResourceFile } from "@/services/api/resources";
 import { deleteCanvasLibraryFolder as deleteCanvasLibraryFolderRemote, listCanvasLibraryFolders as listCanvasLibraryFoldersRemote, putCanvasLibraryFolder } from "@/services/api/workspace-data";
 import { usesBrowserLocalResourceStore } from "@/services/workspace-resource-storage";
 import { useCanvasStore, type CanvasFolder } from "@/stores/canvas/use-canvas-store";
-
-export const CANVAS_FOLDER_PENDING_KEY = "infinite-canvas:canvas_folder_pending";
 
 export class FolderPendingUnreadableError extends Error {
     constructor() {
@@ -35,7 +32,7 @@ type FolderPendingRecord = {
 };
 
 type FolderPendingStore = {
-    getItem(key: string): Promise<FolderPendingRecord | FolderPendingMap | null>;
+    getItem(key: string): Promise<FolderPendingRecord | null>;
     setItem(key: string, value: FolderPendingRecord): Promise<FolderPendingRecord>;
     removeItem(key: string): Promise<void>;
 };
@@ -122,24 +119,11 @@ function parsePendingRecord(raw: unknown): FolderPendingRecord {
     if (raw == null) return emptyPendingRecord();
     if (typeof raw !== "object" || Array.isArray(raw)) throw new FolderPendingUnreadableError();
     const value = raw as { version?: unknown; intents?: unknown; highWater?: unknown };
-    if (value.version === 1 && value.intents && typeof value.intents === "object" && !Array.isArray(value.intents)) {
-        const intents = parsePendingMap(value.intents);
-        return { version: 1, intents, highWater: scanHighWater(intents, parseHighWater(value.highWater)) };
-    }
-    const intents = parsePendingMap(raw);
-    return { version: 1, intents, highWater: scanHighWater(intents) };
-}
-
-function migrateLegacyPending(userScope: string): FolderPendingRecord | null {
-    if (typeof window === "undefined") return null;
-    const raw = window.localStorage?.getItem(scopedStorageKey(CANVAS_FOLDER_PENDING_KEY, userScope));
-    if (!raw) return null;
-    try {
-        return parsePendingRecord(JSON.parse(raw));
-    } catch (error) {
-        if (error instanceof FolderPendingUnreadableError) throw error;
+    if (value.version !== 1 || !value.intents || typeof value.intents !== "object" || Array.isArray(value.intents)) {
         throw new FolderPendingUnreadableError();
     }
+    const intents = parsePendingMap(value.intents);
+    return { version: 1, intents, highWater: scanHighWater(intents, parseHighWater(value.highWater)) };
 }
 
 async function readPendingRecord(userScope: string): Promise<FolderPendingRecord> {
@@ -149,16 +133,7 @@ async function readPendingRecord(userScope: string): Promise<FolderPendingRecord
     } catch {
         throw new FolderPendingUnreadableError();
     }
-    if (raw != null) return parsePendingRecord(raw);
-    const migrated = migrateLegacyPending(userScope);
-    if (!migrated) return emptyPendingRecord();
-    try {
-        await folderPendingStore.setItem(userScope, migrated);
-        window.localStorage?.removeItem(scopedStorageKey(CANVAS_FOLDER_PENDING_KEY, userScope));
-    } catch {
-        throw new FolderPendingUnreadableError();
-    }
-    return migrated;
+    return parsePendingRecord(raw);
 }
 
 async function readPending(userScope: string): Promise<FolderPendingMap> {

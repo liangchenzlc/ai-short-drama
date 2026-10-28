@@ -12,15 +12,18 @@ from short_drama.domain import (
     ProjectScript,
     ShotImage,
 )
-from short_drama.schemas.ai_generation import (
+from short_drama.schemas.generations.admission.generation import (
     ExtractionOptions,
     ImageInput,
     ImageParameters,
     StoryboardOptions,
     VideoParameters,
 )
-from short_drama.service.generation_context_service import GenerationContextService
-from short_drama.service.shot_video_context import DEFAULT_VIDEO_SETTINGS, video_context_hash
+from short_drama.service.creation.storyboard.videos.video_context import (
+    DEFAULT_VIDEO_SETTINGS,
+    video_context_hash,
+)
+from short_drama.service.generations.admission.context import GenerationContextService
 from short_drama.utils.json_digest import digest
 
 

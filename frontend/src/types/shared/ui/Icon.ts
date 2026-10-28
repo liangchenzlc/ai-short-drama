@@ -1,0 +1,18 @@
+export type IconName =
+  | 'film'
+  | 'folder'
+  | 'library'
+  | 'tasks'
+  | 'settings'
+  | 'arrow'
+  | 'plus'
+  | 'person'
+  | 'scene'
+  | 'prop'
+  | 'more'
+  | 'close'
+  | 'back'
+  | 'warning'
+  | 'search'
+  | 'refresh'
+  | 'play';

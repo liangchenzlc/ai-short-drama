@@ -4,8 +4,9 @@ import pytest
 
 from short_drama.agent.coordinator import publisher
 from short_drama.agent.coordinator.recovery import recover
-from short_drama.agent.coordinator.runtime import AgentRuntimeStore, _DeltaBuffer
 from short_drama.agent.core.events import budget_limits
+from short_drama.agent.runtime.delta_buffer import _DeltaBuffer
+from short_drama.agent.runtime.executor import AgentRuntimeStore
 from short_drama.tasks.celery_app import agent_queue, make_celery, topology
 
 
@@ -79,6 +80,25 @@ def test_agent_disabled_never_reads_new_tables():
     assert store.claim_execution(1, 1, None) is None
 
 
+def test_worker_dispatches_agent_delivery_to_harness(monkeypatch):
+    from short_drama.tasks.assistant import agent_worker
+
+    factory, settings = object(), object()
+    deliveries = []
+
+    class Runtime:
+        def __init__(self, received_factory, received_settings):
+            assert received_factory is factory and received_settings is settings
+
+        def execute_one(self, run_id, message_version):
+            deliveries.append((run_id, message_version))
+
+    monkeypatch.setattr(agent_worker, "runtime", lambda: (factory, settings))
+    monkeypatch.setattr(agent_worker, "HarnessRuntime", Runtime)
+    agent_worker.execute_agent.run("12", "3")
+    assert deliveries == [("12", "3")]
+
+
 def test_agent_queue_is_distinct_and_uses_confirmed_no_retry_transport():
     from short_drama.core.config import Settings
 
@@ -93,7 +113,7 @@ def test_agent_queue_is_distinct_and_uses_confirmed_no_retry_transport():
     app = make_celery(settings)
     assert app.conf.task_publish_retry is False
     assert app.conf.broker_transport_options["confirm_publish"] is True
-    assert "short_drama.tasks.agent_worker" in app.conf.include
+    assert "short_drama.tasks.assistant.agent_worker" in app.conf.include
 
 
 def test_reviewed_workflow_has_only_the_documented_higher_limits():

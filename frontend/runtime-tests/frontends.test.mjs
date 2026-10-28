@@ -117,9 +117,9 @@ async function expectEntries(base) {
 }
 
 async function expectLogo(base) {
-  const image = await response(`${base}/canvas-app/beef-logo.png`, 'image/png');
-  assert.match(image.headers.get('content-type'), /image\/png/);
-  assert.deepEqual(Buffer.from(await image.arrayBuffer()), await readFile(resolve(frontend, 'canvas/public/beef-logo.png')));
+  const image = await response(`${base}/canvas-app/favicon.svg`, 'image/svg+xml');
+  assert.match(image.headers.get('content-type'), /image\/svg\+xml/);
+  assert.deepEqual(Buffer.from(await image.arrayBuffer()), await readFile(resolve(frontend, 'canvas/public/favicon.svg')));
 }
 
 async function expectFont(base, stylesheets) {
@@ -169,8 +169,12 @@ test('统一 dev 实际启动独立入口、宿主模块与资源，并在停止
   await expectEntries(base);
   assert.match(await (await response(`${canvasBase}/canvas-app/`)).text(), /infinite-canvas:theme_store/);
   const sessionModule = await (await response(`${base}/canvas-app/src/services/host-session.ts`, 'text/javascript')).text();
-  const hostModule = sessionModule.match(/from\s+["']([^"']*\/src\/api\/http\.ts[^"']*)["']/)?.[1];
-  assert.ok(hostModule, '画布 session 模块未解析到宿主 HTTP 客户端');
+  const bridgeUrl = sessionModule.match(/from\s+["']([^"']*\/src\/integrations\/canvas\/session\.ts[^"']*)["']/)?.[1];
+  assert.ok(bridgeUrl, '画布 session 模块未解析到宿主会话桥接');
+  // 桥接出口仍复用唯一客户端，不能因拆分引入第二份 Cookie／错误处理。
+  const bridgeModule = await (await response(new URL(bridgeUrl, base), 'text/javascript')).text();
+  const hostModule = bridgeModule.match(/from\s+["']([^"']*\/src\/api\/http\.ts[^"']*)["']/)?.[1];
+  assert.ok(hostModule, '会话桥接未解析到宿主 HTTP 客户端');
   assert.match(await (await response(new URL(hostModule, base), 'text/javascript')).text(), /class ApiError/);
   await expectLogo(base);
   await expectFont(base, '/canvas-app/node_modules/@fontsource-variable/inter/index.css');

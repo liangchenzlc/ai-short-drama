@@ -1,0 +1,153 @@
+.project-card-open {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 235px;
+  text-align: left;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.project-card-open:disabled {
+  cursor: default;
+}
+.project-card-art {
+  height: 90px;
+  background: var(--surface-muted);
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  padding: 15px 25px;
+  overflow: hidden;
+}
+.project-card-frame {
+  width: 110px;
+  height: 82px;
+  border: 1px solid var(--hair);
+  border-bottom: 0;
+  border-radius: 9px 9px 0 0;
+  box-shadow:
+    -14px 12px 0 -1px var(--surface-muted),
+    -14px 12px 0 0 var(--hair);
+}
+.project-card-body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+  width: 100%;
+}
+.project-card-body strong {
+  font-size: 16px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.project-card-body span {
+  font-size: 12px;
+  color: var(--sub);
+}
+.project-card-body small {
+  font-size: 11px;
+  color: var(--sub);
+  margin-top: auto;
+  padding-top: 10px;
+}
+.studio-projects .projects-home {
+  border: 0;
+  padding: 0;
+  background: none;
+}
+.studio-projects .project-actions {
+  margin: 0 0 29px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.studio-projects .project-actions .primary-button {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.studio-projects .project-actions .primary-button:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.studio-projects .muted {
+  color: var(--sub);
+}
+.studio-projects .project-form {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  padding: 23px;
+  margin: 18px 0 30px;
+  max-width: 680px;
+}
+.studio-projects .project-form input,
+.studio-projects .project-form select {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--hair);
+}
+.project-create-dialog {
+  width: min(620px, calc(100vw - 34px));
+}
+.studio-projects .project-create-dialog .project-form {
+  margin: 0;
+  max-width: none;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+  padding: 20px 23px 24px;
+  border: 0;
+  border-radius: 0;
+}
+.project-create-dialog .project-actions {
+  margin: 20px 0 0;
+}
+.project-create-dialog .project-create-notice {
+  margin: 16px 23px 0;
+}
+.studio-detail .projects-home {
+  margin: 0;
+}
+.studio-detail .studio-main {
+  padding: 0 0 64px;
+  max-width: none;
+}
+.studio-detail .studio-main > .notice,
+.studio-detail .studio-runtime,
+.studio-detail .projects-home > .notice {
+  max-width: 1320px;
+  margin: 16px auto;
+}
+.studio-detail .studio-projects input:not([type='checkbox']):not([type='file']),
+.studio-detail .studio-projects textarea,
+.studio-detail .studio-projects select {
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--hair);
+  color-scheme: dark;
+}
+.studio-detail .studio-projects .primary-button {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
+}
+.studio .notice {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-color: var(--warning-border);
+}
+.project-overview {
+  display: grid;
+  gap: 20px;
+  max-width: 1340px;
+  margin: 0 auto;
+  padding: 28px 42px 60px;
+}

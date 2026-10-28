@@ -161,7 +161,10 @@ def rows(data, name):
 
 def retained(data, copy_media):
     """按用户复制个人画风闭包；识别媒体字段，不替换剧本文字中的数字。"""
-    from short_drama.service.canvas_document import media_references, remap_resource_references
+    from short_drama.service.canvas.document.document import (
+        media_references,
+        remap_resource_references,
+    )
 
     result = {name: rows(data, name) for name in RETAIN if name in data}
     challenges = [

@@ -9,11 +9,12 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import AssetImageCandidate, MediaFile
-from short_drama.service.asset_image_service import AssetImageService
-from short_drama.service.asset_library_service import AssetLibraryService
-from short_drama.service.project_service import ProjectService
-from short_drama.service.shot_asset_service import ShotAssetService
-from short_drama.service.shot_script_service import ShotScriptService
+from short_drama.service.creation.assets.images.image import AssetImageService
+from short_drama.service.creation.assets.management.library import AssetLibraryService
+from short_drama.service.creation.storyboard.management.script import ShotScriptService
+from short_drama.service.creation.storyboard.references.asset import ShotAssetService
+from short_drama.service.projects.management.project import ProjectService
+from tests.support.integration.identity import actor as fixture_actor
 
 pytestmark = pytest.mark.integration
 
@@ -66,6 +67,24 @@ def test_library_idempotency_sharing_boundaries_and_in_use_removal(db_session):
     assert error.value.details == {"references": [str(shot.id)]}
 
 
+def test_deleted_asset_creation_key_remains_reserved_for_the_owner(db_session):
+    project = ProjectService(db_session).create({"name": "replay"})
+    service = AssetLibraryService(db_session)
+    payload = {"kind": "prop", "name": "umbrella"}
+    asset, _ = service.create("project", project.id, project.id, payload, "same-key")
+    service.unlink("project", project.id, project.id, asset.id, asset.row_version)
+    with pytest.raises(WorkflowError) as removed:
+        service.create("project", project.id, project.id, payload, "same-key")
+    assert removed.value.code == "asset_creation_removed"
+    with pytest.raises(WorkflowError) as changed:
+        service.create(
+            "project", project.id, project.id, {**payload, "name": "changed"}, "same-key"
+        )
+    assert changed.value.code == "idempotency_conflict"
+    replacement, created = service.create("project", project.id, project.id, payload, "new-key")
+    assert created and replacement.id != asset.id
+
+
 def test_concurrent_identical_upload_keeps_one_candidate_and_compensates_loser(
     mysql_engine, db_session
 ):
@@ -108,7 +127,10 @@ def test_concurrent_identical_upload_keeps_one_candidate_and_compensates_loser(
     def upload():
         try:
             with Session(
-                mysql_engine, expire_on_commit=False, autoflush=False, info={"legacy_user_id": 1}
+                mysql_engine,
+                expire_on_commit=False,
+                autoflush=False,
+                info={"actor": fixture_actor()},
             ) as session:
                 result, created = AssetImageService(session, SimpleNamespace(), Storage()).upload(
                     item.id, BytesIO(data), len(data), "same.png", "image/png"

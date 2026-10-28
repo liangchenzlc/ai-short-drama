@@ -6,9 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from short_drama.ai.adapters import build_submission, parse_result, poll_endpoint, validate_request
+from short_drama.ai.adapters.capabilities import validate_request
+from short_drama.ai.adapters.results import parse_result, poll_endpoint
+from short_drama.ai.adapters.submission import build_submission
 from short_drama.ai.types import GenerationError
-from short_drama.service.model_runtime_config import refresh_runtime_model
+from short_drama.service.ai_config.management.runtime import refresh_runtime_model
 from tests.unit.canvas.video.test_canvas_video_transport import frozen_video, video_request
 
 ADAPTER = "canvas_runninghub_workflow.v1"
@@ -36,7 +38,7 @@ def test_saved_protocol_selects_declarative_video_and_catalog_support():
     )
     assert refresh_runtime_model(model)
     assert model.capability_cache["adapter"] == ADAPTER
-    from short_drama.service.canvas_plugin_catalog import provider_catalog
+    from short_drama.service.canvas.tools.plugin_catalog import provider_catalog
 
     provider = next(
         item for item in provider_catalog("canvas", "video") if item["id"] == "runninghub-workflow"

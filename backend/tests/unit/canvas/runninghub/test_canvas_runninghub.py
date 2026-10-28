@@ -6,11 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
+import short_drama.ai.adapters.runninghub.fields as workflow_fields
 from short_drama.ai import GenerationError, GenerationGateway
-from short_drama.ai import canvas_runninghub_fields as workflow_fields
-from short_drama.ai.adapters import build_submission, select_adapter, validate_request
-from short_drama.ai.canvas_credentials import CanvasCredentials
-from short_drama.ai.canvas_runninghub_adapters import (
+from short_drama.ai.adapters.capabilities import validate_request
+from short_drama.ai.adapters.catalog import select_adapter
+from short_drama.ai.adapters.runninghub.adapters import (
     RUNNINGHUB_ADAPTERS,
     output_url,
     parse_runninghub_result,
@@ -19,7 +19,7 @@ from short_drama.ai.canvas_runninghub_adapters import (
     runninghub_root,
     runninghub_submission,
 )
-from short_drama.ai.canvas_runninghub_fields import (
+from short_drama.ai.adapters.runninghub.fields import (
     apply_parameters,
     collect_fields,
     fields_for_mode,
@@ -27,8 +27,10 @@ from short_drama.ai.canvas_runninghub_fields import (
     node_info,
     validate_slots,
 )
-from short_drama.schemas.canvas_runninghub import RunningHubField
-from short_drama.service.model_runtime_config import refresh_runtime_model
+from short_drama.ai.adapters.submission import build_submission
+from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
+from short_drama.schemas.canvas.generation.runninghub.runninghub import RunningHubField
+from short_drama.service.ai_config.management.runtime import refresh_runtime_model
 
 IMAGE = "canvas_runninghub_workflow_image.v1"
 WORKFLOW = {
@@ -334,7 +336,7 @@ def test_all_inline_empty_or_unsupported_outputs_fail_without_new_submission():
 
 
 def test_archive_completion_can_resume_with_ignored_outputs_but_not_all_ignored():
-    from short_drama.service.ai_generation_service import resume_action
+    from short_drama.service.generations.admission.task_policy import resume_action
 
     task = SimpleNamespace(
         status="failed", error={"code": "archive_timeout"}, locked_until=None, next_action=None
@@ -503,8 +505,8 @@ def test_missing_schema_defers_media_slots_until_worker_schema_fetch():
 def test_failed_query_can_resume_only_a_known_runninghub_task_within_budget():
     from datetime import timedelta
 
-    from short_drama.service.ai_generation_service import can_retry, resume_action
     from short_drama.service.base import utcnow
+    from short_drama.service.generations.admission.task_policy import can_retry, resume_action
 
     task = SimpleNamespace(
         status="failed",

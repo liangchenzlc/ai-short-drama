@@ -15,13 +15,13 @@ from short_drama.agent.harness.checkpointer import MySQLCheckpointSaver
 from short_drama.agent.harness.runtime import HarnessRuntime
 from short_drama.agent.resources.contracts import assert_reference_payload
 from short_drama.agent.resources.resolver import ResourceResolver
-from short_drama.core.exceptions import WorkflowError
+from short_drama.core.exceptions import Conflict, WorkflowError
 from short_drama.core.time import utcnow
-from short_drama.domain.agent import AgentRun, AgentToolCall, AgentTurn
-from short_drama.domain.agent_graph import AgentGraphCheckpoint, AgentGraphWrite
-from short_drama.domain.agent_task import AgentOperation, AgentTask
-from short_drama.service.agent_graph_service import AgentGraphService
-from short_drama.service.ai_model_config_service import AIModelConfigService
+from short_drama.domain.assistant.execution.graph import AgentGraphCheckpoint, AgentGraphWrite
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.assistant.execution.graph import AgentGraphService
 from tests.integration.standard.assistant.test_assistant_skills import _Storage, create_skill
 from tests.integration.standard.assistant.test_global_assistant_tasks import (
     harness_workspace,
@@ -30,7 +30,6 @@ from tests.integration.standard.assistant.test_global_assistant_tasks import (
     task_actor,
     task_service,
 )
-from tests.support.integration.harness_skill import seed_legacy_script
 from tests.unit.standard.agent.test_agent_model_gateway import provider as provider
 from tests.unit.standard.agent.test_agent_model_gateway import response, sse_response
 from tests.unit.standard.agent.test_harness_resources import png
@@ -84,9 +83,6 @@ def submit_review(runtime, accepted, state, *, text="", report=None):
                 for item in report["requirements"]
                 if item["key"] in frozen
             ],
-            "additional_requirements": [
-                item for item in report["requirements"] if item["key"] not in frozen
-            ],
         }
     state["responses"] = [
         (200, response("chat", calls=[("review", "submit_completion_review", report)]))
@@ -137,6 +133,41 @@ def pause_with_truncated_response(runtime, accepted, state):
     runtime.execute_one(accepted.run.id, version)
     with runtime.factory() as session:
         assert session.get(AgentTask, accepted.task.id).status == "paused_error"
+
+
+def test_stop_receipt_remains_replayable_after_policy_changes(task_workspace):
+    factory, settings, _model = task_workspace
+    conversation, accepted = new_task(task_workspace)
+    with factory() as session:
+        service = task_service(session, settings)
+        stopped = service.control_task(accepted.task.id, {"kind": "stop"}, "stop-receipt")
+        assert stopped.task.status == "stopped" and stopped.run.status == "cancelled"
+        settings.agent_stop_at_boundary = False
+        replay = service.control_task(accepted.task.id, {"kind": "stop"}, "stop-receipt")
+        assert replay.control_id == stopped.control_id
+        with pytest.raises(Conflict):
+            service.control_task(
+                accepted.task.id,
+                {"kind": "stop", "expected_control_seq": "1"},
+                "stop-receipt",
+            )
+        with pytest.raises(WorkflowError) as unavailable:
+            service.control_task(accepted.task.id, {"kind": "stop"}, "different-stop")
+        assert unavailable.value.code == "assistant_stop_unavailable"
+        settings.agent_stop_at_boundary = True
+        body = {"task_id": accepted.task.id, "content": "补充要求并继续"}
+        continued = service.send_task_message(conversation.id, body, "continue-message")
+        replayed_message = service.send_task_message(conversation.id, body, "continue-message")
+        assert continued.task.id == accepted.task.id and continued.run.id != accepted.run.id
+        assert replayed_message.message.id == continued.message.id
+        assert replayed_message.run.id == continued.run.id
+        replayed_stop = service.control_task(accepted.task.id, {"kind": "stop"}, "stop-receipt")
+        assert replayed_stop.control_id == stopped.control_id
+        assert replayed_stop.run.id == continued.run.id and replayed_stop.run.status == "queued"
+        with pytest.raises(Conflict):
+            service.send_task_message(
+                conversation.id, {**body, "content": "不同的要求"}, "continue-message"
+            )
 
 
 def test_graph_tool_failure_correction_and_duplicate_delivery(task_workspace, provider):
@@ -259,7 +290,7 @@ def test_graph_tool_failure_correction_and_duplicate_delivery(task_workspace, pr
 
 
 def test_harness_advances_beyond_former_cumulative_limits(task_workspace, provider):
-    from short_drama.domain.agent import AgentMessage
+    from short_drama.domain.assistant.conversations.models import AgentMessage
 
     state = configured(task_workspace, provider)
     factory, settings, _model = task_workspace
@@ -425,7 +456,7 @@ def test_skill_progression_compaction_and_ephemeral_pixels(task_workspace, provi
 
     import short_drama.agent.context.transcript as transcript
     import short_drama.agent.skill.runtime as skill_runtime
-    from short_drama.service.agent_skill_service import AgentSkillService
+    from short_drama.service.skills.catalog.skill import AgentSkillService
 
     factory, settings, model = task_workspace
     state = configured(task_workspace, provider)
@@ -437,6 +468,7 @@ def test_skill_progression_compaction_and_ephemeral_pixels(task_workspace, provi
         instructions=body,
         resources=[
             {"path": "references/long.md", "content": "必须保留的线索。" * 600},
+            {"path": "references/check.md", "content": "检查两名角色和三个分镜。"},
             {
                 "path": "assets/example.png",
                 "kind": "image",
@@ -446,7 +478,6 @@ def test_skill_progression_compaction_and_ephemeral_pixels(task_workspace, provi
         ],
         required_tools=["read_resource"],
     )
-    skill = seed_legacy_script((*task_workspace, storage), skill, task_actor())
 
     class Resources:
         @contextmanager
@@ -474,7 +505,7 @@ def test_skill_progression_compaction_and_ephemeral_pixels(task_workspace, provi
         accepted = service.send_task_message(
             conversation.id,
             {
-                "content": "依据雨夜方法，逐段核对线索资料、只读脚本和示例图片，然后给出建议。",
+                "content": "依据雨夜方法，逐段核对线索资料、检查清单和示例图片，然后给出建议。",
                 "model_config_id": model,
                 "skills": [{"id": skill.id, "content_version": skill.content_version}],
             },
@@ -496,7 +527,7 @@ def test_skill_progression_compaction_and_ephemeral_pixels(task_workspace, provi
         calls=[("load1", "load_skill", load)],
         text="先加载核对线索所需的方法",
     )
-    assert body not in json.dumps(initial, ensure_ascii=False) and storage.reads == 2
+    assert body not in json.dumps(initial, ensure_ascii=False) and storage.reads == 3
     repeated = advance(runtime, accepted, state, calls=[("load2", "load_skill", load)])
     assert body in json.dumps(repeated, ensure_ascii=False)
     with factory() as session:
@@ -528,12 +559,12 @@ def test_skill_progression_compaction_and_ephemeral_pixels(task_workspace, provi
         state,
         calls=[
             (
-                "script",
+                "checklist",
                 "read_skill_resource",
                 {
                     "activation_id": activation,
-                    "path": "scripts/check.py",
-                    "purpose": "只读检查规则",
+                    "path": "references/check.md",
+                    "purpose": "读取检查规则",
                 },
             )
         ],
@@ -556,7 +587,7 @@ def test_skill_progression_compaction_and_ephemeral_pixels(task_workspace, provi
     )
     pixels = advance(runtime, accepted, state, calls=[("again", "search_skills", {})])
     assert "data:image/jpeg;base64," in json.dumps(pixels)
-    final = advance(runtime, accepted, state, text="已核对资料、脚本与示例图，完成线索建议。")
+    final = advance(runtime, accepted, state, text="已核对资料、检查清单与示例图，完成线索建议。")
     assert "data:image/" not in json.dumps(final)
     assert body in json.dumps(final, ensure_ascii=False)
     progress = context_frame(final)["tool_progress"]
@@ -1054,7 +1085,7 @@ def test_state_projects_large_task_and_operation_bodies(task_workspace, provider
 def test_harness_discussion_revision_is_read_only_and_excludes_future_history(
     task_workspace, provider
 ):
-    from short_drama.domain.agent import AgentMessage
+    from short_drama.domain.assistant.conversations.models import AgentMessage
 
     state = configured(task_workspace, provider)
     conversation, accepted = new_task(task_workspace)
@@ -1199,7 +1230,7 @@ def test_autonomous_canvas_patch_keeps_versions_and_selected_scope(task_workspac
 def test_harness_l5_forgetting_removes_previously_read_memory_from_next_context(
     task_workspace, provider, resume
 ):
-    from short_drama.service.agent_memory_service import AgentMemoryService
+    from short_drama.service.assistant.memory.memory import AgentMemoryService
 
     state = configured(task_workspace, provider)
     conversation, accepted = new_task(task_workspace)
@@ -1241,8 +1272,8 @@ def test_harness_l5_forgetting_removes_previously_read_memory_from_next_context(
 def test_skill_selection_and_source_changes_revoke_old_body(
     task_workspace, provider, change, resume
 ):
-    from short_drama.service.agent_memory_service import AgentMemoryService
-    from short_drama.service.agent_skill_service import AgentSkillService
+    from short_drama.service.assistant.memory.memory import AgentMemoryService
+    from short_drama.service.skills.catalog.skill import AgentSkillService
 
     factory, settings, model = task_workspace
     state = configured(task_workspace, provider)

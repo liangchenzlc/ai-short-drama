@@ -11,8 +11,8 @@ from sqlalchemy import select
 
 from short_drama.ai import GenerationResult
 from short_drama.domain import AsyncTask, MediaFile
-from short_drama.service.generation_execution_service import GenerationExecutionService
-from short_drama.service.video_render import executable
+from short_drama.service.creation.assembly.rendering.renderer import executable
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.canvas.generation.test_canvas_generation_runtime import (
     TASKS,
     admit,

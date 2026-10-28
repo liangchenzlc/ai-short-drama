@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.core.identity import ActorContext
-from short_drama.db.canvas_render_access import canvas_render_write
+from short_drama.db.access.policies.canvas_render_access import canvas_render_write
 from short_drama.domain import AsyncTask, CanvasRenderJob, CanvasRenderMediaReference, MediaFile
 from short_drama.service.base import utcnow
 from short_drama.utils.snowflake import next_id

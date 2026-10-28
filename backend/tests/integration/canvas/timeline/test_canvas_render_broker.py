@@ -15,8 +15,8 @@ from amqp.exceptions import NotFound as BrokerObjectMissing
 from sqlalchemy import select
 
 from short_drama.domain import AsyncTask, CanvasRenderJob, MediaFile
-from short_drama.tasks.canvas_render import CanvasRenderPublisher
 from short_drama.tasks.celery_app import make_celery, render_queue
+from short_drama.tasks.rendering.canvas_render import CanvasRenderPublisher
 from tests.integration.canvas.generation.test_canvas_generation_broker import (
     eventually,
     wait_for_consumers_to_detach,

@@ -54,16 +54,12 @@ export default defineConfig(({ mode }) => {
             port: canvasPort,
             strictPort: true,
             // 启动后台预热：把约 600 个源码模块的转换从「打开页面时」挪到「启动后台」（dev 首开约 20s → ~2s，2026-10-15 实测）。
-            // glob 覆盖画布全部源码；末尾 5 条为画布经 @host 引用的宿主文件（glob 触达不到 root 之外，新增 @host 引用需补入）。
+            // 画布只经集成桥访问宿主；桥内依赖由 Vite 递归预热，避免在这里复制宿主目录布局。
             warmup: {
                 clientFiles: [
                     "index.html",
                     "src/**/*.{ts,tsx,css}",
-                    "../src/api/http.ts",
-                    "../src/api/types/assistant.ts",
-                    "../src/api/types/canvases.ts",
-                    "../src/app/paths.ts",
-                    "../src/features/ai-assistant/CreativeAssistantPanel.tsx",
+                    "../src/integrations/canvas/**/*.{ts,tsx}",
                 ],
             },
             watch: { ignored: ["**/.runtime/**"] },

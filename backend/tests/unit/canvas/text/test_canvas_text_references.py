@@ -6,11 +6,11 @@ from types import SimpleNamespace
 import pytest
 
 from short_drama.ai import GenerationError
-from short_drama.ai.adapters import build_submission
+from short_drama.ai.adapters.submission import build_submission
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-from short_drama.service.canvas_generation_inputs import generation_payload
-from short_drama.service.canvas_text_admission import freeze_text_references
+from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+from short_drama.service.canvas.generation.generation_inputs import generation_payload
+from short_drama.service.canvas.generation.text.text_admission import freeze_text_references
 from tests.unit.canvas.generation.test_canvas_generation_runtime_contract import request
 from tests.unit.shared.generation.test_generation_adapters import gateway as gateway
 from tests.unit.shared.generation.test_generation_adapters import provider as provider
@@ -269,7 +269,7 @@ def test_real_responses_http_receives_default_manifest_images_without_archive_mu
 
 
 def admission_fixture(monkeypatch):
-    from short_drama.service import canvas_text_admission
+    import short_drama.service.canvas.generation.text.text_admission as canvas_text_admission
 
     media = {
         "9007199254740997": SimpleNamespace(

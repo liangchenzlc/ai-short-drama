@@ -4,13 +4,13 @@ import test from 'node:test';
 import ts from 'typescript';
 
 async function load(file) {
-  const source = readFileSync(new URL(`../../src/features/projects/script-desk/${file}.ts`, import.meta.url), 'utf8');
+  const source = readFileSync(new URL(`../../src/features/creation/writing/${file}.ts`, import.meta.url), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
   return import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 }
-const { writingRewriteRequest, codePointSelection } = await load('writing-requests');
-const { ScriptHistory } = await load('editor-history');
-const { scriptExportName, scriptCharacterCount, selectionSummary } = await load('script-selection');
+const { writingRewriteRequest, codePointSelection } = await load('rewrite/writing-requests');
+const { ScriptHistory } = await load('editor/editor-history');
+const { scriptExportName, scriptCharacterCount, selectionSummary } = await load('editor/script-selection');
 const state = { novel: '小说', outline: '', script: '😀开头，同一句话；同一句话👨‍👩‍👧', scriptId: '9007199254740999', contentVersion: '9007199254740997' };
 
 test('export names remain portable and range summaries preserve complete Unicode characters', () => {

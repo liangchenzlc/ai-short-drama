@@ -9,9 +9,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-from short_drama.ai.gateway import GenerationGateway
+from short_drama.ai.gateway.client import GenerationGateway
 from short_drama.domain import AIGenerationRecord, AsyncTask, User
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.canvas.generation.test_canvas_generation_runtime import (
     TASKS,
     WORKSPACE,

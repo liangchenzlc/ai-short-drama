@@ -11,12 +11,13 @@ from short_drama.agent.resources.resolver import ResourceResolver
 from short_drama.agent.skill.contracts import activation_summary, activations
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.time import utcnow
-from short_drama.dao.agent_transcript_dao import AgentTranscriptDAO
-from short_drama.domain.agent import AgentRun
-from short_drama.domain.agent_skill import AgentSkillVersion
-from short_drama.domain.agent_task import AgentOperation, AgentTaskInput
-from short_drama.schemas.agent_context import SkillSelection
-from short_drama.service.agent_skill_service import AgentSkillService, freeze_skills
+from short_drama.dao.assistant.execution.transcript import AgentTranscriptDAO
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTaskInput
+from short_drama.domain.skills.catalog.skill import AgentSkillVersion
+from short_drama.schemas.assistant.context.context import SkillSelection
+from short_drama.service.skills.catalog.skill import AgentSkillService
+from short_drama.service.skills.catalog.versions import freeze_skills
 from short_drama.utils.snowflake import next_id
 
 INDEX_TOKENS = 2000

@@ -2,7 +2,7 @@
 
 2026-10-26 起新 V3 任务使用 [Harness 运行机制](AI创作助手Harness运行机制.md)：LangGraph 控制工作流、LangChain 单次决策，工具自主选择，图片／方法按需加载。2026-10-27 起新任务另开放边界停止，改向与恢复中断仍不支持；下文旧句式授权和中断流程仅适用于冻结原引擎的历史任务。新增部署须先执行 [图检查点迁移](../database/migrations/2026-10-26-agent-harness/README.md) 与 [交付要求增量](../database/migrations/2026-10-27-agent-contract/README.md)，API、scheduler、Agent Worker 和前端同版升级。
 
-Harness 可靠执行与上下文优化沿用 Task JSON 和既有账本。[交付要求增量](../database/migrations/2026-10-27-agent-contract/README.md)新增 `agent_task_requirements` 一张表，并为 `agent_operations` 增加两列及一个索引；任务创建时冻结 `agent_policy`（契约、预算、停滞窗口、验收与停止策略），新增 `AGENT_RUN_*`、`AGENT_PROGRESS_*`、`AGENT_REQUIREMENT_ATTEMPT_CAP`、`AGENT_REVIEWER_MODE`、`AGENT_STOP_AT_BOUNDARY` 环境变量。收尾增加[记忆抽取重试终态约束](../database/migrations/2026-10-26-agent-memory-retry/README.md)，已有库须先升级，允许运行时既有的 `abandoned` 状态。新冻结请求使用工具 v4、提示词 `assistant-harness-v8`；已有冻结请求保留原 schema／布局和监督版本。API 与 Agent Worker 必须同版，以支持按需能力组、服务端交付要求 draft、发布守卫、证据包验收、工作笔记、Skill 释放和模型容量字段。候选最终答复在独立检查通过后发布，检查也会产生模型用量。
+Harness 可靠执行与上下文优化沿用 Task JSON 和既有账本。[交付要求增量](../database/migrations/2026-10-27-agent-contract/README.md)新增 `agent_task_requirements` 一张表，并为 `agent_operations` 增加两列及一个索引；任务创建时冻结 `agent_policy` 中的预算、停滞窗口和停止策略，使用 `AGENT_RUN_*`、`AGENT_PROGRESS_*`、`AGENT_REQUIREMENT_ATTEMPT_CAP`、`AGENT_REVIEWER_MODE`、`AGENT_STOP_AT_BOUNDARY` 环境变量。收尾增加[记忆抽取重试终态约束](../database/migrations/2026-10-26-agent-memory-retry/README.md)，已有库须先升级，允许运行时既有的 `abandoned` 状态。当前请求使用工具 v4、提示词 `assistant-harness-v10`，完成验收统一按需求表和证据包执行。API 与 Agent Worker 必须同版，以支持按需能力组、服务端交付要求 draft、发布守卫、证据包验收、工作笔记、Skill 释放和模型容量字段。候选最终答复在独立检查通过后发布，检查也会产生模型用量。
 
 出现 `agent_progress_stalled` 时查看最近工具错误、重复结果和 progress 提示；出现 `agent_completion_stalled` 时查看 completion_feedback 的具体缺项。两者保留成果并暂停，可补充必要资料后发送“继续”，不能当作任务累计次数耗尽。图片裁剪错误应返回真实宽高及结构化失败，不应显示已看过像素。排查长任务数据库排序错误时，历史查询必须先筛有界 ID、再读 JSON；不要在 ID 排序阶段加入大 JSON 的选择或筛选。容量使用声明／平台默认值，实际 input_tokens、cached_tokens 和估算指标应分别查看，声明不等于供应商实测。
 
@@ -66,7 +66,7 @@ uv run python -m scripts.agent_system_migration --apply
 uv run python scripts/agent_migration.py --precheck
 ```
 
-此增量增加四张任务表、六张记忆表、账号助手偏好、私人媒体请求、Skill 版本／个人设置、讨论修订及批次撤销回执表、消息／Run 的 task_id、消息版本、运行修订身份与会话摘要字段，解除 V3 会话项目强绑定，并允许角色音色成对空绑定；保留旧记录和授权。记忆索引使用 MySQL ngram；本机 `@@ngram_token_size=2`，其他环境须实际核对。完整新库 [schema.mysql8.sql](../database/schema/schema.mysql8.sql) 当前为 122 张表，包含全部二十八张 Agent 表，直接做 precheck 即可，不重复执行旧库 ALTER。
+此增量增加四张任务表、六张记忆表、账号助手偏好、私人媒体请求、Skill 版本／个人设置、讨论修订及批次撤销回执表、消息／Run 的 task_id、消息版本、运行修订身份与会话摘要字段，解除 V3 会话项目强绑定，并允许角色音色成对空绑定；保留旧记录和授权。记忆索引使用 MySQL ngram；本机 `@@ngram_token_size=2`，其他环境须实际核对。完整新库 [schema.mysql8.sql](../database/schema/schema.mysql8.sql) 当前为 119 张表，包含全部二十八张 Agent 表，直接做 precheck 即可，不重复执行旧库 ALTER。
 
 2026-10-27 的 [Agent 加固增量](../database/migrations/2026-10-27-agent-contract/README.md)新增 `agent_task_requirements`，并给 `agent_operations` 加 `result_digest/evidence_kind` 与索引；这是 119 表／二十八张 Agent 表的来源。已有库须停写后执行 `010-task-requirements.sql` 再 `agent_migration.py --apply`，新库直接用完整 SQL。升级前的任务没有 `agent_policy`，继续按旧契约与旧预算解释；新任务冻结契约、预算、停滞窗口、验收与停止策略，因此 API、scheduler、Agent Worker 与前端必须同版升级。
 

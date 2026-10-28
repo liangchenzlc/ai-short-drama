@@ -1,26 +1,22 @@
 import asyncio
 import re
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Barrier
 
 import httpx
 import pytest
-from short_drama.service.episode_service import EpisodeService
-from sqlalchemy import select, text
-from sqlalchemy.orm import Session
+from sqlalchemy import text
 
-from short_drama.api.dependencies import get_session
+from short_drama.api.dependencies.session import get_session
 from short_drama.core.config import Settings
-from short_drama.domain import Episode, Project
+from short_drama.domain import Project
 from short_drama.main import create_app
-from short_drama.service.project_service import ProjectService
-from tests.support.integration.legacy_identity import session_factory
+from short_drama.service.projects.management.project import ProjectService
+from tests.support.integration.identity import session_factory
 
 pytestmark = pytest.mark.integration
 
 
-def test_http_project_and_episode_persist(mysql_engine, db_session):
+def test_http_project_and_script_persist(mysql_engine, db_session):
     async def run():
         url = mysql_engine.url
         app = create_app(
@@ -46,57 +42,32 @@ def test_http_project_and_episode_persist(mysql_engine, db_session):
             app.router.lifespan_context(app),
             httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client,
         ):
-            response = await client.post(
-                "/api/v1/projects", json={"name": "story", "aspect": "9:16", "style": "ink"}
-            )
+            response = await client.post("/api/v1/projects", json={"name": "story"})
             assert response.status_code == 201, response.text
             project_id = response.json()["id"]
-            root = f"/api/v1/projects/{project_id}/episodes"
-            for position in (1, 2):
-                response = await client.post(root, json={"title": "same title"})
-                assert response.status_code == 201, response.text
-                assert response.json()["position"] == position
-                assert response.json()["aspect"] == "9:16"
-                assert response.json()["style"] == "ink"
-            missing = await client.post("/api/v1/projects/1/episodes", json={"title": "missing"})
-            assert missing.status_code == 404
+            root = f"/api/v1/projects/{project_id}"
+            assert (await client.get(root)).json()["name"] == "story"
+            saved = await client.put(
+                root + "/script",
+                json={"content_version": "1", "script_id": None, "content": "  持久化正文\n"},
+            )
+            assert saved.status_code == 200, saved.text
+            current = await client.get(root + "/writing")
+            assert current.status_code == 200
+            assert current.json()["editing_script"]["content"] == "  持久化正文\n"
+            assert (
+                await client.post(root + "/episodes", json={"title": "retired"})
+            ).status_code == 404
             return int(project_id)
 
     project_id = asyncio.run(run())
     with db_session.begin():
         project = db_session.get(Project, project_id)
         assert project.created_at == project.last_opened_at == project.updated_at
-        episodes = list(db_session.scalars(select(Episode).where(Episode.project_id == project_id)))
-        assert len(episodes) == 2
-
-
-def test_concurrent_append_to_empty_and_gapped_collections(mysql_engine, db_session):
-    project = ProjectService(db_session).create_project({"name": "concurrent", "aspect": "16:9"})
-
-    def append_batch():
-        barrier = Barrier(4)
-
-        def append(index):
-            with Session(
-                mysql_engine, expire_on_commit=False, autoflush=False, info={"legacy_user_id": 1}
-            ) as session:
-                barrier.wait(timeout=10)
-                return EpisodeService(session).get(project.id)
-
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            return list(executor.map(append, range(4)))
-
-    first = append_batch()
-    assert sorted(row.position for row in first) == [1, 2, 3, 4]
-    highest = max(first, key=lambda row: row.position)
-    EpisodeService(db_session).update(highest.id, {"position": 10})
-    second = append_batch()
-    assert sorted(row.position for row in second) == [11, 12, 13, 14]
-    assert len({row.id for row in first + second}) == 8
 
 
 def test_remove_target_migration_preserves_projects_and_is_repeatable(mysql_engine, db_session):
-    project = ProjectService(db_session).create_project({"name": "preserved", "aspect": "9:16"})
+    project = ProjectService(db_session).create_project({"name": "preserved"})
     migration = next(
         (Path(__file__).resolve().parents[5] / "docs").rglob("001_remove_project_target.sql")
     )

@@ -1,6 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { fixture, root } from '../support/studio-fixture';
 
+async function openSaveDetails(page: Page) {
+  const status = page.getByRole('button', { name: /^保存状态：/ });
+  if (await status.getAttribute('aria-expanded') !== 'true') await status.click();
+  return page.locator('.standard-save-details');
+}
+
 async function standardFixture(page: Page) {
   const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   const time = '2026-10-13T00:00:00Z';
@@ -35,8 +41,8 @@ for (const viewport of windows) test('three creation stages fill the desktop at 
     await expect(work).toBeVisible();
     const navigation = page.getByRole('navigation', { name: '创作流程' });
     await expect(navigation.getByRole('button')).toHaveCount(4);
-    expect((await page.locator('.episode-top').boundingBox())!.height).toBe(60);
-    await expect(page.locator('.episode-stage-select')).toHaveCount(0);
+    expect((await page.locator('.creation-top').boundingBox())!.height).toBe(60);
+    await expect(page.locator('.creation-stage-select')).toHaveCount(0);
     if (stage === 'source') await expect(page.getByRole('textbox', { name: '剧本正文', exact: true })).toBeEditable();
     else await expect(page.getByRole('textbox', { name: '画面要求', exact: true })).toBeVisible();
     const before = (await work.boundingBox())!.width;
@@ -156,12 +162,15 @@ for (const kind of ['image', 'video'] as const) test(`unknown shot ${kind} uses 
   if (kind === 'video') await page.getByRole('tab', { name: '分镜视频', exact: true }).click();
   const send = page.getByRole('button', { name: kind === 'image' ? '生成图片' : '生成视频', exact: true });
   await expect(send).toBeEnabled(); await send.click();
+  await expect.poll(() => keys.length).toBe(1);
+  await openSaveDetails(page);
   const check = page.getByRole('button', { name: kind === 'image' ? '核对原图片请求' : '核对原视频请求', exact: true });
   await expect(check).toBeVisible();
   page.removeAllListeners('dialog');
   page.on('dialog', dialog => { void dialog.accept(); });
   await page.reload();
   if (kind === 'video') await page.getByRole('tab', { name: '分镜视频', exact: true }).click();
+  await openSaveDetails(page);
   await check.click(); await expect.poll(() => lookups.length).toBe(1);
   expect(lookups[0]).toBe(keys[0]); expect(keys).toHaveLength(1); await expect(send).toBeDisabled();
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
@@ -178,7 +187,9 @@ test('shot conflict pauses autosave and preserves title and script after reload'
   await page.goto(`${root}/storyboard?shot=101`);
   await page.getByRole('textbox', { name: '镜头名称', exact: true }).fill('恢复后仍保留的名称');
   await page.getByRole('textbox', { name: '分镜 1 脚本', exact: true }).fill('恢复后仍保留的脚本');
-  await expect(page.locator('#storyboard-image-pane').getByText('镜头保存已暂停，输入保留。', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^保存状态：需处理/ })).toBeVisible();
+  await expect(await openSaveDetails(page)).toContainText('镜头保存已暂停，输入保留。');
+  await page.getByRole('button', { name: /^保存状态：/ }).click();
   await page.getByRole('textbox', { name: '分镜 1 脚本', exact: true }).fill('冲突后继续保留的新脚本');
   page.removeAllListeners('dialog');
   page.once('dialog', async dialog => { expect(dialog.type()).toBe('beforeunload'); await dialog.accept(); });
@@ -210,7 +221,7 @@ for (const kind of ['image', 'video'] as const) test(`resolved default ${kind} m
   await expect.poll(() => draftRequested).toBe(true);
   const model = page.getByRole('combobox', { name: kind === 'image' ? '分镜生图模型' : '视频模型', exact: true });
   await expect(model).toBeDisabled();
-  await expect(page.locator('.generation-config-select').filter({ has: model }).getByText(/本地验收模型.*默认/)).toBeVisible();
+  await expect(page.locator('.generation-config-select').filter({ has: model }).getByText('本地验收模型', { exact: true })).toBeVisible();
   releaseDraft();
   const send = page.getByRole('button', { name: kind === 'image' ? '生成图片' : '生成视频', exact: true });
   await expect(send).toBeEnabled(); await send.click();
@@ -229,7 +240,8 @@ test('shot reload keeps a local backup and locks editing without confirmation', 
   await page.goto(`${root}/storyboard?shot=101`);
   const title = page.getByRole('textbox', { name: '镜头名称', exact: true });
   await title.fill('确认载入前的本机名称');
-  await expect(page.locator('#storyboard-image-pane').getByText('镜头保存已暂停，输入保留。', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^保存状态：需处理/ })).toBeVisible();
+  await expect(await openSaveDetails(page)).toContainText('镜头保存已暂停，输入保留。');
   let releaseRead!: () => void;
   const readReady = new Promise<void>(resolve => { releaseRead = resolve; });
   let readStarted = false;
@@ -237,7 +249,7 @@ test('shot reload keeps a local backup and locks editing without confirmation', 
     if (route.request().method() !== 'GET') return route.fallback();
     readStarted = true; await readReady; return route.fallback();
   });
-  await page.getByRole('button', { name: '载入服务端镜头', exact: true }).click();
+  await page.locator('.standard-save-details').getByRole('button', { name: '载入服务端镜头', exact: true }).first().click();
   await expect(page.getByRole('button', { name: '确认继续', exact: true })).toHaveCount(0);
   await expect.poll(() => readStarted).toBe(true);
   await expect(title).toBeDisabled();
@@ -300,6 +312,8 @@ for (const action of ['retry', 'reload'] as const) test(`private draft ${action}
   await prompt.fill('核对期间保留的私人输入');
   const retry = page.getByRole('button', { name: '重试保存设置', exact: true, includeHidden: true });
   const reload = page.getByRole('button', { name: '载入服务端设置', exact: true, includeHidden: true });
+  await expect(page.getByRole('button', { name: /^保存状态：(待同步|需处理)/ })).toBeVisible();
+  await openSaveDetails(page);
   await expect(retry).toBeVisible();
   let releaseRead!: () => void;
   const ready = new Promise<void>(resolve => { releaseRead = resolve; });
@@ -332,7 +346,7 @@ for (const viewport of windows) test('desktop panels retain geometry and reachab
   for (const stage of ['assets', 'storyboard']) {
     await page.goto(root + '/' + stage);
     const layout = page.locator('.standard-creation-layout');
-    const list = page.locator('.episode-work-stage');
+    const list = page.locator('.creation-work-stage');
     const panel = page.locator('.creation-main-panel');
     const settings = page.locator('.standard-object-settings:visible');
     await expect(settings).toBeVisible();
@@ -353,12 +367,13 @@ for (const viewport of windows) test('desktop panels retain geometry and reachab
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('image groups retain the caption and individual full preview without group zoom controls', async ({ page }) => {
+test('image groups retain each image size and full preview without group zoom controls', async ({ page }) => {
   const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   await page.goto(`${root}/storyboard?shot=101`);
   const group = page.locator('#storyboard-image-pane .standard-image-group');
   await expect(group.locator('.image-subject')).toHaveCount(1);
-  await expect(group.locator('.image-group-caption')).toHaveCSS('font-size', '11px');
+  await expect(group.locator('.image-subject-size')).toHaveText('1920 × 1080');
+  await expect(group.locator('.image-group-caption')).toHaveCount(0);
   await expect(group.locator('.image-subject-label .image-primary-badge')).toHaveText('主图');
   await expect(page.getByRole('group', { name: '图片预览工具', exact: true })).toHaveCount(0);
   await group.locator('.image-subject-open').click();

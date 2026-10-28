@@ -7,9 +7,9 @@ from threading import Event
 import pytest
 from sqlalchemy import select
 
-from short_drama.dao.canvas_dao import CanvasDAO
-from short_drama.domain.canvas import CanvasRevision
-from short_drama.domain.canvas_folder import CanvasProjectFolderItem
+from short_drama.dao.canvas.document.canvas import CanvasDAO
+from short_drama.domain.canvas.document.canvas import CanvasRevision
+from short_drama.domain.canvas.workspace.folders.folder import CanvasProjectFolderItem
 from short_drama.service.base import utcnow
 from tests.integration.canvas.resources.test_canvas_library import (
     database_errors as database_errors,

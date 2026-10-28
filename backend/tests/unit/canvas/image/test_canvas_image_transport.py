@@ -193,7 +193,7 @@ def test_canvas_private_reference_preparation_failure_never_submits(
     ],
 )
 def test_canvas_worker_inline_path_does_not_need_public_media_presigning(adapter, model):
-    from short_drama.service.generation_execution_service import GenerationExecutionService
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
 
     payload = frozen_request(
         request("image", references=[{"storageKey": "resource:12"}, {"storageKey": "resource:13"}]),
@@ -243,7 +243,7 @@ def test_standard_ark_keeps_original_url_wire_and_does_not_read_inline_bytes(gat
 def test_canvas_inline_byte_limits_fail_before_any_provider_http(
     gateway, provider, monkeypatch, limit
 ):
-    from short_drama.ai import canvas_image_references
+    import short_drama.ai.adapters.image.image_references as canvas_image_references
 
     base, _, calls = provider
     png = reference_image()
@@ -273,7 +273,7 @@ def test_canvas_inline_byte_limits_fail_before_any_provider_http(
 def test_inline_storage_stream_closes_before_submission_or_validation_failure(
     gateway, provider, references, valid_image
 ):
-    from short_drama.service.generation_references import StoredImageReferences
+    from short_drama.service.generations.references.references import StoredImageReferences
 
     base, state, calls = provider
     state["body"] = {"data": [{"b64_json": "aW1hZ2U="}]}

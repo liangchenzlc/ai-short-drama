@@ -13,20 +13,20 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, func, inspect, select, update
 from sqlalchemy.exc import OperationalError
 
-import tests.integration.standard.agent.test_agent_conversations as conversation_tests
+import tests.support.assistant_workspace as conversation_tests
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import token_hash
-from short_drama.domain.agent_context import AgentSkill
-from short_drama.domain.agent_skill import AgentSkillVersion
-from short_drama.domain.collaboration import UserSession
+from short_drama.domain.assistant.context.context import AgentSkill
+from short_drama.domain.identity.accounts.user import UserSession
+from short_drama.domain.skills.catalog.skill import AgentSkillSetting, AgentSkillVersion
 from short_drama.main import create_app
-from short_drama.schemas.agent_context import SkillSelection
-from short_drama.service.agent_skill_service import AgentSkillService, freeze_skills
+from short_drama.schemas.assistant.context.context import SkillSelection
 from short_drama.service.base import utcnow
+from short_drama.service.skills.catalog.skill import AgentSkillService
+from short_drama.service.skills.catalog.versions import freeze_skills
 from short_drama.utils.snowflake import next_id
-from tests.integration.standard.agent.test_agent_conversations import actor
-from tests.integration.standard.agent.test_agent_services import settings
+from tests.support.assistant_workspace import actor, settings
 
 pytestmark = pytest.mark.integration
 workspace = conversation_tests.workspace
@@ -119,14 +119,26 @@ def builtin_workspace(workspace):
 def test_builtin_package_publication_is_idempotent_and_preserves_personal_settings(
     builtin_workspace,
 ):
-    from short_drama.agent.skill.builtin import SKILLS
-    from short_drama.service.agent_builtin_skill_service import publish_builtin_skills
+    from scripts.agent_system_migration import LEGACY_BUILTIN_TEXTS
+    from short_drama.service.skills.catalog.builtin_skill import publish_builtin_skills
 
     factory, configured, storage = builtin_workspace
     with factory() as session:
         session.info["actor"] = actor(1)
-        AgentSkillService(session, configured, storage).patch_settings(
-            "script.v1", {"row_version": "0", "enabled": False}
+        library = AgentSkillService(session, configured, storage)
+        assert library.list(source="builtin").total == 0
+        with pytest.raises(NotFound):
+            library.detail("script.v1")
+    with factory.kw["bind"].begin() as connection:
+        connection.execute(
+            AgentSkillSetting.__table__.insert().values(
+                id=next_id(),
+                owner_user_id=1,
+                skill_key="script.v1",
+                enabled=0,
+                row_version=1,
+                updated_at=utcnow(),
+            )
         )
     first = publish_builtin_skills(factory, configured, storage)
     second = publish_builtin_skills(factory, configured, storage)
@@ -160,12 +172,13 @@ def test_builtin_package_publication_is_idempotent_and_preserves_personal_settin
                     AgentSkillVersion.content_version == 1,
                 )
             )
-            assert legacy.instructions == SKILLS["script.v1"] and legacy.resources == []
+            assert legacy.instructions == LEGACY_BUILTIN_TEXTS["script.v1"]
+            assert legacy.resources == []
 
 
 def test_builtin_publication_rejects_same_version_changes_and_rolls_back_batch(builtin_workspace):
     from short_drama.agent.skill.packages import builtin_skill_packages
-    from short_drama.service.agent_builtin_skill_service import publish_builtin_skills
+    from short_drama.service.skills.catalog.builtin_skill import publish_builtin_skills
 
     factory, configured, storage = builtin_workspace
     packages = builtin_skill_packages()
@@ -196,7 +209,7 @@ def test_builtin_publication_rejects_same_version_changes_and_rolls_back_batch(b
 
 
 def test_builtin_publication_storage_failure_publishes_no_new_version(builtin_workspace):
-    from short_drama.service.agent_builtin_skill_service import publish_builtin_skills
+    from short_drama.service.skills.catalog.builtin_skill import publish_builtin_skills
 
     factory, configured, storage = builtin_workspace
     storage.fail_put = True
@@ -207,7 +220,7 @@ def test_builtin_publication_storage_failure_publishes_no_new_version(builtin_wo
 
 
 def test_concurrent_builtin_publishers_reuse_one_immutable_release(builtin_workspace):
-    from short_drama.service.agent_builtin_skill_service import publish_builtin_skills
+    from short_drama.service.skills.catalog.builtin_skill import publish_builtin_skills
 
     factory, configured, storage = builtin_workspace
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -254,7 +267,7 @@ def test_skill_package_create_summary_idempotency_and_account_isolation(workspac
 
 
 def test_skill_upload_does_not_reuse_an_unpublished_object(workspace):
-    from short_drama.schemas.agent_skill import SkillCreate
+    from short_drama.schemas.skills.catalog.skill import SkillCreate
 
     factory, _, _ = workspace
     with factory() as session:
@@ -268,8 +281,8 @@ def test_skill_upload_does_not_reuse_an_unpublished_object(workspace):
 
 
 def test_skill_gc_keeps_all_history_and_previews_expired_orphans(workspace, monkeypatch):
-    from short_drama.schemas.agent_skill import SkillCreate
-    from short_drama.service import agent_skill_resource_service as resources
+    import short_drama.service.skills.resources.skill_resource as resources
+    from short_drama.schemas.skills.catalog.skill import SkillCreate
 
     factory, _, _ = workspace
     configured = settings()
@@ -312,8 +325,8 @@ def test_skill_gc_keeps_all_history_and_previews_expired_orphans(workspace, monk
 
 
 def test_skill_expired_upload_cannot_publish_after_gc_snapshot(workspace, monkeypatch):
-    from short_drama.schemas.agent_skill import SkillCreate
-    from short_drama.service import agent_skill_resource_service as resources
+    import short_drama.service.skills.resources.skill_resource as resources
+    from short_drama.schemas.skills.catalog.skill import SkillCreate
 
     factory, _, _ = workspace
     configured = settings()
@@ -344,8 +357,8 @@ def test_skill_expired_upload_cannot_publish_after_gc_snapshot(workspace, monkey
 
 
 def test_skill_gc_waits_for_publication_commit_before_reading_references(workspace, monkeypatch):
-    from short_drama.service import agent_skill_resource_service as resources
-    from short_drama.service import agent_skill_service as library_module
+    import short_drama.service.skills.catalog.editing as library_module
+    import short_drama.service.skills.resources.skill_resource as resources
 
     factory, _, _ = workspace
     configured = settings()
@@ -403,9 +416,9 @@ def test_skill_gc_waits_for_publication_commit_before_reading_references(workspa
 
 
 def test_skill_gc_bounds_scope_age_limit_and_storage_errors(workspace, monkeypatch):
+    import short_drama.service.skills.resources.skill_resource as resources
     from short_drama.core.exceptions import StorageUnavailable
-    from short_drama.schemas.agent_skill import SkillCreate
-    from short_drama.service import agent_skill_resource_service as resources
+    from short_drama.schemas.skills.catalog.skill import SkillCreate
 
     factory, _, _ = workspace
     configured = settings()
@@ -495,28 +508,31 @@ def test_skill_package_versions_resources_and_old_task_snapshot_survive_edits(wo
             freeze_skills(session, 1, [SkillSelection(id=created.id, content_version="1")])
 
 
-def test_skill_package_personal_settings_builtin_readonly_and_copy(workspace):
-    factory, _, _ = workspace
+def test_skill_package_personal_settings_builtin_readonly_and_copy(builtin_workspace):
+    from short_drama.service.skills.catalog.builtin_skill import publish_builtin_skills
+
+    factory, configured, storage = builtin_workspace
+    publish_builtin_skills(factory, configured, storage)
     with factory() as session:
         session.info["actor"] = actor(1)
-        library = AgentSkillService(session, settings())
+        library = AgentSkillService(session, configured, storage)
         changed = library.patch_settings("script.v1", {"row_version": "0", "enabled": False})
         assert (
-            not changed.enabled and changed.settings_version == 1 and changed.content_version == 1
+            not changed.enabled and changed.settings_version == 1 and changed.content_version == 2
         )
         assert library.list(enabled=False).total == 1
         with session.begin(), pytest.raises(WorkflowError) as caught:
-            freeze_skills(session, 1, [SkillSelection(id="script.v1", content_version="1")])
+            freeze_skills(session, 1, [SkillSelection(id="script.v1", content_version="2")])
         assert caught.value.code == "agent_skill_disabled"
         with pytest.raises(Conflict):
             library.patch_settings("script.v1", {"row_version": "0", "enabled": True})
         with pytest.raises(WorkflowError) as caught:
             library.patch("script.v1", {"row_version": "1", "instructions": "overwrite"})
         assert caught.value.code == "agent_skill_readonly"
-        copied = library.copy("script.v1", {"content_version": "1"}, "copy-builtin")
+        copied = library.copy("script.v1", {"content_version": "2"}, "copy-builtin")
         assert not copied.builtin and copied.enabled
         assert copied.id != "script.v1" and "script.v1" in copied.source
-        assert library.copy("script.v1", {"content_version": "1"}, "copy-builtin").id == copied.id
+        assert library.copy("script.v1", {"content_version": "2"}, "copy-builtin").id == copied.id
         session.info["actor"] = actor(2)
         assert library.detail("script.v1").enabled
 
@@ -641,7 +657,7 @@ def test_incompatible_skill_can_be_disabled_but_not_enabled(workspace, monkeypat
             _skill_package(instructions="方法正文", resources=[]), "retired-capability"
         )
         monkeypatch.setattr(
-            "short_drama.service.agent_skill_service.platform_tool_issues",
+            "short_drama.service.skills.catalog.versions.platform_tool_issues",
             lambda _tools: ["所需能力已退役"],
         )
         disabled = library.patch_settings(created.id, {"row_version": "1", "enabled": False})
@@ -653,8 +669,11 @@ def test_incompatible_skill_can_be_disabled_but_not_enabled(workspace, monkeypat
         assert not current.enabled and current.settings_version == 2
 
 
-def test_skill_package_concurrent_create_and_settings_are_serialized(workspace):
-    factory, _, _ = workspace
+def test_skill_package_concurrent_create_and_settings_are_serialized(builtin_workspace):
+    from short_drama.service.skills.catalog.builtin_skill import publish_builtin_skills
+
+    factory, configured, storage = builtin_workspace
+    publish_builtin_skills(factory, configured, storage)
 
     def create():
         with factory() as session:
@@ -674,7 +693,7 @@ def test_skill_package_concurrent_create_and_settings_are_serialized(workspace):
             session.info["actor"] = actor(1)
             try:
                 return (
-                    AgentSkillService(session, settings())
+                    AgentSkillService(session, configured, storage)
                     .patch_settings(
                         "script.v1",
                         {"row_version": "0", "enabled": False},
@@ -691,7 +710,7 @@ def test_skill_package_concurrent_create_and_settings_are_serialized(workspace):
 
 def test_skill_package_offline_backfill_preserves_legacy_identity_and_settings(workspace):
     from scripts.agent_system_migration import backfill_skill_packages
-    from short_drama.service.agent_skill_service import skill_digest
+    from short_drama.service.skills.catalog.versions import skill_digest
 
     factory, _, _ = workspace
     identifier = next_id()

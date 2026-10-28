@@ -38,7 +38,7 @@ async function fits(page: Page) {
 
 const studioRoutes = [
   ['projects', '/projects', '项目管理'],
-  ...['source', 'assets', 'storyboard', 'assembly'].map(stage => [`episode-${stage}`, `${root}/${stage}`, '雨夜来信']),
+  ...['source', 'assets', 'storyboard', 'assembly'].map(stage => [`creation-${stage}`, `${root}/${stage}`, '雨夜来信']),
 ];
 
 for (const width of [2048, 1440, 1366, 1280]) test(`account page returns to its source and visible account links open it at ${width}px`, async ({ page }, info) => {
@@ -47,13 +47,13 @@ for (const width of [2048, 1440, 1366, 1280]) test(`account page returns to its 
   await page.setViewportSize({ width, height: width === 2048 ? 1070 : 900 });
   for (const [name, path, heading] of studioRoutes) {
     await page.goto(path);
-    const episodeRoute = name.startsWith('episode-');
-    const title = episodeRoute ? page.locator('.episode-project-location') : page.getByRole('heading', { name: heading, exact: true, level: 1 });
+    const episodeRoute = name.startsWith('creation-');
+    const title = episodeRoute ? page.locator('.creation-project-location') : page.getByRole('heading', { name: heading, exact: true, level: 1 });
     await expect(title).toBeVisible();
     if (episodeRoute) {
       await expect(title).toContainText(heading);
-      if (name === 'episode-assembly') await expect(page.getByRole('region', { name: '视频时间轴', exact: true })).toBeVisible();
-      else await expect(page.locator(name === 'episode-source' ? '.sd-doc-head' : '.standard-object-heading')).toBeVisible();
+      if (name === 'creation-assembly') await expect(page.getByRole('region', { name: '视频时间轴', exact: true })).toBeVisible();
+      else await expect(page.locator(name === 'creation-source' ? '.sd-doc-head' : '.standard-object-heading')).toBeVisible();
       await expect(page.getByRole('button', { name: '保存状态：已保存', exact: true })).toHaveCount(1);
     }
     const sourceUrl = new URL(page.url());
@@ -151,7 +151,7 @@ for (const width of [1440, 1280]) test(`password verification preserves failed i
 test('every workspace entry reaches the account page and a missing email disables password recovery', async ({ page }) => {
   test.setTimeout(90000);
   const data = await signedInFixture(page); data.state.user.email = '';
-  for (const path of ['/assets/character', '/assets/scene', '/assets/prop', '/tasks/text', '/tasks/image', '/tasks/video', '/tasks/audio', '/media-library/image', '/media-library/video', '/ai_config']) {
+  for (const path of ['/projects', '/media-library/all', '/media-library/image', '/media-library/video', '/media-library/audio', '/skills', '/ai_config']) {
     await page.goto(path);
     await page.getByRole('link', { name: /^账号中心：/ }).click();
     const center = page.getByRole('region', { name: '账号中心', exact: true });

@@ -6,8 +6,8 @@ from PIL import Image
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import Base
-from short_drama.schemas.canvas_resource import CanvasResourceStart
-from short_drama.service.canvas_resource_io import inspect_resource, resource_byte_range
+from short_drama.schemas.canvas.resources.resource import CanvasResourceStart
+from short_drama.service.canvas.resources.resource_io import inspect_resource, resource_byte_range
 
 
 @pytest.mark.parametrize(
@@ -68,7 +68,7 @@ def test_foreign_key_names_are_globally_unique_before_running_mysql_ddl():
 
 
 def test_resource_id_overflow_fails_before_a_database_query():
-    from short_drama.service.canvas_document import media_references
+    from short_drama.service.canvas.document.document import media_references
 
     with pytest.raises(WorkflowError) as failure:
         list(media_references({"storageKey": "resource:18446744073709551616"}))

@@ -11,15 +11,15 @@ import pytest
 from sqlalchemy import event, select
 from sqlalchemy.dialects import mysql
 
+import short_drama.db.access as _access  # noqa: F401
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict
-from short_drama.db import access as _access  # noqa: F401
-from short_drama.domain import MediaFile, ProjectRenderJob, ProjectScript
-from short_drama.domain.project_sound import ProjectSound
-from short_drama.schemas.project_sound import SoundDocument
+from short_drama.domain import MediaFile, ProjectScript
+from short_drama.domain.creation.sound.tracks.sound import ProjectSound, SoundMediaReference
+from short_drama.schemas.creation.sound.tracks.sound import SoundDocument
 from short_drama.service.base import utcnow
-from short_drama.service.project_service import ProjectService
-from short_drama.service.project_sound_service import ProjectSoundService
+from short_drama.service.creation.sound.tracks.sound import ProjectSoundService
+from short_drama.service.projects.management.project import ProjectService
 from tests.support.generation_fixtures import generation_session
 from tests.unit.standard.assembly.test_project_assembly import body, export_body, flow
 from tests.unit.standard.assets.test_asset_extraction import extraction
@@ -51,23 +51,37 @@ def test_writing_and_project_reads_avoid_write_locks_but_save_keeps_version_mute
         saved = writing.save_script(
             e, {"script_id": None, "content": "script", "content_version": "1"}
         )
-        confirmed = writing.confirm(e, saved["script"]["id"], {"content_version": "2"})
+        confirmed = writing.get(e)
         with session.begin():
             session.get(ProjectScript, int(saved["script"]["id"])).created_by = 1
         actor_scope(session, e)
         with capture_sql(session) as reads:
             assert writing.get(e) == confirmed
-            assert writing.candidates(e)["items"][0]["is_confirmed"]
+            assert confirmed["confirmed_script_id"] == saved["script"]["id"]
             assert ProjectService(session).get(e).id == e
             assert ProjectService(session).list_projects().total == 1
         assert reads and all("FOR UPDATE" not in sql for sql in reads)
         with capture_sql(session) as writes:
-            writing.save_novel(e, {"content": "new", "content_version": "3"})
+            writing.save_script(
+                e,
+                {
+                    "script_id": saved["script"]["id"],
+                    "content": "new",
+                    "content_version": confirmed["content_version"],
+                },
+            )
         locks = [sql for sql in writes if "FOR UPDATE" in sql]
         assert any("FROM projects" in sql for sql in locks)
         with pytest.raises(Conflict):
-            writing.save_novel(e, {"content": "stale", "content_version": "3"})
-        assert writing.get(e)["novel"]["content"] == "new"
+            writing.save_script(
+                e,
+                {
+                    "script_id": saved["script"]["id"],
+                    "content": "stale",
+                    "content_version": confirmed["content_version"],
+                },
+            )
+        assert writing.get(e)["editing_script"]["content"] == "new"
 
 
 @pytest.mark.parametrize("with_audio", [False, True])
@@ -76,14 +90,13 @@ def test_assembly_sound_and_job_reads_avoid_locks_but_edit_keeps_assembly_mutex(
         f, assembly = flow(session)
         state = assembly.initialize(f.project)
         job = assembly.export(f.project, export_body(state), "lock-test-export")
-        settings = Settings(_env_file=None, audio_production_enabled=True)
-        # Production media references share the project's scope. This legacy fixture
-        # predates actor enforcement, so align its seed before enabling the actor.
+        settings = Settings(
+            _env_file=None, audio_production_enabled=True, minio_image_bucket="images"
+        )
         with session.begin():
             for media in session.scalars(select(MediaFile)):
-                media.scope_user_id, media.project_id = None, int(f.project)
-                media.created_by, media.published_at = 1, utcnow()
-            session.get(ProjectRenderJob, int(job["id"])).initiated_by = 1
+                if media.published_at is None:
+                    media.published_at = utcnow()
             if with_audio:
                 session.add(
                     MediaFile(
@@ -107,6 +120,9 @@ def test_assembly_sound_and_job_reads_avoid_locks_but_edit_keeps_assembly_mutex(
                         updated_at=utcnow(),
                     )
                 )
+                session.add(
+                    SoundMediaReference(assembly_id=int(state["assembly"]["id"]), media_id=900)
+                )
         assembly.settings = settings
         actor_scope(session, f.project)
         storage = SimpleNamespace(presigned_get=lambda *_: "https://media.example.test/music.wav")
@@ -117,10 +133,13 @@ def test_assembly_sound_and_job_reads_avoid_locks_but_edit_keeps_assembly_mutex(
             assert assembly.job_action(f.project, job["id"], "get")["id"] == job["id"]
             assert sound.get(f.project)["row_version"] == str(int(with_audio))
         assert reads and all("FOR UPDATE" not in sql for sql in reads)
-        payload = body(state)
+        from short_drama.service.creation.assembly.editing.editor import AssemblyEditorService
+
+        editor = AssemblyEditorService(session, settings, storage)
+        payload = body(editor.get_editor(f.project))
         payload["clips"][0]["muted"] = True
         with capture_sql(session) as writes:
-            assembly.edit(f.project, payload)
+            editor.save_editor(f.project, payload)
         locks = [sql for sql in writes if "FOR UPDATE" in sql]
         assert any("FROM project_assemblies" in sql for sql in locks)
 

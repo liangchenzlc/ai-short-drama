@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from short_drama.schemas.canvas_model_test import CanvasModelTestCreate
+from short_drama.schemas.canvas.models.model_test import CanvasModelTestCreate
 
 
 def request(**changes):

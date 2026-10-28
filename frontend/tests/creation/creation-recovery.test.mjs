@@ -5,13 +5,13 @@ import ts from 'typescript';
 
 const compile = path => ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const url = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const attemptUrl = url(compile('../../src/features/generations/attempt.ts'));
+const attemptUrl = url(compile('../../src/features/shared/async/request-receipt.ts'));
 const attempt = await import(attemptUrl);
-const recoveryUrl = url(compile('../../src/features/projects/creation-recovery.ts').replace('../generations/attempt', attemptUrl));
+const recoveryUrl = url(compile('../../src/features/creation/shared/recovery/creation-recovery.ts').replace('@host/features/shared/async/request-receipt', attemptUrl));
 const recovery = await import(recoveryUrl);
-const render = await import(url(compile('../../src/features/projects/render-recovery.ts').replace('./creation-recovery', recoveryUrl)));
+const render = await import(url(compile('../../src/features/creation/assembly/sessions/render-recovery.ts').replace('@host/features/creation/shared/recovery/creation-recovery', recoveryUrl)));
 const assemblyDocument = url('export const materialClip = value => value;');
-const assembly = await import(url(compile('../../src/features/projects/assembly-recovery.ts').replace('./creation-recovery', recoveryUrl).replace('./assembly-document', assemblyDocument)));
+const assembly = await import(url(compile('../../src/features/creation/assembly/sessions/assembly-recovery.ts').replace('@host/features/creation/shared/recovery/creation-recovery', recoveryUrl).replace('@host/features/creation/assembly/sessions/assembly-document', assemblyDocument)));
 const store = () => { const map = new Map(); return { getItem: k => map.get(k) ?? null, setItem: (k, v) => map.set(k, v), removeItem: k => map.delete(k) }; };
 const body = { row_version: '9007199254740993', source_hash: 'a'.repeat(64), acknowledge_stale_source: false };
 

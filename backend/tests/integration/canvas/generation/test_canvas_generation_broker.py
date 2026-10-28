@@ -24,7 +24,7 @@ from sqlalchemy import select
 
 from short_drama.domain import AsyncTask, MediaFile
 from short_drama.tasks.celery_app import make_celery, topology
-from short_drama.tasks.publisher import Publisher
+from short_drama.tasks.runtime.publisher import Publisher
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.generation.test_canvas_generation_runtime import (
     TASKS,

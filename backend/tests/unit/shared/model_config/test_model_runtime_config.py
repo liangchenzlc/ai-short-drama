@@ -6,27 +6,27 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from short_drama.ai.canvas_credentials import CanvasCredentials, decode_canvas_credentials
-from short_drama.ai.gateway import _authentication
+from short_drama.ai.gateway.canvas_credentials import CanvasCredentials, decode_canvas_credentials
+from short_drama.ai.gateway.support import _authentication
 from short_drama.ai.model_identity import model_credential_identity
 from short_drama.ai.types import GenerationError
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import ConfigurationError, WorkflowError
-from short_drama.schemas.ai_model_config import AIModelConfigCreate, AIModelConfigUpdate
-from short_drama.schemas.canvas_model_test import CanvasModelTestCreate
-from short_drama.schemas.canvas_workspace import CanvasWorkspacePreferencesRequest
-from short_drama.schemas.model_runtime_profile import ModelRuntimeProfile
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.canvas_credential_freeze import freeze_model_credentials
-from short_drama.service.canvas_model_catalog_service import CanvasModelCatalogService
-from short_drama.service.canvas_model_test_service import CanvasModelTestService
-from short_drama.service.canvas_workspace_service import CanvasWorkspaceService
-from short_drama.service.model_runtime_config import (
+from short_drama.schemas.ai_config.management.models import AIModelConfigCreate, AIModelConfigUpdate
+from short_drama.schemas.ai_config.management.runtime_profile import ModelRuntimeProfile
+from short_drama.schemas.canvas.models.model_test import CanvasModelTestCreate
+from short_drama.schemas.canvas.workspace.workspace import CanvasWorkspacePreferencesRequest
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.ai_config.management.runtime import (
     decrypt_runtime_credentials,
     encrypt_runtime_credentials,
     legacy_runtime_profile,
     refresh_runtime_model,
 )
+from short_drama.service.canvas.generation.credential_freeze import freeze_model_credentials
+from short_drama.service.canvas.models.model_catalog import CanvasModelCatalogService
+from short_drama.service.canvas.models.model_test import CanvasModelTestService
+from short_drama.service.canvas.workspace.workspace import CanvasWorkspaceService
 
 
 def test_host_runtime_schema_preserves_source_capability_fields_and_secret_redaction():
@@ -386,7 +386,11 @@ def test_capabilities_reads_saved_profile_without_mutating_or_falling_back(proto
 
 
 def test_header_account_identity_changes_without_rewriting_frozen_call_or_reusing_evidence():
-    from short_drama.service.agent_model_service import capability_evidence, model_snapshot
+    from short_drama.agent.gateway.langchain import FRAMEWORK_VERSION
+    from short_drama.service.ai_config.management.assistant_models import (
+        capability_evidence,
+        model_snapshot,
+    )
 
     config = SimpleNamespace(
         id=17,
@@ -406,6 +410,7 @@ def test_header_account_identity_changes_without_rewriting_frozen_call_or_reusin
         "model_key": config.model_key,
         "base_url": config.base_url,
         "credential_identity": frozen["credential_identity"],
+        "framework_version": FRAMEWORK_VERSION,
         "tool_calling": True,
     }
     assert capability_evidence(config)["tool_calling"]

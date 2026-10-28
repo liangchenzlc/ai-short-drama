@@ -9,21 +9,22 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 import tests.integration.standard.assistant.test_global_assistant_tasks as task_tests
+from short_drama.agent.gateway.langchain import LangChainGateway
+from short_drama.agent.harness.runtime import HarnessRuntime
 from short_drama.agent.memory.runtime import AgentMemoryRuntime
-from short_drama.agent.gateway.protocol import AgentModelGateway
-from short_drama.agent.coordinator.runtime import AgentRuntime
 from short_drama.core.config import Settings
 from short_drama.domain import Asset, ShotScript
-from short_drama.domain.agent import AgentMessage, AgentRun
-from short_drama.domain.agent_memory import AgentMemoryJob
-from short_drama.domain.agent_task import AgentOperation, AgentTask
-from short_drama.domain.canvas import CanvasNode
-from short_drama.service.agent_memory_service import AgentMemoryService
-from short_drama.service.agent_skill_service import AgentSkillService
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.asset_service import AssetService
-from short_drama.service.canvas_service import CanvasService
-from short_drama.service.project_service import ProjectService
+from short_drama.domain.assistant.conversations.models import AgentMessage
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.memory.memory import AgentMemoryJob
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
+from short_drama.domain.canvas.document.canvas import CanvasNode
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.assistant.memory.memory import AgentMemoryService
+from short_drama.service.canvas.document.canvas import CanvasService
+from short_drama.service.creation.assets.management.assets import AssetService
+from short_drama.service.projects.management.project import ProjectService
+from short_drama.service.skills.catalog.skill import AgentSkillService
 from tests.integration.canvas.assistant.test_canvas_agnes_live import assert_no_secret, live_key
 
 pytestmark = [
@@ -55,22 +56,16 @@ def global_live_workspace(db_session, request):
     return factory, settings, model.id
 
 
-class _ObservedGateway(AgentModelGateway):
+class _ObservedGateway(LangChainGateway):
     def __init__(self, settings):
         super().__init__(settings)
         self.inputs, self.outputs = [], []
 
-    async def run_segment(self, snapshot, credential, **kwargs):
+    async def decide(self, snapshot, credential, **kwargs):
         # Never save the snapshot or credential. All calls use the actual gateway and transport.
-        self.inputs.append(
-            {
-                key: value
-                for key, value in kwargs.items()
-                if key in {"instructions", "user_prompt", "message_history", "deferred_results"}
-            }
-        )
-        result = await super().run_segment(snapshot, credential, **kwargs)
-        self.outputs.append({"protocol": result.protocol, "usage": result.usage})
+        self.inputs.append([item.model_dump(mode="json") for item in kwargs["messages"]])
+        result = await super().decide(snapshot, credential, **kwargs)
+        self.outputs.append({"protocol": result["protocol"], "usage": result["usage"]})
         return result
 
 
@@ -89,7 +84,7 @@ def _finish(runtime, run_id, *, maximum=12):
 def _write_report(directory: Path, gateway, **facts):
     report = {
         "model": "agnes-3.0-flash",
-        "scope": "real V3 AgentRuntime and AgentModelGateway; disposable MySQL",
+        "scope": "real HarnessRuntime and LangChainGateway; disposable MySQL",
         "submissions": len(gateway.outputs),
         "segments": gateway.outputs,
         **facts,
@@ -161,7 +156,7 @@ def test_global_assistant_agnes_creates_real_structures_without_implicit_body_or
             "live-structure-message",
         )
     gateway = _ObservedGateway(settings)
-    runtime = AgentRuntime(factory, settings, gateway)
+    runtime = HarnessRuntime(factory, settings, gateway)
     _finish(runtime, accepted.run.id)
     with factory() as session:
         operations = session.scalars(
@@ -222,7 +217,7 @@ def test_global_assistant_agnes_reads_real_memory_before_answering(global_live_w
             "live-memory-question",
         )
     gateway = _ObservedGateway(settings)
-    _finish(AgentRuntime(factory, settings, gateway), accepted.run.id)
+    _finish(HarnessRuntime(factory, settings, gateway), accepted.run.id)
     with factory() as session:
         reads = session.scalars(
             select(AgentOperation).where(AgentOperation.tool_name == "read_memory")
@@ -289,7 +284,7 @@ def test_global_assistant_agnes_asks_about_incompatible_manual_methods(
             "live-method-conflict",
         )
     gateway = _ObservedGateway(settings)
-    _finish(AgentRuntime(factory, settings, gateway), accepted.run.id)
+    _finish(HarnessRuntime(factory, settings, gateway), accepted.run.id)
     with factory() as session:
         answer = session.scalar(
             select(AgentMessage.content).where(AgentMessage.role == "assistant")

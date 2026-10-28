@@ -9,13 +9,13 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import select, text
 
+import short_drama.service.canvas.generation.text.text_stream as canvas_text_stream
 from short_drama.ai import GenerationError, GenerationResult
-from short_drama.dao.canvas_generation_dao import CanvasGenerationDAO
-from short_drama.dao.task_runtime_dao import LeaseLost
+from short_drama.dao.canvas.generation.generation import CanvasGenerationDAO
+from short_drama.dao.generations.runtime.lifecycle import LeaseLost
 from short_drama.domain import AIGenerationRecord, AsyncTask, CanvasTaskTextDelta
-from short_drama.service import canvas_text_stream
 from short_drama.service.base import utcnow
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.canvas.document.test_canvas_workspace import actor
 from tests.integration.canvas.generation.test_canvas_generation_runtime import TASKS, admit, seed
 from tests.integration.canvas.resources.test_canvas_library import (
@@ -105,7 +105,7 @@ def events(content):
 def test_task_list_locks_batch_parents_before_text_ranges(
     identity_app, database_errors, monkeypatch, scope
 ):
-    from short_drama.service.canvas_generation_service import CanvasGenerationService
+    from short_drama.service.canvas.generation.generation import CanvasGenerationService
 
     client, user, _, _, request = seed(identity_app, "canvas_text_batch_lock_order")
     request["input"]["textOptions"]["stream"] = True
@@ -259,7 +259,7 @@ def test_text_writer_and_detail_reader_use_parent_before_task_lock_order(
             errors.append(error)
 
     def read_detail():
-        from short_drama.service.canvas_generation_service import CanvasGenerationService
+        from short_drama.service.canvas.generation.generation import CanvasGenerationService
 
         try:
             engine = identity_app[1].kw["bind"]

@@ -67,39 +67,22 @@ async function openEditor(page: Page) {
   return page.locator('.asset-editor-drawer');
 }
 
-for (const scope of ['episode', 'project', 'global'] as const) {
-  test(`current published image can be reconfirmed in the ${scope} library`, async ({ page }) => {
-    const data = await editorFixture(page);
-    if (scope === 'episode') await page.goto(`${root}/assets`);
-    else if (scope === 'global') await page.goto('/assets/character');
-    else {
-      await page.goto('/projects/10');
-      await page.getByRole('button', { name: '项目资源库', exact: true }).click();
-    }
-    const editor = await openEditor(page);
-    await editor.getByRole('textbox', { name: '描述', exact: true }).fill('修改后的外观，继续使用已采用的图片。');
-    if (scope === 'episode') await expect.poll(() => data.server.description).toBe('修改后的外观，继续使用已采用的图片。');
-    else await editor.getByRole('button', { name: '保存修改', exact: true }).click();
-    if (scope === 'episode') {
-      const details = await openSaveDetails(page);
-      await expect(details.getByText('素材设定已变化，请重新生成，或将核对后的图片设为主图。', { exact: true })).toBeVisible();
-      await page.getByRole('button', { name: /^保存状态：/ }).click();
-      await expect(editor.getByRole('button', { name: '重新确认当前图片', exact: true })).toHaveCount(0);
-      const image = editor.locator('.image-subject').first();
-      await image.hover();
-      await expect(image.getByRole('button', { name: '将第 1 张设为主图', exact: true })).toBeEnabled();
-      expect(data.operations.filter(op => op.path.endsWith('/confirm'))).toHaveLength(0);
-      return;
-    }
-    await expect(editor.getByText('待确认', { exact: true }).first()).toBeVisible();
-    await editor.getByRole('button', { name: '重新确认当前图片', exact: true }).click();
-    await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确认继续', exact: true }).click();
-    await expect.poll(() => data.server.state).toBe('confirmed');
-    expect(data.operations.filter(op => op.path.endsWith('/confirm'))).toHaveLength(1);
-    expect(data.operations.find(op => op.path.endsWith('/confirm'))?.body.row_version).toBe('5');
-    expect(data.errors).toEqual([]);
-  });
-}
+test('changed asset settings keep the published image and offer the current primary action', async ({ page }) => {
+  const data = await editorFixture(page);
+  await page.goto(`${root}/assets`);
+  const editor = await openEditor(page);
+  await editor.getByRole('textbox', { name: '描述', exact: true }).fill('修改后的外观，继续使用已采用的图片。');
+  await expect.poll(() => data.server.description).toBe('修改后的外观，继续使用已采用的图片。');
+  const details = await openSaveDetails(page);
+  await expect(details.getByText('素材设定已变化，请重新生成，或将核对后的图片设为主图。', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /^保存状态：/ }).click();
+  await expect(editor.getByRole('button', { name: '重新确认当前图片', exact: true })).toHaveCount(0);
+  const image = editor.locator('.image-subject').first();
+  await image.hover();
+  await expect(image.getByRole('button', { name: '将第 1 张设为主图', exact: true })).toBeEnabled();
+  expect(data.operations.filter(op => op.path.endsWith('/confirm'))).toHaveLength(0);
+  expect(data.errors).toEqual([]);
+});
 
 test('opening the editor reads latest detail and retries a failed initial read', async ({ page }) => {
   const data = await editorFixture(page);
@@ -141,24 +124,6 @@ test('a version conflict preserves and downloads the draft before explicit recon
   await expect.poll(() => data.server.description).toBe('本页尚未保存的草稿');
   expect(data.operations.filter(op => op.method === 'PATCH').at(-1)?.body.row_version).toBe('5');
   expect(data.errors).toEqual([]);
-});
-
-test('standalone library reconfirmation keeps stale-source and shared-impact confirmations', async ({ page }) => {
-  const data = await editorFixture(page);
-  Object.assign(data.server, { state: 'unconfirmed', reference_count: 2 });
-  data.state.stale = true;
-  data.state.shared = true;
-  await page.goto('/assets/character');
-  const editor = await openEditor(page);
-  await editor.getByRole('button', { name: '重新确认当前图片', exact: true }).click();
-  const confirmation = page.getByRole('dialog', { name: '确认操作', exact: true });
-  await confirmation.getByRole('button', { name: '确认继续', exact: true }).click();
-  await expect(confirmation).toContainText('旧内容');
-  await confirmation.getByRole('button', { name: '确认继续', exact: true }).click();
-  await expect(confirmation).toContainText('影响共享引用');
-  await confirmation.getByRole('button', { name: '确认继续', exact: true }).click();
-  await expect.poll(() => data.server.state).toBe('confirmed');
-  expect(data.operations.filter(op => op.path.endsWith('/confirm')).at(-1)?.body).toMatchObject({ acknowledge_stale_source: true, confirm_shared: true, row_version: '4', expected_media_id: '9901' });
 });
 
 test('selecting a new local card ignores a delayed detail response from the previous object', async ({ page }) => {
@@ -226,7 +191,7 @@ test('conflict review can fail safely before explicitly discarding the draft at 
 
 test('malformed local recovery remains downloadable and blocks editing until explicitly cleared', async ({ page }) => {
   const data = await editorFixture(page);
-  const key = 'short-drama:asset-editor:v1:anonymous:10:20:501';
+  const key = 'short-drama:asset-editor:v2:anonymous:10:501';
   const original = JSON.stringify({ base: {}, fields: { description: '损坏记录中的原始文字' } });
   await page.addInitScript(({ key, original }) => localStorage.setItem(key, original), { key, original });
   await page.goto(`${root}/assets`);

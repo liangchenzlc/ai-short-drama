@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
-const source = readFileSync(new URL('../../src/features/projects/creation-draft-session.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/creation/shared/sessions/creation-draft-session.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { CreationDraftSession } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const value = (input_text = '') => ({ model_config_id: '7', input_text, image_settings: { count: 1, aspect: '16:9', resolution: '2K' }, video_settings: null, reference_media_ids: [] });
@@ -255,24 +255,24 @@ test('private reload after an initial read failure retains the persisted request
 });
 
 test('private draft hook backs up a damaged original record before explicit server replacement', async () => {
-  const hookSource = readFileSync(new URL('../../src/features/projects/useCreationDraft.ts', import.meta.url), 'utf8');
+  const hookSource = readFileSync(new URL('../../src/features/creation/shared/sessions/useCreationDraft.ts', import.meta.url), 'utf8');
   const hookCompiled = ts.transpileModule(hookSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const storage = new Map(), scope = '7:generation-draft:10:30:storyboard_image';
   storage.set(scope, '{damaged-original-record');
   const exports = {};
   const providers = {
     react: { useEffect() {}, useMemo: factory => factory(), useRef: current => ({ current }), useSyncExternalStore: (_subscribe, snapshot) => snapshot() },
-    '../../api/modules/creation-drafts': { creationDraftsApi: () => ({ get: async () => saved('server input') }) },
-    '../auth/AuthSession': { useAuth: () => ({ user: { id: '7' }, enabled: true }) },
-    './creation-draft-session': { CreationDraftSession },
-    './creation-recovery': {
+    '@host/api/creation/drafts/requests': { creationDraftsApi: () => ({ get: async () => saved('server input') }) },
+    '@host/features/identity/session/AuthSession': { useAuth: () => ({ user: { id: '7' }, enabled: true }) },
+    '@host/features/creation/shared/sessions/creation-draft-session': { CreationDraftSession },
+    '@host/features/creation/shared/recovery/creation-recovery': {
       creationScope: (key, actor) => `${actor}:${key}`,
       readRecovery: () => { throw new Error('damaged recovery'); },
       readRecoveryText: key => storage.get(key) ?? null,
       saveRecovery: (key, input) => storage.set(key, structuredClone(input)),
       clearRecovery: key => storage.delete(key),
     },
-    './standard-session-registry': { retainStandardSession: (_actor, _key, factory) => factory(), releaseStandardSession() {} },
+    '@host/features/creation/shared/sessions/registry': { retainStandardSession: (_actor, _key, factory) => factory(), releaseStandardSession() {} },
   };
   vm.runInNewContext(hookCompiled, { exports, require: key => { assert.ok(providers[key], key); return providers[key]; } });
   const hook = exports.useCreationDraft({ projectId: '10', objectId: '30', purpose: 'storyboard_image' });

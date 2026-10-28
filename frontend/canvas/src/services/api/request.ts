@@ -1,5 +1,5 @@
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
-import { http as hostHttp, ApiError as HostApiError } from "@host/api/http";
+import { http as hostHttp, ApiError as HostApiError } from "@host/integrations/canvas/session";
 import { createHostCanvasContract } from "@/services/host-canvas-contract";
 import { canvasRequestFailureRevokes, canvasRequestIdentity, hostCanvasAccess } from "@/services/host-canvas-access";
 import { hostCanvasErrorMessage } from "@/services/host-canvas-errors";

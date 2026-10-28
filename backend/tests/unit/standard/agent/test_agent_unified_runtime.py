@@ -5,16 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 from short_drama.agent.context.capabilities import input_capabilities
-from short_drama.agent.gateway.protocol import provider_failure_code
 from short_drama.agent.core.state import failure_message
-from short_drama.agent.legacy.tools import tool_manifest
-from short_drama.schemas.agent_runtime import MessageCreate
-from short_drama.service.agent_model_service import AgentModelService
-
-
-def test_messages_default_to_auto_and_keep_explicit_discussion_read_only():
-    assert MessageCreate(content="修改这个人物").mode == "auto"
-    assert MessageCreate(content="仅讨论", mode="discuss").mode == "discuss"
+from short_drama.agent.gateway.protocol import provider_failure_code
+from short_drama.schemas.assistant.operations.runtime import MessageCreate
+from short_drama.service.ai_config.management.assistant_models import AgentModelService
 
 
 def test_model_selection_does_not_require_paid_capability_evidence(monkeypatch):
@@ -32,12 +26,6 @@ def test_unknown_model_family_is_not_a_multimodal_deny_list():
     assert support["image"] is True
     assert support["audio"] is True
     assert support["evidence"] == "runtime"
-
-
-def test_agent_has_prepare_and_status_tools_without_adoption_power():
-    names = {tool.name for tool in tool_manifest()}
-    assert {"prepare_task", "read_task_status", "create_candidate", "propose_plan"} <= names
-    assert "adopt" not in names
 
 
 def test_legacy_discussion_cannot_carry_a_task():

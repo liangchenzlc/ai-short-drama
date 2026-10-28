@@ -1,0 +1,8 @@
+.studio-content,
+.studio-main {
+  min-width: 0;
+}
+/* 创作页已占满视口；详情页底部留白会使聚焦控件时整页滚动，挤走顶部导航。 */
+.studio-detail.studio-creation .studio-main {
+  padding: 0;
+}

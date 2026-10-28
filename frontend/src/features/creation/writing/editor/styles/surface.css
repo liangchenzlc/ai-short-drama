@@ -1,0 +1,161 @@
+.creation-page:is(textarea, input, select) {
+  display: block;
+  width: 100%;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  padding: 9px 11px;
+  font: inherit;
+  line-height: 1.5;
+}
+.creation-page textarea {
+  resize: vertical;
+}
+.creation-page:is(textarea, input, select):focus-visible,
+.creation-page button:focus-visible,
+.creation-page summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.creation-page:is(textarea, input, select):read-only,
+.creation-page :is(textarea, input, select):disabled {
+  background: var(--surface-muted);
+  color: var(--sub);
+}
+.creation-page .creation-novel-text {
+  font-weight: 400;
+}
+.creation-page .creation-script-textarea {
+  min-height: 360px;
+  font-weight: 400;
+  line-height: 1.65;
+}
+.creation-stage-controls,
+.creation-script-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin: 12px 0;
+}
+.creation-stage-controls label,
+.creation-script-settings label,
+.creation-asset-list label {
+  display: grid;
+  gap: 7px;
+  color: var(--sub);
+  font-size: 13px;
+}
+.creation-primary-action {
+  min-height: 40px;
+  padding: 8px 15px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--on-accent);
+  background: var(--accent-fill);
+  cursor: pointer;
+  font: inherit;
+}
+.creation-primary-action:hover:not(:disabled) {
+  background: var(--ink);
+}
+.creation-primary-action:disabled {
+  background: var(--hair);
+  cursor: not-allowed;
+}
+.creation-stage-controls.creation-source-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 14px 0;
+}
+.creation-source-controls label {
+  width: min(100%, 240px);
+}
+.creation-page .creation-source-controls select {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.creation-stage-controls.creation-source-controls > button {
+  min-height: 34px;
+  padding: 6px 12px;
+}
+.creation-script-settings {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  max-width: 840px;
+  margin: 16px 0 0;
+}
+.creation-script-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 16px;
+}
+.creation-script-action-row p {
+  flex: 1 1 260px;
+  margin: 0;
+  color: var(--sub);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.creation-help {
+  color: var(--sub);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.creation-candidates {
+  margin-top: 16px;
+}
+.creation-candidates h3 {
+  font-size: 15px;
+  color: var(--ink);
+}
+.creation-candidate {
+  padding: 14px 0;
+  border-top: 1px solid var(--hair);
+}
+.creation-candidate pre,
+.creation-source-compare pre {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.7;
+  color: var(--ink);
+}
+.creation-candidate button {
+  margin-top: 8px;
+  cursor: pointer;
+}
+.creation-candidate button:disabled {
+  cursor: not-allowed;
+}
+.creation-asset-list {
+  display: grid;
+  gap: 12px;
+}
+.creation-asset-list .creation-candidate {
+  display: grid;
+  gap: 10px;
+}
+.creation-source-compare {
+  margin-bottom: 16px;
+  color: var(--sub);
+}
+.creation-source-compare summary {
+  cursor: pointer;
+}
+.creation-stage-pending {
+  color: var(--sub);
+}
+.creation-asset-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin-top: 16px;
+  border-bottom: 1px solid var(--hair);
+}

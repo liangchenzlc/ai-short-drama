@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from short_drama.core.config import Settings
-from short_drama.service.canvas_depth_execute import CanvasDepthCaptureExecutor
-from short_drama.service.canvas_timeline_renderer import CanvasTimelineRenderer
+from short_drama.service.canvas.timeline.timeline_renderer import CanvasTimelineRenderer
+from short_drama.service.canvas.tools.depth.depth_execute import CanvasDepthCaptureExecutor
 from tests.integration.canvas.timeline.test_canvas_timeline_ffmpeg import ffmpeg
 
 pytestmark = [

@@ -3,29 +3,38 @@
 import pytest
 from sqlalchemy import func, select
 
-from short_drama.core.exceptions import Conflict, WorkflowError
-from short_drama.domain import AIGenerationRecord, AsyncTask, NovelScriptRecord, ProjectScript
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.generation_business_service import GenerationBusinessService
-from short_drama.service.project_script_service import ProjectScriptService
-from short_drama.service.project_writing_service import ProjectWritingService
-from short_drama.service.task_runtime_service import finish
+from short_drama.core.exceptions import WorkflowError
+from short_drama.domain import AIGenerationRecord, AsyncTask, ProjectScript
+from short_drama.service.creation.writing.script.documents import ProjectWritingService
+from short_drama.service.generations.admission.business import GenerationBusinessService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.runtime.lifecycle import finish
 from tests.support.generation_fixtures import config, generation_session, settings
 from tests.unit.standard.writing.test_project_writing import setup
 
 
-def admit(session, project, scene="script_generate", kind="idea", **extra):
+def admit(session, project, scene="script_rewrite", kind=None, **extra):
     writing = ProjectWritingService(session)
+    state = writing.get(project)
+    if state["editing_script"] is None:
+        writing.save_script(
+            project,
+            {"script_id": None, "content": "原正文", "content_version": state["content_version"]},
+        )
+        state = writing.get(project)
+    script = state["editing_script"]
     source = {
-        "scene": scene,
+        "scene": "script_rewrite",
         "project_id": str(project),
-        "content_version": writing.get(project)["content_version"],
+        "content_version": state["content_version"],
+        "script_id": script["id"],
+        "start": 0,
+        "end": len(script["content"]),
+        "selected_text": script["content"],
         **extra,
     }
-    if scene != "script_rewrite":
-        source.update(input_kind=kind, **({"idea": "雨夜的一封信"} if kind == "idea" else {}))
     body = {"source": source, "instructions": "保持人物性格"}
-    return AIGenerationService(session, settings).create("text", body, f"{scene}:{kind}"), body
+    return AIGenerationService(session, settings).create("text", body, "script-rewrite"), body
 
 
 def output(session, task_id, content="生成的正文", reason="stop"):
@@ -46,53 +55,6 @@ def apply(session, task_id, record_id):
         return result
 
 
-@pytest.mark.parametrize(
-    "scene,kind",
-    [
-        ("story_outline", "idea"),
-        ("story_outline", "novel"),
-        ("script_generate", "idea"),
-        ("script_generate", "novel"),
-        ("script_generate", "outline"),
-    ],
-)
-def test_all_sources_freeze_and_write_one_current_document(scene, kind):
-    with generation_session() as session:
-        config(session, "text")
-        project, writing = setup(session)
-        writing.save_novel(project, {"content": "原小说", "content_version": "1"})
-        writing.save_outline(project, {"content": "原大纲", "content_version": "2"})
-        (receipt, created), body = admit(session, project, scene, kind)
-        assert created
-        task_id = receipt["generation_id"]
-        replay, duplicate = AIGenerationService(session, settings).create(
-            "text", body, f"{scene}:{kind}"
-        )
-        assert not duplicate and replay["generation_id"] == task_id
-        state = writing.get(project)
-        assert len(state["active_writing_tasks"]) == 1
-        record_id = output(session, task_id)
-        result = apply(session, task_id, record_id)
-        current = writing.get(project)
-        assert current["active_writing_tasks"] == []
-        assert current["content_version"] == "4"
-        target = current["outline" if scene == "story_outline" else "editing_script"]
-        assert target["content"] == "生成的正文"
-        assert result["document_id"] == target["id"]
-        if scene != "story_outline":
-            assert current["confirmed_script_id"] == target["id"]
-        with session.begin():
-            record = session.get(AIGenerationRecord, record_id)
-            expected = {"idea": "雨夜的一封信", "novel": "原小说", "outline": "原大纲"}[kind]
-            assert record.request_data["source_snapshot"]["content"] == expected
-            assert record.response_data["business_result"] == result
-            assert session.scalar(select(func.count()).select_from(NovelScriptRecord)) == 0
-            assert (
-                GenerationBusinessService(session).save_text_result(int(task_id), record_id)
-                == result
-            )
-
-
 def test_rewrite_uses_code_points_and_changes_only_selected_occurrence_in_place():
     with generation_session() as session:
         config(session, "text")
@@ -100,9 +62,6 @@ def test_rewrite_uses_code_points_and_changes_only_selected_occurrence_in_place(
         original = "😀开头\n同一句话\n转场\n同一句话\n结尾👨‍👩‍👧"
         saved = writing.save_script(
             project, {"script_id": None, "content": original, "content_version": "1"}
-        )
-        writing.save_outline(
-            project, {"content": "不可见旧大纲，不应影响改写", "content_version": "2"}
         )
         start = original.rindex("同一句话")
         (receipt, _), _ = admit(
@@ -125,8 +84,6 @@ def test_rewrite_uses_code_points_and_changes_only_selected_occurrence_in_place(
             assert frozen["source_snapshot"]["after"] == original[start + 4 :]
             assert "不可见旧大纲" not in str(frozen["input"])
             assert frozen["template_version"] == "script-rewrite-v2"
-        # Another document may save while the target remains locked.
-        writing.save_outline(project, {"content": "新大纲", "content_version": "3"})
         record_id = output(session, receipt["generation_id"], "  只改这句\n")
         apply(session, receipt["generation_id"], record_id)
         current = writing.get(project)
@@ -135,14 +92,12 @@ def test_rewrite_uses_code_points_and_changes_only_selected_occurrence_in_place(
             current["editing_script"]["content"]
             == original[:start] + "  只改这句\n" + original[start + 4 :]
         )
-        assert current["editing_script"]["editor_document"] is None
-        assert current["outline"]["content"] == "新大纲"
-        assert current["content_version"] == "5"
+        assert current["content_version"] == "3"
         with session.begin():
             assert session.scalar(select(func.count()).select_from(ProjectScript)) == 1
 
 
-@pytest.mark.parametrize("operation", ["save", "switch", "internal", "generate", "assets", "shots"])
+@pytest.mark.parametrize("operation", ["save", "generate", "assets", "shots"])
 def test_script_target_lock_covers_all_writers_and_downstream_sources(operation):
     with generation_session() as session:
         config(session, "text")
@@ -157,21 +112,20 @@ def test_script_target_lock_covers_all_writers_and_downstream_sources(operation)
                 writing.save_script(
                     project, {"script_id": script_id, "content": "新文本", "content_version": "2"}
                 )
-            elif operation == "switch":
-                writing.select_script(project, {"script_id": script_id, "content_version": "2"})
-            elif operation == "internal":
-                ProjectScriptService(session).update(script_id, {"content": "内部写入"})
             elif operation == "generate":
                 AIGenerationService(session, settings).create(
                     "text",
                     {
                         "source": {
-                            "scene": "script_generate",
+                            "scene": "script_rewrite",
                             "project_id": str(project),
                             "content_version": "2",
-                            "input_kind": "idea",
-                            "idea": "新想法",
-                        }
+                            "script_id": script_id,
+                            "start": 0,
+                            "end": 3,
+                            "selected_text": "旧正文",
+                        },
+                        "instructions": "改写对白",
                     },
                     "other",
                 )
@@ -229,7 +183,7 @@ def test_cancelled_task_and_late_output_cannot_overwrite():
         rid = output(session, receipt["generation_id"])
         with pytest.raises(WorkflowError):
             apply(session, receipt["generation_id"], rid)
-        assert writing.get(project)["editing_script"] is None
+        assert writing.get(project)["editing_script"]["content"] == "原正文"
 
 
 def test_stale_fingerprint_prevents_save_and_resume_without_regeneration():
@@ -254,24 +208,13 @@ def test_stale_fingerprint_prevents_save_and_resume_without_regeneration():
             assert session.get(AIGenerationRecord, rid).text_content == "生成的正文"
 
 
-def test_outline_crud_preserves_whitespace_and_fences_stale_edits():
-    with generation_session() as session:
-        project, writing = setup(session)
-        first = writing.save_outline(project, {"content": "  大纲\n", "content_version": "1"})
-        second = writing.save_outline(project, {"content": "  修改\n", "content_version": "2"})
-        assert first["outline"]["id"] == second["outline"]["id"]
-        assert writing.get(project)["outline"]["content"] == "  修改\n"
-        with pytest.raises(Conflict):
-            writing.save_outline(project, {"content": "过期", "content_version": "1"})
-
-
 def test_failed_atomic_write_resumes_saved_output_without_another_model_call(monkeypatch):
     from sqlalchemy.exc import SQLAlchemyError
     from sqlalchemy.orm import sessionmaker
 
     from short_drama.ai.types import GenerationResult
     from short_drama.core.config import Settings
-    from short_drama.service.generation_execution_service import GenerationExecutionService
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
 
     with generation_session() as session:
         config(session, "text")

@@ -2,9 +2,9 @@ import pytest
 from pydantic import ValidationError
 from starlette.requests import Request
 
-from short_drama.api.v1.canvases import get_canvas_service
+from short_drama.api.v1.canvas.document.router import get_canvas_service
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.canvas_workspace import CanvasWorkspacePreferencesRequest
+from short_drama.schemas.canvas.workspace.workspace import CanvasWorkspacePreferencesRequest
 
 
 def test_preferences_only_accept_generation_settings_without_credentials():
@@ -39,8 +39,8 @@ def test_workspace_projects_legacy_modelhub_video_capabilities(model_key, durati
     from types import SimpleNamespace
     from unittest.mock import Mock
 
-    from short_drama.schemas.canvas_workspace import CanvasModelRead
-    from short_drama.service.canvas_workspace_service import CanvasWorkspaceService
+    from short_drama.schemas.canvas.workspace.workspace import CanvasModelRead
+    from short_drama.service.canvas.workspace.workspace import CanvasWorkspaceService
 
     config = SimpleNamespace(
         id=17,
@@ -92,7 +92,7 @@ def test_workspace_does_not_infer_modelhub_capabilities_from_name_or_override_pr
     from types import SimpleNamespace
     from unittest.mock import Mock
 
-    from short_drama.service.canvas_workspace_service import CanvasWorkspaceService
+    from short_drama.service.canvas.workspace.workspace import CanvasWorkspaceService
 
     config = SimpleNamespace(
         id=17,

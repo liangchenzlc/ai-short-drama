@@ -1,0 +1,345 @@
+.web-episode,
+.standard-creation-dialog,
+.standard-creation-popup,
+.standard-creation-drawer {
+  --creation-panel-inset: 12px;
+  --creation-overlay-inset: 16px;
+  --creation-section-gap: 12px;
+  --creation-action-gap: 8px;
+}
+
+.web-episode :is(.ant-btn, .creation-step-button, .creation-switch),
+.standard-creation-dialog .ant-btn {
+  transition:
+    color 140ms,
+    background-color 140ms,
+    border-color 140ms;
+}
+
+.standard-creation-dialog.ui-dialog {
+  font-size: 13px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+}
+.standard-creation-dialog.ui-dialog > header {
+  padding: 12px var(--creation-overlay-inset);
+  gap: 8px;
+  flex-shrink: 0;
+}
+.standard-creation-dialog.ui-dialog > header h2 {
+  font-size: 16px;
+}
+.standard-creation-dialog.ui-dialog > header .icon-button {
+  flex-shrink: 0;
+}
+.standard-creation-dialog
+  :is(
+    .media-picker-body,
+    .asset-import-body,
+    .shot-image-history-body,
+    .storyboard-history-scroll,
+    .extraction-body,
+    .assembly-dialog-body
+  ) {
+  padding: var(--creation-overlay-inset);
+}
+.standard-creation-dialog :is(.production-dialog-footer, .extraction-footer, .assembly-dialog-actions) {
+  padding: 12px var(--creation-overlay-inset);
+  gap: 8px;
+  flex-shrink: 0;
+}
+.standard-creation-dialog :is(.asset-import-search, .storyboard-result-preview) {
+  padding-inline: var(--creation-overlay-inset);
+}
+.standard-creation-dialog .dialog-actions {
+  gap: 8px;
+}
+.standard-creation-dialog .studio-confirm-content {
+  gap: 10px;
+  padding: 16px 16px 4px;
+}
+.standard-creation-dialog.studio-confirm-dialog > .dialog-actions {
+  padding: 12px 16px 16px;
+}
+.standard-creation-dialog .studio-confirm-content p {
+  line-height: 1.7;
+}
+.standard-creation-dialog .media-picker-body > p {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--sub);
+  line-height: 1.6;
+}
+.standard-creation-dialog .media-picker-grid {
+  gap: 10px;
+}
+.standard-creation-dialog .studio-empty {
+  padding: 16px 12px;
+  min-height: 0;
+}
+.standard-creation-dialog .studio-empty :is(h3, p) {
+  margin-block: 4px;
+}
+.standard-creation-dialog .image-preview-toolbar {
+  padding: 10px 16px;
+  gap: 8px;
+}
+.standard-creation-dialog .image-preview-controls {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.standard-creation-dialog .image-preview-actions {
+  margin: 0;
+  padding: 12px 16px;
+  flex-shrink: 0;
+}
+.standard-creation-dialog .image-preview-caption {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.standard-creation-dialog .ant-alert {
+  overflow-wrap: anywhere;
+}
+
+.standard-creation-popup .ant-popover-inner {
+  padding: 12px;
+}
+.standard-creation-popup .ant-popover-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.standard-creation-popup :is(.ant-dropdown-menu, .ant-select-dropdown) {
+  padding: 4px;
+}
+.standard-creation-popup :is(.ant-dropdown-menu-item, .ant-select-item-option) {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.standard-creation-popup .ant-dropdown-menu-item-divider {
+  margin: 4px 6px;
+}
+.standard-creation-popup .ant-modal-content {
+  padding: 16px;
+}
+.standard-creation-popup .ant-modal-footer {
+  margin-top: 12px;
+}
+.standard-image-options-popover.ant-popover,
+.standard-video-options-popover.ant-popover {
+  width: min(376px, calc(100vw - 24px));
+}
+.standard-image-options-popover.ant-popover .ant-popover-inner,
+.standard-video-options-popover.ant-popover .ant-popover-inner {
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid #565656;
+  border-radius: 14px;
+  background: #252525;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 32%);
+}
+.standard-image-options {
+  width: 100%;
+}
+.standard-output-options-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  color: var(--sub, #b4b4bc);
+  font-size: 12px;
+}
+.standard-output-options-heading h4 {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 400;
+}
+.standard-output-options-heading .ant-btn {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+.standard-image-options fieldset {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0 0 12px;
+}
+.standard-image-options fieldset:last-child {
+  margin-bottom: 0;
+}
+.standard-image-options legend {
+  padding: 0;
+  margin-bottom: 8px;
+  color: var(--sub, #b4b4bc);
+  font-size: 12px;
+}
+.standard-image-ratios,
+.standard-image-resolutions {
+  display: grid;
+  gap: 3px;
+  padding: 3px;
+  background: #171717;
+  border-radius: 10px;
+}
+.standard-image-ratios {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+.standard-image-resolutions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.standard-image-ratios button,
+.standard-image-resolutions button {
+  min-width: 0;
+  height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sub, #b4b4bc);
+  font-size: 10px;
+  cursor: pointer;
+}
+.standard-image-resolutions button {
+  height: 34px;
+  font-size: 12px;
+}
+.standard-image-ratios button[aria-pressed='true'],
+.standard-image-resolutions button[aria-pressed='true'] {
+  color: var(--ink, #f3f3f5);
+  border-color: #777;
+  background: #393939;
+}
+.standard-image-ratios button:focus-visible,
+.standard-image-resolutions button:focus-visible {
+  outline: 2px solid #d9d9df;
+  outline-offset: -2px;
+}
+.standard-image-ratios button:disabled,
+.standard-image-resolutions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.standard-image-options-help {
+  margin: 8px 0 0;
+  color: var(--quiet, #9a9aa4);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.standard-image-default.ant-btn {
+  min-height: 24px;
+  height: 24px;
+  margin-top: 8px;
+  padding: 0;
+  font-size: 11px;
+  color: var(--sub, #b4b4bc);
+}
+.standard-image-default.ant-btn[aria-pressed='true'] {
+  color: var(--ink, #f3f3f5);
+}
+.standard-image-output-separator {
+  height: 12px;
+  border-left: 1px solid #545454;
+}
+.standard-reference-strip figcaption {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  color: #ededf0;
+  font-size: 9px;
+  padding: 1px 3px;
+  background: rgb(0 0 0 / 65%);
+  border-radius: 3px;
+}
+.creation-model-popup .ant-select-item-option {
+  min-height: 48px;
+  height: 48px;
+  padding: 5px 10px;
+}
+.creation-model-popup.creation-model-popup-compact .ant-select-item-option {
+  min-height: 44px;
+  height: 44px;
+  padding: 4px 8px;
+}
+.creation-model-option {
+  display: grid;
+  gap: 2px;
+  line-height: 17px;
+  min-width: 0;
+}
+.creation-model-option strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.creation-model-option span {
+  font-size: 11px;
+  color: var(--sub);
+}
+.creation-model-option :is(strong, span) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.standard-creation-drawer .ant-drawer-header {
+  padding: 12px 16px;
+}
+.standard-creation-drawer .ant-drawer-body {
+  padding: 16px;
+}
+.standard-creation-drawer .ant-drawer-footer {
+  padding: 12px 16px;
+}
+
+.creation-legacy-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow-y: auto;
+  width: min(760px, calc(100vw - 24px));
+}
+.creation-legacy-dialog > p {
+  margin: 12px 16px 0;
+  color: var(--sub);
+  font-size: 12px;
+}
+.creation-legacy-dialog > div {
+  padding: 16px;
+}
+.creation-legacy-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.creation-legacy-dialog textarea {
+  display: block;
+  margin-bottom: 8px;
+  resize: vertical;
+}
+.standard-creation-dialog .identity-form-embedded {
+  padding: 16px;
+  gap: 12px;
+}
+.standard-creation-dialog .identity-form-embedded > p {
+  margin: 0;
+  font-size: 12px;
+}
+.standard-creation-dialog .identity-form-embedded label {
+  gap: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .web-episode :is(.ant-btn, .creation-step-button, .creation-switch),
+  .standard-creation-dialog .ant-btn {
+    transition: none;
+  }
+}

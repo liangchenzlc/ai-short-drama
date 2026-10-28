@@ -25,9 +25,12 @@ from short_drama.domain import (
     CanvasToolSubmission,
     MediaFile,
 )
-from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-from short_drama.service.canvas_storyboard import canvas_storyboard_result, storyboard_system_prompt
-from short_drama.tasks.publisher import RabbitSender
+from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+from short_drama.service.canvas.document.storyboard.storyboard import (
+    canvas_storyboard_result,
+    storyboard_system_prompt,
+)
+from short_drama.tasks.runtime.publisher import RabbitSender
 from tests.integration.canvas.assistant.test_canvas_agnes_live import assert_no_secret, live_key
 from tests.integration.canvas.document.test_canvas_browser import stop_browser
 from tests.integration.canvas.generation.test_canvas_generation_broker import eventually
@@ -37,14 +40,14 @@ from tests.integration.canvas.resources.test_canvas_library import (
 )
 from tests.integration.canvas.resources.test_canvas_resources import canvas
 from tests.integration.canvas.resources.test_canvas_resources import resource_app as resource_app
-from tests.integration.standard.assistant.test_project_assistant_agnes_broker_live import (
-    ROLE_IDS,
-    official_stack,
-    read_json,
-)
 from tests.integration.standard.identity.test_identity_collaboration import PASSWORD, account
 from tests.integration.standard.identity.test_identity_collaboration import (
     identity_app as identity_app,
+)
+from tests.support.integration.official_stack import (
+    ROLE_IDS,
+    official_stack,
+    read_json,
 )
 
 pytestmark = [

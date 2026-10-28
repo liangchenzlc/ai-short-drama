@@ -1,4 +1,4 @@
-import type { CanvasViewPreferencesDto, CanvasViewPreferencesRequestDto } from "@host/api/types/canvases";
+import type { CanvasViewPreferencesDto, CanvasViewPreferencesRequestDto } from "@host/integrations/canvas/contracts";
 
 export type ViewPreferences = CanvasViewPreferencesDto;
 type Write = CanvasViewPreferencesRequestDto;

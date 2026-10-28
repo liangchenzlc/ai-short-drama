@@ -6,14 +6,14 @@ from sqlalchemy import select
 
 from short_drama.agent.context.attachments import historical_attachment_keys
 from short_drama.agent.context.subjects import subject_memory_keys
-from short_drama.domain.agent import AgentConversation, AgentMessage
-from short_drama.domain.agent_memory import (
+from short_drama.domain.assistant.conversations.models import AgentConversation, AgentMessage
+from short_drama.domain.assistant.memory.memory import (
     AgentMemoryForgetRule,
     AgentMemoryItem,
     AgentMemoryRevision,
     AgentMemorySource,
 )
-from short_drama.domain.agent_task import AgentOperation, AgentTask, AgentTaskInput
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask, AgentTaskInput
 from short_drama.utils.json_digest import digest
 
 SOFT_HISTORY_BYTES = 16000

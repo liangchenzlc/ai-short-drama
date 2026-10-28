@@ -13,12 +13,13 @@ from urllib.parse import quote
 import pytest
 
 from short_drama.ai import GenerationError
-from short_drama.ai.adapters import build_submission, validate_request
-from short_drama.ai.canvas_credentials import CanvasCredentials
-from short_drama.ai.gateway import GenerationGateway
+from short_drama.ai.adapters.capabilities import validate_request
+from short_drama.ai.adapters.submission import build_submission
+from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
+from short_drama.ai.gateway.client import GenerationGateway
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import NotFound, StorageUnavailable, WorkflowError
-from short_drama.service.canvas_video_admission import freeze_video_references
+from short_drama.service.canvas.generation.video.video_admission import freeze_video_references
 
 ADAPTER = "canvas_openai_videos.v1"
 SIGNED_QUERY = "X-Amz-Signature=offline-signature"
@@ -79,7 +80,7 @@ def test_pure_validation_accepts_frozen_identity_without_any_io(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", forbidden)
     monkeypatch.setattr("short_drama.storage.minio.MinioStorage.stat", forbidden)
     monkeypatch.setattr("short_drama.storage.minio.MinioStorage.provider_presigned_get", forbidden)
-    monkeypatch.setattr("short_drama.ai.transport.SafeTransport.request", forbidden)
+    monkeypatch.setattr("short_drama.ai.gateway.transport.SafeTransport.request", forbidden)
     request = payload(mixed=True)
     before = deepcopy(request)
     result = validate_request(snapshot(), request, ADAPTER)
@@ -211,7 +212,9 @@ def test_unknown_submission_signs_once_posts_once_and_poll_never_resigns():
 
 
 def admitted_generation(monkeypatch, *, enabled=True, scope=(None, 9)):
-    monkeypatch.setattr("short_drama.service.canvas_video_admission.scope_of", lambda *args: scope)
+    monkeypatch.setattr(
+        "short_drama.service.canvas.generation.video.video_admission.scope_of", lambda *args: scope
+    )
     media = SimpleNamespace(
         storage_locator="minio://image/reference.png",
         format_code="image/png",
@@ -275,7 +278,9 @@ def test_enabled_admission_freezes_real_metadata_and_removes_client_url(monkeypa
     ],
 )
 def test_real_media_is_rechecked_before_signer_with_original_index(failure):
-    from short_drama.service.canvas_video_references import StoredCanvasVideoReferenceURLs
+    from short_drama.service.canvas.generation.video.video_references import (
+        StoredCanvasVideoReferenceURLs,
+    )
 
     media = SimpleNamespace(
         scope_user_id=None,
@@ -337,9 +342,9 @@ def test_worker_uses_real_submit_policy_before_resolver_and_only_freezes_scalars
     monkeypatch, permission
 ):
     from short_drama.domain import AIGenerationRecord, AIModelConfig, MediaFile, Project
-    from short_drama.domain.collaboration import User
+    from short_drama.domain.identity.accounts.user import User
     from short_drama.service.base import utcnow
-    from short_drama.service.generation_execution_service import GenerationExecutionService
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
 
     task = SimpleNamespace(
         id=1,
@@ -407,10 +412,13 @@ def test_worker_uses_real_submit_policy_before_resolver_and_only_freezes_scalars
 
         begin = __call__
 
+    for module in ("provider", "settlement", "archive"):
+        monkeypatch.setattr(
+            f"short_drama.service.generations.execution.{module}.owned_task", lambda *args: task
+        )
     monkeypatch.setattr(
-        "short_drama.service.generation_execution_service.owned_task", lambda *args: task
+        "short_drama.service.generations.runtime.access.lock_resource_project", lambda *args: None
     )
-    monkeypatch.setattr("short_drama.service.task_access.lock_resource_project", lambda *args: None)
     storage = Mock()
     storage.stat.return_value = SimpleNamespace(size=12, content_type="image/png")
     storage.provider_presigned_get.return_value = "https://media.test/reference.png?" + SIGNED_QUERY
@@ -485,7 +493,7 @@ def test_post_completed_echo_is_rejected_after_one_post_and_retains_safe_id(outp
     ],
 )
 def test_poll_echo_never_resigns_and_stops_without_retry(reply):
-    from short_drama.ai.canvas_agnes_adapters import agnes_reference_guard
+    from short_drama.ai.adapters.image.agnes_adapters import agnes_reference_guard
 
     gateway, calls = captured_gateway(reply)
     guard = agnes_reference_guard([SIGNED_URL])
@@ -567,9 +575,9 @@ def test_independent_signed_video_output_is_accepted_and_guard_precedes_post():
 
 @pytest.mark.parametrize("record_adapter", [None, ADAPTER])
 def test_store_result_rejects_echo_before_archive_prepares_source_cipher(record_adapter):
-    from short_drama.ai.canvas_agnes_adapters import agnes_reference_guard
+    from short_drama.ai.adapters.image.agnes_adapters import agnes_reference_guard
     from short_drama.ai.types import GenerationResult
-    from short_drama.service.generation_execution_service import GenerationExecutionService
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
 
     factory = Mock()
     executor = GenerationExecutionService(factory, public_settings(), Mock(), Mock())
@@ -594,7 +602,7 @@ def test_store_result_rejects_echo_before_archive_prepares_source_cipher(record_
 
 
 def test_reference_guard_bounds_and_does_not_scan_base64_media():
-    from short_drama.ai.canvas_agnes_adapters import (
+    from short_drama.ai.adapters.image.agnes_adapters import (
         agnes_reference_guard,
         check_agnes_reference_echo,
     )
@@ -612,7 +620,7 @@ def test_reference_guard_bounds_and_does_not_scan_base64_media():
 def execution_fixture(monkeypatch):
     from short_drama.domain import AIGenerationRecord
     from short_drama.service.base import utcnow
-    from short_drama.service.generation_execution_service import GenerationExecutionService
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
 
     task = SimpleNamespace(
         id=1,
@@ -655,11 +663,13 @@ def execution_fixture(monkeypatch):
             finally:
                 state.in_transaction = False
 
+    for module in ("provider", "settlement", "archive"):
+        monkeypatch.setattr(
+            f"short_drama.service.generations.execution.{module}.owned_task", lambda *args: task
+        )
     monkeypatch.setattr(
-        "short_drama.service.generation_execution_service.owned_task", lambda *args: task
-    )
-    monkeypatch.setattr(
-        "short_drama.service.canvas_text_stream.finalize_canvas_text", lambda *args: None
+        "short_drama.service.canvas.generation.text.text_stream.finalize_canvas_text",
+        lambda *args: None,
     )
     gateway, calls = captured_gateway()
     executor = GenerationExecutionService(Factory(), public_settings(), gateway, Mock())
@@ -715,15 +725,15 @@ def test_guard_transaction_commits_before_post_and_store_result_preserves_it(mon
     "failure", ["commit", "lease", "wrong-record", "wrong-action", "duplicate"]
 )
 def test_guard_persistence_failure_or_lost_lease_leaves_zero_post(monkeypatch, failure):
-    from short_drama.ai.canvas_agnes_adapters import agnes_reference_guard
-    from short_drama.dao.task_runtime_dao import LeaseLost
+    from short_drama.ai.adapters.image.agnes_adapters import agnes_reference_guard
+    from short_drama.dao.generations.runtime.lifecycle import LeaseLost
 
     executor, gateway, task, record, call, state, calls = execution_fixture(monkeypatch)
     if failure == "commit":
         state.commit_failure = True
     elif failure == "lease":
         monkeypatch.setattr(
-            "short_drama.service.generation_execution_service.owned_task",
+            "short_drama.service.generations.execution.provider.owned_task",
             Mock(side_effect=LeaseLost()),
         )
     elif failure == "wrong-record":
@@ -748,8 +758,8 @@ def test_guard_persistence_failure_or_lost_lease_leaves_zero_post(monkeypatch, f
 
 
 def test_echo_error_preserves_safe_provider_id_and_guard_without_retry(monkeypatch):
-    from short_drama.ai.canvas_agnes_adapters import agnes_reference_guard
-    from short_drama.tasks.state import recovery_action
+    from short_drama.ai.adapters.image.agnes_adapters import agnes_reference_guard
+    from short_drama.tasks.runtime.state import recovery_action
 
     executor, gateway, task, record, call, _, calls = execution_fixture(monkeypatch)
     guard = agnes_reference_guard([SIGNED_URL])
@@ -806,7 +816,7 @@ def test_worker_poll_missing_or_corrupt_guard_never_calls_gateway_or_storage(mon
 
 
 def test_independent_video_archives_its_own_url_and_save_does_not_submit_or_sign(monkeypatch):
-    from short_drama.ai.canvas_agnes_adapters import agnes_reference_guard
+    from short_drama.ai.adapters.image.agnes_adapters import agnes_reference_guard
     from short_drama.ai.types import GenerationResult
 
     executor, gateway, task, record, call, _, _ = execution_fixture(monkeypatch)
@@ -814,7 +824,7 @@ def test_independent_video_archives_its_own_url_and_save_does_not_submit_or_sign
         _env_file=None,
         encryption_key=base64.b64encode(b"offline-archive-key".ljust(32, b"0")).decode(),
     )
-    monkeypatch.setattr("short_drama.service.generation_archive.next_id", lambda: 99)
+    monkeypatch.setattr("short_drama.service.generations.results.archive.next_id", lambda: 99)
     guard = agnes_reference_guard([SIGNED_URL])
     call.response_data["agnes_reference_guard"] = guard
     record.response_data = deepcopy(call.response_data)
@@ -832,7 +842,7 @@ def test_independent_video_archives_its_own_url_and_save_does_not_submit_or_sign
     record.response_data = deepcopy(call.response_data)
     executor.store.heartbeat = Mock(return_value=True)
     monkeypatch.setattr(
-        "short_drama.service.generation_execution_service.latest_record", lambda *args: call
+        "short_drama.service.generations.execution.settlement.latest_record", lambda *args: call
     )
 
     def save_one(*args):
@@ -849,7 +859,7 @@ def test_independent_video_archives_its_own_url_and_save_does_not_submit_or_sign
 
 
 def test_excessive_percent_encoding_is_rejected_with_bounded_decoding():
-    from short_drama.ai.canvas_agnes_adapters import (
+    from short_drama.ai.adapters.image.agnes_adapters import (
         agnes_reference_guard,
         check_agnes_reference_echo,
     )

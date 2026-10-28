@@ -6,12 +6,15 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+import short_drama.db.scope.resource_scope as access
 from short_drama.core.exceptions import NotFound
-from short_drama.db import access
-from short_drama.schemas.canvas import CanvasSummaryRead
-from short_drama.schemas.canvas_creation import CanvasCreationRequest, canvas_creation_payload
+from short_drama.schemas.canvas.document.canvas import CanvasSummaryRead
+from short_drama.schemas.canvas.workspace.creation.creation import (
+    CanvasCreationRequest,
+    canvas_creation_payload,
+)
 from short_drama.service.base import BaseService
-from short_drama.service.canvas_document import content_hash
+from short_drama.service.canvas.document.document import content_hash
 
 
 def test_optional_drawings_preserve_existing_creation_digest_input():

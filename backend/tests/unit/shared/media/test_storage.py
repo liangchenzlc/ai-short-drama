@@ -19,7 +19,7 @@ def settings(**overrides):
 
 
 def service(sdk=None):
-    from short_drama.service.storage_service import StorageService
+    from short_drama.service.media.files.storage import StorageService
     from short_drama.storage.minio import MinioStorage
 
     sdk = sdk or Mock()

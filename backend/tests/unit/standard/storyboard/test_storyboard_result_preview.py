@@ -5,11 +5,11 @@ from sqlalchemy import select
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import AIGenerationRecord, AsyncTask
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.asset_library_service import AssetLibraryService
-from short_drama.service.asset_service import AssetService
-from short_drama.service.generation_business_service import GenerationBusinessService
-from short_drama.service.task_runtime_service import finish
+from short_drama.service.creation.assets.management.assets import AssetService
+from short_drama.service.creation.assets.management.library import AssetLibraryService
+from short_drama.service.generations.admission.business import GenerationBusinessService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.runtime.lifecycle import finish
 from tests.support.generation_fixtures import config, generation_session, settings
 from tests.unit.standard.writing.test_project_writing import setup
 
@@ -22,7 +22,6 @@ def test_storyboard_preview_preserves_complete_candidates_and_frozen_asset_names
             project_id,
             {"content_version": "1", "script_id": None, "content": "first second"},
         )
-        writing.confirm(project_id, saved["script"]["id"], {"content_version": "2"})
         asset = AssetLibraryService(session).create(
             "project", project_id, project_id, {"kind": "prop", "name": "old name"}, "asset-preview"
         )[0]

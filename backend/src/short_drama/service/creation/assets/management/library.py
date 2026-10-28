@@ -1,0 +1,288 @@
+import hashlib
+import json
+from contextlib import contextmanager
+
+from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
+from short_drama.dao.base import BaseDAO
+from short_drama.dao.creation.assets.management.library import AssetLibraryDAO
+from short_drama.domain.creation.assets.management.assets import Asset
+from short_drama.domain.projects.management.project import Project
+from short_drama.schemas.base import UINT64_MAX, parse_identifier
+from short_drama.schemas.creation.assets.management.assets import (
+    AssetImageRead,
+    AssetPatch,
+    AssetRead,
+)
+from short_drama.schemas.creation.assets.management.library import (
+    AssetLibraryCreate,
+    LibraryAssetRead,
+)
+from short_drama.service.base import BaseService
+from short_drama.service.media.files.storage import StorageService
+
+
+def creation_fingerprint(kind, parent_id, payload):
+    if hasattr(payload, "model_dump") and not isinstance(payload, AssetLibraryCreate):
+        payload = payload.model_dump(exclude={"model_id", "media_id"})
+    values = AssetLibraryCreate.model_validate(payload).model_dump(
+        mode="json", exclude={"model_id", "media_id"}
+    )
+    raw = json.dumps(
+        {"scope": kind, "parent_id": parent_id, "asset": values},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+class AssetLibraryService(BaseService):
+    model = Asset
+
+    def __init__(self, session, settings=None, storage=None):
+        super().__init__(session)
+        self.assets = BaseDAO(session, Asset)
+        self.library = AssetLibraryDAO(session)
+        self.storage = (
+            storage
+            if callable(getattr(storage, "download_url", None))
+            else StorageService(storage, settings)
+            if settings is not None and storage
+            else None
+        )
+
+    def _validate_scope(self, kind, parent_id=None, project_id=None, *, for_update=False):
+        if kind != "project":
+            raise NotFound("Asset is unavailable")
+        parent_id = parse_identifier(parent_id)
+        project = self._require(Project, parent_id, for_update=for_update)
+        if project_id is not None and parse_identifier(project_id) != project.id:
+            raise NotFound("Asset is unavailable")
+        return project
+
+    @contextmanager
+    def _library_transaction(self, kind):
+        if kind != "project":
+            raise NotFound("Asset is unavailable")
+        with self._transaction():
+            yield
+
+    def _lock_scope(self, kind, parent_id, project_id=None):
+        return self._validate_scope(kind, parent_id, project_id, for_update=True)
+
+    def _url(self, media):
+        if media is None or self.storage is None:
+            return None
+        return self.storage.download_url(media.storage_locator)
+
+    def _read(self, asset, media=None, *, link=None, library=False, reference_count=None):
+        schema = LibraryAssetRead if library else AssetRead
+        values = {
+            name: getattr(asset, name) for name in schema.model_fields if hasattr(asset, name)
+        }
+        values["reference_count"] = (
+            self.library.reference_count(asset.id) if reference_count is None else reference_count
+        )
+        values["image"] = None
+        if self.session.info.get("actor") and "model_id" in schema.model_fields:
+            from short_drama.service.ai_config.preferences.preferences import get_model_preference
+
+            values["model_id"] = get_model_preference(self.session, f"asset:{asset.id}:image")
+        if media is not None:
+            values["image"] = AssetImageRead(
+                media_id=media.id,
+                url=self._url(media) or "",
+                width=media.width,
+                height=media.height,
+            )
+        if library:
+            values.update(position=asset.position)
+            return LibraryAssetRead.model_validate(values)
+        return AssetRead.model_validate(values)
+
+    def list(
+        self, kind, parent_id=None, project_id=None, *, asset_kind=None, q="", offset=0, limit=20
+    ):
+        self.assets.validate_pagination(offset, limit)
+        with self._transaction(read_only=True):
+            self._validate_scope(kind, parent_id, project_id, for_update=False)
+            rows, total = self.library.links(
+                kind, parent_id, asset_kind=asset_kind, query=q, offset=offset, limit=limit
+            )
+            counts = self.library.reference_counts([asset.id for _link, asset, _media in rows])
+            return {
+                "items": [
+                    self._read(
+                        asset, media, link=link, library=True, reference_count=counts[asset.id]
+                    )
+                    for link, asset, media in rows
+                ],
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+            }
+
+    def create(self, kind, parent_id, project_id, payload, idempotency_key):
+        key = idempotency_key.strip() if isinstance(idempotency_key, str) else ""
+        if not 1 <= len(key) <= 128:
+            raise WorkflowError(
+                "validation_error", "Idempotency-Key must contain 1 to 128 characters", 422
+            )
+        from short_drama.db.access.identity import scoped_key
+
+        key = scoped_key(self.session, key)
+        parsed = AssetLibraryCreate.model_validate(payload)
+        digest = creation_fingerprint(kind, parent_id, parsed)
+        try:
+            with self._library_transaction(kind):
+                self._lock_scope(kind, parent_id, project_id)
+                existing = self.library.creation(key, for_update=True)
+                if existing is not None:
+                    return self._creation_replay(kind, parent_id, existing, digest)
+                removed_hash = self.library.removed_creation_hash(key)
+                if removed_hash is not None:
+                    if removed_hash != digest:
+                        raise WorkflowError(
+                            "idempotency_conflict", "Idempotency-Key was used for another request"
+                        )
+                    raise WorkflowError(
+                        "asset_creation_removed",
+                        "This creation was removed; use a new Idempotency-Key",
+                    )
+                asset, link = self.create_locked(kind, parent_id, parsed, key, digest)
+                return self._read(asset, link=link, library=True), True
+        except Conflict:
+            # Different scope parents do not share a row lock. Resolve a creation-key
+            # unique race after rollback instead of surfacing an unstable SQL conflict.
+            with self._transaction():
+                existing = self.library.creation(key)
+                if existing is None:
+                    raise
+                return self._creation_replay(kind, parent_id, existing, digest)
+
+    def create_locked(self, kind, parent_id, parsed, key, digest, *, model_id=None):
+        """Caller owns the scope lock, idempotency check, and transaction."""
+        values = parsed.model_dump(exclude={"model_id", "media_id"})
+        values.update(
+            model_id=model_id,
+            media_id=None,
+            state="unconfirmed",
+            row_version=1,
+            creation_key=key,
+            creation_hash=digest,
+        )
+        if kind != "project":
+            raise NotFound("Asset is unavailable")
+        values["project_id"] = parse_identifier(parent_id)
+        values["position"] = self.library.next_position(kind, parent_id)
+        values["deleted_at"] = None
+        if values["position"] > 2**32 - 1:
+            raise Conflict("Asset is unavailable")
+        from short_drama.db.access.identity import set_scope
+
+        set_scope(self.session, (None, values["project_id"]))
+        asset = self.assets.create(self._creation_audit(values))
+        from short_drama.service.creation.assets.management.version import AssetVersionService
+
+        AssetVersionService(self.session).append_locked(asset)
+        return asset, asset
+
+    def link_locked(self, kind, parent, asset_id):
+        asset = self.library.link(kind, parent.id, asset_id, for_update=True)
+        if asset is None or asset.deleted_at is not None:
+            raise NotFound("Asset is unavailable")
+        return asset
+
+    def _creation_replay(self, kind, parent_id, existing, digest):
+        if existing.creation_hash != digest:
+            raise WorkflowError(
+                "idempotency_conflict", "Idempotency-Key was used for another request"
+            )
+        link = self.library.link(kind, parent_id, existing.id)
+        if link is None or existing.deleted_at is not None:
+            raise WorkflowError(
+                "asset_creation_removed", "This creation was removed; use a new Idempotency-Key"
+            )
+        media = self.library.media(existing.media_id) if existing.media_id else None
+        return self._read(existing, media, link=link, library=True), False
+
+    def unlink(self, kind, parent_id, project_id, asset_id, row_version):
+        asset_id, row_version = parse_identifier(asset_id), parse_identifier(row_version)
+        with self._library_transaction(kind):
+            self._lock_scope(kind, parent_id, project_id)
+            link = self.library.link(kind, parent_id, asset_id, for_update=True)
+            if link is None:
+                return
+            asset = self.assets.get(asset_id, for_update=True)
+            if asset.row_version != row_version:
+                raise WorkflowError(
+                    "asset_version_conflict",
+                    "Asset changed; refresh before removing",
+                    details={"current_version": asset.row_version},
+                )
+            if asset.row_version >= UINT64_MAX:
+                raise Conflict("Asset version exhausted")
+            shot_ids = self.library.active_shot_ids(parent_id, asset_id)
+            if shot_ids:
+                raise WorkflowError(
+                    "asset_in_use",
+                    "Asset is unavailable",
+                    details={"references": [str(value) for value in shot_ids]},
+                )
+            from short_drama.service.base import utcnow
+
+            self._apply_update(
+                asset, {"deleted_at": utcnow(), "row_version": asset.row_version + 1}
+            )
+
+    def get(self, asset_id):
+        asset_id = parse_identifier(asset_id)
+        with self._transaction(read_only=True):
+            asset = self.assets.get(asset_id)
+            if asset is None or asset.deleted_at is not None:
+                raise NotFound("Asset does not exist")
+            media = self.library.media(asset.media_id) if asset.media_id else None
+            return self._read(asset, media)
+
+    def patch(self, asset_id, payload):
+        parsed = AssetPatch.model_validate(payload)
+        values = parsed.model_dump(exclude_unset=True, exclude={"row_version"})
+        with self._transaction():
+            asset = self.assets.get(parse_identifier(asset_id), for_update=True)
+            if asset is None or asset.deleted_at is not None:
+                raise NotFound("Asset does not exist")
+            if asset.row_version != parsed.row_version:
+                raise WorkflowError(
+                    "asset_version_conflict",
+                    "Asset changed; refresh before saving",
+                    details={"current_version": asset.row_version},
+                )
+            from short_drama.service.creation.assets.management.kinds import (
+                validate_asset_kind_change,
+            )
+
+            validate_asset_kind_change(self.session, asset, values)
+            if self.session.info.get("actor") and "model_id" in values:
+                from short_drama.service.ai_config.preferences.preferences import (
+                    save_model_preference,
+                )
+
+                save_model_preference(
+                    self.session, f"asset:{asset.id}:image", values.pop("model_id")
+                )
+            changes = {
+                name: value for name, value in values.items() if getattr(asset, name) != value
+            }
+            if asset.row_version >= UINT64_MAX:
+                raise Conflict("Asset version exhausted")
+            if not changes:
+                self._apply_update(asset, {"row_version": asset.row_version + 1})
+                media = self.library.media(asset.media_id) if asset.media_id else None
+                return self._read(asset, media)
+            changes.update(row_version=asset.row_version + 1, state="unconfirmed")
+            self._apply_update(asset, changes)
+            from short_drama.service.creation.assets.management.version import AssetVersionService
+
+            AssetVersionService(self.session).append_locked(asset)
+            media = self.library.media(asset.media_id) if asset.media_id else None
+            return self._read(asset, media)

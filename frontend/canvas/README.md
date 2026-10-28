@@ -156,7 +156,7 @@ ui-e只补菜单截图的入场等待，正常场景 **1 passed/2 deselected，4
 
 ## 共用 AI 创作助手
 
-标准分集与画布统一使用 `frontend/src/features/ai-assistant/CreativeAssistantPanel.tsx`，直接抽取原画布助手的面板、消息气泡、Markdown 和输入区样式。画布的 `creative-assistant-sidebar.tsx` 仅管理停靠、拖宽和窄屏抽屉；不再保留另一套助手 UI 或 `/canvas-runtime/assistant/*` 请求链路。
+标准分集与画布统一使用 `frontend/src/features/assistant/panel/CreativeAssistantPanel.tsx`，直接抽取原画布助手的面板、消息气泡、Markdown 和输入区样式。画布的 `creative-assistant-sidebar.tsx` 仅管理停靠、拖宽和窄屏抽屉；不再保留另一套助手 UI 或 `/canvas-runtime/assistant/*` 请求链路。
 
 对话按本人和项目归属，切换同项目画布不会拆分对话。自动作品上下文可移除，节点通过 `@` 显式引用；发送前必须完成模型偏好和画布远端保存，使用服务端确认的十进制版本。409 或准备期间变更会保留消息与作品草稿。附件、资产引用和个人 Skill 复用宿主功能。新 `/api/v1/assistant` 仅聊天与建议，禁止创作工具、改图、付费生成提议和助手回合撤销；节点自身生成和手动撤销保持原流程。旧 Agent 深链转为只读历史入口，已有任务与候选仍按原许可处理。
 

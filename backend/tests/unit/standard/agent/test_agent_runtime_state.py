@@ -5,16 +5,21 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import event
 
-from short_drama.domain.agent import AgentConversation, AgentEvent, AgentMessage, AgentRun
-from short_drama.service.agent_run_service import AgentRunService
+from short_drama.domain.assistant.conversations.models import (
+    AgentConversation,
+    AgentEvent,
+    AgentMessage,
+)
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.tasks.task import AgentTask
+from short_drama.service.assistant.execution.run import AgentRunService
 from short_drama.service.base import utcnow
-from short_drama.service.project_service import ProjectService
+from short_drama.service.projects.management.project import ProjectService
 from tests.support.generation_fixtures import config, generation_session
 
 
 def seed(session, status, *, next_event_seq=105):
     project = ProjectService(session).create_project({"name": "P"})
-    episode = project
     model = config(session, "text", 71)
     now = utcnow()
     for identifier in (301, 302):
@@ -23,11 +28,7 @@ def seed(session, status, *, next_event_seq=105):
                 id=identifier,
                 owner_user_id=1,
                 project_id=project.id,
-                stage="source",
-                subject_type="project",
-                subject_id=episode.id,
-                task_type="writing",
-                scope_version=1,
+                scope_version=3,
                 title="C",
                 next_event_seq=next_event_seq,
                 fixed_requirements={},
@@ -40,10 +41,28 @@ def seed(session, status, *, next_event_seq=105):
         (802, 301, status),
         (803, 302, "running"),
     ):
+        task_id = identifier + 2000
+        session.add(
+            AgentTask(
+                id=task_id,
+                conversation_id=parent,
+                goal="Continue",
+                status="succeeded" if state == "succeeded" else "running",
+                phase="at_boundary",
+                memory_project_ids=[str(project.id)],
+                selected_skills=[],
+                effective_state={},
+                media_limits={},
+                media_usage={},
+                created_at=now,
+                updated_at=now,
+            )
+        )
         session.add(
             AgentMessage(
                 id=identifier + 1000,
                 conversation_id=parent,
+                task_id=task_id,
                 seq=identifier,
                 role="user",
                 content="Continue",
@@ -56,6 +75,7 @@ def seed(session, status, *, next_event_seq=105):
             AgentRun(
                 id=identifier,
                 conversation_id=parent,
+                task_id=task_id,
                 trigger_message_id=identifier + 1000,
                 initiated_by=1,
                 model_config_id=model.id,
@@ -72,12 +92,6 @@ def seed(session, status, *, next_event_seq=105):
     session.commit()
     session.info["actor"] = SimpleNamespace(user_id=1, request_id="cursor-recovery")
     session.info["request_project"] = int(project.id)
-    return {
-        "stage": "source",
-        "subject_type": "project",
-        "subject_id": episode.id,
-        "task_type": "writing",
-    }
 
 
 def add_event(session, run_id, seq, *, conversation_id=301):
@@ -94,14 +108,14 @@ def add_event(session, run_id, seq, *, conversation_id=301):
     )
 
 
-def runtime_state(session, scope):
-    return AgentRunService(session, SimpleNamespace(agent_enabled=True)).runtime_state("301", scope)
+def runtime_state(session):
+    return AgentRunService(session, SimpleNamespace(agent_enabled=True)).runtime_state("301")
 
 
 @pytest.mark.parametrize("status", ["succeeded", "failed", "cancelled"])
 def test_completed_history_starts_at_latest_cursor_without_an_event_scan(status):
     with generation_session() as session:
-        scope = seed(session, status)
+        seed(session, status)
         add_event(session, 801, 1)
         add_event(session, 802, 20)
         session.commit()
@@ -109,7 +123,7 @@ def test_completed_history_starts_at_latest_cursor_without_an_event_scan(status)
         event.listen(
             session, "do_orm_execute", lambda state: statements.append(str(state.statement))
         )
-        state = runtime_state(session, scope)
+        state = runtime_state(session)
         assert state.cursor == state.resume_cursor == 104
         assert state.active_run is None and state.queued_runs == []
         assert not any("min(agent_events.seq)" in statement for statement in statements)
@@ -118,14 +132,14 @@ def test_completed_history_starts_at_latest_cursor_without_an_event_scan(status)
 @pytest.mark.parametrize("status", ["queued", "running", "waiting_generation", "waiting_review"])
 def test_active_recovery_ignores_completed_other_conversation_and_future_events(status):
     with generation_session() as session:
-        scope = seed(session, status)
+        seed(session, status)
         add_event(session, 801, 1)
         add_event(session, 803, 2, conversation_id=302)
         add_event(session, 802, 101)
         add_event(session, 802, 104)
         add_event(session, 802, 105)
         session.commit()
-        state = runtime_state(session, scope)
+        state = runtime_state(session)
         assert state.cursor == 104 and state.resume_cursor == 100
         if status == "queued":
             assert state.active_run is None
@@ -136,27 +150,27 @@ def test_active_recovery_ignores_completed_other_conversation_and_future_events(
 
 def test_an_active_run_without_snapshot_events_starts_from_snapshot_cursor():
     with generation_session() as session:
-        scope = seed(session, "running")
+        seed(session, "running")
         add_event(session, 801, 1)
         add_event(session, 802, 105)
         session.commit()
-        state = runtime_state(session, scope)
+        state = runtime_state(session)
         assert state.cursor == state.resume_cursor == 104
         assert state.active_run.id == 802
 
 
 def test_the_first_active_event_can_resume_from_zero():
     with generation_session() as session:
-        scope = seed(session, "running", next_event_seq=2)
+        seed(session, "running", next_event_seq=2)
         add_event(session, 802, 1)
         session.commit()
-        state = runtime_state(session, scope)
+        state = runtime_state(session)
         assert state.cursor == 1 and state.resume_cursor == 0
 
 
 def test_public_reads_keep_large_execution_json_out_of_sorting_and_preserve_metadata():
     with generation_session() as session:
-        scope = seed(session, "queued")
+        seed(session, "queued")
         row = session.get(AgentRun, 802)
         row.checkpoint = {
             "authorization": {"mode": "auto"},
@@ -167,13 +181,13 @@ def test_public_reads_keep_large_execution_json_out_of_sorting_and_preserve_meta
         session.commit()
         statements = []
         event.listen(session, "do_orm_execute", lambda state: statements.append(state.statement))
+        session.info["actor"] = SimpleNamespace(user_id=1, request_id="projection-test")
         service = AgentRunService(session, SimpleNamespace(agent_enabled=True))
-        state = service.runtime_state("301", scope)
-        page = service.list_runs("301", limit=1, expected_scope=scope)
+        state = service.runtime_state("301")
         assert state.queued_runs[0].awaiting_artifact_ids == [42]
         assert state.queued_runs[0].model_name == "Frozen model"
-        assert page.items[0].id == 802 and page.total == 2
-        assert page.items[0].mode == "auto"
+        assert state.queued_runs[0].id == 802
+        assert state.queued_runs[0].mode == "auto"
         for statement in statements:
             if "agent_runs" not in str(statement):
                 continue

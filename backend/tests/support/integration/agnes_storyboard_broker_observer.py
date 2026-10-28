@@ -6,8 +6,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+import short_drama.tasks.generations.worker as worker
 from short_drama.core.config import Settings
-from short_drama.tasks import worker
 from tests.integration.canvas.assistant.test_canvas_agnes_live import (
     ObservedTransport,
     assert_no_secret,

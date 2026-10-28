@@ -19,10 +19,10 @@ from short_drama.agent.tools.contracts import ReadTaskResults as ReadTaskResults
 from short_drama.agent.tools.dialogue import sound_write_scope
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.domain import Asset, Project, ShotScript
-from short_drama.domain.agent import AgentConversation, AgentMessage
-from short_drama.domain.agent_task import AgentOperation, AgentTask, AgentTaskInput
-from short_drama.service.assistant_dialogue_service import SOUND_ACTIONS, sound_line_state
-from short_drama.service.assistant_standard_service import AssistantStandardService
+from short_drama.domain.assistant.conversations.models import AgentConversation, AgentMessage
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask, AgentTaskInput
+from short_drama.service.assistant.operations.dialogue import SOUND_ACTIONS, sound_line_state
+from short_drama.service.assistant.operations.standard import AssistantStandardService
 from short_drama.utils.json_digest import digest
 
 _KINDS = {

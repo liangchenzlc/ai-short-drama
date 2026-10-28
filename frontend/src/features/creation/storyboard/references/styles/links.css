@@ -1,0 +1,68 @@
+@media (prefers-reduced-motion: reduce) {
+  .storyboard-chevron {
+    transition: none;
+  }
+}
+.creation-shot-assets {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  gap: 8px 14px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  color: var(--sub);
+  font-size: 12px;
+}
+.creation-shot-assets legend {
+  padding: 0 4px;
+}
+.creation-shot-assets label {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+}
+.creation-shot-assets input {
+  width: auto;
+}
+.creation-reorder-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.creation-reorder-actions button,
+.creation-frame-role button,
+.creation-grid-cell button {
+  min-height: 32px;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--sub);
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.creation-reorder-actions button:disabled,
+.creation-frame-role button:disabled,
+.creation-grid-cell button:disabled {
+  cursor: not-allowed;
+  color: var(--sub);
+  background: var(--surface-muted);
+}
+.creation-storyboard-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 18px;
+  margin: 28px 0 18px;
+}
+.creation-storyboard-tools > label {
+  display: grid;
+  min-width: 210px;
+  gap: 7px;
+  color: var(--sub);
+  font-size: 13px;
+}

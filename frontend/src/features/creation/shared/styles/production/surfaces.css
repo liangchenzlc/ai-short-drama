@@ -1,0 +1,109 @@
+/* Production surfaces: dense controls, readable scripts, images beside their context. */
+:where(
+  .remote-asset-library,
+  .storyboard-workspace,
+  .asset-editor-drawer,
+  .asset-extraction-dialog,
+  .storyboard-history-dialog,
+  .asset-import-dialog,
+  .media-picker-dialog
+) {
+  --production-gap: 12px;
+  --production-section: 16px;
+  --production-inset: 20px;
+}
+:where(.remote-asset-library, .storyboard-workspace, .asset-editor-drawer) ::selection {
+  background: var(--pale);
+  color: var(--ink);
+}
+:where(.remote-asset-library, .storyboard-workspace, .asset-editor-drawer) textarea {
+  caret-color: var(--accent);
+}
+:where(
+    .remote-asset-library,
+    .storyboard-workspace,
+    .asset-editor-drawer,
+    .asset-extraction-dialog,
+    .storyboard-history-dialog
+  )
+  :is(button, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+html:has(dialog[open]),
+body:has(dialog[open]) {
+  overflow: hidden;
+}
+.remote-asset-library.overview-card {
+  padding: 16px 20px;
+}
+.remote-asset-library > .overview-heading {
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 0;
+}
+.remote-asset-library > .overview-heading h2 {
+  font-size: 18px;
+}
+.remote-asset-library > .overview-heading p {
+  margin-top: 4px;
+}
+.remote-asset-library .resource-toolbar {
+  margin: 16px 0 12px;
+  gap: 12px;
+}
+.asset-library-count {
+  font-size: 12px;
+  color: var(--sub);
+  margin-right: auto;
+  white-space: nowrap;
+}
+.remote-asset-library .asset-grid {
+  gap: 12px;
+}
+.remote-asset-library .library-resource-card {
+  grid-template-columns: 88px minmax(0, 1fr);
+}
+.library-resource-card .resource-image {
+  width: 76px;
+  height: 96px;
+  margin: 12px 0 0 12px;
+}
+.library-resource-card .asset-card-content {
+  padding: 12px;
+}
+.library-resource-card .asset-card-content h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.library-resource-card .asset-card-content p {
+  margin: 0 0 8px;
+  line-height: 1.6;
+}
+.asset-name-button {
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  min-height: 24px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.asset-name-button:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.remote-asset-library .resource-card-actions {
+  padding: 4px 8px;
+}
+.remote-asset-library .legacy-tools {
+  margin-top: 16px;
+  padding-top: 12px;
+}
+.remote-asset-library > .ant-alert {
+  margin-bottom: 12px;
+}

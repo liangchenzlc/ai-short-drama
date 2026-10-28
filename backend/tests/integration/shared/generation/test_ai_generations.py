@@ -3,18 +3,17 @@
 from types import SimpleNamespace
 
 import pytest
-from short_drama.service.episode_service import EpisodeService
-from short_drama.service.episode_storyboard_service import EpisodeStoryboardService
 from sqlalchemy import select
 
 from short_drama.core.exceptions import Conflict, WorkflowError
 from short_drama.domain import AIGenerationRecord, MediaAsset, MediaFile, ShotImage
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.ai_model_config_service import AIModelConfigService
+from short_drama.service.ai_config.management.models import AIModelConfigService
 from short_drama.service.base import utcnow
-from short_drama.service.media_asset_service import MediaAssetService
-from short_drama.service.project_service import ProjectService
-from short_drama.service.shot_script_service import ShotScriptService
+from short_drama.service.creation.storyboard.management.script import ShotScriptService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.media.library.assets import MediaAssetService
+from short_drama.service.projects.management.project import ProjectService
 
 pytestmark = pytest.mark.integration
 
@@ -31,11 +30,8 @@ def test_generation_source_history_candidates_and_explicit_adoption(db_session):
         }
     )
     project = ProjectService(db_session).create_project({"name": "Source"})
-    episode = EpisodeService(db_session).create(
-        {"project_id": project.id, "position": 1, "title": "E", "aspect": "16:9"}
-    )
     shot = ShotScriptService(db_session).create(
-        {"episode_id": episode.id, "position": 1, "script": "Original script"}
+        {"project_id": project.id, "position": 1, "script": "Original script"}
     )
     service = AIGenerationService(db_session, settings)
     request = {
@@ -88,7 +84,7 @@ def test_generation_source_history_candidates_and_explicit_adoption(db_session):
         assert db_session.scalar(select(ShotImage)) is None
     assets = MediaAssetService(db_session, settings, None)
     assert assets.list(filters=filters)["total"] == 4
-    context = EpisodeStoryboardService(db_session).get_shot_context(project.id, episode.id, shot.id)
+    context = ProjectStoryboardService(db_session).get_shot_context(project.id, shot.id)
     target = {
         "target": {"type": "shot_image", "id": str(shot.id)},
         "expected_media_id": None,

@@ -6,11 +6,12 @@ from sqlalchemy import JSON, DateTime, Float, Integer, MetaData, String, create_
 from sqlalchemy.orm import Session
 
 from short_drama.domain import AIModelConfig, Base
+from tests.support.integration.identity import actor
 
 
 def generation_session():
     """Local behavior fixture; MySQL constraint/concurrency tests stay integration tests."""
-    from short_drama.db import access  # noqa: F401
+    import short_drama.db.access as access  # noqa: F401
 
     engine = create_engine("sqlite://")
 
@@ -47,8 +48,7 @@ def generation_session():
                     column.server_default.arg = text("CURRENT_TIMESTAMP")
     metadata.create_all(engine)
     session = Session(engine, expire_on_commit=False)
-    session.info["legacy_user_id"] = 1
-    from short_drama.domain.collaboration import User
+    from short_drama.domain.identity.accounts.user import User
     from short_drama.service.base import utcnow
 
     session.add(
@@ -64,6 +64,7 @@ def generation_session():
         )
     )
     session.commit()
+    session.info["actor"] = actor()
     return session
 
 

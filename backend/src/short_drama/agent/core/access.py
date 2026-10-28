@@ -2,11 +2,11 @@
 
 from sqlalchemy import select
 
-from short_drama.agent.gateway.protocol import AgentGatewayError
 from short_drama.ai.model_identity import model_credential_identity
 from short_drama.domain import AIModelConfig, Project
-from short_drama.domain.agent import AgentConversation, AgentRun
-from short_drama.domain.collaboration import User
+from short_drama.domain.assistant.conversations.models import AgentConversation
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.identity.accounts.user import User
 
 
 class LeaseLost(Exception):
@@ -43,7 +43,7 @@ def lock_run(session, run_id, *, skip_locked=False):
         return None
     task_id = session.scalar(select(AgentRun.task_id).where(AgentRun.id == run_id))
     if task_id is not None:
-        from short_drama.dao.agent_task_dao import AgentTaskDAO
+        from short_drama.dao.assistant.tasks.task import AgentTaskDAO
 
         if AgentTaskDAO(session).task(task_id, conversation_id=conversation.id, lock=True) is None:
             return None
@@ -86,26 +86,7 @@ def may_decide(session, project, conversation, run):
             and task.status in {"queued", "running", "waiting_media"}
             and (run.checkpoint or {}).get("purpose") == "global_assistant"
         )
-    if project is None or project.owner_user_id != user.id:
-        return False
-    authorization = (run.checkpoint or {}).get("authorization")
-    if conversation.scope_version == 2:
-        from short_drama.agent.legacy.chat import validate_assistant_chat
-
-        try:
-            validate_assistant_chat(conversation, run)
-        except AgentGatewayError:
-            return False
-        return True
-    if (run.checkpoint or {}).get("purpose") == "assistant_chat":
-        return False
-    creation = session.scalar(select(Project).where(Project.id == conversation.project_id))
-    return (
-        creation is not None
-        and creation.id == project.id
-        and isinstance(authorization, dict)
-        and authorization.get("mode") in {"auto", "discuss", "single", "workflow"}
-    )
+    return False
 
 
 def model_unchanged(session, run):

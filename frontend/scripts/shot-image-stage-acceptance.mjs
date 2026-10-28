@@ -88,9 +88,9 @@ async (page) => {
     import '/node_modules/.vite/deps/@ant-design_v5-patch-for-react-19.js';
     import { ConfigProvider } from '/node_modules/.vite/deps/antd.js';
     import { BrowserRouter } from '/node_modules/.vite/deps/react-router-dom.js';
-    import { StoryboardStage } from '/src/pages/projects/episode/StoryboardStage.tsx';
+    import { StoryboardStage } from '/src/pages/creation/storyboard/index.tsx';
     import { studioTheme } from '/src/app/theme.ts';
-    import '/src/app/generations.css'; import '/src/app/styles.css'; import '/src/app/studio.css'; import '/src/app/web.css';
+    import '/src/features/generations/tasks/generations.css'; import '/src/app/styles/styles.css'; import '/src/app/styles/studio.css'; import '/src/app/styles/web.css';
     sessionStorage.clear();
     const root = ReactDOM.createRoot(document.getElementById('root'));
     let value = { version: 2, novel: '', scriptDraft: '', scriptCandidates: [], approvedScript: null, aspect: '9:16', style: '',

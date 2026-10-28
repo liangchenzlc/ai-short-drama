@@ -1,13 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { AgentAttachment, AgentModel, AgentSkillDetail } from '../../src/api/types/agents';
+import type { AgentAttachment, AgentModel, AgentSkillDetail } from '../../src/types/assistant/engine';
 import { fixture, image, root } from '../support/studio-fixture';
 import { captureRefinement, refinementViewports } from '../support/refinement-visual';
-
-async function openSaveDetails(page: Page) {
-  const entry = page.getByRole('button', { name: /^保存状态：/ });
-  if (await entry.getAttribute('aria-expanded') !== 'true') await entry.click();
-  return page.locator('.standard-save-details');
-}
 
 const time = '2026-10-03T00:00:00Z';
 const personalSkill = (): AgentSkillDetail => ({
@@ -35,7 +29,7 @@ async function contextFixture(page: Page, stage: 'source' | 'assets' = 'source')
       input_capabilities: { text: true, image: true, audio: false, video: 'sampled_frames', evidence: 'model_family' } },
   ];
   const skills: AgentSkillDetail[] = [{ ...personalSkill(), id: 'script.v1', name: '人物连续性', filename: null, builtin: true, row_version: null, settings_version: '0', slug: 'script-v1', instructions: '核对人物外貌与动机的连续性。', checksum_sha256: 'a'.repeat(64) }];
-  const conversation = { id: '301', project_id: null, episode_id: null, stage: null, subject_type: null, subject_id: null, task_type: null, scope_version: 3, status: 'active', title: '本人的素材讨论', row_version: '1', archived: false, last_run_status: null, created_at: time, updated_at: time };
+  const conversation = { id: '301', project_id: '10', scope_version: 3, status: 'active', title: '本人的素材讨论', row_version: '1', archived: false, last_run_status: null, created_at: time, updated_at: time };
   const state = {
     models, skills, attachments: [] as AgentAttachment[], messages: [] as Record<string, unknown>[],
     tasks: [] as Record<string, any>[], runs: [] as Record<string, unknown>[],
@@ -153,17 +147,16 @@ async function contextFixture(page: Page, stage: 'source' | 'assets' = 'source')
   return { ...base, state, attachment };
 }
 
-async function openTools(page: Page) {
-  const toggle = page.getByRole('button', { name: '附件与技能', exact: true });
-  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
-}
-
-async function upload(page: Page, kind: '文本' | '图片' | '视频', name: string, mimeType: string) {
-  await openTools(page);
+async function upload(page: Page, kind: '文本' | '图片', name: string, mimeType: string) {
   await page.getByRole('button', { name: '添加附件', exact: true }).click();
   const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('menuitem', { name: `添加${kind}`, exact: true }).click();
+  await page.getByRole('menuitem', { name: kind, exact: true }).click();
   await (await chooser).setFiles({ name, mimeType, buffer: Buffer.from('fixture media content') });
+}
+async function chooseSkill(page: Page) {
+  await page.getByRole('button', { name: '选择 Skill', exact: true }).click();
+  await page.getByRole('region', { name: '选择 Skill', exact: true }).getByRole('checkbox', { name: '人物连续性', exact: true }).check();
+  await page.keyboard.press('Escape');
 }
 async function chooseModel(page: Page, label: string) {
   await page.getByRole('combobox', { name: '助手模型', exact: true }).press('ArrowDown');
@@ -182,26 +175,22 @@ test('input tools compose attachments, project assets and a versioned skill with
   await upload(page, '图片', '角色参考.png', 'image/png');
   await expect(page.getByRole('alert').filter({ hasText: '当前模型不支持图片理解' })).toHaveCount(0);
   await chooseModel(page, '视觉协作模型');
-  await page.getByRole('button', { name: '添加资产库', exact: true }).click();
+  await page.getByRole('button', { name: '添加附件', exact: true }).click();
+  await page.getByRole('menuitem', { name: '从资产库选择', exact: true }).click();
   const assets = page.getByRole('dialog', { name: '添加资产上下文', exact: true });
   await assets.getByRole('button', { name: '添加', exact: true }).first().click();
   await expect(assets).toHaveCount(0);
   await expect(page.locator('.agent-attached-items')).toContainText('林晚（项目素材）');
-  await openTools(page);
-  await page.getByRole('button', { name: '加载 Skill', exact: true }).click();
-  const skills = page.getByRole('dialog', { name: '加载 Skill', exact: true });
-  await skills.getByRole('checkbox', { name: '人物连续性', exact: true }).check();
-  await skills.getByRole('button', { name: '完成', exact: true }).click();
   await page.getByRole('textbox', { name: '给助手的消息', exact: true }).fill('根据附件和人物规范整理素材候选。');
+  await chooseSkill(page);
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect.poll(() => data.state.sends.length).toBe(1);
-  expect(data.state.sends[0].body).toEqual({ content: '根据附件和人物规范整理素材候选。', new_task: true, model_config_id: '72', attachment_ids: ['7001', '7002', '7003'], skills: [{ id: 'script.v1', content_version: '1' }], video_audio: 'include', execution_target: null, memory_project_ids: [], media_limits: { images: null, videos: null, audio: null } });
+  expect(data.state.sends[0].body).toEqual({ content: '根据附件和人物规范整理素材候选。 /人物连续性', new_task: true, model_config_id: '72', attachment_ids: ['7001', '7002', '7003'], skills: [{ id: 'script.v1', content_version: '1' }], video_audio: 'include', script_reference: null, execution_target: { mode: 'standard', project_id: '10' } });
   expect(data.state.references).toEqual([{ source_type: 'asset', source_id: '501' }]);
   expect(data.state.uploads.every(item => !!item.key)).toBe(true);
   await expect(page.locator('.agent-attached-items')).toHaveCount(0);
   await expect(page.locator('.ai-assistant-references')).toContainText('Skill：人物连续性');
-  await page.getByText('查看文本资料', { exact: true }).click();
-  await expect(page.getByText('雨夜站台：人物连续性参考。', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('消息素材', { exact: true })).toContainText('雨夜站台：人物连续性参考。');
   await page.getByRole('button', { name: '预览角色参考.png', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '图片预览', exact: true })).toBeVisible();
   expect(data.writing.editing_script.content).toBe('林晚走进车站，抬头寻找站台。');
@@ -210,15 +199,16 @@ test('input tools compose attachments, project assets and a versioned skill with
 
 test('video audio is sent intact unless the user explicitly chooses visual-only', async ({ page }) => {
   const data = await contextFixture(page);
+  // 新界面不再上传音视频，但历史待发送附件仍需保留声音选择和原请求身份。
+  data.state.attachments.push(data.attachment('video', '站台视频.mp4'));
   await page.goto(`${root}/source?assistant=open&conversation=301`);
   await page.getByRole('textbox', { name: '给助手的消息', exact: true }).fill('讨论站台运镜。');
   await chooseModel(page, '视觉协作模型');
-  data.state.uploadKind = 'video'; await upload(page, '视频', '站台视频.mp4', 'video/mp4');
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
   await page.getByRole('checkbox', { name: '视频只理解画面（忽略声音）', exact: true }).check();
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect.poll(() => data.state.sends.length).toBe(1);
-  expect(data.state.sends[0].body).toMatchObject({ new_task: true, execution_target: null, attachment_ids: ['7001'], video_audio: 'visual_only' });
+  expect(data.state.sends[0].body).toMatchObject({ new_task: true, execution_target: { mode: 'standard', project_id: '10' }, attachment_ids: ['7001'], video_audio: 'visual_only' });
   expect(data.state.sends[0].body).not.toHaveProperty('context');
   expect(data.state.sends[0].body).not.toHaveProperty('subject_selection');
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
@@ -232,8 +222,6 @@ test('restoring pending attachments and retrying their load keep sending blocked
   await input.fill('继续讨论已有附件。');
   try { await expect(page.getByRole('button', { name: '发送', exact: true })).toBeDisabled(); }
   finally { gate.resolve(); }
-  await expect(page.getByRole('button', { name: /^保存状态：需处理/ })).toBeVisible();
-  await openSaveDetails(page);
   await expect(page.getByRole('button', { name: '重新载入附件', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeDisabled();
   data.state.failLoad = false; data.state.attachmentGate = null;
@@ -248,7 +236,6 @@ test('uncertain attachment uploads require explicit reconciliation with the same
   await page.goto(`${root}/source?assistant=open&conversation=301`);
   await page.getByRole('textbox', { name: '给助手的消息', exact: true }).fill('先核对上传，再讨论。');
   await upload(page, '文本', '雨夜资料.txt', 'text/plain');
-  await openSaveDetails(page);
   const retry = page.getByRole('button', { name: '使用原请求核对上传', exact: true });
   await expect(retry).toBeVisible();
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeDisabled();
@@ -258,7 +245,6 @@ test('uncertain attachment uploads require explicit reconciliation with the same
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
   expect(data.state.uploads).toHaveLength(2);
   expect(data.state.uploads[1].key).toBe(data.state.uploads[0].key);
-  await page.getByRole('button', { name: /^保存状态：/ }).click();
   await page.getByRole('button', { name: '移除附件雨夜资料.txt', exact: true }).click();
   await expect(page.locator('.agent-attached-items')).toHaveCount(0);
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
@@ -278,31 +264,24 @@ test('model choice makes no capability declaration or provider request', async (
 
 test('an accepted attachment send keeps its original request after reload and preserves a separate draft', async ({ page }) => {
   const data = await contextFixture(page);
+  data.state.attachments.push(data.attachment('video', '站台视频.mp4'));
   await page.goto(`${root}/source?assistant=open&conversation=301`);
   await chooseModel(page, '视觉协作模型');
-  data.state.uploadKind = 'video'; await upload(page, '视频', '站台视频.mp4', 'video/mp4');
   await page.getByRole('checkbox', { name: '视频只理解画面（忽略声音）', exact: true }).check();
-  await openTools(page);
-  await page.getByRole('button', { name: '加载 Skill', exact: true }).click();
-  const skills = page.getByRole('dialog', { name: '加载 Skill', exact: true });
-  await skills.getByRole('checkbox', { name: '人物连续性', exact: true }).check();
-  await skills.getByRole('button', { name: '完成', exact: true }).click();
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await input.fill('按原视频和人物规范生成候选。');
+  await chooseSkill(page);
   data.state.abortAcceptedSend = true;
   await page.getByRole('button', { name: '发送', exact: true }).click();
-  const retry = page.getByRole('button', { name: '使用原请求核对', exact: true });
-  await openSaveDetails(page);
+  const retry = page.getByRole('button', { name: '重发原消息', exact: true });
   await expect(retry).toBeVisible();
   const original = structuredClone(data.state.sends[0]);
   expect(original.body).toMatchObject({ attachment_ids: ['7001'], video_audio: 'visual_only', skills: [{ id: 'script.v1', content_version: '1' }] });
   expect(data.state.messages).toHaveLength(1); expect(data.state.attachments[0].pending).toBe(false);
-  await page.getByRole('button', { name: /^保存状态：/ }).click();
   await input.fill('之后写的新草稿，等待原请求核对。');
   data.state.skills[0].content_version = '2'; data.state.skills[0].enabled = false;
   await page.reload();
   await expect(input).toHaveValue('之后写的新草稿，等待原请求核对。');
-  await openSaveDetails(page);
   await expect(retry).toBeVisible();
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeDisabled();
   expect(data.state.sends).toHaveLength(1);
@@ -332,30 +311,36 @@ test('a send stays local when its pending recovery record cannot be saved', asyn
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await input.fill('不能保存恢复记录时不要发送。');
   await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(page.getByRole('alert').filter({ hasText: '无法保存待核对的发送记录' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'AI 创作助手', exact: true }).getByRole('alert').filter({ hasText: '浏览器无法保存发送记录，本次尚未发送' })).toBeVisible();
   await expect(input).toHaveValue('不能保存恢复记录时不要发送。');
   expect(data.state.sends).toEqual([]);
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 
-test('a refreshed draft restores its model and validated Skill reference without sending', async ({ page }) => {
+test('a refreshed draft restores its model and pinned Skill version without sending', async ({ page }) => {
   const data = await contextFixture(page);
   await page.goto(`${root}/source?assistant=open&conversation=301`);
   await chooseModel(page, '视觉协作模型');
-  await openTools(page);
-  await page.getByRole('button', { name: '加载 Skill', exact: true }).click();
-  const skills = page.getByRole('dialog', { name: '加载 Skill', exact: true });
-  await skills.getByRole('checkbox', { name: '人物连续性', exact: true }).check();
-  await skills.getByRole('button', { name: '完成', exact: true }).click();
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
-  await input.fill('先保留这份尚未发送的连续性草稿'); await page.reload();
-  await expect(input).toHaveValue('先保留这份尚未发送的连续性草稿');
-  await expect(page.locator('.agent-loaded-skills')).toContainText('人物连续性 v1');
+  await input.fill('先保留这份尚未发送的连续性草稿');
+  await chooseSkill(page);
+  await page.reload();
+  await expect(input).toHaveValue('先保留这份尚未发送的连续性草稿 /人物连续性 ');
+  await page.getByRole('button', { name: '选择 Skill', exact: true }).click();
+  const picker = page.getByRole('region', { name: '选择 Skill', exact: true });
+  await expect(picker.getByRole('checkbox', { name: '人物连续性', exact: true })).toBeChecked();
+  await page.keyboard.press('Escape');
   await expect(page.locator('.ai-assistant-model .ant-select-selection-item')).toContainText('视觉协作模型');
   data.state.skills[0].content_version = '2'; await page.reload();
-  await expect(input).toHaveValue('先保留这份尚未发送的连续性草稿');
-  await expect(page.locator('.studio-message').filter({ hasText: '部分 Skill 已更新、停用或删除' })).toBeVisible();
-  await expect(page.locator('.agent-loaded-skills')).toHaveCount(0);
+  await expect(input).toHaveValue('先保留这份尚未发送的连续性草稿 /人物连续性 ');
+  await page.getByRole('button', { name: '选择 Skill', exact: true }).click();
+  await expect(picker).toContainText('当前任务使用 v1，目录已更新到 v2');
+  await picker.getByRole('button', { name: '改用 v2', exact: true }).click();
+  await expect(picker.getByRole('button', { name: '改用 v2', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await expect(input).toHaveValue('先保留这份尚未发送的连续性草稿 /人物连续性 ');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('short-drama:user:9007199254740993:assistant-draft:v1:301')!).skills)).toEqual([{ id: 'script.v1', name: '人物连续性', content_version: '2' }]);
   expect(data.state.sends).toEqual([]); expect(data.state.modelUpdates).toEqual([]);
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
@@ -370,19 +355,15 @@ test('shared AI assistant dialogue keeps its conversation and input tools usable
   );
   await page.goto(`${root}/source?assistant=open&conversation=301`);
   await chooseModel(page, '视觉协作模型');
-  await openTools(page);
-  await page.getByRole('button', { name: '加载 Skill', exact: true }).click();
-  const skills = page.getByRole('dialog', { name: '加载 Skill', exact: true });
-  await skills.getByRole('checkbox', { name: '人物连续性', exact: true }).check();
-  await skills.getByRole('button', { name: '完成', exact: true }).click();
   await page.getByRole('textbox', { name: '给助手的消息', exact: true }).fill('保留雨夜氛围，进一步细化相认时的眼神和动作。');
+  await chooseSkill(page);
   for (const viewport of refinementViewports) {
     await page.setViewportSize(viewport);
     const aiTab = page.getByRole('tab', { name: 'AI 创作', exact: true });
     if (await aiTab.isVisible()) await aiTab.click();
     await expect(page.locator('.ai-assistant-log')).toContainText('可以把认出信主人的瞬间');
     await expect(page.locator('.agent-attached-items')).toContainText('角色参考.png');
-    await expect(page.locator('.agent-loaded-skills')).toContainText('人物连续性');
+    await expect(page.getByRole('textbox', { name: '给助手的消息', exact: true })).toHaveValue('保留雨夜氛围，进一步细化相认时的眼神和动作。 /人物连续性 ');
     await page.getByRole('button', { name: '发送', exact: true }).scrollIntoViewIfNeeded();
     await expect(page.getByRole('button', { name: '发送', exact: true })).toBeInViewport();
     await captureRefinement(page, 'agent-dialogue', viewport.width);

@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from kombu import Producer, Queue
 
-from short_drama.agent.coordinator.runtime import AgentRuntimeStore
+from short_drama.agent.runtime.executor import AgentRuntimeStore
 from short_drama.tasks.celery_app import agent_queue, make_celery, topology
 
 

@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from short_drama.ai.canvas_credentials import CanvasCredentials
+from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
 from short_drama.ai.types import GenerationError
 from tests.unit.canvas.generation.test_canvas_generation_parameters import frozen_request, request
 from tests.unit.shared.generation.test_generation_adapters import gateway as gateway

@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
-import type { WritingNovel, WritingTask } from '../../src/api/modules/episode-writing';
-import type { ImageGroup } from '../../src/api/modules/image-groups';
+import type { WritingDocument, WritingTask } from '../../src/types/creation/writing/documents';
+import type { ImageGroup } from '../../src/types/media/image-groups';
 
 export const root = '/projects/10';
 const time = '2026-09-24T00:00:00Z';
@@ -13,7 +13,7 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
   const modelPreferences = new Map<string, string>();
   let storySettings = { row_version: '0', logline: '', synopsis: '', genre: '', character_bios: '' };
   const project = { id: '10', name: '雨夜来信', workspace_mode: 'standard', row_version: '1', canvas_count: 0, primary_canvas_id: null };
-  const writing = { project_id: '10', content_version: '1', novel: { id: '30', content: '雨夜，林晚拿着一封旧信走入车站。', updated_at: time }, outline: null as WritingNovel | null, active_writing_tasks: [] as WritingTask[], editing_script: { id: '40', content: '林晚走进车站，抬头寻找站台。', state: 'confirmed', updated_at: time }, confirmed_script_id: '40' as string | null };
+  const writing = { project_id: '10', content_version: '1', novel: { id: '30', content: '雨夜，林晚拿着一封旧信走入车站。', updated_at: time }, outline: null as WritingDocument | null, active_writing_tasks: [] as WritingTask[], editing_script: { id: '40', content: '林晚走进车站，抬头寻找站台。', state: 'confirmed', updated_at: time }, confirmed_script_id: '40' as string | null };
   const asset = { id: '501', kind: 'character', name: '林晚', label: '主角', description: '黑发，穿着深色风衣。', prompt: '人物肖像，深色风衣', tags: [], scene_time: '', state: 'unconfirmed', row_version: '1', media_id: null, image: null, reference_count: 1, link_id: '601', position: 1 };
   const assets = [asset];
   const shots: any[] = Array.from({ length: 80 }, (_, index) => ({ id: String(101 + index), position: index + 1, script: `林晚走过雨夜中的站台，镜头 ${index + 1}，列车的光线映在她的眼睛里。`, duration_ms: 3000, source_excerpt: '', asset_ids: ['501'], row_version: '1', context_hash: 'a'.repeat(64), image_settings: { aspect: null, resolution: '2K', layout: 'single' }, image: null, deleted_at: null }));
@@ -38,7 +38,6 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
   const source = (scene: string) => ({ scene, project_id: '10', script_id: '40', content_version: '1' });
   const task = (id: string, scene: string) => ({ generation_id: id, service_type: scene.endsWith('image') ? 'image' : 'text', status: 'succeeded', source: scene === 'asset_image' ? { scene, asset_id: '501', row_version: '1', project_id: '10', project_id: '10' } : source(scene), config: { id: '77', name: '测试替身模型', model_key: 'fixture', provider: 'fixture' }, created_at: time, can_cancel: false, can_retry: false, can_resume: false, display_context: { project: project.name, subject: scene === 'asset_image' ? '角色：林晚' : '分镜脚本', scope: '通用任务' } });
   const textTasks = Array.from({ length: 35 }, (_, index) => task(String(8001 + index), 'script_shots'));
-  const candidate = { id: '41', position: 2, state: 'unconfirmed', preview: '候选剧本：林晚在站台发现了信的主人。', content: '候选剧本：林晚在站台发现了信的主人。', is_editing: false, is_confirmed: false, generation_id: '77001', created_at: time, updated_at: time };
   const controls = { emptyProjects: false, errorProjects: false, delayProjects: 0 };
   const poster = 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#242b3e"/><path d="M248 130h144v100H248z M278 130v100 M362 130v100" fill="none" stroke="#7e90c4" stroke-width="3"/><text x="320" y="270" fill="#b9c5e4" font-family="sans-serif" font-size="20" text-anchor="middle">测试参考画面</text></svg>').toString('base64');
   const projects = [project, { ...project, id: '11', name: '长街与少年', synopsis: '夏天结束之前，完成一场迟到的告别。', aspect: '9:16', style: '日系动画', episode_count: 3 }, { ...project, id: '12', name: '零点之后', synopsis: '午夜广播里藏着未被解开的谜题。', style: '悬疑写实', episode_count: 2 }, { ...project, id: '13', name: '漫长的星期天', synopsis: '', episode_count: 0 }].map(p => ({ ...p, last_opened_at: time, created_at: time }));
@@ -138,11 +137,7 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     if (path === `${root}/writing`) return reply(writing);
     if (path === `${root}/novel`) { writing.novel.content = body.content; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, novel: writing.novel }); }
     if (path === `${root}/outline`) { writing.outline = { id: '31', content: body.content, updated_at: time }; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, outline: writing.outline }); }
-    if (path === `${root}/script`) { Object.assign(writing.editing_script, { content: body.content, editor_document: body.editor_document ?? null }); writing.editing_script.state = body.content.trim() ? 'confirmed' : 'unconfirmed'; writing.confirmed_script_id = body.content.trim() ? writing.editing_script.id : null; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, script: writing.editing_script, confirmed_script_id: writing.confirmed_script_id }); }
-    if (path === `${root}/scripts`) return reply(paged([candidate]));
-    if (path === `${root}/scripts/41`) return reply(candidate);
-    if (path === `${root}/editing-script`) { writing.editing_script = { ...writing.editing_script, id: '41', content: candidate.content, state: 'unconfirmed' }; writing.confirmed_script_id = null; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply(writing); }
-    if (/\/scripts\/\d+\/confirm$/.test(path)) { writing.editing_script.state = 'confirmed'; writing.confirmed_script_id = writing.editing_script.id; return reply(writing); }
+    if (path === `${root}/script`) { Object.assign(writing.editing_script, { content: body.content }); writing.editing_script.state = body.content.trim() ? 'confirmed' : 'unconfirmed'; writing.confirmed_script_id = body.content.trim() ? writing.editing_script.id : null; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, script: writing.editing_script, confirmed_script_id: writing.confirmed_script_id }); }
     if (path === '/ai-model-configs') return reply(paged([{ id: '77', name: '测试替身模型', model_key: 'fixture', service_type: query.get('service_type'), provider: 'fixture', enabled: 1, is_default: 1, is_deleted: 0, row_version: '1', has_api_key: true }]));
     if (path.endsWith('/capabilities')) return reply({ known: true, reference_images: true, mask: true, vision: true, parameters: ['aspect', 'resolution', 'count'], video_input: { reference_images: true, audio_references: true, generate_audio: true, duration_seconds: [3, 5, 10], resolutions: ['480p', '720p', '1080p'] } });
     if (path.startsWith('/image-groups/current/')) { const [, , , kind, id] = path.split('/'); return reply(currentGroup(kind, id)); }

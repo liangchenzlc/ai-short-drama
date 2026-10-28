@@ -13,15 +13,16 @@ from PIL import Image
 from sqlalchemy import inspect
 
 from short_drama.ai import GenerationResult
-from short_drama.api.dependencies import get_session
+from short_drama.api.dependencies.session import get_session
 from short_drama.domain import MediaFile
 from short_drama.main import create_app
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.generation_execution_service import GenerationExecutionService
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
-from short_drama.service.shot_image_service import ShotImageService
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.creation.storyboard.images.image import ShotImageService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.standard.assets.test_asset_image_generation import drain
 from tests.integration.standard.assets.test_asset_image_generation import flow as flow
+from tests.support.integration.identity import actor as fixture_actor
 
 pytestmark = pytest.mark.integration
 
@@ -65,7 +66,6 @@ def test_video_http_generation_history_automatic_confirmation_and_saved_work(flo
     service = ProjectStoryboardService(flow.session)
     shot = service.create(
         flow.project.id,
-        flow.episode.id,
         {
             "storyboard_version": "1",
             "script": "人物右手拿起桌上的伞，机位保持固定。",
@@ -81,6 +81,7 @@ def test_video_http_generation_history_automatic_confirmation_and_saved_work(flo
     flow.session.add(
         MediaFile(
             id=101,
+            project_id=flow.project.id,
             format_code="image/png",
             original_name="",
             storage_locator=f"minio://{bucket}/frame.png",
@@ -91,7 +92,7 @@ def test_video_http_generation_history_automatic_confirmation_and_saved_work(flo
     flow.session.commit()
     ShotImageService(flow.session).create(
         {
-            "project_id": flow.episode.id,
+            "project_id": flow.project.id,
             "shot_id": shot["id"],
             "media_id": "101",
             "layout": layout,
@@ -111,11 +112,12 @@ def test_video_http_generation_history_automatic_confirmation_and_saved_work(flo
 
         def session():
             with flow.factory() as database:
+                database.info["actor"] = fixture_actor()
                 database.info["resource_scope"] = (None, flow.project.id)
                 yield database
 
         app.dependency_overrides[get_session] = session
-        root = f"/api/v1/projects/{flow.episode.id}/shots/{shot['id']}"
+        root = f"/api/v1/projects/{flow.project.id}/shots/{shot['id']}"
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app), base_url="http://test"
         ) as client:

@@ -9,22 +9,36 @@ import pytest
 from sqlalchemy import event, func, select
 from sqlalchemy.orm import sessionmaker
 
-from short_drama.agent.coordinator.assistant import claim_operation, complete_operation
 from short_drama.agent.coordinator.recovery import recover
-from short_drama.agent.coordinator.runtime import AgentRuntimeStore
 from short_drama.agent.gateway.protocol import AgentGatewayError
-from short_drama.agent.legacy.tools import execute_tools, prepare_decision
+from short_drama.agent.runtime.decision_input import prepare_decision
+from short_drama.agent.runtime.decisions import execute_tools
+from short_drama.agent.runtime.executor import AgentRuntimeStore
+from short_drama.agent.runtime.operations import claim_operation, complete_operation
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
-from short_drama.domain.agent import AgentConversation, AgentMessage, AgentRun, AgentToolCall
-from short_drama.domain.agent_task import AgentOperation, AgentTask, AgentTaskControl
-from short_drama.domain.collaboration import User
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.assistant_task_service import AssistantTaskService
+from short_drama.domain.assistant.conversations.models import AgentConversation, AgentMessage
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask, AgentTaskControl
+from short_drama.domain.identity.accounts.user import User
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.assistant.tasks.task import AssistantTaskService
 from short_drama.service.base import utcnow
 from short_drama.utils.json_digest import digest
 
 pytestmark = pytest.mark.integration
+
+
+def decision_prompt(kwargs):
+    """动态状态位于用户消息；附件封装和末尾的用户原文仍分别校验。"""
+    prompt = kwargs["user_prompt"]
+    text = prompt["content"] if isinstance(prompt, dict) else prompt
+    state, end = json.JSONDecoder().raw_decode(text)
+    return state, text[end:].strip()
+
+
+def decision_state(kwargs):
+    return decision_prompt(kwargs)[0]
 
 
 def task_actor(identifier=1):
@@ -233,10 +247,11 @@ def test_resume_reused_message_keeps_task_scope_and_the_original_stop_watermark(
                 "foreign-source",
             )
         newer = service.control_task(accepted.task.id, {"kind": "stop"}, "newer-stop")
-        with pytest.raises(Conflict):
+        with pytest.raises(WorkflowError) as error:
             service.control_task(
                 accepted.task.id, {**control, "message_id": submitted.message.id}, "stale-resume"
             )
+        assert error.value.code == "assistant_control_changed"
         current = service.control_task(
             accepted.task.id,
             {
@@ -440,7 +455,7 @@ def decision(workspace, accepted, *, tool_count=0):
 
 
 def task_constraint_job(workspace, *, repeat=100, allow_wait=False):
-    from short_drama.domain.agent_memory import AgentMemoryJob
+    from short_drama.domain.assistant.memory.memory import AgentMemoryJob
 
     factory, settings, model = workspace
     with factory() as session:
@@ -477,7 +492,7 @@ def test_task_constraint_compaction_preserves_early_constraints_and_latest_input
     task_workspace,
 ):
     from short_drama.agent.memory.runtime import AgentMemoryStore
-    from short_drama.domain.agent import AgentMessage
+    from short_drama.domain.assistant.conversations.models import AgentMessage
 
     conversation, accepted, _store, _claim, job = task_constraint_job(task_workspace)
     factory, settings, _model = task_workspace
@@ -586,9 +601,9 @@ def task_constraint_payload(job, *, text="主角不能杀人；合并重复背�
 def test_task_constraint_compaction_final_send_checks_the_active_original_sources(task_workspace):
     from dataclasses import replace
 
-    from short_drama.agent.coordinator.runtime import freeze_input
     from short_drama.agent.memory.runtime import AgentMemoryStore
-    from short_drama.domain.agent import AgentMessage
+    from short_drama.agent.runtime.claims import freeze_input
+    from short_drama.domain.assistant.conversations.models import AgentMessage
 
     conversation, accepted, store, prepared, job = task_constraint_job(task_workspace)
     factory, settings, _model = task_workspace
@@ -650,10 +665,10 @@ def test_task_constraint_compaction_checks_original_prefix_at_every_boundary(
     from short_drama.agent.core.access import LeaseLost
     from short_drama.agent.memory.runtime import AgentMemoryStore
     from short_drama.agent.task.compaction import task_input_projection_locked
-    from short_drama.domain.agent import AgentMessage
-    from short_drama.domain.agent_memory import AgentMemoryJob
-    from short_drama.schemas.agent_memory import MemoryCreate
-    from short_drama.service.agent_memory_service import (
+    from short_drama.domain.assistant.conversations.models import AgentMessage
+    from short_drama.domain.assistant.memory.memory import AgentMemoryJob
+    from short_drama.schemas.assistant.memory.memory import MemoryCreate
+    from short_drama.service.assistant.memory.memory import (
         create_memory_locked,
         forget_memory_locked,
         source_rows,
@@ -719,7 +734,7 @@ def test_task_constraint_compaction_checks_original_prefix_at_every_boundary(
 def test_task_constraint_compaction_waits_at_hard_budget_then_pauses_if_maintenance_failed(
     task_workspace,
 ):
-    from short_drama.domain.agent_memory import AgentMemoryJob
+    from short_drama.domain.assistant.memory.memory import AgentMemoryJob
 
     _conversation, accepted, store, claim, job = task_constraint_job(
         task_workspace, repeat=500, allow_wait=True
@@ -794,7 +809,7 @@ def test_task_constraint_compaction_merges_with_bounded_parent_refs_and_rejects_
         assert len(state["facts"][0]["source_message_ids"]) <= 128
         # Replaying a completed parent cannot overwrite the activated child.
         from short_drama.agent.memory.context import settle_maintenance_locked
-        from short_drama.domain.agent_memory import AgentMemoryJob
+        from short_drama.domain.assistant.memory.memory import AgentMemoryJob
 
         parent_job = session.get(AgentMemoryJob, first.id)
         parent_job.status = "running"
@@ -811,8 +826,8 @@ def test_task_constraint_compaction_merges_with_bounded_parent_refs_and_rejects_
 @pytest.mark.parametrize("unknown", [False, True])
 def test_task_constraint_compaction_manual_retry_preserves_frozen_identity(task_workspace, unknown):
     from short_drama.agent.memory.runtime import AgentMemoryStore
-    from short_drama.domain.agent_memory import AgentMemoryJob
-    from short_drama.service.agent_memory_service import AgentMemoryService
+    from short_drama.domain.assistant.memory.memory import AgentMemoryJob
+    from short_drama.service.assistant.memory.memory import AgentMemoryService
 
     _conversation, _accepted, _store, _claim, job = task_constraint_job(task_workspace)
     factory, settings, _model = task_workspace
@@ -846,7 +861,7 @@ def test_task_constraint_compaction_manual_retry_preserves_frozen_identity(task_
 
 
 def test_discussion_revision_replaces_only_the_reply_and_preserves_versions(task_workspace):
-    from short_drama.domain.agent import AgentMessage
+    from short_drama.domain.assistant.conversations.models import AgentMessage
 
     conversation, accepted = new_task(task_workspace)
     store, claim, result = decision(task_workspace, accepted)
@@ -917,8 +932,8 @@ def test_discussion_revision_rejects_stale_versions_and_executed_dependencies(ta
 
 
 def test_discussion_revision_preserves_history_used_by_saved_memory(task_workspace):
-    from short_drama.schemas.agent_memory import MemoryCreate
-    from short_drama.service.agent_memory_service import create_memory_locked, source_rows
+    from short_drama.schemas.assistant.memory.memory import MemoryCreate
+    from short_drama.service.assistant.memory.memory import create_memory_locked, source_rows
 
     conversation, accepted = new_task(task_workspace)
     store, claim, result = decision(task_workspace, accepted)
@@ -954,7 +969,7 @@ def test_discussion_revision_preserves_history_used_by_saved_memory(task_workspa
 
 
 def test_discussion_revision_never_accepts_a_tool_receipt(task_workspace):
-    from short_drama.domain.agent import AgentMessage
+    from short_drama.domain.assistant.conversations.models import AgentMessage
 
     conversation, accepted = new_task(task_workspace)
     store, claim, result = decision(task_workspace, accepted)
@@ -1020,14 +1035,14 @@ def test_discussion_revision_excludes_later_discussion_and_reuses_original_reque
                 revised.task.id, {"kind": "redirect", "content": "新方向"}, "redirect"
             )
     _store, revision_claim, _result = decision(task_workspace, revised)
-    assert "后续私有讨论不可倒灌原回复" not in revision_claim.inputs["kwargs"]["instructions"]
-    assert "后续助手结论不可倒灌原回复" not in revision_claim.inputs["kwargs"]["instructions"]
+    assert "后续私有讨论不可倒灌原回复" not in str(revision_claim.inputs["kwargs"])
+    assert "后续助手结论不可倒灌原回复" not in str(revision_claim.inputs["kwargs"])
 
 
 def test_discussion_revision_invalidates_summaries_and_fences_late_extraction(task_workspace):
     from short_drama.agent.memory.context import enqueue_job_locked, settle_maintenance_locked
     from short_drama.agent.memory.sources import message_sources
-    from short_drama.domain.agent_memory import AgentConversationSummary, AgentMemoryJob
+    from short_drama.domain.assistant.memory.memory import AgentConversationSummary, AgentMemoryJob
 
     conversation, accepted = new_task(task_workspace)
     store, claim, result = decision(task_workspace, accepted)
@@ -1106,8 +1121,8 @@ def test_discussion_revision_stop_and_resume_keep_the_original_readonly_boundary
 def test_discussion_revision_rejects_cross_account_reads_and_arbitrary_message_rewrites(
     task_workspace,
 ):
-    from short_drama.domain.agent import AgentMessage
-    from short_drama.domain.agent_history import AgentDiscussionRevision
+    from short_drama.domain.assistant.conversations.history import AgentDiscussionRevision
+    from short_drama.domain.assistant.conversations.models import AgentMessage
 
     conversation, accepted = new_task(task_workspace)
     store, claim, result = decision(task_workspace, accepted)
@@ -1142,7 +1157,7 @@ def test_discussion_revision_rejects_cross_account_reads_and_arbitrary_message_r
 
 def test_discussion_revision_deleted_conversation_scrubs_revision_snapshots(task_workspace):
     from short_drama.agent.session.purge import purge_one
-    from short_drama.domain.agent_history import AgentDiscussionRevision
+    from short_drama.domain.assistant.conversations.history import AgentDiscussionRevision
 
     conversation, accepted = new_task(task_workspace)
     store, claim, result = decision(task_workspace, accepted)
@@ -1204,8 +1219,8 @@ def test_account_conversations_do_not_require_projects_and_do_not_leak(task_work
 
 def test_generation_policy_defaults_without_writing_and_retains_an_explicit_disable(task_workspace):
     from scripts.agent_system_migration import apply_migration
-    from short_drama.domain.agent_preference import AgentPreference
-    from short_drama.service.assistant_policy_service import AssistantPolicyService
+    from short_drama.domain.assistant.operations.preference import AgentPreference
+    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 
     factory, _settings, _model = task_workspace
     with factory() as session:
@@ -1237,8 +1252,8 @@ def test_generation_policy_defaults_without_writing_and_retains_an_explicit_disa
 def test_generation_policy_is_owner_scoped_and_stale_identity_cannot_write_foreign_preferences(
     task_workspace,
 ):
-    from short_drama.domain.agent_preference import AgentPreference
-    from short_drama.service.assistant_policy_service import AssistantPolicyService
+    from short_drama.domain.assistant.operations.preference import AgentPreference
+    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 
     factory, _settings, _model = task_workspace
     with factory.begin() as session:
@@ -1277,7 +1292,7 @@ def test_generation_policy_optimistic_version_rejects_concurrent_first_saves(tas
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
-    from short_drama.service.assistant_policy_service import AssistantPolicyService
+    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 
     factory, _settings, _model = task_workspace
     barrier = Barrier(2)
@@ -1307,9 +1322,9 @@ def test_generation_policy_optimistic_version_rejects_concurrent_first_saves(tas
 
 
 def test_generation_policy_version_overflow_does_not_change_the_setting(task_workspace):
-    from short_drama.domain.agent_preference import AgentPreference
+    from short_drama.domain.assistant.operations.preference import AgentPreference
     from short_drama.schemas.base import UINT64_MAX
-    from short_drama.service.assistant_policy_service import AssistantPolicyService
+    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 
     factory, _settings, _model = task_workspace
     with factory.begin() as session:
@@ -1336,7 +1351,7 @@ def test_generation_policy_version_overflow_does_not_change_the_setting(task_wor
 def test_generation_policy_reports_only_own_enabled_models_without_claiming_execution(
     task_workspace,
 ):
-    from short_drama.service.assistant_policy_service import AssistantPolicyService
+    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 
     factory, _settings, _model = task_workspace
     with factory() as session:
@@ -1370,7 +1385,7 @@ def test_generation_policy_reports_only_own_enabled_models_without_claiming_exec
 def test_generation_policy_change_before_model_send_rebuilds_without_charging_a_call(
     task_workspace,
 ):
-    from short_drama.service.assistant_policy_service import AssistantPolicyService
+    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 
     factory, settings, _model = task_workspace
     _conversation, accepted = new_task(task_workspace)
@@ -1393,7 +1408,10 @@ def test_generation_policy_change_before_model_send_rebuilds_without_charging_a_
         version = run.message_version
     refreshed = store.claim_execution(accepted.run.id, version, prepare_decision)
     assert refreshed.inputs["generation_policy_version"] == 1
-    assert '"media_generation_enabled": false' in refreshed.inputs["kwargs"]["instructions"]
+    assert (
+        decision_state(refreshed.inputs["kwargs"])["generation_policy"]["media_generation_enabled"]
+        is False
+    )
     store.before_send(refreshed, {"fixture": "text-with-media-disabled"})
     store.save_raw(refreshed, {"fixture": "text"})
     applied = store.save_result(
@@ -1413,7 +1431,7 @@ def test_generation_policy_change_before_model_send_rebuilds_without_charging_a_
 def test_generation_policy_tool_reads_latest_switch_without_granting_media_execution(
     task_workspace,
 ):
-    from short_drama.service.assistant_policy_service import AssistantPolicyService
+    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 
     factory, settings, _model = task_workspace
     _conversation, accepted = new_task(task_workspace)
@@ -1459,54 +1477,31 @@ def test_supplements_reuse_task_and_run_but_new_task_is_separate(task_workspace)
         assert session.scalar(select(func.count()).select_from(AgentRun)) == 2
 
 
-def test_stop_retains_supplements_resume_has_a_new_attempt_and_is_versioned(task_workspace):
-    factory, settings, _model = task_workspace
-    conversation, accepted = new_task(task_workspace)
+def test_stop_then_message_creates_a_new_attempt_and_preserves_control_receipts(harness_workspace):
+    factory, settings, _model = harness_workspace
+    conversation, accepted = new_task(harness_workspace)
     with factory() as session:
         service = task_service(session, settings)
         stopped = service.control_task(accepted.task.id, {"kind": "stop"}, "stop")
         assert stopped.task.status == "stopped" and stopped.run.status == "cancelled"
-        saved = service.send_task_message(
-            conversation.id,
-            {
-                "task_id": str(accepted.task.id),
-                "content": "保留，暂时不要继续",
-            },
-            "paused-input",
+        body = {"task_id": str(accepted.task.id), "content": "保留已保存内容，继续补充"}
+        continued = service.send_task_message(conversation.id, body, "continued-input")
+        assert continued.task.id == accepted.task.id and continued.run.id != accepted.run.id
+        assert continued.task.status == "queued"
+        replay = service.send_task_message(conversation.id, body, "continued-input")
+        assert replay.message.id == continued.message.id and replay.run.id == continued.run.id
+        assert service.control_task(accepted.task.id, {"kind": "stop"}, "stop").control_id == (
+            stopped.control_id
         )
-        assert saved.task.status == "stopped" and saved.run.id == accepted.run.id
-        assert service.task_runtime_state(conversation.id).tasks[0].status == "stopped"
-        resumed = service.control_task(
-            accepted.task.id,
-            {
-                "kind": "resume",
-                "expected_control_seq": str(stopped.task.control_seq),
-            },
-            "resume",
-        )
-        assert resumed.task.id == accepted.task.id and resumed.run.id != accepted.run.id
-        assert resumed.task.status == "queued"
-        assert (
-            service.control_task(
-                accepted.task.id,
-                {
-                    "kind": "resume",
-                    "expected_control_seq": str(stopped.task.control_seq),
-                },
-                "resume",
-            ).run.id
-            == resumed.run.id
-        )
-        service.control_task(accepted.task.id, {"kind": "stop"}, "stop-again")
-        with pytest.raises(Conflict):
-            service.control_task(
-                accepted.task.id,
-                {
-                    "kind": "resume",
-                    "expected_control_seq": str(stopped.task.control_seq),
-                },
-                "stale-resume",
-            )
+        stopped_again = service.control_task(accepted.task.id, {"kind": "stop"}, "stop-again")
+        assert stopped_again.control_id != stopped.control_id
+        assert stopped_again.task.status == "stopped"
+        controls = session.scalars(
+            select(AgentTaskControl)
+            .where(AgentTaskControl.task_id == accepted.task.id)
+            .order_by(AgentTaskControl.seq)
+        ).all()
+        assert [control.kind for control in controls] == ["stop", "stop"]
 
 
 def test_supplement_before_provider_send_invalidates_only_the_old_decision(task_workspace):
@@ -1528,7 +1523,7 @@ def test_supplement_before_provider_send_invalidates_only_the_old_decision(task_
         version = run.message_version
     refreshed = store.claim_execution(accepted.run.id, version, prepare_decision)
     assert refreshed is not None
-    assert "明确改为三段" in refreshed.inputs["kwargs"]["instructions"]
+    assert "明确改为三段" in str(decision_state(refreshed.inputs["kwargs"]))
     assert refreshed.inputs["task_input_revision"] == 2
 
 
@@ -1610,7 +1605,8 @@ def test_tool_result_continues_the_same_task_with_closed_provider_calls(task_wor
     assert following.inputs["kwargs"]["deferred_results"] == {
         "calls": {"call-0": {"target": None, "write_authorized": False}}
     }
-    assert following.inputs["kwargs"]["user_prompt"] is None
+    state, repeated_goal = decision_prompt(following.inputs["kwargs"])
+    assert state["task_id"] == str(accepted.task.id) and repeated_goal == ""
 
 
 def test_recovery_fences_old_worker_and_settles_the_original_operation(task_workspace):
@@ -1662,8 +1658,8 @@ def test_snapshot_has_one_watermark_for_messages_inputs_and_receipts(task_worksp
 def test_global_event_replay_requires_resync_for_ahead_or_missing_cursors(task_workspace):
     from sqlalchemy import delete
 
-    from short_drama.domain.agent import AgentEvent
-    from short_drama.service.agent_run_service import AgentRunService
+    from short_drama.domain.assistant.conversations.models import AgentEvent
+    from short_drama.service.assistant.execution.run import AgentRunService
 
     factory, settings, _model = task_workspace
     conversation, accepted = new_task(task_workspace)
@@ -1734,7 +1730,7 @@ def test_delete_waits_for_the_started_operation_and_hides_the_conversation(task_
 
 
 def test_task_reference_guard_rejects_an_input_from_another_task(task_workspace):
-    from short_drama.domain.agent_task import AgentTaskInput
+    from short_drama.domain.assistant.tasks.task import AgentTaskInput
     from short_drama.utils.snowflake import next_id
 
     factory, settings, _model = task_workspace
@@ -1760,8 +1756,8 @@ def test_task_reference_guard_rejects_an_input_from_another_task(task_workspace)
 
 
 def subject_assets(workspace):
-    from short_drama.service.asset_service import AssetService
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.creation.assets.management.assets import AssetService
+    from short_drama.service.projects.management.project import ProjectService
 
     factory, settings, _model = workspace
     references = []
@@ -1810,8 +1806,8 @@ def selected_task(workspace, references, *, content="比较主动选入主体", 
 def image_group_workspace(workspace, *, kind="asset"):
     from short_drama.core.config import Settings
     from short_drama.domain import MediaFile
-    from short_drama.service.image_group_service import ImageGroupService
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.media.image_groups.groups import ImageGroupService
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(workspace)[0]
@@ -2006,9 +2002,7 @@ def test_image_content_read_delivers_only_requested_pixels_after_tool_results(
         locator = media.storage_locator
     conversation, accepted, store, claim = selected_task(task_workspace, [reference])
     assert "read_image_content" in {tool["name"] for tool in claim.inputs["kwargs"]["tools"]}
-    directory = json.loads(
-        claim.inputs["kwargs"]["instructions"].split("任务状态与用户原始输入：", 1)[1]
-    )
+    directory = decision_state(claim.inputs["kwargs"])
     key = directory["image_sources"][0]["subject_key"]
     store.before_send(claim, {"fixture": True})
     store.save_raw(claim, {"fixture": True})
@@ -2063,7 +2057,7 @@ def test_image_content_read_delivers_only_requested_pixels_after_tool_results(
     "invalid", ["sibling", "other_group", "unselected", "later_media", "metadata"]
 )
 def test_image_content_read_rejects_guessed_or_unselected_pixels(task_workspace, invalid):
-    from short_drama.agent.coordinator.assistant import execute_locked
+    from short_drama.agent.runtime.tool_execution import execute_locked
     from short_drama.domain import ImageGroupItem, MediaFile
 
     reference, groups = image_group_workspace(task_workspace)
@@ -2074,9 +2068,7 @@ def test_image_content_read_rejects_guessed_or_unselected_pixels(task_workspace,
         "revision": "2",
     }
     conversation, accepted, _store, claim = selected_task(task_workspace, [selected])
-    directory = json.loads(
-        claim.inputs["kwargs"]["instructions"].split("任务状态与用户原始输入：", 1)[1]
-    )
+    directory = decision_state(claim.inputs["kwargs"])
     key = directory["image_sources"][0]["subject_key"]
     item = groups[0]["items"][0]
     args = {
@@ -2116,15 +2108,13 @@ def test_image_content_read_rejects_guessed_or_unselected_pixels(task_workspace,
     "mutation", ["removed", "deleted", "archived", "checksum", "locator", "refreshed"]
 )
 def test_image_content_read_invalidates_history_and_blocks_stale_send(task_workspace, mutation):
-    from short_drama.agent.coordinator.assistant import execute_locked
+    from short_drama.agent.runtime.tool_execution import execute_locked
     from short_drama.domain import Asset, MediaFile, Project
 
     reference, groups = image_group_workspace(task_workspace)
     conversation, accepted, store, claim = selected_task(task_workspace, [reference])
     factory, settings, _model = task_workspace
-    directory = json.loads(
-        claim.inputs["kwargs"]["instructions"].split("任务状态与用户原始输入：", 1)[1]
-    )
+    directory = decision_state(claim.inputs["kwargs"])
     key = directory["image_sources"][0]["subject_key"]
     item = groups[0]["items"][1]
     with factory.begin() as session:
@@ -2179,7 +2169,7 @@ def test_image_content_read_invalidates_history_and_blocks_stale_send(task_works
 
 
 def test_image_content_read_keeps_frozen_history_and_never_follows_replacement(task_workspace):
-    from short_drama.agent.coordinator.assistant import execute_locked
+    from short_drama.agent.runtime.tool_execution import execute_locked
     from short_drama.domain import ImageGroupItem
 
     reference, groups = image_group_workspace(task_workspace)
@@ -2190,9 +2180,7 @@ def test_image_content_read_keeps_frozen_history_and_never_follows_replacement(t
         slot.origin = {**slot.origin, "history": [item["media_id"], old["media_id"]]}
     reference.update(kind="image_slot", id=item["id"], revision="2")
     conversation, accepted, _store, claim = selected_task(task_workspace, [reference])
-    directory = json.loads(
-        claim.inputs["kwargs"]["instructions"].split("任务状态与用户原始输入：", 1)[1]
-    )
+    directory = decision_state(claim.inputs["kwargs"])
     key = directory["image_sources"][0]["subject_key"]
     with factory.begin() as session:
         slot = session.get(ImageGroupItem, int(item["id"]))
@@ -2231,7 +2219,7 @@ def test_image_reader_freezes_paginated_history_and_never_returns_private_parame
     from short_drama.agent.tools.contracts import ReadImageGroup
     from short_drama.agent.tools.image import read_image_group_locked
     from short_drama.domain import ImageGroupItem
-    from short_drama.service.assistant_subject_service import selection_metadata
+    from short_drama.service.assistant.context.subject import selection_metadata
 
     reference, groups = image_group_workspace(task_workspace)
     conversation, accepted, _store, claim = selected_task(task_workspace, [reference])
@@ -2466,8 +2454,8 @@ def test_image_primary_restores_actor_scope_and_rolls_back_late_failure(
     task_workspace, monkeypatch, context
 ):
     from short_drama.domain import Asset, ImageGroup
-    from short_drama.service.assistant_image_service import AssistantImageService
-    from short_drama.service.image_group_service import ImageGroupService
+    from short_drama.service.assistant.operations.image import AssistantImageService
+    from short_drama.service.media.image_groups.groups import ImageGroupService
 
     reference, groups = image_group_workspace(task_workspace)
     selected = {
@@ -2640,9 +2628,9 @@ def test_image_reader_refuses_removed_or_inaccessible_subjects(task_workspace, f
 
 
 def test_image_primary_versions_feed_following_authorized_standard_edit(task_workspace):
-    from short_drama.agent.legacy.authorization import digest
     from short_drama.agent.tools.standard import standard_requests_locked
     from short_drama.domain import Asset, Project
+    from short_drama.utils.json_digest import digest
 
     reference, groups = image_group_workspace(task_workspace)
     conversation, accepted, _claim, operations = image_primary_run(
@@ -2787,14 +2775,14 @@ def test_image_primary_withdrawal_replaces_authority_at_the_input_boundary(task_
 
 
 def test_multi_source_subjects_preserve_scope_and_read_only_frozen_content(task_workspace):
-    from short_drama.agent.coordinator.assistant import _read_selected
+    from short_drama.agent.runtime.read_tools import _read_selected
     from short_drama.agent.tools.contracts import ReadSelectedSubjects
-    from short_drama.service.asset_service import AssetService
+    from short_drama.service.creation.assets.management.assets import AssetService
 
     references = subject_assets(task_workspace)
     conversation, accepted, _store, claim = selected_task(task_workspace, references)
     factory, settings, _model = task_workspace
-    assert "第一部的设定" not in claim.inputs["kwargs"]["instructions"]
+    assert "第一部的设定" not in str(claim.inputs["kwargs"])
     with factory() as session:
         service = task_service(session, settings)
         meta = service.subject_metadata(accepted.task.id)
@@ -2859,7 +2847,7 @@ def test_subject_selection_retain_remove_and_stale_revision_are_durable(task_wor
 
 
 def test_subject_refresh_waits_for_current_tool_and_keeps_its_frozen_parameters(task_workspace):
-    from short_drama.service.asset_service import AssetService
+    from short_drama.service.creation.assets.management.assets import AssetService
 
     references = subject_assets(task_workspace)[:1]
     conversation, accepted, store, claim = selected_task(task_workspace, references)
@@ -2918,8 +2906,8 @@ def test_subject_refresh_waits_for_current_tool_and_keeps_its_frozen_parameters(
 
 def test_subject_long_frozen_text_has_lossless_continuation(task_workspace):
     from short_drama.agent.tools.contracts import ReadSelectedSubjects
-    from short_drama.service.asset_service import AssetService
-    from short_drama.service.assistant_subject_service import read_selected_snapshot
+    from short_drama.service.assistant.context.subject import read_selected_snapshot
+    from short_drama.service.creation.assets.management.assets import AssetService
 
     references = subject_assets(task_workspace)[:1]
     text = "需要完整回查的中文设定" * 1500
@@ -2944,9 +2932,9 @@ def test_subject_long_frozen_text_has_lossless_continuation(task_workspace):
 
 
 def subject_canvas(workspace, name):
-    from short_drama.domain.canvas import CanvasNode
-    from short_drama.service.canvas_service import CanvasService
-    from short_drama.service.project_service import ProjectService
+    from short_drama.domain.canvas.document.canvas import CanvasNode
+    from short_drama.service.canvas.document.canvas import CanvasService
+    from short_drama.service.projects.management.project import ProjectService
 
     factory, settings, _model = workspace
     with factory() as session:
@@ -2994,12 +2982,12 @@ def subject_canvas(workspace, name):
 
 def test_subject_nodes_have_scoped_identity_and_layout_does_not_change_body(task_workspace):
     from short_drama.agent.tools.contracts import ReadSelectedSubjects
-    from short_drama.domain.canvas import CanvasNode
-    from short_drama.service.assistant_subject_service import read_selected_snapshot
+    from short_drama.domain.canvas.document.canvas import CanvasNode
+    from short_drama.service.assistant.context.subject import read_selected_snapshot
 
     refs = [subject_canvas(task_workspace, name) for name in ("画布甲", "画布乙")]
     _conversation, accepted, _store, claim = selected_task(task_workspace, refs)
-    instructions = claim.inputs["kwargs"]["instructions"]
+    instructions = str(claim.inputs["kwargs"])
     for private_text in ("画布甲的正文", "画布乙的正文", "不应自动读入的私人提示词"):
         assert private_text not in instructions
     factory, settings, _model = task_workspace
@@ -3031,7 +3019,7 @@ def test_subject_nodes_have_scoped_identity_and_layout_does_not_change_body(task
 def test_subject_deletion_blocks_new_reads_and_stop_does_not_apply_removal(task_workspace):
     from short_drama.agent.tools.contracts import ReadSelectedSubjects
     from short_drama.domain import Asset
-    from short_drama.service.assistant_subject_service import read_selected_snapshot
+    from short_drama.service.assistant.context.subject import read_selected_snapshot
 
     references = subject_assets(task_workspace)[:1]
     conversation, accepted, _store, _claim = selected_task(task_workspace, references)
@@ -3098,7 +3086,7 @@ def test_subject_revocation_before_provider_send_rebuilds_without_a_paid_call(ta
         version = run.message_version
     sanitized = store.claim_execution(accepted.run.id, version, prepare_decision)
     assert sanitized is not None and sanitized.inputs["subject_access_keys"] == []
-    assert "unavailable" in sanitized.inputs["kwargs"]["instructions"]
+    assert "unavailable" in str(decision_state(sanitized.inputs["kwargs"]))
 
 
 def test_subject_directory_and_image_slots_use_real_identity_without_other_prompt_bodies(
@@ -3106,7 +3094,7 @@ def test_subject_directory_and_image_slots_use_real_identity_without_other_promp
 ):
     from short_drama.agent.tools.contracts import ReadSelectedSubjects
     from short_drama.domain import ImageGroup, ImageGroupItem, MediaFile
-    from short_drama.service.assistant_subject_service import read_selected_snapshot
+    from short_drama.service.assistant.context.subject import read_selected_snapshot
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(task_workspace)[0]
@@ -3190,7 +3178,7 @@ def test_subject_directory_and_image_slots_use_real_identity_without_other_promp
 def add_text_attachment(workspace, conversation_id, text="仅本任务的附件正文"):
     import hashlib
 
-    from short_drama.domain.agent_context import AgentAttachment
+    from short_drama.domain.assistant.context.context import AgentAttachment
     from short_drama.utils.snowflake import next_id
 
     factory, settings, _model = workspace
@@ -3217,8 +3205,8 @@ def add_text_attachment(workspace, conversation_id, text="仅本任务的附件�
 
 def test_attachment_selection_waits_for_full_tool_and_replays_one_removal(task_workspace):
     from short_drama.agent.context.attachments import task_attachments
-    from short_drama.agent.coordinator.assistant import prepare_decision as prepare_task
-    from short_drama.domain.agent import AgentMessage
+    from short_drama.agent.runtime.decision_input import prepare_decision as prepare_task
+    from short_drama.domain.assistant.conversations.models import AgentMessage
 
     factory, settings, model = task_workspace
     with factory() as session:
@@ -3273,7 +3261,7 @@ def test_attachment_selection_waits_for_full_tool_and_replays_one_removal(task_w
         assert current.applied_input_revision == 2
         run = session.get(AgentRun, accepted.run.id)
         clean = prepare_task(session, session.get(AgentConversation, conversation.id), run)
-        assert clean["user_prompt"] == "读取这份资料" and "附件正文" not in str(clean)
+        assert decision_prompt(clean)[1] == "读取这份资料" and "附件正文" not in str(clean)
         message = session.scalar(select(AgentMessage).where(AgentMessage.id == accepted.message.id))
         assert message.references[0]["type"] == "attachment"
     with factory() as session:
@@ -3293,10 +3281,10 @@ def test_attachment_selection_waits_for_full_tool_and_replays_one_removal(task_w
 
 
 def test_attachment_scope_blocks_old_reply_reinjection_and_cross_task_retain(task_workspace):
-    from short_drama.agent.coordinator.assistant import _read_history
     from short_drama.agent.memory.context import history_projection_locked
+    from short_drama.agent.runtime.read_tools import _read_history
     from short_drama.agent.tools.contracts import ReadHistory
-    from short_drama.domain.agent import AgentMessage
+    from short_drama.domain.assistant.conversations.models import AgentMessage
     from short_drama.utils.snowflake import next_id
 
     factory, settings, model = task_workspace
@@ -3422,7 +3410,7 @@ def test_attachment_budget_counts_all_pending_inputs_and_removal_releases_capaci
 
 
 def test_attachment_revocation_before_send_rebuilds_without_a_provider_call(task_workspace):
-    from short_drama.domain.agent_context import AgentAttachment
+    from short_drama.domain.assistant.context.context import AgentAttachment
 
     factory, settings, _model = task_workspace
     conversation, accepted = new_task(task_workspace)
@@ -3501,7 +3489,7 @@ def test_standard_patch_creates_real_assets_shots_and_local_associations_in_one_
     task_workspace,
 ):
     from short_drama.domain import Asset, AssetVersion, Project, ShotAsset, ShotScript
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(task_workspace)[0]
@@ -3557,7 +3545,7 @@ def test_standard_patch_creates_real_assets_shots_and_local_associations_in_one_
 
 def test_standard_patch_late_failure_rolls_back_every_new_object_and_version(task_workspace):
     from short_drama.domain import Asset, AssetVersion, Project, ShotScript
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
     from short_drama.utils.snowflake import next_id
 
     refs = subject_assets(task_workspace)
@@ -3600,7 +3588,7 @@ def test_standard_patch_late_failure_rolls_back_every_new_object_and_version(tas
 
 def test_standard_patch_versions_owner_and_removed_associations_cannot_expand_scope(task_workspace):
     from short_drama.domain import Project, ShotScript
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
     from short_drama.utils.snowflake import next_id
 
     refs = subject_assets(task_workspace)
@@ -3697,7 +3685,7 @@ def test_standard_patch_versions_owner_and_removed_associations_cannot_expand_sc
 
 def test_standard_patch_reorders_only_authorized_positions_and_ignores_noop_changes(task_workspace):
     from short_drama.domain import Project, ShotScript
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(task_workspace)[0]
@@ -3770,7 +3758,7 @@ def test_standard_patch_delete_preserves_history_and_requires_related_objects_to
     task_workspace,
 ):
     from short_drama.domain import Asset, AssetVersion, Project, ShotAsset, ShotScript
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(task_workspace)[0]
@@ -3859,8 +3847,8 @@ def test_standard_patch_asset_updates_preserve_character_history_and_business_va
     task_workspace,
 ):
     from short_drama.domain import Asset, AssetVersion, MediaFile
-    from short_drama.service.asset_image_service import AssetImageService
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
+    from short_drama.service.creation.assets.images.image import AssetImageService
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(task_workspace)[0]
@@ -3942,7 +3930,7 @@ def standard_tool_run(
     authority=None,
     project_id=None,
 ):
-    from short_drama.agent.legacy.authorization import digest
+    from short_drama.utils.json_digest import digest
 
     factory, settings, model = workspace
     with factory() as session:
@@ -4006,8 +3994,8 @@ def standard_tool_run(
 
 
 def canvas_patch_workspace(workspace):
-    from short_drama.service.canvas_service import CanvasService
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.canvas.document.canvas import CanvasService
+    from short_drama.service.projects.management.project import ProjectService
 
     factory, settings, _model = workspace
     with factory() as session:
@@ -4061,7 +4049,7 @@ def canvas_tool_run(
     before_execute=None,
     authority=None,
 ):
-    from short_drama.agent.legacy.authorization import digest
+    from short_drama.utils.json_digest import digest
 
     factory, settings, model = workspace
     with factory() as session:
@@ -4128,8 +4116,8 @@ def canvas_tool_run(
 def test_canvas_tool_real_grant_replays_one_batch_and_reads_only_its_created_snapshot(
     task_workspace,
 ):
-    from short_drama.agent.coordinator.assistant import execute_locked
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.agent.runtime.tool_execution import execute_locked
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     project_id, canvas_id, saved = canvas_patch_workspace(task_workspace)
     text = "本任务新建的节点正文。" * 160
@@ -4213,11 +4201,9 @@ def test_canvas_tool_real_grant_replays_one_batch_and_reads_only_its_created_sna
         accepted.run.id, version, prepare_decision
     )
     assert next_claim is not None
-    directory = json.loads(
-        next_claim.inputs["kwargs"]["instructions"].split("任务状态与用户原始输入：", 1)[1]
-    )
+    directory = decision_state(next_claim.inputs["kwargs"])
     assert directory["canvas_write_requests"][0]["create_remaining"] == {"text": 0, "image": 0}
-    assert "本任务新建的节点正文" not in next_claim.inputs["kwargs"]["instructions"]
+    assert "本任务新建的节点正文" not in str(next_claim.inputs["kwargs"])
     assert "read_task_results" in [item["name"] for item in next_claim.inputs["kwargs"]["tools"]]
     store = AgentRuntimeStore(factory, settings)
     store.before_send(next_claim, {"fixture": "canvas-result-read"})
@@ -4252,7 +4238,7 @@ def test_canvas_tool_real_grant_replays_one_batch_and_reads_only_its_created_sna
         version = session.get(AgentRun, accepted.run.id).message_version
     pending = store.claim_execution(accepted.run.id, version, prepare_decision)
     assert pending is not None and text in str(pending.inputs["kwargs"]["deferred_results"])
-    from short_drama.domain.canvas import CanvasNode
+    from short_drama.domain.canvas.document.canvas import CanvasNode
 
     with factory.begin() as session:
         row = session.scalar(
@@ -4277,7 +4263,7 @@ def test_canvas_tool_real_grant_replays_one_batch_and_reads_only_its_created_sna
 def test_canvas_subject_freezes_private_write_revision_without_disclosing_private_body(
     task_workspace,
 ):
-    from short_drama.domain.canvas import CanvasNodeUserState
+    from short_drama.domain.canvas.document.canvas import CanvasNodeUserState
 
     reference = subject_canvas(task_workspace, "私人版本")
     _conversation, accepted, _store, claim = selected_task(task_workspace, [reference])
@@ -4320,7 +4306,7 @@ def test_canvas_subject_freezes_private_write_revision_without_disclosing_privat
 def test_canvas_tool_rechecks_real_authority_scope_fields_and_versions(
     task_workspace, violation, code
 ):
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     project_id, canvas_id, saved = canvas_patch_workspace(task_workspace)
     factory, settings, _model = task_workspace
@@ -4414,7 +4400,7 @@ def test_canvas_tool_rechecks_real_authority_scope_fields_and_versions(
 
 
 def test_canvas_tool_completes_one_started_batch_before_stopping(task_workspace):
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     project_id, canvas_id, saved = canvas_patch_workspace(task_workspace)
     factory, settings, _model = task_workspace
@@ -4458,9 +4444,9 @@ def test_canvas_tool_completes_one_started_batch_before_stopping(task_workspace)
 def test_canvas_result_reader_preserves_saved_content_and_rechecks_current_access(
     task_workspace, change
 ):
-    from short_drama.agent.coordinator.assistant import execute_locked
+    from short_drama.agent.runtime.tool_execution import execute_locked
     from short_drama.domain import Project, ProjectCanvas
-    from short_drama.domain.canvas import CanvasNode, CanvasNodeUserState
+    from short_drama.domain.canvas.document.canvas import CanvasNode, CanvasNodeUserState
 
     project_id, _canvas_id, saved = canvas_patch_workspace(task_workspace)
     factory, settings, _model = task_workspace
@@ -4538,7 +4524,7 @@ def test_canvas_result_reader_preserves_saved_content_and_rechecks_current_acces
 
 
 def test_canvas_result_reader_cannot_read_selected_old_nodes_or_another_task(task_workspace):
-    from short_drama.agent.coordinator.assistant import execute_locked
+    from short_drama.agent.runtime.tool_execution import execute_locked
 
     project_id, _canvas_id, saved = canvas_patch_workspace(task_workspace)
     conversation, accepted, _claim, operations = canvas_tool_run(
@@ -4594,9 +4580,9 @@ def test_canvas_result_reader_cannot_read_selected_old_nodes_or_another_task(tas
 def test_canvas_result_reader_does_not_treat_later_move_snapshots_as_new_private_content(
     task_workspace,
 ):
-    from short_drama.agent.coordinator.assistant import execute_locked
-    from short_drama.agent.legacy.authorization import digest
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.agent.runtime.tool_execution import execute_locked
+    from short_drama.service.canvas.document.canvas import CanvasService
+    from short_drama.utils.json_digest import digest
 
     project_id, canvas_id, saved = canvas_patch_workspace(task_workspace)
     factory, settings, _model = task_workspace
@@ -4735,9 +4721,9 @@ def test_canvas_result_reader_does_not_treat_later_move_snapshots_as_new_private
 def test_canvas_patch_builds_four_native_nodes_and_preserves_unselected_work_and_viewport(
     task_workspace,
 ):
-    from short_drama.domain.canvas import CanvasRevision
-    from short_drama.service.assistant_canvas_service import AssistantCanvasService
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.domain.canvas.document.canvas import CanvasRevision
+    from short_drama.service.assistant.operations.canvas import AssistantCanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
     from short_drama.utils.snowflake import next_id
 
     project_id, canvas_id, saved = canvas_patch_workspace(task_workspace)
@@ -4818,8 +4804,8 @@ def test_canvas_patch_builds_four_native_nodes_and_preserves_unselected_work_and
 def test_canvas_patch_rejects_late_invalid_actions_without_partial_graph_or_history(
     task_workspace, violation
 ):
-    from short_drama.domain.canvas import CanvasNode, CanvasRevision
-    from short_drama.service.assistant_canvas_service import AssistantCanvasService
+    from short_drama.domain.canvas.document.canvas import CanvasNode, CanvasRevision
+    from short_drama.service.assistant.operations.canvas import AssistantCanvasService
     from short_drama.utils.snowflake import next_id
 
     project_id, canvas_id, saved = canvas_patch_workspace(task_workspace)
@@ -4866,8 +4852,8 @@ def test_canvas_patch_rejects_late_invalid_actions_without_partial_graph_or_hist
 
 
 def test_canvas_patch_checks_private_versions_and_records_private_only_changes(task_workspace):
-    from short_drama.service.assistant_canvas_service import AssistantCanvasService
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.assistant.operations.canvas import AssistantCanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
     from short_drama.utils.snowflake import next_id
 
     project_id, canvas_id, saved = canvas_patch_workspace(task_workspace)
@@ -4928,8 +4914,8 @@ def test_canvas_patch_checks_private_versions_and_records_private_only_changes(t
 def test_canvas_patch_delete_protects_related_scope_and_keeps_mechanical_differences_private(
     task_workspace,
 ):
-    from short_drama.service.assistant_canvas_service import AssistantCanvasService
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.assistant.operations.canvas import AssistantCanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
     from short_drama.utils.snowflake import next_id
 
     project_id, canvas_id, saved = canvas_patch_workspace(task_workspace)
@@ -4995,9 +4981,9 @@ def test_canvas_patch_delete_protects_related_scope_and_keeps_mechanical_differe
 @pytest.mark.parametrize("ceiling", ["content", "private", "mechanical", "canvas"])
 def test_canvas_patch_rejects_overflow_in_every_affected_version(task_workspace, ceiling):
     from short_drama.domain import ProjectCanvas
-    from short_drama.domain.canvas import CanvasNode, CanvasNodeUserState
+    from short_drama.domain.canvas.document.canvas import CanvasNode, CanvasNodeUserState
     from short_drama.schemas.base import UINT64_MAX
-    from short_drama.service.assistant_canvas_service import AssistantCanvasService
+    from short_drama.service.assistant.operations.canvas import AssistantCanvasService
     from short_drama.utils.snowflake import next_id
 
     project_id, _canvas_id, saved = canvas_patch_workspace(task_workspace)
@@ -5116,7 +5102,7 @@ def settled_media_undo_flow(workspace, tmp_path, kind, **kwargs):
 
 
 def continue_undo_flow_tool(flow, content, tool_name, arguments, *, key, references=None):
-    from short_drama.agent.legacy.authorization import digest
+    from short_drama.utils.json_digest import digest
 
     with flow.factory() as session:
         service = task_service(session, flow.settings)
@@ -5265,7 +5251,9 @@ def test_batch_undo_reverse_media_after_structure_preserves_interleaved_storyboa
     )
 
     def advance_manual_version():
-        from short_drama.service.project_storyboard_service import ProjectStoryboardService
+        from short_drama.service.creation.storyboard.management.storyboard import (
+            ProjectStoryboardService,
+        )
 
         with flow.factory() as session:
             task_service(session, flow.settings)
@@ -5280,7 +5268,7 @@ def test_batch_undo_reverse_media_after_structure_preserves_interleaved_storyboa
             )
 
     def choose_current_primary():
-        from short_drama.service.image_group_service import ImageGroupService
+        from short_drama.service.media.image_groups.groups import ImageGroupService
 
         with flow.factory() as current:
             task_service(current, flow.settings)
@@ -5358,7 +5346,7 @@ def test_batch_undo_reverse_three_batches_preserves_native_media_bindings(
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.agent.tools.media import media_requests_locked
     from short_drama.domain import Asset
-    from short_drama.service.assistant_dialogue_service import sound_document_binding
+    from short_drama.service.assistant.operations.dialogue import sound_document_binding
 
     flow = settled_media_undo_flow(task_workspace, tmp_path, kind)
     with flow.factory() as session:
@@ -5414,7 +5402,7 @@ def test_batch_undo_reverse_three_batches_preserves_native_media_bindings(
                 "row_version"
             ]
         else:
-            from short_drama.domain.canvas import CanvasNode
+            from short_drama.domain.canvas.document.canvas import CanvasNode
 
             references[0]["revision"] = str(
                 session.scalar(
@@ -5486,7 +5474,7 @@ def test_batch_undo_reverse_three_batches_preserves_native_media_bindings(
 def test_batch_undo_reverse_batches_restores_media_after_a_later_structural_batch(
     task_workspace, tmp_path, kind, later_edit
 ):
-    from short_drama.agent.legacy.authorization import digest
+    from short_drama.utils.json_digest import digest
 
     flow = settled_media_undo_flow(task_workspace, tmp_path, kind)
     with flow.factory() as session:
@@ -5608,8 +5596,8 @@ def test_batch_undo_reverse_batches_restores_media_after_a_later_structural_batc
         )
         if later_edit:
             from short_drama.domain import Asset, ShotScript
-            from short_drama.domain.canvas import CanvasNode
-            from short_drama.domain.project_sound import ProjectSound
+            from short_drama.domain.canvas.document.canvas import CanvasNode
+            from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
             with flow.factory.begin() as current:
                 task_service(current, flow.settings)
@@ -5650,10 +5638,10 @@ def test_batch_undo_media_restores_adoption_and_keeps_generated_history(
     task_workspace, tmp_path, kind
 ):
     from short_drama.domain import AIGenerationRecord, Asset, MediaAsset, MediaFile, ShotVideo
-    from short_drama.domain.agent_media import AgentMediaRequest
-    from short_drama.domain.native_voice import CharacterVoice
-    from short_drama.domain.project_sound import ProjectSound
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
+    from short_drama.domain.creation.sound.voices.voices import CharacterVoice
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     flow = settled_media_undo_flow(task_workspace, tmp_path, kind)
     with flow.factory() as session:
@@ -5720,9 +5708,9 @@ def test_batch_undo_media_rejects_a_stale_preview_after_later_native_edits(
     from copy import deepcopy
 
     from short_drama.domain import Asset, ShotScript
-    from short_drama.domain.canvas import CanvasNodeUserState
-    from short_drama.domain.native_voice import CharacterVoice
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.canvas.document.canvas import CanvasNodeUserState
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
+    from short_drama.domain.creation.sound.voices.voices import CharacterVoice
 
     flow = settled_media_undo_flow(task_workspace, tmp_path, kind)
     with flow.factory() as session:
@@ -5765,7 +5753,7 @@ def test_batch_undo_media_rejects_a_stale_preview_after_later_native_edits(
 def test_batch_undo_media_primary_restores_historical_selection_with_new_versions(
     task_workspace, kind
 ):
-    from short_drama.service.assistant_image_service import image_adoption_state, image_target
+    from short_drama.service.assistant.operations.image import image_adoption_state, image_target
 
     reference, groups = image_group_workspace(task_workspace, kind=kind)
     factory, settings, _model = task_workspace
@@ -5813,7 +5801,7 @@ def test_batch_undo_media_primary_restores_historical_selection_with_new_version
 def test_batch_undo_media_sound_allows_two_explicit_subsets_and_keeps_other_audio(
     task_workspace, tmp_path
 ):
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     flow = settled_media_undo_flow(task_workspace, tmp_path, "sound", lines=2)
     with flow.factory() as session:
@@ -5859,8 +5847,8 @@ def test_batch_undo_media_restores_previous_voice_and_keeps_the_binding_version(
     task_workspace, tmp_path
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.domain.native_voice import CharacterVoice
-    from short_drama.service.native_voice_service import NativeVoiceService
+    from short_drama.domain.creation.sound.voices.voices import CharacterVoice
+    from short_drama.service.creation.sound.voices.voices import NativeVoiceService
 
     first = settled_media_undo_flow(task_workspace, tmp_path, "voice")
     with first.factory() as session:
@@ -5922,9 +5910,9 @@ def test_batch_undo_media_restores_previous_voice_and_keeps_the_binding_version(
 def test_batch_undo_media_rollback_keeps_binding_and_receipt_atomic(
     task_workspace, tmp_path, monkeypatch
 ):
-    from short_drama.dao.agent_undo_dao import AgentUndoDAO
+    from short_drama.dao.assistant.undo.undo import AgentUndoDAO
     from short_drama.domain import Asset
-    from short_drama.domain.agent_undo import AgentBatchUndo
+    from short_drama.domain.assistant.undo.undo import AgentBatchUndo
 
     flow = settled_media_undo_flow(task_workspace, tmp_path, "image")
     with flow.factory() as session:
@@ -5953,7 +5941,7 @@ def test_batch_undo_media_rollback_keeps_binding_and_receipt_atomic(
 def test_batch_undo_canvas_creation_requires_edges_and_preserves_native_private_root(
     task_workspace,
 ):
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     pid, canvas_id, saved = canvas_patch_workspace(task_workspace)
     _conversation, accepted, _claim, operations = canvas_tool_run(
@@ -6020,7 +6008,7 @@ def test_batch_undo_canvas_creation_requires_edges_and_preserves_native_private_
 
 
 def test_batch_undo_canvas_delete_restores_edge_order_and_private_node(task_workspace):
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     pid, canvas_id, saved = canvas_patch_workspace(task_workspace)
     factory, settings, _model = task_workspace
@@ -6100,7 +6088,7 @@ def test_batch_undo_canvas_delete_restores_edge_order_and_private_node(task_work
 def test_batch_undo_canvas_keeps_later_private_edits_and_allows_an_independent_subset(
     task_workspace,
 ):
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     pid, canvas_id, saved = canvas_patch_workspace(task_workspace)
     _conversation, accepted, _claim, operations = canvas_tool_run(
@@ -6235,8 +6223,8 @@ def test_batch_undo_canvas_and_sound_partial_receipts_allow_a_second_explicit_su
 def test_batch_undo_canvas_rolls_back_native_writes_and_receipt_after_a_late_failure(
     task_workspace, monkeypatch
 ):
-    from short_drama.domain.agent_undo import AgentBatchUndo
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.domain.assistant.undo.undo import AgentBatchUndo
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     pid, canvas_id, saved = canvas_patch_workspace(task_workspace)
     _conversation, accepted, _claim, operations = canvas_tool_run(
@@ -6296,7 +6284,7 @@ def test_batch_undo_canvas_rolls_back_native_writes_and_receipt_after_a_late_fai
 
 
 def test_batch_undo_canvas_protects_a_later_graph_reference_and_stale_preview(task_workspace):
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     pid, canvas_id, saved = canvas_patch_workspace(task_workspace)
     _conversation, accepted, _claim, operations = canvas_tool_run(
@@ -6363,8 +6351,8 @@ def test_batch_undo_canvas_protects_a_later_graph_reference_and_stale_preview(ta
 def test_batch_undo_sound_keeps_a_later_native_edit(task_workspace):
     from copy import deepcopy
 
-    from short_drama.domain.project_sound import ProjectSound
-    from short_drama.service.project_sound_service import ProjectSoundService
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
+    from short_drama.service.creation.sound.tracks.sound import ProjectSoundService
 
     refs, _model, assembly_id = dialogue_audio_workspace(task_workspace)
     pid = refs[0]["project_id"]
@@ -6416,7 +6404,7 @@ def test_batch_undo_sound_restores_only_selected_lines_and_preserves_multitrack(
 ):
     from copy import deepcopy
 
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     refs, _model, assembly_id = dialogue_audio_workspace(task_workspace)
     pid = refs[0]["project_id"]
@@ -6456,7 +6444,7 @@ def test_batch_undo_sound_restores_only_selected_lines_and_preserves_multitrack(
 
 def test_batch_undo_requires_a_complete_boundary_and_explicit_dependency_selection(task_workspace):
     from short_drama.domain import Asset, ShotAsset, ShotScript
-    from short_drama.domain.agent_undo import AgentBatchUndo
+    from short_drama.domain.assistant.undo.undo import AgentBatchUndo
 
     conversation, accepted, operation = undo_test_batch(task_workspace)
     factory, settings, _model = task_workspace
@@ -6522,7 +6510,7 @@ def test_batch_undo_requires_a_complete_boundary_and_explicit_dependency_selecti
 
 def test_batch_undo_keeps_later_edits_and_only_reverses_explicit_safe_items(task_workspace):
     from short_drama.domain import Asset, ShotScript
-    from short_drama.service.asset_service import AssetService
+    from short_drama.service.creation.assets.management.assets import AssetService
 
     _conversation, accepted, operation = undo_test_batch(task_workspace)
     factory, settings, _model = task_workspace
@@ -6567,12 +6555,12 @@ def test_batch_undo_keeps_later_edits_and_only_reverses_explicit_safe_items(task
 def test_batch_undo_reverse_batches_uses_proven_restore_chain(
     task_workspace, kind, guard, monkeypatch
 ):
+    import short_drama.service.assistant.undo.undo as assistant_undo_service
     from short_drama.domain import Asset, Project, ShotScript
-    from short_drama.domain.canvas import CanvasNode
-    from short_drama.domain.project_sound import ProjectSound
-    from short_drama.service import assistant_undo_service
-    from short_drama.service.assistant_standard_service import AssistantStandardService
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.domain.canvas.document.canvas import CanvasNode
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
+    from short_drama.service.canvas.document.canvas import CanvasService
     from short_drama.utils.snowflake import next_id
 
     factory, settings, _model = task_workspace
@@ -6898,8 +6886,10 @@ def test_batch_undo_restores_existing_asset_with_a_new_version(task_workspace, a
 
 def test_batch_undo_restores_deleted_middle_shot_order_and_links(task_workspace):
     from short_drama.domain import Project, ShotScript
-    from short_drama.service.assistant_standard_service import AssistantStandardService
-    from short_drama.service.project_storyboard_service import ProjectStoryboardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(task_workspace)[0]
@@ -6966,7 +6956,7 @@ def test_batch_undo_restores_deleted_middle_shot_order_and_links(task_workspace)
 @pytest.mark.parametrize("action", ["edit_dialogue", "delete_shot"])
 def test_batch_undo_restores_native_dialogue_without_rewinding_its_version(task_workspace, action):
     from short_drama.domain import ShotDialogue, ShotScript
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(task_workspace)[0]
@@ -7064,8 +7054,11 @@ def test_batch_undo_deleted_asset_query_cannot_read_other_batches_or_accounts(ta
 @pytest.mark.parametrize("later", ["shot_reference", "assembly_reference", "media", "native_task"])
 def test_batch_undo_protects_later_references_media_and_native_tasks(task_workspace, later):
     from short_drama.domain import Asset, AsyncTask, MediaFile, Project
-    from short_drama.domain.project_assembly import ProjectAssembly, ProjectAssemblyClip
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.domain.creation.assembly.document.assembly import (
+        ProjectAssembly,
+        ProjectAssemblyClip,
+    )
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
     from short_drama.utils.snowflake import next_id
 
     _conversation, accepted, operation = undo_test_batch(task_workspace)
@@ -7166,7 +7159,7 @@ def test_batch_undo_receipt_survives_resume_and_is_scrubbed_with_deleted_convers
     task_workspace,
 ):
     from short_drama.agent.session.purge import purge_one
-    from short_drama.domain.agent_undo import AgentBatchUndo
+    from short_drama.domain.assistant.undo.undo import AgentBatchUndo
 
     conversation, accepted, operation = undo_test_batch(task_workspace)
     factory, settings, _model = task_workspace
@@ -7199,6 +7192,8 @@ def test_batch_undo_receipt_survives_resume_and_is_scrubbed_with_deleted_convers
     assert claim is not None
     assert "operation_undo_receipts" in str(claim.inputs)
     assert str(receipt.id) in str(claim.inputs)
+    store.before_send(claim, {"fixture": "in-flight-before-deletion"})
+    store.save_raw(claim, {"fixture": "original-response"})
     with factory() as session:
         service = task_service(session, settings)
         service.control_task(accepted.task.id, {"kind": "stop"}, "stop-after-undo-resume")
@@ -7206,6 +7201,12 @@ def test_batch_undo_receipt_survives_resume_and_is_scrubbed_with_deleted_convers
         service.delete_global_conversation(
             conversation.id, {"row_version": str(current.row_version)}, "delete-undone-conversation"
         )
+    with factory() as session:
+        assert session.get(AgentConversation, conversation.id).status == "deleting"
+    assert not purge_one(factory, SimpleNamespace(delete=lambda locator: None))
+    assert not store.save_result(
+        claim, {"output_kind": "text", "output": "停止前的响应", "history": None}
+    )
     assert purge_one(factory, SimpleNamespace(delete=lambda locator: None))
     with factory() as session:
         row = session.get(AgentBatchUndo, receipt.id)
@@ -7322,7 +7323,7 @@ def test_standard_tool_independently_rejects_forged_authority_fields_and_scope(
 
 def test_standard_tool_rejects_guessed_new_version_and_preserves_the_users_edit(task_workspace):
     from short_drama.domain import Asset
-    from short_drama.service.asset_service import AssetService
+    from short_drama.service.creation.assets.management.assets import AssetService
 
     reference = subject_assets(task_workspace)[0]
     factory, settings, _model = task_workspace
@@ -7477,7 +7478,7 @@ def test_standard_tool_mechanical_compaction_is_recorded_without_exposing_unsele
     task_workspace,
 ):
     from short_drama.domain import Project
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(task_workspace)[0]
@@ -7519,7 +7520,7 @@ def test_standard_tool_mechanical_compaction_is_recorded_without_exposing_unsele
     assert [item["id"] for item in operations[0].result_refs] == [middle]
     assert "未选入正文" not in str(operations[0].result) and last not in str(operations[0].result)
 
-    from short_drama.agent.coordinator.assistant import execute_locked
+    from short_drama.agent.runtime.tool_execution import execute_locked
 
     with factory() as session:
         task_service(session, settings)
@@ -7537,7 +7538,7 @@ def test_standard_tool_mechanical_compaction_is_recorded_without_exposing_unsele
 
 
 def test_standard_results_are_read_on_demand_through_real_receipts_and_paginate(task_workspace):
-    from short_drama.agent.coordinator.assistant import execute_locked
+    from short_drama.agent.runtime.tool_execution import execute_locked
 
     reference = subject_assets(task_workspace)[0]
     description = "只属于本任务的新素材说明。" * 300
@@ -7577,8 +7578,8 @@ def test_standard_results_are_read_on_demand_through_real_receipts_and_paginate(
     assert claim is not None
     kwargs = claim.inputs["kwargs"]
     assert "read_task_results" in [item["name"] for item in kwargs["tools"]]
-    assert description not in kwargs["instructions"]
-    directory = json.loads(kwargs["instructions"].split("任务状态与用户原始输入：", 1)[1])
+    assert description not in str(kwargs)
+    directory = decision_state(kwargs)
     request = directory["standard_write_requests"][0]
     assert request["create_remaining"] == {"character": 0, "shot": 0}
     assert operation.result_refs[0]["id"] in [item["id"] for item in request["allowed_assets"]]
@@ -7656,7 +7657,7 @@ def test_standard_results_are_read_on_demand_through_real_receipts_and_paginate(
 
 
 def test_standard_result_body_does_not_leak_into_an_unselected_new_task(task_workspace):
-    from short_drama.agent.coordinator.assistant import _read_history
+    from short_drama.agent.runtime.read_tools import _read_history
     from short_drama.agent.tools.contracts import ReadHistory
 
     reference = subject_assets(task_workspace)[0]
@@ -7722,9 +7723,9 @@ def test_standard_result_body_does_not_leak_into_an_unselected_new_task(task_wor
 
 @pytest.mark.parametrize("change", ["edited", "deleted", "archived", "other_owner"])
 def test_standard_result_reads_keep_saved_content_and_recheck_live_access(task_workspace, change):
-    from short_drama.agent.coordinator.assistant import execute_locked
+    from short_drama.agent.runtime.tool_execution import execute_locked
     from short_drama.domain import Asset, Project
-    from short_drama.service.asset_service import AssetService
+    from short_drama.service.creation.assets.management.assets import AssetService
 
     reference = subject_assets(task_workspace)[0]
     conversation, accepted, _claim, operations = standard_tool_run(
@@ -7813,7 +7814,7 @@ def test_standard_result_reads_keep_saved_content_and_recheck_live_access(task_w
 
 
 def test_standard_result_reads_reject_selected_unrelated_and_other_task_objects(task_workspace):
-    from short_drama.agent.coordinator.assistant import execute_locked
+    from short_drama.agent.runtime.tool_execution import execute_locked
 
     references = subject_assets(task_workspace)
     conversation, accepted, _claim, operations = standard_tool_run(
@@ -7949,7 +7950,7 @@ def test_standard_patch_dialogue_is_a_real_native_document_and_participates_in_a
     task_workspace,
 ):
     from short_drama.domain import Project, ShotDialogue, ShotScript
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(task_workspace)[0]
@@ -8009,7 +8010,7 @@ def test_standard_patch_dialogue_respects_native_feature_admission_and_rolls_bac
     task_workspace, disabled
 ):
     from short_drama.domain import Asset, Project, ShotScript
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(task_workspace)[0]
@@ -8031,7 +8032,7 @@ def test_standard_tool_edits_native_dialogue_with_real_character_scope_and_expos
     task_workspace,
 ):
     from short_drama.domain import ShotDialogue
-    from short_drama.service.assistant_standard_service import AssistantStandardService
+    from short_drama.service.assistant.operations.standard import AssistantStandardService
     from short_drama.utils.snowflake import next_id
 
     reference = subject_assets(task_workspace)[0]
@@ -8100,8 +8101,8 @@ def media_tool_run(
 ):
     import base64
 
-    from short_drama.agent.legacy.authorization import digest
     from short_drama.core.config import Settings
+    from short_drama.utils.json_digest import digest
 
     factory, settings, model = workspace
     runtime = Settings(_env_file=None, encryption_key=base64.b64encode(b"0" * 32).decode())
@@ -8262,7 +8263,7 @@ def media_tool_run(
 
 
 def media_worker(flow, provider=None, *, storage=None):
-    from short_drama.service.generation_execution_service import GenerationExecutionService
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
     from tests.integration.standard.assets.test_asset_image_generation import (
         ImageProvider,
         MemoryStorage,
@@ -8485,7 +8486,7 @@ def test_assistant_shot_video_final_barrier_and_late_edit_preserve_human_work(
 
 def test_assistant_shot_video_reserves_video_budget_before_native_admission(task_workspace):
     from short_drama.domain import AsyncTask
-    from short_drama.domain.agent_media import AgentMediaRequest
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
     flow = shot_video_flow(task_workspace, limit=0)
     with flow.factory() as session:
@@ -8706,7 +8707,7 @@ def test_assistant_shot_video_can_use_this_task_generated_main_image(task_worksp
 
 def drain_assistant_media(flow, worker):
     from short_drama.domain import AsyncTask
-    from short_drama.domain.agent_media import AgentMediaRequest
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
     with flow.factory() as session:
         ids = session.scalars(
@@ -8732,7 +8733,7 @@ def drain_assistant_media(flow, worker):
 def test_assistant_media_waits_through_generation_and_adoption_before_applying_stop(task_workspace):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.domain import Asset, ImageGroup, ImageGroupItem
-    from short_drama.domain.agent_media import AgentMediaRequest
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
     flow = media_tool_run(task_workspace, count=2, limit=2)
     with flow.factory() as session:
@@ -8775,7 +8776,7 @@ def test_assistant_media_reserves_whole_batch_and_pauses_without_admitting_when_
     task_workspace,
 ):
     from short_drama.domain import AsyncTask
-    from short_drama.domain.agent_media import AgentMediaRequest
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
     flow = media_tool_run(task_workspace, count=2, limit=1)
     with flow.factory() as session:
@@ -8788,7 +8789,7 @@ def test_assistant_media_reserves_whole_batch_and_pauses_without_admitting_when_
 
 def test_assistant_media_switch_blocks_unsent_work_and_releases_reservation(task_workspace):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.service.assistant_policy_service import AssistantPolicyService
+    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 
     flow = media_tool_run(task_workspace)
     with flow.factory() as session:
@@ -8879,7 +8880,7 @@ def test_assistant_media_final_send_barrier_and_sent_receipt_have_distinct_polic
     task_workspace, disable_at
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.service.assistant_policy_service import AssistantPolicyService
+    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
     from tests.integration.standard.assets.test_asset_image_generation import ImageProvider
 
     flow = media_tool_run(task_workspace)
@@ -8928,9 +8929,9 @@ def test_assistant_media_primary_waits_for_first_output_then_falls_back_only_aft
         MediaAsset,
         MediaFile,
     )
-    from short_drama.domain.agent_media import AgentMediaRequest
-    from short_drama.service.image_group_service import ImageGroupService
-    from short_drama.service.task_runtime_service import finish
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
+    from short_drama.service.generations.runtime.lifecycle import finish
+    from short_drama.service.media.image_groups.groups import ImageGroupService
     from short_drama.utils.snowflake import next_id
 
     flow = media_tool_run(task_workspace, count=2)
@@ -9034,7 +9035,7 @@ def test_assistant_media_rechecks_quantity_target_reference_and_trusted_versions
 
 
 def test_assistant_media_receipt_reads_cannot_cross_logical_tasks(task_workspace):
-    from short_drama.agent.coordinator.assistant import execute_locked
+    from short_drama.agent.runtime.tool_execution import execute_locked
 
     flow = media_tool_run(task_workspace)
     other_conversation, other = new_task(task_workspace)
@@ -9070,8 +9071,8 @@ def test_assistant_media_recovery_preserves_wait_and_never_starts_a_second_nativ
 
 
 def media_target_references(workspace, kind="asset"):
-    from short_drama.service.asset_service import AssetService
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.creation.assets.management.assets import AssetService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
 
     reference = subject_assets(workspace)[0]
     factory, settings, _model = workspace
@@ -9101,7 +9102,7 @@ def test_assistant_media_multiple_targets_reserve_the_total_before_any_admission
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.domain import AsyncTask
-    from short_drama.domain.agent_media import AgentMediaRequest
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
     references = media_target_references(task_workspace)
     flow = media_tool_run(task_workspace, count=2, limit=limit, references=references)
@@ -9129,7 +9130,7 @@ def test_assistant_media_multiple_targets_reserve_the_total_before_any_admission
 
 def test_assistant_media_late_target_conflict_prevents_the_entire_batch(task_workspace):
     from short_drama.domain import Asset, AsyncTask
-    from short_drama.domain.agent_media import AgentMediaRequest
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
     references = media_target_references(task_workspace)
     factory, _settings, _model = task_workspace
@@ -9153,7 +9154,7 @@ def test_assistant_media_local_partial_admission_preserves_success_and_releases_
     from short_drama.agent.tools import media as media_tools
     from short_drama.core.exceptions import BusinessError
     from short_drama.domain import AsyncTask
-    from short_drama.domain.agent_media import AgentMediaRequest
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
     original = media_tools.admit_media_locked
 
@@ -9192,8 +9193,8 @@ def test_assistant_media_native_shot_adoption_does_not_send_unselected_linked_co
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.domain import AIGenerationRecord, Asset, ImageGroup, ShotImage, ShotScript
-    from short_drama.service.shot_asset_service import ShotAssetService
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.creation.storyboard.references.asset import ShotAssetService
 
     asset_reference, groups = image_group_workspace(task_workspace)
     factory, settings, _model = task_workspace
@@ -9295,7 +9296,7 @@ def test_assistant_media_deleting_conversation_waits_for_adoption_and_preserves_
 def test_assistant_media_private_ledger_rejects_identity_replacement_and_stale_foreign_writes(
     task_workspace, change
 ):
-    from short_drama.domain.agent_media import AgentMediaRequest
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
     flow = media_tool_run(task_workspace)
     if change == "foreign_identity":
@@ -9375,8 +9376,8 @@ def test_assistant_media_retry_missing_outputs_requires_explicit_continue_and_ke
 ):
     from copy import deepcopy
 
-    from short_drama.agent.coordinator.assistant import execute_locked
     from short_drama.agent.coordinator.media_runtime import collect_media_results
+    from short_drama.agent.runtime.tool_execution import execute_locked
     from short_drama.ai import GenerationResult
     from short_drama.domain import AsyncTask, ImageGroup
     from tests.integration.standard.assets.test_asset_image_generation import ImageProvider
@@ -9415,7 +9416,10 @@ def test_assistant_media_retry_missing_outputs_requires_explicit_continue_and_ke
             )
         assert raised.value.code == "assistant_media_resume_required"
     retry_id, claim = resume_media_tool(flow, body)
-    assert f'"retry_operation_id": "{flow.operation_id}"' in claim.inputs["kwargs"]["instructions"]
+    assert any(
+        item.get("retry_operation_id") == str(flow.operation_id)
+        for item in decision_state(claim.inputs["kwargs"])["generation_requests"]
+    )
     with flow.factory() as session:
         retry = session.get(AgentOperation, retry_id)
         assert retry.status == "waiting_media"
@@ -9455,7 +9459,7 @@ def test_assistant_media_retry_missing_outputs_requires_explicit_continue_and_ke
 
 
 def test_assistant_media_model_catalog_has_real_owned_versions_and_bounded_pages(task_workspace):
-    from short_drama.agent.coordinator.assistant import execute_locked
+    from short_drama.agent.runtime.tool_execution import execute_locked
 
     flow = media_tool_run(task_workspace)
     with flow.factory() as session:
@@ -9503,8 +9507,8 @@ def test_assistant_media_model_catalog_has_real_owned_versions_and_bounded_pages
 def test_assistant_media_result_groups_read_saved_identities_without_refreshing_selected_body(
     task_workspace,
 ):
-    from short_drama.agent.coordinator.assistant import execute_locked
     from short_drama.agent.coordinator.media_runtime import collect_media_results
+    from short_drama.agent.runtime.tool_execution import execute_locked
     from short_drama.domain import Asset, ImageGroupItem
 
     flow = media_tool_run(task_workspace, count=2)
@@ -9586,8 +9590,8 @@ def test_assistant_media_result_groups_read_saved_identities_without_refreshing_
 
 @pytest.mark.parametrize("mode", ["standard", "canvas"])
 def test_image_content_read_accepts_only_this_tasks_settled_generation(task_workspace, mode):
-    from short_drama.agent.coordinator.assistant import execute_locked
     from short_drama.agent.coordinator.media_runtime import collect_media_results
+    from short_drama.agent.runtime.tool_execution import execute_locked
 
     flow = canvas_media_flow(task_workspace) if mode == "canvas" else media_tool_run(task_workspace)
     _provider, worker = media_worker(flow)
@@ -9623,7 +9627,7 @@ def test_image_content_read_accepts_only_this_tasks_settled_generation(task_work
         assert [part["media_id"] for part in prompt["attachments"]] == [item["media_id"]]
         assert "read_image_content" in {entry.name for entry in values["tools"]}
         if mode == "canvas":
-            directory = json.loads(values["instructions"].split("任务状态与用户原始输入：", 1)[1])
+            directory = decision_state(values)
             assert directory["image_results"][0]["media_id"] == item["media_id"]
         foreign = SimpleNamespace(id=task.id + 1, effective_state={})
         with pytest.raises(NotFound):
@@ -9639,7 +9643,7 @@ def test_image_content_read_accepts_only_this_tasks_settled_generation(task_work
             )
     if mode == "canvas":
         from short_drama.agent.tools.image import available_image_contents_locked
-        from short_drama.domain.canvas import CanvasNode
+        from short_drama.domain.canvas.document.canvas import CanvasNode
 
         with flow.factory.begin() as session:
             node = session.scalar(
@@ -9721,8 +9725,8 @@ def test_assistant_media_applies_new_requirements_only_after_the_complete_curren
 def test_assistant_media_result_access_is_task_scoped_and_rechecked_before_model_send(
     task_workspace,
 ):
-    from short_drama.agent.coordinator.assistant import execute_locked
     from short_drama.agent.coordinator.media_runtime import collect_media_results
+    from short_drama.agent.runtime.tool_execution import execute_locked
     from short_drama.domain import Project
 
     flow = media_tool_run(task_workspace)
@@ -9805,8 +9809,8 @@ def test_assistant_media_result_access_is_task_scoped_and_rechecked_before_model
 
 
 def canvas_media_flow(workspace, *, kind="image", count=1, limit=None, nodes=1, **kwargs):
-    from short_drama.domain.canvas import CanvasNode
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.domain.canvas.document.canvas import CanvasNode
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     project_id, canvas_id, saved = canvas_patch_workspace(workspace)
     factory, settings, _model = workspace
@@ -9865,7 +9869,7 @@ def canvas_media_flow(workspace, *, kind="image", count=1, limit=None, nodes=1, 
 def test_assistant_canvas_media_waits_for_native_delivery_and_binding_before_stop(task_workspace):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.domain import AIGenerationRecord, CanvasLibraryAsset, CanvasResult
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     flow = canvas_media_flow(task_workspace, count=2, limit=2)
     assert "submit_generation_batch" in [
@@ -9930,8 +9934,8 @@ def test_assistant_canvas_media_waits_for_native_delivery_and_binding_before_sto
 @pytest.mark.parametrize("change", ["private_edit", "replacement", "delete", "disable"])
 def test_assistant_canvas_media_preserves_saved_work_and_conflicts(task_workspace, change):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.service.assistant_policy_service import AssistantPolicyService
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     flow = canvas_media_flow(task_workspace)
     if change == "disable":
@@ -9990,7 +9994,7 @@ def test_assistant_canvas_media_video_and_audio_complete_archive_delivery_and_bi
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.ai import GenerationResult
     from short_drama.domain import CanvasLibraryAsset, CanvasResult, MediaFile
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
     from tests.integration.canvas.generation.test_canvas_generation_media_runtime import (
         playable_fixture,
     )
@@ -10065,7 +10069,7 @@ def test_assistant_canvas_media_final_send_rechecks_node_and_private_version(
     task_workspace, change
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     flow = canvas_media_flow(task_workspace)
     with flow.factory() as session:
@@ -10106,7 +10110,7 @@ def test_assistant_canvas_media_final_send_rechecks_node_and_private_version(
 )
 def test_assistant_canvas_media_rejects_untrusted_target_and_versions(task_workspace, patch, code):
     from short_drama.domain import AsyncTask
-    from short_drama.domain.agent_media import AgentMediaRequest
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
     flow = canvas_media_flow(task_workspace, item_patch=patch)
     with flow.factory() as session:
@@ -10121,7 +10125,7 @@ def test_assistant_canvas_media_rejects_untrusted_target_and_versions(task_works
 @pytest.mark.parametrize("failure", ["budget", "second_version"])
 def test_assistant_canvas_media_reserves_and_validates_the_whole_batch(task_workspace, failure):
     from short_drama.domain import AsyncTask
-    from short_drama.domain.canvas import CanvasNodeUserState
+    from short_drama.domain.canvas.document.canvas import CanvasNodeUserState
 
     factory, _settings, _model = task_workspace
 
@@ -10292,9 +10296,9 @@ def test_assistant_canvas_media_denies_native_retry_outside_the_assistant_budget
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.ai import GenerationResult
     from short_drama.domain import AsyncTask
-    from short_drama.domain.agent_media import AgentMediaRequest
-    from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-    from short_drama.service.canvas_generation_service import CanvasGenerationService
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
+    from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+    from short_drama.service.canvas.generation.generation import CanvasGenerationService
     from tests.integration.standard.assets.test_asset_image_generation import ImageProvider
 
     class FailedProvider(ImageProvider):
@@ -10326,10 +10330,10 @@ def test_assistant_canvas_media_denies_native_retry_outside_the_assistant_budget
 def test_assistant_canvas_media_versions_allow_next_edit_without_expanding_read_scope(
     task_workspace,
 ):
-    from short_drama.agent.coordinator.assistant import execute_locked
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.agent.legacy.authorization import digest
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.agent.runtime.tool_execution import execute_locked
+    from short_drama.service.canvas.document.canvas import CanvasService
+    from short_drama.utils.json_digest import digest
 
     flow = canvas_media_flow(task_workspace)
     _provider, worker = media_worker(flow)
@@ -10393,7 +10397,7 @@ def test_assistant_canvas_media_versions_allow_next_edit_without_expanding_read_
 def media_reference_body(flow, *, content, media_id, target_index=0):
     from copy import deepcopy
 
-    from short_drama.agent.legacy.authorization import digest
+    from short_drama.utils.json_digest import digest
 
     with flow.factory() as session:
         service = task_service(session, flow.settings)
@@ -10453,7 +10457,7 @@ def test_assistant_media_uses_only_real_current_task_generated_image_references(
 
 def test_assistant_media_generated_reference_rechecks_origin_before_paid_send(task_workspace):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.domain.canvas import CanvasNode
+    from short_drama.domain.canvas.document.canvas import CanvasNode
 
     flow = canvas_media_flow(task_workspace, nodes=2)
     _provider, worker = media_worker(flow)
@@ -10495,8 +10499,8 @@ def test_assistant_media_generated_reference_does_not_expand_identity_or_scope(
     from copy import deepcopy
 
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.domain.canvas import CanvasNode
-    from short_drama.service.assistant_media_reference_service import generated_image_references
+    from short_drama.domain.canvas.document.canvas import CanvasNode
+    from short_drama.service.assistant.operations.media_reference import generated_image_references
 
     flow = canvas_media_flow(task_workspace)
     _provider, worker = media_worker(flow)
@@ -10515,7 +10519,7 @@ def test_assistant_media_generated_reference_does_not_expand_identity_or_scope(
             operation.status = "waiting_media"
             operation.phase, operation.finished_at = "waiting_media", None
         elif invalid == "output_index":
-            from short_drama.domain.agent_media import AgentMediaRequest
+            from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
             intent = session.scalar(select(AgentMediaRequest))
             changed = deepcopy(intent.result)
@@ -10561,7 +10565,7 @@ def voice_design_provider(tmp_path, *, before_validate=None, before_submit=None,
     from copy import deepcopy
 
     from short_drama.ai import GenerationResult
-    from short_drama.service.video_render import executable
+    from short_drama.service.creation.assembly.rendering.renderer import executable
 
     audio = tmp_path / "assistant-voice.wav"
     if not audio.exists():
@@ -10611,7 +10615,7 @@ def test_assistant_voice_design_waits_for_archival_and_atomic_native_adoption(
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.domain import AIGenerationRecord, MediaFile
-    from short_drama.domain.native_voice import CharacterVoice
+    from short_drama.domain.creation.sound.voices.voices import CharacterVoice
 
     flow = voice_design_flow(task_workspace, limit=1)
     with flow.factory() as session:
@@ -10694,7 +10698,7 @@ def test_assistant_voice_design_replacement_preserves_original_sample_history(
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.domain import MediaAsset, MediaFile
-    from short_drama.domain.native_voice import CharacterVoice
+    from short_drama.domain.creation.sound.voices.voices import CharacterVoice
 
     first = adopted_assistant_voice(task_workspace, tmp_path)
     with first.factory() as session:
@@ -10744,7 +10748,7 @@ def test_assistant_voice_design_guards_final_send_and_late_manual_voice_changes(
     task_workspace, tmp_path, when
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.domain.native_voice import CharacterVoice
+    from short_drama.domain.creation.sound.voices.voices import CharacterVoice
 
     first = adopted_assistant_voice(task_workspace, tmp_path)
     second = voice_design_flow(
@@ -10785,7 +10789,7 @@ def test_assistant_voice_design_cannot_guess_fresh_binding_or_overflow_its_versi
     task_workspace, tmp_path, case
 ):
     from short_drama.domain import AsyncTask
-    from short_drama.domain.native_voice import CharacterVoice
+    from short_drama.domain.creation.sound.voices.voices import CharacterVoice
     from short_drama.schemas.base import UINT64_MAX
 
     first = adopted_assistant_voice(task_workspace, tmp_path)
@@ -10815,7 +10819,7 @@ def test_assistant_voice_design_cannot_guess_fresh_binding_or_overflow_its_versi
 
 def test_assistant_voice_design_uses_audio_budget_before_admitting_native_request(task_workspace):
     from short_drama.domain import AsyncTask
-    from short_drama.domain.agent_media import AgentMediaRequest
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
     flow = voice_design_flow(task_workspace, limit=0)
     with flow.factory() as session:
@@ -10893,7 +10897,7 @@ def test_assistant_voice_design_explicit_resume_creates_only_the_missing_attempt
 
 def test_assistant_voice_design_cannot_target_non_character_assets(task_workspace):
     from short_drama.domain import AsyncTask
-    from short_drama.service.asset_service import AssetService
+    from short_drama.service.creation.assets.management.assets import AssetService
 
     reference = subject_assets(task_workspace)[0]
     with task_workspace[0]() as session:
@@ -10914,8 +10918,8 @@ def test_assistant_voice_design_cannot_target_non_character_assets(task_workspac
 def native_shot_video_flow(workspace, tmp_path, monkeypatch, *, selected_voice=True, **kwargs):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.domain import Asset, ShotScript
-    from short_drama.service.native_voice_service import NativeVoiceService
-    from short_drama.service.shot_asset_service import ShotAssetService
+    from short_drama.service.creation.sound.voices.voices import NativeVoiceService
+    from short_drama.service.creation.storyboard.references.asset import ShotAssetService
 
     monkeypatch.setenv("NATIVE_VIDEO_ENABLED", "true")
     reference, groups = image_group_workspace(workspace, kind="shot")
@@ -11062,7 +11066,7 @@ def test_assistant_native_shot_video_requires_selected_voice_identity(
 def native_video_provider(tmp_path, *, audible=True, **kwargs):
     import subprocess
 
-    from short_drama.service.video_render import executable
+    from short_drama.service.creation.assembly.rendering.renderer import executable
 
     command = [
         executable("ffmpeg"),
@@ -11098,7 +11102,7 @@ def test_assistant_native_shot_video_rejects_untrusted_speech_sources(
     elif case == "voice_version":
         kwargs["voice_version"] = "999"
     elif case == "guessed_new_voice":
-        from short_drama.domain.native_voice import CharacterVoice
+        from short_drama.domain.creation.sound.voices.voices import CharacterVoice
 
         def changed(_accepted, _reference):
             with task_workspace[0].begin() as session:
@@ -11123,7 +11127,7 @@ def test_assistant_native_shot_video_rechecks_voice_before_send_and_adoption(
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.domain import MediaAsset, ShotVideo
-    from short_drama.domain.native_voice import CharacterVoice
+    from short_drama.domain.creation.sound.voices.voices import CharacterVoice
 
     flow = native_shot_video_flow(task_workspace, tmp_path, monkeypatch)
 
@@ -11212,9 +11216,9 @@ def test_assistant_native_shot_video_reviewed_empty_dialogue_needs_no_voice_refe
 
 
 def dialogue_audio_workspace(workspace):
-    from short_drama.domain.project_assembly import ProjectAssembly
-    from short_drama.domain.project_sound import ProjectSound
-    from short_drama.schemas.project_sound import SoundDocument
+    from short_drama.domain.creation.assembly.document.assembly import ProjectAssembly
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
+    from short_drama.schemas.creation.sound.tracks.sound import SoundDocument
     from short_drama.utils.snowflake import next_id
 
     factory, settings, _model = workspace
@@ -11337,7 +11341,7 @@ def dialogue_audio_provider(tmp_path, *, before_validate=None, before_submit=Non
 
 def test_assistant_dialogue_audio_only_reads_explicit_saved_lines(task_workspace):
     from short_drama.agent.tools.contracts import ReadSelectedSubjects
-    from short_drama.service.assistant_subject_service import read_selected_snapshot
+    from short_drama.service.assistant.context.subject import read_selected_snapshot
 
     refs, _model, _assembly = dialogue_audio_workspace(task_workspace)
     factory, settings, _ = task_workspace
@@ -11379,8 +11383,8 @@ def test_assistant_dialogue_audio_waits_for_native_atomic_multitrack_adoption(
 
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.domain import AIGenerationRecord, MediaFile
-    from short_drama.domain.project_assembly import ProjectAssembly
-    from short_drama.domain.project_sound import ProjectSound, SoundMediaReference
+    from short_drama.domain.creation.assembly.document.assembly import ProjectAssembly
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound, SoundMediaReference
 
     flow = dialogue_audio_flow(task_workspace, lines=lines, limit=lines)
     with flow.factory() as session:
@@ -11435,8 +11439,8 @@ def change_dialogue_source(flow, change):
     from copy import deepcopy
 
     from short_drama.domain import Project
-    from short_drama.domain.project_assembly import ProjectAssembly
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.creation.assembly.document.assembly import ProjectAssembly
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     if change == "flags":
         flow.settings.audio_production_enabled = False
@@ -11462,7 +11466,7 @@ def test_assistant_dialogue_audio_guards_claim_send_and_late_adoption(
     task_workspace, tmp_path, change, when
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     flow = dialogue_audio_flow(task_workspace)
     if when == "claim":
@@ -11542,8 +11546,8 @@ def test_assistant_dialogue_audio_adopts_out_of_order_completions_without_stalin
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
     from short_drama.domain import AsyncTask
-    from short_drama.domain.agent_media import AgentMediaRequest
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     flow = dialogue_audio_flow(task_workspace, lines=3)
     provider, worker = media_worker(flow, dialogue_audio_provider(tmp_path))
@@ -11597,8 +11601,8 @@ def test_assistant_dialogue_audio_replacement_keeps_clip_identity_and_original_c
     task_workspace, tmp_path
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.domain.project_sound import ProjectSound, SoundMediaReference
-    from short_drama.service.project_sound_service import ProjectSoundService
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound, SoundMediaReference
+    from short_drama.service.creation.sound.tracks.sound import ProjectSoundService
 
     first = dialogue_audio_flow(task_workspace)
     provider, worker = media_worker(first, dialogue_audio_provider(tmp_path))
@@ -11685,9 +11689,9 @@ def test_assistant_dialogue_audio_unknown_preserves_original_request_and_pending
 def test_assistant_dialogue_audio_rechecks_frozen_sources_at_admission(task_workspace, change):
     from copy import deepcopy
 
-    from short_drama.dao.assistant_context_dao import AssistantContextDAO
+    from short_drama.dao.assistant.context.context import AssistantContextDAO
     from short_drama.domain import AsyncTask
-    from short_drama.domain.native_voice import ProjectSoundMode
+    from short_drama.domain.creation.sound.voices.voices import ProjectSoundMode
 
     factory, _settings, _model = task_workspace
 
@@ -11728,7 +11732,7 @@ def test_assistant_dialogue_audio_finishes_sent_work_after_global_switch_closes(
     task_workspace, tmp_path
 ):
     from short_drama.agent.coordinator.media_runtime import collect_media_results
-    from short_drama.service.assistant_policy_service import AssistantPolicyService
+    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 
     flow = dialogue_audio_flow(task_workspace)
 
@@ -11749,7 +11753,7 @@ def test_assistant_dialogue_audio_finishes_sent_work_after_global_switch_closes(
 
 
 def sound_text_revision(workspace, project_id):
-    from short_drama.service.assistant_dialogue_service import sound_document_binding
+    from short_drama.service.assistant.operations.dialogue import sound_document_binding
 
     factory, _settings, _model = workspace
     with factory.begin() as session:
@@ -11763,8 +11767,8 @@ def test_assistant_sound_text_creates_only_requested_lines_and_preserves_the_mul
     from copy import deepcopy
 
     from short_drama.domain import AsyncTask
-    from short_drama.domain.project_assembly import ProjectAssembly
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.creation.assembly.document.assembly import ProjectAssembly
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     refs, model, assembly_id = dialogue_audio_workspace(task_workspace)
     factory, _settings, _text_model = task_workspace
@@ -11822,7 +11826,7 @@ def test_assistant_sound_text_creates_with_a_frozen_zero_or_existing_sound_versi
     task_workspace,
     existing_sound,
 ):
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     refs, _model, assembly_id = dialogue_audio_workspace(task_workspace)
     factory, _settings, _text_model = task_workspace
@@ -11863,9 +11867,9 @@ def test_assistant_sound_text_rejects_forged_scope_fields_versions_and_ineligibl
 ):
     from copy import deepcopy
 
-    from short_drama.domain.native_voice import ProjectSoundMode
-    from short_drama.domain.project_assembly import ProjectAssembly
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.creation.assembly.document.assembly import ProjectAssembly
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
+    from short_drama.domain.creation.sound.voices.voices import ProjectSoundMode
 
     refs, _model, assembly_id = dialogue_audio_workspace(task_workspace)
     factory, settings, _text_model = task_workspace
@@ -11922,7 +11926,7 @@ def test_assistant_sound_text_rejects_forged_scope_fields_versions_and_ineligibl
 
 def test_assistant_sound_text_late_failure_rolls_back_other_created_objects(task_workspace):
     from short_drama.domain import Asset
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     refs, _audio_model, assembly_id = dialogue_audio_workspace(task_workspace)
     factory, _settings, text_model = task_workspace
@@ -11959,8 +11963,8 @@ def test_assistant_sound_text_late_failure_rolls_back_other_created_objects(task
 
 
 def test_assistant_sound_text_reads_only_created_saved_lines_and_checks_final_send(task_workspace):
-    from short_drama.agent.coordinator.assistant import execute_locked
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.agent.runtime.tool_execution import execute_locked
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     refs, _model, assembly_id = dialogue_audio_workspace(task_workspace)
     factory, settings, _text_model = task_workspace
@@ -12023,7 +12027,7 @@ def test_assistant_sound_text_reads_only_created_saved_lines_and_checks_final_se
 
 
 def sound_text_followup(flow, content, payload, tool_name="apply_standard_patch"):
-    from short_drama.agent.legacy.authorization import digest
+    from short_drama.utils.json_digest import digest
 
     key = digest(content)[:16]
     with flow.factory() as session:
@@ -12050,11 +12054,11 @@ def test_assistant_sound_text_created_result_can_be_edited_then_dubbed_in_the_sa
     task_workspace,
     tmp_path,
 ):
-    from short_drama.agent.coordinator.assistant import execute_locked
     from short_drama.agent.coordinator.media_runtime import collect_media_results
+    from short_drama.agent.runtime.tool_execution import execute_locked
     from short_drama.core.config import Settings
     from short_drama.domain import AsyncTask
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     refs, model, assembly_id = dialogue_audio_workspace(task_workspace)
     factory, settings, _text_model = task_workspace
@@ -12198,7 +12202,7 @@ def test_assistant_sound_text_created_result_can_be_edited_then_dubbed_in_the_sa
         },
     )
     with factory() as session:
-        from short_drama.service.project_sound_service import line_hash
+        from short_drama.service.creation.sound.tracks.sound import line_hash
 
         operation = session.get(AgentOperation, updated_id)
         assert operation.status == "succeeded", operation.error
@@ -12211,7 +12215,7 @@ def test_assistant_sound_text_created_result_can_be_edited_then_dubbed_in_the_sa
 
 
 def test_assistant_sound_text_noop_keeps_versions_and_returns_the_real_line(task_workspace):
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     refs, _model, assembly_id = dialogue_audio_workspace(task_workspace)
     *_rest, operations = standard_tool_run(
@@ -12244,8 +12248,8 @@ def test_assistant_sound_text_creation_rechecks_frozen_input_and_finishes_only_c
 ):
     from copy import deepcopy
 
-    from short_drama.domain.agent_task import AgentTaskInput
-    from short_drama.domain.project_sound import ProjectSound
+    from short_drama.domain.assistant.tasks.task import AgentTaskInput
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound
 
     refs, _model, assembly_id = dialogue_audio_workspace(task_workspace)
     factory, settings, _text_model = task_workspace

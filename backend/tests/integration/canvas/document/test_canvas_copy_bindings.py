@@ -10,11 +10,11 @@ import pytest
 from sqlalchemy import event, select
 
 from short_drama.core.exceptions import NotFound
-from short_drama.dao.canvas_resource_dao import CanvasResourceDAO
+from short_drama.dao.canvas.resources.resource import CanvasResourceDAO
 from short_drama.domain import CanvasLibraryAsset, CanvasLibraryAssetReference
 from short_drama.service.base import BaseService
-from short_drama.service.canvas_library_service import CanvasLibraryService
-from short_drama.service.canvas_service import CanvasService
+from short_drama.service.canvas.document.canvas import CanvasService
+from short_drama.service.canvas.library.library import CanvasLibraryService
 from short_drama.utils.snowflake import next_id
 from tests.integration.canvas.resources.test_canvas_library_deletion import (
     ASSETS,

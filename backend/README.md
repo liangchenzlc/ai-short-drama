@@ -28,7 +28,7 @@ src/short_drama/
   schemas/      Pydantic 输入/输出模型及结构化模型结果验证
   service/      业务规则、事务边界、版本检查与采用
   dao/          SQLAlchemy 查询与持久化操作
-  domain/       全部 101 张表的 ORM 映射
+  domain/       全部 119 张表的 ORM 映射
   db/           连接池、Session、资源范围过滤与迁移就绪检查
   ai/           提示词模板、协议适配、受限网络传输
   agent/        持久决策段、延迟工具、候选、授权与安全恢复
@@ -58,7 +58,7 @@ node ../scripts/test.mjs --scope backend --feature standard.assets --level mysql
 
 该脚本复用 `.env` 中的服务器连接配置，在服务器创建随机 `_test` 数据库，结束后仅删除该临时库；需要 CREATE/DROP DATABASE 权限。不会以应用库作为测试库。RabbitMQ/MinIO 测试另需显式启用，详见[测试分层](../docs/instruction/开发运行与验证.md#测试与验证)。
 
-Agent 模式默认开启，启动需显式七表迁移、账号认证及独立 Agent Worker；尚未升级的环境须显式设置 `AGENT_ENABLED=false`。迁移、节点/队列命名、SSE 代理、unknown 处理和关闭步骤见 [Agent 部署](../docs/instruction/Agent模式部署与排障.md)。
+Agent 模式默认开启，启动需完成当前助手迁移、账号认证及独立 Agent Worker；尚未升级的环境须显式设置 `AGENT_ENABLED=false`。迁移、节点/队列命名、SSE 代理、unknown 处理和关闭步骤见 [Agent 部署](../docs/instruction/Agent模式部署与排障.md)。
 
 ## 修改约定
 
@@ -79,3 +79,5 @@ Agent 模式默认开启，启动需显式七表迁移、账号认证及独立 A
 - 数据库 ID 与版本对外为十进制字符串，新增剪辑片段对外使用稳定 UUID，时间为 UTC；不要在前端将 ID 转成 `Number`。
 - 模型密钥只放环境或加密保存；不得写入日志、测试快照或前端配置。
 - 生成输出与当前采用分开；失败恢复不得隐式重复提交可能已受理的模型请求。
+
+各层内部按业务／功能组织，复杂 Service 按生命周期拆分且共享事务 Session；目录与迁移对应见[目录与职责维护](../docs/instruction/目录与职责维护.md)。

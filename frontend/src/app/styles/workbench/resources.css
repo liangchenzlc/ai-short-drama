@@ -1,0 +1,77 @@
+/* Project settings, episode items, and shared resources. */
+.detail-header,
+.web-episode .creation-top {
+  background: var(--navigation);
+  border-bottom: 1px solid var(--hair);
+}
+.detail-header-inner {
+  max-width: 1680px;
+  padding: 12px 30px;
+}
+.detail-title h1 {
+  font-size: 18px;
+}
+.detail-back {
+  font-size: 12px;
+}
+.project-overview {
+  max-width: 1560px;
+  padding: 26px 30px;
+  gap: 20px;
+}
+.project-overview > :is(.remote-asset-library, .project-collaboration) {
+  grid-column: 1 / -1;
+}
+.overview-card {
+  background: var(--surface);
+  border-color: var(--hair);
+  padding: 22px;
+  border-radius: 12px;
+}
+.overview-heading {
+  margin-bottom: 18px;
+}
+.overview-heading h2 {
+  font-size: 17px;
+}
+.overview-top-row {
+  gap: 22px;
+}
+.overview-top-row h3 {
+  font-size: 21px;
+}
+.overview-card label,
+.studio-form label,
+.ai-config-form label {
+  color: var(--sub);
+  font-size: 12px;
+}
+.overview-card input,
+.overview-card textarea,
+.overview-card select,
+.ai-config-form input:not([type='checkbox']),
+.ai-config-form select {
+  min-height: 34px;
+  padding: 7px 10px;
+  background: var(--canvas);
+  border-color: var(--border-control);
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.overview-card textarea {
+  line-height: 1.8;
+}
+.creation-actions {
+  gap: 7px;
+}
+.resource-toolbar {
+  gap: 10px;
+}
+.resource-search,
+.resource-toolbar > .ant-input-affix-wrapper {
+  max-width: 300px;
+}
+.remote-asset-library .resource-toolbar {
+  gap: var(--space-group);
+}

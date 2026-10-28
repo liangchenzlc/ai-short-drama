@@ -5,9 +5,9 @@ import pytest
 from fastapi import FastAPI
 from pydantic import ValidationError
 
-from short_drama.api.dependencies import get_session
-from short_drama.api.v1.project_generation import router
-from short_drama.schemas.project_storyboard import StoryboardResultPage
+from short_drama.api.dependencies.session import get_session
+from short_drama.api.v1.creation.storyboard.management.generation import router
+from short_drama.schemas.creation.storyboard.management.storyboard import StoryboardResultPage
 
 
 def preview_payload():
@@ -55,7 +55,10 @@ def test_storyboard_preview_http_contract_serializes_large_identifiers_and_compl
             calls.append(args)
             return preview_payload()
 
-    monkeypatch.setattr("short_drama.api.v1.project_generation.GenerationBusinessService", Service)
+    monkeypatch.setattr(
+        "short_drama.api.v1.creation.storyboard.management.generation.GenerationBusinessService",
+        Service,
+    )
 
     async def run():
         app = FastAPI()

@@ -15,11 +15,11 @@ from threading import Event, Thread
 import pytest
 
 from short_drama.core.config import Settings
-from short_drama.service.canvas_transcription_execute import (
+from short_drama.service.canvas.tools.transcription.transcription_execute import (
     CanvasTranscriptionExecutor,
     prepare_transcription_wav,
 )
-from short_drama.service.video_render import RenderCancelled, executable
+from short_drama.service.creation.assembly.rendering.renderer import RenderCancelled, executable
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_CANVAS_TRANSCRIPTION_FFMPEG") != "1",

@@ -8,15 +8,22 @@ from PIL import Image
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import ProjectRenderJob
-from short_drama.service.video_render import VideoRenderer, executable
+from short_drama.service.creation.assembly.rendering.renderer import VideoRenderer, executable
 from tests.support.generation_fixtures import generation_session
-from tests.unit.standard.assembly.test_project_assembly import body, export_body, flow, make_sample
+from tests.unit.standard.assembly.test_project_assembly import (
+    body,
+    editor_flow,
+    export_body,
+    flow,
+    make_sample,
+)
 
 
 def test_split_delete_undo_reorder_reload_and_idempotent_save():
     with generation_session() as session:
-        f, svc = flow(session)
-        state = svc.initialize(f.project)
+        f, svc = editor_flow(session)
+        svc.initialize(f.project)
+        state = svc.get_editor(f.project)
         original = state["clips"][0]["id"]
         payload = body(state)
         second = str(uuid4())
@@ -31,49 +38,55 @@ def test_split_delete_undo_reorder_reload_and_idempotent_save():
                 "trim_out_ms": 4200,
             }
         )
-        state = svc.edit(f.project, payload)
+        state = svc.save_editor(f.project, payload)
         assert len(state["clips"]) == 2
         assert len(state["sources"]) == 1
         assert (
-            svc.edit(f.project, payload)["assembly"]["row_version"]
+            svc.save_editor(f.project, payload)["assembly"]["row_version"]
             == state["assembly"]["row_version"]
         )
         assert svc.get(f.project)["clips"][1]["id"] == second
         original_edits = body(state)["clips"]
         payload = body(state)
         payload["clips"] = [payload["clips"][1]]
-        state = svc.edit(f.project, payload)
+        state = svc.save_editor(f.project, payload)
         assert [c["id"] for c in state["clips"]] == [second]
         state = svc.sync(f.project, export_body(state))
         assert [c["id"] for c in state["clips"]] == [second]
         assert state["clips"][0]["trim_in_ms"] == 2000
-        state = svc.edit(f.project, {**body(state), "clips": original_edits[::-1]})
+        state = svc.save_editor(f.project, {**body(state), "clips": original_edits[::-1]})
         assert [c["id"] for c in state["clips"]] == [second, original]
         job = svc.export(f.project, export_body(state), "split-export")
         row = session.get(ProjectRenderJob, int(job["id"]))
         assert [c["clip_id"] for c in row.snapshot["clips"]] == [second, original]
         assert row.snapshot["version"] == 2
         session.commit()
-        state = svc.edit(f.project, {**body(state), "clips": []})
+        state = svc.save_editor(f.project, {**body(state), "clips": []})
         assert state["clips"] == [] and len(state["sources"]) == 1
         assert svc.sync(f.project, export_body(state))["clips"] == []
 
 
 def test_unknown_source_and_subframe_edits_are_rejected_atomically():
     with generation_session() as session:
-        f, svc = flow(session)
-        state = svc.initialize(f.project)
+        f, svc = editor_flow(session)
+        svc.initialize(f.project)
+        state = svc.get_editor(f.project)
         payload = body(state)
         payload["clips"].append(
-            {**payload["clips"][0], "id": str(uuid4()), "source_clip_id": "999999"}
+            {
+                **payload["clips"][0],
+                "id": str(uuid4()),
+                "source_clip_id": "999999",
+                "media_id": None,
+            }
         )
         with pytest.raises(WorkflowError):
-            svc.edit(f.project, payload)
+            svc.save_editor(f.project, payload)
         assert svc.get(f.project)["assembly"]["row_version"] == state["assembly"]["row_version"]
         payload = body(state)
         payload["clips"][0]["trim_out_ms"] = 1
         with pytest.raises(WorkflowError):
-            svc.edit(f.project, payload)
+            svc.save_editor(f.project, payload)
 
 
 def test_preview_reuses_matching_snapshot_and_does_not_become_export():

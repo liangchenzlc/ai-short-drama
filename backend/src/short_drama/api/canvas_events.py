@@ -8,8 +8,8 @@ from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
 
 from short_drama.core.exceptions import BusinessError, WorkflowError
-from short_drama.service.auth_service import AuthService
-from short_drama.service.canvas_service import CanvasService
+from short_drama.service.canvas.document.canvas import CanvasService
+from short_drama.service.identity.authentication.auth import AuthService
 
 
 async def canvas_events(

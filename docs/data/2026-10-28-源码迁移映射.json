@@ -1,0 +1,2744 @@
+{
+  "frontend/src/pages/projects/ProjectsPage.tsx": [
+    "frontend/src/pages/projects/list/index.tsx",
+    "frontend/src/types/projects/management.ts"
+  ],
+  "frontend/src/pages/projects/ProjectRoute.tsx": [
+    "frontend/src/pages/projects/workspace/index.tsx",
+    "frontend/src/types/projects/management.ts"
+  ],
+  "frontend/src/pages/projects/EpisodePage.tsx": [
+    "frontend/src/pages/creation/index.tsx",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/references/agent-scope.ts",
+    "frontend/src/types/assistant/runtime/assistant-business-events.ts",
+    "frontend/src/types/creation/workspace/model.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/projects/management.ts",
+    "frontend/src/types/projects/model.ts"
+  ],
+  "frontend/src/pages/projects/episode/SourceStage.tsx": [
+    "frontend/src/pages/creation/script/index.tsx",
+    "frontend/src/types/creation/workspace/model.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/creation/writing/sessions/writing-session.ts"
+  ],
+  "frontend/src/pages/projects/episode/AssetsStage.tsx": [
+    "frontend/src/pages/creation/assets/index.tsx",
+    "frontend/src/types/assistant/artifacts.ts",
+    "frontend/src/types/creation/workspace/model.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts"
+  ],
+  "frontend/src/pages/projects/episode/StoryboardStage.tsx": [
+    "frontend/src/features/creation/storyboard/editor/ShotGenerationSettings.tsx",
+    "frontend/src/features/creation/storyboard/editor/ShotInformation.tsx",
+    "frontend/src/features/creation/storyboard/editor/shot-generation-submission.ts",
+    "frontend/src/features/creation/storyboard/editor/shot-mutations.ts",
+    "frontend/src/features/creation/storyboard/history/StoryboardHistory.tsx",
+    "frontend/src/features/creation/storyboard/list/StoryboardShotList.tsx",
+    "frontend/src/features/creation/storyboard/sessions/collection.ts",
+    "frontend/src/features/creation/storyboard/sessions/editing-session.ts",
+    "frontend/src/features/creation/storyboard/sessions/storyboard-session.ts",
+    "frontend/src/features/creation/storyboard/sessions/useStoryboardCollection.ts",
+    "frontend/src/features/creation/storyboard/workbench/StoryboardWorkspace.tsx",
+    "frontend/src/features/creation/storyboard/workbench/views/StoryboardEditorHeader.tsx",
+    "frontend/src/features/creation/storyboard/workbench/views/StoryboardShotActions.tsx",
+    "frontend/src/pages/creation/storyboard/index.tsx",
+    "frontend/src/types/creation/storyboard/history/views.ts",
+    "frontend/src/types/creation/storyboard/list/views.ts",
+    "frontend/src/types/creation/storyboard/workbench.ts",
+    "frontend/src/types/creation/storyboard/workbench/views.ts"
+  ],
+  "frontend/src/pages/projects/episode/AssemblyStage.tsx": [
+    "frontend/src/features/creation/assembly/export/AssemblyAdoptionDialog.tsx",
+    "frontend/src/features/creation/assembly/export/AssemblyExportDialog.tsx",
+    "frontend/src/features/creation/assembly/export/AssemblyExportHistory.tsx",
+    "frontend/src/features/creation/assembly/export/AssemblySyncDialog.tsx",
+    "frontend/src/features/creation/assembly/export/presentation.ts",
+    "frontend/src/features/creation/assembly/export/useRenderRecovery.ts",
+    "frontend/src/features/creation/assembly/workbench/AssemblyStageContent.tsx",
+    "frontend/src/features/creation/assembly/workbench/useAssemblyStage.ts",
+    "frontend/src/pages/creation/assembly/index.tsx",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/export/dialogs.ts",
+    "frontend/src/types/creation/assembly/export/recovery.ts",
+    "frontend/src/types/creation/assembly/sessions/render-recovery.ts",
+    "frontend/src/types/creation/assembly/workbench/stage.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts"
+  ],
+  "frontend/src/pages/projects/episode/TopStepNav.tsx": [
+    "frontend/src/features/creation/workspace/navigation/TopStepNav.tsx",
+    "frontend/src/types/creation/workspace/model.ts"
+  ],
+  "frontend/src/pages/projects/episode/StageNav.tsx": [
+    "frontend/src/features/creation/workspace/navigation/StageNav.tsx",
+    "frontend/src/types/creation/workspace/model.ts"
+  ],
+  "frontend/src/pages/ai-config/AiConfigPage.tsx": [
+    "frontend/src/pages/ai-config/index.tsx",
+    "frontend/src/types/ai-config/editor/AiConfigSession.ts",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/pages/skills/SkillsPage.tsx": [
+    "frontend/src/pages/skills/index.tsx"
+  ],
+  "frontend/src/pages/media-library/MediaLibraryPage.tsx": [
+    "frontend/src/pages/media-library/index.tsx",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/pages/media-library/media-library.css": [
+    "frontend/src/pages/media-library/index.css"
+  ],
+  "frontend/src/api/modules/projects.ts": [
+    "frontend/src/api/projects/management.ts",
+    "frontend/src/types/canvas/api.ts",
+    "frontend/src/types/projects/management.ts"
+  ],
+  "frontend/src/api/modules/episode-writing.ts": [
+    "frontend/src/api/creation/writing/documents.ts",
+    "frontend/src/types/creation/writing/documents.ts"
+  ],
+  "frontend/src/api/modules/assets.ts": [
+    "frontend/src/api/creation/assets/management.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/api/modules/asset-extraction.ts": [
+    "frontend/src/api/creation/assets/extraction.ts",
+    "frontend/src/types/creation/assets/extraction.ts",
+    "frontend/src/types/creation/assets/management.ts"
+  ],
+  "frontend/src/api/modules/storyboard.ts": [
+    "frontend/src/api/creation/storyboard/shots.ts",
+    "frontend/src/types/creation/storyboard/shots.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/api/modules/assembly.ts": [
+    "frontend/src/api/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/document.ts"
+  ],
+  "frontend/src/api/modules/sound.ts": [
+    "frontend/src/api/creation/sound/tracks.ts",
+    "frontend/src/types/creation/sound/api.ts",
+    "frontend/src/types/creation/sound/tracks.ts"
+  ],
+  "frontend/src/api/modules/native-voice.ts": [
+    "frontend/src/api/creation/sound/voices.ts",
+    "frontend/src/types/creation/sound/voices.ts"
+  ],
+  "frontend/src/api/modules/creation-drafts.ts": [
+    "frontend/src/api/creation/drafts/requests.ts",
+    "frontend/src/types/creation/drafts/requests.ts"
+  ],
+  "frontend/src/api/modules/assistant.ts": [
+    "frontend/src/api/assistant/conversations/requests.ts",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/api/modules/assistant-script.ts": [
+    "frontend/src/api/assistant/operations/script.ts",
+    "frontend/src/types/assistant/api.ts"
+  ],
+  "frontend/src/api/modules/agents.ts": [
+    "frontend/src/api/skills/catalog.ts",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/api/modules/agent-artifacts.ts": [
+    "frontend/src/api/assistant/operations/artifacts.ts",
+    "frontend/src/types/assistant/artifacts.ts",
+    "frontend/src/types/assistant/engine.ts"
+  ],
+  "frontend/src/api/modules/generations.ts": [
+    "frontend/src/api/generations/tasks/requests.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/api/modules/generation-references.ts": [
+    "frontend/src/api/generations/references/requests.ts",
+    "frontend/src/types/generations/references/requests.ts"
+  ],
+  "frontend/src/api/modules/generation-batches.ts": [
+    "frontend/src/api/generations/batches/requests.ts",
+    "frontend/src/types/generations/batches/requests.ts"
+  ],
+  "frontend/src/api/modules/ai-model-configs.ts": [
+    "frontend/src/api/ai-config/management.ts",
+    "frontend/src/types/ai-config/api.ts"
+  ],
+  "frontend/src/api/modules/ai-config-tools.ts": [
+    "frontend/src/api/ai-config/tools.ts",
+    "frontend/src/types/ai-config/api.ts",
+    "frontend/src/types/ai-config/tools.ts"
+  ],
+  "frontend/src/api/modules/media-library.ts": [
+    "frontend/src/api/media/library.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/api/modules/image-groups.ts": [
+    "frontend/src/api/media/image-groups.ts",
+    "frontend/src/types/generations/api.ts",
+    "frontend/src/types/media/image-groups.ts"
+  ],
+  "frontend/src/api/modules/canvas-archives.ts": [
+    "frontend/src/api/canvas/archives.ts",
+    "frontend/src/types/canvas/archives.ts"
+  ],
+  "frontend/src/api/types/generations.ts": [
+    "frontend/src/types/ai-config/api.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/api/types/canvases.ts": [
+    "frontend/src/types/canvas/api.ts"
+  ],
+  "frontend/src/api/types/assistant.ts": [
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/engine.ts"
+  ],
+  "frontend/src/api/types/assistant-memory.ts": [],
+  "frontend/src/api/types/agents.ts": [
+    "frontend/src/types/assistant/engine.ts"
+  ],
+  "frontend/src/api/types/agent-artifacts.ts": [
+    "frontend/src/types/assistant/artifacts.ts"
+  ],
+  "frontend/src/api/types/ai-model-configs.ts": [
+    "frontend/src/types/ai-config/api.ts"
+  ],
+  "frontend/src/api/types/ai-config-tools.ts": [
+    "frontend/src/types/ai-config/api.ts",
+    "frontend/src/types/ai-config/tools.ts"
+  ],
+  "frontend/src/types/projects.ts": [
+    "frontend/src/types/projects/model.ts"
+  ],
+  "frontend/src/app/assembly.css": [
+    "frontend/src/features/creation/assembly/workbench/assembly.css"
+  ],
+  "frontend/src/app/batches.css": [
+    "frontend/src/features/generations/batches/batches.css"
+  ],
+  "frontend/src/app/generations.css": [
+    "frontend/src/features/generations/tasks/generations.css"
+  ],
+  "frontend/src/app/identity.css": [
+    "frontend/src/pages/identity/identity.css"
+  ],
+  "frontend/src/app/native-voice.css": [
+    "frontend/src/features/creation/sound/voices/native-voice.css"
+  ],
+  "frontend/src/app/production.css": [
+    "frontend/src/features/creation/shared/styles/production.css",
+    "frontend/src/features/creation/shared/styles/production/asset-editor.css",
+    "frontend/src/features/creation/shared/styles/production/dialogs.css",
+    "frontend/src/features/creation/shared/styles/production/models.css",
+    "frontend/src/features/creation/shared/styles/production/storyboard.css",
+    "frontend/src/features/creation/shared/styles/production/surfaces.css",
+    "frontend/src/features/creation/shared/styles/production/video.css"
+  ],
+  "frontend/src/app/sound.css": [
+    "frontend/src/features/creation/sound/tracks/sound.css"
+  ],
+  "frontend/src/app/studio.css": [
+    "frontend/src/app/layouts/studio/base.css",
+    "frontend/src/features/creation/assets/list/styles/cards.css",
+    "frontend/src/features/creation/assets/list/styles/workspace.css",
+    "frontend/src/features/creation/shared/styles/resource-list.css",
+    "frontend/src/features/creation/storyboard/images/styles/frames.css",
+    "frontend/src/features/creation/storyboard/list/styles/states.css",
+    "frontend/src/features/creation/storyboard/list/styles/workspace.css",
+    "frontend/src/features/creation/storyboard/references/styles/links.css",
+    "frontend/src/features/creation/storyboard/videos/styles/workspace.css",
+    "frontend/src/features/creation/writing/editor/styles/surface.css",
+    "frontend/src/pages/creation/index.css",
+    "frontend/src/pages/projects/list/index.css",
+    "frontend/src/shared/ui/styles/dialogs.css",
+    "frontend/src/shared/ui/styles/settings.css"
+  ],
+  "frontend/src/app/styles.css": [
+    "frontend/src/app/styles/base.css",
+    "frontend/src/features/creation/assembly/workbench/styles/editor.css",
+    "frontend/src/features/creation/workspace/styles/panels.css",
+    "frontend/src/features/creation/writing/editor/styles/candidates.css",
+    "frontend/src/features/creation/writing/editor/styles/drafts.css",
+    "frontend/src/features/generations/tasks/styles/details.css",
+    "frontend/src/features/media/library/styles/workspace.css",
+    "frontend/src/features/projects/creation/styles/form.css"
+  ],
+  "frontend/src/app/tokens.css": [
+    "frontend/src/app/styles/tokens.css"
+  ],
+  "frontend/src/app/web.css": [
+    "frontend/src/app/layouts/studio/web.css",
+    "frontend/src/features/creation/workspace/styles/web.css",
+    "frontend/src/features/creation/writing/editor/styles/web.css",
+    "frontend/src/features/generations/tasks/styles/table.css",
+    "frontend/src/pages/ai-config/index.css",
+    "frontend/src/shared/media/styles/preview.css"
+  ],
+  "frontend/src/app/workbench.css": [
+    "frontend/src/app/styles/workbench.css",
+    "frontend/src/app/styles/workbench/assembly.css",
+    "frontend/src/app/styles/workbench/creation.css",
+    "frontend/src/app/styles/workbench/desktop.css",
+    "frontend/src/app/styles/workbench/dialogs.css",
+    "frontend/src/app/styles/workbench/management.css",
+    "frontend/src/app/styles/workbench/materials.css",
+    "frontend/src/app/styles/workbench/projects.css",
+    "frontend/src/app/styles/workbench/resources.css",
+    "frontend/src/app/styles/workbench/shell.css",
+    "frontend/src/app/styles/workbench/storyboard.css",
+    "frontend/src/app/styles/workbench/tokens.css"
+  ],
+  "frontend/src/app/paths.ts": [
+    "frontend/src/shared/navigation/paths.ts",
+    "frontend/src/types/shared/navigation/paths.ts"
+  ],
+  "frontend/src/app/NotFoundPage.tsx": [
+    "frontend/src/pages/not-found/index.tsx"
+  ],
+  "frontend/src/components/layout/Sidebar.tsx": [
+    "frontend/src/app/layouts/studio/components/Sidebar.tsx",
+    "frontend/src/types/app/layouts/studio/components/Sidebar.ts"
+  ],
+  "frontend/src/components/ui/confirm.tsx": [
+    "frontend/src/shared/ui/confirm.tsx",
+    "frontend/src/types/shared/ui/confirm.ts"
+  ],
+  "frontend/src/components/ui/Dialog.tsx": [
+    "frontend/src/shared/ui/Dialog.tsx"
+  ],
+  "frontend/src/components/ui/Icon.tsx": [
+    "frontend/src/shared/ui/Icon.tsx",
+    "frontend/src/types/shared/ui/Icon.ts"
+  ],
+  "frontend/src/components/ui/ImagePreview.tsx": [
+    "frontend/src/shared/ui/ImagePreview.tsx",
+    "frontend/src/types/shared/ui/ImagePreview.ts"
+  ],
+  "frontend/src/components/ui/LazyLoadMore.tsx": [
+    "frontend/src/shared/ui/LazyLoadMore.tsx"
+  ],
+  "frontend/src/components/ui/preloadable.tsx": [
+    "frontend/src/shared/async/preloadable.tsx"
+  ],
+  "frontend/src/components/ui/RouteBoundary.tsx": [
+    "frontend/src/shared/ui/RouteBoundary.tsx"
+  ],
+  "frontend/src/components/ui/studio-feedback-store.ts": [
+    "frontend/src/shared/ui/studio-feedback-store.ts",
+    "frontend/src/types/shared/ui/studio-feedback-store.ts"
+  ],
+  "frontend/src/components/ui/studio-feedback.css": [
+    "frontend/src/shared/ui/studio-feedback.css"
+  ],
+  "frontend/src/components/ui/StudioFeedback.tsx": [
+    "frontend/src/shared/ui/StudioFeedback.tsx",
+    "frontend/src/types/shared/ui/StudioFeedback.ts",
+    "frontend/src/types/shared/ui/studio-feedback-store.ts"
+  ],
+  "frontend/src/components/ui/StudioProvider.tsx": [
+    "frontend/src/shared/ui/StudioProvider.tsx"
+  ],
+  "frontend/src/components/ui/useReducedMotion.ts": [
+    "frontend/src/shared/ui/useReducedMotion.ts"
+  ],
+  "frontend/src/components/ui/Workspace.tsx": [
+    "frontend/src/shared/ui/Workspace.tsx"
+  ],
+  "frontend/src/lib/image-tools/angle.ts": [
+    "frontend/src/shared/media/image-tools/angle.ts",
+    "frontend/src/types/shared/media/image-tools/image-data.ts"
+  ],
+  "frontend/src/lib/image-tools/annotation-model.ts": [
+    "frontend/src/shared/media/image-tools/annotation-model.ts",
+    "frontend/src/types/shared/media/image-tools/annotation-model.ts"
+  ],
+  "frontend/src/lib/image-tools/emotion.ts": [
+    "frontend/src/shared/media/image-tools/emotion.ts",
+    "frontend/src/types/shared/media/image-tools/emotion.ts"
+  ],
+  "frontend/src/lib/image-tools/image-data.ts": [
+    "frontend/src/shared/media/image-tools/image-data.ts",
+    "frontend/src/types/shared/media/image-tools/image-data.ts"
+  ],
+  "frontend/src/lib/image-tools/lighting.ts": [
+    "frontend/src/shared/media/image-tools/lighting.ts",
+    "frontend/src/types/shared/media/image-tools/lighting.ts"
+  ],
+  "frontend/src/lib/image-tools/portrait-texture.ts": [
+    "frontend/src/shared/media/image-tools/portrait-texture.ts",
+    "frontend/src/types/shared/media/image-tools/portrait-texture.ts"
+  ],
+  "frontend/src/features/agents/agent-artifact-presentation.ts": [
+    "frontend/src/features/assistant/operations/agent-artifact-presentation.ts",
+    "frontend/src/types/assistant/artifacts.ts"
+  ],
+  "frontend/src/features/agents/agent-composer-context.ts": [
+    "frontend/src/features/assistant/attachments/agent-composer-context.ts",
+    "frontend/src/types/assistant/engine.ts"
+  ],
+  "frontend/src/features/agents/agent-draft.ts": [],
+  "frontend/src/features/agents/agent-events.ts": [
+    "frontend/src/features/assistant/runtime/agent-events.ts",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/assistant/runtime/agent-events.ts"
+  ],
+  "frontend/src/features/agents/agent-input-context.ts": [
+    "frontend/src/features/assistant/attachments/agent-input-context.ts",
+    "frontend/src/types/assistant/engine.ts"
+  ],
+  "frontend/src/features/agents/agent-navigation.ts": [
+    "frontend/src/features/assistant/runtime/agent-navigation.ts"
+  ],
+  "frontend/src/features/agents/agent-scope.ts": [
+    "frontend/src/types/assistant/references/agent-scope.ts"
+  ],
+  "frontend/src/features/agents/AgentArtifactShelf.tsx": [],
+  "frontend/src/features/agents/AgentAssetPicker.tsx": [
+    "frontend/src/features/assistant/references/AgentAssetPicker.tsx",
+    "frontend/src/types/assistant/references/AgentAssetPicker.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/agents/AgentContextComposer.tsx": [
+    "frontend/src/features/assistant/attachments/AgentContextComposer.tsx",
+    "frontend/src/types/assistant/attachments/AgentContextComposer.ts",
+    "frontend/src/types/assistant/attachments/agent-composer-context.ts",
+    "frontend/src/types/assistant/engine.ts"
+  ],
+  "frontend/src/features/agents/AgentConversationRuntime.tsx": [],
+  "frontend/src/features/agents/AgentEpisodeLayout.tsx": [],
+  "frontend/src/features/agents/AgentMediaTaskComposer.tsx": [],
+  "frontend/src/features/agents/AgentMessageBubble.tsx": [],
+  "frontend/src/features/agents/agents.css": [
+    "frontend/src/features/assistant/runtime/agents.css",
+    "frontend/src/features/assistant/runtime/styles/agents/conversations.css",
+    "frontend/src/features/assistant/runtime/styles/agents/desktop.css",
+    "frontend/src/features/assistant/runtime/styles/agents/runtime-artifacts.css"
+  ],
+  "frontend/src/features/agents/AgentSkillPicker.tsx": [
+    "frontend/src/features/assistant/skills/AgentSkillPicker.tsx",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/assistant/skills/AgentSkillPicker.ts"
+  ],
+  "frontend/src/features/agents/LegacyCreationRecord.tsx": [],
+  "frontend/src/features/agents/useAgentAvailability.ts": [],
+  "frontend/src/features/agents/useAgentRuntime.ts": [],
+  "frontend/src/features/ai-assistant/agent-timeline.ts": [
+    "frontend/src/features/assistant/messages/agent-timeline.ts",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/assistant/messages/agent-timeline.ts"
+  ],
+  "frontend/src/features/ai-assistant/AgentArtifactCard.tsx": [
+    "frontend/src/features/assistant/operations/AgentArtifactCard.tsx",
+    "frontend/src/types/assistant/api.ts"
+  ],
+  "frontend/src/features/ai-assistant/AgentTimeline.tsx": [
+    "frontend/src/features/assistant/messages/AgentTimeline.tsx",
+    "frontend/src/types/assistant/messages/AgentTimeline.ts"
+  ],
+  "frontend/src/features/ai-assistant/ai-assistant.css": [
+    "frontend/src/features/assistant/panel/ai-assistant.css",
+    "frontend/src/features/assistant/panel/styles/ai-assistant/attachments.css",
+    "frontend/src/features/assistant/panel/styles/ai-assistant/composer.css",
+    "frontend/src/features/assistant/panel/styles/ai-assistant/conversation.css"
+  ],
+  "frontend/src/features/ai-assistant/assistant-business-events.ts": [
+    "frontend/src/features/assistant/runtime/assistant-business-events.ts",
+    "frontend/src/types/assistant/runtime/assistant-business-events.ts"
+  ],
+  "frontend/src/features/ai-assistant/assistant-draft.ts": [
+    "frontend/src/features/assistant/recovery/assistant-draft.ts",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/recovery/assistant-draft.ts"
+  ],
+  "frontend/src/features/ai-assistant/assistant-history-draft.ts": [
+    "frontend/src/features/assistant/recovery/assistant-history-draft.ts",
+    "frontend/src/types/assistant/recovery/assistant-history-draft.ts"
+  ],
+  "frontend/src/features/ai-assistant/assistant-material-service.ts": [
+    "frontend/src/features/assistant/references/assistant-material-service.ts",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/references/assistant-materials.ts"
+  ],
+  "frontend/src/features/ai-assistant/assistant-materials.ts": [
+    "frontend/src/features/assistant/references/assistant-materials.ts",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/references/assistant-materials.ts"
+  ],
+  "frontend/src/features/ai-assistant/assistant-receipt.ts": [
+    "frontend/src/features/assistant/runtime/assistant-receipt.ts"
+  ],
+  "frontend/src/features/ai-assistant/assistant-skill-token.ts": [
+    "frontend/src/features/assistant/skills/assistant-skill-token.ts",
+    "frontend/src/types/assistant/skills/AssistantSkillPicker.ts"
+  ],
+  "frontend/src/features/ai-assistant/assistant-source-link.ts": [],
+  "frontend/src/features/ai-assistant/assistant-task-state.ts": [
+    "frontend/src/features/assistant/runtime/assistant-task-state.ts",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/assistant/runtime/assistant-task-state.ts"
+  ],
+  "frontend/src/features/ai-assistant/assistant-undo-draft.ts": [
+    "frontend/src/features/assistant/recovery/assistant-undo-draft.ts",
+    "frontend/src/types/assistant/recovery/assistant-undo-draft.ts"
+  ],
+  "frontend/src/features/ai-assistant/AssistantBatchUndo.tsx": [
+    "frontend/src/features/assistant/operations/AssistantBatchUndo.tsx",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/recovery/assistant-undo-draft.ts"
+  ],
+  "frontend/src/features/ai-assistant/AssistantConversationBody.tsx": [
+    "frontend/src/features/assistant/composer/AssistantComposerTools.tsx",
+    "frontend/src/features/assistant/composer/AssistantMentionTextarea.tsx",
+    "frontend/src/features/assistant/composer/AssistantPromptField.tsx",
+    "frontend/src/features/assistant/composer/prepare-send.ts",
+    "frontend/src/features/assistant/composer/prompt-tokens.ts",
+    "frontend/src/features/assistant/composer/useAssistantComposer.ts",
+    "frontend/src/features/assistant/composer/useAssistantModels.ts",
+    "frontend/src/features/assistant/conversations/AssistantConversationBody.tsx",
+    "frontend/src/features/assistant/messages/AgentTimeline.tsx",
+    "frontend/src/features/assistant/messages/AssistantLoading.tsx",
+    "frontend/src/features/assistant/messages/AssistantMessage.tsx",
+    "frontend/src/features/assistant/messages/AssistantTranscript.tsx",
+    "frontend/src/features/assistant/messages/ThinkBlock.tsx",
+    "frontend/src/features/assistant/messages/agent-timeline.ts",
+    "frontend/src/types/assistant/composer/tools.ts",
+    "frontend/src/types/assistant/conversations/AssistantConversationBody.ts"
+  ],
+  "frontend/src/features/ai-assistant/AssistantDeleteDialog.tsx": [
+    "frontend/src/features/assistant/history/AssistantDeleteDialog.tsx",
+    "frontend/src/types/assistant/api.ts"
+  ],
+  "frontend/src/features/ai-assistant/AssistantDiscussionHistory.tsx": [
+    "frontend/src/features/assistant/history/AssistantDiscussionHistory.tsx",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/history/AssistantDiscussionHistory.ts",
+    "frontend/src/types/assistant/recovery/assistant-history-draft.ts"
+  ],
+  "frontend/src/features/ai-assistant/AssistantHistory.tsx": [
+    "frontend/src/features/assistant/history/AssistantHistory.tsx",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/recovery/assistant-draft.ts"
+  ],
+  "frontend/src/features/ai-assistant/AssistantMentionTextarea.tsx": [
+    "frontend/src/features/assistant/composer/AssistantMentionTextarea.tsx",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/composer/AssistantMentionTextarea.ts",
+    "frontend/src/types/assistant/engine.ts"
+  ],
+  "frontend/src/features/ai-assistant/AssistantMessage.tsx": [
+    "frontend/src/features/assistant/messages/AssistantMessage.tsx",
+    "frontend/src/types/assistant/engine.ts"
+  ],
+  "frontend/src/features/ai-assistant/AssistantOperationResults.tsx": [
+    "frontend/src/features/assistant/operations/AssistantOperationResults.tsx",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/creation/sound/voices.ts"
+  ],
+  "frontend/src/features/ai-assistant/AssistantPromptField.tsx": [
+    "frontend/src/features/assistant/composer/AssistantPromptField.tsx",
+    "frontend/src/types/assistant/composer/AssistantPromptField.ts"
+  ],
+  "frontend/src/features/ai-assistant/AssistantScriptProposal.tsx": [
+    "frontend/src/features/assistant/operations/AssistantScriptProposal.tsx",
+    "frontend/src/types/assistant/api.ts"
+  ],
+  "frontend/src/features/ai-assistant/AssistantSkillPicker.tsx": [
+    "frontend/src/features/assistant/skills/AssistantSkillPicker.tsx",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/assistant/skills/AssistantSkillPicker.ts"
+  ],
+  "frontend/src/features/ai-assistant/CreativeAssistantPanel.tsx": [
+    "frontend/src/features/assistant/panel/CreativeAssistantPanel.tsx",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/panel/CreativeAssistantPanel.ts"
+  ],
+  "frontend/src/features/ai-assistant/LegacyAssistantMessages.tsx": [],
+  "frontend/src/features/ai-assistant/prompt-tokens.ts": [
+    "frontend/src/features/assistant/composer/prompt-tokens.ts",
+    "frontend/src/types/assistant/composer/prompt-tokens.ts"
+  ],
+  "frontend/src/features/ai-assistant/standard-assistant.css": [
+    "frontend/src/features/assistant/panel/standard-assistant.css"
+  ],
+  "frontend/src/features/ai-assistant/ThinkBlock.tsx": [
+    "frontend/src/features/assistant/messages/ThinkBlock.tsx",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/messages/ThinkBlock.ts"
+  ],
+  "frontend/src/features/ai-assistant/useAssistantRuntime.ts": [
+    "frontend/src/features/assistant/runtime/useAssistantRuntime.ts",
+    "frontend/src/types/assistant/api.ts",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/assistant/runtime/agent-events.ts"
+  ],
+  "frontend/src/features/ai-config/AiConfigSession.tsx": [
+    "frontend/src/features/ai-config/editor/AiConfigSession.tsx",
+    "frontend/src/types/ai-config/editor/AiConfigSession.ts"
+  ],
+  "frontend/src/features/ai-config/AssistantGenerationPolicy.tsx": [
+    "frontend/src/features/ai-config/editor/AssistantGenerationPolicy.tsx",
+    "frontend/src/types/assistant/api.ts"
+  ],
+  "frontend/src/features/ai-config/config-api.ts": [
+    "frontend/src/features/ai-config/editor/config-api.ts",
+    "frontend/src/types/ai-config/api.ts",
+    "frontend/src/types/ai-config/editor/config-model.ts",
+    "frontend/src/types/ai-config/tools.ts"
+  ],
+  "frontend/src/features/ai-config/config-catalog.ts": [
+    "frontend/src/features/ai-config/catalog/config-catalog.ts",
+    "frontend/src/types/ai-config/catalog/config-catalog.ts",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/features/ai-config/config-events.ts": [
+    "frontend/src/features/ai-config/catalog/config-events.ts"
+  ],
+  "frontend/src/features/ai-config/config-form-model.ts": [
+    "frontend/src/features/ai-config/editor/config-form-model.ts",
+    "frontend/src/types/ai-config/api.ts",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/features/ai-config/config-form.css": [
+    "frontend/src/features/ai-config/editor/config-form.css"
+  ],
+  "frontend/src/features/ai-config/config-model.ts": [
+    "frontend/src/features/ai-config/editor/config-model.ts",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/features/ai-config/config-selection.ts": [
+    "frontend/src/features/ai-config/selection/config-selection.ts",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/features/ai-config/config-table.css": [
+    "frontend/src/features/ai-config/editor/config-table.css"
+  ],
+  "frontend/src/features/ai-config/ConfigCatalogProvider.tsx": [
+    "frontend/src/features/ai-config/catalog/ConfigCatalogProvider.tsx",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/features/ai-config/ConfigForm.tsx": [
+    "frontend/src/features/ai-config/editor/ConfigForm.tsx",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/features/ai-config/ConfigTable.tsx": [
+    "frontend/src/features/ai-config/editor/ConfigTable.tsx",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/features/ai-config/ModelConfigTest.tsx": [
+    "frontend/src/features/ai-config/testing/ModelConfigTest.tsx",
+    "frontend/src/types/ai-config/editor/config-model.ts",
+    "frontend/src/types/ai-config/tools.ts"
+  ],
+  "frontend/src/features/ai-config/ModelIdentifierField.tsx": [
+    "frontend/src/features/ai-config/editor/ModelIdentifierField.tsx",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/features/ai-config/provider-presets.ts": [
+    "frontend/src/features/ai-config/catalog/provider-presets.ts",
+    "frontend/src/types/ai-config/catalog/provider-presets.ts",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/features/ai-config/RunningHubConfigFields.tsx": [
+    "frontend/src/features/ai-config/editor/RunningHubConfigFields.tsx",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/features/ai-config/RuntimeConfigFields.tsx": [
+    "frontend/src/features/ai-config/editor/RuntimeConfigFields.tsx",
+    "frontend/src/types/ai-config/editor/config-model.ts",
+    "frontend/src/types/ai-config/tools.ts"
+  ],
+  "frontend/src/features/assets/asset-editing-session.ts": [
+    "frontend/src/features/creation/assets/sessions/asset-editing-session.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/creation/assets/sessions/asset-editing-session.ts"
+  ],
+  "frontend/src/features/assets/asset-generation-submission.ts": [
+    "frontend/src/features/creation/assets/images/asset-generation-submission.ts",
+    "frontend/src/types/creation/assets/images/asset-generation-submission.ts"
+  ],
+  "frontend/src/features/assets/asset-image-generation.ts": [
+    "frontend/src/features/creation/assets/images/asset-image-generation.ts",
+    "frontend/src/types/creation/assets/images/asset-image-generation.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/assets/asset-model.ts": [],
+  "frontend/src/features/assets/asset-prompt-input.css": [
+    "frontend/src/features/creation/assets/images/asset-prompt-input.css"
+  ],
+  "frontend/src/features/assets/asset-prompt-references.ts": [
+    "frontend/src/features/creation/assets/images/asset-prompt-references.ts",
+    "frontend/src/types/creation/assets/images/asset-prompt-references.ts"
+  ],
+  "frontend/src/features/assets/AssetImageGeneration.tsx": [],
+  "frontend/src/features/assets/AssetLibraryPanel.tsx": [
+    "frontend/src/features/creation/assets/list/ProjectAssetsPanel.tsx"
+  ],
+  "frontend/src/features/assets/AssetPromptInput.tsx": [
+    "frontend/src/features/creation/assets/images/AssetPromptInput.tsx",
+    "frontend/src/types/creation/assets/images/AssetPromptInput.ts",
+    "frontend/src/types/creation/assets/images/asset-prompt-references.ts"
+  ],
+  "frontend/src/features/assets/episode-asset-drafts.ts": [],
+  "frontend/src/features/assets/episode-assets.css": [
+    "frontend/src/features/creation/assets/list/index.css"
+  ],
+  "frontend/src/features/assets/EpisodeAssetCard.tsx": [
+    "frontend/src/features/creation/assets/list/ProjectAssetCard.tsx",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/creation/assets/sessions/local-asset-draft-model.ts"
+  ],
+  "frontend/src/features/assets/EpisodeAssetEditor.tsx": [
+    "frontend/src/features/creation/assets/editor/ProjectAssetEditor.tsx",
+    "frontend/src/types/creation/assets/images/PrivateAssetReferences.ts",
+    "frontend/src/types/creation/assets/images/asset-prompt-references.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/creation/assets/sessions/local-asset-draft-model.ts",
+    "frontend/src/types/creation/drafts/requests.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts"
+  ],
+  "frontend/src/features/assets/EpisodeAssetWorkspace.tsx": [
+    "frontend/src/features/creation/assets/editor/ProjectAssetWorkspace.tsx",
+    "frontend/src/types/creation/assets/editor/ProjectAssetWorkspace.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/creation/assets/sessions/local-asset-draft-model.ts",
+    "frontend/src/types/creation/drafts/requests.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts"
+  ],
+  "frontend/src/features/assets/local-asset-session.ts": [
+    "frontend/src/features/creation/assets/sessions/local-asset-session.ts",
+    "frontend/src/types/creation/assets/sessions/local-asset-draft-model.ts",
+    "frontend/src/types/creation/assets/sessions/local-asset-session.ts"
+  ],
+  "frontend/src/features/assets/PrivateAssetReferences.tsx": [
+    "frontend/src/features/creation/assets/images/PrivateAssetReferences.tsx",
+    "frontend/src/types/creation/assets/images/PrivateAssetReferences.ts",
+    "frontend/src/types/creation/assets/images/asset-prompt-references.ts",
+    "frontend/src/types/creation/drafts/requests.ts",
+    "frontend/src/types/generations/references/requests.ts"
+  ],
+  "frontend/src/features/assets/StandardAssetGeneration.tsx": [
+    "frontend/src/features/creation/assets/images/StandardAssetGeneration.tsx",
+    "frontend/src/types/ai-config/api.ts",
+    "frontend/src/types/creation/assets/images/StandardAssetGeneration.ts",
+    "frontend/src/types/creation/assets/images/asset-prompt-references.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/creation/drafts/requests.ts"
+  ],
+  "frontend/src/features/assets/useAssetImageGeneration.ts": [
+    "frontend/src/features/creation/assets/images/useAssetImageGeneration.ts",
+    "frontend/src/types/creation/assets/images/asset-generation-submission.ts",
+    "frontend/src/types/creation/assets/images/asset-image-generation.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/creation/drafts/requests.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/assets/useAssetLibrary.ts": [
+    "frontend/src/features/creation/assets/list/useAssetLibrary.ts",
+    "frontend/src/types/creation/assets/management.ts"
+  ],
+  "frontend/src/features/auth/account-center.css": [
+    "frontend/src/features/identity/account/account-center.css"
+  ],
+  "frontend/src/features/auth/account-storage.ts": [
+    "frontend/src/features/identity/storage/account-storage.ts",
+    "frontend/src/types/identity/storage/account-storage.ts"
+  ],
+  "frontend/src/features/auth/AccountCenter.tsx": [
+    "frontend/src/pages/identity/account/index.tsx"
+  ],
+  "frontend/src/features/auth/AccountControls.tsx": [
+    "frontend/src/features/identity/account/AccountControls.tsx"
+  ],
+  "frontend/src/features/auth/AccountPages.tsx": [
+    "frontend/src/pages/identity/account/index.tsx",
+    "frontend/src/pages/identity/login/index.tsx",
+    "frontend/src/pages/identity/register/index.tsx",
+    "frontend/src/pages/identity/reset-password/index.tsx",
+    "frontend/src/pages/identity/verify-email/index.tsx"
+  ],
+  "frontend/src/features/auth/AuthSession.tsx": [
+    "frontend/src/features/identity/session/AuthSession.tsx",
+    "frontend/src/types/identity/session/AuthSession.ts"
+  ],
+  "frontend/src/features/auth/EmailProofForm.tsx": [
+    "frontend/src/features/identity/forms/EmailProofForm.tsx"
+  ],
+  "frontend/src/features/auth/ModelPreferences.tsx": [
+    "frontend/src/features/ai-config/preferences/ModelPreferences.tsx",
+    "frontend/src/types/ai-config/preferences/ModelPreferences.ts"
+  ],
+  "frontend/src/features/generations/attempt.ts": [
+    "frontend/src/features/shared/async/request-receipt.ts",
+    "frontend/src/types/shared/async/request-receipt.ts"
+  ],
+  "frontend/src/features/generations/BatchGeneration.tsx": [
+    "frontend/src/features/generations/batches/BatchGeneration.tsx",
+    "frontend/src/types/generations/batches/requests.ts"
+  ],
+  "frontend/src/features/generations/ConfigSelect.tsx": [
+    "frontend/src/features/ai-config/selection/ModelSelect.tsx",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/generations/presentation.ts": [
+    "frontend/src/features/generations/presentation/presentation.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/generations/ReferenceImages.tsx": [],
+  "frontend/src/features/generations/task-content.ts": [
+    "frontend/src/features/generations/presentation/task-content.ts"
+  ],
+  "frontend/src/features/generations/task-source.ts": [
+    "frontend/src/features/generations/presentation/task-source.ts",
+    "frontend/src/types/generations/api.ts",
+    "frontend/src/types/generations/presentation/task-source.ts"
+  ],
+  "frontend/src/features/generations/TaskDetail.tsx": [
+    "frontend/src/features/generations/tasks/TaskDetail.tsx",
+    "frontend/src/types/generations/api.ts",
+    "frontend/src/types/generations/tasks/TaskDetail.ts"
+  ],
+  "frontend/src/features/generations/useRemotePage.ts": [
+    "frontend/src/features/generations/tasks/useRemotePage.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/image-tools/image-tools.css": [
+    "frontend/src/features/media/image-tools/image-tools.css"
+  ],
+  "frontend/src/features/image-tools/ImageEditingSurface.tsx": [
+    "frontend/src/features/media/image-tools/ImageEditingSurface.tsx",
+    "frontend/src/types/media/image-tools/ImageEditingSurface.ts",
+    "frontend/src/types/shared/media/image-tools/annotation-model.ts",
+    "frontend/src/types/shared/media/image-tools/image-data.ts"
+  ],
+  "frontend/src/features/image-tools/ImageGroupHistory.tsx": [
+    "frontend/src/features/media/image-groups/ImageGroupHistory.tsx",
+    "frontend/src/types/media/image-groups.ts"
+  ],
+  "frontend/src/features/image-tools/ImageGroupPreview.tsx": [
+    "frontend/src/features/media/image-groups/ImageGroupPreview.tsx",
+    "frontend/src/types/media/image-groups.ts",
+    "frontend/src/types/media/image-groups/ImageGroupPreview.ts"
+  ],
+  "frontend/src/features/image-tools/ImageGroupSource.tsx": [
+    "frontend/src/features/media/image-groups/ImageGroupSource.tsx",
+    "frontend/src/types/media/image-groups.ts"
+  ],
+  "frontend/src/features/image-tools/ImageToolsDialog.tsx": [
+    "frontend/src/features/media/image-tools/ImageToolsDialog.tsx",
+    "frontend/src/features/media/image-tools/tool-parameters.ts",
+    "frontend/src/types/ai-config/api.ts",
+    "frontend/src/types/generations/api.ts",
+    "frontend/src/types/media/image-groups.ts",
+    "frontend/src/types/media/image-tools/ImageEditingSurface.ts",
+    "frontend/src/types/media/image-tools/ImageToolsDialog.ts",
+    "frontend/src/types/media/image-tools/parameters.ts",
+    "frontend/src/types/shared/media/image-tools/image-data.ts",
+    "frontend/src/types/shared/media/image-tools/portrait-texture.ts"
+  ],
+  "frontend/src/features/image-tools/useImageGroup.ts": [
+    "frontend/src/features/media/image-groups/useImageGroup.ts",
+    "frontend/src/types/media/image-groups.ts"
+  ],
+  "frontend/src/features/media-library/AssetPreview.tsx": [
+    "frontend/src/features/media/library/AssetPreview.tsx",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/media-library/ImagePicker.tsx": [
+    "frontend/src/features/media/selection/ImagePicker.tsx",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/projects/assembly-document.ts": [
+    "frontend/src/features/creation/assembly/sessions/assembly-document.ts",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/sessions/assembly-document.ts",
+    "frontend/src/types/creation/sound/tracks.ts"
+  ],
+  "frontend/src/features/projects/assembly-editing.ts": [
+    "frontend/src/features/creation/assembly/sessions/assembly-editing.ts",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/sessions/assembly-editing.ts"
+  ],
+  "frontend/src/features/projects/assembly-playback.ts": [
+    "frontend/src/features/creation/assembly/player/assembly-playback.ts",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/sessions/assembly-document.ts",
+    "frontend/src/types/creation/sound/tracks.ts"
+  ],
+  "frontend/src/features/projects/assembly-recovery.ts": [
+    "frontend/src/features/creation/assembly/sessions/assembly-recovery.ts",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/sessions/assembly-recovery.ts",
+    "frontend/src/types/creation/shared/recovery/creation-recovery.ts"
+  ],
+  "frontend/src/features/projects/assembly-subtitles.ts": [
+    "frontend/src/features/creation/assembly/subtitles/assembly-subtitles.ts",
+    "frontend/src/types/creation/sound/tracks.ts"
+  ],
+  "frontend/src/features/projects/AssemblyAction.tsx": [
+    "frontend/src/features/creation/assembly/export/AssemblyAction.tsx"
+  ],
+  "frontend/src/features/projects/AssemblyEditorPlayer.tsx": [
+    "frontend/src/features/creation/assembly/player/AssemblyEditorPlayer.tsx",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/player/AssemblyEditorPlayer.ts",
+    "frontend/src/types/creation/assembly/player/AssemblyPlayer.ts",
+    "frontend/src/types/creation/sound/tracks.ts"
+  ],
+  "frontend/src/features/projects/AssemblyFilmstrip.tsx": [
+    "frontend/src/features/creation/assembly/player/AssemblyFilmstrip.tsx",
+    "frontend/src/types/creation/assembly/document.ts"
+  ],
+  "frontend/src/features/projects/AssemblyInspector.tsx": [
+    "frontend/src/features/creation/assembly/inspector/AssemblyInspector.tsx",
+    "frontend/src/features/creation/assembly/inspector/AudioInspector.tsx",
+    "frontend/src/features/creation/assembly/inspector/PictureInspector.tsx",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/inspector/panels.ts",
+    "frontend/src/types/creation/assembly/sessions/assembly-document.ts",
+    "frontend/src/types/creation/sound/tracks.ts"
+  ],
+  "frontend/src/features/projects/AssemblyMaterialDialog.tsx": [
+    "frontend/src/features/creation/assembly/materials/AssemblyMaterialDialog.tsx",
+    "frontend/src/types/creation/assembly/document.ts"
+  ],
+  "frontend/src/features/projects/AssemblyMultitrack.tsx": [
+    "frontend/src/features/creation/assembly/timeline/AssemblyMultitrack.tsx",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/sessions/assembly-document.ts",
+    "frontend/src/types/creation/sound/tracks.ts"
+  ],
+  "frontend/src/features/projects/AssemblyPlaybackControls.tsx": [
+    "frontend/src/features/creation/assembly/player/AssemblyPlaybackControls.tsx"
+  ],
+  "frontend/src/features/projects/AssemblyPlayer.tsx": [
+    "frontend/src/features/creation/assembly/player/AssemblyPlayer.tsx",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/player/AssemblyPlayer.ts",
+    "frontend/src/types/creation/assembly/sessions/assembly-editing.ts"
+  ],
+  "frontend/src/features/projects/AssemblyResizeHandle.tsx": [
+    "frontend/src/features/creation/assembly/timeline/AssemblyResizeHandle.tsx"
+  ],
+  "frontend/src/features/projects/AssemblyResultPlayer.tsx": [
+    "frontend/src/features/creation/assembly/player/AssemblyResultPlayer.tsx",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/player/AssemblyResultPlayer.ts"
+  ],
+  "frontend/src/features/projects/AssemblyTimeline.tsx": [
+    "frontend/src/features/creation/assembly/timeline/AssemblyTimeline.tsx",
+    "frontend/src/types/creation/assembly/document.ts"
+  ],
+  "frontend/src/features/projects/AssemblyTranscriptionDialog.tsx": [
+    "frontend/src/features/creation/assembly/subtitles/AssemblyTranscriptionDialog.tsx",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/subtitles/AssemblyTranscriptionDialog.ts"
+  ],
+  "frontend/src/features/projects/AssemblyWorkbench.tsx": [
+    "frontend/src/features/creation/assembly/workbench/AssemblyWorkbench.tsx",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/player/AssemblyPlayer.ts",
+    "frontend/src/types/creation/assembly/sessions/assembly-document.ts",
+    "frontend/src/types/creation/sound/tracks.ts"
+  ],
+  "frontend/src/features/projects/asset-extraction-contract.ts": [
+    "frontend/src/features/creation/assets/extraction/contract.ts",
+    "frontend/src/types/creation/assets/extraction.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/projects/assistant-navigation.ts": [
+    "frontend/src/features/creation/workspace/navigation/assistant-navigation.ts"
+  ],
+  "frontend/src/features/projects/CanvasArchiveDialog.tsx": [
+    "frontend/src/features/canvas-integration/archives/CanvasArchiveDialog.tsx",
+    "frontend/src/types/canvas/archives.ts",
+    "frontend/src/types/projects/management.ts"
+  ],
+  "frontend/src/features/projects/CanvasLaunch.tsx": [
+    "frontend/src/features/canvas-integration/launch/CanvasLaunch.tsx"
+  ],
+  "frontend/src/features/projects/creation-draft-session.ts": [
+    "frontend/src/features/creation/shared/sessions/creation-draft-session.ts",
+    "frontend/src/types/creation/drafts/requests.ts",
+    "frontend/src/types/creation/shared/sessions/creation-draft-session.ts"
+  ],
+  "frontend/src/features/projects/creation-overlays.css": [
+    "frontend/src/features/creation/workspace/layout/overlays.css"
+  ],
+  "frontend/src/features/projects/creation-recovery.ts": [
+    "frontend/src/features/creation/shared/recovery/creation-recovery.ts",
+    "frontend/src/types/creation/shared/recovery/creation-recovery.ts"
+  ],
+  "frontend/src/features/projects/CreationDraftFeedback.tsx": [
+    "frontend/src/features/creation/shared/feedback/CreationDraftFeedback.tsx"
+  ],
+  "frontend/src/features/projects/CreationImagePreview.tsx": [],
+  "frontend/src/features/projects/episode-creation.css": [
+    "frontend/src/features/creation/workspace/layout/index.css",
+    "frontend/src/features/creation/workspace/layout/styles/composer.css",
+    "frontend/src/features/creation/workspace/layout/styles/editor.css",
+    "frontend/src/features/creation/workspace/layout/styles/shell.css",
+    "frontend/src/features/creation/workspace/layout/styles/writing.css"
+  ],
+  "frontend/src/features/projects/episode-workflow.ts": [],
+  "frontend/src/features/projects/EpisodeCreationWorkspace.tsx": [
+    "frontend/src/features/creation/workspace/layout/CreationWorkspace.tsx",
+    "frontend/src/types/assistant/references/agent-scope.ts",
+    "frontend/src/types/creation/workspace/layout/CreationWorkspace.ts"
+  ],
+  "frontend/src/features/projects/EpisodeModelSelect.tsx": [
+    "frontend/src/features/ai-config/selection/CreationModelSelect.tsx",
+    "frontend/src/types/ai-config/editor/config-model.ts"
+  ],
+  "frontend/src/features/projects/GenerationComposer.tsx": [
+    "frontend/src/features/creation/shared/generation/GenerationComposer.tsx"
+  ],
+  "frontend/src/features/projects/NativeVoicePanel.tsx": [
+    "frontend/src/features/creation/sound/voices/NativeVoicePanel.tsx",
+    "frontend/src/types/creation/shared/recovery/creation-recovery.ts",
+    "frontend/src/types/creation/sound/voices.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts"
+  ],
+  "frontend/src/features/projects/novel-editor.css": [
+    "frontend/src/features/creation/writing/editor/novel-editor.css"
+  ],
+  "frontend/src/features/projects/novel-generation-attempt.ts": [],
+  "frontend/src/features/projects/novel-import.ts": [],
+  "frontend/src/features/projects/NovelScriptGeneration.tsx": [
+    "frontend/src/features/creation/writing/editor/ScriptWorkspace.tsx",
+    "frontend/src/types/creation/writing/rewrite/writing-requests.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/creation/writing/sessions/writing-session.ts"
+  ],
+  "frontend/src/features/projects/PrivateReferenceImages.tsx": [
+    "frontend/src/features/creation/shared/references/PrivateReferenceImages.tsx",
+    "frontend/src/types/creation/assets/images/asset-prompt-references.ts",
+    "frontend/src/types/generations/references/requests.ts"
+  ],
+  "frontend/src/features/projects/project-creation.ts": [
+    "frontend/src/features/projects/creation/project-creation.ts",
+    "frontend/src/types/projects/creation/project-creation.ts",
+    "frontend/src/types/projects/management.ts"
+  ],
+  "frontend/src/features/projects/ProjectCard.tsx": [
+    "frontend/src/features/projects/list/ProjectCard.tsx",
+    "frontend/src/types/projects/management.ts"
+  ],
+  "frontend/src/features/projects/ProjectDetailHeader.tsx": [],
+  "frontend/src/features/projects/ProjectList.tsx": [
+    "frontend/src/features/projects/list/ProjectList.tsx",
+    "frontend/src/types/projects/management.ts"
+  ],
+  "frontend/src/features/projects/ProjectNameEditor.tsx": [
+    "frontend/src/features/projects/management/ProjectNameEditor.tsx",
+    "frontend/src/types/creation/shared/sessions/resource-editing-session.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/projects/management.ts",
+    "frontend/src/types/projects/management/ProjectNameEditor.ts"
+  ],
+  "frontend/src/features/projects/projects.css": [
+    "frontend/src/features/projects/list/index.css"
+  ],
+  "frontend/src/features/projects/render-recovery.ts": [
+    "frontend/src/features/creation/assembly/sessions/render-recovery.ts",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/sessions/render-recovery.ts",
+    "frontend/src/types/creation/shared/recovery/creation-recovery.ts"
+  ],
+  "frontend/src/features/projects/resource-editing-session.ts": [
+    "frontend/src/features/creation/shared/sessions/resource-editing-session.ts",
+    "frontend/src/types/creation/shared/sessions/resource-editing-session.ts"
+  ],
+  "frontend/src/features/projects/ResourceViewToggle.tsx": [
+    "frontend/src/features/creation/shared/resource-view/ResourceViewToggle.tsx",
+    "frontend/src/types/creation/shared/resource-view/ResourceViewToggle.ts"
+  ],
+  "frontend/src/features/projects/script-document.ts": [
+    "frontend/src/features/creation/writing/editor/script-document.ts",
+    "frontend/src/types/creation/writing/documents.ts",
+    "frontend/src/types/creation/writing/editor/script-document.ts"
+  ],
+  "frontend/src/features/projects/ScriptAssetExtraction.tsx": [
+    "frontend/src/features/creation/assets/extraction/ExtractionCandidateCard.tsx",
+    "frontend/src/features/creation/assets/extraction/ExtractionHistory.tsx",
+    "frontend/src/features/creation/assets/extraction/ExtractionSettings.tsx",
+    "frontend/src/features/creation/assets/extraction/ScriptAssetExtraction.tsx",
+    "frontend/src/features/creation/assets/extraction/presentation.ts",
+    "frontend/src/types/assistant/artifacts.ts",
+    "frontend/src/types/creation/assets/extraction.ts",
+    "frontend/src/types/creation/assets/extraction/ScriptAssetExtraction.ts",
+    "frontend/src/types/creation/assets/extraction/views.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/creation/shared/sessions/resource-editing-session.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/projects/shot-generation-settings.ts": [],
+  "frontend/src/features/projects/shot-generation-submission.ts": [
+    "frontend/src/features/creation/storyboard/editor/shot-generation-submission.ts",
+    "frontend/src/types/creation/storyboard/editor/shot-generation-submission.ts"
+  ],
+  "frontend/src/features/projects/shot-image-attempt.ts": [],
+  "frontend/src/features/projects/shot-image-history.ts": [
+    "frontend/src/features/creation/storyboard/images/shot-image-history.ts",
+    "frontend/src/types/creation/storyboard/images/shot-image-history.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/projects/shot-image-workflow.ts": [
+    "frontend/src/features/creation/storyboard/images/shot-image-workflow.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/creation/storyboard/images/shot-image-workflow.ts",
+    "frontend/src/types/creation/storyboard/shots.ts"
+  ],
+  "frontend/src/features/projects/shot-video-workflow.ts": [
+    "frontend/src/features/creation/storyboard/videos/shot-video-workflow.ts",
+    "frontend/src/types/ai-config/api.ts",
+    "frontend/src/types/creation/storyboard/shots.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/projects/ShotAssetPicker.tsx": [],
+  "frontend/src/features/projects/ShotGenerationSettings.tsx": [
+    "frontend/src/features/creation/storyboard/editor/ShotGenerationSettings.tsx"
+  ],
+  "frontend/src/features/projects/ShotImageCandidates.tsx": [
+    "frontend/src/features/creation/storyboard/images/ShotImageCandidates.tsx",
+    "frontend/src/types/ai-config/api.ts",
+    "frontend/src/types/creation/assets/images/asset-prompt-references.ts",
+    "frontend/src/types/creation/assets/management.ts",
+    "frontend/src/types/creation/storyboard/editor/shot-generation-submission.ts",
+    "frontend/src/types/creation/storyboard/images/shot-image-workflow.ts",
+    "frontend/src/types/creation/storyboard/shots.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/generations/references/requests.ts"
+  ],
+  "frontend/src/features/projects/ShotReferenceAssets.tsx": [],
+  "frontend/src/features/projects/ShotVideoCandidates.tsx": [
+    "frontend/src/features/creation/storyboard/videos/ShotVideoCandidates.tsx",
+    "frontend/src/types/ai-config/api.ts",
+    "frontend/src/types/creation/drafts/requests.ts",
+    "frontend/src/types/creation/storyboard/editor/shot-generation-submission.ts",
+    "frontend/src/types/creation/storyboard/images/shot-image-workflow.ts",
+    "frontend/src/types/creation/storyboard/shots.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/projects/SoundPanel.tsx": [
+    "frontend/src/features/creation/sound/tracks/SoundControls.tsx",
+    "frontend/src/features/creation/sound/tracks/SoundDialogueEditor.tsx",
+    "frontend/src/features/creation/sound/tracks/SoundMixingEditor.tsx",
+    "frontend/src/features/creation/sound/tracks/SoundPanel.tsx",
+    "frontend/src/features/creation/sound/tracks/SoundSubtitlesEditor.tsx",
+    "frontend/src/features/creation/sound/tracks/useSoundSession.ts",
+    "frontend/src/types/creation/shared/recovery/creation-recovery.ts",
+    "frontend/src/types/creation/sound/editor.ts",
+    "frontend/src/types/creation/sound/tracks.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts"
+  ],
+  "frontend/src/features/projects/standard-assembly.css": [
+    "frontend/src/features/creation/assembly/workbench/standard-assembly.css",
+    "frontend/src/features/creation/assembly/workbench/styles/standard-assembly/controls.css",
+    "frontend/src/features/creation/assembly/workbench/styles/standard-assembly/desktop.css",
+    "frontend/src/features/creation/assembly/workbench/styles/standard-assembly/materials.css"
+  ],
+  "frontend/src/features/projects/standard-session-registry.ts": [
+    "frontend/src/features/creation/shared/sessions/registry.ts",
+    "frontend/src/types/creation/shared/sessions/registry.ts"
+  ],
+  "frontend/src/features/projects/StandardSaveStatus.tsx": [
+    "frontend/src/features/creation/shared/feedback/StandardSaveStatus.tsx",
+    "frontend/src/types/creation/shared/sessions/registry.ts"
+  ],
+  "frontend/src/features/projects/storyboard-editing-session.ts": [
+    "frontend/src/features/creation/storyboard/sessions/editing-session.ts",
+    "frontend/src/types/creation/shared/recovery/creation-recovery.ts",
+    "frontend/src/types/creation/storyboard/sessions/editing-session.ts",
+    "frontend/src/types/creation/storyboard/shots.ts"
+  ],
+  "frontend/src/features/projects/storyboard-layout.css": [
+    "frontend/src/features/creation/storyboard/list/index.css",
+    "frontend/src/features/creation/storyboard/list/styles/desktop.css",
+    "frontend/src/features/creation/storyboard/list/styles/editor.css"
+  ],
+  "frontend/src/features/projects/storyboard-session.ts": [
+    "frontend/src/features/creation/storyboard/sessions/storyboard-session.ts"
+  ],
+  "frontend/src/features/projects/StoryboardResultPreview.tsx": [
+    "frontend/src/features/creation/storyboard/history/StoryboardResultPreview.tsx",
+    "frontend/src/types/creation/storyboard/shots.ts"
+  ],
+  "frontend/src/features/projects/StoryboardShotCard.tsx": [
+    "frontend/src/features/creation/storyboard/list/StoryboardShotCard.tsx",
+    "frontend/src/types/creation/storyboard/shots.ts"
+  ],
+  "frontend/src/features/projects/timeline-view.ts": [
+    "frontend/src/features/creation/assembly/timeline/timeline-view.ts"
+  ],
+  "frontend/src/features/projects/useAssembly.ts": [
+    "frontend/src/features/creation/assembly/workbench/useAssembly.ts",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/assembly/sessions/assembly-recovery.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts"
+  ],
+  "frontend/src/features/projects/useAssemblyAnalysis.ts": [
+    "frontend/src/features/creation/assembly/subtitles/useAssemblyAnalysis.ts",
+    "frontend/src/types/creation/assembly/document.ts",
+    "frontend/src/types/creation/sound/tracks.ts"
+  ],
+  "frontend/src/features/projects/useAssemblyLayout.ts": [
+    "frontend/src/features/creation/assembly/workbench/useAssemblyLayout.ts",
+    "frontend/src/types/creation/assembly/workbench/useAssemblyLayout.ts"
+  ],
+  "frontend/src/features/projects/useCreationDraft.ts": [
+    "frontend/src/features/creation/shared/sessions/useCreationDraft.ts",
+    "frontend/src/types/creation/drafts/requests.ts",
+    "frontend/src/types/creation/shared/sessions/creation-draft-session.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts"
+  ],
+  "frontend/src/features/projects/useEpisodeWriting.ts": [
+    "frontend/src/features/creation/writing/sessions/useProjectWriting.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/creation/writing/sessions/writing-session.ts"
+  ],
+  "frontend/src/features/projects/useShotImageGeneration.ts": [
+    "frontend/src/features/creation/storyboard/images/useShotImageGeneration.ts"
+  ],
+  "frontend/src/features/projects/workflow-contract.ts": [
+    "frontend/src/features/creation/shared/model/workflow-contract.ts",
+    "frontend/src/types/creation/storyboard/shots.ts"
+  ],
+  "frontend/src/features/projects/workflow-refinement.css": [
+    "frontend/src/features/creation/workspace/layout/refinement.css"
+  ],
+  "frontend/src/features/projects/writing-navigation.ts": [
+    "frontend/src/features/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/creation/writing/sessions/writing-session.ts"
+  ],
+  "frontend/src/features/projects/writing-session.ts": [
+    "frontend/src/features/creation/writing/sessions/writing-session.ts",
+    "frontend/src/types/creation/writing/documents.ts",
+    "frontend/src/types/creation/writing/sessions/writing-session.ts"
+  ],
+  "frontend/src/features/projects/writing-workflow.ts": [],
+  "frontend/src/features/skills/skill-draft.ts": [
+    "frontend/src/features/skills/imports/skill-draft.ts",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/skills/imports/skill-draft.ts"
+  ],
+  "frontend/src/features/skills/skill-model.ts": [
+    "frontend/src/features/skills/library/skill-model.ts",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/skills/library/skill-model.ts"
+  ],
+  "frontend/src/features/skills/skill-resource.ts": [
+    "frontend/src/features/skills/resources/skill-resource.ts",
+    "frontend/src/types/skills/imports/skill-draft.ts"
+  ],
+  "frontend/src/features/skills/SkillCodeViewer.tsx": [
+    "frontend/src/features/skills/resources/SkillCodeViewer.tsx"
+  ],
+  "frontend/src/features/skills/SkillDetailDialog.tsx": [
+    "frontend/src/features/skills/details/SkillDetailDialog.tsx",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/skills/library/skill-model.ts"
+  ],
+  "frontend/src/features/skills/SkillFileBrowser.tsx": [
+    "frontend/src/features/skills/resources/SkillFileBrowser.tsx",
+    "frontend/src/types/skills/imports/skill-draft.ts"
+  ],
+  "frontend/src/features/skills/SkillImportDialog.tsx": [
+    "frontend/src/features/skills/imports/SkillImportDialog.tsx",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/skills/imports/skill-draft.ts",
+    "frontend/src/types/skills/library/skill-model.ts"
+  ],
+  "frontend/src/features/skills/SkillLibrary.tsx": [
+    "frontend/src/features/skills/library/SkillLibrary.tsx",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/skills/imports/skill-draft.ts"
+  ],
+  "frontend/src/features/skills/skills.css": [
+    "frontend/src/features/skills/library/skills.css"
+  ],
+  "frontend/src/features/skills/useSkillActions.ts": [
+    "frontend/src/features/skills/library/useSkillActions.ts",
+    "frontend/src/types/assistant/engine.ts",
+    "frontend/src/types/skills/imports/skill-draft.ts"
+  ],
+  "frontend/src/features/projects/script-desk/editor-history.ts": [
+    "frontend/src/features/creation/writing/editor/editor-history.ts",
+    "frontend/src/types/creation/writing/editor/editor-history.ts"
+  ],
+  "frontend/src/features/projects/script-desk/script-desk.css": [
+    "frontend/src/features/creation/writing/editor/script-desk.css"
+  ],
+  "frontend/src/features/projects/script-desk/script-review.css": [
+    "frontend/src/features/creation/writing/rewrite/script-review.css"
+  ],
+  "frontend/src/features/projects/script-desk/script-selection.ts": [
+    "frontend/src/features/creation/writing/editor/script-selection.ts",
+    "frontend/src/types/creation/writing/rewrite/writing-requests.ts"
+  ],
+  "frontend/src/features/projects/script-desk/ScriptDesk.tsx": [
+    "frontend/src/features/creation/writing/editor/ScriptDesk.tsx",
+    "frontend/src/types/creation/writing/documents.ts",
+    "frontend/src/types/creation/writing/rewrite/writing-requests.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/creation/writing/sessions/writing-session.ts"
+  ],
+  "frontend/src/features/projects/script-desk/ScriptRewriteDialog.tsx": [
+    "frontend/src/features/creation/writing/rewrite/ScriptRewriteDialog.tsx",
+    "frontend/src/types/creation/writing/rewrite/writing-requests.ts"
+  ],
+  "frontend/src/features/projects/script-desk/ScriptSceneEditor.tsx": [
+    "frontend/src/features/creation/writing/editor/ScriptSceneEditor.tsx",
+    "frontend/src/types/creation/writing/editor/ScriptSceneEditor.ts",
+    "frontend/src/types/creation/writing/rewrite/writing-requests.ts"
+  ],
+  "frontend/src/features/projects/script-desk/StorySettingsEditor.tsx": [
+    "frontend/src/features/creation/writing/story-settings/StorySettingsEditor.tsx",
+    "frontend/src/types/creation/shared/sessions/resource-editing-session.ts",
+    "frontend/src/types/creation/writing/documents.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/creation/writing/story-settings/StorySettingsEditor.ts"
+  ],
+  "frontend/src/features/projects/script-desk/useWritingGeneration.ts": [
+    "frontend/src/features/creation/writing/rewrite/useWritingGeneration.ts",
+    "frontend/src/types/creation/writing/documents.ts",
+    "frontend/src/types/creation/writing/rewrite/useWritingGeneration.ts",
+    "frontend/src/types/creation/writing/rewrite/writing-requests.ts",
+    "frontend/src/types/creation/writing/sessions/writing-navigation.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "frontend/src/features/projects/script-desk/writing-requests.ts": [
+    "frontend/src/features/creation/writing/rewrite/writing-requests.ts",
+    "frontend/src/types/creation/writing/rewrite/writing-requests.ts",
+    "frontend/src/types/creation/writing/sessions/writing-session.ts",
+    "frontend/src/types/generations/api.ts"
+  ],
+  "backend/src/short_drama/service/agent_artifact_service.py": [
+    "backend/src/short_drama/service/assistant/operations/artifact.py"
+  ],
+  "backend/src/short_drama/service/agent_attachment_service.py": [
+    "backend/src/short_drama/service/assistant/context/attachment.py"
+  ],
+  "backend/src/short_drama/service/agent_builtin_skill_service.py": [
+    "backend/src/short_drama/service/skills/catalog/builtin_skill.py"
+  ],
+  "backend/src/short_drama/service/agent_conversation_service.py": [
+    "backend/src/short_drama/service/assistant/conversations/conversation.py"
+  ],
+  "backend/src/short_drama/service/agent_graph_service.py": [
+    "backend/src/short_drama/service/assistant/execution/graph.py"
+  ],
+  "backend/src/short_drama/service/agent_memory_service.py": [
+    "backend/src/short_drama/service/assistant/memory/memory.py"
+  ],
+  "backend/src/short_drama/service/agent_memory_store.py": [
+    "backend/src/short_drama/service/assistant/memory/memory_store.py"
+  ],
+  "backend/src/short_drama/service/agent_model_service.py": [
+    "backend/src/short_drama/service/ai_config/management/assistant_models.py"
+  ],
+  "backend/src/short_drama/service/agent_run_service.py": [
+    "backend/src/short_drama/service/assistant/execution/run.py"
+  ],
+  "backend/src/short_drama/service/agent_skill_package.py": [
+    "backend/src/short_drama/service/skills/packages/skill_package.py"
+  ],
+  "backend/src/short_drama/service/agent_skill_resource_service.py": [
+    "backend/src/short_drama/service/skills/resources/skill_resource.py"
+  ],
+  "backend/src/short_drama/service/agent_skill_service.py": [
+    "backend/src/short_drama/service/skills/catalog/base.py",
+    "backend/src/short_drama/service/skills/catalog/editing.py",
+    "backend/src/short_drama/service/skills/catalog/imports.py",
+    "backend/src/short_drama/service/skills/catalog/listing.py",
+    "backend/src/short_drama/service/skills/catalog/resource_content.py",
+    "backend/src/short_drama/service/skills/catalog/skill.py",
+    "backend/src/short_drama/service/skills/catalog/versions.py"
+  ],
+  "backend/src/short_drama/service/ai_generation_service.py": [
+    "backend/src/short_drama/service/generations/admission/actions.py",
+    "backend/src/short_drama/service/generations/admission/admission.py",
+    "backend/src/short_drama/service/generations/admission/base.py",
+    "backend/src/short_drama/service/generations/admission/generation.py",
+    "backend/src/short_drama/service/generations/admission/queries.py",
+    "backend/src/short_drama/service/generations/admission/support.py"
+  ],
+  "backend/src/short_drama/service/ai_model_config_service.py": [
+    "backend/src/short_drama/service/ai_config/management/models.py"
+  ],
+  "backend/src/short_drama/service/assembly_associations.py": [
+    "backend/src/short_drama/service/creation/assembly/editing/associations.py"
+  ],
+  "backend/src/short_drama/service/assembly_audio.py": [
+    "backend/src/short_drama/service/creation/assembly/editing/audio.py"
+  ],
+  "backend/src/short_drama/service/assembly_editor_service.py": [
+    "backend/src/short_drama/service/creation/assembly/editing/editor.py"
+  ],
+  "backend/src/short_drama/service/assembly_media_execute.py": [
+    "backend/src/short_drama/service/creation/assembly/materials/media_execute.py"
+  ],
+  "backend/src/short_drama/service/assembly_media_service.py": [
+    "backend/src/short_drama/service/creation/assembly/materials/media.py"
+  ],
+  "backend/src/short_drama/service/assembly_output.py": [
+    "backend/src/short_drama/service/creation/assembly/rendering/output.py"
+  ],
+  "backend/src/short_drama/service/asset_extraction_service.py": [
+    "backend/src/short_drama/service/creation/assets/extraction/extraction.py"
+  ],
+  "backend/src/short_drama/service/asset_image_context.py": [
+    "backend/src/short_drama/service/creation/assets/images/image_context.py"
+  ],
+  "backend/src/short_drama/service/asset_image_service.py": [
+    "backend/src/short_drama/service/creation/assets/images/image.py"
+  ],
+  "backend/src/short_drama/service/asset_kind.py": [
+    "backend/src/short_drama/service/creation/assets/management/kinds.py"
+  ],
+  "backend/src/short_drama/service/asset_library_service.py": [
+    "backend/src/short_drama/service/creation/assets/management/library.py"
+  ],
+  "backend/src/short_drama/service/asset_service.py": [
+    "backend/src/short_drama/service/creation/assets/management/assets.py"
+  ],
+  "backend/src/short_drama/service/asset_version_service.py": [
+    "backend/src/short_drama/service/creation/assets/management/version.py"
+  ],
+  "backend/src/short_drama/service/assistant_canvas_media_service.py": [
+    "backend/src/short_drama/service/assistant/operations/canvas_media.py"
+  ],
+  "backend/src/short_drama/service/assistant_canvas_service.py": [
+    "backend/src/short_drama/service/assistant/operations/canvas.py"
+  ],
+  "backend/src/short_drama/service/assistant_canvas_undo_service.py": [
+    "backend/src/short_drama/service/assistant/undo/canvas_undo.py"
+  ],
+  "backend/src/short_drama/service/assistant_context_service.py": [
+    "backend/src/short_drama/service/assistant/context/context.py"
+  ],
+  "backend/src/short_drama/service/assistant_dialogue_service.py": [
+    "backend/src/short_drama/service/assistant/operations/dialogue.py"
+  ],
+  "backend/src/short_drama/service/assistant_history_service.py": [
+    "backend/src/short_drama/service/assistant/conversations/history.py"
+  ],
+  "backend/src/short_drama/service/assistant_image_service.py": [
+    "backend/src/short_drama/service/assistant/operations/image.py"
+  ],
+  "backend/src/short_drama/service/assistant_media_reference_service.py": [
+    "backend/src/short_drama/service/assistant/operations/media_reference.py"
+  ],
+  "backend/src/short_drama/service/assistant_media_service.py": [
+    "backend/src/short_drama/service/assistant/operations/media.py"
+  ],
+  "backend/src/short_drama/service/assistant_media_undo_service.py": [
+    "backend/src/short_drama/service/assistant/undo/media_undo.py"
+  ],
+  "backend/src/short_drama/service/assistant_policy_service.py": [
+    "backend/src/short_drama/service/assistant/tasks/policy.py"
+  ],
+  "backend/src/short_drama/service/assistant_script_service.py": [
+    "backend/src/short_drama/service/assistant/operations/script.py"
+  ],
+  "backend/src/short_drama/service/assistant_service.py": [],
+  "backend/src/short_drama/service/assistant_shot_video_service.py": [
+    "backend/src/short_drama/service/assistant/operations/shot_video.py"
+  ],
+  "backend/src/short_drama/service/assistant_sound_undo_service.py": [
+    "backend/src/short_drama/service/assistant/undo/sound_undo.py"
+  ],
+  "backend/src/short_drama/service/assistant_standard_service.py": [
+    "backend/src/short_drama/service/assistant/operations/standard.py"
+  ],
+  "backend/src/short_drama/service/assistant_subject_service.py": [
+    "backend/src/short_drama/service/assistant/context/subject.py"
+  ],
+  "backend/src/short_drama/service/assistant_task_service.py": [
+    "backend/src/short_drama/service/assistant/tasks/base.py",
+    "backend/src/short_drama/service/assistant/tasks/controls.py",
+    "backend/src/short_drama/service/assistant/tasks/conversations.py",
+    "backend/src/short_drama/service/assistant/tasks/inputs.py",
+    "backend/src/short_drama/service/assistant/tasks/messages.py",
+    "backend/src/short_drama/service/assistant/tasks/queries.py",
+    "backend/src/short_drama/service/assistant/tasks/support.py",
+    "backend/src/short_drama/service/assistant/tasks/task.py"
+  ],
+  "backend/src/short_drama/service/assistant_undo_chain_service.py": [
+    "backend/src/short_drama/service/assistant/undo/undo_chain.py"
+  ],
+  "backend/src/short_drama/service/assistant_undo_service.py": [
+    "backend/src/short_drama/service/assistant/undo/undo.py"
+  ],
+  "backend/src/short_drama/service/assistant_voice_service.py": [
+    "backend/src/short_drama/service/assistant/operations/voice.py"
+  ],
+  "backend/src/short_drama/service/audio_media.py": [
+    "backend/src/short_drama/service/media/processing/audio.py"
+  ],
+  "backend/src/short_drama/service/auth_service.py": [
+    "backend/src/short_drama/service/identity/authentication/auth.py"
+  ],
+  "backend/src/short_drama/service/canvas_audit.py": [
+    "backend/src/short_drama/service/canvas/document/audit.py"
+  ],
+  "backend/src/short_drama/service/canvas_catalog_payload.py": [
+    "backend/src/short_drama/service/canvas/models/catalog_payload.py"
+  ],
+  "backend/src/short_drama/service/canvas_cloud_transcription.py": [
+    "backend/src/short_drama/service/canvas/tools/transcription/cloud_transcription.py"
+  ],
+  "backend/src/short_drama/service/canvas_creation_cleanup.py": [
+    "backend/src/short_drama/service/canvas/workspace/creation/creation_cleanup.py"
+  ],
+  "backend/src/short_drama/service/canvas_creation_service.py": [
+    "backend/src/short_drama/service/canvas/workspace/creation/creation.py"
+  ],
+  "backend/src/short_drama/service/canvas_credential_freeze.py": [
+    "backend/src/short_drama/service/canvas/generation/credential_freeze.py"
+  ],
+  "backend/src/short_drama/service/canvas_depth_archive.py": [
+    "backend/src/short_drama/service/canvas/tools/depth/depth_archive.py"
+  ],
+  "backend/src/short_drama/service/canvas_depth_execute.py": [
+    "backend/src/short_drama/service/canvas/tools/depth/depth_execute.py"
+  ],
+  "backend/src/short_drama/service/canvas_depth_runtime.py": [
+    "backend/src/short_drama/service/canvas/tools/depth/depth_runtime.py"
+  ],
+  "backend/src/short_drama/service/canvas_document.py": [
+    "backend/src/short_drama/service/canvas/document/document.py"
+  ],
+  "backend/src/short_drama/service/canvas_drawing_document.py": [
+    "backend/src/short_drama/service/canvas/drawing/drawing_document.py"
+  ],
+  "backend/src/short_drama/service/canvas_drawing_history.py": [
+    "backend/src/short_drama/service/canvas/drawing/drawing_history.py"
+  ],
+  "backend/src/short_drama/service/canvas_drawing_service.py": [
+    "backend/src/short_drama/service/canvas/drawing/drawing.py"
+  ],
+  "backend/src/short_drama/service/canvas_folder_service.py": [
+    "backend/src/short_drama/service/canvas/workspace/folders/folder.py"
+  ],
+  "backend/src/short_drama/service/canvas_folder_state.py": [
+    "backend/src/short_drama/service/canvas/workspace/folders/folder_state.py"
+  ],
+  "backend/src/short_drama/service/canvas_generation_inputs.py": [
+    "backend/src/short_drama/service/canvas/generation/generation_inputs.py"
+  ],
+  "backend/src/short_drama/service/canvas_generation_media_cleanup.py": [
+    "backend/src/short_drama/service/canvas/generation/generation_media_cleanup.py"
+  ],
+  "backend/src/short_drama/service/canvas_generation_parameters.py": [
+    "backend/src/short_drama/service/canvas/generation/generation_parameters.py"
+  ],
+  "backend/src/short_drama/service/canvas_generation_service.py": [
+    "backend/src/short_drama/service/canvas/generation/generation.py"
+  ],
+  "backend/src/short_drama/service/canvas_library_copy_bindings.py": [
+    "backend/src/short_drama/service/canvas/library/library_copy_bindings.py"
+  ],
+  "backend/src/short_drama/service/canvas_library_deletion.py": [
+    "backend/src/short_drama/service/canvas/library/library_deletion.py"
+  ],
+  "backend/src/short_drama/service/canvas_library_references.py": [
+    "backend/src/short_drama/service/canvas/library/library_references.py"
+  ],
+  "backend/src/short_drama/service/canvas_library_service.py": [
+    "backend/src/short_drama/service/canvas/library/library.py"
+  ],
+  "backend/src/short_drama/service/canvas_local_service.py": [
+    "backend/src/short_drama/service/canvas/tools/local/local.py"
+  ],
+  "backend/src/short_drama/service/canvas_media_locators.py": [
+    "backend/src/short_drama/service/canvas/resources/media_locators.py"
+  ],
+  "backend/src/short_drama/service/canvas_model_catalog_service.py": [
+    "backend/src/short_drama/service/canvas/models/model_catalog.py"
+  ],
+  "backend/src/short_drama/service/canvas_model_discovery_service.py": [
+    "backend/src/short_drama/service/canvas/models/model_discovery.py"
+  ],
+  "backend/src/short_drama/service/canvas_model_test_service.py": [
+    "backend/src/short_drama/service/canvas/models/model_test.py"
+  ],
+  "backend/src/short_drama/service/canvas_playback_cleanup.py": [
+    "backend/src/short_drama/service/canvas/timeline/playback/playback_cleanup.py"
+  ],
+  "backend/src/short_drama/service/canvas_playback_execute.py": [
+    "backend/src/short_drama/service/canvas/timeline/playback/playback_execute.py"
+  ],
+  "backend/src/short_drama/service/canvas_playback_service.py": [
+    "backend/src/short_drama/service/canvas/timeline/playback/playback.py"
+  ],
+  "backend/src/short_drama/service/canvas_plugin_catalog.py": [
+    "backend/src/short_drama/service/canvas/tools/plugin_catalog.py"
+  ],
+  "backend/src/short_drama/service/canvas_provider_query_service.py": [
+    "backend/src/short_drama/service/canvas/generation/providers/provider_query.py"
+  ],
+  "backend/src/short_drama/service/canvas_recycle_cleanup.py": [
+    "backend/src/short_drama/service/canvas/resources/recycle/recycle_cleanup.py"
+  ],
+  "backend/src/short_drama/service/canvas_recycle_service.py": [
+    "backend/src/short_drama/service/canvas/resources/recycle/recycle.py"
+  ],
+  "backend/src/short_drama/service/canvas_render_archive.py": [
+    "backend/src/short_drama/service/canvas/timeline/rendering/render_archive.py"
+  ],
+  "backend/src/short_drama/service/canvas_render_service.py": [
+    "backend/src/short_drama/service/canvas/timeline/rendering/render.py"
+  ],
+  "backend/src/short_drama/service/canvas_resource_cleanup.py": [
+    "backend/src/short_drama/service/canvas/resources/resource_cleanup.py"
+  ],
+  "backend/src/short_drama/service/canvas_resource_copy.py": [
+    "backend/src/short_drama/service/canvas/resources/resource_copy.py"
+  ],
+  "backend/src/short_drama/service/canvas_resource_import.py": [
+    "backend/src/short_drama/service/canvas/resources/resource_import.py"
+  ],
+  "backend/src/short_drama/service/canvas_resource_io.py": [
+    "backend/src/short_drama/service/canvas/resources/resource_io.py"
+  ],
+  "backend/src/short_drama/service/canvas_resource_normalization.py": [
+    "backend/src/short_drama/service/canvas/resources/resource_normalization.py"
+  ],
+  "backend/src/short_drama/service/canvas_resource_service.py": [
+    "backend/src/short_drama/service/canvas/resources/resource.py"
+  ],
+  "backend/src/short_drama/service/canvas_runninghub_admission.py": [
+    "backend/src/short_drama/service/canvas/generation/runninghub/runninghub_admission.py"
+  ],
+  "backend/src/short_drama/service/canvas_runninghub_schema_service.py": [
+    "backend/src/short_drama/service/canvas/generation/runninghub/runninghub_schema.py"
+  ],
+  "backend/src/short_drama/service/canvas_service.py": [
+    "backend/src/short_drama/service/canvas/document/base.py",
+    "backend/src/short_drama/service/canvas/document/canvas.py",
+    "backend/src/short_drama/service/canvas/document/commits.py",
+    "backend/src/short_drama/service/canvas/document/creation.py",
+    "backend/src/short_drama/service/canvas/document/preferences.py",
+    "backend/src/short_drama/service/canvas/document/reading.py",
+    "backend/src/short_drama/service/canvas/document/revisions.py",
+    "backend/src/short_drama/service/canvas/document/support.py"
+  ],
+  "backend/src/short_drama/service/canvas_storyboard.py": [
+    "backend/src/short_drama/service/canvas/document/storyboard/storyboard.py"
+  ],
+  "backend/src/short_drama/service/canvas_style_service.py": [
+    "backend/src/short_drama/service/canvas/styles/style.py"
+  ],
+  "backend/src/short_drama/service/canvas_task_outputs.py": [
+    "backend/src/short_drama/service/canvas/generation/tasks/task_outputs.py"
+  ],
+  "backend/src/short_drama/service/canvas_task_service.py": [
+    "backend/src/short_drama/service/canvas/generation/tasks/task.py"
+  ],
+  "backend/src/short_drama/service/canvas_task_state.py": [
+    "backend/src/short_drama/service/canvas/generation/tasks/task_state.py"
+  ],
+  "backend/src/short_drama/service/canvas_text_admission.py": [
+    "backend/src/short_drama/service/canvas/generation/text/text_admission.py"
+  ],
+  "backend/src/short_drama/service/canvas_text_stream.py": [
+    "backend/src/short_drama/service/canvas/generation/text/text_stream.py"
+  ],
+  "backend/src/short_drama/service/canvas_timeline_compile.py": [
+    "backend/src/short_drama/service/canvas/timeline/timeline_compile.py"
+  ],
+  "backend/src/short_drama/service/canvas_timeline_native.py": [
+    "backend/src/short_drama/service/canvas/timeline/timeline_native.py"
+  ],
+  "backend/src/short_drama/service/canvas_timeline_renderer.py": [
+    "backend/src/short_drama/service/canvas/timeline/timeline_renderer.py"
+  ],
+  "backend/src/short_drama/service/canvas_tool_run_service.py": [
+    "backend/src/short_drama/service/canvas/tools/tool_run.py"
+  ],
+  "backend/src/short_drama/service/canvas_transcription.py": [
+    "backend/src/short_drama/service/canvas/tools/transcription/transcription.py"
+  ],
+  "backend/src/short_drama/service/canvas_transcription_execute.py": [
+    "backend/src/short_drama/service/canvas/tools/transcription/transcription_execute.py"
+  ],
+  "backend/src/short_drama/service/canvas_upload_cleanup.py": [
+    "backend/src/short_drama/service/canvas/resources/upload_cleanup.py"
+  ],
+  "backend/src/short_drama/service/canvas_video_admission.py": [
+    "backend/src/short_drama/service/canvas/generation/video/video_admission.py"
+  ],
+  "backend/src/short_drama/service/canvas_video_policy.py": [
+    "backend/src/short_drama/service/canvas/generation/video/video_policy.py"
+  ],
+  "backend/src/short_drama/service/canvas_video_references.py": [
+    "backend/src/short_drama/service/canvas/generation/video/video_references.py"
+  ],
+  "backend/src/short_drama/service/canvas_workspace_service.py": [
+    "backend/src/short_drama/service/canvas/workspace/workspace.py"
+  ],
+  "backend/src/short_drama/service/generation_archive.py": [
+    "backend/src/short_drama/service/generations/results/archive.py"
+  ],
+  "backend/src/short_drama/service/generation_batch_service.py": [
+    "backend/src/short_drama/service/generations/batches/admission.py",
+    "backend/src/short_drama/service/generations/batches/base.py",
+    "backend/src/short_drama/service/generations/batches/batch.py",
+    "backend/src/short_drama/service/generations/batches/controls.py",
+    "backend/src/short_drama/service/generations/batches/preflight.py",
+    "backend/src/short_drama/service/generations/batches/queries.py"
+  ],
+  "backend/src/short_drama/service/generation_business_service.py": [
+    "backend/src/short_drama/service/generations/admission/business.py"
+  ],
+  "backend/src/short_drama/service/generation_context_service.py": [
+    "backend/src/short_drama/service/generations/admission/context.py"
+  ],
+  "backend/src/short_drama/service/generation_execution_service.py": [
+    "backend/src/short_drama/service/generations/execution/archive.py",
+    "backend/src/short_drama/service/generations/execution/base.py",
+    "backend/src/short_drama/service/generations/execution/execution.py",
+    "backend/src/short_drama/service/generations/execution/provider.py",
+    "backend/src/short_drama/service/generations/execution/settlement.py",
+    "backend/src/short_drama/service/generations/execution/support.py"
+  ],
+  "backend/src/short_drama/service/generation_presentation.py": [
+    "backend/src/short_drama/service/generations/results/presentation.py"
+  ],
+  "backend/src/short_drama/service/generation_references.py": [
+    "backend/src/short_drama/service/generations/references/references.py"
+  ],
+  "backend/src/short_drama/service/generation_reference_service.py": [
+    "backend/src/short_drama/service/generations/references/reference.py"
+  ],
+  "backend/src/short_drama/service/generation_service.py": [
+    "backend/src/short_drama/service/generations/results/generation.py"
+  ],
+  "backend/src/short_drama/service/generation_task_policy.py": [
+    "backend/src/short_drama/service/generations/admission/task_policy.py"
+  ],
+  "backend/src/short_drama/service/health_service.py": [
+    "backend/src/short_drama/service/system/health/health.py"
+  ],
+  "backend/src/short_drama/service/image_adoption_state.py": [
+    "backend/src/short_drama/service/media/image_tools/adoption.py"
+  ],
+  "backend/src/short_drama/service/image_group_service.py": [
+    "backend/src/short_drama/service/media/image_groups/groups.py"
+  ],
+  "backend/src/short_drama/service/image_operation_service.py": [
+    "backend/src/short_drama/service/media/image_tools/operations.py"
+  ],
+  "backend/src/short_drama/service/image_processing.py": [
+    "backend/src/short_drama/service/media/processing/image.py"
+  ],
+  "backend/src/short_drama/service/media_asset_service.py": [
+    "backend/src/short_drama/service/media/library/assets.py"
+  ],
+  "backend/src/short_drama/service/media_file_service.py": [
+    "backend/src/short_drama/service/media/files/files.py"
+  ],
+  "backend/src/short_drama/service/media_recycle_bin_service.py": [
+    "backend/src/short_drama/service/media/recycle/recycle.py"
+  ],
+  "backend/src/short_drama/service/model_discovery_service.py": [
+    "backend/src/short_drama/service/ai_config/discovery/catalog.py"
+  ],
+  "backend/src/short_drama/service/model_preference_service.py": [
+    "backend/src/short_drama/service/ai_config/preferences/preferences.py"
+  ],
+  "backend/src/short_drama/service/model_runtime_config.py": [
+    "backend/src/short_drama/service/ai_config/management/runtime.py"
+  ],
+  "backend/src/short_drama/service/native_video_media.py": [
+    "backend/src/short_drama/service/creation/storyboard/videos/native_media.py"
+  ],
+  "backend/src/short_drama/service/native_voice_context.py": [
+    "backend/src/short_drama/service/creation/sound/voices/context.py"
+  ],
+  "backend/src/short_drama/service/native_voice_service.py": [
+    "backend/src/short_drama/service/creation/sound/voices/voices.py"
+  ],
+  "backend/src/short_drama/service/novel_script_record_service.py": [],
+  "backend/src/short_drama/service/project_assembly_service.py": [
+    "backend/src/short_drama/service/creation/assembly/document/assembly.py",
+    "backend/src/short_drama/service/creation/assembly/document/base.py",
+    "backend/src/short_drama/service/creation/assembly/document/editing.py",
+    "backend/src/short_drama/service/creation/assembly/document/projection.py",
+    "backend/src/short_drama/service/creation/assembly/document/rendering.py",
+    "backend/src/short_drama/service/creation/assembly/document/support.py"
+  ],
+  "backend/src/short_drama/service/project_novel_service.py": [],
+  "backend/src/short_drama/service/project_script_service.py": [
+    "backend/src/short_drama/service/creation/writing/script/documents.py"
+  ],
+  "backend/src/short_drama/service/project_service.py": [
+    "backend/src/short_drama/service/projects/management/project.py"
+  ],
+  "backend/src/short_drama/service/project_sound_service.py": [
+    "backend/src/short_drama/service/creation/sound/tracks/adoption.py",
+    "backend/src/short_drama/service/creation/sound/tracks/base.py",
+    "backend/src/short_drama/service/creation/sound/tracks/editing.py",
+    "backend/src/short_drama/service/creation/sound/tracks/generation.py",
+    "backend/src/short_drama/service/creation/sound/tracks/reading.py",
+    "backend/src/short_drama/service/creation/sound/tracks/sound.py"
+  ],
+  "backend/src/short_drama/service/project_storyboard_service.py": [
+    "backend/src/short_drama/service/creation/storyboard/management/storyboard.py"
+  ],
+  "backend/src/short_drama/service/project_writing_service.py": [
+    "backend/src/short_drama/service/creation/writing/script/documents.py"
+  ],
+  "backend/src/short_drama/service/publication.py": [
+    "backend/src/short_drama/service/creation/writing/script/publication.py"
+  ],
+  "backend/src/short_drama/service/render_tools.py": [
+    "backend/src/short_drama/service/media/processing/render_tools.py"
+  ],
+  "backend/src/short_drama/service/resource_import_service.py": [
+    "backend/src/short_drama/service/media/imports/resources.py"
+  ],
+  "backend/src/short_drama/service/script_shot_record_service.py": [
+    "backend/src/short_drama/service/creation/storyboard/management/records.py"
+  ],
+  "backend/src/short_drama/service/shot_asset_service.py": [
+    "backend/src/short_drama/service/creation/storyboard/references/asset.py"
+  ],
+  "backend/src/short_drama/service/shot_context.py": [
+    "backend/src/short_drama/service/creation/storyboard/management/context.py"
+  ],
+  "backend/src/short_drama/service/shot_image_service.py": [
+    "backend/src/short_drama/service/creation/storyboard/images/image.py"
+  ],
+  "backend/src/short_drama/service/shot_media_service.py": [
+    "backend/src/short_drama/service/creation/storyboard/management/media.py"
+  ],
+  "backend/src/short_drama/service/shot_script_service.py": [
+    "backend/src/short_drama/service/creation/storyboard/management/script.py"
+  ],
+  "backend/src/short_drama/service/shot_video_admission.py": [
+    "backend/src/short_drama/service/creation/storyboard/videos/video_admission.py"
+  ],
+  "backend/src/short_drama/service/shot_video_context.py": [
+    "backend/src/short_drama/service/creation/storyboard/videos/video_context.py"
+  ],
+  "backend/src/short_drama/service/shot_video_service.py": [
+    "backend/src/short_drama/service/creation/storyboard/videos/video.py"
+  ],
+  "backend/src/short_drama/service/sound_render.py": [
+    "backend/src/short_drama/service/creation/sound/tracks/render.py"
+  ],
+  "backend/src/short_drama/service/sound_snapshot.py": [
+    "backend/src/short_drama/service/creation/sound/tracks/snapshot.py"
+  ],
+  "backend/src/short_drama/service/storage_service.py": [
+    "backend/src/short_drama/service/media/files/storage.py"
+  ],
+  "backend/src/short_drama/service/subtitles.py": [
+    "backend/src/short_drama/service/creation/sound/subtitles/subtitles.py"
+  ],
+  "backend/src/short_drama/service/task_access.py": [
+    "backend/src/short_drama/service/generations/runtime/access.py"
+  ],
+  "backend/src/short_drama/service/task_reference_service.py": [
+    "backend/src/short_drama/service/generations/references/task_references.py"
+  ],
+  "backend/src/short_drama/service/task_runtime_service.py": [
+    "backend/src/short_drama/service/generations/runtime/lifecycle.py"
+  ],
+  "backend/src/short_drama/service/upload_cleanup.py": [
+    "backend/src/short_drama/service/media/files/upload_cleanup.py"
+  ],
+  "backend/src/short_drama/service/user_creation_draft_service.py": [
+    "backend/src/short_drama/service/creation/drafts/drafts.py"
+  ],
+  "backend/src/short_drama/service/video_render.py": [
+    "backend/src/short_drama/service/creation/assembly/rendering/renderer.py"
+  ],
+  "backend/src/short_drama/service/writing_generation_service.py": [
+    "backend/src/short_drama/service/creation/writing/rewrite/generation.py"
+  ],
+  "backend/src/short_drama/dao/agent_graph_dao.py": [
+    "backend/src/short_drama/dao/assistant/execution/graph.py"
+  ],
+  "backend/src/short_drama/dao/agent_memory_dao.py": [
+    "backend/src/short_drama/dao/assistant/memory/memory.py"
+  ],
+  "backend/src/short_drama/dao/agent_run_dao.py": [
+    "backend/src/short_drama/dao/assistant/execution/run.py"
+  ],
+  "backend/src/short_drama/dao/agent_task_dao.py": [
+    "backend/src/short_drama/dao/assistant/tasks/task.py"
+  ],
+  "backend/src/short_drama/dao/agent_transcript_dao.py": [
+    "backend/src/short_drama/dao/assistant/execution/transcript.py"
+  ],
+  "backend/src/short_drama/dao/agent_undo_dao.py": [
+    "backend/src/short_drama/dao/assistant/undo/undo.py"
+  ],
+  "backend/src/short_drama/dao/ai_generation_record_dao.py": [
+    "backend/src/short_drama/dao/generations/results/records.py"
+  ],
+  "backend/src/short_drama/dao/ai_model_config_dao.py": [
+    "backend/src/short_drama/dao/ai_config/management/models.py"
+  ],
+  "backend/src/short_drama/dao/asset_image_candidate_dao.py": [
+    "backend/src/short_drama/dao/creation/assets/images/image_candidate.py"
+  ],
+  "backend/src/short_drama/dao/asset_library_dao.py": [
+    "backend/src/short_drama/dao/creation/assets/management/library.py"
+  ],
+  "backend/src/short_drama/dao/asset_version_dao.py": [
+    "backend/src/short_drama/dao/creation/assets/management/version.py"
+  ],
+  "backend/src/short_drama/dao/assistant_context_dao.py": [
+    "backend/src/short_drama/dao/assistant/context/context.py"
+  ],
+  "backend/src/short_drama/dao/async_task_dao.py": [
+    "backend/src/short_drama/dao/generations/runtime/tasks.py"
+  ],
+  "backend/src/short_drama/dao/canvas_creation_dao.py": [
+    "backend/src/short_drama/dao/canvas/workspace/creation/creation.py"
+  ],
+  "backend/src/short_drama/dao/canvas_dao.py": [
+    "backend/src/short_drama/dao/canvas/document/canvas.py"
+  ],
+  "backend/src/short_drama/dao/canvas_drawing_dao.py": [
+    "backend/src/short_drama/dao/canvas/drawing/drawing.py"
+  ],
+  "backend/src/short_drama/dao/canvas_folder_dao.py": [
+    "backend/src/short_drama/dao/canvas/workspace/folders/folder.py"
+  ],
+  "backend/src/short_drama/dao/canvas_generation_dao.py": [
+    "backend/src/short_drama/dao/canvas/generation/generation.py"
+  ],
+  "backend/src/short_drama/dao/canvas_generation_media_cleanup_dao.py": [
+    "backend/src/short_drama/dao/canvas/generation/generation_media_cleanup.py"
+  ],
+  "backend/src/short_drama/dao/canvas_library_dao.py": [
+    "backend/src/short_drama/dao/canvas/library/library.py"
+  ],
+  "backend/src/short_drama/dao/canvas_local_dao.py": [
+    "backend/src/short_drama/dao/canvas/tools/local/local.py"
+  ],
+  "backend/src/short_drama/dao/canvas_model_catalog_dao.py": [
+    "backend/src/short_drama/dao/canvas/models/model_catalog.py"
+  ],
+  "backend/src/short_drama/dao/canvas_model_test_dao.py": [
+    "backend/src/short_drama/dao/canvas/models/model_test.py"
+  ],
+  "backend/src/short_drama/dao/canvas_recycle_cleanup_dao.py": [
+    "backend/src/short_drama/dao/canvas/resources/recycle/recycle_cleanup.py"
+  ],
+  "backend/src/short_drama/dao/canvas_recycle_execution_dao.py": [
+    "backend/src/short_drama/dao/canvas/resources/recycle/recycle_execution.py"
+  ],
+  "backend/src/short_drama/dao/canvas_render_dao.py": [
+    "backend/src/short_drama/dao/canvas/timeline/rendering/render.py"
+  ],
+  "backend/src/short_drama/dao/canvas_resource_dao.py": [
+    "backend/src/short_drama/dao/canvas/resources/resource.py"
+  ],
+  "backend/src/short_drama/dao/canvas_resource_deletion_dao.py": [
+    "backend/src/short_drama/dao/canvas/resources/resource_deletion.py"
+  ],
+  "backend/src/short_drama/dao/canvas_style_dao.py": [
+    "backend/src/short_drama/dao/canvas/styles/style.py"
+  ],
+  "backend/src/short_drama/dao/canvas_task_dao.py": [
+    "backend/src/short_drama/dao/canvas/generation/tasks/task.py"
+  ],
+  "backend/src/short_drama/dao/canvas_text_dao.py": [
+    "backend/src/short_drama/dao/canvas/generation/text/text.py"
+  ],
+  "backend/src/short_drama/dao/canvas_tool_run_dao.py": [
+    "backend/src/short_drama/dao/canvas/tools/tool_run.py"
+  ],
+  "backend/src/short_drama/dao/canvas_workspace_dao.py": [
+    "backend/src/short_drama/dao/canvas/workspace/workspace.py"
+  ],
+  "backend/src/short_drama/dao/health_dao.py": [
+    "backend/src/short_drama/dao/system/health/health.py"
+  ],
+  "backend/src/short_drama/dao/identity_dao.py": [
+    "backend/src/short_drama/dao/identity/accounts/identity.py"
+  ],
+  "backend/src/short_drama/dao/image_group_dao.py": [
+    "backend/src/short_drama/dao/media/image_groups/groups.py"
+  ],
+  "backend/src/short_drama/dao/media_asset_dao.py": [
+    "backend/src/short_drama/dao/media/library/assets.py"
+  ],
+  "backend/src/short_drama/dao/model_preference_dao.py": [
+    "backend/src/short_drama/dao/ai_config/preferences/preferences.py"
+  ],
+  "backend/src/short_drama/dao/project_dao.py": [
+    "backend/src/short_drama/dao/projects/management/project.py"
+  ],
+  "backend/src/short_drama/dao/project_storyboard_dao.py": [
+    "backend/src/short_drama/dao/creation/storyboard/management/storyboard.py"
+  ],
+  "backend/src/short_drama/dao/project_writing_dao.py": [
+    "backend/src/short_drama/dao/creation/writing/script/documents.py"
+  ],
+  "backend/src/short_drama/dao/task_runtime_dao.py": [
+    "backend/src/short_drama/dao/generations/runtime/lifecycle.py"
+  ],
+  "backend/src/short_drama/dao/user_creation_draft_dao.py": [
+    "backend/src/short_drama/dao/creation/drafts/drafts.py"
+  ],
+  "backend/src/short_drama/domain/agent.py": [
+    "backend/src/short_drama/domain/assistant/artifacts/models.py",
+    "backend/src/short_drama/domain/assistant/columns.py",
+    "backend/src/short_drama/domain/assistant/conversations/models.py",
+    "backend/src/short_drama/domain/assistant/execution/models.py",
+    "backend/src/short_drama/domain/assistant/tables.py"
+  ],
+  "backend/src/short_drama/domain/agent_context.py": [
+    "backend/src/short_drama/domain/assistant/context/context.py"
+  ],
+  "backend/src/short_drama/domain/agent_graph.py": [
+    "backend/src/short_drama/domain/assistant/execution/graph.py"
+  ],
+  "backend/src/short_drama/domain/agent_history.py": [
+    "backend/src/short_drama/domain/assistant/conversations/history.py"
+  ],
+  "backend/src/short_drama/domain/agent_media.py": [
+    "backend/src/short_drama/domain/assistant/operations/media.py"
+  ],
+  "backend/src/short_drama/domain/agent_memory.py": [
+    "backend/src/short_drama/domain/assistant/memory/memory.py"
+  ],
+  "backend/src/short_drama/domain/agent_preference.py": [
+    "backend/src/short_drama/domain/assistant/operations/preference.py"
+  ],
+  "backend/src/short_drama/domain/agent_skill.py": [
+    "backend/src/short_drama/domain/skills/catalog/skill.py"
+  ],
+  "backend/src/short_drama/domain/agent_task.py": [
+    "backend/src/short_drama/domain/assistant/tasks/task.py"
+  ],
+  "backend/src/short_drama/domain/agent_task_requirement.py": [
+    "backend/src/short_drama/domain/assistant/tasks/task_requirement.py"
+  ],
+  "backend/src/short_drama/domain/agent_undo.py": [
+    "backend/src/short_drama/domain/assistant/undo/undo.py"
+  ],
+  "backend/src/short_drama/domain/ai_generation_record.py": [
+    "backend/src/short_drama/domain/generations/results/records.py"
+  ],
+  "backend/src/short_drama/domain/ai_model_config.py": [
+    "backend/src/short_drama/domain/ai_config/management/models.py"
+  ],
+  "backend/src/short_drama/domain/asset.py": [
+    "backend/src/short_drama/domain/creation/assets/management/assets.py"
+  ],
+  "backend/src/short_drama/domain/asset_image_candidate.py": [
+    "backend/src/short_drama/domain/creation/assets/images/image_candidate.py"
+  ],
+  "backend/src/short_drama/domain/asset_version.py": [
+    "backend/src/short_drama/domain/creation/assets/management/version.py"
+  ],
+  "backend/src/short_drama/domain/async_task.py": [
+    "backend/src/short_drama/domain/generations/runtime/tasks.py"
+  ],
+  "backend/src/short_drama/domain/canvas.py": [
+    "backend/src/short_drama/domain/canvas/document/canvas.py"
+  ],
+  "backend/src/short_drama/domain/canvas_creation.py": [
+    "backend/src/short_drama/domain/canvas/workspace/creation/creation.py"
+  ],
+  "backend/src/short_drama/domain/canvas_drawing.py": [
+    "backend/src/short_drama/domain/canvas/drawing/drawing.py"
+  ],
+  "backend/src/short_drama/domain/canvas_folder.py": [
+    "backend/src/short_drama/domain/canvas/workspace/folders/folder.py"
+  ],
+  "backend/src/short_drama/domain/canvas_generation.py": [
+    "backend/src/short_drama/domain/canvas/generation/generation.py"
+  ],
+  "backend/src/short_drama/domain/canvas_generation_media_deletion.py": [
+    "backend/src/short_drama/domain/canvas/generation/generation_media_deletion.py"
+  ],
+  "backend/src/short_drama/domain/canvas_library.py": [
+    "backend/src/short_drama/domain/canvas/library/library.py"
+  ],
+  "backend/src/short_drama/domain/canvas_local.py": [
+    "backend/src/short_drama/domain/canvas/tools/local/local.py"
+  ],
+  "backend/src/short_drama/domain/canvas_model_catalog.py": [
+    "backend/src/short_drama/domain/canvas/models/model_catalog.py"
+  ],
+  "backend/src/short_drama/domain/canvas_render.py": [
+    "backend/src/short_drama/domain/canvas/timeline/rendering/render.py"
+  ],
+  "backend/src/short_drama/domain/canvas_resource.py": [
+    "backend/src/short_drama/domain/canvas/resources/resource.py"
+  ],
+  "backend/src/short_drama/domain/canvas_style.py": [
+    "backend/src/short_drama/domain/canvas/styles/style.py"
+  ],
+  "backend/src/short_drama/domain/canvas_text.py": [
+    "backend/src/short_drama/domain/canvas/generation/text/text.py"
+  ],
+  "backend/src/short_drama/domain/canvas_tool_run.py": [
+    "backend/src/short_drama/domain/canvas/tools/tool_run.py"
+  ],
+  "backend/src/short_drama/domain/collaboration.py": [
+    "backend/src/short_drama/domain/ai_config/preferences/models.py",
+    "backend/src/short_drama/domain/identity/accounts/user.py",
+    "backend/src/short_drama/domain/identity/audit/models.py",
+    "backend/src/short_drama/domain/identity/email/models.py",
+    "backend/src/short_drama/domain/media/imports/scope.py",
+    "backend/src/short_drama/domain/options.py"
+  ],
+  "backend/src/short_drama/domain/generation_batch.py": [
+    "backend/src/short_drama/domain/generations/batches/batch.py"
+  ],
+  "backend/src/short_drama/domain/image_group.py": [
+    "backend/src/short_drama/domain/media/image_groups/groups.py"
+  ],
+  "backend/src/short_drama/domain/media_asset.py": [
+    "backend/src/short_drama/domain/media/library/assets.py"
+  ],
+  "backend/src/short_drama/domain/media_file.py": [
+    "backend/src/short_drama/domain/media/files/files.py"
+  ],
+  "backend/src/short_drama/domain/media_recycle_bin.py": [
+    "backend/src/short_drama/domain/media/recycle/recycle.py"
+  ],
+  "backend/src/short_drama/domain/native_voice.py": [
+    "backend/src/short_drama/domain/creation/sound/voices/voices.py"
+  ],
+  "backend/src/short_drama/domain/novel_script_record.py": [],
+  "backend/src/short_drama/domain/project.py": [
+    "backend/src/short_drama/domain/projects/management/project.py"
+  ],
+  "backend/src/short_drama/domain/project_assembly.py": [
+    "backend/src/short_drama/domain/creation/assembly/document/assembly.py"
+  ],
+  "backend/src/short_drama/domain/project_novel.py": [],
+  "backend/src/short_drama/domain/project_script.py": [
+    "backend/src/short_drama/domain/creation/writing/script/script.py"
+  ],
+  "backend/src/short_drama/domain/project_script_revision.py": [
+    "backend/src/short_drama/domain/creation/writing/script/revisions.py"
+  ],
+  "backend/src/short_drama/domain/project_sound.py": [
+    "backend/src/short_drama/domain/creation/sound/tracks/sound.py"
+  ],
+  "backend/src/short_drama/domain/project_story_outline.py": [],
+  "backend/src/short_drama/domain/project_story_settings.py": [
+    "backend/src/short_drama/domain/creation/writing/settings/settings.py"
+  ],
+  "backend/src/short_drama/domain/script_shot_record.py": [
+    "backend/src/short_drama/domain/creation/storyboard/management/records.py"
+  ],
+  "backend/src/short_drama/domain/shot_asset.py": [
+    "backend/src/short_drama/domain/creation/storyboard/references/asset.py"
+  ],
+  "backend/src/short_drama/domain/shot_image.py": [
+    "backend/src/short_drama/domain/creation/storyboard/images/image.py"
+  ],
+  "backend/src/short_drama/domain/shot_script.py": [
+    "backend/src/short_drama/domain/creation/storyboard/management/script.py"
+  ],
+  "backend/src/short_drama/domain/shot_video.py": [
+    "backend/src/short_drama/domain/creation/storyboard/videos/video.py"
+  ],
+  "backend/src/short_drama/domain/user_creation_draft.py": [
+    "backend/src/short_drama/domain/creation/drafts/drafts.py"
+  ],
+  "backend/src/short_drama/schemas/agent.py": [
+    "backend/src/short_drama/schemas/assistant/conversations/engine.py"
+  ],
+  "backend/src/short_drama/schemas/agent_artifacts.py": [
+    "backend/src/short_drama/schemas/assistant/operations/artifacts.py"
+  ],
+  "backend/src/short_drama/schemas/agent_context.py": [
+    "backend/src/short_drama/schemas/assistant/context/context.py"
+  ],
+  "backend/src/short_drama/schemas/agent_memory.py": [
+    "backend/src/short_drama/schemas/assistant/memory/memory.py"
+  ],
+  "backend/src/short_drama/schemas/agent_runtime.py": [
+    "backend/src/short_drama/schemas/assistant/operations/runtime.py"
+  ],
+  "backend/src/short_drama/schemas/agent_skill.py": [
+    "backend/src/short_drama/schemas/skills/catalog/skill.py"
+  ],
+  "backend/src/short_drama/schemas/ai_generation.py": [
+    "backend/src/short_drama/schemas/generations/admission/generation.py"
+  ],
+  "backend/src/short_drama/schemas/ai_model_config.py": [
+    "backend/src/short_drama/schemas/ai_config/management/models.py"
+  ],
+  "backend/src/short_drama/schemas/assembly_editor.py": [
+    "backend/src/short_drama/schemas/creation/assembly/editing/editor.py"
+  ],
+  "backend/src/short_drama/schemas/asset.py": [
+    "backend/src/short_drama/schemas/creation/assets/management/assets.py"
+  ],
+  "backend/src/short_drama/schemas/asset_extraction.py": [
+    "backend/src/short_drama/schemas/creation/assets/extraction/extraction.py"
+  ],
+  "backend/src/short_drama/schemas/asset_image_candidate.py": [
+    "backend/src/short_drama/schemas/creation/assets/images/image_candidate.py"
+  ],
+  "backend/src/short_drama/schemas/asset_library.py": [
+    "backend/src/short_drama/schemas/creation/assets/management/library.py"
+  ],
+  "backend/src/short_drama/schemas/asset_version.py": [
+    "backend/src/short_drama/schemas/creation/assets/management/version.py"
+  ],
+  "backend/src/short_drama/schemas/assistant.py": [],
+  "backend/src/short_drama/schemas/assistant_canvas.py": [
+    "backend/src/short_drama/schemas/assistant/operations/canvas.py"
+  ],
+  "backend/src/short_drama/schemas/assistant_history.py": [
+    "backend/src/short_drama/schemas/assistant/conversations/history.py"
+  ],
+  "backend/src/short_drama/schemas/assistant_media.py": [
+    "backend/src/short_drama/schemas/assistant/operations/media.py"
+  ],
+  "backend/src/short_drama/schemas/assistant_policy.py": [
+    "backend/src/short_drama/schemas/assistant/tasks/policy.py"
+  ],
+  "backend/src/short_drama/schemas/assistant_script.py": [
+    "backend/src/short_drama/schemas/assistant/operations/script.py"
+  ],
+  "backend/src/short_drama/schemas/assistant_standard.py": [
+    "backend/src/short_drama/schemas/assistant/operations/standard.py"
+  ],
+  "backend/src/short_drama/schemas/assistant_task.py": [
+    "backend/src/short_drama/schemas/assistant/tasks/task.py"
+  ],
+  "backend/src/short_drama/schemas/assistant_undo.py": [
+    "backend/src/short_drama/schemas/assistant/undo/undo.py"
+  ],
+  "backend/src/short_drama/schemas/canvas.py": [
+    "backend/src/short_drama/schemas/canvas/document/canvas.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_asset_data.py": [
+    "backend/src/short_drama/schemas/canvas/library/asset_data.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_catalog.py": [
+    "backend/src/short_drama/schemas/canvas/models/catalog.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_creation.py": [
+    "backend/src/short_drama/schemas/canvas/workspace/creation/creation.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_depth.py": [
+    "backend/src/short_drama/schemas/canvas/tools/depth/depth.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_drawing.py": [
+    "backend/src/short_drama/schemas/canvas/drawing/drawing.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_folder.py": [
+    "backend/src/short_drama/schemas/canvas/workspace/folders/folder.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_generation.py": [
+    "backend/src/short_drama/schemas/canvas/generation/generation.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_generation_parameters.py": [
+    "backend/src/short_drama/schemas/canvas/generation/generation_parameters.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_library.py": [
+    "backend/src/short_drama/schemas/canvas/library/library.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_model_catalog.py": [
+    "backend/src/short_drama/schemas/canvas/models/model_catalog.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_model_test.py": [
+    "backend/src/short_drama/schemas/canvas/models/model_test.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_provider_query.py": [
+    "backend/src/short_drama/schemas/canvas/generation/providers/provider_query.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_resource.py": [
+    "backend/src/short_drama/schemas/canvas/resources/resource.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_runninghub.py": [
+    "backend/src/short_drama/schemas/canvas/generation/runninghub/runninghub.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_storyboard.py": [
+    "backend/src/short_drama/schemas/canvas/document/storyboard/storyboard.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_style.py": [
+    "backend/src/short_drama/schemas/canvas/styles/style.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_task_runtime.py": [
+    "backend/src/short_drama/schemas/canvas/generation/tasks/task_runtime.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_text_parameters.py": [
+    "backend/src/short_drama/schemas/canvas/generation/text/text_parameters.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_timeline.py": [
+    "backend/src/short_drama/schemas/canvas/timeline/timeline.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_tool_contracts.py": [
+    "backend/src/short_drama/schemas/canvas/tools/tool_contracts.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_tool_runs.py": [
+    "backend/src/short_drama/schemas/canvas/tools/tool_runs.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_transcription.py": [
+    "backend/src/short_drama/schemas/canvas/tools/transcription/transcription.py"
+  ],
+  "backend/src/short_drama/schemas/canvas_workspace.py": [
+    "backend/src/short_drama/schemas/canvas/workspace/workspace.py"
+  ],
+  "backend/src/short_drama/schemas/editor_document.py": [],
+  "backend/src/short_drama/schemas/generation_batch.py": [
+    "backend/src/short_drama/schemas/generations/batches/batch.py"
+  ],
+  "backend/src/short_drama/schemas/identity.py": [
+    "backend/src/short_drama/schemas/identity/accounts/identity.py"
+  ],
+  "backend/src/short_drama/schemas/image_group.py": [
+    "backend/src/short_drama/schemas/media/image_groups/groups.py"
+  ],
+  "backend/src/short_drama/schemas/media_asset.py": [
+    "backend/src/short_drama/schemas/media/library/assets.py"
+  ],
+  "backend/src/short_drama/schemas/media_file.py": [
+    "backend/src/short_drama/schemas/media/files/files.py"
+  ],
+  "backend/src/short_drama/schemas/media_recycle_bin.py": [
+    "backend/src/short_drama/schemas/media/recycle/recycle.py"
+  ],
+  "backend/src/short_drama/schemas/model_discovery.py": [
+    "backend/src/short_drama/schemas/ai_config/discovery/catalog.py"
+  ],
+  "backend/src/short_drama/schemas/model_runtime_profile.py": [
+    "backend/src/short_drama/schemas/ai_config/management/runtime_profile.py"
+  ],
+  "backend/src/short_drama/schemas/native_voice.py": [
+    "backend/src/short_drama/schemas/creation/sound/voices/voices.py"
+  ],
+  "backend/src/short_drama/schemas/novel_script_record.py": [],
+  "backend/src/short_drama/schemas/project.py": [
+    "backend/src/short_drama/schemas/projects/management/project.py"
+  ],
+  "backend/src/short_drama/schemas/project_assembly.py": [
+    "backend/src/short_drama/schemas/creation/assembly/document/assembly.py"
+  ],
+  "backend/src/short_drama/schemas/project_creation.py": [
+    "backend/src/short_drama/schemas/projects/management/creation.py"
+  ],
+  "backend/src/short_drama/schemas/project_novel.py": [],
+  "backend/src/short_drama/schemas/project_script.py": [
+    "backend/src/short_drama/schemas/creation/writing/script/documents.py"
+  ],
+  "backend/src/short_drama/schemas/project_sound.py": [
+    "backend/src/short_drama/schemas/creation/sound/tracks/sound.py"
+  ],
+  "backend/src/short_drama/schemas/project_storyboard.py": [
+    "backend/src/short_drama/schemas/creation/storyboard/management/storyboard.py"
+  ],
+  "backend/src/short_drama/schemas/project_writing.py": [
+    "backend/src/short_drama/schemas/creation/writing/script/documents.py"
+  ],
+  "backend/src/short_drama/schemas/script_shot_record.py": [
+    "backend/src/short_drama/schemas/creation/storyboard/management/records.py"
+  ],
+  "backend/src/short_drama/schemas/shot_asset.py": [
+    "backend/src/short_drama/schemas/creation/storyboard/references/asset.py"
+  ],
+  "backend/src/short_drama/schemas/shot_image.py": [
+    "backend/src/short_drama/schemas/creation/storyboard/images/image.py"
+  ],
+  "backend/src/short_drama/schemas/shot_script.py": [
+    "backend/src/short_drama/schemas/creation/storyboard/management/script.py"
+  ],
+  "backend/src/short_drama/schemas/shot_video.py": [
+    "backend/src/short_drama/schemas/creation/storyboard/videos/video.py"
+  ],
+  "backend/src/short_drama/schemas/storyboard_apply.py": [
+    "backend/src/short_drama/schemas/creation/storyboard/management/adoption.py"
+  ],
+  "backend/src/short_drama/schemas/storyboard_result.py": [
+    "backend/src/short_drama/schemas/creation/storyboard/management/results.py"
+  ],
+  "backend/src/short_drama/schemas/user_creation_draft.py": [
+    "backend/src/short_drama/schemas/creation/drafts/drafts.py"
+  ],
+  "backend/src/short_drama/api/v1/agent.py": [
+    "backend/src/short_drama/api/v1/ai_config/assistant/models.py",
+    "backend/src/short_drama/api/v1/assistant/context/attachments.py",
+    "backend/src/short_drama/api/v1/assistant/status/status.py",
+    "backend/src/short_drama/api/v1/skills/catalog/router.py"
+  ],
+  "backend/src/short_drama/api/v1/agent_artifacts.py": [
+    "backend/src/short_drama/api/v1/assistant/operations/artifacts.py"
+  ],
+  "backend/src/short_drama/api/v1/ai_generations.py": [
+    "backend/src/short_drama/api/v1/generations/admission/router.py"
+  ],
+  "backend/src/short_drama/api/v1/ai_model_configs.py": [
+    "backend/src/short_drama/api/v1/ai_config/management/router.py"
+  ],
+  "backend/src/short_drama/api/v1/assets.py": [
+    "backend/src/short_drama/api/v1/creation/assets/management/assets.py"
+  ],
+  "backend/src/short_drama/api/v1/assistant.py": [
+    "backend/src/short_drama/api/v1/assistant/conversations/__init__.py",
+    "backend/src/short_drama/api/v1/assistant/conversations/events.py",
+    "backend/src/short_drama/api/v1/assistant/conversations/management.py",
+    "backend/src/short_drama/api/v1/assistant/conversations/messages.py",
+    "backend/src/short_drama/api/v1/assistant/conversations/revisions.py",
+    "backend/src/short_drama/api/v1/assistant/tasks/__init__.py",
+    "backend/src/short_drama/api/v1/assistant/tasks/operations.py",
+    "backend/src/short_drama/api/v1/assistant/tasks/policy.py",
+    "backend/src/short_drama/api/v1/assistant/undo/__init__.py",
+    "backend/src/short_drama/api/v1/assistant/undo/undo.py"
+  ],
+  "backend/src/short_drama/api/v1/assistant_memory.py": [
+    "backend/src/short_drama/api/v1/assistant/memory/memory.py"
+  ],
+  "backend/src/short_drama/api/v1/auth.py": [
+    "backend/src/short_drama/api/v1/identity/authentication/auth.py"
+  ],
+  "backend/src/short_drama/api/v1/canvases.py": [
+    "backend/src/short_drama/api/v1/canvas/document/router.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_catalog.py": [
+    "backend/src/short_drama/api/v1/canvas/models/catalog.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_depth.py": [
+    "backend/src/short_drama/api/v1/canvas/tools/depth/depth.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_drawings.py": [
+    "backend/src/short_drama/api/v1/canvas/drawing/drawings.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_folders.py": [
+    "backend/src/short_drama/api/v1/canvas/workspace/folders/folders.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_library.py": [
+    "backend/src/short_drama/api/v1/canvas/library/library.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_model_tests.py": [
+    "backend/src/short_drama/api/v1/canvas/models/model_tests.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_provider_tasks.py": [
+    "backend/src/short_drama/api/v1/canvas/generation/providers/provider_tasks.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_resources.py": [
+    "backend/src/short_drama/api/v1/canvas/resources/resources.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_styles.py": [
+    "backend/src/short_drama/api/v1/canvas/styles/styles.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_tasks.py": [
+    "backend/src/short_drama/api/v1/canvas/generation/tasks/tasks.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_timeline.py": [
+    "backend/src/short_drama/api/v1/canvas/timeline/timeline.py"
+  ],
+  "backend/src/short_drama/api/v1/canvas_tool_runs.py": [
+    "backend/src/short_drama/api/v1/canvas/tools/tool_runs.py"
+  ],
+  "backend/src/short_drama/api/v1/generation_batches.py": [
+    "backend/src/short_drama/api/v1/generations/batches/batches.py"
+  ],
+  "backend/src/short_drama/api/v1/generation_references.py": [
+    "backend/src/short_drama/api/v1/generations/references/references.py"
+  ],
+  "backend/src/short_drama/api/v1/image_groups.py": [
+    "backend/src/short_drama/api/v1/media/image_groups/router.py"
+  ],
+  "backend/src/short_drama/api/v1/media_library.py": [
+    "backend/src/short_drama/api/v1/media/library/router.py"
+  ],
+  "backend/src/short_drama/api/v1/native_voice.py": [
+    "backend/src/short_drama/api/v1/creation/sound/voices/voices.py"
+  ],
+  "backend/src/short_drama/api/v1/personal_resources.py": [
+    "backend/src/short_drama/api/v1/media/imports/router.py"
+  ],
+  "backend/src/short_drama/api/v1/projects.py": [
+    "backend/src/short_drama/api/v1/projects/management/router.py"
+  ],
+  "backend/src/short_drama/api/v1/project_assembly.py": [
+    "backend/src/short_drama/api/v1/creation/assembly/document/assembly.py"
+  ],
+  "backend/src/short_drama/api/v1/project_generation.py": [
+    "backend/src/short_drama/api/v1/creation/storyboard/management/generation.py"
+  ],
+  "backend/src/short_drama/api/v1/project_sound.py": [
+    "backend/src/short_drama/api/v1/creation/sound/tracks/sound.py"
+  ],
+  "backend/src/short_drama/api/v1/project_storyboard.py": [
+    "backend/src/short_drama/api/v1/creation/storyboard/management/storyboard.py"
+  ],
+  "backend/src/short_drama/api/v1/project_writing.py": [
+    "backend/src/short_drama/api/v1/creation/writing/script/documents.py"
+  ],
+  "backend/src/short_drama/api/v1/test.py": [
+    "backend/src/short_drama/api/v1/system/health/router.py"
+  ],
+  "backend/src/short_drama/api/v1/user_creation_drafts.py": [
+    "backend/src/short_drama/api/v1/creation/drafts/drafts.py"
+  ],
+  "backend/src/short_drama/api/dependencies.py": [
+    "backend/src/short_drama/api/dependencies/__init__.py",
+    "backend/src/short_drama/api/dependencies/ai_config.py",
+    "backend/src/short_drama/api/dependencies/assistant.py",
+    "backend/src/short_drama/api/dependencies/creation.py",
+    "backend/src/short_drama/api/dependencies/generations.py",
+    "backend/src/short_drama/api/dependencies/media.py",
+    "backend/src/short_drama/api/dependencies/projects.py",
+    "backend/src/short_drama/api/dependencies/session.py"
+  ],
+  "backend/src/short_drama/db/access.py": [
+    "backend/src/short_drama/db/access/__init__.py",
+    "backend/src/short_drama/db/access/agent_writes.py",
+    "backend/src/short_drama/db/access/canvas_writes.py",
+    "backend/src/short_drama/db/access/identity.py",
+    "backend/src/short_drama/db/access/policies/__init__.py",
+    "backend/src/short_drama/db/access/policies/agent_skill_access.py",
+    "backend/src/short_drama/db/access/policies/asset_version_access.py",
+    "backend/src/short_drama/db/access/policies/canvas_creation_access.py",
+    "backend/src/short_drama/db/access/policies/canvas_folder_access.py",
+    "backend/src/short_drama/db/access/policies/canvas_generation_access.py",
+    "backend/src/short_drama/db/access/policies/canvas_local_access.py",
+    "backend/src/short_drama/db/access/policies/canvas_recycle_access.py",
+    "backend/src/short_drama/db/access/policies/canvas_render_access.py",
+    "backend/src/short_drama/db/access/policies/canvas_style_access.py",
+    "backend/src/short_drama/db/access/policies/canvas_tool_run_access.py",
+    "backend/src/short_drama/db/access/predicates.py",
+    "backend/src/short_drama/db/access/queries.py",
+    "backend/src/short_drama/db/access/writes.py",
+    "backend/src/short_drama/db/scope/resource_scope.py"
+  ],
+  "backend/src/short_drama/db/agent_skill_access.py": [
+    "backend/src/short_drama/db/access/policies/agent_skill_access.py"
+  ],
+  "backend/src/short_drama/db/asset_version_access.py": [
+    "backend/src/short_drama/db/access/policies/asset_version_access.py"
+  ],
+  "backend/src/short_drama/db/canvas_creation_access.py": [
+    "backend/src/short_drama/db/access/policies/canvas_creation_access.py"
+  ],
+  "backend/src/short_drama/db/canvas_folder_access.py": [
+    "backend/src/short_drama/db/access/policies/canvas_folder_access.py"
+  ],
+  "backend/src/short_drama/db/canvas_generation_access.py": [
+    "backend/src/short_drama/db/access/policies/canvas_generation_access.py"
+  ],
+  "backend/src/short_drama/db/canvas_local_access.py": [
+    "backend/src/short_drama/db/access/policies/canvas_local_access.py"
+  ],
+  "backend/src/short_drama/db/canvas_recycle_access.py": [
+    "backend/src/short_drama/db/access/policies/canvas_recycle_access.py"
+  ],
+  "backend/src/short_drama/db/canvas_render_access.py": [
+    "backend/src/short_drama/db/access/policies/canvas_render_access.py"
+  ],
+  "backend/src/short_drama/db/canvas_resource_scope.py": [
+    "backend/src/short_drama/db/scope/canvas_resource_scope.py"
+  ],
+  "backend/src/short_drama/db/canvas_scope.py": [
+    "backend/src/short_drama/db/scope/canvas_scope.py"
+  ],
+  "backend/src/short_drama/db/canvas_style_access.py": [
+    "backend/src/short_drama/db/access/policies/canvas_style_access.py"
+  ],
+  "backend/src/short_drama/db/canvas_tool_run_access.py": [
+    "backend/src/short_drama/db/access/policies/canvas_tool_run_access.py"
+  ],
+  "backend/src/short_drama/db/resource_scope.py": [
+    "backend/src/short_drama/db/scope/resource_scope.py"
+  ],
+  "backend/src/short_drama/ai/adapters.py": [
+    "backend/src/short_drama/ai/adapters/__init__.py",
+    "backend/src/short_drama/ai/adapters/audio/__init__.py",
+    "backend/src/short_drama/ai/adapters/audio/canvas_audio.py",
+    "backend/src/short_drama/ai/adapters/capabilities.py",
+    "backend/src/short_drama/ai/adapters/catalog.py",
+    "backend/src/short_drama/ai/adapters/constants.py",
+    "backend/src/short_drama/ai/adapters/image/__init__.py",
+    "backend/src/short_drama/ai/adapters/image/agnes_adapters.py",
+    "backend/src/short_drama/ai/adapters/image/image_operations.py",
+    "backend/src/short_drama/ai/adapters/image/image_references.py",
+    "backend/src/short_drama/ai/adapters/results.py",
+    "backend/src/short_drama/ai/adapters/runninghub/__init__.py",
+    "backend/src/short_drama/ai/adapters/runninghub/adapters.py",
+    "backend/src/short_drama/ai/adapters/runninghub/field_parameters.py",
+    "backend/src/short_drama/ai/adapters/runninghub/field_sources.py",
+    "backend/src/short_drama/ai/adapters/runninghub/field_values.py",
+    "backend/src/short_drama/ai/adapters/runninghub/fields.py",
+    "backend/src/short_drama/ai/adapters/runninghub/values.py",
+    "backend/src/short_drama/ai/adapters/runninghub/workflow.py",
+    "backend/src/short_drama/ai/adapters/submission.py",
+    "backend/src/short_drama/ai/adapters/text/__init__.py",
+    "backend/src/short_drama/ai/adapters/text/chat_protocols.py",
+    "backend/src/short_drama/ai/adapters/text/claude_adapters.py",
+    "backend/src/short_drama/ai/adapters/text/claude_stream.py",
+    "backend/src/short_drama/ai/adapters/text/gemini_adapters.py",
+    "backend/src/short_drama/ai/adapters/text/text_adapters.py",
+    "backend/src/short_drama/ai/adapters/text/text_thinking.py",
+    "backend/src/short_drama/ai/adapters/tools/__init__.py",
+    "backend/src/short_drama/ai/adapters/tools/adapters.py",
+    "backend/src/short_drama/ai/adapters/tools/stream.py",
+    "backend/src/short_drama/ai/adapters/tools/submission.py",
+    "backend/src/short_drama/ai/adapters/video/__init__.py",
+    "backend/src/short_drama/ai/adapters/video/config.py",
+    "backend/src/short_drama/ai/adapters/video/input_capabilities.py",
+    "backend/src/short_drama/ai/adapters/video/inputs.py",
+    "backend/src/short_drama/ai/adapters/video/results.py",
+    "backend/src/short_drama/ai/adapters/video/seedance_preupload.py",
+    "backend/src/short_drama/ai/adapters/video/video_adapters.py"
+  ],
+  "backend/src/short_drama/ai/canvas_agnes_adapters.py": [
+    "backend/src/short_drama/ai/adapters/image/agnes_adapters.py"
+  ],
+  "backend/src/short_drama/ai/canvas_audio_adapters.py": [
+    "backend/src/short_drama/ai/adapters/audio/canvas_audio.py"
+  ],
+  "backend/src/short_drama/ai/canvas_chat_protocols.py": [
+    "backend/src/short_drama/ai/adapters/text/chat_protocols.py"
+  ],
+  "backend/src/short_drama/ai/canvas_claude_adapters.py": [
+    "backend/src/short_drama/ai/adapters/text/claude_adapters.py"
+  ],
+  "backend/src/short_drama/ai/canvas_claude_stream.py": [
+    "backend/src/short_drama/ai/adapters/text/claude_stream.py"
+  ],
+  "backend/src/short_drama/ai/canvas_credentials.py": [
+    "backend/src/short_drama/ai/gateway/canvas_credentials.py"
+  ],
+  "backend/src/short_drama/ai/canvas_gemini_adapters.py": [
+    "backend/src/short_drama/ai/adapters/text/gemini_adapters.py"
+  ],
+  "backend/src/short_drama/ai/canvas_image_references.py": [
+    "backend/src/short_drama/ai/adapters/image/image_references.py"
+  ],
+  "backend/src/short_drama/ai/canvas_runninghub_adapters.py": [
+    "backend/src/short_drama/ai/adapters/runninghub/adapters.py"
+  ],
+  "backend/src/short_drama/ai/canvas_runninghub_fields.py": [
+    "backend/src/short_drama/ai/adapters/runninghub/fields.py"
+  ],
+  "backend/src/short_drama/ai/canvas_runninghub_values.py": [
+    "backend/src/short_drama/ai/adapters/runninghub/values.py"
+  ],
+  "backend/src/short_drama/ai/canvas_runninghub_workflow.py": [
+    "backend/src/short_drama/ai/adapters/runninghub/workflow.py"
+  ],
+  "backend/src/short_drama/ai/canvas_seedance_preupload.py": [
+    "backend/src/short_drama/ai/adapters/video/seedance_preupload.py"
+  ],
+  "backend/src/short_drama/ai/canvas_text_adapters.py": [
+    "backend/src/short_drama/ai/adapters/text/text_adapters.py"
+  ],
+  "backend/src/short_drama/ai/canvas_text_thinking.py": [
+    "backend/src/short_drama/ai/adapters/text/text_thinking.py"
+  ],
+  "backend/src/short_drama/ai/canvas_tool_adapters.py": [
+    "backend/src/short_drama/ai/adapters/tools/adapters.py"
+  ],
+  "backend/src/short_drama/ai/canvas_tool_stream.py": [
+    "backend/src/short_drama/ai/adapters/tools/stream.py"
+  ],
+  "backend/src/short_drama/ai/canvas_tool_submission.py": [
+    "backend/src/short_drama/ai/adapters/tools/submission.py"
+  ],
+  "backend/src/short_drama/ai/canvas_video_adapters.py": [
+    "backend/src/short_drama/ai/adapters/video/video_adapters.py"
+  ],
+  "backend/src/short_drama/ai/endpoints.py": [
+    "backend/src/short_drama/ai/gateway/endpoints.py"
+  ],
+  "backend/src/short_drama/ai/gateway.py": [
+    "backend/src/short_drama/ai/gateway/base.py",
+    "backend/src/short_drama/ai/gateway/canvas.py",
+    "backend/src/short_drama/ai/gateway/client.py",
+    "backend/src/short_drama/ai/gateway/polling.py",
+    "backend/src/short_drama/ai/gateway/runninghub.py",
+    "backend/src/short_drama/ai/gateway/submissions.py",
+    "backend/src/short_drama/ai/gateway/support.py",
+    "backend/src/short_drama/ai/gateway/transport_client.py"
+  ],
+  "backend/src/short_drama/ai/image_operations.py": [
+    "backend/src/short_drama/ai/adapters/image/image_operations.py"
+  ],
+  "backend/src/short_drama/ai/streaming.py": [
+    "backend/src/short_drama/ai/gateway/streaming.py"
+  ],
+  "backend/src/short_drama/ai/transport.py": [
+    "backend/src/short_drama/ai/gateway/transport.py"
+  ],
+  "backend/src/short_drama/agent/coordinator/runtime.py": [
+    "backend/src/short_drama/agent/runtime/base.py",
+    "backend/src/short_drama/agent/runtime/claiming.py",
+    "backend/src/short_drama/agent/runtime/claims.py",
+    "backend/src/short_drama/agent/runtime/delta_buffer.py",
+    "backend/src/short_drama/agent/harness/runtime.py",
+    "backend/src/short_drama/agent/runtime/executor.py",
+    "backend/src/short_drama/agent/runtime/publishing.py",
+    "backend/src/short_drama/agent/runtime/sending.py",
+    "backend/src/short_drama/agent/runtime/settlement.py"
+  ],
+  "backend/src/short_drama/agent/coordinator/assistant.py": [
+    "backend/src/short_drama/agent/runtime/decision_input.py",
+    "backend/src/short_drama/agent/runtime/decisions.py",
+    "backend/src/short_drama/agent/runtime/operations.py",
+    "backend/src/short_drama/agent/runtime/read_tools.py",
+    "backend/src/short_drama/agent/runtime/tool_execution.py"
+  ],
+  "backend/src/short_drama/tasks/agent_worker.py": [
+    "backend/src/short_drama/tasks/assistant/agent_worker.py"
+  ],
+  "backend/src/short_drama/tasks/canvas_local.py": [
+    "backend/src/short_drama/tasks/canvas/canvas_local.py"
+  ],
+  "backend/src/short_drama/tasks/canvas_render.py": [
+    "backend/src/short_drama/tasks/rendering/canvas_render.py"
+  ],
+  "backend/src/short_drama/tasks/email.py": [
+    "backend/src/short_drama/tasks/identity/email.py"
+  ],
+  "backend/src/short_drama/tasks/publisher.py": [
+    "backend/src/short_drama/tasks/runtime/publisher.py"
+  ],
+  "backend/src/short_drama/tasks/recovery.py": [
+    "backend/src/short_drama/tasks/runtime/recovery.py"
+  ],
+  "backend/src/short_drama/tasks/render.py": [
+    "backend/src/short_drama/tasks/rendering/render.py"
+  ],
+  "backend/src/short_drama/tasks/runtime.py": [
+    "backend/src/short_drama/tasks/runtime/runtime.py"
+  ],
+  "backend/src/short_drama/tasks/state.py": [
+    "backend/src/short_drama/tasks/runtime/state.py"
+  ],
+  "backend/src/short_drama/tasks/worker.py": [
+    "backend/src/short_drama/tasks/generations/worker.py"
+  ],
+  "frontend/src/app/theme.ts": [
+    "frontend/src/shared/ui/theme.ts"
+  ],
+  "backend/src/short_drama/agent/legacy/artifacts.py": [],
+  "backend/src/short_drama/agent/legacy/authorization.py": [],
+  "backend/src/short_drama/agent/legacy/chat.py": [],
+  "backend/src/short_drama/agent/legacy/discussion.py": [],
+  "backend/src/short_drama/agent/legacy/tools.py": [],
+  "backend/src/short_drama/ai/prompts/novel_script/system.md": [],
+  "backend/src/short_drama/ai/prompts/story_outline/system.md": [],
+  "backend/src/short_drama/ai/prompts/script_generate/system.md": [],
+  "backend/src/short_drama/agent/skill/builtin.py": [],
+  "backend/src/short_drama/ai/prompts/assistant/verification.md": []
+}

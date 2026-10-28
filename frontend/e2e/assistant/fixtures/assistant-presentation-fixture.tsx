@@ -1,12 +1,10 @@
+import '@host/app/styles/index.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ConfigProvider } from 'antd';
 import '@ant-design/v5-patch-for-react-19';
-import { CreativeAssistantPanel } from '../../../src/features/ai-assistant/CreativeAssistantPanel';
-import { studioTheme } from '../../../src/app/theme';
-import '../../../src/app/styles.css';
-import '../../../src/app/studio.css';
-import '../../../src/app/workbench.css';
+import { CreativeAssistantPanel } from '../../../src/features/assistant/panel/CreativeAssistantPanel';
+import { studioTheme } from '../../../src/shared/ui/theme';
 
 const parameters = new URLSearchParams(location.search);
 const standard = parameters.get('layout') === 'standard';

@@ -13,14 +13,14 @@ from sqlalchemy.orm import Session
 from short_drama.ai import select_adapter
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.dao.canvas_workspace_dao import CanvasWorkspaceDAO
+from short_drama.dao.canvas.workspace.workspace import CanvasWorkspaceDAO
 from short_drama.domain import AIModelConfig, CanvasChannelModel, CanvasModelCatalog
-from short_drama.schemas.canvas_model_catalog import CanvasModelChannelInput
-from short_drama.schemas.canvas_workspace import CanvasWorkspacePreferencesRequest
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.canvas_model_catalog_service import CanvasModelCatalogService
-from short_drama.service.canvas_workspace_service import CanvasWorkspaceService
-from short_drama.service.model_runtime_config import decrypt_runtime_credentials
+from short_drama.schemas.canvas.models.model_catalog import CanvasModelChannelInput
+from short_drama.schemas.canvas.workspace.workspace import CanvasWorkspacePreferencesRequest
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.ai_config.management.runtime import decrypt_runtime_credentials
+from short_drama.service.canvas.models.model_catalog import CanvasModelCatalogService
+from short_drama.service.canvas.workspace.workspace import CanvasWorkspaceService
 from tests.integration.canvas.document.test_canvas_workspace import actor
 
 pytestmark = pytest.mark.integration
@@ -306,7 +306,7 @@ def test_host_long_model_identity_and_rename_increment_version_once(db_session):
 def test_internal_catalog_budget_failure_preserves_host_configs_and_preferences(
     db_session, monkeypatch
 ):
-    from short_drama.service import canvas_model_catalog_service
+    import short_drama.service.canvas.models.model_catalog as canvas_model_catalog_service
 
     save(db_session, [channel()])
     before = CanvasWorkspaceService(db_session, cipher=CIPHER).read_models()

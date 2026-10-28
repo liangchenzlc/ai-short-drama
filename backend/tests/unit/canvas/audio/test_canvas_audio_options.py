@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import pytest
 
 from short_drama.ai import GenerationError
-from short_drama.ai.adapters import build_submission
-from short_drama.ai.canvas_audio_adapters import ASYNC_AUDIO
-from short_drama.service.model_runtime_config import refresh_runtime_model
+from short_drama.ai.adapters.audio.canvas_audio import ASYNC_AUDIO
+from short_drama.ai.adapters.submission import build_submission
+from short_drama.service.ai_config.management.runtime import refresh_runtime_model
 from tests.unit.canvas.generation.test_canvas_generation_parameters import (
     frozen_request,
     request,

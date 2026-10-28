@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from short_drama.api.dependencies import get_session
+from short_drama.api.dependencies.session import get_session
 from short_drama.core.config import Settings
 from short_drama.core.identity import ActorContext
 from short_drama.main import create_app

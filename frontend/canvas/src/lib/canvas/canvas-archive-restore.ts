@@ -20,7 +20,7 @@ import { setMediaBlob } from "@/services/file-storage";
 import { setImageBlob } from "@/services/image-storage";
 import { prepareInitialCanvasDrawingWrite, readLocalCanvasProjectFromBackend, syncLocalCanvasProjectToBackend } from "@/services/local-workspace-repository";
 import { loadCanvasOperationJournal } from "@/services/canvas-operation-journal";
-import type { CanvasInitialDrawingDto } from "@host/api/types/canvases";
+import type { CanvasInitialDrawingDto } from "@host/integrations/canvas/contracts";
 import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { deleteWorkspaceAsset } from "@/services/workspace-asset-repository";
 import { usesBrowserLocalResourceStore } from "@/services/workspace-resource-storage";

@@ -3,8 +3,8 @@ import asyncio
 import httpx
 from fastapi import FastAPI
 
-from short_drama.api.dependencies import get_session
-from short_drama.api.v1 import project_generation
+import short_drama.api.v1.creation.storyboard.management.generation as project_generation
+from short_drama.api.dependencies.session import get_session
 
 
 def test_extraction_routes_require_explicit_adoption_and_closed_inputs(monkeypatch):

@@ -1,0 +1,59 @@
+/* The navigation stays available during long desktop editing sessions. */
+.studio-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+}
+
+/* Desktop windows preserve the density of the creation workspace. */
+@media (max-width: 1280px) {
+  .studio-sidebar {
+    width: 182px;
+    flex-basis: 182px;
+  }
+  .studio-main {
+    padding: 24px;
+  }
+  .studio-brand {
+    gap: 8px;
+    font-size: 14px;
+  }
+  .project-dashboard {
+    grid-template-columns: minmax(0, 1fr) 235px;
+    gap: 20px;
+  }
+  .project-row-tail {
+    min-width: 0;
+  }
+  .project-row-enter > span {
+    display: none;
+  }
+  .web-episode .creation-main {
+    padding-inline: 20px;
+  }
+  .assembly-edit-tools {
+    flex-wrap: wrap;
+  }
+}
+@media (min-width: 1700px) {
+  .project-row-enter > span {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .ui-dialog[open],
+  .asset-editor-drawer[open] {
+    animation: none;
+  }
+  .shot-expand-icon {
+    transition: none;
+  }
+}
+
+.asset-library-preview:hover:not(:disabled) {
+  background: var(--surface-hover);
+}

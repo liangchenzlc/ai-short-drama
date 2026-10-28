@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from short_drama.domain import AIGenerationRecord, MediaFile
 from short_drama.tasks.celery_app import make_celery, topology
-from short_drama.tasks.publisher import Publisher
+from short_drama.tasks.runtime.publisher import Publisher
 from tests.integration.canvas.audio.test_canvas_audio_protocols import (
     PROVIDER_ID,
     audio_seed,

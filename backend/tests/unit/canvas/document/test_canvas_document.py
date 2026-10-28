@@ -4,8 +4,8 @@ import pytest
 from pydantic import ValidationError
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.canvas import CanvasDocument
-from short_drama.service.canvas_document import project_document, split_document
+from short_drama.schemas.canvas.document.canvas import CanvasDocument
+from short_drama.service.canvas.document.document import project_document, split_document
 
 
 @pytest.mark.parametrize("three_view", [False, True], ids=["character_cards", "three_view"])
@@ -79,7 +79,10 @@ def test_character_work_identity_and_cover_are_shared_but_voice_and_prompt_stay_
 
 
 def test_character_cover_resource_is_collected_and_remapped_without_touching_prompt():
-    from short_drama.service.canvas_document import media_references, remap_resource_references
+    from short_drama.service.canvas.document.document import (
+        media_references,
+        remap_resource_references,
+    )
 
     value = {
         "metadata": {
@@ -265,7 +268,7 @@ def test_old_shared_skill_bodies_are_redacted_before_applying_trusted_personal_s
 
 
 def test_media_locations_cover_derived_images_and_do_not_reinterpret_text_or_unknown_types():
-    from short_drama.service.canvas_media_locators import canonicalize_canvas_media
+    from short_drama.service.canvas.resources.media_locators import canonicalize_canvas_media
 
     source = {
         "nodes": [
@@ -318,7 +321,7 @@ def test_media_locations_cover_derived_images_and_do_not_reinterpret_text_or_unk
 
 
 def test_media_without_persistent_identity_cannot_be_newly_published():
-    from short_drama.service.canvas_media_locators import canonicalize_canvas_media
+    from short_drama.service.canvas.resources.media_locators import canonicalize_canvas_media
 
     source = {
         "nodes": [
@@ -442,7 +445,7 @@ def test_invalid_dimensions_rejected(bad):
 
 
 def test_resource_remapping_keeps_urls_playback_options_and_unrelated_prose():
-    from short_drama.service.canvas_document import remap_resource_references
+    from short_drama.service.canvas.document.document import remap_resource_references
 
     original = {
         "storageKey": "resource:1",

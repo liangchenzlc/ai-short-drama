@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from urllib3.connection import HTTPConnection
 
-from short_drama.ai import transport
+import short_drama.ai.gateway.transport as transport
 
 
 @pytest.fixture

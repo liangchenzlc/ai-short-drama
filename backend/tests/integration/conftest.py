@@ -73,7 +73,7 @@ def mysql_engine():
 @pytest.fixture
 def migration_mysql_engine():
     """Keep exact schema comparisons independent of earlier DDL-mutating tests."""
-    from short_drama.domain.collaboration import User
+    from short_drama.domain.identity.accounts.user import User
     from short_drama.service.base import utcnow
 
     with closing(isolated_mysql_database()) as databases:
@@ -97,12 +97,12 @@ def migration_mysql_engine():
 @pytest.fixture
 def db_session(mysql_engine):
     from short_drama.domain.base import Base
+    from tests.support.integration.identity import actor
 
     with AppSession(mysql_engine, expire_on_commit=False, autoflush=False) as session:
-        from short_drama.domain.collaboration import User
+        from short_drama.domain.identity.accounts.user import User
         from short_drama.service.base import utcnow
 
-        session.info["legacy_user_id"] = 1
         with session.begin():
             session.add(
                 User(
@@ -116,6 +116,7 @@ def db_session(mysql_engine):
                     created_at=utcnow(),
                 )
             )
+        session.info["actor"] = actor()
         yield session
     with mysql_engine.begin() as connection:
         # Disposable test database only: release the cycle before deleting any table.

@@ -6,17 +6,18 @@ from array import array
 import pytest
 from pydantic import ValidationError
 
-from short_drama.ai.adapters import build_submission, select_adapter
-from short_drama.ai.gateway import GenerationGateway
+from short_drama.ai.adapters.catalog import select_adapter
+from short_drama.ai.adapters.submission import build_submission
+from short_drama.ai.gateway.client import GenerationGateway
 from short_drama.ai.types import GenerationError
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.project_sound import SoundDocument
-from short_drama.service.audio_media import inspect_audio
-from short_drama.service.project_sound_service import line_hash, validate_sound_snapshot
-from short_drama.service.sound_render import font_metadata
-from short_drama.service.subtitles import export_srt, parse_srt
-from short_drama.service.video_render import VideoRenderer, executable
+from short_drama.schemas.creation.sound.tracks.sound import SoundDocument
+from short_drama.service.creation.assembly.rendering.renderer import VideoRenderer, executable
+from short_drama.service.creation.sound.subtitles.subtitles import export_srt, parse_srt
+from short_drama.service.creation.sound.tracks.render import font_metadata
+from short_drama.service.creation.sound.tracks.sound import line_hash, validate_sound_snapshot
+from short_drama.service.media.processing.audio import inspect_audio
 
 
 def test_speech_adapter_endpoint_binary_output_and_unknown_acceptance():
@@ -255,7 +256,7 @@ def test_rejects_forged_audio(tmp_path):
 def test_dialogue_ducks_music_without_shifting_it_and_large_dialogue_is_bounded(tmp_path):
     import math
 
-    from short_drama.service.sound_render import group_dialogue, mix_sound
+    from short_drama.service.creation.sound.tracks.render import group_dialogue, mix_sound
 
     video, speech, music = [tmp_path / name for name in ("base.mp4", "speech.wav", "music.wav")]
     run_ffmpeg(

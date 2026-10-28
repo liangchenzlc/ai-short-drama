@@ -12,8 +12,13 @@ from short_drama.agent.gateway.langchain import LangChainGateway
 from short_drama.agent.gateway.protocol import AgentGatewayError
 from short_drama.agent.resources.contracts import ResourceRef, assert_reference_payload
 from short_drama.agent.resources.resolver import HydratedResource, image_block
+from short_drama.service.ai_config.management.assistant_models import (
+    model_credentials,
+    model_snapshot,
+)
 from tests.unit.standard.agent.test_agent_model_gateway import provider as provider
 from tests.unit.standard.agent.test_agent_model_gateway import response, snapshot, sse_response
+from tests.unit.standard.agent.test_agent_model_runtime_settings import model_fixture
 
 
 def gateway():
@@ -94,6 +99,46 @@ def test_one_decision_and_offline_replay(provider, protocol, with_tools, monkeyp
     replay = asyncio.run(boundary.decide(config, "fixture-key", **kwargs, **saved))
     assert replay["output"] == actual["output"]
     assert replay["requests"] == 0
+
+
+def test_harness_uses_frozen_credentials_for_request_and_offline_replay(provider, monkeypatch):
+    base, state = provider
+    row, settings = model_fixture()
+    row.base_url = base + "/chat/completions"
+    settings.generation_allowed_hosts = ["127.0.0.1"]
+    settings.generation_max_response_bytes = 65536
+    frozen = model_snapshot(row)
+    credential = model_credentials(frozen, settings.encryption_key)
+    state["responses"] = [(200, response("chat", text="understood"))]
+    saved = {}
+
+    async def request(value):
+        saved["request"] = value
+
+    async def raw(value):
+        saved["raw"] = value
+
+    boundary = LangChainGateway(settings)
+    kwargs = dict(
+        messages=[HumanMessage(content="Look up facts")],
+        tools=[],
+        resources=[],
+        max_output_tokens=64,
+        stream=False,
+    )
+    actual = asyncio.run(
+        boundary.decide(frozen, credential, **kwargs, on_request=request, on_response=raw)
+    )
+    headers = {key.lower(): value for key, value in state["calls"][0][1].items()}
+    assert headers["x-account"] == "private-header"
+    assert "private-header" not in json.dumps(saved)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Replay must not perform network I/O")
+
+    monkeypatch.setattr(boundary.transport, "request", forbidden)
+    replay = asyncio.run(boundary.decide(frozen, credential, **kwargs, **saved))
+    assert replay["output"] == actual["output"] and replay["requests"] == 0
 
 
 @pytest.mark.parametrize("protocol", ["chat", "responses", "claude"])

@@ -21,11 +21,12 @@ from short_drama.agent.skill.contracts import activation_summary as activation_s
 from short_drama.agent.skill.contracts import activations as activations
 from short_drama.agent.tools.registry import TOOL_VERSION
 from short_drama.core.exceptions import BusinessError, NotFound, WorkflowError
-from short_drama.domain.agent_skill import AgentSkillVersion
-from short_drama.domain.agent_task import AgentOperation, AgentTaskInput
-from short_drama.schemas.agent_context import SkillSelection
-from short_drama.service.agent_skill_service import AgentSkillService, freeze_skills
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTaskInput
+from short_drama.domain.skills.catalog.skill import AgentSkillVersion
+from short_drama.schemas.assistant.context.context import SkillSelection
 from short_drama.service.base import utcnow
+from short_drama.service.skills.catalog.skill import AgentSkillService
+from short_drama.service.skills.catalog.versions import freeze_skills
 from short_drama.utils.snowflake import next_id
 
 
@@ -399,7 +400,7 @@ def prepare_resource_read(factory, settings, run_id, operation_id, fence):
                     )
                 from short_drama.agent.resources.contracts import HydrationIntent
                 from short_drama.agent.resources.resolver import skill_resource_ref
-                from short_drama.domain.agent import AgentToolCall
+                from short_drama.domain.assistant.execution.models import AgentToolCall
 
                 reference = skill_resource_ref(
                     manifest, f"skill-resource:{values.activation_id}:{values.path}"

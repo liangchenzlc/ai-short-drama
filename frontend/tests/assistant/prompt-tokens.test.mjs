@@ -6,7 +6,7 @@ import ts from 'typescript';
 function compile(source) {
   return ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 }
-const source = readFileSync(new URL('../../src/features/ai-assistant/prompt-tokens.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/assistant/composer/prompt-tokens.ts', import.meta.url), 'utf8');
 const tokens = await import(`data:text/javascript;base64,${Buffer.from(compile(source)).toString('base64')}`);
 
 const words = ['/剧本创作', '@截图参考'];

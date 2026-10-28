@@ -1,3 +1,7 @@
+> **2026-10-28 历史文档：** 下文 scope 0–2 的会话、消息、审核及其 `/agent/conversations`、`/agent/runs` 入口已删除，不能用于当前客户端。现行会话／附件／模型能力见 [助手 API](assistant.md)，方法包见 [Skill API](skills.md)。有效 V3 引擎控制和私有候选采用继续维护。以下原文保留历史背景。
+
+> **2026-10-28 资源契约更新：** 下文关于历史 Skill 脚本可只读查看和导出的描述已失效；当前资源格式见 [Skill API](skills.md)。
+
 # Agent 会话、统一创作与上下文
 
 2026-10-26 新 V3 任务采用 LangGraph／LangChain Harness，兼容路由不变；新工具自主选择与中断边界见 [助手 API](assistant.md) 和 [Harness 运行机制](../instruction/AI创作助手Harness运行机制.md)。本页 V1／V2 计划审核为历史兼容能力。
@@ -6,7 +10,7 @@ Skill 包的资源 `kind` 支持 `reference/template/script/image`。文本和�
 
 本页补充分集 Agent 的输入契约。所有路径相对 `/api/v1`；请求沿用账号认证和 CSRF 规则。会话、消息、运行、附件与生成历史仅本人可见，项目成员不能读取他人的候选或对话。已采用的作品通过原工作流共享。运行要求 Agent schema 就绪、`AGENT_ENABLED=true` 和独立 Agent Worker。
 
-现有会话、消息、运行、批准与采用入口见 [API 总约定](README.md)。本页以 [Agent 路由](../../backend/src/short_drama/api/v1/agent.py)、[上下文 schema](../../backend/src/short_drama/schemas/agent_context.py) 和 [消息 schema](../../backend/src/short_drama/schemas/agent_runtime.py) 为准。
+现有会话、消息、运行、批准与采用入口见 [API 总约定](README.md)。本页以 [Agent 路由](../../backend/src/short_drama/api/v1/assistant/conversations/engine.py)、[上下文 schema](../../backend/src/short_drama/schemas/assistant/context/context.py) 和 [消息 schema](../../backend/src/short_drama/schemas/assistant/operations/runtime.py) 为准。
 
 ## 对象会话范围
 

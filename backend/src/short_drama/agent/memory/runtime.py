@@ -12,16 +12,19 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy import and_, or_, select
 
 from short_drama.agent.core.access import LeaseLost, model_unchanged
-from short_drama.agent.gateway.langchain import LangChainGateway
-from short_drama.agent.gateway.protocol import AgentGatewayError, AgentModelGateway
+from short_drama.agent.gateway.contracts import AgentGatewayError
 from short_drama.agent.memory.context import schedule_maintenance_locked, settle_maintenance_locked
 from short_drama.agent.memory.sources import message_sources, source_hash
 from short_drama.core.exceptions import BusinessError
-from short_drama.domain.agent import AgentConversation, AgentRun
-from short_drama.domain.agent_memory import AgentMemoryJob
-from short_drama.domain.collaboration import User
-from short_drama.schemas.agent_memory import MemoryMaintenanceResult, TaskConstraintResult
-from short_drama.service.agent_model_service import model_credentials
+from short_drama.domain.assistant.conversations.models import AgentConversation
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.memory.memory import AgentMemoryJob
+from short_drama.domain.identity.accounts.user import User
+from short_drama.schemas.assistant.memory.memory import (
+    MemoryMaintenanceResult,
+    TaskConstraintResult,
+)
+from short_drama.service.ai_config.management.assistant_models import model_credentials
 from short_drama.service.base import utcnow
 
 OPEN = ("pending", "running")
@@ -357,7 +360,7 @@ class AgentMemoryStore:
                 schedule_maintenance_locked(session, conversation, run)
                 if job.kind == "task_state":
                     from short_drama.agent.task.compaction import schedule_task_compaction_locked
-                    from short_drama.domain.agent_task import AgentTask
+                    from short_drama.domain.assistant.tasks.task import AgentTask
 
                     task = session.get(AgentTask, int(job.source_snapshot["task_id"]))
                     if task is not None:
@@ -492,60 +495,10 @@ class AgentMemoryRuntime:
 
     async def _execute(self, claim):
         credential = model_credentials(claim.snapshot, self.settings.encryption_key)
-        gateway = self.gateway
-        if (
-            isinstance(gateway, LangChainGateway)
-            and (claim.request or {}).get("codec") != "agent.request"
-        ):
-            output, usage = await self._harness_result(claim, credential)
-            schema = TaskConstraintResult if claim.kind == "task_state" else MemoryMaintenanceResult
-            payload = schema.model_validate(json.loads(output))
-            await asyncio.to_thread(
-                self.store.settle, claim, payload.model_dump(mode="json"), usage
-            )
-            return
-        if isinstance(gateway, LangChainGateway):
-            gateway = AgentModelGateway(self.settings)
-        if claim.raw is not None:
-            result = await gateway.replay_segment(
-                claim.snapshot,
-                credential,
-                request_payload=claim.request,
-                raw_response=claim.raw,
-                **claim.inputs,
-            )
-        else:
-
-            async def on_request(payload):
-                self.store.before_send(claim, payload)
-
-            async def on_response(payload):
-                self.store.save_raw(claim, payload)
-
-            async def maintain():
-                while True:
-                    await asyncio.sleep(max(1, self.settings.agent_lease_seconds // 3))
-                    if not self.store.heartbeat(claim):
-                        return
-
-            heartbeat = asyncio.create_task(maintain())
-            try:
-                result = await gateway.run_segment(
-                    claim.snapshot,
-                    credential,
-                    on_request=on_request,
-                    on_response=on_response,
-                    **claim.inputs,
-                )
-            finally:
-                heartbeat.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await heartbeat
-        if not isinstance(result.output, str):
-            raise AgentGatewayError("invalid_agent_memory_result")
+        output, usage = await self._harness_result(claim, credential)
         schema = TaskConstraintResult if claim.kind == "task_state" else MemoryMaintenanceResult
-        payload = schema.model_validate(json.loads(result.output))
-        self.store.settle(claim, payload.model_dump(mode="json"), result.usage)
+        payload = schema.model_validate(json.loads(output))
+        await asyncio.to_thread(self.store.settle, claim, payload.model_dump(mode="json"), usage)
 
     async def _harness_result(self, claim, credential):
         async def on_request(payload):

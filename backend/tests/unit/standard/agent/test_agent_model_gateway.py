@@ -26,9 +26,9 @@ from short_drama.agent.gateway.protocol import (
     deserialize_history,
     serialize_deferred_requests,
     serialize_history,
-    serialize_segment_result
+    serialize_segment_result,
 )
-from short_drama.ai.canvas_credentials import CanvasCredentials
+from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
 
 
 @pytest.fixture

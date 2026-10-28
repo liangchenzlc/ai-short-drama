@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from celery.exceptions import Reject
 
-from short_drama.tasks import worker
+import short_drama.tasks.generations.worker as worker
 
 
 def test_local_worker_preserves_decimal_identity_and_confirms_only_after_execute(monkeypatch):

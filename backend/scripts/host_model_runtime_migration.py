@@ -25,7 +25,7 @@ RUNTIME_COLUMNS = {
 SQL_PATH = (
     Path(__file__).resolve().parents[2]
     / "docs"
-    / "数据库模型"
+    / "database"
     / "migrations"
     / "2026-10-06-host-model-runtime"
     / "001-host-model-runtime.sql"
@@ -106,7 +106,7 @@ def apply_schema(engine):
 
 def backfill_catalogs(engine, cipher):
     """运维系统 Session；完整校验后原子回填，不读取 HTTP 身份或改写旧任务。"""
-    from short_drama.service.model_runtime_config import (
+    from short_drama.service.ai_config.management.runtime import (
         encrypt_runtime_credentials,
         legacy_runtime_profile,
     )

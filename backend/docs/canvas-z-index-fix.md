@@ -89,4 +89,4 @@ def _calculate_node_z_index(index: int, node_data: dict) -> int:
 
 - 交接文档：`docs/plans/2026-10/2026-10-12-BeefTV功能进度交接清单.md` U01 部分
 - 探索计划：`.claude/plans/elegant-booping-waffle-agent-a1f17a12a3fbe53ea.md`
-- 相关代码：`backend/src/short_drama/service/canvas_service.py:758-785`
+- 相关代码：`backend/src/short_drama/service/canvas/document/canvas.py:758-785`

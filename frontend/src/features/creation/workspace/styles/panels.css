@@ -1,0 +1,195 @@
+.story-structure,
+.content-workbench {
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+  padding-top: 25px;
+}
+.story-structure > section,
+.content-fields > section {
+  margin-top: 26px;
+}
+.story-structure h4,
+.content-fields h4,
+.coverage-panel h3 {
+  font-size: 16px;
+  margin: 0 0 14px;
+}
+.workbench-line {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  margin: 10px 0;
+}
+.workbench-line > label,
+.workbench-line > input,
+.workbench-line > textarea {
+  flex: 1;
+  min-width: 0;
+}
+.workbench-entry {
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+}
+.workbench-entry > button {
+  justify-self: start;
+}
+.story-structure label,
+.content-fields label,
+.reference-review label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.story-structure input:not([type='checkbox']),
+.story-structure textarea,
+.story-structure select,
+.content-fields input:not([type='checkbox']),
+.content-fields textarea,
+.content-fields select,
+.reference-review input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  background: var(--canvas);
+  color: var(--ink);
+  color-scheme: dark;
+  font: inherit;
+  line-height: 1.5;
+  caret-color: var(--accent);
+}
+.story-structure textarea,
+.content-fields textarea {
+  resize: vertical;
+  min-height: 82px;
+}
+.story-structure input::placeholder,
+.content-fields input::placeholder,
+.reference-review input::placeholder {
+  color: var(--sub);
+}
+.story-structure .form-row,
+.content-fields .form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 16px;
+  margin-block: 14px;
+  align-items: start;
+}
+.story-structure > label,
+.content-fields > label {
+  margin-block: 14px 18px;
+}
+.story-structure label:has(> input[type='checkbox']),
+.content-fields .check-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.story-structure fieldset,
+.content-fields fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 12px 0;
+}
+.story-structure fieldset legend,
+.content-fields fieldset legend {
+  color: var(--muted);
+}
+.workbench-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 28px;
+  margin-top: 20px;
+}
+.workbench-index {
+  border-right: 1px solid var(--line);
+  padding-right: 20px;
+}
+.workbench-index h3 {
+  margin: 16px 0 10px;
+  font-size: 15px;
+}
+.workbench-index > button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 8px;
+}
+.workbench-index button[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--surface-raised);
+  border-color: var(--hair);
+}
+.shot-order-row {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 7px;
+}
+.shot-order-row button:first-child {
+  flex: 1;
+  text-align: left;
+}
+.shot-order-row button:not(:first-child) {
+  padding-inline: 10px;
+}
+.content-fields textarea,
+.story-structure textarea {
+  min-height: 72px;
+}
+.reference-thumb {
+  display: block;
+  max-width: 220px;
+  max-height: 150px;
+  object-fit: contain;
+}
+.reference-review {
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: end;
+}
+.reference-review label {
+  flex: 1 1 240px;
+}
+.coverage-panel,
+.prompt-preview {
+  border-top: 1px solid var(--line);
+  margin-top: 26px;
+  padding-top: 20px;
+}
+.coverage-panel dl {
+  display: grid;
+  gap: 12px;
+}
+.coverage-panel dl div {
+  display: grid;
+  grid-template-columns: minmax(125px, 180px) 1fr;
+  gap: 16px;
+}
+.coverage-panel dt {
+  color: var(--muted);
+}
+.coverage-panel dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.prompt-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.7;
+  max-height: 360px;
+  overflow: auto;
+}
+.version-report p {
+  margin-block: 8px;
+}

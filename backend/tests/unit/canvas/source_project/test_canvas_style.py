@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from short_drama.schemas.canvas_style import CanvasStyleSnapshot
-from short_drama.service.canvas_playback_service import playback_operation
-from short_drama.service.canvas_style_service import style_resources
+from short_drama.schemas.canvas.styles.style import CanvasStyleSnapshot
+from short_drama.service.canvas.styles.style import style_resources
+from short_drama.service.canvas.timeline.playback.playback import playback_operation
 
 
 def snapshot():

@@ -1,4 +1,4 @@
-import type { CanvasResourceNormalizeDto } from "@host/api/types/canvases";
+import type { CanvasResourceNormalizeDto } from "@host/integrations/canvas/contracts";
 import { canonicalizeCanvasMedia } from "./canvas-media-locators.ts";
 
 const maximumId = "18446744073709551615";

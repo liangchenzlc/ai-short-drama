@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.domain import AIGenerationRecord, AsyncTask, MediaAsset, MediaFile
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from short_drama.storage.models import ObjectLocation
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.generation.test_canvas_generation_runtime import TASKS, records

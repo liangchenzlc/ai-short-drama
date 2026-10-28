@@ -20,8 +20,7 @@ async function safetyFixture(page: Page) {
   });
   const assets = [asset('501', '林晚'), asset('504', '沈川')];
   const conversation = {
-    id: '301', project_id: '10', episode_id: null, title: '项目对话', row_version: '1',
-    stage: null, subject_type: null, subject_id: null, task_type: null, scope_version: 2,
+    id: '301', project_id: '10', title: '项目对话', row_version: '1', status: 'active', scope_version: 3,
     archived: false, last_run_status: null, created_at: time, updated_at: time,
   };
   const state = {
@@ -32,7 +31,7 @@ async function safetyFixture(page: Page) {
   await page.route('**/api/v1/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
-    const path = url.pathname.slice('/api/v1'.length);
+    const path = url.pathname.slice('/api/v1'.length).replace('/assistant/global/', '/assistant/');
     const method = request.method();
     const body = method === 'POST' || method === 'PATCH' ? request.postDataJSON() : null;
     const reply = (json: unknown, status = 200) => route.fulfill({ json, status });
@@ -58,7 +57,8 @@ async function safetyFixture(page: Page) {
     if (path === '/assistant/conversations') return reply({ items: [conversation], total: 1, offset: 0, limit: 20 });
     if (path === '/assistant/conversations/resolve') return reply(conversation);
     if (path === '/assistant/conversations/301') return reply(conversation);
-    if (path === '/assistant/conversations/301/state') return reply({ conversation_id: '301', cursor: 0, resume_cursor: 0, active_run: null, queued_runs: [] });
+    if (path === '/assistant/subjects/metadata') return reply(body.subjects.map((item: Record<string, unknown>) => ({ ...item, checksum: 'a'.repeat(64) })));
+    if (path === '/assistant/conversations/301/state') return reply({ conversation_id: '301', snapshot_cursor: 0, resume_cursor: 0, messages: { items: [], total: 0, offset: 0, limit: 50 }, tasks: [], runs: [], operations: [], inputs: [], has_more_tasks: false, has_more_operations: false });
     if (path === '/assistant/conversations/301/events') return route.fulfill({
       status: 200, contentType: 'text/event-stream', body: ': heartbeat\n\n',
     });
@@ -67,9 +67,11 @@ async function safetyFixture(page: Page) {
     if (path === '/assistant/conversations/301/messages') {
       if (method === 'POST') {
         state.sends.push(body);
+        const task = { id: '501', conversation_id: '301', goal: body.content, status: 'succeeded', phase: 'terminal', row_version: '1', plan_revision: '1', input_revision: '1', applied_input_revision: '1', control_seq: '0', applied_control_seq: '0', control_state: 'none', execution_target: body.execution_target, memory_project_ids: ['10'], source_context: null, selected_subjects: [], skills: [], task_attachments: [], media_limits: { images: null, videos: null, audio: null }, media_usage: {}, active_operation: null, error: null, created_at: time, updated_at: time };
         return reply({
-          message: { id: '2001', seq: 1, role: 'user', content: body.content, references: [], artifacts: [], created_at: time },
-          run: { id: '901', conversation_id: '301', status: 'succeeded', phase: 'finished', row_version: 1,
+          message: { id: '2001', task_id: '501', seq: 1, role: 'user', content: body.content, references: [], artifacts: [], created_at: time },
+          task,
+          run: { id: '901', task_id: '501', conversation_id: '301', status: 'succeeded', phase: 'finished', row_version: '1',
             mode: 'discuss', model_config_id: '71', model_name: '创作协作模型', error: null,
             usage: {}, budget: {}, review: null, created_at: time, updated_at: time, finished_at: time }, cursor: 1,
         }, 201);
@@ -87,7 +89,7 @@ async function safetyFixture(page: Page) {
 async function openFirstAsset(page: Page) {
   await page.goto(`${root}/assets`);
   await page.getByRole('button', { name: '林晚', exact: true }).click();
-  const detail = page.locator('.episode-asset-detail');
+  const detail = page.locator('.creation-asset-detail');
   await expect(detail).toBeVisible();
   const expand = detail.getByRole('button', { name: '展开生成设置', exact: true });
   if (await expand.isVisible()) await expand.click();
@@ -99,8 +101,8 @@ test('leaving inline material editing saves the draft before returning to the pr
   const data = await safetyFixture(page);
   const detail = await openFirstAsset(page);
   await detail.getByRole('textbox', { name: '素材名称', exact: true }).fill('保存后离开的角色');
-  await page.getByRole('button', { name: '返回项目详情', exact: true }).click();
-  await expect(page).toHaveURL(/\/projects\/10$/);
+  await page.getByRole('button', { name: '返回项目列表', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects$/);
   await expect.poll(() => data.state.updates).toEqual([expect.objectContaining({ id: '501', name: '保存后离开的角色', row_version: '1' })]);
   expect(data.state.assets[0].name).toBe('保存后离开的角色');
   expect(data.errors).toEqual([]);
@@ -112,10 +114,10 @@ test('a material version conflict allows leaving and retains the draft on return
   data.state.conflicts = true;
   const detail = await openFirstAsset(page);
   await detail.getByRole('textbox', { name: '素材名称', exact: true }).fill('发生冲突仍保留的草稿');
-  await page.getByRole('button', { name: '返回项目详情', exact: true }).click();
+  await page.getByRole('button', { name: '返回项目列表', exact: true }).click();
   const confirmation = page.getByRole('dialog', { name: '未保存的修改', exact: true });
   await expect(confirmation).toHaveCount(0);
-  await expect(page).toHaveURL(/\/projects\/10$/);
+  await expect(page).toHaveURL(/\/projects$/);
   await page.goBack();
   await expect(detail.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('发生冲突仍保留的草稿');
   expect(data.state.updates).toHaveLength(1);
@@ -173,33 +175,46 @@ test('material saving conflicts retain editing and the project assistant draft',
   await page.goto(`${root}/assets?assistant=open&conversation=301`);
   const composer = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await expect(composer).toBeVisible();
-  const message = '依据最新角色名称，讨论本集素材安排。';
+  await composer.fill('@林');
+  await page.getByRole('menuitemcheckbox', { name: '角色 · 林晚 素材', exact: true }).click();
+  await expect(page.getByRole('article', { name: '角色 · 林晚', exact: true })).toBeVisible();
+  const message = '依据最新角色名称，讨论素材安排。';
   await composer.fill(message);
   data.state.conflicts = true;
   await page.getByRole('button', { name: '林晚', exact: true }).click();
-  const detail = page.locator('.episode-asset-detail');
+  const detail = page.locator('.creation-asset-detail');
   await expect(detail).toBeVisible();
   const name = detail.getByRole('textbox', { name: '素材名称', exact: true });
   await name.fill('助手消息发送前的素材草稿');
   await expect(composer).toBeVisible();
   await expect(composer).toHaveValue(message);
   await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(detail.getByRole('button', { name: '核对最新版本', exact: true })).toBeVisible();
+  const status = page.getByRole('button', { name: /^保存状态：/ });
+  await status.click();
+  const reviewButton = page.locator('.standard-save-details').getByRole('button', { name: '核对最新版本', exact: true });
+  await expect(reviewButton).toBeVisible();
   await expect(name).toHaveValue('助手消息发送前的素材草稿');
   expect(data.state.updates).toHaveLength(1);
   expect(data.state.sends).toEqual([]);
   await expect(composer).toBeVisible();
   await expect(composer).toHaveValue(message);
   data.state.conflicts = false;
-  await detail.getByRole('button', { name: '核对最新版本', exact: true }).click();
+  await reviewButton.click();
   const review = page.getByRole('dialog', { name: '核对素材版本', exact: true });
   await expect(review).toBeVisible();
   await review.getByRole('button', { name: '已核对，保留草稿继续编辑', exact: true }).click();
+  if (await status.getAttribute('aria-expanded') === 'true') await status.click();
   await expect(name).toHaveValue('助手消息发送前的素材草稿');
   expect(data.state.sends).toEqual([]);
   await expect.poll(() => data.state.assets[0].name).toBe('助手消息发送前的素材草稿');
   await expect(composer).toBeVisible();
   await expect(composer).toHaveValue(message);
+  // 选中的是保存前版本；核对并保存后必须重新选择，不能悄悄升级已绑定的素材。
+  await page.getByRole('button', { name: '移除素材角色 · 林晚', exact: true }).click();
+  await composer.fill('@助手消息');
+  await page.getByRole('menuitemcheckbox', { name: '角色 · 助手消息发送前的素材草稿 素材', exact: true }).click();
+  await expect(page.getByRole('article', { name: '角色 · 助手消息发送前的素材草稿', exact: true })).toBeVisible();
+  await composer.fill(message);
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect.poll(() => data.state.sends.length).toBe(1);
   expect(data.state.updates).toHaveLength(2);
@@ -263,7 +278,7 @@ test('collapsing desktop material settings by keyboard restores focus to its ent
   const data = await safetyFixture(page);
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(root + '/assets');
-  const detail = page.locator('.episode-asset-detail');
+  const detail = page.locator('.creation-asset-detail');
   const settings = detail.locator('.standard-object-settings');
   await expect(settings).toBeVisible();
   const close = settings.getByRole('button', { name: '关闭生成设置', exact: true });
@@ -290,7 +305,7 @@ test('closing saved material settings restores focus while the refreshed card an
   await entry.click();
   await expect(name).toHaveValue('保存后的林晚');
   await expect(page).toHaveURL(url => url.searchParams.get('asset') === '501');
-  await expect(page.locator('.episode-save-state')).toHaveAttribute('aria-label', '保存状态：已保存');
+  await expect(page.locator('.creation-save-state')).toHaveAttribute('aria-label', '保存状态：已保存');
   await page.reload();
   await expect(name).toHaveValue('保存后的林晚');
   expect(data.state.updates).toHaveLength(1);
@@ -304,7 +319,7 @@ test('collapsing inline sound editing restores keyboard focus to its entry', asy
   const entry = rail.getByRole('button', { name: '声音、字幕和配乐', exact: true });
   await entry.focus();
   await page.keyboard.press('Enter');
-  const close = rail.getByRole('button', { name: '收起声音编辑', exact: true });
+  const close = rail.getByRole('region', { name: '原声、字幕和配乐', exact: true }).getByRole('button', { name: '收起声音编辑', exact: true });
   await close.focus();
   await page.keyboard.press('Enter');
   await expect(rail.getByRole('region', { name: '原声、字幕和配乐' })).toHaveCount(0);
@@ -317,7 +332,7 @@ for (const width of [1440, 1280]) {
     const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${root}/source`);
-    await expect(page.getByRole('textbox', { name: '本集剧本正文', exact: true })).toBeEditable();
+    await expect(page.getByRole('textbox', { name: '剧本正文', exact: true })).toBeEditable();
     const status = page.getByRole('button', { name: '保存状态：已保存', exact: true });
     await expect(status).toBeVisible(); await expect(status).toHaveText('');
     await expect(page.getByRole('button', { name: '确认当前剧本', exact: true })).toHaveCount(0);

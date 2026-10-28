@@ -3,17 +3,17 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../../src/features/projects/workflow-contract.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/creation/shared/model/workflow-contract.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const workflow = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
 test('storyboard exposes the persisted image model selection', () => {
-  const component = '../../src/features/projects/ShotImageCandidates.tsx';
+  const component = '../../src/features/creation/storyboard/images/ShotImageCandidates.tsx';
   const componentSource = readFileSync(new URL(component, import.meta.url), 'utf8');
   const file = ts.createSourceFile(component, componentSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let imageSelect;
   function visit(node) {
-    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === 'EpisodeModelSelect') {
+    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === 'CreationModelSelect') {
       const attributes = Object.fromEntries(node.attributes.properties
         .filter(ts.isJsxAttribute)
         .map((attribute) => [attribute.name.getText(file), attribute.initializer?.getText(file)]));
@@ -22,41 +22,14 @@ test('storyboard exposes the persisted image model selection', () => {
     ts.forEachChild(node, visit);
   }
   visit(file);
-  assert.ok(imageSelect, 'missing image EpisodeModelSelect');
+  assert.ok(imageSelect, 'missing image CreationModelSelect');
   assert.equal(imageSelect.label, '"分镜生图模型"');
   assert.equal(imageSelect.value, '{draft.value.model_config_id ?? modelSelection}');
   assert.match(imageSelect.onChange, /draft.edit\(\{ model_config_id: id \|\| null \}\)/);
   assert.match(imageSelect.onChange, /onModelChange\(id\)/);
   assert.equal(imageSelect.onResolvedChange, '{handleResolved}');
 });
-
-test('asset image generation resolves the enabled default model into its request state', () => {
-  const component = '../../src/features/assets/AssetImageGeneration.tsx';
-  const componentSource = readFileSync(new URL(component, import.meta.url), 'utf8');
-  const file = ts.createSourceFile(component, componentSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  let imageSelect;
-  function visit(node) {
-    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === 'ConfigSelect') {
-      const attributes = Object.fromEntries(node.attributes.properties
-        .filter(ts.isJsxAttribute)
-        .map((attribute) => [attribute.name.getText(file), attribute.initializer?.getText(file)]));
-      if (attributes.kind === '"image"') imageSelect = attributes;
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(file);
-  assert.ok(imageSelect, 'missing image ConfigSelect');
-  assert.equal(imageSelect.label, '"生图模型"');
-  assert.equal(imageSelect.value, '{configId}');
-  assert.equal(imageSelect.onChange, '{setConfigId}');
-  assert.equal(imageSelect.onResolvedChange, '{setConfigId}');
-  assert.equal(imageSelect.disabled, '{submitting || disabled}');
-});
-test('novel and storyboard generation payloads use saved server versions without client messages', () => {
-  assert.deepEqual(workflow.novelScriptRequest('12', '56', '突出对白'), {
-    source: { scene: 'novel_script', project_id: '12', content_version: '56' },
-    instructions: '突出对白', parameters: { max_output_tokens: 8192 },
-  });
+test('storyboard generation payloads use saved server versions without client messages', () => {
   assert.deepEqual(workflow.scriptShotsRequest('12', '78', '56', ''), {
     source: { scene: 'script_shots', project_id: '12', script_id: '78', content_version: '56' },
     storyboard: { average_shot_duration_ms: 3000 },
@@ -79,8 +52,8 @@ test('storyboard timing summarizes generated beats and defaults legacy durations
 });
 
 test('storyboard review preserves edited timing and loads compact result pages', async () => {
-  const preview = readFileSync(new URL('../../src/features/projects/StoryboardResultPreview.tsx', import.meta.url), 'utf8');
-  const editingSource = readFileSync(new URL('../../src/features/projects/storyboard-editing-session.ts', import.meta.url), 'utf8');
+  const preview = readFileSync(new URL('../../src/features/creation/storyboard/history/StoryboardResultPreview.tsx', import.meta.url), 'utf8');
+  const editingSource = readFileSync(new URL('../../src/features/creation/storyboard/sessions/editing-session.ts', import.meta.url), 'utf8');
   const editingFile = ts.createSourceFile('storyboard-editing-session.ts', editingSource, ts.ScriptTarget.Latest, true);
   const draftFunction = editingFile.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'shotDraftValue');
   assert.ok(draftFunction);

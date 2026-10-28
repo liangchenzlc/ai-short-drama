@@ -181,7 +181,7 @@ components:
 
 作品列表采用内容卡片，创作模式直接打开四阶段工作区；主页媒体资产采用桌面六列与现有轻微悬停效果，降低动效偏好下关闭缩放。创作模式以左侧40px满高导航为固定入口，剧本采用同色编辑底、960px文档与双标签，资产库和分镜表以列表／宫格及固定底部创建组织对象。AI创作助手仍由顶部按钮打开独立右列，可与桌面设置同时展开。成片继续使用现有紧凑剪辑布局；账号中心为独立页面，没有项目详情、分集、协作及全局素材库页面。
 
-主页导航不展示独立任务管理。媒体资产库上层使用“生成历史 / 创作模式 / 画布模式”标签；下层为“全部 / 图片 / 视频 / 音频”按钮，32px 高的名称搜索框紧邻按钮同行排列，总数右对齐。筛选以灰色选择面和浅灰边线标记当前条件。卡片网格固定六列、12px 间距、4:3 比例，每页 24 项，较原四列的宽高约缩小三成，画面与左下名称仍为内容主体。图片用画布同款全屏预览；视频与音频使用居中播放器，视频在视口内保持原比例。预览工具保持可辨对比度与键盘焦点，不再出现右侧详情或编辑、采用、任务跳转操作。样式入口为 [media-library.css](src/pages/media-library/media-library.css)。
+主页导航不展示独立任务管理。媒体资产库上层使用“生成历史 / 创作模式 / 画布模式”标签；下层为“全部 / 图片 / 视频 / 音频”按钮，32px 高的名称搜索框紧邻按钮同行排列，总数右对齐。筛选以灰色选择面和浅灰边线标记当前条件。卡片网格固定六列、12px 间距、4:3 比例，每页 24 项，较原四列的宽高约缩小三成，画面与左下名称仍为内容主体。图片用画布同款全屏预览；视频与音频使用居中播放器，视频在视口内保持原比例。预览工具保持可辨对比度与键盘焦点，不再出现右侧详情或编辑、采用、任务跳转操作。样式入口为 [media-library.css](src/pages/media-library/index.css)。
 
 中性炭黑剪辑工作台把正文、镜头、素材和候选放在视线中心。黑色画布承载连续编辑，紧凑工具围绕内容排列；标题负责定位，模型设置和低频选项按需展开。视觉服务于中文桌面创作的扫描、核对与剪辑。
 
@@ -194,7 +194,7 @@ components:
 - 白色主操作、灰色选择面与浅灰焦点，独立的成功、警告、错误语义。
 - 内容优先、局部滚动、固定弹窗操作区和可见键盘焦点。
 
-本规范提取自当前实现；设计变量由 [tokens.css](src/app/tokens.css) 与 [theme.ts](src/app/theme.ts) 定义，通用布局与状态由 [workbench.css](src/app/workbench.css)、[production.css](src/app/production.css) 及实际组件补充。创作模式布局使用 [episode-creation.css](src/features/projects/episode-creation.css)、[script-desk.css](src/features/projects/script-desk/script-desk.css)、[novel-editor.css](src/features/projects/novel-editor.css)、[episode-assets.css](src/features/assets/episode-assets.css)、[storyboard-layout.css](src/features/projects/storyboard-layout.css) 和 [standard-assistant.css](src/features/ai-assistant/standard-assistant.css) 的局部规则。产品事实见 [PRODUCT.md](PRODUCT.md)，工作区设计依据见[确认版设计](../docs/design/2026-10-08-标准模式创作流程设计.md)，其他桌面表面方向保留 [ui-redesign-surface.md](docs/ui-redesign-surface.md)。
+本规范提取自当前实现；设计变量由 [tokens.css](src/app/styles/tokens.css) 与 [theme.ts](src/app/theme.ts) 定义，通用布局与状态由 [workbench.css](src/app/styles/workbench.css)、[production.css](src/app/styles/production.css) 及实际组件补充。创作模式布局使用 [episode-creation.css](src/features/creation/workspace/layout/index.css)、[script-desk.css](src/features/creation/writing/editor/script-desk.css)、[novel-editor.css](src/features/creation/writing/editor/novel-editor.css)、[episode-assets.css](src/features/creation/assets/list/episode-assets.css)、[storyboard-layout.css](src/features/creation/storyboard/list/index.css) 和 [standard-assistant.css](src/features/assistant/panel/standard-assistant.css) 的局部规则。产品事实见 [PRODUCT.md](PRODUCT.md)，工作区设计依据见[确认版设计](../docs/design/2026-10-08-标准模式创作流程设计.md)，其他桌面表面方向保留 [ui-redesign-surface.md](docs/ui-redesign-surface.md)。
 
 ## Colors
 
@@ -389,7 +389,7 @@ Ant Design 保留 `darkAlgorithm`，并显式设置主按钮默认、悬停、�
 
 ### AI 创作助手
 
-创作页顶部保存状态右侧固定提供“AI 创作助手”，不展示创作方式切换。标准与画布助手统一使用 Ant Design X 的 Bubble、Sender、Suggestion、Prompts 和 Conversations 组织内部界面，消息正文为 13px，保留安全 Markdown；流式回复与最终消息使用相同的气泡几何。可移除作品引用固定在输入框上方，不随历史消息滚动；输入贴底，底部保留模型选择及发送／停止按钮，回复等待状态显示在消息区。标准桌面助手默认 380px，可拖动左侧分隔条在 320–560px 内调节，受主编辑区至少 640px 及间距约束；宽度按账号本机记忆，分隔条支持方向键、Home／End 和可见焦点。打开时主面板让出空间，选择对象、编辑及展开设置保持助手可见；关闭后主面板恢复宽度。画布保留自己的外层容器、明暗主题与宽度拖动，统一桌面停靠；内部组件按可用宽度排布，不引入宿主全局样式。普通停靠面板不使用 Tab 焦点陷阱或页面 inert，各自输入保留。
+创作页顶部保存状态右侧固定提供“AI 创作助手”，不展示创作方式切换。标准与画布助手统一使用 Ant Design X 的 Bubble、Sender、Suggestion、Prompts 和 Conversations 组织内部界面，消息正文为 13px，保留安全 Markdown；流式回复与最终消息使用相同的气泡几何。显式添加的素材引用固定在输入框上方，不随历史消息滚动；标准助手不再显示“引用当前剧本”按钮；输入贴底，底部保留模型选择及发送／停止按钮，回复等待状态显示在消息区。标准桌面助手默认 380px，可拖动左侧分隔条在 320–560px 内调节，受主编辑区至少 640px 及间距约束；宽度按账号本机记忆，分隔条支持方向键、Home／End 和可见焦点。打开时主面板让出空间，选择对象、编辑及展开设置保持助手可见；关闭后主面板恢复宽度。画布保留自己的外层容器、明暗主题与宽度拖动，统一桌面停靠；内部组件按可用宽度排布，不引入宿主全局样式。普通停靠面板不使用 Tab 焦点陷阱或页面 inert，各自输入保留。
 
 会话以项目为主体，标题栏保留新对话、记录与关闭；记录提供当前项目的新建、选择、搜索、永久删除和重命名。切阶段不更换项目会话，跨项目恢复各自会话及草稿；原任务目标在受理后冻结。旧“历史创作记录”只读。模型旁依次放 32px 添加和 Skill 图标；添加菜单列出图片、文本、当前画布及资产库，创作模式禁用当前画布项并就近说明。Skill 使用锚定列表，搜索、加载更多和复选直接生效，保留版本及不可用原因；`/` 的“浏览全部 Skill”复用此列表；Enter 确认后，方法在输入框内显示为可移除的高亮块。外点关闭，Escape 关闭并回焦图标，列表内可键盘操作。删除附件展开行、本人可见说明、任务设置、上下文管理和记忆管理入口及弹窗；附件、引用、方法标签与错误仍就近可见，上传重试和恢复继续可用。局部精修通过 `layout="standard"` 传递专属标记，标准助手样式限定于 `.ai-assistant-standard` 及 `.standard-assistant-*`，保留画布主题。回看历史时新回复不强制滚到底部，通过“查看最新消息”返回；载入更早消息保留当前阅读位置。素材卡点击或 Enter／Space 选择对象，预览图片另有入口；切换对象立即生效，后台继续原账号与资源的串行保存，失败保留原编辑会话。
 

@@ -59,6 +59,22 @@ export function validateMap(map, root = ROOT) {
     for (const dependency of value.depends_on ?? []) if (!map.features[dependency]) throw new Error(`未知依赖功能：${id} → ${dependency}`);
     for (const path of value.contracts ?? []) if (!map.tests.some(row => row.path === path && row.level === 'fast')) throw new Error(`公共契约路径无效：${id} → ${path}`);
   }
+  for (const row of map.removed_sources ?? []) {
+    inside(root, row.path);
+    if (!row.reason || !row.features?.length || row.features.some(id => !map.features[id])) {
+      throw new Error(`退役源码归属或原因无效：${row.path}`);
+    }
+  }
+  for (const [previous, moved] of Object.entries(map.source_migrations ?? {})) {
+    inside(root, previous);
+    const targets = typeof moved === 'string' ? [moved] : moved;
+    if (!Array.isArray(targets) || targets.some(target => !existsSync(inside(root, target)))) {
+      throw new Error(`源码迁移目标已失效：${previous}`);
+    }
+    if (!targets.length && !map.removed_sources?.some(row => row.path === previous)) {
+      throw new Error(`退役源码缺少说明：${previous}`);
+    }
+  }
   for (const directory of [...map.test_roots, ...(map.auxiliary_roots ?? [])]) {
     inside(root, directory);
     for (const path of walk(root, directory)) if (!known.has(path)) throw new Error(`文件未登记，请更新 test-map.json：${path}`);
@@ -90,7 +106,7 @@ export function selectTests(map, options = {}) {
   for (const path of options.changedPaths ?? []) {
     const tests = map.tests.filter(row => row.path === path || row.previous_path === path);
     const auxiliary = map.auxiliary.find(row => row.path === path || row.previous_path === path);
-    const retired = [...(map.removed_tests ?? []), ...(map.removed_auxiliary ?? [])].find(row => row.path === path);
+    const retired = [...(map.removed_tests ?? []), ...(map.removed_auxiliary ?? []), ...(map.removed_sources ?? [])].find(row => row.path === path);
     if (tests.length) {
       for (const row of tests) { add(row, `测试文件变更：${path}`); row.features.forEach(id => features.add(id)); }
       for (const row of map.tests) if (row.support?.includes(tests[0].path)) {
@@ -106,7 +122,10 @@ export function selectTests(map, options = {}) {
       continue;
     }
     if (retired) { retired.features.forEach(id => direct.add(id)); continue; }
-    const owners = Object.entries(map.features).filter(([, value]) => value.sources?.some(pattern => matches(path, pattern)));
+    // 目录迁移同时包含旧路径删除与新路径新增，两端应选择同一组行为测试。
+    const moved = map.source_migrations?.[path] ?? path;
+    const sourcePaths = typeof moved === 'string' ? [moved] : moved;
+    const owners = Object.entries(map.features).filter(([, value]) => value.sources?.some(pattern => sourcePaths.some(source => matches(source, pattern))));
     if (owners.length) { owners.forEach(([id]) => direct.add(id)); continue; }
     const skip = (map.ignored_changes ?? []).find(row => row.patterns.some(pattern => matches(path, pattern)));
     if (skip) ignored.push({ path, reason: skip.reason });
@@ -281,6 +300,9 @@ export async function main(args = process.argv.slice(2)) {
     return 0;
   }
   const map = JSON.parse(readFileSync(join(ROOT, 'test-map.json'), 'utf8'));
+  if (map.source_migrations_file) {
+    map.source_migrations = JSON.parse(readFileSync(inside(ROOT, map.source_migrations_file), 'utf8'));
+  }
   const inventory = validateMap(map);
   if (options.check) { output(JSON.stringify({ status: 'valid', ...inventory })); return 0; }
   if (options.inventory) {

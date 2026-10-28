@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.config import Settings
 from short_drama.domain import Project
-from short_drama.domain.collaboration import User
+from short_drama.domain.identity.accounts.user import User
 from short_drama.main import create_app
-from short_drama.service.auth_service import PASSWORDS
+from short_drama.service.identity.authentication.auth import PASSWORDS
 
 pytestmark = pytest.mark.integration
 PASSWORD = "read-concurrency-fixture-password"
@@ -72,9 +72,13 @@ def test_editor_reads_finish_before_write_lock_release(
     assert project.status_code == 201, project.text
     project_id = project.json()["id"]
     root = f"/api/v1/projects/{project_id}"
-    novel = client.put(root + "/novel", json={"content_version": "1", "content": "Committed novel"})
-    assert novel.status_code == 200, novel.text
-    assert novel.json()["content_version"] == "2"
+    script = client.put(
+        root + "/script",
+        json={"content_version": "1", "script_id": None, "content": "Committed script"},
+    )
+    assert script.status_code == 200, script.text
+    assert script.json()["content_version"] == "2"
+    script_id = script.json()["script"]["id"]
     assembly = client.post(root + "/assembly/initialize")
     assert assembly.status_code == 200, assembly.text
     assert assembly.json()["clips"] == []
@@ -94,9 +98,10 @@ def test_editor_reads_finish_before_write_lock_release(
         ):
             writer_lock_queried.set()
 
-    def write_novel():
+    def write_script():
         return client.put(
-            root + "/novel", json={"content_version": "2", "content": "Concurrent edit"}
+            root + "/script",
+            json={"content_version": "2", "script_id": script_id, "content": "Concurrent edit"},
         )
 
     with ThreadPoolExecutor(max_workers=2) as executor, Session(mysql_engine) as holder:
@@ -123,7 +128,7 @@ def test_editor_reads_finish_before_write_lock_release(
                 document = response.json()
                 if suffix == "/writing":
                     assert document["content_version"] == "2"
-                    assert document["novel"]["content"] == "Committed novel"
+                    assert document["editing_script"]["content"] == "Committed script"
                 elif suffix == "":
                     assert document["name"] == "Concurrent reads"
                 elif suffix == "/shots":
@@ -133,7 +138,7 @@ def test_editor_reads_finish_before_write_lock_release(
                 assert holder.in_transaction()
             # 其他读取已完成；只监听HTTP写入使用的独立应用Engine。
             event.listen(app_engine, "before_cursor_execute", observe_writer_lock)
-            writer = executor.submit(write_novel)
+            writer = executor.submit(write_script)
             assert writer_lock_queried.wait(timeout=2)
             # 写请求已抵达目标FOR UPDATE，而非认证或排队阶段。
             assert not writer.done()
@@ -147,7 +152,9 @@ def test_editor_reads_finish_before_write_lock_release(
                 event.remove(app_engine, "before_cursor_execute", observe_writer_lock)
     if mutation == "content":
         assert response.status_code == 409, response.text
-        assert client.get(root + "/writing").json()["novel"]["content"] == "Committed novel"
+        assert (
+            client.get(root + "/writing").json()["editing_script"]["content"] == "Committed script"
+        )
     else:
         assert response.status_code == 200, response.text
         assert response.json()["content_version"] == "3"

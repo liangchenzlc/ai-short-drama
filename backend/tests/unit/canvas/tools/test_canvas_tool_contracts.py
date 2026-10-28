@@ -21,11 +21,11 @@ ADAPTERS = (
 
 
 def schema():
-    return importlib.import_module("short_drama.schemas.canvas_tool_contracts")
+    return importlib.import_module("short_drama.schemas.canvas.tools.tool_contracts")
 
 
 def adapters():
-    return importlib.import_module("short_drama.ai.canvas_tool_adapters")
+    return importlib.import_module("short_drama.ai.adapters.tools.adapters")
 
 
 def canonical(name="optimize_prompt", *, image=False):

@@ -1,0 +1,139 @@
+.production-workbench {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.production-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.production-tabs button {
+  min-height: 38px;
+  padding: 7px 13px;
+  background: transparent;
+}
+.production-tabs button.selected {
+  background: var(--surface-raised);
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.production-layout {
+  display: grid;
+  grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+  gap: 24px;
+  min-width: 0;
+}
+.production-index {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9px;
+  padding-right: 19px;
+  border-right: 1px solid var(--line);
+}
+.production-index h3 {
+  margin: 0 0 8px;
+}
+.production-index button {
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.production-index button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--surface-raised);
+}
+.production-index small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+}
+.production-index p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.production-main,
+.production-fields {
+  min-width: 0;
+}
+.production-fields,
+.production-command,
+.production-delivery {
+  display: grid;
+  gap: 15px;
+}
+.production-command,
+.production-result,
+.production-preview,
+.production-track,
+.production-cue,
+.production-issues article {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  min-width: 0;
+}
+.production-command h3,
+.production-command h4,
+.production-preview h4 {
+  margin: 0;
+}
+.production-command p,
+.production-preview p {
+  margin-block: 4px;
+  line-height: 1.6;
+}
+.production-actions,
+.production-track-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.production-fields label,
+.production-command label {
+  min-width: 0;
+}
+.production-fields input,
+.production-fields select,
+.production-fields textarea,
+.production-command input,
+.production-command select {
+  max-width: 100%;
+}
+.production-range-list,
+.production-timeline,
+.production-rights,
+.production-issues {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.production-track-kind {
+  color: var(--accent);
+  font-weight: 650;
+}
+.production-clip {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.production-preview {
+  border-color: var(--hair);
+  background: var(--canvas);
+}
+.production-issues article header {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.production-issues article header span {
+  color: var(--accent);
+}
+.production-issues article p {
+  overflow-wrap: anywhere;
+}

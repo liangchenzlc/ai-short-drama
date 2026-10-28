@@ -16,7 +16,7 @@ from amqp.exceptions import NotFound as BrokerObjectMissing
 from sqlalchemy import select
 
 from short_drama.domain import AsyncTask, CanvasLocalJob, MediaFile
-from short_drama.tasks.canvas_local import CanvasLocalPublisher
+from short_drama.tasks.canvas.canvas_local import CanvasLocalPublisher
 from short_drama.tasks.celery_app import make_celery, render_queue
 from tests.integration.canvas.depth.test_canvas_depth_execution import PATH, calls, create, detail
 from tests.integration.canvas.depth.test_canvas_depth_execution import (

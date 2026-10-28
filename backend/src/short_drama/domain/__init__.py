@@ -1,19 +1,15 @@
-from .agent import (
-    AGENT_PRIVATE_TABLES,
-    AGENT_TABLES,
-    AgentArtifact,
+from short_drama.domain.ai_config.management.models import AIModelConfig
+from short_drama.domain.assistant.artifacts.models import AgentArtifact
+from short_drama.domain.assistant.context.context import AgentAttachment, AgentSkill
+from short_drama.domain.assistant.conversations.history import AgentDiscussionRevision
+from short_drama.domain.assistant.conversations.models import (
     AgentConversation,
     AgentEvent,
     AgentMessage,
-    AgentRun,
-    AgentToolCall,
-    AgentTurn,
 )
-from .agent_context import AgentAttachment, AgentSkill
-from .agent_graph import AgentGraphCheckpoint, AgentGraphWrite
-from .agent_history import AgentDiscussionRevision
-from .agent_media import AgentMediaRequest
-from .agent_memory import (
+from short_drama.domain.assistant.execution.graph import AgentGraphCheckpoint, AgentGraphWrite
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
+from short_drama.domain.assistant.memory.memory import (
     AgentConversationSummary,
     AgentMemoryForgetRule,
     AgentMemoryItem,
@@ -21,39 +17,47 @@ from .agent_memory import (
     AgentMemoryRevision,
     AgentMemorySource,
 )
-from .agent_preference import AgentPreference
-from .agent_skill import AgentSkillSetting, AgentSkillVersion
-from .agent_task import AgentOperation, AgentTask, AgentTaskControl, AgentTaskInput
-from .agent_task_requirement import AgentTaskRequirement
-from .agent_undo import AgentBatchUndo
-from .ai_generation_record import AIGenerationRecord
-from .ai_model_config import AIModelConfig
-from .asset import Asset
-from .asset_image_candidate import AssetImageCandidate
-from .asset_version import AssetVersion, AssetVersionMediaReference
-from .async_task import AsyncTask
-from .base import Base
-from .canvas import CANVAS_PRIVATE_TABLES, CANVAS_TABLES, ProjectCanvas, ProjectCanvasSettings
-from .canvas_creation import CanvasCreationAttempt, CanvasCreationResource
-from .canvas_drawing import (
+from short_drama.domain.assistant.operations.media import AgentMediaRequest
+from short_drama.domain.assistant.operations.preference import AgentPreference
+from short_drama.domain.assistant.tables import AGENT_PRIVATE_TABLES, AGENT_TABLES
+from short_drama.domain.assistant.tasks.task import (
+    AgentOperation,
+    AgentTask,
+    AgentTaskControl,
+    AgentTaskInput,
+)
+from short_drama.domain.assistant.tasks.task_requirement import AgentTaskRequirement
+from short_drama.domain.assistant.undo.undo import AgentBatchUndo
+from short_drama.domain.base import Base
+from short_drama.domain.canvas.document.canvas import (
+    CANVAS_PRIVATE_TABLES,
+    CANVAS_TABLES,
+    ProjectCanvas,
+    ProjectCanvasSettings,
+)
+from short_drama.domain.canvas.drawing.drawing import (
     CanvasDrawing,
     CanvasDrawingMediaReference,
     CanvasDrawingVersion,
     CanvasRevisionDrawingReference,
 )
-from .canvas_folder import CanvasProjectFolder, CanvasProjectFolderItem
-from .canvas_generation import CanvasResult, CanvasTaskBinding, CanvasTaskMediaReference
-from .canvas_generation_media_deletion import CanvasGenerationMediaDeletion
-from .canvas_library import (
+from short_drama.domain.canvas.generation.generation import (
+    CanvasResult,
+    CanvasTaskBinding,
+    CanvasTaskMediaReference,
+)
+from short_drama.domain.canvas.generation.generation_media_deletion import (
+    CanvasGenerationMediaDeletion,
+)
+from short_drama.domain.canvas.generation.text.text import CanvasTaskTextDelta
+from short_drama.domain.canvas.library.library import (
     CanvasLibraryAsset,
     CanvasLibraryAssetReference,
     CanvasLibraryFolder,
     CanvasLibraryFolderItem,
 )
-from .canvas_local import CanvasLocalJob
-from .canvas_model_catalog import CanvasChannelModel, CanvasModelCatalog
-from .canvas_render import CanvasRenderJob, CanvasRenderMediaReference
-from .canvas_resource import (
+from short_drama.domain.canvas.models.model_catalog import CanvasChannelModel, CanvasModelCatalog
+from short_drama.domain.canvas.resources.resource import (
     CanvasBinaryReference,
     CanvasBinaryResource,
     CanvasResourceChunk,
@@ -62,26 +66,52 @@ from .canvas_resource import (
     CanvasResourceUpload,
     CanvasUserBinaryReference,
 )
-from .canvas_style import CanvasStyleMediaReference, CanvasStylePreference, CanvasStyleProfile
-from .canvas_text import CanvasTaskTextDelta
-from .canvas_tool_run import CanvasToolRun, CanvasToolSubmission
-from .generation_batch import GenerationBatchItem, GenerationBatchJob
-from .media_asset import MediaAsset
-from .media_file import MediaFile
-from .media_recycle_bin import MediaRecycleBin
-from .novel_script_record import NovelScriptRecord
-from .project import Project
-from .project_assembly import ProjectAssembly, ProjectAssemblyClip, ProjectRenderJob
-from .project_novel import ProjectNovel
-from .project_script import ProjectScript
-from .project_story_outline import ProjectStoryOutline
-from .project_story_settings import ProjectStorySettings
-from .script_shot_record import ScriptShotRecord
-from .shot_asset import ShotAsset
-from .shot_image import ShotImage
-from .shot_script import ShotScript
-from .shot_video import ShotVideo
-from .user_creation_draft import UserCreationDraft
+from short_drama.domain.canvas.styles.style import (
+    CanvasStyleMediaReference,
+    CanvasStylePreference,
+    CanvasStyleProfile,
+)
+from short_drama.domain.canvas.timeline.rendering.render import (
+    CanvasRenderJob,
+    CanvasRenderMediaReference,
+)
+from short_drama.domain.canvas.tools.local.local import CanvasLocalJob
+from short_drama.domain.canvas.tools.tool_run import CanvasToolRun, CanvasToolSubmission
+from short_drama.domain.canvas.workspace.creation.creation import (
+    CanvasCreationAttempt,
+    CanvasCreationResource,
+)
+from short_drama.domain.canvas.workspace.folders.folder import (
+    CanvasProjectFolder,
+    CanvasProjectFolderItem,
+)
+from short_drama.domain.creation.assembly.document.assembly import (
+    ProjectAssembly,
+    ProjectAssemblyClip,
+    ProjectRenderJob,
+)
+from short_drama.domain.creation.assets.images.image_candidate import AssetImageCandidate
+from short_drama.domain.creation.assets.management.assets import Asset
+from short_drama.domain.creation.assets.management.version import (
+    AssetVersion,
+    AssetVersionMediaReference,
+)
+from short_drama.domain.creation.drafts.drafts import UserCreationDraft
+from short_drama.domain.creation.storyboard.images.image import ShotImage
+from short_drama.domain.creation.storyboard.management.records import ScriptShotRecord
+from short_drama.domain.creation.storyboard.management.script import ShotScript
+from short_drama.domain.creation.storyboard.references.asset import ShotAsset
+from short_drama.domain.creation.storyboard.videos.video import ShotVideo
+from short_drama.domain.creation.writing.script.script import ProjectScript
+from short_drama.domain.creation.writing.settings.settings import ProjectStorySettings
+from short_drama.domain.generations.batches.batch import GenerationBatchItem, GenerationBatchJob
+from short_drama.domain.generations.results.records import AIGenerationRecord
+from short_drama.domain.generations.runtime.tasks import AsyncTask
+from short_drama.domain.media.files.files import MediaFile
+from short_drama.domain.media.library.assets import MediaAsset
+from short_drama.domain.media.recycle.recycle import MediaRecycleBin
+from short_drama.domain.projects.management.project import Project
+from short_drama.domain.skills.catalog.skill import AgentSkillSetting, AgentSkillVersion
 
 __all__ = [
     "AgentSkillSetting",
@@ -153,8 +183,6 @@ __all__ = [
     "ProjectAssembly",
     "ProjectAssemblyClip",
     "ProjectRenderJob",
-    "ProjectNovel",
-    "ProjectStoryOutline",
     "ProjectStorySettings",
     "ProjectScript",
     "Asset",
@@ -168,23 +196,25 @@ __all__ = [
     "UserCreationDraft",
     "ScriptShotRecord",
     "MediaRecycleBin",
-    "NovelScriptRecord",
 ]
 
-from .collaboration import (
-    AuditEvent,
-    AuthRateLimit,
-    EmailChallenge,
-    EmailOutbox,
-    ResourceImport,
-    User,
-    UserModelPreference,
-    UserSession,
+from short_drama.domain.ai_config.preferences.models import UserModelPreference
+from short_drama.domain.creation.sound.tracks.sound import (
+    ProjectSound,
+    ProjectVoiceDefaults,
+    SoundMediaReference,
 )
-from .image_group import ImageGroup, ImageGroupItem, ImageOperation
-from .native_voice import CharacterVoice, ProjectSoundMode, ShotDialogue
-from .project_script_revision import ProjectScriptRevision
-from .project_sound import ProjectSound, ProjectVoiceDefaults, SoundMediaReference
+from short_drama.domain.creation.sound.voices.voices import (
+    CharacterVoice,
+    ProjectSoundMode,
+    ShotDialogue,
+)
+from short_drama.domain.creation.writing.script.revisions import ProjectScriptRevision
+from short_drama.domain.identity.accounts.user import User, UserSession
+from short_drama.domain.identity.audit.models import AuditEvent
+from short_drama.domain.identity.email.models import AuthRateLimit, EmailChallenge, EmailOutbox
+from short_drama.domain.media.image_groups.groups import ImageGroup, ImageGroupItem, ImageOperation
+from short_drama.domain.media.imports.scope import ResourceImport
 
 __all__ += ["ProjectScriptRevision"]
 

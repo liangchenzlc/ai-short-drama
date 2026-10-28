@@ -6,8 +6,9 @@ from short_drama.agent.harness import ENGINE_VERSION
 from short_drama.agent.memory.sources import restricted_messages
 from short_drama.agent.tools.registry import TOOL_VERSION
 from short_drama.core.exceptions import WorkflowError
-from short_drama.domain.agent import AgentConversation, AgentMessage, AgentRun
-from short_drama.domain.agent_task import AgentTaskInput
+from short_drama.domain.assistant.conversations.models import AgentConversation, AgentMessage
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.tasks.task import AgentTaskInput
 
 
 def autonomous_scope(session, conversation, task, operation):

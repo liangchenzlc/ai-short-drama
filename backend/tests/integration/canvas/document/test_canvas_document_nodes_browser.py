@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.domain import AsyncTask, CanvasResult, CanvasTaskBinding, MediaFile
-from short_drama.domain.canvas import CanvasNode
+from short_drama.domain.canvas.document.canvas import CanvasNode
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.image.test_canvas_image_tools_browser import minio_bytes
 from tests.integration.canvas.resources.test_canvas_library import (

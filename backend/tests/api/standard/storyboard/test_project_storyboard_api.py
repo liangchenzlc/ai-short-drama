@@ -3,7 +3,10 @@ import asyncio
 import httpx
 from fastapi import FastAPI
 
-from short_drama.api.v1.project_storyboard import get_storyboard_service, router
+from short_drama.api.v1.creation.storyboard.management.storyboard import (
+    get_storyboard_service,
+    router,
+)
 
 
 def test_static_order_route_and_closed_storyboard_inputs():

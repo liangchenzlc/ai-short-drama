@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from short_drama.schemas.canvas_library import CanvasLibraryDocument
+from short_drama.schemas.canvas.library.library import CanvasLibraryDocument
 
 FIXTURE = json.loads(
     (

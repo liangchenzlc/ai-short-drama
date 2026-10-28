@@ -2,7 +2,7 @@ import { isCanvasNodeGenerating } from "@/lib/canvas/canvas-node-task-state";
 import { CreativeAssistantSidebar } from "./creative-assistant-sidebar";
 import { useCreativeAssistantLayout } from "./use-creative-assistant-layout";
 import { prepareCanvasAssistantContext } from "./canvas-assistant-context";
-import type { AssistantMessageContext, AssistantMentionReference, AssistantReference } from "@host/api/types/assistant";
+import type { AssistantMessageContext, AssistantMentionReference, AssistantReference } from "@host/integrations/canvas/assistant";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { hostCanvasAccess } from "@/services/host-canvas-access";
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from "react";
@@ -532,7 +532,7 @@ function InfiniteCanvasPage() {
         const selectedFixtureNodes = new Set(fixtureNodes.map((node) => node.id));
         selectedNodeIdsRef.current = selectedFixtureNodes;
         setSelectedNodeIds(selectedFixtureNodes);
-        void saveCanvasProject({ requireRemote: false });
+        void saveCanvasProject();
     }, [nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes, setSelectedNodeIds, selectedNodeIdsRef]);
 
     useEffect(() => {
@@ -543,7 +543,7 @@ function InfiniteCanvasPage() {
         const nextNodes = [...nodesRef.current, ...fixtureNodes];
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
-        void saveCanvasProject({ requireRemote: false });
+        void saveCanvasProject();
     }, [nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
 
     useEffect(() => {
@@ -555,7 +555,7 @@ function InfiniteCanvasPage() {
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
         setConnections((current) => [...current, fixture.connection]);
-        void saveCanvasProject({ requireRemote: false });
+        void saveCanvasProject();
     }, [connectionsRef, nodes, nodesRef, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setConnections, setNodes]);
 
     useEffect(() => {
@@ -566,7 +566,7 @@ function InfiniteCanvasPage() {
         const nextNodes = [...nodesRef.current, ...fixtureNodes];
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
-        void saveCanvasProject({ requireRemote: false });
+        void saveCanvasProject();
     }, [nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
 
     useEffect(() => {
@@ -577,7 +577,7 @@ function InfiniteCanvasPage() {
         const nextNodes = [...nodesRef.current, ...fixtureNodes];
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
-        void saveCanvasProject({ requireRemote: false });
+        void saveCanvasProject();
     }, [nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
 
     useEffect(() => {
@@ -590,7 +590,7 @@ function InfiniteCanvasPage() {
         setNodes(nextNodes);
         // Visual audit fixtures are ephemeral; avoid showing the local-save
         // toast over the LibTV reference screenshot when chrome mode is on.
-        if (searchParams.get("libtvChrome") !== "1") void saveCanvasProject({ requireRemote: false });
+        if (searchParams.get("libtvChrome") !== "1") void saveCanvasProject();
     }, [nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
 
     useEffect(() => {
@@ -601,7 +601,7 @@ function InfiniteCanvasPage() {
         const nextNodes = [...nodesRef.current, ...fixtureNodes];
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
-        void saveCanvasProject({ requireRemote: false });
+        void saveCanvasProject();
         // Local runtime normally converts stale loading snapshots to an error
         // immediately after a refresh. The fixture intentionally re-enters the
         // running state after that guard so the visual contract can be audited
@@ -637,7 +637,7 @@ function InfiniteCanvasPage() {
             assertUserScope(expected);
             const persistence = getModelConfigPersistenceState();
             if (persistence.dirty || persistence.status === "error") throw new Error(persistence.error || "模型偏好尚未保存，请处理后再离开画布");
-            const saved = await saveCanvasProject({ requireRemote: true });
+            const saved = await saveCanvasProject();
             assertUserScope(expected);
             if (!saved) throw new Error("画布尚未保存，当前草稿已保留，请处理保存问题后再离开画布");
             const latest = getModelConfigPersistenceState();
@@ -806,7 +806,7 @@ function InfiniteCanvasPage() {
             connectionsRef.current = nextConnections;
             setNodes(nextNodes);
             setConnections(nextConnections);
-            const saved = await saveCanvasProject({ requireRemote: false });
+            const saved = await saveCanvasProject();
             if (!saved) {
                 nodesRef.current = previousNodes;
                 connectionsRef.current = previousConnections;
@@ -827,7 +827,7 @@ function InfiniteCanvasPage() {
             connectionsRef.current = nextConnections;
             setNodes(nextNodes);
             setConnections(nextConnections);
-            const saved = await saveCanvasProject({ requireRemote: false });
+            const saved = await saveCanvasProject();
             if (!saved) {
                 nodesRef.current = previousNodes;
                 connectionsRef.current = previousConnections;
@@ -868,7 +868,7 @@ function InfiniteCanvasPage() {
             assertCurrent,
             getInput: () => ({ nodes: nodesRef.current, connections: connectionsRef.current, chatSessions: chatSessionsRef.current, activeChatId: activeChatIdRef.current, viewport: viewportRef.current }),
             flushPreferences: flushModelConfig, preferences: getModelConfigPersistenceState,
-            saveCanvas: () => saveCanvasProject({ requireRemote: true }), flushLocal: flushCanvasStorePersistence,
+            saveCanvas: () => saveCanvasProject(), flushLocal: flushCanvasStorePersistence,
             hasUnconfirmedEdits: () => hasUnconfirmedCanvasEdits(projectId),
             revision: () => canvasDocumentBase(projectId, expected.userScope)?.revision,
         });
@@ -879,15 +879,13 @@ function InfiniteCanvasPage() {
     // 每帧新对象会让所有节点跟着重渲染，错题本里多条崩溃都出在画布高频更新。
     const nodeGraphContext = useMemo<CanvasNodeGraphContextValue>(() => ({ getUpstreamNodes: (nodeId: string) => getContextResourceNodes(nodeId, nodes, connections) }), [connections, nodes]);
 
-    // 旧链接转为只读历史入口，新项目助手保留自己的对话参数。
+    // 旧入口链接打开当前助手，新项目会话使用自己的对话参数。
     useEffect(() => {
         if (!projectLoaded) return;
         const legacy = searchParams.get("agent") === "1" || searchParams.get("mode") === "agent";
         if (legacy) {
             const next = new URLSearchParams(searchParams);
             next.delete("agent"); next.delete("mode"); next.set("assistant", "1");
-            const conversation = next.get("conversation");
-            if (conversation && /^[1-9]\d*$/.test(conversation)) next.set("legacy_conversation", conversation);
             next.delete("conversation");
             setSearchParams(next, { replace: true });
         }
@@ -3312,16 +3310,12 @@ function InfiniteCanvasPage() {
                         mentionReferences={assistantMentionReferences}
                         prepareContext={prepareAssistantContext}
                         selectedConversationId={searchParams.get("agent") === "1" || searchParams.get("mode") === "agent" ? null : searchParams.get("conversation")}
-                        legacyConversationId={searchParams.get("legacy_conversation") || undefined}
                         onConversationChange={id => {
                             if (searchParams.get("agent") === "1" || searchParams.get("mode") === "agent") return;
                             setSearchParams(previous => {
                                 const next = new URLSearchParams(previous); next.set("conversation", id); return next;
                             }, { replace: true });
                         }}
-                        onCloseLegacy={() => setSearchParams(previous => {
-                            const next = new URLSearchParams(previous); next.delete("legacy_conversation"); return next;
-                        }, { replace: true })}
                         onOpenModelSettings={() => { void navigateToSettings({ continueCreation: true }); }}
                     />
                 ) : null}

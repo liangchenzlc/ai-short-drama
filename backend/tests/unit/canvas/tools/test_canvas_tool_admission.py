@@ -6,9 +6,9 @@ import pytest
 from pydantic import ValidationError
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-from short_drama.service.canvas_generation_inputs import generation_payload
-from short_drama.service.canvas_text_admission import freeze_text_references
+from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+from short_drama.service.canvas.generation.generation_inputs import generation_payload
+from short_drama.service.canvas.generation.text.text_admission import freeze_text_references
 from tests.unit.canvas.generation.test_canvas_generation_runtime_contract import request
 from tests.unit.canvas.text.test_canvas_text_references import admission_fixture
 from tests.unit.canvas.tools.test_canvas_tool_contracts import ADAPTERS, canonical

@@ -4,11 +4,11 @@ from datetime import timedelta
 
 from sqlalchemy import and_, or_, select
 
-from short_drama.agent.coordinator.runtime import latest_turn
 from short_drama.agent.core.access import lock_run, may_decide
 from short_drama.agent.core.events import TERMINAL
 from short_drama.agent.core.state import finish_locked, mark_scheduled
-from short_drama.domain.agent import AgentRun
+from short_drama.agent.runtime.claims import latest_turn
+from short_drama.domain.assistant.execution.models import AgentRun
 from short_drama.service.base import utcnow
 
 
@@ -43,7 +43,7 @@ def recover(factory, settings, limit=100):
             if run.status in TERMINAL or (run.lease_until and run.lease_until > now):
                 continue
             if run.task_id is not None:
-                from short_drama.dao.agent_task_dao import AgentTaskDAO
+                from short_drama.dao.assistant.tasks.task import AgentTaskDAO
 
                 operation = AgentTaskDAO(session).active_operation(run.task_id)
                 if operation is not None:

@@ -20,16 +20,19 @@ from PIL import Image
 from sqlalchemy import select
 
 from short_drama.core.exceptions import NotFound, StorageUnavailable
-from short_drama.dao.canvas_library_dao import CanvasLibraryDAO
+from short_drama.dao.canvas.library.library import CanvasLibraryDAO
 from short_drama.domain import CanvasBinaryResource, CanvasResourceUpload, MediaFile
-from short_drama.domain.canvas_library import CanvasLibraryAsset, CanvasLibraryAssetReference
-from short_drama.domain.canvas_resource import CanvasBinaryReference
+from short_drama.domain.canvas.library.library import (
+    CanvasLibraryAsset,
+    CanvasLibraryAssetReference,
+)
+from short_drama.domain.canvas.resources.resource import CanvasBinaryReference
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_resource_cleanup import cleanup_canvas_resources
-from short_drama.service.canvas_resource_service import CHUNK_SIZE, CanvasResourceService
-from short_drama.service.canvas_service import CanvasService
-from short_drama.service.canvas_upload_cleanup import cleanup_canvas_uploads
-from short_drama.service.video_render import executable
+from short_drama.service.canvas.document.canvas import CanvasService
+from short_drama.service.canvas.resources.resource import CHUNK_SIZE, CanvasResourceService
+from short_drama.service.canvas.resources.resource_cleanup import cleanup_canvas_resources
+from short_drama.service.canvas.resources.upload_cleanup import cleanup_canvas_uploads
+from short_drama.service.creation.assembly.rendering.renderer import executable
 from short_drama.storage.minio import MinioStorage
 from tests.integration.canvas.resources.test_canvas_library import (
     database_errors as database_errors,

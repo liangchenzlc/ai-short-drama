@@ -4,7 +4,7 @@
 
 ## 与既有系统的比较结果
 
-**结论：本次属于既有工作台的功能扩展与界面细化，当前账号实现延续原系统，无需重写设计规范。** 已对照 [DESIGN.md](../DESIGN.md)、[设计扩展](../.impeccable/design.json)、[PRODUCT.md](../PRODUCT.md)、[表面方向契约](ui-redesign-surface.md) 以及 [tokens.css](../src/app/tokens.css)、[theme.ts](../src/app/theme.ts)、[workbench.css](../src/app/workbench.css) 与 [identity.css](../src/app/identity.css)。
+**结论：本次属于既有工作台的功能扩展与界面细化，当前账号实现延续原系统，无需重写设计规范。** 已对照 [DESIGN.md](../DESIGN.md)、[设计扩展](../.impeccable/design.json)、[PRODUCT.md](../PRODUCT.md)、[表面方向契约](ui-redesign-surface.md) 以及 [tokens.css](../src/app/styles/tokens.css)、[theme.ts](../src/app/theme.ts)、[workbench.css](../src/app/styles/workbench.css) 与 [identity.css](../src/pages/identity/identity.css)。
 
 | 系统要求 | 当前账号实现 |
 | --- | --- |
@@ -18,37 +18,37 @@
 
 ### 启用主按钮的局部颜色与对比度
 
-[identity.css](../src/app/identity.css) 对共享邮箱验证表单和嵌入重新登录表单的启用主按钮指定现有颜色角色：默认与按下状态使用 `accent-fill`，悬停与可见键盘焦点使用 `accent-hover`，四种状态的文字均使用 `on-accent`。规则限定在这两类表单并排除禁用按钮；公开邮箱验证与找回密码页面也复用同一表单样式。其余主题、焦点规则、布局及恢复逻辑保持原实现。
+[identity.css](../src/pages/identity/identity.css) 对共享邮箱验证表单和嵌入重新登录表单的启用主按钮指定现有颜色角色：默认与按下状态使用 `accent-fill`，悬停与可见键盘焦点使用 `accent-hover`，四种状态的文字均使用 `on-accent`。规则限定在这两类表单并排除禁用按钮；公开邮箱验证与找回密码页面也复用同一表单样式。其余主题、焦点规则、布局及恢复逻辑保持原实现。
 
 [button-contrast.ts](../e2e/button-contrast.ts) 在默认、悬停、键盘焦点和按下状态读取实际计算后的前景与背景，检查文字对比度至少 4.5:1。账号密码错误与嵌入重新登录错误两个流程各在 1440 / 390px 取证，共四份报告、16 个状态：[contrast-results.json](../.impeccable/review/account-center/fix1/contrast-results.json)。默认及按下为 5.733:1，悬停及键盘焦点为 5.355:1，最小值为 5.355:1。颜色对应既有 token；这组证据只证明两项流程的启用按钮状态，不等于全工作台控件的对比度审计。
 
 ## 挂载与入口
 
-[App.tsx](../src/app/App.tsx) 的 `StudioLayout` 只挂载一个 [AccountCenterProvider](../src/features/auth/AccountCenter.tsx)。Provider 包住工作区，并将账号浮层渲染为工作区根节点外的兄弟节点；账号入口不再成为 `.studio` 的直接子级，也不占据根布局的一列。打开和关闭面板只改变 Provider 的状态，不导航、不替换当前编辑器。
+[App.tsx](../src/app/App.tsx) 的 `StudioLayout` 只挂载一个 [AccountCenterProvider](../src/features/identity/account/AccountCenter.tsx)。Provider 包住工作区，并将账号浮层渲染为工作区根节点外的兄弟节点；账号入口不再成为 `.studio` 的直接子级，也不占据根布局的一列。打开和关闭面板只改变 Provider 的状态，不导航、不替换当前编辑器。
 
-[AccountControls.tsx](../src/features/auth/AccountControls.tsx) 只承担共享入口。认证启用且存在当前用户时，按钮提供“账号中心：完整身份名称”的可访问名称、弹窗提示与展开状态；认证关闭时不显示账号按钮。
+[AccountControls.tsx](../src/features/identity/account/AccountControls.tsx) 只承担共享入口。认证启用且存在当前用户时，按钮提供“账号中心：完整身份名称”的可访问名称、弹窗提示与展开状态；认证关闭时不显示账号按钮。
 
 | 页面或状态 | 入口位置 |
 | --- | --- |
 | 项目管理、三类素材、四类任务、两类媒体、AI 配置 | 通用工作区顶栏右侧。 |
-| 项目详情 | [ProjectDetailHeader.tsx](../src/features/projects/ProjectDetailHeader.tsx) 的右侧操作组，与关闭项目操作相邻。 |
-| 项目数据载入、项目请求失败 | [ProjectRoute.tsx](../src/pages/projects/ProjectRoute.tsx) 继续渲染详情页头；载入和“项目无法打开”状态均保留账号入口及返回项目入口。 |
-| 小说改编、素材准备、分镜制作、成片合成与导出 | [EpisodePage.tsx](../src/pages/projects/EpisodePage.tsx) 的分集页头右侧；内容或成片编辑包载入时页头仍在。 |
-| 专注剪辑 | 外围分集页头被既有专注模式隐藏；[AssemblyStage.tsx](../src/pages/projects/episode/AssemblyStage.tsx) 在可见的成片工具栏提供同一个共享入口。账号浮层不受专注区域隐藏规则影响。 |
+| 项目详情 | [ProjectDetailHeader.tsx](../src/features/projects/management/ProjectDetailHeader.tsx) 的右侧操作组，与关闭项目操作相邻。 |
+| 项目数据载入、项目请求失败 | [ProjectRoute.tsx](../src/pages/projects/workspace/index.tsx) 继续渲染详情页头；载入和“项目无法打开”状态均保留账号入口及返回项目入口。 |
+| 小说改编、素材准备、分镜制作、成片合成与导出 | [CreationPage.tsx](../src/pages/creation/index.tsx) 的分集页头右侧；内容或成片编辑包载入时页头仍在。 |
+| 专注剪辑 | 外围分集页头被既有专注模式隐藏；[AssemblyStage.tsx](../src/pages/creation/assembly/index.tsx) 在可见的成片工具栏提供同一个共享入口。账号浮层不受专注区域隐藏规则影响。 |
 
 专注剪辑中关闭账号面板会回到该工具栏入口，保留专注状态。这里的加载可达性指已渲染的通用外壳、项目数据请求及分集阶段加载；本次浏览器用例没有模拟详情路由代码包下载失败。
 
 ## 只读身份信息
 
-数据来自 [AuthSession.tsx](../src/features/auth/AuthSession.tsx) 中当前用户，读取接口为 `GET /auth/me`。账号中心完整显示显示名称（为空时回退到账号名）、账号名、账号 ID、注册邮箱及邮箱验证状态。显示名称、账号名和邮箱在面板内允许换行；页头短入口的名称可省略，完整身份在面板中读取。
+数据来自 [AuthSession.tsx](../src/features/identity/session/AuthSession.tsx) 中当前用户，读取接口为 `GET /auth/me`。账号中心完整显示显示名称（为空时回退到账号名）、账号名、账号 ID、注册邮箱及邮箱验证状态。显示名称、账号名和邮箱在面板内允许换行；页头短入口的名称可省略，完整身份在面板中读取。
 
 邮箱存在时，以“已验证”或“未验证”文字配合既有语义颜色表达状态。邮箱缺失时显示“未设置邮箱”，说明无法通过邮箱修改密码并禁用该操作，不提供虚构邮箱或绑定操作。信息列表显式使用块级外层，再为每行排列标签与值，避免继承全局 `dl` 布局而压缩内容。
 
-当前后端没有修改显示名称、账号名或邮箱的资料更新接口，因此这些值均为只读，没有保存或编辑资料操作。接口与字段边界已核对 [auth.py](../../backend/src/short_drama/api/v1/auth.py)、[identity.py](../../backend/src/short_drama/schemas/identity.py) 与 [auth_service.py](../../backend/src/short_drama/service/auth_service.py)；本次未改后端。
+当前后端没有修改显示名称、账号名或邮箱的资料更新接口，因此这些值均为只读，没有保存或编辑资料操作。接口与字段边界已核对 [auth.py](../../backend/src/short_drama/api/v1/identity/authentication/auth.py)、[identity.py](../../backend/src/short_drama/schemas/identity/accounts/identity.py) 与 [auth_service.py](../../backend/src/short_drama/service/identity/authentication/auth.py)；本次未改后端。
 
 ## 密码更新、重新登录与草稿
 
-“修改密码”展开 [EmailProofForm.tsx](../src/features/auth/EmailProofForm.tsx)，锁定当前注册邮箱。表单调用现有 `POST /auth/password/request` 获取 challenge，再以 challenge、六位邮箱验证码和新密码调用 `POST /auth/password/reset`。新密码长度为 12–128 位，发送成功后保留 60 秒重发等待；提示验证码十分钟内有效，并使用不泄露邮箱是否存在的发送说明。
+“修改密码”展开 [EmailProofForm.tsx](../src/features/identity/forms/EmailProofForm.tsx)，锁定当前注册邮箱。表单调用现有 `POST /auth/password/request` 获取 challenge，再以 challenge、六位邮箱验证码和新密码调用 `POST /auth/password/reset`。新密码长度为 12–128 位，发送成功后保留 60 秒重发等待；提示验证码十分钟内有效，并使用不泄露邮箱是否存在的发送说明。
 
 发送失败或验证码无效、过期时就近显示错误，保留已填写的邮箱、验证码和新密码。处理中禁用重复提交与相关操作，并阻止关闭账号面板；“取消修改”或正常关闭面板会结束本次密码表单。
 
@@ -56,13 +56,13 @@
 
 这条保留路径针对当前仍挂载的编辑页面，不构成刷新、关闭浏览器或成功退出后的草稿保留承诺。浏览器用例明确检查了未保存的项目名称在打开/关闭账号中心、密码更新与重新登录前后的保留；没有逐一证明所有制作阶段的每种草稿字段。
 
-公开的“验证注册邮箱”与“忘记密码”页面由 [AccountPages.tsx](../src/features/auth/AccountPages.tsx) 复用同一表单，分别调用现有邮箱验证与密码重置接口。公开流程成功后显示结果与返回登录入口；账号中心内的成功回调负责原位恢复认证。
+公开的“验证注册邮箱”与“忘记密码”页面由 [AccountPages.tsx](../src/features/identity/forms/AccountPages.tsx) 复用同一表单，分别调用现有邮箱验证与密码重置接口。公开流程成功后显示结果与返回登录入口；账号中心内的成功回调负责原位恢复认证。
 
 ## 确认退出与失败恢复
 
-退出入口位于账号中心固定页脚。点击后调用现有 [confirm.tsx](../src/components/ui/confirm.tsx)，说明退出前需确认创作内容已保存，默认聚焦取消。取消不发起退出请求，当前编辑与账号保持原状态。
+退出入口位于账号中心固定页脚。点击后调用现有 [confirm.tsx](../src/shared/ui/confirm.tsx)，说明退出前需确认创作内容已保存，默认聚焦取消。取消不发起退出请求，当前编辑与账号保持原状态。
 
-确认后等待 `POST /auth/logout` 完成；[AuthSession.tsx](../src/features/auth/AuthSession.tsx) 在请求成功后才清理用户与会话状态，随后由认证门返回登录页。请求失败时保留前端当前会话和编辑页面，显示“退出登录未完成”、可读错误及“返回创作”；用户可返回后重新打开账号中心再确认退出。失败弹窗关闭也可回到仍打开的账号中心。浏览器验证覆盖取消、失败、返回及重试成功，这些结果来自 fixture，不证明网络中断后真实服务端会话的最终状态。
+确认后等待 `POST /auth/logout` 完成；[AuthSession.tsx](../src/features/identity/session/AuthSession.tsx) 在请求成功后才清理用户与会话状态，随后由认证门返回登录页。请求失败时保留前端当前会话和编辑页面，显示“退出登录未完成”、可读错误及“返回创作”；用户可返回后重新打开账号中心再确认退出。失败弹窗关闭也可回到仍打开的账号中心。浏览器验证覆盖取消、失败、返回及重试成功，这些结果来自 fixture，不证明网络中断后真实服务端会话的最终状态。
 
 ## 响应式与键盘行为
 
@@ -76,7 +76,7 @@
 
 身份行使用 72px 标签列、16px 列间距与可收缩的值列，长身份可自然换行。移动正文左右留白为 20px，桌面为 22px；手机长名称与长邮箱不会强制撑宽页面。
 
-面板复用 [Dialog.tsx](../src/components/ui/Dialog.tsx) 的原生模态行为、可见控件 Tab 循环、Escape 关闭、中文标题及关闭按钮，关闭后恢复仍存在的入口焦点。提交期间按业务状态阻止关闭。专注剪辑中的 Escape 关闭账号中心后保留专注模式。全局可见焦点和减少动态效果偏好继续由既有样式及 `StudioProvider` / `useReducedMotion` 管理，本次没有另建行为体系。
+面板复用 [Dialog.tsx](../src/shared/ui/Dialog.tsx) 的原生模态行为、可见控件 Tab 循环、Escape 关闭、中文标题及关闭按钮，关闭后恢复仍存在的入口焦点。提交期间按业务状态阻止关闭。专注剪辑中的 Escape 关闭账号中心后保留专注模式。全局可见焦点和减少动态效果偏好继续由既有样式及 `StudioProvider` / `useReducedMotion` 管理，本次没有另建行为体系。
 
 ## 验证与证据边界
 

@@ -6,15 +6,15 @@ from array import array
 import pytest
 
 from short_drama.core.config import Settings
-from short_drama.service.video_render import VideoRenderer, executable
+from short_drama.service.creation.assembly.rendering.renderer import VideoRenderer, executable
 
 
 def test_multitrack_still_composition_subtitles_and_real_audio_analysis(tmp_path, monkeypatch):
     from PIL import Image
 
-    from short_drama.schemas.project_sound import AudioClip, SoundDocument, Subtitle
-    from short_drama.service.assembly_audio import analyse_audio
-    from short_drama.service.sound_render import font_metadata
+    from short_drama.schemas.creation.sound.tracks.sound import AudioClip, SoundDocument, Subtitle
+    from short_drama.service.creation.assembly.editing.audio import analyse_audio
+    from short_drama.service.creation.sound.tracks.render import font_metadata
 
     video = tmp_path / "voice.mp4"
     subprocess.run(
@@ -114,8 +114,10 @@ def test_multitrack_still_composition_subtitles_and_real_audio_analysis(tmp_path
     # Decode and mix real sources; only the external recognition model is a substitute.
     import wave
 
-    from short_drama.schemas.canvas_transcription import CanvasTranscriptionResult
-    from short_drama.service import assembly_media_execute
+    import short_drama.service.creation.assembly.materials.media_execute as assembly_media_execute
+    from short_drama.schemas.canvas.tools.transcription.transcription import (
+        CanvasTranscriptionResult,
+    )
 
     class Recognizer:
         def __init__(self, *_):
@@ -187,8 +189,8 @@ def decode_colors(path):
 def test_multitrack_music_ducks_union_of_explicit_and_audible_dialogue(tmp_path, muted):
     import math
 
-    from short_drama.schemas.project_sound import AudioClip, SoundDocument
-    from short_drama.service.assembly_audio import audible_clips, render_audio
+    from short_drama.schemas.creation.sound.tracks.sound import AudioClip, SoundDocument
+    from short_drama.service.creation.assembly.editing.audio import audible_clips, render_audio
 
     renderer = VideoRenderer(Settings())
     sources = {}
@@ -270,8 +272,8 @@ def test_multitrack_music_ducks_union_of_explicit_and_audible_dialogue(tmp_path,
 
 @pytest.mark.parametrize("phase", [350, 1350])
 def test_loop_split_keeps_real_audio_phase(tmp_path, phase):
-    from short_drama.schemas.project_sound import AudioClip
-    from short_drama.service.assembly_audio import render_audio
+    from short_drama.schemas.creation.sound.tracks.sound import AudioClip
+    from short_drama.service.creation.assembly.editing.audio import render_audio
 
     source = tmp_path / "pulse.wav"
     subprocess.run(

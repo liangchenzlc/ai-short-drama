@@ -9,11 +9,10 @@ import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { removeCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
 import { normalizeCanvasNodeTimestamps } from "@/lib/canvas/canvas-node-timestamps";
 import { normalizeCanvasMediaNodeSemanticsList } from "@/lib/canvas/canvas-node-semantics";
-import { migrateDirectorCanvas } from "@/lib/canvas/director/director-node-migration";
 import { canvasWorkspaceProjectId, listCanvasWorkspaceProjectCanvases } from "@/lib/canvas/canvas-workspace-project";
 import { hydrateAssistantImages, resetInterruptedGeneration } from "@/lib/canvas/canvas-project-generation";
 import { listAddedSkills, type Skill } from "@/services/api/skills";
-import { forceOverwriteRemoteCanvasSync, hasRemoteUserDataSyncSession, loadCanvasProjectForEditing, saveRemoteUserDataNow, subscribeCanvasRefresh } from "@/services/local-workspace-sync";
+import { loadCanvasProjectForEditing, repairCanvasAssetBindings, subscribeCanvasRefresh } from "@/services/local-workspace-sync";
 import { createCanvasResourceRemapper, type CanvasResourceRemapper } from "@/services/host-resource-normalization";
 import { createWorkspaceCanvasProject, deleteWorkspaceCanvasProjects } from "@/services/workspace-project-repository";
 import { flushCanvasStorePersistence, useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
@@ -37,11 +36,6 @@ import { useUserStore } from "@/stores/use-user-store";
 import { isHostedWorkspaceMode, isLocalWorkspaceMode } from "@/services/workspace-mode";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
 import type { CanvasHistorySnapshot } from "./use-canvas-history";
-
-function isExpectedLocalOnlySyncError(error: unknown) {
-    const message = error instanceof Error ? error.message : String(error || "");
-    return /尚未建立云端同步会话|未登录|guest/i.test(message);
-}
 
 type UseCanvasProjectLifecycleOptions = {
     projectId: string;
@@ -170,12 +164,7 @@ export function useCanvasProjectLifecycle({
                 ? normalizeCanvasAppearance(targetProject.appearance, fallbackTheme)
                 : canvasAppearanceForTheme(fallbackTheme);
             const sourceNodes = resetInterruptedGeneration(targetProject.nodes);
-            const sourceScenes = targetProject.directorScenes || [];
-            const migration = migrateDirectorCanvas(sourceNodes, sourceScenes);
-            const normalizedDirectorNodes = migration.nodes;
-            const hasDirectorMigration = normalizedDirectorNodes.some((node, index) => node !== sourceNodes[index]) || migration.directorScenes !== sourceScenes;
-            if (hasDirectorMigration) updateProject(targetProject.id, migration);
-            const initialNodes = normalizeCanvasMediaNodeSemanticsList(normalizeCanvasNodeTimestamps(normalizedDirectorNodes, {
+            const initialNodes = normalizeCanvasMediaNodeSemanticsList(normalizeCanvasNodeTimestamps(sourceNodes, {
                 createdAt: targetProject.createdAt,
                 updatedAt: targetProject.updatedAt,
             }));
@@ -188,7 +177,7 @@ export function useCanvasProjectLifecycle({
                 backgroundMode: targetProject.backgroundMode || DEFAULT_CANVAS_BACKGROUND_MODE,
                 showImageInfo: targetProject.showImageInfo || false,
             };
-            observedContentRef.current = hasDirectorMigration ? { ...snapshot, nodes: targetProject.nodes } : snapshot;
+            observedContentRef.current = snapshot;
             chatSessionsRef.current = snapshot.chatSessions;
             activeChatIdRef.current = snapshot.activeChatId;
             nodesRef.current = snapshot.nodes;
@@ -548,8 +537,7 @@ export function useCanvasProjectLifecycle({
             if (!parent || !projectLoaded || editorProjectIdRef.current !== projectId) throw new Error("来源画布尚未完成加载，请重试");
             if (localMode && hasUnconfirmedCanvasEdits(parent.id)) throw new Error("来源画布仍有未确认编辑，请保存后再新建");
             const sourceCanvas = localMode ? initialCanvasSource(parent) : undefined;
-            const { id, syncError } = await createWorkspaceCanvasProject("未命名画布", undefined, canvasWorkspaceProjectId(parent), sourceCanvas);
-            if (syncError && !isExpectedLocalOnlySyncError(syncError)) message.warning(syncError instanceof Error ? `画布已在本地创建，云端同步失败：${syncError.message}` : "画布已在本地创建，云端同步失败");
+            const { id } = await createWorkspaceCanvasProject("未命名画布", undefined, canvasWorkspaceProjectId(parent), sourceCanvas);
             navigate(`/canvas/${id}`);
         })().catch((error) => message.error(error instanceof Error ? `新建画布失败：${error.message}` : "新建画布失败，请稍后重试"));
     }, [localMode, message, navigate, persistLocalEdits, projectId, projectLoaded]);
@@ -573,33 +561,21 @@ export function useCanvasProjectLifecycle({
         });
     }, [persistLocalEdits]);
 
-    const saveCanvasProject = useCallback(async (options: { requireRemote?: boolean } = {}): Promise<boolean> => {
+    const saveCanvasProject = useCallback(async (): Promise<boolean> => {
         try {
             await persistLocalEdits();
         } catch {
             message.error("画布保存失败，请稍后重试");
             return false;
         }
-        if (!hasRemoteUserDataSyncSession()) {
-            message.success("画布已保存");
-            return true;
-        }
-        try {
-            await saveRemoteUserDataNow(projectId);
-            message.success("画布已保存到云端");
-        } catch (error) {
-            const detail = error instanceof Error ? error.message : "未知错误";
-            if (!isExpectedLocalOnlySyncError(error)) message.warning(`本地画布布局已保存，云端同步失败：${detail}`);
-            // Imports can retain their durable local result; sharing requires cloud success.
-            return options.requireRemote === false;
-        }
+        message.success("画布已保存");
         return true;
-    }, [message, persistLocalEdits, projectId]);
+    }, [message, persistLocalEdits]);
 
     const forceSaveCanvasProject = useCallback(async (): Promise<boolean> => {
         try { await persistLocalEdits(); } catch { message.error("本地保存失败，请重试"); return false; }
         try {
-            const result = await forceOverwriteRemoteCanvasSync();
+            const result = await repairCanvasAssetBindings();
             message.success(result.reboundNodes > 0 ? `已保存，并修复 ${result.reboundNodes} 处媒体与素材的绑定` : "素材关联已核对，画布已保存");
         } catch (error) {
             message.error(`修复并保存失败：${error instanceof Error ? error.message : "未知错误"}`);

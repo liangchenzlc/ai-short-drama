@@ -1,9 +1,6 @@
-"""Upgrade a disposable database from the pre-production-workflow schema."""
+"""当前标准创作 DDL 的真实 MySQL 增量、数据保留与重复执行契约。"""
 
-import importlib.util
 import re
-import sys
-from pathlib import Path
 
 import pytest
 from sqlalchemy import bindparam, text
@@ -12,9 +9,15 @@ from scripts.standard_creation_ddl import apply_ddl
 
 pytestmark = pytest.mark.integration
 
-TABLES = ("episodes", "shot_scripts", "assets", "shot_images", "asset_image_candidates")
-ROOT = Path(__file__).resolve().parents[5]
-MIGRATIONS = next((ROOT / "docs").rglob("2026-09-21-production-workflow/000_precheck.sql")).parent
+TABLES = (
+    "projects",
+    "project_scripts",
+    "shot_scripts",
+    "assets",
+    "shot_images",
+    "asset_image_candidates",
+    "user_creation_drafts",
+)
 
 
 def mysql_statements(path):
@@ -36,29 +39,6 @@ def mysql_statements(path):
                 yield statement
             buffer = []
     assert not buffer, f"unterminated SQL in {path.name}"
-
-
-def run_sql(connection, name):
-    for statement in mysql_statements(MIGRATIONS / name):
-        connection.exec_driver_sql(statement)
-
-
-def run_backfill(engine):
-    path = MIGRATIONS / "004_backfill_asset_candidates.py"
-    spec = importlib.util.spec_from_file_location("production_asset_backfill", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    previous = sys.argv
-    try:
-        sys.argv = [
-            str(path),
-            "--database-url",
-            engine.url.render_as_string(hide_password=False),
-            "--apply",
-        ]
-        assert module.main() == 0
-    finally:
-        sys.argv = previous
 
 
 def contract_snapshot(connection):
@@ -124,176 +104,72 @@ def contract_snapshot(connection):
     }
 
 
-def rows(connection, table):
-    assert table in {
-        "episodes",
-        "shot_scripts",
-        "assets",
-        "shot_assets",
-        "shot_images",
-        "shot_videos",
-        "script_shot_records",
-        "media_recycle_bin",
-    }
-    return [
-        dict(row)
-        for row in connection.execute(text(f"SELECT * FROM {table} ORDER BY id")).mappings()
-    ]
-
-
-def test_full_production_migration_is_reentrant_preserves_data_and_matches_canonical(
-    migration_mysql_engine,
-):
+def test_standard_creation_ddl_preserves_documents_and_is_reentrant(migration_mysql_engine):
     with migration_mysql_engine.connect() as connection:
         database = connection.scalar(text("SELECT DATABASE()"))
         assert re.fullmatch(r"short_drama_[a-f0-9]{32}_test", database)
+        # 此测试重建历史迁移后的结构，当前 ORM 已不包含旧格式列。
+        connection.exec_driver_sql(
+            "ALTER TABLE project_scripts ADD COLUMN editor_document JSON NULL "
+            "COMMENT '与纯文本同版本保存的受限 Quill Delta' AFTER content, "
+            "ADD CONSTRAINT ck_scripts_editor_document "
+            "CHECK (editor_document IS NULL OR JSON_TYPE(editor_document) = 'OBJECT')"
+        )
         canonical = contract_snapshot(connection)
         connection.exec_driver_sql(
-            "INSERT INTO projects (id,owner_user_id,name,aspect) VALUES (9001,1,'migration','16:9')"
+            "INSERT INTO projects (id,owner_user_id,name) VALUES (9001,1,'migration')"
         )
         connection.exec_driver_sql(
-            "INSERT INTO episodes (id,project_id,position,title,aspect) "
-            "VALUES (9002,9001,1,'episode','16:9')"
+            "INSERT INTO project_scripts (id,project_id,position,content,state) "
+            "VALUES (9006,9001,1,'saved script','confirmed')"
         )
         connection.exec_driver_sql(
-            "INSERT INTO media_files (id,project_id,format_code,storage_locator) "
-            "VALUES (9003,9001,'image/png','migration/image.png')"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO assets (id,project_id,kind,name,media_id) "
-            "VALUES (9004,9001,'prop','umbrella',9003)"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO episode_assets (id,episode_id,asset_id,position) VALUES (9005,9002,9004,1)"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO episode_scripts (id,episode_id,position,content,state) "
-            "VALUES (9006,9002,1,'source','confirmed')"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO shot_scripts (id,episode_id,position,script) "
-            "VALUES (9007,9002,1,'legacy shot')"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO shot_assets (id,episode_id,asset_id,shot_id) VALUES (9008,9002,9004,9007)"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO shot_images (id,episode_id,shot_id,aspect,media_id) "
-            "VALUES (9009,9002,9007,'16:9',9003)"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO script_shot_records (id,script_id,shot_id,batch_id) "
-            "VALUES (9010,9006,9007,9011)"
+            "INSERT INTO shot_scripts (id,project_id,position,script,row_version) "
+            "VALUES (9007,9001,1,'saved shot',7)"
         )
         connection.commit()
 
-        connection.exec_driver_sql("DROP TABLE asset_image_candidates")
-        connection.exec_driver_sql("ALTER TABLE episode_scripts DROP COLUMN published_at")
-        connection.exec_driver_sql("ALTER TABLE media_files DROP COLUMN published_at")
+        # 只撤去此工具负责的增量；历史分集迁移不再套到当前项目结构上执行。
+        connection.exec_driver_sql("DROP TABLE user_creation_drafts")
         connection.exec_driver_sql(
-            "ALTER TABLE shot_videos DROP FOREIGN KEY fk_shot_videos_first_frame, "
-            "DROP INDEX idx_shot_videos_first_frame, DROP COLUMN first_frame_media_id, "
-            "DROP COLUMN context_hash"
+            "ALTER TABLE project_scripts DROP CHECK ck_scripts_editor_document, "
+            "DROP COLUMN editor_document"
         )
         connection.exec_driver_sql(
-            "ALTER TABLE shot_images DROP CHECK ck_shot_images_context_hash, "
-            "DROP COLUMN context_hash"
+            "ALTER TABLE shot_scripts DROP CHECK ck_shot_scripts_shot_size, "
+            "DROP COLUMN title, DROP COLUMN shot_size"
+        )
+        statements = {
+            "project_scripts": text("SELECT * FROM project_scripts WHERE id=9006"),
+            "shot_scripts": text("SELECT * FROM shot_scripts WHERE id=9007"),
+        }
+        before = {
+            table: dict(connection.execute(statement).mappings().one())
+            for table, statement in statements.items()
+        }
+        assert apply_ddl(connection)
+        for table, statement in statements.items():
+            migrated = dict(connection.execute(statement).mappings().one())
+            assert {key: migrated[key] for key in before[table]} == before[table]
+        assert contract_snapshot(connection) == canonical
+        assert apply_ddl(connection) == []
+
+        connection.exec_driver_sql(
+            "UPDATE shot_scripts SET title='kept title',shot_size='medium_shot',row_version=8 "
+            "WHERE id=9007"
         )
         connection.exec_driver_sql(
-            "ALTER TABLE shot_scripts "
-            "DROP CHECK ck_shot_scripts_shot_size, DROP COLUMN title, DROP COLUMN shot_size, "
-            "DROP CHECK ck_shot_scripts_video_settings, "
-            "DROP COLUMN video_prompt, DROP COLUMN video_settings, "
-            "DROP CHECK ck_shot_scripts_duration_ms, "
-            "DROP COLUMN source_excerpt, DROP COLUMN duration_ms, DROP COLUMN reference_media_ids, "
-            "DROP CHECK ck_shot_scripts_row_version, "
-            "DROP CHECK ck_shot_scripts_image_settings, "
-            "DROP CHECK ck_shot_scripts_deleted_time, "
-            "DROP CHECK ck_shot_scripts_creation, "
-            "DROP INDEX uk_shots_episode_active_position, "
-            "DROP INDEX uk_shots_creation_key, "
-            "DROP INDEX idx_shots_episode_deleted_position, "
-            "ADD UNIQUE KEY uk_shots_episode_position (episode_id,position), "
-            "DROP COLUMN creation_hash, DROP COLUMN creation_key, DROP COLUMN active_position, "
-            "DROP COLUMN deleted_at, DROP COLUMN image_settings, DROP COLUMN row_version"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE assets "
-            "DROP CHECK ck_assets_row_version, DROP CHECK ck_assets_state, "
-            "DROP CHECK ck_assets_confirmed_media, DROP CHECK ck_assets_tags, "
-            "DROP CHECK ck_assets_scene_time, DROP CHECK ck_assets_creation_pair, "
-            "DROP INDEX uk_assets_creation_key, DROP COLUMN creation_hash, "
-            "DROP COLUMN creation_key, DROP COLUMN scene_time, DROP COLUMN tags, "
-            "DROP COLUMN state, DROP COLUMN row_version, DROP COLUMN reference_media_ids"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE episodes DROP CHECK ck_episodes_storyboard_version, "
-            "DROP COLUMN storyboard_version"
+            "UPDATE project_scripts SET editor_document=JSON_OBJECT("
+            "'ops',JSON_ARRAY(JSON_OBJECT('insert','saved script'))) WHERE id=9006"
         )
         connection.commit()
-        protected_tables = (
-            "episodes",
-            "shot_scripts",
-            "assets",
-            "shot_assets",
-            "shot_images",
-            "shot_videos",
-            "script_shot_records",
-            "media_recycle_bin",
-        )
-        before = {table: rows(connection, table) for table in protected_tables}
-
-        for name in (
-            "000_precheck.sql",
-            "001_episode_storyboard.sql",
-            "002_asset_persistence.sql",
-            "003_shot_image_context.sql",
-        ):
-            run_sql(connection, name)
-        run_backfill(migration_mysql_engine)
-        run_sql(connection, "005_verify.sql")
-
-        for table, expected in before.items():
-            migrated = rows(connection, table)
-            old_columns = set(expected[0]) if expected else set()
-            assert [{key: row[key] for key in old_columns} for row in migrated] == expected
-        assert connection.execute(
-            text("SELECT asset_id,media_id FROM asset_image_candidates ORDER BY asset_id")
-        ).all() == [(9004, 9003)]
-        assert connection.scalar(text("SELECT storyboard_version FROM episodes WHERE id=9002")) == 1
-        assert connection.scalar(text("SELECT row_version FROM shot_scripts WHERE id=9007")) == 1
-        assert connection.scalar(text("SELECT row_version FROM assets WHERE id=9004")) == 1
-        assert connection.scalar(text("SELECT context_hash FROM shot_images WHERE id=9009")) is None
-        # Reproduce the complete upgrade path, including later additive migrations.
-        for directory in (
-            "2026-09-22-storyboard-prompts",
-            "2026-09-24-generation-references",
-            "2026-09-28-shot-video",
-            "2026-10-03-private-candidates",
-        ):
-            for path in sorted((MIGRATIONS.parent / directory).glob("*.sql")):
-                for statement in mysql_statements(path):
-                    connection.exec_driver_sql(statement)
-        assert len(apply_ddl(connection)) == 3
+        changed = {
+            table: dict(connection.execute(statement).mappings().one())
+            for table, statement in statements.items()
+        }
         assert apply_ddl(connection) == []
         assert contract_snapshot(connection) == canonical
-
-        connection.exec_driver_sql("UPDATE episodes SET storyboard_version=7 WHERE id=9002")
-        connection.exec_driver_sql("UPDATE shot_scripts SET row_version=8 WHERE id=9007")
-        connection.exec_driver_sql("UPDATE assets SET row_version=9 WHERE id=9004")
-        connection.commit()
-        for name in (
-            "000_precheck.sql",
-            "001_episode_storyboard.sql",
-            "002_asset_persistence.sql",
-            "003_shot_image_context.sql",
-        ):
-            run_sql(connection, name)
-        run_backfill(migration_mysql_engine)
-        run_sql(connection, "005_verify.sql")
-        assert apply_ddl(connection) == []
-        assert contract_snapshot(connection) == canonical
-        assert connection.scalar(text("SELECT storyboard_version FROM episodes WHERE id=9002")) == 7
-        assert connection.scalar(text("SELECT row_version FROM shot_scripts WHERE id=9007")) == 8
-        assert connection.scalar(text("SELECT row_version FROM assets WHERE id=9004")) == 9
-        assert connection.scalar(text("SELECT COUNT(*) FROM asset_image_candidates")) == 1
+        assert {
+            table: dict(connection.execute(statement).mappings().one())
+            for table, statement in statements.items()
+        } == changed

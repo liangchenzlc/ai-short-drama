@@ -1,0 +1,81 @@
+.ui-dialog {
+  border: 1px solid var(--hair);
+  border-radius: 15px;
+  padding: 0;
+  background: var(--surface);
+  color: var(--ink);
+  width: min(540px, calc(100vw - 34px));
+  max-height: calc(100vh - 56px);
+  box-shadow: 0 20px 70px rgb(0 0 0 / 45%);
+}
+.ui-dialog::backdrop {
+  background: var(--canvas);
+}
+.ui-dialog > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 19px 23px;
+  border-bottom: 1px solid var(--hair);
+}
+.ui-dialog h2 {
+  font-size: 18px;
+  margin: 0;
+  color: var(--ink);
+}
+.icon-button {
+  border: 0;
+  background: transparent;
+  font-size: 22px;
+  padding: 4px 8px;
+  min-height: 34px;
+}
+.studio-form {
+  display: grid;
+  gap: 15px;
+  padding: 20px 23px 24px;
+  overflow-y: auto;
+  max-height: calc(100vh - 150px);
+}
+.studio-form label,
+.settings-section label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.studio-form textarea,
+.settings-section textarea {
+  resize: vertical;
+}
+.studio-form .form-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.form-check input {
+  accent-color: var(--blue);
+}
+.form-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.form-error {
+  color: var(--danger);
+  margin: 0;
+  font-size: 12px;
+}
+.dialog-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.studio-project-card {
+  padding: 0;
+  text-align: left;
+  min-height: 235px;
+  width: 100%;
+}

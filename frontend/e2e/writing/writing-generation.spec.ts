@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { fixture, root } from '../support/studio-fixture';
-import type { TextGenerationRequest } from '../../src/api/types/generations';
+import type { TextGenerationRequest } from '../../src/types/generations/api';
 
 async function setup(page: Page) {
   const data = await fixture(page, true);
@@ -54,7 +54,7 @@ async function openRewrite(page: Page) {
   return dialog;
 }
 
-test('rewrite freezes exact Unicode range, preserves footer geometry and is one visible undo transaction', async ({ page }) => {
+test('rewrite freezes exact Unicode range, preserves editor geometry and is one keyboard undo transaction', async ({ page }) => {
   const data = await setup(page);
   const before = await page.locator('.sd-scroll').boundingBox();
   const dialog = await openRewrite(page);
@@ -70,17 +70,17 @@ test('rewrite freezes exact Unicode range, preserves footer geometry and is one 
   expect(source.selected_text).toBe('同一句话');
   expect(data.submissions[0].body.config_id).toBe('77');
   await expect(data.editor).not.toBeEditable();
-  await expect(page.getByRole('button', { name: '导入剧本', exact: true })).toBeDisabled();
-  await expect(page.getByRole('button', { name: '导出剧本', exact: true })).toBeEnabled();
-  await expect(page.locator('.sd-foot-status')).toContainText('正在改写选区');
+  await expect(page.getByRole('button', { name: '导入剧本', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '导出剧本', exact: true })).toHaveCount(0);
+  await expect(page.locator('.sd-task-status')).toHaveText('正在改写选区');
   expect((await page.locator('.sd-scroll').boundingBox())?.height).toBe(before?.height);
   data.controls.complete = true;
   const changed = data.initial.slice(0, start) + '新的台词' + data.initial.slice(start + 4);
   await expect(data.editor).toHaveValue(changed); await expect(data.editor).toBeEditable();
-  await page.getByRole('button', { name: '撤销', exact: true }).click();
+  await data.editor.press('Control+z');
   await expect(data.editor).toHaveValue(data.initial);
   await expect.poll(() => data.writing.editing_script.content).toBe(data.initial);
-  await page.getByRole('button', { name: '重做', exact: true }).click();
+  await data.editor.press('Control+Shift+z');
   await expect(data.editor).toHaveValue(changed);
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
@@ -165,7 +165,7 @@ test('lost submission response restores the same request without duplicate gener
   await expect.poll(() => data.submissions.length).toBe(1);
   await expect(dialog.getByRole('button', { name: '改写选区', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(page.locator('.sd-foot-status')).toContainText('改写请求待核对');
+  await expect(page.locator('.sd-task-status')).toHaveText('改写请求待核对');
   await page.reload();
   await page.getByRole('button', { name: /^保存状态：/ }).click();
   await page.getByRole('button', { name: '核对原任务', exact: true }).click();

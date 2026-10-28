@@ -1,6 +1,6 @@
 """Task lookup under the coordinator's existing task lock."""
 
-from short_drama.dao.agent_task_dao import AgentTaskDAO
+from short_drama.dao.assistant.tasks.task import AgentTaskDAO
 
 
 def task_for_run(session, run):

@@ -660,7 +660,7 @@ def test_expired_runninghub_budget_stops_before_original_task_poll(runninghub_ru
 
 @pytest.mark.parametrize("failure", [404, "malformed"])
 def test_video_query_failures_stop_after_three_and_keep_original_task(runninghub_runtime, failure):
-    from short_drama.service.canvas_video_policy import POLL_STATE_KEY
+    from short_drama.service.canvas.generation.video.video_policy import POLL_STATE_KEY
 
     runtime = runninghub_runtime
     runtime.state["poll"] = failure

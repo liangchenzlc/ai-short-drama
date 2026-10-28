@@ -4,15 +4,15 @@ import pytest
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import aliased
 
+import short_drama.db.access as _access  # noqa: F401
 from short_drama.core.exceptions import WorkflowError
-from short_drama.db import access as _access  # noqa: F401
 from short_drama.domain import AgentConversation, Project, User
 from short_drama.service.base import utcnow
 from tests.support.generation_fixtures import generation_session
 
 
 def seed_scopes(session):
-    session.info.pop("legacy_user_id", None)
+    session.info.pop("actor", None)
     now = utcnow()
     session.add_all(
         [

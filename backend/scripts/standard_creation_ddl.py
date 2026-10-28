@@ -25,7 +25,7 @@ def ddl() -> str:
         "COMMENT '镜头名称；旧记录为空' AFTER `row_version`, "
         "ADD COLUMN `shot_size` VARCHAR(20) NULL DEFAULT NULL COMMENT '受限景别元信息' "
         "AFTER `title`, ADD CONSTRAINT `ck_shot_scripts_shot_size` " + SHOT_SIZE_CHECK + ";\n\n"
-        "ALTER TABLE `episode_scripts` ADD COLUMN `editor_document` JSON NULL "
+        "ALTER TABLE `project_scripts` ADD COLUMN `editor_document` JSON NULL "
         "COMMENT '与纯文本同版本保存的受限 Quill Delta' AFTER `content`, "
         "ADD CONSTRAINT `ck_scripts_editor_document` "
         "CHECK (`editor_document` IS NULL OR JSON_TYPE(`editor_document`) = 'OBJECT');\n\n"
@@ -69,16 +69,16 @@ def apply_ddl(connection) -> list[str]:
             "ALTER TABLE `shot_scripts` ADD CONSTRAINT `ck_shot_scripts_shot_size` "
             + SHOT_SIZE_CHECK
         )
-    columns = {c["name"] for c in inspect(connection).get_columns("episode_scripts")}
+    columns = {c["name"] for c in inspect(connection).get_columns("project_scripts")}
     if "editor_document" not in columns:
         execute(
-            "ALTER TABLE `episode_scripts` ADD COLUMN `editor_document` JSON NULL "
+            "ALTER TABLE `project_scripts` ADD COLUMN `editor_document` JSON NULL "
             "COMMENT '与纯文本同版本保存的受限 Quill Delta' AFTER `content`"
         )
-    checks = {c["name"] for c in inspect(connection).get_check_constraints("episode_scripts")}
+    checks = {c["name"] for c in inspect(connection).get_check_constraints("project_scripts")}
     if "ck_scripts_editor_document" not in checks:
         execute(
-            "ALTER TABLE `episode_scripts` ADD CONSTRAINT `ck_scripts_editor_document` "
+            "ALTER TABLE `project_scripts` ADD CONSTRAINT `ck_scripts_editor_document` "
             "CHECK (`editor_document` IS NULL OR JSON_TYPE(`editor_document`) = 'OBJECT')"
         )
     if not inspect(connection).has_table("user_creation_drafts"):

@@ -10,12 +10,14 @@ from tests.support.generation_fixtures import config, generation_session, settin
 def test_four_candidates_require_explicit_apply_with_current_target_tokens(provider):
     from short_drama.core.exceptions import WorkflowError
     from short_drama.domain import AIGenerationRecord, MediaAsset, MediaFile, ShotImage
-    from short_drama.service.ai_generation_service import AIGenerationService
     from short_drama.service.base import utcnow
-    from short_drama.service.media_asset_service import MediaAssetService
-    from short_drama.service.project_service import ProjectService
-    from short_drama.service.project_storyboard_service import ProjectStoryboardService
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
+    from short_drama.service.generations.admission.generation import AIGenerationService
+    from short_drama.service.media.library.assets import MediaAssetService
+    from short_drama.service.projects.management.project import ProjectService
 
     with generation_session() as session:
         model = config(session)
@@ -144,9 +146,9 @@ def test_four_candidates_require_explicit_apply_with_current_target_tokens(provi
 def test_rename_requires_current_version():
     from short_drama.core.exceptions import Conflict
     from short_drama.domain import AIGenerationRecord, MediaAsset, MediaFile
-    from short_drama.service.ai_generation_service import AIGenerationService
     from short_drama.service.base import utcnow
-    from short_drama.service.media_asset_service import MediaAssetService
+    from short_drama.service.generations.admission.generation import AIGenerationService
+    from short_drama.service.media.library.assets import MediaAssetService
 
     with generation_session() as session:
         config(session)
@@ -197,11 +199,11 @@ def test_rename_requires_current_version():
 )
 def test_video_apply_uses_milliseconds_and_business_parameters(actual_ms, explicit_ms, expected_ms):
     from short_drama.domain import AIGenerationRecord, MediaAsset, MediaFile, ShotVideo
-    from short_drama.service.ai_generation_service import AIGenerationService
     from short_drama.service.base import utcnow
-    from short_drama.service.media_asset_service import MediaAssetService
-    from short_drama.service.project_service import ProjectService
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.generations.admission.generation import AIGenerationService
+    from short_drama.service.media.library.assets import MediaAssetService
+    from short_drama.service.projects.management.project import ProjectService
 
     with generation_session() as session:
         config(session, "video")
@@ -210,6 +212,7 @@ def test_video_apply_uses_milliseconds_and_business_parameters(actual_ms, explic
         AIGenerationService(session, settings).create(
             "video",
             {
+                "project_id": str(project.id),
                 "input": {"prompt": "rain"},
                 "parameters": {"resolution": "720p", "duration_ms": 6000},
             },
@@ -225,6 +228,7 @@ def test_video_apply_uses_milliseconds_and_business_parameters(actual_ms, explic
         session.add(
             MediaFile(
                 id=101,
+                project_id=project.id,
                 format_code="video/mp4",
                 storage_locator="minio://videos/1.mp4",
                 original_name="",
@@ -245,7 +249,9 @@ def test_video_apply_uses_milliseconds_and_business_parameters(actual_ms, explic
             )
         )
         session.commit()
-        from short_drama.service.project_storyboard_service import ProjectStoryboardService
+        from short_drama.service.creation.storyboard.management.storyboard import (
+            ProjectStoryboardService,
+        )
 
         current = ProjectStoryboardService(session).get(project.id, shot.id)["shot"]
         body = {

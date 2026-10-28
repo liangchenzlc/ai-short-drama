@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../../src/features/ai-config/config-form-model.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/ai-config/editor/config-form-model.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { createConfigDraft, serializeConfigDraft, parseRuntimeDraft, safeCanvasReturn, usesRuntimeModelDiscovery, runtimeModelDiscoveryBody } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const profile = () => ({ version: 1, api_format: 'claude', protocol: 'claude-message', reference_asset_origin: 'https://media.example.com', capability_config: { version: 1, text: { streaming: false, references: { maxImages: 2, maxVideos: 0 } } }, default_options: { temperature: 0, count: 1 }, logical_capability_spec: { version: 1, capability: 'text', inputs: { images: { min: 0, max: 2 } } }, logical_capability_profiles: [{ version: 1, capability: 'text', operations: ['chat'] }], video_capabilities_version: 'fixture-v1', concurrency_limit: 4 });

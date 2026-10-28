@@ -7,9 +7,9 @@ import threading
 import pytest
 from sqlalchemy import text
 
-from short_drama.dao.task_runtime_dao import owned_task
-from short_drama.service.canvas_generation_service import CanvasGenerationService
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.dao.generations.runtime.lifecycle import owned_task
+from short_drama.service.canvas.generation.generation import CanvasGenerationService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.canvas.document.test_canvas_workspace import actor
 from tests.integration.canvas.generation.test_canvas_generation_runtime import TASKS, admit
 from tests.integration.canvas.resources.test_canvas_library import (

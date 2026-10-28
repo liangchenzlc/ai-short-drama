@@ -33,17 +33,17 @@ const defer = () => { let resolve; const promise = new Promise(done => { resolve
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 const hostModel = (fields = {}) => ({ id: "9007199254740999", name: "宿主文本", model_key: "current-model", provider: "openai", service_type: "text", enabled: true, has_api_key: true, is_default: true,
-    selection_aliases: ["personal::old-model"], ...fields });
+    ...fields });
 
-test("宿主目录唯一投影，恢复旧默认与节点alias并保留协议能力和逻辑ID", () => {
+test("宿主目录使用当前模型身份并保留协议能力和逻辑ID", () => {
     const runtime = { version: 1, api_format: "claude", protocol: "claude-api", reference_asset_origin: "https://reference.example", concurrency_limit: 3,
         capability_config: { text: { streaming: false, thinking: true } }, default_options: { thinking: true }, logical_capability_spec: { options: {} }, logical_capability_profiles: [{ options: {} }], video_capabilities_version: "fixture-v1" };
-    const value = sourceModelConfig({ row_version: "1", preferences: { textModel: "personal::old-model", model: "personal::old-model", assistantModel: "personal::old-model" }, models: [hostModel({ runtime_profile: runtime, has_secret_key: true, headers: [{ name: "X-Private", has_value: true }] })], channels: [channel()] });
     const canonical = "host-9007199254740999::current-model";
+    const value = sourceModelConfig({ row_version: "1", preferences: { textModel: canonical, model: canonical, assistantModel: canonical }, models: [hostModel({ runtime_profile: runtime, has_secret_key: true, headers: [{ name: "X-Private", has_value: true }] })], channels: [channel()] });
     assert.equal(value.channels.length, 1);
     assert.equal(value.textModel, canonical);
     assert.equal(value.assistantModel, canonical);
-    assert.equal(normalizeModelOptionValue("personal::old-model", value.channels), canonical);
+    assert.equal(normalizeModelOptionValue("personal::old-model", value.channels), "");
     assert.equal(normalizeModelOptionValue("host-9007199254740999::renamed-model", value.channels), canonical);
     assert.equal(value.channels[0].modelProfiles[0].logicalModelId, "9007199254740999");
     assert.deepEqual(value.channels[0].modelProfiles[0].capabilityConfig, runtime.capability_config);
@@ -52,8 +52,7 @@ test("宿主目录唯一投影，恢复旧默认与节点alias并保留协议能
     assert.equal(value.channels[0].concurrencyLimit, 3);
     assert.equal(value.channels[0].referenceAssetOrigin, runtime.reference_asset_origin);
     assert.equal(resolveModelRequestConfig(value, canonical).interfaceType, "claude-api");
-    assert.equal(resolveModelRequestConfig(value, "personal::old-model").interfaceType, "claude-api");
-    assert.equal(logicalModelIDForConfig({ ...value, model: "personal::old-model" }), "9007199254740999");
+    assert.equal(logicalModelIDForConfig(value), "9007199254740999");
     assert.equal(value.channels[0].apiKey, "");
     assert.deepEqual(value.channels[0].headers, [{ name: "X-Private", value: "" }]);
 });

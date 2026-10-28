@@ -5,10 +5,10 @@ import os
 import httpx
 import pytest
 
-from short_drama.api.dependencies import get_session
+from short_drama.api.dependencies.session import get_session
 from short_drama.core.config import Settings
 from short_drama.main import create_app
-from tests.support.integration.legacy_identity import session_factory
+from tests.support.integration.identity import session_factory
 
 pytestmark = pytest.mark.integration
 

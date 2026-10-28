@@ -98,7 +98,7 @@ def main():
     path = (
         Path(__file__).resolve().parents[2]
         / "docs"
-        / "数据库模型"
+        / "database"
         / "migrations"
         / "2026-10-02-agent-mode"
         / "001-agent-tables.sql"

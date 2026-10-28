@@ -26,12 +26,11 @@ export type HostModelConfig = {
         credential_source?: "manual";
         has_secret_key?: boolean;
         headers?: Array<{ name: string; has_value: boolean }>;
-        selection_aliases?: string[];
     }>;
 };
 
-const preferenceKeys = ["model", "imageModel", "videoModel", "textModel", "audioModel", "assistantModel", "audioVoice", "audioFormat", "audioSpeed", "audioPitch", "audioVolume", "audioInstructions", "videoSeconds", "vquality", "videoGenerateAudio", "videoWatermark", "videoArkPrivateAssetUpload", "systemPrompt", "quality", "size", "transparentBackground", "count", "canvasImageCount", "taskWorkflowProvider"] as const;
-/** 宿主模型是唯一目录；源渠道标识只用于恢复旧选择，不能作为可编辑目录回写。 */
+const preferenceKeys = ["model", "imageModel", "videoModel", "textModel", "audioModel", "assistantModel", "audioVoice", "audioFormat", "audioSpeed", "audioPitch", "audioVolume", "audioInstructions", "videoSeconds", "vquality", "videoGenerateAudio", "videoWatermark", "videoArkPrivateAssetUpload", "quality", "size", "transparentBackground", "count", "canvasImageCount", "taskWorkflowProvider"] as const;
+/** 宿主模型是唯一目录，画布只回写个人偏好。 */
 export function sourceModelConfig(value: HostModelConfig): AiConfig {
     const isWorkflow = (model: HostModelConfig["models"][number]) => /^runninghub-workflow-(image|video|audio)$/.test(model.runtime_profile?.protocol || "");
     const workflows: RunningHubWorkflow[] = value.models.filter(isWorkflow).map(model => {
@@ -50,7 +49,7 @@ export function sourceModelConfig(value: HostModelConfig): AiConfig {
             apiKey: "", secretKey: "", apiFormat: runtime?.api_format || "openai", enabled: model.enabled,
             scope: "system", credentialRef: `host:${model.id}`, hasApiKey: model.has_api_key,
             credentialSource: model.credential_source,
-            hasSecretKey: model.has_secret_key, selectionAliases: model.selection_aliases || [],
+            hasSecretKey: model.has_secret_key,
             headers: model.headers?.map(header => ({ name: header.name, value: "" })),
             referenceAssetOrigin: runtime?.reference_asset_origin, concurrencyLimit: runtime?.concurrency_limit,
             models: [model.model_key],

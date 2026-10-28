@@ -6,7 +6,7 @@ pytestmark = pytest.mark.integration
 
 def test_media_library_workspace_search_and_counts_preserve_account_isolation(db_session):
     from short_drama.core.exceptions import NotFound
-    from short_drama.service.media_asset_service import MediaAssetService
+    from short_drama.service.media.library.assets import MediaAssetService
     from tests.support.generation_fixtures import settings
     from tests.support.media_library_fixtures import seed_media_library
 
@@ -35,9 +35,9 @@ def test_media_library_workspace_search_and_counts_preserve_account_isolation(db
 
 
 def media_context(session):
-    from short_drama.service.media_file_service import MediaFileService
-    from short_drama.service.project_service import ProjectService
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.media.files.files import MediaFileService
+    from short_drama.service.projects.management.project import ProjectService
 
     project = ProjectService(session).create_project({"name": "Media"})
     shot = ShotScriptService(session).create({"project_id": project.id, "position": 1})
@@ -50,9 +50,11 @@ def media_context(session):
 
 def test_replace_restore_and_discard_are_atomic(db_session):
     from short_drama.domain import MediaRecycleBin, ShotImage
-    from short_drama.service.media_recycle_bin_service import MediaRecycleBinService
-    from short_drama.service.project_storyboard_service import ProjectStoryboardService
-    from short_drama.service.shot_image_service import ShotImageService
+    from short_drama.service.creation.storyboard.images.image import ShotImageService
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
+    from short_drama.service.media.recycle.recycle import MediaRecycleBinService
 
     project, shot, first, second, _ = media_context(db_session)
     images = ShotImageService(db_session)
@@ -95,8 +97,8 @@ def test_replace_restore_and_discard_are_atomic(db_session):
 
 def test_wrong_media_type_rolls_back_current_result(db_session):
     from short_drama.core.exceptions import BusinessError
-    from short_drama.service.media_recycle_bin_service import MediaRecycleBinService
-    from short_drama.service.shot_image_service import ShotImageService
+    from short_drama.service.creation.storyboard.images.image import ShotImageService
+    from short_drama.service.media.recycle.recycle import MediaRecycleBinService
 
     project, shot, first, _, video = media_context(db_session)
     images = ShotImageService(db_session)
@@ -111,8 +113,8 @@ def test_wrong_media_type_rolls_back_current_result(db_session):
 
 def test_recycle_cannot_contain_current_result_or_be_edited(db_session):
     from short_drama.core.exceptions import BusinessError
-    from short_drama.service.media_recycle_bin_service import MediaRecycleBinService
-    from short_drama.service.shot_image_service import ShotImageService
+    from short_drama.service.creation.storyboard.images.image import ShotImageService
+    from short_drama.service.media.recycle.recycle import MediaRecycleBinService
 
     project, shot, first, _, _ = media_context(db_session)
     ShotImageService(db_session).create(
@@ -136,8 +138,8 @@ def test_recycle_cannot_contain_current_result_or_be_edited(db_session):
 
 
 def test_video_workflow_and_metadata_only_edits(db_session):
-    from short_drama.service.media_recycle_bin_service import MediaRecycleBinService
-    from short_drama.service.shot_video_service import ShotVideoService
+    from short_drama.service.creation.storyboard.videos.video import ShotVideoService
+    from short_drama.service.media.recycle.recycle import MediaRecycleBinService
 
     project, shot, _, _, video = media_context(db_session)
     videos = ShotVideoService(db_session)

@@ -3,7 +3,7 @@
 import pytest
 
 from short_drama.ai import GenerationError
-from short_drama.service.canvas_video_policy import (
+from short_drama.service.canvas.generation.video.video_policy import (
     POLL_STATE_KEY,
     CanvasVideoDownloadError,
     poll_retry_delay,

@@ -35,7 +35,10 @@ def make_celery(settings=None):
     app = Celery(
         "short_drama",
         broker=settings.rabbitmq_url.get_secret_value(),
-        include=["short_drama.tasks.worker", "short_drama.tasks.agent_worker"],
+        include=[
+            "short_drama.tasks.generations.worker",
+            "short_drama.tasks.assistant.agent_worker",
+        ],
     )
     app.conf.update(
         task_queues=(*queues.values(), render_queue(settings), agent_queue(settings)),

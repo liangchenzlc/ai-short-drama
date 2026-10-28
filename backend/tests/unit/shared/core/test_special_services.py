@@ -9,7 +9,7 @@ from short_drama.core.exceptions import BusinessError
 
 
 def test_model_key_is_encrypted_once_and_rejects_oversize():
-    from short_drama.service.ai_model_config_service import AIModelConfigService
+    from short_drama.service.ai_config.management.models import AIModelConfigService
 
     cipher = KeyCipher(base64.b64encode(b"k" * 32).decode())
     service = AIModelConfigService(Session(), cipher=cipher)
@@ -23,30 +23,15 @@ def test_model_key_is_encrypted_once_and_rejects_oversize():
 
 
 def test_generation_records_reject_generic_update():
-    from short_drama.service.novel_script_record_service import NovelScriptRecordService
-    from short_drama.service.script_shot_record_service import ScriptShotRecordService
+    from short_drama.service.creation.storyboard.management.records import ScriptShotRecordService
 
-    for cls in (NovelScriptRecordService, ScriptShotRecordService):
+    for cls in (ScriptShotRecordService,):
         with pytest.raises(BusinessError):
             cls(Session()).update(1, {})
 
 
-def test_script_content_comparison_is_exact():
-    from short_drama.domain import ProjectScript
-    from short_drama.service.project_script_service import ProjectScriptService
-
-    service = ProjectScriptService(Session())
-    script = ProjectScript(content="Text", state="confirmed")
-    values = {"content": "Text", "position": 2}
-    service._validate_update(script, values)
-    assert "state" not in values
-    values = {"content": "text"}
-    service._validate_update(script, values)
-    assert values["state"] == "unconfirmed"
-
-
 def test_generation_rejects_empty_output_without_touching_database():
-    from short_drama.service.generation_service import GenerationService
+    from short_drama.service.generations.results.generation import GenerationService
 
     with pytest.raises(BusinessError, match="at least one"):
-        GenerationService(Session()).generate_scripts(1, [])
+        GenerationService(Session()).generate_shots(1, [])

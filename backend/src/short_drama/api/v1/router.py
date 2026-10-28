@@ -1,40 +1,50 @@
 from fastapi import APIRouter
 
-from short_drama.api.v1.agent import router as agent_router
-from short_drama.api.v1.agent_artifacts import router as agent_artifacts_router
-from short_drama.api.v1.ai_generations import router as ai_generations_router
-from short_drama.api.v1.ai_model_configs import router as ai_model_configs_router
-from short_drama.api.v1.assets import router as assets_router
-from short_drama.api.v1.assistant import router as assistant_router
-from short_drama.api.v1.auth import router as auth_router
-from short_drama.api.v1.canvas_catalog import router as canvas_catalog_router
-from short_drama.api.v1.canvas_depth import router as canvas_depth_router
-from short_drama.api.v1.canvas_drawings import router as canvas_drawings_router
-from short_drama.api.v1.canvas_folders import router as canvas_folders_router
-from short_drama.api.v1.canvas_library import folder_router as canvas_library_folders_router
-from short_drama.api.v1.canvas_library import router as canvas_library_router
-from short_drama.api.v1.canvas_model_tests import router as canvas_model_tests_router
-from short_drama.api.v1.canvas_provider_tasks import router as canvas_provider_tasks_router
-from short_drama.api.v1.canvas_resources import router as canvas_resources_router
-from short_drama.api.v1.canvas_styles import router as canvas_styles_router
-from short_drama.api.v1.canvas_tasks import router as canvas_tasks_router
-from short_drama.api.v1.canvas_timeline import router as canvas_timeline_router
-from short_drama.api.v1.canvas_tool_runs import router as canvas_tool_runs_router
-from short_drama.api.v1.canvases import router as canvases_router
-from short_drama.api.v1.generation_batches import router as generation_batches_router
-from short_drama.api.v1.generation_references import router as generation_references_router
-from short_drama.api.v1.image_groups import router as image_groups_router
-from short_drama.api.v1.media_library import router as media_library_router
-from short_drama.api.v1.native_voice import router as native_voice_router
-from short_drama.api.v1.personal_resources import router as personal_resources_router
-from short_drama.api.v1.project_assembly import router as project_assembly_router
-from short_drama.api.v1.project_generation import router as project_generation_router
-from short_drama.api.v1.project_sound import router as project_sound_router
-from short_drama.api.v1.project_storyboard import router as project_storyboard_router
-from short_drama.api.v1.project_writing import router as project_writing_router
-from short_drama.api.v1.projects import router as projects_router
-from short_drama.api.v1.test import router as test_router
-from short_drama.api.v1.user_creation_drafts import router as user_creation_drafts_router
+from short_drama.api.v1.ai_config.assistant.models import router as assistant_models_router
+from short_drama.api.v1.ai_config.management.router import router as ai_model_configs_router
+from short_drama.api.v1.assistant.operations.artifacts import router as agent_artifacts_router
+from short_drama.api.v1.assistant.router import router as assistant_router
+from short_drama.api.v1.assistant.status.status import router as assistant_status_router
+from short_drama.api.v1.canvas.document.router import router as canvases_router
+from short_drama.api.v1.canvas.drawing.drawings import router as canvas_drawings_router
+from short_drama.api.v1.canvas.generation.providers.provider_tasks import (
+    router as canvas_provider_tasks_router,
+)
+from short_drama.api.v1.canvas.generation.tasks.tasks import router as canvas_tasks_router
+from short_drama.api.v1.canvas.library.library import folder_router as canvas_library_folders_router
+from short_drama.api.v1.canvas.library.library import router as canvas_library_router
+from short_drama.api.v1.canvas.models.catalog import router as canvas_catalog_router
+from short_drama.api.v1.canvas.models.model_tests import router as canvas_model_tests_router
+from short_drama.api.v1.canvas.resources.resources import router as canvas_resources_router
+from short_drama.api.v1.canvas.styles.styles import router as canvas_styles_router
+from short_drama.api.v1.canvas.timeline.timeline import router as canvas_timeline_router
+from short_drama.api.v1.canvas.tools.depth.depth import router as canvas_depth_router
+from short_drama.api.v1.canvas.tools.tool_runs import router as canvas_tool_runs_router
+from short_drama.api.v1.canvas.workspace.folders.folders import router as canvas_folders_router
+from short_drama.api.v1.creation.assembly.document.assembly import router as project_assembly_router
+from short_drama.api.v1.creation.assets.management.assets import router as assets_router
+from short_drama.api.v1.creation.drafts.drafts import router as user_creation_drafts_router
+from short_drama.api.v1.creation.sound.tracks.sound import router as project_sound_router
+from short_drama.api.v1.creation.sound.voices.voices import router as native_voice_router
+from short_drama.api.v1.creation.storyboard.management.generation import (
+    router as project_generation_router,
+)
+from short_drama.api.v1.creation.storyboard.management.storyboard import (
+    router as project_storyboard_router,
+)
+from short_drama.api.v1.creation.writing.script.documents import router as project_writing_router
+from short_drama.api.v1.generations.admission.router import router as ai_generations_router
+from short_drama.api.v1.generations.batches.batches import router as generation_batches_router
+from short_drama.api.v1.generations.references.references import (
+    router as generation_references_router,
+)
+from short_drama.api.v1.identity.authentication.auth import router as auth_router
+from short_drama.api.v1.media.image_groups.router import router as image_groups_router
+from short_drama.api.v1.media.imports.router import router as personal_resources_router
+from short_drama.api.v1.media.library.router import router as media_library_router
+from short_drama.api.v1.projects.management.router import router as projects_router
+from short_drama.api.v1.skills.catalog.router import router as skills_router
+from short_drama.api.v1.system.health.router import router as test_router
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(canvas_catalog_router)
@@ -51,7 +61,9 @@ router.include_router(canvas_provider_tasks_router)
 router.include_router(canvas_model_tests_router)
 router.include_router(canvas_library_router)
 router.include_router(canvas_library_folders_router)
-router.include_router(agent_router)
+router.include_router(assistant_models_router)
+router.include_router(skills_router)
+router.include_router(assistant_status_router)
 router.include_router(assistant_router)
 router.include_router(agent_artifacts_router)
 router.include_router(project_assembly_router)

@@ -1,8 +1,8 @@
 """Read versioned current text and prepare an explicitly reviewed script change."""
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.dao.project_writing_dao import ProjectWritingDAO
-from short_drama.schemas.project_writing import writing_text
+from short_drama.dao.creation.writing.script.documents import ProjectWritingDAO
+from short_drama.schemas.creation.writing.script.documents import writing_text
 
 
 def bound_document(session, target, reference):

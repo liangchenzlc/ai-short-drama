@@ -1,4 +1,4 @@
--- Canonical MySQL 8 schema: 122 tables.
+-- Canonical MySQL 8 schema: 119 tables.
 -- Generated from short_drama.domain by backend/scripts/export_schema.py.
 -- Initialize an empty database; upgrade existing databases with versioned migrations.
 -- Creation-mode upgrades use the explicit offline reset and preservation workflow.
@@ -586,26 +586,11 @@ CREATE TABLE `project_canvases` (
   KEY `idx_canvas_project_order` (`project_id`, `archived_at`, `position`, `id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
-CREATE TABLE `project_novels` (
-  `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的记录标识',
-  `project_id` BIGINT UNSIGNED NOT NULL COMMENT '所属项目',
-  `content` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '创作流程中用户输入的当前小说正文',
-  `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
-  `updated_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '最近修改时间；正常写入非空，历史未知可显式NULL',
-  `created_by` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '创建人；预留用户ID，暂不设外键',
-  `updated_by` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '最近修改人；预留用户ID，暂不设外键',
-  PRIMARY KEY (`id`),
-  CONSTRAINT ck_project_novels_audit_time CHECK (`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`),
-  CONSTRAINT fk_project_novels_project_id FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_novels_creation` (project_id)
-) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COMMENT='小说原文' COLLATE utf8mb4_0900_ai_ci;
-
 CREATE TABLE `project_scripts` (
   `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的记录标识',
   `project_id` BIGINT UNSIGNED NOT NULL COMMENT '所属项目',
   `position` INT UNSIGNED NOT NULL COMMENT '同一项目内剧本排序',
   `content` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '剧本正文',
-  `editor_document` JSON NULL COMMENT '与纯文本同版本保存的受限 Quill Delta',
   `state` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'unconfirmed' COMMENT '未确认 / 已确认',
   `published_at` DATETIME(6) NULL COMMENT '明确采用为项目作品的时间；候选为空',
   `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间；正常写入非空，历史未知可显式NULL',
@@ -616,7 +601,6 @@ CREATE TABLE `project_scripts` (
   PRIMARY KEY (`id`),
   CONSTRAINT ck_project_scripts_audit_time CHECK (`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`),
   CONSTRAINT ck_project_scripts_position CHECK (`position` > 0),
-  CONSTRAINT ck_scripts_editor_document CHECK (`editor_document` IS NULL OR JSON_TYPE(`editor_document`) = 'OBJECT'),
   CONSTRAINT ck_scripts_state CHECK (`state` IN ('unconfirmed', 'confirmed')),
   CONSTRAINT fk_project_scripts_project_id FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_scripts_confirmed_creation` (confirmed_project_id),
@@ -632,20 +616,6 @@ CREATE TABLE `project_sound_modes` (
   CONSTRAINT ck_project_sound_mode_version CHECK (row_version > 0),
   CONSTRAINT fk_projectsoundmode_project_id FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COLLATE utf8mb4_0900_ai_ci;
-
-CREATE TABLE `project_story_outlines` (
-  `id` BIGINT UNSIGNED NOT NULL,
-  `project_id` BIGINT UNSIGNED NOT NULL,
-  `content` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '当前故事大纲正文',
-  `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updated_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `created_by` BIGINT UNSIGNED NULL,
-  `updated_by` BIGINT UNSIGNED NULL,
-  PRIMARY KEY (`id`),
-  CONSTRAINT ck_story_outlines_audit_time CHECK (`created_at` IS NULL OR `updated_at` IS NULL OR `updated_at` >= `created_at`),
-  CONSTRAINT fk_story_outlines_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_story_outlines_project` (project_id)
-) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COMMENT='故事大纲；每个作品一份当前正文' COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `project_story_settings` (
   `project_id` BIGINT UNSIGNED NOT NULL,
@@ -740,7 +710,7 @@ CREATE TABLE `user_creation_drafts` (
   `user_id` BIGINT UNSIGNED NOT NULL COMMENT '本人草稿所有者',
   `project_id` BIGINT UNSIGNED NOT NULL COMMENT 'Project scope',
   `object_id` BIGINT UNSIGNED NOT NULL COMMENT '项目、素材或镜头的稳定对象ID',
-  `purpose` VARCHAR(32) COLLATE utf8mb4_0900_bin NOT NULL COMMENT 'novel_adaptation / asset_image / storyboard_image / storyboard_video',
+  `purpose` VARCHAR(32) COLLATE utf8mb4_0900_bin NOT NULL COMMENT 'asset_image / storyboard_image / storyboard_video',
   `model_config_id` BIGINT UNSIGNED NULL COMMENT 'Saved model choice ID',
   `input_text` MEDIUMTEXT NOT NULL DEFAULT ('') COMMENT '本人本次输入；图片和改编最多4000字符，视频最多16000字符',
   `image_settings` JSON NULL DEFAULT NULL COMMENT 'Image generation settings: aspect, resolution, count',
@@ -754,7 +724,7 @@ CREATE TABLE `user_creation_drafts` (
   PRIMARY KEY (`id`),
   CONSTRAINT ck_user_creation_drafts_draft_version CHECK (`draft_version` > 0),
   CONSTRAINT ck_user_creation_drafts_image_settings CHECK (`image_settings` IS NULL OR JSON_TYPE(`image_settings`) = 'OBJECT'),
-  CONSTRAINT ck_user_creation_drafts_purpose CHECK (`purpose` IN ('novel_adaptation', 'asset_image', 'storyboard_image', 'storyboard_video')),
+  CONSTRAINT ck_user_creation_drafts_purpose CHECK (`purpose` IN ('asset_image', 'storyboard_image', 'storyboard_video')),
   CONSTRAINT ck_user_creation_drafts_reference_media_ids CHECK (JSON_TYPE(`reference_media_ids`) = 'ARRAY' AND JSON_LENGTH(`reference_media_ids`) <= 16),
   CONSTRAINT ck_user_creation_drafts_row_version CHECK (`row_version` > 0),
   CONSTRAINT ck_user_creation_drafts_video_settings CHECK (`video_settings` IS NULL OR JSON_TYPE(`video_settings`) = 'OBJECT'),
@@ -1359,25 +1329,6 @@ CREATE TABLE `media_recycle_bin` (
   KEY `idx_recycle_created` (`created_at`, `id`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COMMENT='分镜媒体回收站' COLLATE utf8mb4_0900_ai_ci;
 
-CREATE TABLE `novel_script_records` (
-  `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的生成记录标识',
-  `novel_id` BIGINT UNSIGNED NOT NULL COMMENT '作为生成来源的项目小说',
-  `script_id` BIGINT UNSIGNED NOT NULL COMMENT '本次生成得到的剧本；一份剧本最多一条生成来源记录',
-  `batch_id` BIGINT UNSIGNED NOT NULL COMMENT '一次小说生成剧本操作的批次标识；不是外键',
-  `model_id` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '本次使用的文本模型配置；演示或来源未知时可空',
-  `created_at` DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '生成结果入库时间；正常写入非空，历史未知可显式NULL',
-  `created_by` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '发起本次生成的用户；预留用户ID，暂不设外键',
-  PRIMARY KEY (`id`),
-  CONSTRAINT ck_novel_script_records_batch CHECK (`batch_id` > 0),
-  CONSTRAINT fk_novel_script_records_model_id FOREIGN KEY (model_id) REFERENCES ai_model_configs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_novel_script_records_novel_id FOREIGN KEY (novel_id) REFERENCES project_novels (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_novel_script_records_script_id FOREIGN KEY (script_id) REFERENCES project_scripts (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_novel_script_result` (script_id),
-  KEY `idx_novel_script_batch` (`batch_id`),
-  KEY `idx_novel_script_records_model_id` (`model_id`),
-  KEY `idx_novel_script_source` (`novel_id`, `batch_id`)
-) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COMMENT='小说生成剧本记录' COLLATE utf8mb4_0900_ai_ci;
-
 CREATE TABLE `project_assemblies` (
   `id` BIGINT UNSIGNED NOT NULL,
   `project_id` BIGINT UNSIGNED NOT NULL,
@@ -1426,8 +1377,6 @@ CREATE TABLE `project_script_revisions` (
   `source` VARCHAR(24) NOT NULL,
   `before_content` MEDIUMTEXT NOT NULL,
   `after_content` MEDIUMTEXT NOT NULL,
-  `before_document` JSON NULL,
-  `after_document` JSON NULL,
   `created_by` BIGINT UNSIGNED NULL,
   `created_at` DATETIME(6) NOT NULL,
   PRIMARY KEY (`id`),

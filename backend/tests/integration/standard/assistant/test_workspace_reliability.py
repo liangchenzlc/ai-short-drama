@@ -11,11 +11,12 @@ from short_drama.agent.task.contract import ConfirmRequirements
 from short_drama.agent.task.requirements import confirm_locked, load_task_requirements
 from short_drama.agent.task.state import apply_inputs_locked
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.domain.agent import AgentConversation, AgentRun
-from short_drama.domain.agent_task import AgentOperation, AgentTask
-from short_drama.domain.agent_task_requirement import AgentTaskRequirement
-from short_drama.service.project_service import ProjectService
-from short_drama.service.project_writing_service import ProjectWritingService
+from short_drama.domain.assistant.conversations.models import AgentConversation
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
+from short_drama.domain.assistant.tasks.task_requirement import AgentTaskRequirement
+from short_drama.service.creation.writing.script.documents import ProjectWritingService
+from short_drama.service.projects.management.project import ProjectService
 from tests.integration.standard.assistant.test_global_assistant_tasks import (
     harness_workspace,
     new_task,
@@ -234,11 +235,9 @@ def test_proposal_requires_adoption_then_is_idempotent_and_recoverable(
         assert current["editing_script"]["content"] == ("新稿" if empty else "前😀新稿后")
         history = writing.script_revisions(project_id)["items"]
         assert len(history) == 1 and history[0]["source"] == "assistant"
-        restored = writing.restore_script_revision(
-            project_id, history[0]["id"], {"content_version": current["content_version"]}
-        )
-        assert restored["editing_script"]["content"] == ("" if empty else "前😀原文后")
-        assert len(writing.script_revisions(project_id)["items"]) == 2
+        snapshot = writing.script_revisions(project_id, revision_id=history[0]["id"])
+        assert snapshot["before_content"] == ("" if empty else "前😀原文后")
+        assert snapshot["after_content"] == current["editing_script"]["content"]
     with factory() as session:
         with pytest.raises(NotFound):
             task_service(session, settings, owner=2).script_proposal(operation_id)

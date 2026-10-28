@@ -25,13 +25,14 @@ from short_drama.core.config import Settings
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.time import utcnow
 from short_drama.domain import Asset, MediaFile, ShotScript
-from short_drama.domain.agent import AgentMessage, AgentRun, AgentToolCall, AgentTurn
-from short_drama.domain.agent_graph import AgentGraphCheckpoint, AgentGraphWrite
-from short_drama.domain.agent_memory import AgentMemoryJob
-from short_drama.domain.agent_task import AgentOperation, AgentTask, AgentTaskInput
-from short_drama.service.agent_skill_service import AgentSkillService
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.storage_service import StorageService
+from short_drama.domain.assistant.conversations.models import AgentMessage
+from short_drama.domain.assistant.execution.graph import AgentGraphCheckpoint, AgentGraphWrite
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
+from short_drama.domain.assistant.memory.memory import AgentMemoryJob
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask, AgentTaskInput
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.media.files.storage import StorageService
+from short_drama.service.skills.catalog.skill import AgentSkillService
 from short_drama.storage.minio import MinioStorage
 from tests.integration.standard.assistant.test_global_assistant_tasks import (
     harness_workspace,
@@ -39,7 +40,6 @@ from tests.integration.standard.assistant.test_global_assistant_tasks import (
     task_actor,
     task_service,
 )
-from tests.support.integration.harness_skill import seed_legacy_script
 
 pytestmark = [
     pytest.mark.integration,
@@ -150,7 +150,7 @@ def test_real_model_long_creation_with_compaction_recovery_and_saved_results(
             following = (
                 f"下一步先确认本事实再读取 step-{index + 2}.md。"
                 if index + 1 < len(clues)
-                else "六段线索已齐备，下一步只读 scripts/check.py，再查看 assets/layout.png。"
+                else "六段线索已齐备，下一步读取 references/check.md，再查看 assets/layout.png。"
             )
             resources.append(
                 {
@@ -159,6 +159,7 @@ def test_real_model_long_creation_with_compaction_recovery_and_saved_results(
                     + "节奏说明：以角色行为呈现线索，不通过长篇解释交代。\n" * 65,
                 }
             )
+        resources.append({"path": "references/check.md", "content": "检查两名角色和三个分镜。"})
         picture = Image.new("RGB", (160, 100), "white")
         ImageDraw.Draw(picture).rectangle((0, 0, 45, 99), fill="blue")
         pixels = io.BytesIO()
@@ -183,13 +184,12 @@ def test_real_model_long_creation_with_compaction_recovery_and_saved_results(
                             "description": "按阶段核对雨夜短剧资料，保存角色和分镜并用回执核验。",
                             "instructions": "逐段读取资料；用户明确约束优先。"
                             "完成后用实际操作回执核验写入。"
-                            "脚本只读，图片需要看像素时才读取。",
+                            "图片需要看像素时才读取。",
                             "resources": resources if index == 0 else [],
                         },
                         uuid4().hex,
                     )
                 )
-        skills[0] = seed_legacy_script((factory, settings, model, objects), skills[0], task_actor())
         reference, image_groups = image_group_workspace((factory, settings, model))
         for group in image_groups:
             for image_item in group["items"]:
@@ -215,7 +215,7 @@ def test_real_model_long_creation_with_compaction_recovery_and_saved_results(
             "2. 按次序分别读取第一个方法的 references/step-1.md 至 step-6.md，"
             "每段核对线索后，用 record_task_observation 将该段事实及读取原文引用保存为工作笔记，"
             "然后再读下一段；不要一轮批量读取。\n"
-            "3. 只读 scripts/check.py 的规则，再查看 assets/layout.png 的实际像素，"
+            "3. 读取 references/check.md 的规则，再查看 assets/layout.png 的实际像素，"
             "然后读取已选素材的当前图片组目录，通过 read_image_content 查看其中第一个图位，"
             "两种图片分别辨认，在最终回答说明蓝色条带位于哪一侧。\n"
             "4. 读取真实创作目标目录，再保存两个角色（林晚和乘客）及关联的三个连续分镜，"
@@ -428,7 +428,7 @@ def test_real_model_long_creation_with_compaction_recovery_and_saved_results(
                 if item.tool_name == "read_skill_resource"
             ]
             stages = [f"references/step-{index}.md" for index in range(1, 7)]
-            assert {*stages, "scripts/check.py", "assets/layout.png"} <= set(read_paths)
+            assert {*stages, "references/check.md", "assets/layout.png"} <= set(read_paths)
             first_reads = [read_paths.index(path) for path in stages]
             assert first_reads == sorted(first_reads)
             assert any(item.tool_name == "read_task_results" for item in successful), {

@@ -3,7 +3,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
 import { nanoid } from "nanoid";
 
-import { promoteLegacyBatchTableSize } from "@/lib/canvas/canvas-batch-table";
 import { persistCanvasDocument } from "@/services/local-workspace-repository";
 import { cancelGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
@@ -151,15 +150,6 @@ export function useCanvasGenerationOrchestration({
 
     useEffect(() => {
         if (!projectLoaded) return;
-        setNodes((current) => {
-            let changed = false;
-            const next = current.map((node) => {
-                const promoted = promoteLegacyBatchTableSize(node);
-                if (promoted !== node) changed = true;
-                return promoted;
-            });
-            return changed ? next : current;
-        });
         nodesRef.current.filter((node) => node.type === CanvasNodeType.BatchTable).forEach((node) => {
             syncRowsFromConnections(node.id, true);
         });

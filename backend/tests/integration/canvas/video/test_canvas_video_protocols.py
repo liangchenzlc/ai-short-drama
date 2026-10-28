@@ -21,11 +21,11 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.ai import GenerationGateway
-from short_drama.ai.canvas_credentials import decode_canvas_credentials
-from short_drama.ai.canvas_video_adapters import (
+from short_drama.ai.adapters.video.video_adapters import (
     NEWAPI_VIDEO_GENERATIONS,
     OPENAI_VIDEOS,
 )
+from short_drama.ai.gateway.canvas_credentials import decode_canvas_credentials
 from short_drama.core.crypto import KeyCipher
 from short_drama.domain import (
     AIGenerationRecord,
@@ -34,14 +34,14 @@ from short_drama.domain import (
     CanvasTaskBinding,
     MediaFile,
 )
-from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.ai_model_config_service import AIModelConfigService
+from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+from short_drama.service.ai_config.management.models import AIModelConfigService
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_generation_service import CanvasGenerationService
-from short_drama.service.canvas_model_catalog_service import CanvasModelCatalogService
-from short_drama.service.generation_execution_service import GenerationExecutionService
-from short_drama.service.task_runtime_service import finish
+from short_drama.service.canvas.generation.generation import CanvasGenerationService
+from short_drama.service.canvas.models.model_catalog import CanvasModelCatalogService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
+from short_drama.service.generations.runtime.lifecycle import finish
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.document.test_canvas_workspace import actor
 from tests.integration.canvas.generation.test_canvas_generation_media_runtime import (

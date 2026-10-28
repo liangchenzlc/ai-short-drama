@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from short_drama.domain import AsyncTask, CanvasLocalJob, CanvasResourceUpload, MediaFile
-from short_drama.service.canvas_depth_archive import archive_key
-from short_drama.tasks.canvas_local import CanvasLocalExecutor
+from short_drama.service.canvas.tools.depth.depth_archive import archive_key
+from short_drama.tasks.canvas.canvas_local import CanvasLocalExecutor
 from tests.integration.canvas.resources.test_canvas_resources import canvas, upload
 from tests.integration.canvas.resources.test_canvas_resources import resource_app as resource_app
 from tests.integration.canvas.timeline.test_canvas_timeline_ffmpeg import ffmpeg

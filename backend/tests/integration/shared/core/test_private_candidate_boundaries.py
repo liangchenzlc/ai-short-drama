@@ -15,12 +15,12 @@ from short_drama.domain import (
     ProjectSound,
     User,
 )
-from short_drama.schemas.ai_generation import VideoGenerationCreate
-from short_drama.schemas.project_sound import SoundDocument
+from short_drama.schemas.creation.sound.tracks.sound import SoundDocument
+from short_drama.schemas.generations.admission.generation import VideoGenerationCreate
 from short_drama.service.base import utcnow
-from short_drama.service.media_asset_service import MediaAssetService
-from short_drama.service.project_sound_service import ProjectSoundService, line_hash
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
+from short_drama.service.creation.sound.tracks.sound import ProjectSoundService, line_hash
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.media.library.assets import MediaAssetService
 from short_drama.utils.snowflake import next_id
 
 pytestmark = pytest.mark.integration
@@ -28,8 +28,8 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def workspace(db_session, mysql_engine):
-    from short_drama.service.project_service import ProjectService
-    from tests.support.integration.legacy_identity import session_factory
+    from short_drama.service.projects.management.project import ProjectService
+    from tests.support.integration.identity import session_factory
 
     with db_session.begin():
         db_session.add(
@@ -52,7 +52,7 @@ def actor(identifier):
 
 
 def media_model(factory, service_type):
-    from short_drama.service.ai_model_config_service import AIModelConfigService
+    from short_drama.service.ai_config.management.models import AIModelConfigService
 
     with factory() as session:
         return (
@@ -70,7 +70,7 @@ def media_model(factory, service_type):
 
 
 def shot(factory, project_id):
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
 
     with factory() as session:
         return (

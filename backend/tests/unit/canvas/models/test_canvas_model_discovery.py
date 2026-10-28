@@ -8,8 +8,8 @@ import pytest
 from pydantic import ValidationError
 
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.schemas.canvas_catalog import CanvasChannelModelsRequest
-from short_drama.service.canvas_model_discovery_service import CanvasModelDiscoveryService
+from short_drama.schemas.canvas.models.catalog import CanvasChannelModelsRequest
+from short_drama.service.canvas.models.model_discovery import CanvasModelDiscoveryService
 
 
 class Catalog:

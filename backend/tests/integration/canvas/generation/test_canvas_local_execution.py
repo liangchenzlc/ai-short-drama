@@ -12,9 +12,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from short_drama.domain import AsyncTask, CanvasLocalJob, CanvasResourceUpload, MediaFile
-from short_drama.domain.collaboration import User
+from short_drama.domain.identity.accounts.user import User
 from short_drama.service.base import utcnow
-from short_drama.tasks.canvas_local import CanvasLocalExecutor, CanvasLocalPublisher
+from short_drama.tasks.canvas.canvas_local import CanvasLocalExecutor, CanvasLocalPublisher
 from tests.integration.canvas.audio.test_canvas_transcription_wav_http import whisper_server
 from tests.integration.canvas.resources.test_canvas_resources import canvas, upload
 from tests.integration.canvas.resources.test_canvas_resources import resource_app as resource_app

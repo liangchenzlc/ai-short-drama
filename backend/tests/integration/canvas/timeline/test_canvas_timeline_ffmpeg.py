@@ -9,14 +9,14 @@ from array import array
 
 import pytest
 
+import short_drama.service.canvas.timeline.timeline_renderer as module
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.canvas_timeline import CanvasTimelinePlanRequest
-from short_drama.service import canvas_timeline_renderer as module
-from short_drama.service.canvas_timeline_compile import compile_timeline_plan
-from short_drama.service.canvas_timeline_native import SUBTITLE_FILE_NAME
-from short_drama.service.canvas_timeline_renderer import CanvasTimelineRenderer
-from short_drama.service.video_render import RenderCancelled, executable
+from short_drama.schemas.canvas.timeline.timeline import CanvasTimelinePlanRequest
+from short_drama.service.canvas.timeline.timeline_compile import compile_timeline_plan
+from short_drama.service.canvas.timeline.timeline_native import SUBTITLE_FILE_NAME
+from short_drama.service.canvas.timeline.timeline_renderer import CanvasTimelineRenderer
+from short_drama.service.creation.assembly.rendering.renderer import RenderCancelled, executable
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_CANVAS_TIMELINE_FFMPEG") != "1",

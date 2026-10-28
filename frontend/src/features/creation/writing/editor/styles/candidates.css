@@ -1,0 +1,226 @@
+/* Immutable story candidates use the same quiet workbench as the draft editor. */
+.revision-panel {
+  margin-block: 32px;
+  padding-block: 26px;
+  border-block: 1px solid var(--line);
+}
+.revision-panel > p {
+  max-width: 75ch;
+}
+.version-toolbar,
+.version-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.version-toolbar {
+  margin-block: 20px 26px;
+}
+.version-toolbar span,
+.version-actions span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.version-pending,
+.version-empty-state {
+  margin-block: 20px;
+  padding: 20px;
+  border: 1px solid var(--warning-border);
+  border-radius: 8px;
+  background: var(--warning-bg);
+}
+.version-pending h3,
+.version-empty-state h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.version-pending p,
+.version-empty-state p {
+  margin-bottom: 14px;
+}
+.version-workspace {
+  display: grid;
+  grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+  border-top: 1px solid var(--line);
+}
+.version-workspace > aside {
+  padding: 22px 22px 22px 0;
+  border-right: 1px solid var(--line);
+}
+.version-workspace > aside h3 {
+  margin: 0 0 14px;
+  font-size: 15px;
+}
+.version-workspace > aside ol {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+}
+.version-workspace > aside li + li {
+  border-top: 1px solid var(--hair);
+}
+.version-workspace > aside li button {
+  display: grid;
+  width: 100%;
+  min-height: 0;
+  gap: 4px;
+  padding: 12px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+}
+.version-workspace > aside li button:hover:not(:disabled) {
+  background: var(--canvas);
+}
+.version-workspace > aside li button.selected {
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+.version-workspace > aside li button span,
+.version-workspace > aside li button small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.version-workspace > aside li button small {
+  min-height: 18px;
+  color: var(--accent);
+}
+.version-detail {
+  min-width: 0;
+  padding: 22px 0 22px 26px;
+}
+.version-state-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 22px;
+  border-block: 1px solid var(--line);
+}
+.version-state-strip span {
+  min-width: 0;
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.version-state-strip span + span {
+  border-left: 1px solid var(--line);
+}
+.version-state-strip strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.version-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.version-columns > article {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--canvas);
+}
+.version-columns > article > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.version-media {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.version-media figure {
+  margin: 0;
+}
+.version-media img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--canvas);
+}
+.version-media figcaption {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.version-columns > article > header h4 {
+  margin: 0;
+  font-size: 15px;
+}
+.version-columns > article > header span {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+.version-columns .story-plan-preview {
+  max-height: 540px;
+  overflow: auto;
+  scrollbar-color: var(--border-hover) var(--border-hover);
+  scrollbar-width: thin;
+}
+.version-columns .story-plan-preview > section {
+  margin-block: 16px;
+}
+.version-columns .story-plan-preview p,
+.version-columns .story-plan-preview li {
+  overflow-wrap: anywhere;
+}
+.version-empty {
+  padding-block: 24px;
+}
+.version-impact,
+.version-report {
+  margin-top: 24px;
+  padding-block: 20px;
+  border-block: 1px solid var(--line);
+}
+.version-impact h4,
+.version-report h4 {
+  margin: 0;
+  font-size: 15px;
+}
+.version-impact h5 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.version-impact dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-block: 16px;
+}
+.version-impact dl div {
+  min-width: 0;
+}
+.version-impact dd {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.version-impact-lists {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.version-impact-lists ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.version-actions {
+  margin-top: 22px;
+  padding-top: 4px;
+}

@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from short_drama.domain import AIGenerationRecord, MediaFile
 from short_drama.tasks.celery_app import make_celery, topology
-from short_drama.tasks.publisher import Publisher
+from short_drama.tasks.runtime.publisher import Publisher
 from tests.integration.canvas.generation.test_canvas_generation_broker import (
     eventually,
     poll_task,

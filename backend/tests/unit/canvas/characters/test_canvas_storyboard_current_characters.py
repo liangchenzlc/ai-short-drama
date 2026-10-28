@@ -8,14 +8,14 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+import short_drama.service.canvas.document.commits as canvas_service
 from short_drama.ai.types import GenerationError
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import Project, ProjectCanvas
-from short_drama.schemas.canvas import CanvasDocument
-from short_drama.service import canvas_service
+from short_drama.schemas.canvas.document.canvas import CanvasDocument
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_service import CanvasService
-from short_drama.service.canvas_storyboard import (
+from short_drama.service.canvas.document.canvas import CanvasService
+from short_drama.service.canvas.document.storyboard.storyboard import (
     canvas_storyboard_result,
     check_storyboard_context,
     storyboard_snapshot,

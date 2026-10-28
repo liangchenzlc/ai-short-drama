@@ -7,10 +7,11 @@ from sqlalchemy.orm import sessionmaker
 from short_drama.ai.types import GenerationResult
 from short_drama.core.config import Settings
 from short_drama.domain import AIGenerationRecord, AsyncTask
-from short_drama.schemas.storyboard_result import parse_storyboard_result
-from short_drama.service.ai_generation_service import AIGenerationService, resume_action
-from short_drama.service.generation_execution_service import GenerationExecutionService
-from short_drama.service.task_runtime_service import finish
+from short_drama.schemas.creation.storyboard.management.results import parse_storyboard_result
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.admission.task_policy import resume_action
+from short_drama.service.generations.execution.execution import GenerationExecutionService
+from short_drama.service.generations.runtime.lifecycle import finish
 from tests.support.generation_fixtures import config, generation_session, settings
 from tests.unit.standard.writing.test_project_writing import setup
 
@@ -85,7 +86,6 @@ def test_failed_storyboard_recovers_saved_text_without_another_model_call():
             {"content_version": "1", "script_id": None, "content": SOURCE},
         )
         script_id = saved["script"]["id"]
-        writing.confirm(project_id, script_id, {"content_version": "2"})
         service = AIGenerationService(session, settings)
         created, _ = service.create(
             "text",

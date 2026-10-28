@@ -1,5 +1,5 @@
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
-import type { CanvasInitialDrawingDto } from "@host/api/types/canvases";
+import type { CanvasInitialDrawingDto } from "@host/integrations/canvas/contracts";
 import { assertUserScope, type CapturedUserScope } from "@/lib/user-scope-guard";
 import { getCanvasDrawing } from "@/services/api/workspace-data";
 import { resourceFileUrl } from "@/services/api/resources";

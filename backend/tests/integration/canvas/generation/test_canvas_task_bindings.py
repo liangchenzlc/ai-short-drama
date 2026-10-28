@@ -20,7 +20,7 @@ from short_drama.domain import (
     MediaFile,
     ProjectCanvas,
 )
-from short_drama.domain.canvas import (
+from short_drama.domain.canvas.document.canvas import (
     CanvasNode,
     CanvasNodeUserState,
     CanvasRevision,
@@ -28,14 +28,17 @@ from short_drama.domain.canvas import (
     CanvasUserState,
     CanvasWriteReceipt,
 )
-from short_drama.domain.collaboration import AuditEvent
-from short_drama.schemas.canvas_generation import CanvasTaskBindOperation, CanvasTaskRegistration
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.ai_model_config_service import AIModelConfigService
+from short_drama.domain.identity.audit.models import AuditEvent
+from short_drama.schemas.canvas.generation.generation import (
+    CanvasTaskBindOperation,
+    CanvasTaskRegistration,
+)
+from short_drama.service.ai_config.management.models import AIModelConfigService
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_service import CanvasService
-from short_drama.service.canvas_task_outputs import generated_asset_id
-from short_drama.service.canvas_task_service import CanvasTaskService
+from short_drama.service.canvas.document.canvas import CanvasService
+from short_drama.service.canvas.generation.tasks.task import CanvasTaskService
+from short_drama.service.canvas.generation.tasks.task_outputs import generated_asset_id
+from short_drama.service.generations.admission.generation import AIGenerationService
 from short_drama.utils.snowflake import next_id
 from tests.integration.canvas.document.test_canvas_workspace import actor, add_user, create, node
 
@@ -43,7 +46,7 @@ pytestmark = pytest.mark.integration
 
 
 def test_bind_waiting_for_project_lock_preserves_the_latest_graph(db_session, monkeypatch):
-    from short_drama.dao.canvas_task_dao import CanvasTaskDAO
+    from short_drama.dao.canvas.generation.tasks.task import CanvasTaskDAO
 
     project_id, canvas_id, task_id, _, op = prepared(db_session)
     complete(db_session, task_id)

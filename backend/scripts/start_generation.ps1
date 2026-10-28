@@ -42,7 +42,7 @@ try {
     if ($Role -eq 'api') {
         $processArguments = @('-m', 'uvicorn', 'short_drama.main:app', '--host', '127.0.0.1', '--port', '8000')
     } elseif ($Role -eq 'scheduler') {
-        $processArguments = @('-m', 'short_drama.tasks.runtime')
+        $processArguments = @('-m', 'short_drama.tasks.runtime.runtime')
     } else {
         Push-Location $backendDirectory
         try {

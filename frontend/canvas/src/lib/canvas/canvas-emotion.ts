@@ -1,1 +1,1 @@
-export * from "../../../../src/lib/image-tools/emotion.ts";
+export * from "@host/integrations/canvas/image-tools/emotion";

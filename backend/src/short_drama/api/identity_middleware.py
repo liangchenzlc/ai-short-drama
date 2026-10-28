@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from short_drama.core.exceptions import BusinessError, WorkflowError
 from short_drama.core.identity import token_hash
-from short_drama.service.auth_service import AuthService
+from short_drama.service.identity.authentication.auth import AuthService
 
 PUBLIC = {
     "/api/v1/auth/register",

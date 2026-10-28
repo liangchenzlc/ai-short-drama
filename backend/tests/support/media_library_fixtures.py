@@ -6,13 +6,15 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.identity import ActorContext
 from short_drama.domain import AIGenerationRecord, AsyncTask, MediaAsset, MediaFile, Project
-from short_drama.domain.collaboration import User
+from short_drama.domain.identity.accounts.user import User
 from short_drama.service.base import utcnow
 from tests.support.generation_fixtures import config
 
 
 def seed_media_library(session: Session) -> ActorContext:
     config(session, identifier=100)
+    # 使用系统会话构造跨账号样本，随后由调用方按返回的账号执行查询。
+    session.info.pop("actor", None)
     now = utcnow() - timedelta(minutes=1)
     session.add(
         User(

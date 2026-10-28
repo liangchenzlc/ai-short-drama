@@ -5,8 +5,8 @@ import pytest
 from sqlalchemy import event
 
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.service.asset_library_service import AssetLibraryService
-from short_drama.service.project_service import ProjectService
+from short_drama.service.creation.assets.management.library import AssetLibraryService
+from short_drama.service.projects.management.project import ProjectService
 from tests.support.generation_fixtures import generation_session
 
 
@@ -21,7 +21,9 @@ def setup_storyboard(session):
 
 
 def test_storyboard_list_keeps_query_count_bounded_as_shots_grow():
-    from short_drama.service.project_storyboard_service import ProjectStoryboardService
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
 
     with generation_session() as session:
         project_id, project_id = setup_storyboard(session)
@@ -65,7 +67,7 @@ def test_storyboard_list_keeps_query_count_bounded_as_shots_grow():
 
 
 def test_shot_context_is_canonical_and_ignores_image_settings():
-    from short_drama.service.shot_context import (
+    from short_drama.service.creation.storyboard.management.context import (
         compute_shot_context_hash,
         normalize_shot_context,
     )
@@ -139,8 +141,10 @@ def test_shot_context_is_canonical_and_ignores_image_settings():
 
 def test_create_replay_update_reorder_and_archive_preserve_versions_and_rows():
 
-    from short_drama.domain.shot_script import ShotScript
-    from short_drama.service.project_storyboard_service import ProjectStoryboardService
+    from short_drama.domain.creation.storyboard.management.script import ShotScript
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
 
     with generation_session() as session:
         project_id, project_id = setup_storyboard(session)
@@ -223,7 +227,9 @@ def test_create_replay_update_reorder_and_archive_preserve_versions_and_rows():
 
 
 def test_assets_must_belong_to_episode_and_change_context_hash():
-    from short_drama.service.project_storyboard_service import ProjectStoryboardService
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
 
     with generation_session() as session:
         project_id, project_id = setup_storyboard(session)
@@ -279,8 +285,10 @@ def test_delete_requires_versions_unlinks_assets_and_blocks_late_writes():
     from sqlalchemy import select
 
     from short_drama.domain import ShotAsset, ShotScript
-    from short_drama.service.generation_context_service import GenerationContextService
-    from short_drama.service.project_storyboard_service import ProjectStoryboardService
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
+    from short_drama.service.generations.admission.context import GenerationContextService
 
     with generation_session() as session:
         project_id, _ = setup_storyboard(session)
@@ -331,7 +339,9 @@ def test_delete_rolls_back_versions_and_links_if_unlink_fails(monkeypatch):
     from sqlalchemy import select
 
     from short_drama.domain import ShotAsset, ShotScript
-    from short_drama.service.project_storyboard_service import ProjectStoryboardService
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
 
     with generation_session() as session:
         project_id, _ = setup_storyboard(session)
@@ -365,7 +375,10 @@ def test_delete_rolls_back_versions_and_links_if_unlink_fails(monkeypatch):
 def test_http_contract_for_storyboard_routes():
     from fastapi import FastAPI
 
-    from short_drama.api.v1.project_storyboard import get_storyboard_service, router
+    from short_drama.api.v1.creation.storyboard.management.storyboard import (
+        get_storyboard_service,
+        router,
+    )
 
     calls = []
     shot = {
@@ -460,7 +473,7 @@ def test_http_contract_for_storyboard_routes():
 
 
 def test_legacy_shot_services_advance_versions_and_archive_instead_of_deleting():
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
 
     with generation_session() as session:
         project_id, project_id = setup_storyboard(session)
@@ -481,10 +494,10 @@ def test_legacy_shot_services_advance_versions_and_archive_instead_of_deleting()
 
 
 def test_internal_asset_and_media_writes_advance_shot_and_storyboard_once():
-    from short_drama.service.media_file_service import MediaFileService
-    from short_drama.service.shot_asset_service import ShotAssetService
-    from short_drama.service.shot_image_service import ShotImageService
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.creation.storyboard.images.image import ShotImageService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.creation.storyboard.references.asset import ShotAssetService
+    from short_drama.service.media.files.files import MediaFileService
 
     with generation_session() as session:
         project_id, project_id = setup_storyboard(session)
@@ -524,14 +537,16 @@ def test_internal_asset_and_media_writes_advance_shot_and_storyboard_once():
 
 
 def test_legacy_generated_shot_batch_advances_collection_once():
-    from short_drama.service.generation_service import GenerationService
-    from short_drama.service.project_script_service import ProjectScriptService
+    from short_drama.service.creation.writing.script.documents import ProjectWritingService
+    from short_drama.service.generations.results.generation import GenerationService
 
     with generation_session() as session:
         project_id, project_id = setup_storyboard(session)
-        script = ProjectScriptService(session).create(
-            {"project_id": project_id, "position": 1, "content": "source"}
+        script = ProjectWritingService(session).save_script(
+            project_id, {"script_id": None, "content": "source", "content_version": "1"}
         )
-        result = GenerationService(session).generate_shots(script.id, ["one", "two"], batch_id=123)
+        result = GenerationService(session).generate_shots(
+            int(script["script"]["id"]), ["one", "two"], batch_id=123
+        )
         assert len(result.outputs) == 2
         assert ProjectService(session).get(project_id).storyboard_version == 2

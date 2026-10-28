@@ -1,0 +1,200 @@
+/* Shell: quiet navigation, a narrow topbar, and a generous content canvas. */
+.studio-sidebar {
+  width: 200px;
+  flex-basis: 200px;
+  padding: 24px 12px 18px;
+  background: var(--navigation);
+  border-right: 1px solid var(--hair);
+}
+.studio-brand,
+.studio-nav,
+.studio-subnav-item {
+  text-decoration: none;
+}
+.studio-nav {
+  display: flex;
+  align-items: center;
+}
+.studio-subnav-item {
+  display: flex;
+  align-items: center;
+}
+.studio-brand {
+  padding: 0 8px 30px;
+  font-size: 15px;
+  gap: 11px;
+  font-weight: 650;
+  color: var(--ink);
+}
+.studio-brand small {
+  color: var(--sub);
+  font-size: 10px;
+  margin-top: 4px;
+}
+.studio-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 36px;
+  flex: 0 0 34px;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  border-radius: 9px;
+}
+.studio-sidebar nav {
+  gap: 5px;
+}
+.studio-nav,
+.studio-subnav-item {
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+.studio-nav {
+  padding: 9px 11px;
+  min-height: 39px;
+  font-size: 13px;
+  gap: 11px;
+  color: var(--sub);
+}
+.studio-nav svg {
+  width: 18px;
+  height: 18px;
+}
+.studio-nav.active,
+.studio-subnav-item.active {
+  background: var(--pale);
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
+}
+.studio-nav:hover:not(:disabled),
+.studio-subnav-item:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+.studio-nav.active:hover:not(:disabled),
+.studio-subnav-item.active:hover:not(:disabled) {
+  background: var(--pale);
+}
+.studio-subnav-item {
+  min-height: 32px;
+  margin-left: 31px;
+  width: calc(100% - 31px);
+  padding: 5px 10px;
+  color: var(--sub);
+  font-size: 12px;
+}
+.studio-sidebar-foot {
+  border-top: 1px solid var(--hair);
+  color: var(--sub);
+  margin-inline: 8px;
+  line-height: 1.8;
+}
+.studio-topbar {
+  height: 52px;
+  padding-inline: 30px;
+  background: var(--navigation);
+  border-bottom: 1px solid var(--hair);
+  color: var(--sub);
+}
+.topbar-divider {
+  color: var(--border-hover);
+}
+.workspace-label {
+  font-size: 11px;
+}
+.workspace-avatar {
+  width: 25px;
+  height: 25px;
+  border-radius: 7px;
+  background: var(--pale);
+  color: var(--accent-strong);
+}
+.studio-main {
+  max-width: 1700px;
+  padding: 30px 32px 40px;
+}
+.studio-page-head {
+  margin-bottom: var(--space-section);
+  gap: 18px;
+}
+.studio-page-head h1,
+.generation-page .studio-page-head h1 {
+  font-size: var(--text-page);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  margin: 0 0 7px;
+}
+.studio-page-head p {
+  font-size: 13px;
+  color: var(--sub);
+}
+.page-heading {
+  min-width: 0;
+}
+.page-heading p {
+  max-width: 68ch;
+}
+.page-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-action);
+  flex-shrink: 0;
+}
+.generation-page .ant-tabs {
+  margin-top: 0;
+}
+.generation-page .studio-page-head {
+  align-items: flex-start;
+}
+.studio-toolbar {
+  margin-block: 16px;
+  gap: 10px;
+}
+.studio-primary,
+.primary-button {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+.studio-primary:hover:not(:disabled),
+.primary-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  color: var(--on-accent);
+}
+.studio-primary:active:not(:disabled),
+.primary-button:active:not(:disabled) {
+  background: var(--accent-active);
+  color: var(--on-accent);
+}
+.studio-empty {
+  padding: 56px 24px;
+  border: 1px dashed var(--border-control);
+  background: var(--surface);
+  border-radius: 12px;
+}
+.studio-empty h3 {
+  font-size: 20px;
+  margin-bottom: 10px;
+}
+.studio-empty p {
+  margin-bottom: 22px;
+}
+.notice,
+.form-error {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.skip-link {
+  z-index: 100;
+  border-radius: 7px;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+.route-loading {
+  padding: 36px 0;
+}

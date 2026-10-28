@@ -7,11 +7,11 @@ import pytest
 from pydantic import ValidationError
 
 from short_drama.core.exceptions import GenerationRequestError, NotFound, WorkflowError
-from short_drama.schemas.ai_generation import VideoInput
-from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-from short_drama.service.canvas_generation_inputs import generation_payload
-from short_drama.service.canvas_model_catalog_service import protocol_adapter
-from short_drama.service.canvas_video_admission import freeze_video_references
+from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+from short_drama.schemas.generations.admission.generation import VideoInput
+from short_drama.service.canvas.generation.generation_inputs import generation_payload
+from short_drama.service.canvas.generation.video.video_admission import freeze_video_references
+from short_drama.service.canvas.models.model_catalog import protocol_adapter
 
 
 def request(kind="video", count=1):
@@ -37,7 +37,8 @@ def request(kind="video", count=1):
 
 def generation(monkeypatch, *, scope=(None, 9), locator="minio://bucket/reference"):
     monkeypatch.setattr(
-        "short_drama.service.canvas_video_admission.scope_of", lambda session, media: scope
+        "short_drama.service.canvas.generation.video.video_admission.scope_of",
+        lambda session, media: scope,
     )
     media = SimpleNamespace(
         storage_locator=locator,
@@ -184,7 +185,9 @@ def test_capability_match_options_override_only_source_video_parameters():
 
 
 def test_mixed_media_loader_uses_original_reference_index(monkeypatch):
-    from short_drama.service.canvas_video_references import StoredCanvasVideoReferences
+    from short_drama.service.canvas.generation.video.video_references import (
+        StoredCanvasVideoReferences,
+    )
 
     captures = []
 
@@ -192,7 +195,9 @@ def test_mixed_media_loader_uses_original_reference_index(monkeypatch):
         captures.append(identifiers)
         return lambda index, maximum, deadline: identifiers[index].encode()
 
-    monkeypatch.setattr("short_drama.service.canvas_video_references.StoredImageReferences", loader)
+    monkeypatch.setattr(
+        "short_drama.service.canvas.generation.video.video_references.StoredImageReferences", loader
+    )
     request_value = {
         "canvas_request": {
             "input": {

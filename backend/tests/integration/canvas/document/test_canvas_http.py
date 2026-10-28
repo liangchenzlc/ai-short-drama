@@ -7,9 +7,10 @@ from threading import Event
 import pytest
 from sqlalchemy import select
 
-from short_drama.dao.canvas_dao import CanvasDAO
-from short_drama.db import access
-from short_drama.domain.canvas import CanvasNode, CanvasRevision, CanvasUserState
+import short_drama.db.scope.canvas_scope as canvas_scope
+import short_drama.db.scope.resource_scope as resource_scope
+from short_drama.dao.canvas.document.canvas import CanvasDAO
+from short_drama.domain.canvas.document.canvas import CanvasNode, CanvasRevision, CanvasUserState
 from tests.integration.canvas.resources.test_canvas_library import (
     database_errors as database_errors,
 )
@@ -204,7 +205,8 @@ def test_first_personal_writes_use_current_state_after_waiting_for_project_lock(
     path = f"/api/v1/projects/{project['id']}/canvases/{project['primary_canvas_id']}"
     document = client.get(path + "/my-document").json()["source_document"]
     document["title"] = "并发时保存作品"
-    original_access = access.require_project
+    original_access = resource_scope.require_project
+    original_canvas = canvas_scope.canvas_project
     original_project = CanvasDAO.project
     entered, other_committed = Event(), Event()
 
@@ -226,7 +228,14 @@ def test_first_personal_writes_use_current_state_after_waiting_for_project_lock(
             wait_after_snapshot(self.session)
         return original_project(self, project_id, lock=lock)
 
-    monkeypatch.setattr(access, "require_project", access_before_lock)
+    def canvas_before_lock(session, project_id, *, lock=False):
+        if lock:
+            wait_after_snapshot(session)
+        return original_canvas(session, project_id, lock=lock)
+
+    # 在 Service 事务申请首个项目锁之前等待，不能等已经持锁后再建立并发场景。
+    monkeypatch.setattr(resource_scope, "require_project", access_before_lock)
+    monkeypatch.setattr(canvas_scope, "canvas_project", canvas_before_lock)
     monkeypatch.setattr(CanvasDAO, "project", project_before_lock)
     viewport = {"x": 12, "y": 24, "k": 1.25}
     expected = {"x": 0, "y": 0, "k": 1}

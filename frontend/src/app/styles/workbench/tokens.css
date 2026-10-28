@@ -1,0 +1,205 @@
+/* Desktop creation workspace. Shared color roles live in tokens.css. */
+body,
+.studio {
+  background: var(--canvas);
+  color: var(--ink);
+}
+body {
+  line-height: 1.6;
+}
+::selection {
+  background: var(--pale);
+  color: var(--ink);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-control);
+  border: 2px solid var(--canvas);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+input,
+textarea {
+  caret-color: var(--accent);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--placeholder);
+  opacity: 1;
+}
+input[type='file'] {
+  font-size: 12px;
+  color: var(--sub);
+}
+input[type='file']::file-selector-button {
+  background: var(--surface-raised);
+  color: var(--ink);
+  border: 1px solid var(--border-control);
+  border-radius: 7px;
+  padding: 7px 10px;
+  margin-right: 10px;
+  font: inherit;
+  cursor: pointer;
+}
+input[type='file']::file-selector-button:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+input[type='checkbox'],
+input[type='radio'],
+input[type='range'] {
+  accent-color: var(--accent-fill);
+}
+button,
+a,
+summary {
+  touch-action: manipulation;
+}
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+:where(button:not(.ant-btn)) {
+  min-height: var(--control-height);
+  padding: var(--space-field) 12px;
+  border-radius: var(--radius-control);
+  border-color: var(--border-control);
+  background: var(--surface-raised);
+  color: var(--ink);
+  transition:
+    background-color 160ms,
+    border-color 160ms,
+    color 160ms;
+}
+:where(button:not(.ant-btn)):hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+:where(button:not(.ant-btn)):disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+:where(a) {
+  color: var(--accent);
+  text-underline-offset: 4px;
+}
+summary {
+  font-size: 13px;
+}
+h1,
+h2,
+h3,
+h4 {
+  color: var(--ink);
+  line-height: 1.4;
+  text-wrap: balance;
+}
+p {
+  color: var(--sub);
+  font-size: 13px;
+  line-height: 1.75;
+}
+.muted {
+  color: var(--sub);
+}
+.ant-btn {
+  font-weight: 500;
+}
+.ant-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.ant-select-dropdown,
+.ant-dropdown-menu,
+.ant-popover-inner {
+  border: 1px solid var(--hair);
+}
+.ant-select .ant-select-selection-placeholder {
+  color: var(--placeholder);
+}
+.ant-select-dropdown .ant-select-item-option-disabled {
+  color: var(--placeholder);
+}
+.ant-alert {
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.ant-alert-description {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.ant-tag {
+  font-size: 11px;
+  border-radius: 5px;
+}
+.ant-tabs .ant-tabs-tab {
+  padding-block: 11px;
+}
+.ant-empty {
+  padding: 20px;
+}
+.ant-empty-description {
+  color: var(--sub);
+}
+.ant-pagination {
+  margin-top: 20px;
+}
+.ant-table {
+  font-variant-numeric: tabular-nums;
+}
+.ant-table-wrapper .ant-table-cell {
+  overflow-wrap: anywhere;
+}
+.ant-segmented {
+  padding: 3px;
+  border: 1px solid var(--hair);
+}
+.ant-segmented-item-label {
+  min-height: 28px;
+  line-height: 28px;
+}
+.ant-drawer .ant-drawer-header {
+  border-color: var(--hair);
+  padding: 18px 24px;
+}
+.ant-drawer .ant-drawer-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.ant-drawer .ant-drawer-body {
+  padding: 22px 24px;
+  scrollbar-gutter: stable;
+}
+.ant-drawer .ant-drawer-footer {
+  padding: 14px 24px;
+  border-color: var(--hair);
+  background: var(--surface);
+}
+.ant-drawer-mask {
+  background: rgb(0 0 0 / 62%);
+}
+.ant-drawer-close {
+  color: var(--sub);
+}
+.ant-drawer .ant-form-item {
+  margin-bottom: 18px;
+}
+.ant-form-item .ant-form-item-label > label {
+  color: var(--sub);
+  font-size: 12px;
+}

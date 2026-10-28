@@ -7,15 +7,14 @@ from sqlalchemy import select
 from short_drama.core.exceptions import BusinessError, NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
 from short_drama.domain import AIModelConfig, MediaFile, UserCreationDraft
-from short_drama.domain.collaboration import User
-from short_drama.schemas.ai_generation import ImageGenerationCreate
-from short_drama.schemas.user_creation_draft import UserCreationDraftCreate
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.asset_library_service import AssetLibraryService
+from short_drama.domain.identity.accounts.user import User
+from short_drama.schemas.creation.drafts.drafts import UserCreationDraftCreate
+from short_drama.schemas.generations.admission.generation import ImageGenerationCreate
 from short_drama.service.base import utcnow
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
-from short_drama.service.project_writing_service import ProjectWritingService
-from short_drama.service.user_creation_draft_service import UserCreationDraftService
+from short_drama.service.creation.assets.management.library import AssetLibraryService
+from short_drama.service.creation.drafts.drafts import UserCreationDraftService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.generations.admission.generation import AIGenerationService
 from tests.support.generation_fixtures import config, generation_session, settings
 from tests.unit.standard.shot_video.test_shot_video_generation import current, request, setup_video
 from tests.unit.standard.storyboard.test_project_storyboard import setup_storyboard
@@ -225,9 +224,6 @@ def test_saved_private_image_values_enter_frozen_request_without_mutating_work()
 def test_private_video_keeps_current_adopted_image_script_and_source_checks(prompt_length):
     with generation_session() as session:
         flow = setup_video(session)
-        with session.begin():
-            frame = session.get(MediaFile, 101)
-            frame.scope_user_id, frame.project_id, frame.published_at = None, flow.project, utcnow()
         actor(session, flow.project)
         shot = current(flow)
         drafts = UserCreationDraftService(session)
@@ -328,41 +324,6 @@ def test_private_references_are_persistent_deduplicated_and_limited_with_shared(
             len(flow.generations.detail(result["generation_id"])["input"]["reference_media_ids"])
             == 16
         )
-
-
-def test_novel_draft_uses_saved_text_and_parameters_never_change_shared_novel():
-    with generation_session() as session:
-        flow = setup_draft(session, "text")
-        writing = ProjectWritingService(session)
-        saved = writing.save_novel(
-            flow.project, {"content_version": "1", "content": "夜雨中的故事。"}
-        )
-        draft = flow.drafts.create_for_scope(
-            flow.project,
-            {
-                "object_id": str(flow.episode),
-                "purpose": "novel_adaptation",
-                "model_config_id": "1",
-                "input_text": "保留悬念",
-            },
-        )
-        result, _ = flow.generations.create(
-            "text",
-            {
-                "source": {
-                    "scene": "novel_script",
-                    "project_id": str(flow.episode),
-                    "content_version": saved["content_version"],
-                    "draft_id": draft["id"],
-                    "draft_version": "1",
-                }
-            },
-            "private-novel",
-        )
-        detail = flow.generations.detail(result["generation_id"])
-        assert detail["source_snapshot"]["content"] == "夜雨中的故事。"
-        assert detail["source_snapshot"]["creation_draft"]["input_text"] == "保留悬念"
-        assert writing.get(flow.project)["novel"]["content"] == "夜雨中的故事。"
 
 
 @pytest.mark.parametrize(
@@ -479,7 +440,6 @@ def test_draft_cannot_store_another_users_model_or_private_media(foreign_referen
     with generation_session() as session:
         flow = setup_draft(session)
         session.info.pop("actor")
-        session.info["legacy_user_id"] = 2
         with session.begin():
             session.add(
                 User(
@@ -521,7 +481,6 @@ def test_draft_cannot_store_another_users_model_or_private_media(foreign_referen
                         published_at=None,
                     )
                 )
-        session.info["legacy_user_id"] = 1
         actor(session, flow.project)
         extra = (
             {"model_config_id": "2"}
@@ -560,7 +519,6 @@ def test_legacy_draft_without_source_version_keeps_null_in_frozen_snapshot():
 @pytest.mark.parametrize(
     ("purpose", "length"),
     [
-        ("novel_adaptation", 4000),
         ("asset_image", 4000),
         ("storyboard_image", 4000),
         ("storyboard_video", 4001),
@@ -577,7 +535,6 @@ def test_draft_prompt_limits_match_each_purpose(purpose, length):
 @pytest.mark.parametrize(
     ("purpose", "length"),
     [
-        ("novel_adaptation", 4001),
         ("asset_image", 4001),
         ("storyboard_image", 4001),
         ("storyboard_video", 16001),

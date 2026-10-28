@@ -7,27 +7,25 @@ from uuid import uuid4
 from sqlalchemy import or_, select
 
 from short_drama.domain import MediaFile
-from short_drama.domain.agent import (
+from short_drama.domain.assistant.context.context import AgentAttachment
+from short_drama.domain.assistant.conversations.history import AgentDiscussionRevision
+from short_drama.domain.assistant.conversations.models import (
     AgentConversation,
     AgentEvent,
     AgentMessage,
-    AgentRun,
-    AgentToolCall,
-    AgentTurn,
 )
-from short_drama.domain.agent_context import AgentAttachment
-from short_drama.domain.agent_graph import AgentGraphCheckpoint, AgentGraphWrite
-from short_drama.domain.agent_history import AgentDiscussionRevision
-from short_drama.domain.agent_media import AgentMediaRequest
-from short_drama.domain.agent_memory import (
+from short_drama.domain.assistant.execution.graph import AgentGraphCheckpoint, AgentGraphWrite
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
+from short_drama.domain.assistant.memory.memory import (
     AgentConversationSummary,
     AgentMemoryItem,
     AgentMemoryJob,
     AgentMemoryRevision,
 )
-from short_drama.domain.agent_task import AgentOperation, AgentTask, AgentTaskInput
-from short_drama.domain.agent_task_requirement import AgentTaskRequirement
-from short_drama.domain.agent_undo import AgentBatchUndo
+from short_drama.domain.assistant.operations.media import AgentMediaRequest
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask, AgentTaskInput
+from short_drama.domain.assistant.tasks.task_requirement import AgentTaskRequirement
+from short_drama.domain.assistant.undo.undo import AgentBatchUndo
 from short_drama.domain.base import Base
 from short_drama.service.base import utcnow
 from short_drama.utils.json_digest import digest

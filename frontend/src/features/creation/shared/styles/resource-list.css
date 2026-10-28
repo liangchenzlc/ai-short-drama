@@ -1,0 +1,200 @@
+.overview-card {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+.overview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.overview-heading h2 {
+  color: var(--ink);
+  font-size: 17px;
+  margin: 0;
+}
+.overview-heading h2 small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--sub);
+  margin-left: 8px;
+}
+.overview-heading > span {
+  font-size: 12px;
+  color: var(--sub);
+}
+.overview-empty {
+  padding: 14px 0;
+  color: var(--sub);
+  font-size: 13px;
+  margin: 0;
+}
+.overview-top-row {
+  display: grid;
+  grid-template-columns:
+    minmax(220px, 1fr) minmax(230px, 0.9fr)
+    minmax(190px, 0.55fr);
+  align-items: start;
+  gap: 22px;
+  margin-bottom: 20px;
+}
+.overview-top-row h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 28px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.overview-aspect {
+  min-width: 0;
+}
+.overview-aspect .ant-select {
+  width: 100%;
+}
+.overview-aspect small {
+  color: var(--sub);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.overview-top-row label,
+.overview-synopsis,
+.creation-editor-label,
+.creation-shot-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.overview-top-row input,
+.overview-synopsis textarea,
+.creation-editor-label textarea,
+.creation-shot-fields input,
+.creation-shot-fields textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  font-weight: 400;
+  line-height: 1.6;
+  resize: vertical;
+}
+.overview-heading p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: var(--sub);
+}
+.resource-toolbar,
+.resource-actions,
+.resource-kind-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.resource-toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin: 18px 0;
+}
+.resource-actions {
+  flex-wrap: wrap;
+}
+.resource-search input {
+  min-height: 40px;
+  width: 180px;
+  border-radius: 8px;
+  border: 1px solid var(--hair);
+  padding: 8px 12px;
+}
+.resource-kind-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--sub);
+  padding: 8px 10px;
+}
+.resource-kind-tabs button.active {
+  background: var(--surface-muted);
+  color: var(--blue);
+  font-weight: 650;
+}
+.resource-kind-tabs span {
+  margin-left: 7px;
+  font-size: 11px;
+}
+.resource-empty {
+  border: 1px dashed var(--hair);
+  border-radius: 9px;
+  background: var(--surface);
+  padding: 22px;
+  color: var(--sub);
+  font-size: 13px;
+}
+.resource-import {
+  display: grid;
+  gap: 12px;
+}
+.resource-import-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hair);
+}
+.resource-import-row p {
+  margin: 3px 0 0;
+  font-size: 12px;
+}
+.detail-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--surface);
+  border-bottom: 1px solid var(--hair);
+}
+.detail-header-inner {
+  max-width: 1520px;
+  margin: auto;
+  display: flex;
+  align-items: center;
+  gap: 25px;
+  padding: 20px 42px 15px;
+}
+.detail-back {
+  background: transparent;
+  border: 0;
+  padding: 7px 0;
+  color: var(--blue);
+  white-space: nowrap;
+  font-size: 13px;
+}
+.detail-title {
+  border-left: 1px solid var(--hair);
+  padding-left: 24px;
+  min-width: 0;
+}
+.detail-title span {
+  font-size: 11px;
+  color: var(--sub);
+}
+.detail-title h1 {
+  font:
+    700 20px/1.4 'Microsoft YaHei UI',
+    sans-serif;
+  margin: 1px 0 0;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.detail-close {
+  margin-left: auto;
+  flex: 0 0 auto;
+}

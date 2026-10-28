@@ -10,17 +10,17 @@ from pathlib import Path
 
 import pytest
 
+import short_drama.service.canvas.timeline.timeline_renderer as module
 from short_drama.core.config import Settings
-from short_drama.schemas.canvas_timeline import CanvasTimelinePlanRequest
-from short_drama.service import canvas_timeline_renderer as module
-from short_drama.service.canvas_timeline_compile import compile_timeline_plan
-from short_drama.service.canvas_timeline_native import SourceFacts
-from short_drama.service.canvas_timeline_renderer import (
+from short_drama.schemas.canvas.timeline.timeline import CanvasTimelinePlanRequest
+from short_drama.service.canvas.timeline.timeline_compile import compile_timeline_plan
+from short_drama.service.canvas.timeline.timeline_native import SourceFacts
+from short_drama.service.canvas.timeline.timeline_renderer import (
     BoundedEncoderLog,
     CanvasTimelineRenderer,
     ProbedMedia,
 )
-from short_drama.service.video_render import RenderCancelled
+from short_drama.service.creation.assembly.rendering.renderer import RenderCancelled
 
 
 def settings(tmp_path, **overrides):

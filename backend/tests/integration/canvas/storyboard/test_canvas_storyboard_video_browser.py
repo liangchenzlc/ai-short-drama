@@ -23,10 +23,10 @@ from PIL import Image
 from sqlalchemy import select
 
 from short_drama.domain import AIGenerationRecord, AsyncTask, CanvasTaskBinding, MediaFile
-from short_drama.service.video_render import executable
+from short_drama.service.creation.assembly.rendering.renderer import executable
 from short_drama.storage.models import ObjectLocation
 from short_drama.tasks.celery_app import make_celery, topology
-from short_drama.tasks.publisher import Publisher
+from short_drama.tasks.runtime.publisher import Publisher
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.generation.test_canvas_generation_broker import (
     eventually,

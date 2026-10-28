@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
+import short_drama.ai.adapters.image.image_references as references
 from short_drama.ai import GenerationError
-from short_drama.ai import canvas_image_references as references
-from short_drama.ai.adapters import build_submission
+from short_drama.ai.adapters.submission import build_submission
 from tests.unit.canvas.generation.test_canvas_generation_parameters import (
     frozen_request,
     request,

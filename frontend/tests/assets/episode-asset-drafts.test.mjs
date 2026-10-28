@@ -3,11 +3,11 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../../src/features/assets/episode-asset-drafts.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/creation/assets/sessions/local-asset-draft-model.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { assetCreationAttempt, assetCreationUnknown, assetDraftBody, assetDraftHasInput, blankAssetDraft, localAssetDraftKey, readLocalAssetDrafts } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
-const referencesSource = readFileSync(new URL('../../src/features/assets/asset-prompt-references.ts', import.meta.url), 'utf8');
+const referencesSource = readFileSync(new URL('../../src/features/creation/assets/images/asset-prompt-references.ts', import.meta.url), 'utf8');
 const referencesCompiled = ts.transpileModule(referencesSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { combineAssetPromptReferences, remapAssetPromptReferences } = await import(`data:text/javascript;base64,${Buffer.from(referencesCompiled).toString('base64')}`);
 

@@ -1,16 +1,20 @@
 # AI 创作助手 API
 
+> 2026-10-28 兼容清理：Worker 只执行 Harness；`TaskRead` 不再返回 `interruptions_supported`。停止或暂停后使用普通消息继续，前端不再附带旧 resume 控制。决策次数和输出 token 预算必须为正整数，工具次数与活动时长仍可不限；下文相应的旧引擎、旧字段与旧预算描述为历史记录。
+
+前端只保存和重放待确认的停止控制；旧 `resume` / `redirect` 本地记录会显示无法恢复并保留原记录，不会自动重发。停止请求的相同幂等键先查回执，即使停止开关随后关闭，也能核对已经受理的原请求。
+
 ## 新任务 Harness 契约（2026-10-26）
 
 新 V3 任务固定 `langgraph-harness.1`，旧任务保持原引擎。`TaskRead` 新增 `interruptions`（`stop/redirect/resume`）与兼容字段 `interruptions_supported`；新任务控制只开放 `stop`，`redirect/resume` 返回 409（`assistant_redirect_unavailable` / `assistant_resume_unavailable`），前端按能力对象隐藏按钮。运行中补充仍按原输入版本在下一边界生效。下文句式授权和 redirect／resume 控制仅适用于旧引擎任务，不约束新引擎的自主工具选择。
 
 Harness 处于 `stopped/paused_error/paused_budget` 时，向原任务发送普通消息（包括“继续”）即在同一 Task 下创建新 Run 并调度；刷新后仍保留暂停任务作为发送目标。消息和成果、已结算工具历史及活动 Skill 继承，撤销来源和遗忘规则继续生效。冻结模型配置被修改时返回 `assistant_model_changed`，活跃操作未结算返回冲突；相同幂等键复用已受理结果。此续执行不经过旧中断 control。Harness 的任务创建时冻结单 Run 预算（`AGENT_RUN_DECISION_CAP`/`AGENT_RUN_OUTPUT_TOKEN_CAP`），超限暂停为 `paused_budget`，"继续"即新 Run 续期，不设 Task 总上限；升级前的 `null` 预算快照继续按无限解释。
 
-当前新冻结请求使用工具 schema v4；已有 v3 及更早请求按原冻结协议重放。写工具不含 `request_message_id/request_hash` 等句式授权字段，主体、目标、版本与服务端可信 Actor 校验保留。`load_skill` 参数为 `name/content_version/purpose`；`read_resource` 参数为目录 `ref_id/purpose` 及可选 `detail/crop/offset/limit`；`read_skill_resource` 使用 `activation_id/path/offset/limit/purpose` 及可选图片 detail／crop。脚本只读。schema 的唯一来源为 `agent/tools/registry.py`，客户端不可构造任意工具历史。
+当前新冻结请求使用工具 schema v4；已有 v3 及更早请求按原冻结协议重放。写工具不含 `request_message_id/request_hash` 等句式授权字段，主体、目标、版本与服务端可信 Actor 校验保留。`load_skill` 参数为 `name/content_version/purpose`；`read_resource` 参数为目录 `ref_id/purpose` 及可选 `detail/crop/offset/limit`；`read_skill_resource` 使用 `activation_id/path/offset/limit/purpose` 及可选图片 detail／crop。方法包仅支持文本和图片资源。schema 的唯一来源为 `agent/tools/registry.py`，客户端不可构造任意工具历史。
 
 基础工具常驻，`tool_catalog` 列可用能力组、用途及启用状态。模型通过 `enable_tool_group(group)` 启用 `standard_write/canvas_write/media/memory_write/image_adoption`，下一决策追加该组 schema；仍按任务模式、媒体开关及可信范围裁剪，不额外授予权限。`confirm_requirements` 确认服务端按用户原话生成的 draft（`keys`），可附有原文引用的 `additions`，不能自行删除或降低数量；引用更新用户消息并包含明确数量修订时，旧定义转为 superseded，新定义成为有效要求；`record_task_observation` 保存引用成功读取操作的观察或推断；`release_skill` 只释放自动方法，不移除手选方法。具体配额和字段见 [Harness 运行机制](../instruction/AI创作助手Harness运行机制.md)。
 
-需要验收的候选最终答复进入内部 Turn，由独立 Turn 的 `submit_completion_review` 结构化检查用户来源、实际操作、成果数量和答复引用；该检查不是业务工具调用。`evidence.v3` 任务没有已确认要求且没有成功写操作时，普通讨论直接发布；旧冻结监督协议保持原行为。新任务的验收 Turn 不继承执行器工具轨迹，而是接收服务端证据包与确定性检查结果，验收模型优先使用本人另一个文本模型。发布前另有确定性守卫：有成功写操作却没有任何已确认 `write` 要求时拒绝发布（`agent_requirements_unconfirmed`），未覆盖的成果类别自动补 `server_derived` 要求。新监督请求暂存流式文本，工具旁白在结算时发布，需要验收的最终回复通过检查后发布；缺项返回原 Agent 继续。停滞按当前已应用输入版本的完整滑动窗口判定：不足窗口不累计空转，完整窗口内无新证据连续两个窗口以 `agent_progress_stalled` 暂停；同组完成缺项连续 6 次未解决以 `agent_completion_stalled` 暂停。未结算生成等待和编排类工具不触发空转暂停。暂停后普通消息可继续。
+需要验收的候选最终答复进入内部 Turn，由独立 Turn 的 `submit_completion_review` 结构化检查用户来源、实际操作、成果数量和答复引用；该检查不是业务工具调用。没有已确认要求且没有成功写操作时，普通讨论直接发布。验收 Turn 不继承执行器工具轨迹，而是接收服务端根据需求表重建的证据包与确定性检查结果，验收模型优先使用本人另一个文本模型。发布前另有确定性守卫：有成功写操作却没有任何已确认 `write` 要求时拒绝发布（`agent_requirements_unconfirmed`），未覆盖的成果类别自动补 `server_derived` 要求。监督请求暂存流式文本，工具旁白在结算时发布，需要验收的最终回复通过检查后发布；缺项返回原 Agent 继续。停滞按当前已应用输入版本的完整滑动窗口判定：不足窗口不累计空转，完整窗口内无新证据连续两个窗口以 `agent_progress_stalled` 暂停；同组完成缺项连续 6 次未解决以 `agent_completion_stalled` 暂停。未结算生成等待和编排类工具不触发空转暂停。暂停后普通消息可继续。
 
 完成检查 v2 的已有要求只提交 `checks[].key/satisfied/evidence_operation_ids/answer_quote/reason`，服务端复用已登记定义；新增遗漏要求放入 `additional_requirements` 并提供真实用户来源。要求类型中的 `observation/contract` 分别核对有来源观察笔记和已登记要求，与 `write` 的业务成果分开计数。旧 v1 冻结检查仍可按原协议恢复。
 
@@ -321,9 +325,9 @@ AI 配置的“创作助手”标签保存一个账号级 `media_generation_enab
 
 目录的可空 `source_location` 提供已校验的真实归属：`project_id/kind/id`，kind 为 asset/shot/node/sound_line；节点附 `canvas_id`，标准图片组／图位附 `image_group_id/image_slot_id` 并定位其所属素材或分镜。前端“查看来源”按此身份打开真实对象；图片组／图位另行读取并核对归属，只读查看保存的图片，画布节点使用原生选择和居中，不修改业务内容。
 
-`read_selected_subjects` 使用目录中的 subject_key（裸 ID 只兼容唯一匹配），支持 character_offset/character_limit，单次最多 6000 字符。content 是允许字段的 JSON 文本；range 给实际读取范围，next 给继续所需的 ids 与偏移，可无损回查长正文。未选择、同名歧义、已删除或无权限明确拒绝；不递归读取邻居或其他图位的提示词，不返回存储定位和凭据。升级前已截取的历史快照保留 legacy_truncated 标志，需要明确刷新才能取得完整新快照。
+`read_selected_subjects` 使用目录中的 subject_key（裸 ID 只兼容唯一匹配），支持 character_offset/character_limit，单次最多 6000 字符。content 是允许字段的 JSON 文本；range 给实际读取范围，next 给继续所需的 ids 与偏移，可无损回查长正文。未选择、同名歧义、已删除或无权限明确拒绝；不递归读取邻居或其他图位的提示词，不返回存储定位和凭据。
 
-兼容单来源 `context` 与 `subject_selection` 互斥。V3 context 的 include_document 只能为 false，project 只选 asset/shot，canvas 只选 node；服务端转换为同一新快照，不用无关作品／整图版本替代主体校验。V2 仍沿用自己的旧冻结规则。数据库 ID 不转数值，节点与画布键保留原字符串。服务端只读取已保存内容，不接受客户端正文或图文档；失效的新引用整条输入拒绝。当前页面选入／发送前等待来源编辑保存成功，409、未确认恢复及等待期间的新编辑保留草稿并阻止发送。
+发送时使用 `subject_selection`，每个主体按自身版本校验；数据库 ID 不转数值，节点与画布键保留原字符串。服务端只读取已保存内容，不接受客户端正文或图文档；失效的新引用整条输入拒绝。当前页面选入／发送前等待来源编辑保存成功，409、未确认恢复及等待期间的新编辑保留草稿并阻止发送。
 
 执行目标为 `{mode:'standard',project_id}` 或 `{mode:'infinite_canvas',project_id,canvas_id}`，仅声明任务目标，不自动授予任意业务操作。项目 V3 自动将 `memory_project_ids` 限定为所属项目；旧未绑定会话兼容原先最多 16 项的显式范围。`media_limits.images/videos/audio` 沿用默认规则，分别约束标准图片／普通及原生有声分镜视频／角色音色／旧声音台词配音及画布三类媒体。
 
@@ -390,11 +394,13 @@ DELETE 请求示例：
 
 memory_selections 最多 200 项、不能重复，非空选择要求 clear_derived_memory=true。仅清理明确选择且仍与本会话关联、版本匹配的账号／作品条目；预览后变化或无关条目返回 409，整个删除不生效。只传清理开关而不勾选条目，不会扩大为清理全部账号事实。本会话摘要和会话级记忆始终退出使用，遗忘规则阻止旧来源复活。
 
-删除开始阻止新输入、任务领取和后台整理，等待当前操作完整结算。deleted 后停止在线读取与上下文使用，原删除请求仍可凭原键、原请求取得最小幂等回执。无回收站与产品恢复入口，作品成果保留。
+删除开始阻止新输入、任务领取和后台整理，等待当前操作及在途 Run 完整结算；Task 已停止而模型段仍在返回时，保持 deleting，不能提前投递正文清理。deleted 后停止在线读取与上下文使用，原删除请求仍可凭原键、原请求取得最小幂等回执。无回收站与产品恢复入口，作品成果保留。
 
 收尾同事务投递 purge 作业，由 scheduler 在无需模型凭据／RabbitMQ 的本地路径清理消息正文、输入快照、模型报文、摘要与会话附件引用；即使 AGENT_ENABLED=false 仍可执行。仅由本会话持有、无任何已登记外键引用的上传媒体才进入物理清理；其他会话、作品、历史和任务引用保护媒体。存储失败保留定位值并重试。后来明确恢复／编辑的共享记忆再次受版本保护。备份淘汰与 MinIO 版本保留遵守部署策略，删除按钮不表示所有备份版本即时擦除。
 
 浏览器按账号保存未确认的发送、控制、删除和记忆创建请求；刷新核对必须使用原请求体及原幂等键。损坏记录不能被新请求静默覆盖。
+
+历史 V3 的 resume 在回执查重后核对停止水位，过期返回 `409 assistant_control_changed`。此错误明确表示本次恢复未受理，客户端清理对应待核对控制并刷新状态，不自动跨越其他标签页的新停止；普通 `conflict` 仍保留原请求供核对。任务终态不显示持续恢复连接的加载动画，会话事件监听继续保留。
 
 ## 旧接口与部署边界
 
@@ -406,10 +412,56 @@ memory_selections 最多 200 项、不能重复，非空选择要求 clear_deriv
 
 ## 当前剧本引用与待审修改
 
+> 2026-10-28：标准助手已移除“引用当前剧本”按钮、正文／选区绑定和草稿引用开关。新消息显式发送 `script_reference=null`，在输入应用时清除旧任务绑定；普通聊天无需等待正文保存。以下合同保留用于历史已受理任务、原键核对和已有待审建议，前端不再提供新建剧本引用入口。
+
 普通 `/messages` 的可选 `script_reference` 为 `{project_id,script_id,content_version,start?,end?}`。仅标准模式且项目匹配时可用；`script_id=null` 只允许当前空稿。选区为 Unicode 码点半开区间，两个边界须同时提供。受理时验证当前身份和版本，冻结到 TaskInput；不把正文或临时 URL写入浏览器引用记录。运行中补充使用完整普通消息合同，保留主体、附件和 Skill，在下一边界应用，界面显示待应用水位。
 
-`read_current_script(offset?,limit?)` 分段读取已应用输入绑定的当前剧本或选区，最多6000码点。`propose_script_patch(content_version,script_id,start,end,replacement)` 只建立 `pending_review` 建议，不能自动写正文；范围须在引用内，空稿允许 `[0,0)` 插入，最终正文最大1 MiB。采用前等待本机项目编辑保存，重新校验建议原文、版本、归属和写作互斥；成功原位更新正文、保存前后快照、回执及 `artifact.script.applied` 事件。`assistant_script_changed`（409）要求重新引用当前版本，禁止旧建议覆盖后来编辑。
+`read_current_script(offset?,limit?)` 分段读取已应用输入绑定的当前剧本或选区，最多6000码点。`propose_script_patch(content_version,script_id,start,end,replacement)` 只建立 `pending_review` 建议，不能自动写正文；范围须在引用内，空稿允许 `[0,0)` 插入，最终正文最大1 MiB。采用前等待本机项目编辑保存，重新校验建议原文、版本、归属和写作互斥；成功原位更新正文、保存前后快照、回执及 `artifact.script.applied` 事件。`assistant_script_changed`（409）拒绝旧建议覆盖后来编辑；前端保留当前输入，提示在剧本正文中核对修改。
 
 任务停止尚未生效返回 `assistant_task_stopping`；前一 Run 尚未结算返回 `assistant_task_settling`。这些明确未受理状态和已知 admission 422 可解除本机 pending 并保留输入；未知4xx、鉴权和普通冲突不能推定原消息未受理。请求已受理或仍不明确时继续使用冻结体与原键。需求 draft key 含真实消息身份，跨消息不会碰撞；明确缩减只接受更新、已应用的真实用户来源，模型不能自行缩水。
 
 助手写入、主图、生成结算和撤销按操作回执刷新当前项目资产／分镜；干净表单更新，脏表单保留本机输入进入版本冲突。最小主体引用可随本机草稿恢复，恢复后先读取 metadata 核对身份、版本和 checksum；变化或失败时禁止静默发送，提供重试或明确移除。
+
+## 当前附件与模型入口（2026-10-28）
+
+仅接收当前 V3 会话；先校验账号与项目访问权，再校验会话。旧 scope 0–2 不转换为新任务许可。
+
+| 方法 | 路径（均在 /api/v1 下） | 说明 |
+| --- | --- | --- |
+| GET | `/assistant/conversations/{id}/attachments` | 分页、pending 过滤 |
+| POST | `/assistant/conversations/{id}/attachments/uploads` | multipart file，幂等上传 |
+| POST | `/assistant/conversations/{id}/attachments/references` | 引用本人有权使用的媒体，幂等受理 |
+| DELETE | `/assistant/conversations/{id}/attachments/{attachment_id}` | 204，已冻结输入不变 |
+| GET | `/agent/models` | 本人可用文本模型及输入能力 |
+| PATCH | `/agent/models/{id}/inputs` | 更新已声明输入能力与上下文容量 |
+| POST | `/agent/models/{id}/verify` | 显式模型验证，可能计费；本轮重构未调用 |
+
+## 模型选择与运行反馈
+
+选择只检查本人配置、启用状态和类型，不要求 verified，也不自动调用供应商探测。工具和多模态能力未知时尝试用户的实际请求；系统不能编码的协议组合在运行中本地反馈。模型不匹配、认证失败、限流和受理不明分别处理，不静默丢弃附件或切换模型。文字回复不能代替真实候选执行证据。
+
+`GET /agent/models` 的每项新增 `input_capabilities`：
+
+```json
+{
+  "text": true,
+  "image": true,
+  "audio": false,
+  "video": "sampled_frames",
+  "evidence": "declared",
+  "context_window_tokens": 131072,
+  "context_window_evidence": "declared"
+}
+```
+
+`video` 为 `sampled_frames` 或 `unsupported`；`evidence` 兼容 `declared/model_family/text_only`，增加 `runtime` 表示等待实际请求证据。未知 Chat 配置不再按模型名称判为仅文本。以下旧声明和 `/verify` 接口保留兼容，当前创作界面不提供手动验证或声明入口：
+
+```json
+{"row_version":"1","image":true,"audio":false,"context_window_tokens":131072}
+```
+
+模型行版本输出十进制字符串，输入兼容正整数与十进制字符串；前端始终保留字符串。声明绑定配置版本、地址、模型标识和凭据身份；更新声明会增加模型版本，并保留未变更的已验证工具协议证据。配置发生变化后，旧声明失效。声明本身不调用模型，也不代表真实供应商验证。
+
+`PATCH /agent/models/{id}/inputs` 可选 `context_window_tokens` 为 16384–1048576 的整数。省略时保留仍有效的原容量声明，显式 `null` 清除；无有效声明使用平台默认 65536，平台有效上限 262144。返回的 `context_window_tokens` 是实际参与预算的值，`context_window_evidence` 为 `declared/platform_default`，与图像／音频的 `evidence` 分开。当前前端仅同步 DTO 与请求函数，不提供容量配置界面；声明不是供应商窗口探测或视觉语义验收。
+
+当前 SDK 适配中，Chat 协议允许图片和 MP3/WAV 音频内联；Responses 协议允许图片，不能编码音频输入；视频由图片采样与可选音轨组合输入。协议或供应商明确拒绝所选组合时，运行在对话内给出安全中文反馈。用户决定更换模型、减少附件或对视频明确选择仅画面，系统不自动降级。

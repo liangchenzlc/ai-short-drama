@@ -11,12 +11,12 @@ import pytest
 from short_drama.ai.types import GenerationResult
 from short_drama.core.exceptions import Conflict, WorkflowError
 from short_drama.domain import MediaFile, ShotVideo
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.project_assembly_service import ProjectAssemblyService
-from short_drama.service.project_sound_service import ProjectSoundService
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
-from short_drama.service.video_render import executable
-from short_drama.tasks.render import RenderExecutor
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.creation.assembly.document.assembly import ProjectAssemblyService
+from short_drama.service.creation.assembly.rendering.renderer import executable
+from short_drama.service.creation.sound.tracks.sound import ProjectSoundService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.tasks.rendering.render import RenderExecutor
 from tests.integration.standard.assets.test_asset_image_generation import drain
 from tests.integration.standard.assets.test_asset_image_generation import flow as flow
 
@@ -56,6 +56,7 @@ def setup(flow, tmp_path):
     flow.session.add(
         MediaFile(
             id=301,
+            project_id=flow.project.id,
             format_code="video/mp4",
             storage_locator=f"minio://{flow.settings.minio_video_bucket}/sound-test.mp4",
             duration_ms=2000,
@@ -261,24 +262,11 @@ def test_speech_candidates_staleness_music_export_and_video_review(flow, tmp_pat
     result = assembly.job_action(flow.project.id, job["id"], "get")
     assert result["status"] == "succeeded", result
     assert abs(result["duration_ms"] - 2000) <= 34
-    video = assembly.get(flow.project.id)
-    clip = video["clips"][0]
-    assembly.edit(
-        flow.project.id,
-        {
-            "row_version": video["assembly"]["row_version"],
-            "resolution": "720p",
-            "clips": [
-                {
-                    "id": clip["id"],
-                    "included": True,
-                    "muted": True,
-                    "trim_in_ms": 0,
-                    "trim_out_ms": 1000,
-                }
-            ],
-        },
-    )
+    # A new probe can change source timing without a sound edit.
+    source = flow.session.get(MediaFile, 301)
+    source.video_metadata = {**source.video_metadata, "duration_ms": 1000}
+    source.duration_ms = 1000
+    flow.session.commit()
     assert sound.get(flow.project.id)["needs_review"]
     assert reviewed["document"]["dialogue"][0]["start_ms"] == 250
     video = assembly.get(flow.project.id)
@@ -351,7 +339,7 @@ def test_sound_http_scope_schema_conflict_and_extraction_review(flow, tmp_path):
 
     import httpx
 
-    from short_drama.api.dependencies import get_session
+    from short_drama.api.dependencies.session import get_session
     from short_drama.main import create_app
 
     _, _, _, _ = setup(flow, tmp_path)

@@ -6,12 +6,12 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from short_drama.ai.canvas_credentials import CanvasCredentials, decode_canvas_credentials
+from short_drama.ai.gateway.canvas_credentials import CanvasCredentials, decode_canvas_credentials
 from short_drama.ai.types import GenerationError
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.canvas_model_catalog import CanvasModelChannelInput
-from short_drama.service.canvas_credential_freeze import freeze_canvas_credentials
+from short_drama.schemas.canvas.models.model_catalog import CanvasModelChannelInput
+from short_drama.service.canvas.generation.credential_freeze import freeze_canvas_credentials
 
 
 def cipher():

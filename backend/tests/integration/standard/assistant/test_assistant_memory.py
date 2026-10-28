@@ -8,11 +8,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from short_drama.agent.coordinator.assistant import claim_operation, complete_operation
-from short_drama.agent.coordinator.runtime import AgentRuntimeStore
 from short_drama.agent.core.access import LeaseLost
-from short_drama.agent.legacy.authorization import digest
-from short_drama.agent.legacy.tools import execute_tools, prepare_decision
 from short_drama.agent.memory.context import (
     enqueue_job_locked,
     extraction_waterline,
@@ -26,17 +22,23 @@ from short_drama.agent.memory.runtime import (
     AgentMemoryStore,
 )
 from short_drama.agent.memory.sources import message_sources
+from short_drama.agent.runtime.decision_input import prepare_decision
+from short_drama.agent.runtime.decisions import execute_tools
+from short_drama.agent.runtime.executor import AgentRuntimeStore
+from short_drama.agent.runtime.operations import claim_operation, complete_operation
 from short_drama.agent.task.state import apply_inputs_locked
 from short_drama.core.exceptions import Conflict, NotFound
 from short_drama.core.identity import ActorContext
-from short_drama.dao.agent_memory_dao import MemoryScopeContext
+from short_drama.dao.assistant.memory.memory import MemoryScopeContext
 from short_drama.domain import MediaFile
-from short_drama.domain.agent import AgentConversation, AgentMessage, AgentRun, AgentTurn
-from short_drama.domain.agent_context import AgentAttachment
-from short_drama.domain.agent_memory import AgentMemoryItem, AgentMemoryJob
-from short_drama.domain.agent_task import AgentOperation, AgentTask
-from short_drama.schemas.agent_memory import MemoryCreate, MemoryJobRead
-from short_drama.service.agent_memory_service import (
+from short_drama.domain.assistant.context.context import AgentAttachment
+from short_drama.domain.assistant.conversations.models import AgentConversation, AgentMessage
+from short_drama.domain.assistant.execution.models import AgentRun, AgentTurn
+from short_drama.domain.assistant.memory.memory import AgentMemoryItem, AgentMemoryJob
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
+from short_drama.schemas.assistant.memory.memory import MemoryCreate, MemoryJobRead
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.assistant.memory.memory import (
     AgentMemoryService,
     create_memory_locked,
     memory_catalog_locked,
@@ -45,10 +47,10 @@ from short_drama.service.agent_memory_service import (
     search_memory_locked,
     source_rows,
 )
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.assistant_task_service import AssistantTaskService
+from short_drama.service.assistant.tasks.task import AssistantTaskService
 from short_drama.service.base import utcnow
-from short_drama.service.project_service import ProjectService
+from short_drama.service.projects.management.project import ProjectService
+from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 pytestmark = pytest.mark.integration
@@ -525,7 +527,7 @@ def test_deletion_preview_protects_independent_sources_and_unrelated_facts(memor
 
 def test_purge_releases_only_owned_unreferenced_uploads_and_retries_storage(memory_workspace):
     from short_drama.agent.session.purge import purge_one
-    from short_drama.domain.collaboration import User
+    from short_drama.domain.identity.accounts.user import User
 
     factory, _projects, conversations = memory_workspace
     with factory.begin() as session:
@@ -1060,15 +1062,13 @@ def test_complete_memory_receipt_recovers_by_local_replay_only(memory_workspace)
     class ReplayGateway:
         calls = 0
 
-        async def run_segment(self, *args, **kwargs):
-            raise AssertionError("Recovery must not call a paid endpoint")
-
-        async def replay_segment(self, *args, request_payload, raw_response, **kwargs):
+        async def decide(self, *args, request, raw, **kwargs):
             self.calls += 1
-            assert request_payload == {"original": "request"}
-            assert raw_response == {"original": "receipt"}
-            return SimpleNamespace(
-                output=json.dumps(
+            assert request == {"original": "request"}
+            assert raw == {"original": "receipt"}
+            return {
+                "output_kind": "text",
+                "output": json.dumps(
                     {
                         "memories": [
                             {
@@ -1081,8 +1081,8 @@ def test_complete_memory_receipt_recovers_by_local_replay_only(memory_workspace)
                         ]
                     }
                 ),
-                usage={"output_tokens": 12},
-            )
+                "usage": {"output_tokens": 12},
+            }
 
     gateway = ReplayGateway()
     runtime = AgentMemoryRuntime(factory, settings, gateway)
@@ -1138,7 +1138,7 @@ def test_late_memory_receipt_cannot_restore_a_forgotten_source(memory_workspace)
 
 
 def test_forgetting_user_memory_fences_another_conversation_response(memory_workspace):
-    from short_drama.domain.agent import AgentEvent
+    from short_drama.domain.assistant.conversations.models import AgentEvent
 
     factory, _projects, conversations = memory_workspace
     accepted = seeded_run(memory_workspace, count=2)

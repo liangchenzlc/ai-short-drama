@@ -29,7 +29,8 @@ from short_drama.domain import (
     ProjectScript,
     ShotScript,
 )
-from short_drama.domain.collaboration import AuditEvent, User
+from short_drama.domain.identity.accounts.user import User
+from short_drama.domain.identity.audit.models import AuditEvent
 from short_drama.service.base import utcnow
 
 pytestmark = pytest.mark.integration
@@ -71,7 +72,7 @@ def test_assistant_preference_migration_is_additive_and_never_resets_a_saved_dis
     migration_mysql_engine,
 ):
     from scripts.agent_system_migration import apply_migration
-    from short_drama.domain.agent_preference import AgentPreference
+    from short_drama.domain.assistant.operations.preference import AgentPreference
 
     engine = migration_mysql_engine
     with engine.begin() as connection:
@@ -145,7 +146,7 @@ def test_assistant_media_migration_adds_only_the_missing_private_ledger_and_is_r
     migration_mysql_engine,
 ):
     from scripts.agent_system_migration import apply_migration
-    from short_drama.domain.agent_media import AgentMediaRequest
+    from short_drama.domain.assistant.operations.media import AgentMediaRequest
 
     engine = migration_mysql_engine
     with engine.begin() as connection:
@@ -205,8 +206,8 @@ def test_weakened_check_grouping_is_not_mistaken_for_readiness(migration_mysql_e
 
 
 def seed(session):
-    from short_drama.service.ai_model_config_service import AIModelConfigService
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.ai_config.management.models import AIModelConfigService
+    from short_drama.service.projects.management.project import ProjectService
 
     project = ProjectService(session).create_project({"name": "Agent project"})
     episode = ProjectService(session).get(project.id)
@@ -339,7 +340,7 @@ def test_queued_runs_keep_unique_message_triggers_and_message_immutability(db_se
 
 
 def test_run_cannot_reference_another_members_private_model(db_session):
-    from short_drama.service.ai_model_config_service import AIModelConfigService
+    from short_drama.service.ai_config.management.models import AIModelConfigService
 
     seed(db_session)
     db_session.info["actor"] = actor(2)
@@ -364,7 +365,7 @@ def test_run_cannot_reference_another_members_private_model(db_session):
 
 
 def test_artifact_typed_references_match_episode_project_and_generation(db_session):
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.projects.management.project import ProjectService
 
     episode, model, *_ = seed(db_session)
     other_episode = ProjectService(db_session).create_project({"name": "Other work"})

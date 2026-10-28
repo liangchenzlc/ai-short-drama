@@ -4,6 +4,7 @@ import io
 import json
 from contextlib import contextmanager
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -11,19 +12,18 @@ from sqlalchemy import select
 
 import short_drama.agent.skill.runtime as skill_runtime
 import tests.integration.standard.assistant.test_global_assistant_tasks as task_tests
-from short_drama.agent.coordinator.assistant import (
-    claim_operation,
-    complete_operation,
-    execute_tools,
-)
 from short_drama.agent.coordinator.recovery import recover
-from short_drama.agent.coordinator.runtime import AgentRuntimeStore
-from short_drama.agent.legacy.tools import prepare_decision
-from short_drama.core.exceptions import NotFound
-from short_drama.domain.agent import AgentRun
-from short_drama.domain.agent_task import AgentOperation, AgentTask
-from short_drama.service.agent_skill_service import AgentSkillService
+from short_drama.agent.runtime.decision_input import prepare_decision
+from short_drama.agent.runtime.decisions import execute_tools
+from short_drama.agent.runtime.executor import AgentRuntimeStore
+from short_drama.agent.runtime.operations import claim_operation, complete_operation
+from short_drama.core.exceptions import NotFound, WorkflowError
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
+from short_drama.domain.skills.catalog.skill import AgentSkillVersion
 from short_drama.service.base import utcnow
+from short_drama.service.skills.catalog.skill import AgentSkillService
+from short_drama.service.skills.catalog.versions import freeze_skills
 from tests.integration.standard.assistant.test_global_assistant_tasks import (
     task_actor,
     task_service,
@@ -97,6 +97,64 @@ def create_skill(workspace, *, owner=1, **changes):
                 **changes,
             },
             uuid4().hex,
+        )
+
+
+def test_old_script_resource_is_rejected_by_catalog_and_resource_read(skill_workspace):
+    factory, settings, _model, storage = skill_workspace
+    skill = create_skill(skill_workspace)
+    with factory() as session:
+        version = session.scalar(
+            select(AgentSkillVersion).where(AgentSkillVersion.skill_key == skill.id)
+        )
+        resources = [dict(item, kind="script") for item in version.resources]
+        version_id = version.id
+    with factory.kw["bind"].begin() as connection:
+        connection.execute(
+            AgentSkillVersion.__table__.update()
+            .where(AgentSkillVersion.id == version_id)
+            .values(resources=resources)
+        )
+    for operation in (
+        lambda service: service.detail(skill.id),
+        lambda service: service.resource_content(
+            skill.id, skill.content_version, "assets/method.txt"
+        ),
+    ):
+        with factory() as session:
+            session.info["actor"] = task_actor()
+            with pytest.raises(WorkflowError) as error:
+                operation(AgentSkillService(session, settings, storage))
+            assert error.value.code == "invalid_agent_skill_resource"
+            assert error.value.status_code == 409
+
+
+def test_missing_skill_version_is_not_created_while_reading_or_selecting(skill_workspace):
+    factory, settings, _model, storage = skill_workspace
+    skill = create_skill(skill_workspace)
+    with factory.kw["bind"].begin() as connection:
+        connection.execute(
+            AgentSkillVersion.__table__.delete().where(AgentSkillVersion.skill_key == skill.id)
+        )
+    for operation in (
+        lambda service: service.detail(skill.id),
+        lambda service: service.patch(skill.id, {"row_version": skill.row_version, "name": "修改"}),
+    ):
+        with factory() as session:
+            session.info["actor"] = task_actor()
+            with pytest.raises(WorkflowError) as error:
+                operation(AgentSkillService(session, settings, storage))
+            assert error.value.code == "agent_skill_version_missing"
+    with factory.begin() as session:
+        session.info["actor"] = task_actor()
+        with pytest.raises(WorkflowError) as error:
+            freeze_skills(
+                session, 1, [SimpleNamespace(id=skill.id, content_version=skill.content_version)]
+            )
+        assert error.value.code == "agent_skill_version_missing"
+        assert (
+            session.scalar(select(AgentSkillVersion).where(AgentSkillVersion.skill_key == skill.id))
+            is None
         )
 
 
@@ -329,30 +387,42 @@ def test_task_frozen_method_cannot_bypass_new_activation_or_pending_removal(skil
 
 def test_builtin_publication_uses_db_versions_and_keeps_existing_task_snapshot(skill_workspace):
     from scripts.agent_system_migration import backfill_skill_packages
-    from short_drama.service.agent_builtin_skill_service import publish_builtin_skills
-    from short_drama.service.agent_skill_service import builtin_skills
+    from short_drama.agent.skill.packages import builtin_skill_packages
+    from short_drama.service.skills.catalog.builtin_skill import publish_builtin_skills
 
     factory, settings, _model, storage = skill_workspace
     with factory.kw["bind"].begin() as connection:
         backfill_skill_packages(connection)
-    old_skill = next(item for item in builtin_skills() if item.id == "script.v1")
-    _conversation, accepted = new_skill_task(skill_workspace, old_skill)
     publish_builtin_skills(factory, settings, storage)
+    with factory() as session:
+        session.info["actor"] = task_actor()
+        old_skill = AgentSkillService(session, settings, storage).detail("script.v1")
+    _conversation, accepted = new_skill_task(skill_workspace, old_skill)
+    package = next(item for item in builtin_skill_packages() if item.key == "script.v1")
+    revised = package.model_copy(
+        update={
+            "content_version": 3,
+            "content": package.content.model_copy(
+                update={"instructions": package.content.instructions + "\n补充节奏要求。"}
+            ),
+        }
+    )
+    publish_builtin_skills(factory, settings, storage, [revised])
     run_tool(skill_workspace, accepted, "describe_creation_target", {})
     with factory() as session:
         original = skill_runtime.skill_context(session.get(AgentTask, accepted.task.id))
         assert original[0]["instructions"] == old_skill.instructions
-        assert original[0]["content_version"] == "1"
+        assert original[0]["content_version"] == "2"
     with factory() as session:
         session.info["actor"] = task_actor()
         current = AgentSkillService(session, settings, storage).detail("script.v1")
-        assert current.content_version == 2 and current.resource_count == 3
+        assert current.content_version == 3 and current.resource_count == 3
     _fresh_conversation, fresh = new_skill_task(skill_workspace, current)
     run_tool(skill_workspace, fresh, "describe_creation_target", {})
     with factory() as session:
         active = skill_runtime.skill_context(session.get(AgentTask, fresh.task.id))
         assert active[0]["instructions"] == current.instructions
-        assert active[0]["content_version"] == "2"
+        assert active[0]["content_version"] == "3"
     read = run_tool(
         skill_workspace,
         fresh,
@@ -363,7 +433,7 @@ def test_builtin_publication_uses_db_versions_and_keeps_existing_task_snapshot(s
 
 
 def test_runtime_directory_and_guessed_loads_do_not_cross_accounts(skill_workspace):
-    from short_drama.domain.collaboration import User
+    from short_drama.domain.identity.accounts.user import User
 
     factory, _settings, _model, _storage = skill_workspace
     with factory.begin() as session:

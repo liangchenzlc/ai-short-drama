@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.domain import CanvasDrawing, CanvasDrawingVersion, ProjectCanvas
-from short_drama.service.canvas_drawing_document import drawing_document
+from short_drama.service.canvas.drawing.drawing_document import drawing_document
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.resources.test_canvas_resources import ROOT, canvas
 from tests.integration.canvas.resources.test_canvas_resources import resource_app as resource_app

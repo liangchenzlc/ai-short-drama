@@ -16,8 +16,8 @@ from short_drama.domain import (
     MediaFile,
 )
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_creation_cleanup import cleanup_canvas_creations
-from short_drama.service.canvas_service import CanvasService
+from short_drama.service.canvas.document.canvas import CanvasService
+from short_drama.service.canvas.workspace.creation.creation_cleanup import cleanup_canvas_creations
 from short_drama.storage.models import ObjectLocation
 from tests.integration.canvas.projects.test_canvas_creation import creation_request
 from tests.integration.canvas.resources.test_canvas_library import (

@@ -1,6 +1,7 @@
 """Real MySQL checks for completion gates, replay and bounded task working state."""
 
 import json
+from copy import deepcopy
 from datetime import timedelta
 from uuid import uuid4
 
@@ -11,8 +12,10 @@ from short_drama.agent.coordinator.recovery import recover
 from short_drama.agent.harness.runtime import HarnessRuntime
 from short_drama.agent.task.contract import Requirement
 from short_drama.core.time import utcnow
-from short_drama.domain.agent import AgentEvent, AgentMessage, AgentRun, AgentToolCall, AgentTurn
-from short_drama.domain.agent_task import AgentOperation, AgentTask
+from short_drama.domain.assistant.conversations.models import AgentEvent, AgentMessage
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
+from short_drama.domain.assistant.tasks.task_requirement import AgentTaskRequirement
 from tests.integration.standard.assistant.test_global_assistant_tasks import (
     harness_workspace,
     new_task,
@@ -96,12 +99,38 @@ def test_completion_missing_work_is_rejected_then_original_review_receipt_replay
     requirements = [
         Requirement.model_validate(item).model_dump(mode="json") for item in requirements
     ]
+    with factory() as session:
+        draft = session.scalar(
+            select(AgentTaskRequirement).where(
+                AgentTaskRequirement.task_id == accepted.task.id,
+                AgentTaskRequirement.state == "draft",
+            )
+        )
+        assert draft is not None
+        draft_key = draft.requirement_key
+        requirements[1]["key"] = draft_key
     advance(
         runtime,
         accepted,
         state,
-        calls=[("requirements", "set_task_requirements", {"requirements": requirements})],
+        calls=[
+            (
+                "requirements",
+                "confirm_requirements",
+                {"keys": [draft_key], "additions": [requirements[0], requirements[2]]},
+            )
+        ],
     )
+    with factory.begin() as session:
+        task = session.get(AgentTask, accepted.task.id)
+        state_projection = deepcopy(task.effective_state)
+        item = next(
+            item
+            for item in state_projection["task_contract"]["requirements"]
+            if item["key"] == draft_key
+        )
+        item["minimum_count"] = 1
+        task.effective_state = state_projection
     advance(runtime, accepted, state, text="已经保存并回读两个角色。", finish=False)
     invalid = {
         "intent": "execution",
@@ -111,6 +140,8 @@ def test_completion_missing_work_is_rejected_then_original_review_receipt_replay
         ],
     }
     submit_review(runtime, accepted, state, report=invalid)
+    reviewed = context_frame(state["calls"][-1][2])["requirements"]
+    assert next(item for item in reviewed if item["key"] == draft_key)["minimum_count"] == 2
     with factory() as session:
         run = session.get(AgentRun, accepted.run.id)
         assert run.status not in {"succeeded", "failed"}
@@ -173,7 +204,7 @@ def test_completion_missing_work_is_rejected_then_original_review_receipt_replay
     )
     evidence = {
         "directory": [str(directory.id)],
-        "characters": [str(saved.id), str(read.id)],
+        requirements[1]["key"]: [str(saved.id), str(read.id)],
         "read": [str(read.id)],
     }
     valid = {
@@ -472,7 +503,7 @@ def test_skill_quota_pagination_ambiguity_release_and_archived_body_reuse(
             )
         ).all()
         assert len(bodies) == 2
-        from short_drama.dao.agent_transcript_dao import AgentTranscriptDAO
+        from short_drama.dao.assistant.execution.transcript import AgentTranscriptDAO
 
         run = session.get(AgentRun, accepted.run.id)
         dao = AgentTranscriptDAO(session)
@@ -483,7 +514,7 @@ def test_skill_quota_pagination_ambiguity_release_and_archived_body_reuse(
 
 
 def test_capacity_patch_preserves_omitted_value_and_can_clear_declaration(task_workspace):
-    from short_drama.service.agent_model_service import AgentModelService
+    from short_drama.service.ai_config.management.assistant_models import AgentModelService
     from tests.integration.standard.assistant.test_global_assistant_tasks import task_actor
 
     factory, settings, model = task_workspace
@@ -517,7 +548,7 @@ def test_bounded_transcript_sorts_ids_without_json_predicates(task_workspace, pr
     from sqlalchemy import event
 
     from short_drama.agent.memory.sources import message_sources
-    from short_drama.dao.agent_transcript_dao import AgentTranscriptDAO
+    from short_drama.dao.assistant.execution.transcript import AgentTranscriptDAO
 
     state = configured(task_workspace, provider)
     factory, settings, _model = task_workspace
@@ -557,7 +588,7 @@ def test_bounded_transcript_sorts_ids_without_json_predicates(task_workspace, pr
         )
 
 
-def test_old_frozen_turn_replays_without_adding_review_or_external_request(
+def test_frozen_discussion_turn_replays_without_another_external_request(
     task_workspace,
     provider,
     monkeypatch,
@@ -572,21 +603,9 @@ def test_old_frozen_turn_replays_without_adding_review_or_external_request(
     _conversation, accepted = new_task(task_workspace)
     runtime = HarnessRuntime(factory, settings)
 
-    def prepare_old(session, conversation, run):
-        values = prepare_decision(session, conversation, run)
-        values.pop("supervision_version")
-        values.pop("context_layout_version")
-        return {
-            **values,
-            "instructions": "历史冻结讨论",
-            "tools": [],
-            "prompt_version": "assistant-harness-v3",
-            "tool_version": 2,
-        }
-
     with factory() as session:
         version = session.get(AgentRun, accepted.run.id).message_version
-    claim = runtime.store.claim_execution(accepted.run.id, version, prepare_old)
+    claim = runtime.store.claim_execution(accepted.run.id, version, prepare_decision)
     state["responses"] = [(200, sse_response("chat", text="历史回执答复"), "text/event-stream")]
     original = runtime.store.save_result
 

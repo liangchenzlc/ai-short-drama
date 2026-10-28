@@ -5,7 +5,7 @@ from PIL import Image
 
 
 def test_image_metadata_comes_from_bytes_and_mismatched_media_is_rejected():
-    from short_drama.service.generation_archive import inspect_media
+    from short_drama.service.generations.results.archive import inspect_media
 
     output = BytesIO()
     Image.new("RGB", (13, 7), "red").save(output, format="PNG")
@@ -22,7 +22,7 @@ def test_image_metadata_comes_from_bytes_and_mismatched_media_is_rejected():
 def test_different_download_bytes_cannot_overwrite_same_asset_object():
     from short_drama.core.config import Settings
     from short_drama.core.exceptions import NotFound
-    from short_drama.service.generation_archive import GenerationArchive
+    from short_drama.service.generations.results.archive import GenerationArchive
 
     class Storage:
         objects = {}

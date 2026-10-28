@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import CanvasDrawing, CanvasDrawingVersion, CanvasRevisionDrawingReference
-from short_drama.domain.canvas import CanvasRevision
+from short_drama.domain.canvas.document.canvas import CanvasRevision
 from short_drama.service.base import utcnow
 from tests.integration.canvas.drawing.test_canvas_drawings import drawing_path, drawing_payload
 from tests.integration.canvas.resources.test_canvas_media_locators import save
@@ -135,7 +135,7 @@ def test_drawing_change_after_history_list_rejects_restore_without_losing_either
 
 
 def test_failed_restore_rolls_back_graph_drawing_versions_and_receipt(resource_app, monkeypatch):
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
 
     client, project, path, document, _, history, _ = history_scene(
         resource_app, "drawing_restore_fail"

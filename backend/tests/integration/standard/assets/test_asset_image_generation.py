@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from short_drama.ai import GenerationResult
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict, GenerationRequestError, NotFound, WorkflowError
+from short_drama.db.session import session_factory
 from short_drama.domain import (
     AIGenerationRecord,
     Asset,
@@ -23,19 +24,19 @@ from short_drama.domain import (
     MediaRecycleBin,
     ShotImage,
 )
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.asset_image_service import AssetImageService
-from short_drama.service.asset_library_service import AssetLibraryService
+from short_drama.service.ai_config.management.models import AIModelConfigService
 from short_drama.service.base import utcnow
-from short_drama.service.generation_execution_service import GenerationExecutionService
-from short_drama.service.media_asset_service import MediaAssetService
-from short_drama.service.project_service import ProjectService
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
-from short_drama.service.shot_asset_service import ShotAssetService
-from short_drama.service.shot_script_service import ShotScriptService
+from short_drama.service.creation.assets.images.image import AssetImageService
+from short_drama.service.creation.assets.management.library import AssetLibraryService
+from short_drama.service.creation.storyboard.management.script import ShotScriptService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.creation.storyboard.references.asset import ShotAssetService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
+from short_drama.service.media.library.assets import MediaAssetService
+from short_drama.service.projects.management.project import ProjectService
 from short_drama.storage.models import ObjectLocation, StoredObject
-from tests.support.integration.legacy_identity import session_factory
+from tests.support.integration.identity import actor as fixture_actor
 
 pytestmark = pytest.mark.integration
 
@@ -206,7 +207,7 @@ def submit_shot(flow, shot_id, count=1):
 
 
 def groups(flow):
-    from short_drama.service.image_group_service import ImageGroupService
+    from short_drama.service.media.image_groups.groups import ImageGroupService
 
     return ImageGroupService(flow.session, flow.settings, flow.storage)
 
@@ -363,6 +364,7 @@ def test_deleted_asset_retains_late_group_without_overwriting_or_allowing_primar
     archived = groups(flow).detail(pending["id"])
     assert archived["status"] == "completed"
     assert archived["primary_index"] is None and archived["notice"]
+    assert archived["target_version"] == str(asset.row_version + 1)
     assert all(item["status"] == "ready" and item["media_id"] for item in archived["items"])
     with flow.factory() as session:
         deleted = session.get(Asset, asset.id)
@@ -380,6 +382,12 @@ def test_deleted_asset_retains_late_group_without_overwriting_or_allowing_primar
         choose(flow, archived, 1)
     with pytest.raises(NotFound):
         flow.library.get(asset.id)
+    with flow.factory() as outsider:
+        from short_drama.service.media.image_groups.groups import ImageGroupService
+
+        outsider.info["actor"] = fixture_actor(2)
+        with pytest.raises(NotFound):
+            ImageGroupService(outsider, flow.settings, flow.storage).detail(pending["id"])
     assert len(flow.provider.calls) == 1
 
 
@@ -484,7 +492,7 @@ def test_idempotent_replay_after_edit_keeps_frozen_input_and_one_group(flow):
 
 
 def test_group_failure_rolls_back_archive_and_recovers_without_provider_call(flow, monkeypatch):
-    from short_drama.service.image_group_service import ImageGroupService
+    from short_drama.service.media.image_groups.groups import ImageGroupService
 
     asset = create_asset(flow)
     task_id = submit(flow, asset)
@@ -606,7 +614,7 @@ def test_concurrent_primary_allows_one_version_writer(flow):
     barrier = Barrier(2)
 
     def write(index):
-        from short_drama.service.image_group_service import ImageGroupService
+        from short_drama.service.media.image_groups.groups import ImageGroupService
 
         with flow.factory() as session:
             item = current["items"][index - 1]
@@ -661,7 +669,7 @@ def test_invalid_asset_admission_creates_no_task(flow, problem):
 
 
 def test_expired_worker_cannot_change_group_from_saved_output(flow):
-    from short_drama.dao.task_runtime_dao import LeaseLost
+    from short_drama.dao.generations.runtime.lifecycle import LeaseLost
 
     asset = create_asset(flow)
     task_id = submit(flow, asset)

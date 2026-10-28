@@ -8,7 +8,7 @@ from tests.support.generation_fixtures import config, generation_session, settin
 def test_disposed_canvas_execution_cannot_retry_or_resume_retained_archive(status, record_status):
     from types import SimpleNamespace
 
-    from short_drama.service.ai_generation_service import can_retry, resume_action
+    from short_drama.service.generations.admission.task_policy import can_retry, resume_action
 
     task = SimpleNamespace(
         status=status,
@@ -30,7 +30,7 @@ def test_disposed_canvas_execution_cannot_retry_or_resume_retained_archive(statu
 
 
 def test_upstream_failure_explains_unknown_result_and_only_exposes_valid_http_status():
-    from short_drama.service.ai_generation_service import safe_error
+    from short_drama.service.generations.admission.task_policy import safe_error
 
     result = safe_error({"code": "upstream_unavailable", "http_status": 504, "message": "secret"})
     assert "模型服务或中转站" in result["message"]
@@ -54,7 +54,7 @@ def test_upstream_failure_explains_unknown_result_and_only_exposes_valid_http_st
 def test_partial_result_explains_provider_shortfall_separately_from_save_failure(
     returned, saved, message
 ):
-    from short_drama.service.ai_generation_service import safe_error
+    from short_drama.service.generations.admission.task_policy import safe_error
 
     result = safe_error(
         {
@@ -81,7 +81,7 @@ def test_partial_result_explains_provider_shortfall_separately_from_save_failure
     ],
 )
 def test_partial_result_without_valid_counts_uses_safe_chinese_message(counts):
-    from short_drama.service.ai_generation_service import safe_error
+    from short_drama.service.generations.admission.task_policy import safe_error
 
     result = safe_error({"code": "partial_result", "message": "secret", **counts})
     assert result == {
@@ -105,7 +105,7 @@ def test_image_size_rejection_is_actionable_and_creates_no_task(model_key, param
 
     from short_drama.core.exceptions import BusinessError
     from short_drama.domain import AsyncTask
-    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         model = config(session)
@@ -124,9 +124,11 @@ def test_saved_storyboard_gpt_image_alias_keeps_reference_and_default_2k_setting
     from sqlalchemy import select
 
     from short_drama.domain import AIGenerationRecord, Asset, MediaFile
-    from short_drama.service.ai_generation_service import AIGenerationService
-    from short_drama.service.asset_service import AssetService
-    from short_drama.service.project_storyboard_service import ProjectStoryboardService
+    from short_drama.service.creation.assets.management.assets import AssetService
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
+    from short_drama.service.generations.admission.generation import AIGenerationService
     from tests.unit.standard.storyboard.test_project_storyboard import setup_storyboard
 
     with generation_session() as session:
@@ -192,7 +194,7 @@ def test_saved_storyboard_gpt_image_alias_keeps_reference_and_default_2k_setting
 
 def test_missing_default_configuration_has_distinct_error():
     from short_drama.core.exceptions import BusinessError
-    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         model = config(session)
@@ -222,7 +224,10 @@ def test_generation_domain_matches_fixed_storage_contract():
 def test_generation_input_rejects_unknown_scene_and_excess_outputs():
     from pydantic import ValidationError
 
-    from short_drama.schemas.ai_generation import ImageGenerationCreate, TextGenerationCreate
+    from short_drama.schemas.generations.admission.generation import (
+        ImageGenerationCreate,
+        TextGenerationCreate,
+    )
 
     with pytest.raises(ValidationError):
         ImageGenerationCreate.model_validate(
@@ -242,7 +247,7 @@ def test_idempotency_freezes_config_and_conflicts_on_changed_input():
 
     from short_drama.core.exceptions import BusinessError, Conflict
     from short_drama.domain import AIGenerationRecord
-    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         model = config(session)
@@ -270,7 +275,7 @@ def test_cancel_prepared_invalidates_message_but_running_only_records_intent():
     from sqlalchemy import select
 
     from short_drama.domain import AIGenerationRecord, AsyncTask
-    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         config(session)
@@ -294,7 +299,7 @@ def test_resume_never_resubmits_unknown_acceptance_and_advances_once():
 
     from short_drama.core.exceptions import Conflict
     from short_drama.domain import AIGenerationRecord, AsyncTask
-    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         config(session)
@@ -322,7 +327,7 @@ def test_resume_never_resubmits_unknown_acceptance_and_advances_once():
 def test_retry_creates_new_history_and_unknown_cannot_retry():
     from short_drama.core.exceptions import Conflict
     from short_drama.domain import AsyncTask
-    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         config(session)
@@ -355,7 +360,7 @@ def test_safe_history_keeps_text_and_usage_but_never_raw_response_or_credentials
     from sqlalchemy import select
 
     from short_drama.domain import AIGenerationRecord
-    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         config(session, "text")
@@ -383,8 +388,8 @@ def test_archive_resume_preserves_cancel_intent_and_never_resubmits_generation()
     from sqlalchemy import select
 
     from short_drama.domain import AIGenerationRecord, AsyncTask
-    from short_drama.service.ai_generation_service import AIGenerationService
     from short_drama.service.base import utcnow
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         config(session)
@@ -410,7 +415,7 @@ def test_unknown_video_protocol_rejected_before_task_creation():
 
     from short_drama.core.exceptions import BusinessError
     from short_drama.domain import AsyncTask
-    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         model = config(session, "video")
@@ -427,8 +432,8 @@ def test_history_recovery_uses_latest_call_evidence():
     from sqlalchemy import select
 
     from short_drama.domain import AIGenerationRecord, AsyncTask
-    from short_drama.service.ai_generation_service import AIGenerationService
     from short_drama.service.base import utcnow
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         config(session)
@@ -466,8 +471,8 @@ def test_irrecoverable_inline_result_is_not_offered_as_resumable():
 
     from short_drama.core.exceptions import Conflict
     from short_drama.domain import AIGenerationRecord, AsyncTask
-    from short_drama.service.ai_generation_service import AIGenerationService
     from short_drama.service.base import utcnow
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         config(session)

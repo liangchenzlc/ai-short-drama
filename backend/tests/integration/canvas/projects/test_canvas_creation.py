@@ -13,8 +13,8 @@ from short_drama.core.exceptions import NotFound, StorageUnavailable, WorkflowEr
 from short_drama.core.identity import ActorContext
 from short_drama.domain import CanvasCreationAttempt, CanvasCreationResource, MediaFile, Project
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_creation_cleanup import cleanup_canvas_creations
-from short_drama.service.canvas_service import CanvasService
+from short_drama.service.canvas.document.canvas import CanvasService
+from short_drama.service.canvas.workspace.creation.creation_cleanup import cleanup_canvas_creations
 from tests.integration.canvas.resources.test_canvas_resource_copy import image_node, register
 from tests.integration.canvas.resources.test_canvas_resources import (
     ROOT,

@@ -1,0 +1,102 @@
+.studio-message .ant-message-notice-content {
+  max-width: min(420px, calc(100vw - 24px));
+  border-radius: 8px;
+}
+.studio-message .ant-message-custom-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.studio-message .ant-message-custom-content > .anticon {
+  margin: 3px 0 0;
+  flex: none;
+}
+.studio-message-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  text-align: left;
+}
+.studio-message-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 20px;
+}
+.studio-message-content .ant-btn {
+  flex: none;
+  padding-inline: 2px;
+}
+.studio-message-close.ant-btn {
+  width: 24px;
+  height: 24px;
+}
+.ui-dialog > .ant-message {
+  position: absolute;
+}
+.studio-feedback-host > .ant-message {
+  position: absolute;
+}
+.ui-dialog > header {
+  position: relative;
+}
+.studio-feedback-indicator.ant-btn {
+  position: absolute;
+  inset-inline-end: 48px;
+  top: 12px;
+  width: 28px;
+  height: 28px;
+  color: var(--sub, #b4b4bc);
+}
+.studio-feedback-indicator.has-issues {
+  color: var(--warning, #fbbf24);
+}
+.ui-dialog[open]:has(.studio-feedback-popup:not(.ant-popover-hidden)) {
+  overflow: visible;
+}
+.studio-feedback-popup .ant-popover-inner-content {
+  max-height: min(480px, 65dvh);
+  overflow-y: auto;
+}
+.studio-feedback-details {
+  max-width: min(420px, calc(100vw - 48px));
+  min-width: 0;
+}
+.studio-feedback-detail {
+  padding-block: 8px;
+  overflow-wrap: anywhere;
+}
+.studio-feedback-detail + .studio-feedback-detail {
+  border-top: 1px solid var(--hair, #2d2d2d);
+}
+.studio-feedback-detail strong {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.studio-feedback-detail strong svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--warning, #fbbf24);
+}
+.studio-feedback-error strong svg {
+  color: var(--danger, #f87171);
+}
+.studio-feedback-body {
+  color: var(--sub, #b4b4bc);
+  font-size: 12px;
+}
+.studio-feedback-body:empty {
+  display: none;
+}
+.studio-feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}

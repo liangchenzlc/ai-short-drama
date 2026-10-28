@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from short_drama.domain import AIGenerationRecord, AsyncTask, CanvasTaskBinding, MediaFile
-from short_drama.domain.canvas import CanvasTimeline, CanvasWriteReceipt
-from short_drama.domain.canvas_tool_run import CanvasToolRun
+from short_drama.domain.canvas.document.canvas import CanvasTimeline, CanvasWriteReceipt
+from short_drama.domain.canvas.tools.tool_run import CanvasToolRun
 from tests.integration.standard.identity.test_identity_collaboration import account
 from tests.integration.standard.identity.test_identity_collaboration import (
     identity_app as identity_app,

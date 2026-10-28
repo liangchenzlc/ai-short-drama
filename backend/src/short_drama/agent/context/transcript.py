@@ -6,11 +6,11 @@ from copy import deepcopy
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.gateway.contracts import AgentGatewayError
 from short_drama.agent.resources.resolver import image_block
 from short_drama.agent.skill.contracts import activations
 from short_drama.agent.skill.progressive import ACTIVE_SKILL_TOKENS
-from short_drama.dao.agent_transcript_dao import AgentTranscriptDAO
+from short_drama.dao.assistant.execution.transcript import AgentTranscriptDAO
 from short_drama.utils.json_digest import digest
 
 logger = logging.getLogger(__name__)
@@ -332,15 +332,12 @@ def model_messages(
     *,
     continuation_prompt=None,
     resource_outcomes=(),
-    context_layout_version=1,
 ):
     messages = [
         SystemMessage(content=instructions),
         HumanMessage(
             content=json.dumps(
-                frame
-                if context_layout_version == 1
-                else {
+                {
                     "task_id": frame.get("task_id"),
                     "execution_target": frame.get("execution_target"),
                 },
@@ -402,8 +399,7 @@ def model_messages(
             )
         if visual_delivery:
             messages.append(HumanMessage(content=visual_delivery))
-    if context_layout_version >= 2:
-        messages.append(HumanMessage(content=json.dumps(frame, ensure_ascii=False, sort_keys=True)))
+    messages.append(HumanMessage(content=json.dumps(frame, ensure_ascii=False, sort_keys=True)))
     if continuation_prompt:
         messages.append(HumanMessage(content=continuation_prompt))
     return messages

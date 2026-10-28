@@ -7,30 +7,31 @@ async function baseFixture(page: Page) {
 
 async function openEditor(page: Page) {
   await page.getByRole('button', { name: '林晚', exact: true }).click();
-  const editor = page.locator('.episode-asset-detail');
+  const editor = page.locator('.creation-asset-detail');
   const expand = editor.getByRole('button', { name: '展开生成设置', exact: true });
   if (await expand.isVisible()) await expand.click();
   await expect(editor.getByRole('textbox', { name: '描述', exact: true })).toBeVisible();
   return editor;
 }
 
-test('project import excludes episode members beyond the first page', async ({ page }) => {
+test('project assets retain pagination beyond the first page', async ({ page }) => {
   const data = await baseFixture(page);
-  const existing = { ...data.asset, id: '999', name: '第二页已有角色' };
-  const fresh = { ...data.asset, id: '888', name: '尚未加入角色' };
-  const members = [...Array.from({ length: 20 }, (_, i) => ({ ...data.asset, id: String(1000 + i), name: `角色${i}` })), existing];
+  const last = { ...data.asset, id: '999', name: '第二页角色' };
+  const members = [data.asset, ...Array.from({ length: 19 }, (_, i) => ({ ...data.asset, id: String(1000 + i), name: `角色${i}` })), last];
   await page.route('**/api/v1/projects/10/**assets**', async route => {
     const url = new URL(route.request().url());
-    const values = url.pathname.includes('/episodes/') ? members : [existing, fresh];
+    if (url.pathname !== '/api/v1/projects/10/assets') return route.fallback();
     const offset = Number(url.searchParams.get('offset') ?? 0);
     const limit = Number(url.searchParams.get('limit') ?? 20);
-    return route.fulfill({ json: { items: values.slice(offset, offset + limit), total: values.length, offset, limit } });
+    return route.fulfill({ json: { items: members.slice(offset, offset + limit), total: members.length, offset, limit } });
   });
+  await page.route('**/api/v1/assets/999', route => route.fulfill({ json: last }));
   await page.goto(`${root}/assets`);
-  await page.getByRole('button', { name: '导入素材', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '从项目库导入素材', exact: true });
-  await expect(dialog.getByText('尚未加入角色', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('第二页已有角色', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '林晚', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '第二页角色', exact: true })).toHaveCount(0);
+  await page.locator('.ant-pagination-item-2').click();
+  await page.getByRole('button', { name: '第二页角色', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('第二页角色');
   expect(data.errors).toEqual([]);
 });
 

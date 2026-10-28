@@ -6,7 +6,7 @@ from copy import deepcopy
 
 from sqlalchemy import func, select
 
-from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.gateway.contracts import AgentGatewayError
 from short_drama.agent.memory.sources import HARD_CONTEXT_BYTES as HARD_CONTEXT_BYTES
 from short_drama.agent.memory.sources import MAX_SOURCE_BYTES as MAX_SOURCE_BYTES
 from short_drama.agent.memory.sources import SOFT_HISTORY_BYTES as SOFT_HISTORY_BYTES
@@ -16,13 +16,14 @@ from short_drama.agent.memory.sources import restricted_messages as restricted_m
 from short_drama.agent.memory.sources import selected_keys as selected_keys
 from short_drama.agent.memory.sources import source_hash as source_hash
 from short_drama.agent.memory.sources import token_estimate as token_estimate
-from short_drama.domain.agent import AgentMessage, AgentRun
-from short_drama.domain.agent_memory import (
+from short_drama.domain.assistant.conversations.models import AgentMessage
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.memory.memory import (
     AgentConversationSummary,
     AgentMemoryJob,
 )
-from short_drama.schemas.agent_memory import MemoryCreate, MemoryMaintenanceResult
-from short_drama.service.agent_memory_store import (
+from short_drama.schemas.assistant.memory.memory import MemoryCreate, MemoryMaintenanceResult
+from short_drama.service.assistant.memory.memory_store import (
     checked_scope,
     create_memory_locked,
     memory_catalog_locked,
@@ -334,13 +335,14 @@ def settle_maintenance_locked(session, conversation, job, payload, usage):
             _GLOBAL_INTENT_RE = re.compile(
                 r"以后|始终|一贯|长期|所有(作品|对话)|一直|每次|往后|下次|统一|永远|全部"
             )
-            requested_scope = candidate.model_dump(
-                exclude={"source_message_ids"}
-            ).get("scope_type", "conversation")
+            requested_scope = candidate.model_dump(exclude={"source_message_ids"}).get(
+                "scope_type", "conversation"
+            )
             if requested_scope == "user" and not any(
                 _GLOBAL_INTENT_RE.search(source["content"]) for source in sources
             ):
                 import logging as _logging
+
                 _logging.getLogger(__name__).warning(
                     "auto_memory_scope_downgraded: no global intent found, "
                     "downgrading to conversation"

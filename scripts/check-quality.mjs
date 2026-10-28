@@ -89,6 +89,11 @@ export function checkQuality({ root = PROJECT_ROOT, mode = 'check', output = con
   const feSet = new Set(feTs.map(f => path.join(ROOT, f)));
   const feEdges = new Map();
   const feImports = [];
+  const tsconfigPath = path.join(ROOT, 'frontend/tsconfig.json');
+  const compilerOptions = existsSync(tsconfigPath)
+    ? ts.parseJsonConfigFileContent(ts.readConfigFile(tsconfigPath, ts.sys.readFile).config,
+      ts.sys, path.dirname(tsconfigPath)).options
+    : { moduleResolution: ts.ModuleResolutionKind.Bundler };
   function isConsoleObject(node) {
     while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isTypeAssertionExpression(node) || ts.isNonNullExpression(node))) node = node.expression;
     if (!node) return false;
@@ -132,7 +137,7 @@ export function checkQuality({ root = PROJECT_ROOT, mode = 'check', output = con
         if (/^axios(?:\/|$)/.test(specifier.text) && rel !== 'frontend/src/api/http.ts') {
           bans.push({ rule: 'axios 越界', file: rel, line, detail: '只允许 src/api/http.ts 引入 axios' });
         }
-        const hit = ts.resolveModuleName(specifier.text, abs, { moduleResolution: ts.ModuleResolutionKind.Bundler }, ts.sys).resolvedModule?.resolvedFileName;
+        const hit = ts.resolveModuleName(specifier.text, abs, compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
         if (hit && feSet.has(path.normalize(hit))) {
           deps.add(path.normalize(hit));
           feImports.push({ file: rel, target: toPosix(path.relative(ROOT, hit)), line });
@@ -180,7 +185,14 @@ export function checkQuality({ root = PROJECT_ROOT, mode = 'check', output = con
   for (const item of feImports) {
     const from = item.file.split('/')[2];
     const to = item.target.split('/')[2];
-    if ((from === 'api' && to === 'features') || (from === 'components' && to === 'api')) {
+    const forbiddenFrontend = {
+      api: ['features', 'pages', 'app'],
+      components: ['api', 'features', 'pages'],
+      shared: ['api', 'features', 'pages', 'app', 'integrations'],
+      types: ['api', 'features', 'pages', 'app', 'shared', 'integrations'],
+      features: ['pages'],
+    };
+    if (forbiddenFrontend[from]?.includes(to)) {
       layers.push({ rule: `${from} → ${to}`, file: item.file, line: item.line, detail: item.target });
     }
   }

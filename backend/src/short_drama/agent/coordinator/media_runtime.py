@@ -22,24 +22,24 @@ from short_drama.domain import (
     Project,
     ShotScript,
 )
-from short_drama.domain.agent import AgentToolCall
-from short_drama.domain.agent_media import AgentMediaRequest
-from short_drama.domain.agent_task import AgentOperation, AgentTask
-from short_drama.schemas.assistant_media import MEDIA_USAGE_KEYS
-from short_drama.service.assistant_canvas_media_service import (
+from short_drama.domain.assistant.execution.models import AgentToolCall
+from short_drama.domain.assistant.operations.media import AgentMediaRequest
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
+from short_drama.schemas.assistant.operations.media import MEDIA_USAGE_KEYS
+from short_drama.service.assistant.operations.canvas_media import (
     canvas_media_changes_locked,
     settle_canvas_media_locked,
 )
-from short_drama.service.assistant_dialogue_service import (
+from short_drama.service.assistant.operations.dialogue import (
     dialogue_audio_changes_locked,
     settle_dialogue_audio_locked,
 )
-from short_drama.service.assistant_image_service import image_adoption_state
-from short_drama.service.assistant_shot_video_service import (
+from short_drama.service.assistant.operations.image import image_adoption_state
+from short_drama.service.assistant.operations.shot_video import (
     settle_shot_video_locked,
     shot_video_changes_locked,
 )
-from short_drama.service.assistant_voice_service import (
+from short_drama.service.assistant.operations.voice import (
     settle_voice_design_locked,
     voice_design_changes_locked,
 )
@@ -494,7 +494,7 @@ def settle_batch_locked(session, conversation, task, run, operation, settings):
     task.status = "running"
     call = session.get(AgentToolCall, operation.tool_call_id)
     call.status = "succeeded" if operation.status == "succeeded" else "failed"
-    from short_drama.agent.coordinator.assistant import finish_operation_locked
+    from short_drama.agent.runtime.operations import finish_operation_locked
 
     finish_operation_locked(session, conversation, task, run, operation, call, result)
     if run.status not in TERMINAL:

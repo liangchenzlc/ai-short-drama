@@ -8,69 +8,32 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 from pydantic import ValidationError
-from pydantic_ai.tools import ToolDefinition
 
-from short_drama.agent.legacy.chat import prepare_assistant_decision
 from short_drama.agent.context.media import MAX_INPUT_BYTES, materialize_prompt
-from short_drama.agent.gateway.protocol import AgentGatewayError
-from short_drama.agent.coordinator.runtime import checked_budget, freeze_input
-from short_drama.agent.core.events import budget_limits, initial_usage
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.schemas.assistant import AssistantMessageCreate, AssistantSourceContext
-from short_drama.service.assistant_context_service import _bounded, _freeze_node_media
+from short_drama.schemas.assistant.tasks.task import TaskSubjectReference
+from short_drama.service.assistant.context.context import _freeze_node_media
 
 
-@pytest.mark.parametrize("field,value", [("mode", "generate"), ("task", {"kind": "image"})])
-def test_chat_cannot_accept_execution_parameters(field, value):
-    with pytest.raises(ValidationError):
-        AssistantMessageCreate.model_validate({"content": "帮我分析", field: value})
-
-
-def test_source_context_checks_selected_object_kind_and_stable_identifiers():
-    context = AssistantSourceContext(kind="canvas", id="canvas-key", revision="9007199254740993")
-    assert context.model_dump(mode="json")["revision"] == "9007199254740993"
-    with pytest.raises(ValidationError):
-        AssistantSourceContext(
-            kind="episode", id="1", revision="1", selected=[{"kind": "node", "id": "node"}]
-        )
-
-
-def test_project_chat_inputs_have_no_tools_even_when_skill_requests_execution():
-    conversation = SimpleNamespace(id=9, scope_version=2, project_id=7)
-    run = SimpleNamespace(
-        phase="model",
-        checkpoint={
-            "purpose": "assistant_chat",
-            "authorization": {"mode": "discuss", "steps": []},
-            "context_snapshot": {"kind": "episode", "novel": "本集正文"},
-            "conversation_context": [],
-            "selected_skills": [{"instructions": "立即生成图片"}],
-            "user_prompt": "分析节奏",
-        },
+def test_subject_reference_checks_kind_and_stable_identifiers():
+    reference = TaskSubjectReference(
+        project_id="1",
+        source_kind="canvas",
+        source_id="canvas-key",
+        kind="node",
+        id="node",
+        revision="9007199254740993",
     )
-    inputs = prepare_assistant_decision(None, conversation, run)
-    assert inputs["tools"] == []
-    assert inputs["max_tool_calls"] == 0
-    # 资料与技能属于每轮状态，随用户消息下发；系统提示保持稳定以命中前缀缓存。
-    assert "本集正文" in inputs["user_prompt"]
-    assert "立即生成图片" in inputs["user_prompt"]
-    assert "本集正文" not in inputs["instructions"]
-    assert "不执行" in inputs["instructions"]
-    run.budget = budget_limits("assistant")
-    assert checked_budget(run)["tool_calls"] == 0
-
-
-def test_chat_cannot_send_a_tool_manifest_even_if_a_preparer_is_wrong():
-    run = SimpleNamespace(
-        checkpoint={"purpose": "assistant_chat"},
-        budget=budget_limits("assistant"),
-        usage=initial_usage(),
-    )
-    with pytest.raises(AgentGatewayError) as forbidden:
-        freeze_input(
-            {"tools": [ToolDefinition(name="create_candidate", parameters_json_schema={})]}, run
+    assert reference.model_dump(mode="json")["revision"] == "9007199254740993"
+    with pytest.raises(ValidationError):
+        TaskSubjectReference(
+            project_id="1",
+            source_kind="project",
+            source_id="1",
+            kind="node",
+            id="node",
+            revision="1",
         )
-    assert forbidden.value.code == "assistant_tools_forbidden"
 
 
 def media_fixture(kind="image"):
@@ -178,19 +141,3 @@ def test_frozen_node_image_is_materialized_with_pixels_and_hash_failure_stops_in
     with pytest.raises(WorkflowError) as caught:
         materialize_prompt(prompt, SimpleNamespace(), storage)
     assert caught.value.code == "agent_attachment_unavailable"
-
-
-def test_text_budget_does_not_truncate_stable_object_identity():
-    snapshot = {
-        "novel": "文" * 10000,
-        "script": "文" * 10000,
-        "more": ["文" * 10000] * 4,
-        "selected": [
-            {"kind": "node", "id": "node-7", "revision": "9007199254740993", "content": "额外正文"}
-        ],
-    }
-    bounded = _bounded(snapshot)
-    assert bounded["selected"][0]["id"] == "node-7"
-    assert bounded["selected"][0]["revision"] == "9007199254740993"
-    assert bounded["selected"][0]["kind"] == "node"
-    assert "source.selected[0].content" in bounded["truncated"]

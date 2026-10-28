@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import func, select
 
 from short_drama.ai import GenerationGateway
-from short_drama.ai.canvas_runninghub_workflow import RUNNINGHUB_WORKFLOW
+from short_drama.ai.adapters.runninghub.workflow import RUNNINGHUB_WORKFLOW
 from short_drama.domain import (
     AIGenerationRecord,
     AIModelConfig,

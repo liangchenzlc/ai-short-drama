@@ -24,7 +24,7 @@ LEGACY_RUN_UNIQUE = "uk_agent_runs_active_conversation"
 SQL_PATH = (
     Path(__file__).resolve().parents[2]
     / "docs"
-    / "数据库模型"
+    / "database"
     / "migrations"
     / "2026-10-04-agent-creation-scope"
     / "001-conversation-scope.sql"

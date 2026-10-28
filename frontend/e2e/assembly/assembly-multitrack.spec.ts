@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { AssemblyState, AssemblyMaterial, MediaJob } from '../../src/api/modules/assembly';
-import { emptySound } from '../../src/features/projects/assembly-document';
+import type { AssemblyState, AssemblyMaterial, MediaJob } from '../../src/api/creation/assembly/document';
+import { emptySound } from '../../src/features/creation/assembly/sessions/assembly-document';
 
 const root = '/api/v1/projects/10/assembly';
 async function fixture(page: Page, configure?: (state: AssemblyState) => void) {

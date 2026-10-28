@@ -15,16 +15,19 @@ import pytest
 from sqlalchemy import event, func, select, update
 from sqlalchemy.orm import Session
 
-from short_drama.domain.canvas import (
+from short_drama.domain.canvas.document.canvas import (
     CanvasMediaReference,
     CanvasRevision,
     CanvasRevisionMediaReference,
     CanvasRevisionUserState,
     CanvasUserMediaReference,
 )
-from short_drama.domain.canvas_resource import CanvasBinaryReference, CanvasUserBinaryReference
+from short_drama.domain.canvas.resources.resource import (
+    CanvasBinaryReference,
+    CanvasUserBinaryReference,
+)
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_service import CanvasService
+from short_drama.service.canvas.document.canvas import CanvasService
 from tests.integration.canvas.document.test_canvas_reference_writes import (
     reference_rows,
     reference_scene,

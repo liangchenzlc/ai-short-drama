@@ -19,7 +19,7 @@ from short_drama.domain import (
     CanvasTaskTextDelta,
     MediaFile,
 )
-from short_drama.domain.canvas import CanvasNode, CanvasNodeUserState
+from short_drama.domain.canvas.document.canvas import CanvasNode, CanvasNodeUserState
 from short_drama.service.base import utcnow
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.image.test_canvas_text_image_runtime import (

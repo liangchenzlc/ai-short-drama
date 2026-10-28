@@ -4,11 +4,11 @@ import pytest
 from sqlalchemy import event
 
 from short_drama.core.exceptions import NotFound
-from short_drama.db.access import scope_of
+from short_drama.db.scope.resource_scope import scope_of
 from short_drama.domain import MediaFile
-from short_drama.service.project_service import ProjectService
-from short_drama.service.shot_image_service import ShotImageService
-from short_drama.service.shot_script_service import ShotScriptService
+from short_drama.service.creation.storyboard.images.image import ShotImageService
+from short_drama.service.creation.storyboard.management.script import ShotScriptService
+from short_drama.service.projects.management.project import ProjectService
 from tests.support.generation_fixtures import generation_session
 
 
@@ -81,7 +81,11 @@ def test_episode_page_batches_cover_query_and_excludes_other_project_media():
                 {"project_id": project.id, "position": 1, "script": "first"}
             )
             add_image(session, other.id if index == 2 else project.id, 1001 + index)
+            if index == 2:
+                actor = session.info.pop("actor")
             adopt(session, project.id, shot.id, 1001 + index)
+            if index == 2:
+                session.info["actor"] = actor
         selects = []
 
         def capture(_connection, _cursor, statement, _parameters, _context, _many):

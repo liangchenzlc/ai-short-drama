@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from short_drama.api.dependencies import get_session
+from short_drama.api.dependencies.session import get_session
 from short_drama.core.config import Settings
 from short_drama.core.identity import ActorContext
 from short_drama.main import create_app
@@ -29,7 +29,11 @@ def test_assistant_status_and_disabled_creation_never_invokes_a_model(client):
         "enabled": False,
         "schema_ready": False,
     }
-    response = client.post("/api/v1/assistant/conversations/resolve", json={"project_id": "1"})
+    response = client.post(
+        "/api/v1/assistant/global/conversations",
+        headers={"Idempotency-Key": "current"},
+        json={"project_id": "1"},
+    )
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "agent_disabled"
 
@@ -53,7 +57,7 @@ def test_resume_message_reuse_rejects_ambiguous_or_invalid_sources(client, paylo
 
 
 def test_resume_message_reuse_forwards_exact_decimal_identities(client):
-    from short_drama.api.v1.assistant import task_service
+    from short_drama.api.dependencies.assistant import task_service
     from short_drama.core.exceptions import Conflict
 
     class Tasks:
@@ -78,7 +82,7 @@ def test_resume_message_reuse_forwards_exact_decimal_identities(client):
 
 
 def test_project_task_routes_forward_project_scope_and_cannot_rebind_a_rename(client):
-    from short_drama.api.v1.assistant import task_service
+    from short_drama.api.dependencies.assistant import task_service
     from short_drama.core.exceptions import Conflict
 
     class Tasks:
@@ -101,9 +105,6 @@ def test_project_task_routes_forward_project_scope_and_cannot_rebind_a_rename(cl
             root + "/conversations", params={"project_id": "9007199254740993", "query": "故事"}
         ).status_code
         == 200
-    )
-    assert (
-        client.get(root + "/history", params={"project_id": "9007199254740993"}).status_code == 200
     )
     assert (
         client.post(
@@ -143,7 +144,7 @@ def test_discussion_revision_rejects_invalid_versions_and_execution_input(client
 
 
 def test_discussion_revision_keeps_decimal_identity_and_original_request_key(client):
-    from short_drama.api.v1.assistant import task_service
+    from short_drama.api.dependencies.assistant import task_service
     from short_drama.core.exceptions import Conflict
 
     class Tasks:
@@ -199,7 +200,7 @@ def test_batch_undo_rejects_unversioned_empty_duplicate_or_forged_selection(clie
 
 
 def test_batch_undo_routes_keep_decimal_identity_and_original_request(client):
-    from short_drama.api.v1.assistant import task_service
+    from short_drama.api.dependencies.assistant import task_service
 
     class Tasks:
         def undo_preview(self, identifier):
@@ -233,7 +234,7 @@ def test_batch_undo_routes_keep_decimal_identity_and_original_request(client):
 
 
 def test_generation_policy_routes_are_owner_only_and_keep_decimal_versions(client):
-    from short_drama.api.v1.assistant import policy_service
+    from short_drama.api.dependencies.assistant import policy_service
 
     class Policies:
         def get_generation_policy(self):
@@ -300,7 +301,7 @@ def test_generation_policy_rejects_owner_and_capability_injection(client, invali
 )
 def test_chat_rejects_execution_and_untrusted_source_content(client, extra):
     response = client.post(
-        "/api/v1/assistant/conversations/1/messages",
+        "/api/v1/assistant/global/conversations/1/messages",
         json={"content": "讨论作品", **extra},
         headers={"Idempotency-Key": "message-1"},
     )
@@ -361,7 +362,7 @@ def test_memory_management_rejects_untrusted_owners_and_inconsistent_scopes(clie
 
 
 def test_memory_context_serializes_ids_and_zero_generation_without_provider_data(client):
-    from short_drama.api.v1.assistant_memory import service
+    from short_drama.api.v1.assistant.memory.memory import service
 
     class MemoryDetails:
         def conversation_context(self, identifier):
@@ -387,7 +388,7 @@ def test_memory_context_serializes_ids_and_zero_generation_without_provider_data
 
 
 def test_deletion_preview_serializes_versions_and_routes_pagination(client):
-    from short_drama.api.v1.assistant import task_service
+    from short_drama.api.dependencies.assistant import task_service
 
     class Tasks:
         def deletion_memory_preview(self, identifier, offset, limit):
@@ -456,7 +457,7 @@ def test_deletion_rejects_unconfirmed_duplicate_or_unversioned_selections(client
 
 
 def test_memory_review_serializes_large_ids_and_versioned_choices(client):
-    from short_drama.api.v1.assistant_memory import service
+    from short_drama.api.v1.assistant.memory.memory import service
 
     reviewed = {
         "id": 9007199254740993,
@@ -506,7 +507,7 @@ def test_memory_review_serializes_large_ids_and_versioned_choices(client):
 
 
 def test_phase_summary_serializes_parent_and_message_identities_without_provider_data(client):
-    from short_drama.api.v1.assistant_memory import service
+    from short_drama.api.v1.assistant.memory.memory import service
 
     class Memories:
         def read_summary(self, conversation_id, summary_id):

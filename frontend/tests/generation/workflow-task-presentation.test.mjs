@@ -4,8 +4,8 @@ import test from 'node:test';
 import ts from 'typescript';
 
 const components = [
-  '../../src/features/projects/ShotImageCandidates.tsx',
-  '../../src/pages/projects/episode/StoryboardStage.tsx',
+  '../../src/features/creation/storyboard/images/ShotImageCandidates.tsx',
+  '../../src/features/creation/storyboard/history/StoryboardHistory.tsx',
 ];
 
 test('workflow task rows present statuses through the shared task label', () => {

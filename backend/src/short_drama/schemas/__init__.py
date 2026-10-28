@@ -1,16 +1,44 @@
-from .ai_model_config import AIModelConfigCreate, AIModelConfigRead, AIModelConfigUpdate
-from .asset import AssetCreate, AssetRead, AssetUpdate
-from .media_file import MediaFileCreate, MediaFileRead, MediaFileUpdate
-from .media_recycle_bin import MediaRecycleBinCreate, MediaRecycleBinRead
-from .novel_script_record import NovelScriptRecordCreate, NovelScriptRecordRead
-from .project import ProjectCreate, ProjectRead, ProjectUpdate
-from .project_novel import ProjectNovelCreate, ProjectNovelRead, ProjectNovelUpdate
-from .project_script import ProjectScriptCreate, ProjectScriptRead, ProjectScriptUpdate
-from .script_shot_record import ScriptShotRecordCreate, ScriptShotRecordRead
-from .shot_asset import ShotAssetCreate, ShotAssetRead, ShotAssetUpdate
-from .shot_image import ShotImageCreate, ShotImageRead, ShotImageUpdate
-from .shot_script import ShotScriptCreate, ShotScriptRead, ShotScriptUpdate
-from .shot_video import ShotVideoCreate, ShotVideoRead, ShotVideoUpdate
+from short_drama.schemas.ai_config.management.models import (
+    AIModelConfigCreate,
+    AIModelConfigRead,
+    AIModelConfigUpdate,
+)
+from short_drama.schemas.creation.assets.management.assets import (
+    AssetCreate,
+    AssetRead,
+    AssetUpdate,
+)
+from short_drama.schemas.creation.storyboard.images.image import (
+    ShotImageCreate,
+    ShotImageRead,
+    ShotImageUpdate,
+)
+from short_drama.schemas.creation.storyboard.management.records import (
+    ScriptShotRecordCreate,
+    ScriptShotRecordRead,
+)
+from short_drama.schemas.creation.storyboard.management.script import (
+    ShotScriptCreate,
+    ShotScriptRead,
+    ShotScriptUpdate,
+)
+from short_drama.schemas.creation.storyboard.references.asset import (
+    ShotAssetCreate,
+    ShotAssetRead,
+    ShotAssetUpdate,
+)
+from short_drama.schemas.creation.storyboard.videos.video import (
+    ShotVideoCreate,
+    ShotVideoRead,
+    ShotVideoUpdate,
+)
+from short_drama.schemas.media.files.files import MediaFileCreate, MediaFileRead, MediaFileUpdate
+from short_drama.schemas.media.recycle.recycle import MediaRecycleBinCreate, MediaRecycleBinRead
+from short_drama.schemas.projects.management.project import (
+    ProjectCreate,
+    ProjectRead,
+    ProjectUpdate,
+)
 
 __all__ = [
     "ProjectCreate",
@@ -22,12 +50,6 @@ __all__ = [
     "MediaFileCreate",
     "MediaFileUpdate",
     "MediaFileRead",
-    "ProjectNovelCreate",
-    "ProjectNovelUpdate",
-    "ProjectNovelRead",
-    "ProjectScriptCreate",
-    "ProjectScriptUpdate",
-    "ProjectScriptRead",
     "AssetCreate",
     "AssetUpdate",
     "AssetRead",
@@ -47,6 +69,4 @@ __all__ = [
     "ScriptShotRecordRead",
     "MediaRecycleBinCreate",
     "MediaRecycleBinRead",
-    "NovelScriptRecordCreate",
-    "NovelScriptRecordRead",
 ]

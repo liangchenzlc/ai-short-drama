@@ -21,8 +21,8 @@ from short_drama.domain import (
     CanvasModelCatalog,
     CanvasTaskBinding,
 )
-from short_drama.service.canvas_model_test_service import CanvasModelTestService
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.canvas.models.model_test import CanvasModelTestService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.standard.identity.test_identity_collaboration import PASSWORD, account
 from tests.integration.standard.identity.test_identity_collaboration import (

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { prepareProjectCreation, readProjectCreation, clearProjectCreation } from '../../src/features/projects/project-creation.ts';
+import { prepareProjectCreation, readProjectCreation, clearProjectCreation } from '../../src/features/projects/creation/project-creation.ts';
 
 function storage() {
   const values = new Map();

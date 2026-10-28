@@ -6,14 +6,17 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
-from short_drama.api.dependencies import get_project_service
+from short_drama.api.dependencies.projects import get_project_service
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import WorkflowError
-from short_drama.domain import Project, ProjectNovel, ProjectScript
+from short_drama.domain import Project, ProjectScript
 from short_drama.main import create_app
-from short_drama.schemas.project import ProjectRead
-from short_drama.schemas.project_creation import ProjectCreateRequest, ProjectPatchRequest
-from short_drama.service.project_service import ProjectService
+from short_drama.schemas.projects.management.creation import (
+    ProjectCreateRequest,
+    ProjectPatchRequest,
+)
+from short_drama.schemas.projects.management.project import ProjectRead
+from short_drama.service.projects.management.project import ProjectService
 from tests.support.generation_fixtures import generation_session
 
 
@@ -28,7 +31,7 @@ def test_creation_is_one_work_without_child_episode_or_visual_defaults():
         assert service.get(created.id).id == created.id
         assert service.list_projects().total == 1
         with session.begin():
-            for model in (ProjectNovel, ProjectScript):
+            for model in (ProjectScript,):
                 assert session.scalar(select(func.count()).select_from(model)) == 0
         assert (
             not {"aspect", "style", "synopsis", "episode_count"} & type(created).model_fields.keys()
@@ -120,14 +123,14 @@ def test_http_contract_closes_episode_and_archive_routes():
 def test_project_deletion_fences_old_version_and_hides_owned_content():
     from short_drama.core.exceptions import NotFound
     from short_drama.core.identity import ActorContext
-    from short_drama.service.project_writing_service import ProjectWritingService
+    from short_drama.service.creation.writing.script.documents import ProjectWritingService
 
     with generation_session() as session:
         session.info["actor"] = ActorContext(1, "owner", "owner@example.test", True, 1, "", "test")
         service = ProjectService(session)
         created = service.create_project({"name": "original"})
-        ProjectWritingService(session).save_novel(
-            created.id, {"content": "preserved novel", "content_version": "1"}
+        ProjectWritingService(session).save_script(
+            created.id, {"content": "preserved script", "content_version": "1", "script_id": None}
         )
         renamed = service.update_project(created.id, {"name": "renamed", "row_version": "1"})
         with pytest.raises(WorkflowError) as stale:
@@ -150,14 +153,14 @@ def test_project_deletion_fences_old_version_and_hides_owned_content():
         with session.begin():
             stored = session.get(Project, created.id)
             assert stored.archived_at is not None and stored.row_version == 3
-            assert session.scalar(select(ProjectNovel)).content == "preserved novel"
+            assert session.scalar(select(ProjectScript)).content == "preserved script"
 
 
 def test_deleting_canvas_project_invalidates_all_prior_recycle_receipts():
     from short_drama.core.identity import ActorContext
     from short_drama.domain import ProjectCanvas
-    from short_drama.service.canvas_recycle_service import CanvasRecycleService
-    from short_drama.service.canvas_service import CanvasService
+    from short_drama.service.canvas.document.canvas import CanvasService
+    from short_drama.service.canvas.resources.recycle.recycle import CanvasRecycleService
 
     with generation_session() as session:
         session.info["actor"] = ActorContext(1, "owner", "owner@example.test", True, 1, "", "test")

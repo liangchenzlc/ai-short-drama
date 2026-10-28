@@ -38,6 +38,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), canvasPreview],
     base: '/',
+    resolve: { alias: { '@host': resolve(root, 'src') } },
     server: { port: 8080, strictPort: true, watch: { ignored: ['**/.runtime/**', '**/canvas/**'] }, proxy: {
       '/canvas-app': { target: `http://127.0.0.1:${canvasPort}`, changeOrigin: true, ws: true },
       ...apiProxy,

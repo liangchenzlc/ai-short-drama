@@ -17,7 +17,7 @@ const stubs = {
     "@/stores/use-user-store": "export const useUserStore = Object.assign(() => undefined, { getState: () => ({ user: null }) });",
 };
 const bundled = await build({
-    stdin: { contents: 'export * from "./src/services/api/generation-task.ts"; export * from "./src/services/host-model-config.ts"; export { buildGenerationConfig } from "./src/lib/canvas/canvas-project-generation.ts"; export { modelCompatibilityError } from "./src/lib/model-selection.ts"; export { useConfigStore } from "./src/stores/use-config-store.ts";', resolveDir: fileURLToPath(new URL("../..", import.meta.url)) },
+    stdin: { contents: 'export * from "./src/services/api/generation-task.ts"; export * from "./src/services/host-model-config.ts"; export { buildGenerationConfig } from "./src/lib/canvas/canvas-project-generation.ts"; export { modelCompatibilityError } from "./src/lib/model-selection.ts"; export { useConfigStore, configuredModelMatchesCapability } from "./src/stores/use-config-store.ts";', resolveDir: fileURLToPath(new URL("../..", import.meta.url)) },
     tsconfig: fileURLToPath(new URL("../../tsconfig.json", import.meta.url)),
     bundle: true, write: false, format: "esm", platform: "node", target: "node22",
     plugins: [{ name: "external-boundaries", setup(builder) {
@@ -25,7 +25,7 @@ const bundled = await build({
         builder.onLoad({ filter: /.*/, namespace: "controlled" }, args => ({ contents: stubs[args.path], loader: "js" }));
     } }],
 });
-const { runBackendGenerationTask, prepareBackendGenerationTask, backendProviderConfig, sourceModelConfig, parseBackendGenerationResult, buildGenerationConfig, logicalModelIDForConfig, useConfigStore, modelCompatibilityError } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+const { runBackendGenerationTask, prepareBackendGenerationTask, backendProviderConfig, sourceModelConfig, parseBackendGenerationResult, buildGenerationConfig, logicalModelIDForConfig, useConfigStore, configuredModelMatchesCapability, modelCompatibilityError } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
 
 test("宿主推导能力允许六图参考视频，仍限制图数、时长并优先使用显式配置", () => {
     const id = "9007199254740999";
@@ -51,14 +51,21 @@ test("宿主推导能力允许六图参考视频，仍限制图数、时长并�
     assert.deepEqual(hostModel.default_capability_config, defaults);
 });
 
-test("旧节点metadata.model经宿主alias恢复，未知同名和能力不匹配选择保留不可用", () => {
+test("节点采用当前宿主模型身份，旧别名、未知同名和能力不匹配选择保留不可用", () => {
     const value = sourceModelConfig({ row_version: "1", preferences: {}, models: [{ id: "9007199254740999", name: "文本", model_key: "current-model", provider: "fixture", service_type: "text", enabled: true, has_api_key: true, is_default: true, selection_aliases: ["old::legacy-model"] }] });
-    const known = buildGenerationConfig(value, { id: "old-node", type: "text", metadata: { model: "old::legacy-model" } }, "text");
-    assert.equal(known.model, "host-9007199254740999::current-model");
-    for (const [mode, stored] of [["text", "deleted::current-model"], ["image", "old::legacy-model"]]) {
+    const currentModel = "host-9007199254740999::current-model";
+    const known = buildGenerationConfig(value, { id: "current-node", type: "text", metadata: { model: currentModel } }, "text");
+    assert.equal(known.model, currentModel);
+    assert.equal(logicalModelIDForConfig(known), "9007199254740999");
+    assert.equal(useConfigStore.getState().isAiConfigReady(known, known.model), true);
+    assert.equal(configuredModelMatchesCapability(known, known.model, "text"), true);
+    // 退役别名不能悄悄换成当前模型，未知身份仍需用户重新选择。
+    for (const [mode, stored] of [["text", "old::legacy-model"], ["text", "deleted::current-model"], ["image", currentModel]]) {
         const unknown = buildGenerationConfig(value, { id: "old-node", type: mode, metadata: { model: stored } }, mode);
         assert.equal(unknown.model, stored);
         assert.equal(logicalModelIDForConfig(unknown), mode === "image" ? "9007199254740999" : "");
+        // 模型能力由宿主目录判定；参数兼容性校验只负责尺寸、参考输入等限制。
+        assert.equal(configuredModelMatchesCapability(unknown, unknown.model, mode), false);
         if (mode === "text") assert.equal(useConfigStore.getState().isAiConfigReady(unknown, unknown.model), false);
     }
     const empty = sourceModelConfig({ row_version: "1", preferences: {}, models: [] });

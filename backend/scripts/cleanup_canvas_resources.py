@@ -7,7 +7,7 @@ import logging
 from short_drama.core.config import Settings
 from short_drama.core.logging import configure_logging
 from short_drama.db.session import build_engine, session_factory
-from short_drama.service.canvas_resource_cleanup import cleanup_canvas_resources
+from short_drama.service.canvas.resources.resource_cleanup import cleanup_canvas_resources
 from short_drama.storage.minio import MinioStorage
 
 logger = logging.getLogger(__name__)

@@ -1,4 +1,4 @@
-import type { CanvasRecycleItemDto } from "@host/api/types/canvases";
+import type { CanvasRecycleItemDto } from "@host/integrations/canvas/contracts";
 import type { DeletedCanvasHistoryItem } from "@/stores/canvas/use-canvas-history-store";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 

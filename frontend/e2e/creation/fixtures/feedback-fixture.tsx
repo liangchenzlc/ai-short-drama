@@ -1,15 +1,14 @@
+import '@host/app/styles/index.css';
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import '@ant-design/v5-patch-for-react-19';
 import { Button } from 'antd';
-import { StudioProvider } from '../../../src/components/ui/StudioProvider';
-import { StudioFeedback } from '../../../src/components/ui/StudioFeedback';
-import { StandardSaveStatus } from '../../../src/features/projects/StandardSaveStatus';
-import { Dialog } from '../../../src/components/ui/Dialog';
-import { confirmAction } from '../../../src/components/ui/confirm';
-import '../../../src/app/styles.css';
-import '../../../src/app/workbench.css';
+import { StudioProvider } from '../../../src/shared/ui/StudioProvider';
+import { StudioFeedback } from '../../../src/shared/ui/StudioFeedback';
+import { StandardSaveStatus } from '../../../src/features/creation/shared/feedback/StandardSaveStatus';
+import { Dialog } from '../../../src/shared/ui/Dialog';
+import { confirmAction } from '../../../src/shared/ui/confirm';
 
 function Fixture() {
   const [kind, setKind] = useState(''), [open, setOpen] = useState(false), [dialogError, setDialogError] = useState(false);

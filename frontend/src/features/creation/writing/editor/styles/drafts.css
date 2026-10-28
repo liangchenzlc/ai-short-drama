@@ -1,0 +1,59 @@
+/* Story drafts share the project's quiet, readable editing surface. */
+.story-draft {
+  margin: 24px 0;
+  padding: 24px;
+  border: 1px solid var(--line, var(--hair));
+  border-radius: 12px;
+}
+.draft-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.draft-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.draft-field {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 8px;
+  font-weight: 600;
+}
+.draft-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  min-height: 90px;
+  padding: 14px 16px;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--pale);
+  font: inherit;
+  font-weight: 400;
+  line-height: 1.75;
+}
+.draft-field textarea:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+.draft-conflict {
+  padding: 18px;
+  margin: 16px 0;
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+}
+.draft-conflict pre {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.draft-conflict button {
+  margin: 6px 12px 6px 0;
+}

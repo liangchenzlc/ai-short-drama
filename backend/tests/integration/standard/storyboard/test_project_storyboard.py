@@ -5,8 +5,8 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.service.project_service import ProjectService
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.projects.management.project import ProjectService
 
 pytestmark = pytest.mark.integration
 
@@ -126,7 +126,7 @@ def test_concurrent_delete_and_edit_have_one_winner(mysql_engine, db_session):
 @pytest.mark.parametrize("deleted_index", [0, 1, 3], ids=["first", "middle", "last"])
 def test_delete_keeps_continuous_navigation_and_existing_image(db_session, deleted_index):
     from short_drama.domain import MediaFile
-    from short_drama.service.shot_image_service import ShotImageService
+    from short_drama.service.creation.storyboard.images.image import ShotImageService
 
     project_id, first = seed(db_session)
     service = ProjectStoryboardService(db_session)

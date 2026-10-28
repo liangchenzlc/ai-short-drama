@@ -103,4 +103,4 @@ def session_factory(engine: Engine) -> sessionmaker[Session]:
 
 
 # Register access checks once, for both API and worker Session implementations.
-from . import access as _access  # noqa: F401, E402
+import short_drama.db.access as _access  # noqa: F401, E402

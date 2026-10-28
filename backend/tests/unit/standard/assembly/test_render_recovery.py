@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from short_drama.service.video_render import checksum
-from short_drama.tasks.render import restore_completed_render
+from short_drama.service.creation.assembly.rendering.renderer import checksum
+from short_drama.tasks.rendering.render import restore_completed_render
 
 
 @pytest.mark.parametrize("damaged", ["truncated", "not-object", "mismatch", "invalid-media"])

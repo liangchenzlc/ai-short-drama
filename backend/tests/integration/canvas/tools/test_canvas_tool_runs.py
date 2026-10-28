@@ -9,10 +9,10 @@ import pytest
 from sqlalchemy import func, select, update
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.db.canvas_tool_run_access import tool_run_write
+from short_drama.db.access.policies.canvas_tool_run_access import tool_run_write
 from short_drama.domain import AsyncTask, CanvasResult, CanvasToolRun, CanvasToolSubmission
-from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-from short_drama.schemas.canvas_tool_contracts import builtin_tool
+from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+from short_drama.schemas.canvas.tools.tool_contracts import builtin_tool
 from short_drama.service.base import utcnow
 from tests.integration.canvas.document.test_canvas_workspace import actor
 from tests.integration.canvas.generation.test_canvas_generation_runtime import TASKS, records
@@ -364,7 +364,7 @@ def test_service_authority_still_cannot_replace_a_persisted_receipt(art_scope, f
 
 
 def test_in_memory_approval_without_service_authority_cannot_admit_a_task(art_scope):
-    from short_drama.service.canvas_generation_service import CanvasGenerationService
+    from short_drama.service.canvas.generation.generation import CanvasGenerationService
 
     runtime, _owner, user = art_scope[:3]
     run, guard = create_and_claim(art_scope)

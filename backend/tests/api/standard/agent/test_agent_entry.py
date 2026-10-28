@@ -3,7 +3,7 @@
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from short_drama.api.dependencies import get_session
+from short_drama.api.dependencies.session import get_session
 from short_drama.core.config import Settings
 from short_drama.core.identity import ActorContext
 from short_drama.main import create_app
@@ -23,13 +23,10 @@ def test_disabled_agent_status_and_mutation_without_agent_schema():
         assert status.status_code == 200
         assert status.json() == {"enabled": False, "schema_ready": False}
         response = client.post(
-            "/api/v1/agent/conversations",
+            "/api/v1/assistant/global/conversations",
+            headers={"Idempotency-Key": "create-current"},
             json={
                 "project_id": "2",
-                "stage": "source",
-                "subject_type": "project",
-                "subject_id": "2",
-                "task_type": "writing",
             },
         )
         assert response.status_code == 503
@@ -41,9 +38,14 @@ def test_invalid_agent_payload_is_rejected_without_database_access():
     app.state.session_factory = Session
     client = TestClient(app)
     response = client.post(
-        "/api/v1/agent/conversations",
+        "/api/v1/assistant/global/conversations",
         json={"project_id": "2", "owner_user_id": "3"},
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_error"
-    assert client.patch("/api/v1/agent/conversations/1", json={"row_version": 1}).status_code == 422
+    assert (
+        client.patch(
+            "/api/v1/assistant/global/conversations/1", json={"row_version": 1}
+        ).status_code
+        == 422
+    )

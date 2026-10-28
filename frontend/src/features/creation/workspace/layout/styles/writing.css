@@ -1,0 +1,234 @@
+.standard-writing-review {
+  margin-top: 12px;
+}
+.standard-writing-review > summary {
+  cursor: pointer;
+}
+.standard-writing-review .ant-btn {
+  margin: 4px 4px 0 0;
+}
+.standard-writing-review pre {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.standard-creation-layout.is-assets {
+  --creation-list-width: 228px;
+  --creation-gap: 8px;
+}
+.standard-creation-layout.is-assets .standard-creation-work {
+  gap: var(--creation-gap);
+}
+.standard-creation-layout.is-assets .creation-asset-detail .standard-object-heading {
+  min-height: 44px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--hair);
+}
+.standard-creation-layout.is-assets .creation-asset-detail .standard-asset-settings-heading {
+  height: 44px;
+  min-height: 44px;
+  padding: 5px 10px;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .standard-asset-settings-content {
+  padding: 10px;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .standard-asset-information {
+  gap: 8px;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .standard-asset-name-type {
+  gap: 8px;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .standard-asset-references {
+  margin-block: 8px;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .standard-asset-settings-content > .generation-inputs {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .generation-composer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .generation-composer textarea.ant-input {
+  flex: 1;
+  height: auto;
+  min-height: 160px;
+  max-height: none;
+  resize: none;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .generation-composer-footer {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .generation-composer-model {
+  flex: 0 1 144px;
+  width: 144px;
+  max-width: 144px;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .generation-composer-parameters {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .generation-composer-send {
+  flex: 0 0 30px;
+  margin-left: auto;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .generation-composer-model .ant-select .ant-select-selector {
+  padding-inline: 8px;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .generation-composer-model .ant-select-selection-item {
+  padding-inline-end: 0;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .generation-composer-model .ant-select-selection-search {
+  inset-inline: 8px;
+}
+.standard-creation-layout.is-assets
+  .creation-asset-detail
+  .generation-composer-model
+  .ant-select
+  input.ant-select-selection-search-input {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .standard-image-output {
+  white-space: nowrap;
+}
+.standard-creation-layout.is-assets .creation-asset-detail .standard-asset-empty-preview {
+  flex: 1;
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  margin: 8px;
+  color: var(--sub);
+  font-size: 13px;
+}
+@media (min-width: 1700px) {
+  .standard-creation-layout.is-assets {
+    --creation-list-width: 252px;
+  }
+}
+@media (max-width: 1439px) {
+  .standard-creation-layout.is-assets {
+    --creation-list-width: 204px;
+  }
+}
+
+.standard-creation-layout.is-storyboard {
+  --creation-list-width: 228px;
+  --creation-gap: 8px;
+}
+.web-episode .creation-layout:has(> .standard-creation-layout.is-storyboard) {
+  padding: 8px;
+}
+.standard-creation-layout.is-storyboard .standard-creation-work {
+  gap: var(--creation-gap);
+}
+.standard-creation-layout.is-storyboard .standard-shot-media .standard-image-group,
+.standard-creation-layout.is-storyboard .standard-shot-media .creation-image-preview,
+.standard-creation-layout.is-storyboard .standard-shot-media .creation-video-preview {
+  padding: 8px;
+}
+.standard-creation-layout.is-storyboard .shot-settings-scroll {
+  display: flex;
+  flex-direction: column;
+}
+.standard-creation-layout.is-storyboard .shot-settings-scroll > :not(.generation-inputs) {
+  flex-shrink: 0;
+}
+.standard-creation-layout.is-storyboard .shot-settings-scroll > .generation-inputs {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+}
+.standard-creation-layout.is-storyboard .generation-composer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+}
+.standard-creation-layout.is-storyboard .generation-composer textarea.ant-input {
+  flex: 1;
+  height: auto;
+  min-height: 160px;
+  max-height: none;
+  resize: none;
+}
+.standard-creation-layout.is-storyboard .generation-composer-footer {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+.standard-creation-layout.is-storyboard .generation-composer-model {
+  flex: 0 1 144px;
+  width: 144px;
+  max-width: 144px;
+}
+.standard-creation-layout.is-storyboard .generation-composer-parameters {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+.standard-creation-layout.is-storyboard .generation-composer-send {
+  flex: 0 0 30px;
+  margin-left: auto;
+}
+.standard-creation-layout.is-storyboard .generation-composer-model .ant-select .ant-select-selector {
+  padding-inline: 8px;
+}
+.standard-creation-layout.is-storyboard .generation-composer-model .ant-select-selection-item {
+  padding-inline-end: 0;
+}
+.standard-creation-layout.is-storyboard .generation-composer-model .ant-select-selection-search {
+  inset-inline: 8px;
+}
+.standard-creation-layout.is-storyboard .generation-composer-model .ant-select input.ant-select-selection-search-input {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.standard-creation-layout.is-storyboard .standard-image-output {
+  white-space: nowrap;
+}
+@media (min-width: 1700px) {
+  .standard-creation-layout.is-storyboard {
+    --creation-list-width: 252px;
+  }
+}
+@media (max-width: 1439px) {
+  .standard-creation-layout.is-storyboard {
+    --creation-list-width: 204px;
+  }
+}
+
+.creation-project-name {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: text;
+}
+.creation-project-name:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.creation-project-name-input {
+  width: 180px;
+  max-width: 24vw;
+}

@@ -13,11 +13,11 @@ from sqlalchemy.orm import Session
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import Conflict, WorkflowError
 from short_drama.domain import AIModelConfig, CanvasChannelModel, CanvasModelCatalog
-from short_drama.schemas.canvas_workspace import CanvasWorkspacePreferencesRequest
-from short_drama.service.ai_model_config_service import AIModelConfigService
+from short_drama.schemas.canvas.workspace.workspace import CanvasWorkspacePreferencesRequest
+from short_drama.service.ai_config.management.models import AIModelConfigService
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_model_catalog_service import CanvasModelCatalogService
-from short_drama.service.canvas_workspace_service import CanvasWorkspaceService
+from short_drama.service.canvas.models.model_catalog import CanvasModelCatalogService
+from short_drama.service.canvas.workspace.workspace import CanvasWorkspaceService
 from tests.integration.canvas.document.test_canvas_workspace import actor
 
 pytestmark = pytest.mark.integration

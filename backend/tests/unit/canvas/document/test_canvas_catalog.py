@@ -4,7 +4,7 @@ import json
 import pytest
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.service.canvas_plugin_catalog import (
+from short_drama.service.canvas.tools.plugin_catalog import (
     SOURCE_COMMIT,
     bundled_manifest_snapshot,
     provider_catalog,

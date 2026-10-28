@@ -1,8 +1,10 @@
 # 成片合成与导出 API
 
+> 2026-10-28：旧单画面 PATCH 已退役，保存统一使用 `PUT /editor`；组合响应不再包含固定的 `editor_version` 字段。
+
 路径前缀：`/api/v1/projects/{project_id}/assembly`。项目、媒体和任务 ID 使用十进制字符串；片段 ID 兼容原有十进制字符串和新增片段的稳定 UUID。服务端校验项目及来源归属。
 
-两种编辑保存入口都支持 `aspect: auto | 16:9 | 9:16`，默认 `auto`。自动模式按时间轴选择首个有效分镜视频，其次导入视频，使用服务端探测的显示宽高；无视频使用 16:9。720p／1080p 按短边缩放，预览短边为 360。探测未完成或失败不能猜测比例。同步、重排和探测不会覆盖手动选择。草稿返回 `output_width/output_height/output_source/output_status`，任务冻结前三项，Worker 按快照执行。完整规则见[创作模式维护说明](../instruction/创作模式维护说明.md#成片输出尺寸)。
+编辑保存支持 `aspect: auto | 16:9 | 9:16`，默认 `auto`。自动模式按时间轴选择首个有效分镜视频，其次导入视频，使用服务端探测的显示宽高；无视频使用 16:9。720p／1080p 按短边缩放，预览短边为 360。探测未完成或失败不能猜测比例。同步、重排和探测不会覆盖手动选择。草稿返回 `output_width/output_height/output_source/output_status`，任务冻结前三项，Worker 按快照执行。完整规则见[创作模式维护说明](../instruction/创作模式维护说明.md#成片输出尺寸)。
 
 | 方法与路径 | 用途 |
 | --- | --- |
@@ -10,7 +12,6 @@
 | GET /editor | 标准多轨编辑器的画面、声音、素材与版本组合状态 |
 | PUT /editor | 原子保存整份画面、声音、字幕与构图 |
 | POST /initialize | 幂等创建草稿，并提交未完成的视频检测 |
-| PATCH 空路径 | 兼容旧版单画面保存；不得覆盖已经写入的 v2 多轨草稿 |
 | POST /sync | 明确同步已采用分镜视频 |
 | GET /materials | 当前项目最近 300 个已发布图片、视频及音频素材 |
 | POST /materials/import | 将本人媒体或当前项目媒体接入成片素材 |
@@ -36,7 +37,7 @@ GET 返回活动 `clips` 和按分镜去重的 `sources` 素材列表。删除�
 
 ## 多轨组合编辑
 
-标准前端使用 `/editor`。未初始化时 `assembly=null`，先调用 `/initialize` 后重新读取。已初始化时返回基础聚合字段及 `editor_version=2`、`sound`、`materials`、`subtitle_font`、`voice_context_hash`。`sound` 包含声音版本、文档、媒体试听地址和原有配音信息。签名地址只用于读取，不写入草稿或保存请求。
+标准前端使用 `/editor`。未初始化时 `assembly=null`，先调用 `/initialize` 后重新读取。已初始化时返回基础聚合字段及 `sound`、`materials`、`subtitle_font`、`voice_context_hash`。`sound` 包含声音版本、文档、媒体试听地址和原有配音信息。签名地址只用于读取，不写入草稿或保存请求。
 
 `GET /editor?material_ids=123,456` 可为本机恢复补齐最近 300 条之外的媒体元数据，最多 900 个正 unsigned 64-bit 十进制 ID；仍只返回当前项目已发布且有权读取的媒体，缺失或越权 ID 不返回。非法 ID 返回 422。
 

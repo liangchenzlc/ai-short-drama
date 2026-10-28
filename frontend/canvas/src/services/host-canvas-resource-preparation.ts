@@ -1,4 +1,4 @@
-import type { CanvasResourceNormalizeDto } from "@host/api/types/canvases";
+import type { CanvasResourceNormalizeDto } from "@host/integrations/canvas/contracts";
 import { assertUserScope, type CapturedUserScope } from "@/lib/user-scope-guard";
 import { http } from "@/services/api/request";
 import { hostCanvasAccess } from "@/services/host-canvas-access";

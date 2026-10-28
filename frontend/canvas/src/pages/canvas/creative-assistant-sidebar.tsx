@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type ComponentProps } from "react";
-import { CreativeAssistantPanel } from "@host/features/ai-assistant/CreativeAssistantPanel";
+import { CreativeAssistantPanel } from "@host/integrations/canvas/assistant";
 import { ASSISTANT_MAX_WIDTH, ASSISTANT_MIN_WIDTH, type CreativeAssistantLayout } from "./use-creative-assistant-layout";
 import "./canvas-assistant-sidebar.css";
 

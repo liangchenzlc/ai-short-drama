@@ -7,28 +7,25 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 from short_drama.agent.core.state import finish_locked, mark_scheduled
-from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.gateway.contracts import AgentGatewayError
 from short_drama.agent.task.contract import (
     READ_TOOLS,
     WRITE_TOOLS,
     CompletionAssessment,
-    CompletionReview,
     evaluate_review,
     review_tool,
 )
 from short_drama.agent.task.policy import policy
 from short_drama.agent.tools.digest import stable
 from short_drama.ai.prompts.loader import load_prompt
-from short_drama.domain.agent import AgentRun, AgentTurn
-from short_drama.domain.agent_task import AgentOperation
+from short_drama.domain.assistant.execution.models import AgentRun, AgentTurn
+from short_drama.domain.assistant.tasks.task import AgentOperation
 
-SUPERVISION_VERSION = 2
 DIAGNOSE_AFTER = 6
 
 # Tools that neither produce evidence nor count as wasted turns.
 NEUTRAL_TOOLS = frozenset(
     {
-        "set_task_requirements",
         "confirm_requirements",
         "enable_tool_group",
         "get_generation_policy",
@@ -96,7 +93,8 @@ def prepare_review(session, task, run, values: dict, settings=None) -> dict:
         **values,
         "decision_purpose": "completion_review",
         "context_frame": frame,
-        "instructions": load_prompt("assistant/verification.md"),
+        "instructions": load_prompt("assistant/verification-evidence.md"),
+        "history_manifest": [],
         "tools": [review_tool()],
         "stream": False,
         "max_output_tokens": 4096,
@@ -104,12 +102,9 @@ def prepare_review(session, task, run, values: dict, settings=None) -> dict:
         "hydration_intents": [],
         "continuation_prompt": "检查候选答复和真实执行证据，仅调用 submit_completion_review。",
     }
-    if policy(task, "verification") != "evidence.v3":
-        # Pre-upgrade tasks keep the original review input: same bounded history.
-        return {**base, "history_manifest": values.get("history_manifest", [])}
     from short_drama.agent.harness.evidence import build
     from short_drama.agent.task.requirements import load_task_requirements
-    from short_drama.service.agent_model_service import reviewer_snapshot
+    from short_drama.service.ai_config.management.assistant_models import reviewer_snapshot
 
     requirements = load_task_requirements(session, task)
     if not requirements:
@@ -129,9 +124,6 @@ def prepare_review(session, task, run, values: dict, settings=None) -> dict:
     )
     return {
         **base,
-        "instructions": load_prompt("assistant/verification-evidence.md"),
-        # The reviewer gets the evidence package, never the executor's transcript.
-        "history_manifest": [],
         "reviewer_snapshot": None if degraded else snapshot,
         "reviewer_degraded": degraded,
     }
@@ -144,13 +136,13 @@ def process_completion(session, conversation, task, run, turn, claim, normalized
     structured response, never an executable business tool or public message.
     """
     values = claim.inputs.get("kwargs", {})
-    if not values.get("supervision_version") or run.checkpoint.get("discussion_revision"):
+    if run.checkpoint.get("discussion_revision"):
         return normalized
     checkpoint = deepcopy(run.checkpoint)
     review = values.get("decision_purpose") == "completion_review"
     if not review and normalized["output_kind"] != "text":
         return normalized
-    if not review and policy(task, "verification") == "evidence.v3":
+    if not review:
         from short_drama.agent.task.requirements import load_task_requirements
 
         if not load_task_requirements(session, task):
@@ -191,10 +183,7 @@ def process_completion(session, conversation, task, run, turn, claim, normalized
                 if len(calls) != 1 or calls[0]["tool_name"] != "submit_completion_review":
                     raise ValueError("Review must return the declared schema")
                 arguments = calls[0]["args"]
-                report_type = (
-                    CompletionAssessment if values["supervision_version"] >= 2 else CompletionReview
-                )
-                report = report_type.model_validate(
+                report = CompletionAssessment.model_validate(
                     json.loads(arguments) if isinstance(arguments, str) else arguments
                 )
                 text = candidate_text(session, task, candidate)

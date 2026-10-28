@@ -1,8 +1,8 @@
 import pytest
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.service.canvas_document import media_references, resource_identifier
-from short_drama.service.canvas_library_references import canvas_media_bindings
+from short_drama.service.canvas.document.document import media_references, resource_identifier
+from short_drama.service.canvas.library.library_references import canvas_media_bindings
 
 
 @pytest.mark.parametrize(

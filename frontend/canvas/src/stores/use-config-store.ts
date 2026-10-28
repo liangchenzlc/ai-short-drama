@@ -344,9 +344,6 @@ export type WorkflowGraphPreview = {
     edges: Array<{ from: string; to: string }>;
 };
 
-// 兼容仍在使用旧目录标识的会话恢复和模型选择器。
-export const PUBLIC_MODEL_CATALOG_ID = "managed";
-
 export type ModelChannel = {
     id: string;
     name: string;
@@ -360,10 +357,6 @@ export type ModelChannel = {
     apiFormat: ApiCallFormat;
     interfaceType?: ChannelInterfaceType;
     models: string[];
-    // 仅平台目录使用：将已保存的旧 SKU 选择重定向到当前模型家族。
-    modelAliases?: Record<string, string>;
-    /** 宿主逻辑模型的历史 channel::model 标识，仅用于读取旧偏好和节点。 */
-    selectionAliases?: string[];
     scope?: "system" | "user";
     enabled?: boolean;
     pinned?: boolean;
@@ -436,7 +429,6 @@ export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
-const LEGACY_DEFAULT_MODEL_NAMES = new Set(["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"]);
 
 export const defaultConfig: AiConfig = {
     channelMode: "remote",
@@ -672,9 +664,10 @@ export const useConfigStore = create<ConfigStore>()(
 
 // The canonical local workspace restores credentials at startup. Browser
 // storage only caches presentation/preferences, never an extra plaintext copy.
-export function configWithoutCachedSecrets(config: AiConfig): AiConfig {
+export function configWithoutCachedSecrets(config: AiConfig): Omit<AiConfig, "systemPrompt"> {
+    const { systemPrompt: _systemPrompt, ...preferences } = config;
     return {
-        ...config,
+        ...preferences,
         apiKey: "",
         channels: config.channels.map((channel) => ({ ...channel, apiKey: "", secretKey: "", headers: [] })),
         runningHub: { ...config.runningHub, apiKey: "", walletApiKey: "", uploadApiKey: "" },
@@ -721,9 +714,7 @@ export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefine
             workflows: runningHubWorkflows,
         },
     };
-    const hasPersistedChannels = Array.isArray(persistedConfig.channels);
-    if (!hasPersistedChannels) config.channels = [];
-    const channels = normalizeChannels(config, !hasPersistedChannels);
+    const channels = normalizeChannels(config);
     const models = modelOptionsFromChannels(config.hostModelDirectory ? channels.filter(channel => channel.enabled !== false) : channels);
     const imageModels = filterModelsByCapability(models, "image", channels);
     const videoModels = filterModelsByCapability(models, "video", channels);
@@ -751,7 +742,7 @@ export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefine
             audioPitch: config.audioPitch || defaultConfig.audioPitch,
             audioVolume: config.audioVolume || defaultConfig.audioVolume,
             audioInstructions: config.audioInstructions || "",
-            // 旧版全局 systemPrompt 会跨任务污染请求；提示词定制现已按 operation 由服务端编译。
+            // 提示词按单次操作传入，不作为全局偏好恢复。
             systemPrompt: "",
             videoSeconds: normalizeVideoDuration(config.videoSeconds),
             vquality: normalizeVideoResolution(config.vquality),
@@ -810,7 +801,6 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         credentialSource: channel?.credentialSource,
         hasApiKey: channel?.hasApiKey,
         hasSecretKey: channel?.hasSecretKey,
-        selectionAliases: channel?.selectionAliases ? [...channel.selectionAliases] : undefined,
         concurrencyLimit: channel?.concurrencyLimit,
         modelProfiles: channel?.modelProfiles?.map((item) => ({ ...item, protocol: normalizeModelProtocol(item.protocol) })),
     };
@@ -880,15 +870,13 @@ export function normalizeModelOptionValue(value: unknown, channels: ModelChannel
     const decoded = decodeChannelModel(model);
     if (decoded) {
         const host = channels.find(item => item.scope === "system" && item.id.startsWith("host-") &&
-            (item.id === decoded.channelId || item.selectionAliases?.includes(model)));
+            item.id === decoded.channelId);
         if (host) return host.enabled === false || !host.models[0] ? "" : encodeChannelModel(host.id, host.models[0]);
         const channel = channels.find((item) => item.id === decoded.channelId);
-        const resolved = channel?.modelAliases?.[decoded.model] || decoded.model;
-        return channel && channel.models.includes(resolved) ? encodeChannelModel(channel.id, resolved) : "";
+        return channel && channel.models.includes(decoded.model) ? encodeChannelModel(channel.id, decoded.model) : "";
     }
-    const channel = channels.find((item) => item.models.includes(model) || Boolean(item.modelAliases?.[model])) || channels[0];
-    const resolved = channel?.modelAliases?.[model] || model;
-    return channel && channel.models.includes(resolved) ? encodeChannelModel(channel.id, resolved) : "";
+    const channel = channels.find((item) => item.models.includes(model)) || channels[0];
+    return channel && channel.models.includes(model) ? encodeChannelModel(channel.id, model) : "";
 }
 
 export function resolveModelChannel(config: AiConfig, value: string) {
@@ -939,7 +927,7 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
     };
 }
 
-function normalizeChannels(config: AiConfig, ensureDefault = true) {
+function normalizeChannels(config: AiConfig) {
     const persistedChannels = Array.isArray(config.channels) ? config.channels : [];
     const channels = persistedChannels
         .map((channel, index) =>
@@ -949,32 +937,8 @@ function normalizeChannels(config: AiConfig, ensureDefault = true) {
                 name: channel.name || (index === 0 ? "默认渠道" : `渠道 ${index + 1}`),
                 models: uniqueRawModels(channel.models || []),
             }),
-        )
-        .filter((channel) => !isEmptyDefaultChannel(channel));
-    if (!channels.length && ensureDefault && config.apiKey.trim()) {
-        channels.push(
-            createModelChannel({
-                id: "default",
-                name: "默认渠道",
-                baseUrl: config.baseUrl || defaultConfig.baseUrl,
-                apiKey: config.apiKey || "",
-                apiFormat: config.apiFormat || defaultConfig.apiFormat,
-                models: uniqueRawModels([...(config.models || []), config.model, config.imageModel, config.videoModel, config.textModel, config.audioModel]),
-            }),
         );
-    }
     return channels.map((channel) => ({ ...channel, models: uniqueRawModels(channel.models) }));
-}
-
-function isEmptyDefaultChannel(channel: ModelChannel) {
-    if (channel.scope === "system") return false;
-    if (channel.id !== "default" || channel.name.trim() !== "默认渠道" || channel.apiKey.trim()) return false;
-    const baseUrl = channel.baseUrl.trim().replace(/\/+$/, "");
-    const defaultBaseUrl = defaultConfig.baseUrl.trim().replace(/\/+$/, "");
-    if (baseUrl && baseUrl !== defaultBaseUrl) return false;
-    // 只清理旧版本写入浏览器的无密钥“默认渠道”和内置模型；没有 API Key 但已填写自定义模型时仍保留，
-    // 让用户可以先保存模型目录再补充密钥，而不是把真实自定义配置误判为空。
-    return !channel.models.length || channel.models.every((model) => LEGACY_DEFAULT_MODEL_NAMES.has(modelOptionName(model)));
 }
 
 export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {

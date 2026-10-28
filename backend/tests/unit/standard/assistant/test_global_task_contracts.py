@@ -7,13 +7,13 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai.tools import ToolDefinition
 
-from short_drama.agent.coordinator.runtime import freeze_input
 from short_drama.agent.core.events import budget_limits, initial_usage
 from short_drama.agent.gateway.protocol import AgentGatewayError
 from short_drama.agent.memory.context import validated_facts
 from short_drama.agent.memory.sources import token_estimate
-from short_drama.schemas.agent_memory import MemoryMaintenanceResult
-from short_drama.schemas.assistant_task import (
+from short_drama.agent.runtime.claims import freeze_input
+from short_drama.schemas.assistant.memory.memory import MemoryMaintenanceResult
+from short_drama.schemas.assistant.tasks.task import (
     AssistantTaskMessage,
     GlobalConversationCreate,
     TaskControlRequest,
@@ -70,16 +70,15 @@ def test_skill_tools_are_bounded_and_never_accept_owner_storage_or_executable_in
     assert search().limit <= 20
     assert load(skill_id="script.v1", content_version="1").skill_id == "script.v1"
     assert resource(activation_id="9007199254740993", path="assets/example.json").offset == 0
-    # Historical script resources are readable as text; execution remains outside this contract.
-    assert resource(activation_id="1", path="scripts/run.py").path == "scripts/run.py"
     for schema, body in (
         (search, {"limit": 10000}),
         (search, {"owner_user_id": "2"}),
         (load, {"skill_id": "script.v1", "content_version": "1", "source": "manual"}),
         (resource, {"activation_id": "1", "path": "../secret.txt"}),
         (resource, {"activation_id": "1", "path": "https://example.invalid/secret.txt"}),
-        (resource, {"activation_id": "1", "path": "scripts/run.py", "execute": True}),
-        (resource, {"activation_id": "1", "path": "scripts/run.py", "command": "python run.py"}),
+        (resource, {"activation_id": "1", "path": "scripts/run.py"}),
+        (resource, {"activation_id": "1", "path": "assets/example.json", "execute": True}),
+        (resource, {"activation_id": "1", "path": "assets/example.json", "command": "run"}),
         (resource, {"activation_id": "1", "path": "assets/example.json", "bucket": "private"}),
     ):
         with pytest.raises(ValidationError):
@@ -107,7 +106,10 @@ def test_image_content_read_requires_exact_frozen_identity_and_one_source():
 
 def test_generation_policy_is_versioned_and_cannot_be_changed_by_a_tool():
     from short_drama.agent.tools.contracts import TOOL_SCHEMAS
-    from short_drama.schemas.assistant_policy import GenerationPolicyPatch, ReadGenerationPolicy
+    from short_drama.schemas.assistant.tasks.policy import (
+        GenerationPolicyPatch,
+        ReadGenerationPolicy,
+    )
 
     saved = GenerationPolicyPatch(media_generation_enabled=False, policy_version="0")
     assert saved.model_dump(mode="json") == {
@@ -162,7 +164,7 @@ def test_media_directive_never_grants_quoted_ambiguous_or_excessive_generation(c
 
 def test_media_tool_schema_keeps_versions_and_rejects_private_or_unbounded_parameters():
     from short_drama.agent.tools.contracts import TOOL_SCHEMAS
-    from short_drama.schemas.assistant_media import SubmitGenerationBatch
+    from short_drama.schemas.assistant.operations.media import SubmitGenerationBatch
 
     item = {
         "target_kind": "asset",
@@ -272,22 +274,20 @@ def test_image_tools_keep_real_identifiers_and_reject_unbounded_or_untrusted_inp
 
 def test_new_task_has_no_implicit_selection_target_memory_or_skill():
     message = AssistantTaskMessage(content="聊聊人物动机")
-    assert message.context is None and message.execution_target is None
+    assert message.subject_selection is None and message.execution_target is None
     assert message.memory_project_ids == [] and message.skills == []
     assert message.task_id is None and message.new_task is False
 
 
-def test_reference_context_cannot_request_an_entire_project_or_canvas():
+def test_legacy_context_is_not_a_task_message_input():
     for kind in ("project", "canvas"):
         value = {"kind": kind, "project_id": "1", "id": "1", "revision": "1"}
-        context = AssistantTaskMessage(content="分析", context=value).context
-        assert context.include_document is False
         with pytest.raises(ValidationError):
-            AssistantTaskMessage(content="分析", context={**value, "include_document": True})
+            AssistantTaskMessage(content="分析", context=value)
 
 
 def test_multi_source_selection_is_explicit_versioned_and_cannot_expand_source_kind():
-    from short_drama.schemas.assistant_task import TaskSubjectSelection
+    from short_drama.schemas.assistant.tasks.task import TaskSubjectSelection
 
     reference = {
         "project_id": "9007199254740993",
@@ -333,7 +333,7 @@ def test_attachment_selection_is_independent_and_requires_a_known_input_revision
 
 
 def test_standard_patch_resolves_typed_earlier_references_and_preserves_large_ids():
-    from short_drama.schemas.assistant_standard import StandardPatch
+    from short_drama.schemas.assistant.operations.standard import StandardPatch
 
     payload = {
         "storyboard_version": "9007199254740993",
@@ -425,7 +425,7 @@ def test_created_result_reader_uses_receipt_identity_and_bounded_ranges():
 
 
 def test_canvas_increment_rejects_replacement_documents_untrusted_media_and_bad_references():
-    from short_drama.schemas.assistant_canvas import AssistantCanvasPatch
+    from short_drama.schemas.assistant.operations.canvas import AssistantCanvasPatch
 
     create = {"action": "create_node", "key": "note", "values": {"type": "text", "content": "正文"}}
     connect = {"action": "connect_nodes", "source": "$note", "target": "existing-node"}
@@ -500,7 +500,7 @@ def test_canvas_increment_uses_native_input_types_and_the_selected_model_capacit
     target, sources, profile, error
 ):
     from short_drama.core.exceptions import WorkflowError
-    from short_drama.service.assistant_canvas_service import check_canvas_inputs
+    from short_drama.service.assistant.operations.canvas import check_canvas_inputs
 
     nodes = [
         {
@@ -519,7 +519,7 @@ def test_canvas_increment_uses_native_input_types_and_the_selected_model_capacit
 
 
 def test_canvas_increment_layout_is_deterministic_and_preserves_existing_nested_positions():
-    from short_drama.service.assistant_canvas_service import layout_new_nodes
+    from short_drama.service.assistant.operations.canvas import layout_new_nodes
 
     nodes = {
         "frame": {"id": "frame", "position": {"x": 400, "y": 200}, "width": 300, "height": 200},
@@ -548,7 +548,7 @@ def test_canvas_increment_layout_is_deterministic_and_preserves_existing_nested_
 @pytest.mark.parametrize("location", ["metadata", "nested", "directorScenes", "timeline"])
 def test_canvas_delete_rejects_references_outside_its_increment(location):
     from short_drama.core.exceptions import WorkflowError
-    from short_drama.service.assistant_canvas_service import AssistantCanvasService
+    from short_drama.service.assistant.operations.canvas import AssistantCanvasService
 
     nodes = {"target": {"id": "target"}, "dependent": {"id": "dependent", "metadata": {}}}
     document = {"connections": [], "directorScenes": [], "timeline": None}
@@ -638,13 +638,13 @@ def test_canvas_directives_do_not_infer_authority_from_discussion_or_data(text):
 
 @pytest.mark.parametrize("speed", ["nan", "inf", "0", "0.1", "5", "快"])
 def test_canvas_settings_reject_non_native_audio_speed(speed):
-    from short_drama.schemas.assistant_canvas import AssistantNodeSettings
+    from short_drama.schemas.assistant.operations.canvas import AssistantNodeSettings
 
     with pytest.raises(ValidationError):
         AssistantNodeSettings(audioSpeed=speed)
 
 
-def test_subject_identity_distinguishes_same_node_key_in_two_canvases_and_preserves_legacy_scope():
+def test_subject_identity_distinguishes_same_node_key_in_two_canvases():
     from short_drama.agent.context.subjects import (
         snapshot_subjects,
         subject_key,
@@ -654,20 +654,10 @@ def test_subject_identity_distinguishes_same_node_key_in_two_canvases_and_preser
     assert subject_key("1", "canvas", "a", "node", "same") != subject_key(
         "1", "canvas", "b", "node", "same"
     )
-    legacy = {
-        "kind": "canvas",
-        "id": "a",
-        "project": {"id": "1"},
-        "selected": [
-            {"kind": "node", "id": "same", "revision": "3", "content": {"title": "主体"}},
-        ],
-    }
-    subjects = snapshot_subjects(legacy)
-    assert subjects[0]["name"] == "主体"
-    assert subject_memory_keys(legacy) == {"1:a:node:same"}
-    assert subject_memory_keys({"schema_version": 2, "subjects": subjects}) == subject_memory_keys(
-        legacy
-    )
+    subjects = [{"project_id": "1", "source_id": "a", "kind": "node", "id": "same"}]
+    snapshot = {"schema_version": 2, "subjects": subjects}
+    assert snapshot_subjects(snapshot) == subjects
+    assert subject_memory_keys(snapshot) == {"1:a:node:same"}
 
 
 def test_historical_reply_keeps_its_original_selection_scope_after_removal():
@@ -1097,7 +1087,7 @@ def test_standard_directives_cannot_come_from_data_questions_or_ambiguous_scope(
 
 
 def test_standard_dialogue_uses_typed_temporary_characters_and_native_document_rules():
-    from short_drama.schemas.assistant_standard import StandardPatch
+    from short_drama.schemas.assistant.operations.standard import StandardPatch
 
     prefix = [
         {"action": "create_asset", "key": "hero", "values": {"kind": "character", "name": "林晚"}},
@@ -1162,7 +1152,7 @@ def test_canvas_media_directive_rejects_ambiguous_or_mismatched_generation(conte
 
 
 def test_canvas_media_schema_preserves_string_keys_and_rejects_untrusted_transport():
-    from short_drama.schemas.assistant_media import SubmitGenerationBatch
+    from short_drama.schemas.assistant.operations.media import SubmitGenerationBatch
 
     item = {
         "target_kind": "node",
@@ -1227,7 +1217,7 @@ def test_character_voice_directive_does_not_infer_generation_authority(content):
 
 
 def test_character_voice_schema_keeps_own_version_and_bounded_explicit_input():
-    from short_drama.schemas.assistant_media import AssistantCharacterVoiceRequest
+    from short_drama.schemas.assistant.operations.media import AssistantCharacterVoiceRequest
 
     values = {
         "target_kind": "character_voice",
@@ -1272,7 +1262,7 @@ def test_native_shot_video_directive_requires_explicit_speech_authority():
 
 
 def test_native_shot_video_schema_bounds_dialogue_and_voice_versions():
-    from short_drama.schemas.assistant_media import AssistantShotVideoRequest
+    from short_drama.schemas.assistant.operations.media import AssistantShotVideoRequest
 
     values = {
         "target_kind": "shot_video",
@@ -1334,7 +1324,7 @@ def test_native_video_source_refresh_keeps_newer_voice_than_earlier_task_adoptio
 
 
 def test_sound_line_reference_preserves_real_string_identity():
-    from short_drama.schemas.assistant_task import TaskSubjectReference
+    from short_drama.schemas.assistant.tasks.task import TaskSubjectReference
 
     values = {
         "project_id": "9007199254740993",
@@ -1357,7 +1347,7 @@ def test_sound_line_reference_preserves_real_string_identity():
 
 
 def test_dialogue_audio_schema_accepts_only_identity_and_trusted_versions():
-    from short_drama.schemas.assistant_media import AssistantDialogueAudioRequest
+    from short_drama.schemas.assistant.operations.media import AssistantDialogueAudioRequest
 
     values = {
         "target_kind": "dialogue_audio",
@@ -1405,7 +1395,7 @@ def test_dialogue_audio_directives_do_not_authorize_discussion_or_unselected_sou
 
 
 def test_dialogue_audio_adoptions_follow_committed_versions_instead_of_item_order():
-    from short_drama.service.assistant_dialogue_service import advance_sound_binding
+    from short_drama.service.assistant.operations.dialogue import advance_sound_binding
 
     original = {
         "assembly_id": "1",
@@ -1427,7 +1417,7 @@ def test_dialogue_audio_adoptions_follow_committed_versions_instead_of_item_orde
 
 
 def test_sound_text_patch_is_incremental_and_requires_both_saved_versions():
-    from short_drama.schemas.assistant_standard import StandardPatch
+    from short_drama.schemas.assistant.operations.standard import StandardPatch
 
     revision = {"row_version": "0", "assembly_version": "2", "timeline_hash": "a" * 64}
     create = {
@@ -1468,7 +1458,7 @@ def test_sound_text_directive_limits_fields_and_keeps_generation_separate():
 
 
 def test_sound_text_batch_transitions_advance_all_lines_without_reading_neighbours():
-    from short_drama.service.assistant_dialogue_service import advance_sound_binding
+    from short_drama.service.assistant.operations.dialogue import advance_sound_binding
 
     original = {
         "assembly_id": "1",

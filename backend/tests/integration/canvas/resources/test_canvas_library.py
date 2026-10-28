@@ -6,9 +6,9 @@ from threading import Event
 import pytest
 from sqlalchemy import event, select
 
-from short_drama.dao.canvas_library_dao import CanvasLibraryDAO
+from short_drama.dao.canvas.library.library import CanvasLibraryDAO
 from short_drama.domain import CanvasLibraryAsset, CanvasLibraryFolderItem
-from short_drama.service.canvas_service import CanvasService
+from short_drama.service.canvas.document.canvas import CanvasService
 from tests.integration.standard.identity.test_identity_collaboration import account
 from tests.integration.standard.identity.test_identity_collaboration import (
     identity_app as identity_app,

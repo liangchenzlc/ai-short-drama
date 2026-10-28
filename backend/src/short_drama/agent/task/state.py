@@ -11,10 +11,10 @@ from short_drama.agent.task.policy import budget_caps
 from short_drama.agent.task.queries import task_for_run as task_for_run
 from short_drama.agent.tools.presentation import label as tool_label
 from short_drama.agent.tools.presentation import visibility as tool_visibility
-from short_drama.dao.agent_task_dao import AgentTaskDAO
-from short_drama.domain.agent import AgentRun, AgentToolCall, AgentTurn
-from short_drama.domain.agent_undo import AgentBatchUndo
-from short_drama.schemas.assistant_task import OperationRead, TaskRead
+from short_drama.dao.assistant.tasks.task import AgentTaskDAO
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
+from short_drama.domain.assistant.undo.undo import AgentBatchUndo
+from short_drama.schemas.assistant.tasks.task import OperationRead, TaskRead
 from short_drama.service.base import utcnow
 from short_drama.utils.snowflake import next_id
 
@@ -44,7 +44,7 @@ def read_operation(row, *, undo_receipts=()):
 
 
 def read_operations(session, rows):
-    from short_drama.schemas.assistant_undo import BatchUndoRead
+    from short_drama.schemas.assistant.undo.undo import BatchUndoRead
 
     receipts = {}
     if rows:
@@ -96,7 +96,6 @@ def read_task(session, task, *, active_operation=_UNSET_OPERATION):
         applied_control_seq=task.applied_control_seq,
         control_state=task.control_state,
         interruptions=task_capabilities(task),
-        interruptions_supported=task_capabilities(task)["stop"],
         execution_target=task.execution_target,
         memory_project_ids=task.memory_project_ids,
         selected_subjects=selected,

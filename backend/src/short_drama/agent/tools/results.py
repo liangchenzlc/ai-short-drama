@@ -10,9 +10,9 @@ from short_drama.agent.tools.contracts import ReadTaskResults
 from short_drama.agent.tools.standard import read_standard_results_locked
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import WorkflowError
-from short_drama.dao.agent_task_dao import AgentTaskDAO
-from short_drama.domain.agent import AgentConversation
-from short_drama.domain.agent_task import AgentOperation, AgentTask
+from short_drama.dao.assistant.tasks.task import AgentTaskDAO
+from short_drama.domain.assistant.conversations.models import AgentConversation
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
 
 
 def result_sources_locked(

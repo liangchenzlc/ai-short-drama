@@ -21,26 +21,23 @@ from short_drama.agent.context.transcript import (
     restore_transcript,
     tool_result_references,
 )
-from short_drama.agent.coordinator.assistant import execute_tools
-from short_drama.agent.coordinator.runtime import (
-    AgentRuntimeStore,
-    Claim,
-    LeaseLost,
-    _DeltaBuffer,
-    thaw_input,
-)
+from short_drama.agent.core.access import LeaseLost
+from short_drama.agent.gateway.contracts import AgentGatewayError
 from short_drama.agent.gateway.langchain import LangChainGateway, select_protocol
-from short_drama.agent.gateway.protocol import AgentGatewayError
 from short_drama.agent.harness import ENGINE_VERSION
 from short_drama.agent.harness.checkpointer import MySQLCheckpointSaver
 from short_drama.agent.resources.contracts import HydrationIntent, assert_reference_payload
 from short_drama.agent.resources.resolver import ResourceResolver
+from short_drama.agent.runtime.claims import Claim, thaw_input
+from short_drama.agent.runtime.decisions import execute_tools
+from short_drama.agent.runtime.delta_buffer import _DeltaBuffer
+from short_drama.agent.runtime.executor import AgentRuntimeStore
 from short_drama.agent.task.queries import task_for_run
 from short_drama.core.exceptions import BusinessError
-from short_drama.domain.agent import AgentRun, AgentTurn
-from short_drama.service.agent_graph_service import AgentGraphService
-from short_drama.service.agent_model_service import model_credentials
-from short_drama.service.storage_service import StorageService
+from short_drama.domain.assistant.execution.models import AgentRun, AgentTurn
+from short_drama.service.ai_config.management.assistant_models import model_credentials
+from short_drama.service.assistant.execution.graph import AgentGraphService
+from short_drama.service.media.files.storage import StorageService
 from short_drama.storage.minio import MinioStorage
 
 logger = logging.getLogger(__name__)
@@ -314,7 +311,6 @@ class HarnessRuntime:
                 protocol,
                 continuation_prompt=values.get("continuation_prompt"),
                 resource_outcomes=values.get("resource_outcomes", []),
-                context_layout_version=values.get("context_layout_version", 1),
             )
             delta = _DeltaBuffer(self.store, claim)
 

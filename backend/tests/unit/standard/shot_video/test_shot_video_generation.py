@@ -15,14 +15,15 @@ from short_drama.domain import (
     ShotImage,
     ShotVideo,
 )
-from short_drama.service.ai_generation_service import AIGenerationService
 from short_drama.service.base import utcnow
-from short_drama.service.generation_execution_service import GenerationExecutionService
-from short_drama.service.media_asset_service import MediaAssetService
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
-from short_drama.service.shot_image_service import ShotImageService
-from short_drama.service.shot_script_service import ShotScriptService
+from short_drama.service.creation.storyboard.images.image import ShotImageService
+from short_drama.service.creation.storyboard.management.script import ShotScriptService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
+from short_drama.service.media.library.assets import MediaAssetService
 from tests.support.generation_fixtures import config, generation_session, settings
+from tests.support.integration.identity import actor as fixture_actor
 from tests.unit.standard.storyboard.test_project_storyboard import setup_storyboard
 
 
@@ -45,6 +46,7 @@ def setup_video(session):
     session.add(
         MediaFile(
             id=101,
+            project_id=episode,
             format_code="image/png",
             storage_locator="minio://images/frame.png",
             original_name="",
@@ -96,6 +98,7 @@ def output(flow, task_id, media_id=201):
     session.add(
         MediaFile(
             id=media_id,
+            project_id=flow.project,
             format_code="video/mp4",
             storage_locator=f"minio://videos/{media_id}.mp4",
             original_name="",
@@ -381,7 +384,7 @@ def test_parallel_video_completion_keeps_the_newest_successful_task(newest_first
     ],
 )
 def test_invalidated_video_result_preserves_the_previous_confirmed_work(change):
-    from short_drama.domain.collaboration import User
+    from short_drama.domain.identity.accounts.user import User
 
     with generation_session() as session:
         flow = setup_video(session)
@@ -428,9 +431,12 @@ def test_invalidated_video_result_preserves_the_previous_confirmed_work(change):
             if change == "cancelled":
                 session.get(AsyncTask, pending).cancel_requested = 1
             if change == "scope":
+                actor = session.info.pop("actor")
                 session.get(MediaFile, 202).project_id = None
                 session.get(MediaFile, 202).scope_user_id = 1
             session.commit()
+            if change == "scope":
+                session.info["actor"] = actor
         receipt = confirm_generated_video(flow, pending)
         assert receipt["status"] == "skipped"
         assert current(flow)["video"]["media_id"] == "201"
@@ -462,7 +468,7 @@ def test_worker_completion_exposes_a_safe_warning_when_the_source_has_changed():
             bind=session.get_bind(),
             expire_on_commit=False,
             autoflush=False,
-            info={"legacy_user_id": 1},
+            info={"actor": fixture_actor()},
         )
         executor = GenerationExecutionService(factory, settings, None, None)
         executor._save(task, record, version, "worker-completion-token")

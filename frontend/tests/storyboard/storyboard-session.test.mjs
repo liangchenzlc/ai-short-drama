@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../../src/features/projects/storyboard-session.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/creation/storyboard/sessions/storyboard-session.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const session = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const shot = (id, script, row = '1') => ({ id, position: Number(id), script, row_version: row, asset_ids: [], image_settings: { resolution: '2K', aspect: 'inherit', layout: 'single' }, context_hash: id.repeat(64).slice(0, 64), image: null, deleted_at: null });

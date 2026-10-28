@@ -33,7 +33,7 @@ def video_default_prompt(snapshot):
 
 
 def video_prompt_parts(snapshot, user_prompt):
-    from .prompts.registry import shot_video_system_prompt
+    from short_drama.ai.prompts.registry import shot_video_system_prompt
 
     parts = [user_prompt.strip() or video_default_prompt(snapshot)]
     kinds = {"character": "人物", "prop": "道具", "scene": "场景"}

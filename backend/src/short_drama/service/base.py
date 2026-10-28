@@ -53,7 +53,7 @@ class BaseService:
             with mutex, self.session.begin():
                 project_id = self.session.info.get("request_project")
                 if project_id:
-                    from short_drama.db.access import require_project
+                    from short_drama.db.scope.resource_scope import require_project
 
                     require_project(
                         self.session, project_id, lock=not read_only and lock_request_project

@@ -2,580 +2,702 @@
   "version": 2,
   "structural": {},
   "sizes": {
-    "backend/src/short_drama/agent/artifacts.py": {
-      "lines": 234,
+    "backend/src/short_drama/agent/context/assembly.py": {
+      "lines": 353,
       "maxClass": 0,
-      "maxFn": 154,
-      "params": 6
+      "maxFn": 265,
+      "params": 4
     },
-    "backend/src/short_drama/agent/assistant_tools.py": {
-      "lines": 1075,
-      "maxClass": 0,
-      "maxFn": 293,
-      "params": 7
-    },
-    "backend/src/short_drama/agent/canvas_tools.py": {
-      "lines": 481,
-      "maxClass": 6,
-      "maxFn": 122,
-      "params": 5
-    },
-    "backend/src/short_drama/agent/image_tools.py": {
-      "lines": 651,
-      "maxClass": 3,
-      "maxFn": 55,
-      "params": 5
-    },
-    "backend/src/short_drama/agent/input_media.py": {
+    "backend/src/short_drama/agent/context/media.py": {
       "lines": 245,
       "maxClass": 0,
       "maxFn": 112,
       "params": 3
     },
-    "backend/src/short_drama/agent/media_runtime.py": {
+    "backend/src/short_drama/agent/context/transcript.py": {
+      "lines": 425,
+      "maxClass": 0,
+      "maxFn": 85,
+      "params": 9
+    },
+    "backend/src/short_drama/agent/coordinator/media_runtime.py": {
       "lines": 564,
       "maxClass": 0,
       "maxFn": 194,
       "params": 6
     },
-    "backend/src/short_drama/agent/media_tools.py": {
-      "lines": 794,
-      "maxClass": 6,
-      "maxFn": 190,
-      "params": 6
+    "backend/src/short_drama/agent/gateway/langchain.py": {
+      "lines": 456,
+      "maxClass": 279,
+      "maxFn": 209,
+      "params": 16
     },
-    "backend/src/short_drama/agent/memory_context.py": {
-      "lines": 461,
+    "backend/src/short_drama/agent/gateway/protocol.py": {
+      "lines": 435,
+      "maxClass": 366,
+      "maxFn": 255,
+      "params": 16
+    },
+    "backend/src/short_drama/agent/gateway/transport.py": {
+      "lines": 404,
+      "maxClass": 207,
+      "maxFn": 129,
+      "params": 10
+    },
+    "backend/src/short_drama/agent/memory/context.py": {
+      "lines": 478,
       "maxClass": 0,
-      "maxFn": 105,
+      "maxFn": 121,
       "params": 7
     },
-    "backend/src/short_drama/agent/memory_sources.py": {
-      "lines": 203,
+    "backend/src/short_drama/agent/memory/sources.py": {
+      "lines": 211,
       "maxClass": 0,
-      "maxFn": 107,
+      "maxFn": 115,
       "params": 6
     },
-    "backend/src/short_drama/agent/memory_tools.py": {
+    "backend/src/short_drama/agent/native/adoption.py": {
+      "lines": 146,
+      "maxClass": 0,
+      "maxFn": 113,
+      "params": 6
+    },
+    "backend/src/short_drama/agent/native/context.py": {
+      "lines": 176,
+      "maxClass": 0,
+      "maxFn": 125,
+      "params": 2
+    },
+    "backend/src/short_drama/agent/native/tasks.py": {
+      "lines": 386,
+      "maxClass": 0,
+      "maxFn": 167,
+      "params": 6
+    },
+    "backend/src/short_drama/agent/runtime/claiming.py": {
+      "lines": 193,
+      "maxClass": 159,
+      "maxFn": 158,
+      "params": 4
+    },
+    "backend/src/short_drama/agent/runtime/decision_input.py": {
+      "lines": 380,
+      "maxClass": 0,
+      "maxFn": 316,
+      "params": 3
+    },
+    "backend/src/short_drama/agent/runtime/operations.py": {
+      "lines": 426,
+      "maxClass": 0,
+      "maxFn": 127,
+      "params": 7
+    },
+    "backend/src/short_drama/agent/runtime/read_tools.py": {
+      "lines": 329,
+      "maxClass": 0,
+      "maxFn": 213,
+      "params": 5
+    },
+    "backend/src/short_drama/agent/runtime/sending.py": {
+      "lines": 262,
+      "maxClass": 230,
+      "maxFn": 140,
+      "params": 4
+    },
+    "backend/src/short_drama/agent/runtime/settlement.py": {
+      "lines": 382,
+      "maxClass": 345,
+      "maxFn": 296,
+      "params": 4
+    },
+    "backend/src/short_drama/agent/runtime/tool_execution.py": {
+      "lines": 200,
+      "maxClass": 0,
+      "maxFn": 129,
+      "params": 6
+    },
+    "backend/src/short_drama/agent/session/purge.py": {
+      "lines": 308,
+      "maxClass": 0,
+      "maxFn": 135,
+      "params": 3
+    },
+    "backend/src/short_drama/agent/skill/progressive.py": {
+      "lines": 339,
+      "maxClass": 0,
+      "maxFn": 227,
+      "params": 8
+    },
+    "backend/src/short_drama/agent/task/contract.py": {
+      "lines": 492,
+      "maxClass": 24,
+      "maxFn": 136,
+      "params": 6
+    },
+    "backend/src/short_drama/agent/task/state.py": {
+      "lines": 380,
+      "maxClass": 0,
+      "maxFn": 109,
+      "params": 8
+    },
+    "backend/src/short_drama/agent/tools/autonomous.py": {
+      "lines": 451,
+      "maxClass": 0,
+      "maxFn": 111,
+      "params": 6
+    },
+    "backend/src/short_drama/agent/tools/canvas.py": {
+      "lines": 486,
+      "maxClass": 6,
+      "maxFn": 122,
+      "params": 6
+    },
+    "backend/src/short_drama/agent/tools/contracts.py": {
+      "lines": 310,
+      "maxClass": 17,
+      "maxFn": 29,
+      "params": 9
+    },
+    "backend/src/short_drama/agent/tools/image.py": {
+      "lines": 667,
+      "maxClass": 3,
+      "maxFn": 65,
+      "params": 5
+    },
+    "backend/src/short_drama/agent/tools/media.py": {
+      "lines": 821,
+      "maxClass": 6,
+      "maxFn": 217,
+      "params": 7
+    },
+    "backend/src/short_drama/agent/tools/memory_ops.py": {
       "lines": 294,
       "maxClass": 5,
       "maxFn": 131,
       "params": 5
     },
-    "backend/src/short_drama/agent/model_gateway.py": {
-      "lines": 1005,
-      "maxClass": 360,
-      "maxFn": 249,
-      "params": 16
-    },
-    "backend/src/short_drama/agent/native_adoption.py": {
-      "lines": 146,
-      "maxClass": 0,
-      "maxFn": 113,
-      "params": 6
-    },
-    "backend/src/short_drama/agent/native_context.py": {
-      "lines": 173,
-      "maxClass": 0,
-      "maxFn": 125,
-      "params": 2
-    },
-    "backend/src/short_drama/agent/native_tasks.py": {
-      "lines": 387,
-      "maxClass": 0,
-      "maxFn": 167,
-      "params": 6
-    },
-    "backend/src/short_drama/agent/runtime.py": {
-      "lines": 1044,
-      "maxClass": 700,
-      "maxFn": 213,
-      "params": 6
-    },
-    "backend/src/short_drama/agent/session_purge.py": {
-      "lines": 289,
-      "maxClass": 0,
-      "maxFn": 116,
-      "params": 3
-    },
-    "backend/src/short_drama/agent/standard_tools.py": {
-      "lines": 669,
+    "backend/src/short_drama/agent/tools/standard.py": {
+      "lines": 697,
       "maxClass": 7,
-      "maxFn": 160,
-      "params": 6
+      "maxFn": 174,
+      "params": 7
     },
-    "backend/src/short_drama/agent/tools.py": {
-      "lines": 605,
-      "maxClass": 4,
-      "maxFn": 167,
-      "params": 5
+    "backend/src/short_drama/ai/adapters/results.py": {
+      "lines": 244,
+      "maxClass": 0,
+      "maxFn": 190,
+      "params": 4
     },
-    "backend/src/short_drama/agent/tool_contracts.py": {
-      "lines": 211,
-      "maxClass": 6,
-      "maxFn": 29,
-      "params": 9
-    },
-    "backend/src/short_drama/ai/adapters.py": {
-      "lines": 1206,
+    "backend/src/short_drama/ai/adapters/submission.py": {
+      "lines": 720,
       "maxClass": 0,
       "maxFn": 443,
       "params": 6
     },
-    "backend/src/short_drama/ai/canvas_claude_adapters.py": {
+    "backend/src/short_drama/ai/adapters/text/claude_adapters.py": {
       "lines": 188,
       "maxClass": 18,
       "maxFn": 105,
       "params": 2
     },
-    "backend/src/short_drama/ai/canvas_runninghub_fields.py": {
-      "lines": 809,
-      "maxClass": 0,
-      "maxFn": 84,
-      "params": 4
-    },
-    "backend/src/short_drama/ai/canvas_tool_submission.py": {
-      "lines": 212,
+    "backend/src/short_drama/ai/adapters/tools/submission.py": {
+      "lines": 214,
       "maxClass": 6,
       "maxFn": 154,
       "params": 3
     },
-    "backend/src/short_drama/ai/canvas_video_adapters.py": {
-      "lines": 870,
+    "backend/src/short_drama/ai/adapters/video/config.py": {
+      "lines": 261,
       "maxClass": 0,
-      "maxFn": 131,
+      "maxFn": 111,
+      "params": 2
+    },
+    "backend/src/short_drama/ai/adapters/video/inputs.py": {
+      "lines": 288,
+      "maxClass": 0,
+      "maxFn": 109,
+      "params": 3
+    },
+    "backend/src/short_drama/ai/adapters/video/results.py": {
+      "lines": 204,
+      "maxClass": 0,
+      "maxFn": 109,
       "params": 4
     },
-    "backend/src/short_drama/ai/gateway.py": {
-      "lines": 1128,
-      "maxClass": 1000,
-      "maxFn": 209,
-      "params": 21
+    "backend/src/short_drama/ai/adapters/video/video_adapters.py": {
+      "lines": 225,
+      "maxClass": 0,
+      "maxFn": 131,
+      "params": 3
     },
-    "backend/src/short_drama/ai/transport.py": {
+    "backend/src/short_drama/ai/gateway/runninghub.py": {
+      "lines": 186,
+      "maxClass": 154,
+      "maxFn": 135,
+      "params": 7
+    },
+    "backend/src/short_drama/ai/gateway/submissions.py": {
+      "lines": 291,
+      "maxClass": 249,
+      "maxFn": 152,
+      "params": 12
+    },
+    "backend/src/short_drama/ai/gateway/transport.py": {
       "lines": 292,
       "maxClass": 215,
       "maxFn": 169,
       "params": 13
     },
-    "backend/src/short_drama/api/v1/ai_generations.py": {
+    "backend/src/short_drama/ai/gateway/transport_client.py": {
+      "lines": 428,
+      "maxClass": 383,
+      "maxFn": 209,
+      "params": 21
+    },
+    "backend/src/short_drama/api/v1/generations/admission/router.py": {
       "lines": 138,
       "maxClass": 0,
       "maxFn": 40,
       "params": 12
     },
-    "backend/src/short_drama/api/v1/media_library.py": {
-      "lines": 57,
+    "backend/src/short_drama/api/v1/media/library/router.py": {
+      "lines": 59,
       "maxClass": 0,
-      "maxFn": 27,
-      "params": 11
+      "maxFn": 29,
+      "params": 12
     },
-    "backend/src/short_drama/db/access.py": {
-      "lines": 1390,
+    "backend/src/short_drama/dao/assistant/execution/transcript.py": {
+      "lines": 155,
+      "maxClass": 145,
+      "maxFn": 61,
+      "params": 9
+    },
+    "backend/src/short_drama/db/access/agent_writes.py": {
+      "lines": 368,
       "maxClass": 0,
-      "maxFn": 290,
+      "maxFn": 255,
+      "params": 4
+    },
+    "backend/src/short_drama/db/access/canvas_writes.py": {
+      "lines": 284,
+      "maxClass": 0,
+      "maxFn": 189,
       "params": 5
     },
-    "backend/src/short_drama/db/canvas_generation_access.py": {
-      "lines": 146,
+    "backend/src/short_drama/db/access/policies/canvas_generation_access.py": {
+      "lines": 145,
       "maxClass": 0,
       "maxFn": 105,
       "params": 4
     },
+    "backend/src/short_drama/db/access/predicates.py": {
+      "lines": 339,
+      "maxClass": 0,
+      "maxFn": 222,
+      "params": 5
+    },
+    "backend/src/short_drama/db/access/queries.py": {
+      "lines": 125,
+      "maxClass": 0,
+      "maxFn": 104,
+      "params": 1
+    },
+    "backend/src/short_drama/db/access/writes.py": {
+      "lines": 332,
+      "maxClass": 0,
+      "maxFn": 288,
+      "params": 3
+    },
     "backend/src/short_drama/db/readiness.py": {
-      "lines": 341,
+      "lines": 340,
       "maxClass": 0,
       "maxFn": 113,
       "params": 2
     },
-    "backend/src/short_drama/db/resource_scope.py": {
-      "lines": 200,
+    "backend/src/short_drama/db/scope/resource_scope.py": {
+      "lines": 202,
       "maxClass": 0,
-      "maxFn": 104,
+      "maxFn": 103,
       "params": 4
     },
-    "backend/src/short_drama/domain/agent.py": {
-      "lines": 657,
-      "maxClass": 125,
-      "maxFn": 8,
-      "params": 4
-    },
-    "backend/src/short_drama/service/agent_conversation_service.py": {
-      "lines": 432,
-      "maxClass": 366,
-      "maxFn": 120,
-      "params": 7
-    },
-    "backend/src/short_drama/service/agent_memory_store.py": {
-      "lines": 691,
-      "maxClass": 0,
-      "maxFn": 95,
-      "params": 8
-    },
-    "backend/src/short_drama/service/agent_model_service.py": {
-      "lines": 383,
-      "maxClass": 271,
+    "backend/src/short_drama/service/ai_config/management/assistant_models.py": {
+      "lines": 428,
+      "maxClass": 282,
       "maxFn": 126,
       "params": 4
     },
-    "backend/src/short_drama/service/agent_run_service.py": {
-      "lines": 856,
-      "maxClass": 746,
-      "maxFn": 272,
-      "params": 5
-    },
-    "backend/src/short_drama/service/agent_skill_resource_service.py": {
-      "lines": 180,
-      "maxClass": 0,
-      "maxFn": 102,
-      "params": 7
-    },
-    "backend/src/short_drama/service/agent_skill_service.py": {
-      "lines": 955,
-      "maxClass": 635,
-      "maxFn": 143,
-      "params": 11
-    },
-    "backend/src/short_drama/service/ai_generation_service.py": {
-      "lines": 853,
-      "maxClass": 801,
-      "maxFn": 212,
-      "params": 9
-    },
-    "backend/src/short_drama/service/assembly_associations.py": {
-      "lines": 123,
-      "maxClass": 0,
-      "maxFn": 104,
-      "params": 3
-    },
-    "backend/src/short_drama/service/assembly_audio.py": {
-      "lines": 220,
-      "maxClass": 0,
-      "maxFn": 132,
-      "params": 7
-    },
-    "backend/src/short_drama/service/assembly_media_execute.py": {
-      "lines": 155,
-      "maxClass": 0,
-      "maxFn": 141,
-      "params": 7
-    },
-    "backend/src/short_drama/service/assembly_media_service.py": {
-      "lines": 235,
-      "maxClass": 210,
-      "maxFn": 126,
-      "params": 5
-    },
-    "backend/src/short_drama/service/assistant_canvas_media_service.py": {
-      "lines": 415,
-      "maxClass": 0,
-      "maxFn": 129,
-      "params": 5
-    },
-    "backend/src/short_drama/service/assistant_canvas_service.py": {
-      "lines": 595,
-      "maxClass": 425,
-      "maxFn": 216,
-      "params": 7
-    },
-    "backend/src/short_drama/service/assistant_canvas_undo_service.py": {
-      "lines": 300,
-      "maxClass": 0,
-      "maxFn": 120,
-      "params": 5
-    },
-    "backend/src/short_drama/service/assistant_context_service.py": {
+    "backend/src/short_drama/service/assistant/context/context.py": {
       "lines": 229,
       "maxClass": 0,
       "maxFn": 103,
       "params": 3
     },
-    "backend/src/short_drama/service/assistant_dialogue_service.py": {
+    "backend/src/short_drama/service/assistant/context/subject.py": {
+      "lines": 428,
+      "maxClass": 0,
+      "maxFn": 126,
+      "params": 7
+    },
+    "backend/src/short_drama/service/assistant/conversations/history.py": {
+      "lines": 303,
+      "maxClass": 0,
+      "maxFn": 103,
+      "params": 5
+    },
+    "backend/src/short_drama/service/assistant/memory/memory_store.py": {
+      "lines": 706,
+      "maxClass": 0,
+      "maxFn": 95,
+      "params": 8
+    },
+    "backend/src/short_drama/service/assistant/operations/canvas.py": {
+      "lines": 595,
+      "maxClass": 425,
+      "maxFn": 216,
+      "params": 7
+    },
+    "backend/src/short_drama/service/assistant/operations/canvas_media.py": {
+      "lines": 415,
+      "maxClass": 0,
+      "maxFn": 129,
+      "params": 5
+    },
+    "backend/src/short_drama/service/assistant/operations/dialogue.py": {
       "lines": 529,
       "maxClass": 0,
       "maxFn": 114,
       "params": 7
     },
-    "backend/src/short_drama/service/assistant_history_service.py": {
-      "lines": 302,
-      "maxClass": 0,
-      "maxFn": 103,
-      "params": 5
-    },
-    "backend/src/short_drama/service/assistant_image_service.py": {
-      "lines": 265,
+    "backend/src/short_drama/service/assistant/operations/image.py": {
+      "lines": 264,
       "maxClass": 114,
       "maxFn": 110,
       "params": 6
     },
-    "backend/src/short_drama/service/assistant_media_undo_service.py": {
-      "lines": 249,
-      "maxClass": 0,
-      "maxFn": 113,
-      "params": 5
-    },
-    "backend/src/short_drama/service/assistant_shot_video_service.py": {
-      "lines": 286,
+    "backend/src/short_drama/service/assistant/operations/shot_video.py": {
+      "lines": 288,
       "maxClass": 0,
       "maxFn": 101,
       "params": 7
     },
-    "backend/src/short_drama/service/assistant_sound_undo_service.py": {
+    "backend/src/short_drama/service/assistant/operations/standard.py": {
+      "lines": 426,
+      "maxClass": 378,
+      "maxFn": 315,
+      "params": 8
+    },
+    "backend/src/short_drama/service/assistant/tasks/controls.py": {
+      "lines": 178,
+      "maxClass": 147,
+      "maxFn": 138,
+      "params": 5
+    },
+    "backend/src/short_drama/service/assistant/tasks/inputs.py": {
+      "lines": 293,
+      "maxClass": 250,
+      "maxFn": 109,
+      "params": 7
+    },
+    "backend/src/short_drama/service/assistant/tasks/messages.py": {
+      "lines": 178,
+      "maxClass": 143,
+      "maxFn": 134,
+      "params": 5
+    },
+    "backend/src/short_drama/service/assistant/undo/canvas_undo.py": {
+      "lines": 300,
+      "maxClass": 0,
+      "maxFn": 120,
+      "params": 5
+    },
+    "backend/src/short_drama/service/assistant/undo/media_undo.py": {
+      "lines": 252,
+      "maxClass": 0,
+      "maxFn": 113,
+      "params": 5
+    },
+    "backend/src/short_drama/service/assistant/undo/sound_undo.py": {
       "lines": 173,
       "maxClass": 0,
       "maxFn": 103,
       "params": 6
     },
-    "backend/src/short_drama/service/assistant_standard_service.py": {
-      "lines": 424,
-      "maxClass": 378,
-      "maxFn": 315,
-      "params": 8
-    },
-    "backend/src/short_drama/service/assistant_subject_service.py": {
-      "lines": 432,
-      "maxClass": 0,
-      "maxFn": 130,
-      "params": 7
-    },
-    "backend/src/short_drama/service/assistant_task_service.py": {
-      "lines": 843,
-      "maxClass": 780,
-      "maxFn": 98,
-      "params": 7
-    },
-    "backend/src/short_drama/service/assistant_undo_service.py": {
-      "lines": 544,
+    "backend/src/short_drama/service/assistant/undo/undo.py": {
+      "lines": 551,
       "maxClass": 0,
       "maxFn": 226,
       "params": 6
     },
-    "backend/src/short_drama/service/canvas_generation_inputs.py": {
-      "lines": 306,
+    "backend/src/short_drama/service/canvas/generation/generation.py": {
+      "lines": 559,
+      "maxClass": 504,
+      "maxFn": 199,
+      "params": 6
+    },
+    "backend/src/short_drama/service/canvas/generation/generation_inputs.py": {
+      "lines": 312,
       "maxClass": 0,
-      "maxFn": 196,
+      "maxFn": 198,
       "params": 4
     },
-    "backend/src/short_drama/service/canvas_generation_media_cleanup.py": {
-      "lines": 353,
+    "backend/src/short_drama/service/canvas/generation/generation_media_cleanup.py": {
+      "lines": 354,
       "maxClass": 0,
       "maxFn": 102,
       "params": 9
     },
-    "backend/src/short_drama/service/canvas_generation_service.py": {
-      "lines": 546,
-      "maxClass": 499,
-      "maxFn": 194,
-      "params": 6
-    },
-    "backend/src/short_drama/service/canvas_library_service.py": {
-      "lines": 344,
-      "maxClass": 305,
-      "maxFn": 117,
-      "params": 4
-    },
-    "backend/src/short_drama/service/canvas_runninghub_admission.py": {
-      "lines": 135,
+    "backend/src/short_drama/service/canvas/generation/runninghub/runninghub_admission.py": {
+      "lines": 134,
       "maxClass": 0,
       "maxFn": 112,
       "params": 5
     },
-    "backend/src/short_drama/service/canvas_service.py": {
-      "lines": 1301,
-      "maxClass": 1221,
-      "maxFn": 95,
-      "params": 7
-    },
-    "backend/src/short_drama/service/canvas_task_outputs.py": {
-      "lines": 240,
-      "maxClass": 0,
-      "maxFn": 148,
-      "params": 6
-    },
-    "backend/src/short_drama/service/canvas_task_service.py": {
-      "lines": 408,
+    "backend/src/short_drama/service/canvas/generation/tasks/task.py": {
+      "lines": 414,
       "maxClass": 382,
       "maxFn": 144,
       "params": 5
     },
-    "backend/src/short_drama/service/canvas_text_admission.py": {
+    "backend/src/short_drama/service/canvas/generation/tasks/task_outputs.py": {
+      "lines": 241,
+      "maxClass": 0,
+      "maxFn": 150,
+      "params": 6
+    },
+    "backend/src/short_drama/service/canvas/generation/text/text_admission.py": {
       "lines": 136,
       "maxClass": 0,
       "maxFn": 113,
       "params": 5
     },
-    "backend/src/short_drama/service/canvas_timeline_compile.py": {
+    "backend/src/short_drama/service/canvas/library/library.py": {
+      "lines": 344,
+      "maxClass": 305,
+      "maxFn": 117,
+      "params": 4
+    },
+    "backend/src/short_drama/service/canvas/timeline/timeline_compile.py": {
       "lines": 268,
       "maxClass": 0,
       "maxFn": 123,
       "params": 3
     },
-    "backend/src/short_drama/service/canvas_timeline_native.py": {
-      "lines": 199,
+    "backend/src/short_drama/service/canvas/timeline/timeline_native.py": {
+      "lines": 198,
       "maxClass": 4,
       "maxFn": 103,
       "params": 3
     },
-    "backend/src/short_drama/service/generation_archive.py": {
-      "lines": 469,
+    "backend/src/short_drama/service/creation/assembly/document/projection.py": {
+      "lines": 430,
       "maxClass": 411,
-      "maxFn": 202,
-      "params": 7
-    },
-    "backend/src/short_drama/service/generation_batch_service.py": {
-      "lines": 799,
-      "maxClass": 605,
-      "maxFn": 114,
-      "params": 4
-    },
-    "backend/src/short_drama/service/generation_execution_service.py": {
-      "lines": 909,
-      "maxClass": 862,
-      "maxFn": 230,
-      "params": 6
-    },
-    "backend/src/short_drama/service/image_group_service.py": {
-      "lines": 576,
-      "maxClass": 544,
-      "maxFn": 112,
-      "params": 10
-    },
-    "backend/src/short_drama/service/image_operation_service.py": {
-      "lines": 451,
-      "maxClass": 424,
-      "maxFn": 131,
-      "params": 7
-    },
-    "backend/src/short_drama/service/project_assembly_service.py": {
-      "lines": 928,
-      "maxClass": 894,
       "maxFn": 186,
-      "params": 7
-    },
-    "backend/src/short_drama/service/project_sound_service.py": {
-      "lines": 683,
-      "maxClass": 637,
-      "maxFn": 98,
-      "params": 8
-    },
-    "backend/src/short_drama/service/resource_import_service.py": {
-      "lines": 316,
-      "maxClass": 93,
-      "maxFn": 103,
       "params": 5
     },
-    "backend/src/short_drama/service/sound_render.py": {
+    "backend/src/short_drama/service/creation/assembly/editing/associations.py": {
+      "lines": 123,
+      "maxClass": 0,
+      "maxFn": 104,
+      "params": 3
+    },
+    "backend/src/short_drama/service/creation/assembly/editing/audio.py": {
+      "lines": 220,
+      "maxClass": 0,
+      "maxFn": 132,
+      "params": 7
+    },
+    "backend/src/short_drama/service/creation/assembly/materials/media.py": {
+      "lines": 238,
+      "maxClass": 210,
+      "maxFn": 126,
+      "params": 5
+    },
+    "backend/src/short_drama/service/creation/assembly/materials/media_execute.py": {
+      "lines": 161,
+      "maxClass": 0,
+      "maxFn": 141,
+      "params": 7
+    },
+    "backend/src/short_drama/service/creation/assembly/rendering/renderer.py": {
+      "lines": 481,
+      "maxClass": 442,
+      "maxFn": 186,
+      "params": 5
+    },
+    "backend/src/short_drama/service/creation/sound/tracks/render.py": {
       "lines": 386,
       "maxClass": 0,
       "maxFn": 234,
       "params": 8
     },
-    "backend/src/short_drama/service/task_access.py": {
-      "lines": 215,
-      "maxClass": 0,
-      "maxFn": 125,
+    "backend/src/short_drama/service/generations/admission/admission.py": {
+      "lines": 484,
+      "maxClass": 445,
+      "maxFn": 217,
+      "params": 9
+    },
+    "backend/src/short_drama/service/generations/batches/batch.py": {
+      "lines": 142,
+      "maxClass": 4,
+      "maxFn": 114,
+      "params": 2
+    },
+    "backend/src/short_drama/service/generations/batches/controls.py": {
+      "lines": 208,
+      "maxClass": 177,
+      "maxFn": 105,
       "params": 4
     },
-    "backend/src/short_drama/service/video_render.py": {
-      "lines": 478,
-      "maxClass": 442,
-      "maxFn": 186,
-      "params": 5
+    "backend/src/short_drama/service/generations/execution/archive.py": {
+      "lines": 242,
+      "maxClass": 221,
+      "maxFn": 220,
+      "params": 6
     },
-    "backend/src/short_drama/tasks/render.py": {
-      "lines": 414,
-      "maxClass": 289,
-      "maxFn": 284,
-      "params": 5
+    "backend/src/short_drama/service/generations/execution/provider.py": {
+      "lines": 403,
+      "maxClass": 363,
+      "maxFn": 240,
+      "params": 6
     },
-    "backend/src/short_drama/tasks/runtime.py": {
-      "lines": 182,
+    "backend/src/short_drama/service/generations/execution/settlement.py": {
+      "lines": 329,
+      "maxClass": 306,
+      "maxFn": 169,
+      "params": 6
+    },
+    "backend/src/short_drama/service/generations/results/archive.py": {
+      "lines": 474,
+      "maxClass": 417,
+      "maxFn": 206,
+      "params": 7
+    },
+    "backend/src/short_drama/service/generations/runtime/access.py": {
+      "lines": 221,
       "maxClass": 0,
-      "maxFn": 159,
+      "maxFn": 131,
+      "params": 4
+    },
+    "backend/src/short_drama/service/media/image_groups/groups.py": {
+      "lines": 581,
+      "maxClass": 546,
+      "maxFn": 114,
+      "params": 10
+    },
+    "backend/src/short_drama/service/media/image_tools/operations.py": {
+      "lines": 455,
+      "maxClass": 424,
+      "maxFn": 131,
+      "params": 7
+    },
+    "backend/src/short_drama/service/media/imports/resources.py": {
+      "lines": 317,
+      "maxClass": 93,
+      "maxFn": 103,
+      "params": 5
+    },
+    "backend/src/short_drama/service/skills/catalog/listing.py": {
+      "lines": 159,
+      "maxClass": 136,
+      "maxFn": 123,
+      "params": 10
+    },
+    "backend/src/short_drama/service/skills/resources/skill_resource.py": {
+      "lines": 180,
+      "maxClass": 0,
+      "maxFn": 102,
+      "params": 7
+    },
+    "backend/src/short_drama/tasks/rendering/render.py": {
+      "lines": 416,
+      "maxClass": 291,
+      "maxFn": 286,
+      "params": 5
+    },
+    "backend/src/short_drama/tasks/runtime/runtime.py": {
+      "lines": 202,
+      "maxClass": 0,
+      "maxFn": 179,
       "params": 0
     },
-    "frontend/src/features/agents/AgentArtifactShelf.tsx": {
-      "lines": 223,
-      "useState": 19
-    },
-    "frontend/src/features/agents/AgentConversationRuntime.tsx": {
-      "lines": 207,
-      "useState": 16
-    },
-    "frontend/src/features/agents/AgentMediaTaskComposer.tsx": {
-      "lines": 148,
-      "useState": 20
-    },
-    "frontend/src/features/ai-assistant/AssistantConversationBody.tsx": {
-      "lines": 362,
-      "useState": 40
-    },
-    "frontend/src/features/ai-assistant/AssistantHistory.tsx": {
-      "lines": 112,
-      "useState": 16
-    },
-    "frontend/src/features/ai-assistant/AssistantMemory.tsx": {
-      "lines": 237,
-      "useState": 29
-    },
-    "frontend/src/features/ai-assistant/AssistantSubjects.tsx": {
-      "lines": 220,
-      "useState": 18
-    },
-    "frontend/src/features/ai-config/SkillManager.tsx": {
-      "lines": 278,
+    "frontend/src/features/assistant/composer/useAssistantComposer.ts": {
+      "lines": 574,
       "useState": 27
     },
-    "frontend/src/features/assets/EpisodeAssetEditor.tsx": {
-      "lines": 289,
-      "useState": 16
+    "frontend/src/features/creation/assembly/inspector/AssemblyInspector.tsx": {
+      "lines": 740,
+      "useState": 5
     },
-    "frontend/src/features/generations/BatchGeneration.tsx": {
-      "lines": 177,
-      "useState": 31
-    },
-    "frontend/src/features/image-tools/ImageToolsDialog.tsx": {
-      "lines": 206,
-      "useState": 21
-    },
-    "frontend/src/features/media-library/AssetDetail.tsx": {
-      "lines": 156,
-      "useState": 16
-    },
-    "frontend/src/features/projects/episode-workflow.ts": {
-      "lines": 760,
+    "frontend/src/features/creation/assembly/workbench/AssemblyStageContent.tsx": {
+      "lines": 702,
       "useState": 0
     },
-    "frontend/src/features/projects/NovelScriptGeneration.tsx": {
-      "lines": 351,
-      "useState": 24
+    "frontend/src/features/creation/assembly/workbench/AssemblyWorkbench.tsx": {
+      "lines": 911,
+      "useState": 10
     },
-    "frontend/src/features/projects/ScriptAssetExtraction.tsx": {
-      "lines": 402,
-      "useState": 21
+    "frontend/src/features/creation/assembly/workbench/useAssemblyStage.ts": {
+      "lines": 286,
+      "useState": 16
     },
-    "frontend/src/features/projects/ShotImageCandidates.tsx": {
-      "lines": 240,
+    "frontend/src/features/creation/assets/editor/ProjectAssetEditor.tsx": {
+      "lines": 934,
+      "useState": 15
+    },
+    "frontend/src/features/creation/assets/editor/ProjectAssetWorkspace.tsx": {
+      "lines": 820,
+      "useState": 14
+    },
+    "frontend/src/features/creation/assets/extraction/ScriptAssetExtraction.tsx": {
+      "lines": 976,
+      "useState": 20
+    },
+    "frontend/src/features/creation/assets/images/StandardAssetGeneration.tsx": {
+      "lines": 619,
+      "useState": 8
+    },
+    "frontend/src/features/creation/sound/tracks/SoundPanel.tsx": {
+      "lines": 905,
+      "useState": 12
+    },
+    "frontend/src/features/creation/sound/voices/NativeVoicePanel.tsx": {
+      "lines": 726,
+      "useState": 14
+    },
+    "frontend/src/features/creation/storyboard/images/ShotImageCandidates.tsx": {
+      "lines": 658,
       "useState": 19
     },
-    "frontend/src/features/projects/SoundPanel.tsx": {
-      "lines": 311,
+    "frontend/src/features/creation/storyboard/videos/ShotVideoCandidates.tsx": {
+      "lines": 775,
+      "useState": 14
+    },
+    "frontend/src/features/creation/storyboard/workbench/StoryboardWorkspace.tsx": {
+      "lines": 1011,
       "useState": 16
     },
-    "frontend/src/pages/ai-config/AiConfigPage.tsx": {
-      "lines": 186,
-      "useState": 16
+    "frontend/src/features/creation/writing/sessions/writing-session.ts": {
+      "lines": 663,
+      "useState": 0
     },
-    "frontend/src/pages/projects/episode/AssemblyStage.tsx": {
-      "lines": 313,
+    "frontend/src/features/generations/batches/BatchGeneration.tsx": {
+      "lines": 739,
+      "useState": 25
+    },
+    "frontend/src/features/media/image-tools/ImageToolsDialog.tsx": {
+      "lines": 925,
       "useState": 21
     },
-    "frontend/src/pages/projects/episode/StoryboardStage.tsx": {
-      "lines": 879,
-      "useState": 48
+    "frontend/src/pages/ai-config/index.tsx": {
+      "lines": 365,
+      "useState": 16
     },
-    "frontend/src/pages/projects/ProjectsPage.tsx": {
-      "lines": 144,
+    "frontend/src/pages/creation/index.tsx": {
+      "lines": 658,
+      "useState": 6
+    },
+    "frontend/src/pages/projects/list/index.tsx": {
+      "lines": 382,
       "useState": 18
     }
   }

@@ -13,18 +13,18 @@ from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
 from short_drama.domain import AssetImageCandidate, ImageGroup
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.asset_library_service import AssetLibraryService
-from short_drama.service.image_group_service import ImageGroupService
-from short_drama.service.image_operation_service import ImageOperationService
-from short_drama.service.image_processing import (
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.creation.assets.management.library import AssetLibraryService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.media.image_groups.groups import ImageGroupService
+from short_drama.service.media.image_tools.operations import ImageOperationService
+from short_drama.service.media.processing.image import (
     composite_emotion,
     decode,
     emotion_artifacts,
     process,
 )
-from short_drama.service.project_service import ProjectService
+from short_drama.service.projects.management.project import ProjectService
 from short_drama.storage.models import ObjectLocation, StoredObject
 from tests.support.generation_fixtures import generation_session
 
@@ -145,7 +145,7 @@ def fill(flow, current, index, data=None):
         media = flow.tools._media(values, (None, flow.project.id), 1)
         item.media_id = media.id
         item.item_version += 1
-        from short_drama.service.publication import publish
+        from short_drama.service.creation.writing.script.publication import publish
 
         publish(media)
         if index == 1:

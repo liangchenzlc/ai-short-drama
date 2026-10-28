@@ -5,7 +5,7 @@ import test from 'node:test';
 import ts from 'typescript';
 
 globalThis.crypto ??= webcrypto;
-const source = readFileSync(new URL('../../src/features/generations/attempt.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/shared/async/request-receipt.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { requestAttempt, clearAttempt, isServerId, setAttemptAccount } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const memory = () => {

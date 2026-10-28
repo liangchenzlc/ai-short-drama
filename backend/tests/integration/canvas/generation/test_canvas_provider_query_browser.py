@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
+import short_drama.api.v1.canvas.generation.providers.provider_tasks as canvas_provider_tasks
 from short_drama.ai import GenerationGateway
-from short_drama.api.v1 import canvas_provider_tasks
 from short_drama.domain import AIGenerationRecord, AsyncTask, CanvasResult, MediaFile
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.generation.test_canvas_generation_media_runtime import (
     playable_fixture,

@@ -6,21 +6,19 @@ import ts from 'typescript';
 function compile(source) {
   return ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 }
-const source = readFileSync(new URL('../../src/features/ai-assistant/assistant-draft.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/assistant/recovery/assistant-draft.ts', import.meta.url), 'utf8');
 const drafts = await import(`data:text/javascript;base64,${Buffer.from(compile(source)).toString('base64')}`);
-const historyDraftSource = readFileSync(new URL('../../src/features/ai-assistant/assistant-history-draft.ts', import.meta.url), 'utf8');
+const historyDraftSource = readFileSync(new URL('../../src/features/assistant/recovery/assistant-history-draft.ts', import.meta.url), 'utf8');
 const historyDrafts = await import(`data:text/javascript;base64,${Buffer.from(compile(historyDraftSource)).toString('base64')}`);
-const undoSource = readFileSync(new URL('../../src/features/ai-assistant/assistant-undo-draft.ts', import.meta.url), 'utf8');
+const undoSource = readFileSync(new URL('../../src/features/assistant/recovery/assistant-undo-draft.ts', import.meta.url), 'utf8');
 const undoDrafts = await import(`data:text/javascript;base64,${Buffer.from(compile(undoSource)).toString('base64')}`);
-const linkSource = readFileSync(new URL('../../src/features/ai-assistant/assistant-source-link.ts', import.meta.url), 'utf8');
-const { assistantSourceLink } = await import(`data:text/javascript;base64,${Buffer.from(compile(linkSource)).toString('base64')}`);
-const projectionCode = readFileSync(new URL('../../src/features/ai-assistant/assistant-task-state.ts', import.meta.url), 'utf8');
+const projectionCode = readFileSync(new URL('../../src/features/assistant/runtime/assistant-task-state.ts', import.meta.url), 'utf8');
 const projection = await import(`data:text/javascript;base64,${Buffer.from(compile(projectionCode)).toString('base64')}`);
-const receiptCode = readFileSync(new URL('../../src/features/ai-assistant/assistant-receipt.ts', import.meta.url), 'utf8');
+const receiptCode = readFileSync(new URL('../../src/features/assistant/runtime/assistant-receipt.ts', import.meta.url), 'utf8');
 const receipts = await import(`data:text/javascript;base64,${Buffer.from(compile(receiptCode)).toString('base64')}`);
 
 test('only definite admission failures release a frozen send after transport uncertainty', () => {
-  for (const [status, code] of [[422, 'validation_error'], [422, 'unsupported_assistant_protocol'], [409, 'assistant_script_changed'], [409, 'assistant_task_stopping']]) {
+  for (const [status, code] of [[422, 'validation_error'], [422, 'unsupported_assistant_protocol'], [409, 'assistant_script_changed'], [409, 'assistant_task_stopping'], [409, 'assistant_control_changed']]) {
     assert.equal(receipts.isAssistantAdmissionRejection({ status, code }), true);
   }
   for (const value of [{}, { status: 401, code: 'unauthorized' }, { status: 409, code: 'conflict' }, { status: 503 }, { status: 422, code: 'unknown' }]) assert.equal(receipts.isAssistantAdmissionRejection(value), false);
@@ -29,10 +27,9 @@ test('only definite admission failures release a frozen send after transport unc
 test('draft reference recovery keeps only minimal identities and detects corrupt records', () => {
   const local = storage();
   const material = { project_id: '9', source_kind: 'project', source_id: '9', kind: 'shot', id: '13', revision: '7', checksum: 'a'.repeat(64), name: '夜色', content: '正文不保存', url: 'temporary-secret' };
-  drafts.saveAssistantDraft('1', '20', { version: 1, text: '@夜色 继续', skills: [], includeContext: false, materials: [material] }, local);
+  drafts.saveAssistantDraft('1', '20', { version: 1, text: '@夜色 继续', skills: [], materials: [material] }, local);
   const restored = drafts.readAssistantDraft('1', '20', local);
   assert.equal(restored.materials[0].name, '夜色'); assert.equal(restored.materials[0].revision, '7');
-  assert.equal(restored.includeContext, false);
   assert.ok(!local.getItem(drafts.assistantDraftKey('1', '20')).includes('正文不保存'));
   assert.ok(!local.getItem(drafts.assistantDraftKey('1', '20')).includes('temporary-secret'));
   assert.equal(drafts.readAssistantDraft('2', '20', local).materials, undefined);
@@ -50,7 +47,7 @@ test('frozen script references preserve code point selections and reject changed
 });
 
 test('a failed Harness task remains the send target after refreshing without enabling controls', () => {
-  const paused = { id: '9007199254740993', status: 'paused_error', interruptions_supported: false };
+  const paused = { id: '9007199254740993', status: 'paused_error', interruptions: { stop: false, redirect: false, resume: false } };
   assert.equal(projection.selectedTask({ [paused.id]: paused }), paused);
   const budget = { ...paused, status: 'paused_budget' };
   assert.equal(projection.selectedTask({ [budget.id]: budget }), budget);
@@ -88,54 +85,55 @@ test('batch undo cannot overwrite damaged records or proceed without reliable lo
 });
 const pending = () => ({ version: 1, key: 'original-request', draft: '分析当前作品', body: {
   content: '分析当前作品', model_config_id: '9007199254740993',
-  context: { kind: 'canvas', id: 'canvas-source-key', revision: '4', include_document: false, selected: [{ kind: 'node', id: 'stable-node-uuid' }] },
+  subject_selection: { expected_input_revision: '0', retain_keys: [], subjects: [{ project_id: '1', source_kind: 'canvas', source_id: 'canvas-source-key', kind: 'node', id: 'stable-node-uuid', revision: '4' }] },
   attachment_ids: ['301'], skills: [{ id: 'builtin:continuity', content_version: '1' }], video_audio: 'visual_only',
 } });
 
-test('assistant drafts keep only the prompt and never persist mention references or credentials', () => {
+test('assistant drafts discard retired script reference settings and never persist mention references or credentials', () => {
   const local = storage();
-  const draft = { version: 1, text: '@文字1 分析它', modelId: '9007199254740993', skills: [], contextKey: 'canvas:1', includeContext: false,
+  const draft = { version: 1, text: '@文字1 分析它', modelId: '9007199254740993', skills: [], contextKey: 'canvas:1', includeContext: true,
     references: [{ kind: 'node', id: 'stable-node-uuid', name: '文字1', revision: '4', url: 'temporary', api_key: 'test-secret' }], api_key: 'test-secret' };
+  local.setItem(drafts.assistantDraftKey('1', '20'), JSON.stringify(draft));
+  const restored = drafts.readAssistantDraft('1', '20', local);
+  assert.equal(restored.text, draft.text);
+  assert.equal(restored.includeContext, undefined);
+  assert.equal(restored.contextKey, undefined);
   assert.equal(drafts.saveAssistantDraft('1', '20', draft, local), true);
   assert.equal(drafts.readAssistantDraft('1', '20', local).references, undefined);
-  assert.equal(drafts.readAssistantDraft('1', '20', local).includeContext, false);
+  assert.ok(!local.getItem(drafts.assistantDraftKey('1', '20')).includes('includeContext'));
+  assert.ok(!local.getItem(drafts.assistantDraftKey('1', '20')).includes('contextKey'));
   assert.equal(drafts.readAssistantDraft('2', '20', local).text, '');
   assert.equal(drafts.readAssistantDraft('1', '21', local).text, '');
   assert.ok(!local.getItem(drafts.assistantDraftKey('1', '20')).includes('test-secret'));
   assert.ok(!local.getItem(drafts.assistantDraftKey('1', '20')).includes('temporary'));
 });
 
-test('uncertain messages retain frozen context and original key independently of new edits', () => {
+test('uncertain messages retain frozen subject selection and original key independently of new edits', () => {
   const local = storage(); const original = pending();
   assert.equal(drafts.saveAssistantPendingSend('1', '20', original, local), true);
   drafts.saveAssistantDraft('1', '20', { version: 1, text: '新的消息', skills: [] }, local);
   assert.deepEqual(drafts.readAssistantPendingSend('1', '20', local), { pending: original, error: '' });
   assert.equal(drafts.readAssistantPendingSend('2', '20', local).pending, null);
   assert.equal(drafts.saveAssistantPendingSend('1', '20', { ...original, key: 'new-key' }, local), false);
-  assert.equal(drafts.saveAssistantPendingSend('1', '20', { ...original, body: { ...original.body, context: null } }, local), false);
+  assert.equal(drafts.saveAssistantPendingSend('1', '20', { ...original, body: { ...original.body, subject_selection: { ...original.body.subject_selection, subjects: [] } } }, local), false);
   assert.equal(drafts.clearAssistantPendingSend('1', '20', 'new-key', local), false);
   assert.equal(drafts.clearAssistantPendingSend('1', '20', original.key, local), true);
   assert.equal(drafts.readAssistantDraft('1', '20', local).text, '新的消息');
 });
 
-test('a message after stopping freezes its resume identity and control sequence with the original send', () => {
+test('a message after stopping preserves only the original send request', () => {
   const local = storage();
-  const original = { version: 1, key: 'message-after-stop', draft: '改成雨夜', body: { task_id: '501', content: '改成雨夜' },
-    resume: { version: 1, kind: 'control', targetId: '501', key: 'resume-after-message', body: { kind: 'resume', expected_control_seq: '9007199254740993' } } };
+  const original = { version: 1, key: 'message-after-stop', draft: '改成雨夜', body: { task_id: '501', content: '改成雨夜' } };
   assert.equal(drafts.saveAssistantPendingSend('1', '20', original, local), true);
   assert.deepEqual(drafts.readAssistantPendingSend('1', '20', local).pending, original);
-  for (const resume of [undefined, { ...original.resume, key: 'different' }, { ...original.resume, body: { kind: 'resume', expected_control_seq: '9007199254740995' } }]) {
-    assert.equal(drafts.saveAssistantPendingSend('1', '20', { ...original, resume }, local), false);
-  }
+  assert.equal(drafts.saveAssistantPendingSend('1', '20', { ...original, key: 'different' }, local), false);
   assert.equal(drafts.readAssistantPendingSend('2', '20', local).pending, null);
 });
 
-test('a resume attached to a pending send must target the same task and include the stopped control sequence', () => {
+test('a pending send rejects obsolete attached control requests', () => {
   const original = { version: 1, key: 'message-after-stop', draft: '补充人物动机', body: { task_id: '501', content: '补充人物动机' },
     resume: { version: 1, kind: 'control', targetId: '501', key: 'resume-after-message', body: { kind: 'resume', expected_control_seq: '1' } } };
-  for (const resume of [{ ...original.resume, targetId: '502' }, { ...original.resume, body: { kind: 'stop' } }, { ...original.resume, body: { kind: 'resume' } }, { ...original.resume, body: { kind: 'resume', expected_control_seq: '1', content: '另一条消息' } }]) {
-    assert.equal(drafts.saveAssistantPendingSend('1', '20', { ...original, resume }, storage()), false);
-  }
+  assert.equal(drafts.saveAssistantPendingSend('1', '20', original, storage()), false);
 });
 
 test('explicitly clearing task methods survives refresh and stays account scoped', () => {
@@ -214,16 +212,6 @@ test('attachment selection lives in the send body and drafts no longer keep a ta
   }
 });
 
-test('source links locate the actual owner, image group, slot and canvas node without number coercion', () => {
-  const subject = { project_id: '9007199254740993', source_kind: 'project', source_id: '9007199254740993', kind: 'asset', id: '9007199254740995' };
-  assert.equal(assistantSourceLink(subject), '/projects/9007199254740993/assets?asset=9007199254740995');
-  assert.equal(assistantSourceLink({ ...subject, kind: 'shot' }), '/projects/9007199254740993/storyboard?shot=9007199254740995');
-  assert.equal(assistantSourceLink({ ...subject, kind: 'image_slot', id: '99', source_location: { project_id: subject.project_id, kind: 'shot', id: '9007199254740997', image_group_id: '9007199254740999', image_slot_id: '99' } }), '/projects/9007199254740993/storyboard?shot=9007199254740997&source_image_group=9007199254740999&source_image_slot=99');
-  assert.equal(assistantSourceLink({ ...subject, kind: 'node', id: 'node #1', source_id: 'canvas/b' }), '/canvas-app/canvas/canvas%2Fb?node=node%20%231');
-  assert.equal(assistantSourceLink({ ...subject, kind: 'image_group' }), null);
-  assert.equal(assistantSourceLink({ ...subject, kind: 'sound_line', id: 'line_a-9' }), '/projects/9007199254740993/assembly?source_line=line_a-9');
-});
-
 test('saved sound line requests keep string identities and reject injected bodies', () => {
   const local = storage(); const request = pending();
   const reference = { project_id: '9007199254740993', source_kind: 'project', source_id: '9007199254740993', kind: 'sound_line', id: 'line_a-9', revision: '9007199254740995' };
@@ -238,8 +226,7 @@ test('saved sound line requests keep string identities and reject injected bodie
 test('control and deletion recovery preserve the original payload, account and request identity', () => {
   const local = storage();
   for (const request of [
-    { version: 1, kind: 'control', targetId: '9007199254740993', key: 'resume-original', body: { kind: 'resume', expected_control_seq: '0', content: '按修正继续' } },
-    { version: 1, kind: 'control', targetId: '9007199254740993', key: 'resume-message', body: { kind: 'resume', expected_control_seq: '9007199254740995', message_id: '9007199254740997' } },
+    { version: 1, kind: 'control', targetId: '9007199254740993', key: 'stop-original', body: { kind: 'stop' } },
     { version: 1, kind: 'delete', targetId: '9007199254740993', key: 'delete-original', body: { row_version: '7', clear_derived_memory: true } },
   ]) {
     assert.equal(drafts.saveAssistantPendingAction('1', '20', request, local), true);
@@ -247,7 +234,6 @@ test('control and deletion recovery preserve the original payload, account and r
     assert.equal(drafts.readAssistantPendingAction('2', '20', request.kind, local).pending, null);
     assert.equal(drafts.readAssistantPendingAction('1', '21', request.kind, local).pending, null);
     assert.equal(drafts.saveAssistantPendingAction('1', '20', { ...request, body: { ...request.body, content: '新请求' } }, local), false);
-    if (request.body.message_id) assert.equal(drafts.saveAssistantPendingAction('1', '20', { ...request, body: { ...request.body, message_id: '9007199254740999' } }, local), false);
     assert.equal(drafts.clearAssistantPendingAction('1', '20', request.kind, 'wrong-key', local), false);
     assert.equal(drafts.clearAssistantPendingAction('1', '20', request.kind, request.key, local), true);
   }
@@ -262,6 +248,13 @@ test('malformed control recovery is retained and prevents replacing the uncertai
   assert.equal(drafts.clearAssistantPendingAction('1', '20', 'control', valid.key, local), false);
   assert.equal(drafts.saveAssistantPendingAction('1', '21', { ...valid, body: { kind: 'resume' } }, local), false);
   assert.equal(drafts.saveAssistantPendingAction('1', '21', { ...valid, body: { kind: 'redirect', content: ' ' } }, local), false);
+  for (const body of [{ kind: 'resume', expected_control_seq: '1' }, { kind: 'redirect', content: '继续' }]) {
+    const key = drafts.assistantPendingActionKey('1', '22', 'control');
+    const old = JSON.stringify({ ...valid, body });
+    local.setItem(key, old);
+    assert.ok(drafts.readAssistantPendingAction('1', '22', 'control', local).error);
+    assert.equal(local.getItem(key), old);
+  }
 });
 
 test('uncertain deletion retains exactly the selected memory identities and versions', () => {
@@ -279,12 +272,14 @@ test('uncertain deletion retains exactly the selected memory identities and vers
   ]) assert.equal(drafts.saveAssistantPendingAction('1', 'other', { ...request, body: { ...request.body, ...change } }, local), false);
 });
 
-test('ordinary chat and valid episode context can be restored', () => {
-  for (const context of [null, { kind: 'episode', id: '9007199254740993', revision: '1', stage: 'assembly' }, { kind: 'episode', id: '20', revision: '2', stage: 'storyboard', storyboard_revision: '4', selected: [{ kind: 'shot', id: '21', revision: '7' }] }]) {
-    const local = storage(); const request = pending(); request.body.context = context;
-    assert.equal(drafts.saveAssistantPendingSend('1', '20', request, local), true);
-    assert.deepEqual(drafts.readAssistantPendingSend('1', '20', local).pending, request);
-  }
+test('obsolete context requests remain untouched for explicit reconciliation', () => {
+  const local = storage(), request = pending();
+  request.body.context = { kind: 'episode', id: '20', revision: '2' };
+  const key = drafts.assistantPendingSendKey('1', '20'), raw = JSON.stringify(request);
+  local.setItem(key, raw);
+  assert.ok(drafts.readAssistantPendingSend('1', '20', local).error);
+  assert.equal(drafts.saveAssistantPendingSend('1', '20', pending(), local), false);
+  assert.equal(local.getItem(key), raw);
 });
 
 test('pure chat recovery rejects tool mode, task fields, bad identifiers and credentials', () => {
@@ -305,14 +300,14 @@ test('corrupt pending state and unavailable storage block fresh submission', () 
 test('assistant HTTP contracts use project scope, separate attachment paths and unchanged decimal IDs', async () => {
   const calls = [];
   globalThis.__assistantHttp = Object.fromEntries(['get', 'post', 'patch', 'delete'].map(method => [method, async (...args) => { calls.push({ method, args }); return { data: { items: [] } }; }]));
-  const apiSource = readFileSync(new URL('../../src/api/modules/assistant.ts', import.meta.url), 'utf8').replace("import { http } from '../http';", 'const http = globalThis.__assistantHttp;');
+  const apiSource = readFileSync(new URL('../../src/api/assistant/conversations/requests.ts', import.meta.url), 'utf8').replace("import { http } from '@host/api/http';", 'const http = globalThis.__assistantHttp;');
   const { assistantApi } = await import(`data:text/javascript;base64,${Buffer.from(compile(apiSource)).toString('base64')}`);
-  await assistantApi.conversations('9007199254740993', 20, true, undefined, '名称');
-  assert.equal(calls[0].args[0], '/assistant/conversations');
+  await assistantApi.globalConversations('9007199254740993', 20, undefined, '名称');
+  assert.equal(calls[0].args[0], '/assistant/global/conversations');
   assert.equal(calls[0].args[1].params.project_id, '9007199254740993');
   assert.equal(calls[0].args[1].params.episode_id, undefined);
-  const original = pending(); await assistantApi.send('9007199254740995', original.body, original.key);
-  assert.equal(calls[1].args[0], '/assistant/conversations/9007199254740995/messages');
+  const original = pending(); await assistantApi.sendTask('9007199254740995', original.body, original.key);
+  assert.equal(calls[1].args[0], '/assistant/global/conversations/9007199254740995/messages');
   assert.deepEqual(calls[1].args[1], original.body);
   assert.equal(calls[1].args[2].headers['Idempotency-Key'], original.key);
   await assistantApi.referenceAttachment('20', 'asset', '9007199254740997', 'reference-key');
@@ -322,12 +317,12 @@ test('assistant HTTP contracts use project scope, separate attachment paths and 
 });
 
 test('shared assistant keeps package boundaries, durable traces and safe Markdown', () => {
-  const dir = new URL('../../src/features/ai-assistant/', import.meta.url);
-  const code = readdirSync(dir).filter(name => name.endsWith('.tsx') || name.endsWith('.ts')).map(name => readFileSync(new URL(name, dir), 'utf8')).join('\n');
+  const dir = new URL('../../src/features/assistant/', import.meta.url);
+  const code = readdirSync(dir, { recursive: true }).filter(name => name.endsWith('.tsx') || name.endsWith('.ts')).map(name => readFileSync(new URL(name, dir), 'utf8')).join('\n');
   assert.doesNotMatch(code, /from\s+['"](?:@\/|[^'"]*canvas\/|zustand|react-router)/);
   assert.doesNotMatch(code, /rehypeRaw|dangerouslySetInnerHTML|onRunProposal|\.review\(|\.continue\(/);
   assert.match(code, /ReactMarkdown remarkPlugins=\{\[remarkGfm\]\}/);
-  assert.match(code, /\/assistant\/global\/conversations/);
+  assert.match(readFileSync(new URL('../../src/api/assistant/conversations/requests.ts', import.meta.url), 'utf8'), /global\/conversations/);
   assert.match(code, /timelineBubbles/);
   assert.match(code, /内容较长，已截取/);
 });
@@ -437,10 +432,10 @@ test('older task pages merge their entities without lowering the live snapshot w
   assert.equal(state.tasks['9'].status, 'stopped');
 });
 
-test('global task recovery retains three independent scopes and resume identity', () => {
+test('global task recovery retains three independent scopes and request identity', () => {
   const local = storage(); const request = pending();
   request.body = { content: '补充一个条件', task_id: '9007199254740993',
-    context: { kind: 'project', id: '11', project_id: '11', revision: '4', include_document: false, selected: [{ kind: 'asset', id: '16', revision: '7' }] },
+    subject_selection: { expected_input_revision: '0', retain_keys: [], subjects: [{ project_id: '11', source_kind: 'project', source_id: '11', kind: 'asset', id: '16', revision: '7' }] },
     execution_target: { mode: 'infinite_canvas', project_id: '12', canvas_id: 'canvas-uuid' }, memory_project_ids: ['13'], media_limits: { images: 2, videos: 0, audio: null },
   };
   assert.equal(drafts.saveAssistantPendingSend('1', '3', request, local), true);

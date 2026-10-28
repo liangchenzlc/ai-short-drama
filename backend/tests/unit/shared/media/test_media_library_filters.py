@@ -1,6 +1,6 @@
 import pytest
 
-from short_drama.service.media_asset_service import MediaAssetService
+from short_drama.service.media.library.assets import MediaAssetService
 from tests.support.generation_fixtures import generation_session, settings
 from tests.support.media_library_fixtures import seed_media_library
 

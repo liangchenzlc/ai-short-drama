@@ -4,7 +4,11 @@ import sys
 
 from short_drama.core.config import Settings
 from short_drama.db.session import build_engine
-from short_drama.domain.native_voice import CharacterVoice, ProjectSoundMode, ShotDialogue
+from short_drama.domain.creation.sound.voices.voices import (
+    CharacterVoice,
+    ProjectSoundMode,
+    ShotDialogue,
+)
 
 try:
     from scripts.assembly_ddl import tables_ddl

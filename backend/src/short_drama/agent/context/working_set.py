@@ -6,7 +6,7 @@ from pydantic import AfterValidator, Field
 
 from short_drama.agent.task.contract import READ_TOOLS
 from short_drama.core.exceptions import WorkflowError
-from short_drama.dao.agent_transcript_dao import AgentTranscriptDAO
+from short_drama.dao.assistant.execution.transcript import AgentTranscriptDAO
 from short_drama.schemas.base import Identifier, InputModel, nonblank
 from short_drama.utils.json_digest import digest
 
@@ -44,7 +44,7 @@ def projection(task, run) -> dict:
 
 
 def record_locked(session, conversation, task, operation, values: RecordObservation, settings):
-    from short_drama.domain.agent import AgentRun
+    from short_drama.domain.assistant.execution.models import AgentRun
 
     run = session.get(AgentRun, operation.run_id)
     rows = AgentTranscriptDAO(session).evidence(task.id, [int(values.operation_id)])

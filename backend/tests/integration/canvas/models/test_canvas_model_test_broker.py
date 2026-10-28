@@ -17,7 +17,7 @@ from amqp.exceptions import NotFound as BrokerObjectMissing
 from kombu import Queue
 from sqlalchemy import func, select
 
-from short_drama.ai.canvas_credentials import decode_canvas_credentials
+from short_drama.ai.gateway.canvas_credentials import decode_canvas_credentials
 from short_drama.core.crypto import KeyCipher
 from short_drama.domain import (
     AIGenerationRecord,
@@ -28,7 +28,7 @@ from short_drama.domain import (
     MediaFile,
 )
 from short_drama.tasks.celery_app import make_celery, topology
-from short_drama.tasks.publisher import Publisher
+from short_drama.tasks.runtime.publisher import Publisher
 from tests.integration.canvas.generation.test_canvas_generation_broker import (
     eventually,
     wait_for_consumers_to_detach,

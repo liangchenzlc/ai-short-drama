@@ -13,20 +13,21 @@ from sqlalchemy.orm import Session
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
 from short_drama.domain import Project, ProjectCanvas, ProjectCanvasSettings
-from short_drama.domain.canvas import (
+from short_drama.domain.canvas.document.canvas import (
     CanvasEdge,
     CanvasNode,
     CanvasNodeUserState,
     CanvasRevision,
     CanvasWriteReceipt,
 )
-from short_drama.domain.collaboration import AuditEvent, User
-from short_drama.schemas.canvas import CanvasCreateRequest
-from short_drama.schemas.canvas_workspace import CanvasWorkspacePreferencesRequest
+from short_drama.domain.identity.accounts.user import User
+from short_drama.domain.identity.audit.models import AuditEvent
+from short_drama.schemas.canvas.document.canvas import CanvasCreateRequest
+from short_drama.schemas.canvas.workspace.workspace import CanvasWorkspacePreferencesRequest
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_service import CanvasService
-from short_drama.service.canvas_workspace_service import CanvasWorkspaceService
-from short_drama.service.project_service import ProjectService
+from short_drama.service.canvas.document.canvas import CanvasService
+from short_drama.service.canvas.workspace.workspace import CanvasWorkspaceService
+from short_drama.service.projects.management.project import ProjectService
 
 pytestmark = pytest.mark.integration
 
@@ -214,9 +215,9 @@ def test_workspace_model_preferences_are_private_and_never_force_conflicts(db_se
 
 def test_saved_legacy_modelhub_capabilities_reach_workspace_without_mutating_config(db_session):
     from short_drama.domain import AIModelConfig
-    from short_drama.schemas.ai_model_config import AIModelConfigCreate
-    from short_drama.schemas.canvas_workspace import CanvasWorkspaceModelsRead
-    from short_drama.service.ai_model_config_service import AIModelConfigService
+    from short_drama.schemas.ai_config.management.models import AIModelConfigCreate
+    from short_drama.schemas.canvas.workspace.workspace import CanvasWorkspaceModelsRead
+    from short_drama.service.ai_config.management.models import AIModelConfigService
 
     create(db_session)
     saved = AIModelConfigService(db_session).create(

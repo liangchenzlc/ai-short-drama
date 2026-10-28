@@ -6,8 +6,9 @@ from copy import deepcopy
 import pytest
 
 from short_drama.ai import GenerationError
-from short_drama.ai.adapters import build_submission, validate_request
-from short_drama.ai.canvas_credentials import CanvasCredentials
+from short_drama.ai.adapters.capabilities import validate_request
+from short_drama.ai.adapters.submission import build_submission
+from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
 from tests.unit.canvas.tools.test_canvas_tool_contracts import (
     ADAPTERS,
     canonical,

@@ -18,11 +18,11 @@ from short_drama.domain import (
     ShotImage,
     ShotScript,
 )
-from short_drama.domain.collaboration import User
-from short_drama.service.ai_model_config_service import AIModelConfigService
+from short_drama.domain.identity.accounts.user import User
+from short_drama.service.ai_config.management.models import AIModelConfigService
 from short_drama.service.base import utcnow
-from short_drama.service.image_operation_service import ImageOperationService
-from short_drama.service.shot_script_service import ShotScriptService
+from short_drama.service.creation.storyboard.management.script import ShotScriptService
+from short_drama.service.media.image_tools.operations import ImageOperationService
 from tests.integration.standard.assets.test_asset_image_generation import (
     create_asset,
     drain,

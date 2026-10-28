@@ -14,7 +14,11 @@ import pytest
 from sqlalchemy import func, select
 
 from short_drama.domain import MediaFile, ProjectCanvas
-from short_drama.domain.canvas import CanvasRevision, CanvasRevisionUserState, CanvasWriteReceipt
+from short_drama.domain.canvas.document.canvas import (
+    CanvasRevision,
+    CanvasRevisionUserState,
+    CanvasWriteReceipt,
+)
 from short_drama.service.base import utcnow
 from short_drama.storage.models import ObjectLocation
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser

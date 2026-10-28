@@ -11,7 +11,7 @@ const pages = [
   ['media-videos', '/media-library/video', '资产库'],
   ['ai-config', '/ai_config', 'AI 配置'],
   ['writing', `${root}/source`, '雨夜来信'],
-  ['episode-assets', `${root}/assets`, '雨夜来信'],
+  ['creation-assets', `${root}/assets`, '雨夜来信'],
   ['storyboard', `${root}/storyboard`, '雨夜来信'],
   ['assembly', `${root}/assembly`, '雨夜来信'],
   ['not-found', '/missing', '没有找到内容'],
@@ -47,11 +47,11 @@ for (const width of [1280, 1440, 1920]) test(`all routes use the dark workspace 
       }).click();
       await expect(page).toHaveURL(current => current.pathname === url);
     } else {
-      if (new URL(page.url()).pathname.startsWith(root)) await expect(page.locator('.episode-save-state')).toHaveAttribute('aria-label', '保存状态：已保存');
+      if (new URL(page.url()).pathname.startsWith(root)) await expect(page.locator('.creation-save-state')).toHaveAttribute('aria-label', '保存状态：已保存');
       await page.goto(url);
     }
     if (url.startsWith(root)) {
-      await expect(page.locator('.episode-project-location')).toContainText(heading);
+      await expect(page.locator('.creation-project-location')).toContainText(heading);
       await expect(page.getByRole('navigation', { name: '创作流程', exact: true })).toBeVisible();
     } else await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
     if (name === 'projects') await expect(page.locator('.project-tile')).toHaveCount(4);
@@ -71,11 +71,13 @@ test('dialogs, drawers and nested confirmations retain input and restore keyboar
   await create.click();
   const project = page.getByRole('dialog', { name: '新建项目', exact: true });
   await expect(project.getByLabel('项目名称')).toBeFocused();
-  await project.getByLabel('默认画幅').focus();
-  await project.getByLabel('默认画幅').press('ArrowDown');
-  await expect(project.locator('.ant-select-dropdown').getByText('竖屏 9:16', { exact: true })).toBeVisible();
-  await capture(page, info, 'project-create-select');
-  await page.keyboard.press('Escape');
+  await project.getByLabel('项目名称').fill('键盘切换时保留的项目名称');
+  const canvasMode = project.getByRole('radio', { name: '无限画布模式', exact: true });
+  await canvasMode.focus();
+  await canvasMode.press('Space');
+  await expect(canvasMode).toBeChecked();
+  await expect(project.getByLabel('项目名称')).toHaveValue('键盘切换时保留的项目名称');
+  await capture(page, info, 'project-create-mode');
   await expect(project).toBeVisible();
   await project.getByRole('button', { name: '取消', exact: true }).click();
   await expect(create).toBeFocused();
@@ -125,7 +127,7 @@ test('production editor overlays and compact desktop layout remain usable', asyn
   await expect(page).toHaveURL(url => url.searchParams.get('asset') === '504');
   await capture(page, info, 'asset-create');
   await page.getByRole('button', { name: '林晚', exact: true }).click();
-  await expect(page.locator('.episode-asset-detail')).toBeVisible();
+  await expect(page.locator('.creation-asset-detail')).toBeVisible();
   await expect(page.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('林晚');
   await capture(page, info, 'asset-edit');
 
@@ -152,12 +154,12 @@ test('production editor overlays and compact desktop layout remain usable', asyn
   await capture(page, info, 'sound-subtitles');
   await page.getByRole('tab', { name: /配乐/ }).click();
   await capture(page, info, 'sound-music');
-  await page.getByRole('button', { name: '收起声音编辑', exact: true }).click();
+  await page.getByRole('region', { name: '原声、字幕和配乐', exact: true }).getByRole('button', { name: '收起声音编辑', exact: true }).click();
   await page.getByRole('button', { name: '导出记录', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '导出记录', exact: true })).toBeVisible();
   await capture(page, info, 'export-history');
   await page.keyboard.press('Escape');
-  const exportButton = page.locator('.assembly-export-actions').getByRole('button', { name: /导出成片$/ });
+  const exportButton = page.getByRole('button', { name: '导出成片', exact: true });
   await expect(exportButton).not.toHaveClass(/ant-btn-loading/);
   await exportButton.click();
   await expect(page.getByRole('dialog', { name: '导出本集成片', exact: true })).toBeVisible();
@@ -173,9 +175,10 @@ test('production editor overlays and compact desktop layout remain usable', asyn
   });
   await page.getByRole('button', { name: '导出记录', exact: true }).click();
   const history = page.getByRole('dialog', { name: '导出记录', exact: true });
-  await expect(history.getByRole('button', { name: '设为当前成片', exact: true })).toBeVisible();
+  await history.getByRole('button', { name: '更多导出操作', exact: true }).click();
+  await expect(page.getByRole('menuitem', { name: '设为当前成片', exact: true })).toBeVisible();
   await capture(page, info, 'export-history-populated');
-  await history.getByRole('button', { name: '设为当前成片', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设为当前成片', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '设为当前成片', exact: true })).toBeVisible();
   await capture(page, info, 'export-apply-confirm');
   expect(state.requests.filter(r => /\/ai\/generations\/(text|image|video|audio)$|discover-models|\/exports$/.test(r.path) && r.method === 'POST')).toEqual([]);
@@ -199,7 +202,9 @@ test('loading, empty, search and error states provide a clear next action', asyn
   state.controls.emptyProjects = false;
   await page.reload();
   await expect(page.locator('.project-tile')).toHaveCount(4);
-  await page.getByRole('searchbox', { name: '搜索项目名称' }).fill('不存在的测试项目');
+  const search = page.getByRole('textbox', { name: '搜索项目名称', exact: true });
+  await search.fill('不存在的测试项目');
+  await search.press('Enter');
   await expect(page.getByRole('heading', { name: '没有找到项目' })).toBeVisible();
   await capture(page, info, 'projects-no-results');
   await page.getByRole('button', { name: '清除搜索', exact: true }).click();

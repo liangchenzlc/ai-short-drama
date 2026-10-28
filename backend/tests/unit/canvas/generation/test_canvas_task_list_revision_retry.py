@@ -8,7 +8,7 @@ from sqlalchemy import select
 from short_drama.core.exceptions import NotFound
 from short_drama.domain import Project, ProjectCanvas
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_service import CanvasService
+from short_drama.service.canvas.document.canvas import CanvasService
 from tests.support.generation_fixtures import generation_session
 
 

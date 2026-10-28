@@ -6,7 +6,7 @@ import { commitCanvasDocument } from "@/services/api/operations";
 import { restoreCanvasHistory, type CanvasDrawingHeads, type CanvasHistoryRestore } from "@/services/api/workspace-data";
 import { prepareInitialCanvasWrite, readInitialCanvasWrite, clearInitialCanvasWrite, initialCanvasDocument, initialCanvasResourceIds, initialCanvasSource, type CanvasSourceOrigin, type CanvasInitialWrite } from "@/services/canvas-initial-write";
 import { prepareCanvasDrawingCopies } from "@/services/canvas-drawing-copy-preparation";
-import type { CanvasInitialDrawingDto, CanvasRecycleStatusDto } from "@host/api/types/canvases";
+import type { CanvasInitialDrawingDto, CanvasRecycleStatusDto } from "@host/integrations/canvas/contracts";
 import { CANVAS_DELETION_PREFIX, clearCanvasDeletion, prepareCanvasDeletion, readCanvasDeletion, validateCanvasDeletionStatus, type CanvasDeletionAttempt } from "@/services/canvas-deletion-attempt";
 import { INITIAL_CANVAS_GROUP_PREFIX, prepareInitialCanvasGroup, readInitialCanvasGroup, clearInitialCanvasGroup } from "@/services/canvas-initial-group";
 import { persistHostCanvasResourceAliases, prepareHostCanvasResources } from "@/services/host-canvas-resource-preparation";

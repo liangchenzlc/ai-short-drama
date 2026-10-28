@@ -32,7 +32,7 @@ test('asset cards select the shared preview and settings panel without a details
   const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   await page.goto(`${root}/assets`);
   const card = page.locator('.standard-asset-card').first();
-  const detail = page.locator('.episode-asset-detail');
+  const detail = page.locator('.creation-asset-detail');
   await expect(card.getByRole('button', { name: '编辑素材', exact: true })).toHaveCount(0);
   await card.getByRole('button', { name: '林晚', exact: true }).click();
   await expect(detail).toBeVisible();
@@ -43,17 +43,17 @@ test('asset cards select the shared preview and settings panel without a details
   await expect(card.getByRole('button', { name: '林晚更多操作', exact: true })).toHaveCount(0);
   await detail.getByRole('button', { name: '生成记录', exact: true }).click();
   await page.locator('.asset-generation-history-dialog').getByRole('button', { name: '素材更多操作', exact: true }).click();
-  await expect(page.getByRole('button', { name: '共享素材到项目', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '从本集移除素材', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '从资产库选择', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '删除素材', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('button', { name: '共享素材到项目', exact: true })).toBeHidden();
+  await expect(page.getByRole('button', { name: '删除素材', exact: true })).toBeHidden();
   await page.keyboard.press('Escape');
   await expect(page.locator('.asset-generation-history-dialog')).toHaveCount(0);
   const box = await card.boundingBox();
   await card.click({ position: { x: box!.width - 80, y: box!.height - 16 } });
   await expect(detail).toBeVisible();
-  await expect(page.locator('.creation-editor-target .episode-asset-detail')).toBeVisible();
-  await expect(page.locator('.episode-work-stage .episode-asset-detail')).toHaveCount(0);
+  await expect(page.locator('.creation-editor-target .creation-asset-detail')).toBeVisible();
+  await expect(page.locator('.creation-work-stage .creation-asset-detail')).toHaveCount(0);
   await expect(detail.getByRole('button', { name: '生成图片', exact: true })).toBeVisible();
   await detail.getByRole('button', { name: '收起生成设置', exact: true }).click();
   await expect(detail.getByRole('textbox', { name: '描述', exact: true })).toBeHidden();
@@ -77,7 +77,7 @@ test('asset extraction history remains available from the library heading', asyn
 test('desktop material settings preserve input through explicit collapse and restore focus', async ({ page }) => {
   const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   await page.setViewportSize({ width: 1280, height: 720 }); await page.goto(root + '/assets');
-  const detail = page.locator('.creation-editor-target .episode-asset-detail');
+  const detail = page.locator('.creation-editor-target .creation-asset-detail');
   const settings = detail.locator('.standard-object-settings');
   await expect(settings).toBeVisible();
   await expect(detail.getByRole('textbox', { name: '描述', exact: true })).toHaveValue(data.asset.description);
@@ -98,7 +98,7 @@ test('material cards, right editor and storyboard remain usable at the review vi
     await expect(entry).toBeVisible();
     await captureRefinement(page, 'material-cards', viewport.width);
     await entry.click();
-    const detail = page.locator('.creation-editor-target .episode-asset-detail');
+    const detail = page.locator('.creation-editor-target .creation-asset-detail');
     await expect(detail).toBeVisible();
     await captureRefinement(page, 'material-editor', viewport.width);
     const close = detail.getByRole('button', { name: '收起生成设置', exact: true });

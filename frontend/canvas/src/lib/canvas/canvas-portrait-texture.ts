@@ -1,1 +1,1 @@
-export * from "../../../../src/lib/image-tools/portrait-texture.ts";
+export * from "@host/integrations/canvas/image-tools/portrait-texture";

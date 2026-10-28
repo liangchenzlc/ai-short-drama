@@ -9,7 +9,7 @@ import pytest
 from short_drama.core.config import Settings
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
-from short_drama.service.canvas_cloud_transcription import (
+from short_drama.service.canvas.tools.transcription.cloud_transcription import (
     CanvasCloudTranscriptionExecutor,
     require_cloud_transcription,
     supports_cloud_transcription,

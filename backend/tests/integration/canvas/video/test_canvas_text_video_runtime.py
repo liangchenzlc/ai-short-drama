@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.domain import AIGenerationRecord, CanvasTaskMediaReference, MediaFile
-from short_drama.service.video_render import executable
+from short_drama.service.creation.assembly.rendering.renderer import executable
 from tests.integration.canvas.generation.test_canvas_generation_runtime import TASKS, admit, records
 from tests.integration.canvas.image.test_canvas_text_image_runtime import (
     CAPABILITY,

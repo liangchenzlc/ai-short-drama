@@ -5,10 +5,10 @@ from sqlalchemy import select
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
 from short_drama.domain import Asset, CharacterVoice, MediaFile, ShotAsset, ShotDialogue
-from short_drama.schemas.project_storyboard import StoryboardCreate
-from short_drama.schemas.project_writing import ScriptSave
-from short_drama.service.asset_library_service import AssetLibraryService
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
+from short_drama.schemas.creation.storyboard.management.storyboard import StoryboardCreate
+from short_drama.schemas.creation.writing.script.documents import ScriptSave
+from short_drama.service.creation.assets.management.library import AssetLibraryService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
 from tests.support.generation_fixtures import generation_session
 from tests.unit.standard.storyboard.test_project_storyboard import setup_storyboard
 from tests.unit.standard.writing.test_project_writing import setup
@@ -48,7 +48,7 @@ def test_shot_metadata_rejects_oversize_null_title_and_unknown_size(fields):
         StoryboardCreate.model_validate({"storyboard_version": "1", **fields})
 
 
-def test_format_only_save_is_versioned_and_old_text_clients_clear_formats():
+def test_plain_text_save_preserves_whitespace_and_checks_version():
     with generation_session() as session:
         episode, service = setup(session)
         initial = service.save_script(
@@ -59,20 +59,16 @@ def test_format_only_save_is_versioned_and_old_text_clients_clear_formats():
                 "content_version": "1",
             },
         )
-        formatted = {
-            "ops": [{"insert": "中文", "attributes": {"bold": True}}, {"insert": "\n\n\n"}]
-        }
         saved = service.save_script(
             episode,
             {
                 "script_id": initial["script"]["id"],
                 "content": "中文\n\n",
                 "content_version": initial["content_version"],
-                "editor_document": formatted,
             },
         )
         assert saved["content_version"] == "3"
-        assert service.get(episode)["editing_script"]["editor_document"] == formatted
+        assert service.get(episode)["editing_script"]["content"] == "中文\n\n"
         with pytest.raises(Conflict):
             service.save_script(
                 episode,
@@ -80,10 +76,9 @@ def test_format_only_save_is_versioned_and_old_text_clients_clear_formats():
                     "script_id": initial["script"]["id"],
                     "content": "中文\n\n",
                     "content_version": "2",
-                    "editor_document": formatted,
                 },
             )
-        old_client = service.save_script(
+        saved_again = service.save_script(
             episode,
             {
                 "script_id": initial["script"]["id"],
@@ -91,28 +86,18 @@ def test_format_only_save_is_versioned_and_old_text_clients_clear_formats():
                 "content_version": "3",
             },
         )
-        assert old_client["script"]["editor_document"] is None
-        assert old_client["content_version"] == "4"
+        assert saved_again["script"]["content"] == "中文\n\n"
+        assert saved_again["content_version"] == "4"
 
 
-@pytest.mark.parametrize(
-    "document",
-    [
-        {"ops": [{"insert": {"image": "https://invalid.test/image"}}]},
-        {"ops": [{"insert": "中文\n", "attributes": {"color": "red"}}]},
-        {"ops": [{"insert": "中文\n", "attributes": {"header": 7}}]},
-        {"ops": [{"insert": "other\n"}]},
-        {"ops": [{"insert": "中文"}]},
-    ],
-)
-def test_delta_rejects_embeds_unknown_formats_and_mismatched_text(document):
+def test_script_save_rejects_obsolete_editor_document():
     with pytest.raises(ValidationError):
         ScriptSave.model_validate(
             {
                 "script_id": None,
                 "content": "中文",
                 "content_version": "1",
-                "editor_document": document,
+                "editor_document": {"ops": [{"insert": "中文\n"}]},
             }
         )
 
@@ -189,18 +174,21 @@ def test_legacy_character_voice_and_dialogue_dependencies_block_type_change(depe
     with generation_session() as session:
         project, episode = setup_storyboard(session)
         # 旧角色尚未回填不可变版本，仍必须保留原声音或对白依赖。
+        actor = session.info.pop("actor")
         with session.begin():
             asset = Asset(
                 id=99, project_id=int(project), position=1, kind="character", name="旧角色"
             )
             session.add(asset)
             session.flush()
+        session.info["actor"] = actor
         assets = AssetLibraryService(session)
         shot = ProjectStoryboardService(session).create(
             episode,
             {"storyboard_version": "1", "script": "对白。", "asset_ids": [str(asset.id)]},
             "legacy-dialogue",
         )["shot"]
+        session.info.pop("actor")
         with session.begin():
             if dependency == "voice":
                 session.add(
@@ -220,6 +208,7 @@ def test_legacy_character_voice_and_dialogue_dependencies_block_type_change(depe
                         document={"lines": [{"character_id": str(asset.id), "text": "回来。"}]},
                     )
                 )
+        session.info["actor"] = actor
         with pytest.raises(WorkflowError) as reference:
             assets.patch(asset.id, {"row_version": "1", "kind": "prop"})
         assert reference.value.code == "asset_kind_incompatible"

@@ -7,13 +7,11 @@ from pydantic import Field, model_validator
 
 from short_drama.agent.context.subjects import visible_result_reference
 from short_drama.agent.memory.sources import restricted_messages
-from short_drama.agent.task.policy import policy
-from short_drama.agent.task.requirements import authoritative_definitions
+from short_drama.agent.task.requirements import authoritative_definitions, draft_rows
 from short_drama.agent.task.sources import READ_TOOLS as READ_TOOLS
 from short_drama.agent.task.sources import WRITE_TOOLS as WRITE_TOOLS
 from short_drama.agent.task.sources import source_valid as _source_valid
-from short_drama.core.exceptions import WorkflowError
-from short_drama.dao.agent_transcript_dao import AgentTranscriptDAO
+from short_drama.dao.assistant.execution.transcript import AgentTranscriptDAO
 from short_drama.schemas.base import Identifier, InputModel
 from short_drama.utils.json_digest import digest
 
@@ -97,47 +95,17 @@ class RegisteredRequirementCheck(EvidenceCheck):
     key: Annotated[str, Field(min_length=1, max_length=64)]
 
 
-class CompletionReview(InputModel):
-    """Version 1 receipts remain replayable with their original schema."""
-
-    intent: Literal["discussion", "execution"]
-    requirements: Annotated[list[RequirementCheck], Field(min_length=1, max_length=32)]
-
-    @model_validator(mode="after")
-    def unique_requirements(self):
-        if len({item.key for item in self.requirements}) != len(self.requirements):
-            raise ValueError("Requirement keys must be unique")
-        if self.intent == "discussion" and any(item.kind != "answer" for item in self.requirements):
-            raise ValueError("Discussion can only require an answer")
-        return self
-
-
 class CompletionAssessment(InputModel):
     intent: Literal["discussion", "execution"]
-    checks: Annotated[list[RegisteredRequirementCheck], Field(max_length=32)] = Field(
-        default_factory=list,
+    checks: Annotated[list[RegisteredRequirementCheck], Field(min_length=1, max_length=32)] = Field(
         description="已有 task_contract 要求仅按 key 提交检查，定义由服务端读取。",
-    )
-    additional_requirements: Annotated[list[RequirementCheck], Field(max_length=32)] = Field(
-        default_factory=list,
-        description="仅补充未登记的真实用户要求，不能改写已有 key。",
     )
 
     @model_validator(mode="after")
     def unique_requirements(self):
-        keys = [item.key for item in [*self.checks, *self.additional_requirements]]
-        if not 1 <= len(keys) <= 32 or len(set(keys)) != len(keys):
+        keys = [item.key for item in self.checks]
+        if len(set(keys)) != len(keys):
             raise ValueError("Review needs 1–32 unique requirement keys")
-        return self
-
-
-class SetTaskRequirements(InputModel):
-    requirements: Annotated[list[Requirement], Field(min_length=1, max_length=32)]
-
-    @model_validator(mode="after")
-    def unique_keys(self):
-        if len({item.key for item in self.requirements}) != len(self.requirements):
-            raise ValueError("Requirement keys must be unique")
         return self
 
 
@@ -163,27 +131,6 @@ class ConfirmRequirements(InputModel):
         return self
 
 
-def _may_replace(requirement: dict, previous: dict, messages: dict) -> bool:
-    source = messages.get(str(requirement["source_message_id"]))
-    return bool(source and source.input_revision > int(previous.get("input_revision", 0)))
-
-
-def _definition(item: Requirement, frozen: dict, previous: dict, messages: dict) -> dict:
-    definition = item.model_dump(mode="json", include=Requirement.model_fields.keys())
-    original = frozen.get(item.key)
-    if original and not _may_replace(definition, previous, messages):
-        # Wording changes do not weaken a requirement: keep the canonical text.
-        definition["description"] = original["description"]
-    return definition
-
-
-def _compatible(definition: dict, original: dict) -> bool:
-    tightened = {**original, "minimum_count": definition["minimum_count"]}
-    if original["kind"] == "read" and definition["kind"] == "image":
-        tightened["kind"] = "image"
-    return definition == tightened and definition["minimum_count"] >= original["minimum_count"]
-
-
 def reviewed_projection(contract: dict, floor: int = 0) -> dict:
     definitions = {item["key"]: item for item in contract.get("requirements", [])}
     return {
@@ -195,67 +142,10 @@ def reviewed_projection(contract: dict, floor: int = 0) -> dict:
     }
 
 
-def declare_locked(session, conversation, task, operation, values: SetTaskRequirements, settings):
-    messages = {
-        str(row.id): row
-        for row in AgentTranscriptDAO(session).input_messages(
-            task.id,
-            task.applied_input_revision,
-            {int(item.source_message_id) for item in values.requirements},
-        )
-    }
-    restricted, _ = restricted_messages(session, conversation.id)
-    previous = task.effective_state.get("task_contract", {})
-    frozen = {item["key"]: item for item in previous.get("requirements", [])}
-    requirements = [_definition(item, frozen, previous, messages) for item in values.requirements]
-    invalid = len({item.key for item in values.requirements}) != len(requirements)
-    invalid |= any(not _source_valid(item, messages, restricted) for item in values.requirements)
-    invalid |= any(
-        item["key"] in frozen
-        and not _compatible(item, frozen[item["key"]])
-        and not _may_replace(item, previous, messages)
-        for item in requirements
-    )
-    if invalid:
-        raise WorkflowError(
-            "invalid_tool_arguments",
-            "交付要求须引用真实用户原文；当前输入版本已有要求不能改写",
-            422,
-            details={
-                "locked_requirements": list(frozen.values()),
-                "invalid_source_keys": [
-                    item.key
-                    for item in values.requirements
-                    if not _source_valid(item, messages, restricted)
-                ],
-            },
-        )
-    combined = {**frozen, **{item["key"]: item for item in requirements}}
-    if len(combined) > 32:
-        raise WorkflowError(
-            "invalid_tool_arguments", "单个任务最多保留 32 项交付要求，请合并同类要求", 422
-        )
-    contract = {
-        "input_revision": str(task.applied_input_revision),
-        "intent": "execution",
-        "requirements": list(combined.values()),
-        "verified": False,
-    }
-    contract["reviewed_evidence"] = reviewed_projection({**previous, **contract})
-    task.effective_state = {**task.effective_state, "task_contract": contract}
-    if policy(task, "contract") == "server_draft.v1":
-        # The legacy tool stays callable for frozen v3 requests; new tasks must
-        # still end up with table-backed requirements the publish guard can see.
-        from short_drama.agent.task.requirements import record_legacy_requirements
-
-        record_legacy_requirements(session, task, requirements, messages)
-    return contract
-
-
 def review_tool() -> dict:
     return {
         "name": "submit_completion_review",
-        "description": "已有要求仅按 key 核对操作和候选答复；漏登要求另附用户来源。",
+        "description": "按已确认要求的 key 核对操作证据和候选答复。",
         "parameters": CompletionAssessment.model_json_schema(),
     }
 
@@ -325,25 +215,9 @@ def _evidence_issue(
     return None
 
 
-def _expand_assessment(review: CompletionAssessment, frozen: dict) -> CompletionReview | None:
-    if any(item.key not in frozen for item in review.checks) or any(
-        item.key in frozen for item in review.additional_requirements
-    ):
-        return None
-    return CompletionReview(
-        intent=review.intent,
-        requirements=[
-            RequirementCheck(**frozen[item.key], **item.model_dump(exclude={"key"}))
-            for item in review.checks
-        ]
-        + review.additional_requirements,
-    )
-
-
-def _state_issue(item: RequirementCheck, task, floor: int) -> str | None:
+def _state_issue(item: RequirementCheck, task, floor: int, requirement_count: int) -> str | None:
     if item.kind == "contract":
-        requirements = task.effective_state.get("task_contract", {}).get("requirements", [])
-        return "已登记交付要求不足" if len(requirements) < item.minimum_count else None
+        return "已登记交付要求不足" if requirement_count < item.minimum_count else None
     notes = task.effective_state.get("working_set", {}).get("items", [])
     sources = {
         (item["operation_id"], item.get("source_quote", ""))
@@ -354,87 +228,52 @@ def _state_issue(item: RequirementCheck, task, floor: int) -> str | None:
 
 
 def evaluate_review(
-    session, conversation, task, run, review: CompletionReview | CompletionAssessment, answer: str
+    session, conversation, task, run, review: CompletionAssessment, answer: str
 ) -> dict:
     previous = task.effective_state.get("task_contract", {})
-    frozen = {item["key"]: item for item in previous.get("requirements", [])}
     dao = AgentTranscriptDAO(session)
     restricted, _ = restricted_messages(session, conversation.id)
-    # Server-authored rows carry exact quote spans; old tasks keep their JSON.
-    backed = None
-    if session is not None and policy(task, "contract") == "server_draft.v1":
-        applied = {
-            str(row.id): row
-            for row in dao.task_input_messages(task.id, task.applied_input_revision)
+    applied = {
+        str(row.id): row for row in dao.task_input_messages(task.id, task.applied_input_revision)
+    }
+    definitions = authoritative_definitions(session, task, applied, restricted)
+    if draft_rows(session, task) and not definitions:
+        return {
+            "approved": False,
+            "missing": [{"reason": "交付要求尚未确认，请先调用 confirm_requirements"}],
         }
-        backed = authoritative_definitions(session, task, applied, restricted)
-    if backed is not None:
-        frozen = backed
-    if session is not None and policy(task, "contract") == "server_draft.v1":
-        from short_drama.agent.task.requirements import draft_rows
-
-        if draft_rows(session, task) and not frozen:
-            # Without a confirmation there is nothing authoritative to check;
-            # say so instead of failing every unknown key.
-            return {
-                "approved": False,
-                "missing": [
-                    {
-                        "reason": "交付要求尚未确认：请先调用 confirm_requirements "
-                        "列出需要交付的 keys，再提交完成检查"
-                    }
-                ],
-            }
-    if isinstance(review, CompletionAssessment):
-        if backed is not None and review.additional_requirements:
-            return {
-                "approved": False,
-                "missing": [
-                    {
-                        "reason": "新增要求不能改写已登记定义；"
-                        "需要补充时请用户再次输入并用 confirm_requirements 登记"
-                    }
-                ],
-            }
-        review = _expand_assessment(review, frozen)
-        if review is None:
-            return {
-                "approved": False,
-                "missing": [{"reason": "checks 必须使用已有 key；新增要求不能改写已登记定义"}],
-            }
+    if any(item.key not in definitions for item in review.checks):
+        return {"approved": False, "missing": [{"reason": "checks 必须使用已确认要求的 key"}]}
+    checks = [
+        RequirementCheck(**definitions[item.key], **item.model_dump(exclude={"key"}))
+        for item in review.checks
+    ]
+    if review.intent == "discussion" and any(item.kind != "answer" for item in checks):
+        return {"approved": False, "missing": [{"reason": "讨论验收只能检查答复要求"}]}
     messages = {
         str(row.id): row
         for row in dao.input_messages(
             task.id,
             task.applied_input_revision,
-            {int(item.source_message_id) for item in review.requirements},
+            {int(item.source_message_id) for item in checks},
         )
     }
     evidence_ids = {
-        int(identifier)
-        for item in review.requirements
-        for identifier in item.evidence_operation_ids
+        int(identifier) for item in checks for identifier in item.evidence_operation_ids
     }
     operations = {str(row.id): row for row in dao.evidence(task.id, evidence_ids)}
     floor = (run.checkpoint or {}).get("history_floor_turn_id", 0)
     media = task.effective_state.get("media_evidence", {})
-    failures, requirements, reviewed = [], [], {}
-    for item in review.requirements:
-        requirement = _definition(item, frozen, previous, messages)
-        requirements.append(requirement)
+    failures, reviewed = [], {}
+    for item in checks:
+        requirement = definitions[item.key]
         issue = None
         if not _source_valid(item, messages, restricted):
             issue = "用户来源原文不存在、已遗忘或不属于已应用输入"
-        elif (
-            item.key in frozen
-            and not _compatible(requirement, frozen[item.key])
-            and not _may_replace(requirement, previous, messages)
-        ):
-            issue = "当前输入版本的交付要求不能自行改写"
         elif not item.satisfied:
             issue = item.reason or "用户要求尚未满足"
         elif item.kind in {"observation", "contract"}:
-            issue = _state_issue(item, task, floor)
+            issue = _state_issue(item, task, floor, len(definitions))
         elif item.kind == "answer":
             if not item.answer_quote.strip() or item.answer_quote not in answer:
                 issue = "候选答复未包含所引用的交付内容"
@@ -452,36 +291,23 @@ def evaluate_review(
                 }
         if issue:
             failures.append({"key": item.key, "description": item.description, "reason": issue})
-    omitted = set(frozen) - {item.key for item in review.requirements}
+    omitted = set(definitions) - {item.key for item in checks}
     failures.extend(
-        {"key": key, "description": frozen[key]["description"], "reason": "遗漏已有交付要求"}
+        {"key": key, "description": definitions[key]["description"], "reason": "遗漏已有交付要求"}
         for key in sorted(omitted)
     )
-    combined = {
-        **frozen,
-        **{
-            item["key"]: item
-            for item in requirements
-            if item["key"] not in frozen
-            or _compatible(item, frozen[item["key"]])
-            or _may_replace(item, previous, messages)
-        },
-    }
-    if len(combined) > 32:
+    if len(definitions) > 32:
         failures.append({"reason": "交付要求超过 32 项，请复用已有 key 并合并同类要求"})
-    # Invalid citations do not become authoritative requirements.
-    if len(combined) <= 32 and all(
-        _source_valid(item, messages, restricted) for item in review.requirements
-    ):
+    if len(definitions) <= 32 and all(_source_valid(item, messages, restricted) for item in checks):
         task.effective_state = {
             **task.effective_state,
             "task_contract": {
                 "input_revision": str(task.applied_input_revision),
                 "intent": review.intent,
-                "requirements": list(combined.values()),
+                "requirements": list(definitions.values()),
                 "reviewed_evidence": {
                     **reviewed_projection(
-                        {**previous, "requirements": list(combined.values())}, floor
+                        {**previous, "requirements": list(definitions.values())}, floor
                     ),
                     **reviewed,
                 },

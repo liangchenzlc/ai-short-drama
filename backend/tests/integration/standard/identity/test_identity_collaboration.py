@@ -13,11 +13,12 @@ from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
 from short_drama.db.session import session_factory
 from short_drama.domain import MediaFile, Project
-from short_drama.domain.collaboration import EmailChallenge, EmailOutbox, UserSession
+from short_drama.domain.identity.accounts.user import UserSession
+from short_drama.domain.identity.email.models import EmailChallenge, EmailOutbox
 from short_drama.main import create_app
 from short_drama.service.base import utcnow
 from short_drama.storage.models import StoredObject
-from short_drama.tasks.email import deliver_one, prune_limits
+from short_drama.tasks.identity.email import deliver_one, prune_limits
 from short_drama.utils.snowflake import next_id
 
 pytestmark = pytest.mark.integration

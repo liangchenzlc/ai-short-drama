@@ -9,13 +9,14 @@ from sqlalchemy.exc import IntegrityError
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.core.identity import ActorContext
-from short_drama.dao.canvas_resource_deletion_dao import CanvasResourceDeletionDAO
+from short_drama.dao.canvas.resources.resource_deletion import CanvasResourceDeletionDAO
 from short_drama.db.session import AppSession
 from short_drama.domain import Asset, AssetVersion, AssetVersionMediaReference, MediaFile
-from short_drama.service.asset_service import AssetService
 from short_drama.service.base import utcnow
-from short_drama.service.project_service import ProjectService
+from short_drama.service.creation.assets.management.assets import AssetService
+from short_drama.service.projects.management.project import ProjectService
 from short_drama.utils.snowflake import next_id
+from tests.support.integration.identity import actor as fixture_actor
 
 pytestmark = pytest.mark.integration
 
@@ -94,7 +95,7 @@ def test_concurrent_character_patch_has_one_winner_and_one_new_version(db_sessio
 
     def patch(description):
         with AppSession(mysql_engine, expire_on_commit=False, autoflush=False) as session:
-            session.info["legacy_user_id"] = 1
+            session.info["actor"] = fixture_actor()
             barrier.wait(timeout=10)
             try:
                 AssetService(session).update(

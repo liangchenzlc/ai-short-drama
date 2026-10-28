@@ -1,0 +1,391 @@
+/* Each production step owns the available canvas; there are no empty stacked stages. */
+.web-episode {
+  --creation-header-height: 65px;
+  min-height: 100dvh;
+}
+.web-episode .creation-top h1 {
+  font-size: 19px;
+}
+.web-episode .creation-top-status {
+  background: var(--pale);
+  color: var(--accent);
+  padding: 5px 10px;
+  font-size: 11px;
+}
+.web-episode .creation-layout {
+  grid-template-columns: 210px minmax(0, 1fr);
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  min-height: calc(100dvh - 65px);
+  align-items: start;
+}
+.web-episode .creation-sidebar {
+  background: transparent;
+  border-right: 1px solid var(--hair);
+  align-self: stretch;
+}
+.web-episode .creation-sidebar-inner {
+  top: 65px;
+  padding: 23px 12px;
+}
+.web-episode .creation-sidebar nav button {
+  min-height: 44px;
+  gap: 10px;
+  padding: 10px;
+  font-size: 12px;
+}
+.web-episode .creation-sidebar nav button.active {
+  background: var(--pale);
+  color: var(--accent);
+}
+.web-episode .creation-sidebar nav button.active span {
+  color: var(--accent);
+}
+.creation-context-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 24px 10px 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--hair);
+}
+.creation-context-summary strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.creation-context-summary > span {
+  font-size: 11px;
+  color: var(--sub);
+}
+.web-episode .creation-context-summary p {
+  margin: 5px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  font-weight: 400;
+}
+.web-episode .creation-content {
+  display: block;
+  padding: 20px 28px 28px;
+}
+.web-episode .creation-demo-banner {
+  padding: 8px 12px;
+  margin: 0 0 18px;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  background: var(--pale);
+  color: var(--sub);
+  font-size: 11px;
+  gap: 12px;
+}
+.web-episode .creation-stage {
+  border: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.web-episode .creation-stage-heading {
+  margin-bottom: 16px;
+}
+.web-episode .creation-stage-heading h2 {
+  font-size: 20px;
+  margin-bottom: 5px;
+}
+.web-episode .creation-stage-heading p {
+  font-size: 12px;
+}
+.web-episode .creation-editor-label textarea,
+.web-episode .creation-script-textarea,
+.web-episode .creation-novel-text {
+  min-height: 230px;
+  height: 30vh;
+  max-height: none;
+  line-height: 1.85;
+  font-size: 14px;
+  background: var(--surface);
+}
+.web-episode .creation-editor-label {
+  gap: 8px;
+}
+.web-episode .creation-script-settings {
+  margin: 16px 0;
+  gap: 14px;
+}
+.web-episode .creation-stage-controls select {
+  min-height: 36px;
+}
+.web-episode .creation-asset-panel {
+  min-height: 220px;
+  padding: 16px;
+}
+.web-episode .creation-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+}
+.web-episode .creation-library-asset-card {
+  width: 100%;
+  height: auto;
+  min-height: 180px;
+  grid-template-columns: minmax(0, 1fr) 100px;
+  padding: 12px;
+  gap: 12px;
+}
+.web-episode .creation-library-card-copy {
+  padding: 0;
+}
+.web-episode .creation-library-cover {
+  width: 100%;
+  height: 100px;
+}
+.web-episode .creation-library-add-card {
+  width: 100%;
+  min-width: 0;
+  height: 76px;
+  min-height: 0;
+  flex-direction: row;
+  gap: 10px;
+  align-self: start;
+  border-radius: 8px;
+}
+.web-episode .creation-library-add-icon {
+  width: 26px;
+  height: 26px;
+}
+.web-episode select:not(:disabled) {
+  background: var(--surface);
+  color: var(--ink);
+}
+.creation-step-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--hair);
+  padding-top: 16px;
+  margin-top: 24px;
+}
+.creation-step-footer > span {
+  font-size: 12px;
+  color: var(--sub);
+}
+.creation-step-next {
+  margin-left: auto;
+}
+.creation-step-previous + span {
+  margin-left: auto;
+}
+.storyboard-prompt textarea,
+.storyboard-script textarea {
+  min-height: 115px;
+}
+.storyboard-summary {
+  padding: 12px 14px;
+}
+.storyboard-summary-copy > span {
+  line-height: 1.6;
+}
+.storyboard-image-placeholder,
+.storyboard-video-placeholder {
+  max-height: 220px;
+}
+.storyboard-shot-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr));
+}
+.storyboard-shot-layout .storyboard-script {
+  border: 0;
+  padding: 16px 16px 12px;
+}
+.storyboard-shot-layout .storyboard-script textarea {
+  min-height: 180px;
+}
+.storyboard-shot-layout .storyboard-output {
+  padding: 16px;
+  border-left: 1px solid var(--hair);
+  border-radius: 0 0 12px 0;
+}
+.storyboard-shot-layout .storyboard-materials {
+  padding: 0 16px 16px;
+}
+.storyboard-materials-table {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.storyboard-shot-layout .storyboard-asset-thumbnail {
+  width: 56px;
+  height: 42px;
+}
+.storyboard-shot-layout .storyboard-linked-asset {
+  width: 56px;
+}
+.storyboard-shot-layout .storyboard-asset-group {
+  border-top: 1px solid var(--hair);
+  padding-top: 10px;
+}
+.storyboard-shot-layout .storyboard-asset-group h4 {
+  margin-bottom: 8px;
+}
+.storyboard-preview-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 180px;
+  background: var(--pale);
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.storyboard-preview-area > div {
+  width: auto;
+  max-width: 100%;
+  height: 100%;
+  max-height: 180px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.storyboard-media-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--sub);
+  font-size: 12px;
+  text-align: center;
+  padding: 12px;
+}
+.storyboard-media-empty svg {
+  color: var(--sub);
+  flex-shrink: 0;
+}
+.storyboard-generation-actions p {
+  color: var(--sub);
+  font-size: 11px;
+}
+.storyboard-shot-layout .shot-settings-fields {
+  grid-template-columns: 1fr;
+}
+.storyboard-shot-layout .shot-advanced-settings > summary {
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.storyboard-shot-layout .shot-layout-options > div {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.storyboard-summary-copy > span {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+@media (min-width: 1600px) {
+  .studio-main {
+    padding-top: 32px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* API configuration states keep the existing compact form and table language. */
+.ai-config-form fieldset {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.ai-config-page .config-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+  color: var(--sub);
+}
+.ai-config-page .config-pagination span {
+  margin-right: auto;
+}
+.ai-config-page .config-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ai-config-page .config-model-key {
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
+.ai-config-page .config-actions {
+  white-space: nowrap;
+}
+.ai-config-page button:disabled,
+.ai-config-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.ai-config-form .config-conflict {
+  color: var(--sub);
+  font-size: 13px;
+}
+.model-discovery-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.model-discovery-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.model-discovery-input .ant-select {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+}
+.model-discovery-input .ant-input-affix-wrapper {
+  height: 36px;
+  padding: 0 8px;
+}
+.studio-form .model-discovery-input .ant-input-affix-wrapper input.ant-input {
+  min-height: 0;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.model-discovery-input button {
+  flex-shrink: 0;
+  min-height: 36px;
+}
+.model-discovery-input .model-dropdown-toggle {
+  display: grid;
+  place-items: center;
+  min-height: 28px;
+  width: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.model-discovery-input .model-dropdown-toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+.model-discovery-hint {
+  margin: 0;
+  color: var(--text-muted, var(--sub));
+  font-size: 12px;
+  line-height: 1.6;
+}

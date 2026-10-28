@@ -9,16 +9,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from short_drama.agent.gateway.protocol import AgentModelGateway
-from short_drama.api.dependencies import get_session
+from short_drama.api.dependencies.session import get_session
 from short_drama.core.config import Settings
 from short_drama.main import create_app
 
 
 @pytest.mark.parametrize("failure", ["temporary", "resync", "access"])
 def test_sse_stream_distinguishes_retry_resync_and_access_end(monkeypatch, failure):
-    from short_drama.api.v1.agent import conversation_events
+    from short_drama.api.v1.assistant.conversations.events import conversation_events
     from short_drama.core.exceptions import DatabaseUnavailable, NotFound, WorkflowError
-    from short_drama.service.agent_run_service import AgentRunService
+    from short_drama.service.assistant.execution.run import AgentRunService
 
     reads = 0
 
@@ -51,10 +51,10 @@ def test_sse_stream_distinguishes_retry_resync_and_access_end(monkeypatch, failu
         is_disconnected=connected,
     )
     monkeypatch.setattr(AgentRunService, "events", events)
-    monkeypatch.setattr("short_drama.api.v1.agent.asyncio.sleep", no_wait)
+    monkeypatch.setattr("short_drama.api.v1.assistant.conversations.events.asyncio.sleep", no_wait)
 
     async def run():
-        response = await conversation_events(1, request, None, 0, None)
+        response = await conversation_events(1, request, 0, None)
         return "".join([part async for part in response.body_iterator])
 
     frames = asyncio.run(run())
@@ -148,26 +148,10 @@ def client(monkeypatch):
     ],
 )
 def test_message_validation_cannot_create_authority_or_effects(client, body, headers):
-    response = client.post("/api/v1/agent/conversations/1/messages", json=body, headers=headers)
+    response = client.post(
+        "/api/v1/assistant/global/conversations/1/messages", json=body, headers=headers
+    )
     assert response.status_code == 422, response.text
-
-
-@pytest.mark.parametrize(
-    "body",
-    [
-        {"decision": "approved"},
-        {"review_version": 0, "review_hash": "a" * 64, "decision": "approved"},
-        {"review_version": 1, "review_hash": "wrong", "decision": "approved"},
-        {
-            "review_version": 1,
-            "review_hash": "a" * 64,
-            "decision": "approved",
-            "steps": [{"kind": "video"}],
-        },
-    ],
-)
-def test_review_can_only_accept_frozen_version_hash_and_decision(client, body):
-    assert client.post("/api/v1/agent/runs/1/reviews/2", json=body).status_code == 422
 
 
 def test_model_probe_requires_version_and_forbids_caller_supplied_snapshot(client):
@@ -206,7 +190,7 @@ def test_skill_management_rejects_empty_or_unauthorized_changes(client, body):
 
 def test_attachment_upload_requires_idempotency_key_before_io(client):
     response = client.post(
-        "/api/v1/agent/conversations/1/attachments/uploads",
+        "/api/v1/assistant/conversations/1/attachments/uploads",
         files={"file": ("notes.md", b"Notes", "text/markdown")},
     )
     assert response.status_code == 422
@@ -215,7 +199,9 @@ def test_attachment_upload_requires_idempotency_key_before_io(client):
 @pytest.mark.parametrize("cursor", ["-1", str(2**64)])
 def test_sse_query_cursor_must_fit_unsigned_sequence(client, cursor):
     assert (
-        client.get("/api/v1/agent/conversations/1/events", params={"cursor": cursor}).status_code
+        client.get(
+            "/api/v1/assistant/global/conversations/1/events", params={"cursor": cursor}
+        ).status_code
         == 422
     )
 
@@ -223,7 +209,7 @@ def test_sse_query_cursor_must_fit_unsigned_sequence(client, cursor):
 @pytest.mark.parametrize("cursor", ["-1", " 1", "1.0", "١", str(2**64)])
 def test_sse_reconnect_cursor_is_validated_before_private_lookup(client, cursor):
     response = client.get(
-        "/api/v1/agent/conversations/1/events",
+        "/api/v1/assistant/global/conversations/1/events",
         headers={"Last-Event-ID": cursor.encode("utf-8")},
     )
     assert response.status_code == 422

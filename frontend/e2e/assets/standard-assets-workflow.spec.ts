@@ -79,7 +79,7 @@ test('asset card deletion opens independently, confirms, and keeps another selec
   const more = page.getByRole('button', { name: '雨夜车站卡片更多操作', exact: true });
   await more.focus(); await page.keyboard.press('Enter');
   await expect(page.getByRole('menuitem', { name: '删除素材', exact: true })).toBeVisible();
-  await expect(page.locator('.episode-asset-detail .standard-object-heading h3')).toHaveText('林晚');
+  await expect(page.locator('.creation-asset-detail .standard-object-heading h3')).toHaveText('林晚');
   await page.keyboard.press('Escape');
   await expect(more).toBeFocused();
   await more.click(); await page.getByRole('menuitem', { name: '删除素材', exact: true }).click();
@@ -98,7 +98,7 @@ test('asset card deletion opens independently, confirms, and keeps another selec
   finish();
   await expect(more).toHaveCount(0);
   await expect(page.locator('.standard-asset-card')).toHaveCount(1);
-  await expect(page.locator('.episode-asset-detail .standard-object-heading h3')).toHaveText('林晚');
+  await expect(page.locator('.creation-asset-detail .standard-object-heading h3')).toHaveText('林晚');
   await expect(page.locator('.standard-assets-heading h2 small')).toHaveText('1');
   expect(data.removals).toEqual([{ id: '502', version: '"1"' }]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -117,7 +117,7 @@ test('asset card deletion saves current edits and uses the acknowledged asset ve
   expect(data.removals).toEqual([{ id: '501', version: `"${data.asset.row_version}"` }]);
   expect(data.requests.some(request => request.method === 'PATCH' && request.path === '/assets/501' && request.body.description === '删除前保存的最新素材描述')).toBe(true);
   await expect(page.getByRole('button', { name: '林晚卡片更多操作', exact: true })).toHaveCount(0);
-  await expect(page.locator('.episode-asset-detail .standard-object-heading h3')).toHaveText('雨夜车站');
+  await expect(page.locator('.creation-asset-detail .standard-object-heading h3')).toHaveText('雨夜车站');
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 
@@ -135,7 +135,7 @@ test('asset card deletion waits for the retained background save before deleting
   await page.goto(`${root}/assets?asset=501`);
   await page.getByRole('textbox', { name: '描述', exact: true }).fill('切换后继续保存的描述');
   await page.locator('.standard-asset-card').getByRole('button', { name: '雨夜车站', exact: true }).click();
-  await expect(page.locator('.episode-asset-detail .standard-object-heading h3')).toHaveText('雨夜车站');
+  await expect(page.locator('.creation-asset-detail .standard-object-heading h3')).toHaveText('雨夜车站');
   await expect.poll(() => saving).toBe(true);
   const more = page.getByRole('button', { name: '林晚卡片更多操作', exact: true });
   await more.click(); await page.getByRole('menuitem', { name: '删除素材', exact: true }).click();
@@ -145,7 +145,7 @@ test('asset card deletion waits for the retained background save before deleting
   finishSave();
   await expect(more).toHaveCount(0);
   expect(data.removals).toEqual([{ id: '501', version: '"2"' }]);
-  await expect(page.locator('.episode-asset-detail .standard-object-heading h3')).toHaveText('雨夜车站');
+  await expect(page.locator('.creation-asset-detail .standard-object-heading h3')).toHaveText('雨夜车站');
   expect(data.asset.description).toBe('切换后继续保存的描述');
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
@@ -162,7 +162,7 @@ test('asset card deletion preserves a failed background generation draft on an u
   await page.goto(`${root}/assets?asset=501`);
   await page.getByRole('textbox', { name: '画面要求', exact: true }).fill('未选中素材仍需保留的私人生成要求');
   await page.locator('.standard-asset-card').getByRole('button', { name: '雨夜车站', exact: true }).click();
-  await expect(page.locator('.episode-asset-detail .standard-object-heading h3')).toHaveText('雨夜车站');
+  await expect(page.locator('.creation-asset-detail .standard-object-heading h3')).toHaveText('雨夜车站');
   await expect.poll(() => failed).toBe(true);
   const more = page.getByRole('button', { name: '林晚卡片更多操作', exact: true });
   await more.click(); await page.getByRole('menuitem', { name: '删除素材', exact: true }).click();
@@ -283,13 +283,13 @@ test('the asset page selects its first item with desktop settings open and honor
   });
   await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto(`${root}/assets`);
-  await expect(page.locator('.episode-asset-detail .standard-object-heading h3')).toHaveText('林晚');
+  await expect(page.locator('.creation-asset-detail .standard-object-heading h3')).toHaveText('林晚');
   await expect(page.getByRole('button', { name: '林晚', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.standard-object-settings[aria-label="素材生成设置"]')).toBeVisible();
   await expect(page.getByRole('dialog', { name: '素材生成设置', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '未命名素材', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await page.goto(`${root}/assets?asset=502`);
-  await expect(page.locator('.episode-asset-detail .standard-object-heading h3')).toHaveText('雨夜车站');
+  await expect(page.locator('.creation-asset-detail .standard-object-heading h3')).toHaveText('雨夜车站');
   await expect(page.getByRole('button', { name: '雨夜车站', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page).toHaveURL(url => url.searchParams.get('asset') === '502');
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
@@ -460,7 +460,7 @@ test('uncertain generation only performs receipt lookup and never submits anothe
   });
   await page.route('**/api/v1/ai/generations/by-idempotency-key**', route => { lookups += 1; return route.fulfill({ json: null }); });
   await page.goto(`${root}/assets`);
-  await expect(page.locator('.episode-asset-detail')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('.creation-asset-detail')).toBeVisible({ timeout: 15000 });
   const generate = page.getByRole('button', { name: '生成图片', exact: true });
   await expect(generate).toBeEnabled(); await generate.click();
   await openSaveDetails(page);
@@ -591,7 +591,7 @@ test('asset metadata, references and preview tools follow the compact refinement
   const data = await fixture(page, true, String(test.info().project.use.baseURL));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${root}/assets?asset=501`);
-  const detail = page.locator('.episode-asset-detail');
+  const detail = page.locator('.creation-asset-detail');
   await expect(detail).toBeVisible();
   await expect(page.locator('.standard-assets-heading h2')).toHaveText('资产库 3');
   for (const [label, count] of [['全部', 3], ['角色', 1], ['场景', 1], ['道具', 1]] as const) {
@@ -656,7 +656,7 @@ test('asset metadata, references and preview tools follow the compact refinement
 test('asset image preview exposes the saved primary without an adoption step', async ({ page }) => {
   const data = await fixture(page, true, String(test.info().project.use.baseURL));
   await page.goto(`${root}/assets?asset=501`);
-  const detail = page.locator('.episode-asset-detail');
+  const detail = page.locator('.creation-asset-detail');
   await expect(detail.locator('.image-primary-badge')).toHaveText('主图');
   await expect(detail.getByRole('button', { name: '采用此结果', exact: true })).toHaveCount(0);
   await expect(detail.getByRole('button', { name: '最新生成', exact: true })).toHaveCount(0);
@@ -863,7 +863,7 @@ test('asset category-count failure exposes retry without inventing category tota
 test('main asset actions reuse the history image operations', async ({ page }) => {
   const data = await fixture(page, true, String(test.info().project.use.baseURL));
   await page.goto(`${root}/assets?asset=501`);
-  const main = page.locator('.episode-asset-detail');
+  const main = page.locator('.creation-asset-detail');
   const more = main.getByRole('button', { name: '素材更多操作', exact: true });
   await more.click();
   await expect(page.locator('.asset-generation-history-dialog')).toHaveCount(0);

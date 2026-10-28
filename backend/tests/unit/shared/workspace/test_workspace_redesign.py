@@ -7,12 +7,12 @@ from sqlalchemy import func, select
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import AIGenerationRecord, AssetImageCandidate, AsyncTask, MediaFile
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.asset_library_service import AssetLibraryService
-from short_drama.service.generation_business_service import GenerationBusinessService
-from short_drama.service.generation_reference_service import GenerationReferenceService
-from short_drama.service.project_service import ProjectService
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
+from short_drama.service.creation.assets.management.library import AssetLibraryService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.generations.admission.business import GenerationBusinessService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.references.reference import GenerationReferenceService
+from short_drama.service.projects.management.project import ProjectService
 from tests.support.generation_fixtures import config, generation_session, settings
 
 
@@ -168,7 +168,7 @@ def test_storyboard_history_pages_only_requested_shots_and_checks_episode_scope(
                 ],
             }
         }
-        from short_drama.service.task_runtime_service import finish
+        from short_drama.service.generations.runtime.lifecycle import finish
 
         finish(session.get(AsyncTask, int(task["generation_id"])), "succeeded")
         session.commit()

@@ -13,13 +13,13 @@ import pytest
 from sqlalchemy import func, select
 
 from short_drama.core.exceptions import StorageUnavailable
-from short_drama.dao.canvas_resource_deletion_dao import CanvasResourceDeletionDAO
+from short_drama.dao.canvas.resources.resource_deletion import CanvasResourceDeletionDAO
 from short_drama.domain import CanvasRenderJob, CanvasResourceUpload, MediaFile, ProjectCanvas
-from short_drama.domain.collaboration import User
+from short_drama.domain.identity.accounts.user import User
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_timeline_renderer import CanvasTimelineRenderer
+from short_drama.service.canvas.timeline.timeline_renderer import CanvasTimelineRenderer
 from short_drama.storage.models import ObjectLocation
-from short_drama.tasks.canvas_render import CanvasRenderExecutor, CanvasRenderPublisher
+from short_drama.tasks.rendering.canvas_render import CanvasRenderExecutor, CanvasRenderPublisher
 from tests.integration.canvas.resources.test_canvas_resources import canvas, upload
 from tests.integration.canvas.resources.test_canvas_resources import resource_app as resource_app
 from tests.integration.canvas.timeline.test_canvas_timeline_ffmpeg import ffmpeg

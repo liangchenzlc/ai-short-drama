@@ -11,12 +11,12 @@ from short_drama.agent.tools.contracts import ChangeMemory as ChangeMemory
 from short_drama.agent.tools.contracts import MemoryRequest as MemoryRequest
 from short_drama.agent.tools.contracts import RememberMemory as RememberMemory
 from short_drama.core.exceptions import Conflict, WorkflowError
-from short_drama.dao.agent_memory_dao import AgentMemoryDAO
-from short_drama.domain.agent import AgentMessage
-from short_drama.domain.agent_memory import AgentMemoryItem
-from short_drama.domain.agent_task import AgentOperation, AgentTaskInput
-from short_drama.schemas.agent_memory import MemoryCreate, normalize_memory_key
-from short_drama.service.agent_memory_store import (
+from short_drama.dao.assistant.memory.memory import AgentMemoryDAO
+from short_drama.domain.assistant.conversations.models import AgentMessage
+from short_drama.domain.assistant.memory.memory import AgentMemoryItem
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTaskInput
+from short_drama.schemas.assistant.memory.memory import MemoryCreate, normalize_memory_key
+from short_drama.service.assistant.memory.memory_store import (
     apply_memory_command_locked,
     blocked_extraction,
     checked_scope,

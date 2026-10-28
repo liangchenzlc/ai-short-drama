@@ -42,7 +42,9 @@ def evidence(monkeypatch):
         result={},
         turn_id=10,
     )
-    data = SimpleNamespace(messages=[source], operations=[operation], restricted=set())
+    data = SimpleNamespace(
+        messages=[source], operations=[operation], restricted=set(), definitions={}
+    )
 
     class DAO:
         def __init__(self, session):
@@ -58,8 +60,13 @@ def evidence(monkeypatch):
         def evidence(self, task, identifiers):
             return [row for row in data.operations if row.id in identifiers]
 
+        def task_input_messages(self, task, revision):
+            return [row for row in data.messages if row.input_revision <= revision]
+
     monkeypatch.setattr(contract, "AgentTranscriptDAO", DAO)
     monkeypatch.setattr(contract, "restricted_messages", lambda *args: (data.restricted, None))
+    monkeypatch.setattr(contract, "authoritative_definitions", lambda *args: data.definitions)
+    monkeypatch.setattr(contract, "draft_rows", lambda *args: [])
     data.task = SimpleNamespace(id=1, applied_input_revision=1, effective_state={})
     data.run = SimpleNamespace(checkpoint={})
     data.conversation = SimpleNamespace(id=1)
@@ -67,12 +74,25 @@ def evidence(monkeypatch):
 
 
 def evaluate(data, checks):
+    data.definitions = {
+        item["key"]: {
+            key: value for key, value in item.items() if key in contract.Requirement.model_fields
+        }
+        for item in checks
+    }
+    fields = {"key", "satisfied", "evidence_operation_ids", "answer_quote", "reason"}
+    return assess(
+        data, [{key: value for key, value in item.items() if key in fields} for item in checks]
+    )
+
+
+def assess(data, checks):
     return contract.evaluate_review(
         None,
         data.conversation,
         data.task,
         data.run,
-        contract.CompletionReview(intent="execution", requirements=checks),
+        contract.CompletionAssessment(intent="execution", checks=checks),
         "实际交付",
     )
 
@@ -151,25 +171,19 @@ def test_invalid_evidence_cannot_close_task(evidence, change):
     assert not evaluate(evidence, [check])["approved"]
 
 
-def test_continue_preserves_requirements_and_new_user_input_can_revise(evidence):
+def test_review_uses_confirmed_requirements_after_new_input(evidence):
     assert evaluate(evidence, [requirement()])["approved"]
     evidence.task.applied_input_revision = 2
-    missing = requirement(
-        key="other", kind="answer", artifact_kind=None, asset_kind=None, answer_quote="实际交付"
-    )
-    assert not evaluate(evidence, [missing])["approved"]
-    shrunk = requirement(minimum_count=1)
-    assert not evaluate(evidence, [shrunk])["approved"]
-    evidence.messages.append(SimpleNamespace(id=102, input_revision=3, content="只保存一个角色"))
-    evidence.task.applied_input_revision = 3
-    revised = requirement(
-        minimum_count=1,
-        description="保存一个角色",
-        source_message_id="102",
-        source_quote="只保存一个角色",
-    )
-    # The extra requirement was also frozen; changes cannot silently omit it.
-    assert not evaluate(evidence, [revised])["approved"]
+    assert not assess(evidence, [{"key": "other", "satisfied": True}])["approved"]
+    previous = evidence.task.effective_state["task_contract"]
+    evidence.task.effective_state["task_contract"] = {
+        **previous,
+        "requirements": [{**previous["requirements"][0], "minimum_count": 1}],
+    }
+    evidence.operations[0].result_refs.pop()
+    assert not assess(
+        evidence, [{"key": "save", "satisfied": True, "evidence_operation_ids": ["201"]}]
+    )["approved"]
 
 
 def test_image_intent_is_insufficient_until_pixels_delivered(evidence):
@@ -206,12 +220,14 @@ def test_empty_citations_and_false_answer_quotes_are_rejected(evidence):
     assert not evaluate(evidence, [check])["approved"]
 
 
-def test_rewording_keeps_canonical_requirement_but_cannot_reduce_count(evidence):
+def test_review_cannot_redefine_confirmed_requirement(evidence):
     assert evaluate(evidence, [requirement()])["approved"]
-    assert evaluate(evidence, [requirement(description="保留两名人物")])["approved"]
     current = evidence.task.effective_state["task_contract"]["requirements"][0]
     assert current["description"] == "保存两个角色"
-    assert not evaluate(evidence, [requirement(minimum_count=1)])["approved"]
+    with pytest.raises(ValidationError):
+        contract.CompletionAssessment(
+            intent="execution", checks=[{"key": "save", "satisfied": True, "minimum_count": 1}]
+        )
 
 
 def test_reviewed_evidence_preserves_real_ids_without_bypassing_future_checks(evidence):
@@ -247,14 +263,16 @@ def test_keyed_review_uses_authoritative_definition_and_rejects_unknown_or_overw
     evidence.operations[0].result_refs.pop()
     assert not assess(checks=[check])["approved"], "Keyed review must still verify saved counts"
     assert not assess(checks=[{**check, "key": "unknown"}])["approved"]
-    assert not assess(additional_requirements=[requirement(minimum_count=1)])["approved"]
+    with pytest.raises(ValidationError):
+        contract.CompletionAssessment(
+            intent="execution", checks=[check], additional_requirements=[requirement()]
+        )
     with pytest.raises(ValidationError):
         contract.RegisteredRequirementCheck.model_validate({**check, "minimum_count": 1})
 
 
 def test_state_requirements_count_live_observations_and_registered_contract(evidence):
     item = requirement(kind="contract", minimum_count=1, artifact_kind=None, asset_kind=None)
-    assert not evaluate(evidence, [item])["approved"]
     assert evaluate(evidence, [item])["approved"]
     item = requirement(kind="observation", minimum_count=2, artifact_kind=None, asset_kind=None)
     evidence.task.effective_state = {
@@ -295,17 +313,16 @@ def test_notes_support_read_review_without_increasing_actual_reads(evidence):
     assert not evaluate(evidence, [{**item, "evidence_operation_ids": ["202"]}])["approved"]
 
 
-@pytest.mark.parametrize("version", [1, 2])
-def test_frozen_review_versions_remain_replayable(evidence, monkeypatch, version):
+def test_keyed_review_receipt_remains_replayable(evidence, monkeypatch):
+    from short_drama.agent.task import requirements
+
     monkeypatch.setattr(supervision, "candidate_text", lambda *args: "实际交付")
-    if version == 1:
-        arguments = {"intent": "execution", "requirements": [requirement()]}
-    else:
-        assert evaluate(evidence, [requirement()])["approved"]
-        arguments = {
-            "intent": "execution",
-            "checks": [{"key": "save", "satisfied": True, "evidence_operation_ids": ["201"]}],
-        }
+    monkeypatch.setattr(requirements, "guard_publish_locked", lambda *args: None)
+    assert evaluate(evidence, [requirement()])["approved"]
+    arguments = {
+        "intent": "execution",
+        "checks": [{"key": "save", "satisfied": True, "evidence_operation_ids": ["201"]}],
+    }
     evidence.run.checkpoint["completion_candidate"] = {"turn_id": "10", "memory_epoch": 0}
     result = supervision.process_completion(
         None,
@@ -313,11 +330,7 @@ def test_frozen_review_versions_remain_replayable(evidence, monkeypatch, version
         evidence.task,
         evidence.run,
         SimpleNamespace(response={}),
-        SimpleNamespace(
-            inputs={
-                "kwargs": {"supervision_version": version, "decision_purpose": "completion_review"}
-            }
-        ),
+        SimpleNamespace(inputs={"kwargs": {"decision_purpose": "completion_review"}}),
         {
             "output_kind": "tool_requests",
             "output": {"calls": [{"tool_name": "submit_completion_review", "args": arguments}]},
@@ -465,6 +478,8 @@ def test_progressive_schemas_are_isolated_cached_and_append_in_activation_order(
     )
     base = tool_manifest(task, media_enabled=False, progressive=True)
     full = tool_manifest(task, media_enabled=False)
+    names = {item["name"] for item in full}
+    assert "confirm_requirements" in names and "set_task_requirements" not in names
     assert len(json.dumps(base)) < len(json.dumps(full)) * 0.8
     assert "standard_write" in {group["group"] for group in tool_catalog(task, media_enabled=False)}
     original = base[0]["parameters"]

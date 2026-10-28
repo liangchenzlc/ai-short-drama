@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../../src/features/projects/shot-image-history.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/creation/storyboard/images/shot-image-history.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
@@ -219,7 +219,7 @@ test('reconciles disappearance from active queries even when history still repor
   assert.equal(setup.state.candidates[0].asset_id, '7');
 });
 
-const hookSource = readFileSync(new URL('../../src/features/projects/useShotImageGeneration.ts', import.meta.url), 'utf8');
+const hookSource = readFileSync(new URL('../../src/features/creation/storyboard/images/useShotImageGeneration.ts', import.meta.url), 'utf8');
 const hookCompiled = ts.transpileModule(hookSource, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
 }).outputText;
@@ -371,10 +371,10 @@ function mountHook(context, api) {
   };
   const modules = {
     react,
-    '../../api/http': { errorMessage: cause => cause.message },
-    '../../api/modules/generations': { generations: { list: (...args) => api.listTasks(...args), detail: (...args) => api.detail(...args) } },
-    '../../api/modules/media-library': { mediaLibrary: { list: (...args) => api.listCandidates(...args) } },
-    './shot-image-history': {
+    '@host/api/http': { errorMessage: cause => cause.message },
+    '@host/api/generations/tasks/requests': { generations: { list: (...args) => api.listTasks(...args), detail: (...args) => api.detail(...args) } },
+    '@host/api/media/library': { mediaLibrary: { list: (...args) => api.listCandidates(...args) } },
+    '@host/features/creation/storyboard/images/shot-image-history': {
       emptyShotImageHistory,
       createShotImageHistory: options => createShotImageHistory({ ...options,
         schedule: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; },

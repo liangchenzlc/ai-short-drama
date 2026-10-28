@@ -7,9 +7,12 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-from short_drama.service.canvas_generation_inputs import generation_payload
-from short_drama.service.canvas_task_outputs import durable_output, generation_metadata
+from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+from short_drama.service.canvas.generation.generation_inputs import generation_payload
+from short_drama.service.canvas.generation.tasks.task_outputs import (
+    durable_output,
+    generation_metadata,
+)
 
 
 def request_body():
@@ -57,7 +60,7 @@ def test_storyboard_admission_compiles_frozen_style_and_json_contract():
 
 
 def test_storyboard_prompt_binding_example_is_valid_and_keeps_frozen_character_identity():
-    from short_drama.service.canvas_storyboard import (
+    from short_drama.service.canvas.document.storyboard.storyboard import (
         canvas_storyboard_result,
         storyboard_system_prompt,
     )
@@ -103,7 +106,7 @@ def test_storyboard_prompt_binding_example_is_valid_and_keeps_frozen_character_i
 )
 def test_storyboard_result_rejects_malformed_binding_for_known_asset(binding):
     from short_drama.ai.types import GenerationError
-    from short_drama.service.canvas_storyboard import canvas_storyboard_result
+    from short_drama.service.canvas.document.storyboard.storyboard import canvas_storyboard_result
 
     request = request_body()
     request["input"]["canvasAssets"] = [{"id": "character-one"}]
@@ -177,7 +180,7 @@ def test_structured_delivery_keeps_task_derived_ids_and_character_objects():
     ],
 )
 def test_storyboard_result_rejects_untrusted_or_incomplete_rows(mutation):
-    from short_drama.service.canvas_storyboard import canvas_storyboard_result
+    from short_drama.service.canvas.document.storyboard.storyboard import canvas_storyboard_result
 
     body = deepcopy(reply_body())
     if mutation == "empty":
@@ -208,7 +211,7 @@ def test_storyboard_result_rejects_untrusted_or_incomplete_rows(mutation):
 
 def test_storyboard_result_does_not_accept_markdown_or_explanatory_text():
     from short_drama.ai.types import GenerationError
-    from short_drama.service.canvas_storyboard import canvas_storyboard_result
+    from short_drama.service.canvas.document.storyboard.storyboard import canvas_storyboard_result
 
     for text in (
         "```json\n" + json.dumps(reply_body()) + "\n```",

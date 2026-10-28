@@ -14,7 +14,7 @@ from langgraph.checkpoint.base import (
 )
 
 from short_drama.core.exceptions import Conflict
-from short_drama.service.agent_graph_service import AgentGraphService
+from short_drama.service.assistant.execution.graph import AgentGraphService
 
 
 class MySQLCheckpointSaver(BaseCheckpointSaver):

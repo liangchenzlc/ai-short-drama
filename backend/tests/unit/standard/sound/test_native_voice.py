@@ -10,16 +10,18 @@ import pytest
 from PIL import Image
 from pydantic import ValidationError
 
-from short_drama.ai.adapters import build_submission, parse_result, validate_request
-from short_drama.ai.gateway import GenerationGateway
+from short_drama.ai.adapters.capabilities import validate_request
+from short_drama.ai.adapters.results import parse_result
+from short_drama.ai.adapters.submission import build_submission
+from short_drama.ai.gateway.client import GenerationGateway
 from short_drama.ai.types import GenerationError
 from short_drama.core.config import Settings
-from short_drama.schemas.native_voice import NativeDialogueDocument
-from short_drama.schemas.project_sound import SoundDocument
-from short_drama.service.native_video_media import inspect_native_video
-from short_drama.service.native_voice_service import native_context, native_prompt
-from short_drama.service.sound_render import mix_sound
-from short_drama.service.video_render import VideoRenderer
+from short_drama.schemas.creation.sound.tracks.sound import SoundDocument
+from short_drama.schemas.creation.sound.voices.voices import NativeDialogueDocument
+from short_drama.service.creation.assembly.rendering.renderer import VideoRenderer
+from short_drama.service.creation.sound.tracks.render import mix_sound
+from short_drama.service.creation.sound.voices.voices import native_context, native_prompt
+from short_drama.service.creation.storyboard.videos.native_media import inspect_native_video
 from tests.unit.standard.sound.test_sound_production import run_ffmpeg
 
 DESIGN = "dashscope_voice_design.v1"

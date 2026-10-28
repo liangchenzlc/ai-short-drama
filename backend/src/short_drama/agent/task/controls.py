@@ -6,8 +6,8 @@ from short_drama.agent.task.state import (
     new_attempt_locked,
     task_event,
 )
-from short_drama.dao.agent_task_dao import AgentTaskDAO
-from short_drama.domain.agent import AgentMessage
+from short_drama.dao.assistant.tasks.task import AgentTaskDAO
+from short_drama.domain.assistant.conversations.models import AgentMessage
 from short_drama.service.base import utcnow
 
 
@@ -69,8 +69,7 @@ def apply_controls_locked(session, conversation, task, run):
         close_unstarted_calls(session, run)
         task.status, task.phase = "stopped", "terminal"
         if run.status == "running" and run.lease_token is not None:
-            # A segment is in flight. Let the worker persist what it already streamed
-            # and close the run; finishing here would discard that prefix.
+            # 模型段尚在返回，由 Worker 保存已流出的正文并关闭 Run；提前结束会丢失这段内容。
             run.cancel_requested = 1
             task_event(session, conversation, task, "task.stopping", run=run)
         else:

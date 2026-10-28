@@ -6,8 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-from short_drama.service.canvas_generation_inputs import generation_payload
+from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+from short_drama.service.canvas.generation.generation_inputs import generation_payload
 
 
 def request(kind="text", config=None):

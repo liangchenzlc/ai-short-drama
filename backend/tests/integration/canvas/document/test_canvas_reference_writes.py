@@ -15,7 +15,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event, select, update
 
-from short_drama.domain.canvas import CanvasMediaReference, CanvasRevision, CanvasUserMediaReference
+from short_drama.domain.canvas.document.canvas import (
+    CanvasMediaReference,
+    CanvasRevision,
+    CanvasUserMediaReference,
+)
 from short_drama.service.base import utcnow
 from tests.integration.canvas.resources.test_canvas_library import (
     database_errors as database_errors,

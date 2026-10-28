@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from short_drama.ai.canvas_video_adapters import NEWAPI_VIDEO_GENERATIONS
+from short_drama.ai.adapters.video.video_adapters import NEWAPI_VIDEO_GENERATIONS
 from short_drama.domain import AIGenerationRecord, AsyncTask
 from tests.integration.canvas.generation.test_canvas_generation_runtime import TASKS, records
 from tests.integration.canvas.resources.test_canvas_resources import resource_app as resource_app

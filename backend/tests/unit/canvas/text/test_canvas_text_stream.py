@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from short_drama.ai.streaming import TextStreamObserver
+from short_drama.ai.gateway.streaming import TextStreamObserver
 from short_drama.ai.types import GenerationError
 
 
@@ -74,7 +74,7 @@ def test_callback_failure_is_not_swallowed_or_resubmitted():
 
 @pytest.mark.parametrize("disconnect", [False, True])
 def test_real_http_delivers_supplier_delta_before_completion_without_a_second_post(disconnect):
-    from short_drama.ai.gateway import GenerationGateway
+    from short_drama.ai.gateway.client import GenerationGateway
 
     observed = threading.Event()
     values, calls = [], []

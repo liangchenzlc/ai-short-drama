@@ -1,0 +1,136 @@
+/* Timeline and monitor remain a real editing surface with visible tools. */
+.assembly-workspace {
+  --assembly-accent: var(--accent);
+  --assembly-ink: var(--ink);
+  --assembly-muted: var(--sub);
+}
+.assembly-heading {
+  margin-bottom: 18px;
+  gap: 16px;
+}
+.assembly-heading h2 {
+  font-size: 21px;
+}
+.assembly-heading p {
+  font-size: 12px;
+}
+.assembly-workspace.is-focused .assembly-heading {
+  background: var(--canvas);
+  border-color: var(--hair);
+}
+.assembly-editor-desk {
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: 18px;
+}
+.assembly-media-bin {
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+}
+.assembly-source-list {
+  gap: 14px;
+}
+.assembly-source-image {
+  background: var(--canvas);
+}
+.assembly-source-image small {
+  background: var(--canvas);
+  color: var(--ink);
+  border-radius: 4px;
+}
+.assembly-monitor {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  padding: 12px;
+}
+.assembly-screen,
+.assembly-result-dialog video {
+  background: var(--media-canvas);
+  border-radius: 8px;
+}
+.assembly-player-controls {
+  padding-top: 12px;
+  gap: 7px;
+}
+.assembly-resize-handle {
+  height: 18px;
+}
+.assembly-resize-handle > span {
+  background: var(--border-control);
+}
+.assembly-resize-handle:hover {
+  background: var(--surface-hover);
+}
+.assembly-edit-tools {
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 9px;
+}
+.assembly-edit-tools .ant-btn {
+  padding-inline: 10px;
+}
+.assembly-timeline {
+  border-color: var(--hair);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.assembly-timeline-heading {
+  background: var(--surface-muted);
+  border-color: var(--hair);
+  padding: 10px 14px;
+}
+.assembly-timeline-lane,
+.assembly-timeline-ruler {
+  background: var(--canvas);
+}
+.assembly-timeline-clip {
+  border-color: var(--border-hover);
+}
+.assembly-timeline-clip.is-selected {
+  border-color: var(--accent);
+}
+.assembly-playhead,
+.assembly-timeline-playhead {
+  background: var(--accent);
+}
+.assembly-export-bar {
+  padding: 16px 18px;
+  margin-top: 20px;
+  background: var(--surface);
+  border-color: var(--hair);
+  border-radius: 12px;
+}
+.assembly-total {
+  font-size: 20px;
+}
+.assembly-export-bar strong {
+  font-size: 13px;
+}
+.assembly-empty {
+  min-height: 390px;
+}
+.assembly-empty-frame {
+  background: var(--pale);
+  color: var(--accent);
+  width: 96px;
+  height: 64px;
+}
+.assembly-clip {
+  background: var(--surface);
+  border-color: var(--hair);
+}
+.assembly-clip.is-selected {
+  background: var(--pale);
+  border-color: var(--accent-border);
+}
+.assembly-clip.is-excluded {
+  background: var(--surface-muted);
+}
+.assembly-drop-hint {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}

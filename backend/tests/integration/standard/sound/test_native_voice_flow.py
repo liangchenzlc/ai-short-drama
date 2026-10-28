@@ -11,13 +11,13 @@ from sqlalchemy import select
 from short_drama.ai.types import GenerationResult
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.domain import AIGenerationRecord, MediaFile
-from short_drama.domain.native_voice import CharacterVoice
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.generation_batch_service import GenerationBatchService, dispatch_batches
-from short_drama.service.native_voice_service import NativeVoiceService
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
-from short_drama.service.shot_asset_service import ShotAssetService
-from short_drama.service.shot_image_service import ShotImageService
+from short_drama.domain.creation.sound.voices.voices import CharacterVoice
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.creation.sound.voices.voices import NativeVoiceService
+from short_drama.service.creation.storyboard.images.image import ShotImageService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.creation.storyboard.references.asset import ShotAssetService
+from short_drama.service.generations.batches.batch import GenerationBatchService, dispatch_batches
 from tests.integration.standard.assets.test_asset_image_generation import create_asset, drain
 from tests.integration.standard.assets.test_asset_image_generation import flow as flow
 from tests.integration.standard.sound.test_project_sound import setup as setup_sound
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.integration
 def setup(flow, tmp_path, monkeypatch):
     import subprocess
 
-    from short_drama.service.video_render import executable
+    from short_drama.service.creation.assembly.rendering.renderer import executable
 
     monkeypatch.setenv("NATIVE_VIDEO_ENABLED", "true")
     flow.settings.native_video_enabled = flow.settings.audio_production_enabled = True
@@ -248,7 +248,7 @@ def test_two_speakers_frozen_video_inputs_voice_change_pauses_waiting_batch(
     import subprocess
 
     from short_drama.domain import MediaAsset
-    from short_drama.service.video_render import executable
+    from short_drama.service.creation.assembly.rendering.renderer import executable
 
     for audible in (False, True):
         path = tmp_path / f"native-{audible}.mp4"
@@ -332,8 +332,8 @@ def test_two_speakers_frozen_video_inputs_voice_change_pauses_waiting_batch(
                 flow.media.apply(asset_id, body)
             assert invalid.value.code == "native_audio_invalid"
 
-    from short_drama.service.project_assembly_service import ProjectAssemblyService
-    from short_drama.service.project_sound_service import ProjectSoundService
+    from short_drama.service.creation.assembly.document.assembly import ProjectAssemblyService
+    from short_drama.service.creation.sound.tracks.sound import ProjectSoundService
 
     assembly = ProjectAssemblyService(flow.session, flow.settings, flow.storage)
     assembly.initialize(flow.project.id)
@@ -423,7 +423,7 @@ def test_native_http_capability_scope_schema_and_creation_replay(flow, tmp_path,
 
     import httpx
 
-    from short_drama.api.dependencies import get_session
+    from short_drama.api.dependencies.session import get_session
     from short_drama.main import create_app
 
     _, config = setup(flow, tmp_path, monkeypatch)

@@ -1,4 +1,4 @@
-import type { CanvasCreationDto, CanvasCreationRequestDto, CanvasInitialDrawingDto, CanvasDrawingHeadsDto, CanvasReadDto, CanvasRecycleRestoreRequestDto, CanvasRevisionDto, CanvasSummaryDto, CanvasWorkspaceDto } from "@host/api/types/canvases";
+import type { CanvasCreationDto, CanvasCreationRequestDto, CanvasInitialDrawingDto, CanvasDrawingHeadsDto, CanvasReadDto, CanvasRecycleRestoreRequestDto, CanvasRevisionDto, CanvasSummaryDto, CanvasWorkspaceDto } from "@host/integrations/canvas/contracts";
 
 import { validateCanvasSourceOrigin, type CanvasSourceOrigin } from "./canvas-initial-write.ts";
 

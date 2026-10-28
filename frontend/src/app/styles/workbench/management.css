@@ -1,0 +1,183 @@
+/* Tasks, media, and settings use the same compact table and filter vocabulary. */
+.task-status-filters {
+  gap: 5px;
+}
+.task-status-filters button {
+  min-height: 30px;
+  padding: 4px 11px;
+  font-size: 12px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--sub);
+}
+.task-status-filters button[aria-pressed='true'] {
+  background: var(--pale);
+  color: var(--accent-strong);
+  border-color: var(--accent-border);
+}
+.generation-list-toolbar {
+  margin-block: 16px;
+}
+.generation-page .ant-table-wrapper {
+  background: var(--surface);
+  border-color: var(--hair);
+}
+.generation-link {
+  color: var(--accent);
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 13px;
+}
+.generation-link:hover:not(:disabled) {
+  background: transparent;
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+.generation-status.status-running,
+.generation-status.status-queued {
+  color: var(--accent);
+  background: var(--pale);
+  border-color: var(--accent-border);
+}
+.generation-status.status-succeeded {
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: var(--success-border);
+}
+.generation-status.status-failed,
+.generation-status.status-unknown {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+}
+.generation-status.status-cancelled {
+  color: var(--sub);
+  background: var(--surface-muted);
+  border-color: var(--border-control);
+}
+.generation-facts {
+  gap: 16px;
+  background: var(--surface-muted);
+  border-radius: 9px;
+}
+.generation-text-result {
+  background: var(--canvas);
+  color: var(--ink);
+  border-color: var(--hair);
+  border-radius: 9px;
+}
+.generation-json {
+  background: var(--canvas);
+  color: var(--sub);
+  border-radius: 9px;
+}
+.generation-detail-toolbar {
+  font-size: 12px;
+}
+.generation-section {
+  border-color: var(--hair);
+}
+.generation-drawer .ant-form-item-hidden {
+  display: none !important;
+}
+.config-table-wrap {
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.config-table th {
+  color: var(--sub);
+  background: var(--surface-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.config-table td {
+  font-size: 13px;
+}
+.config-table th,
+.config-table td {
+  padding: 14px 16px;
+  border-color: var(--hair);
+}
+.config-table tbody tr:hover {
+  background: var(--surface-raised);
+}
+.config-actions {
+  gap: 6px;
+}
+.preview-note {
+  background: var(--surface-muted);
+  color: var(--sub);
+}
+.generation-list-toolbar {
+  flex-wrap: wrap;
+}
+.generation-list-toolbar p {
+  min-width: 0;
+}
+.list-toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-action);
+}
+.status-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: var(--surface-hover);
+  color: var(--sub);
+}
+.status-badge.is-success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.status-badge.is-neutral {
+  background: var(--surface-hover);
+  color: var(--sub);
+}
+.service-tabs button {
+  min-height: 34px;
+  font-size: 13px;
+  padding: 6px 14px;
+}
+.service-tabs button.active {
+  background: var(--pale);
+  color: var(--accent-strong);
+}
+.ai-config-form fieldset {
+  gap: 15px;
+}
+.ai-config-form input:focus-visible,
+.ai-config-form select:focus-visible {
+  border-color: var(--accent);
+}
+.model-config-dialog input:not([type='checkbox']),
+.model-config-dialog select {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.ui-dialog .ant-input-number input.ant-input-number-input {
+  min-height: 0;
+  height: 32px;
+  padding: 0 11px;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+}
+.ui-dialog .ant-select input.ant-select-selection-search-input {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.batch-toolbar {
+  margin-bottom: 16px;
+}
+.batch-form .batch-fields {
+  gap: 14px;
+}

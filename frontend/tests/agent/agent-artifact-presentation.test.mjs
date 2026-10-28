@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
-const compiled = ts.transpileModule(readFileSync(new URL('../../src/features/agents/agent-artifact-presentation.ts', import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
+const compiled = ts.transpileModule(readFileSync(new URL('../../src/features/assistant/operations/agent-artifact-presentation.ts', import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { artifactVersion, diffValue, artifactEffect } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 test('adoption keeps decimal versions intact through unsigned 64-bit boundaries', () => {
   for (const version of ['42', '9007199254740993', '18446744073709551615']) assert.equal(artifactVersion(version), version);

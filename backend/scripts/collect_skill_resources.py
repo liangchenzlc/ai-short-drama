@@ -6,7 +6,7 @@ import sys
 
 from short_drama.core.config import Settings
 from short_drama.db.session import build_engine, session_factory
-from short_drama.service.agent_skill_resource_service import collect_unreferenced_skill_resources
+from short_drama.service.skills.resources.skill_resource import collect_unreferenced_skill_resources
 from short_drama.storage.minio import MinioStorage
 
 

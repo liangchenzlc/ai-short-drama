@@ -1,23 +1,18 @@
-"""Add the single story-outline document and normalize published current scripts."""
+"""规范已发布当前剧本的确认状态；退役的大纲表不再创建。"""
 
 import argparse
-from pathlib import Path
 
 from sqlalchemy import inspect, select, update
-from sqlalchemy.dialects.mysql import dialect
-from sqlalchemy.schema import CreateTable
 
 from short_drama.core.config import Settings
 from short_drama.core.time import utcnow
 from short_drama.db.session import build_engine
-from short_drama.domain import Project, ProjectScript, ProjectStoryOutline
-from short_drama.domain.agent import AgentArtifact
+from short_drama.domain import Project, ProjectScript
+from short_drama.domain.assistant.artifacts.models import AgentArtifact
 
 
 def migrate(engine):
-    table = ProjectStoryOutline.__table__
-    with engine.begin() as connection:
-        table.create(connection, checkfirst=True)
+    # 大纲表已退役；仅规范仍有效的剧本确认状态，不重建历史功能表。
     with engine.begin() as connection:
         statement = (
             select(Project.id, ProjectScript.id, ProjectScript.content)
@@ -75,23 +70,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
-    target = (
-        Path(__file__).resolve().parents[2]
-        / "docs/database/migrations/2026-10-27-writing-workspace"
-    )
-    target.mkdir(parents=True, exist_ok=True)
-    ddl = str(CreateTable(ProjectStoryOutline.__table__).compile(dialect=dialect())).strip() + ";\n"
-    (target / "001_story_outline.sql").write_text(ddl, encoding="utf-8", newline="\n")
     if args.apply:
         engine = build_engine(Settings())
         count = migrate(engine)
         print(
-            f"Writing workspace migrated in {engine.url.database}: outline table ready; "
+            f"Writing workspace migrated in {engine.url.database}: "
             f"{count} published current scripts normalized."
         )
         engine.dispose()
     else:
-        print("DDL exported. Use --apply to add the table and normalize published current scripts.")
+        print("Use --apply to normalize published current scripts; no retired tables are created.")
 
 
 if __name__ == "__main__":

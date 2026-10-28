@@ -9,7 +9,6 @@ from short_drama.agent.resources.catalog import attachments_locked
 from short_drama.agent.resources.contracts import HydrationIntent
 from short_drama.agent.resources.resolver import attachment_ref
 from short_drama.agent.skill import progressive
-from short_drama.agent.task.contract import declare_locked
 from short_drama.agent.task.requirements import confirm_locked
 from short_drama.agent.tools import canvas, image, media, standard
 from short_drama.agent.tools import script as script_tools
@@ -18,19 +17,20 @@ from short_drama.agent.tools.registry import REGISTRY, tool_catalog
 from short_drama.agent.tools.results import read_results_locked
 from short_drama.agent.tools.scope import autonomous_scope
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
-from short_drama.dao.agent_memory_dao import AgentMemoryDAO
-from short_drama.domain.agent import AgentMessage, AgentRun, AgentToolCall
-from short_drama.domain.agent_memory import AgentMemoryItem
-from short_drama.domain.agent_task import AgentOperation, AgentTaskInput
-from short_drama.schemas.agent_memory import MemoryCreate
-from short_drama.service.agent_memory_store import (
+from short_drama.dao.assistant.memory.memory import AgentMemoryDAO
+from short_drama.domain.assistant.conversations.models import AgentMessage
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall
+from short_drama.domain.assistant.memory.memory import AgentMemoryItem
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTaskInput
+from short_drama.schemas.assistant.memory.memory import MemoryCreate
+from short_drama.service.assistant.memory.memory_store import (
     apply_memory_command_locked,
     blocked_extraction,
     checked_scope,
     create_memory_locked,
     source_rows,
 )
-from short_drama.service.assistant_image_service import AssistantImageService
+from short_drama.service.assistant.operations.image import AssistantImageService
 
 
 def _standard(session, conversation, task, operation, values, settings):
@@ -153,7 +153,7 @@ def _search(session, conversation, task, operation, values, settings):
 
 
 def _enable_tools(session, conversation, task, operation, values, settings):
-    from short_drama.service.assistant_policy_service import generation_policy_locked
+    from short_drama.service.assistant.tasks.policy import generation_policy_locked
 
     policy = generation_policy_locked(session, conversation.owner_user_id)
     catalog = tool_catalog(task, media_enabled=policy.media_generation_enabled)
@@ -367,7 +367,6 @@ HANDLERS = {
     "read_current_script": script_tools.read_locked,
     "propose_script_patch": script_tools.propose_locked,
     "confirm_requirements": confirm_locked,
-    "set_task_requirements": declare_locked,
     "enable_tool_group": _enable_tools,
     "record_task_observation": record_observation,
     "release_skill": progressive.release_locked,

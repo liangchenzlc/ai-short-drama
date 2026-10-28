@@ -12,9 +12,6 @@ from uuid import uuid4
 
 import pytest
 from PIL import Image
-from short_drama.service.episode_service import EpisodeService
-from short_drama.service.episode_storyboard_service import EpisodeStoryboardService
-from short_drama.service.episode_writing_service import EpisodeWritingService
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -23,19 +20,21 @@ from short_drama.core.config import Settings
 from short_drama.domain import (
     AsyncTask,
     MediaAsset,
-    NovelScriptRecord,
     ScriptShotRecord,
     ShotImage,
     ShotScript,
 )
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.generation_business_service import GenerationBusinessService
-from short_drama.service.generation_execution_service import GenerationExecutionService
-from short_drama.service.image_group_service import ImageGroupService
-from short_drama.service.media_asset_service import MediaAssetService
-from short_drama.service.project_service import ProjectService
-from tests.support.integration.legacy_identity import session_factory
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.creation.writing.script.documents import ProjectWritingService
+from short_drama.service.generations.admission.business import GenerationBusinessService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
+from short_drama.service.media.image_groups.groups import ImageGroupService
+from short_drama.service.media.library.assets import MediaAssetService
+from short_drama.service.projects.management.project import ProjectService
+from tests.support.integration.identity import actor as fixture_actor
+from tests.support.integration.identity import session_factory
 
 pytestmark = pytest.mark.integration
 
@@ -60,7 +59,7 @@ class ControlledProvider:
             )
         text = (
             "EXT. GARDEN - DAY\nA character enters."
-            if scene == "novel_script"
+            if scene == "script_rewrite"
             else (
                 '{"shots":[{"title":"Garden entrance","shot_size":"wide_shot",'
                 '"source_excerpt":"EXT. GARDEN - DAY",'
@@ -74,7 +73,7 @@ class ControlledProvider:
 
 
 @pytest.mark.parametrize("infrastructure", [False, True])
-def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_session, infrastructure):
+def test_script_to_storyboard_and_automatic_image_primary(mysql_engine, db_session, infrastructure):
     if infrastructure and os.environ.get("TEST_PRODUCTION_INFRA") != "1":
         pytest.skip("Opt in to isolated real RabbitMQ and MinIO smoke")
     namespace = "production_test_" + uuid4().hex
@@ -87,7 +86,7 @@ def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_sessio
     uploaded = []
     if infrastructure:
         from short_drama.storage.minio import MinioStorage
-        from short_drama.tasks.publisher import RabbitSender
+        from short_drama.tasks.runtime.publisher import RabbitSender
 
         storage = MinioStorage(settings)
         original_put = storage.put
@@ -101,7 +100,7 @@ def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_sessio
     executor = GenerationExecutionService(factory, settings, provider, storage)
 
     def drain(task_id, kind):
-        from short_drama.tasks.publisher import Publisher
+        from short_drama.tasks.runtime.publisher import Publisher
 
         for _ in range(5):
             with factory() as session:
@@ -141,43 +140,33 @@ def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_sessio
                 .id
             )
         project = ProjectService(db_session).create_project({"name": namespace})
-        episode = EpisodeService(db_session).create(
-            {
-                "project_id": project.id,
-                "position": 1,
-                "title": "smoke",
-                "aspect": "16:9",
-            }
+        p = project.id
+        writing = ProjectWritingService(db_session)
+        saved = writing.save_script(
+            p, {"content_version": "1", "script_id": None, "content": "A garden encounter."}
         )
-        p, e = project.id, episode.id
-        writing = EpisodeWritingService(db_session)
-        writing.save_novel(p, e, {"content_version": "1", "content": "A garden encounter."})
+        script_id = saved["script"]["id"]
         generations = AIGenerationService(db_session, settings)
         task, _ = generations.create(
             "text",
             {
                 "config_id": str(configs["text"]),
                 "source": {
-                    "scene": "novel_script",
+                    "scene": "script_rewrite",
                     "project_id": str(p),
-                    "episode_id": str(e),
                     "content_version": "2",
+                    "script_id": script_id,
+                    "start": 0,
+                    "end": 19,
+                    "selected_text": "A garden encounter.",
                 },
             },
             "novel-smoke",
         )
         drain(task["generation_id"], "text")
-        state = writing.get(p, e)
-        assert state["editing_script"] is None and state["content_version"] == "2"
-        candidates = writing.candidates(p, e)
-        assert candidates["total"] == 1
-        script_id = candidates["items"][0]["id"]
-        with db_session.begin():
-            assert db_session.scalar(select(func.count()).select_from(NovelScriptRecord)) == 1
-        selected = writing.select_script(p, e, {"content_version": "2", "script_id": script_id})
-        confirmed = writing.confirm(
-            p, e, script_id, {"content_version": selected["content_version"]}
-        )
+        confirmed = writing.get(p)
+        assert confirmed["editing_script"]["content"] == "EXT. GARDEN - DAY\nA character enters."
+        assert confirmed["content_version"] == "3"
         task, _ = generations.create(
             "text",
             {
@@ -185,7 +174,6 @@ def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_sessio
                 "source": {
                     "scene": "script_shots",
                     "project_id": str(p),
-                    "episode_id": str(e),
                     "script_id": script_id,
                     "content_version": confirmed["content_version"],
                 },
@@ -193,8 +181,8 @@ def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_sessio
             "shots-smoke",
         )
         drain(task["generation_id"], "text")
-        board = EpisodeStoryboardService(db_session)
-        assert board.list(p, e)["total"] == 0
+        board = ProjectStoryboardService(db_session)
+        assert board.list(p)["total"] == 0
         payload = {
             "mode": "append",
             "content_version": confirmed["content_version"],
@@ -204,11 +192,14 @@ def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_sessio
 
         def apply_storyboard(_attempt):
             with Session(
-                mysql_engine, expire_on_commit=False, autoflush=False, info={"legacy_user_id": 1}
+                mysql_engine,
+                expire_on_commit=False,
+                autoflush=False,
+                info={"actor": fixture_actor()},
             ) as session:
                 barrier.wait(timeout=10)
                 return GenerationBusinessService(session).apply_storyboard(
-                    p, e, task["generation_id"], payload
+                    p, task["generation_id"], payload
                 )
 
         with ThreadPoolExecutor(max_workers=2) as executor_pool:
@@ -218,13 +209,13 @@ def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_sessio
         assert {result["storyboard_version"] for result in applications} == {"2"}
         shot_id = applications[0]["shot_ids"][0]
         db_session.expire_all()
-        assert board.list(p, e)["total"] == 1
-        adopted = board.get(p, e, shot_id)["shot"]
+        assert board.list(p)["total"] == 1
+        adopted = board.get(p, shot_id)["shot"]
         assert adopted["title"] == "Garden entrance" and adopted["shot_size"] == "wide_shot"
         with db_session.begin():
             assert (
                 db_session.scalar(
-                    select(func.count()).select_from(ShotScript).where(ShotScript.episode_id == e)
+                    select(func.count()).select_from(ShotScript).where(ShotScript.project_id == p)
                 )
                 == 1
             )
@@ -237,7 +228,7 @@ def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_sessio
                 == 1
             )
         if infrastructure:
-            context = board.get_shot_context(p, e, shot_id)
+            context = board.get_shot_context(p, shot_id)
             task, _ = generations.create(
                 "image",
                 {
@@ -259,7 +250,7 @@ def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_sessio
             group = ImageGroupService(db_session, settings, storage).current("shot", shot_id)
             assert group["id"] == task["image_group_id"]
             assert group["status"] == "completed" and group["primary_index"] == 1
-            saved = board.get(p, e, shot_id)["shot"]
+            saved = board.get(p, shot_id)["shot"]
             assert saved["image"]["media_id"] == group["items"][0]["media_id"]
             assert not saved["image"]["is_stale"] and saved["row_version"] == "2"
             with db_session.begin():
@@ -281,7 +272,7 @@ def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_sessio
                     mysql_engine,
                     expire_on_commit=False,
                     autoflush=False,
-                    info={"legacy_user_id": 1},
+                    info={"actor": fixture_actor()},
                 ) as session:
                     image_barrier.wait(timeout=10)
                     return MediaAssetService(session, settings, storage).apply(asset_id, body)
@@ -294,12 +285,12 @@ def test_novel_to_storyboard_and_automatic_image_primary(mysql_engine, db_sessio
             db_session.expire_all()
             with db_session.begin():
                 assert db_session.scalar(select(func.count()).select_from(ShotImage)) == 1
-            assert board.get(p, e, shot_id)["shot"]["image"] is not None
+            assert board.get(p, shot_id)["shot"]["image"] is not None
             assert uploaded
         assert provider.calls == (
-            ["novel_script", "script_shots", "shot_image"]
+            ["script_rewrite", "script_shots", "shot_image"]
             if infrastructure
-            else ["novel_script", "script_shots"]
+            else ["script_rewrite", "script_shots"]
         )
     finally:
         if storage:

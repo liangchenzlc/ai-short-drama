@@ -8,8 +8,8 @@ from short_drama.core.config import Settings
 from short_drama.core.crypto import KeyCipher
 from short_drama.dao.base import BaseDAO
 from short_drama.domain import AIModelConfig
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.model_discovery_service import ModelDiscoveryError
+from short_drama.service.ai_config.discovery.catalog import ModelDiscoveryError
+from short_drama.service.ai_config.management.models import AIModelConfigService
 
 
 @pytest.mark.parametrize("stored_url", ["", "https://old.example/v1"])

@@ -26,19 +26,15 @@ def test_reference_migration_preserves_existing_rows_and_matches_canonical(migra
         )
         canonical = contract_snapshot(connection)
         connection.exec_driver_sql(
-            "INSERT INTO projects (id,owner_user_id,name,aspect) VALUES (9101,1,'test','16:9')"
+            "INSERT INTO projects (id,owner_user_id,name) VALUES (9101,1,'test')"
         )
         connection.exec_driver_sql(
-            "INSERT INTO episodes (id,project_id,position,title,aspect) "
-            "VALUES (9102,9101,1,'episode','16:9')"
+            "INSERT INTO shot_scripts (id,project_id,position,script,row_version) "
+            "VALUES (9103,9101,1,'existing script',7)"
         )
         connection.exec_driver_sql(
-            "INSERT INTO shot_scripts (id,episode_id,position,script,row_version) "
-            "VALUES (9103,9102,1,'existing script',7)"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO assets (id,project_id,kind,name,description,row_version) "
-            "VALUES (9104,9101,'character','actor','existing description',4)"
+            "INSERT INTO assets (id,project_id,position,kind,name,description,row_version) "
+            "VALUES (9104,9101,1,'character','actor','existing description',4)"
         )
         connection.commit()
         before = {}

@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from short_drama.schemas.canvas import CanvasNodeDocument
+from short_drama.schemas.canvas.document.canvas import CanvasNodeDocument
 
 
 @pytest.mark.parametrize("kind", ["text", "image", "video", "audio"])

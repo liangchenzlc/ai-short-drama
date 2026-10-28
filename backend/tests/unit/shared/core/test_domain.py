@@ -155,7 +155,6 @@ def test_constraints_indexes_and_mysql_compilation_match_sql():
 def test_creation_only_tables_do_not_gain_update_audit():
     for name in (
         "script_shot_records",
-        "novel_script_records",
         "media_recycle_bin",
     ):
         assert "updated_at" not in Base.metadata.tables[name].c

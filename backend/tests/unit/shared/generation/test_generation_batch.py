@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from short_drama.schemas.generation_batch import BatchPreflight
-from short_drama.service.generation_batch_service import batch_status, item_status
+from short_drama.schemas.generations.batches.batch import BatchPreflight
+from short_drama.service.generations.batches.batch import batch_status, item_status
 
 
 def test_batch_unknown_never_reports_completion_or_releases_as_normal_failure():

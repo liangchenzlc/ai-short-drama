@@ -1,1 +1,1 @@
-export * from "../../../../src/lib/image-tools/annotation-model.ts";
+export * from "@host/integrations/canvas/image-tools/annotation-model";

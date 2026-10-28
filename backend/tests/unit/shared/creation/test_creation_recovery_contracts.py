@@ -6,11 +6,11 @@ from pydantic import ValidationError
 
 from short_drama.agent.core import state
 from short_drama.domain import AgentEvent, AgentMessage
-from short_drama.schemas.agent import ConversationPatch
-from short_drama.schemas.agent_artifacts import ArtifactAdopt
-from short_drama.schemas.agent_runtime import ReviewDecision, RunContinue
-from short_drama.schemas.project_sound import SoundAdopt, SoundEdit, VoiceDefaultsEdit
-from short_drama.service.agent_artifact_service import AgentArtifactService
+from short_drama.schemas.assistant.conversations.engine import ConversationPatch
+from short_drama.schemas.assistant.operations.artifacts import ArtifactAdopt
+from short_drama.schemas.assistant.operations.runtime import ReviewDecision, RunContinue
+from short_drama.schemas.creation.sound.tracks.sound import SoundAdopt, SoundEdit, VoiceDefaultsEdit
+from short_drama.service.assistant.operations.artifact import AgentArtifactService
 
 
 def artifact(*, source_content="原始生成稿"):
@@ -46,20 +46,18 @@ def artifact(*, source_content="原始生成稿"):
     )
 
 
-def test_original_agent_script_is_immutable_and_legacy_origin_is_explicit():
+def test_original_agent_script_uses_the_immutable_snapshot():
     service = AgentArtifactService(None)
     record = artifact()
-    script = SimpleNamespace(content="采用后修改的正文")
-    projected = service._view(record, detail=True, script=script)
+    projected = service._view(record, detail=True)
     assert projected["content"] == "原始生成稿"
-    assert projected["content_origin"] == "snapshot"
     assert projected["row_version"] == "9007199254740993"
     assert projected["source_snapshot"]["content_version"] == "9007199254740993"
     assert projected["apply_receipt"]["content_version"] == "9007199254740994"
     record.source_content = None
-    legacy = service._view(record, detail=True, script=script)
-    assert legacy["content"] == script.content
-    assert legacy["content_origin"] == "current_script_legacy"
+    without_snapshot = service._view(record, detail=True)
+    assert without_snapshot["content"] is None
+    assert without_snapshot["preview"] == ""
 
 
 @pytest.mark.parametrize("version", ["9007199254740993", 9007199254740993])
@@ -89,7 +87,7 @@ def test_agent_and_sound_versions_accept_legacy_int_but_serialize_decimal_string
 
 
 def test_late_results_are_visible_without_resuming_a_stopped_run(monkeypatch):
-    conversation = SimpleNamespace(id=1, next_message_seq=9, next_event_seq=10)
+    conversation = SimpleNamespace(id=1, next_message_seq=9, next_event_seq=10, next_item_seq=1)
     run = SimpleNamespace(id=2, trigger_message_id=3, status="cancelled", next_run_at=None)
     monkeypatch.setattr(
         state,

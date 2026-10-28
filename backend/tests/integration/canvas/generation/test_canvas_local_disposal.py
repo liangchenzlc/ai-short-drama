@@ -13,7 +13,7 @@ from sqlalchemy import event, func, select
 from sqlalchemy.exc import OperationalError
 
 from short_drama.core.exceptions import NotFound
-from short_drama.dao.canvas_recycle_cleanup_dao import CanvasRecycleCleanupDAO
+from short_drama.dao.canvas.resources.recycle.recycle_cleanup import CanvasRecycleCleanupDAO
 from short_drama.domain import (
     CanvasLocalJob,
     CanvasRenderJob,
@@ -22,10 +22,10 @@ from short_drama.domain import (
     MediaFile,
     ProjectCanvas,
 )
-from short_drama.domain.canvas import CanvasWriteReceipt
+from short_drama.domain.canvas.document.canvas import CanvasWriteReceipt
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_local_service import CanvasLocalService
-from short_drama.service.canvas_render_service import CanvasRenderService
+from short_drama.service.canvas.timeline.rendering.render import CanvasRenderService
+from short_drama.service.canvas.tools.local.local import CanvasLocalService
 from short_drama.storage.models import ObjectLocation
 from short_drama.utils.snowflake import next_id
 from tests.integration.canvas.depth.test_canvas_depth_execution import (

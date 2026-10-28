@@ -5,8 +5,11 @@ import pytest
 from pydantic import ValidationError
 
 from short_drama.domain import CanvasLibraryAsset
-from short_drama.schemas.canvas_generation import CanvasTaskBindOperation
-from short_drama.service.canvas_task_outputs import durable_output, generation_metadata
+from short_drama.schemas.canvas.generation.generation import CanvasTaskBindOperation
+from short_drama.service.canvas.generation.tasks.task_outputs import (
+    durable_output,
+    generation_metadata,
+)
 
 
 def test_bind_rejects_client_results_and_keeps_large_task_id_as_string():

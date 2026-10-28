@@ -7,9 +7,11 @@ from types import SimpleNamespace
 import pytest
 
 from short_drama.ai import GenerationError, GenerationGateway
-from short_drama.ai.adapters import build_submission, parse_result, poll_endpoint, select_adapter
-from short_drama.ai.canvas_credentials import CanvasCredentials
-from short_drama.service.model_runtime_config import refresh_runtime_model
+from short_drama.ai.adapters.catalog import select_adapter
+from short_drama.ai.adapters.results import parse_result, poll_endpoint
+from short_drama.ai.adapters.submission import build_submission
+from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
+from short_drama.service.ai_config.management.runtime import refresh_runtime_model
 from tests.unit.canvas.generation.test_canvas_generation_parameters import (
     frozen_request,
     request,
@@ -192,7 +194,7 @@ def test_standard_speech_still_uses_wav_without_canvas_options():
 @pytest.mark.parametrize("adapter", ["openai_speech.v1", ASYNC_AUDIO])
 @pytest.mark.parametrize("code", ["archive_failed", "partial_result", "archive_timeout"])
 def test_completed_canvas_audio_can_only_restore_its_archive_without_regeneration(adapter, code):
-    from short_drama.service.ai_generation_service import can_retry, resume_action
+    from short_drama.service.generations.admission.task_policy import can_retry, resume_action
 
     task = SimpleNamespace(
         service_type="audio", status="failed", error={"code": code}, locked_until=None

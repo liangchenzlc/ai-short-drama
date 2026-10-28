@@ -18,11 +18,15 @@ from short_drama.agent.tools.contracts import SetImageGroupPrimary as SetImageGr
 from short_drama.agent.tools.contracts import SubjectKey as SubjectKey
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
 from short_drama.domain import Asset, ImageGroup, MediaFile, Project, ShotScript
-from short_drama.domain.agent import AgentMessage, AgentRun
-from short_drama.domain.agent_media import AgentMediaRequest
-from short_drama.domain.agent_task import AgentOperation, AgentTaskInput
-from short_drama.service.assistant_image_service import AssistantImageService, freeze_image_catalog
-from short_drama.service.assistant_subject_service import selection_metadata
+from short_drama.domain.assistant.conversations.models import AgentMessage
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.operations.media import AgentMediaRequest
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTaskInput
+from short_drama.service.assistant.context.subject import selection_metadata
+from short_drama.service.assistant.operations.image import (
+    AssistantImageService,
+    freeze_image_catalog,
+)
 from short_drama.utils.json_digest import digest
 
 
@@ -122,7 +126,7 @@ def generated_image_sources(session, owner, task):
 
 
 def _canvas_image_sources(session, owner, task):
-    from short_drama.service.assistant_media_reference_service import generated_image_references
+    from short_drama.service.assistant.operations.media_reference import generated_image_references
 
     rows = session.scalars(
         select(AgentMediaRequest)
@@ -168,7 +172,7 @@ def image_result_keys(session, owner, task):
 
 def _generated_catalog(session, conversation, task, values):
     from short_drama.agent.tools.media import generation_status_locked
-    from short_drama.schemas.assistant_media import GetGenerationStatus
+    from short_drama.schemas.assistant.operations.media import GetGenerationStatus
 
     receipt = generation_status_locked(
         session, conversation, task, GetGenerationStatus(operation_id=values.operation_id)
@@ -261,8 +265,10 @@ def _content_source(session, conversation, task, values):
 
     if values.group_id is None:
         from short_drama.agent.tools.media import generation_status_locked
-        from short_drama.schemas.assistant_media import GetGenerationStatus
-        from short_drama.service.assistant_media_reference_service import generated_image_references
+        from short_drama.schemas.assistant.operations.media import GetGenerationStatus
+        from short_drama.service.assistant.operations.media_reference import (
+            generated_image_references,
+        )
 
         receipt = generation_status_locked(
             session, conversation, task, GetGenerationStatus(operation_id=values.operation_id)

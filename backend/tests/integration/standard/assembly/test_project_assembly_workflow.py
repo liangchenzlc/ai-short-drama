@@ -9,12 +9,12 @@ import httpx
 import pytest
 from sqlalchemy import inspect
 
-from short_drama.api.dependencies import get_session
+from short_drama.api.dependencies.session import get_session
 from short_drama.domain import Base, MediaFile, ShotVideo
 from short_drama.main import create_app
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
-from short_drama.service.video_render import VideoRenderer, executable
-from short_drama.tasks.render import RenderExecutor
+from short_drama.service.creation.assembly.rendering.renderer import VideoRenderer, executable
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.tasks.rendering.render import RenderExecutor
 from tests.integration.standard.assets.test_asset_image_generation import flow as flow
 from tests.integration.standard.identity.test_identity_collaboration import account
 from tests.integration.standard.identity.test_identity_collaboration import (
@@ -28,7 +28,7 @@ def test_authenticated_imported_video_survives_next_request_and_is_owner_only(
     identity_app, monkeypatch
 ):
     from short_drama.service.base import utcnow
-    from short_drama.service.storage_service import StorageService
+    from short_drama.service.media.files.storage import StorageService
     from short_drama.utils.snowflake import next_id
 
     monkeypatch.setattr(
@@ -143,6 +143,7 @@ def test_http_probe_export_retry_download_apply_and_duplicate_worker(flow, tmp_p
     flow.session.add(
         MediaFile(
             id=301,
+            project_id=flow.project.id,
             format_code="video/mp4",
             original_name="",
             storage_locator=f"minio://{settings.minio_video_bucket}/assembly.mp4",
@@ -209,13 +210,19 @@ def test_http_probe_export_retry_download_apply_and_duplicate_worker(flow, tmp_p
             executor.execute(preview.json()["id"], 1)
             ready_preview = (await client.get(root + f"/exports/{preview.json()['id']}")).json()
             assert ready_preview["status"] == "succeeded", ready_preview
+            editor_state = (await client.get(root + "/editor")).json()
             edit = {
                 "row_version": state["assembly"]["row_version"],
+                "sound_row_version": editor_state["sound"]["row_version"],
+                "sound": editor_state["sound"]["document"],
+                "request_id": "edit-once",
                 "aspect": "auto",
                 "resolution": "720p",
                 "clips": [
                     {
                         "id": state["clips"][0]["id"],
+                        "media_id": state["clips"][0]["media_id"],
+                        "source_type": state["clips"][0]["source_type"],
                         "included": True,
                         "muted": True,
                         "trim_in_ms": 300,
@@ -223,16 +230,18 @@ def test_http_probe_export_retry_download_apply_and_duplicate_worker(flow, tmp_p
                     }
                 ],
             }
-            edited = await client.patch(root, json=edit)
+            edited = await client.put(root + "/editor", json=edit)
             assert edited.status_code == 200, edited.text
             state = edited.json()
-            conflict = await client.patch(root, json=edit)
+            conflict = await client.put(root + "/editor", json={**edit, "request_id": "stale"})
             assert conflict.status_code == 409
             # A split creates a second persistent instance of the same source.
             split_id = str(uuid4())
             split_body = {
                 **edit,
                 "row_version": state["assembly"]["row_version"],
+                "sound_row_version": state["sound"]["row_version"],
+                "sound": state["sound"]["document"],
                 "request_id": "split-once",
                 "clips": [
                     {**edit["clips"][0], "trim_out_ms": 1000},
@@ -244,10 +253,10 @@ def test_http_probe_export_retry_download_apply_and_duplicate_worker(flow, tmp_p
                     },
                 ],
             }
-            response = await client.patch(root, json=split_body)
+            response = await client.put(root + "/editor", json=split_body)
             assert response.status_code == 200, response.text
             state = response.json()
-            replay = await client.patch(root, json=split_body)
+            replay = await client.put(root + "/editor", json=split_body)
             assert replay.status_code == 200
             assert replay.json()["assembly"]["row_version"] == state["assembly"]["row_version"]
             assert len((await client.get(root)).json()["clips"]) == 2
@@ -322,7 +331,7 @@ def test_timeline_migration_is_repeatable_and_preserves_existing_edits(flow):
 
     from sqlalchemy import text
 
-    from short_drama.service.project_assembly_service import ProjectAssemblyService
+    from short_drama.service.creation.assembly.document.assembly import ProjectAssemblyService
 
     storyboard = ProjectStoryboardService(flow.session)
     storyboard.create(
@@ -373,10 +382,10 @@ def test_upload_compensation_waits_for_mysql_transaction_outcome(mysql_engine, d
 
     from sqlalchemy import event
 
-    from short_drama.service.upload_cleanup import cleanup_unreferenced_uploads
+    from short_drama.service.media.files.upload_cleanup import cleanup_unreferenced_uploads
     from short_drama.storage.models import StoredObject
     from short_drama.utils.snowflake import next_id
-    from tests.support.integration.legacy_identity import session_factory
+    from tests.support.integration.identity import session_factory
 
     key = f"compensation/{uuid4().hex}.png"
     stored = StoredObject(

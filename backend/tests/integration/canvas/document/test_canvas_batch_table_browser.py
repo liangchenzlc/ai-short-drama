@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.domain import AIGenerationRecord, AsyncTask, CanvasTaskBinding, MediaFile
-from short_drama.domain.canvas import CanvasNode
+from short_drama.domain.canvas.document.canvas import CanvasNode
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.generation.test_canvas_generation_broker import (
     broker_app as broker_app,

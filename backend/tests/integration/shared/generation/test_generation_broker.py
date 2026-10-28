@@ -22,23 +22,23 @@ from sqlalchemy import select
 from short_drama.ai import GenerationGateway
 from short_drama.core.config import Settings
 from short_drama.domain import AIGenerationRecord, AIModelConfig, AsyncTask, MediaAsset, MediaFile
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from short_drama.storage.minio import MinioStorage
 from short_drama.storage.models import ObjectLocation
 from short_drama.tasks.celery_app import make_celery, topology
-from short_drama.tasks.publisher import Publisher
+from short_drama.tasks.runtime.publisher import Publisher
 from short_drama.utils.snowflake import next_id
-from tests.support.integration.legacy_identity import session_factory
+from tests.support.integration.identity import session_factory
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.mark.skipif(os.getenv("RUN_GENERATION_BROKER_TESTS") != "1", reason="Broker test opt-in")
 def test_writing_documents_cross_real_text_worker_and_http(mysql_engine, db_session, monkeypatch):
-    from short_drama.service.project_service import ProjectService
-    from short_drama.service.project_writing_service import ProjectWritingService
-    from short_drama.tasks import worker
+    import short_drama.tasks.generations.worker as worker
+    from short_drama.service.creation.writing.script.documents import ProjectWritingService
+    from short_drama.service.projects.management.project import ProjectService
 
     posts = []
     outputs = ["雨夜旧信引发误会，大纲结尾揭开真相。", "😀开头\n重复句\n重复句\n结尾", "新的对白"]
@@ -170,7 +170,7 @@ def test_writing_documents_cross_real_text_worker_and_http(mysql_engine, db_sess
 def test_four_generation_actions_cross_real_broker_and_archive(
     mysql_engine, db_session, monkeypatch
 ):
-    from short_drama.tasks import worker
+    import short_drama.tasks.generations.worker as worker
 
     image_bytes = BytesIO()
     Image.new("RGB", (8, 6), "orange").save(image_bytes, "PNG")

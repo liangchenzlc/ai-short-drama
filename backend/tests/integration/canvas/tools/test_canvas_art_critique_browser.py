@@ -21,7 +21,7 @@ from short_drama.domain import (
     MediaFile,
 )
 from short_drama.service.base import utcnow
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from short_drama.storage.models import ObjectLocation
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.resources.test_canvas_library import (

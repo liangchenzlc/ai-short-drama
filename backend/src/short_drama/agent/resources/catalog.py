@@ -6,8 +6,8 @@ from short_drama.agent.context.attachments import available_attachment_ids, task
 from short_drama.agent.context.subjects import snapshot_subjects
 from short_drama.agent.memory.sources import restricted_messages
 from short_drama.agent.resources.resolver import attachment_ref
-from short_drama.domain.agent_task import AgentTaskInput
-from short_drama.service.assistant_subject_service import selection_metadata
+from short_drama.domain.assistant.tasks.task import AgentTaskInput
+from short_drama.service.assistant.context.subject import selection_metadata
 
 
 def attachments_locked(session, conversation, task):

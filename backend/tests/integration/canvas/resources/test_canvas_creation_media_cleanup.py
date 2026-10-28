@@ -12,8 +12,8 @@ from sqlalchemy import event, func, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from short_drama.core.exceptions import NotFound, StorageUnavailable, WorkflowError
-from short_drama.dao.canvas_creation_dao import CanvasCreationDAO
-from short_drama.dao.canvas_recycle_cleanup_dao import CanvasRecycleCleanupDAO
+from short_drama.dao.canvas.resources.recycle.recycle_cleanup import CanvasRecycleCleanupDAO
+from short_drama.dao.canvas.workspace.creation.creation import CanvasCreationDAO
 from short_drama.domain import (
     CanvasBinaryResource,
     CanvasCreationAttempt,
@@ -24,13 +24,13 @@ from short_drama.domain import (
     MediaFile,
     ProjectCanvas,
 )
-from short_drama.domain.canvas import (
+from short_drama.domain.canvas.document.canvas import (
     CanvasRevision,
     CanvasRevisionMediaReference,
     CanvasWriteReceipt,
 )
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_creation_service import CanvasCreationService
+from short_drama.service.canvas.workspace.creation.creation import CanvasCreationService
 from short_drama.utils.snowflake import next_id
 from tests.integration.canvas.document.test_canvas_workspace import actor
 from tests.integration.canvas.projects.test_canvas_creation import creation_request

@@ -2,8 +2,8 @@
 
 ``agent_task_requirements`` is authoritative: the executor may confirm drafts and
 raise counts, it can never delete a requirement or author one without a real
-quote. ``effective_state.task_contract`` stays as a compatibility projection for
-frozen requests and old readers.
+quote. ``effective_state.task_contract`` is a display and review projection;
+the rows remain the only source of requirement definitions.
 """
 
 import re
@@ -11,11 +11,10 @@ import re
 from sqlalchemy import select
 
 from short_drama.agent.task.intake import draft_requirements
-from short_drama.agent.task.policy import policy
 from short_drama.agent.task.sources import WRITE_TOOLS, source_valid
 from short_drama.core.exceptions import WorkflowError
-from short_drama.domain.agent_task import AgentOperation, AgentTaskInput
-from short_drama.domain.agent_task_requirement import AgentTaskRequirement
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTaskInput
+from short_drama.domain.assistant.tasks.task_requirement import AgentTaskRequirement
 from short_drama.service.base import utcnow
 from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
@@ -65,8 +64,6 @@ def _insert(session, task, message_id, **values):
 
 def seed_requirements_locked(session, task, message):
     """Freeze server drafts before any model call. Idempotent per message."""
-    if policy(task, "contract") != "server_draft.v1":
-        return 0
     if not getattr(message, "content", ""):
         return 0
     existing = session.scalar(
@@ -98,7 +95,7 @@ def seed_requirements_locked(session, task, message):
 
 
 def project_contract(task, rows, *, intent=None, verified=False):
-    """Keep the legacy JSON view in sync with the authoritative rows."""
+    """Update the task's display projection from its authoritative rows."""
     previous = task.effective_state.get("task_contract") or {}
     requirements = [
         {
@@ -129,16 +126,16 @@ def project_contract(task, rows, *, intent=None, verified=False):
 
 
 def authoritative_definitions(session, task, messages, restricted):
-    """Definitions backed by real quote spans, or ``None`` for legacy-only tasks."""
-    if session is None or policy(task, "contract") != "server_draft.v1":
-        return None
+    """Read requirement definitions and their exact source quotes from the table."""
     rows = load_task_requirements(session, task)
-    if not rows or any(row.quote_end <= row.quote_start for row in rows):
-        return None
     definitions = {}
     for row in rows:
         source = messages.get(str(row.source_message_id))
-        if source is None or int(row.source_message_id) in restricted:
+        if (
+            source is None
+            or int(row.source_message_id) in restricted
+            or row.quote_end <= row.quote_start
+        ):
             continue
         # Requirement.source_quote is bounded; a longer sentence keeps its head.
         quote_end = min(row.quote_end, row.quote_start + 500)
@@ -168,7 +165,7 @@ def _latest_user_input(session, task):
     )
     if row is None:
         return None
-    from short_drama.domain.agent import AgentMessage
+    from short_drama.domain.assistant.conversations.models import AgentMessage
 
     return session.get(AgentMessage, row.message_id)
 
@@ -230,7 +227,7 @@ def _reject_superseded(rows, key):
 
 def confirm_locked(session, conversation, task, operation, values, settings):
     """Confirm drafts; explicit newer user instructions can supersede their targets."""
-    from short_drama.dao.agent_transcript_dao import AgentTranscriptDAO
+    from short_drama.dao.assistant.execution.transcript import AgentTranscriptDAO
 
     messages = {
         str(row.id): row
@@ -326,52 +323,6 @@ def confirm_locked(session, conversation, task, operation, values, settings):
     }
 
 
-def record_legacy_requirements(session, task, requirements, messages):
-    """Mirror a legacy ``set_task_requirements`` call into the authoritative table."""
-    existing = {
-        row.requirement_key: row
-        for row in load_task_requirements(
-            session, task, states=("draft", "confirmed", "frozen", "superseded")
-        )
-    }
-    for definition in requirements:
-        key = definition["key"]
-        _reject_superseded(existing, key)
-        source = messages.get(str(definition["source_message_id"]))
-        if source is None:
-            continue
-        quote = definition["source_quote"]
-        start = source.content.find(quote)
-        if start < 0:
-            continue
-        row = existing.get(key)
-        if row is not None:
-            if definition["minimum_count"] < row.minimum_count:
-                _revise_locked(session, task, row, definition, source)
-                continue
-            row.minimum_count = definition["minimum_count"]
-            row.state = "confirmed"
-            row.updated_at = utcnow()
-            continue
-        _insert(
-            session,
-            task,
-            int(definition["source_message_id"]),
-            requirement_key=key,
-            description=definition["description"],
-            kind=definition["kind"],
-            origin="agent",
-            state="confirmed",
-            minimum_count=definition["minimum_count"],
-            artifact_kind=definition.get("artifact_kind"),
-            asset_kind=definition.get("asset_kind"),
-            quote_start=start,
-            quote_end=start + len(quote),
-        )
-    session.flush()
-    project_contract(task, load_task_requirements(session, task))
-
-
 def _run_writes(session, task, run):
     return session.scalars(
         select(AgentOperation).where(
@@ -403,8 +354,6 @@ def _written_kinds(operations):
 
 def guard_publish_locked(session, task, run):
     """Refuse to publish work that was saved without a confirmed, verifiable ask."""
-    if session is None or policy(task, "contract") != "server_draft.v1":
-        return None
     writes = _run_writes(session, task, run)
     if not writes:
         return None
@@ -425,13 +374,13 @@ def guard_publish_locked(session, task, run):
     written = _written_kinds(writes)
     if written and not written <= {row.artifact_kind for row in write_rows}:
         if not any(row.requirement_key == DERIVED_KEY for row in rows):
-            message = _latest_user_input(session, task)
+            source = write_rows[0]
             # A generic write requirement covers any saved artifact kind, so a
             # gap never invents an artifact kind the contract cannot express.
             _insert(
                 session,
                 task,
-                message.id if message is not None else run.trigger_message_id,
+                source.source_message_id,
                 requirement_key=DERIVED_KEY,
                 description="本次运行保存的作品成果",
                 kind="write",
@@ -440,6 +389,8 @@ def guard_publish_locked(session, task, run):
                 minimum_count=1,
                 artifact_kind=None,
                 asset_kind=None,
+                quote_start=source.quote_start,
+                quote_end=source.quote_end,
             )
             session.flush()
             project_contract(task, load_task_requirements(session, task))

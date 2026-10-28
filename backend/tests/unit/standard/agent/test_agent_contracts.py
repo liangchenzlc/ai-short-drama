@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from short_drama.core.config import Settings
-from short_drama.schemas.agent import ConversationCreate, ConversationPatch
+from short_drama.schemas.assistant.conversations.engine import ConversationCreate, ConversationPatch
 
 
 def test_agent_defaults_on_and_allows_explicit_opt_out(monkeypatch):

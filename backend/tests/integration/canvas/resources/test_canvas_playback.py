@@ -11,10 +11,10 @@ from sqlalchemy import select
 from short_drama.core.exceptions import NotFound
 from short_drama.domain import CanvasLocalJob, MediaFile
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_playback_cleanup import cleanup_canvas_playback
-from short_drama.service.video_render import executable
+from short_drama.service.canvas.timeline.playback.playback_cleanup import cleanup_canvas_playback
+from short_drama.service.creation.assembly.rendering.renderer import executable
 from short_drama.storage.models import ObjectLocation
-from short_drama.tasks.canvas_local import CanvasLocalExecutor
+from short_drama.tasks.canvas.canvas_local import CanvasLocalExecutor
 from tests.integration.canvas.resources.test_canvas_resources import ROOT, canvas, upload
 from tests.integration.canvas.resources.test_canvas_resources import resource_app as resource_app
 from tests.integration.canvas.timeline.test_canvas_timeline_ffmpeg import ffmpeg

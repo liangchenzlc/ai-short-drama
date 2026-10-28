@@ -89,7 +89,7 @@ def test_explicit_region_static_credentials_sign_without_region_or_http_lookup(m
 
 
 def test_browser_presign_keeps_internal_endpoint_and_five_minute_cap():
-    from short_drama.service.storage_service import StorageService
+    from short_drama.service.media.files.storage import StorageService
 
     sdk = Mock()
     sdk.presigned_get_object.return_value = "http://localhost:9000/image/a?offline=1"

@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.domain import CanvasLocalJob, MediaFile
-from short_drama.service.canvas_timeline_renderer import CanvasTimelineRenderer
+from short_drama.service.canvas.timeline.timeline_renderer import CanvasTimelineRenderer
 from tests.integration.canvas.depth.test_canvas_depth_broker import independent_depth_worker
 from tests.integration.canvas.depth.test_canvas_depth_execution import calls
 from tests.integration.canvas.depth.test_canvas_depth_execution import (

@@ -7,14 +7,19 @@ from sqlalchemy import event, select
 from sqlalchemy.dialects import mysql
 
 from short_drama.agent.core import state
-from short_drama.domain.agent import AgentConversation, AgentEvent, AgentMessage, AgentRun
+from short_drama.domain.assistant.conversations.models import (
+    AgentConversation,
+    AgentEvent,
+    AgentMessage,
+)
+from short_drama.domain.assistant.execution.models import AgentRun
 from short_drama.service.base import utcnow
 from tests.support.generation_fixtures import generation_session
 from tests.unit.standard.agent.test_agent_runtime_state import seed
 
 REFERENCES = [
     {"artifact_id": "9101", "kind": "script_candidate"},
-    {"artifact_id": "9102", "kind": "novel_proposal"},
+    {"artifact_id": "9102", "kind": "asset_patch"},
 ]
 
 
@@ -66,7 +71,11 @@ def test_cancellation_persists_existing_candidates_and_keeps_the_run_terminal(mo
         session.commit()
         assert len(messages(session)) == 1
         events = session.scalars(select(AgentEvent).where(AgentEvent.run_id == run.id)).all()
-        assert [event.event_type for event in events] == ["run.finished", "message.created"]
+        assert [event.event_type for event in events] == [
+            "task.stopped",
+            "run.finished",
+            "message.created",
+        ]
 
 
 def test_cancellation_only_appends_candidates_missing_from_existing_messages(monkeypatch):

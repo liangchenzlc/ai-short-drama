@@ -6,11 +6,11 @@ from sqlalchemy.orm import sessionmaker
 
 from short_drama.core.config import Settings
 from short_drama.domain import AIGenerationRecord, AsyncTask
-from short_drama.service.ai_generation_service import AIGenerationService
 from short_drama.service.base import utcnow
-from short_drama.service.task_runtime_service import TaskRuntimeService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.runtime.lifecycle import TaskRuntimeService
 from short_drama.tasks.celery_app import topology
-from short_drama.tasks.recovery import recover
+from short_drama.tasks.runtime.recovery import recover
 from tests.support.generation_fixtures import config, generation_session
 from tests.support.generation_fixtures import settings as fixture_settings
 

@@ -1,11 +1,10 @@
+import '@host/app/styles/index.css';
 import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@ant-design/v5-patch-for-react-19';
-import { AssemblyResultPlayer } from '../../../src/features/projects/AssemblyResultPlayer';
-import type { RenderJob } from '../../../src/api/modules/assembly';
-import '../../../src/app/styles.css';
-import '../../../src/app/assembly.css';
-import '../../../src/app/workbench.css';
+import { AssemblyResultPlayer } from '../../../src/features/creation/assembly/player/AssemblyResultPlayer';
+import type { RenderJob } from '../../../src/types/creation/assembly/document';
+import '../../../src/features/creation/assembly/workbench/assembly.css';
 
 function Fixture() {
   const [job, setJob] = useState<RenderJob>({ id: '1', media_id: '2', status: 'succeeded', kind: 'preview',

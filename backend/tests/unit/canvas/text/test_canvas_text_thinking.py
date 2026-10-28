@@ -5,11 +5,11 @@ from copy import deepcopy
 import pytest
 from pydantic import ValidationError
 
-from short_drama.ai.adapters import build_submission
+from short_drama.ai.adapters.submission import build_submission
 from short_drama.ai.types import GenerationError
-from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-from short_drama.schemas.model_runtime_profile import ModelRuntimeProfile
-from short_drama.service.canvas_generation_inputs import generation_payload
+from short_drama.schemas.ai_config.management.runtime_profile import ModelRuntimeProfile
+from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+from short_drama.service.canvas.generation.generation_inputs import generation_payload
 from tests.unit.canvas.text.test_canvas_claude_text import request as claude_request
 from tests.unit.canvas.text.test_canvas_claude_text import snapshot as claude_snapshot
 from tests.unit.canvas.text.test_canvas_text_references import (
@@ -137,7 +137,7 @@ def test_editor_tool_thinking_cannot_bypass_saved_capability(adapter):
 
 def test_claude_video_is_rejected_before_reference_hydration(monkeypatch):
     from short_drama.core.exceptions import WorkflowError
-    from short_drama.service.canvas_text_admission import freeze_text_references
+    from short_drama.service.canvas.generation.text.text_admission import freeze_text_references
     from tests.unit.canvas.video.test_canvas_text_video_references import video_admission
 
     generation, _, payload, cache = video_admission(monkeypatch)

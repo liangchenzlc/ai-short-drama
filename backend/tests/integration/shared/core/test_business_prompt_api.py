@@ -1,4 +1,4 @@
-"""Exercise the five prompt entry points via HTTP + MySQL + controlled generation.
+"""Exercise current prompt entry points via HTTP + MySQL + controlled generation.
 
 No paid provider is called. These tests verify transport, snapshots, execution,
 JSON projection and image archival; they do not judge model creativity.
@@ -14,13 +14,13 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.ai import GenerationResult
-from short_drama.api.dependencies import get_session
+from short_drama.api.dependencies.session import get_session
 from short_drama.domain import AIGenerationRecord
 from short_drama.main import create_app
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from short_drama.service.generation_execution_service import GenerationExecutionService
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
-from short_drama.service.project_writing_service import ProjectWritingService
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.creation.writing.script.documents import ProjectWritingService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.standard.assets.test_asset_image_generation import (
     ImageProvider,
     create_asset,
@@ -52,9 +52,7 @@ class BusinessProvider(ImageProvider):
         if scene in {"asset_image", "shot_image"}:
             return super().submit(snapshot, request, *args, **kwargs)
         self.calls.append(deepcopy(request))
-        if scene == "novel_script":
-            content = SCRIPT
-        elif scene == "script_assets":
+        if scene == "script_assets":
             content = json.dumps(
                 {
                     "schema_version": 1,
@@ -137,7 +135,7 @@ def submit_through_http(flow, kind, body):
         return deepcopy(record.request_data), deepcopy(record.response_data), detail
 
 
-@pytest.mark.parametrize("scene", ["novel_script", "script_assets", "script_shots"])
+@pytest.mark.parametrize("scene", ["script_assets", "script_shots"])
 def test_text_business_prompt_http_execution_and_structured_results(flow, scene):
     config = AIModelConfigService(flow.session).create(
         {
@@ -151,18 +149,9 @@ def test_text_business_prompt_http_execution_and_structured_results(flow, scene)
     writing = ProjectWritingService(flow.session)
     p = flow.project.id
     source = {"scene": scene, "project_id": str(p)}
-    if scene == "novel_script":
-        saved = writing.save_novel(p, {"content_version": "1", "content": "林晚拿起红伞。"})
-        source["content_version"] = saved["content_version"]
-    else:
-        saved = writing.save_script(
-            p, {"content_version": "1", "script_id": None, "content": SCRIPT}
-        )
-        source["script_id"] = saved["script"]["id"]
-        confirmed = writing.confirm(
-            p, source["script_id"], {"content_version": saved["content_version"]}
-        )
-        source["content_version"] = confirmed["content_version"]
+    saved = writing.save_script(p, {"content_version": "1", "script_id": None, "content": SCRIPT})
+    source["script_id"] = saved["script"]["id"]
+    source["content_version"] = saved["content_version"]
     body = {"config_id": str(config.id), "source": source, "instructions": "保留红伞"}
     request, response, _ = submit_through_http(flow, "text", body)
     assert request["template_version"] == scene.replace("_", "-") + "-v2"
@@ -181,9 +170,6 @@ def test_text_business_prompt_http_execution_and_structured_results(flow, scene)
         assert result["shots"][0]["script"] == SHOT
         assert result["shots"][0]["source_excerpt"] in SCRIPT
         assert "冻结首帧" in messages[0]["content"]
-    else:
-        assert writing.candidates(p, script_id=result["script_id"])["content"] == SCRIPT
-        assert "只返回剧本正文" in messages[0]["content"]
 
 
 @pytest.mark.parametrize("kind", ["character", "prop", "scene"])

@@ -3,8 +3,11 @@ import json
 
 import pytest
 
-from short_drama.ai.adapters import build_submission, parse_result, select_adapter, validate_request
-from short_drama.ai.gateway import GenerationGateway
+from short_drama.ai.adapters.capabilities import validate_request
+from short_drama.ai.adapters.catalog import select_adapter
+from short_drama.ai.adapters.results import parse_result
+from short_drama.ai.adapters.submission import build_submission
+from short_drama.ai.gateway.client import GenerationGateway
 from short_drama.ai.types import GenerationError
 from short_drama.core.config import Settings
 

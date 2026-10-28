@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../../src/features/skills/skill-draft.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/skills/imports/skill-draft.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { createSkillDraft, skillDraftIssue, skillContent, skillResourcePathIssue, readSkillDraft, saveSkillDraft,
   clearSkillDraft, rawSkillDraft, readSkillAction, saveSkillAction } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
@@ -14,7 +14,7 @@ function storage() {
 function validDraft() {
   const draft = createSkillDraft();
   Object.assign(draft.values, { name: '分镜检查', description: '检查用户提供的分镜。', instructions: '# 检查\n保持人物连续性。' });
-  draft.changed = true; return draft;
+  draft.changed = true; draft.imported = true; return draft;
 }
 function detail() {
   return { id: '9007199254740995', name: '分镜检查', filename: 'shot.md', builtin: false, content_version: '3', row_version: '9007199254740993',
@@ -25,7 +25,7 @@ function detail() {
 }
 
 test('readonly main-file content hides legacy metadata and preserves Markdown separators', async () => {
-  const model = readFileSync(new URL('../../src/features/skills/skill-model.ts', import.meta.url), 'utf8');
+  const model = readFileSync(new URL('../../src/features/skills/library/skill-model.ts', import.meta.url), 'utf8');
   const compiledModel = ts.transpileModule(model, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
   const { instructionBody } = await import(`data:text/javascript;base64,${Buffer.from(compiledModel).toString('base64')}`);
   assert.equal(instructionBody('---\nname: method\ndescription: 检查\n---\n# 正文'), '# 正文');
@@ -93,15 +93,17 @@ test('submissions contain text resources without cache or storage implementation
   assert.deepEqual(content.resources, [{ path: 'assets/é.json', kind: 'template', content: '{}', encoding: 'utf-8' }]);
 });
 
-test('legacy scripts remain recoverable but new submissions reject them; images preserve binary transport', () => {
+test('retired script drafts retain original bytes; images preserve binary transport', () => {
   const disk = storage(); const draft = validDraft();
   draft.values.resources = [
     { path: 'scripts/check.py', kind: 'script', content: 'raise RuntimeError("read-only")' },
     { path: 'assets/example.png', kind: 'image', content: btoa('managed-image-bytes'), encoding: 'base64' },
   ];
-  assert.match(skillDraftIssue(draft.values), /暂不支持脚本/);
-  assert.equal(saveSkillDraft('legacy', draft, disk), true);
-  assert.equal(readSkillDraft('legacy', disk).draft.values.resources[0].kind, 'script');
+  assert.match(skillDraftIssue(draft.values), /文件路径不受支持/);
+  const raw = JSON.stringify(draft);
+  disk.setItem('agent-skill-draft:v1:legacy', raw);
+  assert.match(readSkillDraft('legacy', disk).error, /原记录已保留/);
+  assert.equal(rawSkillDraft('legacy', disk), raw);
   draft.values.resources.shift();
   draft.pending = { key: draft.key, row_version: null, body: skillContent(draft.values) };
   assert.equal(saveSkillDraft('owner', draft, disk), true);
@@ -130,4 +132,13 @@ test('retired settings requests retain their original bytes and cannot be rewrit
   assert.match(readSkillAction('owner', disk).error, /原记录已保留/);
   assert.equal(disk.getItem(key), raw);
   assert.equal(saveSkillAction('owner', legacy, disk), false);
+});
+
+test('retired import requests remain untouched for explicit recovery', () => {
+  const disk = storage(), draft = validDraft(), key = 'agent-skill-draft:v1:owner';
+  draft.pending = { key: draft.key, row_version: null, body: { ...skillContent(draft.values), invocation_mode: 'manual' } };
+  const raw = JSON.stringify(draft); disk.setItem(key, raw);
+  assert.match(readSkillDraft('owner', disk).error, /原记录已保留/);
+  assert.equal(saveSkillDraft('owner', validDraft(), disk), false);
+  assert.equal(rawSkillDraft('owner', disk), raw);
 });

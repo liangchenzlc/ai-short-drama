@@ -13,7 +13,9 @@ from sqlalchemy import event, select, text, update
 from scripts.canvas_migration import apply, inspect_schema
 from short_drama.ai import GenerationResult
 from short_drama.core.exceptions import NotFound, StorageUnavailable, WorkflowError
-from short_drama.dao.canvas_generation_media_cleanup_dao import CanvasGenerationMediaCleanupDAO
+from short_drama.dao.canvas.generation.generation_media_cleanup import (
+    CanvasGenerationMediaCleanupDAO,
+)
 from short_drama.domain import (
     AIGenerationRecord,
     AsyncTask,
@@ -26,13 +28,13 @@ from short_drama.domain import (
     MediaFile,
     ProjectCanvas,
 )
-from short_drama.domain.canvas import CanvasWriteReceipt
+from short_drama.domain.canvas.document.canvas import CanvasWriteReceipt
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_generation_media_cleanup import (
+from short_drama.service.canvas.generation.generation_media_cleanup import (
     cleanup_canvas_generation_media,
     retire_canvas_generation_media,
 )
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from short_drama.storage.models import ObjectLocation
 from short_drama.utils.snowflake import next_id
 from tests.integration.canvas.document.test_canvas_workspace import actor

@@ -17,23 +17,29 @@ from short_drama.domain import (
     ShotAsset,
     ShotScript,
 )
-from short_drama.domain.agent import AgentArtifact, AgentConversation, AgentRun, AgentToolCall
-from short_drama.domain.native_voice import CharacterVoice, ProjectSoundMode, ShotDialogue
-from short_drama.service.agent_artifact_service import AgentArtifactService
-from short_drama.service.agent_conversation_service import AgentConversationService
-from short_drama.service.agent_run_service import AgentRunService
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.asset_service import AssetService
+from short_drama.domain.assistant.artifacts.models import AgentArtifact
+from short_drama.domain.assistant.conversations.models import AgentConversation
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall
+from short_drama.domain.creation.sound.voices.voices import (
+    CharacterVoice,
+    ProjectSoundMode,
+    ShotDialogue,
+)
+from short_drama.service.assistant.execution.run import AgentRunService
+from short_drama.service.assistant.operations.artifact import AgentArtifactService
+from short_drama.service.assistant.tasks.task import AssistantTaskService
 from short_drama.service.base import utcnow
-from short_drama.service.generation_presentation import generation_display_context
-from short_drama.service.native_voice_service import (
+from short_drama.service.creation.assets.management.assets import AssetService
+from short_drama.service.creation.sound.voices.voices import (
     NativeVoiceService,
     native_context,
     native_contexts,
 )
-from short_drama.service.project_service import ProjectService
-from short_drama.service.project_storyboard_service import ProjectStoryboardService
-from short_drama.service.shot_video_context import video_context_hash
+from short_drama.service.creation.storyboard.management.storyboard import ProjectStoryboardService
+from short_drama.service.creation.storyboard.videos.video_context import video_context_hash
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.results.presentation import generation_display_context
+from short_drama.service.projects.management.project import ProjectService
 from tests.support.generation_fixtures import config, generation_session, settings
 
 
@@ -63,13 +69,14 @@ def test_sound_reads_and_snapshots_batch_media_and_preserve_actor_scope(size):
     from short_drama.core.config import Settings
     from short_drama.core.exceptions import NotFound
     from short_drama.domain import ProjectAssembly
-    from short_drama.domain.project_sound import ProjectSound, SoundMediaReference
-    from short_drama.schemas.project_sound import SoundDocument
-    from short_drama.service.project_sound_service import ProjectSoundService
+    from short_drama.domain.creation.sound.tracks.sound import ProjectSound, SoundMediaReference
+    from short_drama.schemas.creation.sound.tracks.sound import SoundDocument
+    from short_drama.service.creation.sound.tracks.sound import ProjectSoundService
 
     cfg = Settings(_env_file=None, native_video_enabled=False)
     with generation_session() as session:
         project_id = workspace(session)
+        session.info.pop("actor")
         session.add(
             ProjectAssembly(
                 id=500,
@@ -347,7 +354,7 @@ def test_authenticated_task_list_batches_records_owners_and_legacy_origins(size)
 @pytest.mark.parametrize("size", [3, 20])
 def test_authenticated_native_storyboard_batches_missing_dialogue(monkeypatch, size):
     cfg = SimpleNamespace(native_video_enabled=True, audio_production_enabled=True)
-    monkeypatch.setattr("short_drama.service.native_voice_context.Settings", lambda: cfg)
+    monkeypatch.setattr("short_drama.service.creation.sound.voices.context.Settings", lambda: cfg)
     with generation_session() as session:
         project_id = workspace(session)
         now = utcnow()
@@ -393,6 +400,7 @@ def test_authenticated_native_storyboard_batches_missing_dialogue(monkeypatch, s
 
 def agent_rows(session, size):
     project_id = workspace(session)
+    session.info.pop("actor")
     now = utcnow()
     connection = session.connection().connection.driver_connection
     connection.create_function("OCTET_LENGTH", 1, lambda value: len(value.encode()))
@@ -404,6 +412,7 @@ def agent_rows(session, size):
                 owner_user_id=1,
                 project_id=project_id,
                 title=f"C{index}",
+                scope_version=3,
                 fixed_requirements={},
                 created_at=now,
                 updated_at=now,
@@ -472,7 +481,9 @@ def test_agent_conversation_and_shared_artifact_lists_batch_details(size):
         project_id = agent_rows(session, size)
         cfg = SimpleNamespace(agent_enabled=True)
         with select_queries(session) as statements:
-            page = AgentConversationService(session, cfg).list_conversations(project_id)
+            page = AssistantTaskService(session, cfg).list_global_conversations(
+                project_id=project_id
+            )
         assert len(page.items) == size
         assert page.items[-1].last_run_status is None
         assert all(row.last_run_status == "succeeded" for row in page.items[:-1])
@@ -486,7 +497,7 @@ def test_agent_conversation_and_shared_artifact_lists_batch_details(size):
 
 
 @pytest.mark.parametrize("size", [3, 20])
-def test_agent_run_list_batches_first_pending_review(size):
+def test_agent_runtime_batches_active_run_metadata(size):
     with generation_session() as session:
         agent_rows(session, 1)
         session.info.pop("actor")
@@ -499,14 +510,14 @@ def test_agent_run_list_batches_first_pending_review(size):
                     trigger_message_id=1000 + index,
                     initiated_by=1,
                     model_config_id=1,
-                    status="succeeded",
+                    status="running",
                     checkpoint={},
                     config_snapshot={},
                     budget={},
                     usage={},
                     created_at=now,
                     updated_at=now,
-                    finished_at=now,
+                    finished_at=None,
                 )
             )
             if index:
@@ -533,10 +544,9 @@ def test_agent_run_list_batches_first_pending_review(size):
         session.expunge_all()
         session.info["actor"] = SimpleNamespace(user_id=1)
         with select_queries(session) as statements:
-            page = AgentRunService(session, SimpleNamespace(agent_enabled=True)).list_runs(100)
-        assert len(page.items) == size
-        assert page.items[-1].review is None
-        assert all(row.review.title == "review-1" for row in page.items[:-1])
+            state = AgentRunService(session, SimpleNamespace(agent_enabled=True)).runtime_state(100)
+        assert state.active_run.id == 200
+        assert state.queued_runs == []
         assert len(statements) <= 6
 
 
@@ -544,7 +554,7 @@ def test_native_storyboard_reuses_shared_voice_sample_and_preserves_strict_valid
     from short_drama.core.exceptions import WorkflowError
 
     cfg = SimpleNamespace(native_video_enabled=True, audio_production_enabled=True)
-    monkeypatch.setattr("short_drama.service.native_voice_context.Settings", lambda: cfg)
+    monkeypatch.setattr("short_drama.service.creation.sound.voices.context.Settings", lambda: cfg)
     with generation_session() as session:
         project_id = workspace(session)
         character = AssetService(session).create(
@@ -613,7 +623,9 @@ def test_native_storyboard_reuses_shared_voice_sample_and_preserves_strict_valid
         with session.begin():
             for row in page["items"]:
                 shot = session.get(ShotScript, int(row["id"]))
-                from short_drama.service.publication import public_voice_context
+                from short_drama.service.creation.writing.script.publication import (
+                    public_voice_context,
+                )
 
                 assert row["native_speech"] == public_voice_context(
                     native_context(session, shot, strict=True, settings=cfg)

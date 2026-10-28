@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from short_drama.schemas.canvas_workspace import CanvasWorkspacePreferencesRequest
+from short_drama.schemas.canvas.workspace.workspace import CanvasWorkspacePreferencesRequest
 
 
 def channel(**changes):

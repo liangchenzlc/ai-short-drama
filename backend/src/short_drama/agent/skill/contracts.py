@@ -4,8 +4,8 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
 
-from short_drama.schemas.agent_skill import MAX_RESOURCE_BYTES, resource_path
 from short_drama.schemas.base import Identifier, InputModel
+from short_drama.schemas.skills.catalog.skill import MAX_RESOURCE_BYTES, resource_path
 
 SKILL_SEARCH = "search_skills"
 SKILL_LOAD = "load_skill"

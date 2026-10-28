@@ -6,8 +6,11 @@ import pytest
 
 from short_drama.ai import GenerationError
 from short_drama.core.exceptions import NotFound, StorageUnavailable
-from short_drama.service.ai_generation_service import safe_error
-from short_drama.service.generation_references import StoredAudioReferences, StoredImageReferences
+from short_drama.service.generations.admission.task_policy import safe_error
+from short_drama.service.generations.references.references import (
+    StoredAudioReferences,
+    StoredImageReferences,
+)
 
 
 @pytest.fixture
@@ -104,7 +107,7 @@ def test_reference_budget_expires_before_and_during_read(references, monkeypatch
         loader(0, 4, time.monotonic() - 1)
     ticks = iter([0, 0, 2])
     monkeypatch.setattr(
-        "short_drama.service.generation_references.time.monotonic", lambda: next(ticks)
+        "short_drama.service.generations.references.references.time.monotonic", lambda: next(ticks)
     )
     with pytest.raises(GenerationError, match="timeout"):
         loader(0, 4, 1)

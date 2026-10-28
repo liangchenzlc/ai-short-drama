@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import event, select
 
 from short_drama.core.exceptions import NotFound, StorageUnavailable, WorkflowError
-from short_drama.dao.canvas_library_dao import CanvasLibraryDAO
+from short_drama.dao.canvas.library.library import CanvasLibraryDAO
 from short_drama.domain import (
     Asset,
     CanvasBinaryResource,
@@ -20,7 +20,7 @@ from short_drama.domain import (
     MediaFile,
 )
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_resource_cleanup import cleanup_canvas_resources
+from short_drama.service.canvas.resources.resource_cleanup import cleanup_canvas_resources
 from short_drama.utils.snowflake import next_id
 from tests.integration.canvas.resources.test_canvas_library import ASSETS, text_asset
 from tests.integration.canvas.resources.test_canvas_library import (

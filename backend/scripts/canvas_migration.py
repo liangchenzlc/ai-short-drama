@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 SQL_PATH = (
     Path(__file__).resolve().parents[2]
     / "docs"
-    / "数据库模型"
+    / "database"
     / "migrations"
     / "2026-10-05-infinite-canvas"
     / "001-canvas-core.sql"

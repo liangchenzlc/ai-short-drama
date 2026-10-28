@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import CanvasCreationResource, CanvasDrawingVersion, Project
-from short_drama.service.canvas_drawing_service import CanvasDrawingService
+from short_drama.service.canvas.drawing.drawing import CanvasDrawingService
 from tests.integration.canvas.drawing.test_canvas_drawings import drawing_path, drawing_payload
 from tests.integration.canvas.resources.test_canvas_resources import (
     ROOT,

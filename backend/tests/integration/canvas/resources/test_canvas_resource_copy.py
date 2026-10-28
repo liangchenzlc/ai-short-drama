@@ -15,8 +15,8 @@ from sqlalchemy import event, select
 from short_drama.core.exceptions import NotFound, StorageUnavailable, WorkflowError
 from short_drama.domain import CanvasResourceCopySource, CanvasResourceUpload, MediaFile
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_upload_cleanup import cleanup_canvas_uploads
-from short_drama.service.video_render import executable
+from short_drama.service.canvas.resources.upload_cleanup import cleanup_canvas_uploads
+from short_drama.service.creation.assembly.rendering.renderer import executable
 from tests.integration.canvas.resources.test_canvas_library_deletion import (
     ASSETS,
     cleanup,

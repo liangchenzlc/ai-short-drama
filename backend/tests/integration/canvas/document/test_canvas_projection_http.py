@@ -7,7 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from short_drama.domain.canvas import CanvasRevision, CanvasRevisionUserState, CanvasWriteReceipt
+from short_drama.domain.canvas.document.canvas import (
+    CanvasRevision,
+    CanvasRevisionUserState,
+    CanvasWriteReceipt,
+)
 from tests.integration.canvas.resources.test_canvas_library import (
     database_errors as database_errors,
 )

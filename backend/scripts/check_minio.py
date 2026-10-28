@@ -2,7 +2,7 @@
 
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import BusinessError
-from short_drama.service.storage_service import StorageService
+from short_drama.service.media.files.storage import StorageService
 from short_drama.storage.minio import MinioStorage
 
 

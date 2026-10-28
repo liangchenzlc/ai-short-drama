@@ -93,9 +93,9 @@ async (page) => {
     import '/node_modules/.vite/deps/@ant-design_v5-patch-for-react-19.js';
     import { ConfigProvider } from '/node_modules/.vite/deps/antd.js';
     import { BrowserRouter } from '/node_modules/.vite/deps/react-router-dom.js';
-    import { ShotImageCandidates } from '/src/features/projects/ShotImageCandidates.tsx';
+    import { ShotImageCandidates } from '/src/features/creation/storyboard/images/ShotImageCandidates.tsx';
     import { studioTheme } from '/src/app/theme.ts';
-    import '/src/app/generations.css'; import '/src/app/styles.css'; import '/src/app/studio.css'; import '/src/app/web.css';
+    import '/src/features/generations/tasks/generations.css'; import '/src/app/styles/styles.css'; import '/src/app/styles/studio.css'; import '/src/app/styles/web.css';
     const shot = ${JSON.stringify(shot)};
     const root = ReactDOM.createRoot(document.getElementById('root'));
     let revision = 0; let mode = 'supported'; let mounted = true;

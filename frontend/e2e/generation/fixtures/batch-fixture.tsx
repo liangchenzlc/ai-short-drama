@@ -1,16 +1,13 @@
+import '@host/app/styles/index.css';
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { Checkbox, ConfigProvider } from 'antd';
-import { studioTheme } from '../../../src/app/theme';
+import { studioTheme } from '../../../src/shared/ui/theme';
 import '@ant-design/v5-patch-for-react-19';
-import { BatchLauncher, useBatchSelection } from '../../../src/features/generations/BatchGeneration';
-import { ConfigCatalogProvider } from '../../../src/features/ai-config/ConfigCatalogProvider';
-import '../../../src/app/styles.css';
-import '../../../src/app/studio.css';
-import '../../../src/app/web.css';
-import '../../../src/app/workbench.css';
-import '../../../src/features/projects/creation-overlays.css';
+import { BatchLauncher, useBatchSelection } from '../../../src/features/generations/batches/BatchGeneration';
+import { ConfigCatalogProvider } from '../../../src/features/ai-config/catalog/ConfigCatalogProvider';
+import '../../../src/features/creation/workspace/layout/overlays.css';
 
 function Fixture() {
   const selection = useBatchSelection('episode:1:2');

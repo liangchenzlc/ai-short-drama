@@ -1,4 +1,6 @@
 import subprocess
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
@@ -6,12 +8,19 @@ from sqlalchemy import select
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import MediaFile, ProjectAssembly, ProjectRenderJob, ShotVideo
-from short_drama.domain.project_sound import ProjectSound
-from short_drama.schemas.project_sound import SoundDocument
+from short_drama.domain.creation.sound.tracks.sound import ProjectSound
+from short_drama.schemas.creation.sound.tracks.sound import SoundDocument
 from short_drama.service.base import utcnow
-from short_drama.service.project_assembly_service import ProjectAssemblyService, digest
-from short_drama.service.project_sound_service import ProjectSoundService
-from short_drama.service.video_render import RenderCancelled, VideoRenderer, executable
+from short_drama.service.creation.assembly.document.assembly import ProjectAssemblyService
+from short_drama.service.creation.assembly.editing.editor import AssemblyEditorService
+from short_drama.service.creation.assembly.rendering.renderer import (
+    RenderCancelled,
+    VideoRenderer,
+    executable,
+)
+from short_drama.service.creation.sound.tracks.sound import ProjectSoundService
+from short_drama.service.creation.writing.script.publication import publish
+from short_drama.utils.json_digest import digest
 from tests.support.generation_fixtures import generation_session
 from tests.unit.standard.shot_video.test_shot_video_generation import setup_video
 
@@ -22,6 +31,7 @@ def flow(session, ready=True):
     session.add(
         MediaFile(
             id=201,
+            project_id=int(f.project),
             format_code="video/mp4",
             storage_locator="minio://video/source.mp4",
             original_name="test.mp4",
@@ -46,13 +56,40 @@ def flow(session, ready=True):
     return f, ProjectAssemblyService(session)
 
 
+def editor_flow(session):
+    f, _ = flow(session)
+    media = session.get(MediaFile, 201)
+    publish(media)
+    session.commit()
+    settings = Settings(_env_file=None, auth_enabled=False, minio_image_bucket="images")
+    storage = SimpleNamespace(
+        presigned_get=lambda bucket, name, expiry: f"http://fixture/{bucket}/{name}"
+    )
+    return f, AssemblyEditorService(session, settings, storage)
+
+
 def body(state):
     return {
         "row_version": state["assembly"]["row_version"],
+        "sound_row_version": state["sound"]["row_version"],
+        "sound": state["sound"]["document"],
+        "request_id": str(uuid4()),
         "resolution": state["assembly"]["resolution"],
         "aspect": state["assembly"]["aspect"],
         "clips": [
-            {k: c[k] for k in ("id", "included", "muted", "trim_in_ms", "trim_out_ms")}
+            {
+                k: c[k]
+                for k in (
+                    "id",
+                    "media_id",
+                    "source_type",
+                    "display_duration_ms",
+                    "included",
+                    "muted",
+                    "trim_in_ms",
+                    "trim_out_ms",
+                )
+            }
             for c in state["clips"]
         ],
     }
@@ -87,22 +124,23 @@ def test_deleted_shot_keeps_existing_clip_and_reports_archived_source():
 
 def test_output_choice_survives_sync_and_export_freezes_probed_square_dimensions():
     with generation_session() as session:
-        f, svc = flow(session)
-        state = svc.initialize(f.project)
+        f, svc = editor_flow(session)
+        svc.initialize(f.project)
+        state = svc.get_editor(f.project)
         assert state["assembly"]["aspect"] == "auto"
         payload = body(state)
         payload["aspect"] = "9:16"
-        state = svc.edit(f.project, payload)
+        state = svc.save_editor(f.project, payload)
         state = svc.sync(f.project, export_body(state))
         assert state["assembly"]["aspect"] == "9:16"
         assert state["assembly"]["output_height"] == 1280
         media = session.get(MediaFile, 201)
         media.video_metadata = {**media.video_metadata, "width": 640, "height": 640}
         session.commit()
-        state = svc.get(f.project)
+        state = svc.get_editor(f.project)
         payload = body(state)
         payload["aspect"] = "auto"
-        state = svc.edit(f.project, payload)
+        state = svc.save_editor(f.project, payload)
         assert state["assembly"]["output_width"] == state["assembly"]["output_height"] == 720
         job = svc.export(f.project, export_body(state), "freeze-square")
         media.video_metadata = {**media.video_metadata, "width": 1920, "height": 1080}
@@ -114,15 +152,16 @@ def test_output_choice_survives_sync_and_export_freezes_probed_square_dimensions
 
 def test_assembly_actual_duration_snapshot_replay_conflict_and_retry():
     with generation_session() as session:
-        f, svc = flow(session)
-        state = svc.initialize(f.project)
+        f, svc = editor_flow(session)
+        svc.initialize(f.project)
+        state = svc.get_editor(f.project)
         assert state["clips"][0]["duration_ms"] == 4200
         assert not state["clips"][0]["is_stale"]
         payload = body(state)
         payload["clips"][0].update(trim_in_ms=500, trim_out_ms=3500, muted=True)
-        changed = svc.edit(f.project, payload)
+        changed = svc.save_editor(f.project, payload)
         with pytest.raises(WorkflowError, match="其他窗口"):
-            svc.edit(f.project, payload)
+            svc.save_editor(f.project, {**payload, "request_id": str(uuid4())})
         job = svc.export(f.project, export_body(changed), "export-key")
         assert svc.export(f.project, export_body(changed), "export-key")["id"] == job["id"]
         row = session.get(ProjectRenderJob, int(job["id"]))
@@ -131,7 +170,7 @@ def test_assembly_actual_duration_snapshot_replay_conflict_and_retry():
         session.commit()
         payload = body(changed)
         payload["clips"][0]["trim_in_ms"] = 1000
-        latest = svc.edit(f.project, payload)
+        latest = svc.save_editor(f.project, payload)
         assert latest["context_hash"] != job["context_hash"]
         cancelled = svc.job_action(f.project, job["id"], "cancel")
         assert cancelled["status"] == "cancelled"
@@ -142,14 +181,16 @@ def test_assembly_actual_duration_snapshot_replay_conflict_and_retry():
 
 def test_missing_video_blocks_export_and_sync_preserves_replaced_trim():
     with generation_session() as session:
-        f, svc = flow(session)
-        state = svc.initialize(f.project)
+        f, svc = editor_flow(session)
+        svc.initialize(f.project)
+        state = svc.get_editor(f.project)
         edit = body(state)
         edit["clips"][0]["trim_in_ms"] = 500
-        state = svc.edit(f.project, edit)
+        state = svc.save_editor(f.project, edit)
         session.add(
             MediaFile(
                 id=202,
+                project_id=int(f.project),
                 format_code="video/mp4",
                 storage_locator="minio://video/new.mp4",
                 original_name="",
@@ -185,6 +226,7 @@ def test_sync_during_probe_schedules_replacement_without_duplicate_work(status):
         session.add(
             MediaFile(
                 id=202,
+                project_id=int(f.project),
                 format_code="video/mp4",
                 storage_locator="minio://video/replacement.mp4",
                 original_name="replacement.mp4",
@@ -224,6 +266,7 @@ def test_render_job_timeline_keeps_original_media_after_replacement():
         session.add(
             MediaFile(
                 id=202,
+                project_id=int(f.project),
                 format_code="video/mp4",
                 storage_locator="minio://video/replacement.mp4",
                 original_name="replacement.mp4",
@@ -248,24 +291,25 @@ def test_render_job_timeline_keeps_original_media_after_replacement():
 
 def test_trim_bounds_scope_and_empty_export():
     with generation_session() as session:
-        f, svc = flow(session)
-        state = svc.initialize(f.project)
+        f, svc = editor_flow(session)
+        svc.initialize(f.project)
+        state = svc.get_editor(f.project)
         edit = body(state)
         edit["clips"][0]["trim_out_ms"] = 5000
         with pytest.raises(WorkflowError, match="实际时长"):
-            svc.edit(f.project, edit)
+            svc.save_editor(f.project, edit)
         with pytest.raises(WorkflowError):
             svc.get(999)
         edit = body(state)
         edit["clips"][0]["included"] = False
-        state = svc.edit(f.project, edit)
+        state = svc.save_editor(f.project, edit)
         with pytest.raises(WorkflowError):
             svc.export(f.project, export_body(state), "empty")
 
 
 def test_initialize_keeps_reserved_sources_without_blocking_ready_video():
     with generation_session() as session:
-        f, svc = flow(session)
+        f, svc = editor_flow(session)
         missing = f.storyboard.create(
             f.project,
             {
@@ -276,7 +320,8 @@ def test_initialize_keeps_reserved_sources_without_blocking_ready_video():
             "missing-source",
         )["shot"]
         assert svc.get(f.project)["source_count"] == 1
-        state = svc.initialize(f.project)
+        svc.initialize(f.project)
+        state = svc.get_editor(f.project)
         absent = next(c for c in state["clips"] if c["shot_id"] == missing["id"])
         assert absent["issue"] == "missing" and absent["included"] is True
         assert absent["is_stale"] is True
@@ -287,10 +332,15 @@ def test_initialize_keeps_reserved_sources_without_blocking_ready_video():
         # Explicit exclusion is retained without affecting the effective render timeline.
         edited = body(state)
         next(c for c in edited["clips"] if c["id"] == absent["id"])["included"] = False
-        state = svc.edit(f.project, edited)
+        state = svc.save_editor(f.project, edited)
         state = svc.sync(f.project, export_body(state))
         assert next(c for c in state["clips"] if c["id"] == absent["id"])["included"] is False
-        assert state["context_hash"] == job["context_hash"]
+        assembly = session.get(ProjectAssembly, int(state["assembly"]["id"]))
+        clips = svc._video_snapshot(assembly, svc._clips(assembly))["clips"]
+        fields = ("clip_id", "shot_id", "media_id", "trim_in_ms", "trim_out_ms", "muted")
+        assert [{key: clip[key] for key in fields} for clip in clips] == [
+            {key: clip[key] for key in fields} for clip in job["timeline"]
+        ]
 
 
 def test_sync_reserves_empty_source_and_includes_it_after_video_adoption():
@@ -351,19 +401,20 @@ def test_source_count_requires_an_adopted_video():
 @pytest.mark.parametrize("issue", ["preparing", "invalid", "trim"])
 def test_existing_unusable_video_still_blocks_export(issue):
     with generation_session() as session:
-        f, svc = flow(session)
-        state = svc.initialize(f.project)
+        f, svc = editor_flow(session)
+        svc.initialize(f.project)
+        state = svc.get_editor(f.project)
         if issue == "trim":
             edit = body(state)
             edit["clips"][0]["trim_in_ms"] = 2000
-            state = svc.edit(f.project, edit)
+            state = svc.save_editor(f.project, edit)
         session.get(MediaFile, 201).video_metadata = {
             "preparing": {},
             "invalid": {"error": "unreadable"},
             "trim": {"duration_ms": 1000, "has_audio": False},
         }[issue]
         session.commit()
-        state = svc.get(f.project)
+        state = svc.get_editor(f.project)
         assert state["clips"][0]["media_id"] == "201"
         assert state["clips"][0]["issue"] == issue
         with pytest.raises(WorkflowError) as error:

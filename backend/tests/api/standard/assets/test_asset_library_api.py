@@ -3,11 +3,11 @@ from datetime import datetime
 
 import httpx
 
-from short_drama.api.dependencies import get_asset_image_service, get_asset_library_service
+from short_drama.api.dependencies.creation import get_asset_image_service, get_asset_library_service
 from short_drama.core.config import Settings
 from short_drama.main import create_app
-from short_drama.schemas.asset_image_candidate import AssetImageCandidateRead
-from short_drama.schemas.asset_library import LibraryAssetRead
+from short_drama.schemas.creation.assets.images.image_candidate import AssetImageCandidateRead
+from short_drama.schemas.creation.assets.management.library import LibraryAssetRead
 
 
 def library_item():

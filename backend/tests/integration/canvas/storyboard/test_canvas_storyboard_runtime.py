@@ -11,9 +11,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-from short_drama.ai.gateway import GenerationGateway
+from short_drama.ai.gateway.client import GenerationGateway
 from short_drama.domain import AIGenerationRecord, CanvasResult, CanvasToolRun, MediaFile
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.canvas.document.test_canvas_workspace import actor
 from tests.integration.canvas.generation.test_canvas_generation_runtime import (
     TASKS,

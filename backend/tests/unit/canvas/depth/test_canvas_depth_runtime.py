@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from short_drama.service.canvas_depth_runtime import (
+from short_drama.service.canvas.tools.depth.depth_runtime import (
     DepthArtifact,
     extract_runtime,
     publish_runtime,

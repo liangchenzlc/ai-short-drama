@@ -315,7 +315,8 @@ def test_modelhub_multipart_frames_and_poll(gateway, provider, frame_count, mode
 
 
 def test_modelhub_capabilities_and_exact_host():
-    from short_drama.ai.adapters import capabilities, select_adapter
+    from short_drama.ai.adapters.capabilities import capabilities
+    from short_drama.ai.adapters.catalog import select_adapter
 
     snap = snapshot("https://api.modelhub.cc", "video", "seedance-2.0-mini")
     assert select_adapter(snap) == "modelhub_video.v1"
@@ -344,16 +345,17 @@ def test_modelhub_canvas_frozen_credentials_execute_submit_and_poll(
 ):
     import base64
 
-    from short_drama.ai.adapters import select_adapter, validate_request
-    from short_drama.ai.canvas_credentials import decode_canvas_credentials
+    from short_drama.ai.adapters.capabilities import validate_request
+    from short_drama.ai.adapters.catalog import select_adapter
+    from short_drama.ai.gateway.canvas_credentials import decode_canvas_credentials
     from short_drama.core.crypto import KeyCipher
-    from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-    from short_drama.service.canvas_credential_freeze import (
+    from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+    from short_drama.service.canvas.generation.credential_freeze import (
         freeze_canvas_credentials,
         freeze_model_credentials,
     )
-    from short_drama.service.canvas_generation_inputs import generation_payload
-    from short_drama.service.canvas_generation_parameters import frozen_canvas_parameters
+    from short_drama.service.canvas.generation.generation_inputs import generation_payload
+    from short_drama.service.canvas.generation.generation_parameters import frozen_canvas_parameters
 
     base, state, calls = provider
     snap = snapshot("https://api.modelhub.cc", "video", "seedance-2.0-mini")
@@ -470,7 +472,7 @@ def test_modelhub_invalid_parameters_never_submit(gateway, provider, params):
 )
 def test_modelhub_ambiguous_submit_does_not_authorize_retry(body):
     from short_drama.ai import GenerationError
-    from short_drama.ai.adapters import parse_result
+    from short_drama.ai.adapters.results import parse_result
 
     with pytest.raises(GenerationError) as caught:
         parse_result(body, "modelhub_video.v1", submitted=True)
@@ -492,7 +494,7 @@ def test_modelhub_ambiguous_submit_does_not_authorize_retry(body):
     ],
 )
 def test_modelhub_poll_states(status):
-    from short_drama.ai.adapters import parse_result
+    from short_drama.ai.adapters.results import parse_result
 
     result = parse_result(
         {"status": status}, "modelhub_video.v1", submitted=False, task_id="task-1"
@@ -855,8 +857,10 @@ def test_edit_downloads_enforce_file_and_total_limits(
 ):
     from short_drama.ai import GenerationError
 
-    monkeypatch.setattr("short_drama.ai.gateway.MAX_REFERENCE_IMAGE_BYTES", per_file)
-    monkeypatch.setattr("short_drama.ai.gateway.MAX_REFERENCE_TOTAL_BYTES", total)
+    monkeypatch.setattr(
+        "short_drama.ai.gateway.transport_client.MAX_REFERENCE_IMAGE_BYTES", per_file
+    )
+    monkeypatch.setattr("short_drama.ai.gateway.transport_client.MAX_REFERENCE_TOTAL_BYTES", total)
     base, state, calls = provider
     data = reference_image()
     assert len(data) < 100 < 2 * len(data)
@@ -1371,7 +1375,8 @@ def test_output_manifest_cannot_exceed_application_limit(gateway, provider):
 
 
 def test_https_pins_validated_ip_and_verifies_original_hostname(monkeypatch):
-    from short_drama.ai import GenerationGateway, transport
+    import short_drama.ai.gateway.transport as transport
+    from short_drama.ai import GenerationGateway
 
     connections = []
     resolutions = []
@@ -1432,7 +1437,7 @@ def test_https_pins_validated_ip_and_verifies_original_hostname(monkeypatch):
 def test_upload_timeout_uses_remaining_budget_without_enabling_retries(
     monkeypatch, multipart, budget
 ):
-    from short_drama.ai import transport
+    import short_drama.ai.gateway.transport as transport
 
     monkeypatch.setattr(transport.time, "monotonic", lambda: 100)
     monkeypatch.setattr(
@@ -1482,8 +1487,9 @@ def test_upload_timeout_uses_remaining_budget_without_enabling_retries(
     ],
 )
 def test_interrupted_upload_is_unknown_and_never_resent(monkeypatch, cause, code):
-    from short_drama.ai import GenerationError, transport
-    from short_drama.service.ai_generation_service import safe_error
+    import short_drama.ai.gateway.transport as transport
+    from short_drama.ai import GenerationError
+    from short_drama.service.generations.admission.task_policy import safe_error
 
     monkeypatch.setattr(
         transport.socket, "getaddrinfo", lambda *_args, **_kwargs: [(2, 1, 6, "", ("8.8.8.8", 443))]

@@ -1,5 +1,7 @@
 # AI 创作助手 Harness 运行机制
 
+> 2026-10-28 兼容清理：Worker 统一使用 Harness，记忆任务使用同一模型网关；消息布局固定为稳定前缀加末尾动态 frame，不再冻结布局版本字段。`interruptions_supported` 和消息附带的旧 resume 控制已移除；决策次数及输出 token 不再接受无限预算。交付要求以需求表为准，完成验收统一使用证据包。下文对应的旧引擎、布局及预算描述仅作历史背景。
+
 2026-10-26 起，新 V3 任务冻结 `langgraph-harness.1` 引擎；已有任务继续使用原引擎，不在恢复中切换协议。LangGraph 决定模型／工具节点次序，LangChain 每次只完成一个模型决策，function calling 由模型自主选择。服务端校验所有权、选入范围、输入版本、工具版本、模型能力、预算和执行租约，不再以用户句式正则作为新任务的工具授权条件。
 
 ## 目录与职责
@@ -14,7 +16,7 @@
 | `agent/skill/progressive.py` | 小目录分页、不可变版本加载、去重、释放／复用及独立配额 |
 | `agent/tools/registry.py`、`autonomous.py`、`scope.py` | v4 工具 schema、按需能力组、处理器、可信任务范围；旧冻结请求保留原版本 |
 | `agent/coordinator/`、`task/`、`memory/` | 复用 Run／Turn／Operation、可靠调度、记忆水位与 CAS |
-| `service/agent_graph_service.py`、`dao/agent_graph_dao.py`、`domain/agent_graph.py` | checkpoint 与 pending writes 的事务、查询与 ORM |
+| `service/assistant/execution/graph.py`、`dao/assistant/execution/graph.py`、`domain/assistant/execution/graph.py` | checkpoint 与 pending writes 的事务、查询与 ORM |
 | `ai/prompts/assistant/` | 五段系统提示词、continuation 续执行提示与独立 verification 验收提示 |
 
 ## 执行与恢复
@@ -35,19 +37,19 @@ API 在任务及 Run 固定引擎，Agent Worker 按固定引擎派发。每次 
 
 ## 交付要求、完成验收与局部进展
 
-复杂执行任务的要求分两层：服务端在发送消息时用规则（非模型）从用户原话抽取 draft，写入 `agent_task_requirements`（含真实 `quote_start/quote_end`、`origin=server_draft`、`state=draft`）；Agent 只能用 `confirm_requirements(keys, additions, intent)` 确认这些 draft 或补充有原文引用的要求，不能自行删除或降低数量。用户在更新的已应用消息中明确修订数量时，可建立新confirmed定义并将旧定义标记superseded。最多 32 项，`key/description/kind/source_message_id/minimum_count/artifact_kind/asset_kind` 与旧契约一致。来源必须是本任务已应用的真实用户消息；改述保留原表述。普通“继续”保留旧要求；修改约束须引用更新用户输入，遗忘来源退出使用。旧任务没有 `agent_policy.contract=server_draft.v1` 时继续使用旧 `set_task_requirements` 与 JSON 契约。
+复杂执行任务的要求分两层：服务端在发送消息时用规则（非模型）从用户原话抽取 draft，写入 `agent_task_requirements`（含真实 `quote_start/quote_end`、`origin=server_draft`、`state=draft`）；Agent 使用 `confirm_requirements(keys, additions, intent)` 确认这些 draft 或补充有原文引用的要求，不能自行删除或降低数量。用户在更新的已应用消息中明确修订数量时，可建立新 confirmed 定义并将旧定义标记 superseded。最多 32 项，来源必须是本任务已应用的真实用户消息；改述保留原表述。普通“继续”保留旧要求；修改约束须引用更新用户输入，遗忘来源退出使用。
 
-要求类型区分 `answer/read/write/image/skill/observation/contract`。`write` 只计算真实业务保存的分类成果；`observation` 核对当前工作集中的有来源观察，推断、同来源同引文的重复笔记及历史下界前的笔记不计数；`contract` 核对已登记要求。不能把登记或笔记当成作品写入。检查协议 v2 对已有要求只接收 `checks[].key` 及核验字段，由服务端取权威定义；新任务不再接受 `additional_requirements`（未登记 key 直接拒绝，避免被验收方定义标准）。旧 v1 检查回执按原结构解析和重放。
+要求类型区分 `answer/read/write/image/skill/observation/contract`。`write` 只计算真实业务保存的分类成果；`observation` 核对当前工作集中的有来源观察，推断、同来源同引文的重复笔记及历史下界前的笔记不计数；`contract` 核对已登记要求。不能把登记或笔记当成作品写入。检查只接收已确认要求的 `checks[].key` 及核验字段，由服务端从需求表读取权威定义；未登记 key 和新增定义直接拒绝，避免验收方改写标准。`task_contract` 是供上下文展示和记录验收结果的单向投影。
 
-发布前有一道确定性守卫（不调用模型）：本 Run 有成功写操作但没有任何已确认的 `write` 要求时拒绝发布，回填 `completion_feedback`（`agent_requirements_unconfirmed`）；实际写入的成果类别未被已确认要求覆盖时，自动补一条 `server_derived` 要求后放行；纯讨论且无写操作时跳过。守卫以 `agent_policy.contract` 为开关，旧任务不经过它。
+发布前有一道确定性守卫（不调用模型）：本 Run 有成功写操作但没有任何已确认的 `write` 要求时拒绝发布，回填 `completion_feedback`（`agent_requirements_unconfirmed`）；实际写入的成果类别未被已确认要求覆盖时，自动补一条引用已确认写入要求来源的 `server_derived` 要求后放行；纯讨论且无写操作时跳过。
 
 `describe_creation_target` 的成功目录结果属于读取证据，可核对目标身份、版本及可用能力；目录不能证明已读取正文、已看过像素或已保存业务成果，这些语义仍须分别核验。
 
 `requirement_sources` 以独立约 4000 tokens 的字节估算配额保留用户原文，优先初始目标及最新输入，最多 32 条；每条附 message ID、seq 和截断标记。来源已遗忘时退出投影，超过配额的内容按原消息序号显式读取。登记和检查可以直接复制连续原文，避免把 L4 摘要改述误当引文；不改变 L1–L5 数据存储、摘要生成或水位。
 
-模型给出候选最终答复时，先将该 Turn 标记为内部，不立即发布最终消息。新监督请求的流式文本暂存于执行器，工具旁白在结算时发布，候选回复通过检查后发布，避免未验收的完成声明先进入 SSE。下一独立 Turn 只开放 `submit_completion_review`。新任务（`agent_policy.verification=evidence.v3`）的验收 Turn **不继承执行器的工具轨迹**：服务端先按 `agent_task_requirements` 重建证据包（成功操作、成果引用、正文摘录、Turn 身份）并跑确定性检查（操作存在/成功/在范围内、类别与数量、版本一致），再把未通过或有歧义的要求、候选答复与证据缺口交给验收模型；验收模型优先选择本人**另一个文本模型**，没有时降级为同模型并在 `run.checkpoint.reviewer_degraded` 标记。程序仍核验真实用户引文、同任务成功操作、成果类别及去重数量、当前范围、答复实际引文，以及媒体已经交付给模型的事实。读取意图不能当作看过像素。缺项反馈原 Agent 继续；通过后发布原候选答复。新输入、记忆代次或历史下界变化会作废候选。验收使用原请求与原始回执账本，恢复不重复外发，也不创建业务 Operation。旧冻结请求没有监督版本时沿用原行为。
+模型给出候选最终答复时，先将该 Turn 标记为内部，不立即发布最终消息。监督请求的流式文本暂存于执行器，工具旁白在结算时发布，候选回复通过检查后发布，避免未验收的完成声明先进入 SSE。下一独立 Turn 只开放 `submit_completion_review`。验收 Turn **不继承执行器的工具轨迹**：服务端先按 `agent_task_requirements` 重建证据包（成功操作、成果引用、正文摘录、Turn 身份）并跑确定性检查（操作存在/成功/在范围内、类别与数量、版本一致），再把未通过或有歧义的要求、候选答复与证据缺口交给验收模型；验收模型优先选择本人**另一个文本模型**，没有时降级为同模型并在 `run.checkpoint.reviewer_degraded` 标记。程序仍核验真实用户引文、同任务成功操作、成果类别及去重数量、当前范围、答复实际引文，以及媒体已经交付给模型的事实。读取意图不能当作看过像素。缺项反馈原 Agent 继续；通过后发布原候选答复。新输入、记忆代次或历史下界变化会作废候选。验收使用原请求与原始回执账本，恢复不重复外发，也不创建业务 Operation。
 
-完成检查提供可观测证据约束，不能确定性证明任意自然语言意图和创作质量。`evidence.v3` 任务没有已确认要求且没有成功写操作时，普通讨论直接发布，不创建独立验收 Turn；已有要求的答复仍进入检查，不因此要求业务写入。有成功写操作但要求未确认时仍由发布守卫拒绝。旧冻结监督协议保持原检查行为。内部验收 Turn 计入实际模型用量，不作为可执行业务工具，也不进入近期业务工具轨迹。
+完成检查提供可观测证据约束，不能确定性证明任意自然语言意图和创作质量。没有已确认要求且没有成功写操作时，普通讨论直接发布，不创建独立验收 Turn；已有要求的答复仍进入检查，不因此要求业务写入。有成功写操作但要求未确认时仍由发布守卫拒绝。内部验收 Turn 计入实际模型用量，不作为可执行业务工具，也不进入近期业务工具轨迹。
 
 `task_contract.reviewed_evidence` 为此前通过核验的执行项保留实际操作 ID、要求定义 hash 及来源 Turn。定义变化、来源遗忘或越过历史下界时退出投影。该记录供后续检查复用正确证据身份，仍按本次检查重新查询真实操作、数量和状态，不自动放行本次缺项。图片目录可辅助核对，但只有已交付像素的读取计入图片数量。
 
@@ -65,7 +67,7 @@ API 在任务及 Run 固定引擎，Agent Worker 按固定引擎派发。每次 
 | --- | --- | --- |
 | 图片 | Claude 的原生 tool_result image；Responses 原生工具输出；Chat 的 tool 占位及后续 user 视觉块 | 历史、请求模板和图状态仅留引用；当前请求结束后不再次注入像素 |
 | Skill 正文 | 原 load_skill 调用对应的文本 tool result | 正文只保存于首次 Operation；重复调用返回原正文操作身份及已加载说明 |
-| references、scripts | 分段文本工具结果，返回 next_offset | Operation 保存本次实际读取；脚本仅可读，不执行 |
+| references、模板 | 分段文本工具结果，返回 next_offset | Operation 保存本次实际读取；脚本资源不受支持 |
 | Skill 示例图 | 与普通图片相同 | 不写入 Skill 目录或常驻正文 |
 | 音视频附件 | 受管 FFmpeg 转换、均匀采样帧，按用户策略包含或忽略音轨 | 冻结衍生对象及校验引用，不保存媒体编码 |
 
@@ -101,7 +103,7 @@ Harness 采用"单 Run 有限、可续期"的预算：任务创建时把 `AGENT_
 
 ## 提示词与观测
 
-提示词由 registry 组合并冻结版本，当前为 `assistant-harness-v8`。system 定义目标与可信边界；tool_use 定义自主选择、按需工具组、交付要求、保存来源与回读正文；resources 定义像素缺口、完整身份与单次水合；skills 定义手选优先、自动加载、版本、去重及阶段释放；compaction 定义水位、已读证据与活动正文保留。独立的 continuation 作为本轮用户续执行提示，冻结在 Turn 输入内并放在完整工具轨迹和动态状态之后，只核对当前缺口的前置依赖和未完成项，避免重复登记要求、每轮复述快照或把正文离开窗口误判为读取失败。关键事实进入有来源工作笔记，可恢复错误据回执纠正；没有真实保存来源时不能跳到回读。独立 verification 只提交检查结构，不执行创作工具，分别核对分镜剧本文字 `script` 与结构化配音台词 `dialogue.document.lines`。这些提示不指定固定业务工具序列。
+提示词由 registry 组合并冻结版本，当前为 `assistant-harness-v10`。system 定义目标与可信边界；tool_use 定义自主选择、按需工具组、交付要求、保存来源与回读正文；resources 定义像素缺口、完整身份与单次水合；skills 定义手选优先、自动加载、版本、去重及阶段释放；compaction 定义水位、已读证据与活动正文保留。独立的 continuation 作为本轮用户续执行提示，冻结在 Turn 输入内并放在完整工具轨迹和动态状态之后，只核对当前缺口的前置依赖和未完成项，避免重复登记要求、每轮复述快照或把正文离开窗口误判为读取失败。关键事实进入有来源工作笔记，可恢复错误据回执纠正；没有真实保存来源时不能跳到回读。独立 verification 只提交检查结构，不执行创作工具，分别核对分镜剧本文字 `script` 与结构化配音台词 `dialogue.document.lines`。这些提示不指定固定业务工具序列。
 
 请求布局 v2 先放稳定系统提示、轻任务身份和完整工具历史，再放动态任务 frame 及 continuation，以增加可复用前缀。工具 schema 按需启用：基础读取和编排工具常驻，`standard_write/canvas_write/media/memory_write/image_adoption` 由 `enable_tool_group` 启用后按启用顺序追加；schema 生成有缓存，返回独立副本，已有工具顺序稳定。旧冻结请求保留原布局和 schema，不改写已发送报文。提示词不代替 Pydantic schema、业务版本或权限校验。工具参数错误返回最多八个字段位置、错误类型和原因，不附输入值、异常上下文或内部堆栈，模型据此修正。
 

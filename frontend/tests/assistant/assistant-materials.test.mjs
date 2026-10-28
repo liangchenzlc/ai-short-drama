@@ -6,7 +6,7 @@ import ts from 'typescript';
 function compile(source) {
   return ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 }
-const source = readFileSync(new URL('../../src/features/ai-assistant/assistant-materials.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/assistant/references/assistant-materials.ts', import.meta.url), 'utf8');
 const materials = await import(`data:text/javascript;base64,${Buffer.from(compile(source)).toString('base64')}`);
 
 const scene = { project_id: '1', source_kind: 'project', source_id: '1', kind: 'shot', id: '20', revision: '3', content_revision: '9', checksum: 'a'.repeat(64), name: '场景1', project_name: '作品', source_name: '作品' };

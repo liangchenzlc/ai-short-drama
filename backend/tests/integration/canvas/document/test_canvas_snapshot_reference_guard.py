@@ -18,11 +18,11 @@ from sqlalchemy import event, func, select, update
 from short_drama.core.exceptions import NotFound
 from short_drama.core.identity import ActorContext
 from short_drama.domain import CanvasBinaryResource, MediaFile, ProjectCanvas
-from short_drama.domain.canvas import CanvasRevision, CanvasUserMediaReference
-from short_drama.domain.canvas_resource import CanvasUserBinaryReference
+from short_drama.domain.canvas.document.canvas import CanvasRevision, CanvasUserMediaReference
+from short_drama.domain.canvas.resources.resource import CanvasUserBinaryReference
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_document import content_hash
-from short_drama.service.canvas_service import CanvasService
+from short_drama.service.canvas.document.canvas import CanvasService
+from short_drama.service.canvas.document.document import content_hash
 from short_drama.utils.snowflake import next_id
 from tests.integration.canvas.document.test_canvas_reference_writes import (
     reference_scene,

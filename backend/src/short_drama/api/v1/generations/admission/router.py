@@ -1,0 +1,137 @@
+from datetime import datetime
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends, Header, Query, Response
+
+from short_drama.api.dependencies.generations import get_ai_generation_service
+from short_drama.schemas.base import Identifier
+from short_drama.schemas.generations.admission.generation import (
+    AudioGenerationCreate,
+    GenerationRetry,
+    ImageGenerationCreate,
+    TextGenerationCreate,
+    VideoGenerationCreate,
+)
+
+router = APIRouter(prefix="/ai/generations", tags=["ai-generations"])
+Service = Annotated[object, Depends(get_ai_generation_service)]
+Key = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)]
+
+
+def _created(service, kind, body, key, response):
+    result, created = service.create(kind, body, key)
+    response.status_code = 202 if created else 200
+    return result
+
+
+@router.post("/audio", status_code=202)
+def create_audio(
+    body: AudioGenerationCreate, response: Response, service: Service, idempotency_key: Key
+):
+    return _created(service, "audio", body, idempotency_key, response)
+
+
+@router.post("/text", status_code=202)
+def create_text(
+    body: TextGenerationCreate, response: Response, service: Service, idempotency_key: Key
+):
+    return _created(service, "text", body, idempotency_key, response)
+
+
+@router.post("/image", status_code=202)
+def create_image(
+    body: ImageGenerationCreate, response: Response, service: Service, idempotency_key: Key
+):
+    return _created(service, "image", body, idempotency_key, response)
+
+
+@router.post("/video", status_code=202)
+def create_video(
+    body: VideoGenerationCreate, response: Response, service: Service, idempotency_key: Key
+):
+    return _created(service, "video", body, idempotency_key, response)
+
+
+@router.get("")
+def list_generations(
+    service: Service,
+    resource_scope: Literal["all", "personal", "project"] = "all",
+    service_type: Literal["text", "image", "video", "audio"] | None = None,
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled"] | None = None,
+    config_id: Identifier | None = None,
+    source_scene: Literal[
+        "shot_image",
+        "shot_video",
+        "asset_image",
+        "script_rewrite",
+        "script_shots",
+        "script_assets",
+        "character_voice_design",
+        "dialogue_audio",
+        "dialogue_extract",
+    ]
+    | None = None,
+    source_id: Identifier | None = None,
+    project_id: Identifier | None = None,
+    created_after: datetime | None = None,
+    created_before: datetime | None = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+):
+    return service.list(
+        offset,
+        limit,
+        {
+            "resource_scope": resource_scope,
+            "service_type": service_type,
+            "status": status,
+            "config_id": config_id,
+            "source_scene": source_scene,
+            "source_id": source_id,
+            "project_id": project_id,
+            "created_after": created_after,
+            "created_before": created_before,
+        },
+    )
+
+
+@router.get("/by-idempotency-key")
+def lookup_generation(
+    service: Service,
+    service_type: Literal["text", "image", "video", "audio"],
+    idempotency_key: Annotated[str, Query(min_length=1, max_length=128)],
+):
+    return service.lookup_by_key(service_type, idempotency_key)
+
+
+@router.get("/{generation_id}")
+def detail(generation_id: Identifier, service: Service):
+    return service.detail(generation_id)
+
+
+@router.get("/{generation_id}/records")
+def records(generation_id: Identifier, service: Service):
+    return service.records(generation_id)
+
+
+@router.post("/{generation_id}/cancel")
+def cancel(generation_id: Identifier, service: Service):
+    return service.cancel(generation_id)
+
+
+@router.post("/{generation_id}/resume")
+def resume(generation_id: Identifier, service: Service):
+    return service.resume(generation_id)
+
+
+@router.post("/{generation_id}/retry", status_code=202)
+def retry(
+    generation_id: Identifier,
+    response: Response,
+    service: Service,
+    idempotency_key: Key,
+    body: GenerationRetry | None = None,
+):
+    result, created = service.retry(generation_id, body, idempotency_key)
+    response.status_code = 202 if created else 200
+    return result

@@ -12,7 +12,9 @@ from short_drama.agent.core.events import append_event as append_event
 from short_drama.agent.core.events import budget_limits as budget_limits
 from short_drama.agent.core.events import initial_usage as initial_usage
 from short_drama.agent.core.items import KIND_NARRATION, KIND_NOTICE, allocate_item_seq
-from short_drama.domain.agent import AgentArtifact, AgentMessage, AgentToolCall
+from short_drama.domain.assistant.artifacts.models import AgentArtifact
+from short_drama.domain.assistant.conversations.models import AgentMessage
+from short_drama.domain.assistant.execution.models import AgentToolCall
 from short_drama.service.base import utcnow
 from short_drama.utils.snowflake import next_id
 
@@ -141,7 +143,6 @@ def run_artifact_references(session, conversation, run):
                 AgentToolCall.run_id == run.id,
                 AgentArtifact.created_by == run.initiated_by,
                 AgentArtifact.created_by == conversation.owner_user_id,
-                AgentArtifact.project_id == conversation.project_id,
                 AgentArtifact.project_id == conversation.project_id,
             )
             .order_by(AgentArtifact.id)
@@ -340,6 +341,12 @@ def finish_locked(session, conversation, run, status, error=None):
         from short_drama.agent.memory.context import schedule_maintenance_locked
 
         schedule_maintenance_locked(session, conversation, run)
+    if conversation.status == "deleting":
+        from short_drama.agent.session.lifecycle import finalize_deletion_locked
+
+        # 先写入运行终态，再检查会话内的全部运行，避免清理抢在分段收尾之前。
+        session.flush()
+        finalize_deletion_locked(session, conversation)
     return True
 
 

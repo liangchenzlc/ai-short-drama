@@ -10,8 +10,8 @@ import pytest
 from sqlalchemy import event, func, select
 
 from short_drama.core.exceptions import NotFound
-from short_drama.dao.canvas_creation_dao import CanvasCreationDAO
-from short_drama.dao.canvas_recycle_cleanup_dao import CanvasRecycleCleanupDAO
+from short_drama.dao.canvas.resources.recycle.recycle_cleanup import CanvasRecycleCleanupDAO
+from short_drama.dao.canvas.workspace.creation.creation import CanvasCreationDAO
 from short_drama.domain import (
     CanvasCreationAttempt,
     CanvasCreationResource,
@@ -20,8 +20,8 @@ from short_drama.domain import (
     MediaFile,
     ProjectCanvas,
 )
-from short_drama.domain.canvas import CanvasWriteReceipt
-from short_drama.service.canvas_creation_service import CanvasCreationService
+from short_drama.domain.canvas.document.canvas import CanvasWriteReceipt
+from short_drama.service.canvas.workspace.creation.creation import CanvasCreationService
 from tests.integration.canvas.document.test_canvas_workspace import actor
 from tests.integration.canvas.projects.test_canvas_creation import creation_request
 from tests.integration.canvas.resources.test_canvas_library import (

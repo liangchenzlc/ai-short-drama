@@ -8,11 +8,13 @@ from pathlib import Path
 
 import pytest
 
+from short_drama.ai.adapters.video.config import VIDEO_ADAPTERS
+from short_drama.ai.adapters.video.input_capabilities import video_input_capabilities
 from short_drama.ai.types import GenerationError
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.canvas_task_runtime import CanvasRuntimeTaskCreate
-from short_drama.service.canvas_generation_inputs import generation_payload
-from short_drama.service.canvas_generation_parameters import frozen_canvas_parameters
+from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasRuntimeTaskCreate
+from short_drama.service.canvas.generation.generation_inputs import generation_payload
+from short_drama.service.canvas.generation.generation_parameters import frozen_canvas_parameters
 
 PACKAGE = Path(__file__).resolve().parent
 ADAPTER = "modelhub_video.v1"
@@ -22,7 +24,7 @@ ADAPTER = "modelhub_video.v1"
 def adapters():
     override = os.environ.get("MODELHUB_ADAPTER_UNDER_TEST")
     if override is None:
-        from short_drama.ai import adapters as product_adapters
+        import short_drama.ai.adapters as product_adapters
 
         return product_adapters
     target = Path(override).resolve()
@@ -155,7 +157,7 @@ def test_unknown_model_stays_rejected(adapters, model):
 
 
 def test_seedance_capabilities_remain_exact(adapters):
-    assert adapters.video_input_capabilities(snapshot("seedance-2.0-mini"), ADAPTER) == {
+    assert video_input_capabilities(snapshot("seedance-2.0-mini"), ADAPTER) == {
         "first_frame": True,
         "reference_images": True,
         "duration_seconds": list(range(4, 16)),
@@ -297,7 +299,7 @@ def test_minimax_uses_existing_canvas_generic_video_mapping(adapters):
     payload["canvas_parameters"] = frozen_canvas_parameters(value, ADAPTER)
     _, _, body = adapters.build_submission(snapshot(), payload, ADAPTER)
     assert body["duration"] == 5 and body["resolution"] == "480p"
-    assert body["ratio"] == "16:9" and ADAPTER not in adapters.VIDEO_ADAPTERS
+    assert body["ratio"] == "16:9" and ADAPTER not in VIDEO_ADAPTERS
 
 
 def test_minimax_generic_canvas_image_uses_stable_saved_reference(adapters):

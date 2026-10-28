@@ -41,11 +41,6 @@ type SceneRouterResult = {
     scene: ArtCritiqueScene;
 };
 
-type SceneReviewResult = {
-    scene: ArtCritiqueScene;
-    candidates: ArtCritiqueCandidate[];
-};
-
 type AggregateIssueDraft = Omit<ArtCritiqueIssue, "target" | "groundingConfidence" | "verification"> & {
     targetDescription: string;
 };
@@ -428,12 +423,6 @@ export async function runArtCritiquePipeline(config: AiConfig, input: ArtCritiqu
 export function parseSceneRouterPayload(value: unknown): SceneRouterResult {
     if (!isRecord(value) || !isRecord(value.scene)) throw new Error("art_critique_scene_invalid");
     return { scene: parseScene(value.scene) };
-}
-
-/** @deprecated Kept for callers of the original two-reviewer parser. */
-export function parseSceneReviewPayload(value: unknown): SceneReviewResult {
-    if (!isRecord(value) || !isRecord(value.scene) || !Array.isArray(value.candidates)) throw new Error("art_critique_scene_invalid");
-    return { scene: parseScene(value.scene), candidates: parseCandidates(value, "composition") };
 }
 
 export function parseAggregatePayload(value: unknown): AggregateResult {
@@ -1168,4 +1157,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-export type { AggregateResult, EditPromptResult, GroundingResult, SceneRouterResult, SceneReviewResult, VerificationResult };
+export type { AggregateResult, EditPromptResult, GroundingResult, SceneRouterResult, VerificationResult };

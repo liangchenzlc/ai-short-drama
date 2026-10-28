@@ -1,0 +1,521 @@
+/* 两端共用 Ant Design X 对话界面，颜色由各自工作区的语义变量提供。 */
+.ai-assistant-panel,
+.ai-assistant-history-dialog,
+.ai-assistant-context-dialog {
+  --assistant-background: var(--background, var(--surface, #181818));
+  --assistant-foreground: var(--foreground, var(--ink, #f3f3f5));
+  --assistant-secondary: var(--muted-foreground, var(--sub, #b4b4bc));
+  --assistant-border: var(--border, var(--hair, #2d2d2d));
+  --assistant-muted: var(--surface-muted, var(--muted, #202020));
+  --assistant-card: var(--card, var(--surface-raised, #1f1f20));
+  --assistant-ring: var(--ring, var(--accent-border, #c1c1c5));
+  --assistant-danger: var(--destructive, var(--danger, #f87171));
+  --assistant-body-size: 13px;
+  --assistant-caption-size: 12px;
+  --assistant-tiny-size: 11px;
+  --assistant-small-radius: var(--radius-sm, 5px);
+  --assistant-medium-radius: var(--radius-md, 8px);
+  --assistant-large-radius: var(--radius-lg, 12px);
+}
+.ai-assistant-panel {
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--assistant-background);
+  color: var(--assistant-foreground);
+  font-size: var(--assistant-body-size);
+  overscroll-behavior: contain;
+}
+.ai-assistant-task-trace {
+  min-width: 0;
+  padding-block: 4px;
+}
+.ai-assistant-step-results {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ai-assistant-result-list {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.ai-assistant-result-list:empty {
+  display: none;
+}
+.ai-assistant-result-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--assistant-border, var(--hair));
+  border-radius: var(--assistant-small-radius, 5px);
+  background: var(--assistant-card, var(--surface));
+  overflow-wrap: anywhere;
+}
+.ai-assistant-result-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--assistant-secondary, var(--sub));
+}
+.ai-assistant-result-card strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.ai-assistant-result-card a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ai-assistant-result-card a:focus-visible {
+  outline: 2px solid var(--assistant-ring, var(--accent-border));
+  outline-offset: 3px;
+}
+.ai-assistant-result-version,
+.ai-assistant-result-batch {
+  color: var(--assistant-secondary, var(--sub));
+  font-size: 11px;
+}
+.ai-assistant-result-batch {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ai-assistant-chip > span,
+.ai-assistant-chip > a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-assistant-chip > a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+.ai-assistant-receipt {
+  max-height: 45dvh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.ai-assistant-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 54px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--assistant-border);
+}
+.ai-assistant-header h2 {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--assistant-body-size);
+  font-weight: 600;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-assistant-heading {
+  flex: 1;
+  min-width: 0;
+}
+.ai-assistant-panel h2 {
+  margin: 0;
+}
+.ai-assistant-heading > span {
+  display: block;
+  margin-top: 4px;
+  color: var(--assistant-secondary);
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ai-assistant-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--assistant-border);
+  background: var(--assistant-muted);
+  line-height: 1.7;
+}
+.ai-assistant-notice > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ai-assistant-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 14px;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+}
+.ai-assistant-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+.ai-assistant-user {
+  align-self: flex-end;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 13px;
+  border-radius: var(--assistant-large-radius);
+  background: var(--assistant-muted);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.ai-assistant-reply {
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.ai-assistant-reply p,
+.ai-assistant-reply li {
+  text-wrap: wrap;
+}
+.ai-assistant-reply > :first-child {
+  margin-top: 0;
+}
+.ai-assistant-reply > :last-child {
+  margin-bottom: 0;
+}
+.ai-assistant-reply p,
+.ai-assistant-reply ul,
+.ai-assistant-reply ol,
+.ai-assistant-reply pre {
+  margin: 0 0 9px;
+}
+.ai-assistant-reply ul,
+.ai-assistant-reply ol {
+  padding-left: 20px;
+  list-style: revert;
+}
+.ai-assistant-reply li {
+  margin-bottom: 4px;
+}
+.ai-assistant-reply h1,
+.ai-assistant-reply h2,
+.ai-assistant-reply h3 {
+  margin: 12px 0 7px;
+  font-size: var(--assistant-body-size);
+  font-weight: 600;
+}
+.ai-assistant-reply code {
+  padding: 1px 5px;
+  border-radius: var(--assistant-small-radius);
+  background: var(--assistant-muted);
+  font-size: var(--assistant-caption-size);
+}
+.ai-assistant-reply pre {
+  padding: 10px 12px;
+  border-radius: var(--assistant-medium-radius);
+  background: var(--assistant-muted);
+  overflow-x: auto;
+}
+.ai-assistant-reply pre code {
+  padding: 0;
+  background: none;
+}
+.ai-assistant-reply a {
+  text-decoration: underline;
+}
+.ai-assistant-reply blockquote {
+  margin: 0 0 9px;
+  padding-left: 11px;
+  border-left: 1px solid var(--assistant-border);
+  color: var(--assistant-secondary);
+}
+.ai-assistant-reply table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.ai-assistant-reply th,
+.ai-assistant-reply td {
+  border: 1px solid var(--assistant-border);
+  padding: 5px 9px;
+  text-align: left;
+}
+
+.ai-assistant-meta {
+  font-size: 12px;
+  color: var(--assistant-secondary);
+  line-height: 1.7;
+}
+.ai-assistant-failed {
+  color: var(--assistant-danger);
+  line-height: 1.75;
+}
+.ai-assistant-empty {
+  display: grid;
+  gap: 20px;
+  padding-block: 20px;
+}
+.ai-assistant-empty .ant-welcome-title {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+.ai-assistant-empty .ant-welcome {
+  padding: 0;
+  gap: 12px;
+}
+.ai-assistant-empty .ant-welcome-description {
+  color: var(--assistant-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.ai-assistant-empty .ant-prompts-list {
+  gap: 8px;
+}
+.ai-assistant-empty .ant-prompts-item {
+  padding: 0;
+  background: transparent;
+  border-color: var(--assistant-border);
+}
+.ai-assistant-empty .ant-prompts-item:hover {
+  background: var(--assistant-muted);
+}
+.ai-assistant-empty .ant-prompts-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  white-space: normal;
+}
+.ai-assistant-starter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  line-height: 1.7;
+  cursor: pointer;
+}
+.ai-assistant-starter > svg {
+  flex: 0 0 auto;
+}
+.ai-assistant-composer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-top: 1px solid var(--assistant-border);
+  background: var(--assistant-background);
+}
+.ai-assistant-input {
+  min-width: 0;
+}
+.ai-assistant-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 110px;
+  overflow-y: auto;
+}
+.ai-assistant-chips:empty {
+  display: none;
+}
+.ai-assistant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--assistant-muted);
+  color: var(--assistant-foreground);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.ai-assistant-chip > svg {
+  flex: 0 0 auto;
+}
+.ai-assistant-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-assistant-chip button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--assistant-secondary);
+}
+.ai-assistant-reference-details {
+  width: 100%;
+  font-size: 11px;
+  color: var(--assistant-secondary);
+}
+.ai-assistant-reference-details summary {
+  cursor: pointer;
+  padding-block: 4px;
+}
+.ai-assistant-reference-details[open] > .ai-assistant-chips {
+  padding-top: 6px;
+}
+.ai-assistant-panel .ai-assistant-sender {
+  border-radius: 10px;
+  border-color: var(--assistant-border);
+  background: var(--assistant-card);
+  box-shadow: none;
+}
+.ai-assistant-panel .ai-assistant-sender:focus-within {
+  border-color: var(--assistant-ring);
+  box-shadow: none;
+}
+.ai-assistant-panel .ai-assistant-sender .ant-sender-content {
+  padding: 10px 10px 4px;
+}
+.ai-assistant-panel .ai-assistant-sender .ant-sender-footer {
+  padding: 4px 8px 8px;
+}
+.ai-assistant-panel .ai-assistant-sender .ant-input {
+  min-height: 84px;
+  max-height: 180px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--assistant-foreground);
+  font-size: 13px;
+  line-height: 1.75;
+  resize: none;
+}
+.ai-assistant-panel .ai-assistant-sender .ant-input::placeholder {
+  color: var(--assistant-secondary);
+}
+.ai-assistant-sender-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+}
+.ai-assistant-sender-footer .ai-assistant-model {
+  flex: 0 1 150px;
+  min-width: 0;
+  max-width: calc(100% - 120px);
+  height: 30px;
+  color: var(--assistant-secondary);
+  font-size: 12px;
+}
+.ai-assistant-model-locked.ant-btn {
+  justify-content: flex-start;
+  gap: 6px;
+  padding-inline: 6px;
+}
+.ai-assistant-model-locked .ant-btn-icon {
+  flex: none;
+}
+.ai-assistant-model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-assistant-model-locked.ant-btn:focus-visible {
+  outline: 2px solid var(--assistant-ring);
+  outline-offset: 2px;
+}
+.ai-assistant-composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: auto;
+}
+.ai-assistant-composer-tools > .ant-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--assistant-secondary);
+}
+.ai-assistant-composer-tools > .ant-btn:hover:not(:disabled),
+.ai-assistant-composer-tools > .ant-btn[aria-expanded='true'] {
+  color: var(--assistant-foreground);
+  background: var(--assistant-muted);
+}
+.ai-assistant-composer-tools > .ant-btn:focus-visible {
+  outline: 2px solid var(--assistant-ring);
+  outline-offset: 2px;
+}
+.ai-assistant-menu-hint {
+  display: block;
+  font-size: 12px;
+}
+.assistant-skill-popover {
+  max-width: calc(100vw - 24px);
+}
+.assistant-skill-picker {
+  width: min(348px, calc(100vw - 48px));
+  color: var(--ink, #f3f3f5);
+  font-size: 13px;
+}
+.assistant-skill-scroll {
+  max-height: min(360px, 48dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair, #2d2d2d) transparent;
+}
+.assistant-skill-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hair, #2d2d2d);
+  font-size: 12px;
+  color: var(--sub, #b4b4bc);
+}
+.assistant-skill-footer a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.assistant-skill-picker :is(button, a):focus-visible {
+  outline: 2px solid var(--accent-border, #c1c1c5);
+  outline-offset: 2px;
+}
+.ai-assistant-sender-footer .ai-assistant-send.ant-btn {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  box-shadow: none;
+}

@@ -16,13 +16,11 @@ from short_drama.domain import (
     AsyncTask,
     MediaAsset,
     MediaFile,
-    NovelScriptRecord,
     Project,
-    ProjectNovel,
     ProjectScript,
     User,
 )
-from short_drama.domain.collaboration import AuditEvent
+from short_drama.domain.identity.audit.models import AuditEvent
 from short_drama.service.base import utcnow
 from tests.support.generation_fixtures import config, generation_session
 from tests.unit.standard.writing.test_project_writing import setup
@@ -35,7 +33,7 @@ def actor(session, user_id):
 def seed(session):
     project_id, writing = setup(session)
     config(session)
-    session.info.pop("legacy_user_id")
+    session.info.pop("actor")
     connection = session.connection().connection.driver_connection
     connection.create_function("JSON_OBJECT", 0, lambda: "{}")
     now = utcnow()
@@ -53,7 +51,6 @@ def seed(session):
             )
         )
     session.add(Asset(id=50, project_id=project_id, position=1, kind="character", name="Hero"))
-    session.add(ProjectNovel(id=60, project_id=project_id, content="Novel"))
     for index, owner in enumerate((1, 2, None)):
         session.add(
             AsyncTask(
@@ -79,9 +76,9 @@ def seed(session):
                 config_snapshot={"private": "private-model"},
                 request_data={
                     "source": {
-                        "scene": "novel_script",
+                        "scene": "script_rewrite",
                         "project_id": str(project_id),
-                        "novel_id": "60",
+                        "script_id": str(500 + index),
                     }
                 },
                 response_data={},
@@ -121,15 +118,6 @@ def seed(session):
             )
         )
         session.add(
-            NovelScriptRecord(
-                id=600 + index,
-                novel_id=60,
-                script_id=500 + index,
-                batch_id=100 + index,
-                created_by=owner,
-            )
-        )
-        session.add(
             AssetImageCandidate(id=700 + index, asset_id=50, media_id=300 + index, created_by=owner)
         )
         if owner:
@@ -138,8 +126,8 @@ def seed(session):
                     id=900 + index,
                     actor_user_id=owner,
                     project_id=project_id,
-                    object_type="novel_script_records",
-                    object_id=str(600 + index),
+                    object_type="project_scripts",
+                    object_id=str(500 + index),
                     action="create",
                     request_id="private-provenance-audit",
                     created_at=now,
@@ -173,7 +161,6 @@ def test_project_owner_only_sees_own_execution_and_candidates_after_publication(
                     (AsyncTask, 100),
                     (AIGenerationRecord, 200),
                     (MediaAsset, 400),
-                    (NovelScriptRecord, 600),
                     (AssetImageCandidate, 700),
                     (AgentArtifact, 800),
                 ):
@@ -184,22 +171,23 @@ def test_project_owner_only_sees_own_execution_and_candidates_after_publication(
                 assert set(session.scalars(select(ProjectScript.id))) == expected_scripts
                 expected_media = {300} if user_id == 1 else set()
                 assert set(session.scalars(select(MediaFile.id))) == expected_media
-                assert list(session.scalars(select(AuditEvent.id))) == (
-                    [] if offset is None else [900 + offset]
-                )
-            # These scripts are unadopted Agent candidates. Their creators read
-            # them through the private artifact entry, never ordinary selection.
+                assert list(
+                    session.scalars(
+                        select(AuditEvent.id).where(
+                            AuditEvent.request_id == "private-provenance-audit"
+                        )
+                    )
+                ) == ([] if offset is None else [900 + offset])
+            # Unadopted candidates do not become the current writing document.
             if user_id == 1:
-                assert writing.candidates(project_id)["items"] == []
+                assert writing.get(project_id)["editing_script"] is None
             else:
                 with pytest.raises(NotFound):
-                    writing.candidates(project_id)
+                    writing.get(project_id)
 
 
 @pytest.mark.parametrize("status", ["ready", "rejected", "archived"])
-@pytest.mark.parametrize(
-    "operation", ["select", "save", "confirm", "script_assets", "script_shots"]
-)
+@pytest.mark.parametrize("operation", ["save", "script_assets", "script_shots"])
 def test_published_agent_script_still_requires_adoption_for_owner(status, operation):
     user_id = 1
     with generation_session() as session:
@@ -225,14 +213,12 @@ def test_published_agent_script_still_requires_adoption_for_owner(status, operat
         before = writing.get(project_id)
         payload = {"script_id": "500", "content_version": before["content_version"]}
         with pytest.raises(WorkflowError) as blocked:
-            if operation == "select":
-                writing.select_script(project_id, payload)
-            elif operation == "save":
+            if operation == "save":
                 writing.save_script(project_id, {**payload, "content": "Changed"})
-            elif operation == "confirm":
-                writing.confirm(project_id, "500", {"content_version": before["content_version"]})
             else:
-                from short_drama.service.generation_context_service import GenerationContextService
+                from short_drama.service.generations.admission.context import (
+                    GenerationContextService,
+                )
 
                 with session.begin():
                     GenerationContextService(session).prepare_text(
@@ -254,9 +240,7 @@ def test_published_agent_script_still_requires_adoption_for_owner(status, operat
             )
 
 
-@pytest.mark.parametrize(
-    "operation", ["select", "save", "confirm", "script_assets", "script_shots"]
-)
+@pytest.mark.parametrize("operation", ["save", "script_assets", "script_shots"])
 def test_adopted_agent_script_keeps_owner_editor_operations(operation):
     with generation_session() as session:
         project_id, writing = seed(session)
@@ -271,24 +255,15 @@ def test_adopted_agent_script_keeps_owner_editor_operations(operation):
         )
         before = writing.get(project_id)
         payload = {"script_id": "500", "content_version": before["content_version"]}
-        if operation == "select":
-            assert writing.select_script(project_id, payload) == before
-        elif operation == "save":
+        if operation == "save":
             assert (
                 writing.save_script(project_id, {**payload, "content": "Updated edit"})["script"][
                     "content"
                 ]
                 == "Updated edit"
             )
-        elif operation == "confirm":
-            assert (
-                writing.confirm(project_id, "500", {"content_version": before["content_version"]})[
-                    "confirmed_script_id"
-                ]
-                == "500"
-            )
         else:
-            from short_drama.service.generation_context_service import GenerationContextService
+            from short_drama.service.generations.admission.context import GenerationContextService
 
             with session.begin():
                 request = GenerationContextService(session).prepare_text(
@@ -323,7 +298,9 @@ def test_agent_adoption_provenance_does_not_expose_inaccessible_scripts(visibili
             assert writing._requires_agent_adoption(500) is False
             assert session.scalar(select(AgentArtifact.id).where(AgentArtifact.id == 800)) is None
         with pytest.raises(NotFound):
-            writing.select_script(project_id, {"script_id": "500", "content_version": "1"})
+            writing.save_script(
+                project_id, {"script_id": "500", "content": "Changed", "content_version": "1"}
+            )
 
 
 @pytest.mark.parametrize(

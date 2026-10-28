@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from short_drama.core.exceptions import StorageUnavailable
 from short_drama.domain import CanvasResourceUpload, MediaFile
-from short_drama.service.video_render import executable
+from short_drama.service.creation.assembly.rendering.renderer import executable
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.resources.test_canvas_library_deletion import commit, image_node
 from tests.integration.canvas.resources.test_canvas_resources import ROOT, canvas, png

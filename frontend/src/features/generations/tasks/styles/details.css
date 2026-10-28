@@ -1,0 +1,196 @@
+/* Task and cost controls retain their own workbench forms. */
+.settings-workspace {
+  max-width: 1040px;
+}
+.settings-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-block: 18px 24px;
+}
+.settings-fields label,
+.settings-field {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+.settings-fields input,
+.settings-fields select {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--canvas);
+  color-scheme: dark;
+  font: inherit;
+  caret-color: var(--accent);
+}
+.settings-fields input::placeholder {
+  color: var(--sub);
+}
+.settings-fields input:focus-visible,
+.settings-fields select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.settings-workspace fieldset {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin-top: 24px;
+}
+.settings-workspace legend {
+  font-weight: 600;
+}
+.settings-workspace fieldset:disabled {
+  opacity: 0.65;
+}
+.settings-workspace p {
+  max-width: 75ch;
+  overflow-wrap: anywhere;
+}
+.settings-workspace button {
+  min-height: 40px;
+}
+.settings-pending {
+  padding: 20px;
+  margin-block: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.settings-pending code {
+  overflow-wrap: anywhere;
+}
+.task-panel {
+  margin-block: 32px;
+  padding-block: 24px;
+  border-block: 1px solid var(--line);
+}
+.task-panel > section,
+.task-panel > form,
+.task-panel > details {
+  margin-block: 24px;
+}
+.task-panel summary {
+  cursor: pointer;
+  padding-block: 12px;
+  font-weight: 600;
+}
+.task-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow: auto;
+  padding: 16px;
+  background: var(--surface);
+}
+.task-panel ul,
+.task-activity ul {
+  padding-left: 22px;
+}
+.task-panel li,
+.task-detail article {
+  padding-block: 12px;
+  overflow-wrap: anywhere;
+}
+.task-detail article + article {
+  border-top: 1px solid var(--line);
+}
+.task-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-block: 18px;
+}
+.task-check input {
+  margin-top: 4px;
+  accent-color: var(--accent);
+}
+.task-costs dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+.task-costs dt {
+  color: var(--muted);
+  font-size: 14px;
+}
+.task-costs dd {
+  margin: 8px 0 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 19px;
+}
+.task-list button {
+  text-align: left;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.task-candidates {
+  display: grid;
+  gap: 14px;
+  margin-block: 18px;
+}
+.task-candidates article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 148px auto;
+  align-items: center;
+  gap: 18px;
+  padding-block: 16px;
+  border-block: 1px solid var(--line);
+}
+.task-candidates h4,
+.task-candidates p {
+  margin: 0 0 8px;
+}
+.task-candidates p {
+  white-space: pre-wrap;
+}
+.task-candidates small {
+  color: var(--muted);
+}
+.task-candidates img {
+  width: 148px;
+  height: 92px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--canvas);
+}
+.task-activity {
+  padding-block: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.task-activity small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.task-panel a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+.story-plan-preview > section {
+  margin-block: 20px;
+}
+.story-plan-preview h4 {
+  margin-bottom: 8px;
+}
+.story-plan-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.story-plan-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+}
+.story-plan-metadata dt {
+  color: var(--muted);
+  font-size: 14px;
+}
+.story-plan-metadata dd {
+  margin: 4px 0 0;
+}

@@ -57,6 +57,33 @@ test('TypeScript dynamic imports and re-exports participate in the graph', t => 
   assert.match(run(root).structural[0].detail, /a.ts.*b.ts/);
 });
 
+test('@host aliases enforce shared and type boundaries including type-only imports', t => {
+  const { root } = fixture(t, {
+    'frontend/tsconfig.json': JSON.stringify({ compilerOptions: {
+      moduleResolution: 'bundler', baseUrl: '.', paths: { '@host/*': ['src/*'] },
+    } }),
+    'frontend/src/features/assistant/model.ts': 'export interface Model { id: string }\n',
+    'frontend/src/api/assistant/requests.ts': 'export const load = () => true;\n',
+    'frontend/src/types/assistant/model.ts': 'import type { Model } from "@host/features/assistant/model"; export type Alias = Model;\n',
+    'frontend/src/shared/ui/widget.ts': 'export { load } from "@host/api/assistant/requests";\n',
+  });
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.ok(result.structural.some(item => item.file === 'frontend/src/types/assistant/model.ts'));
+  assert.ok(result.structural.some(item => item.file === 'frontend/src/shared/ui/widget.ts'));
+});
+
+test('@host type-only aliases cannot hide a dependency cycle', t => {
+  const { root } = fixture(t, {
+    'frontend/tsconfig.json': JSON.stringify({ compilerOptions: {
+      moduleResolution: 'bundler', baseUrl: '.', paths: { '@host/*': ['src/*'] },
+    } }),
+    'frontend/src/types/assistant/a.ts': 'import type { B } from "@host/types/assistant/b"; export interface A { value: B }\n',
+    'frontend/src/types/assistant/b.ts': 'import type { A } from "@host/types/assistant/a"; export interface B { value: A }\n',
+  });
+  assert.ok(run(root).structural.some(item => item.rule === '循环依赖（前端）'));
+});
+
 test('--update rejects new structural keys and increased counts without changing the baseline', t => {
   const rel = 'backend/src/short_drama/api/routes.py';
   const key = `api → domain::${rel}`;

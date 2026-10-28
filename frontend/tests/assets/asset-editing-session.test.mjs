@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../../src/features/assets/asset-editing-session.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/creation/assets/sessions/asset-editing-session.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { AssetEditingSession, assetRecoveryKey } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const asset = () => ({ id: '9007199254740993', row_version: '1', name: '林晚', kind: 'character', description: '黑色外套', prompt: '旧共享提示词', tags: [], scene_time: '', label: '', state: 'confirmed', media_id: '8', image: { media_id: '8', url: 'image' }, link_id: '77', position: 0 });

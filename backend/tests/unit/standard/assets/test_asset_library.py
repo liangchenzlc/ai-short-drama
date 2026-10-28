@@ -7,13 +7,16 @@ from sqlalchemy import event, select
 
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import Asset, AssetVersion
-from short_drama.schemas.asset import AssetCreate, AssetPatch
-from short_drama.schemas.asset_library import AssetLibraryCreate
-from short_drama.service.asset_image_service import AssetImageService
-from short_drama.service.asset_library_service import AssetLibraryService, creation_fingerprint
-from short_drama.service.asset_service import AssetService
+from short_drama.schemas.creation.assets.management.assets import AssetCreate, AssetPatch
+from short_drama.schemas.creation.assets.management.library import AssetLibraryCreate
 from short_drama.service.base import utcnow
-from short_drama.service.project_service import ProjectService
+from short_drama.service.creation.assets.images.image import AssetImageService
+from short_drama.service.creation.assets.management.assets import AssetService
+from short_drama.service.creation.assets.management.library import (
+    AssetLibraryService,
+    creation_fingerprint,
+)
+from short_drama.service.projects.management.project import ProjectService
 from tests.support.generation_fixtures import generation_session
 
 
@@ -167,8 +170,8 @@ def test_unchanged_save_fences_delayed_input_without_artwork_history():
 
 def test_only_active_shot_references_block_removal_and_pages_batch_counts():
     from short_drama.domain import ShotScript
-    from short_drama.service.shot_asset_service import ShotAssetService
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.creation.storyboard.references.asset import ShotAssetService
 
     with generation_session() as session:
         project = ProjectService(session).create({"name": "Work"})

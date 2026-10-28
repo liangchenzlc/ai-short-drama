@@ -16,7 +16,7 @@ def request(**overrides):
 
 
 def test_asset_image_accepts_empty_supplement_and_defaults_to_one():
-    from short_drama.schemas.ai_generation import ImageGenerationCreate
+    from short_drama.schemas.generations.admission.generation import ImageGenerationCreate
 
     parsed = ImageGenerationCreate.model_validate(request())
     assert parsed.source.scene == "asset_image"
@@ -35,7 +35,7 @@ def test_asset_image_accepts_empty_supplement_and_defaults_to_one():
     ],
 )
 def test_asset_content_hash_changes_for_generation_content(change):
-    from short_drama.service.asset_image_context import (
+    from short_drama.service.creation.assets.images.image_context import (
         asset_image_content,
         asset_image_content_hash,
     )
@@ -61,7 +61,7 @@ def test_asset_content_hash_changes_for_generation_content(change):
 
 
 def test_asset_content_hash_ignores_state_image_version_and_tag_order():
-    from short_drama.service.asset_image_context import (
+    from short_drama.service.creation.assets.images.image_context import (
         asset_image_content,
         asset_image_content_hash,
     )
@@ -101,7 +101,7 @@ def test_asset_content_hash_ignores_state_image_version_and_tag_order():
     ],
 )
 def test_asset_image_rejects_invalid_client_context(body):
-    from short_drama.schemas.ai_generation import ImageGenerationCreate
+    from short_drama.schemas.generations.admission.generation import ImageGenerationCreate
 
     with pytest.raises(ValidationError):
         ImageGenerationCreate.model_validate(body)
@@ -111,11 +111,11 @@ def test_asset_image_create_freezes_saved_content_without_mutating_asset():
     from sqlalchemy import select
 
     from short_drama.domain import AIGenerationRecord, Asset
-    from short_drama.service.ai_generation_service import AIGenerationService
+    from short_drama.service.generations.admission.generation import AIGenerationService
 
     with generation_session() as session:
         config(session)
-        from short_drama.service.project_service import ProjectService
+        from short_drama.service.projects.management.project import ProjectService
 
         project = ProjectService(session).create({"name": "Image generation"})
         asset = Asset(
@@ -165,7 +165,7 @@ def test_asset_image_create_freezes_saved_content_without_mutating_asset():
 
 
 def test_asset_image_accepts_reference_inputs():
-    from short_drama.schemas.ai_generation import ImageGenerationCreate
+    from short_drama.schemas.generations.admission.generation import ImageGenerationCreate
 
     parsed = ImageGenerationCreate.model_validate(
         request(input={"prompt": "", "reference_media_ids": ["9"]})

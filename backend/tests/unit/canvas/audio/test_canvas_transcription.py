@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from short_drama.schemas.canvas_transcription import CanvasTranscriptionResult
-from short_drama.service.canvas_transcription import (
+from short_drama.schemas.canvas.tools.transcription.transcription import CanvasTranscriptionResult
+from short_drama.service.canvas.tools.transcription.transcription import (
     build_transcription_srt,
     decode_whisper_verbose_json,
 )

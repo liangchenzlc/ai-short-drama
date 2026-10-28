@@ -5,10 +5,10 @@ import ts from 'typescript';
 
 const compile = path => ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const url = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const registry = await import(url(compile('../../src/features/projects/standard-session-registry.ts')));
-const assetDraftsUrl = url(compile('../../src/features/assets/episode-asset-drafts.ts'));
+const registry = await import(url(compile('../../src/features/creation/shared/sessions/registry.ts')));
+const assetDraftsUrl = url(compile('../../src/features/creation/assets/sessions/local-asset-draft-model.ts'));
 const { blankAssetDraft } = await import(assetDraftsUrl);
-const { LocalAssetSession } = await import(url(compile('../../src/features/assets/local-asset-session.ts').replace("'./episode-asset-drafts'", JSON.stringify(assetDraftsUrl))));
+const { LocalAssetSession } = await import(url(compile('../../src/features/creation/assets/sessions/local-asset-session.ts').replace("'@host/features/creation/assets/sessions/local-asset-draft-model'", JSON.stringify(assetDraftsUrl))));
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const storage = () => { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }; };
 

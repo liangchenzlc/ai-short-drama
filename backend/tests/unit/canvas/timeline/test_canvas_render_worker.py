@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from celery.exceptions import Reject
 
-from short_drama.tasks import worker
+import short_drama.tasks.generations.worker as worker
 
 
 def test_canvas_render_task_delegates_original_decimal_strings(monkeypatch):

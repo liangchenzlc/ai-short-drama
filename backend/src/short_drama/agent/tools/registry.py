@@ -8,7 +8,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from short_drama.agent.context.working_set import RecordObservation
 from short_drama.agent.skill.contracts import ReadSkillResource, SearchSkills
-from short_drama.agent.task.contract import ConfirmRequirements, SetTaskRequirements
+from short_drama.agent.task.contract import ConfirmRequirements
 from short_drama.agent.tools.contracts import (
     CANVAS_TOOL,
     IMAGE_CONTENT_TOOL,
@@ -20,19 +20,19 @@ from short_drama.agent.tools.contracts import (
     ReadImageContent,
     ReadTaskResults,
 )
-from short_drama.schemas.agent_memory import MemoryKind
-from short_drama.schemas.assistant_canvas import AssistantCanvasPatch
-from short_drama.schemas.assistant_media import (
+from short_drama.schemas.assistant.memory.memory import MemoryKind
+from short_drama.schemas.assistant.operations.canvas import AssistantCanvasPatch
+from short_drama.schemas.assistant.operations.media import (
     AssistantCanvasMediaRequest,
     AssistantCharacterVoiceRequest,
     AssistantDialogueAudioRequest,
     AssistantImageRequest,
     AssistantShotVideoRequest,
 )
-from short_drama.schemas.assistant_script import ProposeScriptPatch, ReadCurrentScript
-from short_drama.schemas.assistant_standard import StandardPatch
+from short_drama.schemas.assistant.operations.script import ProposeScriptPatch, ReadCurrentScript
+from short_drama.schemas.assistant.operations.standard import StandardPatch
 from short_drama.schemas.base import Identifier, InputModel
-from short_drama.schemas.image_group import ImagePrimarySet
+from short_drama.schemas.media.image_groups.groups import ImagePrimarySet
 
 TOOL_VERSION = 4
 
@@ -171,11 +171,6 @@ OVERRIDES = {
         "用户明确改为新数量时，可在 additions 引用原 key、更新的用户消息和新数量修订；"
         "模型不能自行缩减。",
     ),
-    "set_task_requirements": (
-        SetTaskRequirements,
-        "按用户原文登记交付结果、数量和来源；模型不能自行缩减。用户明确改为新数量时，"
-        "引用更新的消息、原 key 和新数量修订，旧要求将保留为已替代。",
-    ),
     "enable_tool_group": (
         EnableToolGroup,
         "需要尚未提供 schema 的能力时，按 tool_catalog 中的 group 启用；"
@@ -202,7 +197,7 @@ OVERRIDES = {
     "search_skills": (SearchSkills, "目录不足时搜索更多兼容方法的名称和描述；不自动加载正文。"),
     "read_skill_resource": (
         ReadSkillResource,
-        "按激活方法的冻结路径分段读取 references、scripts 或示例图片；脚本仅可读。",
+        "按激活方法的冻结路径分段读取资料、模板或示例图片。",
     ),
     IMAGE_CONTENT_TOOL: (
         ReadPixels,

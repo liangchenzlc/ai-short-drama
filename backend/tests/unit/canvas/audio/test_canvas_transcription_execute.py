@@ -7,14 +7,14 @@ import wave
 import httpx
 import pytest
 
+import short_drama.service.canvas.tools.transcription.transcription_execute as module
 from short_drama.core.config import Settings
-from short_drama.service import canvas_transcription_execute as module
-from short_drama.service.canvas_transcription_execute import (
+from short_drama.service.canvas.tools.transcription.transcription_execute import (
     CanvasTranscriptionExecutor,
     is_transcribable_mime,
     transcription_extension,
 )
-from short_drama.service.video_render import RenderCancelled
+from short_drama.service.creation.assembly.rendering.renderer import RenderCancelled
 
 
 @pytest.mark.parametrize(

@@ -3,7 +3,6 @@
 import argparse
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 from sqlalchemy import CheckConstraint, create_engine, inspect, text
 from sqlalchemy.dialects.mysql import dialect
@@ -16,6 +15,30 @@ from short_drama.domain import AgentConversation, Base
 
 DIRECTORY = Path(__file__).resolve().parents[2] / "docs/database/migrations/2026-10-21-agent-system"
 NEW_TABLES = ("agent_tasks", "agent_task_inputs", "agent_task_controls", "agent_operations")
+
+# Historical bytes used only by the explicit, repeatable database migration.
+LEGACY_BUILTIN_SOURCE = "平台内置方法；保留历史兼容身份"
+LEGACY_BUILTIN_TEXTS = {
+    "novel.v1": (
+        "小说创作：保持当前作品风格、人物动机和情节因果。按用户要求提供完整小说候选正文，不改作品。"
+    ),
+    "script.v1": (
+        "剧本创作：明确场景、人物动作、对白与节奏；忠实于小说和已确认要求。"
+        "提供可编辑剧本候选，不确认定稿。"
+    ),
+    "extract.v1": "资产提取：从当前剧本提取角色、场景、道具；匹配项目既有资产；保留创建/复用审核。",
+    "storyboard.v1": (
+        "分镜：以当前已确认剧本为依据，镜头保持连续原文依据和时长；候选需用户选择追加或替换。"
+    ),
+    "asset_patch.v1": (
+        "资产修改：仅提出允许字段的差异建议，保留来源版本和共享影响；禁止直接确认、删除或覆盖。"
+    ),
+    "shot_patch.v1": "镜头修改：仅提出脚本、时长、视频提示词的差异建议；保留原文依据及来源版本。",
+    "image.v1": "图片：固定对象、模型、画幅、数量和参考图；复用原生候选任务；图片完成不自动采用。",
+    "video.v1": (
+        "视频：固定镜头、模型、分辨率、时长、数量和参考图；按批准数量受理；视频完成不自动采用。"
+    ),
+}
 
 
 def foundation_steps():
@@ -354,10 +377,10 @@ def apply_migration(engine):
 
 
 def backfill_skill_packages(connection):
-    from short_drama.schemas.agent_skill import SkillMetadata
-    from short_drama.service.agent_skill_package import package_digest
-    from short_drama.service.agent_skill_service import builtin_skills, legacy_metadata
+    from short_drama.core.skill_catalog import BUILTIN_NAMES
+    from short_drama.schemas.skills.catalog.skill import SkillMetadata
     from short_drama.service.base import utcnow
+    from short_drama.service.skills.packages.skill_package import package_digest
     from short_drama.utils.snowflake import next_id
 
     skills = Base.metadata.tables["agent_skills"]
@@ -366,13 +389,19 @@ def backfill_skill_packages(connection):
     counts = {"personal_versions": 0, "builtin_versions": 0, "settings": 0}
     packages = []
     for row in connection.execute(skills.select()).mappings():
+        metadata = SkillMetadata(
+            name=row["name"],
+            slug=f"personal-{row['id']}",
+            description=f"个人创作方法：{row['name']}",
+        ).model_dump(mode="json")
+        metadata["issues"] = []
         packages.append(
             dict(
                 skill_key=str(row["id"]),
                 skill_id=row["id"],
                 owner_user_id=row["owner_user_id"],
                 content_version=row["content_version"],
-                package_metadata=legacy_metadata(SimpleNamespace(**row)),
+                package_metadata=metadata,
                 instructions=row["instructions"],
                 resources=[],
             )
@@ -398,21 +427,22 @@ def backfill_skill_packages(connection):
                 )
             )
             counts["settings"] += 1
-    for item in builtin_skills():
-        metadata = {
-            key: value
-            for key, value in item.model_dump().items()
-            if key in SkillMetadata.model_fields
-        }
+    for key, instructions in LEGACY_BUILTIN_TEXTS.items():
+        metadata = SkillMetadata.model_construct(
+            name=BUILTIN_NAMES[key],
+            slug=key.replace(".", "-"),
+            description=instructions,
+            source=LEGACY_BUILTIN_SOURCE,
+        ).model_dump(mode="json")
         metadata["issues"] = []
         packages.append(
             dict(
-                skill_key=item.id,
+                skill_key=key,
                 skill_id=None,
                 owner_user_id=None,
-                content_version=item.content_version,
+                content_version=1,
                 package_metadata=metadata,
-                instructions=item.instructions,
+                instructions=instructions,
                 resources=[],
             )
         )

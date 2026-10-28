@@ -20,8 +20,8 @@ from short_drama.domain import (
     MediaAsset,
     MediaFile,
 )
-from short_drama.service.canvas_task_service import CanvasTaskService
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.canvas.generation.tasks.task import CanvasTaskService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.canvas.document.test_canvas_workspace import actor
 from tests.integration.canvas.resources.test_canvas_resources import png
 from tests.integration.canvas.resources.test_canvas_resources import resource_app as resource_app

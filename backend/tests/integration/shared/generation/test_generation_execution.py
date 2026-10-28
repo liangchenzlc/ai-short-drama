@@ -9,7 +9,7 @@ from short_drama.core.config import Settings
 from short_drama.domain import AIGenerationRecord, AIModelConfig, AsyncTask
 from short_drama.service.base import utcnow
 from short_drama.utils.snowflake import next_id
-from tests.support.integration.legacy_identity import session_factory
+from tests.support.integration.identity import session_factory
 
 pytestmark = pytest.mark.integration
 
@@ -66,7 +66,7 @@ def seeded(factory, kind="text"):
 
 
 def test_published_is_not_republished_and_early_consumer_wins(mysql_engine, db_session):
-    from short_drama.service.task_runtime_service import TaskRuntimeService
+    from short_drama.service.generations.runtime.lifecycle import TaskRuntimeService
 
     factory = session_factory(mysql_engine)
     store = TaskRuntimeService(factory, Settings(_env_file=None))
@@ -84,8 +84,8 @@ def test_published_is_not_republished_and_early_consumer_wins(mysql_engine, db_s
 
 
 def test_confirmed_queue_backlog_never_becomes_pending(mysql_engine, db_session):
-    from short_drama.service.task_runtime_service import TaskRuntimeService
-    from short_drama.tasks.recovery import recover
+    from short_drama.service.generations.runtime.lifecycle import TaskRuntimeService
+    from short_drama.tasks.runtime.recovery import recover
 
     factory = session_factory(mysql_engine)
     settings = Settings(_env_file=None)
@@ -101,8 +101,8 @@ def test_confirmed_queue_backlog_never_becomes_pending(mysql_engine, db_session)
 
 
 def test_expired_sent_execution_becomes_unknown_without_post(mysql_engine, db_session):
-    from short_drama.service.task_runtime_service import TaskRuntimeService
-    from short_drama.tasks.recovery import recover
+    from short_drama.service.generations.runtime.lifecycle import TaskRuntimeService
+    from short_drama.tasks.runtime.recovery import recover
 
     factory = session_factory(mysql_engine)
     settings = Settings(_env_file=None)
@@ -124,8 +124,8 @@ def test_expired_sent_execution_becomes_unknown_without_post(mysql_engine, db_se
 
 
 def test_expired_prepared_claim_creates_exactly_one_recovery_version(mysql_engine, db_session):
-    from short_drama.service.task_runtime_service import TaskRuntimeService
-    from short_drama.tasks.recovery import recover
+    from short_drama.service.generations.runtime.lifecycle import TaskRuntimeService
+    from short_drama.tasks.runtime.recovery import recover
 
     factory = session_factory(mysql_engine)
     settings = Settings(_env_file=None)
@@ -144,7 +144,7 @@ def test_expired_prepared_claim_creates_exactly_one_recovery_version(mysql_engin
 
 def test_worker_text_is_saved_once_and_duplicate_never_calls_again(mysql_engine, db_session):
     from short_drama.ai import GenerationResult
-    from short_drama.service.generation_execution_service import GenerationExecutionService
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
 
     class Provider:
         calls = 0
@@ -182,8 +182,8 @@ def test_submit_timeout_is_unknown_without_automatic_post_retry(
     mysql_engine, db_session, error_code, http_status
 ):
     from short_drama.ai import GenerationError
-    from short_drama.service.generation_execution_service import GenerationExecutionService
-    from short_drama.tasks.recovery import recover
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
+    from short_drama.tasks.runtime.recovery import recover
 
     class Provider:
         calls = 0
@@ -214,7 +214,7 @@ def test_submit_timeout_is_unknown_without_automatic_post_retry(
 
 def test_late_video_result_receives_fresh_archive_window(mysql_engine, db_session):
     from short_drama.ai import GenerationResult
-    from short_drama.service.generation_execution_service import GenerationExecutionService
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
 
     class Provider:
         def poll(self, *args):
@@ -252,7 +252,7 @@ def test_late_video_result_receives_fresh_archive_window(mysql_engine, db_sessio
 
 def test_expired_archive_action_does_not_download(mysql_engine, db_session):
     from short_drama.core.crypto import KeyCipher
-    from short_drama.service.generation_execution_service import GenerationExecutionService
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
 
     class Provider:
         downloads = 0
@@ -300,7 +300,7 @@ def test_inline_manifest_is_committed_before_object_upload(mysql_engine, db_sess
 
     from short_drama.ai import GenerationResult
     from short_drama.core.exceptions import NotFound
-    from short_drama.service.generation_execution_service import GenerationExecutionService
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
 
     factory = session_factory(mysql_engine)
     task_id, record_id = seeded(factory, "image")
@@ -334,7 +334,7 @@ def test_inline_manifest_is_committed_before_object_upload(mysql_engine, db_sess
 
 
 def test_only_finished_old_tasks_lose_retained_credentials(mysql_engine, db_session):
-    from short_drama.tasks.recovery import purge_credentials
+    from short_drama.tasks.runtime.recovery import purge_credentials
 
     factory = session_factory(mysql_engine)
     old_task, old_record = seeded(factory)

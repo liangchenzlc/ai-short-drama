@@ -1,0 +1,132 @@
+/* Materials and candidates share the same media well and selection language. */
+.asset-grid {
+  gap: 14px;
+}
+.asset-cover {
+  background: var(--pale);
+  color: var(--accent);
+}
+.asset-cover-scene,
+.asset-cover-prop {
+  background: var(--surface-muted);
+  color: var(--accent);
+}
+.library-resource-card,
+.asset-card {
+  border: 1px solid var(--hair);
+  background: var(--surface);
+  border-radius: 12px;
+}
+.library-resource-card:hover {
+  border-color: var(--border-hover);
+}
+.global-assets-page .remote-asset-library {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.remote-asset-library .asset-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+.library-resource-card .batch-item-select {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hair);
+  color: var(--sub);
+  font-size: var(--text-label);
+}
+.library-resource-card .resource-image {
+  grid-column: 1;
+}
+.library-resource-card .asset-card-content {
+  grid-column: 2;
+  min-width: 0;
+}
+.library-resource-card .asset-card-content p {
+  font-size: var(--text-body);
+}
+.library-resource-card .asset-name-button {
+  max-width: 100%;
+}
+.remote-asset-library > .batch-toolbar {
+  margin-bottom: 16px;
+  padding: 10px 0;
+  gap: var(--space-action);
+  border-top: 1px solid var(--hair);
+}
+.resource-toolbar .ant-input-search-button {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+.resource-card-actions {
+  border-color: var(--hair);
+}
+.resource-image,
+.asset-image-frame,
+.media-picker-item img {
+  background: var(--canvas);
+}
+.asset-card-meta span,
+.service-tag {
+  background: var(--surface-hover);
+  color: var(--sub);
+  border-radius: 4px;
+}
+.asset-card-content p {
+  color: var(--sub);
+}
+.asset-image-generation {
+  background: var(--surface-muted);
+  border-color: var(--hair);
+  padding: 14px;
+}
+.asset-generation-task {
+  background: var(--surface);
+  padding: 12px;
+  border-color: var(--hair);
+}
+.image-candidate,
+.shot-video-candidate {
+  border-color: var(--hair);
+  border-radius: 9px;
+}
+.asset-candidate-preview,
+.shot-current-preview,
+.asset-current-image .asset-image-frame {
+  background: var(--canvas);
+}
+.asset-generation-history,
+.asset-current-image {
+  border-color: var(--hair);
+}
+.image-preview-stage {
+  background: var(--media-canvas);
+}
+.image-preview-trigger:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.reference-image-strip figure,
+.reference-thumbnail-list img,
+.frame-picker img {
+  background: var(--canvas);
+  border-color: var(--hair);
+}
+.media-picker-item.is-selected {
+  outline-color: var(--accent);
+  background: var(--pale);
+}
+.extraction-story-function {
+  background: var(--pale);
+}
+.extraction-importance {
+  background: transparent;
+  color: var(--accent);
+  border-color: var(--accent-border);
+  border-radius: 5px;
+}
+.extraction-item,
+.extraction-prompt {
+  background: var(--surface-muted);
+  border-color: var(--hair);
+}

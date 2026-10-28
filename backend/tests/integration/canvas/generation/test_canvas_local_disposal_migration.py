@@ -110,7 +110,6 @@ def test_populated_legacy_jobs_keep_all_payload_identity_and_media_on_upgrade(
                 id=10,
                 owner_user_id=1,
                 name="旧版任务升级",
-                aspect="16:9",
                 workspace_mode="infinite_canvas",
                 **audit,
             )

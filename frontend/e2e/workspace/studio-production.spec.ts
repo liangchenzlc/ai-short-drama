@@ -33,7 +33,7 @@ test('production routes render with deferred editor bundles and compact controls
   })));
   let configControls: { height: number; tag: string; label: string; className: string; fontSize: string; padding: string }[] = [];
   const nativePrimaryContrast: { state: string; ratio: number }[] = [];
-  const directory = '.runtime/review/production';
+  const directory = '../.runtime/restructure/production-review';
   mkdirSync(directory, { recursive: true });
   writeFileSync(`${directory}/performance.json`, JSON.stringify({ firstRouteAssets, controls, firstRouteTiming }, null, 2));
   expect(controls.every(control => control.height >= 28 && control.height <= 38)).toBe(true);
@@ -42,7 +42,7 @@ test('production routes render with deferred editor bundles and compact controls
   await expect(page.getByRole('dialog', { name: '新建项目', exact: true }).getByLabel('项目名称')).toBeFocused();
   await page.keyboard.press('Escape');
 
-  for (const route of ['/ai_config', '/assets/character', '/tasks/image', '/media-library/image', `${root}/storyboard`, `${root}/assembly`]) {
+  for (const route of ['/ai_config', '/media-library/image', `${root}/assets`, `${root}/storyboard`, `${root}/assembly`]) {
     await page.goto(route);
     await expect(route.startsWith(root) ? page.getByRole('navigation', { name: '创作流程', exact: true }) : page.locator('h1'), `Production route: ${route}`).toBeVisible();
     if (route === '/ai_config') {

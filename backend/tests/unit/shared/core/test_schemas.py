@@ -4,20 +4,21 @@ import pytest
 from pydantic import ValidationError
 
 from short_drama import schemas
+from short_drama.schemas.creation.writing.script.documents import ScriptSave, WritingScript
 
 
 @pytest.mark.parametrize("value", [True, False, 1.5, 1.0, "1.5", "-1", "1e3", " 1", 0, 2**64])
 def test_ids_reject_non_decimal_or_out_of_range_inputs(value):
     with pytest.raises(ValidationError):
-        schemas.ProjectNovelCreate(project_id=value)
+        ScriptSave(script_id=value, content_version=1, content="text")
 
 
 @pytest.mark.parametrize("value", [1, "1", 2**64 - 1, str(2**64 - 1)])
 def test_ids_accept_ints_and_decimal_strings(value):
-    novel = schemas.ProjectNovelCreate(project_id=value)
-    assert novel.project_id == int(value)
-    assert novel.model_dump()["project_id"] == int(value)
-    assert json.loads(novel.model_dump_json())["project_id"] == str(value)
+    script = ScriptSave(script_id=value, content_version=1, content="text")
+    assert script.script_id == int(value)
+    assert script.model_dump()["script_id"] == int(value)
+    assert json.loads(script.model_dump_json())["script_id"] == str(value)
 
 
 def test_patch_distinguishes_omitted_nullable_and_invalid_null():
@@ -28,15 +29,17 @@ def test_patch_distinguishes_omitted_nullable_and_invalid_null():
     with pytest.raises(ValidationError):
         schemas.ProjectUpdate(last_opened_at=None)
     with pytest.raises(ValidationError):
-        schemas.ProjectScriptUpdate(state="confirmed")
+        ScriptSave(script_id=None, content_version=1, content="text", state="confirmed")
 
 
-def test_read_handles_legacy_nullable_times_and_large_identifiers():
-    from short_drama.domain import ProjectNovel
+def test_writing_read_handles_nullable_times_and_large_identifiers():
+    from short_drama.domain import ProjectScript
 
-    item = ProjectNovel(id=2**63, project_id=2**63 + 1, content="text")
-    result = schemas.ProjectNovelRead.model_validate(item)
-    assert result.created_at is None
+    item = ProjectScript(
+        id=2**63, project_id=2**63 + 1, position=1, state="unconfirmed", content="text"
+    )
+    result = WritingScript.model_validate(item)
+    assert result.updated_at is None
     assert result.model_dump(mode="json")["id"] == str(2**63)
 
 
@@ -69,11 +72,11 @@ def test_project_bounds(values):
         schemas.ProjectCreate(**data)
 
 
-def test_mediumtext_limit_counts_utf8_bytes():
-    text = "a" * (2**24 - 1)
-    assert schemas.ProjectNovelCreate(project_id=1, content=text).content == text
+def test_writing_text_limit_counts_utf8_bytes():
+    text = "a" * (2**20)
+    assert ScriptSave(script_id=None, content_version=1, content=text).content == text
     with pytest.raises(ValidationError):
-        schemas.ProjectNovelCreate(project_id=1, content="😀" * (2**22))
+        ScriptSave(script_id=None, content_version=1, content="😀" * (2**18 + 1))
 
 
 def test_media_metadata_constraints_and_immutable_identity():
@@ -163,11 +166,11 @@ def test_recycle_requires_exactly_image_or_video_parameter_shape():
 
 
 def test_records_are_immutable_and_creation_rejects_system_fields():
-    for name in ("ScriptShotRecord", "NovelScriptRecord", "MediaRecycleBin"):
+    for name in ("ScriptShotRecord", "MediaRecycleBin"):
         assert not hasattr(schemas, name + "Update")
     for values in ({"id": 1}, {"created_at": None}, {"updated_by": 2}):
         with pytest.raises(ValidationError):
-            schemas.ProjectNovelCreate(project_id=1, **values)
+            ScriptSave(script_id=None, content_version=1, content="text", **values)
 
 
 @pytest.mark.parametrize(

@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from short_drama.ai.canvas_seedance_preupload import (
+from short_drama.ai.adapters.video.seedance_preupload import (
     JSON_LIMIT,
     JSON_OVERHEAD,
     inline_canvas_references,

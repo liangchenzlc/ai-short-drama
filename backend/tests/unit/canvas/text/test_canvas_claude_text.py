@@ -6,11 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from short_drama.ai.adapters import build_submission, parse_result
-from short_drama.ai.canvas_credentials import CanvasCredentials
-from short_drama.ai.gateway import GenerationGateway
+from short_drama.ai.adapters.results import parse_result
+from short_drama.ai.adapters.submission import build_submission
+from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
+from short_drama.ai.gateway.client import GenerationGateway
 from short_drama.ai.types import GenerationError
-from short_drama.service.model_runtime_config import refresh_runtime_model
+from short_drama.service.ai_config.management.runtime import refresh_runtime_model
 
 ADAPTER = "claude_messages.v1"
 KEY = "synthetic-claude-test-key"

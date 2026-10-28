@@ -6,13 +6,13 @@ from fastapi.testclient import TestClient
 
 from short_drama.api.identity_middleware import install_identity
 from short_drama.core.exceptions import WorkflowError
-from short_drama.service.auth_service import AuthService
-from short_drama.tasks.email import smtp_send
+from short_drama.service.identity.authentication.auth import AuthService
+from short_drama.tasks.identity.email import smtp_send
 
 
 def test_model_preferences_keep_service_transaction_and_actor_scope():
     from short_drama.core.identity import ActorContext
-    from short_drama.service.model_preference_service import ModelPreferenceService
+    from short_drama.service.ai_config.preferences.preferences import ModelPreferenceService
     from tests.support.generation_fixtures import config, generation_session
 
     with generation_session() as session:
@@ -76,7 +76,7 @@ def test_current_account_proofs_keep_their_email_purpose(monkeypatch, purpose, e
         def send_message(self, message):
             messages.append(message)
 
-    monkeypatch.setattr("short_drama.tasks.email.smtplib.SMTP", SMTP)
+    monkeypatch.setattr("short_drama.tasks.identity.email.smtplib.SMTP", SMTP)
     settings = SimpleNamespace(
         smtp_from="sender@example.test",
         smtp_host="mail.example.test",
@@ -94,7 +94,7 @@ def test_retired_invitation_mail_is_rejected_before_smtp(monkeypatch):
     def unexpected_smtp(*_args, **_kwargs):
         pytest.fail("Retired invitations must not reach SMTP")
 
-    monkeypatch.setattr("short_drama.tasks.email.smtplib.SMTP", unexpected_smtp)
+    monkeypatch.setattr("short_drama.tasks.identity.email.smtplib.SMTP", unexpected_smtp)
     settings = SimpleNamespace(
         smtp_from="sender@example.test", smtp_host="mail.example.test", smtp_port=25
     )

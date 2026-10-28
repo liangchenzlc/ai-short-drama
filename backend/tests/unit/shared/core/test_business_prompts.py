@@ -26,14 +26,6 @@ def test_storyboard_prompt_defines_beat_segmentation_and_duration_target():
     assert "source_excerpt" in prompt
 
 
-def test_novel_prompt_does_not_request_json_for_plain_text_script():
-    prompt = system_prompt("novel_script")
-
-    assert "只返回剧本正文" in prompt
-    assert "一个 JSON 对象" not in prompt
-    assert "Schema" not in prompt
-
-
 def test_storyboard_prompt_describes_the_full_parser_contract():
     prompt = system_prompt("script_shots")
 

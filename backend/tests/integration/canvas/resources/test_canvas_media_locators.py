@@ -6,7 +6,7 @@ from copy import deepcopy
 import pytest
 from sqlalchemy import select
 
-from short_drama.domain.canvas import CanvasNode, CanvasRevision
+from short_drama.domain.canvas.document.canvas import CanvasNode, CanvasRevision
 from tests.integration.canvas.projects.test_canvas_creation import creation_request
 from tests.integration.canvas.resources.test_canvas_resource_copy import image_node, register
 from tests.integration.canvas.resources.test_canvas_resources import (

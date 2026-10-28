@@ -10,10 +10,10 @@ import pytest
 from sqlalchemy import func, select
 
 from short_drama.ai import GenerationGateway
-from short_drama.ai.canvas_credentials import decode_canvas_credentials
+from short_drama.ai.gateway.canvas_credentials import decode_canvas_credentials
 from short_drama.core.crypto import KeyCipher
 from short_drama.domain import AIGenerationRecord, AIModelConfig, AsyncTask, CanvasTaskBinding
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.standard.identity.test_identity_collaboration import account
 from tests.integration.standard.identity.test_identity_collaboration import (
     identity_app as identity_app,

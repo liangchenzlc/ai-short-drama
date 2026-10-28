@@ -9,8 +9,8 @@ Python 3.12+、FastAPI、Pydantic 2、SQLAlchemy 2、MySQL、Celery。Settings �
 | 目录 | 放什么 | 不该放 |
 | --- | --- | --- |
 | `src/short_drama/api/v1` | 路由：HTTP 语义、依赖注入、状态码 | 业务规则、直接写 SQL |
-| `api/dependencies.py` | Service 构造与依赖提供 | 业务分支 |
-| `schemas/` | Pydantic 请求／响应，按资源一模块 | 把 ORM 对象直接外泄 |
+| `api/dependencies/` | Service 构造与依赖提供 | 业务分支 |
+| `schemas/` | Pydantic 请求／响应，按业务与功能细分 | 把 ORM 对象直接外泄 |
 | `service/` | 业务规则、事务边界、跨 DAO 组合 | 绕开 DAO 拼散装 SQL |
 | `dao/` | SQL 查询与 ORM 读取 | 提交事务、业务判断 |
 | `domain/` | SQLAlchemy ORM，表结构唯一来源 | 业务方法 |
@@ -24,15 +24,17 @@ Python 3.12+、FastAPI、Pydantic 2、SQLAlchemy 2、MySQL、Celery。Settings �
 
 命名：
 
-- 模块 `snake_case`；一个资源成套出现：`api/v1/<资源>.py` + `schemas/<资源>.py` + `service/<资源>_service.py` + `dao/<资源>_dao.py`。
-- 不新建 `<模块>_v2.py` 并列实现，直接改造现有文件；只有新增表才新增 `domain/<表>.py`。
+- 模块 `snake_case`；顶层分层不变，各层内部用 identity、projects、creation、assistant、generations、ai_config、skills、media、canvas、system 业务目录，再按功能细分。不是每项能力都必须建齐五层。
+- creation 按 writing、assets、storyboard、sound、assembly、drafts 组织。复杂 Service 包按受理、查询、执行、归档等独立职责拆文件，包入口提供明确出口。
+- 不新建并列 v2 实现；ORM 按实体与关系放到业务功能目录，不把所有模型放在一个文件。
 - 增量 SQL 进 `docs/database/migrations/<日期-功能>/`，不要放进 `backend/`。
 
 ## 代码编写规范
 
 - 分层 API → Service → DAO → ORM：路由不查库，DAO 不提交，Service 管事务边界。
-- 依赖通过 `api/dependencies.py` 的 `Annotated[T, Depends(...)]` 注入，不在路由里直接 new Service。
+- 依赖通过 `api/dependencies/` 的 `Annotated[T, Depends(...)]` 注入，不在路由里直接 new Service。
 - 事务用 `with self.session.begin():`；独立调用 Service 时传入尚未开启事务的 Session。
+- 组合 Service 共享 Session，不因拆文件新增提交；权限、幂等受理、租约与版本边界用中文注释解释必须保持的约束。
 - 时间统一取 `core.time.utcnow()`（与 MySQL 连接的 naive UTC 一致）；`service.base.utcnow` 保留兼容导出，低层代码不得为取时间反向依赖 Service。
 - ID 对外十进制字符串、内部 `int`，用 `schemas.base.Identifier` 与 `parse_identifier` 转换。
 - 异常只抛 `core/exceptions.py` 的 `BusinessError` 家族：`NotFound`、`Conflict`、`WorkflowError(code, message, status_code, details)`。不把供应商原文、SQL 或堆栈细节透给前端。

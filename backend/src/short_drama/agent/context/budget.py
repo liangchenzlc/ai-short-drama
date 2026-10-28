@@ -3,7 +3,7 @@
 import json
 from copy import deepcopy
 
-from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.gateway.contracts import AgentGatewayError
 
 CONTEXT_TOKENS = 65536
 TOOL_RESULT_TOKENS = 4096

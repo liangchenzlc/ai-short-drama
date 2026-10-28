@@ -4,7 +4,6 @@ import { assertUserScope, type CapturedUserScope } from "@/lib/user-scope-guard"
 import { ApiError } from "@/services/api/request";
 import { creationConversationsApi, type CreationConversationDocument, type CreationConversationRecord } from "@/services/api/creation-conversations";
 
-export const CREATION_CONVERSATIONS_KEY = "creation-conversations-v1";
 const CREATION_CONVERSATION_DRAFTS_KEY = "creation-conversation-drafts-v1";
 const CREATION_CONVERSATION_DRAFT_INDEX_KEY = "creation-conversation-drafts-v1:index";
 const CREATION_CONVERSATION_TOMBSTONES_KEY = "creation-conversation-tombstones-v1";
@@ -331,31 +330,6 @@ function nextGeneration(key: string) {
     return generation;
 }
 
-async function readLegacyArray(scope: string): Promise<StoredCreationConversation[] | null> {
-    const storage = localForageStorageForScope(scope);
-    const value = await storage.getItem(CREATION_CONVERSATIONS_KEY);
-    if (!value) return null;
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(value);
-    } catch {
-        throw new Error("创作对话持久状态无效");
-    }
-    if (!Array.isArray(parsed)) throw new Error("创作对话持久状态无效");
-    return parsed as StoredCreationConversation[];
-}
-
-async function writeLegacyArray(scope: string, conversations: StoredCreationConversation[]) {
-    const storage = localForageStorageForScope(scope);
-    await storage.setItem(CREATION_CONVERSATIONS_KEY, JSON.stringify(conversations));
-}
-
-async function removeLegacyConversation(scope: string, id: string) {
-    const legacy = await readLegacyArray(scope);
-    if (!legacy?.some((item) => item.id === id)) return;
-    await writeLegacyArray(scope, legacy.filter((item) => item.id !== id));
-}
-
 async function readJSON<T>(scope: string, key: string, fallback: T): Promise<T> {
     const storage = localForageStorageForScope(scope);
     const value = await storage.getItem(key);
@@ -368,32 +342,8 @@ async function readJSON<T>(scope: string, key: string, fallback: T): Promise<T> 
 }
 
 async function readDraftIndex(scope: string): Promise<string[]> {
-    await migrateCombinedDrafts(scope);
     const index = await readJSON<string[]>(scope, CREATION_CONVERSATION_DRAFT_INDEX_KEY, []);
     return Array.isArray(index) ? index.filter((id) => typeof id === "string" && id) : [];
-}
-
-async function migrateCombinedDrafts(scope: string) {
-    const storage = localForageStorageForScope(scope);
-    const raw = await storage.getItem(CREATION_CONVERSATION_DRAFTS_KEY);
-    if (!raw) return;
-    let parsed: Record<string, ConversationDraft>;
-    try {
-        parsed = JSON.parse(raw) as Record<string, ConversationDraft>;
-    } catch {
-        await storage.removeItem(CREATION_CONVERSATION_DRAFTS_KEY);
-        return;
-    }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        await storage.removeItem(CREATION_CONVERSATION_DRAFTS_KEY);
-        return;
-    }
-    const ids = Object.keys(parsed);
-    for (const id of ids) {
-        if (parsed[id]?.document) await storage.setItem(draftItemKey(id), JSON.stringify(parsed[id]));
-    }
-    await storage.setItem(CREATION_CONVERSATION_DRAFT_INDEX_KEY, JSON.stringify(ids));
-    await storage.removeItem(CREATION_CONVERSATION_DRAFTS_KEY);
 }
 
 async function readDraft(scope: string, id: string): Promise<ConversationDraft | null> {
@@ -487,11 +437,7 @@ function withConflict(document: StoredCreationConversation, remote: { revision: 
 export async function loadLocalCreationConversationDrafts<T extends StoredCreationConversation>(scope = getActiveUserScope()) {
     const drafts = await withScopeStorage(scope, () => listDrafts(scope));
     const tombstones = await withScopeStorage(scope, () => readTombstones(scope));
-    const legacy = await withScopeStorage(scope, () => readLegacyArray(scope));
     const byId = new Map<string, T>();
-    for (const item of legacy || []) {
-        if (item?.id && !tombstones.has(item.id)) byId.set(item.id, item as T);
-    }
     for (const [id, draft] of Object.entries(drafts)) {
         if (draft?.document?.id && !tombstones.has(id)) {
             byId.set(id, (draft.remote ? withConflict(draft.document, draft.remote) : draft.document) as T);
@@ -510,59 +456,7 @@ export async function loadCreationConversations<T extends StoredCreationConversa
     rejectIfScopeChanged(epoch);
     const committedRecords = new Map((listed.conversations || []).map((item) => [item.id, item]));
     const tombstones = await withScopeStorage(scope, () => readTombstones(scope));
-    const legacy = await withScopeStorage(scope, () => readLegacyArray(scope));
     rejectIfScopeChanged(epoch);
-    for (const local of legacy || []) {
-        rejectIfScopeChanged(epoch);
-        if (!local?.id || deleted.has(local.id) || tombstones.has(local.id)) continue;
-        const existing = committedRecords.get(local.id);
-        if (existing && !existing.deleted) {
-            const remoteDocument = documentFromRecord(existing);
-            const localFingerprint = persistableFingerprint(local);
-            const remoteFingerprint = persistableFingerprint(remoteDocument);
-            if (localFingerprint && remoteFingerprint && localFingerprint === remoteFingerprint) {
-                rejectIfScopeChanged(epoch);
-                await withScopeStorage(scope, () => removeLegacyConversation(scope, local.id));
-                rejectIfScopeChanged(epoch);
-                continue;
-            }
-            rejectIfScopeChanged(epoch);
-            await withScopeStorage(scope, () => writeDraft(scope, local.id, {
-                baseRevision: existing.revision,
-                document: cloneConversation(local),
-                remote: { revision: existing.revision, document: remoteDocument },
-            }));
-            rejectIfScopeChanged(epoch);
-            await withScopeStorage(scope, () => removeLegacyConversation(scope, local.id));
-            rejectIfScopeChanged(epoch);
-            continue;
-        }
-        let document: CreationConversationDocument;
-        try {
-            document = persistableDocument(local);
-        } catch {
-            await withScopeStorage(scope, () => writeDraft(scope, local.id, { baseRevision: 0, document: cloneConversation(local) }));
-            rejectIfScopeChanged(epoch);
-            continue;
-        }
-        rejectIfScopeChanged(epoch);
-        const imported = await creationConversationsApi.importLegacy({
-            operationId: `${CREATION_CONVERSATIONS_KEY}:${local.id}`,
-            document,
-        });
-        rejectIfScopeChanged(epoch);
-        if (imported.deleted) {
-            deleted.add(imported.id);
-            await rememberTombstones(scope, [imported.id]);
-            rejectIfScopeChanged(epoch);
-            continue;
-        }
-        if (imported.conversation?.id) {
-            committedRecords.set(imported.conversation.id, imported.conversation);
-            await withScopeStorage(scope, () => removeLegacyConversation(scope, imported.conversation.id));
-            rejectIfScopeChanged(epoch);
-        }
-    }
     const drafts = await withScopeStorage(scope, () => listDrafts(scope));
     rejectIfScopeChanged(epoch);
     const loaded: T[] = [];
@@ -876,7 +770,6 @@ export async function deleteCreationConversation(conversationId: string, scope =
         await rememberTombstones(scope, [conversationId]);
         await withScopeStorage(scope, async () => {
             await removeDraft(scope, conversationId);
-            await removeLegacyConversation(scope, conversationId);
         });
         const storage = localForageStorageForScope(scope);
         await storage.removeItem(parkedDraftKey(conversationId));

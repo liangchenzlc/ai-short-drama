@@ -9,7 +9,7 @@ const routes = [
   ['projects', '/projects', '项目管理'],
   ...['all', 'image', 'video', 'audio'].map(kind => [`media-${kind}`, `/media-library/${kind}`, '资产库']),
   ['ai-config', '/ai_config', 'AI 配置'],
-  ...['source', 'assets', 'storyboard', 'assembly'].map(stage => [`episode-${stage}`, `${root}/${stage}`, '雨夜来信']),
+  ...['source', 'assets', 'storyboard', 'assembly'].map(stage => [`creation-${stage}`, `${root}/${stage}`, '雨夜来信']),
   ['not-found', '/missing', '没有找到内容'],
 ];
 
@@ -28,12 +28,12 @@ test.describe('desktop workspace', () => {
         await expect(page.locator('.project-tile')).toHaveCount(4);
         await expect(page.getByRole('textbox', { name: '搜索项目名称' })).toBeVisible();
       }
-      if (name === 'episode-source') await expect(page.getByRole('textbox', { name: '剧本正文', exact: true })).toBeEditable();
-      if (name === 'episode-assets' || name === 'episode-storyboard') {
+      if (name === 'creation-source') await expect(page.getByRole('textbox', { name: '剧本正文', exact: true })).toBeEditable();
+      if (name === 'creation-assets' || name === 'creation-storyboard') {
         await expect(page.locator('.standard-object-settings:visible')).toHaveCount(1);
         await expect(page.getByRole('textbox', { name: '画面要求', exact: true })).toBeVisible();
       }
-      if (name === 'episode-assembly') await expect(page.getByRole('region', { name: '视频时间轴' })).toBeVisible();
+      if (name === 'creation-assembly') await expect(page.getByRole('region', { name: '视频时间轴' })).toBeVisible();
       await fits(page);
       await page.screenshot({ path: info.outputPath(name + '.png'), fullPage: true, animations: 'disabled' });
     }
@@ -87,7 +87,7 @@ test.describe('desktop workspace', () => {
     const state = await fixture(page, true);
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto(root + '/assets?asset=501');
-    const detail = page.locator('.episode-asset-detail');
+    const detail = page.locator('.creation-asset-detail');
     const description = detail.getByRole('textbox', { name: '描述', exact: true });
     const draft = '在桌面选择素材图片时保留角色外观描述。';
     await description.fill(draft);
@@ -108,21 +108,8 @@ test.describe('desktop workspace', () => {
   });
 });
 
-test('batch selection leaves room for asset descriptions and stays with its storyboard card', async ({ page }) => {
+test('batch selection stays with its storyboard card when opening its settings', async ({ page }) => {
   const state = await fixture(page, true);
-  await page.goto('/projects/10?section=resources');
-  const library = page.locator('.project-section .remote-asset-library');
-  await expect(library.getByRole('button', { name: '编辑素材', exact: true })).toBeVisible();
-  const workspaceBounds = await page.locator('.project-section').boundingBox();
-  const libraryBounds = await library.boundingBox();
-  expect(libraryBounds!.width).toBeGreaterThan(workspaceBounds!.width * .9);
-  const card = library.locator('.library-resource-card').first();
-  const image = await card.locator('.resource-image').boundingBox();
-  const copy = await card.locator('.asset-card-content').boundingBox();
-  expect(copy!.width).toBeGreaterThan(150);
-  expect(Math.abs(copy!.y - image!.y)).toBeLessThanOrEqual(14);
-  await card.getByRole('checkbox', { name: '批量选择 林晚' }).check();
-  await expect(library.getByText('已选 1 项', { exact: true })).toBeVisible();
   await page.goto(`${root}/storyboard`);
   await expect(page.locator('.storyboard-summary')).toHaveCount(20);
   await page.getByRole('button', { name: '分镜生成记录', exact: true }).click();

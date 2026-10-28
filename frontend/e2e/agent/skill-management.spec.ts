@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
-import type { AgentSkillContent, AgentSkillDetail } from '../../src/api/types/agents';
+import type { AgentSkillContent, AgentSkillDetail } from '../../src/types/assistant/engine';
 import { fixture } from '../support/studio-fixture';
 
 const personalId = '9007199254740995';
@@ -358,10 +358,11 @@ test('retired pending requests remain downloadable and are never rewritten or re
   const draft = { schema_version: 1, key: 'legacy-create', base: null, values, changed: true, pending: { key: 'legacy-create', body: values, row_version: null }, conflict: false };
   await page.addInitScript(({ account, draft }) => localStorage.setItem(`agent-skill-draft:v1:${account}`, JSON.stringify(draft)), { account: state.account.id, draft });
   await page.goto('/skills'); await page.getByRole('button', { name: '恢复旧 Skill记录' }).click();
-  await page.getByRole('button', { name: '核对导入结果' }).click();
-  await expect.poll(() => state.calls.some(call => call.path === '/skills/requests/legacy-create')).toBe(true);
-  const download = page.waitForEvent('download'); await page.getByRole('button', { name: '下载记录', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '恢复 Skill 记录' })).toBeVisible();
+  const download = page.waitForEvent('download'); await page.getByRole('button', { name: '下载原记录', exact: true }).click();
   expect((await download).suggestedFilename()).toBe('skill-recovery.json');
+  expect(await page.evaluate(account => localStorage.getItem(`agent-skill-draft:v1:${account}`), state.account.id)).toBe(JSON.stringify(draft));
+  expect(state.calls.some(call => call.path === '/skills/requests/legacy-create')).toBe(false);
   expect(writes(state)).toEqual([]);
 });
 

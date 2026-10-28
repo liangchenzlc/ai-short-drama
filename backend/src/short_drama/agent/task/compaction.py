@@ -12,10 +12,10 @@ from short_drama.agent.memory.sources import (
     source_hash,
     token_estimate,
 )
-from short_drama.domain.agent import AgentMessage
-from short_drama.domain.agent_memory import AgentMemoryJob
-from short_drama.domain.agent_task import AgentTask, AgentTaskInput
-from short_drama.schemas.agent_memory import TaskConstraintResult
+from short_drama.domain.assistant.conversations.models import AgentMessage
+from short_drama.domain.assistant.memory.memory import AgentMemoryJob
+from short_drama.domain.assistant.tasks.task import AgentTask, AgentTaskInput
+from short_drama.schemas.assistant.memory.memory import TaskConstraintResult
 from short_drama.service.base import utcnow
 from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id

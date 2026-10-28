@@ -13,12 +13,12 @@ from short_drama.domain import (
     ShotScript,
     ShotVideo,
 )
-from short_drama.schemas.asset_extraction import ExtractionApply
-from short_drama.schemas.media_asset import MediaAssetApply
-from short_drama.schemas.storyboard_apply import StoryboardApply
-from short_drama.service.asset_extraction_service import AssetExtractionService
-from short_drama.service.generation_business_service import GenerationBusinessService
-from short_drama.service.media_asset_service import MediaAssetService
+from short_drama.schemas.creation.assets.extraction.extraction import ExtractionApply
+from short_drama.schemas.creation.storyboard.management.adoption import StoryboardApply
+from short_drama.schemas.media.library.assets import MediaAssetApply
+from short_drama.service.creation.assets.extraction.extraction import AssetExtractionService
+from short_drama.service.generations.admission.business import GenerationBusinessService
+from short_drama.service.media.library.assets import MediaAssetService
 
 
 def _review(schema, values):

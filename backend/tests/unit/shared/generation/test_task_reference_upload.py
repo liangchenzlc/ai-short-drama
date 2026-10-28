@@ -7,8 +7,8 @@ from sqlalchemy import func, select
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import AIGenerationRecord, Asset, AsyncTask, MediaAsset, MediaFile
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.task_reference_service import TaskReferenceService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.references.task_references import TaskReferenceService
 from tests.support.generation_fixtures import config, generation_session, settings
 
 

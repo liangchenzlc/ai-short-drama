@@ -7,7 +7,7 @@ import logging
 from short_drama.core.config import Settings
 from short_drama.core.logging import configure_logging
 from short_drama.db.session import build_engine, session_factory
-from short_drama.service.canvas_generation_media_cleanup import (
+from short_drama.service.canvas.generation.generation_media_cleanup import (
     cleanup_canvas_generation_media,
     retire_canvas_generation_media,
 )

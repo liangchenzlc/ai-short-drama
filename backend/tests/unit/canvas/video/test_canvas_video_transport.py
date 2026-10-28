@@ -2,8 +2,10 @@
 
 import pytest
 
-from short_drama.ai.adapters import build_submission, parse_result, poll_endpoint, validate_request
-from short_drama.ai.canvas_credentials import CanvasCredentials
+from short_drama.ai.adapters.capabilities import validate_request
+from short_drama.ai.adapters.results import parse_result, poll_endpoint
+from short_drama.ai.adapters.submission import build_submission
+from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
 from short_drama.ai.types import GenerationError
 from tests.unit.shared.generation.test_generation_adapters import gateway as gateway
 from tests.unit.shared.generation.test_generation_adapters import provider as provider
@@ -332,7 +334,7 @@ def test_retry_after_accepts_future_http_date_and_ignores_invalid():
     from datetime import UTC, datetime, timedelta
     from email.utils import format_datetime
 
-    from short_drama.ai.transport import response_retry_after
+    from short_drama.ai.gateway.transport import response_retry_after
 
     at = format_datetime(datetime.now(UTC) + timedelta(seconds=65), usegmt=True)
     assert 63 < response_retry_after({"retry-after": at}) <= 65

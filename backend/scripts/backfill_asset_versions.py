@@ -22,18 +22,21 @@ from short_drama.domain import (
     ResourceImport,
     User,
 )
-from short_drama.schemas.asset_version import (
+from short_drama.schemas.creation.assets.management.version import (
     snapshot_content_hash,
     snapshot_media_references,
     validate_snapshot,
 )
-from short_drama.service.asset_version_service import AssetVersionService, canonical_current
+from short_drama.service.creation.assets.management.version import (
+    AssetVersionService,
+    canonical_current,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def _require_system_session(session: Session) -> None:
-    if session.info.get("actor") or session.info.get("legacy_user_id"):
+    if session.info.get("actor"):
         raise ValueError("角色版本维护必须使用独立系统 Session")
     if session.new or session.dirty or session.deleted:
         raise ValueError("角色版本维护不能复用含未提交业务修改的 Session")

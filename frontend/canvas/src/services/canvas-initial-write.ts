@@ -1,5 +1,5 @@
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
-import type { CanvasInitialDrawingDto } from "@host/api/types/canvases";
+import type { CanvasInitialDrawingDto } from "@host/integrations/canvas/contracts";
 import { canonicalizeCanvasMedia } from "./canvas-media-locators.ts";
 import { collectCanvasResourceIds } from "./host-resource-normalization.ts";
 

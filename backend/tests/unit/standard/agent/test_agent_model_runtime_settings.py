@@ -1,6 +1,5 @@
 """宿主已保存协议与加密请求头在 Agent 消费路径中保持一致。"""
 
-import asyncio
 import base64
 from contextlib import contextmanager
 from copy import deepcopy
@@ -9,14 +8,17 @@ from types import SimpleNamespace
 import pytest
 from pydantic import SecretStr
 
-from short_drama.agent.coordinator.runtime import AgentRuntime, Claim
 from short_drama.agent.gateway.langchain import FRAMEWORK_VERSION
-from short_drama.agent.gateway.protocol import AgentCapabilityEvidence, AgentSegmentResult
-from short_drama.agent.legacy.artifacts import candidate_secret, public_content
+from short_drama.agent.gateway.protocol import AgentCapabilityEvidence
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
-from short_drama.service.agent_model_service import AgentModelService, model_snapshot, read_model
-from short_drama.service.model_runtime_config import encrypt_runtime_credentials
+from short_drama.service.ai_config.management.assistant_models import (
+    AgentModelService,
+    model_credentials,
+    model_snapshot,
+    read_model,
+)
+from short_drama.service.ai_config.management.runtime import encrypt_runtime_credentials
 
 
 def model_fixture(*, profile=None, headers=True):
@@ -163,73 +165,18 @@ def test_probe_current_model_check_includes_saved_header_account_and_profile():
     assert not AgentModelService._same_probe_model(row, frozen)
 
 
-@pytest.mark.parametrize("replay", [False, True])
 @pytest.mark.parametrize("legacy", [False, True])
-def test_agent_runtime_decrypts_frozen_header_credentials_and_preserves_legacy_key(replay, legacy):
+def test_agent_model_credentials_decrypt_frozen_headers_and_preserve_legacy_key(legacy):
     row, settings = model_fixture(headers=not legacy)
     frozen = model_snapshot(row)
     if legacy:
         frozen.pop("runtime_credentials_cipher", None)
         frozen.pop("runtime_profile", None)
-    observed = []
-
-    class Gateway:
-        async def run_segment(self, snapshot, credential, **kwargs):
-            observed.append((snapshot, credential))
-            return AgentSegmentResult("Safe", {}, {}, "openai_chat.v1", 1)
-
-        async def replay_segment(self, *args, **kwargs):
-            assert replay
-            return await self.run_segment(*args, **kwargs)
-
-    runtime = object.__new__(AgentRuntime)
-    runtime.settings = settings
-    runtime.gateway = Gateway()
-    runtime.store = SimpleNamespace(save_result=lambda *args: False)
-    claim = Claim(
-        1,
-        1,
-        "token",
-        "model",
-        1,
-        frozen,
-        {
-            "codec": "agent.segment-input",
-            "version": 1,
-            "kwargs": {
-                "instructions": "Answer.",
-                "user_prompt": "Hello.",
-                "stream": False,
-            },
-        },
-        {},
-        {} if replay else None,
-    )
-    asyncio.run(runtime._decision(claim))
-    credential = observed[0][1]
+    credential = model_credentials(frozen, settings.encryption_key)
     if legacy:
         assert credential == "private-api-key"
     else:
         assert credential.api_key.get_secret_value() == "private-api-key"
         assert credential.headers[0].value.get_secret_value() == "private-header"
         assert "unused-signing-secret" not in repr(credential)
-    assert "private-header" not in repr(claim.snapshot)
-
-
-def test_candidate_content_redacts_saved_header_values_and_keeps_private_intent_unchanged():
-    row, settings = model_fixture()
-    run = SimpleNamespace(config_snapshot=model_snapshot(row))
-    private = {"name": "private-header", "content": "private-api-key and private-header"}
-    before = deepcopy(private)
-    public = public_content(private, candidate_secret(run, settings))
-    assert public == {"name": "[redacted]", "content": "[redacted] and [redacted]"}
-    assert private == before
-
-
-def test_legacy_candidate_without_encrypted_credentials_requires_no_master_key():
-    run = SimpleNamespace(config_snapshot={"credential_cipher": None})
-    assert candidate_secret(run, SimpleNamespace()) == ""
-    assert (
-        public_content("Candidate text", candidate_secret(run, SimpleNamespace()))
-        == "Candidate text"
-    )
+    assert "private-header" not in repr(frozen)

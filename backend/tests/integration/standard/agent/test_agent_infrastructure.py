@@ -3,27 +3,12 @@
 import os
 from uuid import uuid4
 
-import httpx
 import pytest
-from sqlalchemy import select
 
-import tests.integration.standard.agent.test_agent_conversations as conversation_tests
-from short_drama.agent.native.tasks import collect_native_results
+import tests.support.assistant_workspace as conversation_tests
 from short_drama.agent.coordinator.publisher import AgentRabbitSender
 from short_drama.core.config import Settings
-from short_drama.core.exceptions import NotFound
-from short_drama.domain import AgentArtifact, MediaFile
-from short_drama.service.agent_artifact_service import AgentArtifactService
-from short_drama.service.generation_execution_service import GenerationExecutionService
-from short_drama.storage.minio import MinioStorage
 from short_drama.tasks.celery_app import agent_queue
-from tests.integration.standard.agent.test_agent_conversations import actor
-from tests.integration.standard.agent.test_agent_native_tasks import (
-    Provider,
-    admit,
-    drain,
-    prepared,
-)
 
 pytestmark = [
     pytest.mark.integration,
@@ -72,66 +57,3 @@ def test_agent_publication_is_confirmed_and_routes_only_safe_identifiers():
                         channel.close()
                     except Exception:
                         pass
-
-
-class TrackedStorage(MinioStorage):
-    def __init__(self, settings):
-        super().__init__(settings)
-        self.written = {}
-
-    def put(self, bucket, key, *args):
-        self.written[bucket, key] = None
-        stored = super().put(bucket, key, *args)
-        self.written[bucket, key] = stored.version_id
-        return stored
-
-
-def test_native_worker_archives_in_real_minio_then_shares_and_adopts(workspace):
-    flow = prepared(workspace, "image")
-    # The provider remains an in-memory deterministic PNG; storage and MySQL are real.
-    flow.settings = Settings(auth_enabled=True, agent_enabled=True)
-    storage = TrackedStorage(flow.settings)
-    task_id = None
-    try:
-        task_id = admit(flow)
-        worker = GenerationExecutionService(flow.factory, flow.settings, Provider("image"), storage)
-        assert drain(flow, task_id, worker) == "succeeded"
-        assert collect_native_results(flow.factory, flow.settings) == 1
-        with flow.factory() as session:
-            artifact = session.scalar(select(AgentArtifact))
-            media = session.get(MediaFile, artifact.media_id)
-            identifier, locator, byte_size = artifact.id, media.storage_locator, media.byte_size
-            session.rollback()
-            session.info["actor"] = actor(1)
-            svc = AgentArtifactService(session, flow.settings, storage)
-            detail = svc.get(flow.project_id, identifier)
-            source = detail["source_snapshot"]
-            applied = svc.adopt(
-                flow.project_id,
-                identifier,
-                {
-                    "row_version": 1,
-                    "content_version": source["content_version"],
-                    "target_row_version": source["target_row_version"],
-                },
-            )
-            assert applied["status"] == "applied"
-            from short_drama.service.storage_service import StorageService
-
-            service = StorageService(storage, flow.settings)
-            assert service.stat(locator).size == byte_size
-            # Do not print this temporary access URL.
-            response = httpx.get(service.download_url(locator), timeout=10, trust_env=False)
-            assert response.status_code == 200 and response.content.startswith(b"\x89PNG")
-    finally:
-        try:
-            for (bucket, key), version in storage.written.items():
-                assert task_id is not None and key.startswith(f"generations/{task_id}/")
-                if version is None:
-                    try:
-                        version = storage.stat(bucket, key).version_id
-                    except NotFound:
-                        continue
-                storage.remove(bucket, key, version)
-        finally:
-            storage.close()

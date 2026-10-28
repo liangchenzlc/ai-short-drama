@@ -3,12 +3,12 @@
 from copy import deepcopy
 
 from short_drama.core.time import utcnow
-from short_drama.domain.agent import AgentEvent
+from short_drama.domain.assistant.conversations.models import AgentEvent
 from short_drama.utils.snowflake import next_id
 
 TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
 
-UNBOUNDED_HARNESS_METERS = frozenset(
+VARIABLE_HARNESS_METERS = frozenset(
     {"decision_calls", "tool_calls", "output_tokens", "active_seconds"}
 )
 

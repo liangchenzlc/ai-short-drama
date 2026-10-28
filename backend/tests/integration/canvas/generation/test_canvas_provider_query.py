@@ -9,14 +9,14 @@ from threading import Event
 import pytest
 from sqlalchemy import func, select
 
+import short_drama.api.v1.canvas.generation.providers.provider_tasks as canvas_provider_tasks
 from short_drama.ai import GenerationGateway
-from short_drama.api.v1 import canvas_provider_tasks
 from short_drama.core.exceptions import StorageUnavailable
-from short_drama.dao.task_runtime_dao import LeaseLost
+from short_drama.dao.generations.runtime.lifecycle import LeaseLost
 from short_drama.domain import AIGenerationRecord, AsyncTask, CanvasResult, MediaAsset, MediaFile
 from short_drama.service.base import utcnow
-from short_drama.service.generation_archive import GenerationArchive
-from short_drama.service.task_runtime_service import finish
+from short_drama.service.generations.results.archive import GenerationArchive
+from short_drama.service.generations.runtime.lifecycle import finish
 from tests.integration.canvas.generation.test_canvas_generation_media_runtime import (
     playable_fixture,
 )

@@ -5,8 +5,8 @@ from typing import Any
 
 from short_drama.agent.context.subjects import snapshot_subjects
 from short_drama.core.exceptions import Conflict
-from short_drama.domain.agent_task import AgentOperation, AgentTask
-from short_drama.service.assistant_dialogue_service import COMMON_VERSIONS, advance_sound_binding
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
+from short_drama.service.assistant.operations.dialogue import COMMON_VERSIONS, advance_sound_binding
 
 
 def task_sound_sources(

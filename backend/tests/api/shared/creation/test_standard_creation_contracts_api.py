@@ -3,14 +3,12 @@ import asyncio
 import httpx
 from fastapi import FastAPI
 
-from short_drama.api.dependencies import (
-    get_ai_generation_service,
-    get_user_creation_draft_service,
-)
-from short_drama.api.v1.ai_generations import router as generations_router
+from short_drama.api.dependencies.creation import get_user_creation_draft_service
+from short_drama.api.dependencies.generations import get_ai_generation_service
+from short_drama.api.v1.generations.admission.router import router as generations_router
 from short_drama.core.config import Settings
 from short_drama.main import create_app
-from short_drama.service.user_creation_draft_service import UserCreationDraftService
+from short_drama.service.creation.drafts.drafts import UserCreationDraftService
 
 
 def test_idempotency_lookup_is_read_only_and_validates_query_before_service():

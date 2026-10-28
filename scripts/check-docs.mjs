@@ -4,6 +4,7 @@
 // 退出码：0 一致；1 存在不一致（逐条列出文件与行号）。
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { collectApiModules, compareApiModuleInventory } from './docs-api-modules.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const quiet = process.argv.includes('--quiet');
@@ -54,10 +55,7 @@ const docs = [
 const schemaSql = readFileSync(path.join(ROOT, 'docs/database/schema/schema.mysql8.sql'), 'utf8');
 const tableCount = (schemaSql.match(/^CREATE TABLE /gm) ?? []).length;
 
-const apiModules = readdirSync(path.join(ROOT, 'backend/src/short_drama/api/v1'))
-  .filter(f => f.endsWith('.py') && f !== '__init__.py')
-  .map(f => f.replace(/\.py$/, ''))
-  .filter(name => name !== 'router' && name !== 'test');
+const apiModules = collectApiModules(path.join(ROOT, 'backend/src/short_drama/api/v1'));
 
 const npmScripts = new Set();
 for (const pkg of ['frontend/package.json', 'frontend/canvas/package.json']) {
@@ -141,17 +139,8 @@ for (const docRel of docs) {
 const overviewPath = path.join(ROOT, 'docs/instruction/项目概览.md');
 if (existsSync(overviewPath)) {
   const lines = readFileSync(overviewPath, 'utf8').split('\n');
-  const start = lines.findIndex(l => l.startsWith('### 接口分组'));
-  if (start >= 0) {
-    const block = lines.slice(start + 1, start + 6).join('');
-    const listed = new Set([...block.matchAll(/`([a-z][a-z0-9_]*)`/g)].map(m => m[1]));
-    const actual = new Set(apiModules);
-    for (const name of actual) if (!listed.has(name) && !block.includes(`canvas_*`) && !name.startsWith('canvas_') && name !== 'canvases') {
-      add('docs/instruction/项目概览.md', start + 2, `接口模块未登记：${name}`);
-    }
-    for (const name of listed) if (!actual.has(name) && name !== 'router' && name !== 'test') {
-      add('docs/instruction/项目概览.md', start + 2, `接口模块已不存在：${name}`);
-    }
+  for (const { line, message } of compareApiModuleInventory(lines, apiModules)) {
+    add('docs/instruction/项目概览.md', line, message);
   }
 }
 

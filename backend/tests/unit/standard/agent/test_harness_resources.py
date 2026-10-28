@@ -20,8 +20,8 @@ from short_drama.agent.resources.contracts import (
 )
 from short_drama.agent.resources.resolver import ResourceResolver, request_template
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.agent_skill import SkillCreate
-from short_drama.service.agent_skill_package import parse_skill_import
+from short_drama.schemas.skills.catalog.skill import SkillCreate
+from short_drama.service.skills.packages.skill_package import parse_skill_import
 
 
 def png():
@@ -248,13 +248,13 @@ def test_compacted_progress_retains_nested_read_evidence_and_original_source():
     assert_reference_payload(progress)
 
 
-def test_harness_finite_budget_stops_at_the_cap_and_legacy_nulls_stay_unlimited():
+def test_harness_budget_requires_finite_decisions_and_output_but_allows_unlimited_time():
     import pytest
 
-    from short_drama.agent.coordinator.runtime import freeze_input
     from short_drama.agent.core.events import budget_limits, initial_usage
     from short_drama.agent.gateway.protocol import AgentGatewayError
     from short_drama.agent.harness import ENGINE_VERSION
+    from short_drama.agent.runtime.claims import freeze_input
 
     caps = {"decision_calls": 32, "output_tokens": 131072}
     frozen = budget_limits("harness", caps=caps)
@@ -272,33 +272,34 @@ def test_harness_finite_budget_stops_at_the_cap_and_legacy_nulls_stay_unlimited(
             {"tools": [], "max_tool_calls": 16, "harness_version": ENGINE_VERSION}, exhausted
         )
 
-    # Legacy runs that froze null meters keep their original unlimited policy.
-    legacy = SimpleNamespace(
+    available = SimpleNamespace(
         checkpoint={"engine": ENGINE_VERSION},
-        budget={
-            **budget_limits("harness"),
-            "decision_calls": None,
-            "tool_calls": None,
-            "output_tokens": None,
-            "active_seconds": None,
-        },
+        budget=frozen,
         usage={
             **initial_usage(),
-            "decision_calls": 100,
             "tool_calls": 400,
-            "output_tokens": 500000,
             "active_seconds": 7200,
         },
     )
     values = freeze_input(
-        {"tools": [], "max_tool_calls": 16, "harness_version": ENGINE_VERSION}, legacy
+        {"tools": [], "max_tool_calls": 16, "harness_version": ENGINE_VERSION}, available
     )
     assert values["kwargs"]["max_tool_calls"] == 16
     assert values["kwargs"]["max_output_tokens"] == 8192
     assert values["kwargs"]["timeout_seconds"] == 120
+    for key in ("decision_calls", "output_tokens"):
+        invalid = SimpleNamespace(
+            checkpoint={"engine": ENGINE_VERSION},
+            budget={**frozen, key: None},
+            usage=initial_usage(),
+        )
+        with pytest.raises(AgentGatewayError, match="invalid_agent_budget"):
+            freeze_input(
+                {"tools": [], "max_tool_calls": 16, "harness_version": ENGINE_VERSION}, invalid
+            )
 
 
-def test_continuation_is_frozen_after_complete_tool_pairs_and_old_inputs_are_unchanged():
+def test_continuation_follows_complete_tool_pairs_and_current_context():
     group = {
         "turn_id": "1",
         "content": "阶段观察",
@@ -307,7 +308,8 @@ def test_continuation_is_frozen_after_complete_tool_pairs_and_old_inputs_are_unc
     }
     arguments = ("System", {"task_id": "1"}, [group], {}, [], "openai_chat.v1")
     original = model_messages(*arguments)
-    assert [message.type for message in original] == ["system", "human", "ai", "tool"]
+    assert [message.type for message in original] == ["system", "human", "ai", "tool", "human"]
+    assert json.loads(original[-1].content) == {"task_id": "1"}
     current = model_messages(*arguments, continuation_prompt="冻结的本轮继续指引")
     assert current[:-1] == original
     assert current[-1].type == "human" and current[-1].content == "冻结的本轮继续指引"
@@ -340,7 +342,7 @@ def test_local_media_progression_freezes_frames_and_audio_without_persistent_ent
     tmp_path, kind, visual_only
 ):
     from short_drama.core.config import Settings
-    from short_drama.service.render_tools import executable
+    from short_drama.service.media.processing.render_tools import executable
 
     settings = Settings()
     target = tmp_path / ("clip.mp4" if kind == "video" else "voice.wav")

@@ -1,1 +1,1 @@
-export * from "../../../../src/lib/image-tools/image-data.ts";
+export * from "@host/integrations/canvas/image-tools/image-data";

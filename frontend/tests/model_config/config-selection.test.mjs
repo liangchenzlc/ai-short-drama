@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../../src/features/ai-config/config-selection.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/ai-config/selection/config-selection.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { resolveConfigSelection, savedConfigId } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const config = (id, serviceType, isDefault = true, enabled = true) => ({ id, serviceType, isDefault, enabled });

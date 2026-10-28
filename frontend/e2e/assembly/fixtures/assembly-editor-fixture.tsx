@@ -1,14 +1,13 @@
+import '@host/app/styles/index.css';
 import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { StudioProvider } from '../../../src/components/ui/StudioProvider';
-import { StudioFeedbackIndicator } from '../../../src/components/ui/StudioFeedback';
+import { StudioProvider } from '../../../src/shared/ui/StudioProvider';
+import { StudioFeedbackIndicator } from '../../../src/shared/ui/StudioFeedback';
 import '@ant-design/v5-patch-for-react-19';
-import type { AssemblyClip, AssemblyState, RenderJob } from '../../../src/api/modules/assembly';
-import { AssemblyWorkbench } from '../../../src/features/projects/AssemblyWorkbench';
-import type { useAssembly } from '../../../src/features/projects/useAssembly';
-import '../../../src/app/styles.css';
-import '../../../src/app/assembly.css';
-import '../../../src/app/workbench.css';
+import type { AssemblyClip, AssemblyState, RenderJob } from '../../../src/types/creation/assembly/document';
+import { AssemblyWorkbench } from '../../../src/features/creation/assembly/workbench/AssemblyWorkbench';
+import type { useAssembly } from '../../../src/features/creation/assembly/workbench/useAssembly';
+import '../../../src/features/creation/assembly/workbench/assembly.css';
 
 const source: AssemblyClip = { id: 'source-a', shot_id: 'shot-a', media_id: 'new-video', position: 1,
   shot_position: 1, included: true, muted: false, trim_in_ms: 0, trim_out_ms: null, duration_ms: 3000,

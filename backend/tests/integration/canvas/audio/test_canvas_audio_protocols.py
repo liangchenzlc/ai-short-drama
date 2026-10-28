@@ -16,12 +16,12 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.ai import GenerationGateway
-from short_drama.ai.canvas_audio_adapters import ASYNC_AUDIO
-from short_drama.dao.canvas_generation_dao import CanvasGenerationDAO
+from short_drama.ai.adapters.audio.canvas_audio import ASYNC_AUDIO
+from short_drama.dao.canvas.generation.generation import CanvasGenerationDAO
 from short_drama.domain import AIGenerationRecord, AIModelConfig, AsyncTask, MediaFile
 from short_drama.service.base import utcnow
-from short_drama.service.generation_execution_service import GenerationExecutionService
-from short_drama.service.task_runtime_service import finish
+from short_drama.service.generations.execution.execution import GenerationExecutionService
+from short_drama.service.generations.runtime.lifecycle import finish
 from tests.integration.canvas.generation.test_canvas_generation_media_runtime import (
     playable_fixture,
 )

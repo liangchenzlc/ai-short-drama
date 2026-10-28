@@ -1,5 +1,5 @@
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
-import type { CanvasRecycleStatusDto } from "@host/api/types/canvases";
+import type { CanvasRecycleStatusDto } from "@host/integrations/canvas/contracts";
 
 export const CANVAS_DELETION_PREFIX = "canvas-deletion-attempt:";
 type Storage = {

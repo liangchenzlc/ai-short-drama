@@ -14,8 +14,8 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from short_drama.core.config import Settings
-from short_drama.service.canvas_depth_runtime import CanvasDepthRuntime, DepthArtifact
-from short_drama.service.video_render import RenderCancelled
+from short_drama.service.canvas.tools.depth.depth_runtime import CanvasDepthRuntime, DepthArtifact
+from short_drama.service.creation.assembly.rendering.renderer import RenderCancelled
 
 pytestmark = pytest.mark.integration
 

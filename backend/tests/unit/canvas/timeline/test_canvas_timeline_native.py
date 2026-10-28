@@ -3,9 +3,9 @@
 import pytest
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.canvas_timeline import CanvasTimelinePlanRequest
-from short_drama.service.canvas_timeline_compile import compile_timeline_plan
-from short_drama.service.canvas_timeline_native import (
+from short_drama.schemas.canvas.timeline.timeline import CanvasTimelinePlanRequest
+from short_drama.service.canvas.timeline.timeline_compile import compile_timeline_plan
+from short_drama.service.canvas.timeline.timeline_native import (
     SourceFacts,
     apply_source_facts,
     build_ffmpeg_args,

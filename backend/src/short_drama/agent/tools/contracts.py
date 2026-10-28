@@ -9,14 +9,17 @@ from pydantic import Field, model_validator
 from pydantic_ai.tools import ToolDefinition
 
 from short_drama.agent.skill.contracts import SKILL_TOOLS
-from short_drama.schemas.agent_memory import MemoryKind
-from short_drama.schemas.assistant_canvas import AssistantCanvasPatch
-from short_drama.schemas.assistant_media import GetGenerationStatus, SubmitGenerationBatch
-from short_drama.schemas.assistant_policy import ReadGenerationPolicy
-from short_drama.schemas.assistant_standard import StandardPatch
+from short_drama.schemas.assistant.memory.memory import MemoryKind
+from short_drama.schemas.assistant.operations.canvas import AssistantCanvasPatch
+from short_drama.schemas.assistant.operations.media import (
+    GetGenerationStatus,
+    SubmitGenerationBatch,
+)
+from short_drama.schemas.assistant.operations.standard import StandardPatch
+from short_drama.schemas.assistant.tasks.policy import ReadGenerationPolicy
 from short_drama.schemas.base import Identifier, InputModel
-from short_drama.schemas.canvas import SourceKey
-from short_drama.schemas.image_group import ImagePrimarySet
+from short_drama.schemas.canvas.document.canvas import SourceKey
+from short_drama.schemas.media.image_groups.groups import ImagePrimarySet
 
 # ── Tool name constants ────────────────────────────────────────────────────────
 

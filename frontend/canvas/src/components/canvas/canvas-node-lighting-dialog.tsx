@@ -11,8 +11,8 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 
-import { defaultLightingOptions, LIGHT_POSITIONS, LIGHTING_PREVIEW_COLUMN_WIDTH, LIGHTING_SPHERE_SIZE, STYLE_PRESETS, DEFAULT_LIGHTING_PROMPT_TEMPLATE, LIGHTING_PROMPT_PLACEHOLDERS, buildImageLightingPrompt, type CanvasImageLightingOptions } from "../../../../src/lib/image-tools/lighting.ts";
-export { buildLightingLabel, type CanvasImageLightingOptions } from "../../../../src/lib/image-tools/lighting.ts";
+import { defaultLightingOptions, LIGHT_POSITIONS, LIGHTING_PREVIEW_COLUMN_WIDTH, LIGHTING_SPHERE_SIZE, STYLE_PRESETS, DEFAULT_LIGHTING_PROMPT_TEMPLATE, LIGHTING_PROMPT_PLACEHOLDERS, buildImageLightingPrompt, type CanvasImageLightingOptions } from "@host/integrations/canvas/image-tools/lighting";
+export { buildLightingLabel, type CanvasImageLightingOptions } from "@host/integrations/canvas/image-tools/lighting";
 
 export function CanvasNodeLightingPanel({ dataUrl, onClose, onConfirm }: { dataUrl: string; onClose: () => void; onConfirm: (options: CanvasImageLightingOptions, prompt: string) => void }) {
     const theme = canvasThemes[useActiveTheme()];

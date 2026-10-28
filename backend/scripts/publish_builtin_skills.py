@@ -4,10 +4,10 @@ import argparse
 import json
 import sys
 
-from short_drama.agent.builtin_skill_packages import builtin_skill_packages
+from short_drama.agent.skill.packages import builtin_skill_packages
 from short_drama.core.config import Settings
 from short_drama.db.session import build_engine, session_factory
-from short_drama.service.agent_builtin_skill_service import publish_builtin_skills
+from short_drama.service.skills.catalog.builtin_skill import publish_builtin_skills
 from short_drama.storage.minio import MinioStorage
 
 

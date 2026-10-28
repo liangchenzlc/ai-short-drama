@@ -5,8 +5,11 @@ import subprocess
 import pytest
 
 from short_drama.core.config import Settings
-from short_drama.service.assembly_output import display_dimensions, resolve_output
-from short_drama.service.video_render import VideoRenderer, executable
+from short_drama.service.creation.assembly.rendering.output import (
+    display_dimensions,
+    resolve_output,
+)
+from short_drama.service.creation.assembly.rendering.renderer import VideoRenderer, executable
 
 
 def video(identifier, width, height, kind="shot"):

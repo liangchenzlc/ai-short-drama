@@ -3,8 +3,8 @@
 from sqlalchemy import select
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.domain.agent_context import AgentAttachment
-from short_drama.domain.agent_task import AgentTaskInput
+from short_drama.domain.assistant.context.context import AgentAttachment
+from short_drama.domain.assistant.tasks.task import AgentTaskInput
 
 
 def task_attachments(session, task, *, include_pending=False, restricted_ids=()):

@@ -30,24 +30,24 @@ from short_drama.agent.tools.standard import (
 )
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
 from short_drama.domain import Asset, Project, ProjectCanvas
-from short_drama.domain.agent import AgentRun
-from short_drama.domain.agent_media import AgentMediaRequest
-from short_drama.domain.agent_task import AgentOperation, AgentTaskControl
-from short_drama.domain.canvas import CanvasNode
-from short_drama.domain.collaboration import User
-from short_drama.schemas.assistant_media import MEDIA_USAGE_KEYS
-from short_drama.service.assistant_canvas_media_service import (
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.operations.media import AgentMediaRequest
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTaskControl
+from short_drama.domain.canvas.document.canvas import CanvasNode
+from short_drama.domain.identity.accounts.user import User
+from short_drama.schemas.assistant.operations.media import MEDIA_USAGE_KEYS
+from short_drama.service.assistant.operations.canvas_media import (
     admit_canvas_media_locked,
     prepare_canvas_media_locked,
 )
-from short_drama.service.assistant_dialogue_service import (
+from short_drama.service.assistant.operations.dialogue import (
     prepare_dialogue_audio_locked,
 )
-from short_drama.service.assistant_media_reference_service import generated_image_references
-from short_drama.service.assistant_media_service import admit_media_locked, prepare_image_locked
-from short_drama.service.assistant_policy_service import policy_state_locked
-from short_drama.service.assistant_shot_video_service import prepare_shot_video_locked
-from short_drama.service.assistant_voice_service import prepare_voice_design_locked
+from short_drama.service.assistant.operations.media import admit_media_locked, prepare_image_locked
+from short_drama.service.assistant.operations.media_reference import generated_image_references
+from short_drama.service.assistant.operations.shot_video import prepare_shot_video_locked
+from short_drama.service.assistant.operations.voice import prepare_voice_design_locked
+from short_drama.service.assistant.tasks.policy import policy_state_locked
 from short_drama.service.base import utcnow
 from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
@@ -559,7 +559,7 @@ def reserve_batch_locked(
         None,
     )
     if previous:
-        from short_drama.schemas.assistant_media import SubmitGenerationBatch
+        from short_drama.schemas.assistant.operations.media import SubmitGenerationBatch
 
         if not autonomous and SubmitGenerationBatch.model_validate(previous.arguments) != values:
             raise Conflict("这次生成已受理，不能更换参数重发；请核对原回执")

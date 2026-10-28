@@ -46,8 +46,8 @@ class PresignBoundary:
 
 def seed(engine: Engine, settings: Settings) -> dict[str, int]:
     from short_drama.domain.base import Base
-    from short_drama.service.auth_service import PASSWORDS
     from short_drama.service.base import utcnow
+    from short_drama.service.identity.authentication.auth import PASSWORDS
 
     now = utcnow()
     tables = Base.metadata.tables

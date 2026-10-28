@@ -15,9 +15,9 @@ from typing import Any
 import pytest
 from sqlalchemy import event, func, select, update
 
-from short_drama.domain.canvas import CanvasRevision, CanvasUserMediaReference
+from short_drama.domain.canvas.document.canvas import CanvasRevision, CanvasUserMediaReference
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_service import CanvasService
+from short_drama.service.canvas.document.canvas import CanvasService
 from tests.integration.canvas.document.test_canvas_reference_writes import (
     reference_rows,
     reference_scene,

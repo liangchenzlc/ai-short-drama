@@ -1,0 +1,149 @@
+.assembly-material-dialog {
+  width: min(760px, calc(100vw - 24px));
+}
+.assembly-material-tools,
+.assembly-recognition-config,
+.assembly-recognition-history {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.assembly-material-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  align-items: start;
+  min-height: 180px;
+  max-height: 52vh;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+.assembly-material-grid > button {
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+.assembly-material-grid > button:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+.assembly-material-grid > button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.assembly-material-grid > button > div {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 78px;
+  overflow: hidden;
+  background: var(--canvas);
+  border-radius: 3px;
+}
+.assembly-material-grid img,
+.assembly-material-grid video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.assembly-material-grid > button > div > svg:last-child {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px;
+  background: var(--surface);
+  border-radius: 3px;
+}
+.assembly-material-grid strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 4px;
+  font-size: 12px;
+}
+.assembly-material-grid small {
+  color: var(--sub);
+  font-size: 11px;
+}
+.assembly-material-empty {
+  grid-column: 1 / -1;
+  display: grid;
+  place-content: center;
+  min-height: 100px;
+  padding: 12px;
+  color: var(--sub);
+  text-align: center;
+  font-size: 12px;
+}
+.assembly-transcription-dialog {
+  width: min(680px, calc(100vw - 24px));
+}
+.assembly-recognition-config .ant-select {
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+.assembly-recognition-history {
+  margin-top: 12px;
+}
+.assembly-recognition-history .ant-select {
+  flex: 1;
+}
+.assembly-task-recovery {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding-block: 8px;
+}
+.assembly-transcript-results {
+  max-height: 45vh;
+  min-height: 160px;
+  overflow-y: auto;
+  border-block: 1px solid var(--hair);
+}
+.assembly-transcript-results > div:not(.assembly-material-empty) {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--hair);
+}
+.assembly-transcript-results small {
+  font-variant-numeric: tabular-nums;
+  color: var(--sub);
+}
+.assembly-transcript-results p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.assembly-replacement-video {
+  display: block;
+  width: 100%;
+  max-height: 40vh;
+  margin-bottom: 8px;
+  background: var(--canvas);
+}
+.assembly-material-dialog footer,
+.assembly-transcription-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.assembly-material-grid button:focus-visible,
+.assembly-lane-clip:focus-visible,
+.assembly-caption-list button:focus-visible,
+.assembly-subtitle-style summary:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}

@@ -1,0 +1,734 @@
+.web-episode .assembly-editing {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.web-episode .assembly-workspace .assembly-editor-desk {
+  grid-template-columns: 184px minmax(0, 1fr);
+  gap: 8px;
+  flex: 1;
+  min-height: 220px;
+}
+.web-episode .assembly-workspace .assembly-editing.is-media-hidden .assembly-editor-desk {
+  grid-template-columns: minmax(0, 1fr);
+}
+.web-episode .assembly-editing[data-player-sized='true'] .assembly-editor-desk {
+  flex: 0 0 calc(var(--assembly-player-height) + 88px);
+}
+.web-episode .assembly-workspace .assembly-media-bin {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+}
+.web-episode .assembly-workspace .assembly-monitor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--canvas);
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+}
+.web-episode .assembly-workspace .assembly-panel-heading {
+  flex-shrink: 0;
+  min-height: 28px;
+  margin-bottom: 6px;
+}
+.web-episode .assembly-workspace .assembly-panel-heading h3 {
+  font-size: 12px;
+}
+.web-episode .assembly-workspace .assembly-source-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  gap: 6px;
+  padding: 0;
+}
+.web-episode .assembly-workspace .assembly-source-list article {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 6px;
+  padding: 4px;
+  background: var(--surface-raised);
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.web-episode .assembly-workspace .assembly-source-list article:hover {
+  border-color: var(--border-hover);
+}
+.web-episode .assembly-workspace .assembly-source-list article:focus-within {
+  outline: 1px solid var(--accent-border);
+  outline-offset: -1px;
+}
+.web-episode .assembly-workspace .assembly-source-image {
+  height: 48px;
+  aspect-ratio: auto;
+  border-radius: 4px;
+}
+.web-episode .assembly-workspace .assembly-source-image small {
+  right: 2px;
+  bottom: 2px;
+  padding: 0 3px;
+  font-size: 10px;
+}
+.web-episode .assembly-workspace .assembly-source-meta {
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0;
+  font-size: 11px;
+}
+.web-episode .assembly-workspace .assembly-source-meta strong {
+  white-space: nowrap;
+}
+.web-episode .assembly-workspace .assembly-source-list p {
+  display: none;
+}
+.web-episode .assembly-workspace .assembly-monitor-heading {
+  flex-shrink: 0;
+  min-height: 40px;
+  margin: 0;
+  padding: 4px 8px;
+  gap: 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--hair);
+}
+.web-episode .assembly-workspace .assembly-mode-switch {
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--hair);
+  border-radius: 7px;
+  background: var(--input-bg, #101010);
+}
+.web-episode .assembly-mode-switch .ant-btn {
+  height: 28px;
+  min-height: 28px;
+  padding-inline: 10px;
+  font-size: 12px;
+  border: 0;
+  box-shadow: none;
+}
+.web-episode .assembly-mode-switch .ant-btn-primary {
+  color: var(--ink);
+  background: var(--surface-hover);
+}
+.web-episode .assembly-workspace .assembly-player {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.web-episode .assembly-workspace .assembly-screen {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+.web-episode .assembly-workspace .assembly-resize-handle {
+  flex: 0 0 10px;
+  height: 10px;
+}
+.web-episode .assembly-workspace .assembly-edit-tools {
+  flex-shrink: 0;
+  min-height: 40px;
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  gap: 4px;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.web-episode .assembly-workspace .assembly-jump {
+  gap: 4px;
+  font-size: 11px;
+}
+.web-episode .assembly-workspace .assembly-jump .ant-input-number {
+  width: 76px;
+}
+.web-episode .assembly-workspace .assembly-timeline {
+  flex-shrink: 0;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.web-episode .assembly-workspace .assembly-timeline-heading {
+  padding: 4px 8px;
+  min-height: 38px;
+  gap: 4px 8px;
+}
+.web-episode .assembly-workspace .assembly-timeline-heading > div:first-child {
+  gap: 8px;
+  font-size: 12px;
+}
+.web-episode .assembly-workspace .assembly-timeline-heading span {
+  font-size: 11px;
+}
+.web-episode .assembly-workspace .assembly-timeline-canvas {
+  border: 0;
+  border-top: 1px solid var(--hair);
+  border-radius: 0;
+}
+.web-episode .assembly-workspace .assembly-zoom {
+  gap: 2px;
+}
+.web-episode .assembly-workspace .assembly-zoom .ant-slider {
+  width: 72px;
+  margin-inline: 6px;
+}
+.web-episode .assembly-workspace .assembly-empty {
+  flex: 1;
+  min-height: 220px;
+  padding: 16px;
+}
+.web-episode .assembly-workspace .assembly-empty h3 {
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+.web-episode .assembly-workspace .assembly-empty p {
+  margin-bottom: 12px;
+}
+.web-episode .assembly-operation-dialog .assembly-dialog-actions {
+  justify-content: flex-end;
+}
+.assembly-export-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.assembly-export-summary dt {
+  font-size: 12px;
+  color: var(--sub);
+}
+.assembly-export-summary dd {
+  margin: 5px 0 0;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.assembly-export-resolution {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.assembly-export-resolution .ant-select {
+  width: 144px;
+}
+.assembly-export-hint {
+  margin-top: 12px;
+  color: var(--sub);
+  font-size: 12px;
+}
+.assembly-sync-list {
+  display: grid;
+  gap: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.assembly-sync-list > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hair);
+  font-size: 12px;
+}
+.assembly-sync-list > div span {
+  color: var(--sub);
+}
+.web-episode .assembly-creation-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sub);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.web-episode .assembly-operation-dialog > .assembly-dialog-body {
+  padding: 16px;
+}
+.web-episode .assembly-operation-dialog > .assembly-dialog-actions {
+  padding: 12px 16px;
+  gap: 8px;
+}
+.web-episode .assembly-operation-dialog .assembly-dialog-body p {
+  line-height: 1.7;
+  margin-bottom: 10px;
+}
+.web-episode .assembly-operation-dialog .assembly-dialog-body p:last-child {
+  margin-bottom: 0;
+}
+.web-episode .assembly-operation-dialog .assembly-dialog-body ul {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  color: var(--sub);
+  line-height: 1.8;
+}
+.web-episode .assembly-operation-dialog .assembly-history article {
+  padding: 12px 0;
+  gap: 10px 16px;
+  align-items: flex-start;
+}
+.web-episode .assembly-history-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  font-size: 12px;
+}
+.web-episode .assembly-history-meta time {
+  font-size: 11px;
+  color: var(--sub);
+  justify-self: end;
+}
+.web-episode .assembly-history-meta > span,
+.web-episode .assembly-history-meta > details {
+  grid-column: 1 / -1;
+  font-size: 11px;
+}
+.web-episode .assembly-history-meta details summary {
+  cursor: pointer;
+  color: var(--sub);
+}
+.web-episode .assembly-operation-dialog .assembly-history article:first-child {
+  padding-top: 0;
+}
+.web-episode .assembly-operation-dialog .assembly-history article:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.web-episode .assembly-operation-dialog .assembly-history article > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.web-episode .assembly-operation-dialog .assembly-inline-actions {
+  gap: 6px;
+}
+.web-episode .assembly-operation-dialog a {
+  padding: 5px 8px;
+  border-radius: 6px;
+  text-underline-offset: 3px;
+}
+.web-episode .assembly-operation-dialog a:hover {
+  background: var(--surface-hover);
+}
+
+.web-episode .sound-inline {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.web-episode .sound-inline > header {
+  margin-bottom: 8px;
+}
+.web-episode .sound-inline h3 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.web-episode .sound-inline p {
+  margin: 8px 0;
+  color: var(--sub);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.web-episode .sound-inline .ant-alert {
+  margin-block: 8px;
+}
+.web-episode .sound-inline .sound-actions {
+  margin: 8px 0;
+  gap: 6px 8px;
+}
+.web-episode .sound-inline .sound-actions > .generation-config-select {
+  flex: 1 1 200px;
+  min-width: 0;
+  max-width: 320px;
+}
+.web-episode .sound-inline .sound-actions > .ant-input {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.web-episode .sound-inline .ant-tabs-nav {
+  margin-bottom: 10px;
+}
+.web-episode .sound-inline .sound-fields,
+.web-episode .sound-inline .sound-grid {
+  gap: 10px;
+}
+.web-episode .sound-inline .sound-fields > label,
+.web-episode .sound-inline .sound-subtitle > label {
+  font-size: 12px;
+  color: var(--sub);
+  gap: 5px;
+}
+.web-episode .sound-inline .sound-fields > .ant-btn {
+  align-self: flex-start;
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  white-space: normal;
+}
+.web-episode .sound-inline .sound-fields .ant-input-number,
+.web-episode .sound-inline .sound-subtitle .ant-input-number {
+  width: 100%;
+}
+.web-episode .sound-inline .sound-editor {
+  gap: 10px;
+  margin: 12px 0;
+}
+.web-episode .sound-inline .sound-editor nav {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 6px;
+}
+.web-episode .sound-inline .sound-editor nav button {
+  margin: 0;
+  gap: 3px;
+  padding: 8px 10px;
+  color: var(--ink);
+}
+.web-episode .sound-inline .sound-editor nav small {
+  color: var(--sub);
+}
+.web-episode .sound-inline .sound-editor nav button:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+.web-episode .sound-inline .sound-editor nav button[aria-pressed='true'] {
+  background: var(--pale);
+  border-color: var(--accent-border);
+}
+.web-episode .sound-inline .sound-subtitle {
+  gap: 8px;
+  margin: 10px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--hair);
+}
+.web-episode .sound-inline .sound-subtitle > .ant-btn {
+  justify-self: start;
+}
+.web-episode .sound-inline .sound-save-actions {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--hair);
+}
+.web-episode .sound-save-actions > .ant-checkbox-wrapper {
+  flex: 1 1 240px;
+  margin: 0;
+  font-size: 12px;
+}
+.web-episode .sound-inline details > summary {
+  padding-block: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--sub);
+}
+.web-episode .sound-inline details > summary:hover {
+  color: var(--ink);
+}
+.web-episode .sound-inline .native-voice {
+  padding-block: 10px;
+  gap: 8px;
+}
+.web-episode .native-voice,
+.web-episode .native-dialogue {
+  padding-block: 12px;
+  gap: 10px;
+  font-size: 12px;
+}
+.web-episode .native-voice fieldset {
+  gap: 10px;
+}
+.web-episode .native-candidates {
+  gap: 12px;
+}
+.native-voice-audio {
+  position: relative;
+  width: min(100%, 380px);
+  height: 70px;
+}
+.native-voice-audio-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--sub);
+}
+.web-episode .native-candidates li,
+.web-episode .native-line {
+  padding-block: 12px;
+  gap: 8px;
+}
+.web-episode .native-dialogue-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.web-episode .native-dialogue-dialog > header {
+  flex-shrink: 0;
+}
+.web-episode .native-dialogue-dialog > .native-voice {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 16px;
+}
+.web-episode .native-dialogue-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--hair);
+  background: var(--surface);
+}
+.web-episode .native-dialogue-footer .ant-checkbox-wrapper {
+  flex: 1 1 240px;
+  font-size: 12px;
+}
+.web-episode .sound-inline input[type='file'] {
+  max-width: 100%;
+  font: inherit;
+  color: var(--sub);
+}
+.web-episode .sound-inline input[type='file']::file-selector-button {
+  margin-right: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-control);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  cursor: pointer;
+}
+.web-episode .sound-inline input[type='file']::file-selector-button:hover {
+  background: var(--surface-hover);
+}
+.web-episode .sound-inline :is(button, summary, input[type='file']):focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+
+.web-episode:has(.assembly-workspace) .creation-layout {
+  padding: 8px;
+}
+.web-episode .sound-inline.sound-rail {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.web-episode .sound-rail > header {
+  flex: 0 0 44px;
+  margin: 0;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--hair);
+}
+.web-episode .sound-rail .sound-header-actions {
+  gap: 2px;
+}
+.web-episode .sound-rail .sound-header-actions .studio-feedback-indicator {
+  position: static;
+}
+.web-episode .sound-rail-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 10px 10px;
+  scrollbar-width: thin;
+}
+.web-episode .sound-rail .sound-save-actions {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 46px;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--surface);
+}
+.web-episode .sound-rail .sound-save-actions > .ant-checkbox-wrapper {
+  flex: 1;
+  font-size: 12px;
+}
+.web-episode .sound-rail .sound-actions > .generation-config-select {
+  flex: 1 1 120px;
+  max-width: 200px;
+}
+.web-episode .sound-rail .sound-editor {
+  margin-block: 8px;
+  gap: 8px;
+}
+.web-episode .sound-rail .sound-editor nav {
+  display: flex;
+  flex-direction: column;
+  max-height: 156px;
+  gap: 4px;
+}
+.web-episode .sound-rail .sound-editor nav button {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  padding: 6px 8px;
+  gap: 4px 8px;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.web-episode .sound-rail .sound-editor nav small {
+  grid-column: 2;
+  font-size: 10px;
+}
+.web-episode .sound-rail .sound-fields {
+  gap: 8px;
+}
+.web-episode .sound-rail .sound-fields h3 {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.web-episode .sound-rail .sound-fields > .ant-btn.assembly-icon-action {
+  width: 30px;
+  min-height: 30px;
+  height: 30px;
+}
+.sound-subtitle-list {
+  display: grid;
+  gap: 4px;
+}
+.web-episode .sound-rail .sound-subtitle {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 0;
+}
+.web-episode .sound-rail .sound-subtitle > label {
+  grid-column: auto;
+  min-width: 0;
+  font-size: 10px;
+}
+.web-episode .sound-rail .sound-subtitle > .sound-subtitle-text {
+  grid-row: 2;
+  grid-column: 2 / 4;
+}
+.web-episode .sound-rail .sound-subtitle > .ant-btn {
+  grid-column: 4;
+  grid-row: 1 / 3;
+  align-self: center;
+}
+.sound-subtitle-number {
+  color: var(--sub);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.sound-field-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.sound-volume {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px;
+  align-items: center;
+  gap: 4px 12px;
+}
+.sound-volume > span {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--sub);
+}
+.sound-volume .ant-slider {
+  min-width: 0;
+  margin-inline: 4px;
+}
+.sound-volume .ant-input-number {
+  width: 76px;
+}
+.sound-music-upload {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+.sound-music-upload > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+.sound-music-advanced .sound-grid {
+  grid-template-columns: 1fr 1fr;
+}
+.sound-candidate > p {
+  display: flex;
+  justify-content: space-between;
+}
+.sound-candidate > p > span {
+  color: var(--sub);
+}
+.sound-candidate-output {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 11px;
+  color: var(--sub);
+}
+.sound-candidate-output audio {
+  flex: 1 0 100%;
+  height: 32px;
+}
+.sound-candidate-output > .ant-btn {
+  margin-left: auto;
+}
+.sound-rail audio {
+  width: 100%;
+  height: 32px;
+  color-scheme: dark;
+}
+.web-episode .sound-rail .native-voice {
+  display: flex;
+  flex-wrap: wrap;
+  padding-block: 6px;
+}
+.web-episode .sound-rail .native-voice .sound-subtitle {
+  flex: 1 0 100%;
+}
+.web-episode .assembly-workspace.is-focused .assembly-heading {
+  position: static;
+  background: var(--surface);
+}
+
+.assembly-latest-export {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}

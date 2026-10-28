@@ -1,0 +1,117 @@
+/* Four-stage editor, with compact navigation and readable long-form text. */
+.web-episode .creation-top h1 {
+  font-size: 18px;
+}
+.web-episode .creation-top-status {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid var(--success-border);
+  border-radius: 6px;
+}
+.web-episode .creation-sidebar {
+  background: var(--navigation);
+}
+.web-episode .creation-sidebar-inner {
+  padding: 22px 12px;
+  top: 62px;
+}
+.web-episode .creation-sidebar nav button {
+  min-height: 58px;
+  padding: 10px;
+  gap: 10px;
+  font-size: 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sub);
+}
+.web-episode .creation-sidebar nav button:hover {
+  background: var(--surface-hover);
+}
+.web-episode .creation-sidebar nav button.active {
+  background: var(--pale);
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
+}
+.web-episode .creation-sidebar nav button > span:first-child {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--sub);
+  font-size: 10px;
+}
+.web-episode .creation-sidebar nav button.active > span:first-child {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+.web-episode .creation-sidebar nav button.active .creation-stage-name {
+  color: var(--accent-strong);
+}
+.creation-stage-name small {
+  color: var(--sub);
+  font-size: 10px;
+}
+.web-episode .creation-main {
+  padding: 24px 26px 32px;
+  background: var(--canvas);
+}
+.web-episode .creation-main h2 {
+  font-size: 21px;
+  letter-spacing: -0.02em;
+}
+.writing-model-panel {
+  background: var(--surface);
+  border-color: var(--hair);
+  padding: 18px;
+  border-radius: 12px;
+}
+.writing-model-panel h3 {
+  font-size: 15px;
+}
+.writing-control > span {
+  color: var(--sub);
+  font-size: 12px;
+}
+.writing-model-panel p {
+  font-size: 12px;
+}
+.writing-editor-panel {
+  background: var(--surface);
+  border-color: var(--hair);
+  border-radius: 12px;
+}
+.web-episode .creation-script-textarea,
+.web-episode .creation-novel-textarea {
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 2;
+}
+.web-episode .creation-novel-text {
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 2;
+}
+.writing-editor-header,
+.writing-editor-footer {
+  border-color: var(--hair);
+  color: var(--sub);
+}
+.creation-step-footer {
+  padding-top: 16px;
+  margin-top: 22px;
+}
+.creation-step-footer > span {
+  font-variant-numeric: tabular-nums;
+}
+.creation-help {
+  color: var(--sub);
+}
+.creation-stage-controls select,
+.web-episode select:not(:disabled) {
+  min-height: 34px;
+  color: var(--ink);
+  background: var(--surface-muted);
+}

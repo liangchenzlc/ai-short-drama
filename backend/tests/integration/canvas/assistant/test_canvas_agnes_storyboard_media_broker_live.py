@@ -25,9 +25,9 @@ from short_drama.domain import (
     CanvasTaskBinding,
     MediaFile,
 )
-from short_drama.service.video_render import executable
+from short_drama.service.creation.assembly.rendering.renderer import executable
 from short_drama.storage.models import ObjectLocation
-from short_drama.tasks.publisher import RabbitSender
+from short_drama.tasks.runtime.publisher import RabbitSender
 from tests.integration.canvas.assistant.test_canvas_agnes_live import (
     MODELS,
     PROTOCOLS,
@@ -46,14 +46,14 @@ from tests.integration.canvas.resources.test_canvas_library import (
 )
 from tests.integration.canvas.resources.test_canvas_resources import ROOT, canvas
 from tests.integration.canvas.resources.test_canvas_resources import resource_app as resource_app
-from tests.integration.standard.assistant.test_project_assistant_agnes_broker_live import (
-    ROLE_IDS,
-    official_stack,
-    read_json,
-)
 from tests.integration.standard.identity.test_identity_collaboration import PASSWORD, account
 from tests.integration.standard.identity.test_identity_collaboration import (
     identity_app as identity_app,
+)
+from tests.support.integration.official_stack import (
+    ROLE_IDS,
+    official_stack,
+    read_json,
 )
 
 pytestmark = [

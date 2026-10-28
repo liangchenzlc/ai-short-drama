@@ -2,9 +2,10 @@
 
 from sqlalchemy import select
 
-from short_drama.agent.core.events import append_event
-from short_drama.domain.agent_context import AgentAttachment
-from short_drama.domain.agent_task import AgentOperation, AgentTask
+from short_drama.agent.core.events import ACTIVE, append_event
+from short_drama.domain.assistant.context.context import AgentAttachment
+from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
 from short_drama.service.base import utcnow
 
 
@@ -17,6 +18,12 @@ def finalize_deletion_locked(session, conversation):
         select(AgentTask).where(AgentTask.conversation_id == conversation.id).with_for_update()
     ).all()
     if any(task.status in {"queued", "running", "waiting_media"} for task in tasks):
+        return False
+    # 任务可先进入 stopped，但在途模型分段仍持有租约；必须等运行落库后才能擦除上下文。
+    runs = session.scalars(
+        select(AgentRun).where(AgentRun.conversation_id == conversation.id).with_for_update()
+    ).all()
+    if any(run.status in ACTIVE for run in runs):
         return False
     if (
         tasks

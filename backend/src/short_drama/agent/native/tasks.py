@@ -12,8 +12,8 @@ from short_drama.agent.core.state import (
     mark_scheduled,
     wait_locked,
 )
-from short_drama.agent.legacy.authorization import check_source
 from short_drama.agent.native.context import freeze_native_context as freeze_native_context
+from short_drama.agent.native.sources import check_source
 from short_drama.core.exceptions import Conflict, WorkflowError
 from short_drama.core.identity import ActorContext
 from short_drama.domain import (
@@ -24,10 +24,11 @@ from short_drama.domain import (
     Project,
     User,
 )
-from short_drama.domain.agent import AgentArtifact, AgentToolCall
-from short_drama.service.ai_generation_service import AIGenerationService
+from short_drama.domain.assistant.artifacts.models import AgentArtifact
+from short_drama.domain.assistant.execution.models import AgentToolCall
 from short_drama.service.base import utcnow
-from short_drama.service.generation_context_service import GenerationContextService
+from short_drama.service.generations.admission.context import GenerationContextService
+from short_drama.service.generations.admission.generation import AIGenerationService
 from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
@@ -131,9 +132,7 @@ def _payload(session, conversation, run, step, quantity):
 
 def admit_native_locked(session, conversation, run, tool, step, *, settings):
     """Caller holds Project -> Conversation/Run -> Tool, and must retain this transaction."""
-    from short_drama.service.agent_conversation_service import validate_conversation_subject
 
-    validate_conversation_subject(session, conversation, lock=True)
     project = session.scalar(
         select(Project)
         .where(Project.id == conversation.project_id)
@@ -299,7 +298,7 @@ def collect_native_results(factory, settings, limit=100):
                     "image": "image_candidate",
                     "video": "video_candidate",
                 }[result["kind"]]
-                from short_drama.agent.legacy.authorization import source_snapshot
+                from short_drama.agent.native.sources import source_snapshot
 
                 source = source_snapshot(step, run, now)
                 source["model_name"] = record.config_snapshot["name"]

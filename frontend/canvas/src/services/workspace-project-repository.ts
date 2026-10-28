@@ -1,6 +1,5 @@
 import { isLocalWorkspaceMode } from "@/services/workspace-mode";
 import { createLocalCanvasProject, deleteLocalCanvasProjects } from "@/services/local-workspace-repository";
-import { createCanvasProjectWithRemoteSync, deleteCanvasProjectsWithRemoteSync } from "@/services/local-workspace-sync";
 import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
 
 import type { CanvasSourceOrigin } from "@/services/canvas-initial-write";
@@ -9,20 +8,17 @@ type InitialCanvasContent = Partial<Pick<CanvasProject, "nodes" | "connections" 
 
 /**
  * Single project-storage boundary for workspace UI code.
- * Local mode writes only to the local repository; hosted mode keeps the
- * existing remote-sync implementation and its retry semantics.
+ * Local and hosted modes both use the workspace repository.
  */
 export async function createWorkspaceCanvasProject(title: string, initialContent?: InitialCanvasContent, workspaceProjectId?: string, sourceCanvas?: CanvasSourceOrigin) {
     if (isLocalWorkspaceMode()) {
-        const local = await createLocalCanvasProject(title, initialContent, workspaceProjectId, sourceCanvas);
-        return { ...local, syncError: undefined as undefined };
+        return createLocalCanvasProject(title, initialContent, workspaceProjectId, sourceCanvas);
     }
-    const created = await createCanvasProjectWithRemoteSync(title, initialContent);
+    const created = await createLocalCanvasProject(title, initialContent);
     if (workspaceProjectId) useCanvasStore.getState().updateProject(created.id, { workspaceProjectId });
     return created;
 }
 
 export async function deleteWorkspaceCanvasProjects(ids: readonly string[]) {
-    if (isLocalWorkspaceMode()) return deleteLocalCanvasProjects(ids);
-    return deleteCanvasProjectsWithRemoteSync([...ids]);
+    return deleteLocalCanvasProjects(ids);
 }

@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from short_drama.domain import CANVAS_PRIVATE_TABLES, CANVAS_TABLES, CanvasRenderJob
-from short_drama.schemas.canvas_timeline import CanvasTimelineRenderRequest
+from short_drama.schemas.canvas.timeline.timeline import CanvasTimelineRenderRequest
 
 
 def body():

@@ -4,8 +4,8 @@ from copy import deepcopy
 
 import pytest
 
+import short_drama.service.canvas.generation.generation_inputs as canvas_generation_inputs
 from short_drama.core.exceptions import GenerationRequestError, WorkflowError
-from short_drama.service import canvas_generation_inputs
 from tests.unit.canvas.video.test_canvas_video_admission import request
 
 

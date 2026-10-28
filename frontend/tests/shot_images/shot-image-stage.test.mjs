@@ -1,25 +1,29 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 
 function compile(path, dependencies, globals = {}) {
-  const source = readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
+  const file = new URL(`../../src/${path}`, import.meta.url);
+  const resolved = [file, new URL(file.href + '.ts'), new URL(file.href + '.tsx')].find(existsSync);
+  const source = readFileSync(resolved, 'utf8');
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports = {};
   runInNewContext(output, { exports, require: name => {
+    if (!(name in dependencies) && name.endsWith('.css')) return {};
+    if (!(name in dependencies) && name.startsWith('@host/features/creation/storyboard/')) return compile(name.replace('@host/', ''), dependencies, globals);
     if (!(name in dependencies)) throw new Error(`Missing dependency: ${name}`);
     return dependencies[name];
   }, AbortController, setTimeout, clearTimeout, ...globals });
   return exports;
 }
 
-const workflow = compile('features/projects/shot-image-workflow.ts', {});
-const session = compile('features/projects/storyboard-session.ts', {});
-const contract = compile('features/projects/workflow-contract.ts', {});
-const resourceEditing = compile('features/projects/resource-editing-session.ts', {});
-const feedbackPolicy = compile('components/ui/studio-feedback-store.ts', {});
+const workflow = compile('features/creation/storyboard/images/shot-image-workflow', {});
+const session = compile('features/creation/storyboard/sessions/storyboard-session', {});
+const contract = compile('features/creation/shared/model/workflow-contract', {});
+const resourceEditing = compile('features/creation/shared/sessions/resource-editing-session', {});
+const feedbackPolicy = compile('shared/ui/studio-feedback-store', {});
 const shot = (id = '11') => ({ id, position: 1, row_version: '1', context_hash: 'first', script: 'original', duration_ms: 3000, source_excerpt: '', asset_ids: [], deleted_at: null, image: null, image_settings: { layout: 'single', aspect: null, resolution: '2K' } });
 const page = (items, project_id = '1') => ({ project_id, storyboard_version: '1', items, total: items.length, offset: 0, limit: 100 });
 const deferred = () => { let resolve; let reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -61,54 +65,54 @@ function mount(context, overrides = {}) {
     useMemo(create, dependencies) { const index = cursor++; const previous = slots[index]; if (!previous || dependencies.some((value, offset) => !Object.is(value, previous.dependencies[offset]))) slots[index] = { dependencies, value: create() }; return slots[index].value; },
     useSyncExternalStore(subscribe, getSnapshot) { effect(effects)(() => subscribe(() => {}), [subscribe]); return getSnapshot(); },
   };
-  const jsx = (type, props) => ({ type, props });
+  const jsx = (type, props) => typeof type === 'function' ? type(props) : ({ type, props });
   const recovery = overrides.recovery ?? new Map();
   const recoveryAdapter = { creationScope: scope => scope, readRecovery: scope => recovery.get(scope) ?? null, saveRecovery: (scope, value) => recovery.set(scope, structuredClone(value)), clearRecovery: scope => recovery.delete(scope), readRecoveryText: scope => recovery.has(scope) ? JSON.stringify(recovery.get(scope)) : null };
   const savedBackups = new Map();
-  const storyboardEditing = compile('features/projects/storyboard-editing-session.ts', {
-    '../../api/modules/storyboard': { storyboardApi: () => api }, './creation-recovery': recoveryAdapter,
-    './resource-editing-session': resourceEditing,
+  const storyboardEditing = compile('features/creation/storyboard/sessions/editing-session', {
+    '@host/api/creation/storyboard/shots': { storyboardApi: () => api }, '@host/features/creation/shared/recovery/creation-recovery': recoveryAdapter,
+    '@host/features/creation/shared/sessions/resource-editing-session': resourceEditing,
   }, { localStorage: { setItem: (key, value) => savedBackups.set(key, value) }, crypto });
-  const registry = compile('features/projects/standard-session-registry.ts', {}, { queueMicrotask, setTimeout: (callback, delay) => setTimeout(callback, delay).unref() });
+  const registry = compile('features/creation/shared/sessions/registry', {}, { queueMicrotask, setTimeout: (callback, delay) => setTimeout(callback, delay).unref() });
   const retained = new Set();
   const retainedRegistry = { ...registry, retainStandardSession: (...args) => { const value = registry.retainStandardSession(...args); retained.add(value); return value; } };
-  const { StoryboardStage } = compile('pages/projects/episode/StoryboardStage.tsx', {
+  const { StoryboardWorkspace: StoryboardStage } = compile('features/creation/storyboard/workbench/StoryboardWorkspace', {
     react, 'react/jsx-runtime': { jsx, jsxs: jsx },
     'lucide-react': { History: 'History', Sparkles: 'Sparkles' },
     antd: { Alert: 'Alert', Button: 'Button', Dropdown: 'Dropdown', Checkbox: 'Checkbox', Input: { TextArea: 'TextArea' }, InputNumber: 'InputNumber', Segmented: 'Segmented', Select: 'Select', Spin: 'Spin' },
-    '../../../api/http': { ApiError: class extends Error {}, errorMessage: cause => cause.message },
-    '../../../api/modules/storyboard': { storyboardApi: () => api },
-    '../../../api/modules/assets': { assetLibraries: { list: overrides.listAssets ?? (async () => ({ items: [], total: 0 })) } },
-    '../../../api/modules/generations': { generations: { list: overrides.listTasks ?? (async () => ({ items: [], total: 0 })) } },
-    '../../../api/modules/ai-model-configs': { aiModelConfigs: configs },
-    '../../../features/ai-config/config-events': { AI_CONFIGS_CHANGED: 'configs-changed' },
-    '../../../features/projects/EpisodeModelSelect': { EpisodeModelSelect: 'EpisodeModelSelect' },
-    '../../../features/projects/EpisodeCreationWorkspace': { EpisodeEditorSlot: 'EpisodeEditorSlot', useEpisodeCreationControls: () => controls },
-    '../../../features/projects/StoryboardShotCard': { StoryboardShotCard: 'StoryboardShotCard' },
-    '../../../features/projects/ResourceViewToggle': { ResourceViewToggle: 'ResourceViewToggle', useResourceView: () => react.useState('grid') },
-    '../../../features/projects/storyboard-layout.css': {},
-    '../../../features/projects/workflow-refinement.css': {},
-    '../../../features/projects/workflow-contract': contract,
-    '../../../features/projects/storyboard-session': session,
-    '../../../features/projects/shot-image-workflow': workflow,
-    '../../../features/projects/creation-recovery': recoveryAdapter,
-    '../../../features/projects/storyboard-editing-session': storyboardEditing,
-    '../../../features/projects/standard-session-registry': retainedRegistry,
-    '../../../features/auth/AuthSession': { useAuth: () => ({ user: null }) },
-    '../../../features/generations/attempt': { attemptStorage: () => null, requestAttempt: async () => 'same-attempt', clearAttempt() {} },
-    '../../../features/generations/BatchGeneration': { BatchLauncher: 'BatchLauncher', useBatchSelection: () => ({ enabled: false, ids: [], setIds() {}, toggle() {} }) },
-    '../../../features/generations/presentation': { taskLabel: () => '' },
-    '../../../features/generations/TaskDetail': { TaskDetail: 'TaskDetail' },
-    '../../../features/projects/StoryboardResultPreview': { StoryboardResultPreview: 'StoryboardResultPreview' },
-    '../../../components/ui/Dialog': { Dialog: 'Dialog' },
-    '../../../components/ui/StudioFeedback': { StudioFeedback: 'Alert', feedbackType: feedbackPolicy.feedbackType },
-    '../../../components/ui/Icon': { Icon: 'Icon' },
-    '../../../components/ui/confirm': { confirmAction: async () => true },
-    '../../../components/ui/LazyLoadMore': { LazyLoadMore: 'LazyLoadMore' },
-    '../../../features/projects/ShotAssetPicker': { ShotAssetPicker: 'ShotAssetPicker' },
-    '../../../features/projects/ShotImageCandidates': { ShotImageCandidates: 'ShotImageCandidates' },
-    '../../../features/projects/ShotVideoCandidates': { ShotVideoCandidates: 'ShotVideoCandidates' },
-    '../../../features/projects/NativeVoicePanel': { NativeDialoguePanel: 'NativeDialoguePanel', NativeSoundMode: 'NativeSoundMode' },
+    '@host/api/http': { ApiError: class extends Error {}, errorMessage: cause => cause.message },
+    '@host/api/creation/storyboard/shots': { storyboardApi: () => api },
+    '@host/api/creation/assets/management': { projectAssetsApi: { list: overrides.listAssets ?? (async () => ({ items: [], total: 0 })) } },
+    '@host/api/generations/tasks/requests': { generations: { list: overrides.listTasks ?? (async () => ({ items: [], total: 0 })) } },
+    '@host/api/ai-config/management': { aiModelConfigs: configs },
+    '@host/features/ai-config/catalog/config-events': { AI_CONFIGS_CHANGED: 'configs-changed' },
+    '@host/features/creation/workspace/model/CreationModelSelect': { CreationModelSelect: 'CreationModelSelect' },
+    '@host/features/creation/workspace/layout/CreationWorkspace': { CreationEditorSlot: 'CreationEditorSlot', useCreationControls: () => controls },
+    '@host/features/creation/storyboard/list/StoryboardShotCard': { StoryboardShotCard: 'StoryboardShotCard' },
+    '@host/features/creation/shared/resource-view/ResourceViewToggle': { ResourceViewToggle: 'ResourceViewToggle', useResourceView: () => react.useState('grid') },
+    '@host/features/creation/storyboard/list/index': {},
+    '@host/features/creation/workspace/layout/refinement': {},
+    '@host/features/creation/shared/model/workflow-contract': contract,
+    '@host/features/creation/storyboard/sessions/storyboard-session': session,
+    '@host/features/creation/storyboard/images/shot-image-workflow': workflow,
+    '@host/features/creation/shared/recovery/creation-recovery': recoveryAdapter,
+    '@host/features/creation/storyboard/sessions/editing-session': storyboardEditing,
+    '@host/features/creation/shared/sessions/registry': retainedRegistry,
+    '@host/features/identity/session/AuthSession': { useAuth: () => ({ user: null }) },
+    '@host/features/shared/async/request-receipt': { attemptStorage: () => null, requestAttempt: async () => 'same-attempt', clearAttempt() {} },
+    '@host/features/generations/batches/BatchGeneration': { BatchLauncher: 'BatchLauncher', useBatchSelection: () => ({ enabled: false, ids: [], setIds() {}, toggle() {} }) },
+    '@host/features/generations/presentation/presentation': { taskLabel: () => '' },
+    '@host/features/generations/tasks/TaskDetail': { TaskDetail: 'TaskDetail' },
+    '@host/features/creation/storyboard/history/StoryboardResultPreview': { StoryboardResultPreview: 'StoryboardResultPreview' },
+    '@host/shared/ui/Dialog': { Dialog: 'Dialog' },
+    '@host/shared/ui/StudioFeedback': { StudioFeedback: 'Alert', feedbackType: feedbackPolicy.feedbackType },
+    '@host/shared/ui/Icon': { Icon: 'Icon' },
+    '@host/shared/ui/confirm': { confirmAction: async () => true },
+    '@host/shared/ui/LazyLoadMore': { LazyLoadMore: 'LazyLoadMore' },
+    '@host/features/creation/storyboard/references/ShotAssetPicker': { ShotAssetPicker: 'ShotAssetPicker' },
+    '@host/features/creation/storyboard/images/ShotImageCandidates': { ShotImageCandidates: 'ShotImageCandidates' },
+    '@host/features/creation/storyboard/videos/ShotVideoCandidates': { ShotVideoCandidates: 'ShotVideoCandidates' },
+    '@host/features/creation/sound/voices/NativeVoicePanel': { NativeDialoguePanel: 'NativeDialoguePanel', NativeSoundMode: 'NativeSoundMode' },
   }, { window, document, CustomEvent, Event });
   let props = { value: { aspect: '16:9', models: { storyboardText: '', storyboardImage: '' } }, readOnly: false, projectId: '1', scriptId: null, confirmed: false, writingSession: {}, registerBarrier: next => { barrier = next; }, onChange: next => { props.value = next; } };
   const render = patch => {

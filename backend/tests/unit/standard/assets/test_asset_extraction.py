@@ -7,13 +7,13 @@ from sqlalchemy import func, select
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import AIGenerationRecord, Asset, AsyncTask
-from short_drama.schemas.ai_generation import TextGenerationCreate
-from short_drama.schemas.asset_extraction import parse_extraction_result
-from short_drama.service.ai_generation_service import AIGenerationService
-from short_drama.service.asset_extraction_service import AssetExtractionService
-from short_drama.service.asset_library_service import AssetLibraryService
-from short_drama.service.generation_business_service import GenerationBusinessService
-from short_drama.service.task_runtime_service import finish
+from short_drama.schemas.creation.assets.extraction.extraction import parse_extraction_result
+from short_drama.schemas.generations.admission.generation import TextGenerationCreate
+from short_drama.service.creation.assets.extraction.extraction import AssetExtractionService
+from short_drama.service.creation.assets.management.library import AssetLibraryService
+from short_drama.service.generations.admission.business import GenerationBusinessService
+from short_drama.service.generations.admission.generation import AIGenerationService
+from short_drama.service.generations.runtime.lifecycle import finish
 from tests.support.generation_fixtures import config, generation_session, settings
 from tests.unit.standard.writing.test_project_writing import setup
 
@@ -73,8 +73,6 @@ def extraction(items=None, *, confirmed=True, legacy=False):
             p, {"content_version": "1", "script_id": None, "content": SCRIPT}
         )
         sid = saved["script"]["id"]
-        if confirmed:
-            writing.confirm(p, sid, {"content_version": "2"})
         if not confirmed:
             from short_drama.domain import ProjectScript
 
@@ -296,9 +294,16 @@ def test_duplicate_review_and_failure_rolls_back_entire_batch():
         assert library.list("project", p, p)["total"] == 1
 
 
-def test_changed_script_blocks_adoption_but_novel_only_change_allows_it():
+def test_changed_script_blocks_adoption_but_unchanged_save_allows_it():
     with extraction() as (_, p, e, writing, sid, tid, service):
-        writing.save_novel(p, {"content_version": "2", "content": "小说更新"})
+        writing.save_script(
+            p,
+            {
+                "script_id": sid,
+                "content_version": "2",
+                "content": SCRIPT,
+            },
+        )
         result = service.get(p, tid)
         assert not result["stale"] and result["content_version"] == "3"
         service.apply(
@@ -307,7 +312,7 @@ def test_changed_script_blocks_adoption_but_novel_only_change_allows_it():
             create_request(
                 result, [{"candidate_id": result["items"][0]["candidate_id"], "action": "create"}]
             ),
-            "novel-change",
+            "format-change",
         )
         writing.save_script(p, {"content_version": "3", "script_id": sid, "content": "新的剧本"})
         result = service.get(p, tid)
@@ -317,7 +322,7 @@ def test_changed_script_blocks_adoption_but_novel_only_change_allows_it():
         assert error.value.code == "source_changed"
 
 
-def test_unconfirmed_extraction_result_survives_format_only_save():
+def test_unconfirmed_extraction_result_survives_unchanged_save():
     with extraction(confirmed=False) as (_, p, e, writing, sid, tid, service):
         saved = writing.save_script(
             p,
@@ -325,9 +330,6 @@ def test_unconfirmed_extraction_result_survives_format_only_save():
                 "content_version": "2",
                 "script_id": sid,
                 "content": SCRIPT,
-                "editor_document": {
-                    "ops": [{"insert": SCRIPT, "attributes": {"bold": True}}, {"insert": "\n"}]
-                },
             },
         )
         assert saved["content_version"] == "3"
@@ -355,7 +357,7 @@ def test_only_new_extraction_policy_ignores_legacy_confirmation_status(legacy):
 
 def test_truncated_result_and_wrong_ownership_cannot_be_adopted():
     with extraction() as (session, p, e, _, _, tid, service):
-        from short_drama.service.project_service import ProjectService
+        from short_drama.service.projects.management.project import ProjectService
 
         other = ProjectService(session).create({"name": "Other"})
         with pytest.raises(WorkflowError) as error:
@@ -375,7 +377,7 @@ def test_worker_routes_extraction_to_local_save_without_model_or_image_call():
 
     from short_drama.ai.types import GenerationResult
     from short_drama.core.config import Settings
-    from short_drama.service.generation_execution_service import GenerationExecutionService
+    from short_drama.service.generations.execution.execution import GenerationExecutionService
 
     with extraction() as (session, p, e, _, sid, _, service):
         receipt, _ = AIGenerationService(session, settings).create(
@@ -448,7 +450,7 @@ def test_configured_script_bound_rejects_input_without_submitting_a_task():
 def test_extraction_accepts_absent_evidence_and_strips_legacy_evidence():
     import json
 
-    from short_drama.schemas.asset_extraction import parse_extraction_result
+    from short_drama.schemas.creation.assets.extraction.extraction import parse_extraction_result
 
     item = {
         "kind": "character",

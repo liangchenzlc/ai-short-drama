@@ -9,8 +9,8 @@ from sqlalchemy import select
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.core.identity import ActorContext
-from short_drama.domain.canvas import CanvasWriteReceipt
-from short_drama.service.canvas_recycle_service import CanvasRecycleService
+from short_drama.domain.canvas.document.canvas import CanvasWriteReceipt
+from short_drama.service.canvas.resources.recycle.recycle import CanvasRecycleService
 from tests.integration.canvas.projects.test_canvas_project_folders import (
     create_canvas,
     save_document,

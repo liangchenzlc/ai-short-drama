@@ -17,8 +17,8 @@ from short_drama.agent.context.capabilities import context_profile
 from short_drama.agent.context.subjects import snapshot_subjects, subject_memory_keys
 from short_drama.agent.context.transcript import freeze_transcript
 from short_drama.agent.context.working_set import projection as working_projection
-from short_drama.agent.gateway.protocol import AgentGatewayError
-from short_drama.agent.harness.supervision import SUPERVISION_VERSION, prepare_review
+from short_drama.agent.gateway.contracts import AgentGatewayError
+from short_drama.agent.harness.supervision import prepare_review
 from short_drama.agent.memory.context import assemble_memory_locked
 from short_drama.agent.memory.sources import restricted_messages
 from short_drama.agent.resources.catalog import attachments_locked
@@ -45,10 +45,10 @@ from short_drama.agent.tools.results import result_sources_locked
 from short_drama.agent.tools.standard import standard_result_keys
 from short_drama.ai.prompts.loader import load_prompt
 from short_drama.ai.prompts.registry import PROMPT_VERSIONS, system_prompt
-from short_drama.domain.agent import AgentRun, AgentToolCall, AgentTurn
-from short_drama.domain.agent_task import AgentOperation
-from short_drama.service.assistant_policy_service import generation_policy_locked
-from short_drama.service.assistant_subject_service import selection_metadata
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
+from short_drama.domain.assistant.tasks.task import AgentOperation
+from short_drama.service.assistant.context.subject import selection_metadata
+from short_drama.service.assistant.tasks.policy import generation_policy_locked
 
 logger = logging.getLogger(__name__)
 MAX_OPERATION_RECEIPTS = 64
@@ -300,8 +300,6 @@ def prepare_decision(session, conversation, run, settings=None):
         "prompt_version": PROMPT_VERSIONS["assistant"],
         "tool_version": TOOL_VERSION,
         "harness_version": run.checkpoint["engine"],
-        "supervision_version": SUPERVISION_VERSION,
-        "context_layout_version": 2,
         **profile,
     }
     values = prepare_review(session, task, run, values, settings)
@@ -322,7 +320,7 @@ def prepare_decision(session, conversation, run, settings=None):
 
 
 def _prepare_revision(session, conversation, run):
-    from short_drama.agent.legacy.discussion import prepare_revision
+    from short_drama.agent.task.discussion import prepare_revision
 
     values = prepare_revision(session, conversation, run)
     prompt = values["user_prompt"]

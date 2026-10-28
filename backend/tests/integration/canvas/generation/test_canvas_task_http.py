@@ -1,6 +1,6 @@
 """原版操作信封接入真实 FastAPI、账号、CSRF 与 MySQL。"""
 
-from short_drama.schemas.canvas_generation import CanvasTaskBindRead
+from short_drama.schemas.canvas.generation.generation import CanvasTaskBindRead
 from tests.integration.canvas.generation.test_canvas_task_bindings import complete, prepared
 from tests.integration.standard.identity.test_identity_collaboration import account
 from tests.integration.standard.identity.test_identity_collaboration import (

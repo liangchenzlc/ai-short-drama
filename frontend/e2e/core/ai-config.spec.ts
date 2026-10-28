@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { fixture } from '../support/studio-fixture';
-import type { AiRuntimeProfileDto } from '../../src/api/types/ai-model-configs';
+import type { AiRuntimeProfileDto } from '../../src/types/ai-config/api';
 
 async function configsFixture(page: Page) {
   const base = await fixture(page, true);

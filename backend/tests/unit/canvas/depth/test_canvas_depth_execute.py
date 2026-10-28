@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 
 from short_drama.core.config import Settings
-from short_drama.service.canvas_depth_execute import (
+from short_drama.service.canvas.tools.depth.depth_execute import (
     CanvasDepthCaptureExecutor,
     DepthComponentFailure,
     supported_platform,
 )
-from short_drama.service.canvas_depth_runtime import CanvasDepthRuntime
-from short_drama.service.video_render import RenderCancelled
+from short_drama.service.canvas.tools.depth.depth_runtime import CanvasDepthRuntime
+from short_drama.service.creation.assembly.rendering.renderer import RenderCancelled
 
 
 @pytest.mark.parametrize(

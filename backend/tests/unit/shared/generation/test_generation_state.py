@@ -15,7 +15,7 @@ def task(**values):
 
 
 def test_only_due_pending_actions_are_published():
-    from short_drama.tasks.state import publish_due
+    from short_drama.tasks.runtime.state import publish_due
 
     now = datetime(2026, 1, 2)
     assert publish_due(task(), now)
@@ -26,7 +26,7 @@ def test_only_due_pending_actions_are_published():
 
 
 def test_recovery_prefers_existing_result_and_never_resubmits_sent():
-    from short_drama.tasks.state import recovery_action
+    from short_drama.tasks.runtime.state import recovery_action
 
     def record(**values):
         return SimpleNamespace(
@@ -57,7 +57,7 @@ def test_recovery_prefers_existing_result_and_never_resubmits_sent():
 
 
 def test_archive_budget_is_independent_of_generation_start():
-    from short_drama.tasks.state import archive_due
+    from short_drama.tasks.runtime.state import archive_due
 
     now = datetime(2026, 1, 3)
     response = {"archive_started_at": (now - timedelta(seconds=20)).isoformat()}

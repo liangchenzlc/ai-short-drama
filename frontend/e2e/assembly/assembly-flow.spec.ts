@@ -51,7 +51,7 @@ async function fixture(page: Page, soundEnabled = false) {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/v1/**', async route => {
-    const request = route.request(), path = new URL(request.url()).pathname.slice('/api/v1'.length).replace(/\/assembly\/editor$/, '/assembly'), method = request.method();
+    const request = route.request(), path = new URL(request.url()).pathname.slice('/api/v1'.length), method = request.method();
     const body = request.postData() ? request.postDataJSON() : null;
     const key = request.headers()['idempotency-key'];
     calls.push({ path, method, body, key });
@@ -61,16 +61,20 @@ async function fixture(page: Page, soundEnabled = false) {
       if (method === 'PUT') { sound.document = body.document; sound.row_version = String(BigInt(sound.row_version) + 1n); state.assembly.row_version = String(Number(state.assembly.row_version) + 1); }
       return reply(sound);
     }
-    if (path === root) {
+    if (path === `${root}/editor`) {
       if (!controls.online) return reply({ error: { code: 'unavailable', message: '工作台连接中断' } }, 503);
-      if (method === 'PATCH') {
+      if (method === 'PUT') {
         if (controls.saveFails) return reply({ error: { code: 'conflict', message: '测试保存冲突，草稿保留' } }, 409);
         state.clips = body.clips.map((clip: any) => ({ ...(state.clips.find(c => c.id === clip.id) ?? source), ...clip }));
         state.assembly.row_version = String(Number(state.assembly.row_version) + 1);
         state.assembly.resolution = body.resolution;
+        state.assembly.aspect = body.aspect;
+        sound.document = body.sound;
+        sound.row_version = String(BigInt(sound.row_version) + 1n);
       }
-      return reply(state);
+      return reply({ ...state, sound });
     }
+    if (path === root) return reply(state);
     if (path === `${root}/exports` && method === 'GET') return reply({ items: state.jobs.filter(j => j.kind === 'export'), has_more: false });
     if ((path === `${root}/exports` || path === `${root}/previews` || path === `${root}/exports/301/retry`) && method === 'POST') {
       if (key && receipts.has(key)) return reply(receipts.get(key), 202);
@@ -113,7 +117,7 @@ test('feedback details and background render progress preserve the editor geomet
     data.controls.online = true; data.state.jobs = [];
     await page.setViewportSize(viewport);
     await page.goto('/e2e/assembly/fixtures/assembly-flow-fixture.html');
-    await expect(page.getByRole('region', { name: '视频时间轴' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '音画分轨时间轴' })).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     const original = await geometry();
     data.controls.online = false;
@@ -141,8 +145,8 @@ test('shared adopted work plays and refreshes without the collaborator private r
   const current = { media_id: '9901', url: `${source.url}?current=1`, width: 640, height: 360, duration_ms: 3000, is_stale: false };
   Object.assign(data.state, { current_work: current });
   await page.goto('/e2e/assembly/fixtures/assembly-flow-fixture.html');
-  await expect(page.getByRole('button', { name: '成片回看', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: '成片回看', exact: true }).click();
+  await expect(page.getByRole('button', { name: '当前采用', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '当前采用', exact: true }).click();
   const playback = page.getByRole('region', { name: '实际成片播放', exact: true });
   await expect(playback).toHaveAttribute('data-playback-state', 'ready');
   await expect(playback.getByRole('button', { name: '成片版本信息', exact: true })).toBeVisible();
@@ -152,9 +156,9 @@ test('shared adopted work plays and refreshes without the collaborator private r
   await expect(playback).toHaveAttribute('data-playback-state', 'playing');
   await video.evaluate(node => node.pause());
   current.url = `${source.url}?current=2`;
-  const reads = data.calls.filter(call => call.path === root && call.method === 'GET').length;
+  const reads = data.calls.filter(call => call.path === `${root}/editor` && call.method === 'GET').length;
   await playback.getByRole('button', { name: '刷新成片地址', exact: true }).click();
-  await expect.poll(() => data.calls.filter(call => call.path === root && call.method === 'GET').length).toBe(reads + 1);
+  await expect.poll(() => data.calls.filter(call => call.path === `${root}/editor` && call.method === 'GET').length).toBe(reads + 1);
   await expect(video).toHaveAttribute('src', current.url);
   await expect(playback).toHaveAttribute('data-playback-state', 'ready');
   expect(data.state.jobs).toEqual([]);
@@ -297,12 +301,12 @@ test('standard assembly keeps the preview and timeline stable while the sound ra
   const sync = toolbar.getByRole('button', { name: '同步分镜视频', exact: true });
   await expect(page.locator('.assembly-screen')).toBeVisible();
   const before = await page.locator('.assembly-screen').boundingBox();
-  const trackBefore = await page.locator('.assembly-timeline').boundingBox();
+  const trackBefore = await page.getByRole('region', { name: '音画分轨时间轴' }).boundingBox();
   await toolbar.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
   const sound = page.locator('.sound-rail');
   await expect(sound).toBeVisible();
   const after = await page.locator('.assembly-screen').boundingBox();
-  const trackAfter = await page.locator('.assembly-timeline').boundingBox();
+  const trackAfter = await page.getByRole('region', { name: '音画分轨时间轴' }).boundingBox();
   expect(Math.abs(after!.y - before!.y)).toBeLessThanOrEqual(1);
   expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(1);
   expect(Math.abs(trackAfter!.y - trackBefore!.y)).toBeLessThanOrEqual(1);
@@ -326,8 +330,9 @@ test('standard assembly keeps the preview and timeline stable while the sound ra
   await page.screenshot({ path: test.info().outputPath('standard-inline-sound-desktop.png'), fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 1280, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await expect(sound).toHaveAttribute('role', 'dialog');
-  expect((await sound.getByRole('button', { name: '收起声音编辑', exact: true }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  // 最低桌面宽度仍是可并行编辑的区域，不切换触屏抽屉或锁住键盘焦点。
+  await expect(page.getByRole('region', { name: '原声、字幕和配乐', exact: true })).toBeVisible();
+  await expect(sync).toBeVisible();
   await sound.getByRole('button', { name: '字幕操作', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: '导入 UTF-8 SRT', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -339,7 +344,7 @@ test('standard assembly keeps the preview and timeline stable while the sound ra
   await expect(toolbar.getByRole('button', { name: '声音、字幕和配乐', exact: true })).toBeFocused();
   const exportButton = page.getByRole('button', { name: '导出成片', exact: true });
   await exportButton.scrollIntoViewIfNeeded(); await expect(exportButton).toBeInViewport();
-  await expect.poll(() => page.locator('.episode-work-stage').evaluate(node => getComputedStyle(node).overflowY)).toBe('hidden');
+  await expect.poll(() => page.locator('.creation-work-stage').evaluate(node => getComputedStyle(node).overflowY)).toBe('hidden');
   await page.screenshot({ path: test.info().outputPath('standard-inline-sound-desktop-1280-export.png'), fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: '退出专注剪辑', exact: true }).click();
   await toolbar.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
@@ -359,7 +364,7 @@ test('export settings save the selected resolution before freezing the render re
   await page.getByText('1080p', { exact: true }).filter({ visible: true }).click();
   await dialog.getByRole('button', { name: '开始导出', exact: true }).click();
   await expect(dialog).toBeHidden();
-  const saved = data.calls.findLast(call => call.method === 'PATCH');
+  const saved = data.calls.findLast(call => call.path === `${root}/editor` && call.method === 'PUT');
   const render = data.calls.find(call => call.path === `${root}/exports` && call.method === 'POST');
   expect(saved?.body.resolution).toBe('1080p');
   expect(render?.body.row_version).toBe(data.state.assembly.row_version);
@@ -409,7 +414,7 @@ test('assembly polling slows when idle and stays frequent for an active render',
   const data = await fixture(page);
   await page.goto('/e2e/assembly/fixtures/assembly-flow-fixture.html');
   await expect(page.getByRole('button', { name: '片段静音', exact: true })).toBeVisible();
-  const reads = () => data.calls.filter(c => c.path === root && c.method === 'GET').length;
+  const reads = () => data.calls.filter(c => c.path === `${root}/editor` && c.method === 'GET').length;
   const initial = reads();
   await page.clock.runFor(4000);
   await expect.poll(reads).toBe(initial + 1);
@@ -459,12 +464,12 @@ test('unsaved clip edits silently recover and resume saving after refresh', asyn
   await page.getByRole('button', { name: '片段静音', exact: true }).click();
   await page.reload();
   await expect(page.getByText('发现本机未保存的剪辑恢复稿', { exact: true })).toHaveCount(0);
-  expect(data.calls.filter(c => c.method === 'PATCH')).toHaveLength(0);
+  expect(data.calls.filter(c => c.path === `${root}/editor` && c.method === 'PUT')).toHaveLength(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '恢复原声', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.clock.fastForward(650);
-  await expect.poll(() => data.calls.filter(c => c.method === 'PATCH').length).toBe(1);
-  expect(data.calls.find(c => c.method === 'PATCH')!.body.clips[0].muted).toBe(true);
+  await expect.poll(() => data.calls.filter(c => c.path === `${root}/editor` && c.method === 'PUT').length).toBe(1);
+  expect(data.calls.find(c => c.path === `${root}/editor` && c.method === 'PUT')!.body.clips[0].muted).toBe(true);
   expect(data.errors).toEqual([]);
 });
 
@@ -480,10 +485,10 @@ test('retrying a failed initial assembly read silently restores and saves recove
   await page.getByRole('button', { name: '重新加载', exact: true }).click();
   await closeFeedback(page);
   await expect(page.getByRole('button', { name: '恢复原声', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  expect(data.calls.filter(c => c.method === 'PATCH')).toHaveLength(0);
+  expect(data.calls.filter(c => c.path === `${root}/editor` && c.method === 'PUT')).toHaveLength(0);
   expect(await page.evaluate(() => localStorage.getItem('creation-recovery:user:anonymous:assembly:10:draft'))).toContain('"muted":true');
   await page.clock.fastForward(650);
-  await expect.poll(() => data.calls.filter(c => c.method === 'PATCH').length).toBe(1);
+  await expect.poll(() => data.calls.filter(c => c.path === `${root}/editor` && c.method === 'PUT').length).toBe(1);
   expect(data.errors).toEqual([]);
 });
 
@@ -583,9 +588,9 @@ test('failed initial load retries the GET and restores the editor', async ({ pag
   data.controls.online = true;
   await page.getByRole('button', { name: '重新加载', exact: true }).click();
   await closeFeedback(page);
-  await expect(page.getByRole('region', { name: '视频时间轴' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '音画分轨时间轴' })).toBeVisible();
   await expect(page.locator('.assembly-save')).toHaveCount(0);
-  expect(data.calls.filter(c => c.path === root && c.method === 'PATCH')).toHaveLength(0);
+  expect(data.calls.filter(c => c.path === `${root}/editor` && c.method === 'PUT')).toHaveLength(0);
   expect(data.errors).toEqual([]);
 });
 
@@ -599,7 +604,7 @@ test('reserved shots are kept without blocking preview or export or requiring ex
   await expect(page.getByRole('button', { name: '排除缺失视频', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('无法显示在时间轴的片段')).toHaveCount(0);
   await expect(page.getByRole('alert')).toHaveCount(0);
-  await expect(page.locator('.assembly-track-clip')).toHaveCount(1);
+  await expect(page.getByRole('region', { name: '音画分轨时间轴' }).getByRole('button', { name: '画面 合成测试画面' })).toHaveCount(1);
   await expect(page.locator('.assembly-creation-meta')).toContainText('1 段');
   await captureLayouts(page, 'reserved-shots');
   await page.getByRole('button', { name: '合成预览', exact: true }).click();
@@ -610,7 +615,7 @@ test('reserved shots are kept without blocking preview or export or requiring ex
   await expect(dialog.locator('.assembly-export-summary')).toContainText('1 段');
   await dialog.getByRole('button', { name: '开始导出', exact: true }).click();
   await expect.poll(() => data.calls.filter(c => c.path === `${root}/exports` && c.method === 'POST').length).toBe(1);
-  expect(data.calls.filter(c => c.path === root && c.method === 'PATCH')).toHaveLength(0);
+  expect(data.calls.filter(c => c.path === `${root}/editor` && c.method === 'PUT')).toHaveLength(0);
   expect(data.state.clips).toHaveLength(2);
   expect(data.state.clips[0]).toEqual(reserved);
   expect(data.state.clips[1]).toMatchObject({ trim_in_ms: 0, trim_out_ms: 3000, included: true });
@@ -693,7 +698,7 @@ test('a stale poll cannot hide the assembly version loaded after saving sound', 
   const data = await fixture(page, true);
   await page.clock.install();
   await page.goto('/e2e/assembly/fixtures/assembly-flow-fixture.html');
-  await expect(page.getByRole('region', { name: '视频时间轴' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '音画分轨时间轴' })).toBeVisible();
   await page.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
   const deferred = [0, 1].map(() => {
     let release!: () => void;
@@ -704,7 +709,7 @@ test('a stale poll cannot hide the assembly version loaded after saving sound', 
   await page.route(`**/api/v1${root}/editor`, async route => {
     if (route.request().method() !== 'GET' || heldGets >= deferred.length) return route.fallback();
     const held = deferred[heldGets++];
-    const snapshot = structuredClone(data.state);
+    const snapshot = structuredClone({ ...data.state, sound: data.sound });
     held.version = snapshot.assembly.row_version;
     held.received = true;
     await held.gate;
@@ -734,8 +739,8 @@ test('a stale poll cannot hide the assembly version loaded after saving sound', 
   await page.locator('.sound-drawer .ant-drawer-close').click();
 
   await page.getByRole('button', { name: '片段静音', exact: true }).click();
-  await expect.poll(() => data.calls.filter(c => c.path === root && c.method === 'PATCH').length).toBe(1);
-  const edit = data.calls.find(c => c.path === root && c.method === 'PATCH')!;
+  await expect.poll(() => data.calls.filter(c => c.path === `${root}/editor` && c.method === 'PUT').length).toBe(1);
+  const edit = data.calls.find(c => c.path === `${root}/editor` && c.method === 'PUT')!;
   expect(edit.body.row_version).toBe('2');
   expect(edit.body.clips[0]).toMatchObject({ muted: true, trim_in_ms: 0, trim_out_ms: 3000 });
   expect(data.errors).toEqual([]);

@@ -28,10 +28,9 @@ from openai import AsyncOpenAI
 from openai._streaming import SSEDecoder
 from pydantic import Field
 
-from short_drama.agent.gateway.protocol import (
-    AgentCapabilityEvidence,
-    AgentGatewayError,
-    _credentials,
+from short_drama.agent.gateway.contracts import AgentCapabilityEvidence, AgentGatewayError
+from short_drama.agent.gateway.inputs import _credentials
+from short_drama.agent.gateway.transport import (
     _ProtectedHTTPTransport,
     _ReplaySafeTransport,
     _TextRedactor,
@@ -39,8 +38,9 @@ from short_drama.agent.gateway.protocol import (
 )
 from short_drama.agent.resources.contracts import assert_reference_payload
 from short_drama.agent.resources.resolver import HydratedResource, request_template
-from short_drama.ai.adapters import endpoint, select_adapter
-from short_drama.ai.transport import SafeTransport
+from short_drama.ai.adapters.catalog import select_adapter
+from short_drama.ai.gateway.endpoints import endpoint
+from short_drama.ai.gateway.transport import SafeTransport
 from short_drama.ai.types import GenerationError
 
 FRAMEWORK_VERSION = f"langchain-core:{version('langchain-core')}"
@@ -70,7 +70,7 @@ def select_protocol(snapshot: dict) -> str:
 
 def _endpoints(snapshot, protocol):
     if protocol == "claude_messages.v1":
-        from short_drama.ai.transport import validated_url
+        from short_drama.ai.gateway.transport import validated_url
 
         root = validated_url(snapshot["base_url"]).rstrip("/")
         if root.endswith("/v1/messages"):

@@ -60,8 +60,8 @@
     "upstream_sha256": "41a9b5660bb4395e7d64ac1f5a2384bee1f5d59ec1549eb6987ccbafe75ae182"
   },
   "src/lib/canvas/canvas-archive-restore.ts": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
-    "sha256": "6698dfc4f2862061df77bac1c648234247c0ab951e03e8808c17af22dcccd1d0",
+    "reason": "源码目录重构：归档恢复使用宿主 integrations/canvas/contracts 提供的绘图契约。",
+    "sha256": "6faae515e46959ea3ce0efb4d19ba33fa955db958a49eb40e446723762f593a8",
     "upstream_sha256": "51f6f0c08dea94aa809d9c1584b48e7ab017455602ebee0f8b89dd3c519a19bf"
   },
   "src/lib/canvas/canvas-external-revision.ts": {
@@ -85,8 +85,8 @@
     "upstream_sha256": "807611a7176992868f69858c9450e987f6ffc9929ecf1b55609021520bbc08a6"
   },
   "src/pages/canvas/use-canvas-project-lifecycle.ts": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
-    "sha256": "99dee100d13a793f9d5cc2b161c863a2eb996cb5f8e6bacfc97edcf19ba0ee61",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。 清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "9c71c4419ac2b13fb738689ec1424bf0b42f79b382f3ccf141281c077d04df46",
     "upstream_sha256": "0102c8ce9e1b14cf6473ada49c19459e9915da39a1fbe57845b857343a4a9fc3"
   },
   "src/pages/canvas/use-canvas-director.ts": {
@@ -115,13 +115,13 @@
     "upstream_sha256": "4b8fc900ec880d7e384b2e62299ccef87c3cae2c3c12763876e0e1017a79add8"
   },
   "src/services/canvas-operation-journal.ts": {
-    "reason": "服务端画布及模型偏好版本改为十进制字符串，保留原版几何、操作和本地缓存计数。 在本人提交日记保存并校验副本来源，刷新后恢复未提交草稿的素材身份，不改既有请求键和正文。 保存门禁新增仅含版本、在途与未完成投影状态的读取，避免克隆整个大图；资源别名独立返回，完整日记读取、冻结提交、串行持久化及回执身份规则保持。",
-    "sha256": "58fa7dad75fc315ea0c57d6a41f50a6107b1d5df0e5d2d54be5a7b089f73390a",
+    "reason": "服务端画布及模型偏好版本改为十进制字符串，保留原版几何、操作和本地缓存计数。 在本人提交日记保存并校验副本来源，刷新后恢复未提交草稿的素材身份，不改既有请求键和正文。 保存门禁新增仅含版本、在途与未完成投影状态的读取，避免克隆整个大图；资源别名独立返回，完整日记读取、冻结提交、串行持久化及回执身份规则保持。 本轮核对源文本与重构前 HEAD 完全一致，补齐既有指纹登记，不改画布内部行为。",
+    "sha256": "6964f11afa5b1fec0b294dc524be0b7ebf522b9dd25dc395ccffe3ccd3b42f08",
     "upstream_sha256": "f95b7847bd0de21ffb3bf76e0ce24e14fbca2f87f3a3dfd90e662b481d9f9954"
   },
   "src/services/local-workspace-sync.ts": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
-    "sha256": "044963c92b9d60b87f7fa33690cf41478ef0ea13b91cc65deb36465e3941c4b6",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。 清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "8e86f57c2860abf85a4eb70a8eaf1917675ff8f7064c7128b55700dd1825707e",
     "upstream_sha256": "b3dbb72d21d1c94b58668d9172cfe474168db860c24c509a9dff769a55f34ca7"
   },
   "src/stores/canvas/use-canvas-store.ts": {
@@ -145,13 +145,13 @@
     "upstream_sha256": "197f84eeeeed43e4d5f5e36e9a88ef7ce8c581e6ea8cddd048a9c11e262bb3da"
   },
   "src/pages/canvas/project.tsx": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文；共享助手为全局逻辑任务显式传入当前画布写入目标，页面切换不改变已受理任务。 助手来源链接复用原节点聚焦方法，选中并居中所指节点；不修改节点或连线。 来源已移除时使用现有局部弹窗，避免全局 Toast 被画布样式隐藏。 来源定位等待真实画布尺寸，避免初始化 1200px 占位尺寸导致手机焦点落在屏幕外。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：取消移动夹具坐标分支，统一桌面助手停靠补偿与视口定位；该文件在本次开始前已有未登记改动，原状保留，详见本次验收记录。",
-    "sha256": "784aede5f14d83a319419b1d051286c065a31a5d7fdc2a49e70aeb6a47eb1c39",
+    "reason": "源码目录重构：助手类型经宿主桥接入口导入，移除已退役助手历史对话的宿主参数。 清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "4bf9ee1d0862e58fa135c147fafea8a2569c5f7e175469a2a455d0bd3c1684e1",
     "upstream_sha256": "36ca409ced7f1d562a3630bd34fe3f53fdeb8cbb5831f4f0602750b5fd90a5e8"
   },
   "src/services/api/request.ts": {
-    "reason": "复用宿主 HTTP、CSRF、账号 epoch；画布撤权冻结；已知错误安全提示；仅在捕获账号仍一致时登记本人资源来源关系。首次复制的来源缺失不冒充目标撤权，已知撤权仍阻止重试。将 Python 绘图删除墓碑映射为源 failed_precondition，保留本机草稿且禁止自动重建。项目文件夹墓碑错误映射为源 failed_precondition，保留原本机修改并停止自动复活。 ??? not_found404?????????csrf_failed403?????????403???????????????????????",
-    "sha256": "a056fb2d513db5206b98921270d0c8d0c46cdcfa6d4bced6e2a5fdd0afb37ffd",
+    "reason": "源码目录重构：HTTP 客户端及统一错误类改由宿主 integrations/canvas/session 导出，继续复用账号与 CSRF 会话。",
+    "sha256": "6ffe76876fb690ced96eca34ec67d79980c47654752417127249f2af34345412",
     "upstream_sha256": "1e1a4915bbcacb977a54cbd82b3305fefa8ebfcc075de1c44a531688d3bbbc8a"
   },
   "src/services/api/resources.ts": {
@@ -165,8 +165,8 @@
     "upstream_sha256": "bc0578c2b43dea3a516226838f4a0021f7b6ef4454df655fbb74ee0a428811f9"
   },
   "src/services/local-workspace-repository.ts": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
-    "sha256": "affbafc68f861d2933374e2d4da3ad66fae9e74b5adf7f6c1a0f6cc4dcaf70c6",
+    "reason": "源码目录重构：初始绘图与回收状态 DTO 改从宿主 integrations/canvas/contracts 公共契约入口导入。",
+    "sha256": "3e2380b9d56981996dcc530163cedc6a10f3bb5ddfa8abfcd37f8f13d1a77306",
     "upstream_sha256": "163df579bdd0f232637f0845e2e3bfa853ddba4b963ef20e4f8ba928954f08e3"
   },
   "src/services/model-config-repository.ts": {
@@ -180,8 +180,8 @@
     "upstream_sha256": "ef1e335fe6d03bc850d3bff08a20c777e67f8f6350a539b4d6ca1de2464cc3ab"
   },
   "src/stores/use-config-store.ts": {
-    "reason": "支持 host 配置凭据引用的就绪判断，不把服务端密钥送到浏览器。 宿主模型profile保留十进制logicalModelId与能力契约，自定义渠道保留服务端hasSecretKey脱敏状态，浏览器缓存继续清除全部凭据及私密header值。 宿主模型目录保留可信能力、并发与alias；未知或禁用显式选择不可用且不回退首模型；可信企业来源保留原助手白名单，alias请求保持真实逻辑ID。 增加宿主工作流稳定身份与凭据存在标记；生成就绪检查匹配保存条目和用途，不要求浏览器持有地址或密钥。",
-    "sha256": "c911f16e179b7bdba2d8a4dbede6c96ecbb9696668c687ef26de2c2a96c73944",
+    "reason": "支持 host 配置凭据引用的就绪判断，不把服务端密钥送到浏览器。 宿主模型profile保留十进制logicalModelId与能力契约，自定义渠道保留服务端hasSecretKey脱敏状态，浏览器缓存继续清除全部凭据及私密header值。 宿主模型目录保留可信能力、并发与alias；未知或禁用显式选择不可用且不回退首模型；可信企业来源保留原助手白名单，alias请求保持真实逻辑ID。 增加宿主工作流稳定身份与凭据存在标记；生成就绪检查匹配保存条目和用途，不要求浏览器持有地址或密钥。 清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "2e5a237eba6879e9ff8102d519a1d4f78cbb540203dd8a001158f6123041ff86",
     "upstream_sha256": "ff29768f4a862917f151b0ac76384f98edd9785479a9aac04ea905c0dc42906c"
   },
   "src/pages/canvas/canvas-sync-status.tsx": {
@@ -240,8 +240,8 @@
     "upstream_sha256": "ac7b6601faa852f7a4fa698627bd74617f3a2c37f8f6179b078a5f2d8ccd19fd"
   },
   "src/lib/canvas/canvas-drawing-storage.ts": {
-    "reason": "保留源串行绘图草稿与 CAS 流程；版本以十进制字符串比较，读取旧安全整数缓存；图片上传键包含画布/绘图身份并捕获目标画布，成品使用实际上传资源键。保留源串行绘图草稿与 CAS 流程；版本以十进制字符串比较，读取旧安全整数缓存；图片上传键包含画布/绘图身份并捕获目标画布，成品使用实际上传资源键；绘图请求使用窗口打开时的版本，不借用其他窗口更新后的缓存版本覆盖作品。整图恢复只在确认后解除本机绘图墓碑，保留私人草稿；旧草稿始终使用其自身 CAS 来源版本，不能由最新缓存静默升级。本机墓碑记录已确认删除版本，仅以严格较新的活动绘图解除，支持另一浏览器明确恢复；旧/未知版本不猜测解除，草稿保持原 CAS 版本。节点复制显式区分来源与目标画布，预览和成品使用目标画布上传身份保存，源笔画仍保留完整快照。归档按一次绘图记录读取同版笔画/预览/成品，本机草稿按同一代缓存读取；缺失图片停止导出。归档和节点复制按一次绘图记录读取同版笔画/预览/成品，本机草稿按同一代缓存读取；缺失图片停止操作，资源读取前后核对删除标记，旧响应不能绕过已确认删除，明确恢复的新版本可读取。",
-    "sha256": "fbead0f681a7050048615250779e15e85c538fda2c817176a75c017f7570f57a",
+    "reason": "保留源串行绘图草稿与 CAS 流程；版本以十进制字符串比较，读取旧安全整数缓存；图片上传键包含画布/绘图身份并捕获目标画布，成品使用实际上传资源键。保留源串行绘图草稿与 CAS 流程；版本以十进制字符串比较，读取旧安全整数缓存；图片上传键包含画布/绘图身份并捕获目标画布，成品使用实际上传资源键；绘图请求使用窗口打开时的版本，不借用其他窗口更新后的缓存版本覆盖作品。整图恢复只在确认后解除本机绘图墓碑，保留私人草稿；旧草稿始终使用其自身 CAS 来源版本，不能由最新缓存静默升级。本机墓碑记录已确认删除版本，仅以严格较新的活动绘图解除，支持另一浏览器明确恢复；旧/未知版本不猜测解除，草稿保持原 CAS 版本。节点复制显式区分来源与目标画布，预览和成品使用目标画布上传身份保存，源笔画仍保留完整快照。归档按一次绘图记录读取同版笔画/预览/成品，本机草稿按同一代缓存读取；缺失图片停止导出。归档和节点复制按一次绘图记录读取同版笔画/预览/成品，本机草稿按同一代缓存读取；缺失图片停止操作，资源读取前后核对删除标记，旧响应不能绕过已确认删除，明确恢复的新版本可读取。 清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "bde489a230a252fa2878f88280a3fee8e952bf48e6b3e3b61a22a2de3c51349c",
     "upstream_sha256": "b1a46b1ca2718b1b01416f5bef2778a4d574be1a655080a237f5bf8812e11eaa"
   },
   "src/types/canvas.ts": {
@@ -285,8 +285,8 @@
     "upstream_sha256": "ecedb5dc935ff378705ed2c5f9c062bc236b06e1c89b324c4e95b9981aa6136a"
   },
   "src/lib/canvas/canvas-folder-storage.ts": {
-    "reason": "文件夹封面明确使用本人上传作用域，不依赖当前激活画布；保留原上传和文件夹交互。",
-    "sha256": "fed2b51a3a385be4ccc7a446c792c04b99ec2bc64d381df60ff8404ce2ba0b18",
+    "reason": "文件夹封面明确使用本人上传作用域，不依赖当前激活画布；保留原上传和文件夹交互。 清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "e0279f70ce8fe485476333d6aca04566982b6f561fa6f36ba91dc24f77652402",
     "upstream_sha256": "36ec4b865eae7aa519dbd81277511764c4bc4bedc1a6cb57ae477ab425717f44"
   },
   "src/components/canvas/recycle-bin-dialog.tsx": {
@@ -350,8 +350,8 @@
     "upstream_sha256": "cac287a6ce8bdd15fbeac236e65fa1b09022f5ca4b73e6b83bbaa23fd3676cd1"
   },
   "src/components/model-picker.tsx": {
-    "reason": "按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。 宿主目录显式模型失效时显示已选模型不可用，不随机改成其他模型。",
-    "sha256": "e9066294d7fdb27f89702887eddffc3d878a17673a853ec2a5e217182e03215c",
+    "reason": "按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。 宿主目录显式模型失效时显示已选模型不可用，不随机改成其他模型。 清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "478ab6a6f85e073caa412e89f9e94eac088d5ceb12650c419be1884568f4ad71",
     "upstream_sha256": "af50aaf82431558b5ffd74fd366bdb2655600a06d0ec7016ea943b3a58c4b12d"
   },
   "src/components/ui/product/app-modal/app-modal.tsx": {
@@ -980,8 +980,8 @@
     "upstream_sha256": "221d3b592a11943574bbace5ad3443905e98ca35beecc7a0c9217fb08f6f3edc"
   },
   "src/lib/canvas/canvas-project-domain.ts": {
-    "reason": "分镜任务解析复用服务端稳定镜头身份，旧文字分镜按任务/顺序稳定派生，角色名兼容转为编辑器角色对象，重复消费不重建行ID。 图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
-    "sha256": "a80c9a3e0d63e0029ea73290dde17370a176f10e82b495bf080daf65f383bba5",
+    "reason": "源码目录重构：角度标签与提示词改从宿主 integrations/canvas/image-tools 桥接入口导入。",
+    "sha256": "07945734079790bafdd5146dfa8f620bc0a787d60dfbaed7029e645392842405",
     "upstream_sha256": "e286f04d7109c33434ad0545b3dafa933ce4a929fcfe6db5c622f6d951a26ef1"
   },
   "src/lib/timeline/timeline-canonical-plan.ts": {
@@ -1030,8 +1030,8 @@
     "upstream_sha256": "b5fa32c6b47677833a8a376440c0ed6d9340e6bfe32dd92e8c33787746266268"
   },
   "src/services/workspace-project-repository.ts": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
-    "sha256": "d6b954595c5f4a23d629bffb3e4f499270f11ef36929ea5e89174d9d2070c645",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。 清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "e12d389ee21d7c162994ff1f270d2df255593a1673a631df34539cbe20e144ee",
     "upstream_sha256": "e8f10f2932ee5dc30ce076835d1ee5c7b0eab137d63b0583f486c6af8f057fe1"
   },
   "src/services/api/projects.ts": {
@@ -1100,8 +1100,8 @@
     "upstream_sha256": "8fb6c1fe2ee07d540d2bfe8aeff120c6c5b7c53e070e9e39a4cfcb8dc5809b91"
   },
   "src/lib/zip.ts": {
-    "reason": "ZIP导入在解压filter中校验规范化名称重复，避免完全同名条目在fflate覆盖后丢失；原路径、数量、单项与总体容量限制保留。",
-    "sha256": "8467ae0b6f3f0f847289375271a2758fa9e2ed5dca56eaada02d948e78d01f8f",
+    "reason": "ZIP导入在解压filter中校验规范化名称重复，避免完全同名条目在fflate覆盖后丢失；原路径、数量、单项与总体容量限制保留。 本轮核对源文本与重构前 HEAD 完全一致，补齐既有指纹登记，不改画布内部行为。",
+    "sha256": "e95b8728662bb91719c4f91dd40ff8c1ae5b1ef90305382e94c7b1e0b19117dc",
     "upstream_sha256": "0e85de03860b4cce30a3b9e85fe326182ce2c3dfd07d30ebe943418f4c5dbf9f"
   },
   "src/components/ai/ai-message-markdown.tsx": {
@@ -1120,23 +1120,23 @@
     "upstream_sha256": "c21f5e30bd2f02f9ff4bdf3c0650b0c2a8fd1d9fe3d7af6d3ae08f282cfcb66d"
   },
   "src/lib/canvas/canvas-live-viewport.ts": {
-    "reason": "五个实时视口CSS属性注册为非继承，仅同步实际标题、错误内容、选择轮廓与世界栅格消费者；挂载变化时更新，逐帧无DOM扫描和几何读取，保留原变换、通知与旧浏览器回退。 仅在真实控件挂载变化时收集CSS消费者，每个元素只序列化一次样式；忽略纯文本变动，只为正在框选预览的节点同步轮廓倍率，首次选区立即同步当前值，保留标题、错误内容、裁切与标注消费者。 交互期React提交容器倍率时同步原继承值，保持世界层和浮层原变换关系。",
-    "sha256": "c8cfc29dee52068ff49d43156598400a999d833c5cd718d8bf8d68ca4a5366df",
+    "reason": "五个实时视口CSS属性注册为非继承，仅同步实际标题、错误内容、选择轮廓与世界栅格消费者；挂载变化时更新，逐帧无DOM扫描和几何读取，保留原变换、通知与旧浏览器回退。 仅在真实控件挂载变化时收集CSS消费者，每个元素只序列化一次样式；忽略纯文本变动，只为正在框选预览的节点同步轮廓倍率，首次选区立即同步当前值，保留标题、错误内容、裁切与标注消费者。 交互期React提交容器倍率时同步原继承值，保持世界层和浮层原变换关系。 本轮核对源文本与重构前 HEAD 完全一致，补齐既有指纹登记，不改画布内部行为。",
+    "sha256": "6b694e289afd52809056f451bdf7ac2393c5c945611fd54a30abf166da47398a",
     "upstream_sha256": "06fb96c650dcd1ebd73c58e11765a3400078765eae52490d2bfba516d3a7b245"
   },
   "src/components/canvas/infinite-canvas.tsx": {
-    "reason": "捕获挂载的画布容器，在卸载时释放实时视口消费者观察器；保留原32ms通知、120ms提交及全部手势。 交互期React提交容器倍率时同步原继承值，保持世界层和浮层原变换关系。 2026-10-16：对齐 F017，新版滚轮意图判断、二百毫秒锁定及缩放锚点。",
-    "sha256": "9e11d8db9442a9a78d02f8c3225e3e22ee937764abc44b4985c48fd9de2da40d",
+    "reason": "捕获挂载的画布容器，在卸载时释放实时视口消费者观察器；保留原32ms通知、120ms提交及全部手势。 交互期React提交容器倍率时同步原继承值，保持世界层和浮层原变换关系。 2026-10-16：对齐 F017，新版滚轮意图判断、二百毫秒锁定及缩放锚点。 本轮核对源文本与重构前 HEAD 完全一致，补齐既有指纹登记，不改画布内部行为。",
+    "sha256": "34b8708638b8272923f62dcbf7fbe1d1c4e6505daffeccec543c43b3099f761c",
     "upstream_sha256": "562da1317a05664a4a680f04ff6ff591e629351cac5afadae6c1522c555176fb"
   },
   "src/lib/canvas/director/director-scene.ts": {
-    "reason": "同步导演数学仅导入同版Three显式导出的Color/Euler/Quaternion/Matrix4/Vector3源码入口，使完整WebGL渲染器保留在既有按需3D面板；创建时机、所有数学函数及持久坐标保持。",
-    "sha256": "f50a8c910ab75ddbbf86dd5520afc9d949dbc9afc39a907de4d519267a98c661",
+    "reason": "同步导演数学仅导入同版Three显式导出的Color/Euler/Quaternion/Matrix4/Vector3源码入口，使完整WebGL渲染器保留在既有按需3D面板；创建时机、所有数学函数及持久坐标保持。 本轮核对源文本与重构前 HEAD 完全一致，补齐既有指纹登记，不改画布内部行为。",
+    "sha256": "f09563c528c70acff70fc647a4fc0f1a9ef5b69cc54b00714b0979d4654879f6",
     "upstream_sha256": "afc199a51074a13250156b9871fcd1e66bb4542f1ea66e6558ad92a2294199aa"
   },
   "src/lib/canvas/director/director-stage-transform.ts": {
-    "reason": "同步导演数学仅导入同版Three显式导出的Color/Euler/Quaternion/Matrix4/Vector3源码入口，使完整WebGL渲染器保留在既有按需3D面板；创建时机、所有数学函数及持久坐标保持。",
-    "sha256": "4323c09fe424adbe868e9d3ed113af20ff93c1be9ff2f02cfc4a645f9838b9b9",
+    "reason": "同步导演数学仅导入同版Three显式导出的Color/Euler/Quaternion/Matrix4/Vector3源码入口，使完整WebGL渲染器保留在既有按需3D面板；创建时机、所有数学函数及持久坐标保持。 本轮核对源文本与重构前 HEAD 完全一致，补齐既有指纹登记，不改画布内部行为。",
+    "sha256": "ba1441a2d71cdb59268ff2491bcf6b25281ae829ca7495c6ccc2e74fca9f296a",
     "upstream_sha256": "88208646ae1c8adc2279a62babf41824cec6966cb6cef276a3a4c63376ed6b73"
   },
   "src/lib/canvas/canvas-feature-availability.ts": {
@@ -1310,33 +1310,33 @@
     "upstream_sha256": "24350487919b2eadf05c966afb60f6825af24b8e5c45c33007e6c4e8dc618f38"
   },
   "src/pages/canvas/use-canvas-generation-orchestration.ts": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
-    "sha256": "5d3fb2cc32a350f71de19e5245fb75c0309d69fb0a6d5ab2f26acda5d2be9aa6",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。 清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "8dec6f1dda3bf54b6c9d4676c27dd81bd68272cc03932fd02feb528df50776d9",
     "upstream_sha256": "490f92a68729366d0728f2a076a62427a33695a311b050deb3db6a7e0e0adbf1"
   },
   "src/lib/canvas/canvas-image-data.ts": {
-    "reason": "图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
-    "sha256": "0280d01daee87d4818a069f5a7c2bcb6a75feadd183b291be17bfacff59b2250",
+    "reason": "源码目录重构：图片工具经宿主 integrations/canvas/image-tools 桥接入口访问，保持画布内部数据处理不变。",
+    "sha256": "36cafc899428c1d932a590add9f8e956e2b039f167e30ad5cadf4c2c396ce7bf",
     "upstream_sha256": "a3be817944de9cb57dbb25a9d9a3a307553e4b2fce5d8763b2ea9594d4535b46"
   },
   "src/lib/canvas/canvas-emotion.ts": {
-    "reason": "图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
-    "sha256": "d859d814691855b12f37ac71e720b0e9a9eb3d40146f80717c65e9a4ce09c410",
+    "reason": "源码目录重构：表情纯逻辑改从宿主 integrations/canvas/image-tools 桥接入口导入。",
+    "sha256": "aa534ebc12adebeeb5308db829ab04febac280bc3106cb222b9f24b7f5772684",
     "upstream_sha256": "fa965878d7779a91d5ed9620a003349fd0cd214390e5ad97a84e38f667ed76c8"
   },
   "src/lib/canvas/canvas-portrait-texture.ts": {
-    "reason": "图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
-    "sha256": "cf977251229f50cb18f2ce2e708caa3efae6971d366f3f598d679218bc558d03",
+    "reason": "源码目录重构：人像质感纯逻辑改从宿主 integrations/canvas/image-tools 桥接入口导入。",
+    "sha256": "5b731444e529bfdf3cb176f82d6f371ddd780dc92fbe2f4f80a0600aab4594f0",
     "upstream_sha256": "739f7939de8010f0f0f54b8a65027a877fc23a5b9f4201d3cd1c4780ace878eb"
   },
   "src/components/canvas/canvas-image-annotation-model.ts": {
-    "reason": "图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
-    "sha256": "f7a92bd1842ab88a56066de331d2235793abefd4e4e49f359b92234352a9ef5c",
+    "reason": "源码目录重构：标注纯逻辑改从宿主 integrations/canvas/image-tools 桥接入口导入。",
+    "sha256": "9e7312f088aca5594471b497121e01cca84c660e510cba722876b5d7b58d9688",
     "upstream_sha256": "04e593555e37549c8640b76e53458309df1239ce8ab4eec8bbc5e67af54d93d9"
   },
   "src/components/canvas/canvas-node-lighting-dialog.tsx": {
-    "reason": "图片裁切、表情、质感、标注、角度和打光的纯算法抽到宿主共享模块；原路径保留兼容导出，画布面板及交互保持原实现，供标准模式逐图工具复用。",
-    "sha256": "b8191582c30ce75f0093134769e175133e11686836e9c2dbe37805d8732fa38c",
+    "reason": "源码目录重构：打光配置与提示词改从宿主 integrations/canvas/image-tools 桥接入口导入。",
+    "sha256": "3f3a04707d29ca35151f3e622c4c34ae3b13e7e4cfb8f6cfce7ac2afcbc3982c",
     "upstream_sha256": "07e6d6d9609855a46696ebf032c4cafa78b301ce033b5cc6d3e1ccbee507b942"
   },
   "src/components/canvas/canvas-node.tsx": {
@@ -1440,8 +1440,8 @@
     "upstream_sha256": "9d4c55dd45de3364a981fa70fa14bbaa5f23b3e57e60aac6a81aa8c92f149785"
   },
   "src/services/creation-canvas-conversation.ts": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
-    "sha256": "f2c8408a2b215967cf3ef1958c84e074a74f91c95d0248f57242c5afc81f9817",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。 清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "267d2d2e31f771a45b676f8e9b615f29a6d79c22b225fe8f361d3d24318f4b6e",
     "upstream_sha256": "af93b9909fe22930789bbaeff66da84cab46454c79c5a94138c953e610a206e2"
   },
   "src/services/workspace-asset-repository.ts": {
@@ -1543,5 +1543,45 @@
     "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
     "sha256": "d1f6f96c56d6eb8a801ff921c49bd411e1037348393fa786628bdcf5af9b2f25",
     "upstream_sha256": "15d9367f4df52210ada3cb810ac921e72fa5fc5c2be43021995d94652c560b25"
+  },
+  "src/components/canvas/canvas-folder-card.tsx": {
+    "reason": "清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "5d963fabe0bc84f5f512192b8450e0ae92e36128447defd9b706f479a72d8688",
+    "upstream_sha256": "c7547b191b3386bad8aaaadd4a2886c7a15efc39638d2cd21ae8dfc94dc25d1c"
+  },
+  "src/lib/art-critique/pipeline.ts": {
+    "reason": "清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "766b8fff139086f432d2393a8207380a995a215dab036b63ca644ec1eb439ba8",
+    "upstream_sha256": "3d817e75622678693872873bcec439ab2a0b783427a0b977fe21982aafcaf980"
+  },
+  "src/lib/canvas/canvas-batch-table.ts": {
+    "reason": "清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "d03c6cb42578776b6e5e832c305bd74a94891061f967495c2bf2abc558f97671",
+    "upstream_sha256": "ae2f16c8b6aad42966d72397eb694f251a7afb79d68cdc76ef4cec3a89e24321"
+  },
+  "src/lib/canvas/director/director-node-migration.ts": {
+    "action": "removed",
+    "reason": "清理历史兼容逻辑，保留现行保存与交互。",
+    "upstream_sha256": "ad3b5cf302c910d18b6823c46af9674f7133794e7ead4c9d72d922176aaa412d"
+  },
+  "src/lib/canvas/tool-registry/index.ts": {
+    "reason": "清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "d3a684bc1e50747129eeef58739fd48d56efcb88d38cfd2a47a827e9dfda5475",
+    "upstream_sha256": "091269604e247e7048e5be81c3d760e4b9028f010c702d04ac56f780c9ff1264"
+  },
+  "src/lib/canvas/tool-registry/tool-persistence.ts": {
+    "reason": "清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "817e7d5249f5578271fac7d16b4a7c75ced3ce3f3bb2868561982b399366ebfe",
+    "upstream_sha256": "2881bc2c49438ea2201a99487b9b42dcdedd9b194c5f5a1b8e12abc888c1e354"
+  },
+  "src/services/api/creation-conversations.ts": {
+    "reason": "清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "ff241eb6315aded2f02627a5c3ab99f874c61db8dd616b3686e3875729dc191f",
+    "upstream_sha256": "0154bc818f77a1c00a3a7528e9375926d05283ff0d8b4f51e4731bf9cce893ee"
+  },
+  "src/services/creation-conversation-store.ts": {
+    "reason": "清理历史兼容逻辑，保留现行保存与交互。",
+    "sha256": "c35988e4e557b236e93f0a797740538c921ddaece99fd8f99acefef9ee7c6a71",
+    "upstream_sha256": "5637dac51f4087dabf038f71648899e4a4fdf95307cfbe497f8caa29e6996d27"
   }
 }

@@ -2,14 +2,14 @@
 
 import pytest
 
-from short_drama.ai.canvas_runninghub_values import (
+from short_drama.ai.adapters.runninghub.values import (
     aspect_ratio,
     dimensions,
     numeric_value,
     ratio_value,
     selected_value,
 )
-from short_drama.schemas.canvas_runninghub import RunningHubField
+from short_drama.schemas.canvas.generation.runninghub.runninghub import RunningHubField
 
 
 def test_legacy_fields_recover_nested_ranges_and_string_flags():

@@ -1,4 +1,5 @@
 import base64
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -12,17 +13,18 @@ pytestmark = pytest.mark.integration
 
 
 def seed(session):
-    from short_drama.service.project_novel_service import ProjectNovelService
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.creation.writing.script.documents import ProjectWritingService
+    from short_drama.service.projects.management.project import ProjectService
 
     project = ProjectService(session).create_project({"name": "Project"})
-    episode = project
-    novel = ProjectNovelService(session).create({"project_id": episode.id, "content": "Novel"})
-    return project, episode, novel
+    saved = ProjectWritingService(session).save_script(
+        project.id, {"script_id": None, "content": "Text", "content_version": "1"}
+    )
+    return project, SimpleNamespace(id=int(saved["script"]["id"]))
 
 
 def test_model_encryption_versions_defaults_and_soft_delete(db_session):
-    from short_drama.service.ai_model_config_service import AIModelConfigService
+    from short_drama.service.ai_config.management.models import AIModelConfigService
 
     cipher = KeyCipher(base64.b64encode(b"m" * 32).decode())
     service = AIModelConfigService(db_session, cipher=cipher)
@@ -52,44 +54,44 @@ def test_model_encryption_versions_defaults_and_soft_delete(db_session):
     assert service.list().total == 1
 
 
-def test_confirm_script_content_noop_case_change_and_reorder(db_session):
-    from short_drama.service.project_script_service import ProjectScriptService
+def test_script_save_keeps_identity_and_confirms_current_content(db_session):
+    from short_drama.service.creation.writing.script.documents import ProjectWritingService
 
-    _, episode, _ = seed(db_session)
-    service = ProjectScriptService(db_session)
-    first = service.create({"project_id": episode.id, "position": 1, "content": "Text"})
-    second = service.create({"project_id": episode.id, "position": 2, "content": "Other"})
-    confirmed = service.confirm(first.id)
-    assert confirmed.state == "confirmed"
-    assert service.confirm(first.id).updated_at == confirmed.updated_at
-    assert service.update(first.id, {"content": "Text"}).updated_at == confirmed.updated_at
-    service.reorder(episode.id, [second.id, first.id])
-    assert service.get(first.id).state == "confirmed"
-    assert service.update(first.id, {"content": "text"}).state == "unconfirmed"
-    service.confirm(first.id)
-    service.confirm(second.id)
-    assert service.get(first.id).state == "unconfirmed"
-    assert service.get(second.id).state == "confirmed"
+    project, script = seed(db_session)
+    service = ProjectWritingService(db_session)
+    current = service.get(project.id)
+    saved = service.save_script(
+        project.id,
+        {"script_id": script.id, "content": "Text", "content_version": current["content_version"]},
+    )
+    assert saved["script"] == current["editing_script"]
+    changed = service.save_script(
+        project.id,
+        {"script_id": script.id, "content": "text", "content_version": saved["content_version"]},
+    )
+    assert changed["script"]["id"] == str(script.id)
+    assert changed["script"]["content"] == "text"
+    assert changed["confirmed_script_id"] == str(script.id)
 
 
 def test_record_batch_consistency_retries_and_same_project_rollback(db_session):
-    from short_drama.service.novel_script_record_service import NovelScriptRecordService
-    from short_drama.service.project_script_service import ProjectScriptService
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.creation.storyboard.management.records import ScriptShotRecordService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.projects.management.project import ProjectService
 
-    project, episode, novel = seed(db_session)
-    scripts = ProjectScriptService(db_session)
-    first = scripts.create({"project_id": episode.id, "position": 1})
-    second = scripts.create({"project_id": episode.id, "position": 2})
-    other_episode = ProjectService(db_session).create_project({"name": "Other"})
-    foreign = scripts.create({"project_id": other_episode.id, "position": 1})
-    service = NovelScriptRecordService(db_session)
+    project, script = seed(db_session)
+    shots = ShotScriptService(db_session)
+    first = shots.create({"project_id": project.id, "position": 1})
+    second = shots.create({"project_id": project.id, "position": 2})
+    other_project = ProjectService(db_session).create_project({"name": "Other"})
+    foreign = shots.create({"project_id": other_project.id, "position": 1})
+    service = ScriptShotRecordService(db_session)
     rows = [
-        {"novel_id": novel.id, "script_id": output.id, "batch_id": 100}
+        {"script_id": script.id, "shot_id": output.id, "batch_id": 100}
         for output in (first, second)
     ]
     with pytest.raises(BusinessError):
-        service.create_batch([rows[0], {**rows[1], "script_id": foreign.id}])
+        service.create_batch([rows[0], {**rows[1], "shot_id": foreign.id}])
     assert service.list().total == 0
     result = service.create_batch(rows)
     assert result[0].created_at == result[1].created_at
@@ -97,22 +99,20 @@ def test_record_batch_consistency_retries_and_same_project_rollback(db_session):
     with pytest.raises(Conflict):
         service.create_batch(rows[:1])
     with pytest.raises(BusinessError):
-        service.update(result[0].id, {"novel_id": 123})
+        service.update(result[0].id, {"script_id": 123})
     assert service.list().total == 2
 
 
 def test_script_shot_records_keep_model_reference_after_soft_delete(db_session):
-    from short_drama.service.ai_model_config_service import AIModelConfigService
-    from short_drama.service.generation_service import GenerationService
-    from short_drama.service.project_script_service import ProjectScriptService
-    from short_drama.service.script_shot_record_service import ScriptShotRecordService
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.ai_config.management.models import AIModelConfigService
+    from short_drama.service.creation.storyboard.management.records import ScriptShotRecordService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.generations.results.generation import GenerationService
 
-    _, episode, _ = seed(db_session)
+    project, script = seed(db_session)
     models = AIModelConfigService(db_session)
     model = models.create({"service_type": "text", "name": "M", "model_key": "m", "provider": "p"})
-    script = ProjectScriptService(db_session).create({"project_id": episode.id, "position": 1})
-    shot = ShotScriptService(db_session).create({"project_id": episode.id, "position": 1})
+    shot = ShotScriptService(db_session).create({"project_id": project.id, "position": 1})
     service = ScriptShotRecordService(db_session)
     payload = {"script_id": script.id, "shot_id": shot.id, "batch_id": 101, "model_id": model.id}
     record = service.create(payload)
@@ -120,7 +120,7 @@ def test_script_shot_records_keep_model_reference_after_soft_delete(db_session):
     assert service.get(record.id).model_id == model.id
     assert service.create(payload).id == record.id
     historical_shot = ShotScriptService(db_session).create(
-        {"project_id": episode.id, "position": 2}
+        {"project_id": project.id, "position": 2}
     )
     historical = service.create({**payload, "shot_id": historical_shot.id, "batch_id": 102})
     assert historical.model_id == model.id
@@ -129,51 +129,47 @@ def test_script_shot_records_keep_model_reference_after_soft_delete(db_session):
 
 
 def test_generation_writes_outputs_and_records_atomically_and_replays(db_session):
-    from short_drama.service.generation_service import GenerationService
-    from short_drama.service.novel_script_record_service import NovelScriptRecordService
-    from short_drama.service.project_script_service import ProjectScriptService
+    from short_drama.service.creation.storyboard.management.records import ScriptShotRecordService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.generations.results.generation import GenerationService
 
-    _, _, novel = seed(db_session)
+    _, script = seed(db_session)
     service = GenerationService(db_session)
     batch_id = service.allocate_batch_id()
-    batch = service.generate_scripts(novel.id, ["first", "second"], batch_id=batch_id)
+    batch = service.generate_shots(script.id, ["first", "second"], batch_id=batch_id)
     assert batch.batch_id == batch_id
     assert len(batch.outputs) == len(batch.records) == 2
-    assert all(output.state == "unconfirmed" for output in batch.outputs)
+    assert [output.script for output in batch.outputs] == ["first", "second"]
+    assert all(output.deleted_at is None for output in batch.outputs)
     assert len({row.created_at for row in [*batch.outputs, *batch.records]}) == 1
-    replay = service.generate_scripts(novel.id, ["first", "second"], batch_id=batch_id)
+    replay = service.generate_shots(script.id, ["first", "second"], batch_id=batch_id)
     assert [row.id for row in replay.outputs] == [row.id for row in batch.outputs]
     with pytest.raises(Conflict):
-        service.generate_scripts(novel.id, ["changed", "second"], batch_id=batch_id)
-    assert ProjectScriptService(db_session).list().total == 2
-    assert NovelScriptRecordService(db_session).list().total == 2
-    shots = service.generate_shots(batch.outputs[0].id, ["shot one", "shot two"])
-    assert [output.script for output in shots.outputs] == ["shot one", "shot two"]
-    assert len(shots.records) == 2
+        service.generate_shots(script.id, ["changed", "second"], batch_id=batch_id)
+    assert ShotScriptService(db_session).list().total == 2
+    assert ScriptShotRecordService(db_session).list().total == 2
 
 
-def test_generation_empty_source_rejects_without_outputs(db_session):
-    from short_drama.service.generation_service import GenerationService
-    from short_drama.service.project_novel_service import ProjectNovelService
-    from short_drama.service.project_script_service import ProjectScriptService
+def test_generation_missing_source_rejects_without_outputs(db_session):
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.generations.results.generation import GenerationService
 
-    _, _, novel = seed(db_session)
-    ProjectNovelService(db_session).update(novel.id, {"content": "  "})
+    seed(db_session)
     with pytest.raises(BusinessError):
-        GenerationService(db_session).generate_scripts(novel.id, ["output"])
-    assert ProjectScriptService(db_session).list().total == 0
+        GenerationService(db_session).generate_shots(2**64 - 1, ["output"])
+    assert ShotScriptService(db_session).list().total == 0
 
 
 def test_generation_output_write_failure_rolls_back_entire_batch(db_session, monkeypatch):
-    from short_drama.service.generation_service import GenerationService
-    from short_drama.service.novel_script_record_service import NovelScriptRecordService
-    from short_drama.service.project_script_service import ProjectScriptService
+    from short_drama.service.creation.storyboard.management.records import ScriptShotRecordService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.generations.results.generation import GenerationService
 
-    _, _, novel = seed(db_session)
+    _, script = seed(db_session)
     # The second output collides at the database after the first output has flushed.
     monkeypatch.setattr("short_drama.dao.base.next_id", lambda: 8001)
     with pytest.warns(SAWarning, match="conflicts with persistent instance"):
         with pytest.raises(Conflict):
-            GenerationService(db_session).generate_scripts(novel.id, ["one", "two"], batch_id=8002)
-    assert ProjectScriptService(db_session).list().total == 0
-    assert NovelScriptRecordService(db_session).list().total == 0
+            GenerationService(db_session).generate_shots(script.id, ["one", "two"], batch_id=8002)
+    assert ShotScriptService(db_session).list().total == 0
+    assert ScriptShotRecordService(db_session).list().total == 0

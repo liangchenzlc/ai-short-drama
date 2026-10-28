@@ -15,7 +15,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from short_drama.domain import CanvasResourceUpload, MediaFile
-from short_drama.service.video_render import executable
+from short_drama.service.creation.assembly.rendering.renderer import executable
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.resources.test_canvas_resources import ROOT, canvas
 from tests.integration.canvas.resources.test_canvas_resources import resource_app as resource_app

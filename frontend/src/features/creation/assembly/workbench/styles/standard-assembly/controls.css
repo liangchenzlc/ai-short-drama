@@ -1,0 +1,500 @@
+/* 成片使用固定编辑工作区，声音设置与画面并排，提示不参与布局。 */
+.assembly-icon-action.ant-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+}
+.assembly-icon-action.ant-btn svg {
+  flex-shrink: 0;
+  stroke-width: 1.7;
+}
+.assembly-icon-action.ant-btn:not(:disabled):hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+.assembly-icon-action.ant-btn-primary:not(:disabled):hover {
+  background: var(--button-primary-hover, #fff);
+  color: #171717;
+}
+.assembly-icon-action.ant-btn:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+.assembly-player-extra {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.assembly-player .assembly-player-controls {
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 6px 8px;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+.assembly-player .assembly-player-controls output {
+  margin: 0 4px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.assembly-timeline {
+  position: relative;
+}
+.assembly-timeline .assembly-timeline-feedback {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  width: fit-content;
+  max-width: calc(100% - 16px);
+  height: auto;
+  margin: 0;
+  padding: 3px 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 4;
+}
+.assembly-timeline .assembly-timeline-feedback.is-active {
+  visibility: visible;
+}
+.web-episode .standard-creation-layout.is-assembly {
+  flex: 1;
+  min-height: 0;
+}
+.web-episode .standard-creation-layout.is-assembly .standard-creation-work {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.web-episode .standard-creation-layout.is-assembly .creation-work-stage {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.web-episode .assembly-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 8px;
+}
+.web-episode .assembly-workspace .assembly-heading {
+  flex: 0 0 auto;
+  min-height: 40px;
+  margin: 0;
+  padding: 4px 8px;
+  gap: 8px;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.assembly-heading-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.web-episode .assembly-workspace .assembly-heading h2 {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.web-episode .assembly-workspace .assembly-heading-actions {
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.assembly-export-entry {
+  display: inline-flex;
+  border-radius: 6px;
+}
+.assembly-export-entry > .ant-btn {
+  min-width: 34px;
+  padding-inline: 8px;
+}
+.assembly-stage-body {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+.assembly-sound-target {
+  flex: 0 0 340px;
+  width: 340px;
+  min-width: 0;
+  min-height: 0;
+}
+.assembly-sound-target[hidden] {
+  display: none;
+}
+.web-episode .assembly-editing.has-inspector .assembly-editor-desk {
+  grid-template-columns: 168px minmax(0, 1fr) 280px;
+}
+.web-episode .assembly-editing.has-inspector.is-media-hidden .assembly-editor-desk {
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+.assembly-inspector {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 12px;
+}
+.assembly-inspector-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--hair);
+}
+.assembly-inspector .ant-tabs {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.assembly-inspector .ant-tabs-nav {
+  flex-shrink: 0;
+  margin: 0;
+  padding-inline: 10px;
+}
+.assembly-inspector .ant-tabs-content-holder {
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.assembly-inspector .ant-tabs-tab {
+  padding-block: 8px;
+  font-size: 12px;
+}
+.assembly-inspector-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+}
+fieldset.assembly-inspector-fields {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.assembly-inspector-fields > label:not(.ant-checkbox-wrapper),
+.assembly-inspector-pair label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--sub);
+  font-size: 12px;
+}
+.assembly-inspector-fields > .ant-checkbox-wrapper {
+  display: inline-flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 4px;
+  margin-inline: 0;
+}
+.assembly-inspector-row,
+.assembly-inspector-object {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.assembly-inspector-object {
+  justify-content: space-between;
+  gap: 8px;
+}
+.assembly-inspector-object strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.assembly-inspector-row > .ant-input {
+  min-width: 0;
+}
+.assembly-inspector .ant-input-number,
+.assembly-inspector .ant-select {
+  width: 100%;
+}
+.assembly-inspector .ant-slider {
+  margin: 7px 6px;
+}
+.assembly-inspector .ant-checkbox-wrapper {
+  font-size: 12px;
+  color: var(--ink);
+}
+.assembly-inspector-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.assembly-inspector-pair .ant-input-number {
+  width: 100%;
+}
+.assembly-inspector input[type='color'] {
+  width: 42px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  background: var(--input-bg);
+  cursor: pointer;
+}
+.assembly-waveform-preview {
+  height: 44px;
+  color: var(--sub);
+  background: var(--canvas);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.assembly-waveform {
+  width: 100%;
+  height: 100%;
+  opacity: 0.72;
+  pointer-events: none;
+}
+.assembly-caption-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  min-height: 56px;
+  overflow-y: auto;
+  border-block: 1px solid var(--hair);
+}
+.assembly-caption-list > button {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 6px;
+  padding: 6px;
+  border: 0;
+  border-bottom: 1px solid var(--hair);
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.assembly-caption-list > button:hover {
+  background: var(--surface-hover);
+}
+.assembly-caption-list > button.is-selected {
+  background: var(--surface-hover);
+  outline: 1px solid var(--accent-border);
+  outline-offset: -1px;
+}
+.assembly-caption-list small {
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+.assembly-caption-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assembly-subtitle-style {
+  border-top: 1px solid var(--hair);
+  padding-top: 8px;
+}
+.assembly-subtitle-style summary {
+  cursor: pointer;
+  color: var(--ink);
+}
+.assembly-subtitle-style .assembly-inspector-fields {
+  padding: 8px 0 0;
+}
+.assembly-complete-player .assembly-screen {
+  isolation: isolate;
+}
+.assembly-composition {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: #000;
+}
+.assembly-complete-player .assembly-composition video,
+.assembly-complete-player .assembly-still {
+  position: absolute;
+  inset: auto;
+  max-width: none;
+  object-fit: fill;
+}
+.assembly-caption-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  white-space: pre-wrap;
+  line-height: 1.3;
+}
+.assembly-caption-overlay > span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.assembly-safe-area {
+  position: absolute;
+  inset: 5%;
+  border: 1px dashed rgb(255 255 255 / 60%);
+  pointer-events: none;
+}
+.assembly-crop-surface {
+  position: absolute;
+  inset: 0;
+  cursor: move;
+  touch-action: none;
+  outline: 1px dashed rgb(255 255 255 / 70%);
+  outline-offset: -1px;
+}
+.assembly-multitrack {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+}
+.assembly-multitrack-heading,
+.assembly-multitrack-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.assembly-multitrack-heading {
+  justify-content: space-between;
+  height: 36px;
+  padding: 4px 8px;
+}
+.assembly-multitrack-heading > span {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.assembly-multitrack-heading small {
+  margin-left: 6px;
+  color: var(--sub);
+  font-size: 10px;
+}
+.assembly-multitrack-heading .ant-slider {
+  width: 64px;
+  margin-inline: 6px;
+}
+.assembly-multitrack-canvas {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--hair);
+}
+.assembly-multitrack .timeline-editor {
+  font-family: inherit;
+  background: var(--canvas);
+}
+.assembly-multitrack .timeline-editor-time-unit {
+  border-color: var(--hair);
+}
+.assembly-multitrack .timeline-editor-time-unit-scale {
+  color: var(--sub);
+  font-size: 10px;
+}
+.assembly-multitrack .timeline-editor-edit-row {
+  background-image: none;
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--hair);
+}
+.assembly-multitrack .timeline-editor-action {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hover);
+  border-radius: 4px;
+}
+.assembly-multitrack .timeline-editor-action-selected {
+  border-color: var(--accent-border);
+}
+.assembly-lane-clip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 3px;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  font-size: 11px;
+  cursor: pointer;
+}
+.assembly-lane-clip > span {
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px #000;
+}
+.assembly-lane-clip .assembly-waveform {
+  position: absolute;
+  inset: 0;
+  color: var(--sub);
+  opacity: 0.35;
+}
+.assembly-lane-clip.is-selected {
+  outline: 1px solid var(--accent-border);
+  outline-offset: -1px;
+}
+.assembly-lane-clip.is-muted {
+  opacity: 0.5;
+}
+.assembly-track-labels {
+  position: absolute;
+  left: 0;
+  width: 124px;
+  z-index: 4;
+  background: var(--surface);
+}
+.assembly-track-labels > div {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 44px;
+  padding: 0 4px 0 8px;
+  border-bottom: 1px solid var(--hair);
+  font-size: 11px;
+}
+.assembly-track-labels span {
+  flex: 1;
+  min-width: 0;
+}
+.assembly-track-labels .assembly-icon-action {
+  min-width: 24px;
+  width: 24px;
+  padding: 0;
+}
+.assembly-track-feedback {
+  position: absolute;
+  right: 12px;
+  bottom: 4px;
+  z-index: 4;
+  color: var(--sub);
+  background: var(--surface);
+  padding: 1px 4px;
+  font-size: 10px;
+  pointer-events: none;
+}

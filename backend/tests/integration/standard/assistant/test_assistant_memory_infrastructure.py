@@ -4,7 +4,6 @@ import io
 import json
 import os
 import threading
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -14,20 +13,20 @@ from celery.signals import task_postrun
 from PIL import Image
 from sqlalchemy import select
 
+import short_drama.tasks.assistant.agent_worker as agent_worker
 import tests.integration.standard.assistant.test_assistant_memory as memory_tests
-from short_drama.agent.memory.runtime import AgentMemoryPublisher, AgentMemoryRuntime
 from short_drama.agent.coordinator.publisher import AgentRabbitSender
+from short_drama.agent.memory.runtime import AgentMemoryPublisher, AgentMemoryRuntime
 from short_drama.agent.session.purge import purge_one
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import NotFound
 from short_drama.domain import MediaFile
-from short_drama.domain.agent_context import AgentAttachment
-from short_drama.domain.agent_memory import AgentMemoryItem, AgentMemoryJob
-from short_drama.service.agent_attachment_service import AgentAttachmentService
-from short_drama.service.assistant_task_service import AssistantTaskService
-from short_drama.service.storage_service import StorageService
+from short_drama.domain.assistant.context.context import AgentAttachment
+from short_drama.domain.assistant.memory.memory import AgentMemoryItem, AgentMemoryJob
+from short_drama.service.assistant.context.attachment import AgentAttachmentService
+from short_drama.service.assistant.tasks.task import AssistantTaskService
+from short_drama.service.media.files.storage import StorageService
 from short_drama.storage.minio import MinioStorage
-from short_drama.tasks import agent_worker
 
 pytestmark = [
     pytest.mark.integration,
@@ -73,12 +72,13 @@ def test_real_memory_worker_consumes_a_published_job_and_deduplicates_redelivery
     class Gateway:
         calls = 0
 
-        async def run_segment(self, _snapshot, _credential, *, on_request, on_response, **_kwargs):
+        async def decide(self, _snapshot, _credential, *, on_request, on_response, **_kwargs):
             self.calls += 1
             await on_request({"fixture": "memory-infrastructure-request"})
             await on_response({"fixture": "memory-infrastructure-receipt"})
-            return SimpleNamespace(
-                output=json.dumps(
+            return {
+                "output_kind": "text",
+                "output": json.dumps(
                     {
                         "memories": [
                             {
@@ -91,8 +91,8 @@ def test_real_memory_worker_consumes_a_published_job_and_deduplicates_redelivery
                         ]
                     }
                 ),
-                usage={"output_tokens": 16},
-            )
+                "usage": {"output_tokens": 16},
+            }
 
     gateway = Gateway()
     runtime = AgentMemoryRuntime(factory, memory_tests.runtime_settings(), gateway)

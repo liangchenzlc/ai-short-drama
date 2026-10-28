@@ -5,13 +5,13 @@ import base64
 import pytest
 from fastapi.testclient import TestClient
 
-from short_drama.api.dependencies import get_session
+from short_drama.api.dependencies.session import get_session
 from short_drama.core.config import Settings
 from short_drama.core.crypto import KeyCipher
 from short_drama.domain import AIModelConfig
 from short_drama.main import create_app
-from short_drama.service.ai_model_config_service import AIModelConfigService
-from tests.support.integration.legacy_identity import session_factory
+from short_drama.service.ai_config.management.models import AIModelConfigService
+from tests.support.integration.identity import session_factory
 
 pytestmark = pytest.mark.integration
 OLD_KEY = base64.b64encode(b"a" * 32).decode()

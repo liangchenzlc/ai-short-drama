@@ -1,0 +1,12 @@
+/* 保持原有层叠顺序；具体职责在下列样式文件中维护。 */
+@import './workbench/tokens.css';
+@import './workbench/shell.css';
+@import './workbench/projects.css';
+@import './workbench/resources.css';
+@import './workbench/creation.css';
+@import './workbench/materials.css';
+@import './workbench/storyboard.css';
+@import './workbench/management.css';
+@import './workbench/assembly.css';
+@import './workbench/dialogs.css';
+@import './workbench/desktop.css';

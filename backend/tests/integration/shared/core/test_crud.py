@@ -11,18 +11,16 @@ pytestmark = pytest.mark.integration
 
 
 def services(session):
-    from short_drama.service.asset_service import AssetService
-    from short_drama.service.media_file_service import MediaFileService
-    from short_drama.service.project_novel_service import ProjectNovelService
-    from short_drama.service.project_service import ProjectService
-    from short_drama.service.shot_asset_service import ShotAssetService
-    from short_drama.service.shot_script_service import ShotScriptService
+    from short_drama.service.creation.assets.management.assets import AssetService
+    from short_drama.service.creation.storyboard.management.script import ShotScriptService
+    from short_drama.service.creation.storyboard.references.asset import ShotAssetService
+    from short_drama.service.media.files.files import MediaFileService
+    from short_drama.service.projects.management.project import ProjectService
 
     return {
         cls.__name__.removesuffix("Service"): cls(session)
         for cls in (
             ProjectService,
-            ProjectNovelService,
             AssetService,
             ShotScriptService,
             ShotAssetService,
@@ -39,7 +37,6 @@ def seed(session):
     asset = svc["Asset"].create(
         {"name": "asset", "kind": "scene", "media_id": media.id}, project_id=project.id
     )
-    novel = svc["ProjectNovel"].create({"project_id": project.id, "content": "novel"})
     shot = svc["ShotScript"].create({"project_id": project.id, "position": 1, "script": "shot"})
     shot_asset = svc["ShotAsset"].create(
         {"project_id": project.id, "shot_id": shot.id, "asset_id": asset.id}
@@ -48,7 +45,6 @@ def seed(session):
         Project=project,
         MediaFile=media,
         Asset=asset,
-        ProjectNovel=novel,
         ShotScript=shot,
         ShotAsset=shot_asset,
     )
@@ -60,7 +56,6 @@ def test_crud_audit_pagination_and_restrict(db_session):
         "Project": {"name": "changed"},
         "MediaFile": {"original_name": "changed"},
         "Asset": {"name": "changed"},
-        "ProjectNovel": {"content": "changed"},
         "ShotScript": {"script": "changed"},
         "ShotAsset": {"asset_id": rows["Asset"].id},
     }
@@ -89,7 +84,6 @@ def test_crud_audit_pagination_and_restrict(db_session):
     for name in (
         "ShotAsset",
         "ShotScript",
-        "ProjectNovel",
         "Asset",
         "MediaFile",
     ):
@@ -222,7 +216,7 @@ def test_media_and_ownership_validation(db_session):
 
 
 def test_dao_flush_does_not_commit_caller_transaction(db_session):
-    from short_drama.dao.project_dao import ProjectDAO
+    from short_drama.dao.projects.management.project import ProjectDAO
 
     dao = ProjectDAO(db_session)
     with pytest.raises(RuntimeError, match="rollback"):
@@ -234,7 +228,7 @@ def test_dao_flush_does_not_commit_caller_transaction(db_session):
 
 
 def test_disabled_historical_model_allows_unrelated_asset_edits(db_session):
-    from short_drama.dao.ai_model_config_dao import AIModelConfigDAO
+    from short_drama.dao.ai_config.management.models import AIModelConfigDAO
 
     with db_session.begin():
         model = AIModelConfigDAO(db_session).create(

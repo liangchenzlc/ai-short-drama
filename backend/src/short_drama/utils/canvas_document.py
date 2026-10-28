@@ -8,9 +8,8 @@ from hashlib import sha256
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.canvas import CanvasDocument
-
-from .canvas_media_locators import canonicalize_canvas_media
+from short_drama.schemas.canvas.document.canvas import CanvasDocument
+from short_drama.utils.canvas_media_locators import canonicalize_canvas_media
 
 # New upstream fields remain private until their publication semantics are reviewed.
 SHARED_METADATA = frozenset(

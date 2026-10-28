@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = ts.transpileModule(readFileSync(new URL('../../src/components/ui/studio-feedback-store.ts', import.meta.url), 'utf8'), {
+const source = ts.transpileModule(readFileSync(new URL('../../src/shared/ui/studio-feedback-store.ts', import.meta.url), 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
 const { createFeedbackStore, feedbackType } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);

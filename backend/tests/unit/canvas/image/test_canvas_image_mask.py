@@ -7,8 +7,8 @@ from PIL import Image
 
 from short_drama.ai import GenerationError
 from short_drama.core.exceptions import WorkflowError
-from short_drama.schemas.canvas_task_runtime import CanvasTaskReference
-from short_drama.service.canvas_generation_inputs import generation_payload
+from short_drama.schemas.canvas.generation.tasks.task_runtime import CanvasTaskReference
+from short_drama.service.canvas.generation.generation_inputs import generation_payload
 from tests.unit.canvas.generation.test_canvas_generation_parameters import frozen_request, request
 from tests.unit.shared.generation.test_generation_adapters import gateway as gateway
 from tests.unit.shared.generation.test_generation_adapters import provider as provider
@@ -113,7 +113,7 @@ def test_missing_mask_loader_is_known_failure_before_any_provider_call(gateway, 
 
 
 def test_mask_counts_toward_aggregate_image_budget(gateway, provider, monkeypatch):
-    from short_drama.ai import gateway as gateway_module
+    import short_drama.ai.gateway.transport_client as gateway_module
 
     base, _, calls = provider
     source, mask = reference_image(), mask_image()

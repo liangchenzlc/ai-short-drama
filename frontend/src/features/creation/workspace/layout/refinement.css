@@ -1,0 +1,122 @@
+.script-generation-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-action, 8px);
+}
+.script-generation-actions > .ant-btn {
+  white-space: nowrap;
+}
+.creation-asset-card {
+  position: relative;
+  cursor: pointer;
+}
+.creation-asset-card:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-raised);
+}
+.creation-asset-card .asset-card-content {
+  padding-right: 42px;
+}
+.creation-asset-card .asset-name-button {
+  position: static;
+}
+.creation-asset-card .asset-name-button::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  border-radius: 12px;
+}
+.creation-asset-card .resource-image,
+.creation-asset-card .batch-item-select,
+.creation-asset-more {
+  position: relative;
+  z-index: 1;
+}
+.creation-asset-card .asset-name-button:focus-visible {
+  outline: 0;
+}
+.creation-asset-card:has(.asset-name-button:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.creation-asset-more {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+}
+.creation-asset-more svg {
+  transform: rotate(90deg);
+}
+.creation-asset-card.is-selected {
+  border-color: var(--accent-border);
+  background: var(--pale);
+}
+.creation-asset-card:has(.asset-name-button:disabled) {
+  cursor: default;
+}
+.creation-asset-detail .asset-editor-section + .asset-editor-section {
+  border-left: 0;
+  padding-left: 0;
+  border-top: 1px solid var(--hair);
+}
+.creation-asset-detail .asset-editor-fields.studio-form {
+  grid-template-columns: minmax(0, 1fr);
+}
+.creation-asset-detail .asset-image-generation-form {
+  grid-template-columns: minmax(0, 1fr);
+}
+.creation-asset-detail .asset-editor-drawer-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--hair);
+}
+.storyboard-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.web-episode .storyboard-editor .storyboard-list {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+.web-episode .storyboard-editor .storyboard-item {
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+}
+.web-episode .storyboard-editor .storyboard-summary {
+  border-radius: 11px;
+}
+.web-episode .storyboard-editor .storyboard-item.is-selected > .storyboard-summary {
+  border-radius: 11px 11px 0 0;
+}
+.web-episode .storyboard-editor .storyboard-expanded {
+  border-radius: 0 0 11px 11px;
+}
+.web-episode .storyboard-editor .storyboard-item.is-selected {
+  border-color: var(--accent-border);
+}
+.storyboard-settings-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+.storyboard-settings-body {
+  padding: 20px 22px;
+  display: grid;
+  gap: 16px;
+  overflow-y: auto;
+}
+.storyboard-settings-body .writing-control {
+  margin: 0;
+}
+.storyboard-settings-body .ant-input-number-group-wrapper {
+  margin-top: 8px;
+}
+.storyboard-settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 22px 20px;
+  border-top: 1px solid var(--hair);
+}

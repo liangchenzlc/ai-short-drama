@@ -12,8 +12,7 @@ from urllib3.response import BaseHTTPResponse
 
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import ConfigurationError, NotFound, StorageUnavailable
-
-from .models import ObjectLocation, StoredObject
+from short_drama.storage.models import ObjectLocation, StoredObject
 
 
 class MinioStorage:

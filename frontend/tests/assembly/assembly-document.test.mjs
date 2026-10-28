@@ -4,18 +4,18 @@ import test from 'node:test';
 import ts from 'typescript';
 
 function moduleUrl(file, imports = {}) {
-  let code = ts.transpileModule(readFileSync(new URL(`../../src/features/projects/${file}.ts`, import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
+  let code = ts.transpileModule(readFileSync(new URL(`../../src/${file}.ts`, import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
   for (const [name, url] of Object.entries(imports)) code = code.replaceAll(`'${name}'`, `'${url}'`);
   return `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
 }
-const editingUrl = moduleUrl('assembly-editing');
-const documentUrl = moduleUrl('assembly-document', { './assembly-editing': editingUrl });
+const editingUrl = moduleUrl('features/creation/assembly/sessions/assembly-editing');
+const documentUrl = moduleUrl('features/creation/assembly/sessions/assembly-document', { '@host/features/creation/assembly/sessions/assembly-editing': editingUrl });
 const { followClips, normalizeSound, emptySound, sourceAudio, splitAudio, resegmentSubtitles, assemblyOutputAspect, aspectRatio } = await import(documentUrl);
 const { splitClip, moveClip, buildTimeline, toMs } = await import(editingUrl);
-const { audioGain, audioSourceTime, frameGeometry, waveformSlice } = await import(moduleUrl('assembly-playback'));
-const { parseSrt, exportSrt, splitSubtitle } = await import(moduleUrl('assembly-subtitles'));
+const { audioGain, audioSourceTime, frameGeometry, waveformSlice } = await import(moduleUrl('features/creation/assembly/player/assembly-playback'));
+const { parseSrt, exportSrt, splitSubtitle } = await import(moduleUrl('features/creation/assembly/subtitles/assembly-subtitles'));
 const creationStub = `data:text/javascript;base64,${Buffer.from("export const isStoredDraft = v => v?.format === 1 && typeof v.base_version === 'string' && /^\\d+$/.test(v.base_version) && 'document' in v;").toString('base64')}`;
-const { assemblyVersion, assemblyDraft, normalizeAssemblyRecovery, restoreAssemblyDraft, validAssemblyDraft } = await import(moduleUrl('assembly-recovery', { './creation-recovery': creationStub, './assembly-document': documentUrl }));
+const { assemblyVersion, assemblyDraft, restoreAssemblyDraft, validAssemblyDraft } = await import(moduleUrl('features/creation/assembly/sessions/assembly-recovery', { '@host/features/creation/shared/recovery/creation-recovery': creationStub, '@host/features/creation/assembly/sessions/assembly-document': documentUrl }));
 const clip = { id: 'a', media_id: '101', shot_id: '10', included: true, position: 1, trim_in_ms: 0, trim_out_ms: 6000, duration_ms: 6000, has_audio: true, muted: false, script: 'A' };
 const speech = { id: 'caption', text: '你好，世界。', start_ms: 1000, end_ms: 5000, anchor_clip_id: 'a', anchor_source_in_ms: 1000 };
 
@@ -109,11 +109,11 @@ test('waveforms show the trimmed source and repeat its selected range for loops'
 
 test('combined versions remain decimal BigInts and recovery retains sound and imported media', () => {
   const version = '9007199254740993';
-  const state = { editor_version: 2, assembly: { id: '100', row_version: version, aspect: 'auto', resolution: '720p' }, clips: [{ ...clip, url: '/temporary', poster: null }], sound: { row_version: '5', document: emptySound(), media: {} } };
+  const state = { assembly: { id: '100', row_version: version, aspect: 'auto', resolution: '720p' }, clips: [{ ...clip, url: '/temporary', poster: null }], sound: { row_version: '5', document: emptySound(), media: {} } };
   const draft = assemblyDraft(state);
   assert.equal(BigInt(assemblyVersion(state)), (BigInt(version) << 64n) + 5n);
   assert.ok(validAssemblyDraft(draft)); assert.equal(draft.document.clips[0].url, null);
-  assert.equal(normalizeAssemblyRecovery({ ...draft, base_version: `${version}:5` }).base_version, assemblyVersion(state));
+  assert.equal(validAssemblyDraft({ ...draft, base_version: `${version}:5` }), false);
   const material = { media_id: '101', kind: 'video', name: '导入视频', url: '/refreshed', poster: null, duration_ms: 6000, has_audio: true };
   const restored = restoreAssemblyDraft({ ...state, clips: [], materials: [material] }, draft);
   assert.equal(restored.clips[0].url, '/refreshed'); assert.equal(restored.clips[0].id, clip.id);

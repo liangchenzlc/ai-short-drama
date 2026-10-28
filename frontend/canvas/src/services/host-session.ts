@@ -1,4 +1,4 @@
-import { http, ApiError } from "@host/api/http";
+import { http, ApiError } from "@host/integrations/canvas/session";
 import { setActiveUserScope } from "@/lib/user-scope";
 import type { WorkspaceBootstrapPayload } from "@/services/api/workspace";
 

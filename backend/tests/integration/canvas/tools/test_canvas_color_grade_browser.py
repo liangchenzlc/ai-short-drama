@@ -22,7 +22,7 @@ from short_drama.domain import (
     CanvasTaskTextDelta,
     MediaFile,
 )
-from short_drama.domain.canvas_generation import CanvasTaskMediaReference
+from short_drama.domain.canvas.generation.generation import CanvasTaskMediaReference
 from short_drama.service.base import utcnow
 from tests.integration.canvas.document.test_canvas_browser import isolated_api, stop_browser
 from tests.integration.canvas.image.test_canvas_image_tools_browser import minio_bytes

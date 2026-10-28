@@ -15,7 +15,7 @@ for (const width of [1440, 1280]) test(`作品直接进入创作并保持60px顶
   await expect(creation).toHaveURL(/\/projects\/10\/source$/);
   await expect(creation.getByRole('button', { name: '雨夜来信', exact: true })).toBeVisible();
   await expect(creation.getByRole('navigation', { name: '创作流程' })).toBeVisible();
-  const bounds = await creation.locator('.episode-top').boundingBox();
+  const bounds = await creation.locator('.creation-top').boundingBox();
   expect(bounds?.height).toBe(60);
   expect(await creation.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   expect(state.requests.some(item => item.path.includes('/episodes'))).toBe(false);
@@ -175,9 +175,14 @@ test('名称停顿不提交，Escape取消，Enter和失焦各只提交一次', 
 
 test('旧分集、项目素材库、全局素材库与协作链接均为退役入口', async ({ page }) => {
   const state = await fixture(page);
-  for (const path of ['/projects/10/episodes/20/source', '/projects/10?section=resources', '/assets/character', '/invite/old']) {
+  for (const [path, heading] of [
+    ['/projects/10/episodes/20/source', '没有找到内容'],
+    ['/projects/10?section=resources', '此功能已停用'],
+    ['/assets/character', '没有找到内容'],
+    ['/invite/old', '没有找到内容'],
+  ]) {
     await page.goto(path);
-    await expect(page.getByText(/已停用/).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
   expect(state.requests.some(item => /episodes|libraries|invitations/.test(item.path))).toBe(false);
   expect(state.errors).toEqual([]);

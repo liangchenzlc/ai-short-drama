@@ -6,10 +6,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from short_drama.ai.adapters import build_submission
+from short_drama.ai.adapters.submission import build_submission
 from short_drama.ai.types import GenerationError
-from short_drama.service.canvas_plugin_catalog import bundled_manifest_snapshot, provider_catalog
-from short_drama.service.model_runtime_config import refresh_runtime_model
+from short_drama.service.ai_config.management.runtime import refresh_runtime_model
+from short_drama.service.canvas.tools.plugin_catalog import (
+    bundled_manifest_snapshot,
+    provider_catalog,
+)
 from tests.unit.canvas.text.test_canvas_text_references import prepared_text, text_snapshot
 from tests.unit.canvas.tools.test_canvas_tool_gateway import frozen_request
 from tests.unit.canvas.tools.test_canvas_tool_gateway import snapshot as tool_snapshot

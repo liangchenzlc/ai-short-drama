@@ -9,7 +9,7 @@ from sqlalchemy.exc import OperationalError
 
 from short_drama.domain import AsyncTask
 from tests.integration.shared.generation.test_generation_execution import seeded
-from tests.support.integration.legacy_identity import session_factory
+from tests.support.integration.identity import session_factory
 
 pytestmark = pytest.mark.integration
 

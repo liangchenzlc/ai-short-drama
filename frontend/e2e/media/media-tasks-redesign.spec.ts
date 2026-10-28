@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { MediaAsset } from '../../src/api/types/generations';
+import type { MediaAsset } from '../../src/types/generations/api';
 import { fixture } from '../support/studio-fixture';
 
 const image = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#292929"/><path d="M150 260L280 100L400 260L490 160L570 260" fill="none" stroke="#aaa" stroke-width="8"/></svg>');
@@ -233,11 +233,12 @@ test('loading, empty and failed lists keep filters and provide a retry', async (
   expect(state.errors).toEqual([]);
 });
 
-test('retired task URLs return to projects without querying or exposing the task manager', async ({ page }) => {
+test('retired task URLs show not-found without querying or exposing the task manager', async ({ page }) => {
   const state = await libraryFixture(page);
   for (const path of ['/tasks', '/tasks/text?task=8001', '/tasks/image', '/tasks/video?batch=6001', '/tasks/audio', '/tasks/old/deep-link']) {
     await page.goto(path);
-    await expect(page).toHaveURL('/projects');
+    await expect(page.getByRole('heading', { name: '没有找到内容', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: '返回项目管理', exact: true })).toHaveAttribute('href', '/projects');
     await expect(page.getByRole('link', { name: '任务管理', exact: true })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: '任务管理', exact: true })).toHaveCount(0);
   }

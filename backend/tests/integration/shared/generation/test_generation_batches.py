@@ -1,4 +1,4 @@
-"""Real disposable MySQL; the provider/MinIO fixture is deterministic and local."""
+"""真实 MySQL 验证批量调度；图片输入、供应商和存储使用明确的本地替身。"""
 
 from uuid import uuid4
 
@@ -7,18 +7,43 @@ from sqlalchemy import select
 
 from short_drama.core.exceptions import Conflict, WorkflowError
 from short_drama.domain import AIGenerationRecord, Asset, AsyncTask
-from short_drama.service.generation_batch_service import GenerationBatchService, dispatch_batches
-from short_drama.service.task_runtime_service import finish
+from short_drama.service.generations.batches.batch import GenerationBatchService, dispatch_batches
+from short_drama.service.generations.runtime.lifecycle import finish
 from tests.integration.standard.assets.test_asset_image_generation import create_asset, drain
 from tests.integration.standard.assets.test_asset_image_generation import flow as flow
 
 pytestmark = pytest.mark.integration
 
 
+class ExplicitImageBatchService(GenerationBatchService):
+    """隔离调度契约，不把未提供个人画面要求的预检当成图片生成验收。"""
+
+    def _request(self, request, row):
+        payload = super()._request(request, row)
+        payload["input"]["prompt"] = "controlled batch image input"
+        return payload
+
+
+def test_batch_without_explicit_image_input_is_blocked(flow):
+    flow.settings.generation_batches_enabled = True
+    asset = create_asset(flow, "character")
+    preview = GenerationBatchService(flow.session, flow.settings).preflight(
+        {
+            "scene": "asset_image",
+            "config_id": str(flow.config.id),
+            "scope": {"library": "project", "project_id": str(flow.project.id)},
+            "source_ids": [str(asset.id)],
+        }
+    )
+    assert preview["task_count"] == 0
+    assert preview["items"][0]["state"] == "blocked"
+    assert not flow.provider.calls
+
+
 def setup(flow, count=3):
     flow.settings.generation_batches_enabled = True
     assets = [create_asset(flow, "character") for _ in range(count)]
-    service = GenerationBatchService(flow.session, flow.settings)
+    service = ExplicitImageBatchService(flow.session, flow.settings)
     request = {
         "scene": "asset_image",
         "config_id": str(flow.config.id),
@@ -37,7 +62,7 @@ def setup(flow, count=3):
     return service, assets, body, batch
 
 
-def test_batch_holds_tasks_limits_dispatch_preserves_candidates_and_replays(flow):
+def test_batch_holds_tasks_limits_dispatch_saves_primary_and_replays(flow):
     service, assets, body, batch = setup(flow)
     detail = service.detail(batch["id"])
     assert detail["counts"] == {"waiting": 3}
@@ -53,18 +78,19 @@ def test_batch_holds_tasks_limits_dispatch_preserves_candidates_and_replays(flow
     assert drain(flow, task_ids[2]) == "succeeded"
     assert service.detail(batch["id"])["status"] == "succeeded"
     assert len(flow.provider.calls) == 3
-    assert all(flow.library.get(a.id).media_id is None for a in assets)
-    assert all(flow.images.list(a.id)["total"] == 1 for a in assets)
+    # 普通创作按现行图片组契约直接保存首张主图，不再进入旧候选表。
+    assert all(flow.library.get(a.id).media_id is not None for a in assets)
+    assert all(flow.images.list(a.id)["total"] == 0 for a in assets)
     preview = service.preflight(
         {k: v for k, v in body.items() if k not in {"preflight_hash", "accepted_ids"}}
     )
-    assert {i["state"] for i in preview["items"]} == {"review"}
+    assert {i["state"] for i in preview["items"]} == {"adopted"}
 
 
 def test_batch_preflight_conflict_and_idempotency(flow):
     flow.settings.generation_batches_enabled = True
     asset = create_asset(flow, "character")
-    svc = GenerationBatchService(flow.session, flow.settings)
+    svc = ExplicitImageBatchService(flow.session, flow.settings)
     request = {
         "scene": "asset_image",
         "config_id": str(flow.config.id),

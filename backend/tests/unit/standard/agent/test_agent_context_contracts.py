@@ -17,11 +17,15 @@ from short_drama.agent.context.media import inspect_attachment, materialize_prom
 from short_drama.agent.skill.packages import builtin_skill_packages
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
-from short_drama.schemas.agent_context import SkillPatch, SkillSelection
-from short_drama.schemas.agent_runtime import MessageCreate
-from short_drama.service.agent_attachment_service import AgentAttachmentService, freeze_attachments
-from short_drama.service.agent_skill_service import AgentSkillService, markdown_content
-from short_drama.service.video_render import executable
+from short_drama.schemas.assistant.context.context import SkillPatch, SkillSelection
+from short_drama.schemas.assistant.operations.runtime import MessageCreate
+from short_drama.service.assistant.context.attachment import (
+    AgentAttachmentService,
+    freeze_attachments,
+)
+from short_drama.service.creation.assembly.rendering.renderer import executable
+from short_drama.service.skills.catalog.skill import AgentSkillService
+from short_drama.service.skills.catalog.versions import markdown_content
 
 
 def test_bundled_methods_cover_nine_capabilities_with_valid_independent_packages():
@@ -54,15 +58,14 @@ def test_bundled_methods_cover_nine_capabilities_with_valid_independent_packages
 
 
 def test_bundled_publication_keeps_original_eight_builtin_versions_exact():
-    from short_drama.agent.skill.builtin import SKILLS
-    from short_drama.service.agent_skill_service import builtin_skills
+    from scripts.agent_system_migration import LEGACY_BUILTIN_TEXTS
 
-    legacy = builtin_skills()
-    assert len(legacy) == 8
-    assert {item.id: item.instructions for item in legacy} == SKILLS
-    assert all(item.content_version == 1 for item in legacy)
+    assert len(LEGACY_BUILTIN_TEXTS) == 8
     upgraded = {item.key: item for item in builtin_skill_packages()}
-    assert all(upgraded[item.id].content_version == 2 for item in legacy)
+    assert all(upgraded[key].content_version == 2 for key in LEGACY_BUILTIN_TEXTS)
+    assert all(
+        upgraded[key].content.instructions != body for key, body in LEGACY_BUILTIN_TEXTS.items()
+    )
 
 
 @pytest.mark.parametrize(
@@ -106,8 +109,8 @@ def test_skill_upload_normalizes_filename_and_keeps_only_instructions():
 
 
 def test_skill_local_links_allow_sibling_files_and_report_malformed_targets():
-    from short_drama.schemas.agent_skill import SkillResourceInput
-    from short_drama.service.agent_skill_package import local_reference_issues
+    from short_drama.schemas.skills.catalog.skill import SkillResourceInput
+    from short_drama.service.skills.packages.skill_package import local_reference_issues
 
     resources = [
         SkillResourceInput(path="references/guide.md", content="[模板](../assets/shot.json)"),
@@ -118,7 +121,7 @@ def test_skill_local_links_allow_sibling_files_and_report_malformed_targets():
 
 
 def test_skill_online_content_defaults_and_resource_paths():
-    from short_drama.schemas.agent_skill import SkillCreate
+    from short_drama.schemas.skills.catalog.skill import SkillCreate
 
     created = SkillCreate(
         name="分镜方法",
@@ -136,7 +139,7 @@ def test_skill_online_content_defaults_and_resource_paths():
 
 
 def test_skill_markdown_import_reads_frontmatter_without_execution():
-    from short_drama.service.agent_skill_package import parse_skill_import
+    from short_drama.service.skills.packages.skill_package import parse_skill_import
 
     preview = parse_skill_import(
         b"---\nname: quiet-writing\ndescription: Concise dialogue.\n"
@@ -159,7 +162,7 @@ def test_skill_markdown_import_reads_frontmatter_without_execution():
     ],
 )
 def test_skill_direct_writes_cannot_bypass_script_rejection(resource):
-    from short_drama.schemas.agent_skill import SkillCreate, SkillPackagePatch
+    from short_drama.schemas.skills.catalog.skill import SkillCreate, SkillPackagePatch
 
     with pytest.raises(ValidationError):
         SkillCreate(
@@ -174,7 +177,7 @@ def test_skill_direct_writes_cannot_bypass_script_rejection(resource):
 
 
 def test_skill_import_requires_metadata_and_distinguishes_absent_tags():
-    from short_drama.service.agent_skill_package import parse_skill_import
+    from short_drama.service.skills.packages.skill_package import parse_skill_import
 
     with pytest.raises(WorkflowError, match="缺少名称"):
         parse_skill_import(b"# Method", "method.md")
@@ -189,7 +192,7 @@ def test_skill_import_requires_metadata_and_distinguishes_absent_tags():
 def test_skill_zip_import_validates_complete_package_and_rejects_traversal():
     from zipfile import ZIP_DEFLATED, ZipFile
 
-    from short_drama.service.agent_skill_package import parse_skill_import
+    from short_drama.service.skills.packages.skill_package import parse_skill_import
 
     def archive(files):
         data = io.BytesIO()
@@ -239,7 +242,7 @@ def test_skill_zip_import_validates_complete_package_and_rejects_traversal():
     ids=["duplicate-key", "alias", "metadata-shape", "python-tag"],
 )
 def test_skill_import_rejects_ambiguous_or_executable_yaml(content):
-    from short_drama.service.agent_skill_package import parse_skill_import
+    from short_drama.service.skills.packages.skill_package import parse_skill_import
 
     with pytest.raises(WorkflowError) as caught:
         parse_skill_import(content.encode(), "SKILL.md")
@@ -250,7 +253,7 @@ def test_skill_import_rejects_ambiguous_or_executable_yaml(content):
 def test_skill_zip_import_enforces_archive_limits(case):
     from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-    from short_drama.service.agent_skill_package import parse_skill_import
+    from short_drama.service.skills.packages.skill_package import parse_skill_import
 
     data = io.BytesIO()
     with ZipFile(data, "w", ZIP_DEFLATED) as stream:
@@ -275,8 +278,11 @@ def test_skill_zip_import_enforces_archive_limits(case):
 
 
 def test_skill_exported_maximum_instructions_and_custom_resource_kind_round_trip():
-    from short_drama.schemas.agent_skill import SkillCreate, SkillMetadata
-    from short_drama.service.agent_skill_package import package_markdown, parse_skill_import
+    from short_drama.schemas.skills.catalog.skill import SkillCreate, SkillMetadata
+    from short_drama.service.skills.packages.skill_package import (
+        package_markdown,
+        parse_skill_import,
+    )
 
     content = SkillCreate(
         name="方法", slug="method", description="任务方法。", instructions="x" * 65536

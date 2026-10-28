@@ -4,7 +4,7 @@ import httpx
 
 
 def request_minio(settings, storage_service=None):
-    from short_drama.api.dependencies import get_storage_service
+    from short_drama.api.dependencies.media import get_storage_service
     from short_drama.main import create_app
 
     async def run():

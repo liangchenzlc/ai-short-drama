@@ -22,9 +22,7 @@ TRANSIENT_RESULT_FIELDS = frozenset(
 def stable(value):
     if isinstance(value, dict):
         return {
-            key: stable(child)
-            for key, child in value.items()
-            if key not in TRANSIENT_RESULT_FIELDS
+            key: stable(child) for key, child in value.items() if key not in TRANSIENT_RESULT_FIELDS
         }
     if isinstance(value, list):
         return [stable(child) for child in value]

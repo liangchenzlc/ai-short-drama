@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../../src/features/projects/shot-video-workflow.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/creation/storyboard/videos/shot-video-workflow.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { videoBlockReason, shotVideoRequest } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const shot = { id: '123', row_version: '3', video_context_hash: 'a'.repeat(64), script: 'Raise the umbrella.', duration_ms: 5000,

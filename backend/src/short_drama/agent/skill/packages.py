@@ -7,8 +7,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from short_drama.schemas.agent_skill import SkillCreate
-from short_drama.service.agent_skill_package import parse_skill_import
+from short_drama.schemas.skills.catalog.skill import SkillCreate
+from short_drama.service.skills.packages.skill_package import parse_skill_import
 
 
 class BuiltinSkillPackage(BaseModel):

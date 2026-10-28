@@ -17,10 +17,10 @@ from short_drama.agent.tools.contracts import ReadTaskResults
 from short_drama.agent.tools.standard import _quantity, _rows
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.domain import Project, ProjectCanvas
-from short_drama.domain.agent import AgentConversation
-from short_drama.domain.agent_task import AgentOperation, AgentTask
-from short_drama.domain.canvas import CanvasNode, CanvasNodeUserState
-from short_drama.service.assistant_canvas_service import AssistantCanvasService
+from short_drama.domain.assistant.conversations.models import AgentConversation
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
+from short_drama.domain.canvas.document.canvas import CanvasNode, CanvasNodeUserState
+from short_drama.service.assistant.operations.canvas import AssistantCanvasService
 from short_drama.utils.json_digest import digest
 
 _KINDS = {"文本": "text", "图片": "image", "视频": "video", "音频": "audio"}

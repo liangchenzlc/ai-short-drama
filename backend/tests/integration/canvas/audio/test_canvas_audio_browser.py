@@ -12,9 +12,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-from short_drama.ai.canvas_audio_adapters import ASYNC_AUDIO
+from short_drama.ai.adapters.audio.canvas_audio import ASYNC_AUDIO
 from short_drama.domain import AIGenerationRecord, AsyncTask, MediaFile
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.canvas.audio.test_canvas_audio_protocols import (
     PROVIDER_ID,
     audio_seed,

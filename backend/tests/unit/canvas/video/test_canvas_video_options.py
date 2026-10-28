@@ -4,8 +4,8 @@ from copy import deepcopy
 
 import pytest
 
-from short_drama.ai import canvas_video_adapters
-from short_drama.ai.adapters import build_submission
+import short_drama.ai.adapters.video.video_adapters as canvas_video_adapters
+from short_drama.ai.adapters.submission import build_submission
 from short_drama.ai.types import GenerationError
 from tests.unit.canvas.video.test_canvas_video_transport import (
     NEWAPI,

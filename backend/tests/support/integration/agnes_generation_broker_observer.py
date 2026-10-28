@@ -7,7 +7,7 @@ from pathlib import Path
 
 from celery.signals import task_postrun, task_prerun
 
-from short_drama.tasks import worker
+import short_drama.tasks.generations.worker as worker
 from tests.integration.canvas.assistant.test_canvas_agnes_live import LiveGateway
 
 directory = Path(os.environ["AGNES_GENERATION_BROKER_DIRECTORY"]).resolve()

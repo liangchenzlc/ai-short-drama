@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from short_drama.schemas.canvas_drawing import CanvasDrawingWrite
+from short_drama.schemas.canvas.drawing.drawing import CanvasDrawingWrite
 
 
 def test_drawing_contract_keeps_content_and_uint64_revision():

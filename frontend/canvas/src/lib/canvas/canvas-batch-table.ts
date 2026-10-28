@@ -10,14 +10,6 @@ export const BATCH_REFERENCE_HANDLE_TOP = 102;
 export const BATCH_REFERENCE_HANDLE_GAP = 40;
 export const MIN_BATCH_REFERENCE_COLUMNS = 1;
 export const MAX_BATCH_REFERENCE_COLUMNS = 6;
-const LEGACY_BATCH_TABLE_WIDTH = 900;
-
-/** 旧默认 900 宽的批量创作表升级到当前默认尺寸，已经手动改过宽度的节点保持原样。 */
-export function promoteLegacyBatchTableSize(node: CanvasNodeData): CanvasNodeData {
-    if (node.type !== "batch-table" || node.width !== LEGACY_BATCH_TABLE_WIDTH) return node;
-    return { ...node, width: 1280, height: Math.max(node.height, 560) };
-}
-
 export function defaultBatchReferenceColumns(): CanvasBatchReferenceColumn[] {
     return [
         { id: "reference-1", label: "参考图 1" },

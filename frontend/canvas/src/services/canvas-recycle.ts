@@ -1,4 +1,4 @@
-import type { CanvasRecycleListDto, CanvasRecyclePurgeDto } from "@host/api/types/canvases";
+import type { CanvasRecycleListDto, CanvasRecyclePurgeDto } from "@host/integrations/canvas/contracts";
 import { assertUserScope, captureUserScope, type CapturedUserScope } from "@/lib/user-scope-guard";
 import { flushCanvasHistoryPersistence, useCanvasHistoryStore, type DeletedCanvasHistoryItem } from "@/stores/canvas/use-canvas-history-store";
 import { http } from "@/services/api/request";

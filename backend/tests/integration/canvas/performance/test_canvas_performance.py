@@ -18,9 +18,9 @@ import pytest
 from httpx import Response
 from sqlalchemy import event, update
 
-from short_drama.domain.canvas import CanvasRevision
+from short_drama.domain.canvas.document.canvas import CanvasRevision
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_service import CanvasService
+from short_drama.service.canvas.document.canvas import CanvasService
 from tests.integration.canvas.resources.test_canvas_library import (
     database_errors as database_errors,
 )

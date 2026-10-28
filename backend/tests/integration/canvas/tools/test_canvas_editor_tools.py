@@ -20,8 +20,8 @@ from short_drama.domain import (
     CanvasResult,
     CanvasTaskMediaReference,
 )
-from short_drama.schemas.canvas_tool_contracts import builtin_tool
-from short_drama.service.generation_execution_service import GenerationExecutionService
+from short_drama.schemas.canvas.tools.tool_contracts import builtin_tool
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 from tests.integration.canvas.generation.test_canvas_generation_runtime import (
     TASKS,
     admit,

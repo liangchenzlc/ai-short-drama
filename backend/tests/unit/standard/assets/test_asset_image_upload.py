@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 
 from short_drama.core.exceptions import BusinessError, WorkflowError
-from short_drama.service.asset_image_service import inspect_image_upload
+from short_drama.service.creation.assets.images.image import inspect_image_upload
 
 
 def image_bytes(format_name="PNG", size=(2, 3)):
@@ -45,13 +45,15 @@ def test_upload_validation_rejects_more_than_forty_million_pixels(monkeypatch):
         def __exit__(self, *_):
             return None
 
-    monkeypatch.setattr("short_drama.service.asset_image_service.Image.open", lambda _: FakeImage())
+    monkeypatch.setattr(
+        "short_drama.service.creation.assets.images.image.Image.open", lambda _: FakeImage()
+    )
     with pytest.raises(BusinessError, match="40 million"):
         inspect_image_upload(BytesIO(b"valid-enough-for-the-fake"), "image/png")
 
 
 def test_compensation_deletes_only_the_new_uploaded_version_on_database_failure(monkeypatch):
-    from short_drama.service.asset_image_service import AssetImageService
+    from short_drama.service.creation.assets.images.image import AssetImageService
 
     data = image_bytes()
     stored = SimpleNamespace(
@@ -80,7 +82,7 @@ def test_compensation_deletes_only_the_new_uploaded_version_on_database_failure(
     [lambda _locator: True, lambda _locator: (_ for _ in ()).throw(RuntimeError())],
 )
 def test_uncertain_database_outcome_retains_uploaded_object(monkeypatch, lookup):
-    from short_drama.service.asset_image_service import AssetImageService
+    from short_drama.service.creation.assets.images.image import AssetImageService
 
     data = image_bytes()
     stored = SimpleNamespace(
@@ -107,9 +109,9 @@ def test_uncertain_database_outcome_retains_uploaded_object(monkeypatch, lookup)
 
 
 def test_upload_deduplicates_then_explicit_confirm_advances_asset_version():
-    from short_drama.service.asset_image_service import AssetImageService
-    from short_drama.service.asset_library_service import AssetLibraryService
-    from short_drama.service.project_service import ProjectService
+    from short_drama.service.creation.assets.images.image import AssetImageService
+    from short_drama.service.creation.assets.management.library import AssetLibraryService
+    from short_drama.service.projects.management.project import ProjectService
     from tests.support.generation_fixtures import generation_session
 
     class Storage:

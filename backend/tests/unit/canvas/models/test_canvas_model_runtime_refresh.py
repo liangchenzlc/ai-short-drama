@@ -6,18 +6,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from short_drama.ai.adapters import capability_fingerprint, select_adapter
+from short_drama.ai.adapters.catalog import capability_fingerprint, select_adapter
 from short_drama.ai.model_identity import model_credential_identity
 from short_drama.ai.types import GenerationResult
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import AIGenerationRecord, AIModelConfig
+from short_drama.service.ai_config.management.runtime import legacy_runtime_profile
 from short_drama.service.base import utcnow
-from short_drama.service.canvas_model_catalog_service import (
+from short_drama.service.canvas.models.model_catalog import (
     CanvasModelCatalogService,
     protocol_adapter,
 )
-from short_drama.service.generation_execution_service import GenerationExecutionService
-from short_drama.service.model_runtime_config import legacy_runtime_profile
+from short_drama.service.generations.execution.execution import GenerationExecutionService
 
 
 def runtime_catalog(*, protocol="openai-videos", mode="video", cache=None):
@@ -215,11 +215,11 @@ def test_old_result_cannot_replace_upgraded_canvas_cache_but_standard_policy_is_
         yield session
 
     monkeypatch.setattr(
-        "short_drama.service.generation_execution_service.owned_task",
+        "short_drama.service.generations.execution.archive.owned_task",
         lambda *args: task,
     )
     monkeypatch.setattr(
-        "short_drama.service.generation_execution_service.schedule", lambda *args: None
+        "short_drama.service.generations.execution.archive.schedule", lambda *args: None
     )
     worker = object.__new__(GenerationExecutionService)
     worker.factory = SimpleNamespace(begin=begin)
@@ -265,10 +265,10 @@ def test_old_standard_result_cannot_reintroduce_cache_after_header_account_chang
         yield session
 
     monkeypatch.setattr(
-        "short_drama.service.generation_execution_service.owned_task", lambda *args: task
+        "short_drama.service.generations.execution.archive.owned_task", lambda *args: task
     )
     monkeypatch.setattr(
-        "short_drama.service.generation_execution_service.schedule", lambda *args: None
+        "short_drama.service.generations.execution.archive.schedule", lambda *args: None
     )
     worker = object.__new__(GenerationExecutionService)
     worker.factory = SimpleNamespace(begin=begin)
