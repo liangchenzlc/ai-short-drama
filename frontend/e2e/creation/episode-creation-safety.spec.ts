@@ -208,7 +208,7 @@ test('material saving conflicts retain editing and the project assistant draft',
   expect(data.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) {
+for (const width of [1440, 1280]) {
   test(`sound editing stays in the assembly workspace and saves before leaving at ${width}px`, async ({ page }, info) => {
     const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
     await page.setViewportSize({ width, height: 1000 });
@@ -222,7 +222,7 @@ for (const width of [1440, 390]) {
     await sound.getByLabel('原视频声音音量', { exact: true }).fill('0.65');
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await page.screenshot({ path: info.outputPath(`assembly-sound-expanded-${width}.png`), fullPage: true, animations: 'disabled' });
-    await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /剧本创作/ }).click();
+    await page.getByRole('navigation', { name: '创作流程' }).getByRole('button', { name: /剧本创作/ }).click();
     await expect(page).toHaveURL(url => url.pathname.endsWith('/source'));
     await expect.poll(() => data.requests.filter(request => request.path === `${root}/sound` && request.method === 'PUT').length).toBe(1);
     const saves = data.requests.filter(request => request.path === `${root}/sound` && request.method === 'PUT');
@@ -246,10 +246,10 @@ test('sound version conflicts preserve the inline draft while navigation remains
   await sound.getByRole('tab', { name: '配乐与混音' }).click();
   const volume = sound.getByLabel('原视频声音音量', { exact: true });
   await volume.fill('0.65');
-  await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /剧本创作/ }).click();
+  await page.getByRole('navigation', { name: '创作流程' }).getByRole('button', { name: /剧本创作/ }).click();
   await expect(page).toHaveURL(url => url.pathname.endsWith('/source'));
   await expect(page.getByRole('dialog', { name: /确认|未保存/ })).toHaveCount(0);
-  await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: /成片合成/ }).click();
+  await page.getByRole('navigation', { name: '创作流程' }).getByRole('button', { name: /成片预览/ }).click();
   await expect(rail).toBeVisible();
   if (!await sound.isVisible()) await rail.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
   await sound.getByRole('tab', { name: '配乐与混音' }).click();
@@ -259,33 +259,31 @@ test('sound version conflicts preserve the inline draft while navigation remains
   expect(data.unexpected).toEqual([]);
 });
 
-test('closing mobile material settings by keyboard restores focus to the settings entry', async ({ page }) => {
+test('collapsing desktop material settings by keyboard restores focus to its entry', async ({ page }) => {
   const data = await safetyFixture(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${root}/assets`);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(root + '/assets');
   const detail = page.locator('.episode-asset-detail');
+  const settings = detail.locator('.standard-object-settings');
+  await expect(settings).toBeVisible();
+  const close = settings.getByRole('button', { name: '关闭生成设置', exact: true });
+  await close.focus(); await close.press('Enter');
   const entry = detail.getByRole('button', { name: '展开生成设置', exact: true });
-  await entry.focus();
-  await page.keyboard.press('Enter');
-  await expect(detail.getByRole('dialog', { name: '素材生成设置', exact: true })).toBeVisible();
-  const close = detail.getByRole('button', { name: '收起生成设置', exact: true });
-  await close.focus();
-  await page.keyboard.press('Enter');
-  await expect(detail.getByRole('dialog', { name: '素材生成设置', exact: true })).toHaveCount(0);
-  await expect(entry).toBeFocused();
+  await expect(settings).toBeHidden(); await expect(entry).toBeFocused();
+  await entry.press('Enter'); await expect(settings).toBeVisible();
   await expect(detail.getByRole('region', { name: '素材图片预览', exact: true })).toBeVisible();
   expect(data.errors).toEqual([]);
 });
 
 test('closing saved material settings restores focus while the refreshed card and deep link retain the asset', async ({ page }) => {
   const data = await safetyFixture(page);
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 844 });
   const detail = await openFirstAsset(page);
   const name = detail.getByRole('textbox', { name: '素材名称', exact: true });
   await name.fill('保存后的林晚');
   await expect.poll(() => data.state.assets[0].name).toBe('保存后的林晚');
   await expect(page.getByRole('button', { name: '保存后的林晚', exact: true })).toBeVisible();
-  await page.keyboard.press('Escape');
+  await detail.getByRole('button', { name: '关闭生成设置', exact: true }).click();
   const entry = detail.getByRole('button', { name: '展开生成设置', exact: true });
   await expect(entry).toBeFocused();
   await expect(page).toHaveURL(url => url.searchParams.get('asset') === '501');
@@ -294,7 +292,6 @@ test('closing saved material settings restores focus while the refreshed card an
   await expect(page).toHaveURL(url => url.searchParams.get('asset') === '501');
   await expect(page.locator('.episode-save-state')).toHaveAttribute('aria-label', '保存状态：已保存');
   await page.reload();
-  await entry.click();
   await expect(name).toHaveValue('保存后的林晚');
   expect(data.state.updates).toHaveLength(1);
   expect(data.errors).toEqual([]);
@@ -315,7 +312,7 @@ test('collapsing inline sound editing restores keyboard focus to its entry', asy
   expect(data.errors).toEqual([]);
 });
 
-for (const width of [1440, 390]) {
+for (const width of [1440, 1280]) {
   test(`save status stays quiet and opens nonmodal details by keyboard at ${width}px`, async ({ page }, info) => {
     const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
     await page.setViewportSize({ width, height: 900 });

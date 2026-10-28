@@ -76,6 +76,13 @@ export class ResourceEditingSession<Resource, Document> {
   }
   initialize = (remote: Resource) => {
     if (this.state.loaded) {
+      if (this.acknowledged && BigInt(this.options.version(remote)) > BigInt(this.options.version(this.acknowledged))) {
+        if (this.state.dirty || this.pending) {
+          clearTimeout(this.timer);
+          this.publish({ status: 'conflict', message: '服务端版本已变化，本机输入已保留。请核对两个版本。' });
+          this.persist(); return;
+        }
+      }
       if (!this.state.dirty && !this.running && !this.pending
         && (!this.acknowledged || BigInt(this.options.version(remote)) >= BigInt(this.options.version(this.acknowledged)))) {
         this.acknowledged = remote; this.publish({ value: remote });

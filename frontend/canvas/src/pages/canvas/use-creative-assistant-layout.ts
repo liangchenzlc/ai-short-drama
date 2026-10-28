@@ -1,5 +1,4 @@
-import { Grid } from "antd";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { scopedLocalStorage } from "@/lib/user-scope";
 
 export const ASSISTANT_MIN_WIDTH = 320;
@@ -20,22 +19,6 @@ export function useCreativeAssistantLayout() {
 
 function clampWidth(value: number) {
     return Number.isFinite(value) ? Math.min(ASSISTANT_MAX_WIDTH, Math.max(ASSISTANT_MIN_WIDTH, Math.round(value))) : ASSISTANT_DEFAULT_WIDTH;
-}
-
-export function useCreativeAssistantDockable(shellRef: { current: HTMLElement | null }, ready: boolean) {
-    const desktop = Boolean(Grid.useBreakpoint().lg);
-    const [wide, setWide] = useState(false);
-    useEffect(() => {
-        const element = shellRef.current;
-        if (!ready || !element || typeof ResizeObserver === "undefined") return;
-        const observer = new ResizeObserver(entries => {
-            if (entries[0]?.contentRect) setWide(entries[0].contentRect.width >= 1050);
-        });
-        observer.observe(element);
-        setWide(element.clientWidth >= 1050);
-        return () => observer.disconnect();
-    }, [shellRef, ready]);
-    return desktop && wide;
 }
 
 export type CreativeAssistantLayout = ReturnType<typeof useCreativeAssistantLayout>;

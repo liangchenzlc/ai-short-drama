@@ -308,7 +308,7 @@ const server = await createServer({
 });
 await server.listen();
 let browser;
-const report = { commit, scope: "Controlled fixtures: editor layout and recorded pointer/keyboard operations only; no provider or server acceptance", browser: "", viewport: { width: narrowDrawingSize ? 600 : 1440, height: 900 }, dpr: 1, colorScheme: "dark", reducedMotion, scenarios: {}, errors: {}, unimplementedFixtures: {} };
+const report = { commit, scope: "Controlled fixtures: editor layout and recorded pointer/keyboard operations only; no provider or server acceptance", browser: "", viewport: { width: narrowDrawingSize ? 1280 : 1440, height: 900 }, dpr: 1, colorScheme: "dark", reducedMotion, scenarios: {}, errors: {}, unimplementedFixtures: {} };
 report.source_assistant_closed_for_comparison = closeSourceAssistant;
 report.depth_title_drag = {};
 report.depth_title_selected = depthTitleSelected;
@@ -348,15 +348,9 @@ try {
             await node.waitFor({ state: "visible", timeout: 90000 });
             if (kind === "source" && closeSourceAssistant) {
                 const assistant = page.getByRole("button", { name: "助手", exact: true });
-                if (narrowDrawingSize) {
-                    assert.equal(await assistant.count(), 0, "固定源窄屏助手入口保持隐藏");
-                    assert.equal(await page.getByRole("button", { name: "关闭助手", exact: true }).count(), 0);
-                    report.source_assistant_responsive_hidden = true;
-                } else {
-                    assert.equal(await assistant.getAttribute("aria-pressed"), "true");
+                assert.equal(await assistant.getAttribute("aria-pressed"), "true");
                     await page.getByRole("button", { name: "关闭助手", exact: true }).click();
                     assert.equal(await assistant.getAttribute("aria-pressed"), "false");
-                }
             }
             await page.locator(narrowDrawingSize ? "#canvas-main" : ".canvas-main-toolbar").waitFor({ state: "visible" });
             const record = async scenario => {
@@ -576,8 +570,8 @@ try {
             await page.mouse.move(900, 600);
             await record("asset-tray-canvas");
             await tray.getByRole("button", { name: "收起素材空间", exact: true }).click();
-            await page.setViewportSize({ width: 390, height: 844 });
-            await record("narrow-default");
+            await page.setViewportSize({ width: 1280, height: 720 });
+            await record("desktop-minimum");
             await page.setViewportSize({ width: 1440, height: 900 });
             await page.getByRole("button", { name: "版本记录", exact: true }).click();
             const historyItem = page.locator(".canvas-version-item").filter({ has: page.getByText("v3", { exact: true }) });

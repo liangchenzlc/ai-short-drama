@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-for (const width of [1440, 390]) test(`feedback preserves editors and recovery actions at ${width}px`, async ({ page }) => {
+for (const width of [1440, 1280]) test(`feedback preserves editors and recovery actions at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 });
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));

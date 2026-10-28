@@ -7,7 +7,7 @@ const owner = { id: '11', username: 'owner', display_name: '项目主人', email
 const editor = { id: '12', username: 'editor', display_name: '同名创作者', email: 'editor@example.test', email_verified: true };
 const project = { id: '10', name: '协作项目', synopsis: '共享故事', style: '', aspect: '16:9', row_version: '1', owner_user_id: '11', capabilities: { delete: true, manage_members: true }, last_opened_at: null, created_at: null, updated_at: null };
 
-for (const width of [1440, 390]) test(`collaboration choices are readable and show the selected recipient at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`collaboration choices are readable and show the selected recipient at ${width}px`, async ({ page }, info) => {
   await accountFixture(page, true);
   await page.setViewportSize({ width, height: 900 });
   await page.goto('/projects/10?section=collaboration');
@@ -71,7 +71,7 @@ async function accountFixture(page: Page, initial = false) {
   return state;
 }
 
-for (const width of [1440, 390]) test(`login and invitation retain wrong-code input at ${width}px`, async ({ page }) => {
+for (const width of [1440, 1280]) test(`login and invitation retain wrong-code input at ${width}px`, async ({ page }) => {
   const state = await accountFixture(page); state.user = editor;
   await page.setViewportSize({ width, height: 844 });
   await page.goto(`/invite/${token}`);
@@ -93,7 +93,7 @@ for (const width of [1440, 390]) test(`login and invitation retain wrong-code in
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
-for (const width of [1440, 390]) test(`logout requires confirmation and preserves the account when the request fails at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`logout requires confirmation and preserves the account when the request fails at ${width}px`, async ({ page }, info) => {
   const state = await accountFixture(page, true);
   await page.setViewportSize({ width, height: 900 });
   await page.goto('/projects/10');
@@ -121,7 +121,7 @@ for (const width of [1440, 390]) test(`logout requires confirmation and preserve
   expect(state.signedIn).toBe(false);
 });
 
-for (const width of [1440, 390]) test(`expired session keeps the edited project through keyboard reauthentication at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`expired session keeps the edited project through keyboard reauthentication at ${width}px`, async ({ page }, info) => {
   const state = await accountFixture(page, true);
   await page.setViewportSize({ width, height: 900 });
   await page.goto('/projects/10');

@@ -760,6 +760,15 @@ class AIGenerationService(BaseService):
 
     def resume(self, identifier):
         with self._transaction():
+            # Writing completion always takes project -> task -> document locks.
+            preview = self._require(AsyncTask, identifier, for_update=False)
+            preview_record = self.record_dao.for_task(preview.id)[-1]
+            from .writing_generation_service import WRITING_SCENES, WritingGenerationService
+
+            if (preview_record.request_data.get("source") or {}).get("scene") in WRITING_SCENES:
+                WritingGenerationService(self.session).validate_target(
+                    preview_record.request_data, excluding_task=preview.id
+                )
             task = self._require(AsyncTask, identifier)
             self._authorize_task_action(task, "resume")
             record = self.record_dao.for_task(task.id)[-1]
@@ -829,6 +838,14 @@ class AIGenerationService(BaseService):
             record = records[0]
             if record.config_snapshot.get("agent_managed"):
                 raise WorkflowError("agent_retry_requires_plan", "请在创作对话中重新授权生成", 409)
+            if (record.request_data.get("source") or {}).get("scene") in {
+                "story_outline",
+                "script_generate",
+                "script_rewrite",
+            }:
+                raise WorkflowError(
+                    "writing_retry_requires_source", "请回到剧本工作台基于当前正文重新生成", 409
+                )
             if (record.request_data.get("source") or {}).get("scene") in {
                 "dialogue_audio",
                 "character_voice_design",

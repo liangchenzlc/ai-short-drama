@@ -76,8 +76,8 @@ export const assistantApi = {
   async subjectDirectory(projectId: string, kind: AssistantSubjectKind, query = '', offset = 0, signal?: AbortSignal) {
     return (await http.get<Page<AssistantSubjectOption>>(`${root}/subjects`, { params: { project_id: projectId, kind, query, offset, limit: 20 }, signal })).data;
   },
-  async inspectSubjects(subjects: AssistantSubjectReference[]) {
-    return (await http.post<AssistantSubjectReference[]>(`${root}/subjects/metadata`, { subjects })).data;
+  async inspectSubjects(subjects: AssistantSubjectReference[], signal?: AbortSignal) {
+    return (await http.post<AssistantSubjectReference[]>(`${root}/subjects/metadata`, { subjects }, { signal })).data;
   },
   async operations(taskId: string, afterId?: string, signal?: AbortSignal) {
     return (await http.get<{ items: AssistantOperation[]; has_more: boolean; next_after_id: string | null; snapshot_cursor: number }>(`${root}/tasks/${encodeURIComponent(taskId)}/operations`, { params: { after_id: afterId, limit: 50 }, signal })).data;

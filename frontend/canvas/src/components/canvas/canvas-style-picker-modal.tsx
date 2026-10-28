@@ -589,12 +589,12 @@ export function CanvasStylePickerModal({ open, value, currentProfile, startInEdi
         <>
             <AppModal rootClassName="canvas-style-picker-modal" open={open} title={null} footer={null} centered width="min(1240px, calc(100vw - 24px))" onCancel={onClose} flush>
                 <div className="canvas-style-center-shell flex min-h-0 flex-col overflow-hidden" style={{ color: theme.node.text, background: theme.node.panel }}>
-                    <header className="flex min-h-16 flex-col gap-3 border-b px-4 py-3 pr-12 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:pr-14" style={{ borderColor: theme.node.stroke }}>
+                    <header className="flex min-h-16 gap-3 border-b py-3 flex-row items-center justify-between px-5 pr-14" style={{ borderColor: theme.node.stroke }}>
                         <div className="min-w-0">
                             <h2 className="text-base font-semibold">风格中心</h2>
                             <p className="mt-0.5 text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>系统规范 · 个人风格 · 项目快照</p>
                         </div>
-                        <div className="flex min-w-0 gap-2 sm:items-center">
+                        <div className="flex min-w-0 gap-2 items-center">
                             <Input allowClear className="style-center-search min-w-0 flex-1" prefix={<Search className="size-3.5 text-foreground/35" />} value={query} placeholder="搜索风格、题材或媒介" onChange={(event) => setQuery(event.target.value)} />
                             {legacyProfiles.length > 0 && <Button onClick={() => setImportOpen(true)}>导入本机风格</Button>}
                             <Button type="primary" className="shrink-0" icon={<Plus className="size-3.5" />} onClick={createNewStyle}>新建风格</Button>
@@ -604,28 +604,28 @@ export function CanvasStylePickerModal({ open, value, currentProfile, startInEdi
                     {actionError && !editor && !importOpen && <p role="alert" className="px-4 py-2 text-xs text-destructive">{actionError}</p>}
                     {(profilesQuery.isError || preferencesQuery.isError) && <div role="alert" className="px-4 py-2 text-xs text-red-400">风格库或收藏读取失败。<Button size="small" onClick={() => { void profilesQuery.refetch(); void preferencesQuery.refetch(); }}>重试读取</Button></div>}
                     <div className="style-center-workspace grid min-h-0 flex-1">
-                        <aside className="style-center-sidebar thin-scrollbar min-h-0 overflow-auto border-b p-2 sm:p-3 lg:border-b-0 lg:border-r" style={{ borderColor: theme.node.stroke }}>
-                            <nav className="style-center-primary-nav flex gap-1 lg:flex-col" aria-label="风格中心视图">
+                        <aside className="style-center-sidebar thin-scrollbar min-h-0 overflow-auto p-3 border-b-0 border-r" style={{ borderColor: theme.node.stroke }}>
+                            <nav className="style-center-primary-nav flex gap-1 flex-col" aria-label="风格中心视图">
                                 <StyleCenterNavItem active={tab === "system"} icon={<Palette className="size-3.5" />} label="系统风格" count={systemItems.length} onClick={() => setTab("system")} />
                                 <StyleCenterNavItem active={tab === "mine"} icon={<UserRound className="size-3.5" />} label="我的风格" count={userItems.length} onClick={() => setTab("mine")} />
                                 <StyleCenterNavItem active={tab === "favorites"} icon={<Star className="size-3.5" />} label="收藏" onClick={() => setTab("favorites")} />
                                 <StyleCenterNavItem active={tab === "recent"} icon={<Clock3 className="size-3.5" />} label="最近使用" onClick={() => setTab("recent")} />
                             </nav>
                             {tab === "system" ? (
-                                <div className="style-center-category-panel mt-2 border-t pt-2 lg:mt-4 lg:pt-3" style={{ borderColor: theme.node.stroke }}>
-                                    <div className="hidden px-2 pb-1.5 text-[var(--fs-tiny)] font-medium lg:block" style={{ color: theme.node.muted }}>分类</div>
-                                    <nav className="style-center-category-nav flex gap-1 lg:flex-col" aria-label="系统风格分类">
+                                <div className="style-center-category-panel border-t mt-4 pt-3" style={{ borderColor: theme.node.stroke }}>
+                                    <div className="px-2 pb-1.5 text-[var(--fs-tiny)] font-medium block" style={{ color: theme.node.muted }}>分类</div>
+                                    <nav className="style-center-category-nav flex gap-1 flex-col" aria-label="系统风格分类">
                                         {categories.map((item) => <button key={item} type="button" aria-current={category === item ? "page" : undefined} className={`style-center-category-item h-9 shrink-0 rounded-md px-2.5 text-left text-xs outline-none transition-colors focus-visible:ring-2 ${category === item ? "is-active font-medium" : ""}`} onClick={() => setCategory(item)}>{item}</button>)}
                                     </nav>
                                 </div>
                             ) : null}
                         </aside>
                         <main className="flex min-h-0 min-w-0 flex-col">
-                            <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b px-3 sm:px-4" style={{ borderColor: theme.node.stroke }}>
+                            <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b px-4" style={{ borderColor: theme.node.stroke }}>
                                 <div className="min-w-0 truncate text-xs font-medium">{styleCenterViewTitle(tab, category)}</div>
                                 <div className="shrink-0 text-[var(--fs-tiny)] tabular-nums" style={{ color: theme.node.muted }}>{visibleItems.length} 个风格</div>
                             </div>
-                            <div className="style-center-grid thin-scrollbar min-h-0 flex-1 content-start overflow-y-auto p-3 sm:p-4">
+                            <div className="style-center-grid thin-scrollbar min-h-0 flex-1 content-start overflow-y-auto p-4">
                             {visibleItems.map((item) => (
                                 <StyleCenterCard
                                     key={`${item.kind}-${item.preset.id}`}
@@ -700,7 +700,7 @@ function IconAction({ label, danger = false, onClick, children }: { label: strin
 }
 
 function StyleCenterNavItem({ active, icon, label, count, onClick }: { active: boolean; icon: ReactNode; label: string; count?: number; onClick: () => void }) {
-    return <button type="button" aria-current={active ? "page" : undefined} className={`style-center-nav-item flex h-11 min-w-fit items-center gap-2 rounded-md px-2.5 text-xs outline-none transition-colors focus-visible:ring-2 lg:w-full ${active ? "is-active font-medium" : ""}`} onClick={onClick}>{icon}<span className="whitespace-nowrap">{label}</span>{count !== undefined ? <span className="ml-auto tabular-nums opacity-55">{count}</span> : null}</button>;
+    return <button type="button" aria-current={active ? "page" : undefined} className={`style-center-nav-item flex h-11 min-w-fit items-center gap-2 rounded-md px-2.5 text-xs outline-none transition-colors focus-visible:ring-2 w-full ${active ? "is-active font-medium" : ""}`} onClick={onClick}>{icon}<span className="whitespace-nowrap">{label}</span>{count !== undefined ? <span className="ml-auto tabular-nums opacity-55">{count}</span> : null}</button>;
 }
 
 function styleCenterViewTitle(tab: StyleCenterTab, category: string) {
@@ -734,10 +734,10 @@ export function CanvasStyleDetailModal({ open, preset, selected = false, onClose
     return (
         <AppModal rootClassName="canvas-style-detail-modal" open={open} title={null} footer={null} centered destroyOnHidden width="min(820px, calc(100vw - 24px))" onCancel={onClose} flush>
             {preset ? <div className="canvas-style-detail-shell flex flex-col overflow-hidden" style={{ color: theme.node.text, background: theme.node.panel }}>
-                <div className="flex h-44 shrink-0 items-center justify-center overflow-hidden border-b sm:h-52" style={{ borderColor: theme.node.stroke, background: theme.canvas.background }}>
+                <div className="flex shrink-0 items-center justify-center overflow-hidden border-b h-52" style={{ borderColor: theme.node.stroke, background: theme.canvas.background }}>
                     <img src={preset.imageUrl} width="960" height="540" alt={`${preset.title}画风示意`} className="h-full w-full object-contain" style={preset.id === "black-white-noir" ? { filter: "grayscale(1) contrast(1.08)" } : undefined} />
                 </div>
-                <header className="border-b px-4 py-3 pr-12 sm:px-5 sm:pr-12" style={{ borderColor: theme.node.stroke }}>
+                <header className="border-b py-3 px-5 pr-12" style={{ borderColor: theme.node.stroke }}>
                     <div className="flex items-center gap-2 text-[var(--fs-tiny)] font-medium" style={{ color: theme.node.activeStroke }}><span>{preset.category}</span><span className="flex items-center gap-1" style={{ color: theme.node.muted }}><SlidersHorizontal className="size-3" />{preset.profile?.assets.length ? `${preset.profile.assets.length} 个执行资产` : "Prompt 通用"}</span></div>
                     <h2 className="mt-1 text-base font-semibold">{preset.title}</h2>
                     <p className="mt-1.5 text-xs leading-5" style={{ color: theme.node.muted }}>{preset.description}</p>
@@ -747,12 +747,12 @@ export function CanvasStyleDetailModal({ open, preset, selected = false, onClose
                     <StyleDetailMetric label="执行策略" value={preset.profile?.executionPolicy === "strict-assets" ? "严格校验" : "兼容降级"} muted={theme.node.muted} />
                     <StyleDetailMetric label="快照版本" value={`r${preset.profile?.revision || 1}`} muted={theme.node.muted} />
                 </div>
-                <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 sm:px-5">
+                <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-5">
                     {preset.profile?.assets.length ? <section className="border-b py-3" style={{ borderColor: theme.node.stroke }}><h3 className="text-xs font-semibold">执行资产</h3><div className="mt-2 divide-y" style={{ borderColor: theme.node.stroke }}>{preset.profile.assets.map((asset) => <div key={asset.id} className="flex items-center justify-between gap-3 py-2 text-xs"><span className="min-w-0"><span className="block truncate font-medium">{asset.title}</span><span className="mt-0.5 block text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>{kindOptionsLabel(asset.kind)} · {asset.provider}</span></span><span className="shrink-0 text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>{asset.status === "validated" ? "已验证" : asset.status === "unavailable" ? "不可用" : "待验证"}</span></div>)}</div></section> : null}
                     {sections.map((section) => <section key={section.title} className="border-b py-3 last:border-b-0" style={{ borderColor: theme.node.stroke }}><h3 className="text-xs font-semibold">{section.title}</h3><p className="mt-1.5 text-xs leading-5" style={{ color: theme.node.muted }}>{section.content}</p></section>)}
                     {preset.profile?.negativePrompt ? <section className="border-b py-3 last:border-b-0" style={{ borderColor: theme.node.stroke }}><h3 className="text-xs font-semibold">全局负面 Prompt</h3><p className="mt-1.5 whitespace-pre-wrap text-xs leading-5" style={{ color: theme.node.muted }}>{preset.profile.negativePrompt}</p></section> : null}
                 </div>
-                <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t px-4 py-3 sm:px-5" style={{ borderColor: theme.node.stroke }}><Button onClick={onClose}>关闭</Button>{onSelect ? <Button type="primary" disabled={selected} icon={selected ? <Check className="size-3.5" /> : <Palette className="size-3.5" />} onClick={() => onSelect(preset)}>{selected ? "当前画风" : "选择该画风"}</Button> : null}</footer>
+                <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t py-3 px-5" style={{ borderColor: theme.node.stroke }}><Button onClick={onClose}>关闭</Button>{onSelect ? <Button type="primary" disabled={selected} icon={selected ? <Check className="size-3.5" /> : <Palette className="size-3.5" />} onClick={() => onSelect(preset)}>{selected ? "当前画风" : "选择该画风"}</Button> : null}</footer>
             </div> : null}
         </AppModal>
     );

@@ -71,11 +71,7 @@ def _current(dao, owner, reference):
     }
     if reference.kind == "node":
         canvas = dao.canvas(project_id, reference.source_id)
-        row = (
-            next((r for r in dao.canvas_nodes(canvas.id) if r.node_key == reference.id), None)
-            if canvas
-            else None
-        )
+        row = dao.canvas_node(canvas.id, reference.id) if canvas else None
         if row is None:
             raise NotFound("已选节点已删除或不再可访问")
         fields = {

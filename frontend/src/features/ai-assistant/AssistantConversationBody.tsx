@@ -17,12 +17,13 @@ import { AssistantMentionTextarea } from './AssistantMentionTextarea';
 import { useAssistantRuntime } from './useAssistantRuntime';
 import { StudioFeedback } from '../../components/ui/StudioFeedback';
 import { timelineBubbles } from './AgentTimeline';
-import { materialIdentity, mergeMaterials, type MessageMaterial } from './assistant-materials';
+import { materialIdentity, materialReference, mergeMaterials, type MessageMaterial } from './assistant-materials';
 import { inspectMaterials, subjectSelectionFor } from './assistant-material-service';
 import { AssistantSkillPicker, type AssistantSkillChoice } from './AssistantSkillPicker';
 import { ensureSkillTokens, removeSkillToken, skillToken } from './assistant-skill-token';
 import { AssistantDiscussionHistory, type HistoryRequest } from './AssistantDiscussionHistory';
 import { AssistantBatchUndo } from './AssistantBatchUndo';
+import { isAssistantAdmissionRejection } from './assistant-receipt';
 
 export interface AssistantContextProps {
   contextPreview?: { key: string; label: string };
@@ -62,8 +63,12 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
   const [modelRevision, setModelRevision] = useState(0);
   const [contextBusy, setContextBusy] = useState(false);
   const [contextBlockReason, setContextBlockReason] = useState('');
-  const [includeContext, setIncludeContext] = useState(false);
+  const [includeContext, setIncludeContext] = useState(restored.contextKey === contextPreview?.key ? restored.includeContext ?? layout === 'standard' : layout === 'standard');
   const [materials, setMaterials] = useState<MessageMaterial[]>([]);
+  const [restoreMaterials, setRestoreMaterials] = useState(restored.materials ?? []);
+  const [restoringMaterials, setRestoringMaterials] = useState((restored.materials?.length ?? 0) > 0);
+  const [materialsError, setMaterialsError] = useState(restored.materialsInvalid ? '本机引用记录无法读取，请移除后重新选择引用。' : '');
+  const [materialsRevision, setMaterialsRevision] = useState(0);
   const [taskId, setTaskId] = useState(restored.taskId ?? '');
   const [independent, setIndependent] = useState(restored.newTask ?? false);
   const task = independent ? null : runtime.tasks.find(item => item.id === taskId && item.status !== 'succeeded') ?? runtime.task;
@@ -97,6 +102,19 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
   }, [task?.id, skillsDirty]);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
+    if (!restoreMaterials.length) { setRestoringMaterials(false); return; }
+    const controller = new AbortController(); setRestoringMaterials(true); setMaterialsError('');
+    assistantApi.inspectSubjects(restoreMaterials.map(({ name: _name, ...reference }) => reference), controller.signal).then(items => {
+      if (controller.signal.aborted) return;
+      if (items.length !== restoreMaterials.length || items.some(item => !restoreMaterials.some(original => materialIdentity(original) === materialIdentity(item) && original.revision === item.revision && (!original.checksum || original.checksum === item.checksum)))) {
+        setMaterialsError('引用版本已变化，请移除旧引用并重新选择。当前输入已保留。'); return;
+      }
+      setMaterials(items.map(item => ({ ...item, name: restoreMaterials.find(original => materialIdentity(original) === materialIdentity(item))?.name ?? item.id, project_name: '已恢复引用', source_name: item.source_id }))); setRestoreMaterials([]);
+    }).catch(cause => { if (!controller.signal.aborted) setMaterialsError(`引用恢复未完成：${errorMessage(cause)} 请重试读取，或移除后重新选择引用。`); })
+      .finally(() => { if (!controller.signal.aborted) setRestoringMaterials(false); });
+    return () => controller.abort();
+  }, [restoreMaterials, materialsRevision]);
+  useEffect(() => {
     if (!busy && !uncertain && pendingControl && autoResume.current === pendingControl.key) {
       void control(pendingControl.targetId, pendingControl.body, pendingControl);
     }
@@ -106,9 +124,10 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
     if (previousContextKey.current !== contextPreview?.key) { setIncludeContext(false); previousContextKey.current = contextPreview?.key; }
   }, [contextPreview?.key]);
   useEffect(() => {
-    setDraftError(saveAssistantDraft(accountId, conversation.id, { version: 1, text: draft, modelId, skills, skillsDirty, contextKey: contextPreview?.key, includeContext, taskId, newTask: independent }, workflowStorage())
+    if (restored.materialsInvalid && materialsError) return;
+    setDraftError(saveAssistantDraft(accountId, conversation.id, { version: 1, text: draft, modelId, skills, skillsDirty, contextKey: contextPreview?.key, includeContext, taskId, newTask: independent, materials: restoreMaterials.length ? restoreMaterials : materials.map(item => ({ ...materialReference(item), name: item.name })) }, workflowStorage())
       ? '' : '浏览器未能保存对话草稿，请在离开前复制当前输入。');
-  }, [accountId, conversation.id, draft, modelId, skills, skillsDirty, contextPreview?.key, includeContext, taskId, independent]);
+  }, [accountId, conversation.id, draft, modelId, skills, skillsDirty, contextPreview?.key, includeContext, taskId, independent, materials, restoreMaterials, materialsError, restored.materialsInvalid]);
   useEffect(() => {
     const controller = new AbortController(); setModelsLoading(true); setModelsError('');
     agentsApi.models(controller.signal).then(page => {
@@ -125,8 +144,8 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
     else setNewContent(true);
   }, [runtime.messages, runtime.delta, runtime.run?.status]);
   async function send(retry?: AssistantPendingSend) {
-    if (locked.current || historyBusy || historyPending || undoBusy || undoPending || contextBusy || readOnly || runtime.loading || runtime.accessEnded || restoredSend.error || restoredControl.error
-      || !retry && (stopTaskId || contextBlockReason || !task && !model || !current.current.draft.trim() || uncertain || pendingControl)) return;
+    if (locked.current || historyBusy || historyPending || undoBusy || undoPending || contextBusy || restoringMaterials || materialsError || readOnly || runtime.loading || runtime.accessEnded || restoredSend.error || restoredControl.error
+      || !retry && (stopping || contextBlockReason || !task && !model || !current.current.draft.trim() || uncertain || pendingControl)) return;
     const submitted = retry?.draft ?? current.current.draft;
     const captured = current.current;
     const matches = () => alive.current && !current.current.readOnly && !current.current.accessEnded
@@ -139,7 +158,7 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
       const input = retry ? null : inputContext.current!.snapshot();
       let context: AssistantMessageContext | null = null;
       if (!retry) {
-        try { if (captured.materials.length) context = await captured.prepareContext(false, captured.materials.map(({ kind, id, revision }) => ({ kind: kind as AssistantReference['kind'], id, revision }))); }
+        try { if (captured.includeContext || captured.materials.length) context = await captured.prepareContext(captured.includeContext, captured.materials.map(({ kind, id, revision }) => ({ kind: kind as AssistantReference['kind'], id, revision }))); }
         catch (cause) {
           if (cause instanceof Error && !(cause instanceof ApiError) && /^(当前|画布|模型偏好|保存期间|作品|引用)/.test(cause.message)) throw new ApiError(cause.message, 'assistant_context_blocked');
           throw cause;
@@ -150,6 +169,7 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
       if (!matches()) { if (alive.current) setActionError('当前作品或素材已变化，消息草稿已保留，请再次发送。'); return; }
       const body: AssistantTaskSendInput = (retry?.body as AssistantTaskSendInput | undefined) ?? {
         content: submitted.trim(), ...input,
+        ...(layout === 'standard' ? { script_reference: context?.script_reference ?? null } : {}),
         ...(task ? { task_id: task.id } : { new_task: true, model_config_id: modelId }),
         ...(selection ? { subject_selection: selection } : {}),
         ...(!task ? { execution_target: executionTarget ?? { mode: 'standard', project_id: projectId } } : {}),
@@ -160,7 +180,8 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
       }
       const key = retry?.key ?? await requestAttempt(attemptScope, body, attemptStorage());
       if (!matches()) return;
-      const resumeBody: AssistantControlInput | null = !retry && task && ['stopped', 'paused_error', 'paused_budget'].includes(task.status) ? { kind: 'resume', expected_control_seq: task.control_seq } : null;
+      const canResume = task?.interruptions?.resume ?? task?.interruptions_supported !== false;
+      const resumeBody: AssistantControlInput | null = !retry && task && canResume && ['stopped', 'paused_error', 'paused_budget'].includes(task.status) ? { kind: 'resume', expected_control_seq: task.control_seq } : null;
       const resume = retry?.resume ?? (resumeBody && task ? { version: 1 as const, kind: 'control' as const, targetId: task.id, body: resumeBody, key: await requestAttempt(`assistant-control:${task.id}:resume`, resumeBody, attemptStorage()) } : undefined);
       if (!matches()) return;
       const pending: AssistantPendingSend = { version: 1, body, key, draft: submitted, ...(resume ? { resume } : {}) };
@@ -191,7 +212,7 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
         if (current.current.draft === submitted) setDraft('');
         pinned.current = true;
       } catch (cause) {
-        const rejected = !retry && cause instanceof ApiError && !!cause.status && cause.status >= 400 && cause.status < 500;
+        const rejected = cause instanceof ApiError && isAssistantAdmissionRejection(cause);
         const cleared = rejected && clearAssistantPendingSend(accountId, conversation.id, key, storage);
         if (cleared) clearAttempt(attemptScope, attemptStorage());
         if (alive.current) { setUncertain(cleared ? null : pending); setActionError(errorMessage(cause)); }
@@ -201,8 +222,7 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
   }
   async function control(controlTaskId: string, body: AssistantControlInput, retry = pendingControl) {
     if (locked.current || readOnly || runtime.accessEnded || restoredControl.error || uncertain) return false;
-    const initialResume = !!retry && autoResume.current === retry.key;
-    if (initialResume) autoResume.current = null;
+    if (retry && autoResume.current === retry.key) autoResume.current = null;
     locked.current = true; setBusy(body.kind === 'stop' ? 'stop' : 'control'); setActionError('');
     const scope = `assistant-control:${controlTaskId}:${body.kind}`;
     try {
@@ -220,7 +240,7 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
           if (request.body.kind === 'redirect' && current.current.draft === request.body.content) setDraft('');
         }
       } catch (cause) {
-        if ((!retry || initialResume) && cause instanceof ApiError && cause.status && cause.status >= 400 && cause.status < 500
+        if (cause instanceof ApiError && isAssistantAdmissionRejection(cause)
           && clearAssistantPendingAction(accountId, conversation.id, 'control', request.key, storage)) {
           clearAttempt(scope, attemptStorage()); if (alive.current) setPendingControl(null);
         }
@@ -232,10 +252,7 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
     finally { locked.current = false; if (alive.current) setBusy(''); }
   }
   async function interject() {
-    const id = stopTaskId;
-    const content = current.current.draft.trim();
-    if (!id || !content) return;
-    await control(id, { kind: 'redirect', content });
+    await send();
   }
   const stop = (id: string) => {
     const actual = runtime.tasks.some(item => item.id === id) ? id : [runtime.run, ...runtime.queuedRuns].find(item => item?.id === id)?.task_id;
@@ -255,9 +272,9 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
     finally { locked.current = false; if (alive.current) setBusy(''); }
   }
   function newTask() {
-    setIndependent(true); setTaskId(''); setMaterials([]); setSkills([]);
-    setSkillsDirty(false);
-    setComposerVersion(value => value + 1);
+    setIndependent(true); setTaskId('');
+    if (!skillsDirty) setSkills([]);
+    setSkillsDirty(true);
   }
   /** 正文是方法选择的唯一入口：只有删掉原本存在的 /名称 才卸载该方法。 */
   function changeDraft(next: string) {
@@ -275,10 +292,10 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
     setSkills(next); setSkillsDirty(true);
     if (text !== draft) setDraft(text);
   }
-  const contextDisabled = readOnly || !!busy || historyBusy || historyPending || undoBusy || undoPending || !!uncertain || !!pendingControl || !!restoredControl.error;
+  const contextDisabled = readOnly || !!busy || historyBusy || historyPending || undoBusy || undoPending || !!uncertain || !!pendingControl || !!restoredControl.error || restoringMaterials || !!materialsError;
   const stopTaskId = active ? runtime.run?.task_id ?? task?.id : task && ['queued', 'running', 'waiting_media'].includes(task.status) ? task.id : undefined;
   const stopping = busy === 'stop' || runtime.tasks.some(item => item.id === stopTaskId && item.control_state === 'stop_pending');
-  const blocked = readOnly || runtime.loading || runtime.accessEnded || !!busy || historyBusy || historyPending || undoBusy || undoPending || contextBusy || !!contextBlockReason || !!uncertain || !!pendingControl || !!restoredSend.error || !!restoredControl.error || !!stopTaskId || !task && !model || !draft.trim();
+  const blocked = readOnly || runtime.loading || runtime.accessEnded || !!busy || historyBusy || historyPending || undoBusy || undoPending || contextBusy || restoringMaterials || !!materialsError || !!contextBlockReason || !!uncertain || !!pendingControl || !!restoredSend.error || !!restoredControl.error || stopping || !task && !model || !draft.trim();
   const taskRun = task ? [runtime.run, ...runtime.queuedRuns].find(run => run?.task_id === task.id) : undefined;
   const taskModelName = taskRun?.model_name || '沿用当前任务模型';
   const modelControl = task
@@ -356,7 +373,7 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
         ...(active && runtime.run && (runtime.delta || !reconnecting && !stopping) ? [{ key: `stream:${runtime.run.id}`, role: 'assistant', placement: 'start' as const, variant: 'borderless' as const, className: 'ai-assistant-bubble-reply', content: <article className="ai-assistant-turn ai-assistant-streaming" data-run-id={runtime.run.id}>{runtime.delta ? <AssistantReply text={runtime.delta}/> : <AssistantLoading label={runtime.run.status === 'queued' ? '等待回复' : '正在回复'}/>}</article> }] : []),
       ]}/> : null}
       {queuedStalled && runtime.connection === 'live' && <div className="ai-assistant-connection ai-assistant-stalled" role="status"><span>消息已提交，但迟迟未被调度。请确认后端调度进程正在运行。</span><Button size="small" onClick={() => runtime.reconnect()}>重新连接</Button></div>}
-      {runtime.run?.status === 'failed' ? <p className="ai-assistant-failed" role="status">{runtime.run.error?.message || '这次回复未完成，已有消息仍保留。请检查模型配置后重试。'}</p> : null}
+      {runtime.run?.status === 'failed' ? <p className="ai-assistant-failed" role="status">{runtime.run.error?.message || '本次任务尚未完成，已有成果和消息已保留。请根据上方提示处理后继续。'}</p> : null}
       {stopping && <AssistantLoading label="当前工具完整结束后停止"/>}
       {reconnecting && <div className="ai-assistant-connection"><AssistantLoading label="正在恢复连接"/><Button type="text" size="small" onClick={() => runtime.reconnect()}>重新连接</Button></div>}
       {queuedRuns.length > 0 && <div className="ai-assistant-queued" aria-label="排队消息">{queuedRuns.map(run => <div key={run.id}><span>排队位置 {run.queue_position || '等待中'}</span><Button type="text" size="small" disabled={readOnly || !!busy} onClick={() => void stop(run.id)}>取消排队</Button></div>)}</div>}
@@ -364,14 +381,20 @@ export function AssistantConversationBody({ conversation, accountId, projectId, 
     </div>
     {newContent ? <Button className="ai-assistant-new-content" size="small" onClick={() => { if (transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight; pinned.current = true; setNewContent(false); }}>查看最新消息</Button> : null}
     <footer className="ai-assistant-composer">
+      {restoringMaterials && <p className="ai-assistant-meta" role="status">正在核对草稿引用…</p>}
+      {materialsError && <StudioFeedback scope="chat" type="error" persistent title="引用恢复" message={materialsError} actions={<>{!!restoreMaterials.length && <Button size="small" disabled={restoringMaterials} onClick={() => setMaterialsRevision(value => value + 1)}>重试恢复引用</Button>}<Button size="small" disabled={restoringMaterials} onClick={() => { setRestoreMaterials([]); setMaterials([]); setMaterialsError(''); }}>移除恢复引用</Button></>}/>}
+      {layout === 'standard' && <Button size="small" type={includeContext ? 'default' : 'text'} aria-pressed={includeContext} disabled={contextDisabled} onClick={() => setIncludeContext(value => !value)}>{includeContext ? '已引用：当前剧本（有选区时仅引用选区）' : '引用当前剧本'}</Button>}
+      {task && <div className="ai-assistant-task-context"><span title={task.goal}>当前任务：{task.goal}</span><Button size="small" type="text" disabled={contextDisabled || !!stopTaskId} onClick={newTask}>开始新任务</Button></div>}
+      {task && task.input_revision !== task.applied_input_revision && <p className="ai-assistant-meta" role="status">补充要求已排队，将在当前步骤结束后生效。</p>}
       {contextBlockReason ? <p className="ai-assistant-meta" role="status">{contextBlockReason}</p> : null}
       <AgentContextComposer key={composerVersion} ref={inputContext} conversation={{ id: conversation.id, project_id: projectId }} layout={layout} attachmentApi={assistantApi} dialogClassName={`ai-assistant-context-dialog${layout === 'standard' ? ' standard-creation-dialog standard-assistant-dialog' : ''}`} materials={materials.map(item => ({ key: materialIdentity(item), name: item.name, kind: item.kind, thumbnail: null, onRemove: () => setMaterials(previous => previous.filter(candidate => candidate !== item)) }))} initialSkills={composerVersion ? [] : restored.skills} onSkills={setSkills} onSkillsEdited={() => setSkillsDirty(true)}
         presentation="assistant" skillsManaged
         disabled={readOnly || runtime.accessEnded || !!busy || !!uncertain} onBusy={setContextBusy} onBlockReason={setContextBlockReason}
         input={<div className="ai-assistant-input"><AssistantMentionTextarea layout={layout} projectId={projectId} references={mentionReferences} highlights={[...skills.map(skillToken), ...materials.map(item => `@${item.name}`)]} value={draft} disabled={readOnly || runtime.accessEnded} modelControl={modelControl} toolControl={toolControl} onChange={changeDraft} onSubmit={() => { if (!blocked) void send(); }}
           action={{ generating: !!stopTaskId, stopping, submitting: busy === 'send' || busy === 'save', disabled: stopTaskId ? contextDisabled || runtime.loading || runtime.accessEnded || stopping : blocked,
-            canInterject: !!stopTaskId && !!draft.trim() && !readOnly && !runtime.accessEnded && !contextBusy && !uncertain && !pendingControl,
-            interjecting: busy === 'control',
+            canStop: task?.interruptions?.stop ?? task?.interruptions_supported !== false,
+            canInterject: !!stopTaskId && !blocked,
+            interjecting: busy === 'send' || busy === 'save',
             onInterject: () => { void interject(); },
             onStop: () => { if (stopTaskId) void stop(stopTaskId); } }}
           skillMode={task?.execution_target?.mode ?? executionTarget?.mode}

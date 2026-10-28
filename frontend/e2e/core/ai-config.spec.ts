@@ -185,10 +185,10 @@ test('advanced editing retains every runtime field without exposing or resubmitt
   await expect(form.getByLabel('请求协议', { exact: true })).toHaveValue('chat-completion');
   await expect(form.getByLabel(/^默认参数 JSON/)).toHaveValue(JSON.stringify(runtimeProfile.default_options, null, 2));
   await page.screenshot({ path: '.runtime/ai-config-runtime-desktop.png' });
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 844 });
   await expect(form.getByLabel(/^逻辑能力配置集 JSON/)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-  await page.screenshot({ path: '.runtime/ai-config-runtime-mobile.png' });
+  await page.screenshot({ path: '.runtime/ai-config-runtime-desktop-1280.png' });
   await form.getByRole('textbox', { name: '配置名称', exact: true }).fill('完整保留的配置');
   await form.getByRole('button', { name: '保存配置', exact: true }).click();
   await expect(form).toHaveCount(0);
@@ -439,7 +439,7 @@ async function generationPolicyFixture(page: Page) {
   return { ...data, policy: state };
 }
 
-for (const width of [1440, 390]) test(`assistant media switch saves its own version and restores a disabled preference at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`assistant media switch saves its own version and restores a disabled preference at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 960 });
   const data = await generationPolicyFixture(page);
   await page.goto('/ai_config');

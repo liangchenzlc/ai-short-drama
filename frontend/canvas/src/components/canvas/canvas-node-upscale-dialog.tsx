@@ -56,7 +56,7 @@ export function CanvasNodeUpscaleDialog({ dataUrl, open, onClose, onConfirm }: {
                     <h2 className="text-xl font-semibold">调整尺寸</h2>
                     <p className="mt-2 text-sm opacity-60">通过插值放大像素尺寸，另存为新图片，保留原图。这不是 AI 超分，不会生成新的真实细节。</p>
                 </div>
-                <div className="grid gap-6 md:grid-cols-[minmax(260px,1fr)_360px]">
+                <div className="grid gap-6 grid-cols-[minmax(260px,1fr)_360px]">
                     <div className="rounded-xl border p-4">
                         <div className="grid min-h-[280px] place-items-center rounded-lg bg-black/5">
                             <img src={dataUrl} alt="" className="max-h-[320px] max-w-full rounded-lg object-contain shadow-xl" draggable={false} />

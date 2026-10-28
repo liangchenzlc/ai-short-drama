@@ -4,6 +4,7 @@ import { errorMessage } from '../../api/http';
 import { nativeVoiceApi, type VoiceCandidate } from '../../api/modules/native-voice';
 import type { AssistantOperation } from '../../api/types/assistant';
 import { Dialog } from '../../components/ui/Dialog';
+import { AssistantScriptProposal } from './AssistantScriptProposal';
 
 const resultStates: Record<string, string> = {
   created: '已创建', updated: '已修改', deleted: '已删除', unchanged: '未变化', adopted: '已设为主图',
@@ -67,6 +68,7 @@ export function OperationResults({ operation, layout, onUndo, undoDisabled }: {
   if (!refs.length) return null;
   return <div className="ai-assistant-result-list" aria-label="本步成果">
     {refs.map((original, index) => {
+      if (original.kind === 'script_proposal') return <AssistantScriptProposal key={operation.id} operationId={operation.id} disabled={undoDisabled}/>;
       const undoKind = original.media_role === 'character_voice' ? 'character_voice' : original.kind;
       const undo = operation.undo_receipts?.find(receipt => receipt.selected_keys.includes(`${undoKind}:${original.id}`));
       const restored = undo?.result_refs.find(ref => ref.kind === original.kind && ref.id === original.id);

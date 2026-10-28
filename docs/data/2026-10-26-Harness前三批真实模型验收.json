@@ -1,0 +1,37 @@
+{
+  "status": "passed",
+  "model": "gpt-6.1-sol",
+  "duration_seconds": 886.55,
+  "turns": 37,
+  "tool_calls": 30,
+  "writes": 2,
+  "max_dropped_groups": 27,
+  "retained_skills": 2,
+  "raw_replay_requests": 0,
+  "media_entity_leaks": 0,
+  "saved_characters": 2,
+  "saved_shots": 3,
+  "visual_stripe_side": "left",
+  "selected_image_read": true,
+  "completion_reviews": 3,
+  "working_observations": 7,
+  "verified_requirements": 11,
+  "task_runs": 2,
+  "user_continuations": 1,
+  "continuation_reasons": [
+    "agent_provider_error"
+  ],
+  "gateway_failures": [
+    {
+      "code": "agent_provider_error",
+      "external_requests": 1
+    }
+  ],
+  "cached_tokens": 1266011,
+  "run_input_tokens": 2195729,
+  "external_requests": 42,
+  "input_tokens": 2234244,
+  "output_tokens": 33859,
+  "acceptance_run": "harness-batches-live-v11",
+  "verified_at": "2026-10-26T11:18:45.316780+00:00"
+}

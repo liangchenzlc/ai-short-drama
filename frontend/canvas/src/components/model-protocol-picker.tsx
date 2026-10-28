@@ -25,7 +25,7 @@ type PickerDensity = "comfortable" | "compact";
 
 export function CapabilityCardPicker({ value, onChange, density = "comfortable" }: { value?: ModelCapabilityChoice; onChange?: (value: ModelCapabilityChoice) => void; density?: PickerDensity }) {
     return (
-        <div className={cn("grid grid-cols-2 gap-2 sm:grid-cols-4", density === "compact" && "gap-1.5")} role="radiogroup" aria-label="模型能力">
+        <div className={cn("grid gap-2 grid-cols-4", density === "compact" && "gap-1.5")} role="radiogroup" aria-label="模型能力">
             {capabilityChoices.map((item) => {
                 const selected = value === item.value;
                 return (
@@ -72,7 +72,7 @@ export function ProtocolCardPicker({
 }) {
     const availableProtocols = protocols.filter((item) => item.capability === capability && item.enabled !== false);
     return (
-        <div className={cn("grid grid-cols-1 gap-2 sm:grid-cols-2", density === "compact" && "gap-1.5 xl:grid-cols-3")} role="radiogroup" aria-label="模型请求协议">
+        <div className={cn("grid gap-2 grid-cols-2", density === "compact" && "gap-1.5 grid-cols-3")} role="radiogroup" aria-label="模型请求协议">
             {availableProtocols.map((protocol) => {
                 const selected = value === protocol.value;
                 return (

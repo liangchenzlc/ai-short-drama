@@ -35,6 +35,138 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.mark.skipif(os.getenv("RUN_GENERATION_BROKER_TESTS") != "1", reason="Broker test opt-in")
+def test_writing_documents_cross_real_text_worker_and_http(mysql_engine, db_session, monkeypatch):
+    from short_drama.service.project_service import ProjectService
+    from short_drama.service.project_writing_service import ProjectWritingService
+    from short_drama.tasks import worker
+
+    posts = []
+    outputs = ["雨夜旧信引发误会，大纲结尾揭开真相。", "😀开头\n重复句\n重复句\n结尾", "新的对白"]
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            posts.append(body)
+            result = {
+                "choices": [
+                    {"message": {"content": outputs[len(posts) - 1]}, "finish_reason": "stop"}
+                ]
+            }
+            data = json.dumps(result, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    settings = Settings().model_copy(
+        update={
+            "generation_queue_namespace": "writing_test_" + uuid4().hex,
+            "model_discovery_allowed_hosts": ["127.0.0.1"],
+        }
+    )
+    factory = session_factory(mysql_engine)
+    executor = GenerationExecutionService(factory, settings, GenerationGateway(settings), None)
+    monkeypatch.setattr(worker, "execution_service", lambda: executor)
+    app = make_celery(settings)
+    exchange, dead_exchange, queues = topology(settings)
+    publisher = Publisher(factory, settings)
+    with factory.begin() as session:
+        model = AIModelConfig(
+            id=next_id(),
+            service_type="text",
+            name="Writing HTTP fixture",
+            model_key="fixture",
+            provider="fixture",
+            base_url=f"http://127.0.0.1:{server.server_port}/v1",
+        )
+        session.add(model)
+        model_id = model.id
+    project = ProjectService(db_session).create_project({"name": "Writing worker test"})
+    writing = ProjectWritingService(db_session)
+
+    def run(source, **extra):
+        state = writing.get(project.id)
+        source.update(project_id=str(project.id), content_version=state["content_version"])
+        with factory() as session:
+            receipt, _ = AIGenerationService(session, settings).create(
+                "text",
+                {
+                    "config_id": str(model_id),
+                    "source": source,
+                    **extra,
+                },
+                str(uuid4()),
+            )
+        deadline = time.monotonic() + 25
+        while time.monotonic() < deadline:
+            publisher.tick()
+            with factory() as session:
+                task = session.get(AsyncTask, int(receipt["generation_id"]))
+                if task.status in {"succeeded", "failed", "cancelled"}:
+                    assert task.status == "succeeded", task.error
+                    return writing.get(project.id)
+            time.sleep(0.1)
+        pytest.fail("Text worker did not complete the writing business save")
+
+    try:
+        with start_worker(
+            app,
+            perform_ping_check=False,
+            pool="threads",
+            concurrency=2,
+            queues=[queues["text"].name],
+            loglevel="CRITICAL",
+            shutdown_timeout=20,
+        ):
+            state = run({"scene": "story_outline", "input_kind": "idea", "idea": "雨夜旧信"})
+            assert state["outline"]["content"] == outputs[0]
+            state = run({"scene": "script_generate", "input_kind": "outline"})
+            assert state["editing_script"]["content"] == outputs[1]
+            script_id = state["editing_script"]["id"]
+            start = outputs[1].rindex("重复句")
+            state = run(
+                {
+                    "scene": "script_rewrite",
+                    "script_id": script_id,
+                    "start": start,
+                    "end": start + 3,
+                    "selected_text": "重复句",
+                },
+                instructions="只改这一句",
+            )
+            assert (
+                state["editing_script"]["content"]
+                == outputs[1][:start] + outputs[2] + outputs[1][start + 3 :]
+            )
+            assert state["confirmed_script_id"] == script_id
+            assert state["active_writing_tasks"] == []
+            assert len(posts) == 3
+            assert "雨夜旧信" in posts[0]["messages"][1]["content"]
+    finally:
+        try:
+            with app.connection_for_write() as connection:
+                channel = connection.channel()
+                for queue in queues.values():
+                    queue(channel).delete(if_unused=False, if_empty=False)
+                    Queue(queue.name + ".dead", channel=channel).delete(
+                        if_unused=False, if_empty=False
+                    )
+                exchange(channel).delete(if_unused=False)
+                dead_exchange(channel).delete(if_unused=False)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+
+
+@pytest.mark.skipif(os.getenv("RUN_GENERATION_BROKER_TESTS") != "1", reason="Broker test opt-in")
 def test_four_generation_actions_cross_real_broker_and_archive(
     mysql_engine, db_session, monkeypatch
 ):

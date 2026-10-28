@@ -129,7 +129,7 @@ test('polling signed media URLs keeps active audio and playback uninterrupted', 
   expect(data.errors).toEqual([]);
 });
 
-test('materials, shorter replacement confirmation, image duration and compact inspector', async ({ page }, info) => {
+test('materials, shorter replacement confirmation, image duration and desktop inspector', async ({ page }, info) => {
   const data = await fixture(page);
   await page.getByRole('button', { name: '展开编辑设置', exact: true }).click();
   await page.getByRole('button', { name: '替换素材', exact: true }).click();
@@ -152,11 +152,15 @@ test('materials, shorter replacement confirmation, image duration and compact in
   await page.getByRole('button', { name: '统一响度', exact: true }).click();
   await expect.poll(() => data.state.sound!.document.audio_clips!.find(c => c.kind === 'music')!.gain_db).toBe(2);
   await page.screenshot({ path: info.outputPath('multitrack-desktop.png'), fullPage: true, animations: 'disabled' });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole('dialog', { name: '成片编辑设置', exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 844 });
+  const inspector = page.getByRole('complementary', { name: '成片编辑设置', exact: true });
+  await expect(inspector).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await page.screenshot({ path: info.outputPath('multitrack-mobile.png'), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: info.outputPath('multitrack-desktop-1280.png'), fullPage: true, animations: 'disabled' });
   await page.keyboard.press('Escape');
+  await expect(inspector).toBeVisible();
+  await inspector.getByRole('button', { name: '收起编辑设置', exact: true }).click();
+  await expect(inspector).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(data.errors).toEqual([]);
 });

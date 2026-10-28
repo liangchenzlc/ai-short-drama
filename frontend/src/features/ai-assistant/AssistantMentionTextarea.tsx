@@ -18,7 +18,7 @@ export function AssistantMentionTextarea({ projectId, value, disabled, reference
   onSubmit: () => void; onReference: (reference: AssistantMentionReference) => Promise<boolean>;
   onSkill?: (skill: AgentSkill) => boolean; onBrowseSkills?: () => void; skillMode?: 'standard' | 'infinite_canvas';
   modelControl?: ReactNode; toolControl?: ReactNode; footer?: ReactNode;
-  action: { generating: boolean; stopping: boolean; submitting: boolean; disabled: boolean; onStop: () => void; canInterject?: boolean; interjecting?: boolean; onInterject?: () => void };
+  action: { generating: boolean; stopping: boolean; submitting: boolean; disabled: boolean; onStop: () => void; canStop?: boolean; canInterject?: boolean; interjecting?: boolean; onInterject?: () => void };
   layout?: 'standard';
 }) {
   const [mention, setMention] = useState<{ kind: 'subject' | 'skill'; start: number; end: number; query: string } | null>(null);
@@ -145,15 +145,15 @@ export function AssistantMentionTextarea({ projectId, value, disabled, reference
             <div className="ai-assistant-sender-footer">{modelControl}{toolControl}
               {action.generating
                 ? <>
-                    {action.canInterject && <SendButton className="ai-assistant-send" aria-label="发送补充要求" disabled={adding || !!mention} loading={action.interjecting} title="发送补充要求 · Enter" icon={<ArrowUp size={16}/>}/>}
-                    <LoadingButton className="ai-assistant-send" aria-label="停止" aria-busy={action.stopping} disabled={action.disabled} title={action.stopping ? '正在停止，等待当前操作结束' : '停止回复'} icon={<Square size={12} fill="currentColor"/>}/>
+                    {action.canInterject && <Button className="ai-assistant-send" aria-label="发送补充要求" disabled={adding || !!mention} loading={action.interjecting} title="补充要求将在下一步骤生效 · Enter" onClick={() => action.onInterject?.()} icon={<ArrowUp size={16}/>}/>}
+                    {action.canStop !== false ? <LoadingButton className="ai-assistant-send" aria-label="停止" aria-busy={action.stopping} disabled={action.disabled} title={action.stopping ? '正在停止，等待当前操作结束' : '停止回复'} icon={<Square size={12} fill="currentColor"/>}/> : <span className="ai-assistant-meta" role="status">正在创作…</span>}
                   </>
                 : <SendButton className="ai-assistant-send" aria-label="发送" disabled={action.disabled || adding || !!mention} loading={action.submitting} title="Enter 发送 · Shift + Enter 换行" icon={<ArrowUp size={16}/>}/>}
             </div>{footer}
           </>} submitType={false} aria-expanded={suggestionOpen} aria-haspopup="menu" aria-describedby={mentionHelpId}
           placeholder={onSkill ? '描述想法，@ 引用素材，/ 选择 Skill' : '描述你的想法，或用 @ 引用素材'}
           onChange={(text, event) => change(text, event?.currentTarget.selectionStart ?? text.length)}
-          onSubmit={() => { if (mention) return; if (action.generating) { if (action.canInterject) action.onInterject?.(); return; } onSubmit(); }} onCancel={action.onStop}
+          onSubmit={() => { if (mention) return; if (action.generating) { if (action.canInterject) action.onInterject?.(); return; } onSubmit(); }} onCancel={() => { if (action.canStop !== false) action.onStop(); }}
           onKeyDown={event => {
             if (composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
             if (mention && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMention(null); }

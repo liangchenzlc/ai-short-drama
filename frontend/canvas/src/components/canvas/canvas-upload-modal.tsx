@@ -156,7 +156,7 @@ export function CanvasUploadModal({ open, initialFiles, onClose, onUpload, onImp
                 </section>
                 {error && <p role="alert" className="border-t border-border px-4 py-2 text-xs text-destructive">{error}</p>}
                 <footer className="flex h-14 shrink-0 items-center justify-between border-t border-border px-4">
-                    <span className="hidden text-[var(--fs-label)] text-foreground/45 sm:inline">文件将在确认后按顺序添加到画布</span>
+                    <span className="text-foreground/45 inline">文件将在确认后按顺序添加到画布</span>
                     <div className="ml-auto flex gap-2">
                         <Button disabled={uploading} onClick={onClose}>取消</Button>
                         <Button type="primary" aria-label={`添加到画布${fileList.length ? `（${fileList.length}）` : ""}`} aria-busy={uploading} icon={<UploadCloud className="size-4" />} disabled={uploading || !fileList.length} loading={uploading} onClick={() => void submit()}>

@@ -30,4 +30,3 @@
 .sound-inline .sound-subtitle label:nth-child(3) { grid-column: 1 / -1; }
 .sound-inline .sound-fields input[type="file"] { max-width: 100%; }
 .sound-inline .sound-actions { gap: 8px; }
-@media (max-width: 640px) { .sound-editor { grid-template-columns: 1fr; } .sound-editor nav { max-height: 200px; } .sound-subtitle { grid-template-columns: 1fr 1fr; } .sound-subtitle label:nth-child(3) { grid-column: 1 / -1; } }

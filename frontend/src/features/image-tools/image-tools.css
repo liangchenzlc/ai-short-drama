@@ -73,24 +73,4 @@
 .image-item-history article { display: flex; flex-direction: column; gap: 8px; min-width: 0; color: var(--sub); font-size: 12px; }
 .image-history-preview { padding: 0; background: var(--media-canvas, #080808); border: 0; border-radius: 6px; overflow: hidden; }
 .image-history-preview img { display: block; width: 100%; height: 180px; object-fit: contain; }
-@media (hover: none) { .image-subject-toolbar { opacity: 1; pointer-events: auto; } .image-subject-toolbar .ant-btn { flex-basis: 38px; width: 38px; min-width: 38px; height: 38px; min-height: 38px; padding: 0; } }
-@media (max-width: 700px) {
-  .standard-image-group { min-height: 280px; padding: 10px; gap: 7px; }
-  .image-subject-grid { min-height: 220px; gap: 7px; }
-  .image-subject-grid-4 { min-height: 360px; }
-  .image-subject-grid-many { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .image-subject-toolbar .ant-btn { padding: 0; font-size: 11px; }
-  .image-subject-label { top: 6px; left: 6px; font-size: 10px; }
-  .image-subject-size { display: none; }
-  .image-subject-state { padding: 16px 6px; font-size: 11px; }
-  .image-tools-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
-  .image-tools-body { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px; }
-  .image-tools-settings { gap: 12px; }
-  .image-tools-feedback { padding-inline: 12px; }
-  .image-tools-dialog .production-dialog-footer > span { display: none; }
-  .image-drawing-controls .ant-segmented-item-label { padding-inline: 8px; }
-  .image-item-history { padding: 12px; gap: 12px; }
-}
 @media (prefers-reduced-motion: reduce) { .image-subject-toolbar { transition: none; } }
-
-@media (hover: none) { @container (max-width: 165px) { .image-subject-toolbar { width: 86px; } } }

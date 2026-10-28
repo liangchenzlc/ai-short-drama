@@ -78,6 +78,7 @@ export function ShotVideoCandidates({ shot, disabled, model, onModelChange, prep
   }, [modelId, draft.loaded, draft.value.model_config_id, draft.session]);
   const [capabilities, setCapabilities] = useState<AiModelCapabilitiesDto | null>(null);
   const [capLoading, setCapLoading] = useState(true);
+  const [capError, setCapError] = useState('');
   const [revision, setRevision] = useState(0);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -120,16 +121,21 @@ export function ShotVideoCandidates({ shot, disabled, model, onModelChange, prep
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    setCapabilities(null); setCapLoading(!!modelId);
+    setCapabilities(null); setCapLoading(!!modelId); setCapError('');
     if (modelId) void aiModelConfigs.capabilities(modelId, controller.signal)
       .then(result => { if (!controller.signal.aborted) setCapabilities(result); })
-      .catch(cause => { if (!controller.signal.aborted) setMessage(errorMessage(cause)); })
+      .catch(cause => { if (!controller.signal.aborted) { const detail = `视频模型能力读取失败：${errorMessage(cause)}`; setCapError(detail); setMessage(detail); } })
       .finally(() => { if (!controller.signal.aborted) setCapLoading(false); });
     return () => controller.abort();
   }, [modelId, revision]);
 
   const effectiveShot = { ...shot, video_settings: { ...shot.video_settings, resolution: selectedSettings.resolution as ShotRead['video_settings']['resolution'] ?? shot.video_settings.resolution, duration_ms: selectedSettings.duration_ms } };
-  const reason = !draft.loaded ? '正在载入个人视频设置…' : draft.status === 'error' || draft.status === 'conflict' ? '请先处理个人生成设置保存提示。' : videoBlockReason(effectiveShot, modelId, capabilities, capLoading);
+  const reason = capError || (!draft.loaded ? '正在载入个人视频设置…' : draft.status === 'error' || draft.status === 'conflict' ? '请先处理个人生成设置保存提示。' : videoBlockReason(effectiveShot, modelId, capabilities, capLoading));
+  const sendReason = uncertain ? '上次视频请求仍待核对，已保留原请求。' : recoveryBlocked ? '生成恢复记录无法读取，请从保存详情处理恢复记录。' : disabled ? '镜头存在未解决的编辑或保存状态，请先核对。' : reason;
+  const blockerActions = uncertain ? <Button size="small" loading={busy} onClick={() => void resolveUnknown()}>核对原视频请求</Button>
+    : capError ? <Button size="small" onClick={() => setRevision(value => value + 1)}>重试读取能力</Button>
+    : draft.status === 'error' ? <Button size="small" onClick={() => void draft.retry()}>重试保存设置</Button>
+    : draft.status === 'conflict' ? <Button size="small" onClick={() => void draft.reload()}>核对服务端设置</Button> : undefined;
   async function generate() {
     if (mutation.current || disabled || reason || uncertain || recoveryBlocked || !modelId) return;
     mutation.current = true; setBusy(true); setMessage('');
@@ -192,7 +198,7 @@ export function ShotVideoCandidates({ shot, disabled, model, onModelChange, prep
         <div className="standard-video-reference-row">{shot.image?.url ? <><PreviewImage presentation="standard-creation" src={shot.image.url} alt="视频生成的分镜参考图" triggerClassName="standard-video-reference"/><p>分镜 {String(shot.position).padStart(2, '0')}<br/>作为视频参考</p></> : <p className="episode-help">请先生成分镜图或设置主图。</p>}</div>
       </section>
       <GenerationComposer feedbackRef={setModelFeedback} purpose="video" prompt={draft.value.input_text} onPrompt={input_text => draft.edit({ input_text })} maxLength={16000} busy={busy} disabled={disabled || !draft.loaded}
-        sendDisabled={disabled || !!reason || !!uncertain || recoveryBlocked} sendTitle={reason.startsWith('正在') ? undefined : reason || undefined} onSend={() => void generate()}
+        sendDisabled={disabled || !!reason || !!uncertain || recoveryBlocked} sendTitle={sendReason || undefined} blocker={sendReason && !busy && !sendReason.startsWith('正在') ? { message: sendReason, actions: blockerActions } : undefined} onSend={() => void generate()}
         model={<EpisodeModelSelect presentation="standard-creation" optionLayout="compact" feedbackContainer={modelFeedback} kind="video" value={draft.value.model_config_id ?? model} label="视频模型" disabled={disabled || busy || !draft.loaded} onResolvedChange={onResolved}
           onChange={id => { setModelId(undefined); setCapabilities(null); draft.edit({ model_config_id: id || null }); onModelChange(id); }}/>} parameters={<ShotVideoParameters settings={selectedSettings} durationMs={shot.duration_ms} disabled={disabled || busy || !draft.loaded || capLoading} capabilities={capabilities} onChange={draft.edit}/>}/>
       <CreationDraftFeedback draft={draft}/>

@@ -28,9 +28,3 @@
 .storyboard-settings-body .writing-control { margin: 0; }
 .storyboard-settings-body .ant-input-number-group-wrapper { margin-top: 8px; }
 .storyboard-settings-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 16px 22px 20px; border-top: 1px solid var(--hair); }
-@media (max-width: 767px) {
-  .storyboard-heading-actions { width: 100%; }
-  .storyboard-heading-actions .ant-btn { min-height: var(--control-height-touch, 44px); }
-  .web-episode .storyboard-editor .storyboard-list { padding: 8px; gap: 8px; }
-  .storyboard-settings-body, .storyboard-settings-footer { padding-inline: 16px; }
-}

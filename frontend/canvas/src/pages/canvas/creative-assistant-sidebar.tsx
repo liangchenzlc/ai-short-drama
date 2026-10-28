@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useRef, type ComponentProps } from "react";
 import { CreativeAssistantPanel } from "@host/features/ai-assistant/CreativeAssistantPanel";
-import { AppDrawer } from "@/components/ui/product/app-drawer";
 import { ASSISTANT_MAX_WIDTH, ASSISTANT_MIN_WIDTH, type CreativeAssistantLayout } from "./use-creative-assistant-layout";
 import "./canvas-assistant-sidebar.css";
 
 type Props = ComponentProps<typeof CreativeAssistantPanel> & {
     assistant: CreativeAssistantLayout;
-    dockable: boolean;
     visible: boolean;
 };
 
-/** 画布只负责原停靠/抽屉容器，消息与输入统一由工作台公共助手提供。 */
-export function CreativeAssistantSidebar({ assistant, dockable, visible, ...props }: Props) {
+/** 画布提供桌面停靠栏，消息与输入统一由工作台公共助手提供。 */
+export function CreativeAssistantSidebar({ assistant, visible, ...props }: Props) {
     const sidebar = useRef<HTMLElement>(null);
     const resizeCleanup = useRef<(() => void) | null>(null);
     useEffect(() => () => resizeCleanup.current?.(), []);
@@ -33,8 +31,6 @@ export function CreativeAssistantSidebar({ assistant, dockable, visible, ...prop
         window.addEventListener("pointercancel", done);
     }, [assistant]);
     const content = <CreativeAssistantPanel {...props} open={visible} />;
-    if (!dockable) return <AppDrawer flush forceRender destroyOnHidden={false} open={visible} placement="right" title={null} closable={false}
-        onClose={props.onClose} width="min(380px, 92vw)" aria-label="AI 创作助手">{content}</AppDrawer>;
     return <aside ref={sidebar} className="canvas-assistant-sidebar creative-assistant-canvas" hidden={!visible}
         aria-label="AI 创作助手" style={{ width: assistant.width, flexBasis: assistant.width }}>
         <button type="button" className="canvas-assistant-resize" aria-label="调整助手宽度"

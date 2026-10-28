@@ -97,19 +97,6 @@
 .standard-creation-dialog .identity-form-embedded { padding: 16px; gap: 12px; }
 .standard-creation-dialog .identity-form-embedded > p { margin: 0; font-size: 12px; }
 .standard-creation-dialog .identity-form-embedded label { gap: 6px; }
-
-@media (max-width: 700px) {
-  .standard-image-ratios button { height: 60px; }
-  .standard-image-resolutions button { height: 40px; }
-  .standard-video-options .standard-image-resolutions button { height: 44px; }
-  .standard-output-options-heading .ant-btn { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
-  .standard-creation-dialog.ui-dialog > header { padding: 8px 12px; }
-  .standard-creation-dialog.ui-dialog > header .icon-button { width: 44px; height: 44px; min-height: 44px; }
-  .standard-creation-dialog .image-preview-toolbar { padding: 10px 12px; }
-  .standard-creation-dialog .image-preview-controls { width: 100%; }
-  .standard-creation-dialog .image-preview-controls > small { margin-right: auto; }
-  .standard-creation-popup .ant-dropdown-menu-item { min-height: 38px; }
-}
 @media (prefers-reduced-motion: reduce) {
   .web-episode :is(.ant-btn, .episode-step-button, .episode-switch), .standard-creation-dialog .ant-btn { transition: none; }
 }

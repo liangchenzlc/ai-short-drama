@@ -13,11 +13,14 @@ export type GenerationSource = (
   | { scene: 'shot_image'; shot_id: string; layout: ImageLayout; context_mode?: 'saved'; row_version?: string; context_hash?: string }
   | { scene: 'asset_image'; asset_id: string; row_version: string; project_id?: string }
   | { scene: 'novel_script'; project_id: string;  content_version: string }
+  | { scene: 'story_outline'; project_id: string; content_version: string; input_kind: 'novel' | 'idea'; idea?: string }
+  | { scene: 'script_generate'; project_id: string; content_version: string; input_kind: 'novel' | 'outline' | 'idea'; idea?: string }
+  | { scene: 'script_rewrite'; project_id: string; content_version: string; script_id: string; start: number; end: number; selected_text: string }
   | { scene: 'script_shots' | 'script_assets'; project_id: string;  script_id: string; content_version: string }) & DraftSourceReference;
 interface CreateBase { config_id?: string }
 export interface TextGenerationRequest extends CreateBase {
   input?: { messages: { role: 'system' | 'user' | 'assistant'; content: string }[] };
-  source?: Extract<GenerationSource, { scene: 'novel_script' | 'script_shots' | 'script_assets' | 'dialogue_extract' | 'image_operation' }>;
+  source?: Extract<GenerationSource, { scene: 'novel_script' | 'story_outline' | 'script_generate' | 'script_rewrite' | 'script_shots' | 'script_assets' | 'dialogue_extract' | 'image_operation' }>;
   extraction?: { kinds: ('character' | 'scene' | 'prop')[] };
   storyboard?: { average_shot_duration_ms: number };
   instructions?: string;
@@ -65,7 +68,7 @@ export interface GenerationDetail extends GenerationSummary {
   input: Record<string, unknown>; parameters: Record<string, unknown>;
   resolved_parameters?: Record<string, unknown>;
   started_at?: string | null; finished_at?: string | null;
-  result: { text: { record_id: string; content: string; finish_reason: string | null } | null; assets: MediaAsset[]; partial: boolean; warnings?: { code: string; message: string; output_index?: number | null }[]; business?: { kind: 'novel_script'; schema_version: 1; script_id: string } | { kind: 'script_shots'; schema_version: 1; shots: { title?: string; source_excerpt?: string; story_beat?: string; script: string; duration_ms?: number; asset_ids: string[] }[]; applied: { mode: 'append' | 'replace'; shot_ids: string[]; applied_at: string; storyboard_version: string } | null } | { kind: 'script_assets'; schema_version: 1; items: { candidate_id: string; applied: { asset_id: string } | null }[] } | null };
+  result: { text: { record_id: string; content: string; finish_reason: string | null } | null; assets: MediaAsset[]; partial: boolean; warnings?: { code: string; message: string; output_index?: number | null }[]; business?: { kind: 'story_outline' | 'script_generate' | 'script_rewrite'; schema_version: 1; document_id: string; content_version: string } | { kind: 'novel_script'; schema_version: 1; script_id: string } | { kind: 'script_shots'; schema_version: 1; shots: { title?: string; source_excerpt?: string; story_beat?: string; script: string; duration_ms?: number; asset_ids: string[] }[]; applied: { mode: 'append' | 'replace'; shot_ids: string[]; applied_at: string; storyboard_version: string } | null } | { kind: 'script_assets'; schema_version: 1; items: { candidate_id: string; applied: { asset_id: string } | null }[] } | null };
   source_snapshot?: Record<string, unknown> | null;
   effective_prompt?: string | null;
 }
@@ -78,7 +81,7 @@ export interface GenerationFilters {
   service_type: GenerationKind; status?: string; config_id?: string; source_scene?: string; project_id?: string;
   source_id?: string; created_after?: string; created_before?: string; offset: number; limit: number;
 }
-export interface AssetFilters { media_type: 'image' | 'video' | 'audio'; resource_scope?: 'all' | 'personal' | 'project'; project_id?: string; name?: string; source_scene?: string; source_id?: string; created_after?: string; created_before?: string; offset: number; limit: number }
+export interface AssetFilters { media_type?: 'image' | 'video' | 'audio'; workspace_mode?: 'standard' | 'infinite_canvas'; resource_scope?: 'all' | 'personal' | 'project'; project_id?: string; name?: string; source_scene?: string; source_id?: string; created_after?: string; created_before?: string; offset: number; limit: number }
 export interface ApplyAssetRequest {
   target: { type: 'shot_image' | 'shot_video' | 'asset_image'; id: string };
   expected_media_id: string | null;

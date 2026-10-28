@@ -40,48 +40,21 @@ function AssetInformation({ value, disabled, onChange }: {
 
 function useSettingsPanel() {
   const controls = useEpisodeCreationControls();
-  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 700px)').matches);
-  const [open, setOpen] = useState(() => !window.matchMedia('(max-width: 700px)').matches);
-  const pane = useRef<HTMLDivElement | null>(null);
-  const trigger = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    const query = window.matchMedia('(max-width: 700px)');
-    const changed = () => { setMobile(query.matches); if (query.matches) setOpen(false); }; query.addEventListener('change', changed);
-    return () => query.removeEventListener('change', changed);
-  }, []);
-  useEffect(() => {
-    if (!mobile || !open) return;
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); setOpen(false); requestAnimationFrame(() => {
-        const target = trigger.current?.isConnected ? trigger.current : pane.current?.closest('.standard-object-panel')?.querySelector<HTMLElement>('button[aria-label="展开生成设置"]');
-        target?.focus();
-      }); }
-      if (event.key !== 'Tab' || !pane.current || document.querySelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')) return;
-      const nodes = [...pane.current.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex="0"]')].filter(node => node.getClientRects().length);
-      const first = nodes[0]; const last = nodes.at(-1);
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    };
-    document.addEventListener('keydown', handler);
-    requestAnimationFrame(() => pane.current?.querySelector<HTMLElement>('input:not(:disabled),button:not(:disabled)')?.focus());
-    return () => document.removeEventListener('keydown', handler);
-  }, [mobile, open]);
-  const reveal = () => { trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; controls.revealPanel?.(); setOpen(true); };
-  return { open, mobile, pane, reveal, close: () => { setOpen(false); if (mobile) requestAnimationFrame(() => {
-    const target = trigger.current?.isConnected ? trigger.current : pane.current?.closest('.standard-object-panel')?.querySelector<HTMLElement>('button[aria-label="展开生成设置"]');
-    target?.focus();
-  }); } };
+  const [open, setOpen] = useState(true);
+  const pane = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const reveal = () => { controls.revealPanel?.(); setOpen(true); };
+  return { open, pane, trigger, reveal, close: () => { setOpen(false); trigger.current?.focus(); } };
 }
 
 function ObjectPanel({ title, settings, actions, status, preview, children }: {
   title: string; settings: ReturnType<typeof useSettingsPanel>; actions?: ReactNode; status?: ReactNode; preview: ReactNode; children: ReactNode;
 }) {
   return <section className={`standard-object-panel episode-asset-detail${settings.open ? '' : ' is-settings-collapsed'}`} aria-label={`素材 ${title}`}>
-    <header className="standard-object-heading"><h3 title={title}>{title}</h3><div className="standard-asset-object-actions">{status}{actions}<Button type="text" aria-label={settings.open ? '收起生成设置' : '展开生成设置'} title={settings.open ? '收起生成设置' : '展开生成设置'} aria-expanded={settings.open} icon={settings.open ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>} onClick={settings.open ? settings.close : settings.reveal}/></div></header>
+    <header className="standard-object-heading"><h3 title={title}>{title}</h3><div className="standard-asset-object-actions">{status}{actions}<Button ref={settings.trigger} type="text" aria-label={settings.open ? '收起生成设置' : '展开生成设置'} title={settings.open ? '收起生成设置' : '展开生成设置'} aria-expanded={settings.open} icon={settings.open ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>} onClick={settings.open ? settings.close : settings.reveal}/></div></header>
     <div className={`standard-object-media${settings.open ? '' : ' is-settings-collapsed'}`}>
       <section className="standard-object-preview" aria-label="素材图片预览">{preview}</section>
-      {settings.open && settings.mobile && <button className="standard-asset-settings-backdrop" aria-label="关闭设置遮罩" onClick={settings.close}/>}
-      <div ref={settings.pane} className={`standard-object-settings${settings.mobile && settings.open ? ' is-mobile-open' : ''}`} hidden={!settings.open} role={settings.mobile && settings.open ? 'dialog' : undefined} aria-modal={settings.mobile && settings.open ? true : undefined} aria-label="素材生成设置">
+      <div ref={settings.pane} className="standard-object-settings" hidden={!settings.open} aria-label="素材生成设置">
         <header className="standard-asset-settings-heading"><h4>生成设置</h4><Button type="text" aria-label="关闭生成设置" title="收起生成设置" icon={<X size={17}/>} onClick={settings.close}/></header>
         <div className="standard-object-settings-scroll standard-asset-settings-content">{children}</div>
       </div>
@@ -107,7 +80,6 @@ export function LocalAssetEditor({ draft, readOnly, onChange, onRetry, onRemove,
   }, [onUploadBusyChange]);
   useEffect(() => { registerBarrier({ hasUnsettled: () => uploading.current, flush: async () => !uploading.current }); return () => registerBarrier(null); }, [registerBarrier]);
   useEffect(() => {
-    if (settings.mobile) return;
     settings.reveal();
     const frame = requestAnimationFrame(() => settings.pane.current?.querySelector<HTMLInputElement>('input[aria-label="素材名称"]')?.focus());
     return () => cancelAnimationFrame(frame);
@@ -194,6 +166,7 @@ export function EpisodeAssetEditor({ asset, scope, actor, readOnly, initialGener
     }).catch(cause => { if (alive.current) setArtworkError(errorMessage(cause)); });
   }, [asset.id, session]);
   const images = useImageGroup('asset', asset.id, artworkChanged);
+  useEffect(() => { void images.refresh(); }, [asset, images.refresh]);
   const candidatesChanged = useCallback(() => { void images.refresh(); }, [images.refresh]);
   const saveBeforeGenerate = useCallback(async () => {
     if (operation.current) return null;

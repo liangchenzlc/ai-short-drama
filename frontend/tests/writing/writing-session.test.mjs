@@ -9,7 +9,7 @@ const helpers = ts.transpileModule(readFileSync(new URL('../../src/features/proj
 const helperUrl = `data:text/javascript;base64,${Buffer.from(helpers).toString('base64')}`;
 const compiled = ts.transpileModule(source, { compilerOptions }).outputText.replace("'./script-document'", JSON.stringify(helperUrl));
 const { WritingSession } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
-const initial = () => ({ episode_id: '9', content_version: '1', novel: null, editing_script: null, confirmed_script_id: null });
+const initial = () => ({ episode_id: '9', content_version: '1', novel: null, outline: null, active_writing_tasks: [], editing_script: null, confirmed_script_id: null });
 const record = (id, content, state) => ({ id, content, updated_at: '2026-09-21T00:00:00Z', ...(state ? { state } : {}) });
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => {resolve=a; reject=b;}); return {promise,resolve,reject}; };
 function transport() {
@@ -17,11 +17,34 @@ function transport() {
   return { writes, get server() { return server; }, set server(v) {server=v;},
     async get() { return structuredClone(server); },
     async novel(body) { writes.push(['novel',body]); server = {...server, content_version: String(BigInt(server.content_version)+1n), novel: record('11',body.content)}; return {content_version:server.content_version,novel:server.novel}; },
-    async script(body) { writes.push(['script',body]); server={...server,content_version:String(BigInt(server.content_version)+1n),editing_script:{...record('12',body.content,'unconfirmed'),editor_document:body.editor_document ?? null},confirmed_script_id:null}; return {content_version:server.content_version,script:server.editing_script}; },
+    async outline(body) { writes.push(['outline',body]); server = {...server, content_version: String(BigInt(server.content_version)+1n), outline: record('13',body.content)}; return {content_version:server.content_version,outline:server.outline}; },
+    async script(body) { writes.push(['script',body]); server={...server,content_version:String(BigInt(server.content_version)+1n),editing_script:{...record('12',body.content,body.content.trim() ? 'confirmed' : 'unconfirmed'),editor_document:body.editor_document ?? null},confirmed_script_id:body.content.trim() ? '12' : null}; return {content_version:server.content_version,script:server.editing_script,confirmed_script_id:server.confirmed_script_id}; },
     async confirm(id,body) { writes.push(['confirm',id,body]); server={...server,content_version:String(BigInt(server.content_version)+1n),editing_script:{...server.editing_script,state:'confirmed'},confirmed_script_id:id};return structuredClone(server); },
     async select() { throw new Error('unused'); },
   };
 }
+
+test('an imported draft survives refresh with its change source and clears it after acknowledgement', async () => {
+  const api = transport(); let stored = null;
+  const recovery = { read: () => stored, save: value => { stored = structuredClone(value); }, clear: () => { stored = null; } };
+  const first = new WritingSession(api, recovery); await first.load(); first.importScript('整篇导入'); first.dispose();
+  assert.equal(stored.script_change_source, 'import');
+  const restored = new WritingSession(api, recovery); await restored.load();
+  await restored.flush();
+  assert.equal(api.writes[0][1].change_source, 'import');
+  restored.edit('script', '后续手工编辑'); await restored.flush();
+  assert.equal(api.writes[1][1].change_source, undefined); restored.dispose();
+});
+
+test('a lost import response is reconciled without leaving the import marker on later edits', async () => {
+  const api = transport(), save = api.script.bind(api); let once = true;
+  api.script = async body => { const result = await save(body); if (once) { once = false; throw { status: 503 }; } return result; };
+  const session = new WritingSession(api); await session.load(); session.importScript('整篇导入');
+  assert.equal(await session.flush(), true);
+  session.edit('script', '手工续写'); assert.equal(await session.flush(), true);
+  assert.equal(api.writes[0][1].change_source, 'import'); assert.equal(api.writes[1][1].change_source, undefined);
+  session.dispose();
+});
 test('same-base crash recovery resumes exact input and the save queue without confirmation', async () => {
   const api = transport(); let stored = null;
   const persistence = { read: () => stored, save: value => { stored = structuredClone(value); }, clear: () => { stored = null; } };
@@ -155,7 +178,7 @@ test('navigation flush waits for pending confirmation and saves text typed durin
   const q=new WritingSession(api);await q.load();q.edit('script','first');const confirmation=q.confirm();
   await new Promise(resolve=>setTimeout(resolve,0));q.edit('script','later');let completed=false;const barrier=q.flush().then(ok=>{completed=true;return ok;});
   await new Promise(resolve=>setTimeout(resolve,0));assert.equal(completed,false);wait.resolve();await confirmation;assert.equal(await barrier,true);
-  assert.equal(q.getSnapshot().script,'later');assert.equal(api.server.editing_script.content,'later');assert.equal(q.getSnapshot().confirmed,false);q.dispose();
+  assert.equal(q.getSnapshot().script,'later');assert.equal(api.server.editing_script.content,'later');assert.equal(q.getSnapshot().confirmed,true);q.dispose();
 });
 test('network failure before commit pauses until explicit retry rechecks server version', async () => {
   const api=transport(),save=api.novel.bind(api);api.novel=async()=>{throw {};};const q=new WritingSession(api);await q.load();q.edit('novel','keep');assert.equal(await q.flush(),false);
@@ -184,7 +207,41 @@ test('uncertain committed save remains paused after draft returns to stale snaps
 const boldDocument = content => ({ ops: [{ insert: content, attributes: { bold: true } }, { insert: '\n' }] });
 const italicDocument = content => ({ ops: [{ insert: content, attributes: { italic: true } }, { insert: '\n' }] });
 
-test('format-only editing is dirty, unconfirms, and saves plain text plus Delta in one version', async () => {
+test('AI refresh preserves dirty non-target input and safely rebases its save version', async () => {
+  const api = transport(), session = new WritingSession(api);
+  await session.load();
+  session.edit('outline', '正在手写的大纲');
+  api.server = { ...api.server, content_version: '2', editing_script: record('12', 'AI 剧本', 'confirmed'), confirmed_script_id: '12' };
+  assert.equal(await session.refreshFromServer(), true);
+  assert.equal(session.getSnapshot().outline, '正在手写的大纲');
+  assert.equal(session.getSnapshot().script, 'AI 剧本');
+  assert.equal(session.getSnapshot().contentVersion, '2');
+  await session.flush();
+  assert.deepEqual(api.writes, [['outline', { content: '正在手写的大纲', content_version: '2' }]]);
+  session.dispose();
+});
+
+test('AI refresh cannot rebase a changed server baseline over local input', async () => {
+  const api = transport(), session = new WritingSession(api);
+  await session.load(); session.edit('outline', '本机大纲');
+  api.server = { ...api.server, content_version: '2', outline: record('13', '其他窗口大纲') };
+  assert.equal(await session.refreshFromServer(), false);
+  assert.equal(session.getSnapshot().outline, '本机大纲');
+  assert.equal(session.getSnapshot().status, 'conflict');
+  assert.equal(session.getSnapshot().contentVersion, '1');
+  assert.equal(await session.flush(), false); session.dispose();
+});
+
+test('active tasks lock only their target while outline and novel keep saving', async () => {
+  const api = transport(), session = new WritingSession(api); await session.load();
+  session.trackTask({ task_id: '91', target: 'script', operation: 'script_generate', status: 'running' });
+  session.edit('script', '不应写入'); session.edit('outline', '可编辑大纲'); session.edit('novel', '可编辑小说');
+  assert.equal(session.getSnapshot().script, '');
+  await session.flush(); assert.deepEqual(api.writes.map(item => item[0]), ['novel', 'outline']);
+  assert.equal(session.getSnapshot().confirmed, false); session.dispose();
+});
+
+test('format-only editing is dirty until the acknowledged save confirms it automatically', async () => {
   const api = transport(), session = new WritingSession(api);
   await session.load(); session.edit('script', '第一场\n主角：你好'); await session.confirm();
   const document = boldDocument(session.getSnapshot().script);

@@ -15,7 +15,7 @@ test('episode card exposes editing and deletion only in its more menu', async ({
 
 test('merged writing imports TXT, collapses settings and adopts a historical script', async ({ page }, info) => {
   const state = await fixture(page); await page.goto(`${root}/source`);
-  await expect(page.locator('.episode-top-step-nav button')).toHaveCount(4);
+  await expect(page.locator('.creation-stage-nav button')).toHaveCount(4);
   await page.getByRole('button', { name: '收起设置', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '创作要求', exact: true })).toBeHidden();
   await page.getByRole('button', { name: '展开设置', exact: true }).click();
@@ -55,9 +55,8 @@ test('asset editors persist reference images and expose prompts only on click', 
   await page.screenshot({ path: info.outputPath('asset-task-detail.png'), animations: 'disabled' });
   await expect(page.getByText('DO_NOT_RENDER')).toHaveCount(0);
   await page.goto(`${root}/assets`);
-  await page.getByRole('button', { name: '从剧本提取素材', exact: true }).click();
+  await page.getByRole('button', { name: '资产提取记录', exact: true }).click();
   await page.screenshot({ path: info.outputPath('extraction-result.png'), animations: 'disabled' });
-  await page.getByRole('dialog').getByRole('button', { name: '提取记录', exact: true }).click();
   await page.screenshot({ path: info.outputPath('extraction-history.png'), animations: 'disabled' });
   await page.getByRole('button', { name: '查看', exact: true }).click();
   await expect(page.getByText('原文依据', { exact: false })).toHaveCount(0);
@@ -107,12 +106,12 @@ test('storyboard and history load pages on scroll and image history stays in a d
 });
 
 test('compact desktop workspaces and drawers fit the viewport', async ({ page }, info) => {
-  const state = await fixture(page); await page.setViewportSize({ width: 1024, height: 900 });
+  const state = await fixture(page); await page.setViewportSize({ width: 1280, height: 900 });
   for (const stage of ['source', 'storyboard', 'assets']) {
     if (stage === 'source') await page.goto(`${root}/${stage}`);
-    else await page.getByRole('navigation', { name: '分集制作流程', exact: true }).getByRole('button', { name: stage === 'storyboard' ? '分镜制作' : '素材生成', exact: true }).click();
-    await expect(page.getByRole('navigation', { name: '分集制作流程', exact: true })).toBeVisible();
-    await expect(page.locator('.episode-top-step-nav button')).toHaveCount(4);
+    else await page.getByRole('navigation', { name: '创作流程', exact: true }).getByRole('button', { name: stage === 'storyboard' ? '分镜制作' : '资产生成', exact: true }).click();
+    await expect(page.getByRole('navigation', { name: '创作流程', exact: true })).toBeVisible();
+    await expect(page.locator('.creation-stage-nav button')).toHaveCount(4);
     if (stage === 'storyboard') {
       await expect(page.locator('.storyboard-summary')).toHaveCount(20);
       await page.locator('.lazy-load-more').scrollIntoViewIfNeeded();

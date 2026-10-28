@@ -35,8 +35,6 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
   const [selected, setSelected] = useState('');
   const [selectedAux, setSelectedAux] = useState(''), [inspectorOpen, setInspectorOpen] = useState(false), [transcriptionOpen, setTranscriptionOpen] = useState(false);
   useEffect(() => { if (soundOpen) setInspectorOpen(false); }, [soundOpen]);
-  const [inspectorWide, setInspectorWide] = useState(() => window.innerWidth > 1200);
-  useEffect(() => { const query = window.matchMedia('(min-width: 1201px)'); const update = () => setInspectorWide(query.matches); query.addEventListener('change', update); return () => query.removeEventListener('change', update); }, []);
   const [materialOpen, setMaterialOpen] = useState<{ audio: boolean; replacing: boolean; kind: AudioClip['kind'] } | null>(null);
   const [shortReplacement, setShortReplacement] = useState<{ material: AssemblyMaterial; clip: AssemblyClip; start: number; end: number } | null>(null);
   const sound = normalizeSound(editor.value?.sound?.document, clips, editor.value?.sound?.media);
@@ -134,7 +132,7 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
   function history(action: 'undo' | 'redo') { if (!locked) { player.current?.pause(); editor[action](); } }
   const recent = editor.value?.jobs?.filter(j => j.kind === 'export' && j.status === 'succeeded') ?? [];
   const inspector = advanced && <AssemblyInspector editor={editor} clip={selection} selectedAux={selectedAux} frame={frame} disabled={locked} onClose={() => setInspectorOpen(false)} onSelectAux={selectAux} onSeek={seek} onMaterial={openMaterial} onTranscribe={() => setTranscriptionOpen(true)} analysis={analysis}/>;
-  return <div className={`assembly-editing${layout.layout.media ? '' : ' is-media-hidden'}${inspectorOpen && advanced && inspectorWide ? ' has-inspector' : ''}`} inert={inert ? true : undefined} data-player-sized={layout.layout.playerHeight > 0} style={{ '--assembly-player-height': `${layout.playerHeight}px` } as CSSProperties} tabIndex={-1} onKeyDown={event => {
+  return <div className={`assembly-editing${layout.layout.media ? '' : ' is-media-hidden'}${inspectorOpen && advanced ? ' has-inspector' : ''}`} inert={inert ? true : undefined} data-player-sized={layout.layout.playerHeight > 0} style={{ '--assembly-player-height': `${layout.playerHeight}px` } as CSSProperties} tabIndex={-1} onKeyDown={event => {
     if ((event.target as HTMLElement).closest('input,textarea,select,[contenteditable=true],[role=dialog]')) return;
     const key = event.key.toLowerCase(), modifier = event.ctrlKey || event.metaKey;
     if (modifier && key === 'z') { event.preventDefault(); history(event.shiftKey ? 'redo' : 'undo'); }
@@ -173,7 +171,8 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
       <div className="assembly-monitor" id={`${layoutId}-monitor`}>
         <div className="assembly-monitor-heading"><div className="assembly-mode-switch" role="group" aria-label="预览模式">
           <Button type={!result && !currentWork ? 'primary' : 'text'} onClick={() => { onResult(null); setShowCurrentWork(false); setFrame(0); setPlaying(false); }}>剪辑预览</Button>
-          <Button type={result?.kind === 'export' || currentWork ? 'primary' : 'text'} disabled={!recent.length && !editor.value?.current_work} onClick={() => { player.current?.pause(); if (editor.value?.current_work) { onResult(null); setShowCurrentWork(true); } else onResult(recent[0]); setFrame(0); }}>成片回看</Button>
+          <Button type={result?.id === recent[0]?.id ? 'primary' : 'text'} disabled={!recent.length} title={recent[0] ? `最新导出 · ${new Date(recent[0].created_at).toLocaleString()}` : '尚无导出结果'} onClick={() => { player.current?.pause(); setShowCurrentWork(false); onResult(recent[0]); setFrame(0); }}>最新导出</Button>
+          <Button type={currentWork ? 'primary' : 'text'} disabled={!editor.value?.current_work} title="当前明确采用的成片" onClick={() => { player.current?.pause(); onResult(null); setShowCurrentWork(true); setFrame(0); }}>当前采用</Button>
         </div><Tooltip title={previewBusy ? `合成预览${previewProgress === undefined ? '' : ` ${previewProgress}%`}` : '合成预览'}><Button className="assembly-preview-action" type="text" aria-label="合成预览" icon={<WandSparkles size={16}/>} disabled={disabled || !total || clips.some(c => isIncludedVideo(c) && c.issue)} loading={previewBusy} onClick={onPreview}>{previewBusy && previewProgress !== undefined ? `${previewProgress}%` : null}</Button></Tooltip></div>
         {result ? <AssemblyResultPlayer key={result.id} job={result} aspect={result.output_width && result.output_height ? `${result.output_width}:${result.output_height}` : result.aspect === '9:16' ? '9:16' : '16:9'}
           stale={result.is_stale || result.context_hash !== editor.value?.context_hash || editor.status !== 'saved'}
@@ -184,21 +183,20 @@ export function AssemblyWorkbench({ editor, disabled, result, onResult, onPrevie
             : advanced ? <AssemblyEditorPlayer ref={player} clips={clips} sound={editor.value!.sound!} readOnly={locked || !!sound.picture_locked} font={editor.value?.subtitle_font} aspect={assemblyOutputAspect(editor.value)} onFrame={setFrame} onPlaying={setPlaying} onRefresh={editor.refreshMedia} onTransform={(id, transform) => update(clips.map(c => c.id === id ? { ...c, transform } : c))}/>
             : <AssemblyPlayer ref={player} clips={clips} aspect={assemblyOutputAspect(editor.value)} onFrame={at => { setFrame(at); if (playing) { const entry = locateFrame(entries, at); if (entry) setSelected(entry.clip.id); } }} onPlaying={setPlaying} onRefresh={editor.refreshMedia}/>}
       </div>
-      {inspectorOpen && advanced && inspectorWide && inspector}
+      {inspectorOpen && advanced && inspector}
     </div>
-    {layout.desktop && <AssemblyResizeHandle label="调整播放器高度" controls={`${layoutId}-monitor`} value={layout.playerHeight} min={200} max={layout.playerMax} onChange={playerHeight => layout.update({ playerHeight })}/>}
+    {<AssemblyResizeHandle label="调整播放器高度" controls={`${layoutId}-monitor`} value={layout.playerHeight} min={200} max={layout.playerMax} onChange={playerHeight => layout.update({ playerHeight })}/>}
     {notice && <StudioFeedback type="error" noticeKey="assembly-edit-action" message={notice}/>}
     {analysis.error && <StudioFeedback type="warning" noticeKey="assembly-waveform" message={analysis.error} actions={<Button onClick={analysis.retry}>重试声音分析</Button>}/>}
     {!result && !currentWork && hiddenClips.length > 0 && <StudioFeedback type="warning" noticeKey="assembly-hidden-clips" quiet persistent message={`${hiddenClips.length} 个片段无法显示在时间轴`}>
       {hiddenClips.map(c => <p key={c.id} className="assembly-inline-actions">镜头 {c.shot_position} · {c.issue ? issues[c.issue] : '片段不足一帧'}，无法显示在时间轴。
         <Button size="small" disabled={locked} aria-label={`移除镜头 ${c.shot_position} 的问题片段`} onClick={() => remove(c.id)}>移除片段</Button></p>)}
     </StudioFeedback>}
-    {advanced && !result && !currentWork ? <AssemblyMultitrack id={`${layoutId}-track`} height={layout.desktop ? Math.max(280, layout.layout.trackHeight) : 280} clips={clips} sound={sound} media={editor.value!.sound!.media} selected={selection?.id ?? ''} selectedAux={selectedAux} frame={frame} playing={playing} disabled={locked} onSelect={select} onSelectAux={selectAux} onSeek={seek} onPause={() => player.current?.pause()} onChange={update} onSoundChange={changeSound} onAdd={add} waveforms={analysis.waveforms}/>
-      : !currentWork && <AssemblyTimeline id={`${layoutId}-track`} height={layout.desktop ? layout.layout.trackHeight : 152} clips={result ? renderedClips : clips} selected={result ? locateFrame(buildTimeline(renderedClips), frame)?.clip.id ?? '' : selection?.id ?? ''}
+    {advanced && !result && !currentWork ? <AssemblyMultitrack id={`${layoutId}-track`} height={Math.max(280, layout.layout.trackHeight)} clips={clips} sound={sound} media={editor.value!.sound!.media} selected={selection?.id ?? ''} selectedAux={selectedAux} frame={frame} playing={playing} disabled={locked} onSelect={select} onSelectAux={selectAux} onSeek={seek} onPause={() => player.current?.pause()} onChange={update} onSoundChange={changeSound} onAdd={add} waveforms={analysis.waveforms}/>
+      : !currentWork && <AssemblyTimeline id={`${layoutId}-track`} height={layout.layout.trackHeight} clips={result ? renderedClips : clips} selected={result ? locateFrame(buildTimeline(renderedClips), frame)?.clip.id ?? '' : selection?.id ?? ''}
       frame={frame} playing={playing} disabled={locked} onSelect={select} onSeek={seek} onChange={update}
       onPause={() => { player.current?.pause(); resultVideo.current?.pause(); }} onAdd={add}/>}
-    {layout.desktop && !currentWork && <AssemblyResizeHandle label="调整轨道高度" controls={`${layoutId}-track`} value={Math.max(advanced && !result ? 280 : 152, layout.layout.trackHeight)} min={advanced && !result ? 280 : 152} max={360} onChange={trackHeight => layout.update({ trackHeight })}/>}
-    {inspectorOpen && advanced && !inspectorWide && <Dialog title="成片编辑设置" className="standard-creation-dialog assembly-inspector-dialog" onClose={() => setInspectorOpen(false)}>{inspector}</Dialog>}
+    {!currentWork && <AssemblyResizeHandle label="调整轨道高度" controls={`${layoutId}-track`} value={Math.max(advanced && !result ? 280 : 152, layout.layout.trackHeight)} min={advanced && !result ? 280 : 152} max={360} onChange={trackHeight => layout.update({ trackHeight })}/>}
     {materialOpen && <AssemblyMaterialDialog editor={editor} audio={materialOpen.audio} replacing={materialOpen.replacing} onClose={() => setMaterialOpen(null)} onChoose={chooseMaterial}/>}
     {transcriptionOpen && <AssemblyTranscriptionDialog editor={editor} clipId={selection?.id} disabled={locked} onClose={() => setTranscriptionOpen(false)}/>}
     {shortReplacement && <Dialog title="替换素材较短" className="standard-creation-dialog assembly-operation-dialog" onClose={() => setShortReplacement(null)}><p>新视频不足当前片段时长。请调整裁剪范围，确认后再替换。</p><video className="assembly-replacement-video" src={shortReplacement.material.url} controls preload="metadata"/>

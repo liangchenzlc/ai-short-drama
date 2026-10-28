@@ -156,9 +156,12 @@ def _agent_conversation(session, entity):
         return _agent_parent(session, "agent_conversations", entity.conversation_id)
     if name in {
         "agent_task_inputs",
+        "agent_task_requirements",
         "agent_task_controls",
         "agent_operations",
         "agent_media_requests",
+        "agent_graph_checkpoints",
+        "agent_graph_writes",
     }:
         task = _agent_parent(session, "agent_tasks", entity.task_id)
         return _agent_parent(session, "agent_conversations", task.conversation_id)

@@ -150,6 +150,10 @@ class AgentOperation(Base):
         nullable=True,
     )
     result: Mapped[dict | None] = _json(nullable=True)
+    result_digest: Mapped[str | None] = _hash(nullable=True)
+    evidence_kind: Mapped[str | None] = mapped_column(
+        VARCHAR(16, charset="ascii", collation="ascii_bin"), nullable=True
+    )
     result_refs: Mapped[list] = _json(array=True)
     changes: Mapped[list] = _json(array=True)
     error: Mapped[dict | None] = _json(nullable=True)
@@ -165,9 +169,20 @@ class AgentOperation(Base):
         UniqueConstraint("active_task_id", name="uk_agent_operations_active"),
         Index("idx_agent_operations_task", "task_id", "id"),
         Index("idx_agent_operations_item", "item_seq"),
+        Index(
+            "idx_agent_operations_evidence",
+            "task_id",
+            "result_digest",
+            mysql_length={"result_digest": 64},
+        ),
         CheckConstraint(
             "status IN ('running','waiting_media','reconciling','succeeded','failed','conflict')",
             name="ck_agent_operations_status",
+        ),
+        CheckConstraint(
+            "evidence_kind IS NULL OR "
+            "evidence_kind IN ('write','read','observation','skill','none')",
+            name="ck_agent_operations_evidence",
         ),
         CheckConstraint(
             "(status IN ('succeeded','failed','conflict')) = (finished_at IS NOT NULL)",

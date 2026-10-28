@@ -76,30 +76,3 @@
 .collaboration-search-result:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .collaboration-link { display: grid; gap: 12px; }
 .collaboration-link input { min-width: 0; }
-@media (max-width: 600px) {
-  .identity-page { padding: 24px 16px; }
-  .identity-form { padding: 24px 20px; gap: 20px; }
-  .identity-form h1 { font-size: 21px; }
-  .identity-links { gap: 8px 16px; }
-  .identity-links a { min-height: 44px; display: inline-flex; align-items: center; }
-  .collaboration-person { align-items: flex-start; flex-wrap: wrap; gap: 8px 16px; }
-  .collaboration-search form { grid-template-columns: minmax(0, 1fr); }
-  .collaboration-search form > .ant-btn { justify-self: start; }
-  .account-trigger { width: 44px; min-height: 44px; padding: 8px; justify-content: center; }
-  .account-trigger-name{ display: none; }
-  .email-proof-form input { font-size: 16px; }
-}
-@media (max-width: 680px) {
-  .detail-header-inner { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 10px 16px; }
-  .detail-title { grid-column: 1 / -1; grid-row: 2; order: 0; padding: 0; border: 0; }
-  .detail-header-actions { grid-column: 2; grid-row: 1; gap: 8px; margin: 0; }
-  .detail-header-inner .detail-back { justify-self: start; min-height: 44px; }
-  .detail-header-actions .detail-close { min-height: 44px; }
-
-}
-@media (pointer: coarse) {
-  .identity-form .ant-btn { min-height: 44px; }
-  .identity-form input { font-size: 16px; }
-  .account-trigger{ min-height: 44px; }
-  .email-proof-form input { font-size: 16px; }
-}

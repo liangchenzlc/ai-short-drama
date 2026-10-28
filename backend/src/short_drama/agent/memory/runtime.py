@@ -8,10 +8,12 @@ from dataclasses import dataclass
 from datetime import timedelta
 from uuid import uuid4
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy import and_, or_, select
 
 from short_drama.agent.core.access import LeaseLost, model_unchanged
-from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.gateway.langchain import LangChainGateway
+from short_drama.agent.gateway.protocol import AgentGatewayError, AgentModelGateway
 from short_drama.agent.memory.context import schedule_maintenance_locked, settle_maintenance_locked
 from short_drama.agent.memory.sources import message_sources, source_hash
 from short_drama.core.exceptions import BusinessError
@@ -369,31 +371,31 @@ class AgentMemoryStore:
             except LeaseLost:
                 return
             job.error = {"code": error.code}
-            if (
-                error.code == "agent_provider_rate_limited"
-                and not error.accepted_unknown
-                and job.attempts < 3
-            ):
-                # The provider explicitly rejected this attempt; no accepted work is duplicated.
+            retryable = (
+                not error.accepted_unknown
+                and job.attempts > 0
+                and job.provider_state in {"sending", "received"}
+                and (
+                    error.code == "agent_provider_rate_limited"
+                    or job.kind == "extract"
+                    and job.provider_state == "received"
+                    and error.code
+                    in {
+                        "invalid_agent_memory_result",
+                        "invalid_agent_response",
+                        "invalid_agent_tool_calls",
+                        "agent_response_truncated",
+                    }
+                )
+            )
+            if retryable and job.attempts < 3:
+                # Only explicit rejections or durable, invalid extraction outputs may retry.
                 job.provider_state, job.raw_result = "not_started", None
-                schedule_job(job, delay=15 * max(1, job.attempts))
+                schedule_job(job, delay=15 * job.attempts)
                 return
-            if (
-                job.kind == "extract"
-                and not error.accepted_unknown
-                and job.attempts < 3
-            ):
-                # Extract jobs are cheap; retry with backoff before abandoning the waterline.
-                job.provider_state, job.raw_result = "not_started", None
-                schedule_job(job, delay=15 * max(1, job.attempts))
-                return
-            if job.kind == "extract" and job.attempts >= 3:
+            if retryable and job.kind == "extract":
                 # Abandon after 3 failures so the waterline can skip past this range.
-                job.status = "abandoned"
-                job.error = {"code": error.code}
-                job.message_status = "idle"
-                job.finished_at = utcnow()
-                job.lease_token = job.lease_until = None
+                finish_job(job, "abandoned", error.code)
                 return
             if error.accepted_unknown and not (job.raw_result or {}).get("raw"):
                 job.provider_state = "unknown"
@@ -490,8 +492,22 @@ class AgentMemoryRuntime:
 
     async def _execute(self, claim):
         credential = model_credentials(claim.snapshot, self.settings.encryption_key)
+        gateway = self.gateway
+        if (
+            isinstance(gateway, LangChainGateway)
+            and (claim.request or {}).get("codec") != "agent.request"
+        ):
+            output, usage = await self._harness_result(claim, credential)
+            schema = TaskConstraintResult if claim.kind == "task_state" else MemoryMaintenanceResult
+            payload = schema.model_validate(json.loads(output))
+            await asyncio.to_thread(
+                self.store.settle, claim, payload.model_dump(mode="json"), usage
+            )
+            return
+        if isinstance(gateway, LangChainGateway):
+            gateway = AgentModelGateway(self.settings)
         if claim.raw is not None:
-            result = await self.gateway.replay_segment(
+            result = await gateway.replay_segment(
                 claim.snapshot,
                 credential,
                 request_payload=claim.request,
@@ -514,7 +530,7 @@ class AgentMemoryRuntime:
 
             heartbeat = asyncio.create_task(maintain())
             try:
-                result = await self.gateway.run_segment(
+                result = await gateway.run_segment(
                     claim.snapshot,
                     credential,
                     on_request=on_request,
@@ -530,3 +546,49 @@ class AgentMemoryRuntime:
         schema = TaskConstraintResult if claim.kind == "task_state" else MemoryMaintenanceResult
         payload = schema.model_validate(json.loads(result.output))
         self.store.settle(claim, payload.model_dump(mode="json"), result.usage)
+
+    async def _harness_result(self, claim, credential):
+        async def on_request(payload):
+            await asyncio.to_thread(self.store.before_send, claim, payload)
+
+        async def on_response(payload):
+            await asyncio.to_thread(self.store.save_raw, claim, payload)
+
+        decision = asyncio.current_task()
+
+        async def maintain():
+            while True:
+                await asyncio.sleep(max(1, self.settings.agent_lease_seconds // 3))
+                if not await asyncio.to_thread(self.store.heartbeat, claim):
+                    decision.cancel()
+                    return
+
+        heartbeat = asyncio.create_task(maintain())
+        try:
+            result = await self.gateway.decide(
+                claim.snapshot,
+                credential,
+                messages=[
+                    SystemMessage(content=claim.inputs["instructions"]),
+                    HumanMessage(content=claim.inputs["user_prompt"]),
+                ],
+                tools=[],
+                resources=[],
+                max_output_tokens=claim.inputs["max_output_tokens"],
+                max_tool_calls=0,
+                timeout_seconds=claim.inputs["timeout_seconds"],
+                stream=False,
+                request=claim.request,
+                raw=claim.raw,
+                on_request=on_request,
+                on_response=on_response,
+            )
+        except asyncio.CancelledError:
+            raise LeaseLost() from None
+        finally:
+            heartbeat.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat
+        if result["output_kind"] != "text":
+            raise AgentGatewayError("invalid_agent_memory_result")
+        return result["output"], result["usage"]

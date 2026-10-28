@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import math
 import time
 from copy import deepcopy
 from dataclasses import asdict, dataclass
@@ -17,7 +18,13 @@ from short_drama.agent.core.access import LeaseLost as LeaseLost
 from short_drama.agent.core.access import lock_run as lock_run
 from short_drama.agent.core.access import may_decide as may_decide
 from short_drama.agent.core.access import model_unchanged as model_unchanged
-from short_drama.agent.core.events import TERMINAL, append_event, budget_limits, initial_usage
+from short_drama.agent.core.events import (
+    TERMINAL,
+    UNBOUNDED_HARNESS_METERS,
+    append_event,
+    budget_limits,
+    initial_usage,
+)
 from short_drama.agent.core.items import KIND_NARRATION, KIND_REPLY, allocate_item_seq
 from short_drama.agent.core.state import (
     append_interrupted_message,
@@ -28,6 +35,8 @@ from short_drama.agent.core.state import (
     wait_locked,
 )
 from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.harness import ENGINE_VERSION
+from short_drama.dao.agent_transcript_dao import AgentTranscriptDAO
 from short_drama.domain.agent import (
     AgentMessage,
     AgentRun,
@@ -57,21 +66,41 @@ def preceding_execution(session, run):
     )
 
 
+def _cancelled_code(session, run):
+    """A user stop is not an access revocation; keep the two notices distinct."""
+    if run.task_id is not None:
+        from short_drama.domain.agent_task import AgentTask
+
+        status = session.scalar(select(AgentTask.status).where(AgentTask.id == run.task_id))
+        if status == "stopped":
+            return "agent_stopped"
+    return "access_revoked"
+
+
 def checked_budget(run):
     authorization = (run.checkpoint or {}).get("authorization") or {}
     assistant = (run.checkpoint or {}).get("purpose") == "assistant_chat"
     mode = (
-        "assistant"
-        if assistant
-        else "workflow"
-        if authorization.get("approved_plan")
-        else "discuss"
+        "harness"
+        if (run.checkpoint or {}).get("engine") == ENGINE_VERSION
+        else (
+            "assistant"
+            if assistant
+            else "workflow"
+            if authorization.get("approved_plan")
+            else "discuss"
+        )
     )
     maximum = budget_limits(mode)
     budget = run.budget or {}
     if set(budget) != set(maximum):
         raise AgentGatewayError("invalid_agent_budget")
     for key, value in budget.items():
+        if mode == "harness" and key in UNBOUNDED_HARNESS_METERS:
+            # A frozen finite cap is enforced; a legacy null stays unlimited.
+            if value is not None and (type(value) is not int or value <= 0):
+                raise AgentGatewayError("invalid_agent_budget")
+            continue
         if (
             type(value) is not int
             or value < 0
@@ -83,7 +112,14 @@ def checked_budget(run):
             or (assistant and key in {"images", "videos", "tool_calls"} and value != 0)
         ):
             raise AgentGatewayError("invalid_agent_budget")
-    return budget
+    # Historical Harness runs that froze null meters keep their original policy;
+    # new runs carry finite caps written when their task was created.
+    return dict(budget)
+
+
+def budget_limit(budget, key):
+    """Infinity is arithmetic-only; durable budgets represent unlimited as null."""
+    return math.inf if budget[key] is None else budget[key]
 
 
 def active_seconds(run, now=None):
@@ -100,12 +136,7 @@ def active_seconds(run, now=None):
 
 
 def latest_turn(session, run_id):
-    return session.scalar(
-        select(AgentTurn)
-        .where(AgentTurn.run_id == run_id)
-        .order_by(AgentTurn.turn_no.desc())
-        .limit(1)
-    )
+    return AgentTranscriptDAO(session).latest_turn(run_id)
 
 
 def _json_copy(value):
@@ -114,7 +145,10 @@ def _json_copy(value):
 
 def freeze_input(values, run):
     values = dict(values)
-    values["tools"] = [asdict(tool) for tool in values.get("tools", ())]
+    values["tools"] = [
+        deepcopy(tool) if isinstance(tool, dict) else asdict(tool)
+        for tool in values.get("tools", ())
+    ]
     if (
         (run.checkpoint or {}).get("purpose") == "assistant_chat"
         or (run.checkpoint or {}).get("discussion_revision")
@@ -125,23 +159,27 @@ def freeze_input(values, run):
     values.setdefault("stream", True)
     budget = checked_budget(run)
     usage = {**initial_usage(), **(run.usage or {})}
-    available = budget["output_tokens"] - usage["output_tokens"] - usage["reserved_output_tokens"]
+    available = (
+        budget_limit(budget, "output_tokens")
+        - usage["output_tokens"]
+        - usage["reserved_output_tokens"]
+    )
     if (
         available <= 0
-        or usage["decision_calls"] >= budget["decision_calls"]
-        or active_seconds(run) >= budget["active_seconds"]
+        or usage["decision_calls"] >= budget_limit(budget, "decision_calls")
+        or active_seconds(run) >= budget_limit(budget, "active_seconds")
     ):
         raise AgentGatewayError("agent_budget_exhausted")
     values["max_output_tokens"] = min(
         values.get("max_output_tokens", 8192), budget["output_tokens_per_call"], available
     )
     values["max_tool_calls"] = min(
-        values.get("max_tool_calls", 16), budget["tool_calls"] - usage["tool_calls"]
+        values.get("max_tool_calls", 16), budget_limit(budget, "tool_calls") - usage["tool_calls"]
     )
     values["timeout_seconds"] = min(
         values.get("timeout_seconds", 120),
         120,
-        max(1, budget["active_seconds"] - active_seconds(run)),
+        max(1, budget_limit(budget, "active_seconds") - active_seconds(run)),
     )
     context_budget = None
     if (run.checkpoint or {}).get("purpose") == "global_assistant":
@@ -168,7 +206,8 @@ def thaw_input(envelope):
     if envelope.get("codec") != "agent.segment-input" or envelope.get("version") != 1:
         raise AgentGatewayError("invalid_agent_checkpoint")
     values = deepcopy(envelope["kwargs"])
-    values["tools"] = [ToolDefinition(**tool) for tool in values.get("tools", ())]
+    if not values.get("harness_version"):
+        values["tools"] = [ToolDefinition(**tool) for tool in values.get("tools", ())]
     return values
 
 
@@ -295,9 +334,12 @@ class AgentRuntimeStore:
                 except AgentGatewayError as error:
                     finish_locked(session, conversation, run, "failed", {"code": error.code})
                     return None
-            if active_operation is None and (
-                run.cancel_requested or not may_decide(session, project, conversation, run)
-            ):
+            if active_operation is None and run.cancel_requested:
+                finish_locked(
+                    session, conversation, run, "cancelled", {"code": _cancelled_code(session, run)}
+                )
+                return None
+            if active_operation is None and not may_decide(session, project, conversation, run):
                 finish_locked(session, conversation, run, "cancelled", {"code": "access_revoked"})
                 return None
             if preceding_execution(session, run) is not None:
@@ -311,6 +353,16 @@ class AgentRuntimeStore:
 
                 task = task_for_run(session, run)
                 apply_controls_locked(session, conversation, task, run)
+                if run.cancel_requested:
+                    # A stop applied at this boundary must not buy another model call.
+                    finish_locked(
+                        session,
+                        conversation,
+                        run,
+                        "cancelled",
+                        {"code": _cancelled_code(session, run)},
+                    )
+                    return None
                 if run.status in TERMINAL or run.message_version != version:
                     return None
                 apply_inputs_locked(session, conversation, task, run)
@@ -346,9 +398,8 @@ class AgentRuntimeStore:
             turn = latest_turn(session, run.id)
             if run.phase == "tools":
                 try:
-                    if (
-                        active_operation is None
-                        and active_seconds(run) >= checked_budget(run)["active_seconds"]
+                    if active_operation is None and active_seconds(run) >= budget_limit(
+                        checked_budget(run), "active_seconds"
                     ):
                         raise AgentGatewayError("agent_budget_exhausted")
                 except AgentGatewayError as error:
@@ -435,6 +486,11 @@ class AgentRuntimeStore:
             )
 
     def before_send(self, claim, request):
+        if claim.inputs["kwargs"].get("harness_version"):
+            from short_drama.agent.resources.contracts import assert_reference_payload
+
+            assert_reference_payload(claim.inputs)
+            assert_reference_payload(request)
         with self.factory.begin() as session:
             project, conversation, run = self._owned(
                 session, claim.run_id, claim.version, claim.token
@@ -541,12 +597,17 @@ class AgentRuntimeStore:
             if run.task_id is not None:
                 from short_drama.agent.context.budget import provider_budget
 
-                context_budget = provider_budget(request.get("body", request), amount)
+                context_budget = provider_budget(
+                    request.get("body", request),
+                    amount,
+                    references=bool(claim.inputs["kwargs"].get("harness_version")),
+                    context_window=claim.inputs["kwargs"].get("context_window_tokens", 65536),
+                )
             if (
-                usage["decision_calls"] >= budget["decision_calls"]
+                usage["decision_calls"] >= budget_limit(budget, "decision_calls")
                 or usage["output_tokens"] + usage["reserved_output_tokens"] + amount
-                > budget["output_tokens"]
-                or active_seconds(run) >= budget["active_seconds"]
+                > budget_limit(budget, "output_tokens")
+                or active_seconds(run) >= budget_limit(budget, "active_seconds")
             ):
                 raise AgentGatewayError("agent_budget_exhausted")
             usage["decision_calls"] += 1
@@ -557,6 +618,10 @@ class AgentRuntimeStore:
             turn.request_messages = [deepcopy(claim.inputs), _json_copy(request)]
             turn.status, turn.started_at, turn.updated_at = "sent", utcnow(), utcnow()
             turn.usage = {"reserved_output_tokens": amount, "settled": False}
+            if claim.inputs["kwargs"].get("harness_version"):
+                turn.usage["context_metrics"] = deepcopy(
+                    claim.inputs["kwargs"].get("context_frame", {}).get("context_metrics", {})
+                )
             if context_budget is not None:
                 turn.usage = {**turn.usage, "context_budget": context_budget}
             append_event(
@@ -608,6 +673,12 @@ class AgentRuntimeStore:
                     "memory_epoch", 0
                 ):
                     return "stale"
+            if claim.inputs.get("kwargs", {}).get("supervision_version") and not (
+                run.checkpoint or {}
+            ).get("discussion_revision"):
+                # A streamed text prefix can still become a rejected candidate.
+                # Narration is published at settlement; replies after review.
+                return "ok"
             append_event(
                 session,
                 conversation,
@@ -659,6 +730,10 @@ class AgentRuntimeStore:
             turn = session.get(AgentTurn, claim.turn_id)
             if conversation.status == "deleted" or turn is None:
                 raise LeaseLost()
+            if (claim.inputs or {}).get("kwargs", {}).get("harness_version"):
+                from short_drama.agent.resources.contracts import assert_reference_payload
+
+                assert_reference_payload(normalized)
             response = deepcopy(turn.response or {})
             if not response.get("raw"):
                 raise AgentGatewayError("agent_response_not_durable", accepted_unknown=True)
@@ -672,6 +747,15 @@ class AgentRuntimeStore:
             usage = {**initial_usage(), **(run.usage or {})}
             turn_usage = deepcopy(turn.usage or {})
             reported = normalized.get("usage") or {}
+            input_tokens = reported.get("input_tokens")
+            if (
+                type(input_tokens) is int
+                and input_tokens >= 0
+                and not turn_usage.get("input_settled")
+            ):
+                usage["input_tokens"] = usage.get("input_tokens", 0) + input_tokens
+                turn_usage["input_settled"] = True
+                turn_usage["input_tokens"] = input_tokens
             tokens = reported.get("output_tokens")
             if (
                 reported.get("output_tokens_reported") is True
@@ -687,6 +771,9 @@ class AgentRuntimeStore:
                 # Provider-reported prefix hits, summed once per settled turn.
                 usage["cached_tokens"] = usage.get("cached_tokens", 0) + cached
                 turn_usage.update({"cached_settled": True, "cached_tokens": cached})
+            usage["uncached_input_tokens"] = max(
+                0, usage.get("input_tokens", 0) - usage.get("cached_tokens", 0)
+            )
             turn_usage["provider_usage"] = reported
             run.usage, turn.usage, run.updated_at = usage, turn_usage, utcnow()
             from short_drama.agent.legacy.chat import is_assistant_chat, validate_assistant_chat
@@ -729,20 +816,40 @@ class AgentRuntimeStore:
                     mark_scheduled(run, phase="model")
                     return False
             budget = checked_budget(run)
-            if usage["output_tokens"] + usage["reserved_output_tokens"] > budget["output_tokens"]:
+            if usage["output_tokens"] + usage["reserved_output_tokens"] > budget_limit(
+                budget, "output_tokens"
+            ):
                 finish_locked(
                     session, conversation, run, "failed", {"code": "agent_budget_exhausted"}
                 )
                 return False
-            if (
-                normalized["output_kind"] == "tool_requests"
-                and active_seconds(run) >= budget["active_seconds"]
+            if normalized["output_kind"] == "tool_requests" and active_seconds(run) >= budget_limit(
+                budget, "active_seconds"
             ):
                 finish_locked(
                     session, conversation, run, "failed", {"code": "agent_budget_exhausted"}
                 )
                 return False
             checkpoint = deepcopy(run.checkpoint)
+            if (run.checkpoint or {}).get("engine") == ENGINE_VERSION and run.task_id is not None:
+                from short_drama.agent.harness.supervision import (
+                    process_completion,
+                    record_media_evidence,
+                )
+                from short_drama.agent.task.queries import task_for_run
+
+                task = task_for_run(session, run)
+                record_media_evidence(task, claim.inputs.get("kwargs", {}), turn.id)
+                response["applied"] = True
+                turn.response = response
+                checked = process_completion(
+                    session, conversation, task, run, turn, claim, normalized
+                )
+                if checked is None:
+                    return False
+                normalized = checked
+                response = deepcopy(turn.response)
+                checkpoint = deepcopy(run.checkpoint)
             checkpoint["history"] = normalized["history"]
             checkpoint["pending_results"] = {"calls": {}}
             run.checkpoint = checkpoint
@@ -866,7 +973,7 @@ class AgentRuntimeStore:
                 )
                 return False
             calls = normalized["output"].get("calls", [])
-            if usage["tool_calls"] + len(calls) > budget["tool_calls"]:
+            if usage["tool_calls"] + len(calls) > budget_limit(budget, "tool_calls"):
                 finish_locked(
                     session, conversation, run, "failed", {"code": "agent_tool_budget_exhausted"}
                 )

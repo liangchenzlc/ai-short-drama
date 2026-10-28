@@ -376,7 +376,7 @@
     min-height: 82px;
     gap: 4px;
     margin: 0;
-    padding: 8px 24px max(12px, env(safe-area-inset-bottom));
+    padding: 8px 24px 12px;
 }
 
 .canvas-video-player:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout .vds-time-slider {
@@ -410,38 +410,6 @@
     transform: none;
 }
 
-@media screen and (max-width: 599px) {
-    .canvas-video-player[data-fullscreen],
-    .canvas-video-player:fullscreen,
-    .canvas-video-player:-webkit-full-screen {
-        --media-fullscreen-button-size: 52px;
-        --media-sm-fullscreen-button-size: 52px;
-        --media-button-size: 52px;
-        --video-fullscreen-time-font-size: 16px;
-        --video-sm-time-font-size: 16px;
-    }
-
-    .canvas-video-player:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout .vds-button {
-        width: 52px;
-        height: 52px;
-        min-width: 52px;
-    }
-
-    .canvas-video-player:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout .vds-button .vds-icon {
-        width: 29px;
-        height: 29px;
-    }
-
-    .canvas-video-player:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout .vds-time {
-        font-size: 16px;
-    }
-
-    .canvas-video-player:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout .vds-controls-group:has(.vds-time-group) {
-        min-height: 72px;
-        padding-inline: 12px;
-    }
-}
-
 /* The compact canvas player keeps the same control order in fullscreen as it
    does inside a node: play, time, volume, fullscreen. Vidstack's small layout
    renders these controls in separate groups, so pin each group explicitly
@@ -461,7 +429,7 @@
 .canvas-video-player[data-player-variant="compact"]:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout[data-sm] .vds-controls-group:has(.vds-volume) {
     position: absolute;
     right: calc(var(--canvas-video-control-size) + var(--canvas-video-control-gap) + 24px);
-    bottom: max(12px, env(safe-area-inset-bottom));
+    bottom: 12px;
     width: var(--canvas-video-control-size);
     height: var(--canvas-video-control-size);
     min-height: var(--canvas-video-control-size);
@@ -501,7 +469,7 @@
 .canvas-video-player[data-player-variant="compact"]:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout[data-sm] .vds-controls-group:has(> .vds-play-button) {
     position: absolute;
     left: 24px;
-    bottom: max(12px, env(safe-area-inset-bottom));
+    bottom: 12px;
     width: var(--canvas-video-control-size);
     height: var(--canvas-video-control-size);
     min-height: var(--canvas-video-control-size);
@@ -530,7 +498,7 @@
 .canvas-video-player[data-player-variant="compact"]:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout[data-sm] .vds-controls-group:has(.vds-time-group) {
     position: absolute;
     inset-inline: 24px;
-    bottom: max(12px, env(safe-area-inset-bottom));
+    bottom: 12px;
     width: auto;
     height: var(--canvas-video-control-size);
     min-height: var(--canvas-video-control-size);
@@ -573,7 +541,7 @@
     position: absolute;
     left: calc(var(--canvas-video-control-size) * 3 + var(--canvas-video-control-gap) + 40px);
     right: calc(var(--canvas-video-control-size) * 2 + var(--canvas-video-control-gap) * 2 + 28px);
-    bottom: max(12px, env(safe-area-inset-bottom));
+    bottom: 12px;
     width: auto;
     height: var(--canvas-video-control-size);
     min-height: var(--canvas-video-control-size) !important;
@@ -591,28 +559,4 @@
     touch-action: none;
     user-select: none;
     cursor: pointer;
-}
-
-@media screen and (max-width: 599px) {
-    .canvas-video-player[data-player-variant="compact"]:is([data-fullscreen], :fullscreen, :-webkit-full-screen) {
-        --canvas-video-control-size: 52px;
-    }
-
-    .canvas-video-player[data-player-variant="compact"]:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout[data-sm] .vds-controls-group:has(.vds-volume) {
-        right: calc(var(--canvas-video-control-size) + var(--canvas-video-control-gap) + 12px);
-    }
-
-    .canvas-video-player[data-player-variant="compact"]:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout[data-sm] .vds-controls-group:has(.vds-time-group) {
-        inset-inline: 12px;
-        padding-left: calc(var(--canvas-video-control-size) + var(--canvas-video-control-gap) + 2px);
-    }
-
-    .canvas-video-player[data-player-variant="compact"]:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout[data-sm] .vds-controls-group:has(> .vds-play-button) {
-        left: 12px;
-    }
-
-    .canvas-video-player[data-player-variant="compact"]:is([data-fullscreen], :fullscreen, :-webkit-full-screen) .vds-video-layout[data-sm] .vds-controls-group:has(.vds-time-slider) {
-        left: calc(var(--canvas-video-control-size) * 3 + var(--canvas-video-control-gap) + 28px);
-        right: calc(var(--canvas-video-control-size) * 2 + var(--canvas-video-control-gap) * 2 + 20px);
-    }
 }

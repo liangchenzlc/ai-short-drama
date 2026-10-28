@@ -2,13 +2,21 @@
 
 **当前版本入口：[2026-10-21 创作模式切换](2026-10-21-creation-mode/README.md)。** 本版删除分集、素材库关联、成员和邀请；新库只执行最新完整 SQL，获准清空业务数据的旧库使用显式离线重建工具。当前助手增量见下文；其余旧版本历史迁移不能继续叠加到本版结构。
 
-[完整建表脚本](../../database/schema/schema.mysql8.sql) 已包含当前全部 116 张表。新库只运行完整脚本；本目录保留旧库升级所需的增量 SQL、回填工具和操作说明。应用启动不自动执行迁移；账号模式会在结构、归属或关键约束缺失时拒绝启动。
+[完整建表脚本](../../database/schema/schema.mysql8.sql) 已包含当前全部 122 张表。新库只运行完整脚本；本目录保留旧库升级所需的增量 SQL、回填工具和操作说明。应用启动不自动执行迁移；账号模式会在结构、归属或关键约束缺失时拒绝启动。
+
+2026-10-27 新增[剧本创作工作台](2026-10-27-writing-workspace/README.md)：每项目唯一故事大纲表、已发布当前剧本状态规范及幂等回填。API、文本 Worker 与前端须协调更新，旧小说改编任务先排空；不删除历史候选和私人草稿记录。
 
 完整 SQL 从当前 Domain 模型生成。在 `backend/` 运行 `uv run python scripts/export_schema.py` 更新文件，运行 `uv run python scripts/export_schema.py --check` 检查是否同步；这两个命令不执行数据库迁移。具体约定见[数据库说明](../../database/README.md#保持完整-sql-同步)。
 
+2026-10-28 新增[故事设定](2026-10-28-story-settings/README.md)：仅创建独立版本的`project_story_settings`表，当前配置库已执行。旧业务数据无须回填；其他部署须先执行此加法DDL再发布同版API。
+
 ## 选择需要执行的迁移
 
-项目助手在[任务、记忆、助手偏好、媒体请求与 Skill 包增量](2026-10-21-agent-system/README.md) 001–009 基础上，还需执行[2026-10-22 项目会话约束增量](2026-10-22-project-assistant/README.md)，只放开 V3 的 `project_id` CHECK，不新增表或回填旧会话。当前 `short_drama` 已实际执行两组迁移，完整结构 116 表、Agent 二十五表且 readiness 为 `ready`；其他部署须独立核对。前组 001／002 增加十表及会话字段，003 增加助手偏好，004 增加媒体请求，005 增加 Skill 版本／设置，006 增加讨论修订，007 增加批次撤销，008 允许角色音色空绑定，009 扩展作业类型；缺少偏好默认开启，已保存关闭不重置。
+2026-10-27 的 [Agent 加固增量](2026-10-27-agent-contract/README.md)新增 `agent_task_requirements`，并为 `agent_operations` 增加 `result_digest`、`evidence_kind` 与 `(task_id, result_digest)` 索引；执行后为 119 表、Agent 二十八表。**该增量尚未在业务库执行**：旧库须停写后执行 `010-task-requirements.sql`，再 `agent_migration.py --apply` 与 `--precheck`；新库直接用完整 SQL。升级前任务没有 `agent_policy`，继续按旧契约、旧预算和旧验收解释。
+
+2026-10-26 Harness 收尾另有[记忆抽取重试终态约束](2026-10-26-agent-memory-retry/README.md)，为 `agent_memory_jobs` 的 CHECK 补齐 `abandoned`。完整 SQL 与幂等迁移工具已同步；表数不变，其他部署仍须核对该单项约束，不能仅凭表数判定就绪。
+
+项目助手在[任务、记忆、助手偏好、媒体请求与 Skill 包增量](2026-10-21-agent-system/README.md) 001–009 基础上，还需执行[2026-10-22 项目会话约束增量](2026-10-22-project-assistant/README.md)，只放开 V3 的 `project_id` CHECK，不新增表或回填旧会话。当前 `short_drama` 已执行上述增量及 [2026-10-26 Harness 图检查点增量](2026-10-26-agent-harness/README.md)；[2026-10-27 交付要求增量](2026-10-27-agent-contract/README.md)待执行。升级完成后完整结构为 119 表、Agent 二十八表；其他部署须独立核对。前组 001／002 增加十表及会话字段，003 增加助手偏好，004 增加媒体请求，005 增加 Skill 版本／设置，006 增加讨论修订，007 增加批次撤销，008 允许角色音色空绑定，009 扩展作业类型；缺少偏好默认开启，已保存关闭不重置。
 
 助手时间线的[2026-10-23 增量](2026-10-23-agent-timeline/README.md)为 `agent_conversations` 增加 `next_item_seq`，为 `agent_messages` 增加 `item_seq`/`kind`，为 `agent_operations` 增加 `item_seq`，并按会话回填历史顺序，使旧对话与新任务的展示一致；表数不变，仍为 116 张。`short_drama` 已执行并核验无空值。
 
@@ -54,6 +62,10 @@
 
 2026-10-16 的[标准图片组与图片工具](2026-10-16-image-groups/README.md)新增三表及两个普通索引。当前完整 SQL 与 `short_drama` 实际均为 **107 张表**；已在该库执行并重入核验。生成任务在准入时建立图片组，新 API 和相关 Worker 必须同版部署。
 
+2026-10-26 的 [Skill 管理增量](2026-10-26-skill-management/README.md)删除个人设置的 `invocation_mode` 列，将对应 CHECK 收为 `row_version > 0`；不新增表，当前结构仍为 118 张表。保留个人启停、历史版本与任务引用，先备份并停旧进程，再协调前端、API 与 Worker 同版切换。
+
+2026-10-26 的 [Skill 管理增量](2026-10-26-skill-management/README.md)删除个人设置的 `invocation_mode` 列，将对应 CHECK 收为 `row_version > 0`；不新增表，当前结构仍为 118 张表。保留个人启停、历史版本与任务引用，先备份并停旧进程，再协调前端、API 与 Worker 同版切换。
+
 ## 公共执行边界
 
 1. 使用 MySQL 8.0.21+、utf8mb4、UTC 和严格 SQL 模式。确认目标数据库、可恢复备份和现有表定义，记录受影响数据行数。
@@ -66,7 +78,7 @@
 
 ## 测试
 
-各阶段的表数是该阶段的历史基线；当前完整建库 SQL 为 **115 张表**。011–017 在当前业务库的执行状态以对应迁移记录为准。[012分镜运行来源](2026-10-05-infinite-canvas/012-canvas-storyboard-run.sql)只将已有来源外键列改为可空，[013本地渲染](2026-10-05-infinite-canvas/013-canvas-render-jobs.sql)新增两表及两个索引，[014本地任务](2026-10-05-infinite-canvas/014-canvas-local-jobs.sql)新增一表及两个索引；012–014于2026-10-09在当前`short_drama`执行。[015生成媒体回收](2026-10-05-infinite-canvas/015-canvas-generation-media-deletions.sql)于2026-10-10新增一表及一个索引并完成核验。[016本地处置引用释放](2026-10-05-infinite-canvas/016-canvas-local-disposal.sql)于2026-10-10在同库执行两项原子 ALTER。[017历史创建媒体删除出处](2026-10-05-infinite-canvas/017-canvas-creation-media-deletions.sql)于2026-10-10 09:53（UTC+8）在同库执行一项原子 ALTER，队列表行数0→0、原列内容摘要相同。016/017均独立回读 ready、表数99不变，没有业务数据/媒体清理或服务重启。其他旧库仍须按缺项升级，完整SQL的新库无需重复执行这些增量。
+各阶段的表数是该阶段的历史基线；当前完整建库 SQL 为 **122 张表**。011–017 在当前业务库的执行状态以对应迁移记录为准。[012分镜运行来源](2026-10-05-infinite-canvas/012-canvas-storyboard-run.sql)只将已有来源外键列改为可空，[013本地渲染](2026-10-05-infinite-canvas/013-canvas-render-jobs.sql)新增两表及两个索引，[014本地任务](2026-10-05-infinite-canvas/014-canvas-local-jobs.sql)新增一表及两个索引；012–014于2026-10-09在当前`short_drama`执行。[015生成媒体回收](2026-10-05-infinite-canvas/015-canvas-generation-media-deletions.sql)于2026-10-10新增一表及一个索引并完成核验。[016本地处置引用释放](2026-10-05-infinite-canvas/016-canvas-local-disposal.sql)于2026-10-10在同库执行两项原子 ALTER。[017历史创建媒体删除出处](2026-10-05-infinite-canvas/017-canvas-creation-media-deletions.sql)于2026-10-10 09:53（UTC+8）在同库执行一项原子 ALTER，队列表行数0→0、原列内容摘要相同。016/017均独立回读 ready、表数99不变，没有业务数据/媒体清理或服务重启。其他旧库仍须按缺项升级，完整SQL的新库无需重复执行这些增量。
 
 [2026-09-30 原生视频与角色音色](2026-09-30-native-video-voice/README.md)：三张增量表，阶段基线为 32 张表。既有项目保持历史模式，迁移并部署同版 Worker 后才启用原生视频功能。
 
@@ -84,3 +96,5 @@
 
 
 2026-10-11 当前 `short_drama` 已完成 018 的三条结构 DDL 及 019 的七条结构 DDL并独立回读；019 新增两张表，当前完整 SQL 为 101 张表。旧来源全 NULL，角色版本、版本媒体和当前指针均 0；角色回填及七角色同版部署未执行，不能称完整升级流程通过。准确 SQL、指纹和未执行边界见[019 实际执行记录](2026-10-05-infinite-canvas/README.md#2026-10-11-当前业务库-019-实际结构执行记录)。历史阶段表数与原验收失败保留。
+
+2026-10-27 新增[剧本变更记录](2026-10-27-script-revisions/README.md)：`project_script_revisions` 保存AI替换、整篇导入、助手采用及恢复前后快照，当前完整结构121表。本机 `short_drama` 已实际执行并重入通过，不回填或改写历史正文。上述 Agent 加固迁移的“尚未执行”是原阶段记录；本次只读 `agent_migration.py --precheck` 实际返回 ready／gaps=[]，未重新执行其旧 SQL。

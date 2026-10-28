@@ -46,8 +46,8 @@ npm run test:e2e -- --feature standard.assets
 | `/projects/:projectId/:stage` | 四步创作，stage 为 source/assets/storyboard/assembly |
 | 旧分集、素材库和邀请链接 | 显示已停用，不能恢复退役入口 |
 | `/ai` | 文本、图片、视频模型配置 |
-| `/tasks/:kind` | text/image/video生成任务 |
-| `/media-library/:kind` | image/video生成媒体资产 |
+| `/tasks/*` | 已退役，兼容跳转项目列表 |
+| `/media-library/:kind` | all/image/video/audio，本人生成资产的工作台分类、名称搜索与纯预览 |
 | `/login`、`/register`、`/verify-email`、`/reset-password` | 登录、注册、邮箱验证和密码找回 |
 
 旧video和无效步骤链接按当前待处理阶段规范化；旧快照算出的video阶段映射到storyboard。BrowserRouter使用真实路径；生产部署要配置API代理、SPA fallback及正确的Vite资源base，详见[部署限制](../docs/instruction/开发运行与验证.md#部署与维护)。
@@ -60,7 +60,7 @@ npm run test:e2e -- --feature standard.assets
 - `src/features/assets`：当前项目流程素材的UI和请求状态。
 - `src/features/auth`：账号会话、过期时保留编辑、账号草稿隔离与个人模型偏好。
 - `src/features/generations`：通用生成、任务详情、轮询与幂等请求标识。
-- `src/features/media-library`：媒体详情与图片选择器。
+- `src/features/media-library`：只读图片／视频／音频预览与创作场景图片选择器。
 - `src/api`：DTO、请求封装和统一错误；见[前端API约定](src/api/README.md)。
 - `canvas/`：独立无限画布子包，保留 BeefTV 页面、交互、Provider、样式、字体、媒体工具及来源记录，通过 `@host` 引用宿主 HTTP 客户端；独立依赖、HTML 和测试仍由本包管理。
 

@@ -9,9 +9,10 @@ from types import SimpleNamespace
 import pytest
 from pydantic import SecretStr
 
-from short_drama.agent.legacy.artifacts import candidate_secret, public_content
-from short_drama.agent.gateway.protocol import AgentCapabilityEvidence, AgentSegmentResult
 from short_drama.agent.coordinator.runtime import AgentRuntime, Claim
+from short_drama.agent.gateway.langchain import FRAMEWORK_VERSION
+from short_drama.agent.gateway.protocol import AgentCapabilityEvidence, AgentSegmentResult
+from short_drama.agent.legacy.artifacts import candidate_secret, public_content
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
 from short_drama.service.agent_model_service import AgentModelService, model_snapshot, read_model
@@ -100,7 +101,9 @@ def test_model_verify_passes_frozen_saved_headers_and_profile_to_gateway():
         async def validate_capability(self, snapshot, credential, **kwargs):
             observed.append((snapshot, credential))
             await kwargs["on_request"]({})
-            return AgentCapabilityEvidence("openai_responses.v1", True, True, requests=1)
+            return AgentCapabilityEvidence(
+                "openai_responses.v1", True, True, requests=1, framework_version=FRAMEWORK_VERSION
+            )
 
     public = probe_service(row, settings, Probe()).verify(17, {"row_version": 3})
     frozen, credential = observed[0]
@@ -110,6 +113,25 @@ def test_model_verify_passes_frozen_saved_headers_and_profile_to_gateway():
     assert "unused-signing-secret" not in repr(credential)
     assert public.verified and public.protocol == "openai_responses.v1"
     assert "private-header" not in public.model_dump_json()
+
+
+@pytest.mark.parametrize("framework", [None, "pydantic-ai:legacy", FRAMEWORK_VERSION])
+def test_verified_capability_requires_current_gateway_framework(framework):
+    row, _ = model_fixture()
+    row.capability_cache = {
+        "agent": {
+            "row_version": row.row_version,
+            "credential_identity": model_snapshot(row)["credential_identity"],
+            "model_key": row.model_key,
+            "base_url": row.base_url,
+            "tool_calling": True,
+            "tool_result_continuation": True,
+            "framework_version": framework,
+        }
+    }
+    public = read_model(row)
+    assert public.verified is (framework == FRAMEWORK_VERSION)
+    assert public.tool_calling is public.verified
 
 
 def test_unsupported_saved_profile_is_rejected_before_model_verify_remote_io():

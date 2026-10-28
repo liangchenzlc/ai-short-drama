@@ -75,8 +75,7 @@
 .standard-assistant-dialog .agent-skill-list article { padding: 10px; gap: 6px 10px; border-radius: 8px; }
 .standard-assistant-dialog .agent-skill-list article > .ant-checkbox-wrapper { min-width: 0; overflow-wrap: anywhere; }
 .standard-assistant-dialog .agent-skill-list article > div { align-items: center; gap: 6px; }
-.standard-assistant-dialog .agent-skill-editor { padding-top: 12px; margin-top: 12px; gap: 10px; }
-.standard-assistant-dialog .agent-skill-editor label { gap: 5px; }
+.standard-assistant-dialog .agent-skill-preview { padding-top: 12px; margin-top: 12px; }
 .standard-assistant-dialog .agent-context-pagination,
 .standard-assistant-dialog .ai-assistant-history-pagination { margin-top: 12px; gap: 8px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
 .standard-assistant-dialog :is(button, summary):focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
@@ -103,28 +102,6 @@
 .standard-assistant-select-popup .ant-select-item-option-content,
 .standard-assistant-suggestions .ant-suggestion-item { overflow-wrap: anywhere; white-space: normal; }
 .standard-assistant-suggestions { max-width: calc(100vw - 24px); }
-@media (max-width: 700px) {
-    .ai-assistant-composer-tools > .ant-btn { min-width: 40px; width: 40px; height: 40px; }
-    .ai-assistant-sender-footer .ai-assistant-model { max-width: calc(100% - 128px); }
-    .assistant-skill-options .ant-checkbox-wrapper { min-height: 40px; align-items: center; }
-    .assistant-discussion-body { padding: 12px 14px; }
-    .ai-assistant-standard .ai-assistant-header .ant-btn { min-width: 40px; width: 40px; height: 40px; }
-    .ai-assistant-standard .ai-assistant-sender-footer .ai-assistant-send.ant-btn { min-width: 40px; width: 40px; height: 40px; }
-    .ai-assistant-standard .ai-assistant-model.ant-select { min-height: 40px; height: 40px; }
-    .ai-assistant-standard .agent-input-tools > .ant-btn { min-height: 40px; height: 40px; }
-    .ai-assistant-standard .agent-input-tools > .ant-btn { min-width: 40px; width: 40px; }
-    .ai-assistant-standard .ai-assistant-chip button { width: 32px; height: 32px; }
-    .standard-assistant-dialog > header { padding: 12px 14px; }
-    .standard-assistant-dialog .ai-assistant-history-body,
-    .standard-assistant-dialog .agent-context-dialog-body { padding: 12px 14px; }
-    .standard-assistant-dialog .ai-assistant-history-footer,
-    .standard-assistant-dialog .standard-assistant-dialog-footer { padding: 10px 14px; }
-    .standard-assistant-dialog .ant-btn { min-height: 44px; height: auto; }
-    .standard-assistant-dialog .ant-btn-icon-only { min-width: 44px; }
-    .standard-assistant-dialog .agent-asset-options article { flex-wrap: wrap; }
-    .standard-assistant-dialog .agent-asset-options audio { width: 100%; max-width: 100%; }
-    .standard-assistant-menu .ant-dropdown-menu-item { min-height: 44px; }
-}
 .assistant-undo-dialog { width: min(560px, calc(100vw - 32px)); }
 .assistant-undo-body { padding: 16px 20px; max-height: min(65vh, 640px); overflow-y: auto; overflow-wrap: anywhere; }
 .assistant-undo-body > p { color: var(--sub); line-height: 1.6; margin: 0 0 12px; }

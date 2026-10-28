@@ -14,6 +14,50 @@ const undoSource = readFileSync(new URL('../../src/features/ai-assistant/assista
 const undoDrafts = await import(`data:text/javascript;base64,${Buffer.from(compile(undoSource)).toString('base64')}`);
 const linkSource = readFileSync(new URL('../../src/features/ai-assistant/assistant-source-link.ts', import.meta.url), 'utf8');
 const { assistantSourceLink } = await import(`data:text/javascript;base64,${Buffer.from(compile(linkSource)).toString('base64')}`);
+const projectionCode = readFileSync(new URL('../../src/features/ai-assistant/assistant-task-state.ts', import.meta.url), 'utf8');
+const projection = await import(`data:text/javascript;base64,${Buffer.from(compile(projectionCode)).toString('base64')}`);
+const receiptCode = readFileSync(new URL('../../src/features/ai-assistant/assistant-receipt.ts', import.meta.url), 'utf8');
+const receipts = await import(`data:text/javascript;base64,${Buffer.from(compile(receiptCode)).toString('base64')}`);
+
+test('only definite admission failures release a frozen send after transport uncertainty', () => {
+  for (const [status, code] of [[422, 'validation_error'], [422, 'unsupported_assistant_protocol'], [409, 'assistant_script_changed'], [409, 'assistant_task_stopping']]) {
+    assert.equal(receipts.isAssistantAdmissionRejection({ status, code }), true);
+  }
+  for (const value of [{}, { status: 401, code: 'unauthorized' }, { status: 409, code: 'conflict' }, { status: 503 }, { status: 422, code: 'unknown' }]) assert.equal(receipts.isAssistantAdmissionRejection(value), false);
+});
+
+test('draft reference recovery keeps only minimal identities and detects corrupt records', () => {
+  const local = storage();
+  const material = { project_id: '9', source_kind: 'project', source_id: '9', kind: 'shot', id: '13', revision: '7', checksum: 'a'.repeat(64), name: '夜色', content: '正文不保存', url: 'temporary-secret' };
+  drafts.saveAssistantDraft('1', '20', { version: 1, text: '@夜色 继续', skills: [], includeContext: false, materials: [material] }, local);
+  const restored = drafts.readAssistantDraft('1', '20', local);
+  assert.equal(restored.materials[0].name, '夜色'); assert.equal(restored.materials[0].revision, '7');
+  assert.equal(restored.includeContext, false);
+  assert.ok(!local.getItem(drafts.assistantDraftKey('1', '20')).includes('正文不保存'));
+  assert.ok(!local.getItem(drafts.assistantDraftKey('1', '20')).includes('temporary-secret'));
+  assert.equal(drafts.readAssistantDraft('2', '20', local).materials, undefined);
+  local.setItem(drafts.assistantDraftKey('1', '20'), JSON.stringify({ ...restored, materials: [{ ...restored.materials[0], revision: 7 }] }));
+  assert.equal(drafts.readAssistantDraft('1', '20', local).materialsInvalid, true);
+});
+
+test('frozen script references preserve code point selections and reject changed versions on replay', () => {
+  const local = storage();
+  const original = { version: 1, key: 'script-original', draft: '改写选区', body: { content: '改写选区', new_task: true, script_reference: { project_id: '9', script_id: '13', content_version: '4', start: 2, end: 7 } } };
+  assert.equal(drafts.saveAssistantPendingSend('1', '20', original, local), true);
+  assert.deepEqual(drafts.readAssistantPendingSend('1', '20', local).pending, original);
+  assert.equal(drafts.saveAssistantPendingSend('1', '20', { ...original, body: { ...original.body, script_reference: { ...original.body.script_reference, content_version: '5' } } }, local), false);
+  assert.equal(drafts.saveAssistantPendingSend('1', '21', { ...original, body: { ...original.body, script_reference: { ...original.body.script_reference, end: 1 } } }, local), false);
+});
+
+test('a failed Harness task remains the send target after refreshing without enabling controls', () => {
+  const paused = { id: '9007199254740993', status: 'paused_error', interruptions_supported: false };
+  assert.equal(projection.selectedTask({ [paused.id]: paused }), paused);
+  const budget = { ...paused, status: 'paused_budget' };
+  assert.equal(projection.selectedTask({ [budget.id]: budget }), budget);
+  assert.equal(projection.selectedTask({ [paused.id]: { ...paused, status: 'stopped' } }).status, 'stopped');
+  const active = { id: '9007199254740991', status: 'running' };
+  assert.equal(projection.selectedTask({ [paused.id]: paused, [active.id]: active }), active);
+});
 function storage() {
   const values = new Map();
   return { values, getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
@@ -287,9 +331,6 @@ test('shared assistant keeps package boundaries, durable traces and safe Markdow
   assert.match(code, /timelineBubbles/);
   assert.match(code, /内容较长，已截取/);
 });
-
-const projectionCode = readFileSync(new URL('../../src/features/ai-assistant/assistant-task-state.ts', import.meta.url), 'utf8');
-const projection = await import(`data:text/javascript;base64,${Buffer.from(compile(projectionCode)).toString('base64')}`);
 
 test('discussion revisions retain frozen original requests across refresh and stay account scoped', () => {
   const local = storage();

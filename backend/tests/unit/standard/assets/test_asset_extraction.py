@@ -51,7 +51,7 @@ ITEMS = [
 ]
 
 
-def body(p, e, sid, version="3", kinds=None):
+def body(p, e, sid, version="2", kinds=None):
     return {
         "source": {
             "scene": "script_assets",
@@ -75,7 +75,12 @@ def extraction(items=None, *, confirmed=True, legacy=False):
         sid = saved["script"]["id"]
         if confirmed:
             writing.confirm(p, sid, {"content_version": "2"})
-        request = body(p, e, sid, "3" if confirmed else "2")
+        if not confirmed:
+            from short_drama.domain import ProjectScript
+
+            with session.begin():
+                session.get(ProjectScript, int(sid)).state = "unconfirmed"
+        request = body(p, e, sid, writing.get(p)["content_version"])
         generation = AIGenerationService(session, settings)
         if legacy:
             with session.begin():
@@ -173,7 +178,7 @@ def test_current_saved_script_and_snapshot_settings():
         api = AIGenerationService(session, settings)
         receipt, _ = api.create("text", body(p, e, sid, "2", kinds=["prop"]), "current-saved")
         assert writing.get(p)["content_version"] == "2"
-        assert writing.get(p)["editing_script"]["state"] == "unconfirmed"
+        assert writing.get(p)["editing_script"]["state"] == "confirmed"
         with session.begin():
             request = session.scalar(select(AIGenerationRecord)).request_data
             assert request["source_snapshot"]["script_source_policy"] == "current_saved_v1"
@@ -293,9 +298,9 @@ def test_duplicate_review_and_failure_rolls_back_entire_batch():
 
 def test_changed_script_blocks_adoption_but_novel_only_change_allows_it():
     with extraction() as (_, p, e, writing, sid, tid, service):
-        writing.save_novel(p, {"content_version": "3", "content": "小说更新"})
+        writing.save_novel(p, {"content_version": "2", "content": "小说更新"})
         result = service.get(p, tid)
-        assert not result["stale"] and result["content_version"] == "4"
+        assert not result["stale"] and result["content_version"] == "3"
         service.apply(
             p,
             tid,
@@ -304,7 +309,7 @@ def test_changed_script_blocks_adoption_but_novel_only_change_allows_it():
             ),
             "novel-change",
         )
-        writing.save_script(p, {"content_version": "4", "script_id": sid, "content": "新的剧本"})
+        writing.save_script(p, {"content_version": "3", "script_id": sid, "content": "新的剧本"})
         result = service.get(p, tid)
         assert result["stale"]
         with pytest.raises(WorkflowError) as error:

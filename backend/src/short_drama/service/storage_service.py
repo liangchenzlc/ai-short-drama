@@ -1,9 +1,11 @@
+import hashlib
+import io
 import re
 from datetime import UTC, datetime
 from typing import BinaryIO
 
 from short_drama.core.config import Settings
-from short_drama.core.exceptions import BusinessError
+from short_drama.core.exceptions import BusinessError, NotFound
 from short_drama.storage.minio import MinioStorage
 from short_drama.storage.models import ObjectLocation, StoredObject
 from short_drama.utils.snowflake import next_id
@@ -63,6 +65,23 @@ class StorageService:
     def stat(self, locator: str) -> StoredObject:
         location = self._location(locator)
         return self.storage.stat(location.bucket, location.object_name)
+
+    def freeze_agent_resource(self, data: bytes, *, invocation_id: str, content_type: str):
+        """A retry of a prepared turn reuses the same immutable derived object."""
+        if not re.fullmatch(r"turn:[1-9][0-9]*", invocation_id) or not 0 < len(data) <= 4 * 1024**2:
+            raise BusinessError("Invalid Agent resource publication")
+        kind = content_type.split("/", 1)[0]
+        if content_type not in {"image/jpeg", "audio/mpeg"}:
+            raise BusinessError("Unsupported Agent derived resource")
+        key = (
+            f"agent-harness/{invocation_id.replace(':', '/')}/"
+            f"{hashlib.sha256(data).hexdigest()}{_EXTENSIONS[content_type]}"
+        )
+        bucket = self._buckets[kind]
+        try:
+            return self.storage.stat(bucket, key)
+        except NotFound:
+            return self.storage.put(bucket, key, io.BytesIO(data), len(data), content_type)
 
     def open(self, locator: str):
         """Use as a context manager; stream with response.stream(chunk_size)."""

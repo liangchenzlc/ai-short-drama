@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>剧本创作 v3</title>
+<link rel="stylesheet" href="board.css">
+<style>
+.rail { width: 292px; flex: none; }
+.setup { flex: none; display: grid; gap: 8px; padding: 10px 10px 8px; border-bottom: 1px solid var(--hair-2); }
+.logline { margin: 0; padding-left: 8px; border-left: 2px solid #3d3d3d; color: #dcdce2; font-size: 12.5px; line-height: 1.6; }
+.setup-row { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 6px; border-radius: 6px; color: #c3c3cb; font-size: 12px; }
+.setup-row:hover { background: var(--hover); }
+.setup-row .meta { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: #6f6f79; }
+.scenes-head { flex: 0 0 32px; height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 10px; color: #cfcfd6; font-size: 11.5px; }
+.scene { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; height: 48px; padding: 0 8px; border-radius: 7px; text-align: left; }
+.scene:hover { background: #1e1e1e; }
+.scene.on { background: #262626; box-shadow: inset 0 0 0 1px #383838; }
+.scene.on::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 2px; background: var(--accent); border-radius: 2px; }
+.scene .no { width: 22px; font-family: var(--mono); font-size: 10.5px; color: #6f6f79; }
+.scene .t { flex: 1; min-width: 0; }
+.scene .t strong { display: flex; gap: 5px; font-size: 11.5px; font-weight: 500; color: #dcdce2; white-space: nowrap; overflow: hidden; }
+.scene .t span { display: block; margin-top: 2px; font-size: 10px; color: #6f6f79; }
+.hook { width: 5px; height: 5px; transform: rotate(45deg); background: var(--amber); border-radius: 1px; margin-top: 6px; flex: none; }
+.doc { flex: 1; min-width: 0; }
+.doc-head { flex: 0 0 46px; height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+.doc-head h1 { margin: 0; font-size: 14px; font-weight: 600; }
+.toolbar { flex: 0 0 36px; height: 36px; display: flex; align-items: center; gap: 4px; padding: 0 10px; background: #1c1c1c; border-top: 1px solid var(--hair-2); border-bottom: 1px solid var(--hair-2); }
+.tool { height: 25px; padding: 0 7px; display: inline-flex; align-items: center; border-radius: 5px; color: #a3a3ac; font-size: 10.5px; }
+.tool:hover { background: #2c2c2c; color: #fff; }
+.scroll { flex: 1; min-height: 0; overflow: hidden; padding: 18px 32px 22px; }
+.page { width: 720px; margin: 0 auto; }
+.shead { display: flex; align-items: baseline; gap: 8px; padding-bottom: 7px; margin: 0 0 10px; border-bottom: 1px solid #2f2f2f; }
+.shead .no { font-family: var(--mono); font-size: 10.5px; color: #8f8f99; letter-spacing: .08em; }
+.shead .rule { width: 14px; height: 1px; background: #3d3d3d; align-self: center; }
+.shead .when { font-size: 10.5px; color: #8b8b95; letter-spacing: .08em; }
+.shead .loc { font-size: 12.5px; font-weight: 600; color: #e2e2e8; }
+.flag { margin-left: 4px; height: 16px; padding: 0 5px; display: inline-flex; align-items: center; border: 1px solid var(--amber-line); border-radius: 3px; background: var(--amber-bg); color: var(--amber); font-size: 9px; }
+.p { margin: 0 0 9px; font-size: 13.5px; line-height: 1.95; color: #dcdce4; }
+.p.action { color: #bcbcc6; }
+.p .mark { color: #7b7b84; }
+.p .who { color: #fff; -webkit-text-stroke: .25px #fff; }
+.p .paren { color: #8a8a94; }
+.sel { background: #3b3b46; color: #fff; border-radius: 2px; box-shadow: 0 0 0 1px #4c4c58; }
+.selbar { display: inline-flex; align-items: center; gap: 2px; height: 32px; padding: 0 4px; margin: 0 0 6px 24px; background: #262628; border: 1px solid #3f3f45; border-radius: 8px; box-shadow: 0 12px 30px rgb(0 0 0 / 55%); }
+.selbar .lbl { display: inline-flex; align-items: center; gap: 5px; padding: 0 6px 0 4px; font-size: 11px; color: #ededf2; }
+.selbar .lbl svg { color: var(--amber); }
+.selbar button { height: 23px; padding: 0 7px; border-radius: 5px; color: #c9c9d1; font-size: 10.5px; }
+.selbar button:hover { background: #38383e; color: #fff; }
+.sep { width: 1px; height: 13px; background: #3c3c42; margin: 0 3px; }
+.foot { flex: 0 0 34px; height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #151515; border-top: 1px solid var(--hair-2); font-size: 10.5px; color: #8a8a93; }
+.warn { display: inline-flex; align-items: center; gap: 5px; color: var(--amber); }
+.next { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: #dcdce2; font-size: 11px; }
+</style></head>
+<body>
+<svg class="sprite" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M17 9h4M3 15h4M17 15h4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5l1.7 4.6 4.6 1.7-4.6 1.7L12 16.1l-1.7-4.6L5.7 9.8l4.6-1.7z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5V5.5"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><path d="M16 5.2A3 3 0 0 1 16 11M17.5 15.2c2 .6 3.2 2.3 3.2 4.8"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 15v5h-5M4 4l6 6M20 20l-6-6"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V10h5.5"/><path d="M12 8v4.5l3 1.8"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0l4-4m-4 4L8 11"/><path d="M4.5 19.5h15"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 1.8"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15m0 0l-5-5m5 5l-5 5"/></symbol>
+</svg>
+
+<div class="topbar">
+  <div class="tb-left">
+    <button class="icon-btn"><svg class="i"><use href="#i-back"/></svg></button>
+    <span class="brand"><svg class="i i-13"><use href="#i-film"/></svg></span>
+    <span class="pname">退婚当天，我成了前夫的上司</span>
+    <span class="mode">创作模式</span>
+  </div>
+  <nav class="steps">
+    <button class="step on"><span class="step-no">01</span>剧本创作</button><span class="step-link"></span>
+    <button class="step"><span class="step-no">02</span>素材生成</button><span class="step-link"></span>
+    <button class="step"><span class="step-no">03</span>分镜制作</button><span class="step-link"></span>
+    <button class="step"><span class="step-no">04</span>成片合成</button>
+  </nav>
+  <div class="tb-right">
+    <span class="save"><i></i>已保存 14:40</span>
+    <button class="ghost"><svg class="i i-13"><use href="#i-spark"/></svg>AI 创作助手</button>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="panel rail">
+    <header class="head"><h2>剧本结构</h2>
+      <div class="actions"><button class="icon-btn"><svg class="i i-13"><use href="#i-panel"/></svg></button></div>
+    </header>
+    <div class="setup">
+      <div>
+        <div class="label" style="margin-bottom:5px">一句话卖点</div>
+        <p class="logline">被扫地出门的豪门弃妇，带着离婚协议走进前夫家的董事会，成了他的顶头上司。</p>
+      </div>
+      <button class="setup-row"><svg class="i i-13"><use href="#i-book"/></svg>故事大纲<span class="meta">1,850 字</span></button>
+      <button class="setup-row"><svg class="i i-13"><use href="#i-users"/></svg>人物小传<span class="meta">6 人</span></button>
+      <div class="setup-row" style="color:#8b8b94;font-size:11px">
+        <svg class="i i-13"><use href="#i-spark"/></svg>素材已建 4 / 6 人
+        <span class="meta" style="color:#b8b8c0">去素材 →</span>
+      </div>
+    </div>
+    <div class="scenes-head">场次<span class="mono" style="color:#6f6f79;font-size:10.5px">12</span>
+      <div class="actions"><button class="icon-btn"><svg class="i i-13"><use href="#i-plus"/></svg></button></div>
+    </div>
+    <div class="list">
+      <button class="scene on"><span class="no">01</span><span class="t"><strong>日 内 · 民政局大厅<i class="hook"></i></strong><span>林晚 · 顾霆琛</span></span></button>
+      <button class="scene"><span class="no">02</span><span class="t"><strong>日 外 · 民政局门口</strong><span>林晚 · 沈亦舟</span></span></button>
+      <button class="scene"><span class="no">03</span><span class="t"><strong>日 内 · 沈氏集团顶层<i class="hook"></i></strong><span>林晚 · 沈亦舟 · 董事</span></span></button>
+      <button class="scene"><span class="no">04</span><span class="t"><strong>日 内 · 会议室</strong><span>林晚 · 顾霆琛</span></span></button>
+      <button class="scene"><span class="no">05</span><span class="t"><strong>夜 内 · 顾家客厅</strong><span>顾霆琛 · 苏蔓</span></span></button>
+      <button class="scene"><span class="no">06</span><span class="t"><strong>夜 外 · 城市天台</strong><span>林晚</span></span></button>
+      <button class="scene"><span class="no">07</span><span class="t"><strong>日 内 · 医院病房</strong><span>林晚 · 周医生</span></span></button>
+      <button class="scene"><span class="no">08</span><span class="t"><strong>日 内 · 医院走廊<i class="hook"></i></strong><span>林晚 · 顾霆琛</span></span></button>
+      <button class="scene"><span class="no">09</span><span class="t"><strong>夜 内 · 宴会厅<i class="hook"></i></strong><span>林晚 · 苏蔓 · 宾客</span></span></button>
+      <button class="scene"><span class="no">10</span><span class="t"><strong>夜 内 · 宴会厅后台</strong><span>林晚 · 沈亦舟</span></span></button>
+    </div>
+    <footer style="flex:0 0 36px;height:36px;display:flex;align-items:center;gap:4px;padding:0 8px;border-top:1px solid var(--hair-2)">
+      <button class="btn quiet"><svg class="i i-13"><use href="#i-plus"/></svg>场次</button>
+      <button class="btn quiet"><svg class="i i-13"><use href="#i-spark"/></svg>从小说拆场</button>
+      <span class="mono" style="margin-left:auto;font-size:10.5px;color:#6f6f79">2'58"</span>
+    </footer>
+  </aside>
+
+  <main class="panel doc">
+    <header class="doc-head">
+      <h1>剧本正文</h1><span class="tag">草稿 v3</span>
+      <div class="actions">
+        <button class="btn"><svg class="i i-13"><use href="#i-spark"/></svg>AI 生成</button>
+        <button class="btn quiet"><svg class="i i-13"><use href="#i-history"/></svg>记录</button>
+        <button class="btn"><svg class="i i-13"><use href="#i-download"/></svg>导出</button>
+        <button class="icon-btn"><svg class="i i-13"><use href="#i-expand"/></svg></button>
+      </div>
+    </header>
+    <div class="toolbar">
+      <button class="tool">场次</button><button class="tool">△ 动作</button><button class="tool">对白</button><button class="tool">OS</button><button class="tool">VO</button>
+    </div>
+    <div class="scroll">
+      <div class="page">
+        <section>
+          <div class="shead"><span class="no">场 01</span><span class="rule"></span><span class="when">日 · 内</span><span class="loc">民政局 · 大厅</span><span class="flag">钩子</span></div>
+          <p class="p action"><span class="mark">△</span>大厅的白灯管嗡嗡作响。林晚把离婚协议推到桌对面，指尖压着签字栏。</p>
+          <p class="p"><span class="who">顾霆琛</span><span class="paren">（指节敲桌）</span>：想清楚了？</p>
+          <p class="p"><span class="who">林晚</span><span class="paren">（不抬眼）</span>：<span class="sel">顾总，我从来没这么清楚过。</span></p>
+          <div class="selbar"><span class="lbl"><svg class="i i-12"><use href="#i-spark"/></svg>改写</span><span class="sep"></span><button>更狠</button><button>更短</button><button>更口语</button><button>加动作</button><span class="sep"></span><span class="mono" style="font-size:9px;color:#8d8d96;padding:0 4px">⌘K</span></div>
+          <p class="p action"><span class="mark">△</span>红章落下，声音很轻。</p>
+        </section>
+        <section>
+          <div class="shead"><span class="no">场 02</span><span class="rule"></span><span class="when">日 · 外</span><span class="loc">民政局 · 门口</span></div>
+          <p class="p action"><span class="mark">△</span>黑色轿车停在台阶下。车窗降下，沈亦舟侧过脸。</p>
+          <p class="p"><span class="who">沈亦舟</span>：上车。</p>
+          <p class="p"><span class="who">林晚</span><span class="paren">（顿了一秒）</span>：沈总，我们不顺路。</p>
+          <p class="p"><span class="who">沈亦舟</span><span class="paren">（笑）</span>：从现在起，顺路。</p>
+        </section>
+      </div>
+    </div>
+    <footer class="foot">
+      <svg class="i i-12"><use href="#i-clock"/></svg>
+      <span>预估 <b style="color:#dcdce2">2'58"</b> / 目标 3'00"</span>
+      <span style="width:1px;height:12px;background:#2e2e2e"></span>
+      <span>钩子 5</span>
+      <span style="width:1px;height:12px;background:#2e2e2e"></span>
+      <span class="warn">场 07「周医生」未登记人物</span>
+      <span class="next"><span class="mono" style="color:#7c7c85">1,286 字</span> · 12 场 · 已同步 <button class="btn quiet">下一步：素材生成<svg class="i i-12"><use href="#i-arrow"/></svg></button></span>
+    </footer>
+  </main>
+</div>
+</body></html>

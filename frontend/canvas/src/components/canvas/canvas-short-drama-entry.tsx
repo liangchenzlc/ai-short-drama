@@ -25,7 +25,7 @@ export function CanvasShortDramaEmptyState({ onCreatePipeline, onStartFreeform, 
                     <h2 className="text-lg font-semibold">从哪里开始？</h2>
                     <p className="mt-1 text-sm" style={{ color: theme.node.muted }}>选择一条主路径，之后仍可随时切换。</p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-3 grid-cols-2">
                     <PathCard
                         icon={<Clapperboard className="size-5" />}
                         title="自己创作"
@@ -113,7 +113,7 @@ export function CanvasFreeformEmptyState({ commands, onOpenAssistant }: { comman
                         或让助手搭个草案 <span className="ml-1 opacity-70">⌘J</span>
                     </button>
                 ) : null}
-                {showQuickStarts ? <div className="mt-6 grid w-full max-w-[984px] grid-cols-2 gap-2 sm:grid-cols-4">
+                {showQuickStarts ? <div className="mt-6 grid w-full max-w-[984px] gap-2 grid-cols-4">
                     {quickStarts.map((item) => {
                         const command = commandById.get(item.commandId);
                         if (!command) return null;
@@ -132,7 +132,7 @@ export function CanvasFreeformEmptyState({ commands, onOpenAssistant }: { comman
                             >
                                 <span className="grid size-9 shrink-0 place-items-center rounded-md" style={{ color: "#fff", background: item.accent, boxShadow: `0 6px 16px ${item.accent}33` }}>{item.icon}</span>
                                 <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                                    <span className="min-w-0 text-xs font-medium leading-4 sm:truncate">{item.label}</span>
+                                    <span className="min-w-0 text-xs font-medium leading-4 truncate">{item.label}</span>
                                     {(command.disabledReason ? "正在开发" : item.badge) ? <span className="shrink-0 rounded bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-medium max-[480px]:hidden" style={{ color: theme.node.muted }}>{command.disabledReason ? "正在开发" : item.badge}</span> : null}
                                 </span>
                             </button>
@@ -142,23 +142,7 @@ export function CanvasFreeformEmptyState({ commands, onOpenAssistant }: { comman
                 <button type="button" aria-label="添加第一项" className="sr-only" tabIndex={-1} onClick={() => commandById.get("text")?.onClick()} />
             </div>
             {connectionsHintOpen ? (
-                <div
-                    className="canvas-connections-hint pointer-events-auto fixed bottom-[52px] left-[176px] z-[var(--z-toolbar)] flex min-w-[218px] items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-medium shadow-lg max-sm:hidden"
-                    style={{ background: "#6fe8e5", color: "#10292a" }}
-                >
-                    <span>点击可显示/隐藏画布上的连线</span>
-                    <button
-                        type="button"
-                        aria-label="关闭连线提示"
-                        className="grid size-4 shrink-0 place-items-center rounded-full transition hover:bg-black/10"
-                        onClick={() => {
-                            setConnectionsHintOpen(false);
-                            try { window.localStorage.setItem("canvas:connections-hint-dismissed", "1"); } catch { /* ignore */ }
-                        }}
-                    >
-                        <X className="size-3.5" />
-                    </button>
-                </div>
+                null
             ) : null}
         </div>
     );

@@ -155,21 +155,23 @@ def test_real_minio_attachment_upload_read_message_freeze_and_exact_version_clea
     reason="Set RUN_AGENT_INFRA_INTEGRATION=1 for configured local MinIO",
 )
 def test_real_minio_skill_package_versions_keep_exact_resources(workspace):
+    """Exercise immutable resources through the explicitly frozen legacy V2 engine."""
     from sqlalchemy import select
 
     from short_drama.agent.coordinator.assistant import claim_operation, complete_operation
     from short_drama.agent.coordinator.runtime import AgentRuntimeStore
-    from short_drama.agent.skill.contracts import activations
     from short_drama.agent.legacy.tools import prepare_decision
+    from short_drama.agent.skill.contracts import activations
     from short_drama.domain.agent_task import AgentOperation, AgentTask
     from short_drama.service.assistant_task_service import AssistantTaskService
+    from tests.integration.standard.assistant.test_global_assistant_tasks import legacy_task_engine
 
     factory, project_id, _ = workspace
     _, model_id = setup(factory, project_id)
     configured = Settings(auth_enabled=True, agent_enabled=True)
     storage = TrackedAttachmentStorage(configured)
     try:
-        with factory() as session:
+        with legacy_task_engine(factory), factory() as session:
             session.info["actor"] = actor(1)
             library = AgentSkillService(session, configured, storage)
             original = library.create(

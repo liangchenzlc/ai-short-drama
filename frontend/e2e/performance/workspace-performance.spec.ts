@@ -31,9 +31,9 @@ test('visited writing preserves unsaved adaptation instructions while moving bet
   await page.goto(`${root}/source`);
   const instructions = page.getByRole('textbox', { name: '创作要求', exact: true });
   await instructions.fill('保留这个尚未提交的改编要求。');
-  await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: '素材生成', exact: true }).click();
-  await expect(page.getByRole('button', { name: '新增素材', exact: true }).first()).toBeVisible();
-  await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: '剧本创作', exact: true }).click();
+  await page.getByRole('navigation', { name: '创作流程' }).getByRole('button', { name: '资产生成', exact: true }).click();
+  await expect(page.getByRole('button', { name: '创建资产', exact: true }).first()).toBeVisible();
+  await page.getByRole('navigation', { name: '创作流程' }).getByRole('button', { name: '剧本创作', exact: true }).click();
   await expect(instructions).toHaveValue('保留这个尚未提交的改编要求。');
   expect(state.errors).toEqual([]);
   expect(state.unexpected).toEqual([]);
@@ -43,8 +43,8 @@ test('same-type model selectors share requests and one focus refresh', async ({ 
   const state = await fixture(page, false, productionOrigin);
   await page.goto(`${root}/source`);
   await expect(page.locator('#episode-novel')).toBeEditable();
-  await page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name: '素材生成', exact: true }).click();
-  await expect(page.getByRole('button', { name: '新增素材', exact: true }).first()).toBeVisible();
+  await page.getByRole('navigation', { name: '创作流程' }).getByRole('button', { name: '资产生成', exact: true }).click();
+  await expect(page.getByRole('button', { name: '创建资产', exact: true }).first()).toBeVisible();
   const textReads = () => state.requests.filter(item => item.path === '/ai-model-configs' && item.query.get('service_type') === 'text');
   await expect.poll(() => textReads().length).toBe(1);
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));

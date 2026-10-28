@@ -57,7 +57,11 @@ def prepare_revision(session, conversation, run):
                     {
                         "id": item["id"],
                         "content_version": str(item["content_version"]),
-                        "instructions": item["instructions"],
+                        **(
+                            {"instructions": item["instructions"]}
+                            if "instructions" in item
+                            else {"name": item["name"], "description": item.get("description", "")}
+                        ),
                     }
                     for item in task.selected_skills
                 ],

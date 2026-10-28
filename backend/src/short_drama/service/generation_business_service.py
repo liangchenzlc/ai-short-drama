@@ -42,6 +42,15 @@ class GenerationBusinessService(BaseService):
         if response.get("finish_reason") in {"length", "max_output_tokens"}:
             raise WorkflowError("text_truncated", "模型输出被截断", 422)
         source = record.request_data.get("source") or {}
+        from .writing_generation_service import WRITING_SCENES, WritingGenerationService
+
+        if source.get("scene") in WRITING_SCENES:
+            result = WritingGenerationService(self.session).apply(record, content)
+            response["business_result"] = result
+            record.response_data = response
+            record.updated_at = utcnow()
+            self.session.flush()
+            return result
         if source.get("scene") not in {"novel_script", "script_shots", "script_assets"}:
             return None
         snapshot = record.request_data["source_snapshot"]

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" color="#101010" role="img" aria-labelledby="cineflow-mark-title cineflow-mark-desc">
+  <title id="cineflow-mark-title">CineFlow CF 图形标志</title>
+  <desc id="cineflow-mark-desc">画框式 C 与两条斜切横笔的 F 组成 CineFlow 双字母标记。</desc>
+  <g fill="currentColor"><path d="M220 76C220 55 203 40 182 40L78 40C51 40 32 59 32 86L32 170C32 197 51 216 78 216L182 216C203 216 220 201 220 180L174 155L174 166C174 173 169 178 162 178L90 178C83 178 78 173 78 166L78 90C78 83 83 78 90 78L162 78C169 78 174 83 174 90L174 101L220 76Z"/><path d="M106 101L166 101L156 119L126 119L126 131L160 131L150 149L126 149L126 165L106 165L106 101Z"/></g>
+</svg>

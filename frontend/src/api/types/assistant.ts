@@ -25,6 +25,7 @@ export interface AssistantMessageContext {
   include_document?: boolean;
   stage?: 'source' | 'assets' | 'storyboard' | 'assembly';
   storyboard_revision?: string;
+  script_reference?: AssistantScriptReference;
   selected?: { kind: 'asset' | 'shot' | 'node'; id: string; revision?: string }[];
 }
 
@@ -106,6 +107,8 @@ export interface AssistantTask {
   row_version: string; plan_revision: string; input_revision: string; applied_input_revision: string;
   control_seq: string; applied_control_seq: string;
   control_state: 'none' | 'stop_pending' | 'redirect_pending' | 'delete_pending';
+  interruptions?: { stop: boolean; redirect: boolean; resume: boolean };
+  interruptions_supported?: boolean;
   execution_target: TaskExecutionTarget | null; memory_project_ids: string[];
   source_context: { kind: 'project' | 'canvas'; id: string; project_id: string; revision: string } | null;
   selected_subjects: AssistantSelectedSubject[];
@@ -117,10 +120,16 @@ export interface AssistantTask {
 }
 export interface AssistantTaskSendInput extends Omit<AssistantSendInput, 'context'> {
   task_id?: string; new_task?: boolean;
+  script_reference?: AssistantScriptReference | null;
   context?: (AssistantMessageContext & { project_id: string; include_document: false }) | null;
   subject_selection?: AssistantSubjectSelection;
   attachment_selection?: AssistantAttachmentSelection;
   execution_target?: TaskExecutionTarget | null; memory_project_ids?: string[]; media_limits?: TaskMediaLimits;
+}
+export interface AssistantScriptReference { project_id: string; script_id: string | null; content_version: string; start?: number | null; end?: number | null }
+export interface AssistantScriptProposal {
+  operation_id: string; project_id: string; script_id: string | null; content_version: string;
+  start: number; end: number; before: string; after: string; applied_version: string | null;
 }
 export interface AssistantTaskAccepted extends AgentSendResult { task: AssistantTask }
 export interface AssistantMemorySelection { id: string; content_version: string }

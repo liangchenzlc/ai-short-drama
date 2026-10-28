@@ -28,8 +28,8 @@ export function CanvasCharacterReferenceModal({ node, open, onClose, loading = f
             onCancel={onClose}
             flush
         >
-            <div className="grid h-[min(720px,calc(100dvh-48px))] min-h-0 grid-rows-[minmax(240px,42vh)_minmax(0,1fr)] overflow-hidden bg-background text-foreground md:grid-cols-[minmax(0,1.55fr)_minmax(360px,.85fr)] md:grid-rows-1">
-                <section className="relative min-h-0 overflow-hidden border-b border-border bg-foreground/[.035] md:border-b-0 md:border-r" aria-label="角色三视图">
+            <div className="grid h-[min(720px,calc(100dvh-48px))] min-h-0 overflow-hidden bg-background text-foreground grid-cols-[minmax(0,1.55fr)_minmax(360px,.85fr)] grid-rows-1">
+                <section className="relative min-h-0 overflow-hidden border-border bg-foreground/[.035] border-b-0 border-r" aria-label="角色三视图">
                     <div className="absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-between px-5 pr-14">
                         <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border/80 bg-background/80 px-2.5 text-[var(--fs-label)] font-medium shadow-sm backdrop-blur-xl">
                             <ImageIcon className="size-3.5" />
@@ -42,7 +42,7 @@ export function CanvasCharacterReferenceModal({ node, open, onClose, loading = f
                             <div>{loading ? <LoaderCircle className="mx-auto size-6 animate-spin" /> : null}<p className="mt-3 text-xs">{loading ? "正在读取当前角色" : error || "角色图片读取失败，请重试"}</p>{!loading && onRetry ? <Button type="text" onClick={() => { setImageError(false); onRetry(); }}>重试</Button> : null}</div>
                         </div>
                     ) : metadata?.characterCoverUrl ? (
-                        <div className="flex h-full w-full items-center justify-center p-5 pt-16 md:p-8 md:pt-20">
+                        <div className="flex h-full w-full items-center justify-center p-8 pt-20">
                             <img
                                 src={metadata.characterCoverUrl}
                                 onError={() => setImageError(true)}

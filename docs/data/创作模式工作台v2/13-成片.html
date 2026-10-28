@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>成片合成 v2</title>
+<link rel="stylesheet" href="board.css">
+<style>
+.bin-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 6px; text-align: left; }
+.bin-row:hover { background: #1e1e1e; }
+.bin-thumb { width: 40px; height: 24px; flex: none; border-radius: 4px; border: 1px solid #303030; }
+.editor { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.edit-head { flex: 0 0 44px; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--surface); border: 1px solid var(--hair); border-radius: 10px; }
+.edit-head h1 { margin: 0; font-size: 13.5px; font-weight: 600; }
+.monitor-wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: #0b0b0c; border: 1px solid var(--hair); border-radius: 10px; position: relative; }
+.monitor { width: 640px; aspect-ratio: 16 / 9; border-radius: 6px; border: 1px solid #2c2c30; box-shadow: 0 20px 50px rgb(0 0 0 / 60%); position: relative; }
+.safe { position: absolute; inset: 6%; border: 1px dashed rgb(255 255 255 / 14%); border-radius: 3px; }
+.playbar { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.pbtn { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: rgb(255 255 255 / 10%); border: 1px solid rgb(255 255 255 / 14%); color: #e8e8ee; }
+.pbtn.big { width: 32px; height: 32px; background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.time { position: absolute; left: 12px; top: 10px; padding: 2px 7px; border-radius: 4px; background: rgb(0 0 0 / 55%); border: 1px solid rgb(255 255 255 / 10%); font-family: var(--mono); font-size: 10px; color: #dcdce4; }
+.timeline { flex: 0 0 300px; height: 300px; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--hair); border-radius: 10px; overflow: hidden; }
+.tl-head { flex: 0 0 32px; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--hair-2); }
+.ruler { flex: 0 0 24px; height: 24px; display: flex; align-items: flex-end; padding-left: 62px; gap: 0; border-bottom: 1px solid #242424; background: #141414; }
+.ruler span { flex: 1; border-left: 1px solid #2e2e2e; font-family: var(--mono); font-size: 8.5px; color: #5f5f68; padding-left: 3px; line-height: 12px; }
+.tracks { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+.track { display: flex; height: 44px; border-bottom: 1px solid #222; }
+.track.a { height: 36px; }
+.track-label { flex: 0 0 62px; display: flex; align-items: center; gap: 5px; padding: 0 8px; font-size: 9.5px; color: #8b8b94; border-right: 1px solid #242424; background: #161616; }
+.lane { position: relative; flex: 1; display: flex; gap: 2px; padding: 4px 6px; background: repeating-linear-gradient(90deg, #151515 0 1px, #131313 1px 2px); }
+.clip { position: relative; height: 100%; border-radius: 4px; overflow: hidden; border: 1px solid #3a3a3a; flex: none; }
+.clip.sel { border-color: #f0f0f4; box-shadow: 0 0 0 1px #f0f0f4; }
+.clip .lbl { position: absolute; left: 4px; top: 2px; font-size: 8.5px; color: #fff; text-shadow: 0 1px 2px #000; font-family: var(--mono); }
+.clip.audio { background: #1d2a22; border-color: #33513e; }
+.clip.audio.music { background: #2a2118; border-color: #57492f; }
+.clip.audio.sfx { background: #1a2430; border-color: #33485c; }
+.wave { position: absolute; inset: 4px 2px; background: repeating-linear-gradient(90deg, rgba(139,225,172,.55) 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, transparent 0 2px, rgba(139,225,172,.18) 2px 3px); opacity: .9; }
+.clip.audio.music .wave { background: repeating-linear-gradient(90deg, rgba(241,195,118,.5) 0 1px, transparent 1px 3px); }
+.clip.audio.sfx .wave { background: repeating-linear-gradient(90deg, rgba(143,184,220,.5) 0 1px, transparent 1px 4px); }
+.playhead { position: absolute; top: 0; bottom: 0; left: 346px; width: 1px; background: #f0f0f4; z-index: 3; }
+.playhead::before { content: ""; position: absolute; top: 0; left: -4px; width: 9px; height: 7px; background: #f0f0f4; clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.status { flex: 0 0 30px; height: 30px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #131313; border-top: 1px solid var(--hair-2); font-size: 10px; color: #7c7c85; }
+</style></head>
+<body>
+<svg class="sprite" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M17 9h4M3 15h4M17 15h4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5l1.7 4.6 4.6 1.7-4.6 1.7L12 16.1l-1.7-4.6L5.7 9.8l4.6-1.7z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0l4-4m-4 4L8 11"/><path d="M4.5 19.5h15"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14-4.5L4 9"/><path d="M4 5v4h4"/><path d="M4 13a8 8 0 0 0 14 4.5L20 15"/><path d="M20 19v-4h-4"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></symbol>
+  <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8 7.5L20 18M8 16.5L20 6"/></symbol>
+</svg>
+
+<div class="topbar">
+  <div class="tb-left">
+    <button class="icon-btn"><svg class="i"><use href="#i-back"/></svg></button>
+    <span class="brand"><svg class="i i-13"><use href="#i-film"/></svg></span>
+    <span class="pname">退婚当天，我成了前夫的上司</span>
+    <span class="mode">创作模式</span>
+  </div>
+  <nav class="steps">
+    <button class="step done"><span class="step-no">01</span>剧本创作</button><span class="step-link"></span>
+    <button class="step done"><span class="step-no">02</span>素材生成</button><span class="step-link"></span>
+    <button class="step done"><span class="step-no">03</span>分镜制作</button><span class="step-link"></span>
+    <button class="step on"><span class="step-no">04</span>成片合成</button>
+  </nav>
+  <div class="tb-right">
+    <span class="save"><i></i>已保存 15:04</span>
+    <button class="ghost"><svg class="i i-13"><use href="#i-spark"/></svg>AI 创作助手</button>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="panel" style="width:172px;flex:none">
+    <header class="head"><h2>素材</h2><span class="mono" style="font-size:10.5px;color:#6f6f79">15</span>
+      <div class="actions"><button class="icon-btn"><svg class="i i-13"><use href="#i-plus"/></svg></button></div>
+    </header>
+    <div style="flex:0 0 auto;display:flex;gap:4px;padding:0 10px 8px">
+      <button class="chip on">分镜 12</button><button class="chip">音频 3</button>
+    </div>
+    <div class="list">
+      <button class="bin-row"><span class="ph bin-thumb"><span class="cap">01</span></span><span class="t" style="flex:1"><strong style="font-size:11px">S01 · 5s</strong></span></button>
+      <button class="bin-row"><span class="ph bin-thumb" style="filter:hue-rotate(12deg)"><span class="cap">02</span></span><span class="t" style="flex:1"><strong style="font-size:11px">S02 · 6s</strong></span></button>
+      <button class="bin-row"><span class="ph bin-thumb" style="filter:hue-rotate(24deg)"><span class="cap">03</span></span><span class="t" style="flex:1"><strong style="font-size:11px">S03 · 5s</strong></span></button>
+      <button class="bin-row"><span class="ph bin-thumb" style="filter:hue-rotate(36deg)"><span class="cap">04</span></span><span class="t" style="flex:1"><strong style="font-size:11px">S04 · 6s</strong></span></button>
+      <button class="bin-row"><span class="ph bin-thumb" style="filter:hue-rotate(48deg);opacity:.5"><span class="cap">05</span></span><span class="t" style="flex:1"><strong style="font-size:11px">S05 · 5s</strong></span></button>
+      <button class="bin-row"><span class="ph bin-thumb" style="filter:hue-rotate(60deg)"><span class="cap">06</span></span><span class="t" style="flex:1"><strong style="font-size:11px">S06 · 4s</strong></span></button>
+      <button class="bin-row"><span class="ph bin-thumb" style="filter:hue-rotate(72deg)"><span class="cap">07</span></span><span class="t" style="flex:1"><strong style="font-size:11px">S07 · 6s</strong></span></button>
+      <button class="bin-row"><span class="ph bin-thumb" style="filter:hue-rotate(84deg)"><span class="cap">08</span></span><span class="t" style="flex:1"><strong style="font-size:11px">S08 · 5s</strong></span></button>
+    </div>
+    <footer class="foot"><button class="btn quiet"><svg class="i i-13"><use href="#i-plus"/></svg>上传素材</button></footer>
+  </aside>
+
+  <div class="editor">
+    <header class="edit-head">
+      <h1>成片</h1>
+      <span class="tag">12 片段</span><span class="tag">1'58"</span><span class="tag warn">2 个未同步</span>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+        <button class="btn"><svg class="i i-13"><use href="#i-sync"/></svg>从分镜同步</button>
+        <button class="btn quiet"><svg class="i i-13"><use href="#i-scissors"/></svg>剪辑工具</button>
+        <button class="btn primary"><svg class="i i-13"><use href="#i-download"/></svg>导出成片</button>
+        <button class="icon-btn"><svg class="i i-13"><use href="#i-panel"/></svg></button>
+      </div>
+    </header>
+
+    <div class="monitor-wrap">
+      <div class="ph monitor">
+        <span class="time">00:12:08 / 01:58:00</span>
+        <span class="safe"></span>
+        <span class="cap" style="left:14px;bottom:52px">S03 · 沈氏集团顶层</span>
+        <div class="playbar">
+          <span class="pbtn">⏮</span><span class="pbtn big"><svg class="i i-13" style="fill:currentColor;stroke:none"><use href="#i-play"/></svg></span><span class="pbtn">⏭</span>
+        </div>
+      </div>
+    </div>
+
+    <section class="timeline" aria-label="时间轴">
+      <header class="tl-head">
+        <span style="font-size:11px;color:#cfcfd6">时间轴</span>
+        <span class="mono" style="font-size:10px;color:#6f6f79">30 fps</span>
+        <div style="margin-left:auto;display:flex;gap:4px">
+          <button class="chip">吸附</button><button class="chip">−</button><span class="mono" style="font-size:10px;color:#8b8b94;padding:0 4px">100%</span><button class="chip">＋</button>
+        </div>
+      </header>
+      <div class="ruler"><span>0:00</span><span>0:15</span><span>0:30</span><span>0:45</span><span>1:00</span><span>1:15</span><span>1:30</span><span>1:45</span></div>
+      <div class="tracks">
+        <div class="playhead"></div>
+        <div class="track">
+          <div class="track-label">V1 画面</div>
+          <div class="lane">
+            <div class="ph clip sel" style="width:11%"><span class="lbl">S01</span></div>
+            <div class="ph clip" style="width:13%;filter:hue-rotate(12deg)"><span class="lbl">S02</span></div>
+            <div class="ph clip" style="width:11%;filter:hue-rotate(24deg)"><span class="lbl">S03</span></div>
+            <div class="ph clip" style="width:13%;filter:hue-rotate(36deg)"><span class="lbl">S04</span></div>
+            <div class="ph clip" style="width:11%;filter:hue-rotate(48deg)"><span class="lbl">S05</span></div>
+            <div class="ph clip" style="width:9%;filter:hue-rotate(60deg)"><span class="lbl">S06</span></div>
+            <div class="ph clip" style="width:13%;filter:hue-rotate(72deg)"><span class="lbl">S07</span></div>
+            <div class="ph clip" style="width:11%;filter:hue-rotate(84deg)"><span class="lbl">S08</span></div>
+          </div>
+        </div>
+        <div class="track a">
+          <div class="track-label">A1 原声</div>
+          <div class="lane">
+            <div class="clip audio" style="width:34%"><i class="wave"></i></div>
+            <div class="clip audio" style="width:22%"><i class="wave"></i></div>
+            <div class="clip audio" style="width:18%"><i class="wave"></i></div>
+          </div>
+        </div>
+        <div class="track a">
+          <div class="track-label">A2 对白</div>
+          <div class="lane">
+            <div class="clip audio" style="width:18%;margin-left:3%"><i class="wave"></i></div>
+            <div class="clip audio" style="width:14%;margin-left:6%"><i class="wave"></i></div>
+            <div class="clip audio" style="width:20%;margin-left:4%"><i class="wave"></i></div>
+          </div>
+        </div>
+        <div class="track a">
+          <div class="track-label">A3 字幕</div>
+          <div class="lane">
+            <div class="clip" style="width:12%;background:#232323;border-color:#3a3a3a"><span class="lbl">想清楚了？</span></div>
+            <div class="clip" style="width:16%;background:#232323;border-color:#3a3a3a"><span class="lbl">从来没这么清楚</span></div>
+            <div class="clip" style="width:14%;background:#232323;border-color:#3a3a3a"><span class="lbl">各位，久等</span></div>
+          </div>
+        </div>
+        <div class="track a">
+          <div class="track-label">A4 配乐</div>
+          <div class="lane">
+            <div class="clip audio music" style="width:64%"><i class="wave"></i><span class="lbl">压抑 · 弦乐</span></div>
+          </div>
+        </div>
+        <div class="track a">
+          <div class="track-label">A5 音效</div>
+          <div class="lane">
+            <div class="clip audio sfx" style="width:6%;margin-left:10%"><i class="wave"></i></div>
+            <div class="clip audio sfx" style="width:5%;margin-left:18%"><i class="wave"></i></div>
+            <div class="clip audio sfx" style="width:7%;margin-left:12%"><i class="wave"></i></div>
+          </div>
+        </div>
+      </div>
+      <footer class="status">
+        <span>总时长 1'58"</span><span>·</span><span>画面 12 段</span><span>·</span>
+        <span style="color:#f1c376">S05、S10 分镜已更新，待同步</span>
+        <span style="margin-left:auto">自动保存 · 15:04</span>
+      </footer>
+    </section>
+  </div>
+
+  <aside class="panel" style="width:272px;flex:none">
+    <header class="head"><h2>片段设置</h2><span class="tag">S03</span>
+      <div class="actions"><button class="icon-btn"><svg class="i i-13"><use href="#i-panel"/></svg></button></div>
+    </header>
+    <div style="flex:0 0 auto;display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid var(--hair-2)">
+      <button class="chip on">画面</button><button class="chip">声音</button><button class="chip">字幕</button>
+    </div>
+    <div class="insp-body">
+      <div class="field">
+        <span class="label">构图</span>
+        <div style="display:flex;gap:6px"><button class="chip on">适应</button><button class="chip">填充</button></div>
+      </div>
+      <div class="field"><span class="label">缩放</span><div class="chip" style="width:100%;justify-content:space-between">100%<span class="mono" style="color:#6f6f79">—●———</span></div></div>
+      <div class="field" style="grid-template-columns:1fr 1fr;display:grid;gap:8px">
+        <div><span class="label">位置 X</span><div class="chip" style="width:100%;justify-content:center">0</div></div>
+        <div><span class="label">位置 Y</span><div class="chip" style="width:100%;justify-content:center">0</div></div>
+      </div>
+      <div class="field">
+        <span class="label">来源</span>
+        <div class="ta" style="display:flex;align-items:center;gap:8px;padding:8px">
+          <span class="ph" style="width:44px;height:26px;border-radius:4px;border:1px solid #333;flex:none"></span>
+          <span style="font-size:11px">S03 · 5.0s<br><span style="color:#6f6f79;font-size:10px">分镜视频 · 已同步</span></span>
+        </div>
+      </div>
+      <p class="hint">换源会先确认裁剪；取消保留原片段。</p>
+    </div>
+  </aside>
+</div>
+</body></html>

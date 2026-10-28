@@ -1,11 +1,14 @@
-"""Account skill packages contain bounded text, never executable resources or storage paths."""
+"""Bounded, non-executable method packages and versioned read-only resources."""
 
+import base64
+import io
 import re
 import unicodedata
 from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Annotated, Literal
 
+from PIL import Image, UnidentifiedImageError
 from pydantic import Field, field_validator, model_validator
 
 from short_drama.schemas.base import Identifier, InputModel, NonnegativeVersion, ReadModel
@@ -15,9 +18,10 @@ MAX_RESOURCE_BYTES = 131072
 MAX_PACKAGE_BYTES = 1048576
 MAX_PACKAGE_FILES = 32
 TEXT_SUFFIXES = {".md", ".txt", ".json", ".csv", ".yaml", ".yml"}
+SCRIPT_SUFFIXES = {".py", ".js", ".ts", ".sh", ".ps1", ".sql"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 SkillMode = Literal["standard", "infinite_canvas"]
-InvocationMode = Literal["auto", "manual"]
-ResourceKind = Literal["reference", "template"]
+ResourceKind = Literal["reference", "template", "script", "image"]
 
 
 def resource_path(value: str) -> str:
@@ -29,10 +33,11 @@ def resource_path(value: str) -> str:
         or len(parts) > 6
         or any(part in {"", ".", ".."} or part.endswith((".", " ")) for part in parts)
         or any(ord(character) < 32 or character in "\\:%?#" for character in value)
-        or PurePosixPath(value).suffix.lower() not in TEXT_SUFFIXES
+        or PurePosixPath(value).suffix.lower()
+        not in TEXT_SUFFIXES | SCRIPT_SUFFIXES | IMAGE_SUFFIXES
         or value.casefold() == "skill.md"
     ):
-        raise ValueError("Resource path must be a bounded relative text path")
+        raise ValueError("Resource path must be a bounded relative path")
     return value
 
 
@@ -42,17 +47,56 @@ def bounded_text(value: str, maximum: int) -> str:
     return value
 
 
+def writable_resource(path: str, kind: str) -> None:
+    """Keep legacy script reads possible while rejecting every new script write."""
+    if kind == "script" or "scripts" in path.casefold().split("/"):
+        raise ValueError(f"暂不支持脚本：{path}")
+    if PurePosixPath(path).suffix.lower() not in TEXT_SUFFIXES | IMAGE_SUFFIXES:
+        raise ValueError(f"暂不支持此文件：{path}")
+    if any(part.casefold() == "skill.md" for part in path.split("/")):
+        raise ValueError("SKILL.md 只能作为根主文件")
+
+
 class SkillResourceInput(InputModel):
     path: Annotated[str, Field(min_length=1, max_length=255)]
     kind: ResourceKind = "reference"
-    content: Annotated[str, Field(max_length=MAX_RESOURCE_BYTES)]
+    content: Annotated[str, Field(max_length=4 * ((MAX_RESOURCE_BYTES + 2) // 3))]
+    encoding: Literal["utf-8", "base64"] = "utf-8"
 
     _path = field_validator("path")(resource_path)
 
-    @field_validator("content")
-    @classmethod
-    def text_only(cls, value: str) -> str:
-        return bounded_text(value, MAX_RESOURCE_BYTES)
+    def resource_bytes(self) -> bytes:
+        return (
+            base64.b64decode(self.content, validate=True)
+            if self.encoding == "base64"
+            else self.content.encode()
+        )
+
+    @model_validator(mode="after")
+    def validate_content(self):
+        writable_resource(self.path, self.kind)
+        suffix = PurePosixPath(self.path).suffix.lower()
+        if self.kind == "image":
+            if self.encoding != "base64" or suffix not in IMAGE_SUFFIXES:
+                raise ValueError("Image resources require base64 transport and an image path")
+            data = self.resource_bytes()
+            if not data or len(data) > MAX_RESOURCE_BYTES:
+                raise ValueError("Image exceeds resource size limit")
+            try:
+                with Image.open(io.BytesIO(data)) as image:
+                    if (
+                        image.format not in {"PNG", "JPEG", "WEBP"}
+                        or image.width * image.height > 40000000
+                    ):
+                        raise ValueError("Unsupported image resource")
+                    image.verify()
+            except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+                raise ValueError("Invalid image resource") from error
+        else:
+            if self.encoding != "utf-8" or suffix in IMAGE_SUFFIXES:
+                raise ValueError("Text resources require UTF-8 transport")
+            bounded_text(self.content, MAX_RESOURCE_BYTES)
+        return self
 
 
 class SkillMetadata(InputModel):
@@ -104,7 +148,6 @@ class SkillCreate(SkillMetadata):
         default_factory=list
     )
     enabled: bool = True
-    invocation_mode: InvocationMode = "auto"
 
     @field_validator("instructions")
     @classmethod
@@ -118,9 +161,11 @@ class SkillCreate(SkillMetadata):
         paths = [item.path.casefold() for item in self.resources]
         if len(paths) != len(set(paths)):
             raise ValueError("Resource paths must be unique on all supported platforms")
+        if any(path.startswith(other + "/") for path in paths for other in paths):
+            raise ValueError("A resource cannot also be a directory")
         if (
             len(self.instructions.encode("utf-8"))
-            + sum(len(item.content.encode("utf-8")) for item in self.resources)
+            + sum(len(item.resource_bytes()) for item in self.resources)
             > MAX_PACKAGE_BYTES
         ):
             raise ValueError("Skill package exceeds 1 MiB")
@@ -143,7 +188,6 @@ class SkillPackagePatch(InputModel):
     source: str | None = None
     resources: list[SkillResourceInput] | None = None
     enabled: bool | None = None
-    invocation_mode: InvocationMode | None = None
 
     @field_validator("name", "instructions", "description")
     @classmethod
@@ -166,7 +210,6 @@ class SkillPackagePatch(InputModel):
 class SkillSettingsPatch(InputModel):
     row_version: NonnegativeVersion
     enabled: bool
-    invocation_mode: InvocationMode
 
 
 class SkillResourceRead(ReadModel):
@@ -184,7 +227,6 @@ class SkillSummary(ReadModel):
     content_version: Identifier
     row_version: Identifier | None
     enabled: bool
-    invocation_mode: InvocationMode = "auto"
     settings_version: NonnegativeVersion = 0
     slug: str = ""
     description: str = ""
@@ -230,7 +272,6 @@ class SkillImportDraft(InputModel):
     source: str = ""
     resources: list[SkillResourceInput] = Field(default_factory=list)
     enabled: bool = True
-    invocation_mode: InvocationMode = "auto"
 
 
 class SkillImportPreview(ReadModel):
@@ -240,6 +281,8 @@ class SkillImportPreview(ReadModel):
     issues: list[str]
     files: list[dict]
     byte_size: int
+    tags_provided: bool = False
+    mode_issues: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class SkillResourceContent(SkillResourceRead):
@@ -248,3 +291,5 @@ class SkillResourceContent(SkillResourceRead):
     offset: int
     content: str
     next_offset: int | None
+    resource_ref: dict | None = None
+    encoding: Literal["utf-8", "base64"] = "utf-8"

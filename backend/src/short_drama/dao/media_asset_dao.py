@@ -1,6 +1,6 @@
 from sqlalchemy import func, select
 
-from short_drama.domain import AIGenerationRecord, MediaAsset, MediaFile
+from short_drama.domain import AIGenerationRecord, AsyncTask, MediaAsset, MediaFile, Project
 
 from .async_task_dao import scope_conditions, source_conditions
 from .base import BaseDAO
@@ -15,6 +15,14 @@ class MediaAssetDAO(BaseDAO):
             AIGenerationRecord, filters, scoped=bool(self.session.info.get("actor"))
         )
         conditions.extend(scope_conditions(MediaFile, filters, self.session))
+        if filters.get("workspace_mode"):
+            conditions.append(
+                AIGenerationRecord.task_id.in_(
+                    select(AsyncTask.id)
+                    .join(Project, Project.id == AsyncTask.project_id)
+                    .where(Project.workspace_mode == filters["workspace_mode"])
+                )
+            )
         if filters.get("media_type"):
             conditions.append(MediaAsset.media_type == filters["media_type"])
         if filters.get("name"):

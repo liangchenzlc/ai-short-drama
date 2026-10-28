@@ -6,81 +6,47 @@ async function fits(page: Page) {
 }
 
 const routes = [
-  ['projects', '/projects', '项目管理'], ['project-detail', '/projects/10', '雨夜来信'],
-  ...['character', 'scene', 'prop'].map(kind => [`assets-${kind}`, `/assets/${kind}`, '全局素材库']),
-  ...['text', 'image', 'video', 'audio'].map(kind => [`tasks-${kind}`, `/tasks/${kind}`, '任务管理']),
-  ...['image', 'video'].map(kind => [`media-${kind}`, `/media-library/${kind}`, '资产库']),
+  ['projects', '/projects', '项目管理'],
+  ...['all', 'image', 'video', 'audio'].map(kind => [`media-${kind}`, `/media-library/${kind}`, '资产库']),
   ['ai-config', '/ai_config', 'AI 配置'],
-  ...['source', 'assets', 'storyboard', 'assembly'].map(stage => [`episode-${stage}`, `${root}/${stage}`, '归来的旅人']),
+  ...['source', 'assets', 'storyboard', 'assembly'].map(stage => [`episode-${stage}`, `${root}/${stage}`, '雨夜来信']),
   ['not-found', '/missing', '没有找到内容'],
 ];
 
-test.describe('touch workspace', () => {
-  test.use({ hasTouch: true });
-  for (const width of [390, 768]) test(`all routes fit and expose their actions at ${width}px`, async ({ page }, info) => {
+test.describe('desktop workspace', () => {
+  for (const width of [1280, 1366]) test('all desktop routes fit and expose their actions at ' + width + 'px', async ({ page }, info) => {
     test.setTimeout(90000);
     const state = await fixture(page, true);
     await page.setViewportSize({ width, height: 900 });
-    const overflow: unknown[] = [];
-    for (const [name, path, heading] of routes) {
-      if (path.startsWith(root) && new URL(page.url()).pathname.startsWith(root)) {
-        const stage = path.split('/').at(-1)!;
-        await page.getByRole('navigation', { name: '分集制作流程', exact: true }).getByRole('button', {
-          name: ({ assets: '素材生成', storyboard: '分镜制作', assembly: '成片合成' } as Record<string, string>)[stage], exact: true,
-        }).click();
-        await expect(page).toHaveURL(current => current.pathname === path);
-      } else {
-        if (new URL(page.url()).pathname.startsWith(root)) await expect(page.locator('.episode-save-state')).toHaveAttribute('aria-label', '保存状态：已保存');
-        await page.goto(path);
-      }
-      if (path.startsWith(root)) {
-        await expect(page.locator('.episode-switch')).toContainText(heading);
-        await expect(page.getByRole('navigation', { name: '分集制作流程', exact: true })).toBeVisible();
-      } else await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
+    for (const [name, route] of routes) {
+      await page.goto(route);
+      if (route.startsWith(root)) {
+        await expect(page.getByRole('button', { name: '雨夜来信', exact: true })).toBeVisible();
+        await expect(page.getByRole('navigation', { name: '创作流程' }).getByRole('button')).toHaveCount(4);
+      } else await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
       if (name === 'projects') {
         await expect(page.locator('.project-tile')).toHaveCount(4);
-        await expect(page.getByRole('searchbox', { name: '搜索项目名称' })).toBeVisible();
+        await expect(page.getByRole('textbox', { name: '搜索项目名称' })).toBeVisible();
       }
-      if (name.startsWith('assets-')) await expect(page.locator('.library-resource-card')).toHaveCount(1);
-      if (name.startsWith('tasks-')) await expect(page.locator('.ant-table-row')).toHaveCount(4);
-      if (name === 'episode-assets') await page.getByRole('button', { name: '林晚', exact: true }).click();
-      if (name === 'episode-storyboard') {
-        await expect(page.locator('.storyboard-summary')).toHaveCount(20);
-        await page.getByRole('button', { name: '选择分镜 01', exact: true }).click();
+      if (name === 'episode-source') await expect(page.getByRole('textbox', { name: '剧本正文', exact: true })).toBeEditable();
+      if (name === 'episode-assets' || name === 'episode-storyboard') {
+        await expect(page.locator('.standard-object-settings:visible')).toHaveCount(1);
+        await expect(page.getByRole('textbox', { name: '画面要求', exact: true })).toBeVisible();
       }
       if (name === 'episode-assembly') await expect(page.getByRole('region', { name: '视频时间轴' })).toBeVisible();
-      const layout = await page.evaluate(() => ({ path: location.pathname, width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
-        offenders: [...document.querySelectorAll('body *')].filter(node => { const box = node.getBoundingClientRect(); return box.width > 0 && (box.right > innerWidth + 1 || box.left < -1) && getComputedStyle(node).position !== 'fixed'; }).slice(0, 12).map(node => ({ tag: node.tagName, class: node.className, width: node.getBoundingClientRect().width })) }));
-      if (layout.scrollWidth > width + 1) overflow.push(layout);
-      await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: 'disabled' });
-      if (name.startsWith('episode-') && name !== 'episode-assembly') {
-        if (name === 'episode-source') {
-          const toggle = page.getByRole('button', { name: /^(展开|收起)设置$/ });
-          await expect(toggle).toBeVisible();
-          if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
-          await expect(page.getByRole('textbox', { name: '创作要求', exact: true })).toBeVisible();
-        } else {
-          const toggle = page.getByRole('button', { name: /^(展开|收起)生成设置$/ });
-          await expect(toggle).toBeVisible();
-          if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
-          await expect(page.getByRole('textbox', { name: '画面要求', exact: true })).toBeVisible();
-        }
-        await fits(page);
-        await page.screenshot({ path: info.outputPath(`${name}-settings.png`), fullPage: true, animations: 'disabled' });
-      }
+      await fits(page);
+      await page.screenshot({ path: info.outputPath(name + '.png'), fullPage: true, animations: 'disabled' });
     }
-    expect(overflow).toEqual([]);
-    expect(state.unexpected).toEqual([]);
-    expect(state.errors).toEqual([]);
+    expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
   });
 
-  for (const width of [390, 681, 768, 900, 1024, 1280, 1440, 1920]) test(`project cards keep titles readable at ${width}px`, async ({ page }, info) => {
+  for (const width of [1280, 1366, 1440, 1920]) test(`project cards keep titles readable at ${width}px`, async ({ page }, info) => {
     const state = await fixture(page, true);
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/projects');
     await expect(page.locator('.project-tile')).toHaveCount(4);
     await expect(page.locator('.continue-episodes')).toHaveCount(0);
-    await expect(page.getByRole('searchbox', { name: '搜索项目名称' })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: '搜索项目名称' })).toBeVisible();
     for (const row of await page.locator('.project-tile').all()) {
       const copy = await row.locator('.project-tile-copy').boundingBox();
       expect(copy!.width).toBeGreaterThanOrEqual(150);
@@ -93,16 +59,15 @@ test.describe('touch workspace', () => {
     expect(state.errors).toEqual([]);
   });
 
-  test('mobile project search accepts touch and keyboard input and clearing restores the list', async ({ page }, info) => {
+  test('desktop project search accepts pointer focus and keyboard submission and clearing restores the list', async ({ page }, info) => {
     const state = await fixture(page, true);
-    await page.setViewportSize({ width: 390, height: 900 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/projects');
-    const search = page.getByRole('searchbox', { name: '搜索项目名称' });
-    await search.tap();
+    const search = page.getByRole('textbox', { name: '搜索项目名称' });
+    await search.click();
     await search.fill('雨夜');
-    const submit = page.locator('.project-search .ant-input-search-button');
-    await expect.poll(async () => Math.round((await submit.boundingBox())!.height)).toBeGreaterThanOrEqual(44);
-    await submit.tap();
+    await expect(search).toBeInViewport({ ratio: 1 });
+    await search.press('Enter');
     await expect(page.locator('.project-tile')).toHaveCount(1);
     await expect(page.locator('.project-tile-copy > h3')).toHaveText('雨夜来信');
     await fits(page);
@@ -111,41 +76,35 @@ test.describe('touch workspace', () => {
     await search.press('Enter');
     await expect(page.getByRole('heading', { name: '没有找到项目' })).toBeVisible();
     await page.screenshot({ path: info.outputPath('projects-search-empty.png'), fullPage: true, animations: 'disabled' });
-    await page.getByRole('button', { name: '清除搜索', exact: true }).tap();
+    await page.getByRole('button', { name: '清除搜索', exact: true }).click();
     await expect(search).toHaveValue('');
     await expect(page.locator('.project-tile')).toHaveCount(4);
     expect(state.unexpected).toEqual([]);
     expect(state.errors).toEqual([]);
   });
 
-  test('mobile asset edits survive a nested cancellation and task drawers fit', async ({ page }, info) => {
+  test('desktop asset drafts survive picker cancellation and media previews fit', async ({ page }, info) => {
     const state = await fixture(page, true);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/assets/character');
-    await page.getByRole('button', { name: '编辑素材', exact: true }).click();
-    const drawer = page.locator('.asset-editor-drawer');
-    await expect(drawer).toBeVisible();
-    const description = drawer.getByRole('textbox', { name: '描述', exact: true });
-    const draft = '这是尚未保存的角色外观描述，关闭确认后仍应保留。';
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(root + '/assets?asset=501');
+    const detail = page.locator('.episode-asset-detail');
+    const description = detail.getByRole('textbox', { name: '描述', exact: true });
+    const draft = '在桌面选择素材图片时保留角色外观描述。';
     await description.fill(draft);
-    await fits(page);
-    await page.screenshot({ path: info.outputPath('asset-edit.png'), animations: 'disabled' });
-    await drawer.getByRole('button', { name: '关闭弹窗', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: '未保存的修改', exact: true })).toBeVisible();
-    await page.keyboard.press('Escape');
+    await detail.getByRole('button', { name: '素材更多操作', exact: true }).click();
+    await page.getByRole('button', { name: '从资产库选择', exact: true }).click();
+    const picker = page.getByRole('dialog', { name: '从图片资产库选择', exact: true });
+    await expect(picker).toBeVisible(); await picker.getByRole('button', { name: '关闭弹窗', exact: true }).click();
     await expect(description).toHaveValue(draft);
-    await drawer.getByRole('button', { name: '关闭弹窗', exact: true }).click();
-    await page.getByRole('dialog', { name: '未保存的修改', exact: true }).getByRole('button', { name: '放弃修改', exact: true }).click();
-    await expect(drawer).toHaveCount(0);
-    await page.getByRole('link', { name: '任务管理', exact: true }).tap();
-    await page.locator('.page-actions').getByRole('button', { name: '新建文本任务' }).click();
-    await expect(page.locator('.ant-drawer-body')).toBeVisible();
+    await expect.poll(() => state.asset.description).toBe(draft);
+    await page.goto('/media-library/image');
+    await page.locator('.media-gallery-card').first().click();
+    await expect(page.locator('.ant-image-preview')).toBeVisible();
     await fits(page);
-    const bounds = await page.locator('.ant-drawer-content-wrapper').boundingBox();
-    expect(bounds!.width).toBeLessThanOrEqual(391);
-    await page.screenshot({ path: info.outputPath('task-create.png'), animations: 'disabled' });
-    expect(state.unexpected).toEqual([]);
-    expect(state.errors).toEqual([]);
+    await page.screenshot({ path: info.outputPath('asset-preview-desktop.png'), animations: 'disabled' });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.ant-image-preview')).toHaveCount(0);
+    expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
   });
 });
 
@@ -199,11 +158,10 @@ test('reduced motion removes dialog movement while retaining keyboard focus', as
   await expect(create).toBeFocused();
 });
 
-for (const width of [1440, 390]) test(`account entry and recovery pages fit at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`account entry and recovery pages fit at ${width}px`, async ({ page }, info) => {
   const state = await fixture(page, true);
-  await page.route('**/api/v1/invitations/**', route => route.fulfill({ json: { status: 'pending', requires_login: true } }));
   await page.setViewportSize({ width, height: 900 });
-  for (const path of ['/login', '/register', '/verify-email', '/reset-password', '/invite/fixture-token']) {
+  for (const path of ['/login', '/register', '/verify-email', '/reset-password']) {
     await page.goto(path);
     await expect(page.locator('.identity-form h1')).toBeVisible();
     if (path.includes('/invite')) await expect(page.getByRole('link', { name: '登录受邀账号' })).toBeVisible();

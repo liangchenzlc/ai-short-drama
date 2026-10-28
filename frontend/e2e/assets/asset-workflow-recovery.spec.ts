@@ -121,7 +121,8 @@ test('correcting an invalid unselected candidate preserves the other input witho
     return route.fulfill({ json: result });
   });
   await page.goto(`${root}/assets`);
-  await page.getByRole('button', { name: '从剧本提取素材', exact: true }).click();
+  await page.getByRole('button', { name: '资产提取记录', exact: true }).click();
+  await page.locator('.asset-extraction-dialog').getByRole('button', { name: '查看', exact: true }).first().click();
   const review = page.locator('.asset-extraction-dialog');
   const first = review.locator('.extraction-candidate').nth(0);
   const second = review.locator('.extraction-candidate').nth(1);
@@ -163,7 +164,8 @@ test('an extraction task outside the latest twenty rows is reconciled without an
   await page.route(`**/api/v1${root}/asset-extraction-results/7001`, route => route.fulfill({ json: extractionResult(data.asset, '7001') }));
   await page.goto(`${root}/assets`);
   await expect.poll(() => lists).toBeGreaterThan(0);
-  await page.getByRole('button', { name: '从剧本提取素材', exact: true }).click();
+  await page.getByRole('button', { name: '资产提取记录', exact: true }).click();
+  await page.locator('.asset-extraction-dialog').getByRole('button', { name: '查看', exact: true }).first().click();
   await expect.poll(() => detailReads, { timeout: 10000 }).toBeGreaterThan(0);
   await expect(page.getByRole('button', { name: '重新提取', exact: true })).toBeEnabled();
   expect(data.requests.filter(request => request.method === 'POST' && request.path === '/ai/generations/text')).toEqual([]);

@@ -15,6 +15,9 @@ def generation_display_context(session, request, *, lookups=None):
         "dialogue_audio": "台词配音",
         "dialogue_extract": "台词提取",
         "novel_script": "小说改编",
+        "story_outline": "故事大纲",
+        "script_generate": "剧本生成",
+        "script_rewrite": "剧本局部修改",
         "script_assets": "素材提取",
         "script_shots": "分镜脚本",
     }.get(scene, "通用生成")

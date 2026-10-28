@@ -11,7 +11,11 @@ _ASSET_RULES = {
 }
 
 PROMPT_VERSIONS = {
+    "assistant": "assistant-harness-v9",
     "novel_script": "novel-script-v2",
+    "story_outline": "story-outline-v1",
+    "script_generate": "script-generate-v1",
+    "script_rewrite": "script-rewrite-v2",
     "script_assets": "script-assets-v2",
     "script_shots": "script-shots-v2",
     "asset_image": "asset-image-v2",
@@ -31,11 +35,26 @@ def _parts(*paths: str) -> str:
 
 
 def system_prompt(scene: str, *, kinds: Iterable[str] = ()) -> str:
+    if scene == "assistant":
+        return _parts(
+            *(
+                f"assistant/{name}.md"
+                for name in (
+                    "system",
+                    "tool_use",
+                    "resources",
+                    "skills",
+                    "compaction",
+                )
+            )
+        )
     if scene == "novel_script":
         return _parts(
             "novel_script/system.md",
             "common/source_boundary.md",
         )
+    if scene in {"story_outline", "script_generate", "script_rewrite"}:
+        return _parts(f"{scene}/system.md", "common/source_boundary.md")
     if scene == "script_shots":
         return _parts(
             "script_shots/system.md",

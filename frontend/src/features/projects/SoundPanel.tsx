@@ -12,7 +12,7 @@ import { generations } from '../../api/modules/generations';
 import { ConfigSelect } from '../generations/ConfigSelect';
 import { attemptStorage, clearAttempt, requestAttempt } from '../generations/attempt';
 import type { NavigationBarrier } from './writing-navigation';
-import { useEpisodeCreation, useEpisodeCreationControls } from './EpisodeCreationWorkspace';
+import { useEpisodeCreation } from './EpisodeCreationWorkspace';
 import { CreationRecoveryError, creationScope, readRecovery, readRecoveryText, saveRecovery, clearRecovery, isStoredDraft, type StoredDraft } from './creation-recovery';
 import { useAuth } from '../auth/AuthSession';
 import { ResourceEditingSession } from './resource-editing-session';
@@ -32,7 +32,6 @@ export function SoundPanel({ projectId, disabled, readOnly = disabled, flushVide
   panelContainer?: HTMLElement | null; onOpenChange?: (open: boolean) => void;
 }) {
   const inline = useEpisodeCreation();
-  const creation = useEpisodeCreationControls();
   const panelId = useId();
   const srtUpload = useRef<HTMLInputElement>(null);
   const musicUpload = useRef<HTMLInputElement>(null);
@@ -40,8 +39,6 @@ export function SoundPanel({ projectId, disabled, readOnly = disabled, flushVide
   const drawerSurface = useRef<HTMLDivElement>(null);
   const api = useMemo(() => soundApi(projectId), [projectId]);
   const [enabled, setEnabled] = useState(false), [open, setOpen] = useState(false);
-  const [compact, setCompact] = useState(() => window.innerWidth <= 1000);
-  useEffect(() => { const query = window.matchMedia('(max-width: 1000px)'); const update = () => setCompact(query.matches); query.addEventListener('change', update); return () => query.removeEventListener('change', update); }, []);
   useLayoutEffect(() => { onOpenChange?.(inline && open); return () => onOpenChange?.(false); }, [inline, open, onOpenChange]);
   const [capabilityStatus, setCapabilityStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [capabilityError, setCapabilityError] = useState('');
@@ -108,17 +105,11 @@ export function SoundPanel({ projectId, disabled, readOnly = disabled, flushVide
     const handle = (event: KeyboardEvent) => {
       if (event.defaultPrevented || document.querySelector('dialog[open], .ant-select-open, .ant-dropdown:not(.ant-dropdown-hidden), .ant-popover:not(.ant-popover-hidden)')) return;
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void close(); }
-      if (event.key === 'Tab' && compact) {
-        const first = controls()[0], last = controls().at(-1);
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-      }
     };
     const focus = requestAnimationFrame(() => (controls()[0] ?? rail)?.focus());
     rail?.addEventListener('keydown', handle);
     return () => { cancelAnimationFrame(focus); rail?.removeEventListener('keydown', handle); };
-  }, [inline, open, compact, panelContainer]);
-  useEffect(() => { if (open && inline && compact && creation.assistantOpen) void close(); }, [creation.assistantOpen, compact]);
+  }, [inline, open, panelContainer]);
   const dirty = snapshot.dirty;
   const live = useRef({ dirty, busy, save: async () => false });
   const scope = `sound:${projectId}`;
@@ -169,7 +160,6 @@ export function SoundPanel({ projectId, disabled, readOnly = disabled, flushVide
   live.current = { dirty: session.hasUnsettled(), busy, save: async () => !readOnly && await session.flush() };
   async function begin() { await action(async () => {
     if (!await flushVideo()) return;
-    if (inline && compact) creation.setPanelOpen?.(true);
     setOpen(true);
     await session.load();
     try { setExtractId(sessionStorage.getItem(`${scope}:extraction`) ?? ''); } catch { /* history remains in task center */ }
@@ -292,8 +282,7 @@ export function SoundPanel({ projectId, disabled, readOnly = disabled, flushVide
     </>;
   const trigger = <Tooltip title={inline && open ? '收起声音编辑' : '声音、字幕和配乐'} trigger={['hover', 'focus']}><Button ref={entry} type="text" className="assembly-icon-action" icon={<Volume2 size={16}/>} aria-label={inline && open ? '收起声音编辑' : '声音、字幕和配乐'} disabled={inline && open ? false : disabled} loading={inline && open ? false : busy} aria-expanded={inline ? open : undefined} aria-controls={inline ? panelId : undefined} onClick={() => { if (inline && open) void close(); else void begin(); }}/></Tooltip>;
   const rail = open && <>
-    {panelContainer && compact && <button className="assembly-sound-backdrop" tabIndex={-1} aria-label="关闭声音编辑" onClick={() => void close()}/>}
-    <section ref={railSurface} id={panelId} className={`sound-inline${panelContainer ? ' sound-rail' : ''}`} aria-label={title} role={panelContainer && compact ? 'dialog' : undefined} aria-modal={panelContainer && compact ? true : undefined} tabIndex={-1}>
+    <section ref={railSurface} id={panelId} className={`sound-inline${panelContainer ? ' sound-rail' : ''}`} aria-label={title} tabIndex={-1}>
       <StudioMessageProvider local getContainer={() => railSurface.current ?? document.body}>
       <ConfigProvider getPopupContainer={() => railSurface.current ?? document.body}>
       <header><h3>{title}</h3><div className="sound-header-actions"><SoundHelp title="修改剪辑后需重新核对声音与字幕时间；合成预览可检查实际混音与字幕。"/><StudioFeedbackIndicator/><AssemblyAction label="收起声音编辑" icon={<X size={16}/>} onClick={() => void close()}/></div></header>

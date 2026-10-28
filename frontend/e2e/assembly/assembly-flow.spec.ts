@@ -94,7 +94,7 @@ async function fixture(page: Page, soundEnabled = false) {
 }
 
 async function captureLayouts(page: Page, name: string) {
-  for (const viewport of [{ width: 1440, height: 1000 }, { width: 1024, height: 900 }, { width: 390, height: 844 }]) {
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 1366, height: 768 }, { width: 1280, height: 720 }]) {
     await page.setViewportSize(viewport);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`${name}-${viewport.width}.png`), fullPage: true });
@@ -109,7 +109,7 @@ test('feedback details and background render progress preserve the editor geomet
     const box = node.getBoundingClientRect();
     return { x: box.x + scrollX, y: box.y + scrollY, width: box.width, height: box.height };
   });
-  for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 1280, height: 720 }]) {
     data.controls.online = true; data.state.jobs = [];
     await page.setViewportSize(viewport);
     await page.goto('/e2e/assembly/fixtures/assembly-flow-fixture.html');
@@ -324,7 +324,7 @@ test('standard assembly keeps the preview and timeline stable while the sound ra
   await page.getByRole('button', { name: '专注剪辑', exact: true }).click();
   await expect(sound).toBeVisible(); await expect(sync).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('standard-inline-sound-desktop.png'), fullPage: true, animations: 'disabled' });
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await expect(sound).toHaveAttribute('role', 'dialog');
   expect((await sound.getByRole('button', { name: '收起声音编辑', exact: true }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
@@ -332,7 +332,7 @@ test('standard assembly keeps the preview and timeline stable while the sound ra
   await expect(page.getByRole('menuitem', { name: '导入 UTF-8 SRT', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(sound).toBeVisible();
-  await page.screenshot({ path: test.info().outputPath('standard-inline-sound-mobile.png'), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: test.info().outputPath('standard-inline-sound-desktop-1280.png'), fullPage: true, animations: 'disabled' });
   await sound.getByRole('button', { name: '收起声音编辑', exact: true }).focus();
   await page.keyboard.press('Escape');
   await expect(sound).toBeHidden();
@@ -340,7 +340,7 @@ test('standard assembly keeps the preview and timeline stable while the sound ra
   const exportButton = page.getByRole('button', { name: '导出成片', exact: true });
   await exportButton.scrollIntoViewIfNeeded(); await expect(exportButton).toBeInViewport();
   await expect.poll(() => page.locator('.episode-work-stage').evaluate(node => getComputedStyle(node).overflowY)).toBe('hidden');
-  await page.screenshot({ path: test.info().outputPath('standard-inline-sound-mobile-export.png'), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: test.info().outputPath('standard-inline-sound-desktop-1280-export.png'), fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: '退出专注剪辑', exact: true }).click();
   await toolbar.getByRole('button', { name: '声音、字幕和配乐', exact: true }).click();
   await sound.getByRole('tab', { name: /字幕/ }).click();

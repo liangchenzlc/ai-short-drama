@@ -2,6 +2,9 @@
 * {
   box-sizing: border-box;
 }
+html, body, #root {
+  min-width: 1280px;
+}
 body {
   margin: 0;
 }
@@ -219,28 +222,6 @@ details p {
 .skip-link:focus {
   top: 12px;
 }
-@media (max-width: 1050px) {
-  main {
-    padding: 24px;
-  }
-  h1 {
-    font-size: 28px;
-  }
-}
-@media (max-width: 700px) {
-  main {
-    padding: 18px;
-  }
-  .section-heading > span {
-    display: none;
-  }
-  h1 {
-    font-size: 26px;
-  }
-  dl {
-    grid-template-columns: 125px 1fr;
-  }
-}
 /* Story drafts share the project's quiet, readable editing surface. */
 .story-draft {
   margin: 24px 0;
@@ -407,19 +388,6 @@ details p {
 .media-preview audio {
   width: 100%;
 }
-@media (max-width: 700px) {
-  .media-tools,
-  .media-pending,
-  .media-items li,
-  .media-jobs li {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .media-import label,
-  .media-choice {
-    width: 100%;
-  }
-}
 /* Task and cost controls retain their own workbench forms. */
 .settings-workspace {
   max-width: 1040px;
@@ -487,16 +455,6 @@ details p {
 }
 .settings-pending code {
   overflow-wrap: anywhere;
-}
-@media (max-width: 760px) {
-  .settings-fields {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .settings-workspace .section-heading {
-    align-items: flex-start;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
 }
 .task-panel {
   margin-block: 32px;
@@ -603,14 +561,6 @@ details p {
 .task-panel a {
   color: var(--accent);
   text-underline-offset: 3px;
-}
-@media (max-width: 760px) {
-  .task-costs dl {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .task-candidates article {
-    grid-template-columns: 1fr;
-  }
 }
 .story-plan-preview > section {
   margin-block: 20px;
@@ -1053,74 +1003,8 @@ details p {
   max-height: 360px;
   overflow: auto;
 }
-@media (max-width: 900px) {
-  .workbench-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .workbench-index {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-    padding: 0 0 18px;
-  }
-  .coverage-panel dl div {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 3px;
-  }
-}
-@media (max-width: 760px) {
-  .story-structure .form-row,
-  .content-fields .form-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 .version-report p {
   margin-block: 8px;
-}
-@media (max-width: 1050px) {
-  .version-state-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .version-state-strip span:nth-child(3) {
-    border-left: 0;
-    border-top: 1px solid var(--line);
-  }
-  .version-state-strip span:nth-child(4) {
-    border-top: 1px solid var(--line);
-  }
-  .version-columns {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .version-columns .story-plan-preview {
-    max-height: 420px;
-  }
-}
-@media (max-width: 760px) {
-  .version-workspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .version-workspace > aside {
-    padding-right: 0;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .version-workspace > aside ol {
-    display: flex;
-    gap: 8px;
-    overflow-x: auto;
-    padding-bottom: 8px;
-    scrollbar-color: var(--border-hover) var(--border-hover);
-    scrollbar-width: thin;
-  }
-  .version-workspace > aside li {
-    flex: 0 0 180px;
-    border-top: 0 !important;
-  }
-  .version-detail {
-    padding-left: 0;
-  }
-  .version-impact-lists {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 .production-workbench {
   display: grid;
@@ -1260,18 +1144,4 @@ details p {
 }
 .production-issues article p {
   overflow-wrap: anywhere;
-}
-@media (max-width: 850px) {
-  .production-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .production-index {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-    padding: 0 0 17px;
-  }
-  .production-command .form-row,
-  .production-fields .form-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }

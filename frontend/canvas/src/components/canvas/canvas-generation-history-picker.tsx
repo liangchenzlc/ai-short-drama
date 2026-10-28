@@ -107,7 +107,7 @@ export function CanvasGenerationHistoryPicker({ open, projectId, onClose, onSele
             {query.isError && tasks.length > 0 && <p role="alert" className="mt-2 text-xs text-destructive">生成历史刷新失败，请稍后重试。</p>}
             <div className="mt-3 max-h-[min(560px,65vh)] overflow-y-auto pr-1">
                 {query.isLoading ? <div className="grid min-h-40 place-items-center"><Spin /></div> : tasks.length ? (
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <div className="grid gap-2 grid-cols-3">
                         {tasks.map((task) => <HistoryTaskCard key={`${scope}:${projectId}:${task.id}`} task={task} active={open} selecting={selectingId === task.id} disabled={selectingId !== null} onSelect={() => void selectSummary(task)} />)}
                     </div>
                 ) : (

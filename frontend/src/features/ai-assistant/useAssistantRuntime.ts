@@ -5,6 +5,7 @@ import type { AgentEvent, AgentMessage, AgentRun } from '../../api/types/agents'
 import type { AssistantControlAccepted, AssistantTaskAccepted, AssistantTaskInputState } from '../../api/types/assistant';
 import { addDelta, latestDelta, parseAgentEvent, sseControl, takeSseFrames, type DeltaChunk } from '../agents/agent-events';
 import { applyTaskEvent, emptyTaskProjection, mergeOperations, mergeTaskSnapshot, selectedTask, mergeAssistantMessages as mergeMessages } from './assistant-task-state';
+import { notifyAssistantBusinessChange } from './assistant-business-events';
 
 export function useAssistantRuntime(conversationId: string) {
   const [projection, setProjection] = useState(() => emptyTaskProjection(conversationId));
@@ -31,6 +32,22 @@ export function useAssistantRuntime(conversationId: string) {
   const readController = useRef<AbortController | null>(null);
   const streamController = useRef<AbortController | null>(null);
   const count = useRef(0); count.current = messages.length;
+  const businessReceipts = useRef(new Map<string, string>());
+  useEffect(() => {
+    const projects = new Map<string, Set<string>>();
+    for (const operation of Object.values(projection.operations)) {
+      if (operation.outcome !== 'succeeded' || !['apply_standard_patch', 'submit_generation_batch', 'set_image_group_primary'].includes(operation.tool_name)) continue;
+      const target = projection.tasks[operation.task_id]?.execution_target;
+      if (target?.mode !== 'standard') continue;
+      const signature = JSON.stringify([operation.state_version, operation.result_refs, operation.undo_receipts]);
+      if (businessReceipts.current.get(operation.id) === signature) continue;
+      businessReceipts.current.set(operation.id, signature);
+      const kinds = projects.get(target.project_id) ?? new Set<string>();
+      operation.result_refs.forEach(ref => { if (typeof ref.kind === 'string') kinds.add(ref.kind); });
+      projects.set(target.project_id, kinds);
+    }
+    projects.forEach((kinds, projectId) => notifyAssistantBusinessChange(projectId, [...kinds]));
+  }, [projection.operations, projection.tasks]);
   useEffect(() => { alive.current = true; return () => { alive.current = false; readController.current?.abort(); }; }, []);
   const endAccess = useCallback((message: string) => {
     accessEndedRef.current = true; setAccessEnded(true);
@@ -137,6 +154,7 @@ export function useAssistantRuntime(conversationId: string) {
       if (event.event_type === 'assistant.delta' && event.run_id) {
         setDeltas(old => ({ ...old, [event.run_id!]: addDelta(old[event.run_id!] ?? [], event) }));
       } else {
+        if (event.event_type === 'artifact.script.applied' && typeof event.payload.project_id === 'string') notifyAssistantBusinessChange(event.payload.project_id, ['script']);
         if (event.event_type.startsWith('artifact')) window.dispatchEvent(new Event('agent-artifacts-updated'));
         if (event.event_type === 'run.finished' && event.run_id) setDeltas(old => { const next = { ...old }; delete next[event.run_id!]; return next; });
         if (event.event_type === 'message.created' && event.payload.role === 'assistant' && event.run_id) setDeltas(old => { const next = { ...old }; delete next[event.run_id!]; return next; });

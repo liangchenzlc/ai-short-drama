@@ -1,6 +1,6 @@
 import { isCanvasNodeGenerating } from "@/lib/canvas/canvas-node-task-state";
 import { CreativeAssistantSidebar } from "./creative-assistant-sidebar";
-import { useCreativeAssistantLayout, useCreativeAssistantDockable } from "./use-creative-assistant-layout";
+import { useCreativeAssistantLayout } from "./use-creative-assistant-layout";
 import { prepareCanvasAssistantContext } from "./canvas-assistant-context";
 import type { AssistantMessageContext, AssistantMentionReference, AssistantReference } from "@host/api/types/assistant";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -456,24 +456,6 @@ function InfiniteCanvasPage() {
     });
 
     const fixtureAppliedRef = useRef<string | null>(null);
-    const focusFixtureOnNarrowViewport = useCallback((fixtureNodes: CanvasNodeData[]) => {
-        if (typeof window === "undefined" || window.innerWidth >= 768) return;
-        const target = fixtureNodes.find((node) => node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Audio || node.type === CanvasNodeType.Text);
-        if (!target) return;
-        // Keep the fixture's world coordinates intact, but place its visual
-        // bounds inside a narrow viewport so the first actionable control is
-        // reachable without requiring a hidden desktop-sized pan.
-        const width = Math.max(320, window.innerWidth);
-        const height = Math.max(420, window.innerHeight - 56);
-        const scale = Math.min(1, Math.max(0.35, Math.min((width - 24) / Math.max(1, target.width), (height - 120) / Math.max(1, target.height))));
-        const next = {
-            x: (width - target.width * scale) / 2 - target.position.x * scale,
-            y: (height - target.height * scale) / 2 - target.position.y * scale,
-            k: scale,
-        };
-        viewportRef.current = next;
-        setViewport(next);
-    }, [setViewport, viewportRef]);
     useEffect(() => {
         if (!projectLoaded || readOnly || searchParams.get("fixture") !== "libtv-storyboard") return;
         if (fixtureAppliedRef.current === projectId || nodes.some((node) => node.metadata?.fixture === "libtv-storyboard")) return;
@@ -550,9 +532,8 @@ function InfiniteCanvasPage() {
         const selectedFixtureNodes = new Set(fixtureNodes.map((node) => node.id));
         selectedNodeIdsRef.current = selectedFixtureNodes;
         setSelectedNodeIds(selectedFixtureNodes);
-        focusFixtureOnNarrowViewport(fixtureNodes);
         void saveCanvasProject({ requireRemote: false });
-    }, [focusFixtureOnNarrowViewport, nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes, setSelectedNodeIds, selectedNodeIdsRef]);
+    }, [nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes, setSelectedNodeIds, selectedNodeIdsRef]);
 
     useEffect(() => {
         if (!projectLoaded || readOnly || !["libtv-video", "libtv-video-subtitle"].includes(searchParams.get("fixture") || "")) return;
@@ -562,9 +543,8 @@ function InfiniteCanvasPage() {
         const nextNodes = [...nodesRef.current, ...fixtureNodes];
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
-        focusFixtureOnNarrowViewport(fixtureNodes);
         void saveCanvasProject({ requireRemote: false });
-    }, [focusFixtureOnNarrowViewport, nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
+    }, [nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
 
     useEffect(() => {
         if (!projectLoaded || readOnly || searchParams.get("fixture") !== "libtv-video-conversion") return;
@@ -575,9 +555,8 @@ function InfiniteCanvasPage() {
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
         setConnections((current) => [...current, fixture.connection]);
-        focusFixtureOnNarrowViewport(fixture.nodes);
         void saveCanvasProject({ requireRemote: false });
-    }, [connectionsRef, focusFixtureOnNarrowViewport, nodes, nodesRef, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setConnections, setNodes]);
+    }, [connectionsRef, nodes, nodesRef, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setConnections, setNodes]);
 
     useEffect(() => {
         if (!projectLoaded || readOnly || searchParams.get("fixture") !== "libtv-audio") return;
@@ -587,9 +566,8 @@ function InfiniteCanvasPage() {
         const nextNodes = [...nodesRef.current, ...fixtureNodes];
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
-        focusFixtureOnNarrowViewport(fixtureNodes);
         void saveCanvasProject({ requireRemote: false });
-    }, [focusFixtureOnNarrowViewport, nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
+    }, [nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
 
     useEffect(() => {
         if (!projectLoaded || readOnly || searchParams.get("fixture") !== "libtv-text") return;
@@ -599,9 +577,8 @@ function InfiniteCanvasPage() {
         const nextNodes = [...nodesRef.current, ...fixtureNodes];
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
-        focusFixtureOnNarrowViewport(fixtureNodes);
         void saveCanvasProject({ requireRemote: false });
-    }, [focusFixtureOnNarrowViewport, nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
+    }, [nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
 
     useEffect(() => {
         if (!projectLoaded || readOnly || searchParams.get("fixture") !== "libtv-text-empty") return;
@@ -611,11 +588,10 @@ function InfiniteCanvasPage() {
         const nextNodes = [...nodesRef.current, ...fixtureNodes];
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
-        focusFixtureOnNarrowViewport(fixtureNodes);
         // Visual audit fixtures are ephemeral; avoid showing the local-save
         // toast over the LibTV reference screenshot when chrome mode is on.
         if (searchParams.get("libtvChrome") !== "1") void saveCanvasProject({ requireRemote: false });
-    }, [focusFixtureOnNarrowViewport, nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
+    }, [nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
 
     useEffect(() => {
         if (!projectLoaded || readOnly || searchParams.get("fixture") !== "libtv-generating") return;
@@ -625,7 +601,6 @@ function InfiniteCanvasPage() {
         const nextNodes = [...nodesRef.current, ...fixtureNodes];
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
-        focusFixtureOnNarrowViewport(fixtureNodes);
         void saveCanvasProject({ requireRemote: false });
         // Local runtime normally converts stale loading snapshots to an error
         // immediately after a refresh. The fixture intentionally re-enters the
@@ -646,7 +621,7 @@ function InfiniteCanvasPage() {
                 },
             } : node));
         }, 260);
-    }, [focusFixtureOnNarrowViewport, nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
+    }, [nodes, projectId, projectLoaded, readOnly, saveCanvasProject, searchParams, setNodes]);
 
     useEffect(() => registerSettingsNavigationGuard(async () => {
         const expected = captureUserScope();
@@ -772,7 +747,6 @@ function InfiniteCanvasPage() {
     // 画布右侧只有一个栏位：助手和版本记录互斥，谁被打开另一个就让位。
     const assistant = useCreativeAssistantLayout();
     const canvasMainRef = useRef<HTMLElement>(null);
-    const assistantDockable = useCreativeAssistantDockable(canvasMainRef, projectLoaded);
     const rightPanel = versions.open ? "versions" : assistant.open ? "assistant" : null;
     const assistantWorkspaceProjectId = currentProject?.workspaceProjectId || workspaceProject?.workspaceProjectId || "";
     const [assistantVisitedProjects, setAssistantVisitedProjects] = useState<Set<string>>(() => new Set());
@@ -948,7 +922,7 @@ function InfiniteCanvasPage() {
     }, [activeChatId, chatSessions, nodes, connections, selectedNodeIds, viewport]);
 
     // 停靠栏挤压画布时补偿一半位移：用户正在看的那块内容留在原处，视野不跳。
-    const dockedAssistantWidth = rightPanel === "assistant" && assistantDockable ? assistant.width : 0;
+    const dockedAssistantWidth = rightPanel === "assistant" ? assistant.width : 0;
     const previousDockedAssistantWidth = useRef(dockedAssistantWidth);
     useEffect(() => {
         const delta = dockedAssistantWidth - previousDockedAssistantWidth.current;
@@ -1408,7 +1382,7 @@ function InfiniteCanvasPage() {
             const shouldCreate = !nodesRef.current.some((node) => node.type === nodeType);
             if (shouldCreate) {
                 createNode(nodeType);
-                // Starter cards can be wider than a narrow viewport. Fit the
+                // Starter cards can exceed the visible canvas area. Fit the
                 // newly selected card after the node commit so it stays fully
                 // visible instead of being clipped against the top-left edge.
                 focusFrame = requestAnimationFrame(() => fitCanvasSelection());
@@ -2976,7 +2950,7 @@ function InfiniteCanvasPage() {
                             <CanvasOverlayLayerContainer
                                 overlayId="asset-tray"
                                 fallbackZIndex="var(--z-panel)"
-                                className={`canvas-libtv-overlay-toolbar absolute bottom-[calc(var(--canvas-inset-y)+var(--space-16))] left-[var(--canvas-inset-x)] flex items-end gap-2 lg:bottom-[var(--canvas-inset-y)] ${searchParams.get("fixture") === "libtv-readonly-dense" ? "canvas-libtv-readonly-dock" : ""}`}
+                                className={`canvas-libtv-overlay-toolbar absolute left-[var(--canvas-inset-x)] flex items-end gap-2 bottom-[var(--canvas-inset-y)] ${searchParams.get("fixture") === "libtv-readonly-dense" ? "canvas-libtv-readonly-dock" : ""}`}
                                 onMouseDown={(event) => event.stopPropagation()}
                                 onPointerDown={(event) => event.stopPropagation()}
                                 onWheel={(event) => event.stopPropagation()}
@@ -3331,7 +3305,7 @@ function InfiniteCanvasPage() {
                         projectId={assistantWorkspaceProjectId}
                         executionTarget={{ mode: "infinite_canvas", project_id: assistantWorkspaceProjectId, canvas_id: projectId }}
                         projectTitle={workspaceProject?.title || "未命名项目"}
-                        dockable={assistantDockable}
+
                         readOnly={readOnly || Boolean(accessError) || !projectLoaded}
                         onClose={closeAssistant}
                         contextPreview={{ key: `canvas:${projectId}`, label: `当前画布 · ${currentProject?.canvasTitle || "主画布"}` }}

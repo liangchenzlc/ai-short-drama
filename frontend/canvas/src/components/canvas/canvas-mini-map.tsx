@@ -137,7 +137,7 @@ export function Minimap({ nodes, viewport, viewportSize, canvasContainerRef, onV
             data-canvas-minimap
             role="dialog"
             aria-label="画布小地图"
-            className="absolute bottom-[calc(var(--canvas-inset-y)+var(--space-16)+var(--space-10))] left-6 z-[var(--z-panel)] overflow-hidden rounded-[var(--panel-radius)] border shadow-2xl backdrop-blur-sm lg:bottom-[calc(var(--canvas-inset-y)+var(--space-12))]"
+            className="absolute left-6 z-[var(--z-panel)] overflow-hidden rounded-[var(--panel-radius)] border shadow-2xl backdrop-blur-sm bottom-[calc(var(--canvas-inset-y)+var(--space-12))]"
             style={{ width, height, background: theme.toolbar.panel, borderColor: theme.toolbar.border }}
         >
             <div

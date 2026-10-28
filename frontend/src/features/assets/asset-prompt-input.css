@@ -22,4 +22,3 @@
 .asset-prompt-menu-items strong { font-size: 12px; font-weight: 500; line-height: 1.4; }
 .asset-prompt-menu-items small { color: var(--sub, #b4b4bc); font-size: 11px; line-height: 1.4; }
 .asset-prompt-menu-empty { margin: 0; padding: 12px 6px; color: var(--sub, #b4b4bc); font-size: 12px; }
-@media (max-width: 700px) { .asset-prompt-menu-items > button { min-height: 44px; } }

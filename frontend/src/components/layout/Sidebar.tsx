@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
-import { aiConfigPath } from '../../app/paths';
+import { aiConfigPath, skillsPath } from '../../app/paths';
 
-export type MainPage = "projects" | "tasks" | "media-library" | "ai" | "account";
+export type MainPage = "projects" | "media-library" | "skills" | "ai" | "account";
 export function Sidebar({ page }: { page: MainPage }) {
   return (
     <aside className="studio-sidebar">
@@ -21,11 +21,11 @@ export function Sidebar({ page }: { page: MainPage }) {
         >
           <Icon name="folder" />项目管理
         </Link>
-        <Link to="/tasks/text" className={page === 'tasks' ? 'studio-nav active' : 'studio-nav'} aria-current={page === 'tasks' ? 'page' : undefined}>
-          <Icon name="tasks" />任务管理
-        </Link>
-        <Link to="/media-library/image" className={page === 'media-library' ? 'studio-nav active' : 'studio-nav'} aria-current={page === 'media-library' ? 'page' : undefined}>
+        <Link to="/media-library/all" className={page === 'media-library' ? 'studio-nav active' : 'studio-nav'} aria-current={page === 'media-library' ? 'page' : undefined}>
           <Icon name="scene" />资产库
+        </Link>
+        <Link to={skillsPath} className={page === 'skills' ? 'studio-nav active' : 'studio-nav'} aria-current={page === 'skills' ? 'page' : undefined}>
+          <Icon name="library" />Skill 管理
         </Link>
         <Link to={aiConfigPath}
           className={page === "ai" ? "studio-nav active" : "studio-nav"}

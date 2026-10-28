@@ -16,6 +16,7 @@ def list_assets(
     service: Service,
     resource_scope: Literal["all", "personal", "project"] = "all",
     media_type: Literal["image", "video", "audio"] | None = None,
+    workspace_mode: Literal["standard", "infinite_canvas"] | None = None,
     name: Annotated[str | None, Query(max_length=255)] = None,
     source_scene: Literal["shot_image", "shot_video", "asset_image"] | None = None,
     source_id: Identifier | None = None,
@@ -31,6 +32,7 @@ def list_assets(
         {
             "resource_scope": resource_scope,
             "media_type": media_type,
+            "workspace_mode": workspace_mode,
             "name": name,
             "source_scene": source_scene,
             "source_id": source_id,

@@ -398,13 +398,23 @@ def _read_catalog(values, frozen, current, source, *, source_changed=False):
         groups = [item for item in groups if item["is_current"]]
     elif values.view == "detail" and values.group_id is None and len(groups) != 1:
         raise WorkflowError("selection_required", "请指定冻结目录中的唯一图片组 ID", 403)
-    page = groups[values.offset : values.offset + values.limit]
+    page = deepcopy(groups[values.offset : values.offset + values.limit])
     for group in page:
         if group["id"] not in current_groups:
             raise NotFound("冻结目录中的图片组已删除或不再可访问")
         current_items = {item["id"] for item in current_groups[group["id"]]["items"]}
         if any(item["id"] not in current_items for item in group["items"]):
             raise NotFound("冻结目录中的图位已删除或不再可访问")
+        for item in group["items"]:
+            if item.get("media_id"):
+                item["read_content_args"] = {
+                    **{
+                        key: source[key] for key in ("subject_key", "operation_id") if key in source
+                    },
+                    "group_id": group["id"],
+                    "item_id": item["id"],
+                    "media_id": item["media_id"],
+                }
     text = json.dumps(
         {
             "target_kind": frozen["target_kind"],

@@ -174,7 +174,7 @@ export function ToolbarSettingsModal({ open, onClose, toolbar }: ToolbarSettings
                     恢复默认
                 </button>
             </div>
-            <div className="grid grid-cols-2 gap-2 px-5 pb-5 pt-2 md:grid-cols-5" aria-label="主工具栏顺序">
+            <div className="grid gap-2 px-5 pb-5 pt-2 grid-cols-5" aria-label="主工具栏顺序">
                 {items.map((item) => (
                     <ToolbarSettingsItem
                         key={item.id}

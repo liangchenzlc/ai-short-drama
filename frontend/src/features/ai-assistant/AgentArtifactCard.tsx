@@ -19,7 +19,7 @@ export function AgentArtifactCard({ operation, layout, onUndo, undoDisabled }: {
       {failed ? <CircleAlert size={14} aria-hidden="true"/> : finished ? <Check size={14} aria-hidden="true"/>
         : <LoaderCircle size={14} className="ai-assistant-artifact-spin" aria-hidden="true"/>}
       <span className="ai-assistant-artifact-title">{operation.label || '查看成果'}</span>
-      <span className="ai-assistant-artifact-state">{stateText[operation.outcome] ?? '处理中'}</span>
+      <span className="ai-assistant-artifact-state">{operation.tool_name === 'propose_script_patch' && operation.outcome === 'succeeded' ? '可审阅' : stateText[operation.outcome] ?? '处理中'}</span>
     </header>
     {failed && operation.error?.message ? <p className="ai-assistant-artifact-error" role="status">{operation.error.message}</p> : null}
     <OperationResults operation={operation} layout={layout} onUndo={onUndo} undoDisabled={undoDisabled}/>

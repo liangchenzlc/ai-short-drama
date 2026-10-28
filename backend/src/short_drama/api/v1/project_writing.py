@@ -8,11 +8,17 @@ from short_drama.schemas.common import PageResponse
 from short_drama.schemas.project_writing import (
     NovelSave,
     NovelSaved,
+    OutlineSave,
+    OutlineSaved,
     ScriptCandidate,
     ScriptCandidateDetail,
+    ScriptRevisionDetail,
+    ScriptRevisionRead,
     ScriptSave,
     ScriptSaved,
     ScriptSelect,
+    StorySettingsRead,
+    StorySettingsSave,
     WritingRead,
     WritingVersion,
 )
@@ -21,6 +27,38 @@ from short_drama.service.project_writing_service import ProjectWritingService
 router = APIRouter(prefix="/projects/{project_id}", tags=["Project writing"])
 ScopedId = Annotated[Identifier, Path(description="Decimal Snowflake identifier")]
 Writing = Annotated[ProjectWritingService, Depends(get_project_writing_service)]
+
+
+@router.get("/story-settings", response_model=StorySettingsRead)
+def read_story_settings(project_id: ScopedId, service: Writing):
+    return service.story_settings(project_id)
+
+
+@router.put("/story-settings", response_model=StorySettingsRead)
+def save_story_settings(project_id: ScopedId, payload: StorySettingsSave, service: Writing):
+    return service.save_story_settings(project_id, payload)
+
+
+@router.get("/script-revisions", response_model=dict[str, list[ScriptRevisionRead]])
+def list_script_revisions(
+    project_id: ScopedId,
+    service: Writing,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+):
+    return service.script_revisions(project_id, offset, limit)
+
+
+@router.get("/script-revisions/{revision_id}", response_model=ScriptRevisionDetail)
+def get_script_revision(project_id: ScopedId, revision_id: ScopedId, service: Writing):
+    return service.script_revisions(project_id, revision_id=revision_id)
+
+
+@router.post("/script-revisions/{revision_id}/restore", response_model=WritingRead)
+def restore_script_revision(
+    project_id: ScopedId, revision_id: ScopedId, payload: WritingVersion, service: Writing
+):
+    return service.restore_script_revision(project_id, revision_id, payload)
 
 
 @router.get("/scripts", response_model=PageResponse[ScriptCandidate])
@@ -51,6 +89,11 @@ def save_novel(project_id: ScopedId, payload: NovelSave, service: Writing):
 @router.put("/script", response_model=ScriptSaved)
 def save_script(project_id: ScopedId, payload: ScriptSave, service: Writing):
     return service.save_script(project_id, payload)
+
+
+@router.put("/outline", response_model=OutlineSaved)
+def save_outline(project_id: ScopedId, payload: OutlineSave, service: Writing):
+    return service.save_outline(project_id, payload)
 
 
 @router.put("/editing-script", response_model=WritingRead)

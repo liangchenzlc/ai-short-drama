@@ -1,5 +1,8 @@
 """Account skill directory, immutable text packages and explicit version publication."""
 
+from __future__ import annotations
+
+import base64
 import hashlib
 import io
 import json
@@ -25,15 +28,16 @@ from short_drama.schemas.agent_skill import (
     SkillCreate,
     SkillMetadata,
     SkillResourceContent,
-    SkillResourceInput,
     SkillSettingsPatch,
     SkillSummary,
     resource_path,
+    writable_resource,
 )
 from short_drama.schemas.base import UINT64_MAX, parse_identifier
 from short_drama.service.agent_skill_package import (
     MAX_IMPORT_BYTES,
     local_reference_issues,
+    mode_tool_issues,
     package_digest,
     package_markdown,
     parse_skill_import,
@@ -67,10 +71,7 @@ def skill_issues(metadata: dict, instructions: str, resources: list[dict]) -> li
     issues.extend(
         local_reference_issues(
             instructions,
-            [
-                SkillResourceInput(path=item["path"], kind=item["kind"], content="")
-                for item in resources
-            ],
+            resources,
         )
     )
     return issues
@@ -220,7 +221,6 @@ def read_skill(row, version=None, setting=None, *, summary=False, resource_count
         content_version=row.content_version,
         row_version=row.row_version,
         enabled=bool(setting.enabled if setting else row.enabled),
-        invocation_mode=setting.invocation_mode if setting else "auto",
         settings_version=setting.row_version if setting else 0,
         checksum_sha256=row.checksum_sha256,
         package_checksum=version.checksum_sha256 if version else "",
@@ -269,7 +269,6 @@ def freeze_skills(session, owner_user_id, selections):
                 skill = skill.model_copy(
                     update={
                         "enabled": bool(setting.enabled),
-                        "invocation_mode": setting.invocation_mode,
                         "settings_version": setting.row_version,
                     }
                 )
@@ -367,7 +366,6 @@ class AgentSkillService(BaseService):
             skill = skill.model_copy(
                 update={
                     "enabled": bool(setting.enabled),
-                    "invocation_mode": setting.invocation_mode,
                     "settings_version": setting.row_version,
                 }
             )
@@ -387,17 +385,12 @@ class AgentSkillService(BaseService):
         query=None,
         source=None,
         enabled=None,
-        invocation_mode=None,
         mode=None,
         compatible_only=False,
         exclude_keys=(),
     ):
         self.dao.validate_pagination(offset, limit)
-        if source not in {None, "builtin", "personal"} or invocation_mode not in {
-            None,
-            "auto",
-            "manual",
-        }:
+        if source not in {None, "builtin", "personal"}:
             raise WorkflowError("invalid_agent_skill_filter", "Skill 筛选条件不正确", 422)
         if (
             mode not in {None, "standard", "infinite_canvas"}
@@ -423,23 +416,16 @@ class AgentSkillService(BaseService):
                 item = item.model_copy(
                     update={
                         "enabled": bool(setting.enabled),
-                        "invocation_mode": setting.invocation_mode,
                         "settings_version": setting.row_version,
                     }
                 )
             if enabled is not None and item.enabled != enabled:
                 continue
-            if invocation_mode is not None and item.invocation_mode != invocation_mode:
-                continue
             if mode is not None and mode not in item.modes:
                 continue
             if compatible_only and not item.compatible:
                 continue
-            if (
-                query
-                and query.casefold()
-                not in " ".join([item.name, item.slug, item.description, *item.tags]).casefold()
-            ):
+            if query and query.casefold() not in " ".join([item.name, item.description]).casefold():
                 continue
             builtin.append(
                 SkillSummary.model_validate(item.model_dump(exclude={"instructions", "resources"}))
@@ -475,8 +461,6 @@ class AgentSkillService(BaseService):
             conditions.append(AgentSkill.id.is_(None))
         if enabled is not None:
             conditions.append(func.coalesce(setting.enabled, AgentSkill.enabled) == int(enabled))
-        if invocation_mode is not None:
-            conditions.append(func.coalesce(setting.invocation_mode, "auto") == invocation_mode)
         if mode is not None:
             conditions.append(
                 or_(
@@ -489,12 +473,6 @@ class AgentSkillService(BaseService):
                 or_(
                     AgentSkill.name.contains(query, autoescape=True),
                     func.json_unquote(version.package_metadata["description"]).contains(
-                        query, autoescape=True
-                    ),
-                    func.json_unquote(version.package_metadata["slug"]).contains(
-                        query, autoescape=True
-                    ),
-                    func.json_unquote(version.package_metadata["tags"]).contains(
                         query, autoescape=True
                     ),
                 )
@@ -527,13 +505,28 @@ class AgentSkillService(BaseService):
         data = stream.read(MAX_SKILL_BYTES + 1)
         name, _instructions = markdown_content(data, filename)
         draft = parse_skill_import(data, name).draft.model_dump()
-        if not draft["description"]:
-            draft["description"] = f"个人创作方法：{draft['name']}"
+        draft["modes"] = ["standard", "infinite_canvas"]
         return self.create(draft, filename=name)
 
     def preview_import(self, stream, filename):
         self._actor()
         return parse_skill_import(stream.read(MAX_IMPORT_BYTES + 1), filename)
+
+    def request_receipt(self, key: str) -> SkillRead:
+        """Read an account-scoped create receipt without replaying a retired payload."""
+        owner = self._actor().user_id
+        key = scoped_key(self.session, key)
+        with self._transaction(read_only=True):
+            row = self.session.scalar(
+                select(AgentSkill).where(
+                    AgentSkill.owner_user_id == owner, AgentSkill.create_key == key
+                )
+            )
+            if row is None:
+                raise NotFound("尚未找到原请求的保存结果")
+            if row.deleted_at is not None:
+                raise Conflict("原请求已保存，但此 Skill 后来已被删除")
+            return self._detail(row)
 
     def _replay(self, owner, key, request_hash):
         if key is None:
@@ -554,7 +547,7 @@ class AgentSkillService(BaseService):
             raise Conflict("原创建的 Skill 已删除，不能以旧创建身份恢复")
         return self._detail(row)
 
-    def _resource_bytes(self, item):
+    def _resource_data(self, item):
         if self.storage is None:
             raise WorkflowError("agent_skill_storage_unavailable", "Skill 资料存储未配置", 503)
         try:
@@ -573,8 +566,11 @@ class AgentSkillService(BaseService):
             raise WorkflowError(
                 "agent_skill_resource_corrupt", f"Skill 资料“{item['path']}”体积或校验值不一致", 409
             )
+        return data
+
+    def _resource_bytes(self, item):
         try:
-            return data.decode("utf-8")
+            return self._resource_data(item).decode("utf-8")
         except UnicodeDecodeError:
             raise WorkflowError(
                 "agent_skill_resource_corrupt", f"Skill 资料“{item['path']}”不是 UTF-8 文本", 409
@@ -588,7 +584,7 @@ class AgentSkillService(BaseService):
         manifest = []
         staged = {} if staged is None else staged
         for resource in resources:
-            data = resource.content.encode("utf-8")
+            data = resource.resource_bytes()
             digest = hashlib.sha256(data).hexdigest()
             try:
                 stored = staged.get(digest)
@@ -598,7 +594,9 @@ class AgentSkillService(BaseService):
                         stage_object_key(owner, digest),
                         io.BytesIO(data),
                         len(data),
-                        "text/plain; charset=utf-8",
+                        "application/octet-stream"
+                        if resource.kind == "image"
+                        else "text/plain; charset=utf-8",
                     )
             except (BusinessError, OSError) as error:
                 raise WorkflowError(
@@ -614,25 +612,34 @@ class AgentSkillService(BaseService):
                 bucket=stored.bucket,
                 object_name=stored.object_name,
             )
-            self._resource_bytes(item)
+            self._resource_data(item)
             staged[digest] = stored
             manifest.append(item)
         return manifest
 
     def _metadata(self, content):
-        metadata = content.model_dump(
-            mode="json", exclude={"instructions", "resources", "enabled", "invocation_mode"}
-        )
+        metadata = content.model_dump(mode="json", exclude={"instructions", "resources", "enabled"})
         manifest = [{"path": item.path, "kind": item.kind} for item in content.resources]
         metadata["issues"] = list(
             dict.fromkeys(
                 skill_issues(metadata, content.instructions, manifest)
                 + local_reference_issues(content.instructions, content.resources)
+                + mode_tool_issues(content.required_tools, content.modes)
             )
         )
         return metadata
 
-    def _write_settings(self, owner, key, *, row=None, enabled=None, invocation_mode=None):
+    @staticmethod
+    def _validate_write(metadata: dict, resources: list[dict]) -> None:
+        for resource in resources:
+            try:
+                writable_resource(resource["path"], resource["kind"])
+            except ValueError as error:
+                raise WorkflowError("invalid_agent_skill_package", str(error), 422) from None
+        if metadata["issues"]:
+            raise WorkflowError("agent_skill_incompatible", "；".join(metadata["issues"]), 422)
+
+    def _write_settings(self, owner, key, *, row=None, enabled=None):
         setting = skill_setting(self.session, owner, key, lock=True)
         if setting is None:
             setting = AgentSkillSetting(
@@ -641,7 +648,6 @@ class AgentSkillService(BaseService):
                 skill_key=key,
                 skill_id=row.id if row else None,
                 enabled=int(enabled if enabled is not None else bool(row.enabled) if row else True),
-                invocation_mode=invocation_mode or "auto",
                 row_version=1,
                 updated_at=utcnow(),
             )
@@ -651,8 +657,6 @@ class AgentSkillService(BaseService):
                 raise Conflict("Skill 设置版本已达到上限")
             if enabled is not None:
                 setting.enabled = int(enabled)
-            if invocation_mode is not None:
-                setting.invocation_mode = invocation_mode
             setting.row_version += 1
             setting.updated_at = utcnow()
         if row is not None and enabled is not None:
@@ -676,11 +680,12 @@ class AgentSkillService(BaseService):
             if replay is not None:
                 return replay
         metadata = self._metadata(content)
+        self._validate_write(metadata, [])
         validate_package_size(
             metadata,
             content.instructions,
             [
-                {"path": item.path, "kind": item.kind, "byte_size": len(item.content.encode())}
+                {"path": item.path, "kind": item.kind, "byte_size": len(item.resource_bytes())}
                 for item in content.resources
             ],
         )
@@ -724,7 +729,6 @@ class AgentSkillService(BaseService):
                 str(row.id),
                 row=row,
                 enabled=content.enabled,
-                invocation_mode=content.invocation_mode,
             )
             self.session.flush()
             return read_skill(row, version, setting)
@@ -759,16 +763,16 @@ class AgentSkillService(BaseService):
             "instructions",
             "resources",
             "enabled",
-            "invocation_mode",
         }
         basis = {key: value for key, value in original.model_dump().items() if key in fields}
-        basis["resources"] = [
-            dict(path=item["path"], kind=item["kind"], content="") for item in old_manifest
-        ]
+        basis["resources"] = []
         basis.update({key: value for key, value in values.items() if key != "row_version"})
         content = SkillCreate.model_validate(basis)
         manifest = (
-            self._store_resources(owner, content.resources)
+            [
+                {"path": item.path, "kind": item.kind, "byte_size": len(item.resource_bytes())}
+                for item in content.resources
+            ]
             if "resources" in values
             else old_manifest
         )
@@ -780,7 +784,17 @@ class AgentSkillService(BaseService):
                 "agent_skill_package_too_large", "Skill 文本与资料合计不能超过 1 MiB", 422
             )
         metadata = self._metadata(content)
+        if "resources" not in values:
+            metadata["issues"] = list(
+                dict.fromkeys(
+                    skill_issues(metadata, content.instructions, manifest)
+                    + mode_tool_issues(content.required_tools, content.modes)
+                )
+            )
+        self._validate_write(metadata, manifest)
         validate_package_size(metadata, content.instructions, manifest)
+        if "resources" in values:
+            manifest = self._store_resources(owner, content.resources)
         with self._transaction():
             lock_skill_owner(self.session, owner)
             row = self._skill(identifier, lock=True)
@@ -804,13 +818,12 @@ class AgentSkillService(BaseService):
                 )
             row.name = content.name
             setting = skill_setting(self.session, owner, str(row.id))
-            if {"enabled", "invocation_mode"}.intersection(values):
+            if "enabled" in values:
                 setting = self._write_settings(
                     owner,
                     str(row.id),
                     row=row,
                     enabled=values.get("enabled"),
-                    invocation_mode=values.get("invocation_mode"),
                 )
             row.row_version += 1
             row.updated_at = utcnow()
@@ -826,10 +839,14 @@ class AgentSkillService(BaseService):
             row = None if key in BUILTIN_NAMES else self._skill(key, lock=True)
             setting = skill_setting(self.session, owner, key, lock=True)
             if (setting.row_version if setting else 0) != values.row_version:
-                raise Conflict("Skill 调用设置已更新，请核对最新设置")
-            self._write_settings(
-                owner, key, row=row, enabled=values.enabled, invocation_mode=values.invocation_mode
-            )
+                raise Conflict("Skill 启停设置已更新，请核对最新设置")
+            if values.enabled:
+                current = self._builtin(key, owner) if row is None else self._detail(row)
+                if not current.compatible:
+                    raise WorkflowError(
+                        "agent_skill_incompatible", "此 Skill 暂不可用，请先更新文件", 422
+                    )
+            self._write_settings(owner, key, row=row, enabled=values.enabled)
             self.session.flush()
             return self._builtin(key, owner) if row is None else self._detail(row)
 
@@ -851,6 +868,21 @@ class AgentSkillService(BaseService):
             item = next((dict(item) for item in version.resources if item["path"] == path), None)
             if item is None:
                 raise NotFound("Skill 资料不存在")
+        if item["kind"] == "image":
+            from short_drama.agent.resources.resolver import skill_resource_ref
+
+            return SkillResourceContent(
+                skill_id=str(identifier),
+                content_version=number,
+                **{key: item[key] for key in ("path", "kind", "byte_size", "checksum_sha256")},
+                offset=0,
+                content=base64.b64encode(self._resource_data(item)).decode(),
+                encoding="base64",
+                next_offset=None,
+                resource_ref=skill_resource_ref(
+                    item, f"skill:{identifier}:{number}:{path}"
+                ).model_dump(mode="json"),
+            )
         text = self._resource_bytes(item)
         end = min(len(text), offset + limit)
         return SkillResourceContent(
@@ -879,6 +911,19 @@ class AgentSkillService(BaseService):
             raise Conflict("复制来源已更新，请核对新版本后重试")
         resources = []
         for item in original.resources:
+            if item.kind == "image":
+                with self._transaction(read_only=True):
+                    version = current_version(self.session, str(identifier), values.content_version)
+                    manifest = next(row for row in version.resources if row["path"] == item.path)
+                resources.append(
+                    dict(
+                        path=item.path,
+                        kind=item.kind,
+                        encoding="base64",
+                        content=base64.b64encode(self._resource_data(manifest)).decode(),
+                    )
+                )
+                continue
             chunks, offset = [], 0
             while True:
                 part = self.resource_content(
@@ -919,7 +964,7 @@ class AgentSkillService(BaseService):
             version = current_version(self.session, str(identifier), original.content_version)
             manifest = [dict(item) for item in version.resources] if version else []
         resources = [
-            dict(path=item["path"], content=self._resource_bytes(item)) for item in manifest
+            dict(path=item["path"], content=self._resource_data(item)) for item in manifest
         ]
         metadata = {
             key: value

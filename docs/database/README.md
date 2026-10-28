@@ -2,13 +2,19 @@
 
 当前 2026-10-21 创作模式结构以[完整 SQL](schema/schema.mysql8.sql)和[本次迁移记录](migrations/2026-10-21-creation-mode/README.md)为准。单层项目移除了 `episodes`、`global_assets/project_assets/episode_assets`、成员及邀请；原 `episode_*` 内容表改为 `project_*`，`assets` 直接包含非空 `project_id/position`。项目保留正文／分镜版本和编辑指针，删除梗概／画幅／风格。下文此前表数与协作／分集描述为历史背景，不作为新结构初始化依据。
 
-当前完整结构包含 **116 张表**，[schema.mysql8.sql](schema/schema.mysql8.sql) 用于初始化空数据库，与[SQLAlchemy Domain](../../backend/src/short_drama/domain)同步。当前 `short_drama` 已执行[全局助手 001–009 迁移](migrations/2026-10-21-agent-system/README.md)和[2026-10-22 项目会话约束增量](migrations/2026-10-22-project-assistant/README.md)，Agent 共二十五表且 readiness 为 `ready`；[2026-10-22 退场项目级界面状态](migrations/2026-10-22-drop-user-project-states/README.md)移除 `user_project_states` 后为 116 张表。历史阶段的表数不代表当前结构；字段类型、默认值、索引和 CHECK 以完整 SQL 为准，不能以 SQL 已生成代替 DDL 已执行，也不能以结构就绪代替供应商验收。
+当前完整结构包含 **122 张表**，[schema.mysql8.sql](schema/schema.mysql8.sql) 用于初始化空数据库，与[SQLAlchemy Domain](../../backend/src/short_drama/domain)同步。当前 `short_drama` 已执行[全局助手 001–009 迁移](migrations/2026-10-21-agent-system/README.md)和[2026-10-22 项目会话约束增量](migrations/2026-10-22-project-assistant/README.md)，其后已执行 [2026-10-26 Harness 增量](migrations/2026-10-26-agent-harness/README.md)，Agent 共二十七表；[2026-10-27 剧本工作台增量](migrations/2026-10-27-writing-workspace/README.md)新增故事大纲表。[2026-10-22 退场项目级界面状态](migrations/2026-10-22-drop-user-project-states/README.md)移除 `user_project_states` 后形成上一版结构基线。历史阶段的表数不代表当前结构；字段类型、默认值、索引和 CHECK 以完整 SQL 为准，不能以 SQL 已生成代替 DDL 已执行，也不能以结构就绪代替供应商验收。
 
 本文说明表的职责、关系及应用维护的约束，不另维护一份重复的字段清单。开发与测试见[开发说明](../instruction/开发运行与验证.md)，模块关系见[架构说明](../instruction/系统架构与数据流.md)，接口见[API 文档](../api/README.md)。旧库升级使用[迁移目录](migrations/README.md)。
 
+Harness 前三批收尾补齐[记忆抽取重试终态约束](migrations/2026-10-26-agent-memory-retry/README.md)：`agent_memory_jobs` 的 CHECK 允许既有运行时状态 `abandoned`，接口同步枚举；不新增表或字段，不改写已有记录。该增量与图检查点迁移分别执行，不能用表数相同推断约束已升级。
+
 标准模式创作新增镜头名称、受限景别、剧本 Delta 和私人生成草稿表，见[2026-10-13 迁移及实际执行记录](migrations/2026-10-13-standard-creation-workflow/README.md)。正文与格式同事务保存，私人草稿按本人、稳定对象和用途隔离，生成引用继续校验来源版本及上下文。
 
+当前剧本节点使用 `project_story_outlines` 保存每项目唯一大纲（MEDIUMTEXT、项目外键及审计字段），与小说／剧本共用项目并发版本。新生成原位写入，不新增候选或场次实体；非空当前剧本保存即发布并内部确认，空正文取消可用状态。旧候选与 Delta 字段保留兼容，未采用 Agent 候选不自动发布。私人 `novel_adaptation` 草稿用途不再由此页面写入，其他素材／分镜用途不变。
+
 标准图片组见[2026-10-16 增量及实际执行记录](migrations/2026-10-16-image-groups/README.md)。`image_groups` 保存当前组／历史组、生成数量及主图版本，目标为素材或镜头二选一；`active_slot=1` 与目标唯一约束保证只有一组当前作品，历史组为 NULL。`image_group_items` 以 `(group_id, output_index)` 固定 1–25 的图位并保存单图版本、原图历史；`image_operations` 按 `(created_by, request_key)` 幂等冻结处理原图及来源，记录私人执行状态。整组和全部作品媒体按来源范围共享，任务、提示词及操作仍仅本人可见。新增三表及两个普通索引已在当前 `short_drama` 实际创建，未批量回写现有作品；旧主图首次读取时建立兼容图片组。
+
+新增[独立故事设定](migrations/2026-10-28-story-settings/README.md)：`project_story_settings`以`project_id`为主键及项目外键，保存logline、synopsis、genre、character_bios、独立正整数row_version和创建／更新时间。首次读取不插入，首次保存版本0→1；后续在项目锁内比较版本。该表不修改正文并发版本，不回填小说或旧大纲。2026-10-28已在当前配置库创建并回读列、主键、外键和CHECK，隔离MySQL验证全量建表及并发首次保存。
 
 ## 保持完整 SQL 同步
 
@@ -25,7 +31,7 @@ uv run python scripts/export_schema.py --check
 
 ## 初始化与升级
 
-新库要求 MySQL **8.0.21+**。先由数据库管理员创建并选定空数据库，连接使用 `utf8mb4`、UTC（`+00:00`）及严格 SQL 模式（至少 `STRICT_TRANS_TABLES`），再执行完整的 `schema.mysql8.sql`。文件包含按外键依赖顺序排列的 113 条 `CREATE TABLE`，角色当前版本及会话摘要的循环外键在相关表建立后用命名 `ALTER TABLE` 添加；不创建数据库、不设置连接、不导入数据，也不自动选择业务库。
+新库要求 MySQL **8.0.21+**。先由数据库管理员创建并选定空数据库，连接使用 `utf8mb4`、UTC（`+00:00`）及严格 SQL 模式（至少 `STRICT_TRANS_TABLES`），再执行完整的 `schema.mysql8.sql`。文件包含按外键依赖顺序排列的 122 条 `CREATE TABLE`，角色当前版本及会话摘要的循环外键在相关表建立后用命名 `ALTER TABLE` 添加；不创建数据库、不设置连接、不导入数据，也不自动选择业务库。
 
 已有数据库不能用全量脚本覆盖。根据实际字段、索引、约束和已执行记录判断缺少哪些迁移，按[迁移顺序](migrations/README.md)补齐；应用启动不会自动迁移。新库执行完整脚本后无需叠加历史迁移。
 
@@ -68,11 +74,12 @@ uv run python scripts/export_schema.py --check
 | `agent_attachments` | 本人会话的文本、图片、视频、音频输入，稳定媒体引用、上传幂等键及绑定消息；上传文件保持个人媒体范围，历史消息引用保留 |
 | `agent_skills` | 本人的 Markdown 技能、内容版本、摘要、启用状态与软删除；加载时冻结准确内容版本 |
 | `agent_tasks`、`agent_task_inputs`、`agent_task_controls`、`agent_operations` | 逻辑任务、不可变补充输入、有序控制及工具完整回执；同会话串行，工具边界应用控制 |
+| `agent_task_requirements` | 服务端按用户原话生成的交付要求 draft、确认状态、真实原文偏移与每项尝试次数；发布守卫与完成验收以此为准 |
 | `agent_memory_items`、`agent_memory_revisions`、`agent_memory_sources`、`agent_memory_forget_rules` | 本人账号／会话／明确作品的事实、版本、来源及遗忘防复活 |
 | `agent_conversation_summaries`、`agent_memory_jobs` | 有来源链的阶段摘要，以及摘要／抽取／删除清理的可靠作业与租约 |
 | `agent_preferences` | 每账号唯一的助手媒体总开关和策略版本；未保存时默认开启，保存过的关闭不重置 |
 | `agent_media_requests` | 本人媒体请求、原生任务关联、冻结目标、数量预占和完整结算 |
-| `agent_skill_versions`、`agent_skill_settings` | 不可变内容／资料版本，以及本人启停与调用方式 |
+| `agent_skill_versions`、`agent_skill_settings` | 不可变内容／资料版本，以及本人启停与独立设置版本；不记录触发方式 |
 | `agent_discussion_revisions` | 纯讨论编辑／重答的不可变修订、原请求与运行身份 |
 | `agent_batch_undos` | 原操作下明确选择的逆向差异、幂等身份和独立撤销结果 |
 
@@ -342,3 +349,7 @@ canvas_revision_drawing_references 通过同画布复合外键将整图历史绑
 `canvas_tool_runs`保存本人、画布、模型与来源的冻结身份，以及45秒租约、持有者与执行epoch。`canvas_tool_submissions`按运行/固定阶段唯一保存不可变请求、批准时间与唯一任务回执；同键恢复不重复生成任务。两表的作者/项目/画布使用复合外键，普通HTTP写入不能伪造授权或替换回执；共享项目成员不能读取他人的创作过程。审美运行以非空源媒体外键保护输入；分镜运行不伪造图片，`source_media_id`为空，来源快照保存原分镜行、画风与资产目录。已批准阶段与任务关联在同一准入事务提交，来源或配置变化阻止尚未执行的新阶段；已受理任务的私人回执仍可核对。
 
 [012分镜来源增量](migrations/2026-10-05-infinite-canvas/012-canvas-storyboard-run.sql)只将该外键列改为可空，保留外键和原记录。2026-10-09已在当前业务库`short_drama`执行，核验`ready/missing=[]/changed=[]`。分镜结果经服务端闭合结构校验，镜头ID由任务ID与顺序确定；绑定复核原行未改变，旧媒体节点保留，失效的逐镜连线删除。项目角色版本接口尚未接通，相关分镜请求明确拒绝，不能把零角色路径通过写成角色验收。
+
+## 剧本变更恢复
+
+`project_script_revisions` 以 `(project_id,after_version)` 唯一保存破坏性操作的前后正文、格式、来源、操作者和UTC时间，关联项目及剧本。CHECK 要求版本前进；只允许项目所有者读取或恢复。恢复同样产生新版本和恢复前快照，不回退并发令牌。普通编辑不记录逐键历史；列表查询不读取MEDIUMTEXT正文。旧库按[2026-10-27变更记录迁移](migrations/2026-10-27-script-revisions/README.md)增加该表，本机已经执行并重入核验。

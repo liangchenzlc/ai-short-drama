@@ -25,6 +25,8 @@ async function installApi(page, options = {}) {
     const modelWrites = [];
     const assistantCalls = [];
     const assistantMessages = [];
+    const assistantTasks = [];
+    const assistantRuns = [];
     const assistantConversation = {
         id: "301", project_id: initial.workspaceProjectId, episode_id: null,
         title: "画布讨论", scope_version: 2, stage: null, subject_type: null,
@@ -53,6 +55,7 @@ async function installApi(page, options = {}) {
         }
         let body;
         if (path === "/auth/me") body = { user: { id: "111", username: "canvas-test", display_name: "画布测试", email: "canvas@example.test" } };
+        else if (path === "/agent/status") body = { enabled: true, schema_ready: true };
         else if (path === "/agent/models") body = { items: [{ id: "71", name: "对话模型", row_version: "1", model_key: "fixture", protocol: "chat", verified: false, preferred: true }], preferred_id: "71" };
         else if (path === "/agent/skills") body = { items: [], total: 0, offset: 0, limit: 50 };
         else if (path === "/canvas-runtime/assets" || path === "/canvas-runtime/tasks") body = [];
@@ -63,7 +66,39 @@ async function installApi(page, options = {}) {
             const method = request.method();
             const input = ["POST", "PATCH"].includes(method) ? request.postDataJSON() : null;
             assistantCalls.push({ path, method, body: input, key: request.headers()["idempotency-key"] });
-            if (path === "/assistant/conversations/resolve" || path === "/assistant/conversations/301") body = assistantConversation;
+            if (path === "/assistant/generation-policy") body = { media_generation_enabled: true, policy_version: "1" };
+            else if (path === "/assistant/subjects/metadata") body = input.subjects.map(item => ({ ...item, checksum: "a".repeat(64), content_revision: item.revision }));
+            else if (/^\/assistant\/tasks\/\d+\/subjects$/.test(path)) {
+                const task = assistantTasks.find(item => path.includes(`/tasks/${item.id}/`));
+                body = { task_id: task.id, input_revision: task.input_revision, applied_input_revision: task.applied_input_revision, pending: false, items: task.selected_subjects };
+            }
+            else if (path.startsWith("/assistant/global/")) {
+                const conversation = { ...assistantConversation, scope_version: 3, status: "active" };
+                if (path === "/assistant/global/conversations") body = { items: [conversation], total: 1, offset: 0, limit: 20 };
+                else if (path === "/assistant/global/conversations/301") body = conversation;
+                else if (path === "/assistant/global/history") body = { items: [legacyConversation], total: 1, offset: 0, limit: 20 };
+                else if (path.endsWith("/state")) body = { conversation_id: "301", snapshot_cursor: 0, resume_cursor: 0, messages: { items: assistantMessages, total: assistantMessages.length, offset: 0, limit: 50 }, tasks: assistantTasks, runs: assistantRuns, operations: [], inputs: [], has_more_tasks: false, has_more_operations: false };
+                else if (path.endsWith("/events")) {
+                    await route.fulfill({ contentType: "text/event-stream", body: ": heartbeat\n\n" });
+                    return;
+                }
+                else if (path.endsWith("/attachments")) body = { items: [], total: 0, offset: 0, limit: 50 };
+                else if (path.endsWith("/messages") && method === "GET") body = { items: assistantMessages, total: assistantMessages.length, offset: 0, limit: 50 };
+                else if (path.endsWith("/messages") && method === "POST") {
+                    assert.ok(request.headers()["idempotency-key"]);
+                    const task = { id: String(501 + assistantTasks.length), conversation_id: "301", goal: input.content, status: "succeeded", phase: "terminal", row_version: "1", plan_revision: "1", input_revision: "1", applied_input_revision: "1", control_seq: "0", applied_control_seq: "0", control_state: "none", execution_target: input.execution_target, memory_project_ids: [initial.workspaceProjectId], source_context: null, selected_subjects: [], skills: [], media_limits: { images: null, videos: null, audio: null }, media_usage: {}, active_operation: null, error: null, created_at: initial.createdAt, updated_at: initial.updatedAt };
+                    const message = { id: String(1001 + assistantMessages.length), task_id: task.id, seq: assistantMessages.length + 1, role: "user", content: input.content, references: [], artifacts: [], created_at: initial.createdAt };
+                    const run = { id: String(901 + assistantRuns.length), task_id: task.id, conversation_id: "301", status: "succeeded", phase: "finished", row_version: "1", mode: "discuss", model_config_id: "71", model_name: "对话模型", error: null, usage: {}, budget: {}, review: null, awaiting_artifact_ids: [], created_at: initial.createdAt, updated_at: initial.updatedAt, finished_at: initial.updatedAt, queue_position: 0, waiting_reason: null };
+                    assistantMessages.push(message, { ...message, id: String(1002 + assistantMessages.length), seq: message.seq + 1, role: "assistant", content: "一起分析画面与故事节奏。" });
+                    assistantTasks.push(task); assistantRuns.push(run);
+                    body = { message, task, run, cursor: 0 };
+                } else {
+                    unimplemented.add(`${method} ${path}`);
+                    await route.fulfill({ status: 404, json: { error: { code: "not_found", message: "Fixture does not implement this feature" } } });
+                    return;
+                }
+            }
+            else if (path === "/assistant/conversations/resolve" || path === "/assistant/conversations/301") body = assistantConversation;
             else if (path === "/assistant/conversations") body = { items: [assistantConversation], total: 1, offset: 0, limit: 20 };
             else if (path === "/assistant/legacy-conversations") body = { items: [legacyConversation], total: 1, offset: 0, limit: 20 };
             else if (path.endsWith("/events")) {
@@ -165,7 +200,7 @@ test("助手来源链接定位远处节点，缺失来源保留画布且不修�
     let browser;
     try {
         browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
-        for (const width of [1440, 390]) {
+        for (const width of [1440, 1280]) {
             for (const source of ["far-node", "missing-node", ""]) {
                 const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
                 try {
@@ -218,7 +253,7 @@ test("视频生成六图参考可提交，准入失败可见且保留已有作�
     let browser;
     try {
         browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
-        for (const [width, rejectsReferences] of [1440, 390].flatMap(width => [[width, true], [width, false]])) {
+        for (const [width, rejectsReferences] of [1440, 1280].flatMap(width => [[width, true], [width, false]])) {
             const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
             await context.addCookies([{ name: "sd_csrf", value: "browser-fixture", url: baseUrl }]);
             const page = await context.newPage();
@@ -262,7 +297,7 @@ test("视频生成六图参考可提交，准入失败可见且保留已有作�
                 await page.goto(`${baseUrl}/canvas-app/canvas/parity-canvas`);
                 const video = page.locator('[data-node-id="video-target"]');
                 await video.waitFor({ timeout: 60000 });
-                // 生成节点可能宽于窄屏；点击可见区域上缘，避开中心播放按钮。
+                // 生成节点可能超出可见画布区域；点击可见区域上缘，避开中心播放按钮。
                 const bounds = await video.boundingBox();
                 await video.click({ position: { x: Math.min(width - 20, Math.max(20, bounds.x + bounds.width / 2)) - bounds.x, y: Math.max(80, bounds.y + 8) - bounds.y } });
                 const composer = page.locator(".canvas-node-composer");
@@ -403,7 +438,7 @@ test("导演台开发期间隐藏快捷入口，新增菜单和已有节点均�
     let browser;
     try {
         browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
-        for (const size of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
             const context = await browser.newContext({ viewport: size, reducedMotion: "reduce" });
             try {
                 await context.addCookies([{ name: "sd_csrf", value: "browser-fixture", url: browserBaseUrl }]);
@@ -423,7 +458,7 @@ test("导演台开发期间隐藏快捷入口，新增菜单和已有节点均�
                 await page.getByRole("button", { name: "画布保存状态：已保存", exact: true }).waitFor();
                 const exitFocus = page.getByRole("button", { name: "退出专注模式", exact: true });
                 if (await exitFocus.isVisible()) await exitFocus.click();
-                if (size.width > 700) await page.getByRole("button", { name: "适合屏幕", exact: true }).click();
+                await page.getByRole("button", { name: "适合屏幕", exact: true }).click();
                 const before = structuredClone(api.document());
                 assert.equal(await page.locator(".canvas-libtv-director-entry").count(), 0);
                 assert.equal(await page.getByRole("button", { name: "打开导演台", exact: true }).count(), 0);
@@ -538,7 +573,7 @@ test("图形视口预览不重复测量容器，窗口缩放后选区与DPR保�
                 }
                 assert.ok(Math.abs(panelAfter.y - (nodeAfter.y + nodeAfter.height) - 16) <= 1, "无遮挡时单选浮层保持原16px间隔");
                 // 在合成预览尚未提交时改变实际容器尺寸。
-                await page.setViewportSize({ width: 1000, height: 760 });
+                await page.setViewportSize({ width: 1280, height: 760 });
                 await page.mouse.up();
                 await page.keyboard.up("Space");
                 const zoomBounds = await page.locator("[data-canvas-viewport]").boundingBox();
@@ -565,7 +600,7 @@ test("图形视口预览不重复测量容器，窗口缩放后选区与DPR保�
                 const zoomedPanel = await panel.boundingBox();
                 assert.ok(Math.abs(zoomedPanel.y - (zoomedNode.y + zoomedNode.height) - 16) <= 1, `缩放提交后浮层必须继续贴合真实节点边界：${JSON.stringify({ zoomedNode, zoomedPanel })}`);
 
-                for (const size of [{ width: 600, height: 900 }, { width: 1440, height: 900 }]) {
+                for (const size of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }]) {
                     await page.setViewportSize(size);
                     await page.getByRole("button", { name: "适合屏幕", exact: true }).click();
                     await page.waitForFunction(() => {
@@ -735,7 +770,7 @@ test("助手首次加载中关闭后再次打开可恢复对话", { timeout: 120
     let browser;
     try {
         browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
-        for (const width of [1440, 390]) {
+        for (const width of [1440, 1280]) {
             const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
             await context.addCookies([{ name: "sd_csrf", value: "browser-fixture", url: baseUrl }]);
             const page = await context.newPage();
@@ -746,16 +781,15 @@ test("助手首次加载中关闭后再次打开可恢复对话", { timeout: 120
             let resolveRequests = 0;
             let releaseInitial;
             const pendingInitial = new Promise(resolve => { releaseInitial = resolve; });
-            let signalStarted;
-            const initialStarted = new Promise(resolve => { signalStarted = resolve; });
-            await page.route("**/api/v1/assistant/conversations/resolve", async route => {
+            await page.route(/\/api\/v1\/assistant\/global\/conversations(?:\?|$)/, async route => {
                 resolveRequests += 1;
-                signalStarted();
                 if (holdInitial) await pendingInitial;
                 await route.fallback();
             });
             try {
-                await page.goto(new URL("/canvas-app/canvas/parity-canvas?assistant=1", baseUrl).href, { waitUntil: "domcontentloaded", timeout: 60000 });
+                await page.goto(new URL("/canvas-app/canvas/parity-canvas", baseUrl).href, { waitUntil: "domcontentloaded", timeout: 60000 });
+                const initialStarted = page.waitForRequest(/\/api\/v1\/assistant\/global\/conversations(?:\?|$)/, { timeout: 15000 });
+                await page.getByRole("button", { name: "AI 创作助手", exact: true }).click();
                 await initialStarted;
                 await page.getByRole("button", { name: "关闭助手", exact: true }).click();
                 const input = page.getByRole("textbox", { name: "给助手的消息" });
@@ -819,7 +853,7 @@ test("设置与工作台导航等待画布保存，409保留草稿", { timeout: 
             for (let attempt = 0; api.waitingCommits() === 0 && attempt < 100; attempt++) await new Promise(resolve => setTimeout(resolve, 50));
             assert.equal(api.waitingCommits(), 1);
             await page.getByRole("button", { name: "打开画布菜单", exact: true }).click();
-            await page.getByRole("menuitem", { name: destination, exact: true }).click();
+            await page.getByRole("menuitem", { name: destination, exact: true }).press("Enter");
             assert.equal(new URL(page.url()).pathname, "/canvas-app/canvas/parity-canvas");
             await page.getByRole("button", { name: "画布保存状态：正在保存", exact: true }).waitFor({ state: "visible" });
             if (editDuringSave) {
@@ -919,6 +953,12 @@ test("共用创作助手保存后引用画布、保留草稿并只读打开旧�
         const node = page.locator('[data-node-id="text-one"]');
         await node.waitFor({ state: "visible", timeout: 60000 });
         await page.evaluate(() => document.fonts.ready);
+        await page.getByRole("button", { name: "AI 创作助手", exact: true }).click();
+        const input = page.getByRole("textbox", { name: "给助手的消息" });
+        await input.waitFor({ state: "visible" });
+        await input.fill("@文字");
+        await page.getByRole("menuitemcheckbox", { name: "文字节点 节点", exact: true }).click();
+        await page.getByRole("button", { name: "移除素材文字节点", exact: true }).waitFor({ state: "visible" });
         const before = await node.boundingBox();
         assert.ok(before);
         const startedCommit = page.waitForRequest(request => request.url().endsWith("/commits"));
@@ -929,40 +969,31 @@ test("共用创作助手保存后引用画布、保留草稿并只读打开旧�
         await startedCommit;
         await api.heldCommit;
         assert.equal(api.waitingCommits(), 1);
-        await page.getByRole("button", { name: "AI 创作助手", exact: true }).click();
-        const input = page.getByRole("textbox", { name: "给助手的消息" });
-        await input.waitFor({ state: "visible" });
         assert.equal(await page.locator(".ai-assistant-composer .ant-sender textarea").count(), 1);
-        await input.fill("@文字");
-        await page.getByRole("menuitemcheckbox", { name: "文字节点 节点", exact: true }).click();
-        await page.locator(".ai-assistant-composer").getByRole("button", { name: "移除引用文字节点", exact: true }).waitFor({ state: "visible" });
         await input.fill("一起分析这个文字节点");
         await page.getByRole("button", { name: "发送", exact: true }).click();
-        await page.getByText("正在保存并核对作品…", { exact: true }).waitFor({ state: "visible" });
+        await page.locator(".ai-assistant-send.ant-btn-loading").waitFor({ state: "visible" });
         assert.equal(api.assistantCalls.filter(call => call.method === "POST" && call.path.endsWith("/messages")).length, 0);
-        const received = page.waitForResponse(response => response.url().endsWith("/assistant/conversations/301/messages") && response.request().method() === "POST");
+        const received = page.waitForResponse(response => response.url().endsWith("/assistant/global/conversations/301/messages") && response.request().method() === "POST");
         api.releaseCommits();
         await received;
         await page.waitForFunction(() => document.querySelector('.ai-assistant-mention-input textarea')?.value === "");
         let sends = api.assistantCalls.filter(call => call.method === "POST" && call.path.endsWith("/messages"));
         assert.equal(sends.length, 1);
-        assert.deepEqual(sends[0].body.context, { kind: "canvas", id: "parity-canvas", revision: api.document().revision, include_document: true, selected: [{ kind: "node", id: "text-one" }] });
-        assert.equal(typeof sends[0].body.context.revision, "string");
-        assert.match(sends[0].body.context.revision, /^\d+$/);
+        assert.deepEqual(sends[0].body.execution_target, { mode: "infinite_canvas", project_id: initial.workspaceProjectId, canvas_id: "parity-canvas" });
+        assert.equal(sends[0].body.new_task, true);
         assert.equal(api.document().revision, "2");
-        await page.getByRole("button", { name: "移除引用文字节点", exact: true }).click();
-        await page.getByRole("button", { name: "这条消息不带当前作品", exact: true }).click();
         await input.fill("@文字");
         await page.getByRole("menuitemcheckbox", { name: "文字节点 节点", exact: true }).click();
-        await page.getByRole("button", { name: "移除引用文字节点", exact: true }).waitFor({ state: "visible" });
+        await page.getByRole("button", { name: "移除素材文字节点", exact: true }).waitFor({ state: "visible" });
         await input.fill("仅讨论手工引用的节点");
-        const selectedReceived = page.waitForResponse(response => response.url().endsWith("/assistant/conversations/301/messages") && response.request().method() === "POST");
+        const selectedReceived = page.waitForResponse(response => response.url().endsWith("/assistant/global/conversations/301/messages") && response.request().method() === "POST");
         await page.getByRole("button", { name: "发送", exact: true }).click();
         await selectedReceived;
         await page.waitForFunction(() => document.querySelector('.ai-assistant-mention-input textarea')?.value === "");
         sends = api.assistantCalls.filter(call => call.method === "POST" && call.path.endsWith("/messages"));
         assert.equal(sends.length, 2);
-        assert.deepEqual(sends[1].body.context, { kind: "canvas", id: "parity-canvas", revision: api.document().revision, include_document: false, selected: [{ kind: "node", id: "text-one" }] });
+        assert.deepEqual(sends[1].body.subject_selection.subjects, [{ project_id: initial.workspaceProjectId, source_kind: "canvas", source_id: "parity-canvas", kind: "node", id: "text-one", revision: api.document().revision, content_revision: api.document().revision, checksum: "a".repeat(64) }]);
         assert.notEqual(sends[0].key, sends[1].key);
         await input.fill("保留的画布对话草稿");
         await page.getByRole("button", { name: "关闭助手", exact: true }).click();
@@ -991,19 +1022,19 @@ test("共用创作助手保存后引用画布、保留草稿并只读打开旧�
         assert.notEqual(lightPanelBackground, darkPanelBackground);
         assert.equal(await input.inputValue(), "保留的画布对话草稿");
         await page.screenshot({ path: resolve(".runtime/browser/shared-canvas-assistant-1440-light.png") });
-        await page.setViewportSize({ width: 390, height: 900 });
+        await page.setViewportSize({ width: 1280, height: 900 });
         await input.waitFor({ state: "visible" });
         assert.equal(await input.inputValue(), "保留的画布对话草稿");
         await page.waitForFunction(() => {
-            const panel = document.querySelector(".ant-drawer-body .ai-assistant-panel");
+            const panel = document.querySelector(".canvas-assistant-sidebar .ai-assistant-panel");
             const bounds = panel?.getBoundingClientRect();
             return bounds && bounds.x >= 0 && bounds.right <= window.innerWidth + 1;
         });
-        const mobile = await page.locator(".ant-drawer-body .ai-assistant-panel").boundingBox();
-        assert.ok(mobile && mobile.x >= 0 && mobile.width <= 391);
-        await page.locator(".ant-drawer-body .ai-assistant-bubbles .ant-bubble").first().waitFor({ state: "visible" });
-        await page.waitForFunction(() => document.querySelector('.ant-drawer-body .ai-assistant-send')?.disabled === false);
-        await page.screenshot({ path: resolve(".runtime/browser/shared-canvas-assistant-390.png") });
+        const desktop = await page.locator(".canvas-assistant-sidebar .ai-assistant-panel").boundingBox();
+        assert.ok(desktop && desktop.x >= 0 && desktop.x + desktop.width <= 1281);
+        await page.locator(".canvas-assistant-sidebar .ai-assistant-bubbles .ant-bubble").first().waitFor({ state: "visible" });
+        await page.waitForFunction(() => document.querySelector('.canvas-assistant-sidebar .ai-assistant-send')?.disabled === false);
+        await page.screenshot({ path: resolve(".runtime/browser/shared-canvas-assistant-1280.png") });
         await page.goto(new URL("/canvas-app/canvas/parity-canvas?agent=1&conversation=401", baseUrl).href, { waitUntil: "domcontentloaded", timeout: 60000 });
         const legacy = page.getByRole("dialog", { name: "历史画布讨论", exact: true });
         await legacy.waitFor({ state: "visible" });
@@ -1036,7 +1067,7 @@ test("补齐方案：上传确认、音视频字幕、兼容预览、历史刷�
     let browser;
     try {
         browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
-        for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
             const context = await browser.newContext({ viewport, reducedMotion: "reduce" });
             try {
                 await context.addCookies([{ name: "sd_csrf", value: "browser-fixture", url: baseUrl }]);

@@ -197,7 +197,6 @@ def list_skills(
     query: Annotated[str | None, Query(max_length=120)] = None,
     source: Annotated[str | None, Query(pattern="^(builtin|personal)$")] = None,
     enabled: bool | None = None,
-    invocation_mode: Annotated[str | None, Query(pattern="^(auto|manual)$")] = None,
     mode: Annotated[str | None, Query(pattern="^(standard|infinite_canvas)$")] = None,
 ):
     return service.list(
@@ -206,7 +205,6 @@ def list_skills(
         query=query,
         source=source,
         enabled=enabled,
-        invocation_mode=invocation_mode,
         mode=mode,
     )
 
@@ -235,6 +233,11 @@ def upload_skill(service: Skills, file: Annotated[UploadFile, File()]):
 @router.get("/skills/{skill_id}", response_model=SkillRead)
 def get_skill(skill_id: str, service: Skills):
     return service.detail(skill_id)
+
+
+@router.get("/skills/requests/{key}", response_model=SkillRead)
+def get_skill_request(key: str, service: Skills):
+    return service.request_receipt(key)
 
 
 @router.post("/skills/{skill_id}/copy", response_model=SkillRead, status_code=201)

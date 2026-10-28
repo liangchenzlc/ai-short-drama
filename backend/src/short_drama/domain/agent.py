@@ -35,6 +35,7 @@ AGENT_PRIVATE_TABLES = frozenset(
         "agent_task_inputs",
         "agent_task_controls",
         "agent_operations",
+        "agent_task_requirements",
         "agent_memory_items",
         "agent_memory_revisions",
         "agent_memory_sources",
@@ -43,6 +44,8 @@ AGENT_PRIVATE_TABLES = frozenset(
         "agent_memory_jobs",
         "agent_preferences",
         "agent_media_requests",
+        "agent_graph_checkpoints",
+        "agent_graph_writes",
     }
 )
 AGENT_TABLES = AGENT_PRIVATE_TABLES | {
@@ -258,9 +261,7 @@ class AgentMessage(Base):
         CheckConstraint("seq > 0", name="ck_agent_messages_seq"),
         CheckConstraint("row_version > 0", name="ck_agent_messages_version"),
         CheckConstraint("role IN ('user','assistant')", name="ck_agent_messages_role"),
-        CheckConstraint(
-            "kind IN ('reply','narration','notice')", name="ck_agent_messages_kind"
-        ),
+        CheckConstraint("kind IN ('reply','narration','notice')", name="ck_agent_messages_kind"),
         CheckConstraint(
             "JSON_TYPE(`references`) = 'ARRAY' AND JSON_TYPE(artifacts) = 'ARRAY'",
             name="ck_agent_messages_arrays",

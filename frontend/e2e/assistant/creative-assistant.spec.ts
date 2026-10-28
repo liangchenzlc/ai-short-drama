@@ -9,6 +9,25 @@ async function openSaveDetails(page: Page) {
 }
 
 const time = '2026-10-06T12:00:00Z';
+
+for (const width of [1440, 1280]) test(`Skill selection uses the single management route at ${width}px`, async ({ page }) => {
+  const state = await assistantFixture(page);
+  state.skills.push({ ...state.skills[0], id: '801', name: '我的对白方法', builtin: false });
+  await page.setViewportSize({ width, height: 900 });
+  await page.goto('/e2e/assistant/fixtures/assistant-presentation-fixture.html?layout=standard');
+  await page.getByRole('button', { name: '选择 Skill', exact: true }).click();
+  const picker = page.getByRole('region', { name: '选择 Skill', exact: true });
+  await expect(picker.getByRole('textbox', { name: '搜索 Skill' })).toHaveAttribute('placeholder', '搜索名称或用途');
+  await expect(picker.getByRole('link', { name: '管理 Skill' })).toHaveAttribute('href', '/skills');
+  await expect(picker.getByRole('button', { name: /上传|编辑|停用|删除/ })).toHaveCount(0);
+  await picker.getByRole('checkbox', { name: '我的对白方法', exact: true }).check();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: '选择 Skill', exact: true }).click();
+  await expect(picker.getByRole('checkbox', { name: '我的对白方法', exact: true })).toBeChecked();
+  expect(state.calls.filter(call => call.method !== 'GET')).toEqual([]);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
 async function assistantFixture(page: Page) {
   const base = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   await page.route('**/api/v1/auth/capabilities', route => route.fulfill({ json: { enabled: true } }));
@@ -32,7 +51,7 @@ async function assistantFixture(page: Page) {
   let snapshotGate: { started: () => void; wait: Promise<void> } | null = null;
   const run = (id: string, status: string, task_id = '501', queue_position = 0) => ({ id, task_id, conversation_id: '301', status, phase: status === 'succeeded' ? 'finished' : 'model', row_version: '1', mode: 'discuss', model_config_id: '71', model_name: '对话模型', error: null, usage: {}, budget: {}, review: null, awaiting_artifact_ids: [], created_at: time, updated_at: time, finished_at: status === 'succeeded' ? time : null, queue_position, waiting_reason: null });
   const task = (id = '501', goal = '讨论故事', status = 'running', conversation_id = '301') => ({ id, conversation_id, goal, status, phase: status === 'succeeded' ? 'terminal' : 'deciding', row_version: '1', plan_revision: '1', input_revision: '1', applied_input_revision: '1', control_seq: '0', applied_control_seq: '0', control_state: 'none', execution_target: { mode: 'standard', project_id: '10' }, memory_project_ids: ['10'], source_context: null, selected_subjects: [], skills: [], media_limits: { images: null, videos: null, audio: null }, media_usage: {}, active_operation: null, error: null, created_at: time, updated_at: time });
-  const skills = [{ id: 'builtin:continuity', name: '人物连续性', builtin: true, content_version: '1', row_version: null, enabled: true, filename: null, checksum_sha256: 'a'.repeat(64), package_checksum: 'b'.repeat(64), slug: 'continuity', description: '核对人物动机与连续性。', tags: [], modes: ['standard', 'infinite_canvas'], exclusions: '', required_tools: [], source: '', invocation_mode: 'auto', settings_version: '0', compatible: true, issues: [], resource_count: 0, updated_at: time }];
+  const skills = [{ id: 'builtin:continuity', name: '人物连续性', builtin: true, content_version: '1', row_version: null, enabled: true, filename: null, checksum_sha256: 'a'.repeat(64), package_checksum: 'b'.repeat(64), slug: 'continuity', description: '核对人物动机与连续性。', tags: [], modes: ['standard', 'infinite_canvas'], exclusions: '', required_tools: [], source: '', settings_version: '0', compatible: true, issues: [], resource_count: 0, updated_at: time }];
   const emit = (event_type: string, payload: any, run_id = '901') => events.push({ seq: events.length + 1, event_type, run_id, payload, created_at: time });
   await page.route('**/api/v1/agent/**', route => {
     const path = new URL(route.request().url()).pathname.slice('/api/v1/agent'.length);
@@ -218,8 +237,8 @@ async function assistantFixture(page: Page) {
 }
 
 test.describe('assistant UX', () => {
-  for (const height of [844, 480]) for (const count of [1, 8, 16]) test(`keeps ${count} attachments and sending reachable at 390x${height}`, async ({ page }, info) => {
-    await page.setViewportSize({ width: 390, height });
+  for (const height of [900, 600]) for (const count of [1, 8, 16]) test(`keeps ${count} attachments and sending reachable at 1280x${height}`, async ({ page }, info) => {
+    await page.setViewportSize({ width: 1280, height });
     const state = await assistantFixture(page);
     state.attachments.push(...Array.from({ length: count }, (_, index) => ({ id: String(8000 + index), kind: 'text', name: `人物关系与故事背景参考文档第${index + 1}份.md`, text_preview: '参考内容', mime_type: 'text/plain', byte_size: 100, media_id: null, url: null, checksum_sha256: 'a'.repeat(64), pending: true, metadata: {} })));
     await page.route('**/api/v1/assistant/conversations/301/attachments/*', route => {
@@ -238,7 +257,7 @@ test.describe('assistant UX', () => {
     const last = panel.getByRole('button', { name: `移除附件人物关系与故事背景参考文档第${count}份.md`, exact: true });
     await last.focus(); await expect(last).toBeInViewport({ ratio: 1 });
     const hitArea = await last.boundingBox();
-    expect(hitArea!.width).toBeGreaterThanOrEqual(44); expect(hitArea!.height).toBeGreaterThanOrEqual(44);
+    expect(hitArea!.width).toBeGreaterThanOrEqual(20); expect(hitArea!.height).toBeGreaterThanOrEqual(20);
     await page.screenshot({ path: info.outputPath(`assistant-materials-${count}-${height}.png`) });
     await last.press('Enter'); await expect(panel.locator('.ai-assistant-attachment')).toHaveCount(count - 1);
     await expect(send).toBeInViewport({ ratio: 1 }); await send.click(); await expect(input).toHaveValue('');
@@ -341,7 +360,7 @@ test.describe('assistant UX', () => {
   });
 });
 
-for (const width of [1440, 390]) test(`composer menus offer scoped attachments and multiple Skills without configuration dialogs at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`composer menus offer scoped attachments and multiple Skills without configuration dialogs at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.skills.push({ ...state.skills[0], id: '801', builtin: false, name: '对白节奏' });
@@ -403,7 +422,7 @@ test('image and text menu actions use the existing upload channel and retain the
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`attachment recovery restores clickable sending for a current project conversation at ${width}px`, async ({ page }) => {
+for (const width of [1440, 1280]) test(`attachment recovery restores clickable sending for a current project conversation at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   let restoreFails = true;
@@ -448,12 +467,14 @@ test('standard assistant width supports pointer, keyboard, viewport limits and a
   await page.reload(); await expect(handle).toHaveAttribute('aria-valuenow', '476');
   await handle.focus(); await page.keyboard.press('End');
   await expect(handle).toHaveAttribute('aria-valuenow', '560');
-  await page.setViewportSize({ width: 1000, height: 900 });
-  await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeLessThan(380);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(sidebar).toBeVisible();
   await expect(handle).toHaveAttribute('aria-valuemin', '320');
-  await page.setViewportSize({ width: 390, height: 900 });
-  await expect(handle).toHaveCount(0);
-  await expect(page.getByRole('dialog', { name: 'AI 创作助手区域', exact: true })).toBeVisible();
+  await expect(handle).toHaveAttribute('aria-valuenow', '560');
+  await handle.press('Home');
+  await expect(handle).toHaveAttribute('aria-valuenow', '320');
+  await expect(page.getByRole('dialog', { name: 'AI 创作助手区域', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: '剧本正文', exact: true })).toBeEditable();
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -497,12 +518,12 @@ test('shared canvas presentation uses the same anchored Skill list without stand
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`lightweight methods keep frozen versions and explicit clearing across refresh at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`lightweight methods keep frozen versions and explicit clearing across refresh at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page); state.beginReply('保留旧方法。');
   state.tasks[0].skills = [{ id: state.skills[0].id, name: state.skills[0].name, content_version: '1', builtin: true }];
   state.skills[0].content_version = '2'; state.skills[0].enabled = false;
-  state.skills.push({ ...state.skills[0], id: '801', name: '我的对白方法', builtin: false, enabled: true, content_version: '1', invocation_mode: 'manual' });
+  state.skills.push({ ...state.skills[0], id: '801', name: '我的对白方法', builtin: false, enabled: true, content_version: '1' });
   await page.goto(`${root}/source?assistant=open`);
   const selected = page.getByLabel('已加载技能', { exact: true });
   await expect(selected).toContainText('人物连续性');
@@ -511,7 +532,7 @@ for (const width of [1440, 390]) test(`lightweight methods keep frozen versions 
   const dialog = page.getByRole('region', { name: '选择 Skill', exact: true });
   await expect(dialog.getByRole('textbox', { name: '搜索 Skill', exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: /上传|编辑|停用|删除/ })).toHaveCount(0);
-  await expect(dialog.getByRole('link', { name: '管理 Skill', exact: true })).toHaveAttribute('href', '/ai_config?section=skills');
+  await expect(dialog.getByRole('link', { name: '管理 Skill', exact: true })).toHaveAttribute('href', '/skills');
   await expect(dialog.getByText('任务使用 v1；目录 v2', { exact: false })).toBeVisible();
   await dialog.getByRole('checkbox', { name: '我的对白方法', exact: true }).check();
   await page.keyboard.press('Escape');
@@ -560,11 +581,11 @@ test('lightweight method discovery searches all pages and keeps unavailable reas
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`slash Skills confirm highlighted input tokens with real identity and restore across refresh at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`slash Skills confirm highlighted input tokens with real identity and restore across refresh at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.skills.splice(0, 1,
-    ...['9007199254740993', '9007199254740995'].map(id => ({ ...state.skills[0], id, name: '同名对白方法', builtin: false, invocation_mode: 'manual' })));
+    ...['9007199254740993', '9007199254740995'].map(id => ({ ...state.skills[0], id, name: '同名对白方法', builtin: false })));
   await page.goto(`${root}/source?assistant=open`);
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await input.fill('#同名');
@@ -597,27 +618,22 @@ for (const width of [1440, 390]) test(`slash Skills confirm highlighted input to
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('mobile novel settings and assistant remain mutually exclusive while preserving adaptation input', async ({ page }) => {
+test('desktop script and assistant remain available together and preserve both drafts', async ({ page }) => {
   const state = await assistantFixture(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${root}/source`);
-  await page.getByRole('button', { name: '展开设置', exact: true }).click();
-  const prompt = page.getByRole('textbox', { name: '创作要求', exact: true });
-  await prompt.fill('保留手机设置里的输入');
-  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(root + '/source');
+  const script = page.getByRole('textbox', { name: '剧本正文', exact: true });
+  await script.fill('保留桌面正文里的输入');
   await page.getByRole('button', { name: 'AI 创作助手', exact: true }).click();
-  const assistant = page.getByRole('textbox', { name: '给助手的消息', exact: true });
-  await expect(assistant).toBeVisible();
-  await expect(prompt).not.toBeVisible();
-  await assistant.fill('保留助手未发送的输入');
-  await page.keyboard.press('Escape');
-  await expect(assistant).not.toBeVisible();
-  await page.getByRole('button', { name: '展开设置', exact: true }).click();
-  await expect(prompt).toHaveValue('保留手机设置里的输入');
-  await expect(assistant).not.toBeVisible();
-  await page.keyboard.press('Escape');
+  const sidebar = page.getByRole('complementary', { name: 'AI 创作助手区域', exact: true });
+  const input = sidebar.getByRole('textbox', { name: '给助手的消息', exact: true });
+  await input.fill('保留助手未发送的输入');
+  await expect(script).toBeEditable(); await script.focus(); await expect(script).toBeFocused();
+  await page.keyboard.press('Escape'); await expect(sidebar).toBeVisible();
+  await page.getByRole('button', { name: '关闭助手', exact: true }).click();
+  await expect(script).toHaveValue('保留桌面正文里的输入');
   await page.getByRole('button', { name: 'AI 创作助手', exact: true }).click();
-  await expect(assistant).toHaveValue('保留助手未发送的输入');
+  await expect(input).toHaveValue('保留助手未发送的输入');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -649,9 +665,9 @@ test('global composer freezes explicitly selected subjects, Skills and safe Mark
   await page.getByRole('button', { name: 'AI 创作助手', exact: true }).click();
   await expect(input).toHaveValue('尚未发送的草稿');
   await page.screenshot({ path: info.outputPath('shared-assistant-1440.png') });
-  await page.setViewportSize({ width: 390, height: 900 });
+  await page.setViewportSize({ width: 1280, height: 900 });
   await expect(input).toBeVisible(); await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
-  await page.screenshot({ path: info.outputPath('shared-assistant-390.png') });
+  await page.screenshot({ path: info.outputPath('shared-assistant-1280.png') });
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -691,7 +707,7 @@ async function openUndo(page: Page) {
   await trace.getByRole('button', { name: '预览批次撤销', exact: true }).click();
   return page.getByRole('dialog', { name: '撤销操作批次', exact: true });
 }
-for (const width of [1440, 390]) test(`batch undo previews conflicts and executes only the explicit safe selection at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`batch undo previews conflicts and executes only the explicit safe selection at ${width}px`, async ({ page }, info) => {
   const state = await undoFixture(page); await page.setViewportSize({ width, height: 1000 });
   const dialog = await openUndo(page);
   await expect(dialog.getByRole('checkbox', { name: '已被人工编辑的角色', exact: true })).toBeDisabled();
@@ -713,7 +729,7 @@ for (const width of [1440, 390]) test(`batch undo previews conflicts and execute
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 for (const kind of ['canvas_node', 'sound_line']) test(`batch undo keeps explicit native dependencies and restored ${kind} status`, async ({ page }) => {
-  const state = await assistantFixture(page); await page.setViewportSize({ width: 390, height: 1000 });
+  const state = await assistantFixture(page); await page.setViewportSize({ width: 1280, height: 1000 });
   state.beginReply('成果已保存。'); state.startOperation();
   state.messages['301'].push({ id: 'native-undo-question', task_id: '501', seq: 1, role: 'user', content: '创建内容', references: [], artifacts: [], created_at: time });
   const native = kind === 'canvas_node'; const title = native ? '保存画布节点与连线' : '保存标准创作内容';
@@ -858,7 +874,7 @@ async function restoreLegacyDiscussionDraft(page: Page, kind: 'edit' | 'regenera
   await page.reload();
 }
 
-for (const width of [1440, 390]) test(`legacy discussion drafts can finish while user messages expose no editing actions at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`legacy discussion drafts can finish while user messages expose no editing actions at ${width}px`, async ({ page }, info) => {
   const state = await assistantFixture(page); await page.setViewportSize({ width, height: 1000 });
   await page.goto(`${root}/source?assistant=open`);
   await page.getByRole('textbox', { name: '给助手的消息', exact: true }).fill('原始的纯讨论');
@@ -966,7 +982,7 @@ test('protected discussions offer a new correcting message without rewriting his
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`subject versions refresh inline and retain other saved sources at ${width}px`, async ({ page }) => {
+for (const width of [1440, 1280]) test(`subject versions refresh inline and retain other saved sources at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 });
   const state = await assistantFixture(page); state.beginReply('按原引用讨论。');
   const remote = { project_id: '11', source_kind: 'project', source_id: '11', kind: 'asset', id: '601', revision: '3', name: '远方角色', project_name: '另一作品', source_name: '另一作品' };
@@ -1040,7 +1056,7 @@ test('image-slot source link opens only its real saved slot and rejects a mismat
   await expect(dialog.getByLabel('来源图位 2', { exact: true })).toContainText('v4');
   await expect(dialog.getByLabel('来源图位 1', { exact: true })).toHaveCount(0);
   await expect(dialog.getByText('1024 × 768', { exact: true })).toBeVisible();
-  for (const width of [1440, 390]) {
+  for (const width of [1440, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`assistant-source-slot-${width}.png`) });
@@ -1250,7 +1266,7 @@ test('streaming and completed replies retain the same bubble width and content i
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`explicit resync replays active text and keeps one trace without new writes at ${width}px`, async ({ page }) => {
+for (const width of [1440, 1280]) test(`explicit resync replays active text and keeps one trace without new writes at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.messages['301'].push({ id: 'question-901', task_id: '501', seq: 1, role: 'user', content: '讨论人物目标', references: [], artifacts: [], created_at: time });
@@ -1371,7 +1387,7 @@ test('mention keyboard selection and Chinese composition do not submit before ex
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`reply waiting dots animate and the Sender stops without clearing the draft at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`reply waiting dots animate and the Sender stops without clearing the draft at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 900 });
   const state = await assistantFixture(page); state.beginReply('');
   state.messages['301'].push({ id: 'waiting-question', task_id: '501', seq: 1, role: 'user', content: '帮我完善人物动机', references: [], artifacts: [], created_at: time });
@@ -1494,7 +1510,7 @@ test('stopping a claimed operation retains its receipt and the next direction re
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`skill trace restores frozen manual methods, automatic loads and resource reads at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`skill trace restores frozen manual methods, automatic loads and resource reads at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.beginReply('按指定方法检查对白。'); state.startOperation(); state.finishOperation();
@@ -1538,7 +1554,7 @@ for (const width of [1440, 390]) test(`skill trace restores frozen manual method
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`standard result cards recover real references, deletion and receipts at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`standard result cards recover real references, deletion and receipts at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.asset.id = '9007199254740993';
@@ -1581,12 +1597,11 @@ for (const width of [1440, 390]) test(`standard result cards recover real refere
   await assetLink.click();
   await expect(page).toHaveURL(/\/projects\/10\/assets\?asset=9007199254740993/);
   await expect(page.getByRole('region', { name: `素材 ${state.asset.name}`, exact: true })).toBeVisible();
-  if (width === 390) await page.getByRole('button', { name: '展开生成设置', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue(state.asset.name);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`media batches retain a pending stop until saved outputs settle at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`media batches retain a pending stop until saved outputs settle at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.beginReply('正在生成图片。'); state.startOperation();
@@ -1615,7 +1630,7 @@ for (const width of [1440, 390]) test(`media batches retain a pending stop until
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`character voice results preview the actual generated sample at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`character voice results preview the actual generated sample at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.beginReply('角色音色已生成并采用。'); state.startOperation();
@@ -1659,7 +1674,7 @@ for (const width of [1440, 390]) test(`character voice results preview the actua
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`standard video result opens the saved shot video at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`standard video result opens the saved shot video at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.shots[0].id = '9007199254740993';
@@ -1682,12 +1697,11 @@ for (const width of [1440, 390]) test(`standard video result opens the saved sho
   await link.click();
   await expect(page).toHaveURL(/source_media=video/);
   await expect(page.getByRole('tab', { name: '分镜视频', exact: true })).toHaveAttribute('aria-selected', 'true');
-  if (width === 390) await page.getByRole('button', { name: '展开生成设置', exact: true }).click();
   await expect(page.getByLabel('分镜视频预览', { exact: true })).toBeVisible();
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) for (const mediaKind of ['image', 'video', 'audio'] as const) test(`canvas ${mediaKind} media cards keep native results, quantities and source availability at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) for (const mediaKind of ['image', 'video', 'audio'] as const) test(`canvas ${mediaKind} media cards keep native results, quantities and source availability at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.beginReply('媒体已生成并回填。'); state.startOperation();
@@ -1738,7 +1752,7 @@ test('media reconciliation and adoption conflicts keep the original receipt and 
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`on demand image reads show their exact receipt at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`on demand image reads show their exact receipt at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.beginReply('按已选图位读取图片。'); state.startOperation();
@@ -1760,7 +1774,7 @@ for (const width of [1440, 390]) test(`on demand image reads show their exact re
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`image primary cards show adoption, versions and exact group locations at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`image primary cards show adoption, versions and exact group locations at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   const ref = { kind: 'asset', id: '9007199254740993', project_id: '10', name: '图片组 9007199254740995 · 图位 2',
@@ -1796,7 +1810,7 @@ for (const width of [1440, 390]) test(`image primary cards show adoption, versio
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`canvas result cards preserve node locations, private versions and deletion at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`canvas result cards preserve node locations, private versions and deletion at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   const refs = [
@@ -1927,7 +1941,7 @@ test('a legacy pending deletion keeps its exact original selection without showi
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`memory and task configuration stay invisible including conversation deletion at ${width}px`, async ({ page }) => {
+for (const width of [1440, 1280]) test(`memory and task configuration stay invisible including conversation deletion at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 });
   const state = await assistantFixture(page);
   await page.goto(`${root}/source?assistant=open`);
@@ -1947,7 +1961,7 @@ for (const width of [1440, 390]) test(`memory and task configuration stay invisi
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`saved sound references remain visible and removal survives refresh at ${width}px`, async ({ page }) => {
+for (const width of [1440, 1280]) test(`saved sound references remain visible and removal survives refresh at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page); state.beginReply('核对台词配音。');
   const option = { project_id: '10', source_kind: 'project', source_id: '10', kind: 'sound_line', id: 'deadbeef', revision: '9007199254740993', name: '旁白 · deadbeef', project_name: '测试项目', source_name: '测试项目' };
@@ -1967,7 +1981,7 @@ for (const width of [1440, 390]) test(`saved sound references remain visible and
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`dialogue audio results restore native source and exact receipt at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`dialogue audio results restore native source and exact receipt at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page); state.beginReply('所选台词已配音并采用。'); state.startOperation();
   state.messages['301'].push({ id: 'dubbing-question', task_id: '501', seq: 1, role: 'user', content: '为已选台词生成配音', references: [], artifacts: [], created_at: time });
@@ -1994,7 +2008,7 @@ for (const width of [1440, 390]) test(`dialogue audio results restore native sou
 });
 
 
-for (const width of [1440, 390]) test(`sound text results recover saved lines and receipts at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`sound text results recover saved lines and receipts at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page); state.beginReply('台词已保存。'); state.startOperation();
   state.messages['301'].push({ id: 'sound-text-question', task_id: '501', seq: 1, role: 'user', content: '创建台词并修改本任务台词', references: [], artifacts: [], created_at: time });
@@ -2028,7 +2042,7 @@ for (const width of [1440, 390]) test(`sound text results recover saved lines an
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`dialogue audio source opens only the real saved sound line at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`dialogue audio source opens only the real saved sound line at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   const line = { id: 'line_a-9', character: '林晚', text: '这封信终于送到了。', voice: 'alloy', config_id: '77', start_ms: 0, media_id: null, adopted_hash: null };

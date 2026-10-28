@@ -37,7 +37,6 @@ export function CanvasZoomControls({ scale, onScaleChange, onFitContent, onAutoA
     const inputRef = useRef<HTMLInputElement>(null);
     const dockLabelRef = useRef<HTMLSpanElement>(null);
     const [precisionOpen, setPrecisionOpen] = useState(false);
-    const [desktopCompactDock, setDesktopCompactDock] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1024);
     const [precisionAnchorX, setPrecisionAnchorX] = useState<number | null>(null);
 
     useEffect(() => updateScaleDisplay(scale), [scale]);
@@ -64,17 +63,7 @@ export function CanvasZoomControls({ scale, onScaleChange, onFitContent, onAutoA
         };
     }, [precisionOpen]);
 
-    useEffect(() => {
-        const updateDockMode = () => setDesktopCompactDock(window.innerWidth >= 1024);
-        window.addEventListener("resize", updateDockMode);
-        return () => window.removeEventListener("resize", updateDockMode);
-    }, []);
-
     useLayoutEffect(() => {
-        if (!desktopCompactDock) {
-            setPrecisionAnchorX(null);
-            return;
-        }
         const root = rootRef.current;
         const button = root?.querySelector<HTMLButtonElement>('button[aria-label="缩放画布"]');
         if (!root || !button) return;
@@ -93,7 +82,7 @@ export function CanvasZoomControls({ scale, onScaleChange, onFitContent, onAutoA
             observer.disconnect();
             window.removeEventListener("resize", updateAnchor);
         };
-    }, [desktopCompactDock]);
+    }, []);
 
     function updateScaleDisplay(nextScale: number) {
         liveScaleRef.current = nextScale;
@@ -225,10 +214,10 @@ export function CanvasZoomControls({ scale, onScaleChange, onFitContent, onAutoA
                 className="canvas-floating-dock"
                 style={{
                     ...canvasDockStyle(theme),
-                    ...(desktopCompactDock ? { background: "transparent", borderColor: "transparent", boxShadow: "none" } : {}),
+                    background: "transparent", borderColor: "transparent", boxShadow: "none",
                 }}
                 ariaLabel="画布视图控制"
-                embedded={desktopCompactDock}
+                embedded
             />
         </div>
     );

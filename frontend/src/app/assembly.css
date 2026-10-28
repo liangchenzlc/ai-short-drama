@@ -14,7 +14,6 @@
 .studio-main:has(.assembly-workspace.is-focused) { max-width: none; }
 .assembly-workspace.is-focused .assembly-heading { position: sticky; top: 0; z-index: 5; background: var(--pale); padding: 8px 0; margin-bottom: 12px; border-bottom: 1px solid var(--hair); }
 .assembly-workspace.is-focused .assembly-heading p { display: none; }
-@media (pointer: coarse) { .assembly-resize-handle { height: 44px; } }
 .assembly-editor-desk { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 20px; }
 .assembly-media-bin { min-width: 0; }
 .assembly-bin-help { font-size: 12px; color: var(--sub); margin: 0 0 14px; }
@@ -81,25 +80,6 @@
 .assembly-drop-hint { position: absolute; bottom: 0; inset-inline: 0; text-align: center; background: var(--accent-fill); color: var(--on-accent); padding: 5px; font-size: 12px; pointer-events: none; }
 .assembly-result-caption { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0; font-size: 12px; }
 .assembly-result-screen video { position: static; opacity: 1; }
-@media (max-width: 1000px) { .assembly-editor-desk { grid-template-columns: 150px minmax(0, 1fr); gap: 14px; } .assembly-jump { margin-left: 0; } }
-@media (max-width: 760px) {
-  .assembly-editing { display: flex; flex-direction: column; }
-  .assembly-editor-desk { display: contents; }
-  .assembly-layout-tools { order: -1; }
-  .assembly-monitor { order: 0; }
-  .assembly-edit-tools { order: 1; }
-  .assembly-timeline { order: 2; }
-  .assembly-media-bin { order: 3; margin-top: 20px; }
-  .assembly-editing .assembly-screen { height: auto; aspect-ratio: 16 / 9; }
-  .assembly-editing .assembly-screen.is-portrait { height: 340px; aspect-ratio: auto; }
-  .assembly-source-list { display: flex; overflow-x: auto; padding-bottom: 6px; }
-  .assembly-source-list article { flex: 0 0 128px; }
-  .assembly-bin-help { display: none; }
-  .assembly-player-controls { gap: 5px; }
-  .assembly-player-controls output { margin: 0; font-size: 12px; }
-  .assembly-edit-tools { margin-top: 12px; }
-  .assembly-timeline-heading { gap: 6px; }
-}
 .assembly-workspace::selection { background: var(--pale); color: var(--accent); }
 .assembly-workspace:focus-visible { outline: 2px solid var(--assembly-accent); outline-offset: 3px; }
 .assembly-workspace input { caret-color: var(--assembly-accent); }
@@ -175,5 +155,3 @@
 .assembly-history article p { color: var(--danger); margin: 6px 0 0; }
 .assembly-result-dialog { width: min(1000px, calc(100vw - 32px)); }
 .assembly-result-dialog video { display: block; width: 100%; max-height: 70vh; background: var(--canvas); margin-bottom: 16px; }
-@media (max-width: 1100px) { .assembly-desk { grid-template-columns: minmax(210px, .9fr) minmax(0, 1.5fr); gap: 16px; } .assembly-panel-heading > span { display: none; } .assembly-mute { margin-left: 0; } }
-@media (max-width: 760px) { .assembly-heading { margin-bottom: 18px; } .assembly-heading h2 { font-size: 22px; } .assembly-heading-actions { width: 100%; } .assembly-desk { display: flex; flex-direction: column; } .assembly-preview { order: -1; width: 100%; } .assembly-sequence { width: 100%; } .assembly-sequence ol { max-height: 430px; padding-right: 4px; } .assembly-export-bar { position: static; padding: 16px; gap: 14px; } .assembly-export-actions { width: 100%; justify-content: space-between; gap: 10px; } .assembly-export-actions label { gap: 6px; } .assembly-trim-title { flex-wrap: wrap; gap: 6px; } .assembly-trim-shortcuts { gap: 8px; } .assembly-empty { padding: 24px 8px; min-height: 360px; } .assembly-screen.is-portrait { height: 360px; } }

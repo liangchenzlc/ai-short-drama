@@ -20,7 +20,7 @@ export interface AssistantMemoryRevision {
 export interface AssistantMemoryContext {
   conversation_id: string; covers_until_seq: number; summary_generation: string;
   summary: AssistantMemorySummary | null;
-  jobs: { id: string; kind: 'extract' | 'summary' | 'task_state' | 'purge'; status: 'pending' | 'running' | 'succeeded' | 'failed' | 'stale' | 'cancelled';
+  jobs: { id: string; kind: 'extract' | 'summary' | 'task_state' | 'purge'; status: 'pending' | 'running' | 'succeeded' | 'failed' | 'stale' | 'cancelled' | 'abandoned';
     provider_state: string; message_version: string; from_seq: number; to_seq: number; attempts: number;
     error: { code: string } | null; usage: Record<string, unknown>; created_at: string; finished_at: string | null;
     retry_job_id?: string | null;

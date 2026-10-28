@@ -4,7 +4,6 @@ import test from 'node:test';
 import ts from 'typescript';
 
 const components = [
-  '../../src/features/projects/NovelScriptGeneration.tsx',
   '../../src/features/projects/ShotImageCandidates.tsx',
   '../../src/pages/projects/episode/StoryboardStage.tsx',
 ];

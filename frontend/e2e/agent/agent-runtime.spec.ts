@@ -119,8 +119,8 @@ test('historical plans remain explicitly approved and stoppable without a messag
   await page.screenshot({ path: info.outputPath('historical-plan-1440.png'), fullPage: true });
   await page.getByRole('button', { name: '批准并生成' }).click(); await expect(page.getByRole('region', { name: '待确认创作计划' })).toHaveCount(0);
   expect(state.calls.find(call => call.path.includes('/reviews/'))?.body).toEqual({ review_version: '2', review_hash: 'a'.repeat(64), decision: 'approved' });
-  await page.setViewportSize({ width: 390, height: 900 }); await expect(page.getByRole('dialog', { name: 'AI 创作助手区域', exact: true })).toBeVisible();
-  await page.screenshot({ path: info.outputPath('historical-running-390.png'), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 }); await expect(page.getByRole('complementary', { name: 'AI 创作助手区域', exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('historical-running-1280.png'), fullPage: true });
   await page.getByRole('button', { name: '停止运行', exact: true }).click(); await expect(page.getByRole('button', { name: '停止运行', exact: true })).toHaveCount(0);
   expect(state.requests.filter(call => call.path.startsWith('/ai/generations/') && call.method === 'POST')).toEqual([]); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });

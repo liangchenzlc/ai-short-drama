@@ -26,7 +26,10 @@ test('asset list failure leaves shot editing readable and retry keeps its draft'
   await input.fill('素材失败时保留镜头输入');
   await expect(panel(page).getByRole('combobox', { name: '关联角色' })).toHaveCount(0);
   const assetIds = [...state.shots[0].asset_ids];
-  fail = false; await page.getByRole('button', { name: '重新加载关联素材', exact: true }).click();
+  fail = false;
+  await page.getByRole('button', { name: /^保存状态：/ }).click();
+  await page.locator('.standard-save-details').getByRole('button', { name: '重新加载关联素材', exact: true }).click();
+  await page.keyboard.press('Escape');
   await expect(input).toHaveValue('素材失败时保留镜头输入');
   await expect.poll(() => state.shots[0].script).toBe('素材失败时保留镜头输入');
   expect(state.shots[0].asset_ids).toEqual(assetIds);
@@ -48,8 +51,9 @@ test('seventeen combined image references block submission and removing one allo
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('history displays failure instead of empty and then reviews complete candidate fields', async ({ page }) => {
+for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) test(`history displays failure instead of empty and then reviews complete candidate fields at ${viewport.width}px`, async ({ page }) => {
   const state = await setup(page); let fail = true;
+  await page.setViewportSize(viewport);
   await page.route('**/api/v1/ai/generations?**', route => {
     if (new URL(route.request().url()).searchParams.get('source_scene') === 'script_shots' && fail) return route.fulfill({ status: 503, json: { error: { code: 'OFFLINE' } } });
     return route.fallback();
@@ -57,8 +61,10 @@ test('history displays failure instead of empty and then reviews complete candid
   await page.goto(`${root}/storyboard`); await page.getByRole('button', { name: '分镜生成记录', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '分镜生成记录', exact: true });
   await expect(dialog.getByRole('alert')).toBeVisible();
-  await expect(dialog.getByText('暂无分镜生成记录，确认剧本后开始生成。', { exact: true })).toHaveCount(0);
-  fail = false; await dialog.getByRole('button', { name: '重新加载生成记录', exact: true }).click();
+  await expect(dialog.getByText('暂无分镜生成记录，编写或采用剧本后开始生成。', { exact: true })).toHaveCount(0);
+  fail = false;
+  await dialog.getByRole('button', { name: /^提示详情：/ }).click();
+  await dialog.locator('.studio-feedback-details').getByRole('button', { name: '重新加载生成记录', exact: true }).click();
   await dialog.getByRole('button', { name: '查看分镜', exact: true }).first().click();
   await expect(dialog.getByText('整批计划时长 165 秒，采用会包含全部 55 个镜头。', { exact: true })).toBeVisible();
   await expect(dialog.getByText('关联素材：角色 · 林晚', { exact: true }).first()).toBeVisible();
@@ -207,12 +213,11 @@ for (const status of [409, 503]) test(`card deletion ${status} retains card and 
 test('deleting another card preserves the current shot and deleting the last shot clears its route', async ({ page }) => {
   const state = await setup(page); state.shots.splice(2);
   const calls = await deletionFixture(page, state);
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto(`${root}/storyboard?shot=101`);
   for (const [id, position] of [['102', '02'], ['101', '01']]) {
     const more = page.locator(`#storyboard-shot-${id}`).getByRole('button', { name: `分镜 ${position} 卡片更多操作`, exact: true });
-    await more.scrollIntoViewIfNeeded(); const box = (await more.boundingBox())!;
-    expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
+    await more.scrollIntoViewIfNeeded();
     await more.click(); await page.getByRole('menuitem', { name: '删除分镜', exact: true }).click();
     await page.getByRole('dialog', { name: '删除分镜', exact: true }).getByRole('button', { name: '删除分镜', exact: true }).click();
     await expect(page.locator(`#storyboard-shot-${id}`)).toHaveCount(0);
@@ -292,7 +297,7 @@ test('creating after eighty shots selects the returned shot and scrolls its card
     return route.fulfill({ status: 201, json: { shot, storyboard_version: version } });
   });
   await page.goto(`${root}/storyboard`); await expect(page.locator('.storyboard-shot-card')).toHaveCount(20);
-  await page.getByRole('button', { name: '新增分镜', exact: true }).click();
+  await page.getByRole('button', { name: '创建分镜', exact: true }).click();
   await expect(panel(page).getByRole('textbox', { name: '分镜 81 脚本', exact: true })).toBeVisible();
   const card = page.locator('#storyboard-shot-181');
   await expect(card.getByRole('button', { name: '选择分镜 81', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -320,7 +325,9 @@ test('replacing all shots clears the previous stable shot scope after adoption',
   const preview = history.locator('.storyboard-result-preview');
   await expect(preview.getByRole('heading', { name: '分镜预览（共 55 镜）' })).toBeVisible();
   const previewBox = await preview.boundingBox();
-  await history.getByRole('button', { name: '替换当前分镜', exact: true }).click();
+  const replace = history.getByRole('button', { name: /替换当前分镜$/ });
+  await expect(replace).toBeEnabled();
+  await replace.click();
   await page.getByRole('button', { name: '确认继续', exact: true }).click();
   await expect(history.getByRole('alert')).toHaveText(/服务暂时不可用/);
   expect(await preview.boundingBox()).toEqual(previewBox);
@@ -330,7 +337,8 @@ test('replacing all shots clears the previous stable shot scope after adoption',
   await page.keyboard.press('Escape');
   await expect(history.locator('.studio-feedback-popup')).toBeHidden();
   await expect(history).toBeVisible();
-  await history.getByRole('button', { name: '替换当前分镜', exact: true }).click();
+  await expect(replace).toBeEnabled();
+  await replace.click();
   await page.getByRole('button', { name: '确认继续', exact: true }).click();
   await expect(history).toHaveCount(0);
   await expect(page).toHaveURL(url => !url.searchParams.has('shot'));
@@ -408,6 +416,11 @@ test('shot video editing exposes dialogue review and a failed save retains its d
   await review.getByRole('checkbox').check(); await expect(save).toBeEnabled(); await save.click();
   await expect(review.getByRole('alert')).toBeVisible(); await expect(review.getByRole('checkbox')).toBeChecked();
   fail = false; await expect(save).toBeEnabled(); await save.click();
-  await expect(review).toHaveCount(0); await expect(panel(page).getByText('0 句已确认对白', { exact: true })).toBeVisible();
+  await expect(review).toHaveCount(0);
+  await expect.poll(() => dialogue.document.reviewed).toBe(true);
+  const summary = panel(page).getByText('对白已确认', { exact: true });
+  await expect(summary).toBeVisible();
+  await summary.hover();
+  await expect(page.getByRole('tooltip')).toHaveText('0 句已确认对白');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });

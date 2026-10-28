@@ -173,7 +173,7 @@ test('selecting a new local card ignores a delayed detail response from the prev
   await page.goto(`${root}/assets`);
   const editor = await openEditor(page);
   await expect(page.locator('.creation-main-panel').getByRole('status').filter({ hasText: '正在加载作品' })).toBeVisible();
-  await page.getByRole('button', { name: '新增素材', exact: true }).first().click();
+  await page.getByRole('button', { name: '创建资产', exact: true }).first().click();
   await expect(editor.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('');
   release();
   await expect(editor.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('');
@@ -199,9 +199,9 @@ test('a generation source conflict exposes recovery without submitting another t
   expect(submissions).toBe(1);
 });
 
-test('conflict review can fail safely before explicitly discarding the draft at narrow widths', async ({ page }) => {
+test('conflict review can fail safely before explicitly discarding the draft at the minimum desktop width', async ({ page }) => {
   const data = await editorFixture(page);
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto(`${root}/assets`);
   const editor = await openEditor(page);
   const description = editor.getByRole('textbox', { name: '描述', exact: true });
@@ -278,7 +278,7 @@ test('a pending asset save does not delay selection of another object or lose la
   await description.fill('慢保存中的第一份输入');
   await expect.poll(() => started).toBe(true);
   await description.fill('发出请求后继续输入的文字');
-  await page.getByRole('button', { name: '新增素材', exact: true }).first().click();
+  await page.getByRole('button', { name: '创建资产', exact: true }).first().click();
   await expect(editor.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue('');
   await expect(page.getByRole('dialog', { name: /未保存|确认操作/ })).toHaveCount(0);
   release();

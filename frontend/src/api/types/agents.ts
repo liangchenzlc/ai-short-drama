@@ -55,6 +55,8 @@ export interface AgentModel {
   input_capabilities?: {
     text: true; image: boolean; audio: boolean; video: 'sampled_frames' | 'unsupported';
     evidence: 'declared' | 'model_family' | 'text_only' | 'runtime';
+    context_window_tokens?: number;
+    context_window_evidence?: 'declared' | 'platform_default';
   };
 }
 export interface AgentModelPage { items: AgentModel[]; preferred_id: string | null }
@@ -108,11 +110,11 @@ export interface AgentSkill {
   checksum_sha256: string; package_checksum: string;
   slug: string; description: string; tags: string[]; modes: ('standard' | 'infinite_canvas')[];
   exclusions: string; required_tools: string[]; source: string;
-  invocation_mode: 'auto' | 'manual'; settings_version: string;
+  settings_version: string;
   compatible: boolean; issues: string[]; resource_count: number; updated_at: string | null;
 }
 export interface AgentSkillResource {
-  path: string; kind: 'reference' | 'template'; byte_size: number; checksum_sha256: string;
+  path: string; kind: 'reference' | 'template' | 'script' | 'image'; byte_size: number; checksum_sha256: string;
 }
 export interface AgentSkillDetail extends AgentSkill {
   instructions: string; resources: AgentSkillResource[];
@@ -120,19 +122,21 @@ export interface AgentSkillDetail extends AgentSkill {
 export interface AgentSkillContent {
   name: string; slug: string; description: string; instructions: string;
   tags?: string[]; modes?: ('standard' | 'infinite_canvas')[]; exclusions?: string;
-  required_tools?: string[]; source?: string; enabled?: boolean; invocation_mode?: 'auto' | 'manual';
-  resources?: { path: string; kind: 'reference' | 'template'; content: string }[];
+  required_tools?: string[]; source?: string; enabled?: boolean;
+  resources?: { path: string; kind: AgentSkillResource['kind']; content: string; encoding?: 'utf-8' | 'base64' }[];
 }
 export interface AgentSkillImportPreview {
   filename: string; draft: AgentSkillContent; compatible: boolean; issues: string[];
   files: { path: string; byte_size: number; supported: boolean }[]; byte_size: number;
+  tags_provided: boolean; mode_issues: Record<string, string[]>;
 }
 export interface AgentSkillResourceContent extends AgentSkillResource {
   skill_id: string; content_version: string; offset: number; content: string; next_offset: number | null;
+  encoding?: 'utf-8' | 'base64'; resource_ref?: Record<string, unknown> | null;
 }
 export interface AgentSkillFilters {
   query?: string; source?: 'builtin' | 'personal'; enabled?: boolean;
-  invocation_mode?: 'auto' | 'manual'; mode?: 'standard' | 'infinite_canvas';
+  mode?: 'standard' | 'infinite_canvas';
 }
 export interface AgentSendResult { message: AgentMessage; run: AgentRun; cursor: number }
 export interface AgentEvent {

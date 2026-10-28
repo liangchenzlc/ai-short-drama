@@ -203,7 +203,7 @@ export function ModelCapabilityEditor({ value, onChange, protocol, capability = 
 
             <CapabilityGroup title="视频" description="生成方式、输出规格与视频引用约束">
                 <CapabilityBlock title="生成方式">
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 grid-cols-2">
                         <Field label="支持模式">
                             <Select
                                 mode="multiple"
@@ -252,7 +252,7 @@ export function ModelCapabilityEditor({ value, onChange, protocol, capability = 
                             />
                         </Field>
                     ) : (
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="grid gap-3 grid-cols-4">
                             <NumberField label="最短" value={profile.duration.min} min={1} disabled={disabled} onChange={(value) => updateDuration({ min: value || 1 })} />
                             <NumberField label="最长" value={profile.duration.max} min={1} disabled={disabled} onChange={(value) => updateDuration({ max: value || 1 })} />
                             <NumberField label="步长" value={profile.duration.step} min={1} disabled={disabled} onChange={(value) => updateDuration({ step: value || 1 })} />
@@ -261,7 +261,7 @@ export function ModelCapabilityEditor({ value, onChange, protocol, capability = 
                     )}
                 </CapabilityBlock>
                 <CapabilityBlock title="画面规格">
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 grid-cols-2">
                         <Field label="画面比例">
                             <Select
                                 mode="multiple"
@@ -300,7 +300,7 @@ export function ModelCapabilityEditor({ value, onChange, protocol, capability = 
                 </CapabilityBlock>
                 {section === "all" ? (
                     <CapabilityBlock title="视频引用">
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        <div className="grid gap-3 grid-cols-3">
                             <NumberField label="最大视频引用" value={profile.references.maxVideos} min={0} disabled={disabled} onChange={(value) => updateReferences({ maxVideos: value || 0 })} />
                             <NumberField label="单个视频上限 MB" value={bytesToMB(profile.references.maxVideoBytes)} min={0} disabled={disabled} onChange={(value) => updateReferences({ maxVideoBytes: mbToBytes(value) })} />
                             <NumberField label="单个视频最长秒数" value={profile.references.maxVideoDurationSeconds} min={0} disabled={disabled} onChange={(value) => updateReferences({ maxVideoDurationSeconds: value || 0 })} />
@@ -312,7 +312,7 @@ export function ModelCapabilityEditor({ value, onChange, protocol, capability = 
             {section === "all" ? (
                 <>
                     <CapabilityGroup title="图片" description="首帧、参考图与多图输入约束">
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        <div className="grid gap-3 grid-cols-3">
                             <NumberField label="最少图片引用" value={profile.references.minImages} min={0} max={profile.references.maxImages} disabled={disabled} onChange={(value) => updateReferences({ minImages: value || 0 })} />
                             <NumberField
                                 label="最大图片引用"
@@ -329,7 +329,7 @@ export function ModelCapabilityEditor({ value, onChange, protocol, capability = 
                     </CapabilityGroup>
 
                     <CapabilityGroup title="音频" description="音频引用与视频同步音频输出">
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        <div className="grid gap-3 grid-cols-3">
                             <NumberField label="最大音频引用" value={profile.references.maxAudios} min={0} disabled={disabled} onChange={(value) => updateReferences({ maxAudios: value || 0 })} />
                             <NumberField label="单个音频上限 MB" value={bytesToMB(profile.references.maxAudioBytes)} min={0} disabled={disabled} onChange={(value) => updateReferences({ maxAudioBytes: mbToBytes(value) })} />
                             <NumberField label="单个音频最长秒数" value={profile.references.maxAudioDurationSeconds} min={0} disabled={disabled} onChange={(value) => updateReferences({ maxAudioDurationSeconds: value || 0 })} />
@@ -338,7 +338,7 @@ export function ModelCapabilityEditor({ value, onChange, protocol, capability = 
                     </CapabilityGroup>
 
                     <CapabilityGroup title="通用限制" description="不属于单一媒体类型的请求与输出约束">
-                        <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="grid gap-3 grid-cols-2">
                             <NumberField label="提示词最大字符数" value={profile.references.promptMaxChars} min={1} disabled={disabled} onChange={(value) => updateReferences({ promptMaxChars: value || 1 })} />
                             <BooleanField label="水印" value={profile.watermark} disabled={disabled} onChange={(watermark) => update({ watermark })} />
                         </div>
@@ -395,13 +395,13 @@ function TextCapabilityEditor({ value, onChange, protocol, disabled, section }: 
                 <div className="mt-0.5 text-[var(--fs-tiny)] text-foreground/48">默认不假设支持图片或视频，只有明确配置后相关请求才会进入该模型。</div>
             </div>
             <CapabilityGroup title="图片" description="文本模型可接收的图片参考范围">
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 grid-cols-2">
                     <NumberField label="最大参考图片数" value={profile.references.maxImages} min={0} max={100} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxImages: next || 0 })} />
                     <NumberField label="单张图片上限 MB" value={bytesToMB(profile.references.maxImageBytes)} min={0} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxImageBytes: mbToBytes(next) })} />
                 </div>
             </CapabilityGroup>
             <CapabilityGroup title="视频" description="文本模型可接收的视频参考范围">
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 grid-cols-2">
                     <NumberField label="最大参考视频数" value={profile.references.maxVideos} min={0} max={100} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxVideos: next || 0 })} />
                     <NumberField label="单个视频上限 MB" value={bytesToMB(profile.references.maxVideoBytes)} min={0} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxVideoBytes: mbToBytes(next) })} />
                 </div>
@@ -519,7 +519,7 @@ function ImageCapabilityEditor({ value, onChange, protocol, model, disabled, sec
             </div>
 
             <CapabilityGroup title="图片" description="参考图、蒙版与图片输入约束">
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 grid-cols-2">
                     <NumberField label="最大参考图" value={profile.references.maxImages} min={0} disabled={disabled} onChange={(maxImages) => updateReferences({ maxImages: maxImages || 0 })} />
                     <NumberField label="单图上限 MB" value={bytesToMB(profile.references.maxImageBytes)} min={0} disabled={disabled} onChange={(maxImageBytes) => updateReferences({ maxImageBytes: mbToBytes(maxImageBytes) })} />
                 </div>
@@ -560,7 +560,7 @@ function ImageCapabilityEditor({ value, onChange, protocol, model, disabled, sec
             <CapabilityGroup title="可选参数" description="质量、背景与响应格式等非必填能力">
                 <ParameterField label="图片质量" description="发送 quality 参数" supported={profile.quality.supported} disabled={disabled} onChange={(supported) => updateQuality({ supported })} />
                 {profile.quality.supported ? (
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 grid-cols-2">
                         <Field label="质量支持值">
                             <Select
                                 mode="tags"
@@ -584,7 +584,7 @@ function ImageCapabilityEditor({ value, onChange, protocol, model, disabled, sec
                     </div>
                 ) : null}
                 <BooleanField label="透明背景" value={profile.transparentBackground} disabled={disabled} onChange={(transparentBackground) => update({ transparentBackground })} />
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 grid-cols-2">
                     <ParameterField label="response_format" description="发送 b64_json 响应格式" supported={profile.responseFormat.supported} disabled={disabled} onChange={(supported) => update({ responseFormat: { supported } })} />
                     <ParameterField label="output_format" description="发送 PNG 输出格式" supported={profile.outputFormat.supported} disabled={disabled} onChange={(supported) => update({ outputFormat: { supported } })} />
                 </div>

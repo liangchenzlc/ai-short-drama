@@ -37,23 +37,23 @@ async function fits(page: Page) {
 }
 
 const studioRoutes = [
-  ['projects', '/projects', '项目管理'], ['project-detail', '/projects/10', '雨夜来信'],
-  ...['source', 'assets', 'storyboard', 'assembly'].map(stage => [`episode-${stage}`, `${root}/${stage}`, '归来的旅人']),
+  ['projects', '/projects', '项目管理'],
+  ...['source', 'assets', 'storyboard', 'assembly'].map(stage => [`episode-${stage}`, `${root}/${stage}`, '雨夜来信']),
 ];
 
-for (const width of [2048, 1440, 768, 390, 320]) test(`account page returns to its source and visible account links open it at ${width}px`, async ({ page }, info) => {
+for (const width of [2048, 1440, 1366, 1280]) test(`account page returns to its source and visible account links open it at ${width}px`, async ({ page }, info) => {
   test.setTimeout(90000);
   const data = await signedInFixture(page);
   await page.setViewportSize({ width, height: width === 2048 ? 1070 : 900 });
   for (const [name, path, heading] of studioRoutes) {
     await page.goto(path);
     const episodeRoute = name.startsWith('episode-');
-    const title = episodeRoute ? page.locator('.episode-switch') : page.getByRole('heading', { name: heading, exact: true, level: 1 });
+    const title = episodeRoute ? page.locator('.episode-project-location') : page.getByRole('heading', { name: heading, exact: true, level: 1 });
     await expect(title).toBeVisible();
     if (episodeRoute) {
       await expect(title).toContainText(heading);
       if (name === 'episode-assembly') await expect(page.getByRole('region', { name: '视频时间轴', exact: true })).toBeVisible();
-      else await expect(page.locator(name === 'episode-source' ? '.novel-script-heading' : '.standard-object-heading')).toBeVisible();
+      else await expect(page.locator(name === 'episode-source' ? '.sd-doc-head' : '.standard-object-heading')).toBeVisible();
       await expect(page.getByRole('button', { name: '保存状态：已保存', exact: true })).toHaveCount(1);
     }
     const sourceUrl = new URL(page.url());
@@ -71,7 +71,6 @@ for (const width of [2048, 1440, 768, 390, 320]) test(`account page returns to i
       const box = (await entry.boundingBox())!;
       expect(box.x).toBeGreaterThan(width / 2);
       expect(box.x + box.width).toBeLessThanOrEqual(width);
-      if (width <= 600) expect(Math.round(box.height)).toBeGreaterThanOrEqual(44);
       await entry.click();
     }
     await expect(page).toHaveURL(new RegExp('/account\\?next='));
@@ -91,7 +90,7 @@ for (const width of [2048, 1440, 768, 390, 320]) test(`account page returns to i
   expect(data.errors).toEqual([]);
 });
 
-for (const width of [1440, 390, 320]) test(`account details support long identity values on a full page at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1366, 1280]) test(`account details support long identity values on a full page at ${width}px`, async ({ page }, info) => {
   const data = await signedInFixture(page);
   data.state.user = { ...account, display_name: '创作者的完整显示名称'.repeat(8), username: 'creator_with_a_long_account_name', email: 'creator'.repeat(31) + '@independent-creator.example.test', email_verified: false };
   await page.setViewportSize({ width, height: 900 });
@@ -108,7 +107,7 @@ for (const width of [1440, 390, 320]) test(`account details support long identit
   expect(data.errors).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`password verification preserves failed inputs and reauthenticates on the account page at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`password verification preserves failed inputs and reauthenticates on the account page at ${width}px`, async ({ page }, info) => {
   const data = await signedInFixture(page);
   await page.setViewportSize({ width, height: 900 });
   await page.goto('/account?next=%2Fprojects%2F10');
@@ -169,7 +168,8 @@ test('account management remains reachable when a project cannot be opened', asy
   await signedInFixture(page);
   await page.route('**/api/v1/projects/10', route => route.fulfill({ status: 503, json: { error: { code: 'TEST_OFFLINE' } } }));
   await page.goto('/projects/10');
-  await expect(page.getByRole('heading', { name: '项目无法打开', exact: true })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('服务暂时不可用');
+  await page.getByRole('link', { name: '返回项目列表', exact: true }).click();
   await page.getByRole('link', { name: /^账号中心：/ }).click();
   await expect(page.getByRole('region', { name: '账号中心', exact: true })).toBeVisible();
 });

@@ -1,17 +1,18 @@
 """Disposable MySQL task/control races; model receipts are explicit test doubles."""
 
 import json
+from contextlib import contextmanager
 from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.orm import sessionmaker
 
 from short_drama.agent.coordinator.assistant import claim_operation, complete_operation
-from short_drama.agent.gateway.protocol import AgentGatewayError
 from short_drama.agent.coordinator.recovery import recover
 from short_drama.agent.coordinator.runtime import AgentRuntimeStore
+from short_drama.agent.gateway.protocol import AgentGatewayError
 from short_drama.agent.legacy.tools import execute_tools, prepare_decision
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
@@ -30,8 +31,7 @@ def task_actor(identifier=1):
     return ActorContext(identifier, "creator", "creator@example.test", True, 1, "hash", "test")
 
 
-@pytest.fixture
-def task_workspace(db_session):
+def _workspace(db_session):
     db_session.info["actor"] = task_actor()
     model = AIModelConfigService(db_session).create(
         {
@@ -50,6 +50,38 @@ def task_workspace(db_session):
         encryption_key=None,
     )
     return factory, settings, model.id
+
+
+@pytest.fixture
+def harness_workspace(db_session):
+    return _workspace(db_session)
+
+
+@pytest.fixture
+def task_workspace(db_session):
+    """Historical controls and grammar tests explicitly run the frozen old engine."""
+    workspace = _workspace(db_session)
+    factory, _settings, _model = workspace
+    with legacy_task_engine(factory):
+        yield workspace
+
+
+@contextmanager
+def legacy_task_engine(factory):
+    """Compatibility suites explicitly freeze the old grammar/control engine."""
+
+    def legacy_task(session, _context, _instances):
+        for row in session.new:
+            if isinstance(row, AgentTask):
+                row.effective_state = {
+                    key: value for key, value in row.effective_state.items() if key != "engine"
+                }
+
+    event.listen(factory.class_, "before_flush", legacy_task)
+    try:
+        yield
+    finally:
+        event.remove(factory.class_, "before_flush", legacy_task)
 
 
 def task_service(session, settings, owner=1):
@@ -71,6 +103,48 @@ def new_task(workspace):
             "message",
         )
     return conversation, accepted
+
+
+def test_state_projects_large_checkpoints_without_mysql_filesort(task_workspace):
+    conversation, accepted = new_task(task_workspace)
+    factory, settings, model = task_workspace
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        run.checkpoint = {
+            **run.checkpoint,
+            "history": {"image": "A" * 450000},
+            "awaiting_artifacts": ["42"],
+        }
+        run.status, run.finished_at = "succeeded", utcnow()
+        task = session.get(AgentTask, accepted.task.id)
+        task.status, task.phase = "succeeded", "terminal"
+        session.commit()
+        service = task_service(session, settings)
+        newer = service.send_task_message(
+            conversation.id, {"content": "第二个任务", "model_config_id": model}, "second-task"
+        )
+        run = session.get(AgentRun, newer.run.id)
+        run.checkpoint = {**run.checkpoint, "history": {"image": "B" * 450000}}
+        session.commit()
+        session.connection().exec_driver_sql("SET SESSION sort_buffer_size = 262144")
+        session.commit()
+        statements = []
+        event.listen(session, "do_orm_execute", lambda state: statements.append(state.statement))
+        state = service.task_runtime_state(conversation.id)
+        assert [row.id for row in state.runs] == [accepted.run.id, newer.run.id]
+        assert state.runs[0].awaiting_artifact_ids == [42]
+        assert state.runs[1].model_name == "Task fixture"
+        assert len(state.model_dump_json()) < 16000
+        projected_statements = list(statements)
+        assert session.get(AgentRun, accepted.run.id).checkpoint["history"]["image"] == (
+            "A" * 450000
+        )
+        for statement in projected_statements:
+            if "agent_runs" not in str(statement):
+                continue
+            columns = {str(column) for column in statement.selected_columns}
+            assert "agent_runs.checkpoint" not in columns
+            assert "agent_runs.config_snapshot" not in columns
 
 
 def test_resume_reuses_accepted_input_without_an_extra_user_message(task_workspace):
@@ -512,8 +586,8 @@ def task_constraint_payload(job, *, text="主角不能杀人；合并重复背�
 def test_task_constraint_compaction_final_send_checks_the_active_original_sources(task_workspace):
     from dataclasses import replace
 
-    from short_drama.agent.memory.runtime import AgentMemoryStore
     from short_drama.agent.coordinator.runtime import freeze_input
+    from short_drama.agent.memory.runtime import AgentMemoryStore
     from short_drama.domain.agent import AgentMessage
 
     conversation, accepted, store, prepared, job = task_constraint_job(task_workspace)
@@ -573,8 +647,8 @@ def test_task_constraint_compaction_migration_upgrades_legacy_check_and_is_idemp
 def test_task_constraint_compaction_checks_original_prefix_at_every_boundary(
     task_workspace, stage, change
 ):
-    from short_drama.agent.memory.runtime import AgentMemoryStore
     from short_drama.agent.core.access import LeaseLost
+    from short_drama.agent.memory.runtime import AgentMemoryStore
     from short_drama.agent.task.compaction import task_input_projection_locked
     from short_drama.domain.agent import AgentMessage
     from short_drama.domain.agent_memory import AgentMemoryJob
@@ -2491,7 +2565,7 @@ def test_image_primary_consumed_request_cannot_choose_another_image(task_workspa
     from short_drama.agent.tools.contracts import SetImageGroupPrimary
     from short_drama.agent.tools.image import (
         execute_image_primary_locked,
-        image_primary_requests_locked
+        image_primary_requests_locked,
     )
 
     reference, groups = image_group_workspace(task_workspace)
@@ -2678,8 +2752,8 @@ def test_image_primary_catalogue_does_not_grant_ambiguous_or_expanded_targets(
 
 
 def test_image_primary_withdrawal_replaces_authority_at_the_input_boundary(task_workspace):
-    from short_drama.agent.tools.image import image_primary_requests_locked
     from short_drama.agent.task.state import apply_inputs_locked
+    from short_drama.agent.tools.image import image_primary_requests_locked
 
     reference, groups = image_group_workspace(task_workspace)
     selected = [
@@ -3142,8 +3216,8 @@ def add_text_attachment(workspace, conversation_id, text="仅本任务的附件�
 
 
 def test_attachment_selection_waits_for_full_tool_and_replays_one_removal(task_workspace):
-    from short_drama.agent.coordinator.assistant import prepare_decision as prepare_task
     from short_drama.agent.context.attachments import task_attachments
+    from short_drama.agent.coordinator.assistant import prepare_decision as prepare_task
     from short_drama.domain.agent import AgentMessage
 
     factory, settings, model = task_workspace
@@ -3220,8 +3294,8 @@ def test_attachment_selection_waits_for_full_tool_and_replays_one_removal(task_w
 
 def test_attachment_scope_blocks_old_reply_reinjection_and_cross_task_retain(task_workspace):
     from short_drama.agent.coordinator.assistant import _read_history
-    from short_drama.agent.tools.contracts import ReadHistory
     from short_drama.agent.memory.context import history_projection_locked
+    from short_drama.agent.tools.contracts import ReadHistory
     from short_drama.domain.agent import AgentMessage
     from short_drama.utils.snowflake import next_id
 
@@ -9075,8 +9149,8 @@ def test_assistant_media_late_target_conflict_prevents_the_entire_batch(task_wor
 def test_assistant_media_local_partial_admission_preserves_success_and_releases_only_missing_item(
     task_workspace, monkeypatch
 ):
-    from short_drama.agent.tools import media as media_tools
     from short_drama.agent.coordinator.media_runtime import collect_media_results
+    from short_drama.agent.tools import media as media_tools
     from short_drama.core.exceptions import BusinessError
     from short_drama.domain import AsyncTask
     from short_drama.domain.agent_media import AgentMediaRequest
@@ -9551,7 +9625,7 @@ def test_image_content_read_accepts_only_this_tasks_settled_generation(task_work
         if mode == "canvas":
             directory = json.loads(values["instructions"].split("任务状态与用户原始输入：", 1)[1])
             assert directory["image_results"][0]["media_id"] == item["media_id"]
-        foreign = SimpleNamespace(id=task.id + 1)
+        foreign = SimpleNamespace(id=task.id + 1, effective_state={})
         with pytest.raises(NotFound):
             execute_locked(
                 session,
@@ -10253,8 +10327,8 @@ def test_assistant_canvas_media_versions_allow_next_edit_without_expanding_read_
     task_workspace,
 ):
     from short_drama.agent.coordinator.assistant import execute_locked
-    from short_drama.agent.legacy.authorization import digest
     from short_drama.agent.coordinator.media_runtime import collect_media_results
+    from short_drama.agent.legacy.authorization import digest
     from short_drama.service.canvas_service import CanvasService
 
     flow = canvas_media_flow(task_workspace)

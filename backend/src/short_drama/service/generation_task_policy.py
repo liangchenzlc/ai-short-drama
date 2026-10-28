@@ -41,6 +41,11 @@ ERROR_MESSAGES = {
     "source_missing": "生成来源已不存在，原始结果已保留。",
     "shot_video_auto_apply_skipped": "视频已生成并保存，未替换当前确定视频。",
     "empty_result": "模型未返回有效正文。",
+    "writing_target_changed": "目标正文已变化，生成结果未覆盖原文。请回到剧本工作台核对。",
+    "writing_selection_changed": "原文选区已变化，生成结果未覆盖。请重新选择文字。",
+    "writing_target_busy": "此文档正在生成或修改，请等待完成或停止任务。",
+    "writing_result_too_large": "生成结果超过 1 MiB，原正文已保留。请缩短要求后重试。",
+    "writing_source_inaccessible": "作品已删除或归属已变化，生成结果未写入正文。",
 }
 
 
@@ -94,6 +99,13 @@ def can_retry(task, record):
     from short_drama.ai.canvas_audio_adapters import ASYNC_AUDIO
     from short_drama.ai.canvas_runninghub_adapters import RUNNINGHUB_ADAPTERS
     from short_drama.ai.canvas_video_adapters import VIDEO_ADAPTERS
+
+    if ((getattr(record, "request_data", None) or {}).get("source") or {}).get("scene") in {
+        "story_outline",
+        "script_generate",
+        "script_rewrite",
+    }:
+        return False  # New writing attempts must capture the current document again.
 
     if (task.error or {}).get("code") == "canvas_work_disposed":
         return False

@@ -17,7 +17,7 @@
 .web-episode .assembly-workspace .assembly-heading { flex: 0 0 auto; min-height: 40px; margin: 0; padding: 4px 8px; gap: 8px; border: 1px solid var(--hair); border-radius: 8px; background: var(--surface); }
 .assembly-heading-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .web-episode .assembly-workspace .assembly-heading h2 { margin: 0; font-size: 13px; line-height: 1.4; white-space: nowrap; }
-.web-episode .assembly-workspace .assembly-heading-actions { gap: 4px; flex-wrap: nowrap; }
+.web-episode .assembly-workspace .assembly-heading-actions { gap: 4px; flex-wrap: wrap; min-width: 0; }
 .assembly-export-entry { display: inline-flex; border-radius: 6px; }
 .assembly-export-entry > .ant-btn { min-width: 34px; padding-inline: 8px; }
 .assembly-stage-body { display: flex; flex: 1; gap: 8px; min-width: 0; min-height: 0; }
@@ -56,9 +56,6 @@ fieldset.assembly-inspector-fields { margin: 0; padding: 0; border: 0; }
 .assembly-subtitle-style { border-top: 1px solid var(--hair); padding-top: 8px; }
 .assembly-subtitle-style summary { cursor: pointer; color: var(--ink); }
 .assembly-subtitle-style .assembly-inspector-fields { padding: 8px 0 0; }
-.assembly-inspector-dialog { width: min(360px, calc(100vw - 24px)); }
-.assembly-inspector-dialog .assembly-inspector { max-height: 70vh; border: 0; border-radius: 0; }
-.assembly-inspector-dialog .assembly-inspector-heading { display: none; }
 .assembly-complete-player .assembly-screen { isolation: isolate; }
 .assembly-composition { position: relative; flex: 0 0 auto; overflow: hidden; background: #000; }
 .assembly-complete-player .assembly-composition video, .assembly-complete-player .assembly-still { position: absolute; inset: auto; max-width: none; object-fit: fill; }
@@ -113,14 +110,6 @@ fieldset.assembly-inspector-fields { margin: 0; padding: 0; border: 0; }
 .assembly-replacement-video { display: block; width: 100%; max-height: 40vh; margin-bottom: 8px; background: var(--canvas); }
 .assembly-material-dialog footer, .assembly-transcription-dialog footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .assembly-material-grid button:focus-visible, .assembly-lane-clip:focus-visible, .assembly-caption-list button:focus-visible, .assembly-subtitle-style summary:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 1px; }
-@media (max-width: 760px) {
-  .assembly-inspector-row { flex-wrap: wrap; }
-  .assembly-multitrack-heading .ant-slider { display: none; }
-  .assembly-multitrack-heading .assembly-icon-action { min-width: 32px; height: 32px; }
-  .assembly-material-tools > .ant-segmented { max-width: 100%; }
-  .assembly-transcript-results > div:not(.assembly-material-empty) { grid-template-columns: 1fr; gap: 2px; }
-  .web-episode .assembly-workspace .assembly-complete-player .assembly-screen { min-height: 220px; }
-}
 .web-episode .assembly-editing { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: auto; }
 .web-episode .assembly-workspace .assembly-editor-desk { grid-template-columns: 184px minmax(0, 1fr); gap: 8px; flex: 1; min-height: 220px; }
 .web-episode .assembly-workspace .assembly-editing.is-media-hidden .assembly-editor-desk { grid-template-columns: minmax(0, 1fr); }
@@ -271,67 +260,6 @@ fieldset.assembly-inspector-fields { margin: 0; padding: 0; border: 0; }
 .sound-rail audio { width: 100%; height: 32px; color-scheme: dark; }
 .web-episode .sound-rail .native-voice { display: flex; flex-wrap: wrap; padding-block: 6px; }
 .web-episode .sound-rail .native-voice .sound-subtitle { flex: 1 0 100%; }
-.assembly-sound-backdrop { display: none; }
 .web-episode .assembly-workspace.is-focused .assembly-heading { position: static; background: var(--surface); }
 
-@media (min-width: 1001px) and (max-width: 1279px) {
-  .assembly-sound-target { flex-basis: 304px; width: 304px; }
-  .web-episode .assembly-workspace .assembly-editor-desk { grid-template-columns: 160px minmax(0, 1fr); }
-}
-@media (max-width: 1000px) {
-  .assembly-sound-target { flex-basis: 0; width: 0; }
-  .web-episode .assembly-sound-target .sound-rail { position: fixed; inset: 68px 8px 8px auto; z-index: 45; width: min(360px, calc(100vw - 16px)); height: auto; }
-  .assembly-sound-backdrop { display: block; position: fixed; inset: 60px 0 0; z-index: 44; padding: 0; border: 0; background: rgb(0 0 0 / 65%); }
-}
-@media (max-width: 760px) {
-  .web-episode .assembly-workspace .assembly-heading { flex-wrap: wrap; padding: 4px 8px; }
-  .web-episode .assembly-heading-title { min-height: 28px; }
-  .web-episode .assembly-workspace .assembly-heading-actions { width: 100%; justify-content: flex-end; }
-  .web-episode .assembly-creation-meta { flex-basis: auto; gap: 5px; font-size: 11px; }
-  .web-episode .assembly-editing { gap: 8px; }
-  .web-episode .assembly-workspace .assembly-edit-tools { order: 0; padding: 4px; gap: 0; margin: 0; }
-  .web-episode .assembly-workspace .assembly-editor-desk { display: contents; }
-  .web-episode .assembly-workspace .assembly-monitor { order: 1; flex: 0 0 320px; min-height: 320px; }
-  .web-episode .assembly-workspace .assembly-screen.is-portrait { height: auto; }
-  .web-episode .assembly-workspace .assembly-media-bin { order: 4; flex: 0 0 auto; }
-  .web-episode .assembly-workspace .assembly-source-list { flex-direction: row; overflow-x: auto; }
-  .web-episode .assembly-workspace .assembly-source-list article { flex: 0 0 170px; }
-  .web-episode .assembly-workspace .assembly-timeline { order: 3; }
-  .web-episode .assembly-workspace .assembly-timeline-heading { padding: 4px; }
-  .web-episode .assembly-workspace .assembly-zoom { width: 100%; justify-content: space-between; }
-  .web-episode .assembly-workspace .assembly-zoom .ant-slider { flex: 1; min-width: 32px; }
-  .web-episode .assembly-workspace .assembly-resize-handle { display: none; }
-  .web-episode .assembly-workspace .assembly-jump { margin-left: auto; }
-  .web-episode .assembly-workspace .assembly-player-controls { flex-wrap: wrap; padding: 4px; }
-  .web-episode .assembly-result-player .assembly-player-extra { flex-basis: 100%; justify-content: flex-end; }
-}
-
-@media (max-width: 700px) {
-  .web-episode .assembly-creation-meta { flex-basis: 100%; }
-  .web-episode .assembly-workspace .assembly-heading-actions { width: auto; }
-  .web-episode .assembly-workspace .ant-btn,
-  .web-episode .native-dialogue-dialog .ant-btn,
-  .web-episode .native-voice .ant-btn { min-height: 44px; height: auto; }
-  .web-episode .assembly-workspace .ant-btn-sm { min-width: 44px; }
-  .web-episode .assembly-workspace .ant-select,
-  .web-episode .assembly-workspace .ant-input-number,
-  .web-episode .native-dialogue-dialog .ant-select { min-height: 44px; }
-  .web-episode .assembly-workspace .ant-select .ant-select-selector,
-  .web-episode .native-dialogue-dialog .ant-select .ant-select-selector { min-height: 44px; align-items: center; }
-  .web-episode .assembly-workspace .ant-input-number-input { height: 42px; }
-  .web-episode .assembly-workspace .assembly-export-actions { justify-content: flex-end; }
-  .web-episode .sound-inline { padding: 10px; }
-  .web-episode .sound-inline .sound-actions > .ant-btn { max-width: 100%; white-space: normal; }
-  .web-episode .sound-inline .sound-save-actions > .ant-checkbox-wrapper { flex-basis: 100%; }
-  .web-episode .sound-inline .sound-save-actions > .ant-btn:last-child { margin-left: auto; }
-  .web-episode .sound-inline .sound-editor nav button { min-height: 60px; }
-  .web-episode .native-dialogue-footer { padding: 10px 14px; }
-  .web-episode .assembly-workspace .assembly-icon-action.ant-btn { width: 44px; min-width: 44px; height: 44px; padding: 0; }
-  .web-episode .assembly-mode-switch .ant-btn { min-height: 44px; height: 44px; }
-  .web-episode .assembly-export-entry > .ant-btn { min-width: 44px; }
-  .web-episode .sound-rail .sound-save-actions > .ant-checkbox-wrapper { flex-basis: auto; }
-  .web-episode .sound-rail .sound-subtitle { grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr) 44px; }
-  .web-episode .assembly-workspace .sound-rail .sound-fields > .ant-btn.assembly-icon-action { width: 44px; height: 44px; }
-  .web-episode .assembly-workspace .assembly-timeline-heading > div:first-child { flex-wrap: wrap; }
-  .web-episode .assembly-workspace .assembly-zoom .assembly-icon-action.ant-btn { min-width: 38px; width: 38px; }
-}
+.assembly-latest-export { display: flex; align-items: center; gap: 4px; }

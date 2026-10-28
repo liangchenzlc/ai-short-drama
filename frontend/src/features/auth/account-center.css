@@ -24,15 +24,3 @@
 .account-center-page .account-details > div { grid-template-columns: 72px minmax(0, 1fr); }
 .account-page-footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--hair); }
 .account-page-error { margin-top: 24px; }
-@media (max-width: 900px) {
-  .account-page-sections { grid-template-columns: minmax(0, 1fr); gap: 32px; }
-}
-@media (max-width: 600px) {
-  .account-page-heading { align-items: flex-start; }
-  .account-page-heading h1 { font-size: 23px; }
-  .account-return, .account-center-page .ant-btn { min-height: 44px; }
-  .account-page-profile { margin-block: 24px; padding-bottom: 24px; }
-  .account-center-page .account-details > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .account-security-entry { flex-wrap: wrap; }
-  .account-security-entry > div { flex-basis: 100%; }
-}

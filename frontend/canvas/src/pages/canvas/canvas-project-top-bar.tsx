@@ -170,7 +170,7 @@ export function CanvasTopBar({
 
     return (
         <>
-            <div className="canvas-topbar pointer-events-none absolute inset-x-0 top-0 z-[var(--z-toolbar)] flex h-[var(--canvas-topbar-h)] items-center justify-between px-2 sm:px-2">
+            <div className="canvas-topbar pointer-events-none absolute inset-x-0 top-0 z-[var(--z-toolbar)] flex h-[var(--canvas-topbar-h)] items-center justify-between px-2">
                 <div className="pointer-events-none flex items-center gap-2">
                 <div className="canvas-topbar-cluster canvas-topbar-project-cluster pointer-events-auto flex min-w-0 items-center gap-2" style={dockStyle}>
                     <Dropdown
@@ -345,7 +345,7 @@ export function CanvasTopBar({
                     </div>
                 ) : null}
 
-                <div className="canvas-topbar-cluster canvas-topbar-local-cluster pointer-events-auto hidden items-center gap-1 lg:flex" style={dockStyle}>
+                <div className="canvas-topbar-cluster canvas-topbar-local-cluster pointer-events-auto items-center gap-1 flex" style={dockStyle}>
                     {onToggleAssistant ? (
                         <CanvasTopBarTooltip label="AI 创作助手（Ctrl/Cmd + J）">
                             <Button
@@ -364,81 +364,7 @@ export function CanvasTopBar({
                     {!libtvChrome ? <CanvasTopBarTooltip label="已保存版本与本机草稿"><Button type="text" className="canvas-topbar-action !h-9 !w-9 !min-w-9 !rounded-xl !p-0" style={{ color: theme.node.text, background: versionsOpen ? theme.toolbar.activeBg : undefined }} icon={<History className="size-4" />} onClick={onToggleVersions} aria-label="版本记录" aria-pressed={versionsOpen} /></CanvasTopBarTooltip> : null}
                 </div>
 
-                <div className="canvas-topbar-cluster canvas-topbar-tools-cluster pointer-events-auto flex items-center gap-1.5 lg:hidden" style={dockStyle}>
-                    <CanvasTopBarTooltip label="搜索画布节点">
-                        <Button
-                            type="text"
-                            className="canvas-topbar-action !hidden !h-10 !w-10 !min-w-10 !rounded-xl !p-0 lg:!inline-flex"
-                            style={{ color: theme.node.text }}
-                            icon={<Search className="size-4" />}
-                            onClick={onOpenSearch}
-                            aria-label="搜索画布节点"
-                        />
-                    </CanvasTopBarTooltip>
-                    <CanvasTopBarTooltip label="媒体性能模式">
-                        <Dropdown
-                            trigger={["click"]}
-                            menu={{
-                                selectable: true,
-                                selectedKeys: [mediaPerformanceMode],
-                                onClick: ({ key }) => onMediaPerformanceModeChange(key as CanvasMediaPerformanceMode),
-                                items: [
-                                    { key: "auto", label: "自动性能" },
-                                    { key: "quality", label: "画质优先" },
-                                    { key: "performance", label: "性能优先" },
-                                ],
-                            }}
-                        >
-                            <Button type="text" className="canvas-topbar-action !hidden !h-10 !w-10 !min-w-10 !rounded-xl !p-0 lg:!inline-flex" style={{ color: theme.node.text }} icon={<Gauge className="size-4" />} aria-label="媒体性能模式" />
-                        </Dropdown>
-                    </CanvasTopBarTooltip>
-                    <CanvasTopBarTooltip label="进入专注模式（Shift + Ctrl/Cmd + F）">
-                        <Button type="text" className="canvas-topbar-action !h-10 !w-10 !min-w-10 !rounded-xl !p-0" style={{ color: theme.node.text }} icon={<Focus className="size-4" />} onClick={onEnterFocusMode} aria-label="进入专注模式" />
-                    </CanvasTopBarTooltip>
-                    {shortDramaGuide ? (
-                        <CanvasTopBarTooltip label={shortDramaGuide.collapsed ? "展开短剧流程" : "收起短剧流程"}>
-                            <Button
-                                type="text"
-                                className="canvas-topbar-action !h-10 !rounded-xl !px-2.5 !font-medium"
-                                style={{ color: theme.node.text, background: shortDramaGuide.collapsed ? undefined : theme.toolbar.activeBg }}
-                                icon={<Clapperboard className="size-4" />}
-                                onClick={handleShortDramaGuideToggle}
-                                aria-label="短剧流程"
-                                aria-pressed={!shortDramaGuide.collapsed}
-                            >
-                                <span className="tabular-nums">{shortDramaGuide.progress.completedCount}/5</span>
-                            </Button>
-                        </CanvasTopBarTooltip>
-                    ) : null}
-                    {onToggleAssistant ? (
-                        <CanvasTopBarTooltip label="AI 创作助手（Ctrl/Cmd + J）">
-                            <Button
-                                type="text"
-                                className="canvas-topbar-action canvas-topbar-agent-button !h-10 !rounded-xl !px-2.5 !font-medium"
-                                style={{ color: theme.node.text, background: assistantOpen ? theme.toolbar.activeBg : undefined }}
-                                icon={<Sparkles className="size-4" />}
-                                onClick={onToggleAssistant}
-                                aria-label="AI 创作助手"
-                                aria-pressed={assistantOpen}
-                            >
-                                <span className="sr-only">AI 创作助手</span>
-                            </Button>
-                        </CanvasTopBarTooltip>
-                    ) : null}
-                    <CanvasTopBarTooltip label="已保存版本与本机草稿">
-                        <Button
-                            type="text"
-                            className="canvas-topbar-action canvas-topbar-version-button !h-10 !rounded-xl !px-2.5 !font-medium"
-                            style={{ color: theme.node.text, background: versionsOpen ? theme.toolbar.activeBg : undefined }}
-                            icon={<History className="size-4" />}
-                            aria-label="版本记录"
-                            aria-pressed={versionsOpen}
-                            onClick={onToggleVersions}
-                        >
-                            <span className="sr-only">版本</span>
-                        </Button>
-                    </CanvasTopBarTooltip>
-                </div>
+
             </div>
             <CanvasShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
         </>

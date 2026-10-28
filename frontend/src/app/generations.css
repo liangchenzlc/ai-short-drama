@@ -55,28 +55,7 @@
 .generation-result-asset img, .generation-media-placeholder { width: 100%; aspect-ratio: 16/10; object-fit: contain; background: var(--surface-muted); display: flex; align-items: center; justify-content: center; border-radius: 7px; }
 .generation-result-asset > span:not(.generation-media-placeholder) { display: block; margin-top: 9px; overflow-wrap: anywhere; }
 .generation-result-asset small { display: block; color: var(--accent); margin-top: 4px; }
-.asset-detail-preview { background: var(--surface-muted); border-radius: 8px; min-height: 200px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.asset-detail-preview img, .asset-detail-preview video { display: block; max-height: 440px; max-width: 100%; object-fit: contain; }
-.asset-preview-unavailable { padding: 36px 24px; text-align: center; color: var(--sub); }
-.asset-rename { margin-bottom: 20px; }
-.asset-rename label { display: block; margin-bottom: 8px; }
-.asset-rename > div { display: flex; gap: 10px; }
 .generation-page input, .generation-page textarea, .generation-drawer input, .generation-drawer textarea { caret-color: var(--accent); }
-@media (max-width: 760px) {
-  .generation-page .studio-page-head { align-items: flex-start; flex-direction: column; gap: 12px; }
-  .generation-filters{ grid-template-columns: 1fr 1fr; }
-  .generation-filter-actions { padding-top: 0; align-items: center; margin-bottom: 16px; }
-  .generation-list-toolbar p span { display: block; margin: 4px 0 0; }
-  .generation-drawer .ant-drawer-body { padding: 20px; }
-  .generation-detail-toolbar { align-items: flex-start; }
-  .generation-detail-toolbar > button { flex-shrink: 0; }
-}
-@media (max-width: 480px) {
-  .generation-filters, .generation-form-grid, .generation-facts { grid-template-columns: 1fr; }
-  .generation-facts { gap: 14px; }
-  .generation-result-assets { gap: 12px; }
-  .generation-page .ant-table-thead > tr > th, .generation-page .ant-table-tbody > tr > td { padding: 12px 8px; }
-}
 
 
 .asset-library-preview { position: relative; width: 100%; aspect-ratio: 16/10; padding: 0; display: block; background: var(--pale); border: 0; border-radius: 8px; overflow: hidden; }

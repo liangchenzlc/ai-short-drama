@@ -40,13 +40,13 @@
     "upstream_sha256": "dc56c06a6b17c49fee90fbd5ddedb94650db08e2917cf6ecf7a8d744691a6f82"
   },
   "src/styles/workspace-product.css": {
-    "reason": "按用户共同依赖采用宿主 AntD 5，更新日志弹窗同时识别源 modal-container 和宿主 modal-content，原尺寸、布局、颜色、阴影和交互样式值保持。",
-    "sha256": "3e91fa0aa35354d1d21d47d2657118bb56ec14ee7f22a9238854fe4c36d76bf0",
+    "reason": "按用户共同依赖采用宿主 AntD 5，更新日志弹窗同时识别源 modal-container 和宿主 modal-content，原尺寸、布局、颜色、阴影和交互样式值保持。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：清理手机／平板专属断点和孤儿样式，将桌面样式提升为默认；根布局最低宽度1280px，保留有效桌面断点、容器排布和降低动效。",
+    "sha256": "5dea2883f90f9ef0e1b99013cf270c4c3626fa85c01d2113aad6d5cfc21617bd",
     "upstream_sha256": "36bda99ef73f3758fb91486104d3811fd0c9d742f184dbc654cdfe8ed33fa53b"
   },
   "src/styles/globals.css": {
-    "reason": "???????? AntD 5 ? X1???????/Drawer/Select/Bubble???????????????????loading mask??????????????????",
-    "sha256": "f396864affec999abb00f72afc3451dfcb83f82319f5f4b336ef71389af3ae81",
+    "reason": "???????? AntD 5 ? X1???????/Drawer/Select/Bubble???????????????????loading mask?????????????????? 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：清理手机／平板专属断点和孤儿样式，将桌面样式提升为默认；根布局最低宽度1280px，保留有效桌面断点、容器排布和降低动效。",
+    "sha256": "a058cb5f863bb3044e157a3ed80b90a1421f82fe52b2fac1b2ed0736d73d2ad9",
     "upstream_sha256": "70ad31bac3489486d71bac3f50b617eb53ec22fcebe74fb92060a6232b0082ce"
   },
   "src/pages/canvas/index.tsx": {
@@ -80,8 +80,8 @@
     "upstream_sha256": "f71ac3d7b37d601ecd476c853623c1b8a8b14ad4d3df2bd298f16184d0b69c86"
   },
   "src/pages/canvas/canvas-version-history.tsx": {
-    "reason": "服务端画布及模型偏好版本改为十进制字符串，保留原版几何、操作和本地缓存计数。原版版本记录保留布局和交互，恢复透传列表时捕获的绘图版本/墓碑以保护跨窗口更新。按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。",
-    "sha256": "e8fafc2f47d7046184505bf05db96e43f58a8699f8e6225577acf8221f6bb082",
+    "reason": "服务端画布及模型偏好版本改为十进制字符串，保留原版几何、操作和本地缓存计数。原版版本记录保留布局和交互，恢复透传列表时捕获的绘图版本/墓碑以保护跨窗口更新。按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：历史版本统一为桌面侧栏，删除移动浮层及其返回入口。",
+    "sha256": "716389ab2ececc123eeb7ff22e0fa4976ab700fb2c4e0e3f76b3d875a3b54c32",
     "upstream_sha256": "807611a7176992868f69858c9450e987f6ffc9929ecf1b55609021520bbc08a6"
   },
   "src/pages/canvas/use-canvas-project-lifecycle.ts": {
@@ -145,8 +145,8 @@
     "upstream_sha256": "197f84eeeeed43e4d5f5e36e9a88ef7ce8c581e6ea8cddd048a9c11e262bb3da"
   },
   "src/pages/canvas/project.tsx": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文；共享助手为全局逻辑任务显式传入当前画布写入目标，页面切换不改变已受理任务。 助手来源链接复用原节点聚焦方法，选中并居中所指节点；不修改节点或连线。 来源已移除时使用现有局部弹窗，避免全局 Toast 被画布样式隐藏。 来源定位等待真实画布尺寸，避免初始化 1200px 占位尺寸导致手机焦点落在屏幕外。",
-    "sha256": "5eb1a9b39d3789e3b23ca094d2fe9e0f03b795c369429aef6953eaadee1e13f4",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文；共享助手为全局逻辑任务显式传入当前画布写入目标，页面切换不改变已受理任务。 助手来源链接复用原节点聚焦方法，选中并居中所指节点；不修改节点或连线。 来源已移除时使用现有局部弹窗，避免全局 Toast 被画布样式隐藏。 来源定位等待真实画布尺寸，避免初始化 1200px 占位尺寸导致手机焦点落在屏幕外。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：取消移动夹具坐标分支，统一桌面助手停靠补偿与视口定位；该文件在本次开始前已有未登记改动，原状保留，详见本次验收记录。",
+    "sha256": "784aede5f14d83a319419b1d051286c065a31a5d7fdc2a49e70aeb6a47eb1c39",
     "upstream_sha256": "36ca409ced7f1d562a3630bd34fe3f53fdeb8cbb5831f4f0602750b5fd90a5e8"
   },
   "src/services/api/request.ts": {
@@ -220,8 +220,8 @@
     "upstream_sha256": "8169c8740bc040f0af422a312bcf1a2766e7112a371b91a4ea6d35111c0fe88e"
   },
   "src/components/canvas/canvas-asset-tray.tsx": {
-    "reason": "托盘使用本人服务端完整图片分页恢复缓存，保留原布局及点击拖入，补充加载与失败重试反馈。 2026-10-16：对齐 F087，托盘查询、搜索和插入覆盖图片、视频、音频与文本；视频使用认证兼容预览。",
-    "sha256": "aea75eb18ba206502700fb270d0a54d3a88295d06b053497e85ded6ef3068b5c",
+    "reason": "托盘使用本人服务端完整图片分页恢复缓存，保留原布局及点击拖入，补充加载与失败重试反馈。 2026-10-16：对齐 F087，托盘查询、搜索和插入覆盖图片、视频、音频与文本；视频使用认证兼容预览。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "4874e3dcf3ba3c851bbea05d911582743795242cef9174f9c1430328ace0bd5b",
     "upstream_sha256": "014fccdfaa2b9d15be8d6cdeaaa678fc37270e6b768162ac38b672f2abd6c912"
   },
   "src/pages/canvas/use-canvas-node-operations.ts": {
@@ -300,8 +300,8 @@
     "upstream_sha256": "fc98488760959efbb6ac8a8097a929bd7579d6ba67bdcc1794692d892f6110e3"
   },
   "src/components/model-logo.tsx": {
-    "reason": "宿主AntD5与原Logo完整npm包peer不兼容，仅按原字节保留5.16.0版本321个Mono SVG与目录的本地MIT许可子集，维持名称、排序、路径、按需加载和全部Logo选择；Modal使用等价destroyOnHidden保留关闭卸载行为并消除弃用告警。",
-    "sha256": "58c9127cd93dc1dc76110262e14547d6e4f7cd7b8ac581c15c1887fd9e3ea4ef",
+    "reason": "宿主AntD5与原Logo完整npm包peer不兼容，仅按原字节保留5.16.0版本321个Mono SVG与目录的本地MIT许可子集，维持名称、排序、路径、按需加载和全部Logo选择；Modal使用等价destroyOnHidden保留关闭卸载行为并消除弃用告警。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "c70206d889e86e4dd5a4d097fd89d34ad588c2570276448b6b79064da9e95d76",
     "upstream_sha256": "3ff3676850c0471db5599521af903dbc851ed43e5b13507581de9b3364b066cf"
   },
   "src/components/assets/asset-library-picker-modal.tsx": {
@@ -335,18 +335,18 @@
     "upstream_sha256": "4e0a901343986ef9e14586f3ea8a08c705cd30a39b215b7155e109bcba5e458b"
   },
   "src/components/canvas/canvas-text-editor-modal.tsx": {
-    "reason": "按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。",
-    "sha256": "c3aa54372a283ade14d3fa3e9f71548b1878fa8f77eba30c557a45889d028f9b",
+    "reason": "按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "1054ee8cecc037f9f3907c6069ac953991231db610875d5815d27df756c84e6c",
     "upstream_sha256": "973862680162eeb649dabab6f880d151232984db9e5504d9b62b630574396fe7"
   },
   "src/components/canvas/director/canvas-director-workbench.tsx": {
-    "reason": "按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。 ???????????????boneMap?????????????????Clip?????????????????????????????/????????????",
-    "sha256": "1c1d62291a14db0b6dbc6565b2a18524afbc73c0fbecd3b830cbfe1efb82386f",
+    "reason": "按用户调整采用宿主 Ant Design 5，等价映射已使用的样式、预览、遮罩和抽屉属性；保留原布局、内容与业务交互。 ???????????????boneMap?????????????????Clip?????????????????????????????/???????????? 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "97bab99790691def298ab9a0a9427ce2e488382be86f6ff7743bb866576c8915",
     "upstream_sha256": "2071a5a379ce85becb3f36d5b164ef6108c589d2f3a70cd6cd850b6713727cb8"
   },
   "src/components/canvas/toolbars/toolbar-settings-modal.tsx": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
-    "sha256": "779b506341ef1fe28a3138773b164bb0e7ca96686a0acb9c0e7ea1590749538c",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "af6d5a7b8a9ac182ed87a78304b5c640213ba35d2729edb1657d6f2703eeb6d2",
     "upstream_sha256": "cac287a6ce8bdd15fbeac236e65fa1b09022f5ca4b73e6b83bbaa23fd3676cd1"
   },
   "src/components/model-picker.tsx": {
@@ -440,8 +440,8 @@
     "upstream_sha256": "a82254cc9a800e09dcb283536b1e7631b4284a9de3834c899d0aab8ae40c3fd0"
   },
   "src/components/model-editor-modal.css": {
-    "reason": "按宿主AntD 5为源modal-container等效匹配modal-content，完整保留源模型配置弹窗高度、flex布局与窄屏尺寸。",
-    "sha256": "c562286e1ee40aa6620477728f8f75d4b90ddbfb1d33daa1296baf0308a3014f",
+    "reason": "按宿主AntD 5为源modal-container等效匹配modal-content，完整保留源模型配置弹窗高度、flex布局与窄屏尺寸。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：清理手机／平板专属断点和孤儿样式，将桌面样式提升为默认；根布局最低宽度1280px，保留有效桌面断点、容器排布和降低动效。",
+    "sha256": "c6dd75fb41d6db7ced5d39586844b5824ee43edc8fdad1a883c3a0ad98d56334",
     "upstream_sha256": "28a7e10e1d674cbb1bc8cf0e3634a9a890352615f19fb59a66d23c59b89a9981"
   },
   "src/pages/settings/model-service-editor.css": {
@@ -845,8 +845,8 @@
     "upstream_sha256": "8d8656878ff34191af47f79746e85bcf071f893fbee5b1c691d2d04c88f915ac"
   },
   "src/pages/canvas/canvas-project-top-bar.tsx": {
-    "reason": "将桌面与窄屏助手入口统一命名为 AI 创作助手，保留原按钮位置、状态及 Ctrl/Cmd + J 快捷键。",
-    "sha256": "d4f54cdf8ed5d0faf3810b420696f17e9de989cd0a9ecc44b97837da39696bb4",
+    "reason": "将桌面与窄屏助手入口统一命名为 AI 创作助手，保留原按钮位置、状态及 Ctrl/Cmd + J 快捷键。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "673c47c3a7b80c6d179d3109c793376d704ddf528af47172685673fc1ab8ef0f",
     "upstream_sha256": "4eccbc8ab87117c264a6ea79b0bd4bf3fabd7daaf7dc299740d283b6fc2dea93"
   },
   "src/pages/canvas/assistant-readiness.ts": {
@@ -930,8 +930,8 @@
     "upstream_sha256": "664f782767c8d630181f4f54a10cc11b5f9526f9b3955ea19989a33623aba96d"
   },
   "src/components/canvas/art-critique/ai-art-critique-modal.tsx": {
-    "reason": "原审美弹窗布局、交互、进度、报告与显式续跑保持；持久批准身份补充当前projectId及真实sourceNodeId，来源保存与本人任务回执串联，关闭观察保留已受理阶段。",
-    "sha256": "fd5273a63b30480267b50f89ce849eef1fdbd74012dea3b56ca2f9ea6a4c7ca2",
+    "reason": "原审美弹窗布局、交互、进度、报告与显式续跑保持；持久批准身份补充当前projectId及真实sourceNodeId，来源保存与本人任务回执串联，关闭观察保留已受理阶段。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "d48af04a7c16f9ea170a38fb5c8da40d418fc7fece47e5a2c3ad48214f7d0139",
     "upstream_sha256": "f521c8387f461186fc09d32c37094c3a127e9e7c34df615cfd2436d6e44a1181"
   },
   "src/components/canvas/nodes/ai-art-critique-node.tsx": {
@@ -1060,8 +1060,8 @@
     "upstream_sha256": "b21f3f0435fe2c050071868b9ccb6042a861c29209659ef54cd74c5ec54c2c6d"
   },
   "src/components/canvas/canvas-character-reference-modal.tsx": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
-    "sha256": "5fd1b4928a71c482eb6888699dcc69b8eb15dd5aabf3d8e85eccf68293cbf468",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "2f184dc4513dab10b48e72052c1514c94a62a65951c1e86276e3c1e8c86b1a80",
     "upstream_sha256": "e7d0e03886865e1e92cb3e44b64896dd9fdc0919639905ebbdb91f56e0bd3424"
   },
   "src/pages/canvas/use-canvas-upload.ts": {
@@ -1080,18 +1080,18 @@
     "upstream_sha256": "c12c744957337484fd15a81239e676ca62dfb18519f7c4eebf892355946ee8c5"
   },
   "src/components/canvas/canvas-short-drama-entry.tsx": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
-    "sha256": "1fc219dd9339ba42c130fb3014134673688a00a4e272df027eebec6856aab7fe",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "d7d0d3539deb6d572257f64e8ece7676e929b046c6dfc47bc75ed842d2bf2867",
     "upstream_sha256": "0f1ebf5d1b60861de2776cb50fd6ec9834c1743a302839214aebce1fad3cd7d2"
   },
   "src/components/ui/aceternity/floating-dock.tsx": {
-    "reason": "原 Dock distance transformer 在动效禁用或鼠标值非有限时提前返回 Infinity，避免已挂载重渲染读取无用几何；保持 Hooks、有限悬停、尺寸、提示及点击路径。真实 default/compact 组件验证复现旧读取并通过候选 24 项；未覆盖 LibTV range=0 中心，不代表整页 32ms 预算通过。",
-    "sha256": "09cece5f1f3b9bb85f56c156d298d39f040050499cf974a9b3c3882bc9dec2f0",
+    "reason": "原 Dock distance transformer 在动效禁用或鼠标值非有限时提前返回 Infinity，避免已挂载重渲染读取无用几何；保持 Hooks、有限悬停、尺寸、提示及点击路径。真实 default/compact 组件验证复现旧读取并通过候选 24 项；未覆盖 LibTV range=0 中心，不代表整页 32ms 预算通过。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：删除触屏检测与移动工具栏尺寸监听，统一桌面工具栏并保留降低动效和内部滚动。",
+    "sha256": "03ef873c837b1b357145cd4111f3605103c7c9e19152a99d0223503871eac4ce",
     "upstream_sha256": "9aa4553016b9324bbf102d28897272f4be71b9fb1708394baf3b84ca29945173"
   },
   "src/components/canvas/canvas-zoom-controls.tsx": {
-    "reason": "画布缩放预览在百分比字符串相同时跳过重复写入；百分比变化时对当前唯一 Text 子节点更新 data，空、多子节点或非 Text 结构回退 textContent；保留原 liveScaleRef、输入焦点、回车/取消/上下限、菜单与 viewport 订阅路径，不改 DOM/CSS 或保存行为。",
-    "sha256": "04525aec08d38d99da7a39a6559212aebd98597fcea4859ddd6cbee15678f510",
+    "reason": "画布缩放预览在百分比字符串相同时跳过重复写入；百分比变化时对当前唯一 Text 子节点更新 data，空、多子节点或非 Text 结构回退 textContent；保留原 liveScaleRef、输入焦点、回车/取消/上下限、菜单与 viewport 订阅路径，不改 DOM/CSS 或保存行为。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "4846bb0970834041b48293ac22086201aa14f0a1dc6e4fb0e4a3b33c51db42aa",
     "upstream_sha256": "6c9cd79ac027419716120755b7efa69f15c78a5622c00864f2b950c6078a6169"
   },
   "src/lib/model-selection.ts": {
@@ -1150,8 +1150,8 @@
     "upstream_sha256": "c45baf6b322f771e905f8efe5b622db5313ead20e3b2de4d427416739bc698f5"
   },
   "src/components/canvas/canvas-toolbar.tsx": {
-    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
-    "sha256": "0844ec787431086644279ed4025eb0af34910054f74177188ce7e61418ab1c29",
+    "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：同步工具栏注释为桌面窗口滚动范围。",
+    "sha256": "971768d5fd6b79a4e397942aa50751eeec4b9ca6927c7cafacded9f87f91583c",
     "upstream_sha256": "0aa57a0e9231f10072aeecd7161c3ef5402f118c2057a07b6413f370fd7b7150"
   },
   "src/components/canvas/director/canvas-director-node-panel.tsx": {
@@ -1240,8 +1240,8 @@
     "upstream_sha256": "278a067a335b7960bc5aaeff66f22987f2339c4c6bfc95c06cea2c084be17267"
   },
   "src/components/canvas/canvas-generation-history-picker.tsx": {
-    "reason": " 2026-10-16：对齐 F096/F097/F098，打开时每五秒刷新，插入显示加载并复核作用域，视频悬停兼容预览。 2026-10-16 逐项复核：复核修复 F097/F098：等待素材保存和画布提交后结束忙状态，失败就近显示；预览提供重新加载，重试不触发卡片插入。",
-    "sha256": "ef03a83a99d983452a352d46c742aed498610b58c2d101e6385a6645b89336ed",
+    "reason": " 2026-10-16：对齐 F096/F097/F098，打开时每五秒刷新，插入显示加载并复核作用域，视频悬停兼容预览。 2026-10-16 逐项复核：复核修复 F097/F098：等待素材保存和画布提交后结束忙状态，失败就近显示；预览提供重新加载，重试不触发卡片插入。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "2ea628ecd9135877776315ec006766255c3f47f559ec85e20547be31f3af8b9c",
     "upstream_sha256": "3c804e6d1c2fefcd8d9a70f7a714590407fa13373f576ad6f42032e419f54e0f"
   },
   "src/components/canvas/canvas-node-content.tsx": {
@@ -1255,8 +1255,8 @@
     "upstream_sha256": "03b3c5eef138af62cc14a2dcefae7090ef7d78f34d854c1ed95a9b967df0cbb4"
   },
   "src/components/canvas/canvas-style-picker-modal.tsx": {
-    "reason": " 2026-10-16：对齐 F211，账号级 CRUD、收藏、最近使用与明确勾选的旧本机幂等导入；版本冲突保留草稿。",
-    "sha256": "7f4be7d96ab503b063f28a6ad80311716fc24ba724717f26a8eb947f3f742665",
+    "reason": " 2026-10-16：对齐 F211，账号级 CRUD、收藏、最近使用与明确勾选的旧本机幂等导入；版本冲突保留草稿。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "beea5ee92625febb5f86ebc22a73f575192996b27c0b028ee35a8536bd09a553",
     "upstream_sha256": "8b424917863e7832256de4d328a72b9d262f6fc803788aed165a90104d16e061"
   },
   "src/components/canvas/canvas-subtitle-dialog.tsx": {
@@ -1265,8 +1265,8 @@
     "upstream_sha256": "bbe00fe7ffb242bfdc464f6ac30e45d247c0f23899302ee5ce70505d297ae34c"
   },
   "src/components/canvas/style-profile-editor-modal.tsx": {
-    "reason": " 2026-10-16：个人风格编辑提供版本冲突就近反馈和保留草稿另存入口。",
-    "sha256": "fc5b1f65550f590b4e3d4cd62885aa481027ae67bb73a62e9d370d5cce3bc991",
+    "reason": " 2026-10-16：个人风格编辑提供版本冲突就近反馈和保留草稿另存入口。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "b72923ba79d80f9425eff9c6d3712fed2effeb7f014f9535f8d84802eef23f6e",
     "upstream_sha256": "b4b64c3b4c11641a49d834d098ff22085c9b7730b36d067bcdb463d0381946ba"
   },
   "src/components/video-player.tsx": {
@@ -1285,8 +1285,8 @@
     "upstream_sha256": "a074234cb27dfa41d56428f64fec2276d8ec2cf0b97f602a047bcb78c694697e"
   },
   "src/lib/plugins/builtin/editor/editor-preview-monitor.tsx": {
-    "reason": " 2026-10-16：剪辑监视器接入统一认证兼容播放及显式重试，不自行猜测副本地址。",
-    "sha256": "48d18e717e79b6490081ae3c84ff3497adfaca6f2082dc27bd303fb2a1d279d9",
+    "reason": " 2026-10-16：剪辑监视器接入统一认证兼容播放及显式重试，不自行猜测副本地址。 2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "debe4673ce40fa3a8aa585098cd907d6f781f7ed24d90791c61c59cb4467e8cb",
     "upstream_sha256": "13759cf1b5063c15864f4e6eeb53758caad4dbeff088377d72af3237dd462cc7"
   },
   "src/lib/plugins/builtin/editor/local-executor-session.ts": {
@@ -1448,5 +1448,100 @@
     "reason": "2026-10-21 创作模式单层化，画布脱离标准来源项目与共享素材，使用本人素材、本图角色及独立保存/复制上下文。",
     "sha256": "921499eb90177fa0d14cb563e72e3369a2c9fd5aefad25ac9abfe898e63ee2f6",
     "upstream_sha256": "c8a02c2eb02a19fbe4234b8e4e311406ff503c40609faa6a0db4487f53c000e4"
+  },
+  "src/components/canvas/canvas-mini-map.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "bdc947e07cb43084199882b96f935a03ca1f874d6794282d3cbac51b30bc0577",
+    "upstream_sha256": "7cf6142612a5929e9840c30a751c2dffb8ba6498174eaca6230d9779d8c2a148"
+  },
+  "src/components/canvas/canvas-node-camera-dialog.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "010ce12df6567e786a4f6b21c45735dfce02e8f8b2df115effc339fd275981f9",
+    "upstream_sha256": "7dfba8cb8474d44104c51fbfba1f776896a9db7f97f825ba7100d930edbf934e"
+  },
+  "src/components/canvas/canvas-node-search-modal.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "480efef19765d07cdc87fc02309661d6af46aeefe287c933ed7c0b0eb429d557",
+    "upstream_sha256": "723cd40d21717142f174a5385e416cf88ae2f1b1e705292f5bbe41d6c4d70bfe"
+  },
+  "src/components/canvas/canvas-node-split-dialog.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "3a6bd626e164db03266fbe7cfd2ebe54ae90fcaa32265abbd0bf097c4c14e793",
+    "upstream_sha256": "1a9456d49bec1e15c41096b0b40753fc5b8e71b80c16cfb0ef440a8cb998cfc7"
+  },
+  "src/components/canvas/canvas-node-upscale-dialog.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "816bdb01291df1909631eb8e1b41fd117c318ebf078ee563b163e8584a36982c",
+    "upstream_sha256": "41817a5cdad958d0b74c0eedbeeec840e25cb7ac66fc398899619cc3d4e113e2"
+  },
+  "src/components/canvas/canvas-timeline-dialog.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "f1fbf76b2a437b206f1edf93c7d1e5f13981a873e9eec52d4bd2af7b2874d83c",
+    "upstream_sha256": "e3a98dc7bad5e92d1a369e4439f9101f5a88ec7bb8d17537051e7aaf2e875ded"
+  },
+  "src/components/canvas/canvas-video-frame-dialog.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "daab5f0a257bf6aaa662c299e1493a38a3ba142ecd3a274d657301a634b34086",
+    "upstream_sha256": "bb77af71c5705ae6aedd6e4bedd9ffa0f458e69d3860a65d6574db35e0040500"
+  },
+  "src/components/canvas/style-asset-binding-modal.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "32eb079cd0365f6bb8e9bf0cfc598809ef4d6421ed9fa65f8557d134c1fabbc5",
+    "upstream_sha256": "7e23da265b1cee5ed0622fd63394f5d969bb4e1a50d480686bc4a63309ee70d7"
+  },
+  "src/components/layout/workspace-state.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "6019a191cb72cdf83c6deb7fb23a71bff472c837b62ac91127d2e3a8d3699a62",
+    "upstream_sha256": "a45feb11b3249eec4c55e22d3baf2228f2a2ae6efdb420ec7ba2acb8e785885b"
+  },
+  "src/components/video-player.css": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：清理手机／平板专属断点和孤儿样式，将桌面样式提升为默认；根布局最低宽度1280px，保留有效桌面断点、容器排布和降低动效。",
+    "sha256": "5cff07da179cd51870d94318a8dea4eb7815fb8ac962d4970fe70b60ff49ae25",
+    "upstream_sha256": "946819afffb8b43375747f8b12cee54a3c730ae46a0318529a08c81451b6b6cc"
+  },
+  "src/hooks/use-focus-mode.ts": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：删除小屏自动进入专注模式的设备默认值，保留用户主动切换与账号偏好。",
+    "sha256": "2d2cf01fb82efe55528fc011a5692d3329203b2fbb7fe6e4dd64fc14338f0708",
+    "upstream_sha256": "1773eadc215e84ff657b02ec8e8225a43ea5d3cacb94d8298357a5dafccd95c8"
+  },
+  "src/pages/canvas/canvas-project-status-dialogs.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "29ba60a3708b68e6623f79e424bada1e4eb361fa0cf7e1c1fb55ce7012e1f562",
+    "upstream_sha256": "50e2b776f0a4957e6a6092db6a463b70cf96e3e63d08571e3b702cd10b8cb9a3"
+  },
+  "src/pages/canvas/canvas-version-history.css": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：清理手机／平板专属断点和孤儿样式，将桌面样式提升为默认；根布局最低宽度1280px，保留有效桌面断点、容器排布和降低动效。",
+    "sha256": "9cc19e037ae9031e8df447c55f4b4fd1274cb10f1c89b57c6a1f77e66edb478b",
+    "upstream_sha256": "10f175d952d6a91658d5ead5157f44402c9f3a3ce633295710724388baca3a86"
+  },
+  "src/pages/canvas/canvas-version-preview.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "a8231efb12d2019216a4f0f0950f5dc0836c45d14a3b70e27471876a1f6f3b0b",
+    "upstream_sha256": "b37ba45a1ee2d612e7c199d395710c693eb1ea0ce5646153a33bff7ca58615d3"
+  },
+  "src/styles/assets-final-lock.css": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：清理手机／平板专属断点和孤儿样式，将桌面样式提升为默认；根布局最低宽度1280px，保留有效桌面断点、容器排布和降低动效。",
+    "sha256": "e14136722a41c11945e521ccb90f9db20b424f2daa1ba15308b335974d363b6a",
+    "upstream_sha256": "dc5ce867a372e6d6b33953875810b4e6ce925c35b0bab60ea8a9f5046aa3dccb"
+  },
+  "src/styles/assets-frame-lock.css": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：清理手机／平板专属断点和孤儿样式，将桌面样式提升为默认；根布局最低宽度1280px，保留有效桌面断点、容器排布和降低动效。",
+    "sha256": "a9f55ec0246acf3ef9f9b7be8f79b5952fab715b1adfa9436988bee1c8128b39",
+    "upstream_sha256": "53f2d4bf8b34432ffec7dce927c1e67708eb500e2c533f0ee7efee6d0e3595dc"
+  },
+  "src/styles/assets-reference-baseline.css": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：清理手机／平板专属断点和孤儿样式，将桌面样式提升为默认；根布局最低宽度1280px，保留有效桌面断点、容器排布和降低动效。",
+    "sha256": "7fc8bbb0af375345dc5e2f1fd7e34d4c2b822a11a63c6f0745dc061f42a6e72a",
+    "upstream_sha256": "9dbe5580ce84b62898ff142afbbf4043d6cad52e4a21352a1a7c32215589bacb"
+  },
+  "src/components/model-capability-editor.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "a7de42bbcb462c0b1cc739ef1b2365755efc142efa2d3bc668d358ff0dd33d42",
+    "upstream_sha256": "e2dd6150b4a2e692fc2819f25b432f40c7a192ccd5d2c85aecd6206b1b3ae41e"
+  },
+  "src/components/model-protocol-picker.tsx": {
+    "reason": "2026-10-27 用户授权取消移动端适配、统一1280px桌面范围：将桌面响应式类与控件提升为默认，移除手机专用呈现；保留业务操作、媒体比例和容器排布。",
+    "sha256": "d1f6f96c56d6eb8a801ff921c49bd411e1037348393fa786628bdcf5af9b2f25",
+    "upstream_sha256": "15d9367f4df52210ada3cb810ac921e72fa5fc5c2be43021995d94652c560b25"
   }
 }

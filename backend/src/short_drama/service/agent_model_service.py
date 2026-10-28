@@ -11,11 +11,8 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 from short_drama.agent.context.capabilities import input_capabilities
-from short_drama.agent.gateway.protocol import (
-    AgentGatewayError,
-    AgentModelGateway,
-    select_agent_protocol,
-)
+from short_drama.agent.gateway.langchain import FRAMEWORK_VERSION, LangChainGateway, select_protocol
+from short_drama.agent.gateway.protocol import AgentGatewayError
 from short_drama.ai.canvas_credentials import CanvasCredentials
 from short_drama.ai.model_identity import model_credential_identity
 from short_drama.core.crypto import KeyCipher
@@ -53,6 +50,39 @@ def model_snapshot(row):
     }
 
 
+def reviewer_snapshot(session, owner_user_id, executor_snapshot, mode="auto"):
+    """Prefer a different text model for review; fall back to a marked downgrade."""
+    if mode != "same_model":
+        from sqlalchemy import select as _select
+
+        rows = session.scalars(
+            _select(AIModelConfig)
+            .where(
+                AIModelConfig.owner_user_id == owner_user_id,
+                AIModelConfig.service_type == "text",
+                AIModelConfig.enabled == 1,
+                AIModelConfig.is_deleted == 0,
+            )
+            .order_by(AIModelConfig.is_default.desc(), AIModelConfig.id)
+        ).all()
+        for row in rows:
+            if (
+                row.model_key == executor_snapshot.get("model_key")
+                and row.base_url == executor_snapshot.get("base_url")
+            ):
+                continue
+            candidate = model_snapshot(row)
+            try:
+                from short_drama.agent.gateway.langchain import select_protocol
+
+                select_protocol(candidate)
+            except Exception:
+                # A reviewer that cannot run the tool protocol would fail the task.
+                continue
+            return candidate, False
+    return dict(executor_snapshot), True
+
+
 def model_credentials(snapshot, key):
     encrypted = snapshot.get("credential_cipher")
     extension = snapshot.get("runtime_credentials_cipher")
@@ -81,6 +111,7 @@ def capability_evidence(row):
         and evidence.get("credential_identity") == model_credential_identity(row)
         and evidence.get("model_key") == row.model_key
         and evidence.get("base_url") == row.base_url
+        and evidence.get("framework_version") == FRAMEWORK_VERSION
     )
     return evidence if valid else {}
 
@@ -88,7 +119,7 @@ def capability_evidence(row):
 def read_model(row, preferred_id=None):
     evidence = capability_evidence(row)
     try:
-        protocol = select_agent_protocol(model_snapshot(row))
+        protocol = select_protocol(model_snapshot(row))
     except Exception:
         protocol = None
     verified = bool(
@@ -115,7 +146,7 @@ class AgentModelService(BaseService):
     def __init__(self, session, settings, gateway=None):
         super().__init__(session)
         self.settings = settings
-        self.gateway = gateway or AgentModelGateway(settings)
+        self.gateway = gateway or LangChainGateway(settings)
 
     def _actor(self):
         actor = require_actor(self.session)
@@ -199,6 +230,16 @@ class AgentModelService(BaseService):
                     "agent_audio_input_unsupported", "Responses 协议不支持音频输入", 422
                 )
             cache = deepcopy(row.capability_cache or {})
+            previous_inputs = cache.get("agent_inputs") or {}
+            same_identity = all(
+                previous_inputs.get(key) == model_snapshot(row).get(key)
+                for key in ("row_version", "model_key", "base_url", "credential_identity")
+            )
+            window = (
+                values.get("context_window_tokens")
+                if "context_window_tokens" in values
+                else (previous_inputs.get("context_window_tokens") if same_identity else None)
+            )
             evidence = capability_evidence(row)
             row.row_version += 1
             if evidence:
@@ -206,6 +247,7 @@ class AgentModelService(BaseService):
             cache["agent_inputs"] = {
                 "image": values["image"],
                 "audio": values["audio"],
+                "context_window_tokens": window,
                 "row_version": row.row_version,
                 "model_key": row.model_key,
                 "base_url": row.base_url,
@@ -311,7 +353,7 @@ class AgentModelService(BaseService):
 
         key = self.settings.encryption_key
         try:
-            select_agent_protocol(snapshot)
+            select_protocol(snapshot)
             credential = model_credentials(snapshot, key)
             evidence = asyncio.run(
                 self.gateway.validate_capability(

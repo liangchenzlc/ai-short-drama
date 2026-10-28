@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 import { Alert, Button, Popover, Select, Skeleton, Tag } from 'antd';
 import type { LibraryAssetRead, AssetScope } from '../../api/modules/assets';
 import type { CreationDraftValue } from '../../api/modules/creation-drafts';
@@ -99,13 +98,22 @@ export function StandardAssetGeneration({ asset, scope, draft, readOnly, disable
   const blocked = disabled || submitting || privateBlocked;
   const reason = assetImageGenerationBlockReason(asset, configId)
     ?? assetPrivateInputBlockReason(draft.value.input_text, references.sharedIds, draft.value.reference_media_ids, !!capabilities?.reference_images);
+  const blockMessage = capabilityError || (generation.uncertain ? '上次生成的受理结果待确认，请先核对原请求。' : '')
+    || (privateBlocked ? draft.message || '生成设置尚未就绪，请检查保存状态。' : '')
+    || (references.blocked ? '参考图片尚未就绪，请在参考图片区域重试读取或完成上传。' : '')
+    || (disabled ? '素材存在未解决的编辑或保存状态，请先核对。' : '') || reason || '';
+  const recoveryActions = capabilityError ? <Button size="small" onClick={() => setCapabilityRevision(value => value + 1)}>重试读取能力</Button>
+    : generation.uncertain ? <Button size="small" loading={generation.reconciling} onClick={() => void generation.reconcileSubmission()}>核对原生成请求</Button>
+    : privateBlocked && draft.status === 'error' ? <Button size="small" onClick={() => void draft.retry()}>重试保存设置</Button>
+    : privateBlocked && draft.status === 'conflict' ? <Button size="small" onClick={() => void draft.reload()}>核对服务端设置</Button>
+    : undefined;
   return <>
     <PrivateAssetReferences assetId={asset.id} projectId={scope.projectId} privateIds={draft.value.reference_media_ids} saved={draft.saved} disabled={readOnly || blocked} onChange={(ids, mapping) => draft.edit({ reference_media_ids: ids, input_text: remapAssetPromptReferences(draft.session.getSnapshot().value.input_text, mapping.before, mapping.after) })} onState={onReferenceState} onImagesChange={setReferenceImages} onBusyChange={onSubmissionBusyChange}/>
     {!readOnly && <GenerationComposer feedbackRef={setModelFeedback} prompt={draft.value.input_text} onPrompt={input_text => draft.edit({ input_text })}
       promptInput={id => <AssetPromptInput id={id} value={draft.value.input_text} onChange={input_text => draft.edit({ input_text })} references={referenceImages} disabled={!draft.loaded}/>}
       model={<ConfigSelect presentation="standard-creation" optionLayout="compact" feedbackContainer={modelFeedback} kind="image" value={configId} onChange={selectModel} onResolvedChange={selectModel} disabled={blocked} label="生图模型"/>}
       parameters={<AssetGenerationParameters countPlacement="options" value={draft.value} disabled={blocked} onChange={draft.edit} capabilities={capabilities}/>}
-      sendTitle={reason || undefined} sendDisabled={blocked || generation.uncertain || references.blocked || capabilityLoading || !!capabilityError || !!reason} busy={submitting} disabled={!draft.loaded}
+      sendTitle={capabilityLoading ? '正在核对模型能力…' : blockMessage || undefined} blocker={blockMessage && !submitting && !capabilityLoading ? { message: blockMessage, actions: recoveryActions } : undefined} sendDisabled={blocked || generation.uncertain || references.blocked || capabilityLoading || !!capabilityError || !!reason} busy={submitting} disabled={!draft.loaded}
       onSend={() => void generation.submit({ configId, supplement: draft.value.input_text, count: draft.value.image_settings?.count ?? 1, scope })}/>}
     {capabilityError && <StudioFeedback type="error" title="素材生图模型" noticeKey={`asset-capabilities:${asset.id}`} message={capabilityError} actions={<Button size="small" onClick={() => setCapabilityRevision(value => value + 1)}>重试读取能力</Button>}/>}
     {draft.message && <StudioFeedback type={draft.status === 'conflict' ? 'warning' : draft.status === 'error' ? 'error' : 'info'} quiet={draft.status !== 'conflict' && draft.status !== 'error'} title={`生成设置 · ${asset.name}`} noticeKey={`asset-generation-draft:${asset.id}`} message={draft.message} actions={draft.status === 'error' ? <Button size="small" onClick={() => void draft.retry()}>核对并重试保存</Button> : draft.status === 'conflict' ? <Button size="small" onClick={() => void draft.reload()}>载入服务端设置</Button> : undefined}/>}
@@ -117,7 +125,7 @@ export function StandardAssetGeneration({ asset, scope, draft, readOnly, disable
       {historyLoading && !historyLoaded ? <div role="status"><Skeleton active paragraph={{ rows: 4 }}/><p className="episode-help">正在读取生成记录…</p></div> : !tasks.length && !refreshError ? <p className="episode-help">暂无生成记录。</p> : <div className="asset-generation-tasks">{tasks.map(task => <article key={task.generation_id} className="asset-generation-task">
         <div><Tag className={'generation-status status-' + task.status}>{taskLabel(task)}</Tag><span>{dateLabel(task.created_at)}</span><small>任务 {task.generation_id}</small></div>
         {task.error && <p className="asset-generation-task-error">{task.error.message}</p>}
-        <div className="asset-generation-task-actions"><Link to={`/tasks/image?task=${task.generation_id}`}>查看任务详情</Link>
+        <div className="asset-generation-task-actions">
           {task.can_cancel && !readOnly && <Button type="link" loading={actionTaskId === task.generation_id} disabled={!!actionTaskId} onClick={async () => { if (await confirmAction('模型调用可能已经发生。仍要请求取消任务吗？', { className: 'standard-creation-dialog' })) void generation.perform(task, 'cancel'); }}>请求取消</Button>}
           {task.can_resume && !readOnly && <Button type="link" loading={actionTaskId === task.generation_id} disabled={!!actionTaskId} onClick={async () => { if (await confirmAction('恢复将继续查询或保存既有调用。确定恢复？', { className: 'standard-creation-dialog' })) void generation.perform(task, 'resume'); }}>安全恢复</Button>}
           {task.can_retry && !readOnly && <Button type="link" loading={actionTaskId === task.generation_id} disabled={!!actionTaskId} onClick={async () => { if (await confirmAction('将使用原任务的旧输入重新生成，可能再次产生费用。确定继续？', { className: 'standard-creation-dialog' })) void generation.perform(task, 'retry'); }}>按旧输入重新生成</Button>}

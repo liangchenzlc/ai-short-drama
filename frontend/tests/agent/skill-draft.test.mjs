@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../../src/features/ai-config/skill-draft.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../src/features/skills/skill-draft.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { createSkillDraft, skillDraftIssue, skillContent, skillResourcePathIssue, readSkillDraft, saveSkillDraft,
   clearSkillDraft, rawSkillDraft, readSkillAction, saveSkillAction } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
@@ -24,15 +24,24 @@ function detail() {
     checksum_sha256: 'b'.repeat(64), package_checksum: 'c'.repeat(64), resource_count: 1, updated_at: null };
 }
 
+test('readonly main-file content hides legacy metadata and preserves Markdown separators', async () => {
+  const model = readFileSync(new URL('../../src/features/skills/skill-model.ts', import.meta.url), 'utf8');
+  const compiledModel = ts.transpileModule(model, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
+  const { instructionBody } = await import(`data:text/javascript;base64,${Buffer.from(compiledModel).toString('base64')}`);
+  assert.equal(instructionBody('---\nname: method\ndescription: 检查\n---\n# 正文'), '# 正文');
+  const markdown = '---\n开场\n---\n后续剧情';
+  assert.equal(instructionBody(markdown), markdown);
+});
+
 test('new and imported drafts use personal defaults while editing preserves saved settings and string versions', () => {
   const fresh = validDraft();
-  assert.equal(fresh.values.enabled, true); assert.equal(fresh.values.invocation_mode, 'auto');
+  assert.equal(fresh.values.enabled, true); assert.equal('invocation_mode' in fresh.values, false);
   const existing = createSkillDraft(detail());
-  assert.equal(existing.values.enabled, false); assert.equal(existing.values.invocation_mode, 'manual');
+  assert.equal(existing.values.enabled, false); assert.equal('invocation_mode' in existing.values, false);
   assert.equal(existing.base.row_version, '9007199254740993');
   assert.equal(existing.values.resources[0].content, null); assert.equal(existing.values.resources[0].origin_version, '3');
   assert.throws(() => skillContent(existing.values), /尚未读取/);
-  assert.equal(createSkillDraft(undefined, { ...fresh.values, enabled: false, invocation_mode: 'manual' }).values.invocation_mode, 'manual');
+  assert.equal('invocation_mode' in skillContent({ ...fresh.values, invocation_mode: 'manual' }), false);
 });
 
 test('a pending create survives refresh under the same account and refuses a replacement request', () => {
@@ -72,7 +81,8 @@ test('UTF-8 and normalized path bounds reject an invalid package before publishi
   assert.match(skillDraftIssue(values), /不能重复/);
   values.resources = [{ path: 'references/notes.md', kind: 'reference', content: '中'.repeat(43691) }];
   assert.match(skillDraftIssue(values), /128 KiB/);
-  for (const path of ['../notes.md', '/notes.md', 'C:/notes.md', 'references\\notes.md', 'a/b/c/d/e/f/g.md', 'SKILL.md', 'scripts/run.py']) assert.ok(skillResourcePathIssue(path), path);
+  for (const path of ['../notes.md', '/notes.md', 'C:/notes.md', 'references\\notes.md', 'a/b/c/d/e/f/g.md', 'SKILL.md', 'scripts/run.exe']) assert.ok(skillResourcePathIssue(path), path);
+  assert.ok(skillResourcePathIssue('scripts/run.py'));
   assert.equal(skillResourcePathIssue('assets/shot-template.json'), '');
 });
 
@@ -80,16 +90,44 @@ test('submissions contain text resources without cache or storage implementation
   const { values } = validDraft(); values.name = '  分镜检查  ';
   values.resources = [{ path: 'assets/e\u0301.json', kind: 'template', content: '{}', origin_version: '3', checksum_sha256: 'a'.repeat(64) }];
   const content = skillContent(values); assert.equal(content.name, '分镜检查');
-  assert.deepEqual(content.resources, [{ path: 'assets/é.json', kind: 'template', content: '{}' }]);
+  assert.deepEqual(content.resources, [{ path: 'assets/é.json', kind: 'template', content: '{}', encoding: 'utf-8' }]);
+});
+
+test('legacy scripts remain recoverable but new submissions reject them; images preserve binary transport', () => {
+  const disk = storage(); const draft = validDraft();
+  draft.values.resources = [
+    { path: 'scripts/check.py', kind: 'script', content: 'raise RuntimeError("read-only")' },
+    { path: 'assets/example.png', kind: 'image', content: btoa('managed-image-bytes'), encoding: 'base64' },
+  ];
+  assert.match(skillDraftIssue(draft.values), /暂不支持脚本/);
+  assert.equal(saveSkillDraft('legacy', draft, disk), true);
+  assert.equal(readSkillDraft('legacy', disk).draft.values.resources[0].kind, 'script');
+  draft.values.resources.shift();
+  draft.pending = { key: draft.key, row_version: null, body: skillContent(draft.values) };
+  assert.equal(saveSkillDraft('owner', draft, disk), true);
+  assert.deepEqual(readSkillDraft('owner', disk).draft.pending, draft.pending);
+  assert.equal(draft.pending.body.resources[0].encoding, 'base64');
+  draft.values.resources[0].content = 'invalid$base64';
+  assert.match(skillDraftIssue(draft.values), /内容无效/);
 });
 
 test('copy, settings and deletion recovery keep account-scoped identities without rounding', () => {
   const disk = storage(); const item = detail();
-  for (const action of [{ kind: 'copy', item, key: crypto.randomUUID() }, { kind: 'settings', item, enabled: true, invocation_mode: 'auto' }, { kind: 'delete', item }]) {
+  for (const action of [{ kind: 'copy', item, key: crypto.randomUUID() }, { kind: 'settings', item, enabled: true }, { kind: 'mode', item, modes: ['standard'] }, { kind: 'delete', item }]) {
     assert.equal(saveSkillAction('owner', action, disk), true);
     const { instructions: _instructions, resources: _resources, ...summary } = item;
     assert.deepEqual(readSkillAction('owner', disk).action, { ...action, item: summary }); assert.equal(readSkillAction('other', disk).action, null);
   }
   const key = [...disk.values.keys()][0]; disk.setItem(key, JSON.stringify({ kind: 'copy', item, key: null }));
   assert.match(readSkillAction('owner', disk).error, /原记录已保留/);
+});
+
+test('retired settings requests retain their original bytes and cannot be rewritten for replay', () => {
+  const disk = storage(); const key = 'agent-skill-action:v1:owner';
+  const legacy = { kind: 'settings', item: detail(), enabled: true, invocation_mode: 'manual' };
+  const raw = JSON.stringify(legacy); disk.setItem(key, raw);
+  assert.equal(readSkillAction('owner', disk).action, null);
+  assert.match(readSkillAction('owner', disk).error, /原记录已保留/);
+  assert.equal(disk.getItem(key), raw);
+  assert.equal(saveSkillAction('owner', legacy, disk), false);
 });

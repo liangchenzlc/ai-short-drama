@@ -118,6 +118,12 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, onR
     || (referencesLoading ? '正在核对参考素材…' : referencesError)
     || (uploaded === null ? '正在核对手动参考图…' : '')
     || (references.missingAssetIds.length ? '关联素材尚未加载完整，请刷新核对。' : '');
+  const sendReason = uncertain ? '上次图片请求仍待核对，已保留原请求。' : recoveryBlocked ? '生成恢复记录无法读取，请从保存详情处理恢复记录。'
+    : disabled ? '镜头存在未解决的编辑或保存状态，请先核对。' : toolBusy ? '图片操作正在进行，请稍候。' : referenceBusy ? '参考图片正在上传，请稍候。' : blockReason;
+  const blockerActions = uncertain ? <Button size="small" loading={busy} onClick={() => void resolveUnknown()}>核对原图片请求</Button>
+    : draft.status === 'error' ? <Button size="small" onClick={() => void draft.retry()}>重试保存设置</Button>
+    : draft.status === 'conflict' ? <Button size="small" onClick={() => void draft.reload()}>核对服务端设置</Button>
+    : privateCapsError || referencesError || references.missingAssetIds.length ? <Button size="small" onClick={() => { setReferencesRevision(value => value + 1); setPrivateCapsRevision(value => value + 1); onRefreshCapabilities(); }}>重新核对</Button> : undefined;
 
   async function generate() {
     if (mutation.current || disabled || toolBusy || referenceBusy || blockReason || uncertain || recoveryBlocked) return;
@@ -219,7 +225,7 @@ export function ShotImageCandidates({ shot, disabled, modelId, capabilities, onR
       {references.unreadyAssetIds.length > 0 && <Alert quiet persistent type="warning" message={`${references.unreadyAssetIds.length} 项关联素材尚无主图，本次仅使用文字设定。`}/>}
       <GenerationComposer feedbackRef={setModelFeedback} prompt={draft.value.input_text} onPrompt={input_text => draft.edit({ input_text })} busy={busy} disabled={disabled || !draft.loaded}
         promptInput={id => <AssetPromptInput id={id} value={draft.value.input_text} onChange={input_text => draft.edit({ input_text })} references={referenceImages} disabled={disabled || busy || !draft.loaded}/>}
-        sendDisabled={disabled || toolBusy || referenceBusy || !!blockReason || !!uncertain || recoveryBlocked} sendTitle={blockReason.startsWith('正在') ? undefined : blockReason || undefined} onSend={() => void generate()}
+        sendDisabled={disabled || toolBusy || referenceBusy || !!blockReason || !!uncertain || recoveryBlocked} sendTitle={sendReason || undefined} blocker={sendReason && !busy && !sendReason.startsWith('正在') ? { message: sendReason, actions: blockerActions } : undefined} onSend={() => void generate()}
         model={<EpisodeModelSelect presentation="standard-creation" optionLayout="compact" feedbackContainer={modelFeedback} kind="image" label="分镜生图模型" value={draft.value.model_config_id ?? modelSelection} disabled={disabled || busy || toolBusy || !draft.loaded}
           onResolvedChange={handleResolved} onChange={id => { draft.edit({ model_config_id: id || null }); onModelChange(id); }}/>} parameters={<AssetGenerationParameters countPlacement="options" value={draft.value} disabled={disabled || busy || !draft.loaded || privateCapsLoading} onChange={draft.edit} capabilities={privateCapabilities}/>}/>
       <CreationDraftFeedback draft={draft}/>

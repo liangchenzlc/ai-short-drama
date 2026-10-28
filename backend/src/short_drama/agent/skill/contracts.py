@@ -1,6 +1,6 @@
 """Skill tool schemas, limits and activation projections shared by coordinators."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
 
@@ -33,6 +33,9 @@ class ReadSkillResource(InputModel):
     path: Annotated[str, Field(min_length=1, max_length=255)]
     offset: Annotated[int, Field(ge=0, le=MAX_RESOURCE_BYTES)] = 0
     limit: Annotated[int, Field(ge=1, le=4000)] = 4000
+    purpose: Annotated[str, Field(min_length=1, max_length=300)] = "读取完成当前任务所需的补充资料"
+    detail: Literal["low", "high", "original"] = "low"
+    crop: tuple[int, int, int, int] | None = None
 
     @field_validator("path")
     @classmethod

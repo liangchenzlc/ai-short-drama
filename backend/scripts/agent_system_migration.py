@@ -148,14 +148,17 @@ def migration_steps():
         + undo_steps()
         + media_undo_steps()
         + task_compaction_steps()
+        + memory_job_check_steps("ck_agent_memory_job_status")
     )
 
 
 def task_compaction_steps():
+    return memory_job_check_steps("ck_agent_memory_job_kind")
+
+
+def memory_job_check_steps(name):
     constraint = next(
-        item
-        for item in Base.metadata.tables["agent_memory_jobs"].constraints
-        if item.name == "ck_agent_memory_job_kind"
+        item for item in Base.metadata.tables["agent_memory_jobs"].constraints if item.name == name
     )
     rule = constraint._create_rule
     try:
@@ -164,8 +167,8 @@ def task_compaction_steps():
         constraint._create_rule = rule
     return [
         (
-            "check:agent_memory_jobs.ck_agent_memory_job_kind",
-            "ALTER TABLE agent_memory_jobs DROP CHECK ck_agent_memory_job_kind, ADD " + addition,
+            f"check:agent_memory_jobs.{name}",
+            f"ALTER TABLE agent_memory_jobs DROP CHECK {name}, ADD " + addition,
         )
     ]
 
@@ -390,7 +393,6 @@ def backfill_skill_packages(connection):
                     skill_key=str(row["id"]),
                     skill_id=row["id"],
                     enabled=0 if row["deleted_at"] else row["enabled"],
-                    invocation_mode="auto",
                     row_version=1,
                     updated_at=utcnow(),
                 )

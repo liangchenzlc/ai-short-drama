@@ -49,8 +49,7 @@ function ImagePreviewContent({ src, alt, title = '图片预览', onClose, canClo
   function moveMagnifier(event: PointerEvent<HTMLDivElement>) {
     const image = imageRef.current;
     const stage = stageRef.current;
-    if (!magnifying || status !== 'loaded' || !image || !stage
-      || (event.pointerType === 'touch' && event.buttons === 0)) return;
+    if (!magnifying || status !== 'loaded' || !image || !stage) return;
 
     // object-fit: contain adds empty bands; sample only the actual image pixels.
     const bounds = image.getBoundingClientRect();
@@ -95,16 +94,11 @@ function ImagePreviewContent({ src, alt, title = '图片预览', onClose, canClo
         </Button>
       </div>
     </div>
-    {magnifying && <p id={magnifierHintId} className="image-magnifier-hint">移动鼠标查看局部细节；触屏可按住图片拖动。关闭放大镜后可滚动原图。</p>}
+    {magnifying && <p id={magnifierHintId} className="image-magnifier-hint">移动鼠标查看局部细节。关闭放大镜后可滚动原图。</p>}
     <div ref={stageRef} className={`image-preview-stage${originalSize ? ' is-original' : ''}${magnifying ? ' is-magnifying' : ''}`}
       aria-busy={status === 'loading'} tabIndex={0} aria-label="图片预览区域，可滚动查看原图" aria-describedby={magnifying ? magnifierHintId : undefined}
       onPointerMove={moveMagnifier} onPointerLeave={() => setLens(null)} onPointerCancel={() => setLens(null)}
-      onPointerDown={(event) => {
-        if (!magnifying || status !== 'loaded') return;
-        if (event.pointerType === 'touch') event.currentTarget.setPointerCapture(event.pointerId);
-        moveMagnifier(event);
-      }}
-      onPointerUp={(event) => { if (event.pointerType === 'touch') setLens(null); }}
+      onPointerDown={moveMagnifier}
       onScroll={() => setLens(null)} onBlur={() => setLens(null)}>
       {status === 'loading' && <div className="image-preview-status" role="status"><Spin/><span>正在加载图片…</span></div>}
       {status === 'error' ? <div className="image-preview-status" role="alert">

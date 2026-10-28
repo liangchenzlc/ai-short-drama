@@ -4,6 +4,36 @@ from sqlalchemy import select
 pytestmark = pytest.mark.integration
 
 
+def test_media_library_workspace_search_and_counts_preserve_account_isolation(db_session):
+    from short_drama.core.exceptions import NotFound
+    from short_drama.service.media_asset_service import MediaAssetService
+    from tests.support.generation_fixtures import settings
+    from tests.support.media_library_fixtures import seed_media_library
+
+    db_session.info["actor"] = seed_media_library(db_session)
+    service = MediaAssetService(db_session, settings, None)
+    all_assets = service.list(0, 24)
+    assert all_assets["total"] == 7
+    assert [item["asset_id"] for item in all_assets["items"]] == [
+        "4007",
+        "4006",
+        "4005",
+        "4004",
+        "4003",
+        "4002",
+        "4001",
+    ]
+    first = service.list(0, 1, {"workspace_mode": "infinite_canvas", "name": "雨夜"})
+    second = service.list(1, 1, {"workspace_mode": "infinite_canvas", "name": "雨夜"})
+    assert first["total"] == second["total"] == 3
+    assert first["items"][0]["asset_id"] == "4006"
+    assert second["items"][0]["asset_id"] == "4004"
+    audio = service.list(0, 24, {"workspace_mode": "standard", "media_type": "audio"})
+    assert audio["total"] == 1 and audio["items"][0]["asset_id"] == "4003"
+    with pytest.raises(NotFound):
+        service.detail(4008)
+
+
 def media_context(session):
     from short_drama.service.media_file_service import MediaFileService
     from short_drama.service.project_service import ProjectService

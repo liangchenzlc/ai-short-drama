@@ -23,6 +23,7 @@ from short_drama.schemas.assistant_history import (
     DiscussionRevisionRequest,
 )
 from short_drama.schemas.assistant_policy import GenerationPolicyPatch, GenerationPolicyRead
+from short_drama.schemas.assistant_script import ScriptProposalApplied, ScriptProposalRead
 from short_drama.schemas.assistant_task import (
     AssistantTaskMessage,
     DeletionMemoryPreview,
@@ -44,6 +45,7 @@ from short_drama.schemas.assistant_task import (
 from short_drama.schemas.assistant_undo import BatchUndoPreview, BatchUndoRead, BatchUndoRequest
 from short_drama.schemas.base import Identifier
 from short_drama.schemas.common import PageResponse
+from short_drama.schemas.project_writing import WritingVersion
 from short_drama.service.agent_attachment_service import AgentAttachmentService
 from short_drama.service.assistant_policy_service import AssistantPolicyService
 from short_drama.service.assistant_service import AssistantService
@@ -77,6 +79,16 @@ def task_service(request: Request, session: Session = Depends(get_session)):
 
 
 Tasks = Annotated[AssistantTaskService, Depends(task_service)]
+
+
+@router.get("/operations/{operation_id}/script-proposal", response_model=ScriptProposalRead)
+def script_proposal(operation_id: Identifier, service: Tasks):
+    return service.script_proposal(operation_id)
+
+
+@router.post("/operations/{operation_id}/apply-script", response_model=ScriptProposalApplied)
+def apply_script_proposal(operation_id: Identifier, payload: WritingVersion, service: Tasks):
+    return service.apply_script_proposal(operation_id, payload)
 
 
 @router.get("/operations/{operation_id}/undo-preview", response_model=BatchUndoPreview)

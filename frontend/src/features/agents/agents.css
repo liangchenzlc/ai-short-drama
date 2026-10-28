@@ -42,11 +42,6 @@
   .storyboard-tool-row, .storyboard-options-grid { grid-template-columns: minmax(0, 1fr); }
   .storyboard-tool-actions { grid-column: auto; padding-top: 0; }
 }
-@media (max-width: 760px) {
-  .agent-conversation-panel { min-height: 460px; }
-  .agent-conversation-empty { padding-block: 42px 30px; }
-  .agent-workspace-tabs button { min-height: var(--control-height-touch); }
-}
 .agent-runtime { display: flex; flex-direction: column; min-width: 0; }
 .agent-runtime-status { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 10px 0; color: var(--sub); font-size: 12px; }
 .agent-runtime-status > span:first-child { color: var(--accent); }
@@ -135,16 +130,6 @@
 .agent-artifact-media img, .agent-artifact-media video { display: block; width: 100%; max-height: 48dvh; object-fit: contain; background: var(--canvas); }
 .agent-artifact-media p { color: var(--sub); font-size: 12px; }
 .agent-artifact-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 22px 20px; border-top: 1px solid var(--hair); }
-@media (max-width: 680px) {
-  .agent-transcript { height: 320px; }
-  .agent-composer .ant-btn, .agent-plan .ant-btn { min-height: var(--control-height-touch); }
-  .agent-composer textarea { font-size: 16px; }
-  .agent-artifact-diff section > div { grid-template-columns: 1fr; }
-  .agent-artifact-detail { padding: 16px; }
-  .agent-artifact-actions { padding: 14px 16px 18px; }
-  .agent-artifact-actions .ant-btn, .agent-awaiting-artifacts .ant-btn { min-height: var(--control-height-touch); }
-  .agent-artifact-filters .ant-select { flex: 1; min-width: 100px; }
-}
 
 .agent-panel-heading { align-items: center; padding: 14px 16px; }
 .agent-panel-heading h2 { margin: 0; }
@@ -202,9 +187,7 @@
 .agent-skill-list article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 12px; border: 1px solid var(--hair); border-radius: var(--radius-panel); }
 .agent-skill-list article > span { color: var(--sub); font-size: 12px; }
 .agent-skill-list article > div { grid-column: 1 / -1; display: flex; gap: 6px; }
-.agent-skill-editor { display: grid; gap: 12px; border-top: 1px solid var(--hair); padding-top: 16px; margin-top: 16px; }
-.agent-skill-editor label { display: grid; gap: 6px; font-size: 12px; color: var(--sub); }
-.agent-skill-editor > div { display: flex; gap: 8px; }
+.agent-skill-preview { border-top: 1px solid var(--hair); padding-top: 16px; margin-top: 16px; }
 .agent-model-inputs { display: grid; gap: 8px; padding-block: 12px; border-top: 1px solid var(--hair); }
 .agent-history-dialog .agent-rename-form { margin-top: 12px; }
 .agent-panel-heading > div { min-width: 0; }
@@ -226,15 +209,3 @@
 .agent-history-rename { display: grid; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--hair); color: var(--sub); font-size: 12px; }
 .agent-history-rename > div { display: flex; gap: 8px; }
 .agent-history-footer { display: flex; justify-content: space-between; gap: 12px; padding: 16px 22px 20px; border-top: 1px solid var(--hair); }
-@media (max-width: 767px) {
-  .agent-runtime { height: max(500px, calc(100dvh - 210px)); }
-  .agent-context-dialog-body { padding: 14px; }
-  .agent-asset-options article { flex-wrap: wrap; }
-  .agent-asset-options audio { max-width: 100%; }
-  .agent-skill-heading { flex-wrap: wrap; }
-  .agent-input-tools .ant-btn { min-height: var(--control-height-touch); }
-  .agent-history-body { padding: 16px; }
-  .agent-history-body .ant-input-search .ant-input-affix-wrapper, .agent-history-body .ant-input-search-button { height: var(--control-height-touch); }
-  .agent-history-footer { padding: 14px 16px 18px; }
-  .agent-history-entry, .agent-history-footer .ant-btn { min-height: var(--control-height-touch); }
-}

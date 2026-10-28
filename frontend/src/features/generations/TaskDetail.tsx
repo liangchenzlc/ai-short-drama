@@ -8,6 +8,7 @@ import { attemptStorage, clearAttempt, isServerId, requestAttempt } from './atte
 import { ConfigSelect } from './ConfigSelect';
 import { dateLabel, generationError, kindLabels, statusLabels, taskLabel } from './presentation';
 import { taskOrigin, taskPrompts } from './task-content';
+import { taskSourceTarget } from './task-source';
 import { projectPath } from '../../app/paths';
 import { StudioFeedback, StudioFeedbackIndicator, StudioMessageProvider } from '../../components/ui/StudioFeedback';
 
@@ -15,14 +16,14 @@ type Action = 'cancel' | 'retry' | 'resume';
 
 function BusinessResult({ detail }: { detail: GenerationDetail }) {
   const business = detail.result.business;
-  const source = detail.source;
   if (!business && !detail.source_snapshot && !detail.effective_prompt) return null;
-  const episodeSource = source?.scene === 'novel_script' || source?.scene === 'script_shots' || source?.scene === 'script_assets' ? source : null;
+  const target = taskSourceTarget(detail);
   return <div className="generation-business-result">
+    {(business?.kind === 'story_outline' || business?.kind === 'script_generate' || business?.kind === 'script_rewrite') && <p>生成结果已保存到当前{business.kind === 'story_outline' ? '故事大纲' : '剧本正文'}，可在作品中继续修改。</p>}
     {business?.kind === 'novel_script' && <p>已保存候选剧本 <strong>{business.script_id}</strong>，需在本集页面预览并明确设为当前编辑。</p>}
     {business?.kind === 'script_shots' && <p>结构化分镜候选共 <strong>{business.shots.length}</strong> 镜。{business.applied ? `已${business.applied.mode === 'append' ? '追加' : '替换'}应用。` : '尚未应用。'}</p>}
     {business?.kind === 'script_assets' && <p>已提取 <strong>{business.items.length}</strong> 项文字素材，已采用 {business.items.filter(item => item.applied).length} 项。请在素材准备中核对名称、描述与图片生成提示词。</p>}
-    {episodeSource && <Link to={projectPath(episodeSource.project_id, episodeSource.scene === 'novel_script' ? 'source' : episodeSource.scene === 'script_assets' ? 'assets' : 'storyboard')}>打开来源作品页面</Link>}
+    {target?.kind === 'project' && <Link to={projectPath(target.project_id, target.stage)}>打开来源作品页面</Link>}
   </div>;
 }
 export function TaskDetail({ id, onClose, onChanged, onCreated, presentation }: { id: string; onClose: () => void; onChanged: () => void; onCreated: (value: GenerationReceipt) => void; presentation?: 'standard-creation' }) {
@@ -95,7 +96,6 @@ export function TaskDetail({ id, onClose, onChanged, onCreated, presentation }: 
         {detail.error && <Alert type="warning" showIcon message={detail.error.message} description={`错误代码：${detail.error.code}`} />}
         <div className="generation-action-row">
           {(detail.source?.scene === 'dialogue_audio' || detail.source?.scene === 'dialogue_extract') && <Link to={projectPath(detail.source.project_id, 'assembly')}>打开当前作品声音面板</Link>}
-          {detail.batch_id && <Link to={`/tasks/${detail.service_type}?batch=${detail.batch_id}`}>查看来源批次／重试失败项</Link>}
           {detail.can_cancel && <Button disabled={busy} onClick={() => { setAction('cancel'); setActionError(''); }}>请求取消</Button>}
           {detail.can_resume && <Button type="primary" disabled={busy} onClick={() => { setAction('resume'); setActionError(''); }}>安全恢复</Button>}
           {detail.can_retry && <Button type="primary" disabled={busy} onClick={() => { setAction('retry'); setActionError(''); }}>重新生成</Button>}
@@ -105,7 +105,7 @@ export function TaskDetail({ id, onClose, onChanged, onCreated, presentation }: 
           {detail.result.text && <><pre className="generation-text-result">{detail.result.text.content}</pre>{detail.result.text.finish_reason === 'length' && <p className="generation-hint">正文已达到输出长度限制，以上内容已保留。</p>}</>}
           {!!detail.result.assets.length && <div className="generation-result-assets">{detail.result.assets.map((asset) => <article key={asset.asset_id} className="generation-result-asset">
             {asset.media_type === 'image' && asset.url ? <PreviewImage presentation={presentation} src={asset.url} alt={asset.name}/> : <span className="generation-media-placeholder">{asset.media_type === 'video' ? '视频' : '图片'}</span>}
-            <span>{asset.name}</span>{asset.media_type === 'audio' ? <><audio controls preload="metadata" src={asset.url ?? undefined}/><p>在本集“配音、字幕和配乐”面板中核对并采用。</p></> : <Link to={`/media-library/${asset.media_type}?asset=${asset.asset_id}`}>查看资产与确认采用</Link>}
+            <span>{asset.name}</span>{asset.media_type === 'audio' ? <><audio controls preload="metadata" src={asset.url ?? undefined}/><p>在本集“配音、字幕和配乐”面板中核对并采用。</p></> : <Link to={`/media-library/${asset.media_type}?asset=${asset.asset_id}`}>预览资产</Link>}
           </article>)}</div>}
           {!detail.result.text && !detail.result.assets.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={detail.status === 'queued' || detail.status === 'running' ? '结果将在完成后显示' : '暂无已保存结果'} />}
           <BusinessResult detail={detail}/>

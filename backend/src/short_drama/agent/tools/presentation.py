@@ -15,6 +15,8 @@ ARTIFACT = "artifact"
 VISIBILITIES = frozenset({SILENT, STEP, ARTIFACT})
 
 _VISIBILITY = {
+    "read_current_script": STEP,
+    "propose_script_patch": ARTIFACT,
     "search_skills": SILENT,
     "load_skill": STEP,
     "read_skill_resource": STEP,
@@ -43,9 +45,12 @@ _VISIBILITY = {
 }
 
 _LABELS = {
+    "read_current_script": "读取当前剧本",
+    "propose_script_patch": "准备剧本修改建议",
     "load_skill": "读取创作方法",
     "read_skill_resource": "读取创作方法",
     "describe_creation_target": "核对写入目标",
+    "confirm_requirements": "确认交付要求",
     "read_selected_subjects": "读取选定内容",
     "read_task_results": "读取作品内容",
     "read_image_group": "读取图片组",

@@ -14,25 +14,30 @@ import { LoginPage, RegisterPage, EmailProofPage } from '../features/auth/Accoun
 import { ModelPreferencesProvider } from '../features/auth/ModelPreferences';
 import { ConfigCatalogProvider } from '../features/ai-config/ConfigCatalogProvider';
 import { preloadable } from '../components/ui/preloadable';
-import { accountPath, aiConfigPath } from './paths';
+import { safeCanvasReturn } from '../features/ai-config/config-form-model';
+import { accountPath, aiConfigPath, skillsPath } from './paths';
 import { hasStandardUnpersistedChanges, retryStandardSessions } from '../features/projects/standard-session-registry';
 
+const SkillsPage = lazy(() => import('../pages/skills/SkillsPage').then(module => ({ default: module.SkillsPage })));
 const AiConfigPage = lazy(() => import('../pages/ai-config/AiConfigPage').then(module => ({ default: module.AiConfigPage })));
 const AccountCenterPage = lazy(() => import('../features/auth/AccountCenter').then(module => ({ default: module.AccountCenterPage })));
 const loadProjectRoute = () => import('../pages/projects/ProjectRoute');
 const ProjectRoute = preloadable(() => loadProjectRoute().then(module => ({ default: module.ProjectRoute })));
-const TasksPage = lazy(() => import('../pages/tasks/TasksPage').then(module => ({ default: module.TasksPage })));
 const MediaLibraryPage = lazy(() => import('../pages/media-library/MediaLibraryPage').then(module => ({ default: module.MediaLibraryPage })));
 
-function TaskRoute() {
-  const { kind } = useParams();
-  if (kind !== 'text' && kind !== 'image' && kind !== 'video' && kind !== 'audio') return <NotFoundPage message="任务类型不存在。" />;
-  return <TasksPage key={kind} kind={kind} />;
+function AiConfigRoute() {
+  const { search } = useLocation();
+  const params = new URLSearchParams(search);
+  if (params.get('section') === 'skills') {
+    const returnTo = safeCanvasReturn(params.get('return_to'));
+    return <Navigate to={skillsPath + (returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : '')} replace/>;
+  }
+  return <AiConfigPage/>;
 }
 function MediaLibraryRoute() {
   const { kind } = useParams();
-  if (kind !== 'image' && kind !== 'video') return <NotFoundPage message="资产类型不存在。" />;
-  return <MediaLibraryPage key={kind} kind={kind} />;
+  if (kind !== 'all' && kind !== 'image' && kind !== 'video' && kind !== 'audio') return <NotFoundPage message="资产类型不存在。" />;
+  return <MediaLibraryPage kind={kind} />;
 }
 function StudioLayout() {
   const { pathname } = useLocation();
@@ -40,8 +45,8 @@ function StudioLayout() {
   const episode = useMatch('/projects/:projectId/:stage');
   const project = useMatch('/projects/:projectId');
   const canvas = useMatch('/projects/:projectId/canvases/:canvasId');
-  const page: MainPage = pathname.startsWith('/tasks') ? 'tasks' : pathname.startsWith('/media-library') ? 'media-library' : pathname === aiConfigPath ? 'ai' : pathname === accountPath ? 'account' : 'projects';
-  const pageLabels: Record<MainPage, string> = { projects: '项目管理', tasks: '任务管理', 'media-library': '资产库', ai: 'AI 配置', account: '账号中心' };
+  const page: MainPage = pathname.startsWith('/media-library') ? 'media-library' : pathname === skillsPath ? 'skills' : pathname === aiConfigPath ? 'ai' : pathname === accountPath ? 'account' : 'projects';
+  const pageLabels: Record<MainPage, string> = { projects: '项目管理', 'media-library': '资产库', skills: 'Skill 管理', ai: 'AI 配置', account: '账号中心' };
   const detail = !!(episode || project || canvas);
   useLayoutEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [pathname]);
   return <div className={detail ? `studio studio-detail studio-${episode ? 'episode' : 'detail'}` : 'studio'}>
@@ -93,11 +98,11 @@ export function App() {
       </Route>
       <Route path="assets/*" element={<NotFoundPage message="全局素材库已停用，素材请在当前项目创作流程中管理。" />} />
       <Route path="ai" element={<Navigate to={aiConfigPath} replace />} />
-      <Route path="ai_config" element={<AiConfigPage />} />
+      <Route path="ai_config" element={<AiConfigRoute />} />
+      <Route path="skills" element={<SkillsPage />} />
       <Route path="account" element={<AccountCenterPage />} />
-      <Route path="tasks" element={<Navigate to="/tasks/text" replace />} />
-      <Route path="tasks/:kind" element={<TaskRoute />} />
-      <Route path="media-library" element={<Navigate to="/media-library/image" replace />} />
+      <Route path="tasks/*" element={<Navigate to="/projects" replace />} />
+      <Route path="media-library" element={<Navigate to="/media-library/all" replace />} />
       <Route path="media-library/:kind" element={<MediaLibraryRoute />} />
       </Route>
     <Route path="*" element={<NotFoundPage />} />

@@ -3,8 +3,9 @@ import { expect, type Page } from '@playwright/test';
 
 export const refinementViewports = [
   { width: 1440, height: 1000 },
-  { width: 1024, height: 900 },
-  { width: 390, height: 844 },
+  { width: 1280, height: 720 },
+  { width: 1366, height: 768 },
+  { width: 1920, height: 1080 },
 ];
 
 export async function captureRefinement(page: Page, name: string, width: number) {

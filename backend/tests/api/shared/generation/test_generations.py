@@ -1,6 +1,20 @@
 from tests.api.shared.model_config.test_ai_validation import send
 
 
+def test_media_library_exposes_optional_workspace_and_all_three_media_types():
+    document = send("GET", "/openapi.json").json()
+    parameters = document["paths"]["/api/v1/media-library/items"]["get"]["parameters"]
+    for name, expected in (
+        ("workspace_mode", ["standard", "infinite_canvas"]),
+        ("media_type", ["image", "video", "audio"]),
+    ):
+        parameter = next(item for item in parameters if item["name"] == name)
+        assert not parameter.get("required")
+        choices = next(item["enum"] for item in parameter["schema"]["anyOf"] if "enum" in item)
+        assert choices == expected
+    assert send("GET", "/api/v1/media-library/items?workspace_mode=invalid").status_code == 422
+
+
 def test_task_status_filter_only_accepts_five_states():
     document = send("GET", "/openapi.json").json()
     parameters = document["paths"]["/api/v1/ai/generations"]["get"]["parameters"]

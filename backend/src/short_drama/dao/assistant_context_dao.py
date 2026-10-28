@@ -11,6 +11,7 @@ from short_drama.domain import (
     ProjectCanvas,
     ShotScript,
 )
+from short_drama.domain.canvas import CanvasNode
 
 
 class AssistantContextDAO:
@@ -19,6 +20,17 @@ class AssistantContextDAO:
 
     def project(self, identifier):
         return self.session.scalar(select(Project).where(Project.id == identifier))
+
+    def canvas_node(self, canvas_id, node_key):
+        return self.session.scalar(
+            select(CanvasNode)
+            .where(
+                CanvasNode.canvas_id == canvas_id,
+                CanvasNode.node_key == node_key,
+                CanvasNode.archived_at.is_(None),
+            )
+            .with_for_update()
+        )
 
     def creation(self, project_id, identifier):
         return self.session.scalar(

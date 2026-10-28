@@ -95,15 +95,13 @@ export function CanvasVersionPreview({ preview, busy = false, onReturn, onShowVe
 
     return (
         <div className="absolute inset-0 flex min-h-0 flex-col" data-canvas-version-preview style={{ background: resolveCanvasAppearance(project?.appearance, theme).background }}>
-            <header data-canvas-no-zoom className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-sidebar px-5 py-3 text-foreground sm:flex">
+            <header data-canvas-no-zoom className="shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-sidebar px-5 py-3 text-foreground flex">
                 <Eye size={16} className="text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                     <strong className="text-sm">{preview.label} · 只读预览</strong>
                     <p className="mt-1 text-xs text-muted-foreground">{new Date(preview.date).toLocaleString("zh-CN")}</p>
                 </div>
-                <Button type="text" className="lg:!hidden" icon={<History size={15} />} disabled={busy} onClick={onShowVersions}>
-                    版本
-                </Button>
+
                 <Button className="col-span-3" icon={<ArrowLeft size={15} />} disabled={busy} onClick={onReturn}>
                     返回当前画布
                 </Button>

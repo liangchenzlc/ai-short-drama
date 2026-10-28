@@ -9,6 +9,8 @@ export interface AssistantDraft {
   taskId?: string; newTask?: boolean; executionTarget?: TaskExecutionTarget | null;
   memoryProjectIds?: string[]; mediaLimits?: TaskMediaLimits;
   settingsDirty?: boolean;
+  materials?: (AssistantSubjectReference & { name: string })[];
+  materialsInvalid?: boolean;
 }
 type DraftStorage = Pick<Storage, 'getItem' | 'setItem'>;
 const empty = (): AssistantDraft => ({ version: 1, text: '', skills: [] });
@@ -34,6 +36,8 @@ export function readAssistantDraft(accountId: string, conversationId: string, st
       ...(Array.isArray(record.memoryProjectIds) && record.memoryProjectIds.every(identifier) ? { memoryProjectIds: record.memoryProjectIds.slice(0, 16) } : {}),
       ...(validLimits(record.mediaLimits) ? { mediaLimits: record.mediaLimits as unknown as TaskMediaLimits } : {}),
       ...(typeof record.settingsDirty === 'boolean' ? { settingsDirty: record.settingsDirty } : {}),
+      ...(record.materials !== undefined ? Array.isArray(record.materials) && record.materials.length <= 16 && record.materials.every(validDraftMaterial)
+        ? { materials: record.materials } : { materialsInvalid: true } : {}),
     };
   } catch { return empty(); }
 }
@@ -46,6 +50,7 @@ export function saveAssistantDraft(accountId: string, conversationId: string, dr
       taskId: draft.taskId, newTask: draft.newTask, executionTarget: draft.executionTarget,
       memoryProjectIds: draft.memoryProjectIds, mediaLimits: draft.mediaLimits,
       settingsDirty: draft.settingsDirty,
+      materials: draft.materials?.map(({ project_id, source_kind, source_id, kind, id, revision, content_revision, checksum, name }) => ({ project_id, source_kind, source_id, kind, id, revision, ...(content_revision ? { content_revision } : {}), ...(checksum ? { checksum } : {}), name: name.slice(0, 120) })),
     }));
     return true;
   } catch { return false; }
@@ -71,6 +76,11 @@ function validLimits(value: unknown): value is Record<'images' | 'videos' | 'aud
 
 const subjectKey = (value: unknown): value is string => typeof value === 'string' && /^subject:[0-9a-f]{64}$/.test(value);
 const subjectFields = ['project_id', 'source_kind', 'source_id', 'kind', 'id', 'revision', 'content_revision', 'checksum'];
+function validDraftMaterial(value: unknown): value is AssistantSubjectReference & { name: string } {
+  if (!record(value) || typeof value.name !== 'string' || value.name.length > 120) return false;
+  const { name: _name, ...reference } = value;
+  return validSubjectReference(reference);
+}
 export function validSubjectReference(value: unknown): value is AssistantSubjectReference {
   if (!record(value) || !only(value, subjectFields) || !identifier(value.project_id) || !identifier(value.revision)
     || typeof value.source_id !== 'string' || !value.source_id || value.source_id.length > 128
@@ -83,8 +93,9 @@ export function validSubjectReference(value: unknown): value is AssistantSubject
       && (value.kind === 'sound_line' ? /^[a-zA-Z0-9_-]{1,64}$/.test(value.id) : identifier(value.id));
 }
 function pendingBody(value: unknown): value is AssistantSendInput {
-  if (!record(value) || !only(value, ['content', 'model_config_id', 'context', 'attachment_ids', 'skills', 'video_audio', 'task_id', 'new_task', 'execution_target', 'memory_project_ids', 'media_limits', 'subject_selection', 'attachment_selection'])
+  if (!record(value) || !only(value, ['content', 'model_config_id', 'context', 'attachment_ids', 'skills', 'video_audio', 'task_id', 'new_task', 'execution_target', 'memory_project_ids', 'media_limits', 'subject_selection', 'attachment_selection', 'script_reference'])
     || typeof value.content !== 'string' || !value.content.trim() || value.content.length > 32000
+    || value.script_reference != null && !validScriptReference(value.script_reference)
     || value.model_config_id !== undefined && !identifier(value.model_config_id)
     || value.task_id !== undefined && !identifier(value.task_id)
     || value.new_task !== undefined && typeof value.new_task !== 'boolean'
@@ -132,6 +143,14 @@ function pendingBody(value: unknown): value is AssistantSendInput {
     && skill.id.length <= 80 && (identifier(skill.id) || /^builtin:[a-z][a-z0-9_-]*$/.test(skill.id)
       || /^[a-z][a-z0-9_-]*\.v[1-9]\d*$/.test(skill.id)) && identifier(skill.content_version)))) return false;
   return value.video_audio === undefined || value.video_audio === 'include' || value.video_audio === 'visual_only';
+}
+
+function validScriptReference(value: unknown): boolean {
+  if (!record(value) || !only(value, ['project_id', 'script_id', 'content_version', 'start', 'end'])
+    || !identifier(value.project_id) || value.script_id !== null && !identifier(value.script_id)
+    || !identifier(value.content_version)) return false;
+  return value.start == null && value.end == null || Number.isSafeInteger(value.start) && Number.isSafeInteger(value.end)
+    && (value.start as number) >= 0 && (value.end as number) > (value.start as number);
 }
 
 function pendingRecord(value: unknown): value is AssistantPendingSend {

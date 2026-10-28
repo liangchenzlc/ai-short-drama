@@ -16,6 +16,7 @@ function entryPath(entry: StandardSaveEntry) {
     : shot || entry.key.startsWith('storyboard') ? 'storyboard'
     : entry.key.startsWith('assembly') || entry.key.startsWith('sound') ? 'assembly' : 'source';
   const query = new URLSearchParams();
+  if (entry.key.startsWith('story-settings:')) query.set('writing', 'settings');
   if (asset) query.set('asset', asset);
   if (shot) query.set('shot', shot);
   return projectPath(entry.projectId!, stage) + (query.size ? `?${query}` : '');

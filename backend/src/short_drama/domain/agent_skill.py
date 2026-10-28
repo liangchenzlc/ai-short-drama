@@ -1,8 +1,8 @@
-"""Immutable account skill packages and separate personal invocation settings."""
+"""Immutable account skill packages and separate personal availability settings."""
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Index, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, Index, UniqueConstraint
 from sqlalchemy.dialects.mysql import MEDIUMTEXT, VARCHAR
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -63,9 +63,6 @@ class AgentSkillSetting(Base):
     skill_key: Mapped[str] = mapped_column(VARCHAR(80, collation="utf8mb4_0900_bin"))
     skill_id: Mapped[int | None] = _number(nullable=True)
     enabled: Mapped[int] = _number(1)
-    invocation_mode: Mapped[str] = mapped_column(
-        VARCHAR(16, collation="utf8mb4_0900_bin"), server_default=text("'auto'")
-    )
     row_version: Mapped[int] = _number(1)
     updated_at: Mapped[datetime] = _time()
 
@@ -80,7 +77,7 @@ class AgentSkillSetting(Base):
         UniqueConstraint("owner_user_id", "skill_key", name="uk_agent_skill_setting"),
         CheckConstraint("enabled IN (0,1)", name="ck_agent_skill_setting_enabled"),
         CheckConstraint(
-            "invocation_mode IN ('auto','manual') AND row_version > 0",
+            "row_version > 0",
             name="ck_agent_skill_setting_values",
         ),
         CheckConstraint(

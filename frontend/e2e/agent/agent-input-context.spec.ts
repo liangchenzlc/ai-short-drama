@@ -15,7 +15,7 @@ const personalSkill = (): AgentSkillDetail => ({
   content_version: '1', row_version: '1', instructions: '保留站台对白。', checksum_sha256: 'c'.repeat(64),
   package_checksum: 'd'.repeat(64), slug: 'rain', description: '保持雨夜站台对白与人物动机。',
   tags: ['对白'], modes: ['standard', 'infinite_canvas'], exclusions: '', required_tools: [], source: '',
-  invocation_mode: 'auto', settings_version: '1', compatible: true, issues: [], resource_count: 0,
+  settings_version: '1', compatible: true, issues: [], resource_count: 0,
   resources: [], updated_at: time,
 });
 function deferred() {
@@ -357,75 +357,6 @@ test('a refreshed draft restores its model and validated Skill reference without
   await expect(page.locator('.studio-message').filter({ hasText: '部分 Skill 已更新、停用或删除' })).toBeVisible();
   await expect(page.locator('.agent-loaded-skills')).toHaveCount(0);
   expect(data.state.sends).toEqual([]); expect(data.state.modelUpdates).toEqual([]);
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('personal Skill conflicts preserve edits and selected skills follow the saved version', async ({ page }) => {
-  const data = await contextFixture(page);
-  await page.goto(`${root}/source?assistant=open&conversation=301`);
-  await openTools(page);
-  await page.getByRole('button', { name: '加载 Skill', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '加载 Skill', exact: true });
-  await dialog.getByText('我的技能', { exact: true }).click();
-  const chooser = page.waitForEvent('filechooser');
-  await dialog.getByRole('button', { name: '上传 Skill', exact: true }).click();
-  await (await chooser).setFiles({ name: 'rain.md', mimeType: 'text/markdown', buffer: Buffer.from('保留站台对白。') });
-  await dialog.getByRole('checkbox', { name: '雨夜创作规范', exact: true }).check();
-  expect(data.state.skillReads).toEqual([]);
-  await dialog.getByRole('button', { name: '编辑', exact: true }).click();
-  await expect.poll(() => data.state.skillReads).toEqual(['/skills/980']);
-  await dialog.getByRole('textbox', { name: 'Markdown 指令', exact: true }).fill('保留站台对白与雨夜人物动机。');
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
-  const discard = page.getByRole('dialog', { name: '未保存的 Skill', exact: true });
-  await expect(discard).toBeVisible();
-  await discard.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(dialog.getByRole('textbox', { name: 'Markdown 指令', exact: true })).toHaveValue('保留站台对白与雨夜人物动机。');
-  data.state.failSkill = true;
-  await dialog.getByRole('button', { name: '保存新版本', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('数据已被修改');
-  await expect(dialog.getByRole('textbox', { name: 'Markdown 指令', exact: true })).toHaveValue('保留站台对白与雨夜人物动机。');
-  data.state.failSkill = false;
-  await dialog.getByRole('button', { name: '保存新版本', exact: true }).click();
-  await expect(dialog.getByRole('textbox', { name: 'Markdown 指令', exact: true })).toHaveCount(0);
-  expect(data.state.skillUpdates).toEqual([
-    { row_version: '1', name: '雨夜创作规范', instructions: '保留站台对白与雨夜人物动机。' },
-    { row_version: '1', name: '雨夜创作规范', instructions: '保留站台对白与雨夜人物动机。' },
-  ]);
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
-  await expect(page.locator('.agent-loaded-skills')).toContainText('雨夜创作规范 v2');
-  await page.getByRole('textbox', { name: '给助手的消息', exact: true }).fill('依据雨夜规范讨论人物。');
-  await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect.poll(() => data.state.sends.length).toBe(1);
-  expect(data.state.sends[0].body.skills).toEqual([{ id: '980', content_version: '2' }]);
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('standard skill management stays in its dialog and keeps completion reachable on a short mobile viewport', async ({ page }) => {
-  const data = await contextFixture(page);
-  data.state.skills.push(personalSkill());
-  await page.setViewportSize({ width: 390, height: 600 });
-  await page.goto(`${root}/source?assistant=open&conversation=301`);
-  await openTools(page);
-  await page.getByRole('button', { name: '加载 Skill', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '加载 Skill', exact: true });
-  await expect(dialog).toHaveClass(/standard-assistant-dialog/);
-  await dialog.getByText('我的技能', { exact: true }).click();
-  await dialog.getByRole('checkbox', { name: '雨夜创作规范', exact: true }).check();
-  await dialog.getByRole('button', { name: '编辑', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: '完成', exact: true })).toBeInViewport();
-  await dialog.getByRole('button', { name: '管理技能雨夜创作规范', exact: true }).click();
-  const disable = dialog.getByRole('menuitem', { name: '停用', exact: true });
-  await expect(disable).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(disable).toBeHidden(); await expect(dialog).toBeVisible();
-  await dialog.getByRole('button', { name: '管理技能雨夜创作规范', exact: true }).click();
-  await dialog.getByRole('menuitem', { name: '停用', exact: true }).click();
-  await expect(dialog.getByRole('checkbox', { name: '雨夜创作规范', exact: true })).toBeDisabled();
-  await expect(dialog.locator('.standard-assistant-dialog-footer')).toContainText('已加载 0 / 8');
-  expect(data.state.skillUpdates).toEqual([{ row_version: '1', enabled: false }]);
-  await page.screenshot({ path: test.info().outputPath('standard-skill-mobile-short.png'), fullPage: true, animations: 'disabled' });
-  await dialog.getByRole('button', { name: '完成', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: '给助手的消息', exact: true })).toBeVisible();
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 

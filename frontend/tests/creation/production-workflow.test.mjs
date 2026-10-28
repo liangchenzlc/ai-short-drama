@@ -78,11 +78,8 @@ test('storyboard timing summarizes generated beats and defaults legacy durations
   assert.deepEqual(workflow.storyboardTiming([]), { total_ms: 0, average_ms: 0 });
 });
 
-test('storyboard review keeps timing controls and loads compact result pages', async () => {
-  const stage = readFileSync(new URL('../../src/pages/projects/episode/StoryboardStage.tsx', import.meta.url), 'utf8');
+test('storyboard review preserves edited timing and loads compact result pages', async () => {
   const preview = readFileSync(new URL('../../src/features/projects/StoryboardResultPreview.tsx', import.meta.url), 'utf8');
-  assert.match(stage, /平均镜头时长/);
-  assert.match(stage, /自定义/);
   const editingSource = readFileSync(new URL('../../src/features/projects/storyboard-editing-session.ts', import.meta.url), 'utf8');
   const editingFile = ts.createSourceFile('storyboard-editing-session.ts', editingSource, ts.ScriptTarget.Latest, true);
   const draftFunction = editingFile.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'shotDraftValue');

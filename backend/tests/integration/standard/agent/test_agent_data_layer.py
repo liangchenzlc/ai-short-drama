@@ -93,6 +93,34 @@ def test_assistant_preference_migration_is_additive_and_never_resets_a_saved_dis
         assert inspect_agent_schema(connection) == {"status": "ready", "gaps": []}
 
 
+def test_memory_retry_status_migration_replaces_only_the_legacy_check_and_is_reentrant(
+    migration_mysql_engine,
+):
+    from scripts.agent_system_migration import apply_migration
+
+    engine = migration_mysql_engine
+    with engine.begin() as connection:
+        before = connection.scalar(text("SELECT COUNT(*) FROM agent_memory_jobs"))
+        connection.exec_driver_sql(
+            "ALTER TABLE agent_memory_jobs DROP CHECK ck_agent_memory_job_status, "
+            "ADD CONSTRAINT ck_agent_memory_job_status CHECK ("
+            "status IN ('pending','running','succeeded','failed','stale','cancelled') "
+            "AND provider_state IN ('not_started','sending','received','unknown'))"
+        )
+    with engine.connect() as connection:
+        assert (
+            "agent_memory_jobs.ck_agent_memory_job_status:check"
+            in inspect_agent_schema(connection)["gaps"]
+        )
+    assert apply_migration(engine)["executed"] == [
+        "check:agent_memory_jobs.ck_agent_memory_job_status"
+    ]
+    assert apply_migration(engine)["executed"] == []
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT COUNT(*) FROM agent_memory_jobs")) == before
+        assert inspect_agent_schema(connection) == {"status": "ready", "gaps": []}
+
+
 def test_missing_agent_tables_do_not_block_prompt_readiness_and_migrate_twice(
     migration_mysql_engine,
 ):

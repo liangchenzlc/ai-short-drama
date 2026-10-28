@@ -62,7 +62,7 @@ export function CanvasNodeSearchModal({ open, nodes, onClose, onFocus }: { open:
             />
             <div className="mt-2 flex min-h-7 items-center justify-between gap-3 border-b pb-2 text-[11px] tracking-[0.015em] text-foreground/45">
                 <span className="tabular-nums">{query.trim() ? `找到 ${results.length} 个节点` : `最近编辑 · ${results.length} 个节点`}</span>
-                <span className="hidden sm:inline">↑↓ 选择 · Enter 定位 · Esc 关闭</span>
+                <span className="inline">↑↓ 选择 · Enter 定位 · Esc 关闭</span>
             </div>
             <div id={RESULT_LIST_ID} role="listbox" aria-label="画布节点搜索结果" className="thin-scrollbar max-h-[54vh] overflow-y-auto overscroll-contain py-1.5">
                 {results.length ? results.map((node, index) => (
@@ -89,7 +89,7 @@ const CanvasNodeSearchResult = memo(function CanvasNodeSearchResult({ node, acti
             type="button"
             role="option"
             aria-selected={active}
-            className="grid min-h-14 w-full grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[var(--r-md)] px-2 py-1.5 text-left transition-[background-color,box-shadow] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 max-sm:grid-cols-[56px_minmax(0,1fr)]"
+            className="grid min-h-14 w-full grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[var(--r-md)] px-2 py-1.5 text-left transition-[background-color,box-shadow] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
             style={{
                 background: active ? "var(--surface-active)" : undefined,
                 boxShadow: active ? "inset 0 0 0 1px color-mix(in srgb, var(--foreground) 10%, transparent)" : undefined,
@@ -110,15 +110,12 @@ const CanvasNodeSearchResult = memo(function CanvasNodeSearchResult({ node, acti
                     {node.metadata?.chapterTitle ? <BookOpenText className="size-3 shrink-0" /> : null}
                     <span className="truncate" title={context}>{context}</span>
                 </span>
-                <span className="mt-1 hidden items-center gap-3 text-[10px] tabular-nums tracking-[0.015em] text-foreground/40 max-sm:flex">
+                <span className="mt-1 hidden items-center gap-3 text-[10px] tabular-nums tracking-[0.015em] text-foreground/40">
                     <time dateTime={times.createdAt} title={fullTime(times.createdAt)}>创建 {times.createdLabel}</time>
                     <time dateTime={times.updatedAt} title={fullTime(times.updatedAt)}>编辑 {times.updatedLabel}</time>
                 </span>
             </span>
-            <span className="grid min-w-[112px] gap-0.5 border-l pl-3 text-[10px] tabular-nums tracking-[0.015em] text-foreground/40 max-sm:hidden" style={{ borderColor: "color-mix(in srgb, var(--foreground) 8%, transparent)" }}>
-                <span className="flex items-center gap-1.5"><Clock3 className="size-3" /><span>创建</span><time className="ml-auto" dateTime={times.createdAt} title={fullTime(times.createdAt)}>{times.createdLabel}</time></span>
-                <span className="flex items-center gap-1.5"><Pencil className="size-3" /><span>编辑</span><time className="ml-auto" dateTime={times.updatedAt} title={fullTime(times.updatedAt)}>{times.updatedLabel}</time></span>
-            </span>
+
         </button>
     );
 });

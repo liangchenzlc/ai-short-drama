@@ -33,7 +33,7 @@ def test_storyboard_preview_preserves_complete_candidates_and_frozen_asset_names
                     "scene": "script_shots",
                     "project_id": str(project_id),
                     "script_id": saved["script"]["id"],
-                    "content_version": "3",
+                    "content_version": "2",
                 }
             },
             "preview-shots",

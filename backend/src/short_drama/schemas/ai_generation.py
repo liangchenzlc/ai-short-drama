@@ -7,6 +7,7 @@ from pydantic import AfterValidator, Field, model_validator
 from .base import Identifier, InputModel, nonblank
 from .image_group import ImageOperationSource
 from .native_voice import VoiceDesignSource
+from .project_writing import WritingText, WritingVersion
 
 Prompt = Annotated[str, Field(min_length=1, max_length=1048576), AfterValidator(nonblank)]
 Aspect = Literal["16:9", "9:16", "1:1", "4:3", "3:4"]
@@ -62,6 +63,41 @@ class NovelScriptSource(CreationDraftSource):
     content_version: Identifier
 
 
+class StoryOutlineSource(WritingVersion):
+    scene: Literal["story_outline"]
+    project_id: Identifier
+    input_kind: Literal["novel", "idea"]
+    idea: Annotated[str, Field(max_length=4000)] = ""
+
+    @model_validator(mode="after")
+    def source_idea(self):
+        if self.input_kind == "idea" and not self.idea.strip():
+            raise ValueError("请填写故事想法")
+        if self.input_kind != "idea" and self.idea:
+            raise ValueError("已保存的来源不能同时提供故事想法")
+        return self
+
+
+class ScriptGenerateSource(StoryOutlineSource):
+    scene: Literal["script_generate"]
+    input_kind: Literal["novel", "outline", "idea"]
+
+
+class ScriptRewriteSource(WritingVersion):
+    scene: Literal["script_rewrite"]
+    project_id: Identifier
+    script_id: Identifier
+    start: int = Field(strict=True, ge=0)
+    end: int = Field(strict=True, gt=0)
+    selected_text: WritingText
+
+    @model_validator(mode="after")
+    def selection_range(self):
+        if self.end <= self.start or not self.selected_text.strip():
+            raise ValueError("请选择需要修改的剧本文字")
+        return self
+
+
 class ScriptShotsSource(InputModel):
     scene: Literal["script_shots"]
     project_id: Identifier
@@ -114,6 +150,9 @@ class TextGenerationCreate(InputModel):
     source: (
         Annotated[
             NovelScriptSource
+            | StoryOutlineSource
+            | ScriptGenerateSource
+            | ScriptRewriteSource
             | ScriptShotsSource
             | ScriptAssetsSource
             | DialogueExtractSource
@@ -128,6 +167,12 @@ class TextGenerationCreate(InputModel):
 
     @model_validator(mode="after")
     def business_or_generic(self):
+        if (
+            self.source is not None
+            and self.source.scene == "script_rewrite"
+            and not self.instructions.strip()
+        ):
+            raise ValueError("请填写修改要求")
         if self.source is not None and self.source.scene == "script_assets":
             if self.extraction is None:
                 self.extraction = ExtractionOptions(kinds=["character", "scene", "prop"])

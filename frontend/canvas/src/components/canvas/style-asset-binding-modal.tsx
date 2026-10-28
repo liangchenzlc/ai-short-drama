@@ -89,7 +89,7 @@ export function StyleAssetBindingModal({ open, profile, onClose, onApply }: Styl
             flush
         >
             <div className="flex max-h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
-                <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 pr-12 sm:items-center sm:px-5">
+                <header className="flex justify-between gap-3 border-b border-border py-3 items-center px-5">
                     <div className="min-w-0">
                         <h2 className="text-sm font-semibold">风格执行资产</h2>
                         <p className="mt-0.5 text-[var(--fs-label)] text-foreground/45">绑定模型资产、兼容范围、执行参数和许可快照</p>
@@ -97,8 +97,8 @@ export function StyleAssetBindingModal({ open, profile, onClose, onApply }: Styl
                     <Button className="shrink-0" icon={<Plus className="size-3.5" />} disabled={draft.assets.length >= MAX_STYLE_ASSETS} title={draft.assets.length >= MAX_STYLE_ASSETS ? `最多绑定 ${MAX_STYLE_ASSETS} 个资产` : undefined} onClick={addAsset}>添加资产</Button>
                 </header>
 
-                <div className="grid min-h-0 flex-1 md:grid-cols-3">
-                    <aside className="thin-scrollbar max-h-52 min-h-0 overflow-y-auto border-b border-border md:col-span-1 md:max-h-none md:border-b-0 md:border-r">
+                <div className="grid min-h-0 flex-1 grid-cols-3">
+                    <aside className="thin-scrollbar max-h-52 min-h-0 overflow-y-auto border-border col-span-1 max-h-none border-b-0 border-r">
                         <div className="sticky top-0 z-10 border-b border-border bg-background px-4 py-3">
                             <label className="flex items-center justify-between gap-3 text-xs">
                                 <span className="min-w-0">
@@ -141,7 +141,7 @@ export function StyleAssetBindingModal({ open, profile, onClose, onApply }: Styl
                         )}
                     </aside>
 
-                    <main className="thin-scrollbar min-h-0 overflow-y-auto p-4 sm:p-5 md:col-span-2">
+                    <main className="thin-scrollbar min-h-0 overflow-y-auto p-5 col-span-2">
                         {editing ? (
                             <AssetEditor asset={editing} onChange={updateAsset} onDelete={() => deleteAsset(editing.id)} />
                         ) : (
@@ -152,7 +152,7 @@ export function StyleAssetBindingModal({ open, profile, onClose, onApply }: Styl
                     </main>
                 </div>
 
-                <footer className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                <footer className="flex gap-3 border-t border-border py-3 flex-row items-center justify-between px-5">
                     <div className="flex min-w-0 items-start gap-2 text-[var(--fs-tiny)] text-foreground/45">
                         {issues.length ? <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-red-500" /> : <Check className="mt-0.5 size-3.5 shrink-0" />}
                         <span className="min-w-0 leading-5">{issues.length ? `${issues.length} 个资产需要处理：${issues[0].message}` : `${draft.assets.length} 个资产，${draft.assets.filter((asset) => asset.enabled).length} 个已启用`}</span>
@@ -193,7 +193,7 @@ function AssetEditor({ asset, onChange, onDelete }: { asset: StyleAssetBinding; 
                 </div>
             ) : null}
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 grid-cols-2">
                 <Field label="资产类型">
                     <Select<StyleAssetKind> value={asset.kind} options={kindOptions} onChange={(kind) => onChange({ kind })} />
                 </Field>
@@ -215,7 +215,7 @@ function AssetEditor({ asset, onChange, onDelete }: { asset: StyleAssetBinding; 
                 <Field label="来源资产 ID">
                     <Input value={asset.sourceId} placeholder="模型 UUID 或模板 ID" onChange={(event) => onChange({ sourceId: event.target.value })} />
                 </Field>
-                <Field label="来源页面 URL" className="sm:col-span-2">
+                <Field label="来源页面 URL" className="col-span-2">
                     <Input value={asset.sourceUrl} placeholder="记录资产出处，不会自动向该地址发送生成请求" onChange={(event) => onChange({ sourceUrl: event.target.value })} />
                 </Field>
                 <Field label="资产模型标识">
@@ -224,7 +224,7 @@ function AssetEditor({ asset, onChange, onDelete }: { asset: StyleAssetBinding; 
                 <Field label="模型版本">
                     <Input value={asset.version} placeholder="版本 UUID 或版本号" onChange={(event) => onChange({ version: event.target.value })} />
                 </Field>
-                <Field label="兼容基础模型" className="sm:col-span-2">
+                <Field label="兼容基础模型" className="col-span-2">
                     <Select<string[]> mode="tags" value={asset.baseModels || []} tokenSeparators={[","]} placeholder="填写实际生成模型名，输入后回车" onChange={(baseModels) => onChange({ baseModels })} />
                 </Field>
             </div>
@@ -248,7 +248,7 @@ function AssetEditor({ asset, onChange, onDelete }: { asset: StyleAssetBinding; 
 
 function LoraFields({ asset, onChange }: AssetFieldProps) {
     return (
-        <section className="grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
+        <section className="grid gap-4 border-t border-border pt-4 grid-cols-2">
             <Field label="LoRA 权重">
                 <InputNumber className="w-full" min={0} max={2} step={0.05} value={asset.weight} onChange={(weight) => onChange({ weight: weight ?? undefined })} />
             </Field>
@@ -288,7 +288,7 @@ function GenerationParameterFields({ asset, onChange }: AssetFieldProps) {
     return (
         <section className="border-t border-border pt-4">
             <h4 className="mb-3 text-xs font-semibold">建议生成参数</h4>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 grid-cols-4">
                 <Field label="Sampler"><Input value={parameters.sampler} placeholder="可选" onChange={(event) => updateParameters({ sampler: event.target.value })} /></Field>
                 <Field label="Steps"><InputNumber className="w-full" min={1} max={200} value={parameters.steps} onChange={(steps) => updateParameters({ steps: steps ?? undefined })} /></Field>
                 <Field label="CFG"><InputNumber className="w-full" min={0} max={50} step={0.5} value={parameters.cfg} onChange={(cfg) => updateParameters({ cfg: cfg ?? undefined })} /></Field>
@@ -302,7 +302,7 @@ function LicenseFields({ asset, onChange }: AssetFieldProps) {
     return (
         <section className="border-t border-border pt-4">
             <h4 className="mb-3 text-xs font-semibold">许可快照</h4>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 grid-cols-2">
                 <Field label="商业使用">
                     <Select
                         value={asset.license?.commercial === true ? "yes" : asset.license?.commercial === false ? "no" : "unknown"}
@@ -311,7 +311,7 @@ function LicenseFields({ asset, onChange }: AssetFieldProps) {
                     />
                 </Field>
                 <Field label="许可来源"><Input value={asset.license?.source} placeholder="许可页面或协议版本" onChange={(event) => onChange({ license: { ...asset.license, source: event.target.value } })} /></Field>
-                <Field label="许可说明" className="sm:col-span-2"><Input value={asset.license?.note} placeholder="记录会员限制、署名或转售限制" onChange={(event) => onChange({ license: { ...asset.license, note: event.target.value } })} /></Field>
+                <Field label="许可说明" className="col-span-2"><Input value={asset.license?.note} placeholder="记录会员限制、署名或转售限制" onChange={(event) => onChange({ license: { ...asset.license, note: event.target.value } })} /></Field>
             </div>
         </section>
     );

@@ -1,5 +1,25 @@
 # AI 创作助手 API
 
+## 新任务 Harness 契约（2026-10-26）
+
+新 V3 任务固定 `langgraph-harness.1`，旧任务保持原引擎。`TaskRead` 新增 `interruptions`（`stop/redirect/resume`）与兼容字段 `interruptions_supported`；新任务控制只开放 `stop`，`redirect/resume` 返回 409（`assistant_redirect_unavailable` / `assistant_resume_unavailable`），前端按能力对象隐藏按钮。运行中补充仍按原输入版本在下一边界生效。下文句式授权和 redirect／resume 控制仅适用于旧引擎任务，不约束新引擎的自主工具选择。
+
+Harness 处于 `stopped/paused_error/paused_budget` 时，向原任务发送普通消息（包括“继续”）即在同一 Task 下创建新 Run 并调度；刷新后仍保留暂停任务作为发送目标。消息和成果、已结算工具历史及活动 Skill 继承，撤销来源和遗忘规则继续生效。冻结模型配置被修改时返回 `assistant_model_changed`，活跃操作未结算返回冲突；相同幂等键复用已受理结果。此续执行不经过旧中断 control。Harness 的任务创建时冻结单 Run 预算（`AGENT_RUN_DECISION_CAP`/`AGENT_RUN_OUTPUT_TOKEN_CAP`），超限暂停为 `paused_budget`，"继续"即新 Run 续期，不设 Task 总上限；升级前的 `null` 预算快照继续按无限解释。
+
+当前新冻结请求使用工具 schema v4；已有 v3 及更早请求按原冻结协议重放。写工具不含 `request_message_id/request_hash` 等句式授权字段，主体、目标、版本与服务端可信 Actor 校验保留。`load_skill` 参数为 `name/content_version/purpose`；`read_resource` 参数为目录 `ref_id/purpose` 及可选 `detail/crop/offset/limit`；`read_skill_resource` 使用 `activation_id/path/offset/limit/purpose` 及可选图片 detail／crop。脚本只读。schema 的唯一来源为 `agent/tools/registry.py`，客户端不可构造任意工具历史。
+
+基础工具常驻，`tool_catalog` 列可用能力组、用途及启用状态。模型通过 `enable_tool_group(group)` 启用 `standard_write/canvas_write/media/memory_write/image_adoption`，下一决策追加该组 schema；仍按任务模式、媒体开关及可信范围裁剪，不额外授予权限。`confirm_requirements` 确认服务端按用户原话生成的 draft（`keys`），可附有原文引用的 `additions`，不能自行删除或降低数量；引用更新用户消息并包含明确数量修订时，旧定义转为 superseded，新定义成为有效要求；`record_task_observation` 保存引用成功读取操作的观察或推断；`release_skill` 只释放自动方法，不移除手选方法。具体配额和字段见 [Harness 运行机制](../instruction/AI创作助手Harness运行机制.md)。
+
+需要验收的候选最终答复进入内部 Turn，由独立 Turn 的 `submit_completion_review` 结构化检查用户来源、实际操作、成果数量和答复引用；该检查不是业务工具调用。`evidence.v3` 任务没有已确认要求且没有成功写操作时，普通讨论直接发布；旧冻结监督协议保持原行为。新任务的验收 Turn 不继承执行器工具轨迹，而是接收服务端证据包与确定性检查结果，验收模型优先使用本人另一个文本模型。发布前另有确定性守卫：有成功写操作却没有任何已确认 `write` 要求时拒绝发布（`agent_requirements_unconfirmed`），未覆盖的成果类别自动补 `server_derived` 要求。新监督请求暂存流式文本，工具旁白在结算时发布，需要验收的最终回复通过检查后发布；缺项返回原 Agent 继续。停滞按当前已应用输入版本的完整滑动窗口判定：不足窗口不累计空转，完整窗口内无新证据连续两个窗口以 `agent_progress_stalled` 暂停；同组完成缺项连续 6 次未解决以 `agent_completion_stalled` 暂停。未结算生成等待和编排类工具不触发空转暂停。暂停后普通消息可继续。
+
+完成检查 v2 的已有要求只提交 `checks[].key/satisfied/evidence_operation_ids/answer_quote/reason`，服务端复用已登记定义；新增遗漏要求放入 `additional_requirements` 并提供真实用户来源。要求类型中的 `observation/contract` 分别核对有来源观察笔记和已登记要求，与 `write` 的业务成果分开计数。旧 v1 冻结检查仍可按原协议恢复。
+
+内部任务 frame 的 `requirement_sources` 提供有配额的用户原文、消息 ID、seq 和截断状态，供 L4 压缩后的来源引用；不把摘要文本当作原文。来源遗忘后不再注入，缺失原文仍使用现有历史读取工具。
+
+选入主体的 `read_image_content` 需要 `subject_key/group_id/item_id/media_id/purpose`，从 `read_image_group` 图位的 `read_content_args` 复制身份。新工具结果增加 `receipt_operation_id` 标记当前操作，不能当作原保存批次。`read_task_results(operation_id)` 必须引用 `result_sources` 中的成功保存 ID，正文为 `results[].content`；读取不创建成果引用。当前仍选入、由本任务更新的素材／分镜也能回读其保存快照。`describe_creation_target` 增加可选 `result_before_id/result_limit`（默认 10，最多 20），返回分页 `result_sources.items/next_result_before_id`，不读取正文。
+
+工具正文只保存在 Operation，运行检查点、ToolCall、pending results 和冻结请求以操作引用访问；媒体只在本次模型请求水合，持久化历史无像素编码。压缩独立保留活动 Skill 的调用／结果对。纯讨论重答仍只读、原位替换，不带入未来历史。协议、预算与目录入口见 [Harness 运行机制](../instruction/AI创作助手Harness运行机制.md)。
+
 标准模式和无限画布共用 `/api/v1/assistant`。当前入口使用本人项目会话（`scope_version=3`、绑定 `project_id`）、逻辑任务与可恢复的执行尝试；同项目切阶段不更换会话，跨项目分别读取。`/global` 保留为兼容路径前缀，历史未绑定项目的 V3 不自动回填或并入项目。V3 已开放目标说明、主动主体读取、操作回执、本任务成果读取、四个只读记忆工具、四个显式记忆写工具、三个 Skill 工具、有界标准／画布结构批次、标准图片组冻结目录与主图设置，以及标准素材／分镜图片、普通／原生有声分镜视频、角色音色、旧声音文档台词配音和画布图片／视频／音频批次生成与完整结算。多批次反序撤销、Skill 广义语义消歧及真实模型验收仍在实施。工具的自动测试不代表真实模型或媒体供应商验收。进度与证据见[实施记录](../plans/2026-10/2026-10-21-AI创作助手实施与验证记录.md)。
 
 所有接口注入可信 Actor，禁止客户端指定 owner 或系统 Session。会话、消息、任务、操作、附件、模型和记忆仅本人可见；作品须另行校验所有权。数据库 ID、行版本、内容版本及控制水位使用十进制字符串；事件 seq/cursor、分页和消息位置使用数值。JSON 拒绝未声明字段，写请求沿用 Cookie、Origin 和 CSRF 校验。
@@ -23,15 +43,15 @@
 
 ## 停止与补充要求
 
-`POST /tasks/{id}/control` 的语义按运行状态区分：
+`POST /tasks/{id}/control` 的语义按引擎与任务冻结策略区分：
 
-| 请求 | 行为 |
-| --- | --- |
-| `{kind:'stop'}` | 无在途段时立即结束；模型段进行中改为置取消标记，由 Worker 中止请求、把已流出文本落成一条 `narration` 消息并补 `run.interrupted`，再结束 Run。工具执行中仍等当前工具结束 |
-| `{kind:'redirect', content}` | 运行中补充要求：写入新的用户消息与输入版本，在同一任务内于下一段生效，不新建排队 Run |
-| `{kind:'resume', expected_control_seq}` | 任务停止或暂停后继续，复制原 Run 的模型快照，配置变更会被拒绝 |
+| 请求 | Harness（`agent_policy.stop=boundary.v1`） | 旧引擎冻结任务 |
+| --- | --- | --- |
+| `{kind:'stop'}` | 放行：无在途段时立即结束；模型段进行中只置取消标记，段结束后把已流出文本落成 `narration` 并补 `run.interrupted`，Run 以 `cancelled` + `agent_stopped` 结束；工具执行中仍等当前工具结束 | 同左（历史行为） |
+| `{kind:'redirect', content}` | 拒绝，`assistant_redirect_unavailable`；改向改为发送普通补充消息，在下一工具边界应用 | 写入新输入版本，同一任务内下一段生效 |
+| `{kind:'resume', expected_control_seq}` | 拒绝，`assistant_resume_unavailable`；暂停或停止后直接发送消息，在原 Task 下创建新 Run | 复制原 Run 的模型快照继续 |
 
-停止后已生成的候选与文本都保留；`run.interrupted` 只表示本次运行被中断，不代表失败，可以继续发送新要求。
+`TaskRead.interruptions` 分别给出 `{stop,redirect,resume}` 能力，前端据此显示按钮；`interruptions_supported` 保留为 `stop` 的兼容投影。停止后已生成的候选与文本都保留；`run.interrupted` 只表示本次运行被中断，不代表失败，可以继续发送新要求。
 
 ## 全局会话、逻辑任务与恢复
 
@@ -60,6 +80,8 @@
 | GET | `/subjects` | 必带 project_id/kind；query/offset/limit 分页读取可选主体的身份、名称、归属与版本，不读正文 |
 | POST | `/subjects/metadata` | `{subjects:[主体引用]}`，只核对元数据，返回当前版本和校验值；不授予读取／写入权限，不调用模型 |
 | GET | `/operations/{id}` | 本人操作及真实结果详情，不返回供应商原始请求／回执 |
+| GET | `/operations/{id}/script-proposal` | 本人待审剧本建议及采用版本 |
+| POST | `/operations/{id}/apply-script` | `{content_version}` → `{project_id,content_version}`，同建议重复采用返回原回执 |
 
 `state` 默认取最近 20 个任务、50 条消息及最多 200 个操作，使用分页补齐，不能将有界快照当成全部历史。轨迹由操作账本和类型化事件生成，不根据回复文本猜测执行。
 
@@ -67,7 +89,7 @@
 
 流中的暂时数据库等故障发送 `event: retry` 后关闭连接，客户端保留私人历史并按退避重连；只有认证／权限／会话访问终止或功能关闭才发送 `event: access-ended`，清空私人状态并停止自动重连。收到删除事件也立即结束访问。迟到快照不能覆盖更新水位、控制回执或访问终止状态；历史任务分页按实体版本合并，保留当前较高水位，不能因旧分页水位丢弃整页。
 
-同会话串行执行；运行中普通新消息补充当前逻辑任务，显式 `new_task=true` 才创建独立排队任务。停止／暂停后补充仍保留，只有明确 resume 才恢复。resume 必须携带读取到的 `expected_control_seq`，可附 `message_id` 复用本任务已受理的用户输入，不追加“继续任务”消息；该字段只允许用于 resume，且不得与 content 同传，跨任务或非用户输入返回 404。省略字段保留旧调用行为及原幂等哈希。前端在停止后发送新要求，先持久化消息，再携带该消息 ID 与发起时的停止水位继续；受理不明分别核对原消息和原控制请求，不越过后续新停止。新 attempt 继续原逻辑任务，不重做完成操作。stop/redirect/delete 先持久记录待生效请求，当前已开始工具完整结算后才生效，未开始的旧工具不得领取。媒体批次须等全部项生成及回填结果明确；受理不明保持核实及控制屏障，不把拿到任务 ID 当成完成。
+同会话串行执行；运行中普通新消息补充当前逻辑任务，显式 `new_task=true` 才创建独立排队任务。Harness 停止／暂停后普通消息直接续跑；旧引擎停止／暂停后补充仍保留，只有明确 resume 才恢复。resume 必须携带读取到的 `expected_control_seq`，可附 `message_id` 复用本任务已受理的用户输入，不追加“继续任务”消息；该字段只允许用于 resume，且不得与 content 同传，跨任务或非用户输入返回 404。省略字段保留旧调用行为及原幂等哈希。旧引擎前端在停止后发送新要求，先持久化消息，再携带该消息 ID 与发起时的停止水位继续；受理不明分别核对原消息和原控制请求，不越过后续新停止。新 attempt 继续原逻辑任务，不重做完成操作。stop/redirect/delete 先持久记录待生效请求，当前已开始工具完整结算后才生效，未开始的旧工具不得领取。媒体批次须等全部项生成及回填结果明确；受理不明保持核实及控制屏障，不把拿到任务 ID 当成完成。
 
 ## 明确选择的批次撤销
 
@@ -103,13 +125,13 @@ V3 注册三个只读方法工具，与既有工具合计二十三项；它们�
 | `load_skill` | 使用搜索实际返回的 `skill_id/content_version`，可填最多 240 字符的 `purpose`；重新校验当前设置及版本、任务模式和必需工具，成功后返回 `activation_id`、冻结指令及资料 manifest |
 | `read_skill_resource` | 使用本任务活动 `activation_id`、manifest 相对 `path`，`offset` 默认 0，`limit` 默认及最多 4000 字符；返回片段、checksum、范围及 `next_offset`，不接受 URL 或存储地址 |
 
-手动选择在输入边界生效，覆盖完整逻辑任务；普通补充保留，显式选择空列表移除手动方法，自动加载不能加回已移除项。最多八个活动方法、正文累计 128 KiB，手动方法优先挤出自动补充；每任务最多 32 条版本激活记录，已读资料片段累计 32 KiB，同片段重复读取不重复计入。缺少任务必需能力时保留固定身份并显示原因，不装入方法正文。方法及资料不能触发脚本、表达式、链接或未获准工具。
+手动选择在输入边界生效，覆盖完整逻辑任务；普通补充保留，显式选择空列表移除手动方法，自动加载不能加回已移除项。Harness 最多八个活动方法、正文估算 8000 tokens，手动方法优先挤出自动补充；只保留最近 16 条失活记录及活动记录，累计激活不设次数上限，原回执归档完整历史。`release_skill` 可释放自动方法，再加载复用仍有效的原正文回执；手选方法只能由用户移除。旧引擎仍沿用正文 128 KiB、每任务最多 32 条激活记录的旧配额。已读资料片段累计 32 KiB，同片段重复读取不重复计入。缺少任务必需能力时保留固定身份并显示原因，不装入方法正文。方法及资料不能触发脚本、表达式、链接或未获准工具。
 
 输入请求省略 `skills` 表示保留原选择；显式 `skills:[]` 表示清空。前端草稿保存这一区别，刷新后仍能发送空选择。原任务仍选用的精确冻结版本可与新增方法一同发送，即使该旧版已更新、停用或从个人目录删除；新选择仍按当前目录、个人设置与版本校验，已明确移除的旧版不能借历史绕过停用。待应用选择同样参与判断，切换任务不继承未发送的方法变更。受理不明的重试使用原请求体及原幂等键。
 
-轻量选择器由模型旁 Skill 图标打开锚定列表，搜索全部内置／个人方法，每次加载 50 项并支持加载更多，多选直接生效，最多 8 项，无选择弹框。展示不可用原因与当前手动冻结版本；旧版与目录新版分别呈现，点“改用 vN”才升级。输入 `/` 的建议项携带真实 ID／版本，为同名项展示来源和身份；Enter 只确认选择并在输入框内显示可移除的高亮块，“浏览全部 Skill”打开同一列表。`#` 是普通文字，纯文本名称不构成身份绑定。维护入口统一到 `/ai_config?section=skills`，选择列表不承载管理表单。自由文本的广义语义消歧仍待实现与真实模型验收。
+轻量选择器由模型旁 Skill 图标打开锚定列表，搜索全部内置／个人方法，每次加载 50 项并支持加载更多，多选直接生效，最多 8 项，无选择弹框。展示不可用原因与当前手动冻结版本；旧版与目录新版分别呈现，点“改用 vN”才升级。输入 `/` 的建议项携带真实 ID／版本，为同名项展示来源和身份；Enter 只确认选择并在输入框内显示可移除的高亮块，“浏览全部 Skill”打开同一列表。`#` 是普通文字，纯文本名称不构成身份绑定。维护入口统一到 `/skills`，只接受导入与只读浏览，选择列表不承载管理表单。自由文本的广义语义消歧仍待实现与真实模型验收。
 
-自动激活须先在本任务成功搜索过该版本。目录更新、改成仅手动、停用或删除后首次激活会失败；已激活的任务仍可读取原指令和原资料，模型不能通过重新搜索自动切换到新版本。用户明确重新选择的新版本在工具边界应用。停止／恢复、Worker 接管及历史压缩从持久激活重新装配，事务外资源读取完成后重新验证执行代次、租约、任务和 manifest，旧 Worker 的结果不得写回。
+自动激活须先在本任务成功搜索过该版本。目录更新导致版本过期、停用或删除后首次激活会失败；Skill 不再保存自动／手动触发偏好；已激活的任务仍可读取原指令和原资料，模型不能通过重新搜索自动切换到新版本。用户明确重新选择的新版本在工具边界应用。停止／恢复、Worker 接管及历史压缩从持久激活重新装配，事务外资源读取完成后重新验证执行代次、租约、任务和 manifest，旧 Worker 的结果不得写回。
 
 任务和操作快照增加 `skill_activations`：每项有 `activation_id/skill_id/name/content_version/package_checksum/source/purpose/active/plan_revision/created_at/issue`。`source` 为 `manual/auto`；`issue` 非空表示当前缺少能力。任务包含激活历史；操作只记录领取时实际可用的方法版本，后来的改向不改写旧步骤。字段不含正文、资料内容或存储位置；正文仅在按权限读取的工具结果中返回。`step.started/step.finished` 携带同名方法摘要，ThoughtChain 展示来源、固定版本、用途、资料路径和参与步骤。
 
@@ -340,7 +362,9 @@ AI 配置的“创作助手”标签保存一个账号级 `media_generation_enab
 
 同范围、类型和键的不同抽取内容保留为待澄清候选，不自动覆盖。选择候选会追加记忆版本和来源；来源已被纠正或遗忘时不显示候选正文，也不允许借澄清恢复。选择请求同键同体重放，旧版本或不同选择返回冲突。明确失败的整理记录可手动重试，保留原记录及回执且最多创建一个后继；`retry_job_id` 指向后继。受理不明／发送中、来源或模型配置已变化时禁止重试；丢响应后先刷新读取后继，不换键重复提交。
 
-模型输入在冻结及最终发送前检查总预算，纳入任务、Skill、工具、历史和待回传工具结果；已完整表示的近期用户输入不重复装配。当前平台窗口估算为 65536 tokens，预留输出（最多 8192）、工具结果 4096 和安全余量 2048；使用 JSON UTF-8 字节／3 及媒体估算，不是供应商 tokenizer 或实际模型窗口验收。超限且有有效的任务约束整理在途时，保留原输入并等待作业；没有可推进作业或整理失败时进入 `paused_budget`，保留明确约束及未闭合工具配对，不发送请求、不增加调用数。
+整理作业 `status` 支持 `pending/running/succeeded/failed/stale/cancelled/abandoned`。凭据／配置及明确鉴权失败直接 `failed`；明确限流，以及抽取任务的已持久化无效输出，最多三次发送。只有这类可重试抽取耗尽后成为 `abandoned`，允许抽取水位越过，不扩大手动重试入口（仍仅接受 `failed`）。一般失败及受理不明不推进水位，后者不自动重发；此处次数不限制创作 Task 的累计执行。
+
+模型输入在冻结及最终发送前检查总预算，纳入任务、Skill、工具、历史和待回传工具结果；已完整表示的近期用户输入不重复装配。Harness 默认平台窗口为 65536 tokens，可使用有效的[模型容量声明](agent.md#模型选择与运行反馈)，平台上限 262144；预留输出（最多 8192，且不超过窗口八分之一）、工具结果 4096 和安全余量 2048，近期完整工具组配额随容量缩小。使用 JSON UTF-8 字节／3 及媒体估算，不是供应商 tokenizer；实际输入和缓存用量另存 Turn／Run usage，不将声明或估算当作供应商窗口实测。超限且有有效的任务约束整理在途时，保留原输入并等待作业；没有可推进作业或整理失败时进入 `paused_budget`，保留明确约束及未闭合工具配对，不发送请求、不增加调用数。
 
 长逻辑任务另使用 `kind=task_state` 的后台作业整理已应用的旧输入前缀，近期原文与新纠正继续直接注入。软阈值为 16000 UTF-8 字节；每轮新来源不超过 48000 字节／128 条，尾部约 8000 字节且至少保留最后一条。有效约束放在任务 `effective_state.input_compaction`；模型接收 `task_constraints` 和近期 `inputs`，原始消息、任务目标及完整来源保留，仍可用 `read_conversation_history` 回查。事实最多24条、估算5000 tokens，必须覆盖新增未受限用户来源及全部父事实；旧来源通过固定父作业及事实索引追溯，不无限展开消息 ID。
 
@@ -379,3 +403,13 @@ memory_selections 最多 200 项、不能重复，非空选择要求 clear_deriv
 模型列表、本人配置、现有 Skill 管理仍复用 `/agent/models`、`/agent/skills`。V3 使用当前已接入工具清单；账号 Skill 包、按需加载和轻量选择已接入，Skill 不得扩大权限，广义语义消歧与真实模型效果仍待验收。模型 Gateway 当前支持 OpenAI Chat Completions 与 Responses；真实远端能力和计费验收必须独立记录。
 
 升级须先执行[全局任务与记忆迁移](../database/migrations/2026-10-21-agent-system/README.md)，再执行[项目会话约束增量](../database/migrations/2026-10-22-project-assistant/README.md)，部署同版 API、scheduler 与 Agent Worker。应用不自动建表／迁移。历史真实供应商证据见[原验收记录](../reviews/Agent模式实施与真实模型验收.md)，不能替代本次系统的真实运行验收。
+
+## 当前剧本引用与待审修改
+
+普通 `/messages` 的可选 `script_reference` 为 `{project_id,script_id,content_version,start?,end?}`。仅标准模式且项目匹配时可用；`script_id=null` 只允许当前空稿。选区为 Unicode 码点半开区间，两个边界须同时提供。受理时验证当前身份和版本，冻结到 TaskInput；不把正文或临时 URL写入浏览器引用记录。运行中补充使用完整普通消息合同，保留主体、附件和 Skill，在下一边界应用，界面显示待应用水位。
+
+`read_current_script(offset?,limit?)` 分段读取已应用输入绑定的当前剧本或选区，最多6000码点。`propose_script_patch(content_version,script_id,start,end,replacement)` 只建立 `pending_review` 建议，不能自动写正文；范围须在引用内，空稿允许 `[0,0)` 插入，最终正文最大1 MiB。采用前等待本机项目编辑保存，重新校验建议原文、版本、归属和写作互斥；成功原位更新正文、保存前后快照、回执及 `artifact.script.applied` 事件。`assistant_script_changed`（409）要求重新引用当前版本，禁止旧建议覆盖后来编辑。
+
+任务停止尚未生效返回 `assistant_task_stopping`；前一 Run 尚未结算返回 `assistant_task_settling`。这些明确未受理状态和已知 admission 422 可解除本机 pending 并保留输入；未知4xx、鉴权和普通冲突不能推定原消息未受理。请求已受理或仍不明确时继续使用冻结体与原键。需求 draft key 含真实消息身份，跨消息不会碰撞；明确缩减只接受更新、已应用的真实用户来源，模型不能自行缩水。
+
+助手写入、主图、生成结算和撤销按操作回执刷新当前项目资产／分镜；干净表单更新，脏表单保留本机输入进入版本冲突。最小主体引用可随本机草稿恢复，恢复后先读取 metadata 核对身份、版本和 checksum；变化或失败时禁止静默发送，提供重试或明确移除。

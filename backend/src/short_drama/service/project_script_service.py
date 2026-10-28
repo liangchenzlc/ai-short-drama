@@ -29,6 +29,20 @@ class ProjectScriptService(BaseService):
         if "content" in values and values["content"] != entity.content:
             values["state"] = "unconfirmed"
 
+    def _apply_update(self, entity, values):
+        creation = self.session.get(Project, entity.project_id)
+        if "content" in values and creation.editing_script_id == entity.id:
+            from .project_writing_service import ProjectWritingService
+
+            writing = ProjectWritingService(self.session)
+            writing.dao.require_idle(creation.id, "script")
+            if "position" in values:
+                entity.position = values["position"]
+            result = writing.write_script(creation, entity, values["content"])
+            writing._changed(creation)
+            return result
+        return super()._apply_update(entity, values)
+
     def confirm(self, identifier):
         """Confirm under the creation lock, clearing the previous confirmation first."""
         with self._transaction():

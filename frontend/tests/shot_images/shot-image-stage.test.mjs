@@ -85,6 +85,7 @@ function mount(context, overrides = {}) {
     '../../../features/projects/EpisodeModelSelect': { EpisodeModelSelect: 'EpisodeModelSelect' },
     '../../../features/projects/EpisodeCreationWorkspace': { EpisodeEditorSlot: 'EpisodeEditorSlot', useEpisodeCreationControls: () => controls },
     '../../../features/projects/StoryboardShotCard': { StoryboardShotCard: 'StoryboardShotCard' },
+    '../../../features/projects/ResourceViewToggle': { ResourceViewToggle: 'ResourceViewToggle', useResourceView: () => react.useState('grid') },
     '../../../features/projects/storyboard-layout.css': {},
     '../../../features/projects/workflow-refinement.css': {},
     '../../../features/projects/workflow-contract': contract,
@@ -143,7 +144,7 @@ async function openShotMenu(setup) {
   return setup.nodes('Dropdown')[0].menu;
 }
 
-for (const recovered of [false, true]) test(`initial selection ${recovered ? 'prefers a recovered shot' : 'selects the first loaded shot'} without opening settings`, async context => {
+for (const recovered of [false, true]) test(`initial selection ${recovered ? 'prefers a recovered shot' : 'selects the first loaded shot'} keeps desktop settings available`, async context => {
   const selections = []; let reveals = 0;
   const controls = { subject: null, selectSubject: next => { selections.push(next); controls.subject = next; }, revealPanel: () => { reveals++; } };
   const recovery = new Map(recovered ? [['shot-edit:1:12', { format: 1, base_version: '1', document: { ...shot('12'), script: 'recovered second shot' } }]] : []);
@@ -305,7 +306,7 @@ test('creating a shot selects its returned ID before it is loaded into the list'
   const rows = Array.from({ length: 20 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
   const setup = mount(context, { autoSelect: false, creationControls: controls, create: async () => ({ shot: { ...shot('181'), position: 81 }, storyboard_version: '2' }), shot: async () => ({ shot: { ...shot('181'), position: 81 }, storyboard_version: '2' }), shots: async () => ({ ...page(rows), total: 80 }) });
   await flush(); setup.render();
-  setup.nodes('Button').find(node => node['aria-label'] === '新增分镜').onClick(); await flush(); setup.render();
+  setup.nodes('Button').find(node => node['aria-label'] === '创建分镜').onClick(); await flush(); setup.render();
   assert.equal(controls.subject.id, '181');
   assert.equal(setup.scriptInput['aria-label'], '分镜 81 脚本');
 });
@@ -548,19 +549,24 @@ test('save completes before single-shot read and read errors retain the saved dr
   assert.ok(setup.nodes('Alert').some(alert => alert.message === 'read offline'));
 });
 
-test('failed saves keep dirty drafts through refresh and never read the shot', async context => {
+test('failed saves block preparation reads and refresh keeps dirty drafts', async context => {
   let reads = 0;
-  const setup = mount(context, { update: async () => { throw new Error('save conflict'); }, shot: async () => { reads++; throw new Error('must not read'); } });
+  const setup = mount(context, {
+    update: async () => { throw new Error('save conflict'); },
+    shot: async () => { reads++; return { shot: { ...shot(), script: 'new remote draft', row_version: '2' }, storyboard_version: '2' }; },
+  });
   await flush(); setup.render();
   setup.scriptInput.onChange({ target: { value: 'unsaved draft' } });
   assert.equal(await setup.nodes('ShotImageCandidates')[0].prepareShot(), null);
   setup.render();
   assert.equal(setup.barrier.hasUnsettled(), true);
+  assert.equal(reads, 0);
   setup.nodes('ShotImageCandidates')[0].onChanged(); setup.render(); await flush(); setup.render();
   assert.equal(setup.scriptInput.value, 'unsaved draft');
   assert.equal(setup.scriptInput.disabled, false);
   assert.equal(setup.nodes('ShotImageCandidates')[0].disabled, true);
-  assert.equal(reads, 0);
+  assert.equal(setup.barrier.hasUnsettled(), true);
+  assert.equal(reads, 1);
 });
 
 for (const purpose of ['generation', 'adoption']) for (const invalidation of ['readOnly', 'project', 'unmount']) {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import { Alert, Button, Checkbox, Empty, Input, Select, Spin, Tabs } from 'antd';
 import { Popover } from 'antd';
-import { Sparkles } from 'lucide-react';
+import { History, Sparkles } from 'lucide-react';
 import { Icon } from '../../components/ui/Icon';
 import { assetExtractionApi, type ExtractionCandidate, type ExtractionResult } from '../../api/modules/asset-extraction';
 import type { AssetDraft, AssetKind } from '../../api/modules/assets';
@@ -320,7 +320,7 @@ export function ScriptAssetExtraction({ projectId, session, readOnly, modelId, o
   const Frame = embedded && phase === 'settings' ? ExtractionInlineFrame : Dialog;
 
   return <>
-    {!embedded && <Button type={presentation === 'standard-creation' ? 'text' : undefined} aria-label={presentation === 'standard-creation' ? '从剧本提取素材' : undefined} title={presentation === 'standard-creation' ? '从剧本提取素材' : undefined} icon={presentation === 'standard-creation' ? <Sparkles size={17} aria-hidden="true"/> : undefined} loading={presentation === 'standard-creation' && busy} onClick={() => { setOpen(true); setPhase(activeId ? 'result' : 'settings'); }}>{presentation === 'standard-creation' ? null : '从剧本提取素材'}</Button>}
+    {!embedded && <Button type={presentation === 'standard-creation' ? 'text' : undefined} aria-label={presentation === 'standard-creation' ? '资产提取记录' : undefined} title={presentation === 'standard-creation' ? '资产提取记录' : undefined} icon={presentation === 'standard-creation' ? <History size={16} aria-hidden="true"/> : <Sparkles size={17} aria-hidden="true"/>} loading={presentation === 'standard-creation' && busy} onClick={() => { setOpen(true); setPhase(presentation === 'standard-creation' ? 'history' : activeId ? 'result' : 'settings'); }}>{presentation === 'standard-creation' ? null : '从剧本提取素材'}</Button>}
     {(open || embedded && phase === 'settings') && <Frame title={phase === 'settings' ? '从剧本提取素材' : phase === 'history' ? '素材提取记录' : '素材提取结果'} className={`asset-extraction-dialog standard-creation-dialog${phase === 'settings' ? ' is-settings' : ''}`} canClose={!busy} onClose={close}>
       <div className="extraction-body">
         {error && <StudioFeedback type="error" title="素材提取" noticeKey={`asset-extraction:${projectId}`} message={error} actions={phase === 'result' && task?.status === 'succeeded' ? <Button disabled={busy} onClick={() => void reloadResult()}>重新载入结果</Button> : undefined}/>}

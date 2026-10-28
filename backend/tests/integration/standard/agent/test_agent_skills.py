@@ -4,12 +4,14 @@ import io
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import timedelta
+from pathlib import Path
 from threading import Event, local
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import event, func, select, update
+from sqlalchemy import event, func, inspect, select, update
+from sqlalchemy.exc import OperationalError
 
 import tests.integration.standard.agent.test_agent_conversations as conversation_tests
 from short_drama.core.config import Settings
@@ -124,7 +126,7 @@ def test_builtin_package_publication_is_idempotent_and_preserves_personal_settin
     with factory() as session:
         session.info["actor"] = actor(1)
         AgentSkillService(session, configured, storage).patch_settings(
-            "script.v1", {"row_version": "0", "enabled": False, "invocation_mode": "manual"}
+            "script.v1", {"row_version": "0", "enabled": False}
         )
     first = publish_builtin_skills(factory, configured, storage)
     second = publish_builtin_skills(factory, configured, storage)
@@ -139,10 +141,10 @@ def test_builtin_package_publication_is_idempotent_and_preserves_personal_settin
         assert all("instructions" not in item.model_dump() for item in page.items)
         assert all("resources" not in item.model_dump() for item in page.items)
         own = library.detail("script.v1")
-        assert own.content_version == 2 and not own.enabled and own.invocation_mode == "manual"
+        assert own.content_version == 2 and not own.enabled
         session.info["actor"] = actor(2)
         other = library.detail("script.v1")
-        assert other.enabled and other.invocation_mode == "auto"
+        assert other.enabled
         assert other.resource_count == 3
         content = library.resource_content("script.v1", "2", "assets/output-template.md")
         assert content.content.startswith("# 剧本标题")
@@ -224,9 +226,7 @@ def test_skill_package_create_summary_idempotency_and_account_isolation(workspac
         storage = _SkillTextStorage(session)
         library = AgentSkillService(session, settings(), storage)
         created = library.create(_skill_package(), "create-package")
-        assert (
-            created.enabled and created.invocation_mode == "auto" and created.settings_version == 1
-        )
+        assert created.enabled and created.settings_version == 1
         assert created.resource_count == 1 and created.compatible
         assert created.content_version == created.row_version == 1
         assert library.create(_skill_package(), "create-package").id == created.id
@@ -500,9 +500,7 @@ def test_skill_package_personal_settings_builtin_readonly_and_copy(workspace):
     with factory() as session:
         session.info["actor"] = actor(1)
         library = AgentSkillService(session, settings())
-        changed = library.patch_settings(
-            "script.v1", {"row_version": "0", "enabled": False, "invocation_mode": "manual"}
-        )
+        changed = library.patch_settings("script.v1", {"row_version": "0", "enabled": False})
         assert (
             not changed.enabled and changed.settings_version == 1 and changed.content_version == 1
         )
@@ -511,14 +509,12 @@ def test_skill_package_personal_settings_builtin_readonly_and_copy(workspace):
             freeze_skills(session, 1, [SkillSelection(id="script.v1", content_version="1")])
         assert caught.value.code == "agent_skill_disabled"
         with pytest.raises(Conflict):
-            library.patch_settings(
-                "script.v1", {"row_version": "0", "enabled": True, "invocation_mode": "auto"}
-            )
+            library.patch_settings("script.v1", {"row_version": "0", "enabled": True})
         with pytest.raises(WorkflowError) as caught:
             library.patch("script.v1", {"row_version": "1", "instructions": "overwrite"})
         assert caught.value.code == "agent_skill_readonly"
         copied = library.copy("script.v1", {"content_version": "1"}, "copy-builtin")
-        assert not copied.builtin and copied.enabled and copied.invocation_mode == "auto"
+        assert not copied.builtin and copied.enabled
         assert copied.id != "script.v1" and "script.v1" in copied.source
         assert library.copy("script.v1", {"content_version": "1"}, "copy-builtin").id == copied.id
         session.info["actor"] = actor(2)
@@ -578,7 +574,6 @@ def test_skill_package_export_import_and_copy_keep_all_resources(workspace):
         created = library.create(
             _skill_package(
                 enabled=False,
-                invocation_mode="manual",
                 exclusions="不适用于未选内容。",
                 resources=[
                     {"path": "assets/shots.json", "kind": "template", "content": '{"shots":[]}'},
@@ -590,7 +585,7 @@ def test_skill_package_export_import_and_copy_keep_all_resources(workspace):
         data, filename = library.export(created.id, "1")
         preview = library.preview_import(io.BytesIO(data), filename)
         assert preview.compatible and preview.draft.resources[0].content == '{"shots":[]}'
-        assert preview.draft.enabled and preview.draft.invocation_mode == "auto"
+        assert preview.draft.enabled
         assert preview.draft.exclusions == created.exclusions
         assert preview.draft.resources[1].kind == "template"
         imported = library.create(preview.draft.model_dump(), "import-package")
@@ -610,16 +605,12 @@ def test_skill_package_setting_changes_do_not_publish_content_and_unknown_tools_
         session.info["actor"] = actor(1)
         library = AgentSkillService(session, settings())
         created = library.create(
-            _skill_package(
-                instructions="方法正文", resources=[], enabled=False, invocation_mode="manual"
-            ),
+            _skill_package(instructions="方法正文", resources=[], enabled=False),
             "settings-package",
         )
         updated = library.patch(created.id, {"row_version": "1", "instructions": "修订方法"})
-        assert not updated.enabled and updated.invocation_mode == "manual"
-        enabled = library.patch_settings(
-            created.id, {"row_version": "1", "enabled": True, "invocation_mode": "auto"}
-        )
+        assert not updated.enabled
+        enabled = library.patch_settings(created.id, {"row_version": "1", "enabled": True})
         assert enabled.content_version == updated.content_version == 2
         assert enabled.row_version == updated.row_version == 2
         with session.begin():
@@ -631,16 +622,35 @@ def test_skill_package_setting_changes_do_not_publish_content_and_unknown_tools_
                 )
                 == 2
             )
-        invalid = library.create(
-            _skill_package(
-                instructions="调用外部命令", resources=[], required_tools=["execute_python"]
-            ),
-            "unsupported-package",
-        )
-        assert not invalid.compatible and invalid.issues
-        with session.begin(), pytest.raises(WorkflowError) as caught:
-            freeze_skills(session, 1, [SkillSelection(id=invalid.id, content_version="1")])
+        with pytest.raises(WorkflowError) as caught:
+            library.create(
+                _skill_package(
+                    instructions="调用外部命令", resources=[], required_tools=["execute_python"]
+                ),
+                "unsupported-package",
+            )
         assert caught.value.code == "agent_skill_incompatible"
+
+
+def test_incompatible_skill_can_be_disabled_but_not_enabled(workspace, monkeypatch):
+    factory, _, _ = workspace
+    with factory() as session:
+        session.info["actor"] = actor(1)
+        library = AgentSkillService(session, settings())
+        created = library.create(
+            _skill_package(instructions="方法正文", resources=[]), "retired-capability"
+        )
+        monkeypatch.setattr(
+            "short_drama.service.agent_skill_service.platform_tool_issues",
+            lambda _tools: ["所需能力已退役"],
+        )
+        disabled = library.patch_settings(created.id, {"row_version": "1", "enabled": False})
+        assert not disabled.enabled and not disabled.compatible
+        with pytest.raises(WorkflowError) as caught:
+            library.patch_settings(created.id, {"row_version": "2", "enabled": True})
+        assert caught.value.code == "agent_skill_incompatible"
+        current = library.detail(created.id)
+        assert not current.enabled and current.settings_version == 2
 
 
 def test_skill_package_concurrent_create_and_settings_are_serialized(workspace):
@@ -667,7 +677,7 @@ def test_skill_package_concurrent_create_and_settings_are_serialized(workspace):
                     AgentSkillService(session, settings())
                     .patch_settings(
                         "script.v1",
-                        {"row_version": "0", "enabled": False, "invocation_mode": "manual"},
+                        {"row_version": "0", "enabled": False},
                     )
                     .settings_version
                 )
@@ -712,9 +722,7 @@ def test_skill_package_offline_backfill_preserves_legacy_identity_and_settings(w
         assert (
             legacy.id == str(identifier) and legacy.content_version == 7 and legacy.row_version == 9
         )
-        assert (
-            not legacy.enabled and legacy.invocation_mode == "auto" and legacy.settings_version == 1
-        )
+        assert not legacy.enabled and legacy.settings_version == 1
         assert legacy.instructions == "原方法正文" and legacy.package_checksum
 
 
@@ -802,3 +810,99 @@ def test_skill_package_authenticated_http_contracts_never_expose_directory_bodie
     assert preview.status_code == 200 and preview.json()["compatible"]
     exported = owner.get(path + "/export", params={"content_version": "1"})
     assert exported.status_code == 200 and exported.headers["content-type"] == "application/zip"
+    assert "invocation_mode" not in created
+    receipt = owner.get("/api/v1/agent/skills/requests/http-create")
+    assert receipt.status_code == 200 and receipt.json()["id"] == created["id"]
+    assert other.get("/api/v1/agent/skills/requests/http-create").status_code == 404
+
+
+def test_import_replacement_preserves_hidden_tags_unless_explicitly_cleared(workspace):
+    factory, _, _ = workspace
+    with factory() as session:
+        session.info["actor"] = actor(1)
+        library = AgentSkillService(session, settings())
+        created = library.create(
+            _skill_package(instructions="正文", resources=[], tags=["隐藏标签"], enabled=False),
+            "tags-original",
+        )
+        preview = library.preview_import(
+            io.BytesIO(b"---\nname: replacement\ndescription: Method\n---\nNew body"), "method.md"
+        )
+        assert preview.tags_provided is False
+        body = preview.draft.model_dump(exclude={"enabled", "tags"})
+        updated = library.patch(created.id, {**body, "row_version": "1"})
+        assert updated.tags == ["隐藏标签"] and not updated.enabled
+        assert library.list(query="隐藏标签", source="personal").total == 0
+        assert library.list(query="replacement", source="personal").total == 1
+        cleared = library.patch(created.id, {"row_version": "2", "tags": []})
+        assert cleared.tags == []
+        assert library.request_receipt("tags-original").id == created.id
+        session.info["actor"] = actor(2)
+        with pytest.raises(NotFound):
+            library.request_receipt("tags-original")
+
+
+def test_mode_incompatibility_and_missing_references_are_rejected_before_storage(workspace):
+    from short_drama.agent.tools.contracts import STANDARD_TOOL
+
+    factory, _, _ = workspace
+    with factory() as session:
+        session.info["actor"] = actor(1)
+        storage = _SkillTextStorage(session)
+        library = AgentSkillService(session, settings(), storage)
+        for changes in (
+            {"required_tools": [STANDARD_TOOL], "modes": ["standard", "infinite_canvas"]},
+            {"instructions": "[缺失](references/missing.md)"},
+        ):
+            with pytest.raises(WorkflowError):
+                library.create(_skill_package(**changes), "invalid-package")
+        assert storage.objects == {}
+        accepted = library.create(
+            _skill_package(required_tools=[STANDARD_TOOL], modes=["standard"]), "valid-mode"
+        )
+        before = dict(storage.objects)
+        with pytest.raises(WorkflowError):
+            library.patch(
+                accepted.id,
+                {
+                    "row_version": "1",
+                    "modes": ["infinite_canvas"],
+                    "resources": [{"path": "references/new.md", "content": "must not upload"}],
+                },
+            )
+        assert storage.objects == before
+        with pytest.raises(WorkflowError):
+            library.patch(accepted.id, {"row_version": "1", "modes": ["infinite_canvas"]})
+
+
+def test_skill_management_migration_preserves_settings_and_version_constraint(
+    migration_mysql_engine,
+):
+    engine = migration_mysql_engine
+    folder = (
+        Path(__file__).resolve().parents[5] / "docs/database/migrations/2026-10-26-skill-management"
+    )
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            (folder / "002_restore_invocation_mode.sql").read_text(encoding="utf-8")
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO agent_skill_settings "
+            "(id, owner_user_id, skill_key, enabled, invocation_mode, row_version, updated_at) "
+            "VALUES (9, 1, 'script.v1', 0, 'manual', 7, UTC_TIMESTAMP(3))"
+        )
+        connection.exec_driver_sql(
+            (folder / "001_drop_invocation_mode.sql").read_text(encoding="utf-8")
+        )
+        assert "invocation_mode" not in {
+            item["name"] for item in inspect(connection).get_columns("agent_skill_settings")
+        }
+        row = connection.exec_driver_sql(
+            "SELECT enabled, row_version FROM agent_skill_settings WHERE id = 9"
+        ).one()
+        assert tuple(row) == (0, 7)
+        with pytest.raises(OperationalError) as caught:
+            connection.exec_driver_sql(
+                "UPDATE agent_skill_settings SET row_version = 0 WHERE id = 9"
+            )
+        assert caught.value.orig.args[0] == 3819

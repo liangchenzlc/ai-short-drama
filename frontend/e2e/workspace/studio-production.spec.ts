@@ -44,7 +44,7 @@ test('production routes render with deferred editor bundles and compact controls
 
   for (const route of ['/ai_config', '/assets/character', '/tasks/image', '/media-library/image', `${root}/storyboard`, `${root}/assembly`]) {
     await page.goto(route);
-    await expect(route.startsWith(root) ? page.getByRole('navigation', { name: '分集制作流程', exact: true }) : page.locator('h1'), `Production route: ${route}`).toBeVisible();
+    await expect(route.startsWith(root) ? page.getByRole('navigation', { name: '创作流程', exact: true }) : page.locator('h1'), `Production route: ${route}`).toBeVisible();
     if (route === '/ai_config') {
       await page.getByRole('button', { name: '添加文本模型' }).click();
       const config = page.getByRole('dialog', { name: /添加|新建/ });

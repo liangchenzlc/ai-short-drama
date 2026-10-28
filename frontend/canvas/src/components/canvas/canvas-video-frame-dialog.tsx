@@ -187,7 +187,7 @@ export function CanvasVideoFrameDialog({ node, open, onClose, onConfirm }: Canva
                         </div>
                     </div>
                     {frames.length ? (
-                        <div className="thin-scrollbar grid max-h-52 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
+                        <div className="thin-scrollbar grid max-h-52 gap-2 overflow-y-auto pr-1 grid-cols-3">
                             {frames.map((frame, index) => (
                                 <div key={frame.id} className="flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2" style={{ background: theme.toolbar.itemHover }}>
                                     <button type="button" className="min-w-0 flex-1 text-left outline-none focus-visible:ring-2" style={{ "--tw-ring-color": theme.node.activeStroke } as CSSProperties} onClick={() => seekTo(frame.timeMs)}>

@@ -16,6 +16,7 @@ from short_drama.domain.agent import (
     AgentTurn,
 )
 from short_drama.domain.agent_context import AgentAttachment
+from short_drama.domain.agent_graph import AgentGraphCheckpoint, AgentGraphWrite
 from short_drama.domain.agent_history import AgentDiscussionRevision
 from short_drama.domain.agent_media import AgentMediaRequest
 from short_drama.domain.agent_memory import (
@@ -25,6 +26,7 @@ from short_drama.domain.agent_memory import (
     AgentMemoryRevision,
 )
 from short_drama.domain.agent_task import AgentOperation, AgentTask, AgentTaskInput
+from short_drama.domain.agent_task_requirement import AgentTaskRequirement
 from short_drama.domain.agent_undo import AgentBatchUndo
 from short_drama.domain.base import Base
 from short_drama.service.base import utcnow
@@ -102,10 +104,29 @@ def _scrub_locked(session, conversation):
         row.error = _error_code(row.error)
     for row in _rows(session, AgentTaskInput, AgentTaskInput.task_id.in_(task_ids)):
         row.payload = {}
+    for row in _rows(session, AgentTaskRequirement, AgentTaskRequirement.task_id.in_(task_ids)):
+        # Descriptions and spans quote the user's own words; clear them with the task.
+        row.description = DELETED
+        row.quote_start, row.quote_end = 0, 0
     for row in runs:
         row.checkpoint, row.config_snapshot, row.error = {}, {}, _error_code(row.error)
+    derived_locators = set()
     for row in _rows(session, AgentTurn, AgentTurn.run_id.in_(run_ids)):
+        for envelope in row.request_messages or []:
+            for intent in envelope.get("kwargs", {}).get("hydration_intents", []):
+                reference = intent.get("resource", {})
+                locator = reference.get("uri", "")
+                # Only the Resolver's per-turn immutable derivatives are private
+                # cleanup candidates. User/business originals remain protected.
+                if (
+                    reference.get("source") in {"hydrated_image", "hydrated_audio"}
+                    and f"/agent-harness/turn/{row.id}/" in locator
+                ):
+                    derived_locators.add(locator)
         row.request_messages, row.response, row.error = [], None, _error_code(row.error)
+    for model in (AgentGraphCheckpoint, AgentGraphWrite):
+        for row in _rows(session, model, model.run_id.in_(run_ids)):
+            session.delete(row)
     for row in _rows(session, AgentToolCall, AgentToolCall.run_id.in_(run_ids)):
         row.arguments, row.result = {}, None
         row.review_payload, row.error = None, _error_code(row.error)
@@ -179,7 +200,7 @@ def _scrub_locked(session, conversation):
             candidates.add(attachment.media_id)
         session.delete(attachment)
     session.flush()
-    media_deletions = []
+    media_deletions = sorted(derived_locators)
     for identifier in sorted(candidates):
         media = session.scalar(
             select(MediaFile).where(MediaFile.id == identifier).with_for_update()

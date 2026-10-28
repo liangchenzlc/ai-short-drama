@@ -60,7 +60,6 @@ export function CanvasAssetTray({ assetImages, canvasImages, showLibrary = true,
     const { bringToFront, zIndex } = useCanvasOverlayLayer("asset-tray", "var(--z-panel)");
     const rootRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
-    const [desktopDockLabels, setDesktopDockLabels] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1024);
     const [tab, setTab] = useState<TrayTab>(() => showLibrary ? "library" : "canvas");
     const [keyword, setKeyword] = useState("");
     const [trayHeight, setTrayHeight] = useState(() => clampTrayHeight(TRAY_DEFAULT_HEIGHT));
@@ -79,11 +78,6 @@ export function CanvasAssetTray({ assetImages, canvasImages, showLibrary = true,
     }), [canvasImages, query]);
     const safeTrayHeight = clampTrayHeight(trayHeight);
 
-    useEffect(() => {
-        const updateDockLabels = () => setDesktopDockLabels(window.innerWidth >= 1024);
-        window.addEventListener("resize", updateDockLabels);
-        return () => window.removeEventListener("resize", updateDockLabels);
-    }, []);
     const motionEnabled = !reducedMotion;
 
     const startAssetDrag = (event: DragEvent<HTMLElement>, asset: CanvasTrayAsset) => {
@@ -269,14 +263,14 @@ export function CanvasAssetTray({ assetImages, canvasImages, showLibrary = true,
                 className="canvas-floating-dock canvas-asset-tray-dock"
                 style={{
                     ...canvasDockStyle(theme),
-                    width: desktopDockLabels ? 92 : 30,
-                    minWidth: desktopDockLabels ? 92 : 30,
+                    width: 92,
+                    minWidth: 92,
                     flex: "0 0 auto",
-                    ...(desktopDockLabels ? { background: "transparent", borderColor: "transparent", boxShadow: "none" } : {}),
+                    background: "transparent", borderColor: "transparent", boxShadow: "none",
                 }}
                 ariaLabel="素材空间"
-                showLabels={libtvReadonlyDense ? false : desktopDockLabels}
-                embedded={libtvReadonlyDense ? false : desktopDockLabels}
+                showLabels={!libtvReadonlyDense}
+                embedded={!libtvReadonlyDense}
             />
         </div>
     );

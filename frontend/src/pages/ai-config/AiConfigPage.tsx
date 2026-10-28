@@ -1,7 +1,7 @@
 import { Button, Skeleton } from 'antd';
 import { Icon } from '../../components/ui/Icon';
 import { ListToolbar, PageHeader } from '../../components/ui/Workspace';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { aiModelConfigs } from '../../features/ai-config/config-api';
 import { ApiError, errorMessage, isCancelled } from '../../api/http';
 import { Dialog } from '../../components/ui/Dialog';
@@ -13,18 +13,12 @@ import { serviceLabels, type AiConfig, type ConfigDraft } from '../../features/a
 import { useSearchParams } from 'react-router-dom';
 import { safeCanvasReturn } from '../../features/ai-config/config-form-model';
 import { ModelConfigTest } from '../../features/ai-config/ModelConfigTest';
-import { SkillManager } from '../../features/ai-config/SkillManager';
-import { useAuth } from '../../features/auth/AuthSession';
 
 const PAGE_SIZE = 20;
 const configLabels = { ...serviceLabels, assistant: '创作助手' };
 export function AiConfigPage() {
   const { tab, setTab } = useAiConfigSession();
-  const [params, setParams] = useSearchParams();
-  const skillsView = params.get('section') === 'skills';
-  const auth = useAuth();
-  const skillGuard = useRef<(() => Promise<boolean>) | null>(null);
-  const changeSkillGuard = useCallback((guard: (() => Promise<boolean>) | null) => { skillGuard.current = guard; }, []);
+  const [params] = useSearchParams();
   const returnTo = safeCanvasReturn(params.get('return_to'));
   const [items, setItems] = useState<AiConfig[]>([]);
   const [offset, setOffset] = useState(0);
@@ -46,7 +40,7 @@ export function AiConfigPage() {
   const reloadList = () => { listRequest.current?.abort(); setLoading(true); setRevision((value) => value + 1); };
 
   useEffect(() => {
-    if (skillsView || tab === 'assistant') { setLoading(false); return; }
+    if (tab === 'assistant') { setLoading(false); return; }
     const controller = new AbortController();
     listRequest.current = controller;
     setLoading(true); setListError('');
@@ -61,14 +55,7 @@ export function AiConfigPage() {
       setListError(errorMessage(cause)); setLoading(false);
     });
     return () => controller.abort();
-  }, [tab, offset, revision, skillsView]);
-
-  async function selectView(skills: boolean) {
-    if (skills === skillsView || skillGuard.current && !await skillGuard.current()) return;
-    const next = new URLSearchParams(params);
-    if (skills) next.set('section', 'skills'); else next.delete('section');
-    setParams(next);
-  }
+  }, [tab, offset, revision]);
 
   function selectTab(kind: AiConfigTab) {
     if (kind === tab) return;
@@ -119,21 +106,7 @@ export function AiConfigPage() {
   }
 
   return <section className="studio-page ai-config-page" aria-labelledby="ai-title">
-    <PageHeader id="ai-title" title="AI 配置" actions={<>{returnTo && <Button disabled={!!busyId || formOpen || !!testing} onClick={async () => { if (!skillGuard.current || await skillGuard.current()) window.location.assign(returnTo); }}>返回画布</Button>}{!skillsView && tab !== 'assistant' && <Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={!!busyId} onClick={() => { setEditing(null); setFormOpen(true); }}>添加{serviceLabels[tab]}</Button>}</>} />
-    <div className="studio-tabs ai-config-views" role="tablist" aria-label="AI 配置视图">
-      {[{ id: 'models', label: '模型与助手' }, { id: 'skills', label: 'Skill 管理' }].map(view => <button key={view.id}
-        id={`ai-view-${view.id}`} role="tab" aria-selected={skillsView === (view.id === 'skills')} aria-controls={`ai-view-panel-${view.id}`}
-        tabIndex={skillsView === (view.id === 'skills') ? 0 : -1} className={skillsView === (view.id === 'skills') ? 'active' : ''}
-        disabled={!!busyId || formOpen || !!testing} onClick={() => void selectView(view.id === 'skills')} onKeyDown={event => {
-          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-          event.preventDefault(); const next = event.key === 'Home' ? false : event.key === 'End' ? true : !skillsView;
-          void selectView(next).then(() => document.getElementById(`ai-view-${next ? 'skills' : 'models'}`)?.focus());
-        }}>{view.label}</button>)}
-    </div>
-    {skillsView && <div role="tabpanel" id="ai-view-panel-skills" aria-labelledby="ai-view-skills">
-      <SkillManager key={auth.user?.id ?? 'anonymous'} accountId={auth.user?.id ?? 'anonymous'} onGuardChange={changeSkillGuard}/>
-    </div>}
-    <div role="tabpanel" id="ai-view-panel-models" aria-labelledby="ai-view-models" hidden={skillsView}>
+    <PageHeader id="ai-title" title="AI 配置" actions={<>{returnTo && <Button disabled={!!busyId || formOpen || !!testing} onClick={() => window.location.assign(returnTo)}>返回画布</Button>}{tab !== 'assistant' && <Button type="primary" icon={<Icon name="plus" size={16}/>} disabled={!!busyId} onClick={() => { setEditing(null); setFormOpen(true); }}>添加{serviceLabels[tab]}</Button>}</>} />
     <div className="studio-tabs" role="tablist" aria-label="AI 配置类别">
       {aiConfigTabs.map((kind, index) => <button key={kind} id={`model-tab-${kind}`} role="tab" aria-selected={tab === kind}
         aria-controls={`model-panel-${kind}`} tabIndex={tab === kind ? 0 : -1} className={tab === kind ? 'active' : ''}
@@ -162,8 +135,7 @@ export function AiConfigPage() {
       </>}
     </div>)}
     <div id="model-panel-assistant" role="tabpanel" aria-labelledby="model-tab-assistant" hidden={tab !== 'assistant'}>
-      <AssistantGenerationPolicy active={!skillsView && tab === 'assistant'} />
-    </div>
+      <AssistantGenerationPolicy active={tab === 'assistant'} />
     </div>
     {formOpen && tab !== 'assistant' && <ConfigForm key={formRevision} existing={editing} serviceType={tab}
       onClose={() => { setFormOpen(false); setEditing(null); }} onSave={save}

@@ -40,7 +40,7 @@ async function referenceFixture(page: Page) {
 
 const panel = (page: Page) => page.locator('.standard-storyboard-panel');
 
-for (const width of [1440, 390]) test(`model capability feedback keeps storyboard geometry at ${width}px`, async ({ page }) => {
+for (const width of [1440, 1280]) test(`model capability feedback keeps storyboard geometry at ${width}px`, async ({ page }) => {
   const state = await layoutFixture(page);
   await page.setViewportSize({ width, height: 900 });
   let release!: () => void;
@@ -52,7 +52,6 @@ for (const width of [1440, 390]) test(`model capability feedback keeps storyboar
     await route.fulfill({ status: 503, json: { detail: '模型能力暂时不可用' } });
   });
   await page.goto(`${root}/storyboard?shot=101`);
-  if (width <= 700) await page.getByRole('button', { name: '展开生成设置', exact: true }).click();
   const settings = panel(page).locator('#storyboard-image-settings');
   const editor = settings.locator('.asset-prompt-input [contenteditable]');
   await expect(editor).toBeVisible({ timeout: 15_000 });
@@ -83,7 +82,6 @@ function savedVideo(mediaId: string, name: string) {
 }
 
 async function expectCardLayout(page: Page) {
-  const mobile = page.viewportSize()!.width <= 700;
   const bounds = await page.locator('.storyboard-shot-card').first().evaluate(card => {
     const summary = card.querySelector('.storyboard-summary')!.getBoundingClientRect();
     const media = card.querySelector('.storyboard-card-media')!.getBoundingClientRect();
@@ -91,17 +89,17 @@ async function expectCardLayout(page: Page) {
     const heading = card.querySelector('.storyboard-card-heading')!.getBoundingClientRect();
     return { summary: { width: summary.width, height: summary.height }, media: { height: media.height, bottom: media.bottom }, copy: { width: copy.width, height: copy.height, top: copy.top, left: copy.left, right: copy.right }, heading: { left: heading.left, right: heading.right } };
   });
-  expect(Math.abs(bounds.copy.height - (mobile ? 44 : 34))).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(bounds.copy.height - 34)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(bounds.copy.width - bounds.summary.width)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(bounds.media.bottom - bounds.copy.top)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(bounds.media.height + bounds.copy.height - bounds.summary.height)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(bounds.heading.left - bounds.copy.left - 10)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(bounds.copy.right - bounds.heading.right - (mobile ? 48 : 39))).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(bounds.copy.right - bounds.heading.right - 39)).toBeLessThanOrEqual(0.5);
   const actions = (await page.locator('.storyboard-shot-card').first().getByRole('button', { name: '分镜 01 卡片更多操作', exact: true }).boundingBox())!;
   expect(actions.x).toBeGreaterThanOrEqual(bounds.heading.right);
 }
 
-async function expectMobileHeaderFits(page: Page) {
+async function expectDesktopHeaderFits(page: Page) {
   const heading = panel(page).locator('.standard-object-heading');
   const bounds = (await heading.boundingBox())!;
   const actions = heading.locator('nav .ant-btn');
@@ -123,22 +121,21 @@ async function expectMobileHeaderFits(page: Page) {
   expect(overlapWidth * overlapHeight).toBeLessThanOrEqual(1);
   await expect(panel(page).locator('.standard-object-tabs,.storyboard-editor-tabs')).toHaveCount(0);
   const listHeading = page.locator('.standard-storyboard-list .storyboard-editor-heading');
-  expect(Math.abs((await listHeading.boundingBox())!.height - 48)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs((await listHeading.boundingBox())!.height - 44)).toBeLessThanOrEqual(0.5);
 }
 
-test('initial mobile selection opens the first shot preview and preserves an explicit off-page route', async ({ page }) => {
+test('initial desktop selection opens the first shot preview and preserves an explicit off-page route', async ({ page }) => {
   const state = await layoutFixture(page);
-  await page.setViewportSize({ width: 320, height: 640 });
+  await page.setViewportSize({ width: 1280, height: 640 });
   await page.goto(`${root}/storyboard`);
   await expect(page.locator('.storyboard-summary').first()).toHaveAttribute('aria-pressed', 'true');
   await expect(page).toHaveURL(url => url.searchParams.get('shot') === '101');
-  const settings = page.getByRole('dialog', { name: '分镜生成设置', exact: true });
-  const toggle = page.getByRole('button', { name: '展开生成设置', exact: true });
-  await expect(settings).toBeHidden(); await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  const settings = panel(page).locator('.standard-object-settings:visible');
+  await expect(settings).toBeVisible(); await expect(page.getByRole('button', { name: '收起生成设置', exact: true })).toHaveAttribute('aria-expanded', 'true');
   await page.goto(`${root}/storyboard?shot=150`);
   await expect(panel(page).locator('.standard-object-heading h3')).toContainText('50 ·');
   await expect(page.locator('.storyboard-summary[aria-pressed="true"]')).toHaveCount(0);
-  await expect(settings).toBeHidden(); await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(settings).toBeVisible(); await expect(page.getByRole('button', { name: '收起生成设置', exact: true })).toHaveAttribute('aria-expanded', 'true');
   await expect(page).toHaveURL(url => url.searchParams.get('shot') === '150');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
@@ -242,7 +239,7 @@ test('project assistant and shot input survive navigation while shot saving is c
   page.on('console', message => { if (message.text().includes('Encountered two children with the same key')) state.errors.push(message.text()); });
   await page.route('**/api/v1/auth/capabilities', route => route.fulfill({ json: { enabled: true } }));
   await page.route('**/api/v1/auth/me', route => route.fulfill({ json: { user: { id: '9007199254740993', username: 'creator', display_name: '创作者', email: 'creator@example.test', email_verified: true } } }));
-  const conversation = { id: '301', project_id: '10', episode_id: null, title: '项目对话', stage: null, subject_type: null, subject_id: null, task_type: null, scope_version: 2, archived: false, row_version: '1', last_run_status: null, created_at: '2026-10-06T00:00:00Z', updated_at: '2026-10-06T00:00:00Z' };
+  const conversation = { id: '301', project_id: '10', episode_id: null, title: '项目对话', stage: null, subject_type: null, subject_id: null, task_type: null, scope_version: 3, status: 'active', archived: false, row_version: '1', last_run_status: null, created_at: '2026-10-06T00:00:00Z', updated_at: '2026-10-06T00:00:00Z' };
   const conversations = [conversation];
   await page.route(/\/api\/v1\/(agent|assistant)\//, async route => {
     const path = new URL(route.request().url()).pathname.replace(/^\/api\/v1\/(agent|assistant)/, '');
@@ -253,9 +250,9 @@ test('project assistant and shot input survive navigation while shot saving is c
       expect(route.request().postDataJSON()).toEqual({ project_id: '10' });
       return route.fulfill({ json: conversation });
     }
-    if (path === '/conversations') return route.fulfill({ json: { items: conversations, total: conversations.length, offset: 0, limit: 20 } });
-    if (/^\/conversations\/\d+$/.test(path)) return route.fulfill({ json: conversations.find(item => item.id === path.split('/').pop()) });
-    if (path.endsWith('/state')) return route.fulfill({ json: { conversation_id: path.split('/')[2], cursor: 0, active_run: null, queued_runs: [] } });
+    if (path === '/global/conversations') return route.fulfill({ json: { items: conversations, total: conversations.length, offset: 0, limit: 20 } });
+    if (/^\/global\/conversations\/\d+$/.test(path)) return route.fulfill({ json: conversations.find(item => item.id === path.split('/').pop()) });
+    if (path.endsWith('/state')) return route.fulfill({ json: { conversation_id: '301', snapshot_cursor: 0, resume_cursor: 0, messages: { items: [], total: 0, offset: 0, limit: 50 }, tasks: [], runs: [], operations: [], inputs: [], has_more_tasks: false, has_more_operations: false } });
     if (path.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': heartbeat\n\n' });
     if (/\/(messages|attachments|runs)$/.test(path)) return route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 50 } });
     return route.fallback();
@@ -274,24 +271,26 @@ test('project assistant and shot input survive navigation while shot saving is c
   await expect(composer).toHaveValue('保留这段项目对话草稿');
   const script = page.getByRole('textbox', { name: '分镜 1 脚本', exact: true });
   await script.fill('发生冲突仍保留的镜头草稿');
-  const stages = page.getByRole('navigation', { name: '分集制作流程' });
-  await stages.getByRole('button', { name: /素材生成/ }).click();
+  const stages = page.getByRole('navigation', { name: '创作流程' });
+  await stages.getByRole('button', { name: /资产生成/ }).click();
   await expect(page).toHaveURL(url => url.pathname.endsWith('/assets') && url.searchParams.get('conversation') === '301');
   await expect(page.getByRole('dialog', { name: '未保存的修改', exact: true })).toHaveCount(0);
   await expect(composer).toHaveValue('保留这段项目对话草稿');
   await stages.getByRole('button', { name: '分镜制作', exact: true }).click();
   await page.locator('.storyboard-summary').first().click();
   await expect(script).toHaveValue('发生冲突仍保留的镜头草稿');
-  await expect(page.locator('#storyboard-image-pane').getByText('镜头保存已暂停，输入保留。', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^保存状态：需处理/ })).toBeVisible();
   await expect(composer).toHaveValue('保留这段项目对话草稿');
   await expect(page).toHaveURL(url => url.pathname.endsWith('/storyboard'));
   conflict = false;
-  await page.getByRole('button', { name: '载入服务端镜头', exact: true }).click();
+  const saveStatus = page.getByRole('button', { name: /^保存状态：/ });
+  if (await saveStatus.getAttribute('aria-expanded') !== 'true') await saveStatus.click();
+  await page.locator('.standard-save-details').getByRole('button', { name: '载入服务端镜头', exact: true }).first().click();
   await expect(page.getByRole('dialog', { name: '确认操作', exact: true })).toHaveCount(0);
   await expect(script).toHaveValue(state.shots[0].script);
   await script.fill('发生冲突仍保留的镜头草稿');
   await expect.poll(() => state.shots[0].script).toBe('发生冲突仍保留的镜头草稿');
-  await stages.getByRole('button', { name: /素材生成/ }).click();
+  await stages.getByRole('button', { name: /资产生成/ }).click();
   await expect(page).toHaveURL(url => url.pathname.endsWith('/assets') && url.searchParams.get('conversation') === '301');
   await expect(composer).toHaveValue('保留这段项目对话草稿');
   expect(conversations).toHaveLength(1);
@@ -299,7 +298,7 @@ test('project assistant and shot input survive navigation while shot saving is c
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
 
-for (const width of [1440, 1024, 390, 320]) test(`cards and the selected-shot panel fit at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1920, 1366, 1280]) test(`cards and the selected-shot panel fit at ${width}px`, async ({ page }, info) => {
   const state = await layoutFixture(page);
   await page.setViewportSize({ width, height: 1000 });
   await page.goto(`${root}/storyboard`);
@@ -307,10 +306,7 @@ for (const width of [1440, 1024, 390, 320]) test(`cards and the selected-shot pa
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.locator('.storyboard-summary').first().click();
   await expectCardLayout(page);
-  if (width <= 700) {
-    await expectMobileHeaderFits(page);
-    await page.getByRole('button', { name: '展开生成设置', exact: true }).click();
-  }
+  await expectDesktopHeaderFits(page);
   await expect(page.getByRole('textbox', { name: '分镜 1 脚本', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: info.outputPath(`selected-shot-${width}.png`), fullPage: true });
@@ -464,7 +460,7 @@ for (const delaySharedSave of [false, true]) test(`completed shot videos refresh
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
 
-for (const viewport of [{ width: 1912, height: 900 }, { width: 1440, height: 600 }, { width: 390, height: 640 }, { width: 320, height: 560 }]) test(`saved video fills the preview and keeps its heading switch reachable at ${viewport.width}x${viewport.height}`, async ({ page }, info) => {
+for (const viewport of [{ width: 1920, height: 1080 }, { width: 1440, height: 600 }, { width: 1366, height: 768 }, { width: 1280, height: 720 }]) test(`saved video fills the preview and keeps its heading switch reachable at ${viewport.width}x${viewport.height}`, async ({ page }, info) => {
   const state = await layoutFixture(page);
   await serveTestVideo(page);
   state.shots[0].video = savedVideo('91001', 'layout');
@@ -481,7 +477,7 @@ for (const viewport of [{ width: 1912, height: 900 }, { width: 1440, height: 600
   for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(videoBox[key] - previewBox[key]), `${key} fills the complete preview`).toBeLessThanOrEqual(1);
   await expect(panel(page).locator('.standard-object-heading').getByRole('tablist', { name: '镜头制作内容', exact: true })).toBeVisible();
   await expect(panel(page).locator('.standard-object-tabs,.storyboard-editor-tabs')).toHaveCount(0);
-  if (viewport.width <= 700) await expectMobileHeaderFits(page);
+  await expectDesktopHeaderFits(page);
   await expect(pane.locator('.standard-candidate-actions')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await video.evaluate(async node => {
@@ -570,25 +566,23 @@ test('shot image mentions follow persisted media order and remove private refere
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('narrow shot mentions and video duration popovers close before the settings drawer', async ({ page }) => {
+test('desktop shot mentions and video duration popovers preserve the settings panel', async ({ page }) => {
   test.setTimeout(60000);
   const state = await referenceFixture(page);
-  await page.setViewportSize({ width: 320, height: 640 });
+  await page.setViewportSize({ width: 1280, height: 640 });
   await page.goto(`${root}/storyboard?shot=101`);
   const toggle = page.getByRole('button', { name: '展开生成设置', exact: true });
-  await toggle.click();
-  const settings = page.getByRole('dialog', { name: '分镜生成设置', exact: true });
+  const settings = panel(page).locator('.standard-object-settings:visible');
   const prompt = settings.getByRole('textbox', { name: '画面要求', exact: true });
-  await prompt.fill('手机 @');
+  await prompt.fill('桌面 @');
   const menu = page.getByRole('listbox', { name: '引用参考图片', exact: true });
   await expect(menu).toBeInViewport({ ratio: 1 });
   await prompt.press('ArrowUp'); await prompt.press('Tab');
-  await expect.poll(() => state.creationDrafts.get('101:storyboard_image')?.input_text).toBe('手机 @图片5 ');
+  await expect.poll(() => state.creationDrafts.get('101:storyboard_image')?.input_text).toBe('桌面 @图片5 ');
   await prompt.pressSequentially('@'); await expect(menu).toBeVisible();
   await prompt.press('Escape'); await expect(menu).toBeHidden(); await expect(settings).toBeVisible(); await expect(prompt).toBeFocused();
-  await prompt.press('Escape'); await expect(settings).toBeHidden(); await expect(toggle).toBeFocused();
+  await prompt.press('Escape'); await expect(settings).toBeVisible(); await expect(prompt).toBeFocused();
   await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
-  await toggle.click();
   const videoOutput = settings.getByRole('button', { name: '视频比例与分辨率', exact: true });
   await videoOutput.click();
   const options = page.getByRole('dialog', { name: '视频生成选项', exact: true });
@@ -597,7 +591,7 @@ test('narrow shot mentions and video duration popovers close before the settings
   await page.keyboard.press('Escape');
   await expect(options).toBeHidden(); await expect(settings).toBeVisible(); await expect(videoOutput).toBeFocused();
   await expect.poll(() => state.creationDrafts.get('101:storyboard_video')?.video_settings?.duration_ms).toBe(5000);
-  await page.keyboard.press('Escape'); await expect(settings).toBeHidden(); await expect(toggle).toBeFocused();
+  await page.keyboard.press('Escape'); await expect(settings).toBeVisible();
   expect(state.shots[0].duration_ms).toBe(3000);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
@@ -623,7 +617,7 @@ test('shared reference changes during image preparation stop submission and save
   await expect(prompt.locator('[data-asset-prompt-token="@图片5"]')).toHaveAttribute('data-asset-prompt-media-id', '9903');
   const generate = panel(page).getByRole('button', { name: '生成图片', exact: true });
   await expect(generate).toBeEnabled(); await generate.click();
-  await expect(panel(page).getByText('参考图片已变化，请核对后重新点击生成。', { exact: true })).toBeVisible();
+  await expect(page.getByText('参考图片已变化，请核对后重新点击生成。', { exact: true })).toBeVisible();
   await expect.poll(() => state.creationDrafts.get('101:storyboard_image')?.input_text).toBe('已存 @图片4 和 @图片6 ');
   await expect(prompt.locator('[data-asset-prompt-token="@图片4"]')).toHaveAttribute('data-asset-prompt-media-id', '9801');
   await expect(prompt.locator('[data-asset-prompt-token="@图片6"]')).toHaveAttribute('data-asset-prompt-media-id', '9903');
@@ -708,7 +702,6 @@ test('main shot actions are direct and filtering preserves the selected draft', 
   await more.click();
   await expect(page.getByRole('menuitem', { name: '上移', exact: true })).toHaveAttribute('aria-disabled', 'true');
   await expect(page.getByRole('menuitem', { name: '下移', exact: true })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: '归档', exact: true })).toBeVisible();
   await expect(page.getByRole('dialog', { name: '分镜生成记录', exact: true })).toHaveCount(0);
   await page.keyboard.press('Escape');
   const title = panel(page).getByRole('textbox', { name: '镜头名称', exact: true });

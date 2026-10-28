@@ -64,7 +64,3 @@
 .generation-history-more { margin: 24px 0 0; display: flex; justify-content: center; }
 .generation-history-more button { min-height: 36px; padding: 0 16px; border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent); border-radius: 999px; background: transparent; color: color-mix(in srgb, var(--foreground) 72%, transparent); font-size: 12px; }
 .generation-history-more button:disabled { opacity: .55; }
-@media (max-width: 720px) {
-    .generation-history-content { width: 100%; padding: 16px; }
-    .generation-history-grid { grid-template-columns: repeat(2, 142px); }
-}

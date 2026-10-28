@@ -264,8 +264,11 @@ def execute_canvas_locked(
     task: AgentTask,
     operation: AgentOperation,
     values: ApplyCanvasPatch,
+    *,
+    scope_request=None,
 ) -> dict[str, Any]:
-    request = next(
+    autonomous = scope_request is not None
+    request = scope_request or next(
         (
             item
             for item in _requests(session, conversation, task, operation.input_revision)
@@ -273,40 +276,42 @@ def execute_canvas_locked(
         ),
         None,
     )
-    if request is None or values.request_hash != digest(
-        {"role": "user", "content": request["message"].content}
+    if not autonomous and (
+        request is None
+        or values.request_hash != digest({"role": "user", "content": request["message"].content})
     ):
         raise WorkflowError(
             "canvas_request_required", "画布写入必须引用本任务已应用的明确用户指令", 403
         )
     prior = _successful_operations(session, task)
     for previous in prior:
-        if (
-            previous.tool_name == CANVAS_TOOL
-            and ApplyCanvasPatch.model_validate(previous.arguments) == values
+        if previous.tool_name == CANVAS_TOOL and (
+            previous.arguments == operation.arguments
+            if autonomous
+            else ApplyCanvasPatch.model_validate(previous.arguments) == values
         ):
             operation.result_refs = previous.result_refs
             return {**previous.result, "already_applied": True, "operation_id": str(previous.id)}
     directive = request["directive"]
-    remaining, counts = _remaining(request, prior), Counter()
+    remaining, counts = ({} if autonomous else _remaining(request, prior)), Counter()
     for action in values.patch.actions:
         if action.action == "create_node":
-            if directive.action != "create":
+            if not autonomous and directive.action != "create":
                 raise WorkflowError("assistant_write_scope", "原指令未授权新增节点", 403)
             counts[action.values.type] += 1
-            if counts[action.values.type] > remaining.get(action.values.type, 0):
+            if not autonomous and counts[action.values.type] > remaining.get(action.values.type, 0):
                 raise WorkflowError(
                     "assistant_write_quantity", "新增节点超过原指令的剩余类型或数量", 403
                 )
-        elif directive.action == "create":
+        elif not autonomous and directive.action == "create":
             if action.action == "connect_nodes" and directive.connect:
                 continue
             if action.action == "update_node" and action.node.startswith("$"):
                 continue
             raise WorkflowError("assistant_write_scope", "创建指令只允许填写新节点和获准连线", 403)
-        elif action.action != directive.action:
+        elif not autonomous and action.action != directive.action:
             raise WorkflowError("assistant_write_scope", "工具动作超出原用户指令", 403)
-        if directive.fields and action.action == "update_node":
+        if not autonomous and directive.fields and action.action == "update_node":
             if action.patch.model_fields_set - directive.fields:
                 raise WorkflowError("assistant_write_scope", "修改节点字段超出原用户指令", 403)
     target = task.execution_target

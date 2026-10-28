@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" color="#F5F9F8" role="img" aria-labelledby="cineflow-mark-light-title cineflow-mark-light-desc">
+  <title id="cineflow-mark-light-title">CineFlow 图形标志</title>
+  <desc id="cineflow-mark-light-desc">带斜切开口的画框式字母 C。</desc>
+  <g fill="currentColor"><path d="M220 76C220 55 203 40 182 40L78 40C51 40 32 59 32 86L32 170C32 197 51 216 78 216L182 216C203 216 220 201 220 180L174 155L174 160C174 167 169 172 162 172L90 172C83 172 78 167 78 160L78 96C78 89 83 84 90 84L162 84C169 84 174 89 174 96L174 101L220 76Z"/></g>
+</svg>

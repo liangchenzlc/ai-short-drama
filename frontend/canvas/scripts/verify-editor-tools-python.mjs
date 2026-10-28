@@ -135,8 +135,8 @@ try {
     assert.equal(report.task_post_count, 0);
     assert.equal((await read(await member.request.get(`${origin}${tools}/status`))).states["ai-art-critique"].effectiveEnabled, false);
     await page.screenshot({ path: resolve(output, "settings-desktop.png"), fullPage: true });
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.screenshot({ path: resolve(output, "settings-mobile.png"), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.screenshot({ path: resolve(output, "settings-desktop-1280.png"), fullPage: true });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.getByRole("button", { name: "返回画布", exact: true }).click();

@@ -173,10 +173,10 @@ test('image tools save one position with the original version and no model task 
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 
-test('four-image shot preview is shared with asset tools and works at narrow width', async ({ page }) => {
+test('four-image shot preview is shared with asset tools and works at the minimum desktop width', async ({ page }) => {
   const data = await fixture(page, true, String(test.info().project.use.baseURL));
   data.imageGroups.set('shot:101', artwork(4, 'shot'));
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto(`${root}/storyboard`);
   await page.locator('.storyboard-shot-card').first().click();
   const grid = page.locator('.shot-image-candidates .image-subject-grid');
@@ -185,7 +185,7 @@ test('four-image shot preview is shared with asset tools and works at narrow wid
   await grid.locator('.image-subject').nth(1).focus();
   await expect(grid.locator('.image-subject').nth(1).locator('.image-subject-toolbar')).toHaveCSS('opacity', '1');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: test.info().outputPath('narrow-four-images.png'), fullPage: true });
+  await page.screenshot({ path: test.info().outputPath('desktop-four-images.png'), fullPage: true });
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 
@@ -288,23 +288,23 @@ test('crop and keyboard annotation save the chosen position and retain original 
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 
-test('touch toolbars remain available without hovering', async ({ page, browser }) => {
-  const context = await browser.newContext({ baseURL: String(test.info().project.use.baseURL), hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
-  const touchPage = await context.newPage();
-  const data = await fixture(touchPage, true, String(test.info().project.use.baseURL));
+test('keyboard focus exposes image tools and opens crop on the desktop', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const data = await fixture(page, true, String(test.info().project.use.baseURL));
   data.imageGroups.set('asset:501', artwork(4));
-  await touchPage.goto(`${root}/assets?asset=501`);
-  const subjects = touchPage.locator('.episode-asset-detail .image-subject');
+  await page.goto(root + '/assets?asset=501');
+  const subjects = page.locator('.episode-asset-detail .image-subject');
   await expect(subjects).toHaveCount(4);
+  await subjects.nth(1).focus();
   await expect(subjects.nth(1).locator('.image-subject-toolbar')).toHaveCSS('opacity', '1');
-  await subjects.nth(1).getByRole('button', { name: '编辑第 2 张图片', exact: true }).tap();
-  await expect(touchPage.getByRole('menuitem', { name: '裁切', exact: true })).toBeVisible();
-  await touchPage.getByRole('menuitem', { name: '裁切', exact: true }).tap();
-  const dialog = touchPage.getByRole('dialog', { name: '裁切', exact: true });
+  const edit = subjects.nth(1).getByRole('button', { name: '编辑第 2 张图片', exact: true });
+  await edit.focus(); await edit.press('Enter');
+  const crop = page.getByRole('menuitem', { name: '裁切', exact: true });
+  await expect(crop).toBeVisible(); await crop.focus(); await crop.press('Enter');
+  const dialog = page.getByRole('dialog', { name: '裁切', exact: true });
   await expect(dialog.getByRole('button', { name: '保存图片', exact: true })).toBeEnabled();
-  await touchPage.screenshot({ path: test.info().outputPath('touch-crop-tool.png'), fullPage: true });
+  await page.screenshot({ path: test.info().outputPath('keyboard-crop-tool.png'), fullPage: true });
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-  await context.close();
 });
 
 
@@ -336,7 +336,7 @@ test('edit and more stay one level and historical groups omit editing', async ({
 });
 
 
-for (const viewport of [{ width: 1440, height: 600 }, { width: 390, height: 844 }]) {
+for (const viewport of [{ width: 1440, height: 600 }, { width: 1280, height: 720 }]) {
   test(`tool dialogs keep their footer available at ${viewport.width}px`, async ({ page }, info) => {
     test.setTimeout(90_000);
     const data = await fixture(page, true, String(test.info().project.use.baseURL));

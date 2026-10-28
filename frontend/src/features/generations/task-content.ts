@@ -1,7 +1,7 @@
 export function taskOrigin(task: { display_context?: { project?: string | null; subject: string; scope: string }; source?: { scene: string } | null }): string {
   const context = task.display_context;
   if (context) return [context.project || context.scope, context.subject].filter(Boolean).join(' / ');
-  return ({ novel_script: '小说改编', script_assets: '素材提取', script_shots: '分镜脚本', shot_image: '分镜生图', asset_image: '素材生图' } as Record<string, string>)[task.source?.scene ?? ''] || '通用任务';
+  return ({ novel_script: '小说改编', story_outline: '故事大纲', script_generate: '剧本生成', script_rewrite: '剧本局部修改', script_assets: '素材提取', script_shots: '分镜脚本', shot_image: '分镜生图', asset_image: '素材生图' } as Record<string, string>)[task.source?.scene ?? ''] || '通用任务';
 }
 
 export function taskPrompts(detail: { input: Record<string, unknown>; effective_prompt?: string | null }): { label: string; content: string }[] {

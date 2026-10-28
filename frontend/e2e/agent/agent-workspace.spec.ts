@@ -6,7 +6,7 @@ const conversation = (id: string) => ({ id, title: '项目对话', project_id: '
 const legacy = { ...conversation('301'), title: '原人物创作记录', episode_id: '20', scope_version: 1, stage: 'assets', subject_type: 'asset', subject_id: '501', task_type: 'creation' };
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; };
 const input = (page: Page) => page.getByRole('textbox', { name: '给助手的消息', exact: true });
-const stageButton = (page: Page, name: RegExp) => page.getByRole('navigation', { name: '分集制作流程' }).getByRole('button', { name });
+const stageButton = (page: Page, name: RegExp) => page.getByRole('navigation', { name: '创作流程' }).getByRole('button', { name });
 
 async function assistantFixture(page: Page) {
   const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
@@ -51,15 +51,14 @@ async function assistantFixture(page: Page) {
 }
 const sends = (state: Awaited<ReturnType<typeof assistantFixture>>) => state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'));
 
-for (const width of [1440, 768, 390]) {
+for (const width of [1440, 1366, 1280]) {
   test(`assistant opens beside saved status and preserves editor inputs at ${width}px`, async ({ page }) => {
     const state = await assistantFixture(page); await page.setViewportSize({ width, height: 1000 }); await page.goto(`${root}/source`);
-    if (width <= 700) await page.getByRole('button', { name: '展开设置', exact: true }).click();
-    const requirements = page.getByRole('textbox', { name: '创作要求', exact: true }); await requirements.fill('保留车站对白');
+    const requirements = page.getByRole('textbox', { name: '剧本正文', exact: true }); await requirements.fill('保留车站对白');
     const entry = page.getByRole('button', { name: 'AI 创作助手', exact: true }); expect(await entry.evaluate(node => node.previousElementSibling?.classList.contains('episode-save-state'))).toBe(true);
     await entry.click(); await expect(input(page)).toBeEditable(); await input(page).fill('助手草稿');
     await expect(page.getByRole('radio', { name: '提示词创作', exact: true })).toHaveCount(0); await expect(page.getByRole('radio', { name: 'Agent 创作', exact: true })).toHaveCount(0);
-    if (width < 1000) await expect(page.getByRole('dialog', { name: 'AI 创作助手区域', exact: true })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'AI 创作助手区域', exact: true })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath(`assistant-${width}.png`), animations: 'disabled' });
     await page.getByRole('button', { name: '关闭助手', exact: true }).click(); await expect(requirements).toHaveValue('保留车站对白');
     await entry.focus(); await entry.press('Enter'); await expect(input(page)).toHaveValue('助手草稿'); expect(state.calls.filter(call => call.path === '/conversations/resolve')).toHaveLength(1);
@@ -69,7 +68,7 @@ for (const width of [1440, 768, 390]) {
 
 test('one project conversation persists through all four stages and refresh', async ({ page }) => {
   const state = await assistantFixture(page); await page.goto(`${root}/source?assistant=open`); await input(page).fill('项目讨论草稿');
-  for (const stage of [/素材生成/, /分镜制作/, /成片合成/, /剧本创作/]) {
+  for (const stage of [/资产生成/, /分镜制作/, /成片预览/, /剧本创作/]) {
     await stageButton(page, stage).click(); await expect(input(page)).toHaveValue('项目讨论草稿'); await expect(page.getByRole('button', { name: 'AI 创作助手', exact: true })).toBeVisible();
     await expect(page).toHaveURL(url => url.searchParams.get('conversation') === '801' && !url.searchParams.has('mode'));
   }

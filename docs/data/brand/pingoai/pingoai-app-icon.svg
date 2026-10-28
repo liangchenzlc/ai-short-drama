@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" color="#101010" role="img" aria-labelledby="brand-title brand-desc">
+  <title id="brand-title">PingoAI 应用图标</title>
+  <desc id="brand-desc">炭黑圆角方形中的月白 PingoAI 图标。</desc>
+  <rect width="256" height="256" rx="56" fill="#101010"/>
+  <g fill="#F5F5F5" transform="translate(7.68 7.68) scale(.94)"><path d="M48 218V52Q48 40 60 40H128Q132 40 132 44V84Q132 88 128 88H100V136H144C160 136 168 126 168 112V104H216V112C216 152 184 184 144 184H100V218Q100 224 94 224H54Q48 224 48 218Z"/><circle cx="192" cy="64" r="24"/></g>
+</svg>

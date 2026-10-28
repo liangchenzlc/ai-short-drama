@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { fixture } from '../support/studio-fixture';
 
-for (const width of [1440, 390]) test(`作品直接进入创作并保持60px顶栏 ${width}`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`作品直接进入创作并保持60px顶栏 ${width}`, async ({ page }, info) => {
   const state = await fixture(page, true, undefined, true);
   await page.setViewportSize({ width, height: 900 });
   await page.goto('/projects');
@@ -24,7 +24,7 @@ for (const width of [1440, 390]) test(`作品直接进入创作并保持60px顶�
   expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 390]) test(`项目三点菜单取消与删除不打开新标签，信息保持同行 ${width}`, async ({ page }) => {
+for (const width of [1440, 1280]) test(`项目三点菜单取消与删除不打开新标签，信息保持同行 ${width}`, async ({ page }) => {
   const state = await fixture(page, true);
   await page.setViewportSize({ width, height: 900 });
   await page.goto('/projects');
@@ -124,9 +124,9 @@ test('原位修改名称只提交名称与版本，保存后四阶段仍保持�
   await page.getByRole('textbox', { name: '作品名称', exact: true }).press('Enter');
   await expect.poll(() => state.requests.filter(item => item.path === '/projects/10' && item.method === 'PATCH').map(item => item.body)).toEqual([{ name: '改名后的作品', row_version: '1' }]);
   await expect(page.getByRole('button', { name: '改名后的作品', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: /素材生成/ }).click();
+  await page.getByRole('button', { name: /资产生成/ }).click();
   await expect(page).toHaveURL(/\/projects\/10\/assets$/);
-  await expect(page.getByRole('heading', { name: '当前素材' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '资产库' })).toBeVisible();
   expect(state.requests.some(item => item.path.includes('/episodes') || item.path.includes('/libraries/'))).toBe(false);
   expect(state.errors).toEqual([]);
   expect(state.unexpected).toEqual([]);

@@ -74,7 +74,7 @@ async function assetDeletionFixture(page: Page) {
 
 test('asset card deletion opens independently, confirms, and keeps another selected asset', async ({ page }) => {
   const data = await assetDeletionFixture(page);
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto(`${root}/assets?asset=501`);
   const more = page.getByRole('button', { name: '雨夜车站卡片更多操作', exact: true });
   await more.focus(); await page.keyboard.press('Enter');
@@ -224,7 +224,7 @@ test('local asset card deletion removes only a confirmed local draft and protect
   await page.getByRole('button', { name: '待核对草稿卡片更多操作', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: '删除素材', exact: true })).toHaveAttribute('aria-disabled', 'true');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: '新增素材', exact: true }).click();
+  await page.getByRole('button', { name: '创建资产', exact: true }).click();
   await page.getByRole('button', { name: '未命名素材卡片更多操作', exact: true }).click();
   await page.getByRole('menuitem', { name: '删除素材', exact: true }).click();
   await page.getByRole('dialog', { name: '删除素材草稿', exact: true }).getByRole('button', { name: '删除草稿', exact: true }).click();
@@ -250,10 +250,10 @@ async function referenceFixture(page: Page) {
   return data;
 }
 
-test('asset extraction hover keeps its icon painted and its hit area stable', async ({ page }) => {
+test('asset extraction history hover keeps its icon painted and its hit area stable', async ({ page }) => {
   const data = await fixture(page, true, String(test.info().project.use.baseURL));
   await page.goto(`${root}/assets`);
-  const extract = page.getByRole('button', { name: '从剧本提取素材', exact: true });
+  const extract = page.getByRole('button', { name: '资产提取记录', exact: true });
   await expect(extract).toBeEnabled();
   const before = (await extract.boundingBox())!;
   const paintedPixels = async () => page.evaluate(async encoded => {
@@ -276,15 +276,16 @@ test('asset extraction hover keeps its icon painted and its hit area stable', as
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 
-test('the asset page selects its first item without opening mobile settings and honors an explicit route', async ({ page }) => {
+test('the asset page selects its first item with desktop settings open and honors an explicit route', async ({ page }) => {
   const data = await fixture(page, true, String(test.info().project.use.baseURL));
   await page.addInitScript(() => {
-    localStorage.setItem('short-drama:asset-drafts:v1:anonymous:10:20', JSON.stringify([{ id: 'draft:empty-recovery', kind: null, name: '', label: '', description: '', prompt: '', tags: [], scene_time: '', status: 'local', message: '', attempt: null }]));
+    localStorage.setItem('short-drama:asset-drafts:v1:anonymous:10', JSON.stringify([{ id: 'draft:empty-recovery', kind: null, name: '', label: '', description: '', prompt: '', tags: [], scene_time: '', status: 'local', message: '', attempt: null }]));
   });
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto(`${root}/assets`);
   await expect(page.locator('.episode-asset-detail .standard-object-heading h3')).toHaveText('林晚');
   await expect(page.getByRole('button', { name: '林晚', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.standard-object-settings[aria-label="素材生成设置"]')).toBeVisible();
   await expect(page.getByRole('dialog', { name: '素材生成设置', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '未命名素材', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await page.goto(`${root}/assets?asset=502`);
@@ -294,18 +295,17 @@ test('the asset page selects its first item without opening mobile settings and 
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 
-test('mobile asset options and compact model selection save privately and restore focus with Escape', async ({ page }) => {
+test('desktop asset options and compact model selection save privately and restore focus with Escape', async ({ page }) => {
   const data = await fixture(page, true, String(test.info().project.use.baseURL));
   await page.route('**/api/v1/ai-model-configs?**', route => route.fulfill({ json: {
     items: [77, 78].map((id, index) => ({ id: String(id), name: `生图模型 ${index + 1} · 长名称`, model_key: `fixture-image-${index + 1}`, service_type: 'image', provider: 'fixture', enabled: 1, is_default: index === 0 ? 1 : 0, is_deleted: 0, row_version: '1', has_api_key: true })), total: 2, offset: 0, limit: 100,
   } }));
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto(`${root}/assets`);
   const settingsTrigger = page.getByRole('button', { name: '展开生成设置', exact: true });
-  await settingsTrigger.click();
-  const settings = page.getByRole('dialog', { name: '素材生成设置', exact: true });
+  const settings = page.locator('.standard-object-settings[aria-label="素材生成设置"]');
   const prompt = settings.getByRole('textbox', { name: '画面要求', exact: true });
-  await prompt.fill('仅保留在本人的手机素材设置');
+  await prompt.fill('仅保留在本人的桌面素材设置');
   const model = settings.locator('.generation-composer-model');
   const select = model.getByRole('combobox', { name: '生图模型', exact: true });
   await expect(model.locator('.ant-select-arrow, .ant-select-clear')).toHaveCount(0);
@@ -322,10 +322,10 @@ test('mobile asset options and compact model selection save privately and restor
   await expect.poll(() => data.creationDrafts.get('501:asset_image')?.image_settings?.count).toBe(2);
   await page.keyboard.press('Escape');
   await expect(options).toBeHidden(); await expect(settings).toBeVisible(); await expect(output).toBeFocused();
-  await page.keyboard.press('Escape');
+  await settings.getByRole('button', { name: '关闭生成设置', exact: true }).click();
   await expect(settings).toBeHidden(); await expect(settingsTrigger).toBeFocused();
   await settingsTrigger.click();
-  await expect(prompt).toHaveText('仅保留在本人的手机素材设置');
+  await expect(prompt).toHaveText('仅保留在本人的桌面素材设置');
   await expect(model.locator('.ant-select-selection-item')).toHaveText('生图模型 2 · 长名称');
   await expect(output).toContainText('2张');
   await settings.getByRole('button', { name: '生成图片', exact: true }).scrollIntoViewIfNeeded();
@@ -337,7 +337,7 @@ test('mobile asset options and compact model selection save privately and restor
 test('all and named categories add immediate local cards; only complete name/type creates a server asset', async ({ page }) => {
   const data = await assetFixture(page);
   await page.goto(`${root}/assets`);
-  await page.getByRole('button', { name: '新增素材', exact: true }).first().click();
+  await page.getByRole('button', { name: '创建资产', exact: true }).first().click();
   await expect(page.getByRole('dialog', { name: /新建/ })).toHaveCount(0);
   const name = page.getByRole('textbox', { name: '素材名称', exact: true });
   await expect(name).toHaveValue(''); await expect(name).toBeFocused();
@@ -352,7 +352,7 @@ test('all and named categories add immediate local cards; only complete name/typ
   await expect(page.locator('.standard-asset-card').getByRole('button', { name: '新角色', exact: true })).toHaveCount(1);
   for (const [kind, label] of [['scene', '场景'], ['prop', '道具'], ['character', '角色']] as const) {
     await page.locator('.standard-assets-filters').getByRole('button', { name: label, exact: true }).click();
-    await page.getByRole('button', { name: '新增素材', exact: true }).first().click();
+    await page.getByRole('button', { name: '创建资产', exact: true }).first().click();
     await expect(page.locator('.standard-asset-name-type .ant-select-selection-item')).toHaveText(label);
     await name.fill(`${label}新增`);
     await expect.poll(() => data.creates.some(item => item.body.name === `${label}新增`)).toBe(true);
@@ -364,7 +364,7 @@ test('all and named categories add immediate local cards; only complete name/typ
 test('uncertain creation survives reload and recovers using the original exact request key', async ({ page }) => {
   const data = await assetFixture(page); data.state.uncertainCreate = true;
   await page.goto(`${root}/assets`);
-  await page.getByRole('button', { name: '新增素材', exact: true }).first().click();
+  await page.getByRole('button', { name: '创建资产', exact: true }).first().click();
   await page.getByRole('textbox', { name: '素材名称', exact: true }).fill('待核对庭院');
   await pickType(page, '场景');
   await openSaveDetails(page);
@@ -437,7 +437,8 @@ test('personal generation input and visible parameters save separately and freez
   await expect(page.getByRole('button', { name: '生成图片', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '生成图片', exact: true }).click();
   await expect.poll(() => submitted).not.toBeNull();
-  expect(submitted.source).toMatchObject({ scene: 'asset_image', asset_id: '501', project_id: '10', episode_id: '20', row_version: data.asset.row_version });
+  expect(submitted.source).toMatchObject({ scene: 'asset_image', asset_id: '501', project_id: '10', row_version: data.asset.row_version });
+  expect(submitted.source).not.toHaveProperty('episode_id');
   expect(submitted.source.draft_id).toMatch(/^\d+$/); expect(submitted.source.draft_version).toMatch(/^\d+$/);
   expect(submitted.input).toEqual({ prompt: '', reference_media_ids: [] });
   expect(submitted.parameters).toEqual({ count: 4, aspect: '9:16', resolution: '2K' });
@@ -533,7 +534,7 @@ test('a local asset waits for its reference upload before automatic creation and
     await route.fulfill({ status: 201, json: { media_id: '991', name: 'reference.png', url: 'data:image/png;base64,iVBORw0KGgo=' } });
   });
   await page.goto(`${root}/assets`);
-  await page.getByRole('button', { name: '新增素材', exact: true }).first().click();
+  await page.getByRole('button', { name: '创建资产', exact: true }).first().click();
   await page.locator('.standard-asset-references input[type="file"]').setInputFiles({ name: 'reference.png', mimeType: 'image/png', buffer: Buffer.from('reference image') });
   await expect.poll(() => uploadStarted).toBe(true);
   await page.getByRole('textbox', { name: '素材名称', exact: true }).fill('带个人参考的庭院');
@@ -557,14 +558,14 @@ test('a local asset waits for its reference upload before automatic creation and
 
 test('malformed nested local generation stays available for backup and blocks automatic creation', async ({ page }) => {
   const data = await assetFixture(page);
-  const key = 'short-drama:asset-drafts:v1:anonymous:10:20';
+  const key = 'short-drama:asset-drafts:v1:anonymous:10';
   const raw = JSON.stringify([{ id: 'draft:broken', kind: 'character', name: '损坏恢复稿', label: '', description: '', prompt: '', tags: [], scene_time: '', status: 'local', message: '', attempt: null, generation: {} }]);
   await page.addInitScript(({ key, raw }) => { localStorage.setItem(key, raw); }, { key, raw });
   await page.goto(`${root}/assets`);
   await openSaveDetails(page);
   await expect(page.locator('.standard-save-details .studio-feedback-details').getByText('本机素材记录无法读取。原记录已保留，请下载后核对。', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '下载本机恢复记录', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '新增素材', exact: true }).first()).toBeDisabled();
+  await expect(page.getByRole('button', { name: '创建资产', exact: true }).first()).toBeDisabled();
   expect(await page.evaluate(key => localStorage.getItem(key), key)).toBe(raw);
   expect(data.creates).toHaveLength(0);
   expect(data.errors).toEqual([]);
@@ -573,14 +574,14 @@ test('malformed nested local generation stays available for backup and blocks au
 test('an incomplete local asset switches stages without confirmation and restores its input', async ({ page }) => {
   const data = await assetFixture(page);
   await page.goto(`${root}/assets`);
-  await page.getByRole('button', { name: '新增素材', exact: true }).first().click();
+  await page.getByRole('button', { name: '创建资产', exact: true }).first().click();
   await page.getByRole('textbox', { name: '描述', exact: true }).fill('名称和类型稍后再填，先保留人物设定');
   await expect(page.getByText('本机草稿已保留', { exact: true })).toHaveCount(0);
-  const nav = page.getByRole('navigation', { name: '分集制作流程', exact: true });
+  const nav = page.getByRole('navigation', { name: '创作流程', exact: true });
   await nav.getByRole('button', { name: /剧本创作/ }).click();
   await expect(page).toHaveURL(new RegExp(`${root}/source`));
   await expect(page.getByRole('dialog', { name: /未保存|确认操作/ })).toHaveCount(0);
-  await nav.getByRole('button', { name: /素材生成/ }).click();
+  await nav.getByRole('button', { name: /资产生成/ }).click();
   await expect(page.getByRole('textbox', { name: '描述', exact: true })).toHaveValue('名称和类型稍后再填，先保留人物设定');
   expect(data.creates).toHaveLength(0); expect(data.errors).toEqual([]);
 });
@@ -592,7 +593,7 @@ test('asset metadata, references and preview tools follow the compact refinement
   await page.goto(`${root}/assets?asset=501`);
   const detail = page.locator('.episode-asset-detail');
   await expect(detail).toBeVisible();
-  await expect(page.locator('.standard-assets-heading h2')).toHaveText('本集素材 3');
+  await expect(page.locator('.standard-assets-heading h2')).toHaveText('资产库 3');
   for (const [label, count] of [['全部', 3], ['角色', 1], ['场景', 1], ['道具', 1]] as const) {
     await expect(page.locator('.standard-asset-category-tabs').getByRole('button', { name: label, exact: true }).locator('small')).toHaveText(String(count));
   }
@@ -636,15 +637,14 @@ test('asset metadata, references and preview tools follow the compact refinement
   await page.locator('.asset-generation-history-dialog').getByRole('button', { name: '素材更多操作', exact: true }).click();
   await expect(page.getByRole('button', { name: '上传作品图片', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '从资产库选择', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '共享素材到项目', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '从本集移除素材', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '删除素材', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('button', { name: '共享素材到项目', exact: true })).toBeHidden();
+  await expect(page.locator('.standard-asset-more-tools:visible')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(page.locator('.asset-generation-history-dialog')).toHaveCount(0);
   await page.locator('.standard-asset-category-tabs').getByRole('button', { name: '场景', exact: true }).click();
   await expect(page.locator('.standard-asset-card')).toHaveCount(1);
-  await expect(page.locator('.standard-assets-heading h2')).toHaveText('本集素材 3');
+  await expect(page.locator('.standard-assets-heading h2')).toHaveText('资产库 3');
   await pickType(page, '场景');
   await expect.poll(() => data.asset.kind).toBe('scene');
   await expect(page.locator('.standard-asset-category-tabs').getByRole('button', { name: '场景', exact: true }).locator('small')).toHaveText('2');
@@ -799,33 +799,33 @@ test('asset references keep shared-first numbering through selection, saving and
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 
-test('narrow asset reference keyboard selection and Escape preserve the settings draft', async ({ page }) => {
+test('desktop asset reference keyboard selection and Escape preserve the settings draft', async ({ page }) => {
   const data = await referenceFixture(page);
-  await page.setViewportSize({ width: 320, height: 640 });
+  await page.setViewportSize({ width: 1280, height: 640 });
   await page.goto(`${root}/assets`);
   const trigger = page.getByRole('button', { name: '展开生成设置', exact: true });
-  await trigger.click();
-  const settings = page.getByRole('dialog', { name: '素材生成设置', exact: true });
+  const settings = page.locator('.standard-object-settings[aria-label="素材生成设置"]');
   const prompt = settings.getByRole('textbox', { name: '画面要求', exact: true });
   const menu = page.getByRole('listbox', { name: '引用参考图片', exact: true });
-  await prompt.fill('手机 @');
+  await prompt.fill('桌面 @');
   await expect(menu).toBeInViewport({ ratio: 1 });
   const bounds = (await menu.boundingBox())!;
-  expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
+  expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(1280);
   await prompt.press('ArrowUp');
   await expect(menu.getByRole('option').last()).toHaveAttribute('aria-selected', 'true');
   await prompt.press('Tab');
   await expect(menu).toBeHidden();
-  await expect.poll(() => data.creationDrafts.get('501:asset_image')?.input_text).toBe('手机 @图片4 ');
+  await expect.poll(() => data.creationDrafts.get('501:asset_image')?.input_text).toBe('桌面 @图片4 ');
   await prompt.pressSequentially('@');
   await expect(menu).toBeVisible();
   await prompt.press('Escape');
   await expect(menu).toBeHidden(); await expect(settings).toBeVisible(); await expect(prompt).toBeFocused();
-  await prompt.press('Escape');
+  await prompt.press('Escape'); await expect(settings).toBeVisible();
+  await settings.getByRole('button', { name: '关闭生成设置', exact: true }).click();
   await expect(settings).toBeHidden(); await expect(trigger).toBeFocused();
   await trigger.click();
   await expect(prompt.locator('[data-asset-prompt-token="@图片4"]')).toHaveCount(1);
-  await expect.poll(() => data.creationDrafts.get('501:asset_image')?.input_text).toBe('手机 @图片4 @');
+  await expect.poll(() => data.creationDrafts.get('501:asset_image')?.input_text).toBe('桌面 @图片4 @');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
@@ -840,7 +840,7 @@ test('asset category-count failure exposes retry without inventing category tota
     return route.fallback();
   });
   await page.goto(`${root}/assets?asset=501`);
-  await expect(page.locator('.standard-assets-heading h2')).toHaveText('本集素材 —');
+  await expect(page.locator('.standard-assets-heading h2')).toHaveText('资产库 —');
   const list = page.locator('.standard-assets-scroll');
   const preview = page.locator('.standard-object-preview');
   const failedList = await list.boundingBox();
@@ -851,7 +851,7 @@ test('asset category-count failure exposes retry without inventing category tota
   await expect(page.locator('.standard-asset-card')).toHaveCount(3);
   failCounts = false;
   await page.getByRole('button', { name: '重试读取分类数量', exact: true }).click();
-  await expect(page.locator('.standard-assets-heading h2')).toHaveText('本集素材 3');
+  await expect(page.locator('.standard-assets-heading h2')).toHaveText('资产库 3');
   await expect(page.locator('.standard-asset-category-tabs').getByRole('button', { name: '角色', exact: true }).locator('small')).toHaveText('1');
   await expect(page.getByRole('button', { name: '重试读取分类数量', exact: true })).toHaveCount(0);
   expect(await list.boundingBox()).toEqual(failedList);
@@ -860,18 +860,15 @@ test('asset category-count failure exposes retry without inventing category tota
 });
 
 
-test('main asset actions reuse the history operations and import search explains no match', async ({ page }) => {
+test('main asset actions reuse the history image operations', async ({ page }) => {
   const data = await fixture(page, true, String(test.info().project.use.baseURL));
-  await page.route('**/api/v1/projects/10/assets?**', route => route.fulfill({ json: {
-    items: [{ ...data.asset, id: '777', name: '项目库新角色' }], total: 1, offset: 0, limit: 100,
-  } }));
   await page.goto(`${root}/assets?asset=501`);
   const main = page.locator('.episode-asset-detail');
   const more = main.getByRole('button', { name: '素材更多操作', exact: true });
   await more.click();
   await expect(page.locator('.asset-generation-history-dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '上传作品图片', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '共享素材到项目', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '删除素材', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(more).toHaveAttribute('aria-expanded', 'false');
   await expect(more).toBeFocused();
@@ -880,20 +877,13 @@ test('main asset actions reuse the history operations and import search explains
   const picker = page.getByRole('dialog', { name: '从图片资产库选择', exact: true });
   await expect(picker).toContainText('选择后更新当前素材主图');
   await picker.getByRole('button', { name: '关闭弹窗', exact: true }).click();
-  await page.getByRole('button', { name: '导入素材', exact: true }).click();
-  const imports = page.getByRole('dialog', { name: '从项目库导入素材', exact: true });
-  await expect(imports.getByText('项目库新角色', { exact: true })).toBeVisible();
-  await imports.getByRole('searchbox', { name: '搜索可添加素材', exact: true }).fill('不存在的素材');
-  await expect(imports.getByRole('status')).toHaveText('没有找到匹配素材，请换个关键词。');
-  await expect(imports.getByText('项目库暂无可添加的素材。', { exact: true })).toHaveCount(0);
-  await imports.getByRole('button', { name: '关闭', exact: true }).click();
   await expect(main.getByRole('textbox', { name: '素材名称', exact: true })).toHaveValue(data.asset.name);
-  await page.getByRole('button', { name: '新增素材', exact: true }).click();
+  await page.getByRole('button', { name: '创建资产', exact: true }).click();
   await expect(main.getByRole('button', { name: '素材更多操作', exact: true })).toHaveCount(0);
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 
-for (const viewport of [{ width: 768, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }, { width: 320, height: 640 }]) {
+for (const viewport of [{ width: 1280, height: 720 }, { width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
   test(`asset heading keeps its count and tools on one row at ${viewport.width}px`, async ({ page }, info) => {
     const data = await fixture(page, true, String(test.info().project.use.baseURL));
     await page.setViewportSize(viewport);

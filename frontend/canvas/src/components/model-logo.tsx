@@ -148,7 +148,7 @@ export function ModelIconPicker({ value, onChange }: { value?: string; onChange?
                         allowClear
                     />
                     <div
-                        className="grid max-h-[380px] grid-cols-8 gap-2 overflow-y-auto pr-1 sm:grid-cols-9"
+                        className="grid max-h-[380px] gap-2 overflow-y-auto pr-1 grid-cols-9"
                         role="listbox"
                         aria-label="模型 Logo 列表"
                     >

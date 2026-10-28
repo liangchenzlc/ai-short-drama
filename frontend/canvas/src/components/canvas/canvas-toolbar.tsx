@@ -284,7 +284,7 @@ export function CanvasToolbar({
                 ref={dockRef}
                 items={items}
                 size="libtv"
-                // 宽度随实际命令数量收缩，避免末尾留下无功能的空白区域；窄屏仍由 FloatingDock 自己滚动收缩。
+                // 宽度随实际命令数量收缩，桌面窗口内由 FloatingDock 保持滚动与操作可达。
                 className="canvas-floating-dock libtv-main-dock pointer-events-auto max-w-full"
                 style={canvasDockStyle(theme)}
             />

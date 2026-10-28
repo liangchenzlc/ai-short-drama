@@ -303,7 +303,7 @@ class AgentMemoryJob(Base):
             name="ck_agent_memory_job_kind",
         ),
         CheckConstraint(
-            "status IN ('pending','running','succeeded','failed','stale','cancelled') "
+            "status IN ('pending','running','succeeded','failed','stale','cancelled','abandoned') "
             "AND provider_state IN ('not_started','sending','received','unknown')",
             name="ck_agent_memory_job_status",
         ),

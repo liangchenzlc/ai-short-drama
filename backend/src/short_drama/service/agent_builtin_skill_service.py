@@ -1,6 +1,7 @@
 """Explicit system publication with verified resources before a short SQL transaction."""
 
 from collections.abc import Sequence
+from hashlib import sha256
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -8,6 +9,7 @@ from short_drama.agent.skill.packages import BuiltinSkillPackage, builtin_skill_
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict
 from short_drama.domain.agent_skill import AgentSkillVersion
+from short_drama.schemas.agent_skill import SkillCreate
 from short_drama.service.agent_skill_package import package_digest, validate_package_size
 from short_drama.service.agent_skill_resource_service import (
     lock_builtin_catalog,
@@ -34,18 +36,18 @@ def publish_builtin_skills(
     library = AgentSkillService(None, settings, storage)
     prepared = []
     for package in packages:
+        content = SkillCreate.model_validate(package.content.model_dump())
         if package.key not in BUILTIN_NAMES:
             raise ValueError(f"Unregistered builtin Skill: {package.key}")
-        metadata = library._metadata(package.content)
-        if metadata["issues"]:
-            raise ValueError(f"Incompatible builtin Skill: {package.key}: {metadata['issues']}")
+        metadata = library._metadata(content)
+        library._validate_write(metadata, [])
         metadata["instructions_checksum_sha256"] = skill_digest(package.content.instructions)
         manifest = [
             {
                 "path": item.path,
                 "kind": item.kind,
-                "byte_size": len(item.content.encode("utf-8")),
-                "checksum_sha256": skill_digest(item.content),
+                "byte_size": len(item.resource_bytes()),
+                "checksum_sha256": sha256(item.resource_bytes()).hexdigest(),
             }
             for item in package.content.resources
         ]
@@ -62,7 +64,7 @@ def publish_builtin_skills(
     for package, metadata, manifest, existing_version in prepared:
         if existing_version:
             for resource in manifest:
-                library._resource_bytes(resource)
+                library._resource_data(resource)
         else:
             manifest = library._store_resources(
                 "builtin", package.content.resources, staged=uploaded

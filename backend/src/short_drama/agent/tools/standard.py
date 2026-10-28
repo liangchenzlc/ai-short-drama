@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from short_drama.agent.context.subjects import snapshot_subjects
+from short_drama.agent.harness import ENGINE_VERSION
 from short_drama.agent.memory.sources import restricted_messages
 from short_drama.agent.tools.contracts import STANDARD_READ_TOOL as STANDARD_READ_TOOL
 from short_drama.agent.tools.contracts import STANDARD_TOOL as STANDARD_TOOL
@@ -327,7 +328,7 @@ def standard_result_keys(session: Session, owner: int, task: AgentTask) -> set[s
 def read_standard_results_locked(
     session: Session, conversation: AgentConversation, task: AgentTask, values: ReadTaskResults
 ) -> dict[str, Any]:
-    """Project only saved public fields for objects actually created by this logical task."""
+    """Read saved public fields from task-created or still-selected, task-updated objects."""
     prior = _successful_operations(session, task)
     operation = next((item for item in prior if item.id == values.operation_id), None)
     if operation is None:
@@ -343,7 +344,16 @@ def read_standard_results_locked(
         for change in item.changes
         if change["before"] is None
     }
-    visible = {(item["kind"], item["id"]) for item in operation.result_refs} & created
+    readable = created
+    if task.effective_state.get("engine") == ENGINE_VERSION:
+        readable = readable | {
+            (item["kind"], item["id"])
+            for item in snapshot_subjects(task.context_snapshot)
+            if item["source_kind"] == "project"
+            and item["project_id"] == str((operation.result or {}).get("project_id"))
+            and item["kind"] in {"asset", "shot"}
+        }
+    visible = {(item["kind"], item["id"]) for item in operation.result_refs} & readable
     changes = {
         change["id"]: change
         for change in operation.changes
@@ -353,7 +363,11 @@ def read_standard_results_locked(
     if len(set(requested)) != len(requested):
         raise WorkflowError("invalid_tool_arguments", "成果引用不能重复", 422)
     if not requested or any(identifier not in changes for identifier in requested):
-        raise WorkflowError("assistant_result_scope", "只能读取回执中的本任务新建成果", 403)
+        raise WorkflowError(
+            "assistant_result_scope",
+            "请求对象不在该保存批次的可读成果中，请核对原始保存 operation_id 和结果 ID",
+            403,
+        )
     project_id = (operation.result or {}).get("project_id")
     project = session.scalar(
         select(Project.id).where(
@@ -514,21 +528,30 @@ def execute_standard_locked(
     values: ApplyStandardPatch,
     *,
     settings=None,
+    scope_request=None,
 ) -> dict[str, Any]:
-    restricted, _tasks = restricted_messages(session, conversation.id)
-    requests = _requests(_rows(session, task, operation.input_revision), task, restricted)
-    request = next(
-        (item for item in requests if item["message"].id == values.request_message_id), None
-    )
-    if request is None or values.request_hash != digest(
-        {"role": "user", "content": request["message"].content}
-    ):
-        raise WorkflowError(
-            "standard_request_required", "标准写入必须引用本任务已应用的明确用户指令", 403
+    autonomous = scope_request is not None
+    request = scope_request
+    if not autonomous:
+        restricted, _tasks = restricted_messages(session, conversation.id)
+        requests = _requests(_rows(session, task, operation.input_revision), task, restricted)
+        request = next(
+            (item for item in requests if item["message"].id == values.request_message_id), None
         )
+        if request is None or values.request_hash != digest(
+            {"role": "user", "content": request["message"].content}
+        ):
+            raise WorkflowError(
+                "standard_request_required", "标准写入必须引用本任务已应用的明确用户指令", 403
+            )
     prior = _successful_operations(session, task)
     for previous in prior:
-        if ApplyStandardPatch.model_validate(previous.arguments) == values:
+        identical = (
+            previous.arguments == operation.arguments
+            if autonomous
+            else ApplyStandardPatch.model_validate(previous.arguments) == values
+        )
+        if identical:
             operation.result_refs = previous.result_refs
             return {**previous.result, "already_applied": True, "operation_id": str(previous.id)}
     directive = request["directive"]
@@ -547,15 +570,17 @@ def execute_standard_locked(
         allowed["sound_line"] = sorted(lines)
     remaining = Counter(directive.limits)
     for previous in prior:
-        if str(previous.arguments.get("request_message_id")) == str(
-            values.request_message_id
-        ) and not (previous.result or {}).get("already_applied"):
+        if (
+            not autonomous
+            and str(previous.arguments.get("request_message_id")) == str(values.request_message_id)
+            and not (previous.result or {}).get("already_applied")
+        ):
             remaining.subtract((previous.result or {}).get("created_counts", {}))
     created_counts: Counter[str] = Counter()
     touched = set()
     for action in values.patch.actions:
         if action.action.startswith("create_"):
-            if directive.action != "create":
+            if not autonomous and directive.action != "create":
                 raise WorkflowError("assistant_write_scope", "原指令未授权新增对象", 403)
             kind = (
                 action.values.kind
@@ -566,15 +591,17 @@ def execute_standard_locked(
             )
             quota_kind = (
                 kind
-                if created_counts[kind] < remaining[kind] or kind in {"shot", "sound_line"}
+                if autonomous
+                or created_counts[kind] < remaining[kind]
+                or kind in {"shot", "sound_line"}
                 else "asset"
             )
             created_counts[quota_kind] += 1
-            if created_counts[quota_kind] > remaining[quota_kind]:
+            if not autonomous and created_counts[quota_kind] > remaining[quota_kind]:
                 raise WorkflowError(
                     "assistant_write_quantity", "新增数量超过原用户指令的剩余范围", 403
                 )
-        elif action.action != directive.action:
+        elif not autonomous and action.action != directive.action:
             # New objects may be completed inside their creation batch only.
             target = getattr(action, "asset", getattr(action, "shot", getattr(action, "line", "")))
             if not (
@@ -591,15 +618,16 @@ def execute_standard_locked(
             ):
                 raise WorkflowError("assistant_write_scope", "工具动作超出原用户指令", 403)
         if action.action == "set_shot_assets" or action.action == "create_shot" and action.assets:
-            if not directive.associate:
+            if not autonomous and not directive.associate:
                 raise WorkflowError(
                     "assistant_related_scope", "原指令未授权建立或替换素材关联", 403
                 )
-        if directive.fields and action.action.startswith("update_"):
+        if not autonomous and directive.fields and action.action.startswith("update_"):
             if set(action.patch.model_fields_set) - {"row_version"} - directive.fields:
                 raise WorkflowError("assistant_write_scope", "修改字段超出原用户指令", 403)
         if (
-            directive.action == "create"
+            not autonomous
+            and directive.action == "create"
             and action.action == "update_asset"
             and "kind" in action.patch.model_fields_set
         ):

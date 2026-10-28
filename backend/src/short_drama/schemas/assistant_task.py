@@ -9,6 +9,7 @@ from pydantic import Field, field_validator, model_validator
 from short_drama.schemas.agent import Title
 from short_drama.schemas.agent_runtime import MessageRead, RunRead
 from short_drama.schemas.assistant import AssistantMessageCreate, AssistantSourceContext
+from short_drama.schemas.assistant_script import ScriptReference
 from short_drama.schemas.base import (
     Identifier,
     InputModel,
@@ -243,6 +244,7 @@ class TaskMediaLimits(InputModel):
 class AssistantTaskMessage(AssistantMessageCreate):
     task_id: Identifier | None = None
     new_task: bool = False
+    script_reference: ScriptReference | None = None
     context: TaskSourceContext | None = None
     subject_selection: TaskSubjectSelection | None = None
     attachment_selection: TaskAttachmentSelection | None = None
@@ -319,6 +321,10 @@ class TaskRead(ReadModel):
     control_seq: NonnegativeVersion
     applied_control_seq: NonnegativeVersion
     control_state: Literal["none", "stop_pending", "redirect_pending", "delete_pending"]
+    interruptions: dict = Field(
+        default_factory=lambda: {"stop": True, "redirect": True, "resume": True}
+    )
+    interruptions_supported: bool = True
     execution_target: TaskExecutionTarget | None
     memory_project_ids: list[Identifier]
     selected_subjects: list[TaskSubjectRead]

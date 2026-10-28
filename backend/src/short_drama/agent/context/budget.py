@@ -11,15 +11,16 @@ SAFETY_TOKENS = 2048
 MEDIA_TOKENS = {"image": 2048, "video": 8192, "audio": 16000}
 
 
-def _measure(value, output_tokens, media_tokens=0):
+def _measure(value, output_tokens, media_tokens=0, *, context_window=CONTEXT_TOKENS):
     # This is a platform estimate, not a vendor tokenizer or advertised model window.
     size = len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
     estimate = (size + 2) // 3 + media_tokens
-    limit = CONTEXT_TOKENS - output_tokens - TOOL_RESULT_TOKENS - SAFETY_TOKENS
+    limit = context_window - output_tokens - TOOL_RESULT_TOKENS - SAFETY_TOKENS
     if estimate > limit:
         raise AgentGatewayError("agent_context_budget_exhausted")
     return {
         "estimated_input_tokens": estimate,
+        "context_window_tokens": context_window,
         "input_limit_tokens": limit,
         "reserved_output_tokens": output_tokens,
         "reserved_tool_tokens": TOOL_RESULT_TOKENS,
@@ -76,12 +77,35 @@ def segment_budget(values):
             if part.get("part_kind") == "user-prompt":
                 part["content"], count = _user_content(part.get("content"))
                 reserved += count
-    return _measure(payload, values.get("max_output_tokens", 8192), reserved)
+    return _measure(
+        payload,
+        values.get("max_output_tokens", 8192),
+        reserved,
+        context_window=values.get("context_window_tokens", CONTEXT_TOKENS),
+    )
 
 
-def provider_budget(body, output_tokens):
+def provider_budget(body, output_tokens, *, references=False, context_window=CONTEXT_TOKENS):
     payload = deepcopy(body)
     reserved = 0
+    if references:
+
+        def count_media(value):
+            if isinstance(value, dict):
+                if isinstance(value.get("audio_ref"), dict):
+                    return MEDIA_TOKENS["audio"]
+                reference = value.get("image_ref")
+                if isinstance(reference, dict):
+                    return 2048 if reference.get("metadata", {}).get("detail") == "low" else 4096
+                operation = value.get("operation_ref")
+                if isinstance(operation, dict):
+                    return operation.get("estimated_tokens", 0)
+                return sum(count_media(child) for child in value.values())
+            if isinstance(value, list):
+                return sum(count_media(child) for child in value)
+            return 0
+
+        return _measure(payload, output_tokens, count_media(payload), context_window=context_window)
     # Only actual user media parts receive a binary allowance. Tool JSON, including
     # arbitrary objects named data/kind/media_type, is always counted in full.
     messages = payload.get("messages", payload.get("input", []))
@@ -90,4 +114,4 @@ def provider_budget(body, output_tokens):
             if isinstance(message, dict) and message.get("role") == "user":
                 message["content"], count = _user_content(message.get("content"), provider=True)
                 reserved += count
-    return _measure(payload, output_tokens, reserved)
+    return _measure(payload, output_tokens, reserved, context_window=context_window)

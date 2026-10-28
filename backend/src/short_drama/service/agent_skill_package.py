@@ -1,8 +1,10 @@
 """Decode bounded, non-executable skill imports in memory; never extract to disk."""
 
+import base64
 import hashlib
 import io
 import json
+import posixpath
 import re
 import stat
 import unicodedata
@@ -16,6 +18,7 @@ from yaml.events import AliasEvent
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.schemas.agent_skill import (
+    IMAGE_SUFFIXES,
     MAX_PACKAGE_BYTES,
     MAX_PACKAGE_FILES,
     MAX_RESOURCE_BYTES,
@@ -88,19 +91,30 @@ def markdown_parts(content: str) -> tuple[dict, str]:
 
 
 def local_reference_issues(instructions: str, resources: list[SkillResourceInput]) -> list[str]:
-    available = {item.path for item in resources} | {"SKILL.md"}
+    rows = [
+        (item["path"], item.get("content", ""))
+        if isinstance(item, dict)
+        else (item.path, item.content)
+        for item in resources
+    ]
+    available = {path for path, _ in rows} | {"SKILL.md"}
     issues = []
-    for path, text in [("SKILL.md", instructions), *[(r.path, r.content) for r in resources]]:
-        if PurePosixPath(path).suffix.lower() != ".md":
+    for path, text in [("SKILL.md", instructions), *rows]:
+        if PurePosixPath(path).suffix.lower() not in TEXT_SUFFIXES:
             continue
         for target in re.findall(r"\[[^\]]*\]\(([^\s)]+)(?:\s+[^)]*)?\)", text):
             target = target.strip("<>")
-            if urlsplit(target).scheme or target.startswith(("#", "//")):
+            try:
+                external = bool(urlsplit(target).scheme)
+            except ValueError:
+                issues.append(f"{path} 含无法识别的引用：{target}")
+                continue
+            if external or target.startswith(("#", "//")):
                 continue
             local = unquote(target.split("#", 1)[0])
             if not local:
                 continue
-            combined = str(PurePosixPath(path).parent / local)
+            combined = posixpath.normpath(str(PurePosixPath(path).parent / local))
             if combined == "SKILL.md":
                 continue
             try:
@@ -125,9 +139,24 @@ def package_digest(metadata: dict, instructions: str, resources: list[dict]) -> 
 
 
 def platform_tool_issues(names: list[str]) -> list[str]:
-    from short_drama.agent.tools.contracts import TOOL_SCHEMAS
+    from short_drama.agent.tools.registry import REGISTRY
 
-    return [f"平台未提供必需工具：{name}" for name in names if name not in TOOL_SCHEMAS]
+    return [f"平台未提供必需工具：{name}" for name in names if name not in REGISTRY]
+
+
+def mode_tool_issues(names: list[str], modes: list[str]) -> list[str]:
+    from short_drama.agent.tools.contracts import CANVAS_TOOL, IMAGE_PRIMARY_TOOL, STANDARD_TOOL
+
+    supported = {
+        CANVAS_TOOL: {"infinite_canvas"},
+        STANDARD_TOOL: {"standard"},
+        IMAGE_PRIMARY_TOOL: {"standard"},
+    }
+    return [
+        "所选模式不支持这个方法需要的能力"
+        for name in names
+        if name in supported and not set(modes) <= supported[name]
+    ][:1]
 
 
 def package_markdown(metadata: dict, instructions: str, resources: list[dict]) -> str:
@@ -231,7 +260,10 @@ def parse_skill_import(data: bytes, filename: str) -> SkillImportPreview:
     extra = metadata.get("metadata", {})
     if not isinstance(extra, dict):
         raise invalid_package("metadata 必须为对象")
-    fallback = re.sub(r"[^a-z0-9]+", "-", PurePosixPath(name).stem.lower()).strip("-")
+    if not metadata.get("name"):
+        raise invalid_package("SKILL.md 缺少名称")
+    if not metadata.get("description"):
+        raise invalid_package("SKILL.md 缺少用途")
     raw_modes = extra.get("short-drama-modes", "standard,infinite_canvas")
     raw_tools = metadata.get("allowed-tools", [])
     if isinstance(raw_tools, str):
@@ -244,17 +276,29 @@ def parse_skill_import(data: bytes, filename: str) -> SkillImportPreview:
         if path == "SKILL.md":
             descriptions.append({"path": path, "byte_size": len(content), "supported": True})
             continue
-        supported = PurePosixPath(path).suffix.lower() in TEXT_SUFFIXES
+        suffix = PurePosixPath(path).suffix.lower()
+        if "scripts" in path.casefold().split("/") or kinds.get(path) == "script":
+            raise invalid_package(f"暂不支持脚本：{path}")
+        supported = suffix in TEXT_SUFFIXES | IMAGE_SUFFIXES
         descriptions.append({"path": path, "byte_size": len(content), "supported": supported})
         if not supported:
-            issues.append(f"不支持执行或发布该文件：{path}")
-            continue
+            raise invalid_package(f"暂不支持此文件：{path}")
         try:
             resources.append(
                 SkillResourceInput(
                     path=path,
-                    kind=kinds.get(path, "template" if path.startswith("assets/") else "reference"),
-                    content=text_content(content, MAX_RESOURCE_BYTES),
+                    kind=kinds.get(
+                        path,
+                        "image"
+                        if suffix in IMAGE_SUFFIXES
+                        else "template"
+                        if path.startswith("assets/")
+                        else "reference",
+                    ),
+                    encoding="base64" if suffix in IMAGE_SUFFIXES else "utf-8",
+                    content=base64.b64encode(content).decode()
+                    if suffix in IMAGE_SUFFIXES
+                    else text_content(content, MAX_RESOURCE_BYTES),
                 )
             )
         except ValidationError:
@@ -264,7 +308,7 @@ def parse_skill_import(data: bytes, filename: str) -> SkillImportPreview:
             name=extra.get("short-drama-display-name")
             or metadata.get("name")
             or PurePosixPath(name).stem,
-            slug=metadata.get("name") or (fallback or "personal-skill")[:64],
+            slug=metadata["name"],
             description=metadata.get("description", ""),
             instructions=instructions,
             modes=raw_modes.split(",") if isinstance(raw_modes, str) else raw_modes,
@@ -274,16 +318,13 @@ def parse_skill_import(data: bytes, filename: str) -> SkillImportPreview:
             source=metadata.get("license", ""),
             exclusions=extra.get("short-drama-exclusions", ""),
         )
-        if draft.description:
-            SkillCreate.model_validate(draft.model_dump())
+        SkillCreate.model_validate(draft.model_dump())
     except ValidationError:
         raise invalid_package("Skill 名称、用途、适用模式或工具声明格式不正确") from None
     if metadata.get("compatibility"):
         issues.append("包声明了额外运行依赖，请适配为平台无脚本方法后发布")
     issues.extend(local_reference_issues(instructions, resources))
     issues.extend(platform_tool_issues(draft.required_tools))
-    if not draft.description:
-        issues.append("请在预览中补充用途说明后保存")
     return SkillImportPreview(
         filename=name,
         draft=draft,
@@ -291,4 +332,10 @@ def parse_skill_import(data: bytes, filename: str) -> SkillImportPreview:
         issues=issues,
         files=descriptions,
         byte_size=sum(len(content) for content in files.values()),
+        tags_provided="short-drama-tags" in extra,
+        mode_issues={
+            "general": mode_tool_issues(draft.required_tools, ["standard", "infinite_canvas"]),
+            "standard": mode_tool_issues(draft.required_tools, ["standard"]),
+            "infinite_canvas": mode_tool_issues(draft.required_tools, ["infinite_canvas"]),
+        },
     )

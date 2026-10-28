@@ -175,7 +175,7 @@ function TaskGenerationParameters({ inputJson, theme }: { inputJson?: string; th
         <div>
             <div className="mb-2 text-xs font-semibold" style={{ color: theme.node.muted }}>生成参数</div>
             {fields.length ? (
-                <div className="grid grid-cols-2 gap-x-5 gap-y-1 rounded-lg border p-3 sm:grid-cols-3" style={{ borderColor: theme.node.stroke, background: theme.node.panel }}>
+                <div className="grid gap-x-5 gap-y-1 rounded-lg border p-3 grid-cols-3" style={{ borderColor: theme.node.stroke, background: theme.node.panel }}>
                     {fields.map((field) => <TaskDetailItem key={field.label} label={field.label} value={field.value} />)}
                 </div>
             ) : (

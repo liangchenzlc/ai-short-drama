@@ -73,7 +73,7 @@ def test_current_saved_script_generation_freezes_without_confirming_and_replays(
         assert created and not duplicate
         assert replay["generation_id"] == receipt["generation_id"]
         assert writing.get(e)["content_version"] == "2"
-        assert writing.get(e)["editing_script"]["state"] == "unconfirmed"
+        assert writing.get(e)["editing_script"]["state"] == "confirmed"
         with session.begin():
             record = session.scalar(select(AIGenerationRecord))
             assert record.request_data["source_snapshot"]["content"] == "已保存正文"
@@ -147,7 +147,7 @@ def test_internal_script_admission_retains_confirmation_and_unmarked_snapshot(sc
     from sqlalchemy import select
 
     from short_drama.core.exceptions import WorkflowError
-    from short_drama.domain import AIGenerationRecord
+    from short_drama.domain import AIGenerationRecord, ProjectScript
     from short_drama.service.ai_generation_service import AIGenerationService
     from tests.support.generation_fixtures import config, generation_session, settings
     from tests.unit.standard.writing.test_project_writing import setup
@@ -159,6 +159,8 @@ def test_internal_script_admission_retains_confirmation_and_unmarked_snapshot(sc
             e, {"script_id": None, "content": "旧合同正文", "content_version": "1"}
         )
         sid = saved["script"]["id"]
+        with session.begin():
+            session.get(ProjectScript, int(sid)).state = "unconfirmed"
         service = AIGenerationService(session, settings)
         with pytest.raises(WorkflowError) as error, session.begin():
             service.create_locked("text", saved_script_request(e, sid, scene), "internal")
@@ -222,7 +224,7 @@ def saved_storyboard_result(*, legacy=False):
             writing.confirm(e, sid, {"content_version": "2"})
             with session.begin():
                 task, _ = service.create_locked(
-                    "text", saved_script_request(e, sid, "script_shots", "3"), "storyboard"
+                    "text", saved_script_request(e, sid, "script_shots", "2"), "storyboard"
                 )
         else:
             task, _ = service.create(
@@ -302,7 +304,7 @@ def test_unmarked_storyboard_keeps_legacy_confirmation_requirement():
             session.get(ProjectScript, int(sid)).state = "unconfirmed"
         with pytest.raises(WorkflowError) as error:
             GenerationBusinessService(session).apply_storyboard(
-                e, tid, {"mode": "append", "content_version": "3", "storyboard_version": "1"}
+                e, tid, {"mode": "append", "content_version": "2", "storyboard_version": "1"}
             )
         assert error.value.code == "source_changed"
 
@@ -616,7 +618,7 @@ def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archive
                     "scene": "script_shots",
                     "project_id": str(e),
                     "script_id": sid,
-                    "content_version": "3",
+                    "content_version": "2",
                 },
                 "storyboard": {"average_shot_duration_ms": 5000},
             },
@@ -654,7 +656,7 @@ def test_storyboard_result_waits_for_adoption_replays_once_and_preserves_archive
         payload = {
             "mode": mode,
             "confirm_replace": mode == "replace",
-            "content_version": "3",
+            "content_version": "2",
             "storyboard_version": before["storyboard_version"],
         }
         business = GenerationBusinessService(session)

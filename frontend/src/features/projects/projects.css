@@ -74,12 +74,6 @@
   .episode-cover > img { transition: transform 180ms var(--ease-out); }
   .episode-media-card:hover .episode-cover > img { transform: scale(1.03); }
 }
-@media (max-width: 768px) {
-  .project-detail-workspace { grid-template-columns: minmax(0, 1fr); }
-  .project-detail-nav { flex-direction: row; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--hair); }
-  .project-detail-panel > .project-overview, .project-section { padding: 20px 16px; }
-  .project-detail-panel .overview-card { padding: 18px 16px; }
-}
 .ui-dialog.project-start-dialog { width: min(560px, calc(100vw - 32px)); padding: 0; }
 .project-start-dialog[open] { display: flex; flex-direction: column; }
 .project-start-dialog > header { flex-shrink: 0; }
@@ -101,19 +95,3 @@
 .project-mode-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
 .project-start-dialog .project-create-form .project-mode-option.ant-radio-wrapper-disabled { cursor: not-allowed; opacity: .6; }
 .project-start-dialog .project-create-form .dialog-actions { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--hair); }
-@media (max-width: 680px) {
-  .project-tile-more.ant-btn { right: 4px; bottom: 6px; width: 44px; height: 44px; min-height: 44px; }
-  .projects-home > .studio-page-head { align-items: flex-start; margin-bottom: 24px; }
-  .projects-home .page-actions { justify-content: flex-start; }
-  .project-collection-toolbar { gap: 14px; }
-  .project-collection-controls { flex-direction: row-reverse; justify-content: space-between; width: 100%; gap: 12px; }
-  .project-collection-controls .project-search { flex: 1; width: auto; min-height: var(--control-height-touch); }
-  .project-card-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 16px; }
-  .project-name-field .ant-input { min-height: var(--control-height-touch); }
-}
-@media (max-width: 480px) {
-  .project-mode-options { grid-template-columns: minmax(0, 1fr); gap: 10px; }
-  .project-mode-copy { grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 6px 10px; }
-  .project-mode-copy > span { grid-column: 2; }
-  .project-start-dialog .project-create-form .project-mode-option { padding: 14px; }
-}

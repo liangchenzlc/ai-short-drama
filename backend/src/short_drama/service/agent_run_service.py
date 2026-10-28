@@ -21,6 +21,7 @@ from short_drama.agent.legacy.authorization import (
     public_step,
 )
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
+from short_drama.dao.agent_run_dao import AgentRunDAO
 from short_drama.domain import AIModelConfig, Asset, Project, ShotScript
 from short_drama.domain.agent import (
     AgentArtifact,
@@ -55,6 +56,32 @@ from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 _UNSET = object()
+
+
+def read_runs(session, rows):
+    """Batch supplemental public metadata without loading execution checkpoints."""
+    if not rows:
+        return []
+    dao = AgentRunDAO(session)
+    reviews = dao.reviews([row.id for row in rows])
+    queued = [row for row in rows if row.status == "queued"]
+    queue = dao.queue({row.conversation_id for row in queued}) if queued else []
+    return [
+        read_run(
+            session,
+            row,
+            tool=reviews.get(row.id),
+            queue_position=sum(
+                item.conversation_id == row.conversation_id
+                and item.id != row.id
+                and (item.status != "queued" or item.id < row.id)
+                for item in queue
+            )
+            if row.status == "queued"
+            else 0,
+        )
+        for row in rows
+    ]
 
 
 def read_run(session, run, *, tool=_UNSET, queue_position=None):
@@ -477,35 +504,17 @@ class AgentRunService(AgentConversationService):
         self.dao.validate_pagination(offset, limit)
         with self._transaction(read_only=True):
             conversation = self._conversation(identifier, expected_scope=expected_scope)
-            rows = self.session.scalars(
-                select(AgentRun)
-                .where(AgentRun.conversation_id == conversation.id)
-                .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
-                .offset(offset)
-                .limit(limit)
-            ).all()
+            dao = AgentRunDAO(self.session)
+            ids = dao.page_ids(conversation.id, offset, limit)
+            positions = {identifier: index for index, identifier in enumerate(ids)}
+            rows = sorted(
+                dao.projections(conversation.id, run_ids=ids), key=lambda row: positions[row.id]
+            )
             total = self.session.scalar(
                 select(func.count(AgentRun.id)).where(AgentRun.conversation_id == conversation.id)
             )
-            reviews = {}
-            if rows:
-                first = (
-                    select(func.min(AgentToolCall.id).label("id"))
-                    .where(
-                        AgentToolCall.run_id.in_([row.id for row in rows]),
-                        AgentToolCall.status == "waiting_review",
-                    )
-                    .group_by(AgentToolCall.run_id)
-                    .subquery()
-                )
-                reviews = {
-                    tool.run_id: tool
-                    for tool in self.session.scalars(
-                        select(AgentToolCall).join(first, AgentToolCall.id == first.c.id)
-                    )
-                }
             return Page(
-                items=[read_run(self.session, row, tool=reviews.get(row.id)) for row in rows],
+                items=read_runs(self.session, rows),
                 total=total,
                 offset=offset,
                 limit=limit,
@@ -519,14 +528,10 @@ class AgentRunService(AgentConversationService):
     def runtime_state(self, identifier, expected_scope=None):
         with self._transaction(read_only=True):
             conversation = self._conversation(identifier, expected_scope=expected_scope)
-            rows = self.session.scalars(
-                select(AgentRun)
-                .where(
-                    AgentRun.conversation_id == conversation.id,
-                    AgentRun.status.in_(ACTIVE),
-                )
-                .order_by(AgentRun.id)
-            ).all()
+            rows = sorted(
+                AgentRunDAO(self.session).projections(conversation.id, active=True),
+                key=lambda row: row.id,
+            )
             running = next(
                 (row for row in rows if row.status in {"running", "waiting_generation"}), None
             )
@@ -534,6 +539,7 @@ class AgentRunService(AgentConversationService):
                 (row for row in reversed(rows) if row.status == "waiting_review"), None
             )
             queued = [row for row in rows if row.status == "queued"]
+            public = {row.id: row for row in read_runs(self.session, rows)}
             snapshot_cursor = conversation.next_event_seq - 1
             resume_cursor = snapshot_cursor
             if rows:
@@ -550,11 +556,8 @@ class AgentRunService(AgentConversationService):
                 conversation_id=conversation.id,
                 cursor=snapshot_cursor,
                 resume_cursor=resume_cursor,
-                active_run=read_run(self.session, active) if active else None,
-                queued_runs=[
-                    read_run(self.session, row, queue_position=index + (1 if running else 0))
-                    for index, row in enumerate(queued)
-                ],
+                active_run=public[active.id] if active else None,
+                queued_runs=[public[row.id] for row in queued],
             )
 
     def stop(self, identifier):

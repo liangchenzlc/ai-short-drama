@@ -127,6 +127,8 @@ class ReadTaskResults(InputModel):
 class DescribeTarget(InputModel):
     model_offset: Annotated[int, Field(ge=0, le=100000)] = 0
     model_limit: Annotated[int, Field(ge=1, le=20)] = 10
+    result_before_id: Identifier | None = None
+    result_limit: Annotated[int, Field(ge=1, le=20)] = 10
 
 
 class ReadSelectedSubjects(InputModel):

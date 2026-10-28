@@ -66,6 +66,10 @@ class GenerationContextService:
         self.settings = settings
 
     def prepare_text(self, request, *, use_current_saved_script=False):
+        from .writing_generation_service import WRITING_SCENES, WritingGenerationService
+
+        if request["source"]["scene"] in WRITING_SCENES:
+            return WritingGenerationService(self.session).prepare(request)
         source = request["source"]
         creation = self.session.scalar(
             select(Project)
@@ -87,6 +91,7 @@ class GenerationContextService:
             if document is None or not document.content.strip():
                 raise WorkflowError("novel_empty", "请先保存小说正文", 422)
         elif scene in {"script_shots", "script_assets"}:
+            ProjectWritingService(self.session).dao.require_idle(creation.id, "script")
             document = self.session.scalar(
                 select(ProjectScript)
                 .where(

@@ -11,14 +11,24 @@ from short_drama.agent.context.attachments import (
 )
 from short_drama.agent.core.access import model_unchanged
 from short_drama.agent.core.items import KIND_REPLY, allocate_item_seq
-from short_drama.agent.gateway.protocol import AgentGatewayError, select_agent_protocol
+from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.harness import ENGINE_VERSION
 from short_drama.agent.task.controls import apply_controls_locked
-from short_drama.agent.task.state import new_attempt_locked, read_operations, read_task, task_event
+from short_drama.agent.task.policy import new_policy_from_settings
+from short_drama.agent.task.state import (
+    close_unstarted_calls,
+    new_attempt_locked,
+    read_operations,
+    read_task,
+    task_capabilities,
+    task_event,
+)
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
+from short_drama.dao.agent_run_dao import AgentRunDAO
 from short_drama.dao.agent_task_dao import RESUMABLE_TASKS, AgentTaskDAO
 from short_drama.db.access import require_project
 from short_drama.domain import Project, ProjectCanvas
-from short_drama.domain.agent import AgentConversation, AgentEvent, AgentMessage, AgentRun
+from short_drama.domain.agent import AgentConversation, AgentEvent, AgentMessage
 from short_drama.domain.agent_memory import AgentMemoryItem
 from short_drama.domain.agent_task import (
     AgentOperation,
@@ -48,7 +58,7 @@ from short_drama.service.agent_memory_store import (
     prepare_deletion_memory_locked,
 )
 from short_drama.service.agent_model_service import AgentModelService, model_snapshot
-from short_drama.service.agent_run_service import AgentRunService, read_run
+from short_drama.service.agent_run_service import AgentRunService, read_run, read_runs
 from short_drama.service.agent_skill_service import freeze_skills
 from short_drama.service.assistant_subject_service import (
     freeze_legacy_selection,
@@ -401,6 +411,15 @@ class AssistantTaskService(AgentRunService):
         for item in AgentTaskDAO(self.session).inputs(task):
             target = item.payload.get("execution_target", target)
         target = payload.get("execution_target", target)
+        if "script_reference" in inputs.model_fields_set:
+            from short_drama.agent.tools.script import bound_document
+
+            reference = (
+                inputs.script_reference.model_dump(mode="json") if inputs.script_reference else None
+            )
+            if reference:
+                bound_document(self.session, target, reference)
+            payload["script_reference"] = reference
         if target and target.get("mode") == "standard":
             from short_drama.service.assistant_dialogue_service import sound_document_binding
 
@@ -474,8 +493,13 @@ class AssistantTaskService(AgentRunService):
         )
         frozen.update(((item["id"], str(item["content_version"])), item) for item in added)
         result = [deepcopy(frozen[item.id, str(item.content_version)]) for item in selections]
-        if sum(len(item["instructions"].encode("utf-8")) for item in result) > 131072:
+        if sum(len(item.get("instructions", "").encode("utf-8")) for item in result) > 131072:
             raise WorkflowError("agent_skills_too_large", "已加载技能正文合计不能超过 128 KiB", 422)
+        from short_drama.agent.harness import ENGINE_VERSION
+        from short_drama.agent.skill.progressive import skill_index
+
+        if task.effective_state.get("engine") == ENGINE_VERSION:
+            return [skill_index(item) for item in result]
         return result
 
     def _pending_selection(self, task):
@@ -573,7 +597,9 @@ class AssistantTaskService(AgentRunService):
                 )
                 snapshot = model_snapshot(model)
                 try:
-                    select_agent_protocol(snapshot)
+                    from short_drama.agent.gateway.langchain import select_protocol
+
+                    select_protocol(snapshot)
                 except AgentGatewayError:
                     raise WorkflowError(
                         "unsupported_assistant_protocol", "此模型协议不支持创作助手", 422
@@ -596,7 +622,10 @@ class AssistantTaskService(AgentRunService):
                     memory_project_ids=[],
                     context_snapshot=None,
                     selected_skills=[],
-                    effective_state={},
+                    effective_state={
+                        "engine": ENGINE_VERSION,
+                        "agent_policy": new_policy_from_settings(self.settings),
+                    },
                     media_limits=inputs.media_limits.model_dump(),
                     media_usage={},
                     created_at=now,
@@ -619,10 +648,49 @@ class AssistantTaskService(AgentRunService):
                     raise WorkflowError(
                         "assistant_model_frozen", "当前任务使用已固定的模型，请新建任务切换", 409
                     )
-            message = self._input_locked(conversation, task, inputs, key, request_hash, snapshot)
-            run = previous or new_attempt_locked(
-                self.session, conversation, task, message, model.id, snapshot
+            continuing = (
+                previous is not None
+                and task.effective_state.get("engine") == ENGINE_VERSION
+                and task.status in {"stopped", "paused_error", "paused_budget"}
             )
+            if previous is not None and task.control_state == "stop_pending":
+                raise WorkflowError(
+                    "assistant_task_stopping", "正在停止当前操作，请等待结算后发送补充要求", 409
+                )
+            if continuing:
+                if previous.status not in {"succeeded", "failed", "cancelled"}:
+                    raise WorkflowError(
+                        "assistant_task_settling", "当前回复尚未结算，请稍后继续", 409
+                    )
+                if not model_unchanged(self.session, previous):
+                    raise WorkflowError(
+                        "assistant_model_changed",
+                        "当前任务的模型配置已被修改，请新建任务后继续。已有成果仍然保留。",
+                        409,
+                    )
+                if dao.active_operation(task.id) is not None:
+                    raise Conflict("当前操作尚未结算，请先核对原任务状态")
+            message = self._input_locked(conversation, task, inputs, key, request_hash, snapshot)
+            if task.effective_state.get("engine") == ENGINE_VERSION:
+                from short_drama.agent.task.requirements import seed_requirements_locked
+
+                seed_requirements_locked(self.session, task, message)
+            if continuing:
+                close_unstarted_calls(self.session, previous)
+                run = new_attempt_locked(
+                    self.session,
+                    conversation,
+                    task,
+                    message,
+                    previous.model_config_id,
+                    snapshot,
+                    previous,
+                )
+                task_event(self.session, conversation, task, "task.resumed", run=run)
+            else:
+                run = previous or new_attempt_locked(
+                    self.session, conversation, task, message, model.id, snapshot
+                )
             self.session.flush()
             return self._accepted(conversation, task, run, message)
 
@@ -633,6 +701,16 @@ class AssistantTaskService(AgentRunService):
             run=read_run(self.session, run),
             cursor=conversation.next_event_seq - 1,
         )
+
+    def script_proposal(self, operation_id):
+        from short_drama.service.assistant_script_service import preview
+
+        return preview(self, operation_id)
+
+    def apply_script_proposal(self, operation_id, payload):
+        from short_drama.service.assistant_script_service import apply
+
+        return apply(self, operation_id, payload)
 
     def revise_discussion(self, identifier, message_id, payload, idempotency_key):
         from short_drama.service.assistant_history_service import revise_discussion
@@ -671,6 +749,28 @@ class AssistantTaskService(AgentRunService):
         dao = AgentTaskDAO(self.session)
         with self._transaction():
             conversation, task = self._task(identifier)
+            if task.effective_state.get("engine") == ENGINE_VERSION:
+                capabilities = task_capabilities(task)
+                if values.kind == "stop":
+                    enabled = capabilities["stop"] and getattr(
+                        self.settings, "agent_stop_at_boundary", True
+                    )
+                    if not enabled:
+                        raise WorkflowError(
+                            "assistant_stop_unavailable", "当前任务暂不支持停止", 409
+                        )
+                elif values.kind == "redirect":
+                    raise WorkflowError(
+                        "assistant_redirect_unavailable",
+                        "当前任务不支持改向；请直接发送补充要求，将在下一段生效",
+                        409,
+                    )
+                else:
+                    raise WorkflowError(
+                        "assistant_resume_unavailable",
+                        "暂停或停止后请直接发送消息继续执行",
+                        409,
+                    )
             existing = self.session.scalar(
                 select(AgentTaskControl)
                 .where(AgentTaskControl.task_id == task.id, AgentTaskControl.request_key == key)
@@ -786,26 +886,21 @@ class AssistantTaskService(AgentRunService):
         self.dao.validate_pagination(0, limit)
         with self._transaction(read_only=True):
             conversation = self._conversation(identifier)
-            query = select(AgentTask).where(AgentTask.conversation_id == conversation.id)
-            if before_task_id is not None:
-                query = query.where(AgentTask.id < parse_identifier(before_task_id))
-            tasks = self.session.scalars(query.order_by(AgentTask.id.desc()).limit(limit + 1)).all()
-            selected = tasks[:limit]
-            task_ids = [task.id for task in selected]
-            operations = (
-                self.session.scalars(
-                    select(AgentOperation)
-                    .where(AgentOperation.task_id.in_(task_ids))
-                    .order_by(AgentOperation.id)
-                    .limit(201)
-                ).all()
-                if selected
-                else []
+            dao = AgentTaskDAO(self.session)
+            ids = dao.page_ids(
+                conversation.id,
+                before_id=parse_identifier(before_task_id) if before_task_id else None,
+                limit=limit + 1,
             )
+            task_ids = ids[:limit]
+            selected = dao.projections(conversation.id, task_ids) if task_ids else []
+            operations = dao.operation_projections(task_ids, limit=201) if task_ids else []
+            active = {row.task_id: row for row in dao.operation_projections(task_ids, active=True)}
             runs = (
-                self.session.scalars(
-                    select(AgentRun).where(AgentRun.task_id.in_(task_ids)).order_by(AgentRun.id)
-                ).all()
+                sorted(
+                    AgentRunDAO(self.session).projections(conversation.id, task_ids=task_ids),
+                    key=lambda run: run.id,
+                )
                 if task_ids
                 else []
             )
@@ -827,8 +922,13 @@ class AssistantTaskService(AgentRunService):
                 )
             )
             inputs = (
-                self.session.scalars(
-                    select(AgentTaskInput)
+                self.session.execute(
+                    select(
+                        AgentTaskInput.task_id,
+                        AgentTaskInput.message_id,
+                        AgentTaskInput.input_revision,
+                        AgentTaskInput.applied_plan_revision,
+                    )
                     .where(AgentTaskInput.task_id.in_(task_ids))
                     .order_by(AgentTaskInput.task_id, AgentTaskInput.input_revision)
                 ).all()
@@ -849,8 +949,11 @@ class AssistantTaskService(AgentRunService):
                     "offset": 0,
                     "limit": 50,
                 },
-                runs=[read_run(self.session, run) for run in runs],
-                tasks=[read_task(self.session, task) for task in selected],
+                runs=read_runs(self.session, runs),
+                tasks=[
+                    read_task(self.session, task, active_operation=active.get(task.id))
+                    for task in selected
+                ],
                 operations=read_operations(self.session, operations[:200]),
                 inputs=[
                     {
@@ -863,7 +966,7 @@ class AssistantTaskService(AgentRunService):
                     }
                     for item in inputs
                 ],
-                has_more_tasks=len(tasks) > limit,
+                has_more_tasks=len(ids) > limit,
                 has_more_operations=len(operations) > 200,
             )
 
@@ -874,10 +977,11 @@ class AssistantTaskService(AgentRunService):
             if task is None:
                 raise NotFound("任务不存在")
             conversation = self._conversation(task.conversation_id)
-            query = select(AgentOperation).where(AgentOperation.task_id == task.id)
-            if after_id is not None:
-                query = query.where(AgentOperation.id > parse_identifier(after_id))
-            rows = self.session.scalars(query.order_by(AgentOperation.id).limit(limit + 1)).all()
+            rows = AgentTaskDAO(self.session).operation_projections(
+                [task.id],
+                after_id=parse_identifier(after_id) if after_id else None,
+                limit=limit + 1,
+            )
             return OperationPage(
                 items=read_operations(self.session, rows[:limit]),
                 has_more=len(rows) > limit,

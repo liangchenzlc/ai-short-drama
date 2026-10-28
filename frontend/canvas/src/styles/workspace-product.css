@@ -176,11 +176,6 @@
 .libtv-folder-dialog-wrap .ant-modal-footer .ant-btn-primary { border-color: var(--user-ink) !important; background: var(--user-ink) !important; background-image: none !important; color: var(--user-surface) !important; }
 .libtv-folder-dialog .ant-modal-footer .ant-btn:not(.ant-btn-primary) { border-color: transparent; background: var(--user-surface-muted); color: var(--user-ink-muted); }
 .libtv-folder-dialog .ant-modal-footer .ant-btn:not(.ant-btn-primary):hover { border-color: color-mix(in srgb, var(--user-ink) 14%, transparent); color: var(--user-ink); }
-@media (max-width: 700px) {
-    .recycle-bin-header, .recycle-bin-footer { padding-right: 16px; padding-left: 16px; }
-    .recycle-bin-viewport { padding-right: 16px; padding-left: 16px; }
-    .recycle-bin-footer .ant-btn { min-width: 0; padding: 0 12px; }
-}
 .app-user-workspace .lib-tv-project-page .canvas-collection-preview { aspect-ratio: 16 / 9; border-radius: 12px; }
 .app-user-workspace .lib-tv-project-page .canvas-collection-custom-cover { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; pointer-events: none; }
 .app-user-workspace .lib-tv-project-page .canvas-collection-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
@@ -503,48 +498,6 @@
     .app-user-workspace .collection-toolbar .ant-input-affix-wrapper:focus-within { outline: 2px solid var(--user-accent-soft); }
     .app-user-workspace .collection-toolbar .ant-input-affix-wrapper svg { width: var(--user-icon-size); height: var(--user-icon-size); color: var(--user-ink-soft); }
 }
-
-@media (max-width: 720px) {
-    .app-product-workspace .library-page > div { width: calc(100% - 32px); }
-    .app-product-workspace .assets-library-page .assets-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
-    .assets-library-source-rail { position: static; width: auto; border-top: 1px solid rgba(255,255,255,.07); border-left: 0; }
-    .app-user-workspace .assets-library-page > div:first-child { width: 100% !important; padding-top: 0 !important; padding-left: 20px !important; padding-right: 20px !important; }
-    .app-product-workspace .app-pagination-bar { flex-wrap: wrap; gap: var(--space-2); padding-inline: 0; }
-    .app-product-workspace .app-pagination-pages { justify-content: center; flex: 1 1 100%; }
-    .app-user-workspace .studio-collection-page > div { width: calc(100% - 32px); padding-top: 20px; }
-    .app-user-workspace .canvas-collection-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
-    .collection-toolbar-controls > .ant-input-affix-wrapper { width: 100%; }
-    .collection-toolbar-controls { flex-basis: 100%; }
-    .canvas-collection-meta { flex-wrap: wrap; gap: var(--space-1); }
-    .canvas-collection-updated { font-size: 11px; }
-    .canvas-collection-heading-row { padding-right: 0; }
-    .canvas-collection-actions { position: static; justify-content: flex-end; padding: 0 var(--space-2) var(--space-1); }
-    .canvas-collection-select { opacity: 1; }
-    .libtv-project-actions { flex-wrap: wrap; }
-    .libtv-project-actions .ant-input-affix-wrapper { width: 100%; }
-    .libtv-project-subbar { align-items: flex-start; flex-direction: column; gap: 6px; }
-    .app-user-workspace .lib-tv-project-page .canvas-collection-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }
-    .assets-collection-layout,
-    .assets-collection-layout.is-filters-open { grid-template-columns: 1fr; gap: var(--space-4); }
-    .assets-collection-layout.is-filters-open .assets-collection-filters { display: flex; }
-    .assets-collection-filters {
-        position: static;
-        max-height: none;
-        overflow: visible;
-    }
-    .assets-collection-filter-scroll { overflow: visible; }
-    .collection-filter-group { gap: var(--space-2); }
-    .assets-collection-filters .collection-filter-options,
-    .assets-collection-filters .collection-folder-list { flex-direction: row; flex-wrap: wrap; }
-    .assets-collection-filters .assets-filter-item { width: auto; }
-    .assets-collection-filters .collection-folder-list > button,
-    .assets-collection-filters .collection-folder-list .assets-folder-row { width: auto; max-width: 220px; }
-    .app-user-workspace .skill-library-grid { grid-template-columns: minmax(0, 1fr); }
-    .app-product-workspace .skill-library-grid.library-grid { grid-template-columns: minmax(0, 1fr); }
-    .story-launcher-panel { padding: var(--space-4); }
-    .story-launcher-main { flex-wrap: wrap; }
-}
-@media (hover: none) { .canvas-collection-select { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
     .app-user-workspace .product-collection-card, .product-icon-button, .canvas-collection-preview img, .product-delete-trigger .lucide-trash-2 > path { transition: none; transform: none; }
     .app-user-workspace .product-collection-card:hover { transform: none; }
@@ -633,10 +586,6 @@
     .app-user-workspace.app-product-workspace { --workspace-reference-sidebar: 240px; --workspace-reference-topbar: 78px; }
     .app-user-workspace.app-product-workspace .app-workspace-sidebar-brand-row { min-height:78px; }
     .app-user-workspace.app-product-workspace .app-workspace-topbar { height:78px;min-height:78px; }
-}
-@media (max-width: 1023px) {
-    .app-user-workspace.app-product-workspace .app-workspace-topbar-utility span { display:none; }
-    .app-user-workspace.app-product-workspace .app-workspace-topbar-utility { width:42px;padding:0;justify-content:center; }
 }
 
 
@@ -969,8 +918,6 @@
 .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-brand.is-active { border-color: var(--workspace-border); background: var(--workspace-surface-hover); }
 .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-model-pane { border: 0; margin: 0; padding: 0; }
 
-@media (max-width: 720px) { .creation-floating-prompt { top: 8px; width: calc(100% - 24px); min-height: 60px; gap: 10px; padding: 8px 9px 8px 16px; border-radius: 19px; } .creation-floating-prompt input { font-size: 14px; } .creation-floating-prompt button { width: 40px; height: 40px; flex-basis: 40px; } .creation-model-picker-surface .creation-model-picker-menu:is(.is-brand-list, .is-model-list) { width: calc(100vw - 24px) !important; } .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-two-pane { grid-template-columns: minmax(0, 1fr); min-height: 0; } .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-brand-rail { display: none; } .app-user-workspace .creation-chat-composer.is-thread .creation-chat-dock .creation-mode-tabs { height: 30px; } .app-user-workspace .creation-chat-composer.is-thread .creation-chat-dock .creation-mode-button { height: 26px; min-height: 26px; padding: 0 6px; font-size: 10px; } }
-
 /* Shared controls: one size system and one state vocabulary. */
 .app-product-workspace :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number),
 .app-product-overlays :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number) {
@@ -1033,22 +980,7 @@
     to { opacity: 1; transform: translateY(0); }
 }
 
-@media (max-width: 900px) {
-    .app-product-workspace .library-page > div,
-    .app-product-workspace .studio-collection-page > div { width: calc(100% - 32px); }
-}
 
-/* 窄屏时侧栏是浮层，关闭状态不能继续占用主内容的 flex 空间。 */
-@media (max-width: 1023px) {
-    .app-user-workspace.app-product-workspace .app-workspace-sidebar:not(.is-mobile-expanded) {
-        flex-basis: 0 !important;
-        width: 0 !important;
-        transform: none !important;
-    }
-    .app-user-workspace.app-product-workspace .app-workspace-sidebar.is-mobile-expanded {
-        flex-basis: min(264px, calc(100vw - 58px)) !important;
-    }
-}
 
 .app-product-workspace .project-workspace-header {
     border-bottom-color: var(--user-border);
@@ -1060,21 +992,6 @@
     background: var(--user-surface-hover) !important;
     box-shadow: none !important;
     transform: none !important;
-}
-
-@media (max-width: 620px) {
-    .app-product-workspace .library-page > div,
-    .app-product-workspace .studio-collection-page > div { width: calc(100% - 24px); padding-top: 16px; padding-bottom: 32px; }
-    .app-product-workspace .app-page-header { align-items: flex-start; padding-bottom: 10px; }
-    .app-product-workspace .app-page-header-title,
-    .app-product-workspace .app-page-header h1 { font-size: 19px !important; }
-    .app-product-workspace .collection-toolbar-controls { flex-basis: 100%; }
-    .app-product-workspace .collection-toolbar-actions { width: 100%; justify-content: flex-start; }
-    .app-product-workspace .canvas-collection-grid,
-    .app-product-workspace .assets-library-grid,
-    .app-product-workspace .task-grid-view { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 10px; }
-    .app-product-workspace .plugins-grid { grid-template-columns: minmax(0, 1fr); }
-    .app-product-workspace .story-launcher-panel { padding: 16px; border-radius: 16px; }
 }
 
 /* Changelog Modal Styles */
@@ -1222,12 +1139,6 @@
     color: var(--user-accent);
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 11.5px;
-}
-
-@media (max-width: 620px) {
-    .app-changelog-heading-description { display: none; }
-    .app-changelog-current-version { display: none; }
-    .app-changelog-scroll { padding: 14px 16px 24px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1405,10 +1316,6 @@
     border-radius: 8px !important;
 }
 
-@media (max-width: 720px) {
-    .assets-folder-delete-confirm { top: calc(100% + 6px); left: 0; width: min(236px, calc(100vw - 40px)); }
-}
-
 @layer utilities {
     .assets-folder-create-confirm,
     .assets-batch-upload-confirm {
@@ -1502,31 +1409,4 @@
     color: var(--user-ink-muted);
     font-size: 12px;
     line-height: 18px;
-}
-
-@media (max-width: 720px) {
-    .app-product-workspace .app-section-page .app-section-page-content {
-        padding: 0 20px 28px;
-    }
-
-    .app-product-workspace .app-section-page .app-section-page-header {
-        min-height: 64px;
-        flex-wrap: wrap;
-        gap: 8px;
-        padding-block: 10px;
-    }
-
-    .app-product-workspace .app-section-page .app-page-header-leading .libtv-project-back {
-        margin-left: 0;
-    }
-
-    .app-product-workspace .app-section-page .app-section-page-content .assets-library-hero > .app-section-page-header {
-        height: auto;
-        min-height: 64px;
-    }
-
-    .app-product-workspace .app-section-page .app-section-page-header > div:last-child {
-        width: 100%;
-        justify-content: flex-start;
-    }
 }

@@ -67,6 +67,12 @@ def failure_message(code, *, accepted_unknown=False):
     }:
         return "请求可能已经提交，但结果暂时无法确认。请先核对当前任务，避免重复生成和计费。"
     messages = {
+        "agent_progress_stalled": (
+            "连续尝试仍未取得新进展，已有成果和回执已保留。请补充缺少的资料或调整要求后继续。"
+        ),
+        "agent_completion_stalled": (
+            "交付检查仍有未完成项，已有成果和检查反馈已保留。请核对缺项后继续。"
+        ),
         "unsupported_agent_protocol": (
             "这个模型的接口暂时无法用于 Agent 创作，请换一个模型后继续。你的输入已保留。"
         ),

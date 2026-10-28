@@ -16,7 +16,11 @@
 
 ## 保存、冲突与生成
 
-小说与剧本使用`writing-session.ts`串行保存共享content_version。剧本同时保存纯文本 `content` 和受限 Quill `editor_document`，格式变化也进入同一队列、恢复稿和版本校验；Delta 只移除文档结尾标记的一个换行，保留用户空行。旧纯文本读取用展示文档，旧客户端省略格式时服务端清除原格式。候选仍只读，生成、提取与导出使用纯文本。旧响应不能覆盖新输入；409暂停保存并保留输入，网络不确定时先读取服务端核实。`standard-session-registry.ts` 按账号及实际资源身份保留队列；页面卸载仅解除订阅，四步、项目、对象与应用内路由立即切换，不等待保存也不追加确认。
+`episode-writing.ts`的`storySettingsApi`提供项目故事设定GET/PUT及四字段DTO；`row_version`独立于正文，未保存版本为字符串0。StorySettingsEditor复用ResourceEditingSession和standard-session-registry，串行保存、确认回执、恢复及冲突核对参与顶部状态与导航保护。中文合成结束才提交，旧版本409保留本机输入；不读取旧大纲、不自动影响生成提示词。
+
+小说、大纲与剧本使用 `writing-session.ts` 串行保存共享 `content_version`，`episode-writing.ts` 提供 outline 保存及 `active_writing_tasks` DTO。非空当前剧本保存即生效，以响应的 `confirmed_script_id` 为准；并发版本用于防覆盖；AI 替换与导入的服务端变更快照继续保存，剧本页已移除历史恢复入口及对应前端请求封装。当前界面采用纯文本，保存清除旧 Delta，历史格式数据仍兼容读取。旧响应不能覆盖新输入；409 暂停并保留输入，网络不确定时先核实服务端。会话按账号及资源保留，页面卸载仅解除订阅；普通保存不阻止应用内切换。
+
+`script-desk/useWritingGeneration.ts` 先 flush，再冻结完整请求及幂等键；受理不明只查询或重放原请求。已受理任务可离开页面，刷新 writing 重建目标锁，任务结束回读三文档；非目标脏输入仅在服务端基线未变时安全续接全局版本，真实冲突保留输入。目标生成／改写期间只读，其他文档仍可编辑。`writing-requests.ts` 将 textarea UTF-16 偏移转换为 Unicode 码点，拒绝半个 surrogate；服务端验证并仅替换选区。生成成功直接回写，编辑器把外部替换记录为独立撤销。来源与错误码见[工作台契约](../../../docs/api/writing-workspace.md)。
 
 正文、剪辑与声音的本机恢复稿按账号和稳定对象隔离，记录服务端基准版本及未知保存回执。同基准自动恢复续存；基准变化或记录损坏保留原记录，用户按需在非模态详情选择版本，替换前持久保留副本，不追加确认。未知回执不能因 GET 恰好返回旧基准便当作保存成功；重新保存最后输入以并发版本拒绝迟到旧写。声音审核状态在版本或剪辑变化后失效。剪辑只保存稳定媒体 ID 与编辑决定，不保存签名 URL；恢复重新读取展示地址，失效来源仍需处理。只有仅在内存的输入才触发文档退出 `beforeunload`，不会阻止应用内导航。
 
@@ -40,6 +44,10 @@ Agent 待核对消息与普通输入草稿分开保存，包含原始完整请�
 
 图片/视频的asset_id、素材本体id、media_id不是同一概念。参考图提交文件media_id；候选采用接口路径使用生成媒体资产asset_id；目标id则由target.type决定。
 
+主页资产库通过 `mediaLibrary.list` 读取本人 AI 图片、视频、音频。`AssetFilters.media_type` 可省略表示全部，`workspace_mode` 可选 `standard/infinite_canvas`，`name` 只匹配资产名称；工作台、媒体与名称可组合，服务端统一计算总数、倒序分页。前端每页 24 项，切换条件清除 offset 和 asset，URL 保留其他条件。手动上传不进入生成资产列表。
+
+`AssetPreview` 打开时只调用 `mediaLibrary.detail` 刷新签名地址，失败可重新读取；不发送重命名或采用写请求，也不跳转任务管理。图片使用画布同款预览，视频与音频关闭时暂停并清除 src；关闭恢复触发焦点。`/tasks/*` 仅兼容跳转项目列表，不请求任务列表，创作场景内原生成接口与恢复合同继续有效。
+
 素材详情的旧来源提交 `source:{scene:"asset_image",asset_id,row_version}`，`input.prompt` 为本次补充要求；创作模式的私人来源扩展见下一节。保存回调必须返回服务端的新版本；短操作锁覆盖保存和提交，不能从尚未更新的 React state 读取版本。历史按素材 ID 查询；切换素材时取消旧请求，轮询错误不覆盖已有任务状态。
 
 候选 `generation` 提供来源任务、版本和 `is_stale/stale_reason`。上传或通用图片候选该字段为 null。采用遇到 `stale_source` 时明确确认后提交 `acknowledge_stale_source`，旧来源确认不能跳过目标版本冲突。
@@ -56,11 +64,13 @@ Agent 待核对消息与普通输入草稿分开保存，包含原始完整请�
 
 `modules/creation-drafts.ts` 访问 `/projects/{project_id}/drafts`，按账号、项目、稳定对象和 `purpose` 管理。用途为 `novel_adaptation/asset_image/storyboard_image/storyboard_video`，小说对象为项目 ID。首次 POST 创建；已有草稿用 PATCH 和 `row_version`，遇到创建或版本冲突先读取当前草稿，保留当前输入等待明确核对。草稿只保存下一次生成输入，按账号与项目隔离。
 
+剧本工作台不再读取或保存 `novel_adaptation` 私人草稿；旧用途仅保留历史兼容。大纲是服务端当前文档，生成要求保留在本次请求；不建立新的用户草稿或版本管理。
+
 DTO 保留 `model_config_id/input_text/image_settings/video_settings/reference_media_ids` 及服务端 `id/draft_version/source_version/row_version`。未选模型仍可保存输入，生成前必须选择本人可用模型。小说改编和图片补充输入最多 4000 字符，视频提示词最多 16000 字符；私人图片张数为 1/2/4，参考图最多 16 张。视频时长为整秒的毫秒值，实际范围遵守模型能力。仅保存永久媒体 ID，`reference_images` 里的现签 URL 用于展示；作品来源参考图与私人参考图分别管理，生成时合并去重并重新校验合计与模型上限。
 
 先完成作品来源保存，再等待本人草稿保存回执，最后提交来源的最新版本和 `draft_id/draft_version`。仅本机保留的输入不能显示服务端已保存，也不能引用为生成来源。`source_version` 是保存时的溯源版本，不替代当前作品许可；作品来源后来改变时重新读取最新行版本和 hash，私人输入仍保留，不自动拿缓存值拼可信最终提示词。
 
-素材私人来源还带 project_id；分镜图使用 `context_mode:saved` 和当前完整 layout。图像补充提示词与可见参数由服务端读取本人草稿并冻结，隐藏 layout 保留来源值。分镜视频仍携带当前主图及 video_context_hash，禁止同时传 input；私人提示词只替代本次视频提示词段，保留剧本，私人时长不改脚本时长。无私人引用的请求仍遵守共享保存设置。409、未保存、不可用模型或当前主图与提交时引用不匹配时停止提交并保稿；素材图和分镜图生成后直接保存到作品图片组，默认第一张主图；分镜视频由后端成功归档时自动确定，前端重新读取 ShotRead.video，不发起媒体采用请求；文本继续明确采用。
+素材私人来源还带 project_id；分镜图使用 `context_mode:saved` 和当前完整 layout。图像补充提示词与可见参数由服务端读取本人草稿并冻结，隐藏 layout 保留来源值。分镜视频仍携带当前主图及 video_context_hash，禁止同时传 input；私人提示词只替代本次视频提示词段，保留剧本，私人时长不改脚本时长。无私人引用的请求仍遵守共享保存设置。409、未保存、不可用模型或当前主图与提交时引用不匹配时停止提交并保稿；素材图和分镜图生成后直接保存到作品图片组，默认第一张主图；分镜视频由后端成功归档时自动确定，前端重新读取 ShotRead.video，不发起媒体采用请求。素材提取、分镜结构及 Agent 文本候选继续明确采用；剧本工作台的三类写作任务成功即回写当前文档。
 
 私人草稿、提交核对记录和恢复稿都按账号及稳定范围隔离。A → B → A 与图片／视频切换分别恢复各自输入，旧保存和提交响应不能覆盖新对象；切账号清除当前会话中的私人展示。
 
@@ -83,6 +93,8 @@ Key仅在当前表单内使用：编辑留空省略字段、明确清除发送nu
 Agent 上下文使用 `modules/agents.ts`：附件上传/引用带幂等键，先恢复 `pending=true` 附件再允许发送；无法确认上传或引用结果时沿用原请求核对。发送冻结 `attachment_ids`、Skill 的 `id/content_version` 和 `video_audio`，未知发送结果重试复用完整请求体与原键。消息 `references` 返回附件与 Skill 的展示投影，临时 URL 每次读取重签。自定义 Skill 的 ID、内容版本及行版本为十进制字符串，详见 [Agent 上下文 API](../../../docs/api/agent.md)。
 
 
+Skill 管理继续使用 `modules/agents.ts` 与 `types/agents.ts`。列表仅按名称／用途搜索，DTO 不包含触发方式；`tags` 隐藏保留，更新时省略表示保留、显式空数组表示清空。导入预览返回 `tags_provided` 和各模式的 `mode_issues`。文件资源按准确版本读取，文本 offset 以 Unicode 字符计数，图片使用 Base64；创建受理不明先通过 `skillRequest(key)` 只读核对原回执。
+
 ## 环境
 
 `.env.local`仅放公开设置：VITE_API_BASE_URL默认`/api/v1`并会进入浏览器，API_PROXY_TARGET仅供开发代理。生产同域先代理`/api/`再配置SPA fallback；跨域需要服务端额外配置CORS。资源base与深链部署限制见[运行指南](../../../docs/instruction/开发运行与验证.md#部署与维护)。
@@ -101,4 +113,10 @@ Agent 上下文使用 `modules/agents.ts`：附件上传/引用带幂等键，�
 
 `assistantApi.globalConversations/globalHistory` 必传当前 `projectId` 作为筛选；`createGlobalConversation` 发送 `{project_id}` 并携带幂等键，响应 `project_id` 可空以兼容旧记录。恢复 URL／本机选择前核验项目归属，当前会话选择按账号与项目隔离。`/global` 只是兼容前缀，不表示前端跨项目共用对话。
 
-停止后发送新要求时先调用 `sendTask` 保存普通消息，再以 `{kind:'resume',expected_control_seq,message_id}` 调用 `controlTask`，复用刚受理的消息，不额外生成用户气泡；控制意图随待核对发送记录冻结，消息与控制分别保留原请求及幂等键。`message_id` 是十进制字符串，只用于 resume，不能同时传 content，旧停止水位不能覆盖新的停止操作。新任务的写入目标来自当前工作区；补充省略目标，由服务端恢复原任务及待应用输入的冻结目标。项目设定范围由服务端自动限定，前端不发送手动记忆设置。受理不明保留原体原键，不以当前页面重建请求。记忆和删除预览 API 留作内部兼容，前端不展示管理入口；普通删除传 `{row_version,clear_derived_memory:false}`，旧待核对请求仍原样重放。
+旧引擎停止后发送新要求时先调用 `sendTask` 保存普通消息，再以 `{kind:'resume',expected_control_seq,message_id}` 调用 `controlTask`，复用刚受理的消息，不额外生成用户气泡；控制意图随待核对发送记录冻结，消息与控制分别保留原请求及幂等键。`message_id` 是十进制字符串，只用于 resume，不能同时传 content，旧停止水位不能覆盖新的停止操作。新任务的写入目标来自当前工作区；补充省略目标，由服务端恢复原任务及待应用输入的冻结目标。项目设定范围由服务端自动限定，前端不发送手动记忆设置。受理不明保留原体原键，不以当前页面重建请求。记忆和删除预览 API 留作内部兼容，前端不展示管理入口；普通删除传 `{row_version,clear_derived_memory:false}`，旧待核对请求仍原样重放。
+
+> **2026-10-28 入口调整：** 剧本页历史恢复入口及下述 `scriptRevisionApi` 前端封装已移除。下段保留原实现约定；服务端变更快照与兼容API继续保留。
+
+`episode-writing.ts` 的 `scriptRevisionApi` 提供摘要分页、前后正文与版本恢复；import 保存显式传 `change_source:import`，未知保存回执仍保留该来源标记，核对成功后清除。恢复前 flush，并核对预览时的当前版本，API 已成功但刷新失败时只重读正文。
+
+`assistant-script.ts` 提供 `preview/apply`，DTO 为 `AssistantScriptProposal`；普通消息可携带 `script_reference`，只在发送前完成正文保存后冻结版本。Harness 的 stopped／paused普通消息直接续跑，运行中补充也调用 `sendTask`，不使用 redirect。明确拒绝用稳定受理错误码判定，不能泛化为清除全部4xx pending。`assistant-business-events.ts` 按操作和撤销指纹通知业务刷新，编辑会话遇新版本保留脏稿。草稿只持久化引用的最小身份、名称、版本和校验值，恢复后通过 `inspectSubjects` 再核对；不保存正文或签名URL。

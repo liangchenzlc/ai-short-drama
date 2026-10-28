@@ -1,5 +1,9 @@
 # Agent 会话、统一创作与上下文
 
+2026-10-26 新 V3 任务采用 LangGraph／LangChain Harness，兼容路由不变；新工具自主选择与中断边界见 [助手 API](assistant.md) 和 [Harness 运行机制](../instruction/AI创作助手Harness运行机制.md)。本页 V1／V2 计划审核为历史兼容能力。
+
+Skill 包的资源 `kind` 支持 `reference/template/script/image`。文本和只读脚本使用 `encoding=utf-8`，PNG／JPEG／WebP 示例图使用 `encoding=base64`；这是管理接口的上传／读取传输格式，运行时只保留受管引用。导入、复制、更新和导出按原始字节核对 checksum。脚本不执行，图片正文不进入常驻 Skill 索引。
+
 本页补充分集 Agent 的输入契约。所有路径相对 `/api/v1`；请求沿用账号认证和 CSRF 规则。会话、消息、运行、附件与生成历史仅本人可见，项目成员不能读取他人的候选或对话。已采用的作品通过原工作流共享。运行要求 Agent schema 就绪、`AGENT_ENABLED=true` 和独立 Agent Worker。
 
 现有会话、消息、运行、批准与采用入口见 [API 总约定](README.md)。本页以 [Agent 路由](../../backend/src/short_drama/api/v1/agent.py)、[上下文 schema](../../backend/src/short_drama/schemas/agent_context.py) 和 [消息 schema](../../backend/src/short_drama/schemas/agent_runtime.py) 为准。
@@ -121,35 +125,40 @@
 
 ## 内置与个人 Skill 管理
 
+独立 `/skills` 是管理入口。AI 配置旧 Skill 视图已删除，旧 `/ai_config?section=skills` 使用替换历史记录跳转。界面只提供导入、整包更新、只读文件浏览、个人启停及模式设置，不提供在线编辑或直接复制。
+
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| GET | `/agent/skills` | 摘要分页，不返回正文或资源 manifest；支持 `query/source/enabled/invocation_mode/mode` 筛选 |
-| POST | `/agent/skills` | 在线新建或保存导入草稿；必带 `Idempotency-Key`，返回 201 |
-| POST | `/agent/skills/imports/preview` | multipart `file`，解析 Markdown／ZIP；仅预览，不创建 Skill |
-| POST | `/agent/skills/uploads` | multipart `file`；单个最多 64 KiB 的 UTF-8 `.md`，返回 201 |
-| GET | `/agent/skills/{skill_id}` | 按需读取主指令及资源目录；不一次返回所有资料正文 |
-| PATCH | `/agent/skills/{skill_id}` | 本人内容发布：必带 `row_version`，元数据／正文／资源变更产生不可变新版本 |
-| PATCH | `/agent/skills/{skill_id}/settings` | 本人的 `enabled/invocation_mode` 设置，带独立设置 `row_version` |
-| POST | `/agent/skills/{skill_id}/copy` | 固定 `content_version` 复制为个人新身份；必带 `Idempotency-Key` |
+| GET | `/agent/skills` | 摘要分页，不返回正文或 manifest；支持 `query/source/enabled/mode`，搜索仅匹配名称和用途 |
+| POST | `/agent/skills` | 保存已检查的完整导入包；必带 `Idempotency-Key`，返回 201；兼容直接请求同样执行写入校验 |
+| GET | `/agent/skills/requests/{key}` | 按当前账号和原创建键只读核对受理结果；未找到 404，原记录已删除 409；不重放旧请求 |
+| POST | `/agent/skills/imports/preview` | multipart `file`，解析 Markdown／ZIP；仅检查和预览，不创建 Skill |
+| POST | `/agent/skills/uploads` | 兼容单个 UTF-8 `.md` 导入，最多 64 KiB，要求完整 frontmatter；无网页补字段流程 |
+| GET | `/agent/skills/{skill_id}` | 按需读取主指令及资源目录；不一次返回全部文件正文 |
+| PATCH | `/agent/skills/{skill_id}` | 必带内容行 `row_version`；前端更新上传完整包，资源数组整体替换；模式可独立修改 |
+| PATCH | `/agent/skills/{skill_id}/settings` | 本人的 `enabled` 设置，必带独立设置 `row_version` |
+| POST | `/agent/skills/{skill_id}/copy` | 兼容固定 `content_version` 复制；必带 `Idempotency-Key`，同样拒绝脚本；当前 UI 不提供入口 |
 | GET | `/agent/skills/{skill_id}/export` | 带 `content_version` 导出 ZIP；来源已更新返回 409 |
-| GET | `/agent/skills/{skill_id}/versions/{version}/resources` | 按 manifest 的 `path` 读取资料；`offset/limit` 按字符分段，limit 最多 6000，返回 `next_offset` |
+| GET | `/agent/skills/{skill_id}/versions/{version}/resources` | 按 manifest 的 `path` 只读获取文件；文本 `offset/limit` 按 Unicode 字符分段，limit 最多 6000；图片完整返回 Base64 |
 | DELETE | `/agent/skills/{skill_id}` | JSON body 必带 `row_version`；软删除并停用，返回 204 |
 
-内置 ID：`planning.v1`、`novel.v1`、`script.v1`、`extract.v1`、`storyboard.v1`、`asset_patch.v1`、`shot_patch.v1`、`image.v1`、`video.v1`、`voice.v1`、`canvas.v1`、`continuity.v1`，覆盖九类能力。ID 是稳定身份，其中 `.v1` 不表示当前内容版本；原八项已发布内容版本 2，新增四项为版本 1，历史八项版本 1 保留。系统原件不可修改／删除（403），可以复制及更改本人启停／调用设置。目录读取数据库中已发布的最新版本，部署包须经显式发布才生效，见[内置方法维护](../instruction/内置创作方法维护.md)；V3 按需激活与任务资源读取见[助手 API](assistant.md#任务创作方法与资料)。
+内置稳定 ID、内容版本和发布流程见 [内置方法维护](../instruction/内置创作方法维护.md)。内置原件不可修改／删除（403），可更改本人启停并导出；在本地修改后重新导入为个人 Skill。目录读取数据库已发布最新版本；任务加载及冻结资源见 [助手 API](assistant.md#任务创作方法与资料)。
 
-摘要包含身份、名称、`slug/description/tags/modes/exclusions/required_tools/source`、`content_version/row_version`、`enabled/invocation_mode/settings_version`、`compatible/issues`、正文与包校验值、资源数量和更新时间。详情另含 `instructions/resources`；资源目录仅含相对路径、reference／template 类型、字节数与 checksum，不暴露存储地址。
+摘要包含身份、名称、`slug/description/tags/modes/exclusions/required_tools/source`、`content_version/row_version`、`enabled/settings_version`、`compatible/issues`、校验值、资源数量及更新时间。卡片仅显示名称、用途、适用模式和启停；标签和文件数量不展示。详情另含 `instructions/resources`，资源目录包含相对路径、类型、字节数与 SHA-256，不暴露存储地址。
 
-内容版本覆盖元数据、主指令和资料；设置修改不发布内容版本。内置 `row_version/filename` 为 null，尚未保存的内置个人设置版本为 `"0"`；个人 ID 和所有版本对外均为十进制字符串，内置 ID 使用上述稳定键。个人内容保存校验内容行版本，设置接口校验 `settings_version`。兼容 PATCH 的启停字段仍可使用，但新客户端优先使用独立设置接口。旧输入全文快照保持原样，新冻结记录增加不可变 `version_id`。新加载使用过期内容版本返回 409，停用／不兼容项不能新加载；原任务仍选用的精确冻结版本继续有效。
+不再接收、输出或使用 `invocation_mode`。`tags` 保留在版本及导入导出中，更新缺省保留原标签，显式 `[]` 清空；UI 不填写、筛选或搜索标签。模式单选映射：通用为 `["standard","infinite_canvas"]`，创作为 `["standard"]`，画布为 `["infinite_canvas"]`；新导入默认通用，更新回显当前模式与启停。服务端验证所选模式所需的工具能力，修改模式会发布内容版本。
 
-```json
-{"row_version":"1","instructions":"# 对白要求\n控制单句长度。","enabled":true}
-```
+导入要求 SKILL.md 的 frontmatter 提供 `name` 和 `description`，正文非空、无 NUL、UTF-8 最多 64 KiB。文件上传最多 4 MiB；ZIP 根目录或共同的单层外目录内恰有一个 SKILL.md，展开后最多 32 文件／1 MiB，主文件含元数据最多 128 KiB、frontmatter 最多 64 KiB，单资源最多 128 KiB。支持 md/txt/json/csv/yaml/yml 和 PNG/JPEG/WebP；路径最多六段，拒绝路径穿越、链接、大小写重复、文件／目录重名和危险 YAML。脚本后缀、`scripts/` 下文件、`kind=script` 或未知格式拒绝整个包，不忽略后继续。历史脚本仍可按冻结版本只读查看和导出；不能借复制、更新或发布重新写入。
 
-在线创建必填 `name/slug/description/instructions`，默认启用且允许按需自动。`modes` 为 `standard/infinite_canvas`，资料以 `resources=[{path,kind,content}]` 整包提交。更新未提供的字段保持原值，发布内容不重置个人设置。创建／复制受理不明须使用原请求体及原幂等键核对，不换键创建副本。
+预览返回 `draft/files/byte_size/compatible/issues`，增加 `tags_provided` 区分缺省与显式空标签，以及 `mode_issues`（`general/standard/infinite_canvas`）供三段模式切换时显示兼容问题。相对引用支持包内合法的 `../`，缺失引用、未知工具及附加运行依赖阻止提交。前端预览成功不替代正式写入检查；全部写入口重新验证文件、引用、体积及工具模式兼容性。
 
-正文非空、无 NUL，UTF-8 最多 64 KiB；单资料最多 128 KiB、最多 31 份，包总量最多 1 MiB。导入文件最多 4 MiB，解压后总量最多 1 MiB／32 文件；主文件含元数据最多 128 KiB、frontmatter 最多 64 KiB。只支持 md/txt/json/csv/yaml/yml，路径最多六段，拒绝路径穿越、符号链接、重复路径和危险 YAML；脚本及未知工具在预览中列为不兼容。普通 Markdown 可在预览后补齐用途。预览成功不等于发布或执行。
+目录树和只读编辑区共用一个文件浏览器，默认打开 SKILL.md 正文，不显示 frontmatter；文本源码、行号和复制可用，不允许修改。前端依据 manifest 路径构树，按准确版本读取文件并核验实际内容 SHA-256；文件切换取消旧请求，迟到响应不覆盖当前文件，失败仅在读取区重试。
 
-资料先在 MinIO 独立暂存键中保存并读回核验，再由短 MySQL 事务发布 ready manifest；同批相同内容可以复用新上传，不能复用无版本引用的旧暂存对象。新上传须在一小时内、持有账号／内置目录锁时发布，超时返回 `agent_skill_upload_expired`；已发布旧资源继续有效。这不是跨存储原子事务。显式回收脚本默认预览，仅回收至少 24 小时且未被任何历史版本引用的已知对象，按精确对象版本删除；详见[资料回收维护](../instruction/内置创作方法维护.md#未引用资料回收)。历史内容版本不可修改，目录软删除不立即删除版本及资料。目录管理支持按账号查看未删除 Skill 的旧资料版本；V3 原任务通过已持久激活的身份读取冻结资料，更新、停用、删除或明确继续均不换成新版本。所选正文累计仍限 128 KiB。409 保留草稿，明确核对后再操作，不自动覆盖。
+内容版本覆盖元数据、主指令和资源；独立启停设置不发布内容版本。内置 `row_version/filename` 为 null，未保存个人设置版本为 `"0"`；个人 ID 与所有版本保持十进制字符串。PATCH 未提供字段兼容保持原值，更新包的 `resources` 必须为完整替换数组；前端包更新不发送 `enabled`。创建受理不明先读原键回执；新请求确认未受理后才可沿用原完整请求体与原键重放，旧含已退役字段的记录只核对或下载，不删字段后重发。更新受理不明读取当前文件和校验值核对；409 保留导入包，用户查看当前版本并明确确认后再提交。
+
+旧启停操作记录若含退役的触发方式字段，仅提供原记录下载与明确清除，不删除字段后重新发送设置请求。
+
+资料先在 MinIO 暂存并读回核验，再以短 MySQL 事务发布 ready manifest；新上传须一小时内持有账号／内置目录锁发布，超时返回 `agent_skill_upload_expired`。这不是跨存储原子事务，回收规则见 [资料回收维护](../instruction/内置创作方法维护.md#未引用资料回收)。历史版本不可修改，软删除不立即删除资料。目录设置只影响新加载；任务使用的冻结包、资源与实际来源审计保持原样。旧数据库升级见 [Skill 管理迁移](../database/migrations/2026-10-26-skill-management/README.md)。
 
 ## 模型选择与运行反馈
 
@@ -163,17 +172,21 @@
   "image": true,
   "audio": false,
   "video": "sampled_frames",
-  "evidence": "declared"
+  "evidence": "declared",
+  "context_window_tokens": 131072,
+  "context_window_evidence": "declared"
 }
 ```
 
 `video` 为 `sampled_frames` 或 `unsupported`；`evidence` 兼容 `declared/model_family/text_only`，增加 `runtime` 表示等待实际请求证据。未知 Chat 配置不再按模型名称判为仅文本。以下旧声明和 `/verify` 接口保留兼容，当前创作界面不提供手动验证或声明入口：
 
 ```json
-{"row_version":1,"image":true,"audio":false}
+{"row_version":"1","image":true,"audio":false,"context_window_tokens":131072}
 ```
 
 模型行版本输出十进制字符串，输入兼容正整数与十进制字符串；前端始终保留字符串。声明绑定配置版本、地址、模型标识和凭据身份；更新声明会增加模型版本，并保留未变更的已验证工具协议证据。配置发生变化后，旧声明失效。声明本身不调用模型，也不代表真实供应商验证。
+
+`PATCH /agent/models/{id}/inputs` 可选 `context_window_tokens` 为 16384–1048576 的整数。省略时保留仍有效的原容量声明，显式 `null` 清除；无有效声明使用平台默认 65536，平台有效上限 262144。返回的 `context_window_tokens` 是实际参与预算的值，`context_window_evidence` 为 `declared/platform_default`，与图像／音频的 `evidence` 分开。当前前端仅同步 DTO 与请求函数，不提供容量配置界面；声明不是供应商窗口探测或视觉语义验收。
 
 当前 SDK 适配中，Chat 协议允许图片和 MP3/WAV 音频内联；Responses 协议允许图片，不能编码音频输入；视频由图片采样与可选音轨组合输入。协议或供应商明确拒绝所选组合时，运行在对话内给出安全中文反馈。用户决定更换模型、减少附件或对视频明确选择仅画面，系统不自动降级。
 

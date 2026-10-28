@@ -30,7 +30,7 @@ from short_drama.ai.canvas_runninghub_adapters import (
 )
 from short_drama.ai.model_identity import model_credential_identity
 from short_drama.core.crypto import KeyCipher
-from short_drama.core.exceptions import WorkflowError
+from short_drama.core.exceptions import BusinessError
 from short_drama.dao.task_runtime_dao import LeaseLost, latest_record, owned_task
 from short_drama.domain import AIGenerationRecord, AIModelConfig, AsyncTask, MediaFile
 from short_drama.service.base import utcnow
@@ -584,6 +584,9 @@ class GenerationExecutionService:
                             finish(current, "succeeded")
                     elif (call.request_data.get("source") or {}).get("scene") in {
                         "novel_script",
+                        "story_outline",
+                        "script_generate",
+                        "script_rewrite",
                         "script_shots",
                         "script_assets",
                     }:
@@ -872,13 +875,19 @@ class GenerationExecutionService:
 
     def _save_text(self, task, record, version, token):
         from .generation_business_service import GenerationBusinessService
+        from .writing_generation_service import WRITING_SCENES, WritingGenerationService
 
         try:
             with self.factory.begin() as session:
+                if (record.request_data.get("source") or {}).get("scene") in WRITING_SCENES:
+                    WritingGenerationService(session).lock_project(record.request_data)
                 current = owned_task(session, task.id, version, token)
+                if current.cancel_requested:
+                    finish(current, "cancelled")
+                    return
                 GenerationBusinessService(session).save_text_result(task.id, record.id)
                 finish(current, "succeeded")
-        except WorkflowError as error:
+        except BusinessError as error:
             with self.factory.begin() as session:
                 current = owned_task(session, task.id, version, token)
                 finish(current, "failed", {"code": error.code, "message": error.message})

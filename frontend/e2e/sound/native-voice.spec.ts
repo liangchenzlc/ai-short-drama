@@ -75,9 +75,9 @@ test('character sample design replay, explicit binding and reviewed two-speaker 
   await page.getByLabel('第2句台词').fill('好，我已经准备好了。');
   await page.getByRole('checkbox', { name: '已确认对白顺序与角色；空列表表示无对白' }).check();
   await page.screenshot({ path: '.runtime/native-desktop.png', animations: 'disabled' });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(async () => { const box = await page.getByRole('dialog').boundingBox(); return !!box && box.x >= -1 && box.width <= 390; }).toBe(true);
-  await page.screenshot({ path: '.runtime/native-mobile.png', animations: 'disabled' });
+  await page.setViewportSize({ width: 1280, height: 844 });
+  await expect.poll(async () => { const box = await page.getByRole('dialog').boundingBox(); return !!box && box.x >= -1 && box.x + box.width <= 1280; }).toBe(true);
+  await page.screenshot({ path: '.runtime/native-desktop-1280.png', animations: 'disabled' });
   await page.getByRole('button', { name: '保存分镜对白' }).click();
   await expect(page.getByRole('dialog')).toBeHidden();
   expect(saved[0].document.reviewed).toBe(true);

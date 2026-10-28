@@ -313,7 +313,7 @@ export function AiArtCritiqueModal({ projectId, node, upstreamNodes, open, onClo
                             {input?.title || "等待图片输入"} · 输入图片，输出批改报告，不修改原图
                         </div>
                     </div>
-                    <div className="hidden shrink-0 items-center gap-2 sm:flex">
+                    <div className="shrink-0 items-center gap-2 flex">
                         <span className="text-xs" style={{ color: theme.node.muted }}>
                             {running
                                 ? artCritiqueStageLabel(visibleState.analysisStage)
@@ -329,8 +329,8 @@ export function AiArtCritiqueModal({ projectId, node, upstreamNodes, open, onClo
                     <IconButton variant="ghost" size="sm" icon={X} onClick={close} aria-label="关闭批改报告" />
                 </header>
 
-                <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1.45fr)_minmax(360px,.85fr)]">
-                    <section className="flex h-[min(48dvh,520px)] min-h-[300px] min-w-0 flex-col gap-3 border-b p-4 lg:h-auto lg:min-h-0 lg:border-b-0 lg:border-r" style={{ borderColor: theme.node.edge }}>
+                <div className="min-h-0 flex-1 flex-col grid grid-cols-[minmax(0,1.45fr)_minmax(360px,.85fr)]">
+                    <section className="flex min-w-0 flex-col gap-3 p-4 h-auto min-h-0 border-b-0 border-r" style={{ borderColor: theme.node.edge }}>
                         <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[var(--r-lg)] border p-2" style={{ borderColor: theme.node.edge, background: "rgba(0,0,0,.18)" }}>
                             {previewUrl ? (
                                 <img src={previewUrl} alt={input?.title || "输入图片"} className="max-h-full max-w-full rounded-[var(--r-md)] object-contain shadow-[var(--shadow-md)]" draggable={false} />
@@ -466,7 +466,7 @@ export function AiArtCritiqueModal({ projectId, node, upstreamNodes, open, onClo
                             )}
 
                             <div className="sticky bottom-0 z-10 -mx-4 mt-auto flex flex-wrap items-center gap-2 border-t px-4 py-2" style={{ borderColor: theme.node.edge, background: theme.canvas.background }}>
-                                <div className="min-w-0 flex-1 basis-full truncate text-[var(--fs-micro)] sm:basis-auto" title={modelInlineLabel} style={{ color: modelStatusColor }}>
+                                <div className="min-w-0 flex-1 truncate text-[var(--fs-micro)] basis-auto" title={modelInlineLabel} style={{ color: modelStatusColor }}>
                                     {modelInlineLabel}
                                 </div>
                                 <div className="ml-auto flex shrink-0 items-center gap-2">

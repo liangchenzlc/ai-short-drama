@@ -35,9 +35,11 @@
 
 ## 全局 AI 创作助手与旧创作候选
 
-创作模式和画布统一使用[项目 AI 创作助手](assistant.md)：兼容路径 `/assistant/global/conversations` 按本人账号及项目提供 V3 会话、逻辑任务、补充与独立任务队列。前端创建必传 `project_id`，列表及历史按项目过滤；任务自动使用所属项目的写入目标与记忆，画布任务另绑定当前画布，已受理目标冻结。任务不自动读取作品正文。前端已移除任务、上下文和记忆管理入口，后台摘要与记忆继续运行。回复中发送按钮切换为停止，停止后发送新要求通过带 `message_id` 的 resume 复用已受理消息，不插入额外用户气泡；停止水位和原请求核对继续生效。结构、媒体与撤销的具体已开放范围及限制以助手 API 为准；旧 V0/V1/V2 在新界面只读，不将旧授权转换为新任务许可。
+当前 Harness 前三批接口及验证见[运行机制](../instruction/AI创作助手Harness运行机制.md)与[验收记录](../reviews/2026-10-26-Harness前三批可靠性与上下文优化验收.md)。记忆作业响应补齐既有终态 `abandoned`；已有库须升级[状态约束](../database/migrations/2026-10-26-agent-memory-retry/README.md)，不增加路由或手动重试权限。授权网关的文本／图片理解长任务已实际验收，其他协议与媒体生成不由该结果覆盖。
 
-Agent 默认开启；运行须完成基础迁移、[全局任务／记忆迁移](../database/migrations/2026-10-21-agent-system/README.md)及[项目会话约束增量](../database/migrations/2026-10-22-project-assistant/README.md)，保持账号认证并启动 scheduler 和独立 Agent Worker。生成可通过 `AGENT_ENABLED=false` 显式关闭，删除清理仍由 scheduler 执行。共享附件接口接受 V2/V3 会话并继续校验本人账号与项目权限，V0/V1 保持旧会话限制。附件、现有个人 Skill、模型输入能力及限制见 [Agent 上下文 API](agent.md)，配置和故障处理见[部署说明](../instruction/Agent模式部署与排障.md)。既有所选配置的真实文本、图片与视频证据见[验收记录](../reviews/Agent模式实施与真实模型验收.md)；本次系统尚未完成真实供应商验收。
+创作模式和画布统一使用[项目 AI 创作助手](assistant.md)：兼容路径 `/assistant/global/conversations` 按本人账号及项目提供 V3 会话、逻辑任务、补充与独立任务队列。前端创建必传 `project_id`，列表及历史按项目过滤；任务自动使用所属项目的写入目标与记忆，画布任务另绑定当前画布，已受理目标冻结。标准模式发送可显式引用当前剧本身份与版本，工具按需读取；其他作品正文仍须有获准引用。前端已移除任务、上下文和记忆管理入口，后台摘要与记忆继续运行。新 Harness 执行中可补充输入，错误或预算暂停后普通“继续”沿用原 Task；新 Harness 支持边界停止，停止后普通消息续跑；resume 控制保留旧引擎契约，原请求核对继续生效。结构、媒体与撤销的具体已开放范围及限制以助手 API 为准；旧 V0/V1/V2 在新界面只读，不将旧授权转换为新任务许可。
+
+Agent 默认开启；运行须完成基础迁移、[全局任务／记忆迁移](../database/migrations/2026-10-21-agent-system/README.md)及[项目会话约束增量](../database/migrations/2026-10-22-project-assistant/README.md)，保持账号认证并启动 scheduler 和独立 Agent Worker。生成可通过 `AGENT_ENABLED=false` 显式关闭，删除清理仍由 scheduler 执行。共享附件接口接受 V2/V3 会话并继续校验本人账号与项目权限，V0/V1 保持旧会话限制。附件、导入式 Skill 管理、创建回执核对、只读版本资源及模型输入能力见 [Agent 上下文 API](agent.md)；Skill 已移除触发设置，旧库须执行 [Skill 管理增量](../database/migrations/2026-10-26-skill-management/README.md)，配置和故障处理见[部署说明](../instruction/Agent模式部署与排障.md)。既有所选配置的真实文本、图片与视频证据见[历史验收记录](../reviews/Agent模式实施与真实模型验收.md)；当前 Harness 的真实长任务证据见本节开头的新验收记录，供应商范围分别说明。
 
 新对话以[助手路由](../../backend/src/short_drama/api/v1/assistant.py)、[全局任务契约](../../backend/src/short_drama/schemas/assistant_task.py)及[记忆契约](../../backend/src/short_drama/schemas/agent_memory.py)为准。账号拥有项目内会话；创建、列表及执行另校验本人项目权限，历史未绑定 V3 保留兼容且不猜测归属。下表为旧 `/agent` 兼容接口，其项目／候选规则不自动适用于 V3。
 
@@ -71,7 +73,7 @@ Agent 默认开启；运行须完成基础迁移、[全局任务／记忆迁移]
 
 候选详情 `content_origin` 为 `snapshot`（冻结的原稿）、`current_script_legacy`（历史记录无原稿快照，只能读取当前剧本）或 null。新剧本候选保存原始正文快照，后续采用和编辑不会改变该快照；历史 fallback 不能作为原生成稿证据。停止时已生成但尚未展示的候选在取消事务内补消息引用，已受理媒体的延迟结果归档后也在原会话追加候选消息；相同候选不重复展示。运行保持停止终态，不能自动继续或采用。
 
-小说改编、素材提取、分镜、图像、视频、音频、批量生成、任务中心、媒体资产库及成片历史中的私人任务、候选和未发布资产，仍按发起人或作者校验列表总数、详情、下载、恢复/重试与采用。创作模式素材图和分镜图的完整图片组及原图历史仅所有者可读，任务、提示词、模型配置与操作记录仅本人可读，见[图片组合同](image-groups.md)。已采用音色通过 `current_voice` 读取（含 `media_id/url/duration_ms/row_version`），已采用成片通过 `assembly.current_work` 及 `/assembly/current/download` 读取；已发布标记不能绕过所有者权限。
+小说改编、素材提取、分镜、图像、视频、音频、批量生成、生成任务 API、媒体资产库及成片历史中的私人任务、候选和未发布资产，仍按发起人或作者校验列表总数、详情、下载、恢复/重试与采用。创作模式素材图和分镜图的完整图片组及原图历史仅所有者可读，任务、提示词、模型配置与操作记录仅本人可读，见[图片组合同](image-groups.md)。已采用音色通过 `current_voice` 读取（含 `media_id/url/duration_ms/row_version`），已采用成片通过 `assembly.current_work` 及 `/assembly/current/download` 读取；已发布标记不能绕过所有者权限。
 
 ## 项目与模式
 
@@ -90,23 +92,29 @@ Agent 默认开启；运行须完成基础迁移、[全局任务／记忆迁移]
 
 | 方法 | 路径 | 请求 / 返回 |
 | --- | --- | --- |
-| GET | `E/writing` | `content_version/novel/editing_script/confirmed_script_id`；尚未创建的正文为 null |
+| GET | `E/writing` | `content_version/novel/outline/editing_script/confirmed_script_id/active_writing_tasks`；尚未创建的正文为 null |
 | PUT | `E/novel` | `{content,content_version}` → 最新版本与小说 |
-| PUT | `E/script` | `{content,editor_document?,content_version,script_id}` → 最新版本与剧本；首次创建 script_id=null |
+| PUT | `E/outline` | `{content,content_version}` → 最新版本与故事大纲 |
+| PUT | `E/script` | `{content,editor_document?,content_version,script_id,change_source?}` → 最新版本、剧本与 confirmed_script_id；首次创建 script_id=null |
+| GET | `E/script-revisions` | 最近变更摘要分页，不读正文 |
+| GET | `E/script-revisions/{revision_id}` | 前后正文和来源 |
+| POST | `E/script-revisions/{revision_id}/restore` | `{content_version}` → 完整 writing，恢复前正文另存历史 |
 | PUT | `E/editing-script` | `{script_id,content_version}` → 完整 writing |
 | POST | `E/scripts/{script_id}/confirm` | `{content_version}` → 完整 writing |
 | GET | `E/scripts` | 候选分页、200 字符预览、编辑/确认标记、生成来源 |
 | GET | `E/scripts/{script_id}` | 候选元信息及完整 content |
 
-正文保留空白与换行，最大 1 MiB UTF-8，允许空字符串但不接受 null。空白剧本不能确认。小说、剧本和选择共用 `content_version`，过期返回 409 `writing_version_conflict`；每次受理正文保存均推进版本，包括内容未变化的保存，以阻止旧的在途请求覆盖最后输入。
+正文保留空白与换行，最大 1 MiB UTF-8，允许空字符串但不接受 null。小说、大纲、剧本和兼容选择操作共用 `content_version`，过期返回 409 `writing_version_conflict`；每次受理正文保存均推进版本，包括内容未变化的保存，以阻止旧的在途请求覆盖最后输入。非空当前剧本保存即发布并成为内部唯一确认稿，空正文取消可用状态且不回退旧稿；界面无候选确认；AI 替换与导入的服务端变更快照及恢复接口继续保留，剧本页已移除“最近变更”入口。
 
 剧本读取另带 `editor_document: object | null`，小说仍为纯文本。格式文档采用受限 Quill Delta：`{ops:[{insert:string,attributes?:{header:1|2|3,bold:boolean,italic:boolean,blockquote:boolean}}]}`，最多 100000 个文本操作；禁止嵌入和其他属性。文档须以换行结束，转换为业务正文时只移除最后一个 Quill 结尾换行，保留用户空行，并与 `content` 完全一致。正文和格式在同一事务、同一 `content_version` 下保存；仅格式变化也推进版本，保留旧确认及正文相同的素材提取、分镜候选有效性。旧客户端省略或明确传 null 时清除旧格式，提取、生成与导出继续读取纯文本。
 
-后台新增剧本候选不改变编辑指针和正文版本。切换候选不会自动确认；编辑已确认剧本会取消该稿确认；确认另一稿在同一事务取消旧稿确认。小说编辑不改变剧本内容或确认状态。
+当前剧本页仅提供 `script_rewrite` 选区改写，`story_outline/script_generate` 及小说／大纲保存继续作为兼容 API 保留，三个场景均直接更新目标文档。活动任务锁定整篇目标，其他文档仍可通过兼容接口保存。选区采用 Unicode 码点半开区间，新改写只读取选文及剧本前后文；任务恢复和原子回写见[剧本工作台完整契约](writing-workspace.md)。旧 `novel_script` 新增候选不改变编辑指针；候选切换及 confirm 保留兼容，已确认稿的重复 confirm 幂等。小说和大纲编辑不自动改变剧本。
 
 普通 `E/scripts` 列表排除尚未采用、已拒绝或已归档的 Agent 剧本候选；已明确采用的稿仍可正常读取和选择。普通选择、保存和确认不能替代 Agent 采用回执，命中未采用稿返回 422 `agent_artifact_adoption_required`，旧编辑指针亦按此规则处理。必须在本人候选入口核对并明确采用，不静默补旧回执。
 
 ## 本人创作草稿
+
+剧本工作台已停用 `novel_adaptation` 草稿读写，直接保存大纲与正文；该用途接口与历史记录仅作兼容保留。下列素材／分镜私人参数接口继续使用。
 
 这些资源只保存本人下一次生成的输入，不修改作品或当前采用媒体。非所有者不能访问项目及草稿；本人身份来自可信 Actor，不接受客户端指定归属或操作人。
 
@@ -176,6 +184,8 @@ PATCH 只更新提供的字段，`model_config_id:null` 清除模型。每次受
 
 对外状态为 `queued/running/succeeded/failed/cancelled`。调用记录中的未知受理结果不是自动重发依据。取消不保证远端取消或免费；retry 可能再次计费，复用原输入快照；resume 不是再次付费生成的快捷方式。客户端依据 `can_*` 显示操作，不自行猜测。
 
+文本来源新增 `story_outline`（小说／想法）、`script_generate`（大纲／小说／想法）与 `script_rewrite`（精确选区）。成功直接保存当前文档，详情 `result.business` 返回 `kind/schema_version/document_id/content_version`。这些场景不提供旧快照 retry，结果保存恢复仍复用原输出；请求示例、锁与错误码见[写作契约](writing-workspace.md)。
+
 受理回执查询不提交任务、不更新模型或草稿，也不读取他人同键任务。查询的 null 只表示本次未找到可访问任务；未知请求继续保留原请求和原键，显式重试仍复用它们，不能自动换键付费提交。
 
 任务摘要及详情提供 `display_context:{project,subject,scope}`，新任务冻结可读名称，旧任务按现存来源解析。素材来源须携带 project_id，后端核对素材直接归属。前端输入区只呈现提示词，协议仍保留采用所需参数。
@@ -244,6 +254,8 @@ ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 
 分镜模型结果每次1–100镜，包含 `title/shot_size/source_excerpt/story_beat/script/duration_ms/asset_ids`；`shot_size` 可缺省或 null，非空须是下文固定枚举。原文依据须能在输入剧本中按序定位，引用素材须在输入快照内；单镜正文≤32 KiB，最多50个不重复素材引用。不合法/截断输出保留原文并失败，不部分写入镜头。
 
 任务详情 `result.business` 包含类型、schema_version 和候选：小说结果含 script_id；分镜含 shots 和 applied；素材提取见下一节。历史分镜缺失的新字段有读取兼容，不降低新模型输出校验。
+
+故事设定新增`GET/PUT /projects/{project_id}/story-settings`，四项字段使用独立`row_version`；读取未保存文档返回版本0和空值，保存CAS冲突返回409，字段上限及语义见[工作台契约](writing-workspace.md#故事设定)。素材和分镜提取API保留兼容，主页面入口已移除。
 
 ### 剧本素材提取
 
@@ -337,9 +349,13 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/media-library/items` | 图片/视频、名称、来源、项目与时间筛选 |
+| GET | `/media-library/items` | 本人 AI 图片/视频/音频，可选媒体类型、工作台、名称、来源、项目与时间筛选 |
 | GET / PATCH | `/media-library/items/{asset_id}` | 详情、重命名 `{name,row_version}` |
 | POST | `/media-library/items/{asset_id}/apply` | 明确采用到素材图片、分镜图片或视频 |
+
+`media_type` 可省略或为 `image/video/audio`；`workspace_mode` 可省略或为 `standard/infinite_canvas`，其他值返回 422。省略工作台条件时包含无项目来源的本人历史生成；指定时按生成任务所属项目模式过滤。`name` 仅匹配资产名称。所有条件先过滤再计算 `total` 与 `offset/limit`，按资产 `created_at DESC, id DESC` 排序；不收录手动上传的输入媒体。主页每页请求 24 项。
+
+> 2026-10-28：主页资产库已改为纯预览，打开时重新 GET 详情获取签名地址；不再展示重命名、采用或任务跳转。PATCH/apply 继续兼容原创作场景，下述采用契约仍有效。独立任务管理页面已退役，后台生成及批次接口保留。
 
 采用公共字段：`target:{type,id}`、`expected_media_id`、`parameters`。target.type为asset_image/shot_image/shot_video。不同目标的版本与参数校验范围不同，不能把分镜图片采用的保证推广到所有类型。
 

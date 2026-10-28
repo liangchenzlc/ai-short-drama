@@ -15,9 +15,9 @@ function read(): Layout {
 }
 export function useAssemblyLayout(focused: boolean) {
   const [layout, setLayout] = useState(read);
-  const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
   useEffect(() => {
-    const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    const resize = () => setViewportHeight(window.innerHeight);
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
   }, []);
@@ -27,10 +27,10 @@ export function useAssemblyLayout(focused: boolean) {
     }, 150);
     return () => clearTimeout(timer);
   }, [layout]);
-  const playerMax = Math.max(240, Math.min(760, Math.round(viewport.height * .72)));
-  const automatic = focused ? Math.max(240, Math.min(460, viewport.height * .36)) : Math.max(280, Math.min(380, viewport.height * .36));
+  const playerMax = Math.max(240, Math.min(760, Math.round(viewportHeight * .72)));
+  const automatic = focused ? Math.max(240, Math.min(460, viewportHeight * .36)) : Math.max(280, Math.min(380, viewportHeight * .36));
   return {
-    layout, desktop: viewport.width > 760, playerMax,
+    layout, playerMax,
     playerHeight: Math.round(Math.max(200, Math.min(playerMax, layout.playerHeight || automatic))),
     update: (patch: Partial<Layout>) => setLayout(value => ({ ...value, ...patch })),
   };

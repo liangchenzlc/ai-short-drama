@@ -14,7 +14,7 @@ import tests.integration.standard.assistant.test_global_assistant_tasks as task_
 from short_drama.agent.coordinator.assistant import (
     claim_operation,
     complete_operation,
-    execute_tools
+    execute_tools,
 )
 from short_drama.agent.coordinator.recovery import recover
 from short_drama.agent.coordinator.runtime import AgentRuntimeStore
@@ -178,9 +178,7 @@ def test_manual_skill_and_resources_survive_update_disable_delete_and_explicit_r
         updated = library.patch(
             skill.id, {"row_version": "1", "instructions": "全新的方法，不应回写原任务。"}
         )
-        disabled = library.patch_settings(
-            skill.id, {"row_version": "1", "enabled": False, "invocation_mode": "auto"}
-        )
+        disabled = library.patch_settings(skill.id, {"row_version": "1", "enabled": False})
         assert disabled.content_version == 2
         library.delete(skill.id, {"row_version": str(updated.row_version)})
     result = run_tool(skill_workspace, accepted, "describe_creation_target", {})
@@ -233,19 +231,19 @@ def test_manual_skill_and_resources_survive_update_disable_delete_and_explicit_r
 def test_auto_catalog_is_summary_only_and_activation_rechecks_current_settings(skill_workspace):
     factory, settings, _model, _storage = skill_workspace
     skill = create_skill(skill_workspace)
-    manual = create_skill(skill_workspace, name="仅手动方法", invocation_mode="manual")
+    manual = create_skill(skill_workspace, name="另一种方法")
     _conversation, accepted = new_skill_task(skill_workspace)
     catalog = run_tool(skill_workspace, accepted, "search_skills", {"query": "方法"})
     assert catalog.status == "succeeded"
     assert str(skill.id) in {item["id"] for item in catalog.result["items"]}
-    assert str(manual.id) not in {item["id"] for item in catalog.result["items"]}
+    assert str(manual.id) in {item["id"] for item in catalog.result["items"]}
     assert all(
         "instructions" not in item and "resources" not in item for item in catalog.result["items"]
     )
     with factory() as session:
         session.info["actor"] = task_actor()
         AgentSkillService(session, settings).patch_settings(
-            skill.id, {"row_version": "1", "enabled": False, "invocation_mode": "auto"}
+            skill.id, {"row_version": "1", "enabled": False}
         )
     rejected = run_tool(
         skill_workspace,
@@ -304,7 +302,7 @@ def test_task_frozen_method_cannot_bypass_new_activation_or_pending_removal(skil
     with factory() as session:
         session.info["actor"] = task_actor()
         AgentSkillService(session, settings, storage).patch_settings(
-            skill.id, {"row_version": "1", "enabled": False, "invocation_mode": "manual"}
+            skill.id, {"row_version": "1", "enabled": False}
         )
     other_conversation, other = new_skill_task(skill_workspace)
     with factory() as session:
@@ -497,7 +495,7 @@ def test_disable_race_is_ordered_by_the_durable_activation(skill_workspace):
         with factory() as session:
             session.info["actor"] = task_actor()
             AgentSkillService(session, settings, storage).patch_settings(
-                skill.id, {"row_version": "1", "enabled": False, "invocation_mode": "auto"}
+                skill.id, {"row_version": "1", "enabled": False}
             )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -528,9 +526,7 @@ def test_auto_activation_deduplicates_and_keeps_original_version_after_directory
         session.info["actor"] = task_actor()
         library = AgentSkillService(session, settings, storage)
         library.patch(skill.id, {"row_version": "1", "instructions": "新版本方法"})
-        library.patch_settings(
-            skill.id, {"row_version": "1", "enabled": False, "invocation_mode": "auto"}
-        )
+        library.patch_settings(skill.id, {"row_version": "1", "enabled": False})
     repeated = run_tool(skill_workspace, accepted, "load_skill", args)
     assert repeated.result["already_loaded"] is True
     assert repeated.result["activation_id"] == first.result["activation_id"]
@@ -756,7 +752,7 @@ def test_resource_result_from_replaced_worker_is_discarded_even_without_explicit
         assert session.get(AgentOperation, operation).status == "succeeded"
 
 
-@pytest.mark.parametrize("change", ["version", "manual"])
+@pytest.mark.parametrize("change", ["version", "disabled"])
 def test_load_rechecks_a_stale_search_result(skill_workspace, change):
     factory, settings, _model, storage = skill_workspace
     skill = create_skill(skill_workspace)
@@ -768,15 +764,11 @@ def test_load_rechecks_a_stale_search_result(skill_workspace, change):
         if change == "version":
             library.patch(skill.id, {"row_version": "1", "instructions": "已更新的正文"})
         else:
-            library.patch_settings(
-                skill.id, {"row_version": "1", "enabled": True, "invocation_mode": "manual"}
-            )
+            library.patch_settings(skill.id, {"row_version": "1", "enabled": False})
     rejected = run_tool(
         skill_workspace, accepted, "load_skill", {"skill_id": str(skill.id), "content_version": "1"}
     )
     assert rejected.status == "failed"
-    assert rejected.error["code"] == (
-        "conflict" if change == "version" else "assistant_skill_manual_only"
-    )
+    assert rejected.error["code"] == ("conflict" if change == "version" else "agent_skill_disabled")
     with factory() as session:
         assert skill_runtime.activations(session.get(AgentTask, accepted.task.id)) == []

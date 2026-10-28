@@ -115,3 +115,11 @@ export function retryStandardSessions() {
   return Promise.allSettled([...entries.values()].filter(entry => entry.accountId === account)
     .map(entry => entry.controller.retry?.() ?? entry.controller.flush?.()));
 }
+export async function flushStandardProjectSessions(projectId: string): Promise<boolean> {
+  const selected = [...entries.values()].filter(entry => entry.accountId === account && entry.details.projectId === projectId);
+  for (const entry of selected) {
+    if (entry.controller.hasUnsettled?.()) await entry.controller.flush?.();
+    if (entry.controller.hasUnsettled?.()) return false;
+  }
+  return true;
+}

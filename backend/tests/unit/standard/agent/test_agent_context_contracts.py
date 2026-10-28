@@ -12,9 +12,9 @@ import pytest
 from PIL import Image
 from pydantic import ValidationError
 
-from short_drama.agent.skill.packages import builtin_skill_packages
 from short_drama.agent.context.capabilities import input_capabilities
 from short_drama.agent.context.media import inspect_attachment, materialize_prompt
+from short_drama.agent.skill.packages import builtin_skill_packages
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.core.identity import ActorContext
 from short_drama.schemas.agent_context import SkillPatch, SkillSelection
@@ -105,6 +105,18 @@ def test_skill_upload_normalizes_filename_and_keeps_only_instructions():
     )
 
 
+def test_skill_local_links_allow_sibling_files_and_report_malformed_targets():
+    from short_drama.schemas.agent_skill import SkillResourceInput
+    from short_drama.service.agent_skill_package import local_reference_issues
+
+    resources = [
+        SkillResourceInput(path="references/guide.md", content="[模板](../assets/shot.json)"),
+        SkillResourceInput(path="assets/shot.json", kind="template", content="{}"),
+    ]
+    assert local_reference_issues("[指南](references/guide.md)", resources) == []
+    assert "无法识别" in local_reference_issues("[错误](http://[)", resources)[0]
+
+
 def test_skill_online_content_defaults_and_resource_paths():
     from short_drama.schemas.agent_skill import SkillCreate
 
@@ -115,7 +127,7 @@ def test_skill_online_content_defaults_and_resource_paths():
         instructions="先核对输入，再规划镜头。",
         resources=[{"path": "references/shots.md", "content": "# 镜头语言"}],
     )
-    assert created.enabled and created.invocation_mode == "auto"
+    assert created.enabled and "invocation_mode" not in created.model_dump()
     assert created.modes == ["standard", "infinite_canvas"]
     assert created.resources[0].kind == "reference"
     for path in ("../secret.md", "C:/secret.md", "a\\b.md", "/secret.md", "a/%2e%2e/x.md"):
@@ -135,7 +147,43 @@ def test_skill_markdown_import_reads_frontmatter_without_execution():
     assert preview.draft.slug == "quiet-writing"
     assert preview.draft.name == "Quiet writing"
     assert preview.draft.instructions == "# Method\nKeep it short."
-    assert preview.draft.enabled and preview.draft.invocation_mode == "auto"
+    assert preview.draft.enabled and "invocation_mode" not in preview.draft.model_dump()
+
+
+@pytest.mark.parametrize(
+    "resource",
+    [
+        {"path": "scripts/guide.md", "kind": "reference", "content": "text"},
+        {"path": "references/guide.md", "kind": "script", "content": "text"},
+        {"path": "references/run.py", "kind": "reference", "content": "text"},
+    ],
+)
+def test_skill_direct_writes_cannot_bypass_script_rejection(resource):
+    from short_drama.schemas.agent_skill import SkillCreate, SkillPackagePatch
+
+    with pytest.raises(ValidationError):
+        SkillCreate(
+            name="Method",
+            slug="method",
+            description="Method",
+            instructions="Body",
+            resources=[resource],
+        )
+    with pytest.raises(ValidationError):
+        SkillPackagePatch(row_version="1", resources=[resource])
+
+
+def test_skill_import_requires_metadata_and_distinguishes_absent_tags():
+    from short_drama.service.agent_skill_package import parse_skill_import
+
+    with pytest.raises(WorkflowError, match="缺少名称"):
+        parse_skill_import(b"# Method", "method.md")
+    absent = parse_skill_import(b"---\nname: method\ndescription: Method\n---\nBody", "method.md")
+    explicit = parse_skill_import(
+        b"---\nname: method\ndescription: Method\nmetadata:\n  short-drama-tags: []\n---\nBody",
+        "method.md",
+    )
+    assert not absent.tags_provided and explicit.tags_provided
 
 
 def test_skill_zip_import_validates_complete_package_and_rejects_traversal():
@@ -168,11 +216,16 @@ def test_skill_zip_import_validates_complete_package_and_rejects_traversal():
     with pytest.raises(WorkflowError) as caught:
         parse_skill_import(archive([("../SKILL.md", "bad")]), "bad.zip")
     assert caught.value.code == "invalid_agent_skill_package"
-    incompatible = parse_skill_import(
-        archive([("SKILL.md", "# Method"), ("scripts/run.py", "raise SystemExit()")]),
-        "scripts.zip",
-    )
-    assert not incompatible.compatible and incompatible.issues
+    with pytest.raises(WorkflowError, match="暂不支持脚本"):
+        parse_skill_import(
+            archive(
+                [
+                    ("SKILL.md", "---\nname: method\ndescription: Read rules.\n---\n# Method"),
+                    ("scripts/run.py", "raise SystemExit()"),
+                ]
+            ),
+            "scripts.zip",
+        )
 
 
 @pytest.mark.parametrize(
@@ -294,6 +347,8 @@ def test_input_declaration_is_version_bound_and_responses_cannot_claim_audio():
         }
     }
     assert input_capabilities(snapshot) == {
+        "context_window_tokens": 65536,
+        "context_window_evidence": "platform_default",
         "text": True,
         "image": True,
         "audio": False,

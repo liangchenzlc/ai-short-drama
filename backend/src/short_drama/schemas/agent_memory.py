@@ -199,7 +199,7 @@ class MemorySummaryRead(ReadModel):
 class MemoryJobRead(ReadModel):
     id: Identifier
     kind: Literal["summary", "extract", "task_state", "purge"]
-    status: Literal["pending", "running", "succeeded", "failed", "stale", "cancelled"]
+    status: Literal["pending", "running", "succeeded", "failed", "stale", "cancelled", "abandoned"]
     provider_state: Literal["not_started", "sending", "received", "unknown"]
     message_version: Identifier
     from_seq: int

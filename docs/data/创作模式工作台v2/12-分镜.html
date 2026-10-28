@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>分镜制作 v2</title>
+<link rel="stylesheet" href="board.css">
+<style>
+.shot-thumb { width: 44px; height: 26px; flex: none; border-radius: 4px; border: 1px solid #303030; }
+.board { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.board-head { flex: 0 0 44px; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 10px; }
+.board-head h1 { margin: 0; font-size: 14px; font-weight: 600; }
+.grid { flex: 1; min-height: 0; overflow: hidden; padding: 0 10px 10px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; align-content: start; }
+.card { display: flex; flex-direction: column; border: 1px solid #2b2b2b; border-radius: 8px; background: #1a1a1a; overflow: hidden; text-align: left; }
+.card.on { border-color: #cfcfd6; box-shadow: 0 0 0 2px rgb(245 245 245 / 10%); }
+.card .frame { position: relative; aspect-ratio: 16 / 9; }
+.card .frame .no { position: absolute; left: 6px; top: 6px; padding: 1px 5px; border-radius: 3px; background: rgb(0 0 0 / 60%); color: #e6e6ec; font-size: 9.5px; font-family: var(--mono); }
+.card .frame .st { position: absolute; right: 6px; top: 6px; display: flex; align-items: center; gap: 4px; }
+.card .frame .dur { position: absolute; right: 6px; bottom: 6px; padding: 1px 5px; border-radius: 3px; background: rgb(0 0 0 / 60%); color: #cfcfd6; font-size: 9.5px; font-family: var(--mono); }
+.card .meta { padding: 6px 7px 7px; display: grid; gap: 2px; }
+.card .meta strong { font-size: 11px; font-weight: 500; color: #dcdce2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .meta span { font-size: 10px; color: #7b7b85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .bar { display: flex; align-items: center; gap: 5px; padding: 0 8px 7px; }
+.preview-box { position: relative; aspect-ratio: 16 / 9; border-radius: 8px; border: 1px solid #303030; }
+.play { position: absolute; inset: 0; display: grid; place-items: center; }
+.play span { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: rgb(0 0 0 / 55%); border: 1px solid rgb(255 255 255 / 22%); color: #fff; font-size: 11px; }
+.seg { display: inline-flex; padding: 2px; gap: 2px; background: #202020; border: 1px solid #303030; border-radius: 6px; }
+.seg button { height: 22px; padding: 0 9px; border-radius: 4px; font-size: 10.5px; color: #8b8b94; }
+.seg button.on { background: #333; color: #fff; }
+.refchip { height: 24px; padding: 0 7px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #333; border-radius: 5px; background: #1e1e1e; color: #c3c3cb; font-size: 10.5px; }
+.refchip b { font-weight: 500; color: #fff; }
+</style></head>
+<body>
+<svg class="sprite" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M17 9h4M3 15h4M17 15h4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5l1.7 4.6 4.6 1.7-4.6 1.7L12 16.1l-1.7-4.6L5.7 9.8l4.6-1.7z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5m0 0L6.5 10.5M12 5l5.5 5.5"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V10h5.5"/><path d="M12 8v4.5l3 1.8"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></symbol>
+</svg>
+
+<div class="topbar">
+  <div class="tb-left">
+    <button class="icon-btn"><svg class="i"><use href="#i-back"/></svg></button>
+    <span class="brand"><svg class="i i-13"><use href="#i-film"/></svg></span>
+    <span class="pname">退婚当天，我成了前夫的上司</span>
+    <span class="mode">创作模式</span>
+  </div>
+  <nav class="steps">
+    <button class="step done"><span class="step-no">01</span>剧本创作</button><span class="step-link"></span>
+    <button class="step done"><span class="step-no">02</span>素材生成</button><span class="step-link"></span>
+    <button class="step on"><span class="step-no">03</span>分镜制作</button><span class="step-link"></span>
+    <button class="step"><span class="step-no">04</span>成片合成</button>
+  </nav>
+  <div class="tb-right">
+    <span class="save"><i></i>已保存 14:58</span>
+    <button class="ghost"><svg class="i i-13"><use href="#i-spark"/></svg>AI 创作助手</button>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="panel" style="width:230px;flex:none">
+    <header class="head"><h2>镜头</h2><span class="mono" style="font-size:10.5px;color:#6f6f79">12</span>
+      <div class="actions"><button class="icon-btn"><svg class="i i-13"><use href="#i-plus"/></svg></button><button class="icon-btn"><svg class="i i-13"><use href="#i-history"/></svg></button></div>
+    </header>
+    <div style="flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:0 10px 8px">
+      <button class="chip on">全部 12</button><button class="chip">待生成 3</button><button class="chip">已完成 9</button>
+    </div>
+    <div class="list">
+      <button class="row" style="padding:6px 8px"><span class="ph shot-thumb"><span class="cap">01</span></span><span class="t"><strong>S01 · 民政局大厅</strong><span>全景 · 5s</span></span><i class="dot ok"></i></button>
+      <button class="row" style="padding:6px 8px"><span class="ph shot-thumb" style="filter:hue-rotate(10deg)"><span class="cap">02</span></span><span class="t"><strong>S02 · 门口</strong><span>中景 · 6s</span></span><i class="dot ok"></i></button>
+      <button class="row" aria-current="true" style="padding:6px 8px"><span class="ph shot-thumb" style="filter:hue-rotate(25deg)"><span class="cap">03</span></span><span class="t"><strong>S03 · 顶层任命</strong><span>近景 · 5s</span></span><i class="dot ok"></i></button>
+      <button class="row" style="padding:6px 8px"><span class="ph shot-thumb" style="opacity:.45"><span class="cap">04</span></span><span class="t"><strong>S04 · 会议室对峙</strong><span>中景 · 6s</span></span><i class="dot wait"></i></button>
+      <button class="row" style="padding:6px 8px"><span class="ph shot-thumb" style="filter:hue-rotate(35deg)"><span class="cap">05</span></span><span class="t"><strong>S05 · 顾家客厅</strong><span>近景 · 5s</span></span><i class="dot ok"></i></button>
+      <button class="row" style="padding:6px 8px"><span class="ph shot-thumb" style="opacity:.45"><span class="cap">06</span></span><span class="t"><strong>S06 · 天台</strong><span>特写 · 4s</span></span><i class="dot wait"></i></button>
+      <button class="row" style="padding:6px 8px"><span class="ph shot-thumb" style="filter:hue-rotate(50deg)"><span class="cap">07</span></span><span class="t"><strong>S07 · 医院走廊</strong><span>全景 · 6s</span></span><i class="dot ok"></i></button>
+      <button class="row" style="padding:6px 8px"><span class="ph shot-thumb" style="filter:hue-rotate(65deg)"><span class="cap">08</span></span><span class="t"><strong>S08 · 病房</strong><span>中景 · 5s</span></span><i class="dot ok"></i></button>
+      <button class="row" style="padding:6px 8px"><span class="ph shot-thumb" style="filter:hue-rotate(80deg)"><span class="cap">09</span></span><span class="t"><strong>S09 · 宴会厅</strong><span>全景 · 6s</span></span><i class="dot ok"></i></button>
+      <button class="row" style="padding:6px 8px"><span class="ph shot-thumb" style="opacity:.45"><span class="cap">10</span></span><span class="t"><strong>S10 · 后台</strong><span>近景 · 4s</span></span><i class="dot wait"></i></button>
+    </div>
+    <footer style="flex:0 0 36px;height:36px;display:flex;align-items:center;gap:6px;padding:0 8px;border-top:1px solid var(--hair-2)">
+      <button class="btn quiet"><svg class="i i-13"><use href="#i-plus"/></svg>镜头</button>
+      <button class="btn quiet"><svg class="i i-13"><use href="#i-spark"/></svg>从剧本提取</button>
+      <span class="mono" style="margin-left:auto;font-size:10.5px;color:#6f6f79">1'58"</span>
+    </footer>
+  </aside>
+
+  <section class="panel board" aria-label="分镜表">
+    <header class="board-head">
+      <h1>分镜表</h1>
+      <span class="tag warn">3 个镜头待生成</span>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+        <div class="seg"><button class="on"><svg class="i i-12"><use href="#i-grid"/></svg></button><button><svg class="i i-12"><use href="#i-list"/></svg></button></div>
+        <button class="btn">批量生成 3 个</button>
+        <button class="btn quiet"><svg class="i i-13"><use href="#i-history"/></svg>记录</button>
+        <button class="icon-btn"><svg class="i i-13"><use href="#i-panel"/></svg></button>
+      </div>
+    </header>
+    <div class="grid">
+      <button class="card"><div class="ph frame" style="filter:hue-rotate(0deg)"><span class="no">S01</span><span class="st"><i class="dot ok"></i></span><span class="dur">5s</span><span class="cap">民政局 · 大厅</span></div><div class="meta"><strong>林晚把离婚协议推过去</strong><span>全景 · 固定</span></div></button>
+      <button class="card"><div class="ph frame" style="filter:hue-rotate(14deg)"><span class="no">S02</span><span class="st"><i class="dot ok"></i></span><span class="dur">6s</span><span class="cap">民政局 · 门口</span></div><div class="meta"><strong>沈亦舟的车停在台阶下</strong><span>中景 · 跟拍</span></div></button>
+      <button class="card on"><div class="ph frame" style="filter:hue-rotate(28deg)"><span class="no">S03</span><span class="st"><i class="dot ok"></i></span><span class="dur">5s</span><span class="cap">沈氏 · 顶层</span></div><div class="meta"><strong>林晚站在长桌尽头</strong><span>近景 · 推进</span></div></button>
+      <button class="card"><div class="ph frame" style="opacity:.5"><span class="no">S04</span><span class="st"><i class="dot wait"></i></span><span class="dur">6s</span><span class="cap">沈氏 · 会议室</span></div><div class="meta"><strong>顾霆琛推门进来</strong><span>中景 · 固定</span></div></button>
+      <button class="card"><div class="ph frame" style="filter:hue-rotate(56deg)"><span class="no">S05</span><span class="st"><i class="dot ok"></i></span><span class="dur">5s</span><span class="cap">顾家 · 客厅</span></div><div class="meta"><strong>苏蔓把手机推过去</strong><span>近景 · 固定</span></div></button>
+      <button class="card"><div class="ph frame" style="opacity:.5"><span class="no">S06</span><span class="st"><i class="dot wait"></i></span><span class="dur">4s</span><span class="cap">城市 · 天台</span></div><div class="meta"><strong>林晚摘下戒指</strong><span>特写 · 推近</span></div></button>
+      <button class="card"><div class="ph frame" style="filter:hue-rotate(84deg)"><span class="no">S07</span><span class="st"><i class="dot ok"></i></span><span class="dur">6s</span><span class="cap">医院 · 走廊</span></div><div class="meta"><strong>两人在走廊相遇</strong><span>全景 · 横移</span></div></button>
+      <button class="card"><div class="ph frame" style="filter:hue-rotate(98deg)"><span class="no">S08</span><span class="st"><i class="dot ok"></i></span><span class="dur">5s</span><span class="cap">医院 · 病房</span></div><div class="meta"><strong>周医生合上病历</strong><span>中景 · 固定</span></div></button>
+      <button class="card"><div class="ph frame" style="filter:hue-rotate(112deg)"><span class="no">S09</span><span class="st"><i class="dot ok"></i></span><span class="dur">6s</span><span class="cap">宴会厅</span></div><div class="meta"><strong>苏蔓当众揭穿身世</strong><span>全景 · 环绕</span></div></button>
+      <button class="card"><div class="ph frame" style="opacity:.5"><span class="no">S10</span><span class="st"><i class="dot wait"></i></span><span class="dur">4s</span><span class="cap">宴会厅 · 后台</span></div><div class="meta"><strong>沈亦舟递上证据</strong><span>近景 · 固定</span></div></button>
+      <button class="card"><div class="ph frame" style="filter:hue-rotate(140deg)"><span class="no">S11</span><span class="st"><i class="dot ok"></i></span><span class="dur">6s</span><span class="cap">宴会厅</span></div><div class="meta"><strong>林晚亮出股权书</strong><span>中景 · 推近</span></div></button>
+      <button class="card"><div class="ph frame" style="filter:hue-rotate(154deg)"><span class="no">S12</span><span class="st"><i class="dot ok"></i></span><span class="dur">5s</span><span class="cap">宴会厅 · 门口</span></div><div class="meta"><strong>顾霆琛追出来</strong><span>全景 · 跟拍</span></div></button>
+      <button class="card" style="align-items:center;justify-content:center;gap:6px;color:#6f6f79;border-style:dashed;background:#171717;min-height:120px">
+        <span style="font-size:18px;line-height:1">＋</span><span style="font-size:10.5px">新增镜头</span>
+      </button>
+    </div>
+  </section>
+
+  <aside class="panel insp" style="width:306px">
+    <header class="head"><h2>镜头 S03</h2><span class="tag">近景 · 5s</span>
+      <div class="actions"><button class="icon-btn"><svg class="i i-13"><use href="#i-panel"/></svg></button></div>
+    </header>
+    <div class="insp-body">
+      <div class="preview-box ph" style="margin:0">
+        <span class="cap" style="bottom:8px">S03 · 已生成视频 00:05</span>
+        <span class="play"><span><svg class="i i-13" style="fill:currentColor;stroke:none"><use href="#i-play"/></svg></span></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="seg"><button class="on">分镜图</button><button>分镜视频</button></div>
+        <span class="tag ok" style="margin-left:auto">视频已定</span>
+      </div>
+      <div class="field">
+        <span class="label">引用资产<span style="margin-left:auto;color:#62626b">2</span></span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <span class="refchip"><svg class="i i-12"><use href="#i-link"/></svg>林晚 <b>v3</b></span>
+          <span class="refchip"><svg class="i i-12"><use href="#i-link"/></svg>沈氏顶层 <b>v2</b></span>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label">画面描述</span>
+        <textarea class="ta" rows="3" readonly>林晚站在长桌尽头，风衣没脱，董事们起身看她。</textarea>
+      </div>
+      <div class="field">
+        <span class="label">提示词</span>
+        <div class="ta" style="height:88px;display:flex;flex-direction:column;justify-content:space-between">
+          <span style="color:#c9c9d1">近景，缓慢推进，冷白顶光，会议室纵深…</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="model"><svg class="i i-12"><use href="#i-spark"/></svg>Seedance 2.5</span>
+            <span class="send"><svg class="i i-13"><use href="#i-send"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <p class="hint">换图会保留旧视频在记录里；视频生成成功后自动成为该镜头成片来源。</p>
+    </div>
+  </aside>
+</div>
+</body></html>

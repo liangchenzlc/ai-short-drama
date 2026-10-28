@@ -87,5 +87,5 @@ export function applyTaskEvent(state: TaskProjection, event: AgentEvent): TaskPr
 export function selectedTask(tasks: Record<string, AssistantTask>) {
   const items = Object.values(tasks).sort((a, b) => version(a.id) < version(b.id) ? 1 : -1);
   return items.find(task => ['running', 'waiting_media'].includes(task.status))
-    ?? items.find(task => ['queued', 'stopped', 'paused_error', 'paused_budget'].includes(task.status)) ?? null;
+    ?? items.find(task => ['queued', 'paused_error', 'paused_budget', 'stopped'].includes(task.status)) ?? null;
 }

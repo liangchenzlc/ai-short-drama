@@ -89,15 +89,3 @@
     gap: 8px;
     margin-left: auto;
 }
-@media (max-width: 600px) {
-    .model-editor-modal :is(.ant-modal-container, .ant-modal-content) {
-        height: calc(100dvh - 24px);
-    }
-    .model-editor-panel {
-        padding: 16px;
-    }
-    .model-editor-modal .ant-modal-header,
-    .model-editor-modal .ant-modal-footer {
-        padding: 16px;
-    }
-}

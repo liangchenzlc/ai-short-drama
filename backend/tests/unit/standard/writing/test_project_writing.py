@@ -8,6 +8,46 @@ from short_drama.service.project_writing_service import ProjectWritingService
 from tests.support.generation_fixtures import generation_session
 
 
+def test_import_retains_durable_before_after_and_restore_fences_later_edits():
+    with generation_session() as session:
+        project_id, service = setup(session)
+        original = service.save_script(
+            project_id,
+            {"content_version": "1", "script_id": None, "content": "整篇导入前的完整原稿"},
+        )
+        imported = service.save_script(
+            project_id,
+            {
+                "content_version": original["content_version"],
+                "script_id": original["script"]["id"],
+                "content": "新导入正文",
+                "change_source": "import",
+            },
+        )
+        history = service.script_revisions(project_id)["items"]
+        assert len(history) == 1 and history[0]["source"] == "import"
+        assert history[0]["created_at"].endswith("Z")
+        # A fresh service reads persistent snapshots, independently of editor undo.
+        reloaded = ProjectWritingService(session)
+        detail = reloaded.script_revisions(project_id, revision_id=history[0]["id"])
+        assert (detail["before_content"], detail["after_content"]) == (
+            "整篇导入前的完整原稿",
+            "新导入正文",
+        )
+        with pytest.raises(Conflict):
+            reloaded.restore_script_revision(
+                project_id, history[0]["id"], {"content_version": original["content_version"]}
+            )
+        restored = reloaded.restore_script_revision(
+            project_id, history[0]["id"], {"content_version": imported["content_version"]}
+        )
+        assert restored["editing_script"]["content"] == "整篇导入前的完整原稿"
+        assert [item["source"] for item in reloaded.script_revisions(project_id)["items"]] == [
+            "restore",
+            "import",
+        ]
+
+
 def setup(session):
     project = ProjectService(session).create_project(
         {
@@ -18,6 +58,58 @@ def setup(session):
     return episode.id, ProjectWritingService(session)
 
 
+def test_story_settings_are_lazy_versioned_and_independent_from_script():
+    from short_drama.domain import ProjectStorySettings
+
+    with generation_session() as session:
+        project_id, service = setup(session)
+        empty = service.story_settings(project_id)
+        assert empty == {
+            "row_version": "0",
+            "logline": "",
+            "synopsis": "",
+            "genre": "",
+            "character_bios": "",
+        }
+        with session.begin():
+            assert session.scalar(select(func.count()).select_from(ProjectStorySettings)) == 0
+        first = service.save_story_settings(
+            project_id, {**empty, "logline": "卖点😀", "synopsis": "  保留空白\n"}
+        )
+        assert first["row_version"] == "1"
+        assert first["synopsis"] == "  保留空白\n"
+        with pytest.raises(WorkflowError) as conflict:
+            service.save_story_settings(project_id, {**empty, "genre": "过期"})
+        assert conflict.value.code == "story_settings_version_conflict"
+        assert service.story_settings(project_id) == first
+        second = service.save_story_settings(project_id, {**first, "character_bios": "人物小传"})
+        assert second["row_version"] == "2"
+        assert service.get(project_id)["content_version"] == "1"
+        script = service.save_script(
+            project_id, {"content_version": "1", "script_id": None, "content": "正文"}
+        )
+        assert script["content_version"] == "2"
+        assert service.story_settings(project_id) == second
+
+
+def test_story_settings_contract_rejects_unknown_fields_and_oversized_values():
+    from pydantic import ValidationError
+
+    from short_drama.schemas.project_writing import StorySettingsRead, StorySettingsSave
+
+    empty = StorySettingsRead().model_dump(mode="json")
+    for patch in (
+        {"row_version": "-1"},
+        {"logline": "字" * 201},
+        {"genre": "字" * 101},
+        {"synopsis": "字" * 20001},
+        {"character_bios": "字" * 20001},
+        {"content_version": "1"},
+    ):
+        with pytest.raises(ValidationError):
+            StorySettingsSave.model_validate({**empty, **patch})
+
+
 def test_empty_read_has_no_side_effects_and_novel_preserves_whitespace():
     with generation_session() as session:
         e, service = setup(session)
@@ -26,6 +118,8 @@ def test_empty_read_has_no_side_effects_and_novel_preserves_whitespace():
             "project_id": str(e),
             "content_version": "1",
             "novel": None,
+            "outline": None,
+            "active_writing_tasks": [],
             "editing_script": None,
             "confirmed_script_id": None,
         }
@@ -71,51 +165,36 @@ def test_unchanged_save_fences_a_delayed_write_without_changing_content_or_confi
         assert current["confirmed_script_id"] == before["confirmed_script_id"]
 
 
-def test_script_create_confirm_edit_and_empty_confirmation():
+def test_script_save_automatically_confirms_and_empty_save_clears_availability():
     with generation_session() as session:
         e, service = setup(session)
         saved = service.save_script(
-            e,
-            {
-                "script_id": None,
-                "content": "script",
-                "content_version": "1",
-            },
+            e, {"script_id": None, "content": "script", "content_version": "1"}
         )
         identifier = saved["script"]["id"]
         assert saved["content_version"] == "2"
-        assert saved["script"]["state"] == "unconfirmed"
+        assert saved["script"]["state"] == "confirmed"
+        assert saved["confirmed_script_id"] == identifier
         with pytest.raises(Conflict):
             service.save_script(
                 e, {"script_id": None, "content": "duplicate", "content_version": "2"}
             )
         confirmed = service.confirm(e, identifier, {"content_version": "2"})
-        assert confirmed["confirmed_script_id"] == identifier
-        assert confirmed["content_version"] == "3"
-        assert service.confirm(e, identifier, {"content_version": "3"}) == confirmed
+        assert confirmed["content_version"] == "2"
         edited = service.save_script(
-            e,
-            {
-                "script_id": identifier,
-                "content": "revised",
-                "content_version": "3",
-            },
+            e, {"script_id": identifier, "content": "revised", "content_version": "2"}
         )
-        assert edited["script"]["state"] == "unconfirmed"
-        assert service.get(e)["confirmed_script_id"] is None
+        assert edited["script"]["state"] == "confirmed"
+        assert service.get(e)["confirmed_script_id"] == identifier
         cleared = service.save_script(
-            e,
-            {
-                "script_id": identifier,
-                "content": " \n",
-                "content_version": "4",
-            },
+            e, {"script_id": identifier, "content": " \n", "content_version": "3"}
         )
-        assert cleared["content_version"] == "5"
+        assert cleared["content_version"] == "4"
+        assert cleared["confirmed_script_id"] is None
         with pytest.raises(Exception) as exc:
-            service.confirm(e, identifier, {"content_version": "5"})
+            service.confirm(e, identifier, {"content_version": "4"})
         assert exc.value.status_code == 422
-        assert service.get(e)["content_version"] == "5"
+        assert service.get(e)["content_version"] == "4"
 
 
 def test_selection_preserves_candidates_and_confirmation_is_explicit():
@@ -132,7 +211,7 @@ def test_selection_preserves_candidates_and_confirmation_is_explicit():
             {"project_id": e, "position": 2, "content": "two"}
         )
         previous = service.get(e)
-        assert int(previous["content_version"]) > 3
+        assert int(previous["content_version"]) == 3
         selected = service.select_script(
             e, {"script_id": str(second.id), "content_version": previous["content_version"]}
         )
@@ -221,18 +300,18 @@ def test_format_only_script_save_keeps_legacy_confirmation_and_increments_versio
             {
                 "script_id": sid,
                 "content": "正文",
-                "content_version": "3",
+                "content_version": "2",
                 "editor_document": {
                     "ops": [{"insert": "正文", "attributes": {"bold": True}}, {"insert": "\n"}]
                 },
             },
         )
-        assert formatted["content_version"] == "4"
+        assert formatted["content_version"] == "3"
         assert formatted["script"]["state"] == "confirmed"
         assert service.get(e)["confirmed_script_id"] == sid
         with pytest.raises(Conflict):
             service.save_script(
-                e, {"script_id": sid, "content": "旧窗口写入", "content_version": "3"}
+                e, {"script_id": sid, "content": "旧窗口写入", "content_version": "2"}
             )
 
 
@@ -305,6 +384,81 @@ def test_scopes_and_input_validation():
         assert service.get(e)["content_version"] == "1"
 
 
+def test_story_settings_respect_project_ownership_and_archive_scope():
+    from short_drama.core.identity import ActorContext
+
+    owner = ActorContext(1, "owner", "owner@example.test", True, 1, "", "settings-test")
+    with generation_session() as session:
+        session.info["actor"] = owner
+        project_id, service = setup(session)
+        other_id, _ = setup(session)
+        empty = service.story_settings(project_id)
+        saved = service.save_story_settings(project_id, {**empty, "logline": "owner's story"})
+        assert service.story_settings(other_id) == empty
+        session.info["actor"] = ActorContext(
+            2, "other", "other@example.test", True, 2, "", "settings-test"
+        )
+        with pytest.raises(NotFound):
+            service.story_settings(project_id)
+        with pytest.raises(NotFound):
+            service.save_story_settings(project_id, {**saved, "logline": "unauthorized"})
+        session.info["actor"] = owner
+        assert service.story_settings(project_id) == saved
+        ProjectService(session).delete_project(project_id, "1")
+        with pytest.raises(NotFound):
+            service.story_settings(project_id)
+        with pytest.raises(NotFound):
+            service.save_story_settings(project_id, saved)
+
+
+def test_http_story_settings_serialization_validation_and_conflict():
+    import asyncio
+
+    import httpx
+
+    from short_drama.api.dependencies import get_project_writing_service
+    from short_drama.core.config import Settings
+    from short_drama.main import create_app
+    from short_drama.schemas.project_writing import StorySettingsRead
+
+    calls = []
+
+    class Service:
+        def story_settings(self, project_id):
+            assert project_id == 2
+            return StorySettingsRead().model_dump(mode="json")
+
+        def save_story_settings(self, project_id, payload):
+            calls.append((project_id, payload.model_dump()))
+            if payload.row_version != 0:
+                raise WorkflowError("story_settings_version_conflict", "版本已变化", 409)
+            return {**payload.model_dump(), "row_version": 1}
+
+    async def run():
+        app = create_app(Settings(_env_file=None))
+        app.dependency_overrides[get_project_writing_service] = Service
+        url = "/api/v1/projects/2/story-settings"
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://test"
+        ) as client:
+            response = await client.get(url)
+            assert response.status_code == 200
+            empty = response.json()
+            assert empty["row_version"] == "0"
+            saved = await client.put(url, json={**empty, "synopsis": "  梗概\n"})
+            assert saved.status_code == 200
+            assert saved.json()["row_version"] == "1"
+            assert saved.json()["synopsis"] == "  梗概\n"
+            conflict = await client.put(url, json=saved.json())
+            assert conflict.status_code == 409
+            assert conflict.json()["error"]["code"] == "story_settings_version_conflict"
+            for invalid in [{**empty, "content_version": "1"}, {**empty, "logline": "x" * 201}]:
+                assert (await client.put(url, json=invalid)).status_code == 422
+        assert len(calls) == 2 and calls[0][0] == 2
+
+    asyncio.run(run())
+
+
 def test_http_writing_contract_and_closed_inputs():
     import asyncio
 
@@ -320,6 +474,8 @@ def test_http_writing_contract_and_closed_inputs():
         "project_id": "2",
         "content_version": "1",
         "novel": document,
+        "outline": None,
+        "active_writing_tasks": [],
         "editing_script": script,
         "confirmed_script_id": None,
     }
@@ -336,7 +492,7 @@ def test_http_writing_contract_and_closed_inputs():
 
         def save_script(self, project_id, payload):
             calls.append(payload)
-            return {"content_version": "2", "script": script}
+            return {"content_version": "2", "script": script, "confirmed_script_id": None}
 
         def select_script(self, project_id, payload):
             calls.append(payload)

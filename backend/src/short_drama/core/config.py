@@ -1,3 +1,4 @@
+from typing import Literal
 from urllib.parse import quote, urlsplit
 
 from minio.helpers import check_bucket_name
@@ -77,6 +78,13 @@ class Settings(BaseSettings):
     agent_enabled: bool = True
     agent_lease_seconds: int = Field(default=180, ge=150, le=3600)
     agent_poll_seconds: int = Field(default=5, ge=3, le=60)
+    agent_run_decision_cap: int = Field(default=240, ge=20, le=2000)
+    agent_run_output_token_cap: int = Field(default=2_000_000, ge=100_000, le=20_000_000)
+    agent_progress_window_operations: int = Field(default=24, ge=8, le=100)
+    agent_progress_zero_windows: int = Field(default=2, ge=1, le=5)
+    agent_requirement_attempt_cap: int = Field(default=4, ge=2, le=10)
+    agent_reviewer_mode: Literal["auto", "same_model"] = "auto"
+    agent_stop_at_boundary: bool = True
     generation_batch_image_concurrency: int = Field(default=2, ge=1, le=8)
     generation_batch_video_concurrency: int = Field(default=1, ge=1, le=4)
     generation_download_timeout: int = Field(default=60, ge=10, le=600)

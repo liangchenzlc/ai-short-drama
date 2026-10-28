@@ -677,9 +677,7 @@ export function CanvasTimelineDialog({
             open={open}
             centered
             footer={null}
-            // Keep the desktop LibTV proportions while allowing the editor to
-            // remain usable on narrow screens instead of rendering a clipped
-            // fixed-width modal.
+            // Keep the desktop LibTV proportions within the available window.
             width="min(1160px, calc(100vw - 24px))"
             destroyOnHidden
             onCancel={() => {
@@ -953,7 +951,7 @@ export function CanvasTimelineDialog({
                             <span className="tabular-nums" style={{ color: theme.accent.primary }}>
                                 {formatTimelineTime((selectedMediaClip.sourceStartMs || 0) + selectedMediaClip.durationMs)}
                             </span>
-                            <span className="ml-auto hidden opacity-45 sm:inline">数值微调精确裁剪，播放头处可分割；拖拽手柄快速裁剪</span>
+                            <span className="ml-auto opacity-45 inline">数值微调精确裁剪，播放头处可分割；拖拽手柄快速裁剪</span>
                         </div>
                     </div>
                 ) : null}

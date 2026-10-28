@@ -22,8 +22,10 @@ export function useEpisodeWriting(projectId: string, extraBarrier?: () => Naviga
         const doc = stored.document as Partial<WritingDraft>;
         if (!doc || typeof doc.novel !== 'string' || typeof doc.script !== 'string' || !(doc.script_id === null || typeof doc.script_id === 'string' && /^[0-9]+$/.test(doc.script_id))) throw new Error('正文恢复记录无效');
         if (doc.editor_document != null && (!isEditorDocument(doc.editor_document) || documentText(doc.editor_document) !== doc.script)) throw new Error('剧本格式恢复记录无效');
-        if (doc.pending && (!['novel', 'script'].includes(doc.pending.field) || typeof doc.pending.content !== 'string' || !doc.pending.before || !/^\d+$/.test(doc.pending.before.content_version))) throw new Error('正文保存回执恢复记录无效');
-        return { base_version: stored.base_version, novel: doc.novel, script: doc.script, script_id: doc.script_id, editor_document: doc.editor_document ?? null, pending: doc.pending ?? null };
+        if (doc.outline !== undefined && typeof doc.outline !== 'string') throw new Error('大纲恢复记录无效');
+        if (doc.pending && (!['novel', 'outline', 'script'].includes(doc.pending.field) || typeof doc.pending.content !== 'string' || !doc.pending.before || !/^\d+$/.test(doc.pending.before.content_version))) throw new Error('正文保存回执恢复记录无效');
+        if (doc.script_change_source !== undefined && doc.script_change_source !== 'import') throw new Error('剧本变更来源恢复记录无效');
+        return { base_version: stored.base_version, novel: doc.novel, outline: doc.outline, script: doc.script, script_id: doc.script_id, editor_document: doc.editor_document ?? null, pending: doc.pending ?? null, script_change_source: doc.script_change_source };
       },
       save: ({ base_version, ...document }) => saveRecovery(scope, { format: 1, base_version, document }),
       clear: () => clearRecovery(scope),

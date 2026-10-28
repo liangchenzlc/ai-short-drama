@@ -20,6 +20,7 @@ def main():
     configure_logging()
     settings = Settings()
     engine = build_engine(settings)
+    log = logging.getLogger(__name__)
     from short_drama.db.readiness import (
         assert_agent_ready,
         assert_identity_ready,
@@ -27,7 +28,16 @@ def main():
     )
 
     assert_identity_ready(engine, settings)
-    assert_agent_ready(engine, settings)
+    agent_degraded = None
+    try:
+        assert_agent_ready(engine, settings)
+    except Exception as error:
+        # A missing Agent schema must not stop native, canvas or cleanup dispatch.
+        agent_degraded = type(error).__name__
+        log.error(
+            "Agent schema is not ready; scheduler continues without Agent work: reason=%s",
+            agent_degraded,
+        )
     with engine.connect() as connection:
         agent_schema_available = inspect_agent_schema(connection)["status"] == "ready"
         canvas_cleanup_available = inspect(connection).has_table("canvas_resource_deletions")
@@ -42,10 +52,11 @@ def main():
     renders = RenderPublisher(factory, settings)
     canvas_renders = CanvasRenderPublisher(factory, settings) if canvas_render_available else None
     canvas_locals = CanvasLocalPublisher(factory, settings) if canvas_local_available else None
-    if settings.agent_enabled:
-        from short_drama.agent.memory.runtime import AgentMemoryPublisher, AgentMemoryStore
+    agent_ready = settings.agent_enabled and agent_degraded is None
+    if agent_ready:
         from short_drama.agent.coordinator.publisher import AgentPublisher
         from short_drama.agent.coordinator.recovery import recover as recover_agent
+        from short_drama.agent.memory.runtime import AgentMemoryPublisher, AgentMemoryStore
 
         agents = AgentPublisher(factory, settings)
         memories = AgentMemoryPublisher(factory, settings)
@@ -53,7 +64,6 @@ def main():
     from short_drama.storage.minio import MinioStorage
 
     storage = MinioStorage(settings)
-    log = logging.getLogger(__name__)
     next_cleanup = 0
     next_agent_poll = 0
     next_canvas_cleanup = 0
@@ -112,7 +122,7 @@ def main():
                     from short_drama.service.storage_service import StorageService
 
                     purge_one(factory, StorageService(storage, settings))
-                if settings.agent_enabled:
+                if agent_ready:
                     recover_agent(factory, settings)
                     memory_store.recover()
                 if agent_schema_available and time.monotonic() >= next_agent_poll:
@@ -158,7 +168,7 @@ def main():
                     for _ in range(10):
                         if not canvas_locals.tick():
                             break
-                if settings.agent_enabled:
+                if agent_ready:
                     for _ in range(50):
                         if not agents.tick():
                             break

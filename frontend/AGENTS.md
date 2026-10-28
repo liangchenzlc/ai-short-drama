@@ -4,6 +4,10 @@
 
 React 19 + TypeScript strict + Vite 7 + Ant Design，无路径别名、无 ESLint/Prettier 配置，风格靠 typecheck、build 与相邻文件对齐。两个包：宿主 `frontend/` 与画布 `frontend/canvas/`，统一由宿主安装、启动、构建。
 
+## 桌面支持范围
+
+宿主与无限画布均只支持桌面浏览器，最低内容视口宽度 **1280 CSS px**。新增和修改页面不设计手机、平板、触屏专属布局或验收矩阵；桌面多栏、容器排布、面板调宽、键盘可访问性和内部滚动继续维护。不得重新引入按设备切换的抽屉、工具栏或焦点陷阱，具体尺寸与验收见 [PRODUCT.md](PRODUCT.md)、[DESIGN.md](DESIGN.md)。
+
 ## 文件存放
 
 | 目录 | 放什么 | 不该放 |

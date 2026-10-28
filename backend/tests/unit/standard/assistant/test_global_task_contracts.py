@@ -7,11 +7,11 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai.tools import ToolDefinition
 
-from short_drama.agent.memory.context import validated_facts
-from short_drama.agent.memory.sources import token_estimate
-from short_drama.agent.gateway.protocol import AgentGatewayError
 from short_drama.agent.coordinator.runtime import freeze_input
 from short_drama.agent.core.events import budget_limits, initial_usage
+from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.memory.context import validated_facts
+from short_drama.agent.memory.sources import token_estimate
 from short_drama.schemas.agent_memory import MemoryMaintenanceResult
 from short_drama.schemas.assistant_task import (
     AssistantTaskMessage,
@@ -70,13 +70,16 @@ def test_skill_tools_are_bounded_and_never_accept_owner_storage_or_executable_in
     assert search().limit <= 20
     assert load(skill_id="script.v1", content_version="1").skill_id == "script.v1"
     assert resource(activation_id="9007199254740993", path="assets/example.json").offset == 0
+    # Historical script resources are readable as text; execution remains outside this contract.
+    assert resource(activation_id="1", path="scripts/run.py").path == "scripts/run.py"
     for schema, body in (
         (search, {"limit": 10000}),
         (search, {"owner_user_id": "2"}),
         (load, {"skill_id": "script.v1", "content_version": "1", "source": "manual"}),
         (resource, {"activation_id": "1", "path": "../secret.txt"}),
         (resource, {"activation_id": "1", "path": "https://example.invalid/secret.txt"}),
-        (resource, {"activation_id": "1", "path": "scripts/run.py"}),
+        (resource, {"activation_id": "1", "path": "scripts/run.py", "execute": True}),
+        (resource, {"activation_id": "1", "path": "scripts/run.py", "command": "python run.py"}),
         (resource, {"activation_id": "1", "path": "assets/example.json", "bucket": "private"}),
     ):
         with pytest.raises(ValidationError):
@@ -645,7 +648,7 @@ def test_subject_identity_distinguishes_same_node_key_in_two_canvases_and_preser
     from short_drama.agent.context.subjects import (
         snapshot_subjects,
         subject_key,
-        subject_memory_keys
+        subject_memory_keys,
     )
 
     assert subject_key("1", "canvas", "a", "node", "same") != subject_key(

@@ -32,7 +32,7 @@ export function readRenderRecoveryRecord(scope: string, storage?: RecoveryStorag
 }
 export function readRenderAttempt(scope: string, storage?: RecoveryStorage | null) {
   const record = readRenderRecoveryRecord(scope, storage);
-  if (record.damaged !== null) throw new CreationRecoveryError('合成请求恢复记录无法读取，已阻止新请求。请先下载完整记录并核对任务中心、导出和预览记录。');
+  if (record.damaged !== null) throw new CreationRecoveryError('合成请求恢复记录无法读取，已阻止新请求。请先下载完整记录并核对当前作品的导出和预览记录。');
   return record.attempt;
 }
 export function discardDamagedRenderAttempt(scope: string, expectedRaw: string, storage?: RecoveryStorage | null): void {

@@ -10,6 +10,7 @@ from .agent import (
     AgentTurn,
 )
 from .agent_context import AgentAttachment, AgentSkill
+from .agent_graph import AgentGraphCheckpoint, AgentGraphWrite
 from .agent_history import AgentDiscussionRevision
 from .agent_media import AgentMediaRequest
 from .agent_memory import (
@@ -23,6 +24,7 @@ from .agent_memory import (
 from .agent_preference import AgentPreference
 from .agent_skill import AgentSkillSetting, AgentSkillVersion
 from .agent_task import AgentOperation, AgentTask, AgentTaskControl, AgentTaskInput
+from .agent_task_requirement import AgentTaskRequirement
 from .agent_undo import AgentBatchUndo
 from .ai_generation_record import AIGenerationRecord
 from .ai_model_config import AIModelConfig
@@ -72,6 +74,8 @@ from .project import Project
 from .project_assembly import ProjectAssembly, ProjectAssemblyClip, ProjectRenderJob
 from .project_novel import ProjectNovel
 from .project_script import ProjectScript
+from .project_story_outline import ProjectStoryOutline
+from .project_story_settings import ProjectStorySettings
 from .script_shot_record import ScriptShotRecord
 from .shot_asset import ShotAsset
 from .shot_image import ShotImage
@@ -89,6 +93,9 @@ __all__ = [
     "AgentBatchUndo",
     "AgentTaskInput",
     "AgentTaskControl",
+    "AgentTaskRequirement",
+    "AgentGraphCheckpoint",
+    "AgentGraphWrite",
     "AgentOperation",
     "CanvasRenderJob",
     "CanvasLocalJob",
@@ -147,6 +154,8 @@ __all__ = [
     "ProjectAssemblyClip",
     "ProjectRenderJob",
     "ProjectNovel",
+    "ProjectStoryOutline",
+    "ProjectStorySettings",
     "ProjectScript",
     "Asset",
     "AssetImageCandidate",
@@ -174,7 +183,10 @@ from .collaboration import (
 )
 from .image_group import ImageGroup, ImageGroupItem, ImageOperation
 from .native_voice import CharacterVoice, ProjectSoundMode, ShotDialogue
+from .project_script_revision import ProjectScriptRevision
 from .project_sound import ProjectSound, ProjectVoiceDefaults, SoundMediaReference
+
+__all__ += ["ProjectScriptRevision"]
 
 __all__ += [
     "ImageGroup",

@@ -19,9 +19,9 @@ test('unplayable sources cannot enter the track and reserved shots survive editi
   await expect(page.locator('.assembly-track-clip')).toHaveCount(1);
   await expect(page.getByRole('button', { name: '移除镜头 3 的问题片段' })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('reserved-shots-desktop.png'), fullPage: true, animations: 'disabled' });
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await page.screenshot({ path: info.outputPath('reserved-shots-mobile.png'), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: info.outputPath('reserved-shots-desktop-1280.png'), fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole('button', { name: '删除片段', exact: true }).click();
   await expect(problems).toHaveCount(0);
@@ -51,8 +51,8 @@ test('result playback resets the cursor and uses the frozen aspect and source th
   await expect(page.getByRole('button', { name: '删除片段', exact: true })).toBeDisabled();
   await expect(page.getByRole('region', { name: '实际成片播放' })).toHaveAttribute('data-playback-state', 'ready');
   await page.screenshot({ path: info.outputPath('frozen-result-desktop.png'), fullPage: true, animations: 'disabled' });
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 844 });
   await expect(page.locator('.assembly-result-screen')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await page.screenshot({ path: info.outputPath('frozen-result-mobile.png'), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: info.outputPath('frozen-result-desktop-1280.png'), fullPage: true, animations: 'disabled' });
 });

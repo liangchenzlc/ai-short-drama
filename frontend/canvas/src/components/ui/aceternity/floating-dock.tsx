@@ -69,12 +69,6 @@ const DOCK_METRICS: Record<NonNullable<FloatingDockProps["size"]>, DockMetrics> 
     libtv: { base: 32, magnified: 32, icon: 18, iconMagnified: 18, distance: 0 },
 };
 
-const TOUCH_DOCK_METRICS: Record<NonNullable<FloatingDockProps["size"]>, DockMetrics> = {
-    default: { base: 40, magnified: 40, icon: 18, iconMagnified: 18, distance: 0 },
-    compact: { base: 36, magnified: 36, icon: 16, iconMagnified: 16, distance: 0 },
-    libtv: { base: 32, magnified: 32, icon: 18, iconMagnified: 18, distance: 0 },
-};
-
 function useSafeReducedMotion() {
     const [reduced, setReduced] = useState(() => {
         if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
@@ -100,29 +94,8 @@ function useSafeReducedMotion() {
 export const FloatingDock = forwardRef<HTMLDivElement, FloatingDockProps>(function FloatingDock({ items, size = "default", embedded = false, className, style, ariaLabel = "画布工具", showLabels = false }, forwardedRef) {
     const mouseX = useMotionValue(Number.POSITIVE_INFINITY);
     const reducedMotion = useSafeReducedMotion();
-    const [coarsePointer, setCoarsePointer] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches);
-    // 窄屏下 dock 按钮总宽易超出可用宽度：此时允许横向滚动并禁用放大（放大依赖 overflow-visible，与滚动互斥）
-    const [narrow, setNarrow] = useState(() => (typeof window !== "undefined" ? window.innerWidth < 768 : false));
-
-    useEffect(() => {
-        if (typeof window.matchMedia !== "function") return;
-        const media = window.matchMedia("(pointer: coarse)");
-        const update = () => setCoarsePointer(media.matches);
-        update();
-        media.addEventListener("change", update);
-        return () => media.removeEventListener("change", update);
-    }, []);
-
-    useEffect(() => {
-        const update = () => setNarrow(window.innerWidth < 768);
-        window.addEventListener("resize", update);
-        return () => window.removeEventListener("resize", update);
-    }, []);
-
-    // scrollable 场景（触屏或窄屏）禁用放大并允许横向滚动，保证按钮始终可达
-    const scrollable = coarsePointer || narrow;
-    const motionEnabled = !reducedMotion && !scrollable;
-    const metrics = coarsePointer ? TOUCH_DOCK_METRICS[size] : DOCK_METRICS[size];
+    const motionEnabled = !reducedMotion;
+    const metrics = DOCK_METRICS[size];
 
     return (
         <motion.div
@@ -131,7 +104,7 @@ export const FloatingDock = forwardRef<HTMLDivElement, FloatingDockProps>(functi
             aria-label={ariaLabel}
             className={cn(
                 "aceternity-floating-dock flex",
-                scrollable ? "overflow-x-auto" : "overflow-visible",
+                "overflow-visible",
                 showLabels ? "items-center" : "items-end",
                 embedded ? "shadow-none" : "border backdrop-blur-2xl",
                 showLabels
@@ -142,15 +115,7 @@ export const FloatingDock = forwardRef<HTMLDivElement, FloatingDockProps>(functi
                         : size === "compact"
                           ? "h-10 gap-0.5 rounded-[var(--dock-radius-compact)] px-1.5"
                           : "h-11 gap-0.5 rounded-[var(--dock-radius-tight)] px-2"
-                    : coarsePointer
-                      ? embedded
-                          ? size === "compact"
-                              ? "h-10 gap-1 px-0.5"
-                              : "h-11 gap-1 px-0.5"
-                          : size === "compact"
-                            ? "h-11 gap-1 rounded-[var(--dock-radius-tight)] px-1.5 pb-1"
-                            : "h-12 gap-1 rounded-[var(--panel-radius)] px-2 pb-1"
-                      : embedded
+                    : embedded
                         ? size === "compact"
                             ? "h-8 gap-0.5 px-0.5 pb-0.5"
                             : "h-9 gap-0.5 px-0.5 pb-0.5"

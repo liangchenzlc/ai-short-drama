@@ -2,7 +2,7 @@ import { confirmAction } from '../../components/ui/confirm';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Checkbox, ConfigProvider, Drawer, Input, Pagination, Radio, Select, Spin, Table, Tag } from 'antd';
 import { Link } from 'react-router-dom';
-import { generationBatches, type Batch, type BatchDetail, type BatchPreview, type BatchRequest, type BatchScene, type BatchScope } from '../../api/modules/generation-batches';
+import { generationBatches, type BatchDetail, type BatchPreview, type BatchRequest, type BatchScene, type BatchScope } from '../../api/modules/generation-batches';
 import { errorMessage } from '../../api/http';
 import { ConfigSelect } from './ConfigSelect';
 import { TaskDetail } from './TaskDetail';
@@ -158,19 +158,4 @@ export function BatchProgress({ id: initialId, onClose, presentation }: { id: st
     </div>}
     {task && <TaskDetail presentation={presentation} id={task} onClose={() => setTask(undefined)} onChanged={() => setRevision(v => v + 1)} onCreated={receipt => { setTask(receipt.generation_id); setRevision(v => v + 1); }}/>}
   </Drawer>;
-}
-
-export function BatchHistory({ selectedId, onSelect, presentation }: { selectedId?: string; onSelect: (id?: string) => void; presentation?: 'standard-creation' }) {
-  const selection = useBatchSelection('history');
-  const [open, setOpen] = useState(false), [items, setItems] = useState<Batch[]>([]), [total, setTotal] = useState(0), [offset, setOffset] = useState(0);
-  const [error, setError] = useState(''), [revision, setRevision] = useState(0);
-  useEffect(() => { if (!open) return; const controller = new AbortController(); void generationBatches.list(offset, controller.signal).then(page => { if (controller.signal.aborted) return; setItems(page.items); setTotal(page.total); setError(''); }).catch(cause => { if (!controller.signal.aborted) setError(errorMessage(cause)); }); return () => controller.abort(); }, [open, offset, revision]);
-  if (!selection.enabled && !selectedId) return null;
-  return <><Button onClick={() => { setOpen(true); setRevision(v => v + 1); }}>批次记录</Button>
-    <Drawer rootClassName={presentation ? 'standard-creation-drawer' : undefined} open={open} title="批次记录" width={680} onClose={() => setOpen(false)}>
-      {error && <Alert type="error" message={error}/>}
-      <Button onClick={() => setRevision(v => v + 1)}>刷新记录</Button>
-      <Table rowKey="id" dataSource={items} pagination={false} columns={[{ title: '类型', render: (_, item) => labels[item.scene] }, { title: '状态', render: (_, item) => labels[item.status] }, { title: '数量', dataIndex: 'total' }, { title: '操作', render: (_, item) => <Button onClick={() => { onSelect(item.id); setOpen(false); }}>查看批次</Button> }]}/>
-      <Pagination current={offset / 20 + 1} pageSize={20} total={total} showSizeChanger={false} onChange={page => setOffset((page - 1) * 20)}/>
-    </Drawer>{selectedId && <BatchProgress presentation={presentation} key={selectedId} id={selectedId} onClose={() => onSelect(undefined)}/>}</>;
 }

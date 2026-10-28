@@ -8,6 +8,7 @@ import { StudioFeedback } from '../../components/ui/StudioFeedback';
 import { confirmAction } from '../../components/ui/confirm';
 import { useAuth } from '../auth/AuthSession';
 import { EpisodeEditorSlot, useEpisodeCreationControls } from '../projects/EpisodeCreationWorkspace';
+import { ResourceViewToggle, useResourceView } from '../projects/ResourceViewToggle';
 import { creationScope, saveRecovery } from '../projects/creation-recovery';
 import type { NavigationBarrier } from '../projects/writing-navigation';
 import { useAssetLibrary } from './useAssetLibrary';
@@ -37,6 +38,7 @@ function ScopedEpisodeAssets({ scope, title, readOnly, toolbar, refreshToken, re
   toolbar?: ReactNode; refreshToken: number; registerBarrier?: (barrier: NavigationBarrier | null) => void; actor: string;
 }) {
   const creation = useEpisodeCreationControls();
+  const [view, setView] = useResourceView('assets');
   const [kind, setKind] = useState<AssetKind | 'all'>('all');
   const [query, setQuery] = useState('');
   const [offset, setOffset] = useState(0);
@@ -102,7 +104,12 @@ function ScopedEpisodeAssets({ scope, title, readOnly, toolbar, refreshToken, re
     alive.current = true;
     return () => { alive.current = false; requests.current.detail?.abort(); requests.current.import?.abort(); };
   }, [recoveryKey]);
-  useEffect(() => { if (refreshToken) refresh(); }, [refreshToken, refresh]);
+  useEffect(() => {
+    if (!refreshToken) return;
+    setOverrides({}); refresh();
+    const id = selection.current;
+    if (id && !id.startsWith('draft:')) void readDetail(id);
+  }, [refreshToken, refresh]);
   useEffect(() => {
     registerBarrier?.({ hasUnsettled: () => !!editorBarrier.current?.hasUnsettled() || localSession.hasUnsettled(),
       hasMemoryOnlyChanges: () => localSession.hasMemoryOnlyChanges() || !!editorBarrier.current?.hasMemoryOnlyChanges?.(),
@@ -256,8 +263,8 @@ function ScopedEpisodeAssets({ scope, title, readOnly, toolbar, refreshToken, re
       registerBarrier={registerEditor} onArtwork={receiveArtwork} onRemove={() => void removeSaved(overrides[detail.id] ?? detail)}/>
     : <section className="standard-object-panel standard-asset-empty" aria-label="素材工作区">{detailLoading ? <div className="standard-asset-workspace-state" role="status"><Spin/><strong>正在加载作品</strong></div> : detailError ? <div className="standard-asset-workspace-state" role="alert"><TriangleAlert size={30}/><strong>作品加载失败</strong><p>{detailError}</p><Button onClick={() => selectedId && void readDetail(selectedId)}>重新读取素材</Button></div> : <div className="standard-asset-workspace-state"><ImageIcon size={30}/><strong>选择一个对象开始制作</strong>{!readOnly && <Button onClick={() => void addDraft()}>新增素材</Button>}</div>}</section>;
 
-  return <section className="standard-assets-list" aria-label={title}>
-    <header className="standard-assets-heading"><h2><span className="standard-assets-title-text">当前素材</span> <small>{categoryCounts ? categoryCounts.all + drafts.length : '—'}</small></h2><div className="standard-assets-tools">{!readOnly && <Button type="text" aria-label="新增素材" title="新增素材" icon={<Plus size={17}/>} disabled={!!recoveryError || !!removingId} onClick={() => void addDraft()}/>}{toolbar}</div></header>
+  return <section className={`standard-assets-list resource-view-${view}`} aria-label={title}>
+    <header className="standard-assets-heading"><h2><span className="standard-assets-title-text">资产库</span> <small>{categoryCounts ? categoryCounts.all + drafts.length : '—'}</small></h2><div className="standard-assets-tools"><ResourceViewToggle value={view} onChange={setView}/>{toolbar}</div></header>
     <div className="standard-assets-filters"><Input prefix={<Search size={15} aria-hidden="true"/>} value={query} onChange={event => { setQuery(event.target.value); setOffset(0); }} aria-label="搜索素材" placeholder="搜索名称或描述" allowClear/><div className="standard-asset-category-tabs" aria-label="素材类别">{Object.entries(labels).map(([value, label]) => <button type="button" key={value} aria-label={label} aria-pressed={kind === value} onClick={() => { setKind(value as AssetKind | 'all'); setOffset(0); }}><span>{label}</span><small>{categoryCounts ? categoryCounts[value as AssetKind | 'all'] + drafts.filter(item => value === 'all' || item.kind === value).length : '—'}</small></button>)}</div></div>
     {countError && <StudioFeedback type="error" title="素材分类" noticeKey={`asset-counts`} message={countError} actions={<Button size="small" onClick={() => setCountRevision(value => value + 1)}>重试读取分类数量</Button>}/>}
     {notice && <StudioFeedback type={notice.type} title="删除素材" noticeKey={`asset-remove:${notice.assetId}`} message={notice.message} actions={<Button onClick={() => { refresh(); if (selection.current === notice.assetId && !notice.assetId.startsWith('draft:')) void readDetail(notice.assetId); }}>重新读取素材</Button>}/>}
@@ -273,9 +280,10 @@ function ScopedEpisodeAssets({ scope, title, readOnly, toolbar, refreshToken, re
     <div className="standard-assets-scroll" aria-busy={loading}>{error && (known.length ? <StudioFeedback type="error" title="素材列表" noticeKey={`asset-list`} message={error} actions={<Button onClick={refresh}>重新加载素材</Button>}/> : <div className="standard-assets-list-state" role="alert"><TriangleAlert size={30}/><strong>列表加载失败</strong><p>{error}</p><Button onClick={refresh}>重新加载素材</Button></div>)}
       {loading && !known.length ? <div role="status" aria-label="正在加载素材列表">{[0, 1, 2].map(index => <div className="standard-asset-skeleton" key={index}><Skeleton.Image active/><Skeleton active title={false} paragraph={{ rows: 1 }}/></div>)}</div> : known.map(item => <StandardEpisodeAssetCard key={item.id} asset={item} selected={selectedId === item.id} disabled={!!removingId} readOnly={readOnly} removing={removingId === item.id} entryRef={node => { if (node) entries.current.set(item.id, node); else entries.current.delete(item.id); }} onOpen={() => void selectAsset(item.id, item)} onRemove={() => void removeSaved(item)}/>)}
       {visibleDrafts.map(item => <StandardEpisodeAssetCard key={item.id} asset={item} selected={selectedId === item.id} disabled={!!removingId} readOnly={readOnly || !!recoveryError} removing={removingId === item.id} entryRef={node => { if (node) entries.current.set(item.id, node); else entries.current.delete(item.id); }} onOpen={() => void selectAsset(item.id)} onRemove={() => void removeDraft(item.id)}/>)}
-      {!loading && !error && !known.length && !visibleDrafts.length && <div className="standard-assets-list-state"><ImageIcon size={30}/><strong>{query ? '没有匹配的条目' : '还没有素材'}</strong><p>{query ? '试试其他关键词或分类。' : '从剧本提取，或手动新增。'}</p>{!readOnly && !query && <Button onClick={() => void addDraft()}>新增素材</Button>}</div>}
+      {!loading && !error && !known.length && !visibleDrafts.length && <div className="standard-assets-list-state"><ImageIcon size={30}/><strong>{query ? '没有匹配的条目' : '还没有资产'}</strong><p>{query ? '试试其他关键词或分类。' : '点击下方创建，添加角色、场景或道具。'}</p></div>}
       <Pagination size="small" current={Math.floor(offset / 20) + 1} pageSize={20} total={total} hideOnSinglePage showSizeChanger={false} onChange={page => setOffset((page - 1) * 20)}/>
     </div>
+    <Button className="resource-create-button" type="text" aria-label="创建资产" icon={<Plus size={16}/>} disabled={readOnly || !!recoveryError || !!removingId} onClick={() => void addDraft()}>创建</Button>
     <EpisodeEditorSlot stage="assets">{editor}</EpisodeEditorSlot>
 
   </section>;

@@ -18,6 +18,7 @@ from short_drama.agent.core.fence import owns_execution as owns_execution
 from short_drama.agent.core.items import allocate_item_seq
 from short_drama.agent.core.state import finish_locked, mark_scheduled, wait_locked
 from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.harness import ENGINE_VERSION
 from short_drama.agent.memory.context import assemble_memory_locked, history_projection_locked
 from short_drama.agent.memory.sources import restricted_messages
 from short_drama.agent.skill.contracts import (
@@ -94,8 +95,9 @@ from short_drama.agent.tools.standard import (
 )
 from short_drama.core.exceptions import BusinessError, NotFound, WorkflowError
 from short_drama.dao.agent_task_dao import AgentTaskDAO
+from short_drama.dao.agent_transcript_dao import AgentTranscriptDAO
 from short_drama.domain import AgentSkillVersion, AIModelConfig, Project, ProjectCanvas
-from short_drama.domain.agent import AgentMessage, AgentRun, AgentToolCall, AgentTurn
+from short_drama.domain.agent import AgentMessage, AgentRun, AgentToolCall
 from short_drama.domain.agent_task import AgentOperation, AgentTaskInput
 from short_drama.domain.agent_undo import AgentBatchUndo
 from short_drama.service.agent_memory_store import (
@@ -433,6 +435,7 @@ def prepare_decision(session, conversation, run):
 
 def _describe(session, conversation, task, values):
     target = task.execution_target
+    harness = task.effective_state.get("engine") == ENGINE_VERSION
     if target is None:
         return {"target": None, "write_authorized": False}
     project = session.scalar(
@@ -452,15 +455,18 @@ def _describe(session, conversation, task, values):
     }
     if target["mode"] == "standard":
         result["storyboard_version"] = str(project.storyboard_version)
-        requests = standard_requests_locked(session, conversation, task)
+        requests = [] if harness else standard_requests_locked(session, conversation, task)
         result["write_authorized"] = bool(requests)
         result["available_tools"] = [STANDARD_TOOL] if requests else []
-        primary_requests = image_primary_requests_locked(session, conversation, task)
+        primary_requests = (
+            [] if harness else image_primary_requests_locked(session, conversation, task)
+        )
         if primary_requests:
             result["write_authorized"] = True
             result["available_tools"].append(IMAGE_PRIMARY_TOOL)
         if (
-            media_requests_locked(session, conversation, task)
+            not harness
+            and media_requests_locked(session, conversation, task)
             and generation_policy_locked(
                 session, conversation.owner_user_id
             ).media_generation_enabled
@@ -554,8 +560,8 @@ def _describe(session, conversation, task, values):
         if canvas is None:
             raise NotFound("目标画布不存在或无权访问")
         result["canvas_revision"] = str(canvas.row_version)
-        requests = canvas_requests_locked(session, conversation, task)
-        media = media_requests_locked(session, conversation, task)
+        requests = [] if harness else canvas_requests_locked(session, conversation, task)
+        media = [] if harness else media_requests_locked(session, conversation, task)
         policy = generation_policy_locked(session, conversation.owner_user_id)
         result["write_authorized"] = bool(requests or (media and policy.media_generation_enabled))
         result["available_tools"] = [CANVAS_TOOL] if requests else []
@@ -623,6 +629,22 @@ def _describe(session, conversation, task, values):
         result["next_model_offset"] = (
             values.model_offset + values.model_limit if len(models) > values.model_limit else None
         )
+    if harness:
+        from short_drama.agent.tools.autonomous import describe_scope
+        from short_drama.agent.tools.registry import tool_manifest
+        from short_drama.agent.tools.results import result_sources_locked
+
+        enabled = generation_policy_locked(
+            session, conversation.owner_user_id
+        ).media_generation_enabled
+        result.update(describe_scope(session, task))
+        result["result_sources"] = result_sources_locked(
+            session, task, before_id=values.result_before_id, limit=values.result_limit
+        )
+        result["write_authorized"] = True
+        result["available_tools"] = [
+            item["name"] for item in tool_manifest(task, media_enabled=enabled)
+        ]
     return result
 
 
@@ -637,6 +659,21 @@ def execute_locked(
     session, conversation, task, operation, *, settings=None, resource_prepared=None
 ):
     name = operation.tool_name
+    if task.effective_state.get("engine") == ENGINE_VERSION:
+        from short_drama.agent.tools.autonomous import (
+            HANDLERS,
+        )
+        from short_drama.agent.tools.autonomous import (
+            execute_locked as execute_autonomous,
+        )
+        from short_drama.agent.tools.scope import autonomous_scope
+
+        autonomous_scope(session, conversation, task, operation)
+        if name in HANDLERS:
+            return execute_autonomous(session, conversation, task, operation, settings)
+        run = session.get(AgentRun, operation.run_id)
+        if name not in (run.checkpoint or {}).get("available_tool_names", []):
+            raise WorkflowError("unknown_tool", "此工具不在当前任务能力目录中", 422)
     if name not in TOOL_SCHEMAS:
         raise WorkflowError("unknown_tool", "当前任务没有此工具能力", 422)
     schema, _description = TOOL_SCHEMAS[name]
@@ -835,18 +872,13 @@ def claim_operation(factory, settings, run_id, *, fence=None):
             finish_locked(session, conversation, run, "cancelled", {"code": "access_revoked"})
             return None
         apply_controls_locked(session, conversation, task, run)
-        if run.status in TERMINAL:
+        if run.status in TERMINAL or run.cancel_requested:
             return None
         if task.input_revision != task.applied_input_revision:
             apply_inputs_locked(session, conversation, task, run)
             mark_scheduled(run, phase="model")
             return None
-        turn = session.scalar(
-            select(AgentTurn)
-            .where(AgentTurn.run_id == run.id)
-            .order_by(AgentTurn.turn_no.desc())
-            .limit(1)
-        )
+        turn = AgentTranscriptDAO(session).latest_turn(run.id)
         if turn is None or not (turn.response or {}).get("applied"):
             finish_locked(
                 session, conversation, run, "failed", {"code": "agent_response_not_durable"}
@@ -884,7 +916,11 @@ def claim_operation(factory, settings, run_id, *, fence=None):
             tool_call_id=call.id,
             tool_name=call.tool_name,
             item_seq=allocate_item_seq(conversation),
-            tool_version=1,
+            tool_version=(
+                turn.request_messages[0].get("kwargs", {}).get("tool_version", 2)
+                if (run.checkpoint or {}).get("engine") == ENGINE_VERSION
+                else 1
+            ),
             plan_revision=task.plan_revision,
             input_revision=task.applied_input_revision,
             payload_hash=digest(arguments),
@@ -923,6 +959,51 @@ def claim_operation(factory, settings, run_id, *, fence=None):
         return operation.id
 
 
+def _abandon_operation_locked(session, conversation, run, operation_id, fence):
+    """Converge an unsettled operation after its delivery lost the lease.
+
+    The business effect and its receipt share one transaction, so an operation
+    still ``running`` here never committed. Marking it failed lets recovery
+    re-decide instead of leaving the task waiting on a phantom active row.
+    """
+    if fence is None or run.message_version != fence[0] or run.status in TERMINAL:
+        return False
+    operation = session.get(AgentOperation, operation_id)
+    if operation is None or operation.run_id != run.id or operation.status != "running":
+        return False
+    error = {
+        "code": "agent_lease_lost_operation",
+        "message": "执行租约已失效，本次工具调用未结算，将重新决策",
+        "retryable": True,
+    }
+    operation.result = {"error": error}
+    operation.error = error
+    operation.status, operation.phase = "failed", "terminal"
+    operation.row_version += 1
+    operation.updated_at = operation.finished_at = utcnow()
+    call = session.get(AgentToolCall, operation.tool_call_id)
+    if call is not None:
+        call.status, call.error, call.updated_at = "failed", error, utcnow()
+        call.result = {"codec": "agent.operation-ref", "operation_id": str(operation.id)}
+    task = task_for_run(session, run)
+    if task is not None:
+        task.phase = "at_boundary"
+        task.row_version += 1
+        task.updated_at = utcnow()
+        task_event(
+            session,
+            conversation,
+            task,
+            "step.requeued",
+            run=run,
+            call_id=str(operation.tool_call_id),
+            operation_id=str(operation.id),
+            tool_name=operation.tool_name,
+            error=error,
+        )
+    return True
+
+
 def complete_operation(factory, settings, run_id, operation_id, *, fence=None):
     resource_prepared = prepare_resource_read(factory, settings, run_id, operation_id, fence)
     with factory.begin() as session:
@@ -955,6 +1036,7 @@ def complete_operation(factory, settings, run_id, operation_id, *, fence=None):
             return
         _project, conversation, run = rows
         if not owns_execution(run, fence):
+            _abandon_operation_locked(session, conversation, run, operation_id, fence)
             return
         if tool == SKILL_RESOURCE and (
             not resource_prepared
@@ -997,11 +1079,11 @@ def complete_operation(factory, settings, run_id, operation_id, *, fence=None):
             if (operation.result or {}).get("skill_activations"):
                 result = {**result, "skill_activations": operation.result["skill_activations"]}
             if operation.tool_name == MEDIA_TOOL and not result.get("settled", True):
-                operation.result = result
+                persist_tool_result(run, operation, call, result)
                 operation.status, operation.phase = "waiting_media", "waiting_media"
                 operation.row_version += 1
                 operation.updated_at = utcnow()
-                call.status, call.result, call.updated_at = "waiting_generation", result, utcnow()
+                call.status, call.updated_at = "waiting_generation", utcnow()
                 task.status, task.phase = "waiting_media", "waiting_media"
                 task.row_version += 1
                 wait_locked(session, conversation, run, "waiting_generation")
@@ -1038,6 +1120,8 @@ def complete_operation(factory, settings, run_id, operation_id, *, fence=None):
             if (
                 operation.tool_name in {STANDARD_TOOL, CANVAS_TOOL}
                 and error.code == "assistant_delete_impact"
+                or (run.checkpoint or {}).get("engine") == ENGINE_VERSION
+                and error.code == "invalid_tool_arguments"
             ):
                 result["error"]["details"] = error.details
             operation.status, call.status = (
@@ -1049,16 +1133,37 @@ def complete_operation(factory, settings, run_id, operation_id, *, fence=None):
         finish_operation_locked(session, conversation, task, run, operation, call, result)
 
 
+def persist_tool_result(run, operation, call, result):
+    harness = (run.checkpoint or {}).get("engine") == ENGINE_VERSION
+    if harness:
+        from short_drama.agent.resources.contracts import assert_reference_payload
+
+        result = {**result, "receipt_operation_id": str(operation.id)}
+        assert_reference_payload(result)
+    operation.result = result
+    call.result = (
+        {"codec": "agent.operation-ref", "operation_id": str(operation.id)} if harness else result
+    )
+
+
 def finish_operation_locked(session, conversation, task, run, operation, call, result):
     if (operation.result or {}).get("skill_activations"):
         result = {**result, "skill_activations": operation.result["skill_activations"]}
-    operation.result = result
+    harness = (run.checkpoint or {}).get("engine") == ENGINE_VERSION
+    persist_tool_result(run, operation, call, result)
     operation.error = result.get("error")
     operation.phase = "terminal"
     operation.row_version += 1
     operation.updated_at = operation.finished_at = utcnow()
-    call.result, call.error, call.updated_at = result, operation.error, utcnow()
+    call.error, call.updated_at = operation.error, utcnow()
     session.flush()
+    if harness:
+        from short_drama.agent.harness.supervision import evidence_kind, record_progress
+        from short_drama.agent.tools.digest import result_digest
+
+        operation.result_digest = result_digest(operation.tool_name, result)
+        operation.evidence_kind = evidence_kind(operation.tool_name, result)
+        record_progress(session, conversation, task, run, operation, result)
     task.phase = "at_boundary"
     task.row_version += 1
     task_event(
@@ -1080,9 +1185,11 @@ def finish_operation_locked(session, conversation, task, run, operation, call, r
         error=operation.error,
         skill_activations=result.get("skill_activations", []),
     )
-    apply_controls_locked(session, conversation, task, run)
+    if not harness:
+        apply_controls_locked(session, conversation, task, run)
     if (
-        operation.status != "succeeded"
+        not harness
+        and operation.status != "succeeded"
         and operation.tool_name
         not in {
             "memory_catalog",
@@ -1102,6 +1209,14 @@ def finish_operation_locked(session, conversation, task, run, operation, call, r
         finish_locked(session, conversation, run, "failed", operation.error)
 
 
-def execute_tools(factory, settings, run_id, *, fence=None):
-    while (operation_id := claim_operation(factory, settings, run_id, fence=fence)) is not None:
+def execute_tools(factory, settings, run_id, *, fence=None, watch=None):
+    while True:
+        if watch is not None and watch.suspect:
+            return
+        operation_id = claim_operation(factory, settings, run_id, fence=fence)
+        if operation_id is None:
+            return
         complete_operation(factory, settings, run_id, operation_id, fence=fence)
+        if watch is not None and watch.suspect:
+            # A lost lease must not keep starting new operations in this delivery.
+            return

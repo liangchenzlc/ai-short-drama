@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import type { WritingNovel, WritingTask } from '../../src/api/modules/episode-writing';
 import type { ImageGroup } from '../../src/api/modules/image-groups';
 
 export const root = '/projects/10';
@@ -10,8 +11,9 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
   const unexpected: string[] = [];
   const errors: string[] = [];
   const modelPreferences = new Map<string, string>();
+  let storySettings = { row_version: '0', logline: '', synopsis: '', genre: '', character_bios: '' };
   const project = { id: '10', name: '雨夜来信', workspace_mode: 'standard', row_version: '1', canvas_count: 0, primary_canvas_id: null };
-  const writing = { project_id: '10', content_version: '1', novel: { id: '30', content: '雨夜，林晚拿着一封旧信走入车站。', updated_at: time }, editing_script: { id: '40', content: '林晚走进车站，抬头寻找站台。', state: 'confirmed', updated_at: time }, confirmed_script_id: '40' as string | null };
+  const writing = { project_id: '10', content_version: '1', novel: { id: '30', content: '雨夜，林晚拿着一封旧信走入车站。', updated_at: time }, outline: null as WritingNovel | null, active_writing_tasks: [] as WritingTask[], editing_script: { id: '40', content: '林晚走进车站，抬头寻找站台。', state: 'confirmed', updated_at: time }, confirmed_script_id: '40' as string | null };
   const asset = { id: '501', kind: 'character', name: '林晚', label: '主角', description: '黑发，穿着深色风衣。', prompt: '人物肖像，深色风衣', tags: [], scene_time: '', state: 'unconfirmed', row_version: '1', media_id: null, image: null, reference_count: 1, link_id: '601', position: 1 };
   const assets = [asset];
   const shots: any[] = Array.from({ length: 80 }, (_, index) => ({ id: String(101 + index), position: index + 1, script: `林晚走过雨夜中的站台，镜头 ${index + 1}，列车的光线映在她的眼睛里。`, duration_ms: 3000, source_excerpt: '', asset_ids: ['501'], row_version: '1', context_hash: 'a'.repeat(64), image_settings: { aspect: null, resolution: '2K', layout: 'single' }, image: null, deleted_at: null }));
@@ -71,6 +73,13 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     const reply = (data: any, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) });
     const paged = (items: any[]) => { const offset = Number(query.get('offset') || 0); const limit = Number(query.get('limit') || 20); return { items: items.slice(offset, offset + limit), total: items.length, offset, limit }; };
     if (path === '/auth/capabilities') return reply({ enabled: false });
+    if (path === `${root}/story-settings`) {
+      if (method === 'PUT') {
+        if (body.row_version !== storySettings.row_version) return reply({ error: { code: 'story_settings_version_conflict', message: '故事设定已变化' } }, 409);
+        storySettings = { ...body, row_version: String(BigInt(storySettings.row_version) + 1n) };
+      }
+      return reply(storySettings);
+    }
     if (path === '/ai/generations/by-idempotency-key') return reply(null);
     if (path === '/generation-references/uploads') return reply({ media_id: '991', name: 'reference.png', url: image }, 201);
     if (path.startsWith(`${root}/drafts`)) {
@@ -110,7 +119,7 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     if (path === '/projects/10/sound-mode') return reply({ mode: 'native', row_version: 1 });
     if (/^\/projects\/10\/characters\/\d+\/voice$/.test(path)) return reply({ row_version: 1, record_id: null, candidates: [] });
     if (path.endsWith('/dialogue')) return reply({ row_version: 1, mode: 'native', document: { lines: [{ character_id: '501', text: '这封信，终于送到了。', delivery: '平静而克制', speech: 'onscreen' }], reviewed: true }, characters: [{ id: '501', name: '林晚' }], voices: [] });
-    if (path === `${root}/assembly`) {
+    if (path === `${root}/assembly` || path === `${root}/assembly/editor`) {
       if (method === 'PATCH') { assembly.assembly.row_version = String(Number(assembly.assembly.row_version) + 1); Object.assign(assembly.assembly, { resolution: body.resolution }); }
       return reply(assembly);
     }
@@ -128,7 +137,8 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
     if (path === '/projects/10' || path === '/projects/10/open') { if (method === 'PATCH') Object.assign(project, body, { row_version: String(BigInt(project.row_version) + 1n) }); return reply(project); }
     if (path === `${root}/writing`) return reply(writing);
     if (path === `${root}/novel`) { writing.novel.content = body.content; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, novel: writing.novel }); }
-    if (path === `${root}/script`) { Object.assign(writing.editing_script, { content: body.content, editor_document: body.editor_document ?? null }); writing.editing_script.state = 'unconfirmed'; writing.confirmed_script_id = null; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, script: writing.editing_script }); }
+    if (path === `${root}/outline`) { writing.outline = { id: '31', content: body.content, updated_at: time }; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, outline: writing.outline }); }
+    if (path === `${root}/script`) { Object.assign(writing.editing_script, { content: body.content, editor_document: body.editor_document ?? null }); writing.editing_script.state = body.content.trim() ? 'confirmed' : 'unconfirmed'; writing.confirmed_script_id = body.content.trim() ? writing.editing_script.id : null; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply({ content_version: writing.content_version, script: writing.editing_script, confirmed_script_id: writing.confirmed_script_id }); }
     if (path === `${root}/scripts`) return reply(paged([candidate]));
     if (path === `${root}/scripts/41`) return reply(candidate);
     if (path === `${root}/editing-script`) { writing.editing_script = { ...writing.editing_script, id: '41', content: candidate.content, state: 'unconfirmed' }; writing.confirmed_script_id = null; writing.content_version = String(BigInt(writing.content_version) + 1n); return reply(writing); }

@@ -23,10 +23,3 @@
 .config-editor-tool-row > div { display: grid; gap: 6px; min-width: 0; }
 .config-editor-tool-row p { margin: 0; }
 .config-editor-tool-row .ant-switch { flex-shrink: 0; }
-@media (max-width: 600px) {
-  .config-form-toggles .form-check { min-height: 44px; }
-  .config-field-pair { grid-template-columns: minmax(0, 1fr); }
-  .config-header-row { grid-template-columns: minmax(0, 1fr); }
-  .config-header-row button { justify-self: start; }
-  .config-json-editor, .config-header-row input { font-size: 16px; }
-}

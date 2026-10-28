@@ -222,7 +222,7 @@ test('patch comparison and shared impact confirmation preserve the original vers
   await expect(page.getByRole('region', { name: '候选修改比较' })).toBeVisible();
   await expect(page.getByText('当前来源', { exact: true })).toBeVisible(); await expect(page.getByText('建议修改', { exact: true })).toBeVisible();
   await page.screenshot({ path: info.outputPath('artifact-diff-1440.png') });
-  await page.setViewportSize({ width: 390, height: 900 }); await page.screenshot({ path: info.outputPath('artifact-diff-390.png') });
+  await page.setViewportSize({ width: 1280, height: 900 }); await page.screenshot({ path: info.outputPath('artifact-diff-1280.png') });
   await page.getByRole('button', { name: '确认采用', exact: true }).click();
   await page.getByRole('dialog', { name: '确认采用候选' }).getByRole('button', { name: '确认采用', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '确认共享影响' })).toContainText('3 处引用');

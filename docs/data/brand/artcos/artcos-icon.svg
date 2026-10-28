@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" color="#101010" role="img" aria-labelledby="brand-title brand-desc">
+  <title id="brand-title">Artcos 应用图标</title>
+  <desc id="brand-desc">蓝绿渐变背景中的月白 A；弧形横梁形成打开的创作空间。</desc>
+  <defs><linearGradient id="artcos-ocean" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse"><stop stop-color="#123E67"/><stop offset=".52" stop-color="#126B80"/><stop offset="1" stop-color="#249282"/></linearGradient></defs>
+  <rect width="256" height="256" rx="56" fill="url(#artcos-ocean)"/>
+  <g fill="#F5F9F8"><path d="M105 52L40 216L88 216L102 180Q128 166 154 180L168 216L216 216L151 52Q147 40 134 40L122 40Q109 40 105 52ZM125 99Q126.5 95 128 95Q129.5 95 131 99L147 143Q128 136 109 143L125 99Z"/></g>
+</svg>

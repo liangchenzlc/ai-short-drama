@@ -1,0 +1,899 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Skill 管理页 · 界面原型</title>
+<style>
+:root{
+  --canvas:#101010; --navigation:#161616; --surface:#181818; --surface-muted:#202020;
+  --surface-raised:#1f1f20; --surface-hover:#242424; --media-canvas:#080808;
+  --ink:#f3f3f5; --sub:#b4b4bc; --placeholder:#9797a1; --disabled-ink:#737373;
+  --hair:#2d2d2d; --border-control:#4a4a4a; --border-hover:#737373;
+  --accent:#c1c1c5; --accent-fill:#f5f5f5; --accent-hover:#fff; --accent-active:#e5e5e5;
+  --accent-strong:#f5f5f5; --pale:#2b2b2b; --accent-border:#c1c1c5; --on-accent:#171717;
+  --success:#4ade80; --success-bg:#152a1c; --success-border:#2d593a;
+  --warning:#fbbf24; --warning-bg:#30271b; --warning-border:#675033;
+  --danger:#f87171; --danger-bg:#321f1f; --danger-border:#683b3b;
+  --read:#d9d9df;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#0a0a0a;font-family:'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:var(--ink);font-size:13px}
+.ic{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ic.sm{width:14px;height:14px}
+.ic.xs{width:12px;height:12px}
+
+/* ---------- gallery chrome (not captured) ---------- */
+.gallery{max-width:1520px;margin:0 auto;padding:40px 40px 100px}
+.g-head{margin-bottom:36px}
+.g-head h1{font-size:26px;font-weight:650;letter-spacing:-.025em;margin:0 0 8px}
+.g-head p{color:var(--sub);font-size:13px;line-height:1.8;margin:0;max-width:80ch}
+.board{margin:0 0 56px}
+.board > .screen{box-shadow:0 24px 80px rgb(0 0 0 / 55%)}
+.caption{display:flex;gap:12px;align-items:baseline;margin:14px 0 0;padding-left:2px}
+.caption b{font-size:13px;color:var(--ink);font-weight:600;white-space:nowrap}
+.caption span{font-size:12px;color:var(--sub);line-height:1.7}
+
+/* ---------- screen shell ---------- */
+.screen{
+  position:relative;display:grid;grid-template-columns:200px 1fr;
+  background:var(--canvas);overflow:hidden;margin:0 auto;
+}
+.screen.narrow{grid-template-columns:182px 1fr}
+.sidebar{background:var(--navigation);border-right:1px solid var(--hair);padding:24px 12px 18px;display:flex;flex-direction:column;gap:5px}
+.brand{display:flex;align-items:center;gap:11px;padding:0 8px 30px;font-size:15px;font-weight:650;color:var(--ink);line-height:1.3}
+.brand-mark{width:34px;height:36px;flex:none;border-radius:9px;background:var(--accent-fill);color:var(--on-accent);display:grid;place-items:center}
+.brand small{display:block;color:var(--sub);font-size:10px;font-weight:400;margin-top:3px}
+.nav{display:flex;align-items:center;gap:11px;min-height:39px;padding:9px 11px;border:1px solid transparent;border-radius:7px;color:var(--sub);font-size:13px}
+.nav.active{background:var(--pale);border-color:var(--accent-border);color:var(--accent-strong)}
+.side-foot{margin-top:auto;border-top:1px solid var(--hair);margin-inline:8px;padding:12px 0 0;color:var(--sub);font-size:11px;line-height:1.8}
+.main{display:flex;flex-direction:column;min-width:0;height:100%}
+.topbar{height:52px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 30px;background:var(--navigation);border-bottom:1px solid var(--hair);color:var(--sub);font-size:13px}
+.narrow .topbar{padding:0 24px}
+.top-div{color:var(--border-hover)}
+.account{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--sub)}
+.ava{width:25px;height:25px;border-radius:7px;background:var(--pale);color:var(--accent-strong);display:grid;place-items:center}
+.content{flex:1;min-height:0;padding:30px 32px 40px;overflow:hidden}
+.narrow .content{padding:24px}
+
+/* ---------- page head ---------- */
+.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:24px}
+.page-head h1{font-size:26px;font-weight:650;letter-spacing:-.025em;line-height:1.35;margin:0 0 7px}
+.narrow .page-head h1{font-size:24px}
+.page-head p{margin:0;font-size:13px;line-height:1.7;color:var(--sub);max-width:64ch}
+.actions{display:flex;align-items:center;gap:8px;flex:none}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:34px;padding:0 13px;
+  border:1px solid var(--border-control);border-radius:7px;background:var(--surface-raised);color:var(--ink);
+  font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--surface-hover);border-color:var(--border-hover)}
+.btn.primary{background:var(--accent-fill);border-color:transparent;color:var(--on-accent);font-weight:600}
+.btn.primary:hover{background:var(--accent-hover)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--sub)}
+.btn.ghost:hover{background:var(--surface-hover);color:var(--ink)}
+.btn.danger{color:var(--danger);border-color:var(--danger-border);background:transparent}
+.btn.sm{height:28px;padding:0 10px;font-size:12px}
+.icon-btn{width:30px;height:30px;display:grid;place-items:center;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--sub);cursor:pointer}
+.icon-btn:hover{background:var(--surface-hover);color:var(--ink)}
+
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:26px;border-bottom:1px solid var(--hair);margin-bottom:18px}
+.tab{display:inline-flex;align-items:center;gap:8px;padding:11px 2px 12px;border:0;background:none;color:var(--sub);
+  font-family:inherit;font-size:13px;cursor:pointer;box-shadow:inset 0 -2px 0 transparent}
+.tab.active{color:var(--accent-strong);font-weight:600;box-shadow:inset 0 -2px 0 var(--accent)}
+.tab .n{font-size:11px;font-weight:500;line-height:16px;padding:0 6px;border-radius:5px;background:var(--surface-hover);color:var(--sub)}
+.tab.active .n{background:var(--pale);color:var(--accent)}
+
+/* ---------- toolbar ---------- */
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.search{display:flex;align-items:center;gap:8px;height:34px;width:290px;padding:0 10px;
+  border:1px solid var(--border-control);border-radius:7px;background:var(--canvas);color:var(--placeholder);font-size:13px}
+.search .ph{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search .val{flex:1;color:var(--ink)}
+.search .clear{display:grid;place-items:center;color:var(--sub)}
+.chips{display:flex;align-items:center;gap:4px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:1px solid transparent;
+  border-radius:7px;background:transparent;color:var(--sub);font-family:inherit;font-size:12px;cursor:pointer}
+.chip .cn{font-size:11px;color:var(--placeholder)}
+.chip.on{background:var(--pale);border-color:var(--accent-border);color:var(--accent-strong)}
+.chip.on .cn{color:var(--accent)}
+.spacer{flex:1}
+.filter-count{display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:5px;
+  background:var(--accent-fill);color:var(--on-accent);font-size:10px;font-weight:700}
+
+/* ---------- card grid ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px;align-content:start}
+.card{position:relative;display:flex;flex-direction:column;min-height:176px;padding:15px 16px;
+  background:var(--surface);border:1px solid var(--hair);border-radius:12px;cursor:pointer}
+.card:hover{background:var(--surface-raised);border-color:var(--border-hover)}
+.card.off .card-name{color:var(--sub)}
+.card.off .icon-tile{opacity:.45}
+.card-head{display:flex;align-items:flex-start;gap:10px}
+.icon-tile{width:36px;height:36px;flex:none;display:grid;place-items:center;border-radius:9px;
+  background:var(--surface-muted);border:1px solid var(--hair);color:var(--accent)}
+.icon-tile .ic{width:19px;height:19px}
+.icon-tile.lg{width:44px;height:44px;border-radius:11px}
+.icon-tile.lg .ic{width:22px;height:22px}
+.card-title{flex:1;min-width:0;padding-top:1px}
+.card-name{display:flex;align-items:center;gap:7px;min-width:0;font-size:14px;font-weight:600;color:var(--ink);line-height:1.4}
+.card-name .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mini{flex:none;font-size:10px;font-weight:500;line-height:16px;padding:0 6px;border-radius:5px;
+  background:var(--surface-muted);border:1px solid var(--hair);color:var(--sub)}
+.mini.off{color:var(--disabled-ink)}
+.mini.warn{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-border)}
+.card-desc{margin:9px 0 0;font-size:12.5px;line-height:1.65;color:var(--sub);height:41px;overflow:hidden;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.card-warn{display:flex;align-items:center;gap:6px;margin:9px 0 0;padding:5px 8px;border-radius:6px;
+  background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);font-size:11px;
+  line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-warn span{overflow:hidden;text-overflow:ellipsis}
+.tags{display:flex;align-items:center;gap:6px;margin-top:10px;overflow:hidden;max-height:22px}
+.tag{flex:none;font-size:11px;line-height:18px;padding:0 8px;border-radius:4px;background:var(--pale);border:1px solid var(--hair);color:var(--sub)}
+.tag.more{border-style:dashed;color:var(--placeholder)}
+.card-foot{display:flex;align-items:center;gap:7px;margin-top:auto;padding-top:11px;border-top:1px solid var(--hair);
+  font-size:11px;color:var(--sub);line-height:1.6}
+.card-foot .sep{color:var(--border-control)}
+.card-foot .detail{margin-left:auto;display:inline-flex;align-items:center;gap:2px;color:var(--placeholder);font-size:11px}
+.card:hover .card-foot .detail{color:var(--ink)}
+.card-foot .saving{color:var(--accent)}
+
+/* switch */
+.switch{position:relative;flex:none;width:36px;height:20px;margin-top:2px;padding:0;border-radius:10px;
+  border:1px solid var(--border-control);background:var(--surface-muted);cursor:pointer}
+.switch i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--disabled-ink)}
+.switch.on{background:var(--success-border);border-color:#3d7449}
+.switch.on i{left:18px;background:var(--success)}
+.switch.dis{opacity:.5;cursor:not-allowed}
+.switch.loading{background:var(--surface-muted);border-color:var(--border-control)}
+.switch.loading i{left:11px;width:12px;height:12px;background:transparent;border-radius:50%;
+  border:2px solid #5a5a5a;border-top-color:var(--accent)}
+.switch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- note ---------- */
+.page-note{margin:18px 0 0;font-size:11px;line-height:1.8;color:var(--placeholder);display:flex;align-items:center;gap:6px}
+
+/* ---------- states ---------- */
+.state{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:380px;padding:56px 24px;text-align:center;background:var(--surface);
+  border:1px dashed var(--border-control);border-radius:12px}
+.state-ic{display:grid;place-items:center;width:52px;height:52px;margin-bottom:16px;border-radius:14px;
+  background:var(--surface-muted);border:1px solid var(--hair);color:var(--accent)}
+.state-ic .ic{width:24px;height:24px}
+.state h3{font-size:19px;font-weight:600;margin:0 0 9px}
+.state p{margin:0;font-size:13px;line-height:1.75;color:var(--sub);max-width:52ch}
+.state-actions{display:flex;gap:8px;margin-top:22px}
+.state-link{display:inline-flex;align-items:center;gap:4px;margin-top:20px;font-size:12px;color:var(--accent);cursor:pointer}
+.state.err{border-style:solid;border-color:var(--danger-border);background:linear-gradient(180deg,rgba(50,31,31,.55),var(--surface) 60%)}
+.state.err .state-ic{color:var(--danger);background:var(--danger-bg);border-color:var(--danger-border)}
+.state .err-detail{margin-top:14px;font-family:Consolas,monospace;font-size:11px;color:var(--placeholder);max-width:none;white-space:nowrap}
+.state .one{margin-top:24px}
+.state.gap{min-height:300px}
+
+/* ---------- skeleton ---------- */
+.sk{min-height:176px;padding:15px 16px;background:var(--surface);border:1px solid var(--hair);border-radius:12px;
+  display:flex;flex-direction:column}
+.sk i{display:block;border-radius:6px;background:#272727}
+.sk .r1{display:flex;gap:10px;align-items:flex-start}
+.sk .t{width:36px;height:36px;border-radius:9px;background:#2b2b2e}
+.sk .l{height:12px;margin-top:6px}
+.sk .l.w1{width:58%}.sk .l.w2{width:100%;margin-top:16px}.sk .l.w3{width:86%;margin-top:8px}
+.sk .tags{display:flex;gap:6px;margin-top:14px}
+.sk .tags i{width:46px;height:16px;border-radius:4px}
+.sk .foot{margin-top:auto;height:11px;width:64%}
+
+/* ---------- toast ---------- */
+.toast{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:9px;
+  padding:9px 14px 9px 12px;border-radius:8px;background:var(--surface-raised);border:1px solid var(--hair);
+  box-shadow:0 12px 36px rgb(0 0 0 / 45%);font-size:12.5px;color:var(--ink);white-space:nowrap}
+.toast .ic{color:var(--success)}
+
+/* ---------- modal ---------- */
+.scrim{position:absolute;inset:0;z-index:20;background:rgb(0 0 0 / 72%)}
+.modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:21;width:900px;max-height:770px;
+  display:flex;flex-direction:column;background:var(--surface-raised);border:1px solid var(--border-control);
+  border-radius:12px;box-shadow:0 24px 80px rgb(0 0 0 / 55%);overflow:hidden}
+.m-head{display:flex;align-items:flex-start;gap:13px;padding:18px 20px 15px;border-bottom:1px solid var(--hair)}
+.m-id{flex:1;min-width:0}
+.m-id h2{font-size:17px;font-weight:600;letter-spacing:-.01em;margin:1px 0 7px;line-height:1.4}
+.m-chips{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.chip-s{display:inline-flex;align-items:center;gap:5px;font-size:11px;line-height:19px;padding:0 8px;
+  border-radius:5px;background:var(--surface-muted);border:1px solid var(--hair);color:var(--sub)}
+.chip-s.ok{background:var(--success-bg);border-color:var(--success-border);color:var(--success)}
+.chip-s.mine{background:var(--pale);border-color:var(--border-control);color:var(--accent)}
+.m-actions{display:flex;align-items:center;gap:6px;flex:none;padding-top:2px}
+.sw-wrap{display:flex;align-items:center;gap:8px;margin-right:6px;font-size:11px;color:var(--sub)}
+.m-body{display:grid;grid-template-columns:340px minmax(0,1fr);min-height:0;flex:1;overflow:hidden}
+.m-left{padding:18px 20px 20px;overflow:hidden}
+.m-right{display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--hair);background:var(--canvas);padding:16px 18px 0}
+.block{margin-bottom:17px}
+.block:last-child{margin-bottom:0}
+.block h4{display:flex;align-items:center;gap:6px;margin:0 0 7px;font-size:11px;font-weight:600;
+  letter-spacing:.05em;color:var(--placeholder)}
+.block h4 .cnt{font-weight:400;color:var(--disabled-ink);letter-spacing:0}
+.m-desc{margin:0;font-size:13px;line-height:1.75;color:var(--read)}
+.seg{display:inline-flex;padding:2px;border:1px solid var(--hair);border-radius:8px;background:var(--surface)}
+.seg button{height:26px;padding:0 11px;border:0;border-radius:6px;background:none;color:var(--sub);
+  font-family:inherit;font-size:12px;cursor:pointer}
+.seg button.on{background:var(--pale);color:var(--accent-strong);box-shadow:inset 0 0 0 1px var(--accent-border);font-weight:600}
+.hint{margin:7px 0 0;font-size:11.5px;line-height:1.7;color:var(--placeholder)}
+.block .tags{margin-top:0;max-height:none;flex-wrap:wrap}
+.quiet{margin:0;padding:9px 11px;border-radius:7px;background:var(--surface-muted);border:1px solid var(--hair);
+  font-size:11.5px;line-height:1.75;color:var(--sub)}
+.res{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.res li{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;background:var(--surface);
+  border:1px solid var(--hair);font-size:11.5px;color:var(--sub)}
+.res li .p{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--read);font-family:Consolas,monospace;font-size:11px}
+.res li .k{font-size:10px;line-height:16px;padding:0 5px;border-radius:4px;background:var(--pale);color:var(--sub)}
+.res li .sz{color:var(--placeholder);font-size:10.5px}
+.res li button{border:0;background:none;color:var(--accent);font-family:inherit;font-size:11.5px;cursor:pointer;padding:0}
+.m-right-head{display:flex;align-items:center;gap:8px;padding:0 2px 10px;flex:none}
+.m-right-head h4{margin:0;font-size:11px;font-weight:600;letter-spacing:.05em;color:var(--placeholder)}
+.doc{margin:0;overflow:auto;flex:1;padding:0 2px 18px;font-size:12.5px;line-height:1.85;color:var(--read)}
+.doc h1{font-size:14px;font-weight:600;color:var(--ink);margin:0 0 10px}
+.doc h2{font-size:12.5px;font-weight:600;color:var(--ink);margin:16px 0 6px}
+.doc p{margin:0 0 10px}
+.doc ol,.doc ul{margin:0 0 10px;padding-left:19px}
+.doc li{margin-bottom:5px}
+.doc code{font-family:Consolas,monospace;font-size:11.5px;padding:1px 4px;border-radius:4px;background:var(--surface-muted);color:var(--accent)}
+.m-foot{display:flex;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid var(--hair);background:var(--surface-raised)}
+.m-foot .note{font-size:11px;color:var(--placeholder);flex:1;line-height:1.6}
+.m-foot .acts{display:flex;gap:8px;flex:none}
+
+/* ---------- small dialog ---------- */
+.dialog-sm{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:21;width:484px;
+  background:var(--surface-raised);border:1px solid var(--border-control);border-radius:12px;
+  box-shadow:0 24px 80px rgb(0 0 0 / 55%);overflow:hidden}
+.dialog-sm header{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px}
+.dialog-sm h2{font-size:16px;font-weight:600;margin:0}
+.dialog-sm .body{padding:0 18px 4px}
+.dialog-sm .body p{margin:0 0 12px;font-size:12.5px;line-height:1.8;color:var(--sub)}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px}
+.cmp > div{padding:9px 11px;border-radius:7px;background:var(--surface);border:1px solid var(--hair)}
+.cmp h5{margin:0 0 4px;font-size:10.5px;font-weight:500;color:var(--placeholder);letter-spacing:.04em}
+.cmp p{margin:0;font-size:12px;color:var(--ink)}
+.dialog-sm footer{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--hair)}
+
+/* ---------- anatomy ---------- */
+.anat{display:grid;grid-template-columns:520px minmax(0,1fr);gap:44px;align-items:start;margin-top:6px}
+.anat-card-wrap{position:relative;padding:34px 34px 44px}
+.anat .card{width:420px;min-height:196px;cursor:default}
+.anat .card:hover{background:var(--surface);border-color:var(--hair)}
+.dot{position:absolute;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;
+  background:var(--accent-fill);color:var(--on-accent);font-size:11px;font-weight:700;z-index:2;
+  box-shadow:0 0 0 3px var(--canvas)}
+.anat-legend{display:grid;grid-template-columns:1fr 1fr;gap:0 26px}
+.anat-item{display:flex;gap:10px;padding:11px 0;border-top:1px solid var(--hair)}
+.anat-item b{display:grid;place-items:center;width:19px;height:19px;flex:none;border-radius:50%;
+  background:var(--surface-hover);color:var(--accent);font-size:10.5px;font-weight:700;margin-top:1px}
+.anat-item span{font-size:12px;line-height:1.7;color:var(--sub)}
+.anat-item strong{display:block;font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:1px}
+.anat-note{grid-column:1/-1;margin-top:22px;padding:12px 14px;border-radius:8px;background:var(--surface);
+  border:1px solid var(--hair);font-size:12px;line-height:1.8;color:var(--sub)}
+.anat-note b{color:var(--ink);font-weight:600}
+/* ---------- create / import dialog ---------- */
+.cdlg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:21;width:960px;max-height:792px;
+  display:flex;flex-direction:column;background:var(--surface-raised);border:1px solid var(--border-control);
+  border-radius:12px;box-shadow:0 24px 80px rgb(0 0 0 / 55%);overflow:hidden}
+.cdlg.busy::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;
+  background:linear-gradient(90deg,transparent,rgba(193,193,197,.85),transparent)}
+.cdlg .m-id p{margin:0;font-size:11.5px;line-height:1.6;color:var(--placeholder)}
+.m-body.form{grid-template-columns:336px minmax(0,1fr)}
+.m-body.form .m-left{padding:16px 20px 18px;overflow:auto}
+.fld{margin-bottom:13px}
+.fld > .lb{display:flex;align-items:baseline;gap:6px;margin-bottom:6px;font-size:11px;font-weight:600;
+  letter-spacing:.05em;color:var(--placeholder)}
+.fld > .lb .req{color:var(--danger);letter-spacing:0}
+.fld > .lb .opt-lb{margin-left:auto;font-size:10.5px;font-weight:400;letter-spacing:0;color:var(--disabled-ink)}
+.inp{width:100%;height:34px;padding:0 10px;border:1px solid var(--border-control);border-radius:7px;
+  background:var(--canvas);color:var(--ink);font-family:inherit;font-size:13px;outline:none}
+.inp::placeholder{color:var(--placeholder)}
+textarea.inp{height:auto;padding:8px 10px;line-height:1.7;resize:none}
+.inp[readonly]{color:var(--sub)}
+.fld .hint{margin:6px 0 0;font-size:11px;line-height:1.6;color:var(--placeholder)}
+.fld .msg{margin:6px 0 0;display:flex;align-items:center;gap:5px;font-size:11px;line-height:1.6;color:var(--danger)}
+.fld.err .inp{border-color:var(--danger-border);background:var(--danger-bg)}
+.fld.err .inp::placeholder{color:#c99595}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opt{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid var(--border-control);
+  border-radius:7px;background:transparent;color:var(--sub);font-family:inherit;font-size:12px}
+.opt.on{border-color:var(--accent-border);background:var(--pale);color:var(--accent-strong)}
+.opt .ic{width:12px;height:12px;stroke-width:2.4}
+.tagedit{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:34px;padding:5px 8px;
+  border:1px solid var(--border-control);border-radius:7px;background:var(--canvas)}
+.tagedit .tag{display:inline-flex;align-items:center;gap:5px;padding-right:4px}
+.tagedit .x{display:grid;place-items:center;color:var(--placeholder)}
+.tagedit input{flex:1;min-width:88px;border:0;background:none;outline:none;color:var(--ink);font-family:inherit;font-size:12.5px}
+.tagedit input::placeholder{color:var(--placeholder)}
+.swrow{display:flex;align-items:flex-start;gap:10px;margin:2px 0 0;padding:11px 0 3px;border-top:1px solid var(--hair)}
+.swrow .txt{flex:1;font-size:12px;line-height:1.5;color:var(--ink)}
+.swrow .txt small{display:block;margin-top:2px;font-size:11px;color:var(--placeholder)}
+.swrow .switch{margin-top:1px}
+.more{margin-top:12px;padding-top:11px;border-top:1px solid var(--hair)}
+.more summary{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sub);list-style:none;cursor:pointer}
+.more summary::-webkit-details-marker{display:none}
+.more summary .sub{font-size:11px;color:var(--disabled-ink);font-weight:400}
+.more .inner{margin-top:12px}
+.cdoc{display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--hair);background:var(--canvas);padding:16px 18px 0}
+.cdoc-head{flex:none;display:flex;align-items:center;gap:8px;padding-bottom:9px}
+.cdoc-head h4{margin:0;font-size:12px;font-weight:600;color:var(--ink)}
+.bytes{font-size:10.5px;color:var(--placeholder);font-variant-numeric:tabular-nums}
+.seg.sm{padding:2px}
+.seg.sm button{height:24px;padding:0 9px;font-size:11.5px}
+.cdoc .hint{margin:0 0 10px;font-size:11px;line-height:1.6;color:var(--placeholder)}
+.cdoc-body{flex:1;display:flex;min-height:0}
+.cdoc-body textarea{flex:1;width:100%;min-height:0;padding:12px 14px;border:1px solid var(--border-control);
+  border-radius:9px;background:var(--canvas);color:var(--read);font-family:inherit;font-size:12.5px;line-height:1.85;
+  resize:none;outline:none}
+.cdoc-body textarea::placeholder{color:var(--disabled-ink)}
+.cdoc-body textarea.err{border-color:var(--danger-border)}
+.cdoc .msg{flex:none;margin:6px 0 0;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--danger)}
+.attach{flex:none;display:flex;align-items:center;gap:9px;margin:12px 0 16px;padding:10px 12px;
+  border:1px dashed var(--border-control);border-radius:9px;font-size:11.5px;color:var(--sub)}
+.attach .n{color:var(--placeholder)}
+.attach .btn{margin-left:auto}
+.res2{list-style:none;flex:none;margin:12px 0 16px;padding:0;display:flex;flex-direction:column;gap:6px}
+.res2 li{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;background:var(--surface);
+  border:1px solid var(--hair);font-size:11.5px;color:var(--sub)}
+.res2 .p{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:Consolas,monospace;font-size:11px;color:var(--read)}
+.res2 .x{display:grid;place-items:center;color:var(--placeholder)}
+.spin{width:13px;height:13px;border-radius:50%;border:2px solid rgba(23,23,23,.25);border-top-color:var(--on-accent)}
+.idlg-body{flex:1;min-height:0;overflow:hidden;padding:16px 20px 8px}
+.dl{display:grid;grid-template-columns:76px minmax(0,1fr);gap:9px 14px;margin:0 0 16px;font-size:12px}
+.dl dt{font-size:11px;letter-spacing:.04em;color:var(--placeholder)}
+.dl dd{margin:0;color:var(--read);line-height:1.65}
+.issuebar{display:flex;gap:8px;align-items:flex-start;margin:0 0 14px;padding:9px 11px;border-radius:7px;
+  background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);font-size:11.5px;line-height:1.65}
+.chip-s.warn{background:var(--warning-bg);border-color:var(--warning-border);color:var(--warning)}
+.card.fresh{border-color:var(--accent-border);box-shadow:inset 0 0 0 1px var(--accent-border)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h12M9 12h12M9 18h12"/><path d="M4 6l1.2 1.2L7.6 4.6M4 12l1.2 1.2L7.6 10.6M4 18l1.2 1.2L7.6 16.6"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4.6 18.4l5-5 4 4 3-3 3.2 3.2"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M11 3l1.8 4.7L17.5 9.5l-4.7 1.8L11 16l-1.8-4.7L4.5 9.5l4.7-1.8z"/><path d="M18 14.5l.9 2.2 2.1.9-2.1.9-.9 2.2-.9-2.2-2.1-.9 2.1-.9z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.6M12 18.4V21M4.3 7.6l2.3 1.3M17.4 15.1l2.3 1.3M4.3 16.4l2.3-1.3M17.4 8.9l2.3-1.3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.7-3.7"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.6 8.4M12 4l4.4 4.4"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h8M18 7h2M4 17h4M10 17h10"/><circle cx="15" cy="7" r="2.2"/><circle cx="8" cy="17" r="2.2"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.4l2.7 2.7L16 9.6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.2l8.6 15.3H3.4z"/><path d="M12 10v4.2M12 17.2h.01"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6.3C10.4 5 8.3 4.3 6 4.3H4V18.5h2c2.3 0 4.4.7 6 2 1.6-1.3 3.7-2 6-2h2V4.3h-2c-2.3 0-4.4.7-6 2z"/><path d="M12 6.3v14.2"/></symbol>
+  <symbol id="i-clapper" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18M7.5 7V4.6M16.5 7V4.6"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3.2l8 4.5v8.6l-8 4.5-8-4.5V7.7z"/><path d="M4 7.7l8 4.5 8-4.5M12 12.2v8.6"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20l4.2-1.1L19 8.1l-3.1-3.1L5.1 15.8z"/><path d="M14.4 6.5l3.1 3.1"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.2" y="3.2" width="7.6" height="7.6" rx="1.6"/><rect x="13.2" y="3.2" width="7.6" height="7.6" rx="1.6"/><rect x="3.2" y="13.2" width="7.6" height="7.6" rx="1.6"/><rect x="13.2" y="13.2" width="7.6" height="7.6" rx="1.6"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l8.5 4.7L12 12.4 3.5 7.7z"/><path d="M3.5 12l8.5 4.7L20.5 12M3.5 16.3L12 21l8.5-4.7"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6.2" width="12.6" height="11.6" rx="2"/><path d="M15.6 10.6l5.4-3.2v9.2l-5.4-3.2z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9.2" y="3" width="5.6" height="11" rx="2.8"/><path d="M5.4 11.4a6.6 6.6 0 0 0 13.2 0M12 18v3"/></symbol>
+  <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9.4 9v11"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.1-7 9.5-4.1-1.4-7-5.2-7-9.5V6z"/><path d="M8.9 12.1l2.1 2.1 4.1-4.2"/></symbol>
+  <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.6h18M9 9.6V20M15 9.6V20"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12.4h3.6L9 5.8l4 12.4 2.4-5.8H21"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13.4 2.6L5 13.4h5.6L9.6 21.4 18.6 10.5h-5.4z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6.4 3h7.8L19 7.8V21H6.4z"/><path d="M14.2 3v4.8H19"/><path d="M9.4 12.6h6.2M9.4 16.4h6.2"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4.2-4.2M12 15l4.2-4.2"/><path d="M4 16.6v2.4A1 1 0 0 0 5 20h14a1 1 0 0 0 1-1v-2.4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.4" y="8.4" width="11.6" height="11.6" rx="2"/><path d="M15.6 8.4V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.6a2 2 0 0 0 2 2h2.4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6.8h16M9.4 6.8V4.6h5.2v2.2M6.2 6.8l.9 13.2h9.8l.9-13.2"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.6" r="3.8"/><path d="M4.8 20c1.2-3.3 3.9-5 7.2-5s6 1.7 7.2 5"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4 12h15M13.6 6l6 6-6 6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.4M12 7.8h.01"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 4.5H4.5V9M15 4.5h4.5V9M15 19.5h4.5V15M9 19.5H4.5V15"/></symbol>
+</svg>
+
+<div class="gallery" id="gallery"></div>
+
+<script>
+const icon = (n, cls = 'ic') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+
+const NAV = [['folder','项目管理'],['list','任务管理'],['image','资产库'],['sparkles','Skill 管理'],['settings','AI 配置']];
+
+function sidebar(active){
+  return `<aside class="sidebar">
+    <div class="brand"><span class="brand-mark">${icon('film')}</span><span>短剧工作台<small>AI 短剧创作空间</small></span></div>
+    ${NAV.map(([i,label]) => `<nav class="nav${label===active?' active':''}">${icon(i)}${label}</nav>`).join('')}
+    <p class="side-foot">从故事出发，<br>逐镜打磨。</p>
+  </aside>`;
+}
+function topbar(page){
+  return `<header class="topbar"><span>创作空间 <span class="top-div">/</span> ${page}</span>
+    <span class="account"><span class="ava">${icon('user','ic sm')}</span>个人空间</span></header>`;
+}
+function head({title='Skill 管理', desc='可复用的创作方法。决定 AI 在什么任务里、用什么方式做事。', actions=true}){
+  return `<header class="page-head"><div><h1>${title}</h1><p>${desc}</p></div>
+    ${actions ? `<div class="actions">
+      <button class="btn">${icon('upload','ic sm')}导入 Skill</button>
+      <button class="btn primary">${icon('plus','ic sm')}新建 Skill</button>
+    </div>` : ''}</header>`;
+}
+function tabs(active, mine, builtin){
+  return `<div class="tabs">
+    <button class="tab${active==='mine'?' active':''}">我的 Skill<span class="n">${mine}</span></button>
+    <button class="tab${active==='builtin'?' active':''}">内置 Skill<span class="n">${builtin}</span></button>
+  </div>`;
+}
+function toolbar({query='', chips=[], filterCount=0, muted=false}){
+  const search = query
+    ? `<div class="search"${muted?' style="opacity:.55"':''}>${icon('search','ic sm')}<span class="val">${query}</span><span class="clear">${icon('x','ic xs')}</span></div>`
+    : `<div class="search"${muted?' style="opacity:.55"':''}>${icon('search','ic sm')}<span class="ph">搜索名称、用途或标签</span></div>`;
+  return `<div class="toolbar">${search}
+    <div class="chips">${chips.map(c=>`<button class="chip${c.on?' on':''}">${c.label}<span class="cn">${c.n}</span></button>`).join('')}</div>
+    <span class="spacer"></span>
+    <button class="btn ghost">${icon('sliders','ic sm')}筛选${filterCount?`<span class="filter-count">${filterCount}</span>`:''}</button>
+  </div>`;
+}
+function sw(on, {loading=false, disabled=false, label=''}={}){
+  const cls = loading ? 'switch loading' : on ? 'switch on' : 'switch';
+  return `<button class="${cls}${disabled?' dis':''}" role="switch" aria-checked="${on}"
+    aria-label="${label}"${disabled?' aria-disabled="true"':''}><i></i></button>`;
+}
+function card(s){
+  const tags = s.t.slice(0,3).map(t=>`<span class="tag">${t}</span>`).join('')
+    + (s.t.length>3?`<span class="tag more">+${s.t.length-3}</span>`:'');
+  const warn = s.issue ? `<p class="card-warn">${icon('alert','ic xs')}<span>需要处理：${s.issue}</span></p>` : '';
+  const foot = s.saving
+    ? `<span class="saving">正在保存设置…</span>`
+    : `<span>${s.modes}</span><span class="sep">·</span><span>${s.inv}</span>${s.res?`<span class="sep">·</span><span>${s.res} 份资料</span>`:''}`;
+  const meta = s.off ? `<span class="mini off">已停用</span>` : '';
+  const badge = s.issue ? `<span class="mini warn">待处理</span>` : meta;
+  return `<article class="card${s.off?' off':''}${s.fresh?' fresh':''}" tabindex="0" aria-label="${s.n}">
+    <div class="card-head">
+      <span class="icon-tile">${icon(s.i)}</span>
+      <div class="card-title"><div class="card-name"><span class="t">${s.n}</span>${badge}</div></div>
+      ${sw(s.on, {loading:s.saving, disabled:!!s.issue || s.disabled, label:`启用 ${s.n}`})}
+    </div>
+    <p class="card-desc">${s.d}</p>
+    ${warn}
+    <div class="tags">${tags}</div>
+    <div class="card-foot">${foot}<span class="detail">查看详情${icon('chevron-right','ic xs')}</span></div>
+  </article>`;
+}
+function pageNote(text){
+  return `<p class="page-note">${icon('info','ic xs')}${text}</p>`;
+}
+function screen({nav='Skill 管理', page='Skill 管理', body, extra='', w=1440, h=900, narrow=false}){
+  return `<div class="screen${narrow?' narrow':''}" style="width:${w}px;height:${h}px">
+    <svg style="position:absolute;width:0;height:0"><use href="#i-film"/></svg>
+    ${sidebar(nav)}
+    <div class="main">${topbar(page)}<div class="content">${body}</div></div>
+    ${extra}
+  </div>`;
+}
+function board(id, title, caption, html){
+  return `<section class="board" id="${id}">${html}
+    <p class="caption"><b>${title}</b><span>${caption}</span></p></section>`;
+}
+
+/* ---------------- data ---------------- */
+const MINE = [
+  {n:'竖屏短剧钩子开场', i:'zap', d:'把开头三秒改写成能拦住滑动的情节钩子，保留人物关系与因果，不新增角色。', t:['开场','钩子','竖屏','改写'], modes:'标准创作 · 无限画布', inv:'按需自动', res:2, on:true},
+  {n:'平台审核敏感词自检', i:'shield', d:'逐句检查台词与画面描述，标出可能触发限流的表达并给出替代表达。', t:['合规','台词','审核'], modes:'标准创作 · 无限画布', inv:'仅手动', res:1, on:true},
+  {n:'角色口播语气校准', i:'mic', d:'按角色身份与当前情绪重写停顿和语气提示，不改动情节与台词含义。', t:['配音','台词','语气'], modes:'标准创作', inv:'按需自动', res:1, on:true},
+  {n:'一镜到底运镜模板', i:'video', d:'为 15 秒内的单镜头片段生成连续运镜路径，含起点、动作、终点与声音边界。', t:['运镜','视频','长镜头'], modes:'标准创作', inv:'仅手动', res:3, on:false, off:true},
+  {n:'季更剧集连续性表', i:'table', d:'把已确认素材整理成人物、服装、持物与场景对照表，供后续镜头核对。', t:['连续性','素材'], modes:'标准创作 · 无限画布', inv:'仅手动', res:2, on:false, off:true, issue:'平台未提供必需工具：timeline_lookup'},
+  {n:'分镜节奏体检', i:'activity', d:'按 3 秒一拍的节奏检查镜头密度，指出过慢段落并给出可剪切的建议。', t:['分镜','节奏'], modes:'标准创作', inv:'按需自动', res:0, on:true},
+];
+const BUILTIN = [
+  {n:'创作任务规划', i:'list', d:'把想法或明确请求整理为有边界的创作步骤、依赖和交付物，区分讨论、结构搭建与媒体制作。', t:['规划','目标','步骤','依赖'], res:2},
+  {n:'小说创作', i:'book', d:'根据想法、梗概或主动选入的原文创作和定点改写小说，组织人物动机、因果与情节节奏。', t:['小说','大纲','人物','改写'], res:2},
+  {n:'剧本创作', i:'clapper', d:'把想法或选入的故事写成可表演的中文短剧剧本，或保留作者语言修订场景、动作与对白。', t:['剧本','对白','场景','节奏'], res:2},
+  {n:'素材设计与拆解', i:'box', d:'从提供的故事或剧本拆解角色、场景和道具，区分身份、变体与镜头瞬态，形成可复用设定。', t:['素材','角色','场景','道具','身份'], res:2},
+  {n:'素材定点修订', i:'pen', d:'定点修改已选角色、场景或道具设定，保留身份锚点与真实关联，检查变体与下游影响。', t:['素材','修订','变体','连续性'], res:2},
+  {n:'分镜规划', i:'grid', d:'把选入的剧情拆为连贯镜头，安排画面职责、时长依据、动作边界与前后衔接。', t:['分镜','镜头','衔接','时长'], res:2},
+  {n:'镜头定点修订', i:'layers', d:'定点调整已选镜头的画面、动作、提示词、时长或关联，保留未授权内容并检查衔接。', t:['分镜','修订','镜头','关联'], res:2},
+  {n:'图片提示词', i:'image', d:'为角色、场景、道具或分镜静帧组织图片提示词，明确构图、视觉锚点、参考范围与禁止项。', t:['图片','提示词','构图','参考图'], res:0},
+  {n:'视频提示词', i:'video', d:'把镜头设计写成有起点、动作、终点、运镜和声音边界的视频提示词，核对参考媒体与时长。', t:['视频','动作','运镜','表演'], res:0},
+  {n:'配音与声音规划', i:'mic', d:'规划角色声音身份、逐句表演、配音台词与声音结构，区分文字设计、音色生成与台词配音。', t:['配音','台词','音色','声音'], res:2},
+  {n:'画布流程搭建', i:'layout', d:'按要求在无限画布搭建文本、图片、视频和音频节点及合法连线，保持局部布局与现有内容。', t:['画布','节点','连线','布局'], res:2},
+  {n:'连续性检查', i:'shield', d:'核对人物、服装、持物、空间、动作与风格连续性，输出有证据的差异。', t:['连续性','审查','人物','服装'], res:2},
+].map(s => ({...s, modes:'标准创作 · 无限画布', inv:'按需自动', on:true}));
+BUILTIN[10].modes = '无限画布';
+const CHIPS_MINE = [{label:'全部',n:6,on:true},{label:'已启用',n:4},{label:'已停用',n:2}];
+const CHIPS_BUILTIN = [{label:'全部',n:12,on:true},{label:'已启用',n:12},{label:'已停用',n:0}];
+
+const grid = list => `<div class="grid">${list.map(card).join('')}</div>`;
+
+/* ---------------- boards ---------------- */
+const boards = [];
+
+boards.push(board('b01','01 · 我的 Skill（默认）',
+ '进入即看到自己的方法卡片。禁用项保留可读性，只降图标块对比度并标注「已停用」；有兼容性问题的卡片用琥珀色说明条并锁住开关。',
+ screen({body: head({}) + tabs('mine',6,12) + toolbar({chips:CHIPS_MINE}) + grid(MINE) +
+   pageNote('停用只会阻止后续任务加载；已开始的任务继续使用原版本。')})));
+
+boards.push(board('b02','02 · 内置 Skill',
+ '同一个页面的第二个分组。内置项全部可启停，但不能编辑：主操作改为「复制为我的 Skill」。12 个内置方法一次铺满，不隐藏。',
+ screen({h:1120, body: head({desc:'平台维护的创作方法，覆盖从剧本到分镜、提示词与声音的主要环节。'}) + tabs('builtin',6,12) +
+   toolbar({chips:CHIPS_BUILTIN}) + grid(BUILTIN) +
+   pageNote('内置方法随平台更新；改动自己的版本请先复制为我的 Skill。')})));
+
+const hoverList = MINE.map((s,i)=> i===1 ? {...s, hover:true} : i===3 ? {...s, saving:true, off:false} : s);
+boards.push(board('b03','03 · 悬停、切换与焦点',
+ '悬停只提亮表面与边线，右侧「查看详情」从低对比变为正文色；开关保存中在卡片内就地显示进度；键盘焦点使用 2px 浅灰外框。顶部提示说明生效范围。',
+ screen({body: head({}) + tabs('mine',6,12) + toolbar({chips:CHIPS_MINE}) +
+   `<div class="grid">${hoverList.map(s=> s.hover ? card(s).replace('class="card"','class="card" style="background:var(--surface-hover);border-color:var(--border-hover)"') : s.saving ? card(s).replace('<span class="detail">查看详情','<span class="detail" style="color:var(--ink)">查看详情') : card(s)).join('')}</div>` +
+   pageNote('新任务按新设置加载；正在运行的任务不受影响。'),
+   extra:`<div class="toast">${icon('check-circle','ic sm')}已启用「角色口播语气校准」· 新任务立即生效</div>`})));
+
+/* modal: personal */
+const modalPersonal = `
+  <div class="scrim"></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mp-title">
+    <header class="m-head">
+      <span class="icon-tile lg">${icon('zap')}</span>
+      <div class="m-id">
+        <h2 id="mp-title">竖屏短剧钩子开场</h2>
+        <div class="m-chips"><span class="chip-s mine">我的 Skill</span><span class="chip-s">标准创作 · 无限画布</span><span class="chip-s ok">${icon('check','ic xs')}已启用</span></div>
+      </div>
+      <div class="m-actions">
+        <span class="sw-wrap">启用 ${sw(true,{label:'启用 竖屏短剧钩子开场'})}</span>
+        <button class="icon-btn" aria-label="更多操作">${icon('more')}</button>
+        <button class="icon-btn" aria-label="关闭">${icon('x')}</button>
+      </div>
+    </header>
+    <div class="m-body">
+      <div class="m-left">
+        <div class="block"><h4>用途</h4><p class="m-desc">把开头三秒改写成能拦住滑动的情节钩子，保留人物关系与因果，不新增角色。</p></div>
+        <div class="block"><h4>触发方式</h4>
+          <div class="seg"><button class="on">按需自动</button><button>仅手动</button></div>
+          <p class="hint">按需自动：AI 判断当前任务需要时自动带上这份方法。仅手动：只在输入框用 / 选它时使用。</p>
+        </div>
+        <div class="block"><h4>适用范围</h4>
+          <div class="m-chips"><span class="chip-s">${icon('check','ic xs')}标准创作</span><span class="chip-s">${icon('check','ic xs')}无限画布</span></div>
+        </div>
+        <div class="block"><h4>标签</h4><div class="tags"><span class="tag">开场</span><span class="tag">钩子</span><span class="tag">竖屏</span><span class="tag">改写</span></div></div>
+        <div class="block"><h4>不适用</h4><p class="quiet">不改人物关系与既定因果，不新增角色，也不负责把开场扩写成完整剧本。</p></div>
+        <div class="block"><h4>附加资料 <span class="cnt">2 份</span></h4>
+          <ul class="res">
+            <li>${icon('file','ic sm')}<span class="p">assets/hook-template.md</span><span class="k">模板</span><button>查看</button></li>
+            <li>${icon('file','ic sm')}<span class="p">references/vertical-hook.md</span><span class="k">参考</span><button>查看</button></li>
+          </ul>
+        </div>
+      </div>
+      <div class="m-right">
+        <div class="m-right-head"><h4>方法主指令</h4><span class="chip-s">只读</span></div>
+        <div class="doc">
+          <h1>竖屏短剧钩子开场</h1>
+          <p>把用户给出的故事开头重写成前 3 秒能留住人的竖屏开场。先确认三件事：主角是谁、当下最急的处境、观众此刻还不知道什么。</p>
+          <h2>写作顺序</h2>
+          <ol>
+            <li>用一句动作或声音切入，不从背景介绍开始。</li>
+            <li>第一句台词必须包含冲突或反常信息，不写寒暄与旁白铺垫。</li>
+            <li>在第 8 秒前抛出一个必须看下去的问题，但不要立刻回答。</li>
+            <li>结尾留 1 秒视觉钩子：门缝、来电、反常表情。</li>
+          </ol>
+          <h2>边界</h2>
+          <ul>
+            <li>不改人物关系与既定因果，不新增角色。</li>
+            <li>不用旁白解释情绪，用动作和台词承担信息。</li>
+            <li>输出 3 个方向不同的开场候选，标注各自的钩子类型。</li>
+          </ul>
+          <p>需要细化时读 <code>references/vertical-hook.md</code>，套用 <code>assets/hook-template.md</code> 的结构。</p>
+        </div>
+      </div>
+    </div>
+    <footer class="m-foot">
+      <span class="note">停用后新任务不再加载这份方法；已经开始的会话继续使用原版本。</span>
+      <div class="acts"><button class="btn">关闭</button><button class="btn">${icon('download','ic sm')}导出 ZIP</button><button class="btn primary">${icon('pen','ic sm')}编辑 Skill</button></div>
+    </footer>
+  </div>`;
+
+boards.push(board('b04','04 · 详情弹窗 · 我的 Skill',
+ '左栏是决策信息（用途、触发方式、适用范围、边界、资料），右栏是方法正文只读预览。开关与启停都在弹窗里，不需要回到列表。',
+ screen({body: head({}) + tabs('mine',6,12) + toolbar({chips:CHIPS_MINE}) + grid(MINE) + pageNote('停用只会阻止后续任务加载；已开始的任务继续使用原版本。'),
+   extra: modalPersonal})));
+
+const modalBuiltin = `
+  <div class="scrim"></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mb-title">
+    <header class="m-head">
+      <span class="icon-tile lg">${icon('grid')}</span>
+      <div class="m-id">
+        <h2 id="mb-title">分镜规划</h2>
+        <div class="m-chips"><span class="chip-s">内置 Skill</span><span class="chip-s">标准创作 · 无限画布</span><span class="chip-s ok">${icon('check','ic xs')}已启用</span></div>
+      </div>
+      <div class="m-actions">
+        <span class="sw-wrap">启用 ${sw(true,{label:'启用 分镜规划'})}</span>
+        <button class="icon-btn" aria-label="更多操作">${icon('more')}</button>
+        <button class="icon-btn" aria-label="关闭">${icon('x')}</button>
+      </div>
+    </header>
+    <div class="m-body">
+      <div class="m-left">
+        <div class="block"><h4>用途</h4><p class="m-desc">把选入的剧情拆为连贯镜头，安排画面职责、时长依据、动作边界、素材关联和前后衔接。</p></div>
+        <div class="block"><h4>触发方式</h4>
+          <div class="seg"><button class="on">按需自动</button><button>仅手动</button></div>
+          <p class="hint">按需自动：AI 判断当前任务需要时自动带上这份方法。仅手动：只在输入框用 / 选它时使用。</p>
+        </div>
+        <div class="block"><h4>适用范围</h4>
+          <div class="m-chips"><span class="chip-s">${icon('check','ic xs')}标准创作</span><span class="chip-s">${icon('check','ic xs')}无限画布</span></div>
+        </div>
+        <div class="block"><h4>标签</h4><div class="tags"><span class="tag">分镜</span><span class="tag">镜头</span><span class="tag">衔接</span><span class="tag">时长</span></div></div>
+        <div class="block"><h4>不适用</h4><p class="quiet">不凭空补齐未选剧本，不把每句对白机械切镜，不自动生成图片、视频或配音。</p></div>
+        <div class="block"><h4>附加资料 <span class="cnt">2 份</span></h4>
+          <ul class="res">
+            <li>${icon('file','ic sm')}<span class="p">assets/output-template.md</span><span class="k">模板</span><button>查看</button></li>
+            <li>${icon('file','ic sm')}<span class="p">references/method.md</span><span class="k">参考</span><button>查看</button></li>
+          </ul>
+        </div>
+      </div>
+      <div class="m-right">
+        <div class="m-right-head"><h4>方法主指令</h4><span class="chip-s">只读</span></div>
+        <div class="doc">
+          <h1>分镜规划</h1>
+          <p>适用于拆解剧情、设计镜头与关联素材，或分析拍摄和剪辑可行性。仅分析时不创建卡片。</p>
+          <p>必要输入是本次剧情范围、人物与空间关系、用户数量和时长要求。输入不足时说明依赖；用户要求固定镜头数时遵守，不因模板改变数量。</p>
+          <ol>
+            <li>为每个镜头确定观众必须接收的信息及其不可替代作用，再选择景别、机位和动作。</li>
+            <li>写清开场状态、单一主要动作和结束状态。延续人物位置、视线、持物、伤势及道具状态，切换轴线需有可理解依据。</li>
+            <li>根据对白、动作和停顿估计时长，保持模型和当前工具允许的参数；估算不等于实测。</li>
+            <li>只关联已选入或本任务真实回执中的素材。无真实身份时可列待关联名称，不猜 ID。</li>
+            <li>用户明确要求搭建后调用标准分镜批次或画布增量工具。生成媒体另按明确请求执行，不能因有图片栏就启动生成。</li>
+          </ol>
+          <p>自检镜头职责、数量、时长容纳、画面文字、声画关系和接续状态。</p>
+        </div>
+      </div>
+    </div>
+    <footer class="m-foot">
+      <span class="note">内置方法由平台维护；要改内容请先复制成自己的 Skill。</span>
+      <div class="acts"><button class="btn">关闭</button><button class="btn">${icon('download','ic sm')}导出 ZIP</button><button class="btn primary">${icon('copy','ic sm')}复制为我的 Skill</button></div>
+    </footer>
+  </div>`;
+
+boards.push(board('b05','05 · 详情弹窗 · 内置 Skill',
+ '内置项只读：没有「编辑」，主操作变成「复制为我的 Skill」。启停与触发方式仍然可改，因为它们属于「我的设置」而不是方法内容。',
+ screen({body: head({desc:'平台维护的创作方法，覆盖从剧本到分镜、提示词与声音的主要环节。'}) + tabs('builtin',6,12) + toolbar({chips:CHIPS_BUILTIN}) + grid(BUILTIN) + pageNote('内置方法随平台更新；改动自己的版本请先复制为我的 Skill。'),
+   extra: modalBuiltin})));
+
+boards.push(board('b06','06 · 空状态 · 我的 Skill',
+ '这一组还没有内容时，工具栏和筛选一起隐藏——没有可筛的东西。空态给出两条真实路径，并留一条去内置库的出口。',
+ screen({body: head({}) + tabs('mine',0,12) + `<div class="grid"><div class="state">
+     <span class="state-ic">${icon('sparkles')}</span>
+     <h3>还没有自己的 Skill</h3>
+     <p>把常用方法写成一份可复用的指令，AI 会在合适的任务里按需带上它；也可以在输入框用 / 手动调用。</p>
+     <div class="state-actions"><button class="btn primary">${icon('plus','ic sm')}新建 Skill</button><button class="btn">${icon('upload','ic sm')}导入 Markdown 或资料包</button></div>
+     <a class="state-link">先看看 12 个内置 Skill ${icon('arrow-right','ic xs')}</a>
+   </div></div>`})));
+
+boards.push(board('b07','07 · 搜索无结果',
+ '有关键词但没有命中：保留工具栏与筛选，说明查了什么、下一步怎么做，只给一个动作。',
+ screen({body: head({}) + tabs('mine',6,12) + toolbar({query:'钩子开场', chips:[{label:'全部',n:6,on:true},{label:'已启用',n:4},{label:'已停用',n:2}]}) +
+   `<div class="grid"><div class="state gap">
+     <span class="state-ic">${icon('search')}</span>
+     <h3>没有匹配的 Skill</h3>
+     <p>搜「钩子开场」没有结果。标签和用途也会参与搜索，可以换个更短的词，或把状态筛选改成全部。</p>
+     <div class="state-actions"><button class="btn">清除筛选</button></div>
+   </div></div>`})));
+
+const skel = Array.from({length:6}).map(()=>`<div class="sk" aria-hidden="true">
+  <div class="r1"><i class="t"></i><div style="flex:1"><i class="l w1"></i><i class="l w1" style="width:32%;margin-top:8px"></i></div><i style="width:36px;height:20px;border-radius:10px"></i></div>
+  <i class="l w2"></i><i class="l w3"></i>
+  <div class="tags"><i></i><i></i><i></i></div>
+  <i class="foot"></i></div>`).join('');
+boards.push(board('b08','08 · 首次加载',
+ '骨架只还原卡片骨架，不显示假标题与假标签。工具栏与页签保持可用状态，避免整页跳动。',
+ screen({body: head({}) + tabs('mine',6,12) + toolbar({chips:CHIPS_MINE, muted:true}) + `<div class="grid">${skel}</div>`})));
+
+boards.push(board('b09','09 · 读取失败',
+ '失败就直说失败：不拿空态冒充，不自动重试覆盖用户刚做的改动。给出重试与错误详情，页签与搜索仍然可用。',
+ screen({body: head({}) + tabs('mine',6,12) + toolbar({chips:CHIPS_MINE}) +
+   `<div class="grid"><div class="state err">
+     <span class="state-ic">${icon('alert')}</span>
+     <h3>暂时读不到 Skill 目录</h3>
+     <p>请求超时。可能是网络或服务暂时不可用。列表不会自动重试，以免覆盖你刚做的改动。</p>
+     <div class="state-actions"><button class="btn primary">${icon('rotate','ic sm')}重新读取</button></div>
+     <p class="err-detail">错误详情：GET /api/v1/agent/skills · 504 Gateway Timeout</p>
+   </div></div>`})));
+
+const dialog = `
+  <div class="scrim"></div>
+  <div class="dialog-sm" role="dialog" aria-modal="true" aria-labelledby="c-title">
+    <header><h2 id="c-title">设置没有保存</h2><button class="icon-btn" aria-label="关闭">${icon('x')}</button></header>
+    <div class="body">
+      <p>「一镜到底运镜模板」的设置在你操作期间已经在别处改变。为了避免覆盖对方的改动，这次没有提交。</p>
+      <div class="cmp">
+        <div><h5>你刚才选择</h5><p>启用 · 按需自动</p></div>
+        <div><h5>服务器当前</h5><p>停用 · 仅手动</p></div>
+      </div>
+      <p>核对后可以按当前状态重新设置；也可以先关掉，之后从列表顶部「1 项待核对」继续。</p>
+    </div>
+    <footer><button class="btn">稍后处理</button><button class="btn primary">按当前状态重新设置</button></footer>
+  </div>`;
+
+boards.push(board('b10','10 · 设置冲突核对',
+ '开关不是无脑乐观更新：服务端版本变了就停下来核对，绝不静默覆盖。已选目标、当前状态并排摆开，默认动作不是继续提交。',
+ screen({body: head({}) + tabs('mine',6,12) + toolbar({chips:CHIPS_MINE}) + grid(MINE) + pageNote('停用只会阻止后续任务加载；已开始的任务继续使用原版本。'),
+   extra: dialog})));
+
+const counter = (n) => `<span class="dot" style="left:${n.x}px;top:${n.y}px">${n.i}</span>`;
+const anat = `
+  <div class="anat">
+    <div class="anat-card-wrap">
+      <article class="card" style="width:420px;min-height:196px">
+        <div class="card-head">
+          <span class="icon-tile">${icon('zap')}</span>
+          <div class="card-title"><div class="card-name"><span class="t">竖屏短剧钩子开场</span></div></div>
+          ${sw(true,{label:'启用'})}
+        </div>
+        <p class="card-desc">把开头三秒改写成能拦住滑动的情节钩子，保留人物关系与因果，不新增角色。</p>
+        <div class="tags"><span class="tag">开场</span><span class="tag">钩子</span><span class="tag">竖屏</span><span class="tag more">+1</span></div>
+        <div class="card-foot"><span>标准创作 · 无限画布</span><span class="sep">·</span><span>按需自动</span><span class="sep">·</span><span>2 份资料</span><span class="detail">查看详情${icon('chevron-right','ic xs')}</span></div>
+      </article>
+      ${counter({i:1,x:4,y:4})}
+      ${counter({i:2,x:4,y:50})}
+      ${counter({i:3,x:462,y:50})}
+      ${counter({i:4,x:4,y:105})}
+      ${counter({i:5,x:4,y:146})}
+      ${counter({i:6,x:4,y:189})}
+    </div>
+    <div class="anat-legend">
+      <div class="anat-item"><b>1</b><span><strong>卡片本体</strong>圆角 12、1px hair 边线、内距 15/16；最小高 176，同排等高。悬停只提亮表面与边线，不位移、不加阴影。</span></div>
+      <div class="anat-item"><b>2</b><span><strong>图标块 + 名称</strong>图标 36×36、圆角 9、surface-muted，只表达方法类型，不做彩色分类；名称 14px / 600，单行省略并保留 title。</span></div>
+      <div class="anat-item"><b>3</b><span><strong>启停开关</strong>36×20，热区 44×44；点开关不打开详情；不兼容时禁用并给原因。</span></div>
+      <div class="anat-item"><b>4</b><span><strong>用途</strong>12.5px / 1.65，固定两行，超出截断。卡片里不做「展开」。</span></div>
+      <div class="anat-item"><b>5</b><span><strong>标签</strong>11px，最多 3 个 + 「+n」。只读，不承担筛选入口。</span></div>
+      <div class="anat-item"><b>6</b><span><strong>元信息与详情入口</strong>11px：适用范围 · 触发方式 · 资料份数（0 份不显示）；右侧「查看详情」常驻低对比，悬停转正文色。</span></div>
+      <div class="anat-note"><b>栅格与命中区：</b>网格 <code>auto-fill minmax(310px, 1fr)</code>，间距 14。名称是唯一可聚焦入口，用 <code>::after</code> 把点击区铺满整卡；开关与「查看详情」用 <code>z-index:1</code> 浮在上面，保证「点开关 ≠ 开详情」。</div>
+    </div>
+  </div>`;
+
+boards.push(board('b11','11 · 卡片解剖与尺寸',
+ '给实现的尺寸表：六处标注对应下面的规格，落地时按这套数值，不要各页各写一套。',
+ screen({body: head({}) + tabs('mine',6,12) + anat})));
+
+boards.push(board('b12','12 · 窄屏（1100px）',
+ '侧栏收至 182，栅格自动降到两列，页头动作换行。卡片信息不增减，只重新分配宽度。',
+ screen({narrow:true, w:1100, h:860, body: head({desc:'可复用的创作方法。决定 AI 在什么任务里、用什么方式做事。'}) + tabs('mine',6,12) +
+   toolbar({chips:[{label:'全部',n:6,on:true},{label:'已启用',n:4}]}) + grid(MINE.slice(0,4)) +
+   pageNote('停用只会阻止后续任务加载；已开始的任务继续使用原版本。')})));
+
+/* ---------------- create / import ---------------- */
+const DOC_EMPTY = '## 适用\n什么时候用这份方法\n\n## 步骤\n1. …\n\n## 输出\n交付什么、写到哪里\n\n## 自检\n怎么判断做对了';
+const DOC_FILLED = '## 适用\n用户要重写故事开头，或新作品需要一版能拦住滑动的开场。\n\n## 步骤\n1. 先确认主角、当下最急的处境、观众此刻还不知道什么。\n2. 用一句动作或声音切入，不从背景介绍开始。\n3. 第一句台词必须含冲突或反常信息。\n4. 第 8 秒前抛出「必须看下去」的问题，但先不回答。\n5. 结尾留 1 秒视觉钩子：门缝、来电、反常表情。\n\n## 输出\n3 个方向不同的开场候选，每个 80–120 字，标注钩子类型。\n\n## 自检\n不改人物关系；不新增角色；不用旁白解释情绪。';
+const kb = (text) => (new Blob([text]).size / 1024).toFixed(1);
+
+function createDialog(o = {}) {
+  const v = Object.assign({ name: '', desc: '', tags: [], modes: ['标准创作', '无限画布'], inv: '按需自动', on: true, doc: '', files: [] }, o.v);
+  const e = o.err || {};
+  const busy = !!o.busy;
+  const field = (key, label, req, inner, hint, right = '') => `<div class="fld${e[key] ? ' err' : ''}">
+      <div class="lb">${label}${req ? '<span class="req">*</span>' : ''}${right ? `<span class="opt-lb">${right}</span>` : ''}</div>
+      ${inner}${e[key] ? `<p class="msg">${icon('alert', 'ic xs')}${e[key]}</p>` : hint ? `<p class="hint">${hint}</p>` : ''}
+    </div>`;
+  const tagsHtml = v.tags.map(t => `<span class="tag">${t}<span class="x">${icon('x', 'ic xs')}</span></span>`).join('');
+  const attach = v.files.length
+    ? `<ul class="res2">${v.files.map(f => `<li>${icon('file', 'ic sm')}<span class="p">${f.p}</span><span class="k">${f.k}</span><span class="x">${icon('x', 'ic xs')}</span></li>`).join('')}</ul>`
+    : `<div class="attach">${icon('file', 'ic sm')}<span>附加资料 <span class="n">0 份</span> · 模板、参考资料或只读脚本</span><button class="btn sm">添加资料</button></div>`;
+  return `<div class="scrim"></div>
+  <div class="cdlg${busy ? ' busy' : ''}" role="dialog" aria-modal="true" aria-labelledby="cd-title">
+    <header class="m-head">
+      <span class="icon-tile lg" style="border-style:dashed;color:var(--sub)">${icon('plus')}</span>
+      <div class="m-id"><h2 id="cd-title">新建 Skill</h2>
+        <p>保存后加入「我的 Skill」，默认按需自动，只在任务需要时参与。</p></div>
+      <div class="m-actions"><button class="icon-btn" aria-label="关闭"${busy ? ' aria-disabled="true"' : ''}>${icon('x')}</button></div>
+    </header>
+    <div class="m-body form">
+      <div class="m-left">
+        ${field('name', '名称', true, `<input class="inp" aria-label="名称" placeholder="例如：竖屏短剧钩子开场" value="${v.name}"${busy ? ' readonly' : ''}${o.focusName ? ' style="border-color:var(--accent);box-shadow:0 0 0 2px rgba(193,193,197,.18)"' : ''}>`, '用一句话说明它能做什么，会显示在卡片上。', '最多 120 字')}
+        ${field('desc', '用途', true, `<textarea class="inp" rows="3" aria-label="用途" placeholder="在什么任务里用，能产出什么。"${busy ? ' readonly' : ''}>${v.desc}</textarea>`, '决定用户会不会点开它。', `${v.desc.length} / 2000`)}
+        ${field('tags', '标签', false, `<div class="tagedit">${tagsHtml}<input aria-label="添加标签" placeholder="${v.tags.length ? '' : '开场、钩子、竖屏'}"></div>`, '标签参与搜索，不影响生成。', 'Enter 添加')}
+        ${field('modes', '适用模式', true, `<div class="opts"><button class="opt on">${icon('check', 'ic')}标准创作</button><button class="opt on">${icon('check', 'ic')}无限画布</button></div>`, '只在勾选的创作模式里出现。')}
+        ${field('inv', '触发方式', false, `<div class="seg"><button class="${v.inv === '按需自动' ? 'on' : ''}">按需自动</button><button class="${v.inv === '仅手动' ? 'on' : ''}">仅手动</button></div>`, '按需自动：AI 判断需要时自己带上；仅手动：只在输入框用 / 调用。')}
+        <div class="swrow"><div class="txt">创建后立即启用<small>关闭时只保存到库，不参与任何任务。</small></div>${sw(v.on, { label: '创建后立即启用' })}</div>
+        <details class="more"><summary>${icon('chevron-right', 'ic xs')}更多设置<span class="sub">不适用场景、来源、格式标识</span></summary>
+          <div class="inner">
+            <div class="fld"><div class="lb">不适用<span class="opt-lb">可选</span></div><textarea class="inp" rows="2" aria-label="不适用" placeholder="这份方法不该用在什么任务上"></textarea></div>
+            <div class="fld"><div class="lb">来源与适配说明<span class="opt-lb">可选</span></div><textarea class="inp" rows="2" aria-label="来源"></textarea></div>
+            <div class="fld" style="margin-bottom:0"><div class="lb">格式标识<span class="opt-lb">自动生成，不用改</span></div><input class="inp" readonly value="skill-3f9a2c1b"></div>
+          </div></details>
+      </div>
+      <div class="cdoc">
+        <div class="cdoc-head"><h4>方法正文</h4>${v.doc ? `<span class="bytes">${kb(v.doc)} KB / 64 KB</span>` : ''}<span class="spacer"></span>
+          <div class="seg sm"><button class="on">编写</button><button>预览</button></div>
+          <button class="icon-btn" aria-label="展开为全屏编辑器">${icon('expand')}</button></div>
+        <p class="hint">写清必要输入、方法步骤、输出与自检。长资料放附加资料，不要塞进正文。</p>
+        <div class="cdoc-body"><textarea aria-label="方法正文" placeholder="${DOC_EMPTY}"${busy ? ' readonly' : ''}${e.doc ? ' class="err"' : ''}>${v.doc}</textarea></div>
+        ${e.doc ? `<p class="msg">${icon('alert', 'ic xs')}${e.doc}</p>` : ''}
+        ${attach}
+      </div>
+    </div>
+    <footer class="m-foot"><span class="note"${o.statusColor ? ` style="color:${o.statusColor}"` : ''}>${o.status || ''}</span>
+      <div class="acts"><button class="btn"${busy ? ' disabled' : ''}>取消</button>
+        ${busy ? `<button class="btn primary" aria-busy="true" disabled><span class="spin"></span>正在创建…</button>`
+          : '<button class="btn primary">创建 Skill</button>'}</div></footer>
+  </div>`;
+}
+
+const CREATE_V = {
+  name: '竖屏短剧钩子开场',
+  desc: '把开头三秒改写成能拦住滑动的情节钩子，保留人物关系与因果，不新增角色。',
+  tags: ['开场', '钩子', '竖屏'],
+  doc: DOC_FILLED,
+  files: [{ p: 'assets/hook-template.md', k: '模板' }, { p: 'references/vertical-hook.md', k: '参考' }],
+};
+
+boards.push(board('b13', '13 · 新建 Skill（空白）',
+ '左栏只问三件事：叫什么、什么时候用、在哪两种创作模式里出现。正文右栏独占高度，附加资料与更多设置按需展开。',
+ screen({body: head({}) + tabs('mine', 6, 12) + toolbar({chips: CHIPS_MINE}) + grid(MINE),
+   extra: createDialog({ focusName: true, status: '未填写 · 名称与正文为必填' })})));
+
+boards.push(board('b14', '14 · 新建 Skill（已填写）',
+ '填完就是一张卡片的全部信息：名称、用途、标签、模式、触发方式。正文右栏给字节上限，资料以路径列出，可逐个移除。',
+ screen({body: head({}) + tabs('mine', 6, 12) + toolbar({chips: CHIPS_MINE}) + grid(MINE),
+   extra: createDialog({ v: CREATE_V, status: '可以创建' })})));
+
+boards.push(board('b15', '15 · 新建 Skill（必填未通过）',
+ '点「创建 Skill」才校验，不在输入时就红；错误就近显示并保留已填内容，底栏汇总还缺几项。',
+ screen({body: head({}) + tabs('mine', 6, 12) + toolbar({chips: CHIPS_MINE}) + grid(MINE),
+   extra: createDialog({ v: { desc: '把开头三秒改写成能拦住滑动的情节钩子，保留人物关系与因果。' },
+     err: { name: '请填写名称', doc: '写一句方法正文：什么时候用、怎么做、产出什么。' },
+     status: '还有 2 项必填：名称、方法正文', statusColor: 'var(--danger)' })})));
+
+boards.push(board('b16', '16 · 新建 Skill（保存中）',
+ '保存期间表单只读、关闭失效、按钮转圈，避免重复创建；顶部一条细进度线说明正在等回执。',
+ screen({body: head({}) + tabs('mine', 6, 12) + toolbar({chips: CHIPS_MINE}) + grid(MINE),
+   extra: createDialog({ v: CREATE_V, busy: true, status: '正在创建…' })})));
+
+const importDialog = `<div class="scrim"></div>
+  <div class="cdlg" style="width:760px" role="dialog" aria-modal="true" aria-labelledby="im-title">
+    <header class="m-head">
+      <span class="icon-tile lg">${icon('file')}</span>
+      <div class="m-id"><h2 id="im-title">导入 Skill</h2>
+        <div class="m-chips"><span class="chip-s">竖屏钩子开场.zip</span><span class="chip-s">28.4 KB</span><span class="chip-s warn">${icon('alert', 'ic xs')}1 处需要处理</span></div>
+        <p>按 SKILL.md 解析出名称、用途与资料目录。采用后进入编辑，不会覆盖同名 Skill。</p></div>
+      <div class="m-actions"><button class="icon-btn" aria-label="关闭">${icon('x')}</button></div>
+    </header>
+    <div class="idlg-body">
+      <dl class="dl">
+        <dt>名称</dt><dd>竖屏短剧钩子开场</dd>
+        <dt>用途</dt><dd>把开头三秒改写成能拦住滑动的情节钩子，保留人物关系与因果。</dd>
+        <dt>适用模式</dt><dd>标准创作 · 无限画布</dd>
+        <dt>触发方式</dt><dd>按需自动</dd>
+        <dt>标签</dt><dd><span class="tags" style="margin:0"><span class="tag">开场</span><span class="tag">钩子</span><span class="tag">竖屏</span></span></dd>
+        <dt>资料</dt><dd>2 份可用 · 1 份缺失</dd>
+      </dl>
+      <ul class="res2" style="margin-top:0">
+        <li>${icon('file', 'ic sm')}<span class="p">assets/hook-template.md</span><span class="k">模板</span></li>
+        <li>${icon('file', 'ic sm')}<span class="p">references/vertical-hook.md</span><span class="k">参考</span></li>
+        <li>${icon('alert', 'ic sm')}<span class="p" style="color:var(--warning)">references/missing.md</span><span class="k">缺失</span></li>
+      </ul>
+      <div class="issuebar">${icon('alert', 'ic sm')}<span>正文引用了 <code style="font-family:Consolas,monospace">references/missing.md</code>，但压缩包里没有这个文件。采用后可以补上，或删掉这段引用。</span></div>
+    </div>
+    <footer class="m-foot"><span class="note">导入只是创建一份副本，不影响已有 Skill。</span>
+      <div class="acts"><button class="btn">取消</button><button class="btn">换个文件</button><button class="btn primary">采用并继续编辑</button></div></footer>
+  </div>`;
+
+boards.push(board('b17', '17 · 导入 Skill（预览）',
+ '导入不是"选完就进库"：先给出解析结果、资料目录和需要处理的问题，采用后才进入新建表单继续改。',
+ screen({body: head({}) + tabs('mine', 6, 12) + toolbar({chips: CHIPS_MINE}) + grid(MINE),
+   extra: importDialog})));
+
+const FRESH = { n: '片头悬念剪辑顺序', i: 'layers', d: '把已生成的镜头重新排序，用倒叙或留白把最大的信息点推到前三秒。',
+  t: ['剪辑', '排序', '悬念'], modes: '标准创作', inv: '按需自动', res: 0, on: true, fresh: true };
+boards.push(board('b18', '18 · 创建成功回到列表',
+ '关闭弹窗后新卡插在最前（按最近更新排序），2 秒浅灰描边标出位置，底部提示说明它已经能被任务加载。',
+ screen({body: head({}) + tabs('mine', 7, 12) +
+   toolbar({ chips: [{ label: '全部', n: 7, on: true }, { label: '已启用', n: 5 }, { label: '已停用', n: 2 }] }) +
+   grid([FRESH, ...MINE].slice(0, 6)) + pageNote('停用只会阻止后续任务加载；已开始的任务继续使用原版本。'),
+   extra: `<div class="toast">${icon('check-circle', 'ic sm')}已创建「片头悬念剪辑顺序」· 按需自动，新任务可加载</div>`})));
+
+document.getElementById('gallery').innerHTML = `
+  <div class="g-head">
+    <h1>Skill 管理页 · 界面原型</h1>
+    <p>与现有工作台同一套中性炭黑 token（画布 #101010 / 表面 #181818 / 近白主操作 / 7px 控件圆角 / 12px 面板圆角）。每张图是一个可交互状态的静态还原，用于评审与实现对照；不含实现代码。</p>
+  </div>` + boards.join('');
+document.body.dataset.ready = '1';
+</script>
+</body>
+</html>

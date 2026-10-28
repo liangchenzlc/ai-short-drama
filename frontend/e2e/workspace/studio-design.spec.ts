@@ -5,21 +5,15 @@ test.use({ actionTimeout: 10000 });
 
 const pages = [
   ['projects', '/projects', '项目管理'],
-  ['project-detail', '/projects/10', '雨夜来信'],
-  ['characters', '/assets/character', '全局素材库'],
-  ['scenes', '/assets/scene', '全局素材库'],
-  ['props', '/assets/prop', '全局素材库'],
-  ['tasks-text', '/tasks/text', '任务管理'],
-  ['tasks-image', '/tasks/image', '任务管理'],
-  ['tasks-video', '/tasks/video', '任务管理'],
-  ['tasks-audio', '/tasks/audio', '任务管理'],
+  ['media-all', '/media-library/all', '资产库'],
+  ['media-audio', '/media-library/audio', '资产库'],
   ['media-images', '/media-library/image', '资产库'],
   ['media-videos', '/media-library/video', '资产库'],
   ['ai-config', '/ai_config', 'AI 配置'],
-  ['writing', `${root}/source`, '归来的旅人'],
-  ['episode-assets', `${root}/assets`, '归来的旅人'],
-  ['storyboard', `${root}/storyboard`, '归来的旅人'],
-  ['assembly', `${root}/assembly`, '归来的旅人'],
+  ['writing', `${root}/source`, '雨夜来信'],
+  ['episode-assets', `${root}/assets`, '雨夜来信'],
+  ['storyboard', `${root}/storyboard`, '雨夜来信'],
+  ['assembly', `${root}/assembly`, '雨夜来信'],
   ['not-found', '/missing', '没有找到内容'],
 ] as const;
 
@@ -41,15 +35,15 @@ async function capture(page: Page, info: TestInfo, name: string) {
   await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: !overlay, animations: 'disabled' });
 }
 
-for (const width of [1024, 1440, 1920]) test(`all routes use the dark workspace at ${width}px`, async ({ page }, info) => {
+for (const width of [1280, 1440, 1920]) test(`all routes use the dark workspace at ${width}px`, async ({ page }, info) => {
   test.setTimeout(90000);
   const state = await fixture(page, true);
   await page.setViewportSize({ width, height: 1000 });
   for (const [name, url, heading] of pages) {
     if (url.startsWith(root) && new URL(page.url()).pathname.startsWith(root)) {
       const stage = url.split('/').at(-1)!;
-      await page.getByRole('navigation', { name: '分集制作流程', exact: true }).getByRole('button', {
-        name: ({ assets: '素材生成', storyboard: '分镜制作', assembly: '成片合成' } as Record<string, string>)[stage], exact: true,
+      await page.getByRole('navigation', { name: '创作流程', exact: true }).getByRole('button', {
+        name: ({ assets: '资产生成', storyboard: '分镜制作', assembly: '成片预览' } as Record<string, string>)[stage], exact: true,
       }).click();
       await expect(page).toHaveURL(current => current.pathname === url);
     } else {
@@ -57,24 +51,13 @@ for (const width of [1024, 1440, 1920]) test(`all routes use the dark workspace 
       await page.goto(url);
     }
     if (url.startsWith(root)) {
-      await expect(page.locator('.episode-switch')).toContainText(heading);
-      await expect(page.getByRole('navigation', { name: '分集制作流程', exact: true })).toBeVisible();
+      await expect(page.locator('.episode-project-location')).toContainText(heading);
+      await expect(page.getByRole('navigation', { name: '创作流程', exact: true })).toBeVisible();
     } else await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
     if (name === 'projects') await expect(page.locator('.project-tile')).toHaveCount(4);
     if (name === 'storyboard') await expect(page.locator('.storyboard-summary')).toHaveCount(20);
     if (name === 'assembly') await expect(page.getByRole('region', { name: '视频时间轴' })).toBeVisible();
     await capture(page, info, name);
-    if (width === 1024 && name.startsWith('tasks-')) {
-      const rows = await page.locator('.ant-table-tbody > tr.ant-table-row').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
-      expect(rows.every(height => height < 170)).toBe(true);
-      const modelColumn = await page.locator('.generation-task-cell').first().boundingBox();
-      expect(modelColumn!.width).toBeGreaterThan(180);
-      await page.locator('.ant-table-content').evaluate(node => { node.scrollLeft = node.scrollWidth; });
-      await expect(name === 'tasks-image' || name === 'tasks-video'
-        ? page.getByRole('link', { name: '查看作品', exact: true }).first()
-        : page.getByRole('button', { name: '查看结果', exact: true }).first()).toBeInViewport();
-      await capture(page, info, `${name}-scroll-actions`);
-    }
   }
   expect(state.unexpected).toEqual([]);
   expect(state.errors).toEqual([]);
@@ -119,48 +102,13 @@ test('dialogs, drawers and nested confirmations retain input and restore keyboar
   await expect(config).toHaveCount(0);
   expect(state.requests.filter(r => r.path === '/ai-model-configs' && r.method !== 'GET')).toEqual([]);
 
-  for (const kind of ['text', 'image', 'video', 'audio']) {
-    await page.goto(`/tasks/${kind}`);
-    await page.locator('.studio-page-head').getByRole('button', { name: /^新建.*任务$/ }).click();
-    await expect(page.locator('.ant-drawer-body')).toBeVisible();
-    await capture(page, info, `create-${kind}-task`);
-    if (kind === 'image') {
-      await page.getByRole('button', { name: '选择图片', exact: true }).click();
-      await expect(page.locator('.media-picker-dialog')).toBeVisible();
-      await capture(page, info, 'image-picker');
-      await page.keyboard.press('Escape');
-      await page.getByRole('textbox', { name: '画面描述' }).fill('保留这段未提交的画面描述');
-      await page.locator('.ant-drawer-close').click();
-      await expect(page.getByRole('dialog', { name: '未保存的修改', exact: true })).toBeVisible();
-      await capture(page, info, 'drawer-confirmation');
-      await page.keyboard.press('Escape');
-      await expect(page.getByRole('textbox', { name: '画面描述' })).toHaveValue('保留这段未提交的画面描述');
-      await page.locator('.ant-drawer-close').click();
-      await page.getByRole('dialog', { name: '未保存的修改', exact: true }).getByRole('button', { name: '放弃修改' }).click();
-      continue;
-    }
-    await page.locator('.ant-drawer-close').click();
-  }
-  await page.goto('/tasks/text?task=8001');
-  await expect(page.getByText('任务详情', { exact: true })).toBeVisible();
-  await capture(page, info, 'task-detail');
-  await page.locator('.ant-drawer-close').click();
-  await page.getByRole('button', { name: '批次记录' }).click();
-  await expect(page.getByText('批次记录', { exact: true }).last()).toBeVisible();
-  await capture(page, info, 'batch-history');
-  await page.getByRole('button', { name: '查看批次' }).click();
-  await expect(page.getByText('批量生成进度', { exact: true })).toBeVisible();
-  await capture(page, info, 'batch-progress');
 
   await page.goto('/media-library/image');
   await page.locator('.media-gallery-card').first().click();
-  await expect(page.getByRole('dialog', { name: '资产详情', exact: true })).toBeVisible();
-  await capture(page, info, 'media-detail');
-  await page.locator('.asset-detail-preview').getByRole('button', { name: /^预览/ }).click();
-  await expect(page.locator('.image-preview-dialog')).toBeVisible();
+  await expect(page.locator('.ant-image-preview')).toBeVisible();
   await capture(page, info, 'image-preview');
   await page.keyboard.press('Escape');
-  await expect(page.getByText('资产详情', { exact: true })).toBeVisible();
+  await expect(page.locator('.ant-image-preview')).toHaveCount(0);
   expect(state.unexpected).toEqual([]);
   expect(state.errors).toEqual([]);
 });
@@ -171,7 +119,7 @@ test('production editor overlays and compact desktop layout remain usable', asyn
   await page.setViewportSize({ width: 1280, height: 960 });
   await page.goto(`${root}/assets`);
   await page.locator('.standard-assets-filters').getByRole('button', { name: '角色', exact: true }).click();
-  await page.getByRole('button', { name: '新增素材', exact: true }).click();
+  await page.getByRole('button', { name: '创建资产', exact: true }).click();
   await page.getByRole('textbox', { name: '素材名称', exact: true }).fill('站台旅客');
   await expect.poll(() => state.requests.some(request => request.method === 'POST' && request.path === `${root}/assets` && request.body.name === '站台旅客')).toBe(true);
   await expect(page).toHaveURL(url => url.searchParams.get('asset') === '504');
@@ -235,39 +183,6 @@ test('production editor overlays and compact desktop layout remain usable', asyn
   expect(state.errors).toEqual([]);
 });
 
-test('video frame pickers keep registered IDs hidden and preserve selected request values', async ({ page }, info) => {
-  const state = await fixture(page, true);
-  const submissions: any[] = [];
-  await page.route('**/api/v1/ai/generations/video', async route => {
-    submissions.push(route.request().postDataJSON());
-    await route.fulfill({ status: 503, json: { error: { code: 'FIXTURE', message: '测试服务暂不可用，表单保留。' } } });
-  });
-  await page.goto('/tasks/video');
-  await page.locator('.studio-page-head').getByRole('button', { name: '新建视频任务', exact: true }).click();
-  const frames = page.locator('.frame-picker');
-  await expect(frames.locator('input:not([type="hidden"])')).toHaveCount(0);
-  await expect(frames.locator('input[type="hidden"]').first()).toBeHidden();
-  await frames.nth(0).getByRole('button', { name: '选择图片', exact: true }).click();
-  await page.getByRole('dialog', { name: '从图片资产库选择' }).getByRole('button', { name: '选择此图片', exact: true }).nth(0).click();
-  await frames.nth(1).getByRole('button', { name: '选择图片', exact: true }).click();
-  await page.getByRole('dialog', { name: '从图片资产库选择' }).getByRole('button', { name: '选择此图片', exact: true }).nth(1).click();
-  await capture(page, info, 'video-selected-frames');
-  await frames.nth(1).getByRole('button', { name: '移除', exact: true }).click();
-  await page.getByRole('textbox', { name: '画面描述' }).fill('雨夜中列车缓缓驶入站台。');
-  const submit = page.getByRole('button', { name: /提交视频任务$/ });
-  await submit.click();
-  await expect.poll(() => submissions.length).toBe(1);
-  expect(submissions[0].input).toEqual({ prompt: '雨夜中列车缓缓驶入站台。', first_frame_media_id: '9901' });
-  await expect(page.getByRole('alert')).toBeVisible();
-  await frames.nth(1).getByRole('button', { name: '选择图片', exact: true }).click();
-  await page.getByRole('dialog', { name: '从图片资产库选择' }).getByRole('button', { name: '选择此图片', exact: true }).nth(1).click();
-  await expect(submit).not.toHaveClass(/ant-btn-loading/);
-  await submit.click();
-  await expect.poll(() => submissions.length).toBe(2);
-  expect(submissions[1].input).toEqual({ prompt: '雨夜中列车缓缓驶入站台。', first_frame_media_id: '9901', last_frame_media_id: '9902' });
-  expect(state.unexpected).toEqual([]);
-  expect(state.errors).toEqual([]);
-});
 
 test('loading, empty, search and error states provide a clear next action', async ({ page }, info) => {
   const state = await fixture(page, true);

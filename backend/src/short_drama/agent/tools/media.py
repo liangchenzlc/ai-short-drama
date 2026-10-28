@@ -515,8 +515,11 @@ def _target_kind(item):
     )
 
 
-def reserve_batch_locked(session, conversation, task, operation, values, settings):
-    request = next(
+def reserve_batch_locked(
+    session, conversation, task, operation, values, settings, *, scope_request=None
+):
+    autonomous = scope_request is not None
+    request = scope_request or next(
         (
             item
             for item in _requests(session, conversation, task, operation.input_revision)
@@ -524,26 +527,41 @@ def reserve_batch_locked(session, conversation, task, operation, values, setting
         ),
         None,
     )
-    if request is None or values.request_hash != digest(
-        {"role": "user", "content": request["message"].content}
+    if not autonomous and (
+        request is None
+        or values.request_hash != digest({"role": "user", "content": request["message"].content})
     ):
         raise WorkflowError(
             "assistant_generation_request_required", "生成必须引用本任务已应用的明确用户指令", 403
         )
-    prior = _prior_batches(session, task, values.request_message_id)
+    prior = (
+        session.scalars(
+            select(AgentOperation).where(
+                AgentOperation.task_id == task.id,
+                AgentOperation.tool_name == MEDIA_TOOL,
+                AgentOperation.id != operation.id,
+            )
+        ).all()
+        if autonomous
+        else _prior_batches(session, task, values.request_message_id)
+    )
     previous = next(
         (
             item
             for item in prior
             if item.id != operation.id
-            and str(item.arguments.get("retry_operation_id")) == str(values.retry_operation_id)
+            and (
+                item.arguments == operation.arguments
+                if autonomous
+                else str(item.arguments.get("retry_operation_id")) == str(values.retry_operation_id)
+            )
         ),
         None,
     )
     if previous:
         from short_drama.schemas.assistant_media import SubmitGenerationBatch
 
-        if SubmitGenerationBatch.model_validate(previous.arguments) != values:
+        if not autonomous and SubmitGenerationBatch.model_validate(previous.arguments) != values:
             raise Conflict("这次生成已受理，不能更换参数重发；请核对原回执")
         operation.result_refs = deepcopy(previous.result_refs)
         return {
@@ -554,14 +572,22 @@ def reserve_batch_locked(session, conversation, task, operation, values, setting
     session.scalar(select(User.id).where(User.id == conversation.owner_user_id).with_for_update())
     if not policy_state_locked(session, conversation.owner_user_id, lock=True)[0]:
         raise WorkflowError("assistant_media_disabled", "助手媒体生成已关闭，未受理生成", 409)
-    allowed, versions = _allowed(session, task, request)
+    allowed, versions = (
+        (request["allowed"], request["versions"])
+        if autonomous
+        else _allowed(session, task, request)
+    )
     targets = {(kind, identifier) for kind, ids in allowed.items() for identifier in ids}
-    counts = dict.fromkeys(targets, request["directive"].count)
+    counts = request["counts"] if autonomous else dict.fromkeys(targets, request["directive"].count)
     if values.retry_operation_id is not None:
         original = next((item for item in prior if item.id == values.retry_operation_id), None)
         if original is None:
             raise NotFound("本任务没有此生成重试的原始批次")
-        if not _resumed_after(session, task, original, operation.run_id):
+        if (
+            operation.input_revision <= original.input_revision
+            if autonomous
+            else not _resumed_after(session, task, original, operation.run_id)
+        ):
             raise WorkflowError(
                 "assistant_media_resume_required",
                 "请在原批次结果明确后显式继续任务，再处理缺失项",
@@ -591,6 +617,7 @@ def reserve_batch_locked(session, conversation, task, operation, values, setting
             raise WorkflowError("assistant_generation_scope", "生成类型超出原指令", 403)
         if (
             item.target_kind == "shot_video"
+            and not autonomous
             and (item.native_dialogue_version is not None) != request["directive"].native_speech
         ):
             raise WorkflowError(
@@ -643,7 +670,7 @@ def reserve_batch_locked(session, conversation, task, operation, values, setting
                         "trusted_native": versions[("native_speech", str(item.target_id))],
                         "settings": settings,
                     }
-                    if request["directive"].native_speech
+                    if item.target_kind == "shot_video" and item.native_dialogue_version is not None
                     else {}
                 ),
             )

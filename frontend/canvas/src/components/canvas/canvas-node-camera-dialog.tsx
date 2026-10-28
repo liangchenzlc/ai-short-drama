@@ -373,7 +373,7 @@ export function CanvasNodeCameraPanel({
             </div>
 
             {/* 相机、镜头、焦距和光圈均来自已注册枚举，确认时由纯函数再次强校验。 */}
-            <div className="grid grid-cols-2 gap-2.5 px-4 py-4 sm:grid-cols-4">
+            <div className="grid gap-2.5 px-4 py-4 grid-cols-4">
                 <CardColumn
                     label="相机"
                     tooltipTitle={`${currentCamera.zhName} · ${currentCamera.label}`}

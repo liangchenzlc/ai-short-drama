@@ -1,6 +1,5 @@
-import { AppDrawer } from "@/components/ui/product/app-drawer";
 import { EmptyState } from "@/components/ui/product/empty-state";
-import { App, Button, Grid, Spin } from "antd";
+import { App, Button, Spin } from "antd";
 import { Check, ChevronDown, Cloud, Download, FileClock, History, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCanvasHistoryEntry, listCanvasHistory, type CanvasDrawingHeads, type CanvasHistoryEntry } from "@/services/api/workspace-data";
@@ -25,7 +24,6 @@ export type CanvasVersionPreviewState = {
 
 export function useCanvasVersionHistory(projectId: string, onRestore: (snapshotId: string, revision: string, drawingHeads?: CanvasDrawingHeads) => Promise<void>, projectFromEditor?: CanvasProject) {
     const { message, modal } = App.useApp();
-    const desktop = Boolean(Grid.useBreakpoint().lg);
     const scope = getActiveUserScope();
     const contextRef = useRef({ projectId, scope });
     contextRef.current = { projectId, scope };
@@ -35,7 +33,6 @@ export function useCanvasVersionHistory(projectId: string, onRestore: (snapshotI
     const currentProject = projectFromEditor || storedProject;
     const localOnly = workspaceCapabilities().local;
     const [open, setOpen] = useState(false);
-    const [listOpen, setListOpen] = useState(true);
     const [tab, setTab] = useState<"cloud" | "draft">("cloud");
     const [entries, setEntries] = useState<CanvasHistoryEntry[]>([]);
     const [drafts, setDrafts] = useState<CanvasSyncDraft[]>([]);
@@ -128,7 +125,6 @@ export function useCanvasVersionHistory(projectId: string, onRestore: (snapshotI
         previewRequest.current = controller;
         const selection: CanvasVersionPreviewState = { key: entry.id, label: `版本 ${entry.revision}`, date: entry.contentUpdatedAt, kind: "cloud", snapshot: entry };
         setPreview(selection);
-        setListOpen(false);
         void getCanvasHistoryEntry(projectId, entry.id, controller.signal)
             .then(({ project }) => {
                 if (!controller.signal.aborted && previewRequest.current === controller && isCurrentContext()) setPreview({ ...selection, project });
@@ -186,8 +182,6 @@ export function useCanvasVersionHistory(projectId: string, onRestore: (snapshotI
 
     return {
         open,
-        listOpen,
-        desktop,
         tab,
         entries,
         drafts,
@@ -205,7 +199,6 @@ export function useCanvasVersionHistory(projectId: string, onRestore: (snapshotI
         show: () => {
             if (restoring || confirming) return;
             setOpen(true);
-            setListOpen(true);
             // Keep a conflict draft of the current editor. Saved versions come
             // from Go snapshots and are listed separately; opening does not restore.
             const snapshotProject = currentProject || useCanvasStore.getState().openProject(projectId);
@@ -216,16 +209,9 @@ export function useCanvasVersionHistory(projectId: string, onRestore: (snapshotI
             }
         },
         toggle: () => {
-            if (open && (desktop || listOpen)) close();
+            if (open) close();
             else {
                 setOpen(true);
-                setListOpen(true);
-            }
-        },
-        hideList: () => {
-            if (!restoring && !confirming) {
-                setListOpen(false);
-                if (!preview) setOpen(false);
             }
         },
         close,
@@ -244,7 +230,6 @@ export function useCanvasVersionHistory(projectId: string, onRestore: (snapshotI
             if (restoring || confirming) return;
             previewRequest.current?.abort();
             setPreview({ key: draft.id, label: "本地草稿", date: draft.savedAt, kind: "draft", project: draft.project });
-            setListOpen(false);
         },
         returnToCurrent: () => {
             if (!restoring && !confirming) returnToCurrent();
@@ -424,27 +409,7 @@ export function CanvasVersionHistory({ history }: { history: CanvasVersionHistor
         </div>
     );
 
-    return history.desktop ? (
-        <aside className="canvas-version-sidebar" aria-label="版本记录">
-            {content}
-        </aside>
-    ) : (
-        <AppDrawer
-            flush
-            open={history.listOpen}
-            focusable={{ trap: !history.confirming }}
-            placement="right"
-            title={null}
-            closable={false}
-            onClose={history.hideList}
-            maskClosable={!restoring}
-            keyboard={!restoring}
-            width="min(350px, 92vw)"
-            aria-label="版本记录"
-        >
-            {content}
-        </AppDrawer>
-    );
+    return <aside className="canvas-version-sidebar" aria-label="版本记录">{content}</aside>;
 }
 
 function formatTime(date: string) {

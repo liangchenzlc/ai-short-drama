@@ -1,8 +1,14 @@
 # Agent 模式部署与排障
 
+2026-10-26 起新 V3 任务使用 [Harness 运行机制](AI创作助手Harness运行机制.md)：LangGraph 控制工作流、LangChain 单次决策，工具自主选择，图片／方法按需加载。2026-10-27 起新任务另开放边界停止，改向与恢复中断仍不支持；下文旧句式授权和中断流程仅适用于冻结原引擎的历史任务。新增部署须先执行 [图检查点迁移](../database/migrations/2026-10-26-agent-harness/README.md) 与 [交付要求增量](../database/migrations/2026-10-27-agent-contract/README.md)，API、scheduler、Agent Worker 和前端同版升级。
+
+Harness 可靠执行与上下文优化沿用 Task JSON 和既有账本。[交付要求增量](../database/migrations/2026-10-27-agent-contract/README.md)新增 `agent_task_requirements` 一张表，并为 `agent_operations` 增加两列及一个索引；任务创建时冻结 `agent_policy`（契约、预算、停滞窗口、验收与停止策略），新增 `AGENT_RUN_*`、`AGENT_PROGRESS_*`、`AGENT_REQUIREMENT_ATTEMPT_CAP`、`AGENT_REVIEWER_MODE`、`AGENT_STOP_AT_BOUNDARY` 环境变量。收尾增加[记忆抽取重试终态约束](../database/migrations/2026-10-26-agent-memory-retry/README.md)，已有库须先升级，允许运行时既有的 `abandoned` 状态。新冻结请求使用工具 v4、提示词 `assistant-harness-v8`；已有冻结请求保留原 schema／布局和监督版本。API 与 Agent Worker 必须同版，以支持按需能力组、服务端交付要求 draft、发布守卫、证据包验收、工作笔记、Skill 释放和模型容量字段。候选最终答复在独立检查通过后发布，检查也会产生模型用量。
+
+出现 `agent_progress_stalled` 时查看最近工具错误、重复结果和 progress 提示；出现 `agent_completion_stalled` 时查看 completion_feedback 的具体缺项。两者保留成果并暂停，可补充必要资料后发送“继续”，不能当作任务累计次数耗尽。图片裁剪错误应返回真实宽高及结构化失败，不应显示已看过像素。排查长任务数据库排序错误时，历史查询必须先筛有界 ID、再读 JSON；不要在 ID 排序阶段加入大 JSON 的选择或筛选。容量使用声明／平台默认值，实际 input_tokens、cached_tokens 和估算指标应分别查看，声明不等于供应商实测。
+
 Skill 包接口与 AI 配置管理页支持在线新建、Markdown／ZIP 预览、不可变正文与资料、复制／导出及独立启停／自动设置。V3 的 `search_skills/load_skill/read_skill_resource` 已接入任务冻结、恢复和可见轨迹，输入区使用锚定 Skill 列表搜索、加载更多及直接多选，支持 `#` 同名身份选择；首批九类能力已适配为 12 个独立内置包。005 必须随 API 与 Worker 同版升级；在 `short_drama` 已真实执行并回填内置八个历史版本，当前 readiness 为 `ready`，12 个新内容版本也已显式发布。资料先写 MinIO 并核验，再以短 SQL 事务发布；全部历史版本的对象引用保留，未引用资料可用[显式回收脚本](内置创作方法维护.md#未引用资料回收)清理。自由文本的广义语义消歧与真实模型效果仍待验收。运行时沿用任务 JSON 与操作账本，无额外 DDL；配额和字段见[Skill API](../api/agent.md#内置与个人-skill-管理)与[任务方法工具](../api/assistant.md#任务创作方法与资料)。
 
-Agent 与原生生成共用 MySQL、RabbitMQ、Celery 和 MinIO。当前入口是按本人项目隔离的 V3 会话与逻辑任务，共二十五张 Agent 表（含任务四表、记忆六表、私有附件、个人 Skill、不可变 Skill 版本及个人设置、账号助手偏好、私人媒体请求、讨论修订及批次撤销回执）及独立 Agent Worker。scheduler 负责运行与记忆整理的可靠发布／恢复、原生结果归档、V3 媒体批次结算及删除清理；前端不展示记忆管理或维护状态。Compose 只启动外部依赖，不启动 Python API、scheduler 或 Worker。
+Agent 与原生生成共用 MySQL、RabbitMQ、Celery 和 MinIO。当前入口是按本人项目隔离的 V3 会话与逻辑任务，共二十八张 Agent 表（含任务四表、记忆六表、私有附件、个人 Skill、不可变 Skill 版本及个人设置、账号助手偏好、私人媒体请求、讨论修订及批次撤销回执）及独立 Agent Worker。scheduler 负责运行与记忆整理的可靠发布／恢复、原生结果归档、V3 媒体批次结算及删除清理；前端不展示记忆管理或维护状态。Compose 只启动外部依赖，不启动 Python API、scheduler 或 Worker。
 
 当前 V3 开放目标／主动主体／操作回执、本任务新建成果读取、四个记忆读取工具、四个显式记忆写工具、三个 Skill 工具、有界标准／画布结构批次、标准素材／分镜图片、普通／原生有声分镜视频、角色音色、旧声音文档台词配音及画布图片／视频／音频批次；标准素材／分镜、画布节点／连线、旧声音文本、主图及实际已采用媒体的批次撤销已接入明确预览与选择。写工具按真实用户指令裁剪，业务效果、版本和持久回执同事务结算；阶段摘要保留有界父摘要索引及来源链。标准批次复用已有素材、分镜、原生对白及声音文档表，不增加 DDL。原生分镜对白仍要求同时启用 `NATIVE_VIDEO_ENABLED` 与 `AUDIO_PRODUCTION_ENABLED`，结构工具只保存文本，不启动音频生成。画布结构批次复用原生四类节点、增量合并、保存历史和私人参数表，独立校验共享／私人版本，不新增 DDL 或发起媒体生成；明确媒体指令另走生成及完整结算。新建成果按真实回执读取保存快照，发送前复核可用性，新任务不继承正文。旧 V1 创作计划与候选、V2 项目纯聊天为兼容接口，不能据此宣称 V3 已开放同类能力。结构工具的测试替身不代表真实模型执行验收。实际范围见[助手 API](../api/assistant.md)与[实施记录](../plans/2026-10/2026-10-21-AI创作助手实施与验证记录.md)。
 
@@ -24,7 +30,7 @@ AI 配置 → 创作助手提供本人媒体总开关，缺少设置默认开启
 
 部署本轮项目助手时同步更新 API、Agent Worker、宿主及画布前端：会话创建和列表携带项目，任务自动绑定所属项目的保存目标与设定，画布新任务另指定当前画布，补充保持原目标。任务设置、上下文和记忆管理入口已移除，引用、附件选择及发送前的版本核对保留。输入字段复用既有 JSON，会话 CHECK 另需下文项目增量；混用旧 Worker 不能保证项目归属和原目标冻结。
 
-批次撤销需要 007／008、API、scheduler、相关 Worker 和前端同版升级。008 允许角色音色成对空绑定，首次采用撤销后保留递增版本行；旧绑定文件及生成历史继续保留。当前业务库已真实创建 `agent_batch_undos`，完整结构为 117 表／二十五张 Agent 表，readiness `ready`、gaps=[]。原工具回执不可改写，模型和前端另读撤销回执；同会话活动执行及作品原生任务结束后才允许明确逆向。详见[007 说明](../database/migrations/2026-10-21-agent-system/README.md#批次撤销回执2026-10-22-接续)。
+批次撤销需要 007／008、API、scheduler、相关 Worker 和前端同版升级。008 允许角色音色成对空绑定，首次采用撤销后保留递增版本行；旧绑定文件及生成历史继续保留。007 阶段已真实创建 `agent_batch_undos`，当时结构为 117 表／二十五张 Agent 表；加图检查点与交付要求表后为 119 表／二十八张 Agent 表，readiness `ready`、gaps=[]。原工具回执不可改写，模型和前端另读撤销回执；同会话活动执行及作品原生任务结束后才允许明确逆向。详见[007 说明](../database/migrations/2026-10-21-agent-system/README.md#批次撤销回执2026-10-22-接续)。
 
 纯讨论历史修订需要 006、API、Agent Worker 与标准前端同步升级。消息带版本，重答使用原任务的新 attempt；Worker 必须保留工具禁用和旧回复原位替换边界，不能混用旧的单列 `trigger_message_id` 唯一键。实际 DDL、幂等复核及006 阶段的 116 表／二十四张 Agent 表证据见[006 说明](../database/migrations/2026-10-21-agent-system/README.md#纯讨论历史修订2026-10-22-接续)。
 
@@ -60,7 +66,9 @@ uv run python -m scripts.agent_system_migration --apply
 uv run python scripts/agent_migration.py --precheck
 ```
 
-此增量增加四张任务表、六张记忆表、账号助手偏好、私人媒体请求、Skill 版本／个人设置、讨论修订及批次撤销回执表、消息／Run 的 task_id、消息版本、运行修订身份与会话摘要字段，解除 V3 会话项目强绑定，并允许角色音色成对空绑定；保留旧记录和授权。记忆索引使用 MySQL ngram；本机 `@@ngram_token_size=2`，其他环境须实际核对。完整新库 [schema.mysql8.sql](../database/schema/schema.mysql8.sql) 当前为 116 张表，包含全部二十五张 Agent 表，直接做 precheck 即可，不重复执行旧库 ALTER。
+此增量增加四张任务表、六张记忆表、账号助手偏好、私人媒体请求、Skill 版本／个人设置、讨论修订及批次撤销回执表、消息／Run 的 task_id、消息版本、运行修订身份与会话摘要字段，解除 V3 会话项目强绑定，并允许角色音色成对空绑定；保留旧记录和授权。记忆索引使用 MySQL ngram；本机 `@@ngram_token_size=2`，其他环境须实际核对。完整新库 [schema.mysql8.sql](../database/schema/schema.mysql8.sql) 当前为 122 张表，包含全部二十八张 Agent 表，直接做 precheck 即可，不重复执行旧库 ALTER。
+
+2026-10-27 的 [Agent 加固增量](../database/migrations/2026-10-27-agent-contract/README.md)新增 `agent_task_requirements`，并给 `agent_operations` 加 `result_digest/evidence_kind` 与索引；这是 119 表／二十八张 Agent 表的来源。已有库须停写后执行 `010-task-requirements.sql` 再 `agent_migration.py --apply`，新库直接用完整 SQL。升级前的任务没有 `agent_policy`，继续按旧契约与旧预算解释；新任务冻结契约、预算、停滞窗口、验收与停止策略，因此 API、scheduler、Agent Worker 与前端必须同版升级。
 
 005 就绪后，另行发布当前部署携带的内置内容；不随应用启动或迁移自动发布：
 
@@ -76,7 +84,7 @@ uv run python scripts/publish_builtin_skills.py --apply
 
 | 设置 | 作用 |
 | --- | --- |
-| `AGENT_ENABLED` | 默认 `true`；启动要求完整二十五张 Agent 表 readiness 为 `ready`，且 `AUTH_ENABLED=true`；显式 `false` 关闭新决策和记忆模型整理，已开始媒体结算及删除清理仍由 scheduler 执行 |
+| `AGENT_ENABLED` | 默认 `true`；启动要求完整二十八张 Agent 表 readiness 为 `ready`，且 `AUTH_ENABLED=true`；显式 `false` 关闭新决策和记忆模型整理，已开始媒体结算及删除清理仍由 scheduler 执行 |
 | `AGENT_LEASE_SECONDS` | 默认 180 秒，允许 150–3600；执行与恢复租约 |
 | `AGENT_POLL_SECONDS` | 默认 5 秒，允许 3–60；scheduler 收集原生任务结果的间隔 |
 | `GENERATION_QUEUE_NAMESPACE` | 默认 `short_drama`；所有进程保持一致，不同数据库使用不同 namespace |
@@ -102,7 +110,7 @@ uv run celery -A short_drama.tasks.celery_app:app worker --pool=threads --concur
 
 Agent 队列始终是 `<GENERATION_QUEUE_NAMESPACE>.tasks.agent`，默认也保留 `short_drama.` 前缀；自定义 `studio_dev` 时用 `studio_dev.tasks.agent`。记忆摘要和抽取复用该队列、独立持久作业与租约；凭据在实际发送前解析，事务外调用模型。删除 purge 由 scheduler 本地执行，不需要模型或 RabbitMQ。它与默认原生队列 `tasks.ai.text/image/video/audio` 的命名规则不同。脚本按 Settings 自动解析。线程共用进程内雪花生成器，不要直接改成共用节点号的 prefork 或多进程；重启前确认旧进程已结束。API、scheduler、原生 Worker 的启动见[开发指南](开发运行与验证.md#启动后端)。
 
-记忆整理的完整回执优先本地重放，发送中或受理不明不换键重发。内部维护接口只允许对明确失败记录安排一个独立后继；来源、摘要代次及原模型配置须仍有效，原失败与供应商回执保留。长任务约束整理使用同队列的 `task_state` 作业，需补齐 [009 迁移](../database/migrations/2026-10-21-agent-system/009-task-compaction.sql)，仅扩展作业类型 CHECK；当前业务库 `short_drama` 已执行，表数仍为117、Agent25表。作业冻结旧输入前缀，近期补充保留原文；原始前缀变化及父约束版本冲突会阻止激活，完成整理不恢复停止任务。抽取同键冲突保留为后台候选，版本和来源再校验后才应用，不能自动覆盖现有事实；前端不显示澄清或维护入口。总输入在冻结和实际发送前检查估算预算，超限先等待有效在途约束整理，无可推进作业或整理失败才以 `paused_budget` 保留输入暂停；平台估算不代表供应商 tokenizer 或模型窗口实测。
+记忆整理的完整回执优先本地重放，发送中或受理不明不换键重发。内部维护接口只允许对明确失败记录安排一个独立后继；来源、摘要代次及原模型配置须仍有效，原失败与供应商回执保留。长任务约束整理使用同队列的 `task_state` 作业，需补齐 [009 迁移](../database/migrations/2026-10-21-agent-system/009-task-compaction.sql)，仅扩展作业类型 CHECK；当前业务库 `short_drama` 已执行，009 阶段为117表、Agent25表；当前118表、Agent27表。作业冻结旧输入前缀，近期补充保留原文；原始前缀变化及父约束版本冲突会阻止激活，完成整理不恢复停止任务。抽取同键冲突保留为后台候选，版本和来源再校验后才应用，不能自动覆盖现有事实；前端不显示澄清或维护入口。总输入在冻结和实际发送前检查估算预算，超限先等待有效在途约束整理，无可推进作业或整理失败才以 `paused_budget` 保留输入暂停；平台估算不代表供应商 tokenizer 或模型窗口实测。
 
 ## 模型与流式代理
 

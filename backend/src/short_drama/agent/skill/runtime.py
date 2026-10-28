@@ -19,6 +19,7 @@ from short_drama.agent.skill.contracts import ReadSkillResource as ReadSkillReso
 from short_drama.agent.skill.contracts import SearchSkills as SearchSkills
 from short_drama.agent.skill.contracts import activation_summary as activation_summary
 from short_drama.agent.skill.contracts import activations as activations
+from short_drama.agent.tools.registry import TOOL_VERSION
 from short_drama.core.exceptions import BusinessError, NotFound, WorkflowError
 from short_drama.domain.agent_skill import AgentSkillVersion
 from short_drama.domain.agent_task import AgentOperation, AgentTaskInput
@@ -181,7 +182,6 @@ def search_skills_locked(session, conversation, task, values, settings):
         values.limit,
         query=values.query or None,
         enabled=True,
-        invocation_mode="auto",
         mode=(task.execution_target or {}).get("mode"),
         compatible_only=True,
         exclude_keys=task.effective_state.get("excluded_skill_ids", []),
@@ -212,8 +212,7 @@ def load_skill_locked(session, conversation, task, operation, values, available_
     if existing is None:
         # Manually-selected skills can be loaded directly without prior search.
         manual_selected_ids = {
-            item["id"]
-            for item in (task.context_snapshot or {}).get("selected_skills", [])
+            item["id"] for item in (task.context_snapshot or {}).get("selected_skills", [])
         }
         if key not in manual_selected_ids:
             discovered = session.scalars(
@@ -240,8 +239,6 @@ def load_skill_locked(session, conversation, task, operation, values, available_
             conversation.owner_user_id,
             [SkillSelection(id=key, content_version=values.content_version)],
         )[0]
-        if skill["invocation_mode"] != "auto":
-            raise WorkflowError("assistant_skill_manual_only", "此方法仅允许用户手动指定", 409)
     else:
         skill = existing["skill"]
     issue = _mode_issue(task, skill)
@@ -319,6 +316,16 @@ def finish_resource_locked(session, conversation, task, operation, values, prepa
             "assistant_skill_resource_changed", "冻结资料校验不一致，请核对原版本", 409
         )
     result = prepared["result"]
+    if operation.tool_version in {2, 3, TOOL_VERSION}:
+        operation.result_refs = [
+            {
+                "kind": "skill_resource",
+                "activation_id": str(values.activation_id),
+                "path": values.path,
+                "offset": values.offset,
+            }
+        ]
+        return result
     records = deepcopy(activations(task))
     activation = next(item for item in records if item["id"] == str(values.activation_id))
     if result not in activation["resource_reads"]:
@@ -385,6 +392,38 @@ def prepare_resource_read(factory, settings, run_id, operation_id, fence):
                 return None
             values = ReadSkillResource.model_validate(operation.arguments)
             manifest = resource_manifest_locked(session, conversation, task, operation, values)
+            if manifest["kind"] == "image":
+                if operation.tool_version not in {2, 3, TOOL_VERSION}:
+                    raise WorkflowError(
+                        "agent_resource_modality", "此方法图片需要 Harness 读取", 409
+                    )
+                from short_drama.agent.resources.contracts import HydrationIntent
+                from short_drama.agent.resources.resolver import skill_resource_ref
+                from short_drama.domain.agent import AgentToolCall
+
+                reference = skill_resource_ref(
+                    manifest, f"skill-resource:{values.activation_id}:{values.path}"
+                )
+                intent = HydrationIntent(
+                    resource=reference,
+                    purpose=values.purpose,
+                    detail=values.detail,
+                    crop=values.crop,
+                    tool_call_id=session.get(
+                        AgentToolCall, operation.tool_call_id
+                    ).provider_call_id,
+                    invocation_id=f"after-operation:{operation.id}",
+                )
+                return {
+                    "fence": read_fence,
+                    "manifest": manifest,
+                    "result": {
+                        "activation_id": str(values.activation_id),
+                        "path": values.path,
+                        "image_ref": reference.model_dump(mode="json"),
+                        "hydration_intent": intent.model_dump(mode="json"),
+                    },
+                }
         text = read_resource_bytes(settings, manifest)
         end = min(len(text), values.offset + values.limit)
         return {
@@ -403,4 +442,3 @@ def prepare_resource_read(factory, settings, run_id, operation_id, fence):
         }
     except (ValueError, BusinessError) as error:
         return {"error": error, "fence": read_fence}
-

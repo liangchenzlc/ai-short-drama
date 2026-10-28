@@ -9,23 +9,24 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from short_drama.agent.coordinator.assistant import claim_operation, complete_operation
+from short_drama.agent.coordinator.runtime import AgentRuntimeStore
+from short_drama.agent.core.access import LeaseLost
 from short_drama.agent.legacy.authorization import digest
+from short_drama.agent.legacy.tools import execute_tools, prepare_decision
 from short_drama.agent.memory.context import (
     enqueue_job_locked,
+    extraction_waterline,
     history_projection_locked,
     schedule_maintenance_locked,
-    settle_maintenance_locked
+    settle_maintenance_locked,
 )
-from short_drama.agent.memory.sources import message_sources
 from short_drama.agent.memory.runtime import (
     AgentMemoryPublisher,
     AgentMemoryRuntime,
-    AgentMemoryStore
+    AgentMemoryStore,
 )
-from short_drama.agent.coordinator.runtime import AgentRuntimeStore
-from short_drama.agent.core.access import LeaseLost
+from short_drama.agent.memory.sources import message_sources
 from short_drama.agent.task.state import apply_inputs_locked
-from short_drama.agent.legacy.tools import execute_tools, prepare_decision
 from short_drama.core.exceptions import Conflict, NotFound
 from short_drama.core.identity import ActorContext
 from short_drama.dao.agent_memory_dao import MemoryScopeContext
@@ -34,11 +35,12 @@ from short_drama.domain.agent import AgentConversation, AgentMessage, AgentRun, 
 from short_drama.domain.agent_context import AgentAttachment
 from short_drama.domain.agent_memory import AgentMemoryItem, AgentMemoryJob
 from short_drama.domain.agent_task import AgentOperation, AgentTask
-from short_drama.schemas.agent_memory import MemoryCreate
+from short_drama.schemas.agent_memory import MemoryCreate, MemoryJobRead
 from short_drama.service.agent_memory_service import (
     AgentMemoryService,
     create_memory_locked,
     memory_catalog_locked,
+    memory_job_read,
     read_memories_locked,
     search_memory_locked,
     source_rows,
@@ -58,6 +60,8 @@ def actor(owner=1):
 
 @pytest.fixture
 def memory_workspace(db_session):
+    from tests.integration.standard.assistant.test_global_assistant_tasks import legacy_task_engine
+
     db_session.info["actor"] = actor()
     projects = [
         ProjectService(db_session).create_project({"name": name}).id
@@ -74,7 +78,8 @@ def memory_workspace(db_session):
                 .create_global_conversation({}, f"conversation-{index}")
                 .id
             )
-    return factory, projects, conversations
+    with legacy_task_engine(factory):
+        yield factory, projects, conversations
 
 
 def service(session, owner=1):
@@ -228,7 +233,10 @@ def test_extraction_conflicts_are_persisted_and_require_a_versioned_choice(
     factory, _projects, conversations = memory_workspace
     accepted = seeded_run(memory_workspace, count=2)
     with factory() as session:
-        item = service(session).create_item(memory(memory_key="dialogue"), "existing")
+        item = service(session).create_item(
+            memory("conversation", conversation_id=conversations[0], memory_key="dialogue"),
+            "existing",
+        )
     identifier = maintenance_job(memory_workspace, accepted)
     with factory.begin() as session:
         conversation = session.get(AgentConversation, conversations[0])
@@ -642,24 +650,93 @@ def test_late_model_receipts_cannot_restore_purged_conversation_content(memory_w
         assert turn.response is None and turn.request_messages == []
 
 
-def test_memory_credential_failure_is_terminal_before_provider_send(memory_workspace, monkeypatch):
+@pytest.mark.parametrize("kind", ["extract", "summary"])
+@pytest.mark.parametrize("prior_attempts", [0, 1])
+@pytest.mark.parametrize("code", ["model_credentials_unavailable", "agent_credential_unavailable"])
+def test_memory_credential_failure_is_terminal_before_provider_send(
+    memory_workspace, monkeypatch, kind, prior_attempts, code
+):
+    from short_drama.agent.gateway.protocol import AgentGatewayError
     from short_drama.core.exceptions import WorkflowError
 
     factory, _projects, _conversations = memory_workspace
     accepted = seeded_run(memory_workspace, count=2)
-    identifier = maintenance_job(memory_workspace, accepted)
+    identifier = maintenance_job(memory_workspace, accepted, kind=kind)
+    with factory.begin() as session:
+        session.get(AgentMemoryJob, identifier).attempts = prior_attempts
 
     def unavailable(*args):
+        if code == "agent_credential_unavailable":
+            raise AgentGatewayError(code)
         raise WorkflowError("model_credentials_unavailable", "credential fixture")
 
-    monkeypatch.setattr("short_drama.agent.memory_runtime.model_credentials", unavailable)
+    monkeypatch.setattr("short_drama.agent.memory.runtime.model_credentials", unavailable)
     runtime = AgentMemoryRuntime(factory, runtime_settings(), None)
     runtime.execute_one(identifier, 1)
     assert runtime.store.recover() == 0
     with factory.begin() as session:
         job = session.get(AgentMemoryJob, identifier)
-        assert job.status == "failed" and job.attempts == 0
-        assert job.error["code"] == "model_credentials_unavailable"
+        assert job.status == "failed" and job.attempts == prior_attempts
+        assert job.error["code"] == code and job.message_version == 1
+        assert job.provider_state == "not_started" and job.raw_result is None
+        assert job.lease_token is None and job.publish_token is None
+        assert job.finished_at is not None
+    assert runtime.store.claim_execution(identifier, 1) is None
+
+
+@pytest.mark.parametrize(
+    ("kind", "code", "receipt", "accepted_unknown", "attempts", "status"),
+    [
+        ("extract", "agent_provider_rate_limited", False, False, 3, "abandoned"),
+        ("summary", "agent_provider_rate_limited", False, False, 3, "failed"),
+        ("extract", "invalid_agent_memory_result", True, False, 3, "abandoned"),
+        ("extract", "agent_response_truncated", True, False, 3, "abandoned"),
+        ("extract", "agent_provider_authentication", True, False, 1, "failed"),
+        ("extract", "agent_provider_rejected", True, False, 1, "failed"),
+        ("summary", "invalid_agent_memory_result", True, False, 1, "failed"),
+        ("extract", "agent_provider_unknown", False, True, 1, "failed"),
+        ("extract", "invalid_agent_memory_result", True, True, 1, "failed"),
+    ],
+)
+def test_memory_retry_classification_preserves_terminal_and_unknown_failures(
+    memory_workspace, kind, code, receipt, accepted_unknown, attempts, status
+):
+    from short_drama.agent.gateway.protocol import AgentGatewayError
+
+    factory, _projects, _conversations = memory_workspace
+    accepted = seeded_run(memory_workspace, count=2)
+    identifier = maintenance_job(memory_workspace, accepted, kind=kind)
+    store = AgentMemoryStore(factory, runtime_settings())
+    for version in range(1, attempts + 1):
+        claim = store.claim_execution(identifier, version)
+        assert claim is not None
+        store.before_send(claim, {"attempt": version})
+        if receipt:
+            store.save_raw(claim, {"response": version})
+        before_failure = utcnow()
+        store.fail(claim, AgentGatewayError(code, accepted_unknown=accepted_unknown))
+        with factory.begin() as session:
+            job = session.get(AgentMemoryJob, identifier)
+            assert job.attempts == version and job.error == {"code": code}
+            assert job.lease_token is None and job.publish_token is None
+            if version < attempts:
+                assert job.status == "pending" and job.message_version == version + 1
+                assert job.provider_state == "not_started" and job.raw_result is None
+                assert job.next_run_at >= before_failure + timedelta(seconds=15 * version)
+                job.next_run_at = utcnow() - timedelta(seconds=1)
+            else:
+                assert job.status == status and job.message_status == "idle"
+                assert job.finished_at is not None and job.message_version == version
+                if receipt:
+                    assert job.raw_result["raw"] == {"response": version}
+                if accepted_unknown and not receipt:
+                    assert job.provider_state == "unknown"
+                assert MemoryJobRead.model_validate(memory_job_read(job)).status == status
+                if kind == "extract":
+                    assert extraction_waterline(session, job.conversation_id) == (
+                        job.to_seq if status == "abandoned" else 0
+                    )
+    assert store.claim_execution(identifier, attempts) is None
 
 
 @pytest.mark.parametrize("provider_state", ["not_started", "received", "unknown"])
@@ -1018,7 +1095,8 @@ def test_complete_memory_receipt_recovers_by_local_replay_only(memory_workspace)
         item = session.scalar(
             select(AgentMemoryItem).where(AgentMemoryItem.memory_key == "dialogue")
         )
-        assert item.scope_type == "user" and item.content_version == 1
+        assert item.scope_type == "conversation" and item.conversation_id == _conversations[0]
+        assert item.content_version == 1
 
 
 def test_late_memory_receipt_cannot_restore_a_forgotten_source(memory_workspace):
@@ -1060,6 +1138,8 @@ def test_late_memory_receipt_cannot_restore_a_forgotten_source(memory_workspace)
 
 
 def test_forgetting_user_memory_fences_another_conversation_response(memory_workspace):
+    from short_drama.domain.agent import AgentEvent
+
     factory, _projects, conversations = memory_workspace
     accepted = seeded_run(memory_workspace, count=2)
     settings = runtime_settings()
@@ -1075,7 +1155,17 @@ def test_forgetting_user_memory_fences_another_conversation_response(memory_work
     store.before_send(claim, {"fixture": True})
     with factory() as session:
         service(session).forget_item(item.id, {"content_version": "1"})
-    assert not store.save_delta(claim, "旧记忆输出", 0)
+    assert store.save_delta(claim, "旧记忆输出", 0) == "stale"
+    with factory() as session:
+        assert (
+            session.scalar(
+                select(AgentEvent.id).where(
+                    AgentEvent.conversation_id == conversations[1],
+                    AgentEvent.event_type == "assistant.delta",
+                )
+            )
+            is None
+        )
     store.save_raw(claim, {"fixture_receipt": True})
     assert not store.save_result(
         claim,

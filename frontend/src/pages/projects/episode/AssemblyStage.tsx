@@ -55,8 +55,6 @@ export function AssemblyStage({ projectId, readOnly, registerBarrier, onStoryboa
   const [focused, setFocused] = useState(false);
   const [soundOpen, setSoundOpen] = useState(false);
   const [soundTarget, setSoundTarget] = useState<HTMLDivElement | null>(null);
-  const [compactSound, setCompactSound] = useState(() => window.innerWidth <= 1000);
-  useEffect(() => { const query = window.matchMedia('(max-width: 1000px)'); const update = () => setCompactSound(query.matches); query.addEventListener('change', update); return () => query.removeEventListener('change', update); }, []);
   const workspace = useRef<HTMLDivElement>(null);
   function setFocusMode(next: boolean) {
     setFocused(next);
@@ -231,7 +229,7 @@ export function AssemblyStage({ projectId, readOnly, registerBarrier, onStoryboa
   }
   async function discardRenderRecovery() {
     const raw = damagedRender;
-    if (raw === null || !await confirmAction('请先到任务中心核对，并检查导出和预览记录。清除后将失去原请求编号的核对依据；若后台已受理，再发起合成可能重复制作。确认已核对并清除这条损坏的本机记录？', { title: '清除损坏的合成请求记录', confirmText: '已核对，清除记录', danger: true, className: 'standard-creation-dialog' })) return;
+    if (raw === null || !await confirmAction('请先下载原请求记录，并检查当前作品的导出和预览记录。清除后将失去原请求编号的核对依据；若后台已受理，再发起合成可能重复制作。确认已核对并清除这条损坏的本机记录？', { title: '清除损坏的合成请求记录', confirmText: '已核对，清除记录', danger: true, className: 'standard-creation-dialog' })) return;
     discardDamagedRenderAttempt(renderScope, raw);
     loadRenderRecovery();
   }
@@ -241,7 +239,7 @@ export function AssemblyStage({ projectId, readOnly, registerBarrier, onStoryboa
     {notice && <StudioFeedback type="error" noticeKey={`assembly:${projectId}:action`} message={notice}/>}
     {preparationError && <StudioFeedback type="warning" noticeKey={`assembly:${projectId}:preparation-error`} quiet message={preparationError} actions={<Button disabled={disabled} onClick={() => void action(async () => { if (await editor.flush()) { await editor.load(); setSyncOpen(true); } })}>同步分镜视频</Button>}/>}
     {renderRecoveryError && <StudioFeedback type="warning" noticeKey={`assembly:${projectId}:render-recovery`} message="合成请求恢复记录无法读取" description={<>
-      <p>{renderRecoveryError} 请先到任务中心核对，并检查导出和预览记录。清除后将失去原请求编号的核对依据；若后台已受理，再发起合成可能重复制作。</p>
+      <p>{renderRecoveryError} 请先下载原请求记录，并检查当前作品的导出和预览记录。清除后将失去原请求编号的核对依据；若后台已受理，再发起合成可能重复制作。</p>
       <div className="assembly-inline-actions"><Button disabled={busy || previewBusy || damagedRender === null} onClick={backupRenderRecovery}>下载完整合成请求记录</Button>{damagedRender !== null && <Button danger disabled={busy || previewBusy} onClick={() => void action(discardRenderRecovery)}>清除损坏的本机记录</Button>}<Button disabled={busy || previewBusy} onClick={loadRenderRecovery}>重新读取恢复记录</Button></div>
     </>}/>}
     {pendingRender && <StudioFeedback type="warning" noticeKey={`assembly:${projectId}:pending-render`} message="上次合成请求尚未核对" description="将使用原参数和原请求编号核对受理结果，避免重复制作。当前编辑仍保留。" actions={<Button loading={busy} disabled={disabled} onClick={() => void action(reconcileRender)}>核对原合成请求</Button>}/>}
@@ -258,11 +256,12 @@ export function AssemblyStage({ projectId, readOnly, registerBarrier, onStoryboa
       event.preventDefault(); setFocusMode(false);
     }
   }}>
-    <header className="assembly-heading" inert={soundOpen && compactSound ? true : undefined}><div className="assembly-heading-title"><Video size={17}/><h2>成片导出</h2>{value?.assembly && <span className="assembly-creation-meta">{value.assembly.aspect === 'auto' ? '自动' : value.assembly.aspect}<span aria-hidden="true">/</span>{included.length} 段<span aria-hidden="true">/</span>{timecode(total)}</span>}</div>
+    <header className="assembly-heading"><div className="assembly-heading-title"><Video size={17}/><h2>成片导出</h2>{value?.assembly && <span className="assembly-creation-meta">{value.assembly.aspect === 'auto' ? '自动' : value.assembly.aspect}<span aria-hidden="true">/</span>{included.length} 段<span aria-hidden="true">/</span>{timecode(total)}</span>}</div>
       {value?.assembly && <div className="assembly-heading-actions" role="group" aria-label="成片设置与同步">
         <SoundPanel key={`${projectId}`} projectId={projectId} disabled={disabled} readOnly={readOnly} flushVideo={editor.flush} onSaved={editor.load} registerBarrier={registerSound} panelContainer={soundTarget} onOpenChange={setSoundOpen}/>
         <AssemblyAction label="同步分镜视频" icon={<RefreshCw size={16}/>} disabled={disabled} onClick={() => void action(async () => { if (await editor.flush()) { await editor.load(); setSyncOpen(true); } })}/>
         <AssemblyAction label="导出记录" icon={<History size={16}/>} aria-busy={busy} loading={busy} onClick={() => void action(openHistory)}/>
+        {latestExport?.status === 'succeeded' && <div className="assembly-latest-export" role="status" aria-label="最近导出已完成"><Button size="small" type="text" title={`导出完成 · ${new Date(latestExport.created_at).toLocaleString()} · ${latestExport.media_id === current?.media_id ? '当前已采用' : '尚未采用'}`} onClick={() => setResult(latestExport)}>播放最新导出</Button><AssemblyAction label="下载最新导出 MP4" icon={<Download size={16}/>} href={api.download(latestExport.id)}/></div>}
         <AssemblyAction className="assembly-focus-toggle" label={focused ? '退出专注剪辑' : '专注剪辑'} icon={focused ? <Minimize2 size={16}/> : <Maximize2 size={16}/>} aria-pressed={focused} onClick={() => setFocusMode(!focused)}/>
         {editor.hasPrevious() && <Dropdown trigger={['click']} overlayClassName="standard-creation-popup" menu={{ items: [{ key: 'backup', label: '下载本机备份', icon: <Download size={15}/>, onClick: backupRecovery }] }}><Button type="text" className="assembly-icon-action" icon={<Ellipsis size={16}/>} aria-label="更多成片操作" title="更多成片操作"/></Dropdown>}
         <Tooltip title={blocked.length ? `${blocked.length} 个片段需要处理` : !included.length ? '请先添加分镜视频' : active ? `导出进度 ${active.progress}%` : '导出成片'} trigger={['hover', 'focus']}><span className="assembly-export-entry" tabIndex={0}><Button type="primary" aria-label="导出成片" icon={<Upload size={16}/>} loading={busy || !!active} disabled={disabled || !included.length || !!blocked.length || !!active || editor.status === 'error'} onClick={() => void action(prepareExport)}>{active ? `${active.progress}%` : null}</Button></span></Tooltip>
@@ -274,7 +273,7 @@ export function AssemblyStage({ projectId, readOnly, registerBarrier, onStoryboa
     {value?.assembly && <>
       {preparation && (needsThumbnails || clips.some(c => c.issue === 'preparing')) && <StudioFeedback type="warning" noticeKey={`assembly:${projectId}:preparation`} quiet message="视频预览素材准备未完成，可重试；已就绪的视频仍可剪辑。" actions={<Button disabled={disabled || preparation.can_retry === false} onClick={() => void action(() => retry(preparation))}>重试检测</Button>}/>}
       <div className={`assembly-stage-body${soundOpen ? ' is-sound-open' : ''}`}>
-        <AssemblyWorkbench editor={editor} disabled={disabled} soundOpen={soundOpen} inert={soundOpen && compactSound} result={result} onResult={setResult} onPreview={() => void preview()} previewBusy={previewBusy || !!previewJob} previewProgress={previewStatus?.progress} focused={focused}/>
+        <AssemblyWorkbench editor={editor} disabled={disabled} soundOpen={soundOpen} result={result} onResult={setResult} onPreview={() => void preview()} previewBusy={previewBusy || !!previewJob} previewProgress={previewStatus?.progress} focused={focused}/>
         <div ref={setSoundTarget} className="assembly-sound-target" hidden={!soundOpen}/>
       </div>
       {previewJob && <StudioFeedback type={previewError ? 'warning' : 'info'} noticeKey={`assembly:${projectId}:preview:${previewJob}`} quiet persistent message={previewStatus?.cancel_requested ? '正在取消预览…' : '正在后台合成预览'} description={previewError || '可以继续编辑，预览使用提交时的版本。'} actions={<Button disabled={disabled || previewStatus?.can_cancel === false || previewStatus?.cancel_requested} onClick={() => void action(async () => { const cancelled = await api.cancel(previewJob); setPreviewStatus(cancelled); await editor.load(); })}>取消预览</Button>}>{previewStatus && <Progress percent={previewStatus.progress} size="small"/>}</StudioFeedback>}

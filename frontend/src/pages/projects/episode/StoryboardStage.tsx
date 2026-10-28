@@ -1,22 +1,20 @@
 import { EpisodeEditorSlot, useEpisodeCreationControls } from '../../../features/projects/EpisodeCreationWorkspace';
 import { confirmAction } from '../../../components/ui/confirm';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
-import { Button, Dropdown, Input, InputNumber, Segmented, Select } from 'antd';
+import { Button, Dropdown, Input, Select } from 'antd';
 import { StudioFeedback as Alert, feedbackType } from '../../../components/ui/StudioFeedback';
 import { Icon } from '../../../components/ui/Icon';
-import { Ellipsis, History, PanelRight, Sparkles } from 'lucide-react';
+import { Ellipsis, History, PanelRight } from 'lucide-react';
 import { ApiError, errorMessage } from '../../../api/http';
 import { storyboardApi, type ShotRead, type StoryboardPage } from '../../../api/modules/storyboard';
 import { assetLibraries, type LibraryAssetRead } from '../../../api/modules/assets';
 import { generations } from '../../../api/modules/generations';
 import { aiModelConfigs } from '../../../api/modules/ai-model-configs';
 import { AI_CONFIGS_CHANGED } from '../../../features/ai-config/config-events';
-import type { GenerationReceipt, GenerationSummary } from '../../../api/types/generations';
-import { EpisodeModelSelect } from '../../../features/projects/EpisodeModelSelect';
+import type { GenerationSummary } from '../../../api/types/generations';
 import type { EpisodeWorkflow } from '../../../features/projects/episode-workflow';
 import type { WritingSession } from '../../../features/projects/writing-session';
 import type { NavigationBarrier } from '../../../features/projects/writing-navigation';
-import { scriptShotsRequest } from '../../../features/projects/workflow-contract';
 import { mergeStoryboardReload, shouldPollStoryboardTasks } from '../../../features/projects/storyboard-session';
 import { attemptStorage, clearAttempt, requestAttempt } from '../../../features/generations/attempt';
 import { taskLabel } from '../../../features/generations/presentation';
@@ -27,6 +25,7 @@ import { LazyLoadMore } from '../../../components/ui/LazyLoadMore';
 import { ShotVideoCandidates } from '../../../features/projects/ShotVideoCandidates';
 import { NativeDialoguePanel } from '../../../features/projects/NativeVoicePanel';
 import { StoryboardShotCard } from '../../../features/projects/StoryboardShotCard';
+import { ResourceViewToggle, useResourceView } from '../../../features/projects/ResourceViewToggle';
 import { ShotImageCandidates } from '../../../features/projects/ShotImageCandidates';
 import { BatchLauncher, useBatchSelection } from '../../../features/generations/BatchGeneration';
 import { prepareShotOperation, type ImageCapabilities, type PreparedShot } from '../../../features/projects/shot-image-workflow';
@@ -83,6 +82,7 @@ export function StoryboardStage({
   const api = storyboardApi(projectId);
   const { user } = useAuth();
   const account = user?.id ?? 'anonymous';
+  const [view, setView] = useResourceView('storyboard');
   const editingKey = `storyboard-edits:${projectId}`;
   const editing = useMemo(() => retainStandardSession(account, editingKey, () => new StoryboardEditingSession(projectId, account), { label: '分镜', projectId }), [account, editingKey, projectId]);
   const editingSnapshot = useSyncExternalStore(editing.subscribe, editing.getSnapshot);
@@ -107,18 +107,11 @@ export function StoryboardStage({
   const [candidate, setCandidate] = useState<GenerationSummary | null>(null);
   const [taskDetailId, setTaskDetailId] = useState<string | null>(null);
   const shotMutation = useRef<symbol | null>(null);
-  const [instructions, setInstructions] = useState('');
-  const [durationMode, setDurationMode] = useState('3000');
-  const [averageShotDurationMs, setAverageShotDurationMs] = useState(3000);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [deletingShotId, setDeletingShotId] = useState<string | null>(null);
   const [deleteNotice, setDeleteNotice] = useState<{ id: string; type: 'error' | 'warning'; message: string; description?: string } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [submittedTask, setSubmittedTask] = useState<GenerationReceipt | null>(null);
-  const submissionLock = useRef(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [actionsOrigin, setActionsOrigin] = useState<'main' | 'history' | null>(null);
@@ -129,7 +122,9 @@ export function StoryboardStage({
   const sourceMediaRequest = useRef(sourceMedia);
   const [search, setSearch] = useState('');
   const [pendingOnly, setPendingOnly] = useState(false);
-  const [mediaSettingsOpen, setMediaSettingsOpen] = useState(() => window.innerWidth > 700);
+  const [mediaSettingsOpen, setMediaSettingsOpen] = useState(true);
+  const mediaSettingsTrigger = useRef<HTMLButtonElement>(null);
+  const closeMediaSettings = () => { setMediaSettingsOpen(false); mediaSettingsTrigger.current?.focus(); };
   const privateBarriers = useRef(new Map<string, NavigationBarrier>());
   const registerImageDraft = useCallback((barrier: NavigationBarrier | null) => { if (barrier) privateBarriers.current.set('image', barrier); else privateBarriers.current.delete('image'); }, []);
   const registerVideoDraft = useCallback((barrier: NavigationBarrier | null) => { if (barrier) privateBarriers.current.set('video', barrier); else privateBarriers.current.delete('video'); }, []);
@@ -173,7 +168,7 @@ export function StoryboardStage({
   const capabilitiesReady = !resolvingImageModel && capabilityResult?.modelId === imageModelId && capabilityResult?.revision === capabilityRevision;
   const imageCapabilities = capabilitiesReady ? capabilityResult.capabilities : null;
   const capabilitiesLoading = resolvingImageModel || (!!imageModelId && !capabilitiesReady);
-  const generationPending = shouldPollStoryboardTasks(tasks) || !!submittedTask && (submittedTask.status === 'queued' || submittedTask.status === 'running');
+  const generationPending = shouldPollStoryboardTasks(tasks);
 
   const onResolvedImageModel = useCallback((id: string | undefined) => {
     capabilityRequest.current?.abort();
@@ -223,7 +218,7 @@ export function StoryboardStage({
     setPage(null);
     removedShotIds.current.clear(); storyboardVersionFloor.current = '0'; setDeletingShotId(null); setDeleteNotice(null);
     extraShots.current.clear(); setDetailError(''); setDetailLoading(false); setUnavailableDraftId(null); locateShot.current = null;
-    setAssets([]); setAssetsLoading(true); setAssetsError(''); setTasks([]); setTasksTotal(0); setTasksLoading(true); setTasksLoaded(false); setTasksError(''); selectShotId(subject?.type === 'shot' ? subject.id : null); setCandidate(null); setMessage(''); setBusy(false); setSubmittedTask(null); setSubmitting(false); setSettingsOpen(false); submissionLock.current = false;
+    setAssets([]); setAssetsLoading(true); setAssetsError(''); setTasks([]); setTasksTotal(0); setTasksLoading(true); setTasksLoaded(false); setTasksError(''); selectShotId(subject?.type === 'shot' ? subject.id : null); setCandidate(null); setMessage(''); setBusy(false);
     setLockedShots(new Set());
     setTaskDetailId(null); shotMutation.current = null;
     setEditorTab(sourceMedia ?? 'image'); setMediaTab(sourceMedia ?? 'image'); setBatchMode(false);
@@ -366,7 +361,7 @@ export function StoryboardStage({
     const controller = new AbortController();
     setTasksLoading(true); setTasksError('');
     generations.list({ service_type: 'text', project_id: projectId, source_scene: 'script_shots', offset: 0, limit: 20 }, controller.signal)
-      .then((page) => { if (!controller.signal.aborted) { setTasks(current => [...page.items, ...current.filter(task => !page.items.some(next => next.generation_id === task.generation_id))]); setTasksTotal(page.total); setTasksLoaded(true); setSubmittedTask(current => current && !page.items.some(task => task.generation_id === current.generation_id) ? current : null); } })
+      .then((page) => { if (!controller.signal.aborted) { setTasks(current => [...page.items, ...current.filter(task => !page.items.some(next => next.generation_id === task.generation_id))]); setTasksTotal(page.total); setTasksLoaded(true); } })
       .catch((cause) => { if (!controller.signal.aborted) setTasksError(errorMessage(cause)); })
       .finally(() => { if (!controller.signal.aborted) setTasksLoading(false); });
     return () => controller.abort();
@@ -376,7 +371,7 @@ export function StoryboardStage({
     if (!generationPending) return;
     const timer = setTimeout(() => setTaskRevision((revision) => revision + 1), 3000);
     return () => clearTimeout(timer);
-  }, [generationPending, tasks, submittedTask]);
+  }, [generationPending, tasks]);
 
   function updateLocal(id: string, patch: Partial<Pick<ShotRead, 'title' | 'script' | 'duration_ms' | 'asset_ids' | 'image_settings' | 'video_prompt' | 'video_settings'>>) {
     const shot = getShot(id);
@@ -524,29 +519,6 @@ export function StoryboardStage({
     finally { taskMoreLock.current = false; if (isCurrentContext(epoch)) setTasksLoading(false); }
   }
 
-  async function generateStoryboard() {
-    if (submissionLock.current || busy || generationPending || readOnly || !scriptId) return;
-    submissionLock.current = true;
-    setSubmitting(true); setMessage('');
-    try {
-      if (!await writingSession.flush()) { setMessage('剧本未保存，未发起生成。'); return; }
-      const latest = writingSession.getSnapshot();
-      if (!latest.script.trim() || !latest.scriptId) { setMessage('先编写或采用一份剧本。'); return; }
-      const body = {
-        ...(value.models.storyboardText ? { config_id: value.models.storyboardText } : {}),
-        ...scriptShotsRequest(projectId, latest.scriptId, latest.contentVersion, instructions, averageShotDurationMs),
-      };
-      const scope = `script-shots:${projectId}`;
-      const idempotencyKey = await requestAttempt(scope, body, attemptStorage());
-      const task = await generations.generateText(body, idempotencyKey);
-      setSubmittedTask(task);
-      clearAttempt(scope, attemptStorage());
-      setMessage(`分镜生成任务 ${task.generation_id} 已提交。`);
-      setTaskRevision((revision) => revision + 1);
-    } catch (cause) { setMessage(errorMessage(cause)); }
-    finally { submissionLock.current = false; setSubmitting(false); }
-  }
-
   async function applyResult(mode: 'append' | 'replace') {
     const epoch = contextEpoch.current;
     const selection = selectionEpoch.current;
@@ -579,7 +551,7 @@ export function StoryboardStage({
   const selectedShotUnsettled = !!selectedShotId && unsettledIds().has(selectedShotId);
   useLayoutEffect(() => { selectShotId(subject?.type === 'shot' ? subject.id : null); }, [subject?.type, subject?.id]);
   useEffect(() => {
-    if (!selectedShotId || selectedShotRef.current !== selectedShotId || selectedShotUnsettled) return;
+    if (!selectedShotId || selectedShotRef.current !== selectedShotId) return;
     const loaded = getShot(selectedShotId);
     if (loaded && !storyboardRevision && !refreshToken && !detailRetry) return;
     const controller = new AbortController();
@@ -590,7 +562,7 @@ export function StoryboardStage({
       if (controller.signal.aborted || !isCurrentContext(epoch) || selectedShotRef.current !== id) return;
       if (BigInt(result.storyboard_version) < BigInt(storyboardVersionFloor.current)) return;
       if (result.shot.deleted_at) { unavailableShot(id, result.shot); return; }
-      if (!unsettledIds().has(id)) setShot(restoreShotDraft(result.shot, result.storyboard_version), result.storyboard_version);
+      setShot(restoreShotDraft(result.shot, result.storyboard_version), result.storyboard_version);
     }).catch(cause => {
       if (controller.signal.aborted || !isCurrentContext(epoch) || selectedShotRef.current !== id) return;
       if (cause instanceof ApiError && cause.status === 404) unavailableShot(id);
@@ -795,7 +767,7 @@ export function StoryboardStage({
   }, [page, loading, loadError, selectedShotId, subject?.type, subject?.id, search, pendingOnly, mediaTab, editingSnapshot.revision, selectSubject]);
   return <div className="storyboard-workspace">
     {deleteNotice && <Alert type={deleteNotice.type} title="分镜删除" noticeKey={`shot:${deleteNotice.id}:delete`} message={deleteNotice.message} description={deleteNotice.description} actions={<Button loading={loading} onClick={() => { setDeleteNotice(null); setStoryboardRevision(revision => revision + 1); }}>重新加载列表核对</Button>}/>}
-    {message && !settingsOpen && <Alert type={feedbackType(message)} message={message} action={unavailableDraftId ? <Button onClick={downloadShotDraft}>下载分镜草稿</Button> : undefined}/>}
+    {message && <Alert type={feedbackType(message)} message={message} action={unavailableDraftId ? <Button onClick={downloadShotDraft}>下载分镜草稿</Button> : undefined}/>}
     {detailError && <Alert type="error" showIcon message={'分镜详情加载失败：' + detailError} action={<Button loading={detailLoading} onClick={() => setDetailRetry(revision => revision + 1)}>重新加载分镜详情</Button>}/>}
     {assetsError && <Alert type="error" showIcon message={'关联素材加载失败：' + assetsError} action={<Button loading={assetsLoading} onClick={() => setAssetsRevision(revision => revision + 1)}>重新加载关联素材</Button>}/>}
     {loadError && <Alert type="error" showIcon message={'分镜列表加载失败：' + loadError} action={<Button loading={loading} onClick={() => setStoryboardRevision(revision => revision + 1)}>重新加载分镜列表</Button>}/>}
@@ -811,12 +783,12 @@ export function StoryboardStage({
             <Button type="text" aria-label="下一个分镜" loading={moreLoading} disabled={!selectedShot || selectionDisabled || !page || selectedShot.position >= page.total} onClick={() => void selectAdjacent(1)} icon={<Icon name="arrow" size={16}/>}/>
             <Button type="text" aria-label={mediaTab === 'video' ? '视频生成记录' : '图片生成记录'} title="生成记录" disabled={!selectedShot} onClick={() => setMediaHistoryOpen(mediaTab === 'video' ? 'video' : 'image')} icon={<History size={16}/>}/>
             {renderShotActions('main')}
-            <Button type="text" aria-label={mediaSettingsOpen ? '收起生成设置' : '展开生成设置'} aria-expanded={mediaSettingsOpen} aria-controls={mediaTab === 'video' ? 'storyboard-video-settings' : 'storyboard-image-settings'} onClick={() => { if (!mediaSettingsOpen) revealPanel?.(); setMediaSettingsOpen(value => !value); }} icon={<PanelRight size={16}/>}/>
+            <Button ref={mediaSettingsTrigger} type="text" aria-label={mediaSettingsOpen ? '收起生成设置' : '展开生成设置'} aria-expanded={mediaSettingsOpen} aria-controls={mediaTab === 'video' ? 'storyboard-video-settings' : 'storyboard-image-settings'} onClick={() => { if (!mediaSettingsOpen) revealPanel?.(); setMediaSettingsOpen(value => !value); }} icon={<PanelRight size={16}/>}/>
           </nav>
         </header>
         {selectedShot ? <div className={`standard-storyboard-media${mediaSettingsOpen ? '' : ' is-settings-collapsed'}`}>
           <div id="storyboard-image-pane" role="tabpanel" aria-labelledby="storyboard-image-tab" hidden={mediaTab !== 'image'}>
-            <ShotImageCandidates key={selectedShot.id} projectId={projectId} information={shotInformation} settingsOpen={mediaSettingsOpen} active={mediaTab === 'image'} onCloseSettings={() => setMediaSettingsOpen(false)} onOpenSettings={() => { revealPanel?.(); setMediaSettingsOpen(true); }}
+            <ShotImageCandidates key={selectedShot.id} projectId={projectId} information={shotInformation} settingsOpen={mediaSettingsOpen} active={mediaTab === 'image'} onCloseSettings={closeMediaSettings} onOpenSettings={() => { revealPanel?.(); setMediaSettingsOpen(true); }}
               historyOpen={mediaHistoryOpen === 'image'} onHistoryOpenChange={open => setMediaHistoryOpen(open ? 'image' : null)}
               availableReferences={availableReferences} availableLoading={assetsLoading} availableError={assetsError} onRefreshAvailable={() => setAssetsRevision(revision => revision + 1)}
               registerBarrier={registerImageDraft} modelSelection={value.models.storyboardImage} onModelChange={id => onChange({ ...value, models: { ...value.models, storyboardImage: id } })} onResolvedModel={onResolvedImageModel}
@@ -824,7 +796,7 @@ export function StoryboardStage({
               onRefreshCapabilities={refreshCapabilities} prepareShot={purpose => prepareShot(selectedShot.id, purpose)} onChanged={() => setStoryboardRevision(revision => revision + 1)}/>
           </div>
           <div id="storyboard-video-pane" role="tabpanel" aria-labelledby="storyboard-video-tab" hidden={mediaTab !== 'video'}>
-            <ShotVideoCandidates key={selectedShot.id} projectId={projectId} settingsOpen={mediaSettingsOpen} active={mediaTab === 'video'} onCloseSettings={() => setMediaSettingsOpen(false)} onOpenSettings={() => { revealPanel?.(); setMediaSettingsOpen(true); }}
+            <ShotVideoCandidates key={selectedShot.id} projectId={projectId} settingsOpen={mediaSettingsOpen} active={mediaTab === 'video'} onCloseSettings={closeMediaSettings} onOpenSettings={() => { revealPanel?.(); setMediaSettingsOpen(true); }}
               historyOpen={mediaHistoryOpen === 'video'} onHistoryOpenChange={open => setMediaHistoryOpen(open ? 'video' : null)}
               information={<>{shotInformation}<details className="storyboard-dialogue-settings"><summary>对白与音色</summary><NativeDialoguePanel key={selectedShot.id} revision={storyboardRevision} registerBarrier={registerDialogueBarrier} projectId={projectId} shotId={selectedShot.id} disabled={readOnly || busy || lockedShots.has(selectedShot.id)} prepare={() => saveShot(selectedShot.id)} onChanged={() => setStoryboardRevision(revision => revision + 1)}/></details></>}
               registerBarrier={registerVideoDraft} shot={selectedShot} disabled={readOnly || busy || lockedShots.has(selectedShot.id) || ['error', 'conflict'].includes(editing.status(selectedShot.id) ?? '')} model={value.models.video}
@@ -833,10 +805,10 @@ export function StoryboardStage({
         </div> : <div className="studio-empty">{detailLoading ? '正在载入镜头…' : '选择左侧镜头开始制作'}</div>}
       </div>
     </EpisodeEditorSlot>
-    <section className="standard-storyboard-list" aria-label="分镜创作区域">
-      <header className="storyboard-editor-heading"><h3>本集镜头 <Button className="storyboard-list-count" type="text" aria-label="分镜生成记录" title="分镜提取记录" onClick={() => { setHistoryOpen(true); setCandidate(null); setTaskRevision(revision => revision + 1); }}>{page?.total ?? 0}</Button></h3><div className="storyboard-heading-actions">
-        <Button type="text" aria-label="新增分镜" title="新增分镜" disabled={readOnly || busy || loading || !!loadError || !page} onClick={() => { setSearch(''); setPendingOnly(false); void add(); }} icon={<Icon name="plus" size={16}/>}/>
-        <Button type="text" aria-label="提取分镜" title="提取分镜" disabled={readOnly || busy || submitting} onClick={() => setSettingsOpen(true)} icon={<Sparkles size={16}/>}/>
+    <section className={`standard-storyboard-list resource-view-${view}`} aria-label="分镜创作区域">
+      <header className="storyboard-editor-heading"><h3>分镜表 <Button className="storyboard-list-count" type="text" aria-label="分镜生成记录" title="分镜提取记录" onClick={() => { setHistoryOpen(true); setCandidate(null); setTaskRevision(revision => revision + 1); }}>{page?.total ?? 0}</Button></h3><div className="storyboard-heading-actions">
+        <ResourceViewToggle value={view} onChange={setView}/>
+        <Button type="text" aria-label="查看分镜提取记录" title="分镜提取记录" icon={<History size={16}/>} onClick={() => { setHistoryOpen(true); setCandidate(null); setTaskRevision(revision => revision + 1); }}/>
       </div></header>
       <div className="standard-storyboard-filters"><Input prefix={<Icon name="search" size={14}/>} aria-label="搜索镜头名称" value={search} placeholder="搜索镜头名称" allowClear onChange={event => setSearch(event.target.value)}/>
         <div className="storyboard-category-tabs" aria-label="镜头筛选"><button type="button" aria-pressed={!pendingOnly} onClick={() => setPendingOnly(false)}>全部镜头</button><button type="button" aria-pressed={pendingOnly} onClick={() => setPendingOnly(true)}>待制作</button></div>
@@ -851,18 +823,8 @@ export function StoryboardStage({
           <LazyLoadMore hasMore={!!page && page.items.length < page.total} loading={loading || moreLoading} error={moreError} onLoad={() => void loadMoreShots()}/>
         </>}
       </div>
-    </section>    {settingsOpen && <Dialog title="提取分镜" className="storyboard-settings-dialog standard-creation-dialog" canClose={!submitting} onClose={() => setSettingsOpen(false)}>
-      <div className="storyboard-settings-body">
-        <p className="episode-help">从当前剧本生成分镜候选，完成后在历史记录中预览并采用。</p>
-        <label className="writing-control"><span>文本模型</span><EpisodeModelSelect presentation="standard-creation" optionLayout="compact" kind="text" label="分镜模型" value={value.models.storyboardText} disabled={readOnly || submitting} onChange={id => onChange({ ...value, models: { ...value.models, storyboardText: id } })}/></label>
-        <div className="writing-control"><span>平均镜头时长</span><Segmented block aria-label="平均镜头时长预设" value={durationMode} disabled={readOnly || submitting} options={[{ label: '2 秒', value: '2000' }, { label: '3 秒', value: '3000' }, { label: '5 秒', value: '5000' }, { label: '自定', value: 'custom' }]} onChange={next => { const mode = String(next); setDurationMode(mode); if (mode !== 'custom') setAverageShotDurationMs(Number(mode)); }}/>
-          {durationMode === 'custom' && <InputNumber aria-label="自定义平均镜头时长" min={1} max={10} step={0.5} precision={1} value={averageShotDurationMs / 1000} addonAfter="秒" disabled={readOnly || submitting} onChange={seconds => { if (seconds !== null) setAverageShotDurationMs(Math.round(seconds * 1000)); }}/>}</div>
-        <label className="writing-control"><span>分镜要求描述</span><Input.TextArea rows={4} maxLength={4000} value={instructions} onChange={event => setInstructions(event.target.value)} aria-label="分镜要求描述" disabled={readOnly || submitting} placeholder="例如：更多近景，突出人物情绪"/></label>
-        {!writingSession.getSnapshot().script.trim() && <Alert quiet persistent type="warning" message="先编写或采用一份剧本。"/>}
-        {message && <Alert type={feedbackType(message)} message={message}/>}
-      </div>
-      <footer className="storyboard-settings-footer"><Button disabled={submitting} onClick={() => setSettingsOpen(false)}>关闭</Button><Button type="primary" aria-label="生成分镜" aria-busy={submitting || generationPending} loading={submitting || generationPending} disabled={readOnly || busy || generationPending || !writingSession.getSnapshot().script.trim() || !scriptId} onClick={() => void generateStoryboard()}>生成分镜</Button></footer>
-    </Dialog>}
+    <Button className="resource-create-button" type="text" aria-label="创建分镜" disabled={readOnly || busy || loading || !!loadError || !page} onClick={() => { setSearch(''); setPendingOnly(false); void add(); }} icon={<Icon name="plus" size={16}/>}>创建</Button>
+    </section>
     {historyOpen && <Dialog title="分镜生成记录" className="storyboard-history-dialog standard-creation-dialog" canClose={!busy} onClose={() => { setHistoryOpen(false); setCandidate(null); }}>
       {candidate ? <><Button type="link" onClick={() => setCandidate(null)}>返回生成记录</Button><StoryboardResultPreview key={candidate.generation_id} projectId={projectId} generationId={candidate.generation_id} busy={busy} disabled={readOnly || loading || !!loadError || !page} error={message} onApply={mode => void applyResult(mode)}/></> : <div className="lazy-scroll storyboard-history-scroll">
         {tasksLoading && !tasks.length && <p role="status" className="episode-help">正在加载分镜生成记录…</p>}

@@ -6,7 +6,8 @@ type TaskSourceTarget =
 
 const sourceStages: Partial<Record<NonNullable<GenerationSummary['source']>['scene'],
   Extract<TaskSourceTarget, { kind: 'project' }>['stage']>> = {
-  novel_script: 'source', script_assets: 'assets', asset_image: 'assets',
+  novel_script: 'source', story_outline: 'source', script_generate: 'source', script_rewrite: 'source',
+  script_assets: 'assets', asset_image: 'assets',
   script_shots: 'storyboard', shot_image: 'storyboard', shot_video: 'storyboard',
   dialogue_extract: 'assembly', dialogue_audio: 'assembly',
 };

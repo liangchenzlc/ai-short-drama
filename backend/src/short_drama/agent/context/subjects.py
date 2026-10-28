@@ -67,3 +67,8 @@ def subject_memory_keys(snapshot):
         f"{item['project_id']}:{item['source_id']}:{item['kind']}:{item['id']}"
         for item in snapshot_subjects(snapshot)
     }
+
+
+def visible_result_reference(reference: dict, scope_keys: set[str]) -> bool:
+    kind = "node" if reference.get("kind") == "canvas_node" else reference.get("kind")
+    return any(key.endswith(f":{kind}:{reference.get('id')}") for key in scope_keys)

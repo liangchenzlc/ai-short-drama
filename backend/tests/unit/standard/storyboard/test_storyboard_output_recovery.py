@@ -94,7 +94,7 @@ def test_failed_storyboard_recovers_saved_text_without_another_model_call():
                     "scene": "script_shots",
                     "project_id": str(project_id),
                     "script_id": script_id,
-                    "content_version": "3",
+                    "content_version": "2",
                 },
                 "storyboard": {"average_shot_duration_ms": 5000},
             },

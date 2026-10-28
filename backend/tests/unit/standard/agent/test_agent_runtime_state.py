@@ -152,3 +152,33 @@ def test_the_first_active_event_can_resume_from_zero():
         session.commit()
         state = runtime_state(session, scope)
         assert state.cursor == 1 and state.resume_cursor == 0
+
+
+def test_public_reads_keep_large_execution_json_out_of_sorting_and_preserve_metadata():
+    with generation_session() as session:
+        scope = seed(session, "queued")
+        row = session.get(AgentRun, 802)
+        row.checkpoint = {
+            "authorization": {"mode": "auto"},
+            "awaiting_artifacts": ["42"],
+            "history": {"image": "A" * 500000},
+        }
+        row.config_snapshot = {"name": "Frozen model", "unused": "B" * 500000}
+        session.commit()
+        statements = []
+        event.listen(session, "do_orm_execute", lambda state: statements.append(state.statement))
+        service = AgentRunService(session, SimpleNamespace(agent_enabled=True))
+        state = service.runtime_state("301", scope)
+        page = service.list_runs("301", limit=1, expected_scope=scope)
+        assert state.queued_runs[0].awaiting_artifact_ids == [42]
+        assert state.queued_runs[0].model_name == "Frozen model"
+        assert page.items[0].id == 802 and page.total == 2
+        assert page.items[0].mode == "auto"
+        for statement in statements:
+            if "agent_runs" not in str(statement):
+                continue
+            columns = {str(column) for column in statement.selected_columns}
+            assert "agent_runs.checkpoint" not in columns
+            assert "agent_runs.config_snapshot" not in columns
+            if "JSON" in str(statement) or ":checkpoint_" in str(statement):
+                assert not statement._order_by_clauses

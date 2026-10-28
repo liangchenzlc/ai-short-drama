@@ -148,9 +148,12 @@ def condition(table, user_id):
         )
     if name in {
         "agent_task_inputs",
+        "agent_task_requirements",
         "agent_task_controls",
         "agent_operations",
         "agent_media_requests",
+        "agent_graph_checkpoints",
+        "agent_graph_writes",
     }:
         return c.task_id.in_(allowed_ids("agent_tasks", user_id))
     if name in {
@@ -587,6 +590,15 @@ def _guard_agent_write(session, entity, actor, new):
             call = _agent_parent(session, "agent_tool_calls", entity.tool_call_id)
             if run.task_id != entity.task_id or call.run_id != run.id:
                 raise NotFound("Operation does not belong to this task and run")
+        if name in {"agent_graph_checkpoints", "agent_graph_writes"}:
+            run = _agent_parent(session, "agent_runs", entity.run_id)
+            if (
+                entity.owner_user_id != actor.user_id
+                or run.task_id != entity.task_id
+                or run.initiated_by != actor.user_id
+                or run.conversation_id != conversation.id
+            ):
+                raise NotFound("Graph record does not belong to this task and run")
         if name == "agent_batch_undos":
             operation = _agent_parent(session, "agent_operations", entity.operation_id)
             task = _agent_parent(session, "agent_tasks", entity.task_id)

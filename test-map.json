@@ -1538,7 +1538,6 @@
         "frontend/src/features/generations/**",
         "frontend/src/features/generations/BatchGeneration.tsx",
         "frontend/src/features/generations/ConfigSelect.tsx",
-        "frontend/src/features/generations/CreateGeneration.tsx",
         "frontend/src/features/generations/ReferenceImages.tsx",
         "frontend/src/features/generations/TaskDetail.tsx",
         "frontend/src/features/generations/attempt.ts",
@@ -1753,6 +1752,7 @@
         "backend/src/short_drama/service/agent_conversation_service.py",
         "backend/src/short_drama/service/agent_model_service.py",
         "backend/src/short_drama/service/agent_run_service.py",
+        "backend/src/short_drama/dao/agent_run_dao.py",
         "backend/src/short_drama/service/agent_skill_package.py",
         "backend/src/short_drama/service/agent_skill_service.py",
         "backend/src/short_drama/service/agent_builtin_skill_service.py",
@@ -1783,13 +1783,14 @@
         "frontend/src/features/agents/agents.css",
         "frontend/src/features/agents/useAgentAvailability.ts",
         "frontend/src/features/agents/useAgentRuntime.ts",
-        "frontend/src/features/ai-config/SkillEditor.tsx",
-        "frontend/src/features/ai-config/SkillImportDialog.tsx",
-        "frontend/src/features/ai-config/SkillManager.tsx",
-        "frontend/src/features/ai-config/SkillResources.tsx",
-        "frontend/src/features/ai-config/skill-draft.ts",
-        "frontend/src/features/ai-config/skill-manager.css",
-        "backend/src/short_drama/core/skill_catalog.py"
+        "backend/src/short_drama/core/skill_catalog.py",
+        "backend/src/short_drama/dao/agent_task_dao.py",
+        "backend/src/short_drama/dao/agent_graph_dao.py",
+        "backend/src/short_drama/dao/agent_transcript_dao.py",
+        "backend/src/short_drama/domain/agent_graph.py",
+        "backend/src/short_drama/service/agent_graph_service.py",
+        "frontend/src/features/skills/**",
+        "frontend/src/pages/skills/**"
       ],
       "depends_on": [
         "shared.core",
@@ -1924,6 +1925,7 @@
         "frontend/src/features/assets/episode-assets.css",
         "frontend/src/features/assets/useAssetImageGeneration.ts",
         "frontend/src/features/assets/useAssetLibrary.ts",
+        "frontend/src/features/media-library/AssetPreview.tsx",
         "frontend/src/features/media-library/AssetDetail.tsx",
         "frontend/src/features/media-library/ImagePicker.tsx",
         "frontend/src/features/projects/PrivateReferenceImages.tsx",
@@ -1978,6 +1980,12 @@
         "backend/src/short_drama/dao/assistant_context_dao.py",
         "backend/src/short_drama/domain/agent_memory.py",
         "backend/src/short_drama/domain/agent_task.py",
+        "backend/src/short_drama/domain/agent_task_requirement.py",
+        "backend/src/short_drama/agent/task/requirements.py",
+        "backend/src/short_drama/agent/task/intake.py",
+        "backend/src/short_drama/agent/task/sources.py",
+        "backend/src/short_drama/agent/harness/evidence.py",
+        "backend/src/short_drama/agent/tools/digest.py",
         "backend/src/short_drama/domain/agent_history.py",
         "backend/src/short_drama/schemas/assistant_history.py",
         "backend/src/short_drama/service/assistant_history_service.py",
@@ -2056,7 +2064,13 @@
         "backend/src/short_drama/agent/dialogue_tools.py",
         "backend/src/short_drama/agent/media_runtime.py",
         "backend/src/short_drama/agent/skill_runtime.py",
-        "backend/src/short_drama/service/agent_memory_store.py"
+        "backend/src/short_drama/service/agent_memory_store.py",
+        "backend/src/short_drama/schemas/assistant_script.py",
+        "backend/src/short_drama/service/assistant_script_service.py",
+        "frontend/src/api/modules/assistant-script.ts",
+        "frontend/src/features/ai-assistant/AssistantScriptProposal.tsx",
+        "frontend/src/features/ai-assistant/assistant-business-events.ts",
+        "frontend/src/features/ai-assistant/assistant-receipt.ts"
       ],
       "depends_on": [
         "shared.core",
@@ -2134,7 +2148,8 @@
         "frontend/src/pages/projects/episode/EpisodeSwitch.tsx",
         "frontend/src/pages/projects/episode/StageNav.tsx",
         "frontend/src/pages/projects/episode/TopStepNav.tsx",
-        "frontend/src/types/projects.ts"
+        "frontend/src/types/projects.ts",
+        "frontend/src/features/projects/ResourceViewToggle.tsx"
       ],
       "depends_on": [
         "shared.core",
@@ -2323,7 +2338,14 @@
         "frontend/src/features/projects/writing-session.ts",
         "frontend/src/features/projects/writing-workflow.ts",
         "frontend/src/pages/projects/episode/ScriptStage.tsx",
-        "frontend/src/pages/projects/episode/SourceStage.tsx"
+        "frontend/src/pages/projects/episode/SourceStage.tsx",
+        "frontend/src/features/projects/script-desk/**",
+        "backend/src/short_drama/domain/project_story_outline.py",
+        "backend/src/short_drama/service/writing_generation_service.py",
+        "backend/scripts/writing_workspace_migration.py",
+        "backend/scripts/script_revision_migration.py",
+        "backend/src/short_drama/domain/project_script_revision.py",
+        "backend/src/short_drama/domain/project_story_settings.py"
       ],
       "depends_on": [
         "shared.core",
@@ -8254,27 +8276,6 @@
       "previous_path": "backend/tests/integration/test_project_creation_mysql.py"
     },
     {
-      "path": "backend/tests/integration/shared/creation/test_standard_creation_workflow.py",
-      "features": [
-        "shared.creation",
-        "standard.assets",
-        "standard.shot_images",
-        "standard.shot_video",
-        "standard.writing"
-      ],
-      "runner": "mysql",
-      "level": "mysql",
-      "requires": [],
-      "support": [
-        "backend/tests/__init__.py",
-        "backend/tests/conftest.py",
-        "backend/tests/integration/conftest.py",
-        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
-        "backend/tests/support/integration/legacy_identity.py"
-      ],
-      "previous_path": "backend/tests/integration/test_standard_creation_workflow.py"
-    },
-    {
       "path": "backend/tests/integration/shared/generation/test_ai_generations.py",
       "features": [
         "shared.generation"
@@ -8309,7 +8310,8 @@
     {
       "path": "backend/tests/integration/shared/generation/test_generation_broker.py",
       "features": [
-        "shared.generation"
+        "shared.generation",
+        "standard.writing"
       ],
       "runner": "mysql",
       "level": "infra",
@@ -8385,7 +8387,9 @@
       "support": [
         "backend/tests/__init__.py",
         "backend/tests/conftest.py",
-        "backend/tests/integration/conftest.py"
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/generation_fixtures.py",
+        "backend/tests/support/media_library_fixtures.py"
       ],
       "previous_path": "backend/tests/integration/test_media_workflows.py"
     },
@@ -8509,7 +8513,8 @@
         "backend/tests/integration/conftest.py",
         "backend/tests/integration/standard/agent/test_agent_conversations.py",
         "backend/tests/integration/standard/agent/test_agent_runtime.py",
-        "backend/tests/integration/standard/agent/test_agent_services.py"
+        "backend/tests/integration/standard/agent/test_agent_services.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py"
       ],
       "previous_path": "backend/tests/integration/test_agent_context.py"
     },
@@ -12312,7 +12317,8 @@
       "level": "browser",
       "requires": [],
       "support": [
-        "frontend/e2e/support/studio-fixture.ts"
+        "frontend/e2e/support/studio-fixture.ts",
+        "frontend/e2e/media/fixtures/asset-preview.mp4"
       ],
       "previous_path": "frontend/e2e/media-tasks-redesign.spec.ts"
     },
@@ -12478,7 +12484,19 @@
       "previous_path": "frontend/e2e/workspace.spec.ts"
     },
     {
-      "path": "frontend/e2e/writing/novel-quill.spec.ts",
+      "path": "frontend/e2e/writing/script-desk.spec.ts",
+      "features": [
+        "standard.writing"
+      ],
+      "runner": "playwright",
+      "level": "browser",
+      "requires": [],
+      "support": [
+        "frontend/e2e/support/studio-fixture.ts"
+      ]
+    },
+    {
+      "path": "frontend/e2e/writing/writing-generation.spec.ts",
       "features": [
         "standard.writing"
       ],
@@ -12488,7 +12506,7 @@
       "support": [
         "frontend/e2e/support/studio-fixture.ts"
       ],
-      "previous_path": "frontend/e2e/novel-quill.spec.ts"
+      "previous_path": "frontend/e2e/writing/novel-quill.spec.ts"
     },
     {
       "path": "frontend/e2e/writing/writing-recovery.spec.ts",
@@ -13148,6 +13166,206 @@
       "level": "fast",
       "requires": [],
       "support": []
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_harness_gateway.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_harness_resources.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_harness_runtime.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
+        "backend/tests/support/integration/legacy_identity.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/unit/standard/agent/test_agent_model_gateway.py",
+        "backend/tests/unit/standard/agent/test_harness_resources.py",
+        "backend/tests/support/integration/harness_skill.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_harness_live.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "live",
+      "requires": [
+        "RUN_HARNESS_LIVE"
+      ],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
+        "backend/tests/support/integration/legacy_identity.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/support/integration/harness_skill.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_agent_task_intake.py",
+      "features": [
+        "standard.assistant"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_harness_supervision.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_harness_supervision.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
+        "backend/tests/support/integration/legacy_identity.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/unit/standard/agent/test_agent_model_gateway.py",
+        "backend/tests/unit/standard/agent/test_harness_resources.py",
+        "backend/tests/integration/standard/assistant/test_harness_runtime.py",
+        "backend/tests/support/integration/harness_skill.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/writing/test_writing_generation.py",
+      "features": [
+        "standard.writing"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/support/generation_fixtures.py",
+        "backend/tests/unit/standard/writing/test_project_writing.py"
+      ]
+    },
+    {
+      "path": "frontend/tests/writing/writing-requests.test.mjs",
+      "features": [
+        "standard.writing"
+      ],
+      "runner": "node",
+      "level": "fast",
+      "requires": [],
+      "support": []
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_workspace_reliability.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant",
+        "standard.writing"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
+        "backend/tests/support/integration/legacy_identity.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/unit/standard/agent/test_agent_model_gateway.py",
+        "backend/tests/unit/standard/agent/test_harness_resources.py",
+        "backend/tests/integration/standard/assistant/test_harness_runtime.py",
+        "backend/tests/support/integration/harness_skill.py"
+      ]
+    },
+    {
+      "path": "frontend/e2e/workspace/workbench-layout.spec.ts",
+      "features": [
+        "standard.writing",
+        "standard.assets",
+        "standard.storyboard",
+        "standard.projects",
+        "standard.assembly"
+      ],
+      "runner": "playwright",
+      "level": "browser",
+      "requires": [],
+      "support": [
+        "frontend/e2e/support/studio-fixture.ts"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/shared/media/test_media_library_filters.py",
+      "features": [
+        "shared.media"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/support/generation_fixtures.py",
+        "backend/tests/support/media_library_fixtures.py"
+      ]
     }
   ],
   "auxiliary": [
@@ -14667,9 +14885,45 @@
       ],
       "kind": "fixture",
       "status": "active"
+    },
+    {
+      "path": "backend/tests/support/integration/harness_skill.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "kind": "helper",
+      "status": "active"
+    },
+    {
+      "path": "backend/tests/support/media_library_fixtures.py",
+      "features": [
+        "shared.media"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
+    {
+      "path": "frontend/e2e/media/fixtures/asset-preview.mp4",
+      "features": [
+        "shared.media"
+      ],
+      "kind": "fixture",
+      "status": "active"
     }
   ],
   "removed_tests": [
+    {
+      "path": "backend/tests/integration/shared/creation/test_standard_creation_workflow.py",
+      "features": [
+        "shared.creation",
+        "standard.assets",
+        "standard.shot_images",
+        "standard.shot_video",
+        "standard.writing"
+      ],
+      "reason": "旧分集工作流、项目成员共享及 episode_scripts 增量迁移已退役；现行项目写作、分镜和私人草稿合同由对应功能测试验证。"
+    },
     {
       "path": "backend/tests/integration/test_canvas_beefapi_browser.py",
       "features": [

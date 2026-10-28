@@ -38,7 +38,7 @@ export function CanvasNodeSplitDialog({ dataUrl, open, onClose, onConfirm }: { d
                     <h2 className="text-xl font-semibold">宫格切分</h2>
                     <p className="mt-1 text-sm opacity-60">生成 {total} 个图片子节点，并按原图网格排列到画布右侧</p>
                 </div>
-                <div className="grid gap-6 md:grid-cols-[minmax(260px,1fr)_280px]">
+                <div className="grid gap-6 grid-cols-[minmax(260px,1fr)_280px]">
                     <div className="rounded-xl border p-4">
                         <div className="grid min-h-[300px] place-items-center rounded-lg bg-black/5">
                             <div className="relative inline-block max-w-full overflow-hidden rounded-lg bg-black shadow-xl">

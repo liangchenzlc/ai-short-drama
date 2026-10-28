@@ -33,7 +33,7 @@ export function AssistantSkillPicker({ selected, activations = [], mode, disable
   }
   return <section className="assistant-skill-picker" aria-label="选择 Skill">
       <div className="assistant-skill-search">
-        <Input autoFocus aria-label="搜索 Skill" placeholder="搜索名称、用途或标签" value={query} maxLength={120} allowClear onChange={event => { setQuery(event.target.value); setOffset(0); }}/>
+        <Input autoFocus aria-label="搜索 Skill" placeholder="搜索名称或用途" value={query} maxLength={120} allowClear onChange={event => { setQuery(event.target.value); setOffset(0); }}/>
       </div>
       <div className="assistant-skill-scroll" aria-busy={loading}>
         {error && <div role="alert" className="agent-context-empty"><p>{error}</p><Button size="small" onClick={() => setRevision(value => value + 1)}>重新载入</Button></div>}
@@ -52,9 +52,9 @@ export function AssistantSkillPicker({ selected, activations = [], mode, disable
             </article>;
           })}</div>}
         {loading && <Skeleton active title={false} paragraph={{ rows: 3 }}/>}
-        {!loading && !error && !items.length && <p className="agent-context-empty">{query ? '没有匹配的方法，请调整搜索条件。' : '暂无方法，可前往管理页新建或导入。'}</p>}
+        {!loading && !error && !items.length && <p className="agent-context-empty">{query ? '没有匹配的方法，请调整搜索条件。' : '暂无方法，可前往管理页导入。'}</p>}
         {!error && items.length < total && <Button block size="small" disabled={loading} onClick={() => setOffset(value => value + 50)}>加载更多 Skill</Button>}
       </div>
-      <footer className="assistant-skill-footer"><span>已选择 {selected.length} / 8{selected.length >= 8 ? '，移除后可继续添加' : '，可多选'}</span><a href="/ai_config?section=skills" target="_blank" rel="noopener noreferrer">管理 Skill</a></footer>
+      <footer className="assistant-skill-footer"><span>已选择 {selected.length} / 8{selected.length >= 8 ? '，移除后可继续添加' : '，可多选'}</span><a href="/skills" target="_blank" rel="noopener noreferrer">管理 Skill</a></footer>
   </section>;
 }

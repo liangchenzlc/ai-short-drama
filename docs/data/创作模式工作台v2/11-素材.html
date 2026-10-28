@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>素材创作 v2</title>
+<link rel="stylesheet" href="board.css">
+<style>
+.asset-thumb { width: 42px; height: 42px; flex: none; border-radius: 6px; border: 1px solid #303030; }
+.stage { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #0e0e0f; border: 1px solid var(--hair); border-radius: 10px; overflow: hidden; }
+.stage-head { flex: 0 0 46px; height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--surface); border-bottom: 1px solid var(--hair-2); }
+.stage-head h1 { margin: 0; font-size: 14px; font-weight: 600; }
+.canvas { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; background:
+  radial-gradient(60% 60% at 50% 30%, #191a1f 0%, #0c0c0e 70%); }
+.main-shot { width: 300px; height: 400px; border-radius: 10px; border: 1px solid #34343a; box-shadow: 0 18px 40px rgb(0 0 0 / 55%); }
+.badge-corner { position: absolute; left: 8px; top: 8px; padding: 2px 6px; border-radius: 4px; background: rgb(0 0 0 / 55%); border: 1px solid rgb(255 255 255 / 12%); font-size: 9.5px; color: #dcdce4; }
+.views { display: flex; align-items: flex-end; gap: 8px; }
+.view { width: 82px; height: 106px; border-radius: 7px; border: 1px solid #2f2f35; }
+.view.on { border-color: #c9c9d0; box-shadow: 0 0 0 2px rgb(245 245 245 / 12%); }
+.view-add { width: 82px; height: 106px; display: grid; place-items: center; gap: 3px; border: 1px dashed #3a3a40; border-radius: 7px; color: #6f6f79; font-size: 10px; }
+.view-cap { text-align: center; margin-top: 4px; font-size: 9.5px; color: #7b7b85; }
+.anchors { display: flex; align-items: center; gap: 6px; }
+.anchor { height: 22px; padding: 0 8px; display: inline-flex; align-items: center; border-radius: 5px; background: #1c1c20; border: 1px solid #303036; color: #c3c3cb; font-size: 10.5px; }
+.stage-foot { flex: 0 0 34px; height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #131313; border-top: 1px solid var(--hair-2); font-size: 10.5px; color: #8a8a93; }
+.filters { flex: 0 0 auto; display: grid; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--hair-2); }
+.search { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border: 1px solid #333; border-radius: 6px; color: #6f6f79; font-size: 11px; }
+.tabs { display: flex; gap: 4px; }
+.tab { height: 22px; padding: 0 7px; display: inline-flex; align-items: center; gap: 4px; border-radius: 5px; background: transparent; color: #8b8b94; font-size: 10.5px; }
+.tab.on { background: #2b2b2b; color: #f0f0f4; }
+.tab small { font-family: var(--mono); font-size: 9.5px; color: #6f6f79; }
+.tab.on small { color: #b9b9c2; }
+.foot { flex: 0 0 36px; height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-top: 1px solid var(--hair-2); }
+</style></head>
+<body>
+<svg class="sprite" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M17 9h4M3 15h4M17 15h4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5l1.7 4.6 4.6 1.7-4.6 1.7L12 16.1l-1.7-4.6L5.7 9.8l4.6-1.7z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5m0 0L6.5 10.5M12 5l5.5 5.5"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V10h5.5"/><path d="M12 8v4.5l3 1.8"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+</svg>
+
+<div class="topbar">
+  <div class="tb-left">
+    <button class="icon-btn"><svg class="i"><use href="#i-back"/></svg></button>
+    <span class="brand"><svg class="i i-13"><use href="#i-film"/></svg></span>
+    <span class="pname">退婚当天，我成了前夫的上司</span>
+    <span class="mode">创作模式</span>
+  </div>
+  <nav class="steps">
+    <button class="step done"><span class="step-no">01</span>剧本创作</button><span class="step-link"></span>
+    <button class="step on"><span class="step-no">02</span>素材生成</button><span class="step-link"></span>
+    <button class="step"><span class="step-no">03</span>分镜制作</button><span class="step-link"></span>
+    <button class="step"><span class="step-no">04</span>成片合成</button>
+  </nav>
+  <div class="tb-right">
+    <span class="save"><i></i>已保存 14:52</span>
+    <button class="ghost"><svg class="i i-13"><use href="#i-spark"/></svg>AI 创作助手</button>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="panel" style="width:258px;flex:none">
+    <header class="head"><h2>素材</h2><span class="mono" style="font-size:10.5px;color:#6f6f79">12</span>
+      <div class="actions"><button class="icon-btn"><svg class="i i-13"><use href="#i-search"/></svg></button><button class="icon-btn"><svg class="i i-13"><use href="#i-plus"/></svg></button></div>
+    </header>
+    <div class="filters">
+      <div class="search"><svg class="i i-13"><use href="#i-search"/></svg>搜索名称或描述</div>
+      <div class="tabs">
+        <button class="tab on">全部<small>12</small></button>
+        <button class="tab">角色<small>6</small></button>
+        <button class="tab">场景<small>4</small></button>
+        <button class="tab">道具<small>2</small></button>
+      </div>
+    </div>
+    <div class="list">
+      <button class="row" aria-current="true">
+        <span class="ph asset-thumb"></span>
+        <span class="t"><strong>林晚</strong><span>角色 · 4 视图 · 被 8 个镜头引用</span></span><i class="dot ok"></i>
+      </button>
+      <button class="row">
+        <span class="ph asset-thumb" style="filter:hue-rotate(18deg)"></span>
+        <span class="t"><strong>顾霆琛</strong><span>角色 · 3 视图 · 被 6 个镜头引用</span></span><i class="dot ok"></i>
+      </button>
+      <button class="row">
+        <span class="ph asset-thumb" style="filter:hue-rotate(-22deg)"></span>
+        <span class="t"><strong>沈亦舟</strong><span>角色 · 3 视图 · 被 4 个镜头引用</span></span><i class="dot ok"></i>
+      </button>
+      <button class="row">
+        <span class="ph asset-thumb" style="opacity:.45"></span>
+        <span class="t"><strong>苏蔓</strong><span>角色 · 还没生成</span></span><i class="dot wait"></i>
+      </button>
+      <button class="row">
+        <span class="ph asset-thumb" style="opacity:.45"></span>
+        <span class="t"><strong>林父</strong><span>角色 · 还没生成</span></span><i class="dot wait"></i>
+      </button>
+      <button class="row">
+        <span class="ph asset-thumb" style="filter:hue-rotate(140deg)"></span>
+        <span class="t"><strong>民政局 · 大厅</strong><span>场景 · 全景已定 · 被 2 个镜头引用</span></span><i class="dot ok"></i>
+      </button>
+      <button class="row">
+        <span class="ph asset-thumb" style="filter:hue-rotate(150deg)"></span>
+        <span class="t"><strong>沈氏集团 · 顶层</strong><span>场景 · 全景已定 · 被 3 个镜头引用</span></span><i class="dot ok"></i>
+      </button>
+      <button class="row">
+        <span class="ph asset-thumb" style="filter:hue-rotate(160deg);opacity:.6"></span>
+        <span class="t"><strong>宴会厅</strong><span>场景 · 主图待更新（剧本改过）</span></span><i class="dot stale"></i>
+      </button>
+      <button class="row">
+        <span class="ph asset-thumb" style="opacity:.45"></span>
+        <span class="t"><strong>医院 · 病房</strong><span>场景 · 还没生成</span></span><i class="dot wait"></i>
+      </button>
+      <button class="row">
+        <span class="ph asset-thumb" style="filter:grayscale(1)"></span>
+        <span class="t"><strong>离婚协议</strong><span>道具 · 被 2 个镜头引用</span></span><i class="dot ok"></i>
+      </button>
+    </div>
+    <footer class="foot">
+      <button class="btn quiet"><svg class="i i-13"><use href="#i-spark"/></svg>从剧本提取 · 6 个待建</button>
+    </footer>
+  </aside>
+
+  <section class="stage" aria-label="资产画布">
+    <header class="stage-head">
+      <h1>林晚</h1>
+      <span class="tag">角色</span>
+      <span class="tag ok">已生成 · v3</span>
+      <span style="font-size:10.5px;color:#6f6f79">28 岁 · 豪门长女 · 前傅太太</span>
+      <div class="actions">
+        <button class="btn quiet"><svg class="i i-13"><use href="#i-history"/></svg>记录</button>
+        <button class="btn quiet"><svg class="i i-13"><use href="#i-eye"/></svg>原图</button>
+        <button class="icon-btn"><svg class="i i-13"><use href="#i-more"/></svg></button>
+        <button class="icon-btn"><svg class="i i-13"><use href="#i-panel"/></svg></button>
+      </div>
+    </header>
+
+    <div class="canvas">
+      <div class="ph main-shot"><span class="badge-corner">主图 · 正面</span><span class="cap">林晚 / 定妆照</span></div>
+      <div>
+        <div class="views">
+          <span class="ph view on"></span>
+          <span class="ph view" style="filter:hue-rotate(8deg)"></span>
+          <span class="ph view" style="filter:hue-rotate(-10deg)"></span>
+          <span class="ph view" style="filter:brightness(1.15)"></span>
+          <span class="view-add"><svg class="i i-13"><use href="#i-plus"/></svg>补视图</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px" class="view-cap">
+          <span style="width:82px">正面</span><span style="width:82px">侧面</span><span style="width:82px">背面</span><span style="width:82px">面部特写</span><span style="width:82px">表情 / 服装</span>
+        </div>
+      </div>
+      <div class="anchors">
+        <span class="label">一致性锚点</span>
+        <span class="anchor">短发 · 及肩</span><span class="anchor">深色风衣</span><span class="anchor">银色耳钉</span><span class="anchor">冷白皮</span>
+        <button class="btn quiet" style="height:22px;padding:0 6px">编辑</button>
+      </div>
+    </div>
+
+    <footer class="stage-foot">
+      <span>角色基准会被所有引用镜头继承</span>
+      <span style="margin-left:auto">更新于 14:32</span>
+    </footer>
+  </section>
+
+  <aside class="panel insp">
+    <header class="head"><h2>生成设置</h2>
+      <div class="actions"><button class="icon-btn"><svg class="i i-13"><use href="#i-panel"/></svg></button></div>
+    </header>
+    <div class="insp-body">
+      <div class="field">
+        <span class="label">人设描述</span>
+        <textarea class="ta" rows="4" readonly>28 岁，豪门长女。被退婚后剪短头发，常穿深色风衣，说话慢、下手狠。</textarea>
+      </div>
+      <div class="field">
+        <span class="label" style="display:flex">参考图<span style="margin-left:auto;color:#62626b">2 / 4</span></span>
+        <div class="refs">
+          <span class="ph ref"></span>
+          <span class="ph ref" style="filter:hue-rotate(12deg)"></span>
+          <span class="ref-add"><svg class="i i-13"><use href="#i-plus"/></svg></span>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label">生成提示词</span>
+        <div class="ta" style="height:96px;display:flex;flex-direction:column;justify-content:space-between">
+          <span style="color:#c9c9d1">定妆照，正面，中性表情，干净背景，冷白光，写实真人…</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="model"><svg class="i i-12"><use href="#i-spark"/></svg>Seedream 5.0</span>
+            <span class="send"><svg class="i i-13"><use href="#i-send"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <p class="hint">生成会同时产出正面 / 侧面 / 背面三视图并存为角色基准；后续镜头只引用资产，不再重写外貌。</p>
+      <div style="height:1px;background:#262626"></div>
+      <div class="field">
+        <span class="label">最近生成</span>
+        <div class="row" style="padding:6px 4px"><i class="dot ok"></i><span class="t"><strong style="font-size:11.5px">14:32 · 三视图 · v3</strong><span>已设为主图</span></span><span class="mono" style="font-size:10px;color:#6f6f79">对比</span></div>
+        <div class="row" style="padding:6px 4px"><i class="dot ok"></i><span class="t"><strong style="font-size:11.5px">昨天 · 单图 · v2</strong><span>被 v3 取代</span></span><span class="mono" style="font-size:10px;color:#6f6f79">对比</span></div>
+      </div>
+    </div>
+  </aside>
+</div>
+</body></html>

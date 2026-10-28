@@ -62,11 +62,11 @@ test('a stalled refresh times out and leaving aborts its request', async ({ page
   await expect(page.locator('video')).toHaveCount(0);
 });
 
-test('narrow screen exposes the error, retry and download without overflow', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test('minimum desktop viewport exposes the error, retry and download without overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
   await open(page); await damage(page);
   await expect(page.getByRole('button', { name: '刷新成片并重试', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '下载 MP4' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: '.runtime/playback-recovery-mobile.png', fullPage: true });
+  await page.screenshot({ path: '.runtime/playback-recovery-desktop-1280.png', fullPage: true });
 });

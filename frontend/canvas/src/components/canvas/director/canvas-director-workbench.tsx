@@ -1641,7 +1641,7 @@ export function CanvasDirectorWorkbench({ open, scene, projectId, imageNodes, on
                 {exportNotice ? <DirectorExportNotice {...exportNotice} background={theme.toolbar.panel} /> : null}
             </header>
 
-            <div className={`grid min-h-0 flex-1 ${workspaceView === "preview" ? "grid-cols-1" : leftDockCollapsed ? "grid-cols-[48px_minmax(0,1fr)_280px] max-lg:grid-cols-[48px_minmax(0,1fr)]" : "grid-cols-[280px_minmax(0,1fr)_280px] max-lg:grid-cols-[220px_minmax(0,1fr)]"}`}>
+            <div className={`grid min-h-0 flex-1 ${workspaceView === "preview" ? "grid-cols-1" : leftDockCollapsed ? "grid-cols-[48px_minmax(0,1fr)_280px]" : "grid-cols-[280px_minmax(0,1fr)_280px]"}`}>
                 {workspaceView === "scene" ? <>
                 <aside id="director-workbench-left-dock" data-director-left-dock="true" className="director-workbench-sidebar flex min-h-0 overflow-hidden border-r" style={{ background: theme.node.panel, borderColor: theme.toolbar.border }}>
                     <DirectorWorkbenchRail active={navigationTab} onHelp={() => setOnboardingRestartSignal((value) => value + 1)} onChange={(tab) => {
@@ -1819,7 +1819,7 @@ export function CanvasDirectorWorkbench({ open, scene, projectId, imageNodes, on
                 </main>
 
                 {workspaceView === "scene" ? <>
-                <aside data-director-right-dock="true" className="director-workbench-property-dock flex min-h-0 flex-col overflow-hidden border-l max-lg:col-span-2 max-lg:max-h-[40vh] max-lg:border-l-0 max-lg:border-t" style={{ background: theme.node.panel, borderColor: theme.toolbar.border }}>
+                <aside data-director-right-dock="true" className="director-workbench-property-dock flex min-h-0 flex-col overflow-hidden border-l" style={{ background: theme.node.panel, borderColor: theme.toolbar.border }}>
                     {/* 摄影机模式下右栏固定显示 shot/camera 检查器：对齐视图与运镜是这个模式的主入口。 */}
                     <div data-director-property-inspector="true" className="director-workbench-property-inspector thin-scrollbar">
                         {selectedGroup && !capabilities.cameraTools ? <Inspector title={selectedGroup.name} onTitleChange={(name) => commit((current) => ({ ...current, groups: current.groups?.map((group) => group.id === selectedGroup.id ? { ...group, name } : group) }))}><Field label="对象">{draft.objects.filter((object) => object.groupId === selectedGroup.id).length}</Field></Inspector>
