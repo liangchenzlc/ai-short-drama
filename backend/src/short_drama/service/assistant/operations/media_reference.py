@@ -20,6 +20,32 @@ from short_drama.domain.assistant.tasks.task import AgentOperation
 from short_drama.domain.canvas.document.canvas import CanvasNode
 
 
+def business_image_references(
+    session, owner, project_id, media_ids, *, lock=False, check_available=True
+):
+    from short_drama.dao.assistant.operations.invocation import BusinessInvocationDAO
+
+    if not media_ids:
+        return {}
+    result = {}
+    for media_id, generation_id, output_index, config in BusinessInvocationDAO(
+        session
+    ).image_origins(owner, project_id, media_ids, lock=lock):
+        target = config.get("business_media")
+        if target and (not check_available or _source_available(session, owner, target, lock=lock)):
+            result[media_id] = {
+                "media_id": str(media_id),
+                "generation_id": str(generation_id),
+                "output_index": output_index,
+                "origin": {
+                    key: target[key]
+                    for key in ("project_id", "kind", "id", "canvas_id")
+                    if key in target
+                },
+            }
+    return result
+
+
 def _source_available(session: Session, owner: int, target: dict[str, Any], *, lock: bool) -> bool:
     project_id = int(target["project_id"])
     mode = "infinite_canvas" if target["kind"] == "node" else "standard"
@@ -76,7 +102,7 @@ def generated_image_references(
         .where(
             AgentMediaRequest.task_id == task_id,
             AgentOperation.task_id == task_id,
-            AgentOperation.tool_name == "submit_generation_batch",
+            AgentOperation.tool_name == "workbench__submit_generation_batch",
             AgentOperation.status.in_(("succeeded", "failed", "conflict")),
             AgentMediaRequest.media_kind == "image",
             AgentMediaRequest.status.in_(("succeeded", "failed", "conflict")),

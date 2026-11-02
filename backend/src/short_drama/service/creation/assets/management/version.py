@@ -146,7 +146,12 @@ class AssetVersionService:
         self.current_snapshot_locked(asset)
 
     def append_locked(
-        self, asset: Asset, *, snapshot: dict | None = None, source_audit: dict | None = None
+        self,
+        asset: Asset,
+        *,
+        snapshot: dict | None = None,
+        source_audit: dict | None = None,
+        initial: bool = False,
     ) -> AssetVersion | None:
         self._require_transaction()
         if asset.kind != "character":
@@ -155,7 +160,8 @@ class AssetVersionService:
             return None
         previous = None
         version = None
-        latest = self.dao.latest_number(asset.id)
+        # 新插入角色尚无历史；查询空版本范围会锁住其他角色的首版插入间隙。
+        latest = 0 if initial else self.dao.latest_number(asset.id)
         if asset.current_version_id is not None:
             version = self.dao.current(asset.id, asset.current_version_id)
             if version is None or version.version != latest:

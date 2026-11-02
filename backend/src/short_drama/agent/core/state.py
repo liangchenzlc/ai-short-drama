@@ -60,6 +60,45 @@ def safe_error(code):
     }
 
 
+def _safe_context_budget(facts: object) -> dict:
+    if not isinstance(facts, dict):
+        return {}
+    enumerated = {
+        "phase": {"fixed", "post_summary", "main", "selector", "helper"},
+        "source": {"assistant", "tool_selection", "summarization"},
+        "fixed_kind": {
+            "system_tools_and_pinned",
+            "system_and_tools",
+            "helper_prompt_and_prior_summary",
+        },
+    }
+    result = {
+        key: value
+        for key, allowed in enumerated.items()
+        if isinstance(value := facts.get(key), str) and value in allowed
+    }
+    for key in (
+        "context_window_tokens",
+        "input_limit_tokens",
+        "reserved_output_tokens",
+        "reserved_tool_tokens",
+        "reserved_safety_tokens",
+        "estimated_input_tokens",
+        "fixed_estimated_input_tokens",
+        "helper_input_limit_tokens",
+        "message_count",
+        "tool_call_count",
+        "tool_result_count",
+        "complete_tool_group_count",
+        "covered_characters",
+        "total_characters",
+    ):
+        value = facts.get(key)
+        if type(value) is int and value >= 0:
+            result[key] = value
+    return result
+
+
 def failure_message(code, *, accepted_unknown=False):
     """Stable user-facing explanations never reflect raw provider errors."""
     if accepted_unknown or code in {
@@ -69,6 +108,7 @@ def failure_message(code, *, accepted_unknown=False):
     }:
         return "请求可能已经提交，但结果暂时无法确认。请先核对当前任务，避免重复生成和计费。"
     messages = {
+        "assistant_engine_updated": "执行引擎已更新，请重新发送继续",
         "agent_progress_stalled": (
             "连续尝试仍未取得新进展，已有成果和回执已保留。请补充缺少的资料或调整要求后继续。"
         ),
@@ -315,6 +355,10 @@ def finish_locked(session, conversation, run, status, error=None):
     charge_active(run, now)
     run.status = status
     run.error = safe_error(error.get("code")) if error else None
+    if run.error and run.error["code"] == "agent_context_budget_exhausted":
+        facts = _safe_context_budget(error.get("context_budget"))
+        if facts:
+            run.error["context_budget"] = facts
     run.finished_at = now
     run.next_run_at = None
     run.message_status = "idle"
@@ -341,17 +385,11 @@ def finish_locked(session, conversation, run, status, error=None):
         from short_drama.agent.memory.context import schedule_maintenance_locked
 
         schedule_maintenance_locked(session, conversation, run)
-    if conversation.status == "deleting":
-        from short_drama.agent.session.lifecycle import finalize_deletion_locked
-
-        # 先写入运行终态，再检查会话内的全部运行，避免清理抢在分段收尾之前。
-        session.flush()
-        finalize_deletion_locked(session, conversation)
     return True
 
 
-def wait_locked(session, conversation, run, status="waiting_review", payload=None):
-    if status not in {"waiting_review", "waiting_generation"}:
+def wait_locked(session, conversation, run, status, payload=None):
+    if status not in {"waiting_generation", "waiting_input"}:
         raise ValueError("Invalid Agent waiting state")
     if run.status in TERMINAL:
         return False

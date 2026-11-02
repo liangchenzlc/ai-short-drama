@@ -27,7 +27,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 }) {
   const user = message.role === 'user';
   const revised = !!onHistory && /^\d+$/.test(message.row_version ?? '1') && BigInt(message.row_version ?? '1') > 1n;
-  const references = message.references?.filter((reference) => reference.type !== 'subject_scope') ?? [];
+  const references = message.references?.filter((reference) => reference.type !== 'subject_scope' && reference.type !== 'question_answer') ?? [];
   const attachments = references.filter((reference) => reference.type === 'attachment');
   const materials = references.filter((reference) => reference.type === 'subject');
   const others = references.filter((reference) => reference.type !== 'attachment' && reference.type !== 'subject');

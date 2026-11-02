@@ -1,4 +1,4 @@
-import type { AssistantTask, TaskExecutionTarget } from '@host/types/assistant/api';
+import type { AssistantTask, TaskExecutionTarget, TaskMediaLimits } from '@host/types/assistant/api';
 import type { AgentContextController } from '@host/types/assistant/attachments/AgentContextComposer';
 import type { AssistantContextProps } from '@host/types/assistant/conversations/AssistantConversationBody';
 import type { AssistantPendingSend } from '@host/types/assistant/recovery/assistant-draft';
@@ -14,6 +14,7 @@ export interface PrepareAssistantSendInput {
   modelId?: string;
   projectId: string;
   executionTarget?: TaskExecutionTarget;
+  mediaLimits?: TaskMediaLimits;
   skillsDirty: boolean;
   skills: AssistantSkillChoice[];
   attemptScope: string;

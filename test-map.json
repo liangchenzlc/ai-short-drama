@@ -1377,14 +1377,12 @@
         "backend/src/short_drama/__init__.py",
         "backend/src/short_drama/agent/__init__.py",
         "backend/src/short_drama/agent/context/__init__.py",
-        "backend/src/short_drama/agent/context/assembly.py",
         "backend/src/short_drama/agent/context/attachments.py",
         "backend/src/short_drama/agent/context/budget.py",
         "backend/src/short_drama/agent/context/capabilities.py",
         "backend/src/short_drama/agent/context/media.py",
         "backend/src/short_drama/agent/context/prompt.py",
         "backend/src/short_drama/agent/context/subjects.py",
-        "backend/src/short_drama/agent/context/transcript.py",
         "backend/src/short_drama/agent/context/working_set.py",
         "backend/src/short_drama/agent/coordinator/__init__.py",
         "backend/src/short_drama/agent/coordinator/media_runtime.py",
@@ -1398,16 +1396,9 @@
         "backend/src/short_drama/agent/core/state.py",
         "backend/src/short_drama/agent/gateway/__init__.py",
         "backend/src/short_drama/agent/gateway/contracts.py",
-        "backend/src/short_drama/agent/gateway/history.py",
         "backend/src/short_drama/agent/gateway/inputs.py",
         "backend/src/short_drama/agent/gateway/langchain.py",
-        "backend/src/short_drama/agent/gateway/protocol.py",
         "backend/src/short_drama/agent/gateway/transport.py",
-        "backend/src/short_drama/agent/harness/__init__.py",
-        "backend/src/short_drama/agent/harness/checkpointer.py",
-        "backend/src/short_drama/agent/harness/evidence.py",
-        "backend/src/short_drama/agent/harness/runtime.py",
-        "backend/src/short_drama/agent/harness/supervision.py",
         "backend/src/short_drama/agent/legacy/__init__.py",
         "backend/src/short_drama/agent/memory/__init__.py",
         "backend/src/short_drama/agent/memory/context.py",
@@ -1415,7 +1406,6 @@
         "backend/src/short_drama/agent/memory/sources.py",
         "backend/src/short_drama/agent/native/__init__.py",
         "backend/src/short_drama/agent/native/adoption.py",
-        "backend/src/short_drama/agent/native/context.py",
         "backend/src/short_drama/agent/native/patches.py",
         "backend/src/short_drama/agent/native/sources.py",
         "backend/src/short_drama/agent/native/tasks.py",
@@ -1425,17 +1415,11 @@
         "backend/src/short_drama/agent/resources/resolver.py",
         "backend/src/short_drama/agent/runtime/__init__.py",
         "backend/src/short_drama/agent/runtime/base.py",
-        "backend/src/short_drama/agent/runtime/claiming.py",
         "backend/src/short_drama/agent/runtime/claims.py",
-        "backend/src/short_drama/agent/runtime/decision_input.py",
-        "backend/src/short_drama/agent/runtime/decisions.py",
         "backend/src/short_drama/agent/runtime/delta_buffer.py",
         "backend/src/short_drama/agent/runtime/executor.py",
-        "backend/src/short_drama/agent/runtime/operations.py",
         "backend/src/short_drama/agent/runtime/publishing.py",
         "backend/src/short_drama/agent/runtime/read_tools.py",
-        "backend/src/short_drama/agent/runtime/sending.py",
-        "backend/src/short_drama/agent/runtime/settlement.py",
         "backend/src/short_drama/agent/runtime/tool_execution.py",
         "backend/src/short_drama/agent/session/__init__.py",
         "backend/src/short_drama/agent/session/lifecycle.py",
@@ -1447,30 +1431,20 @@
         "backend/src/short_drama/agent/skill/runtime.py",
         "backend/src/short_drama/agent/task/__init__.py",
         "backend/src/short_drama/agent/task/compaction.py",
-        "backend/src/short_drama/agent/task/contract.py",
         "backend/src/short_drama/agent/task/controls.py",
         "backend/src/short_drama/agent/task/discussion.py",
-        "backend/src/short_drama/agent/task/intake.py",
         "backend/src/short_drama/agent/task/policy.py",
         "backend/src/short_drama/agent/task/queries.py",
-        "backend/src/short_drama/agent/task/requirements.py",
         "backend/src/short_drama/agent/task/sources.py",
         "backend/src/short_drama/agent/task/state.py",
         "backend/src/short_drama/agent/tools/__init__.py",
-        "backend/src/short_drama/agent/tools/autonomous.py",
-        "backend/src/short_drama/agent/tools/canvas.py",
         "backend/src/short_drama/agent/tools/contracts.py",
         "backend/src/short_drama/agent/tools/dialogue.py",
-        "backend/src/short_drama/agent/tools/digest.py",
-        "backend/src/short_drama/agent/tools/image.py",
-        "backend/src/short_drama/agent/tools/media.py",
         "backend/src/short_drama/agent/tools/memory_ops.py",
         "backend/src/short_drama/agent/tools/presentation.py",
         "backend/src/short_drama/agent/tools/registry.py",
         "backend/src/short_drama/agent/tools/results.py",
         "backend/src/short_drama/agent/tools/scope.py",
-        "backend/src/short_drama/agent/tools/script.py",
-        "backend/src/short_drama/agent/tools/standard.py",
         "backend/src/short_drama/ai/__init__.py",
         "backend/src/short_drama/ai/adapters/__init__.py",
         "backend/src/short_drama/ai/adapters/audio/__init__.py",
@@ -1799,7 +1773,6 @@
         "backend/src/short_drama/domain/assistant/tables.py",
         "backend/src/short_drama/domain/assistant/tasks/__init__.py",
         "backend/src/short_drama/domain/assistant/tasks/task.py",
-        "backend/src/short_drama/domain/assistant/tasks/task_requirement.py",
         "backend/src/short_drama/domain/assistant/undo/__init__.py",
         "backend/src/short_drama/domain/assistant/undo/undo.py",
         "backend/src/short_drama/domain/base.py",
@@ -2360,6 +2333,7 @@
         "backend/src/short_drama/utils/json_digest.py",
         "backend/src/short_drama/utils/snowflake.py",
         "backend/uv.lock",
+        ".env.example",
         "compose.yaml",
         "docker/**",
         "docs/database/**/*.sql",
@@ -2736,20 +2710,19 @@
       "description": "助手执行、上下文、私有候选与 Skill",
       "sources": [
         "backend/scripts/agent_migration.py",
+        "backend/scripts/agent_runtime_migration.py",
         "backend/scripts/agent_scope_migration.py",
         "backend/scripts/collect_skill_resources.py",
         "backend/scripts/publish_builtin_skills.py",
         "backend/src/short_drama/agent/**",
         "backend/src/short_drama/agent/__init__.py",
         "backend/src/short_drama/agent/context/__init__.py",
-        "backend/src/short_drama/agent/context/assembly.py",
         "backend/src/short_drama/agent/context/attachments.py",
         "backend/src/short_drama/agent/context/budget.py",
         "backend/src/short_drama/agent/context/capabilities.py",
         "backend/src/short_drama/agent/context/media.py",
         "backend/src/short_drama/agent/context/prompt.py",
         "backend/src/short_drama/agent/context/subjects.py",
-        "backend/src/short_drama/agent/context/transcript.py",
         "backend/src/short_drama/agent/context/working_set.py",
         "backend/src/short_drama/agent/coordinator/__init__.py",
         "backend/src/short_drama/agent/coordinator/media_runtime.py",
@@ -2763,16 +2736,9 @@
         "backend/src/short_drama/agent/core/state.py",
         "backend/src/short_drama/agent/gateway/__init__.py",
         "backend/src/short_drama/agent/gateway/contracts.py",
-        "backend/src/short_drama/agent/gateway/history.py",
         "backend/src/short_drama/agent/gateway/inputs.py",
         "backend/src/short_drama/agent/gateway/langchain.py",
-        "backend/src/short_drama/agent/gateway/protocol.py",
         "backend/src/short_drama/agent/gateway/transport.py",
-        "backend/src/short_drama/agent/harness/__init__.py",
-        "backend/src/short_drama/agent/harness/checkpointer.py",
-        "backend/src/short_drama/agent/harness/evidence.py",
-        "backend/src/short_drama/agent/harness/runtime.py",
-        "backend/src/short_drama/agent/harness/supervision.py",
         "backend/src/short_drama/agent/legacy/__init__.py",
         "backend/src/short_drama/agent/memory/__init__.py",
         "backend/src/short_drama/agent/memory/context.py",
@@ -2780,7 +2746,6 @@
         "backend/src/short_drama/agent/memory/sources.py",
         "backend/src/short_drama/agent/native/__init__.py",
         "backend/src/short_drama/agent/native/adoption.py",
-        "backend/src/short_drama/agent/native/context.py",
         "backend/src/short_drama/agent/native/patches.py",
         "backend/src/short_drama/agent/native/sources.py",
         "backend/src/short_drama/agent/native/tasks.py",
@@ -2790,17 +2755,11 @@
         "backend/src/short_drama/agent/resources/resolver.py",
         "backend/src/short_drama/agent/runtime/__init__.py",
         "backend/src/short_drama/agent/runtime/base.py",
-        "backend/src/short_drama/agent/runtime/claiming.py",
         "backend/src/short_drama/agent/runtime/claims.py",
-        "backend/src/short_drama/agent/runtime/decision_input.py",
-        "backend/src/short_drama/agent/runtime/decisions.py",
         "backend/src/short_drama/agent/runtime/delta_buffer.py",
         "backend/src/short_drama/agent/runtime/executor.py",
-        "backend/src/short_drama/agent/runtime/operations.py",
         "backend/src/short_drama/agent/runtime/publishing.py",
         "backend/src/short_drama/agent/runtime/read_tools.py",
-        "backend/src/short_drama/agent/runtime/sending.py",
-        "backend/src/short_drama/agent/runtime/settlement.py",
         "backend/src/short_drama/agent/runtime/tool_execution.py",
         "backend/src/short_drama/agent/session/__init__.py",
         "backend/src/short_drama/agent/session/lifecycle.py",
@@ -2812,30 +2771,20 @@
         "backend/src/short_drama/agent/skill/runtime.py",
         "backend/src/short_drama/agent/task/__init__.py",
         "backend/src/short_drama/agent/task/compaction.py",
-        "backend/src/short_drama/agent/task/contract.py",
         "backend/src/short_drama/agent/task/controls.py",
         "backend/src/short_drama/agent/task/discussion.py",
-        "backend/src/short_drama/agent/task/intake.py",
         "backend/src/short_drama/agent/task/policy.py",
         "backend/src/short_drama/agent/task/queries.py",
-        "backend/src/short_drama/agent/task/requirements.py",
         "backend/src/short_drama/agent/task/sources.py",
         "backend/src/short_drama/agent/task/state.py",
         "backend/src/short_drama/agent/tools/__init__.py",
-        "backend/src/short_drama/agent/tools/autonomous.py",
-        "backend/src/short_drama/agent/tools/canvas.py",
         "backend/src/short_drama/agent/tools/contracts.py",
         "backend/src/short_drama/agent/tools/dialogue.py",
-        "backend/src/short_drama/agent/tools/digest.py",
-        "backend/src/short_drama/agent/tools/image.py",
-        "backend/src/short_drama/agent/tools/media.py",
         "backend/src/short_drama/agent/tools/memory_ops.py",
         "backend/src/short_drama/agent/tools/presentation.py",
         "backend/src/short_drama/agent/tools/registry.py",
         "backend/src/short_drama/agent/tools/results.py",
         "backend/src/short_drama/agent/tools/scope.py",
-        "backend/src/short_drama/agent/tools/script.py",
-        "backend/src/short_drama/agent/tools/standard.py",
         "backend/src/short_drama/api/dependencies/skills.py",
         "backend/src/short_drama/api/v1/assistant/operations/artifacts.py",
         "backend/src/short_drama/api/v1/skills/**",
@@ -2893,7 +2842,12 @@
         "frontend/src/pages/skills/**",
         "frontend/src/pages/skills/index.tsx",
         "frontend/src/types/assistant/artifacts.ts",
-        "frontend/src/types/skills/**"
+        "frontend/src/types/skills/**",
+        "backend/src/short_drama/agent/runtime/checkpointer.py",
+        "backend/src/short_drama/agent/runtime/lease.py",
+        "backend/src/short_drama/agent/resources/graph.py",
+        "backend/src/short_drama/service/assistant/execution/interruptions.py",
+        "backend/src/short_drama/service/assistant/execution/results.py"
       ],
       "depends_on": [
         "shared.core",
@@ -3066,11 +3020,7 @@
       "description": "项目助手任务、操作、记忆与撤销",
       "sources": [
         "backend/scripts/agent_system_migration.py",
-        "backend/src/short_drama/agent/harness/evidence.py",
-        "backend/src/short_drama/agent/task/intake.py",
-        "backend/src/short_drama/agent/task/requirements.py",
         "backend/src/short_drama/agent/task/sources.py",
-        "backend/src/short_drama/agent/tools/digest.py",
         "backend/src/short_drama/api/dependencies/assistant.py",
         "backend/src/short_drama/api/v1/assistant/**",
         "backend/src/short_drama/api/v1/assistant/memory/memory.py",
@@ -3085,7 +3035,6 @@
         "backend/src/short_drama/domain/assistant/operations/media.py",
         "backend/src/short_drama/domain/assistant/operations/preference.py",
         "backend/src/short_drama/domain/assistant/tasks/task.py",
-        "backend/src/short_drama/domain/assistant/tasks/task_requirement.py",
         "backend/src/short_drama/domain/assistant/undo/undo.py",
         "backend/src/short_drama/schemas/assistant/**",
         "backend/src/short_drama/schemas/assistant/conversations/history.py",
@@ -3134,7 +3083,7 @@
         "frontend/src/features/assistant/history/AssistantHistory.tsx",
         "frontend/src/features/assistant/messages/AgentTimeline.tsx",
         "frontend/src/features/assistant/messages/AssistantMessage.tsx",
-        "frontend/src/features/assistant/messages/ThinkBlock.tsx",
+        "frontend/src/features/assistant/messages/ToolExecutionBlock.tsx",
         "frontend/src/features/assistant/messages/agent-timeline.ts",
         "frontend/src/features/assistant/operations/AgentArtifactCard.tsx",
         "frontend/src/features/assistant/operations/AssistantBatchUndo.tsx",
@@ -3198,7 +3147,8 @@
         "frontend/src/features/identity/session/AuthSession.tsx",
         "frontend/src/features/identity/storage/account-storage.ts",
         "frontend/src/pages/identity/**",
-        "frontend/src/types/identity/**"
+        "frontend/src/types/identity/**",
+        "backend/src/short_drama/api/mcp/**"
       ],
       "depends_on": [
         "shared.core",
@@ -9747,7 +9697,8 @@
         "frontend/canvas/scripts/verify-project-assistant-agnes-python.mjs",
         "frontend/canvas/scripts/verify-python.mjs",
         "frontend/canvas/scripts/verify-resource-python.mjs",
-        "frontend/canvas/scripts/verify-tray-clipboard-python.mjs"
+        "frontend/canvas/scripts/verify-tray-clipboard-python.mjs",
+        "backend/tests/support/assistant_live.py"
       ]
     },
     {
@@ -11351,6 +11302,20 @@
       "previous_path": "backend/tests/unit/test_workspace_redesign.py"
     },
     {
+      "path": "backend/tests/unit/standard/agent/test_framework_runtime.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/support/assistant_model.py"
+      ]
+    },
+    {
       "path": "backend/tests/unit/standard/agent/test_agent_context_contracts.py",
       "features": [
         "standard.agent"
@@ -11379,20 +11344,6 @@
       "previous_path": "backend/tests/unit/test_agent_contracts.py"
     },
     {
-      "path": "backend/tests/unit/standard/agent/test_agent_model_gateway.py",
-      "features": [
-        "standard.agent"
-      ],
-      "runner": "pytest",
-      "level": "fast",
-      "requires": [],
-      "support": [
-        "backend/tests/__init__.py",
-        "backend/tests/conftest.py"
-      ],
-      "previous_path": "backend/tests/unit/test_agent_model_gateway.py"
-    },
-    {
       "path": "backend/tests/unit/standard/agent/test_agent_model_runtime_settings.py",
       "features": [
         "standard.agent"
@@ -11405,6 +11356,32 @@
         "backend/tests/conftest.py"
       ],
       "previous_path": "backend/tests/unit/test_agent_model_runtime_settings.py"
+    },
+    {
+      "path": "backend/tests/unit/standard/assistant/test_assistant_settings.py",
+      "features": [
+        "standard.assistant"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_assistant_model_factory.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
     },
     {
       "path": "backend/tests/unit/standard/agent/test_agent_prompt_prefix.py",
@@ -11444,7 +11421,9 @@
       "requires": [],
       "support": [
         "backend/tests/__init__.py",
-        "backend/tests/conftest.py"
+        "backend/tests/conftest.py",
+        "backend/tests/support/agent_runtime_live.py",
+        "backend/tests/support/agent_runtime_live_worker.py"
       ],
       "previous_path": "backend/tests/unit/test_agent_runtime.py"
     },
@@ -13535,7 +13514,8 @@
       "support": [
         "backend/tests/__init__.py",
         "backend/tests/conftest.py",
-        "backend/tests/integration/conftest.py"
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/chat_transport.py"
       ]
     },
     {
@@ -13552,7 +13532,41 @@
         "backend/tests/__init__.py",
         "backend/tests/conftest.py",
         "backend/tests/integration/conftest.py",
-        "backend/tests/integration/standard/assistant/test_assistant_memory.py"
+        "backend/tests/integration/standard/assistant/test_assistant_memory.py",
+        "backend/tests/support/chat_transport.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_agent_context_compaction.py",
+      "features": [
+        "standard.assistant",
+        "standard.agent"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py",
+        "backend/tests/support/assistant_model.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_assistant_settings.py",
+      "features": [
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py"
       ]
     },
     {
@@ -13625,7 +13639,7 @@
       "support": []
     },
     {
-      "path": "backend/tests/unit/standard/agent/test_harness_gateway.py",
+      "path": "backend/tests/unit/standard/agent/test_assistant_model_protocols.py",
       "features": [
         "standard.agent"
       ],
@@ -13647,33 +13661,13 @@
       "requires": [],
       "support": [
         "backend/tests/__init__.py",
-        "backend/tests/conftest.py"
-      ]
-    },
-    {
-      "path": "backend/tests/integration/standard/assistant/test_harness_runtime.py",
-      "features": [
-        "standard.agent",
-        "standard.assistant"
-      ],
-      "runner": "mysql",
-      "level": "mysql",
-      "requires": [],
-      "support": [
-        "backend/tests/__init__.py",
         "backend/tests/conftest.py",
-        "backend/tests/integration/conftest.py",
-        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
-        "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
-        "backend/tests/support/integration/identity.py",
-        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
-        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
-        "backend/tests/unit/standard/agent/test_agent_model_gateway.py",
-        "backend/tests/unit/standard/agent/test_harness_resources.py"
+        "backend/tests/unit/standard/agent/test_assistant_model_protocols.py",
+        "backend/tests/support/assistant_http.py"
       ]
     },
     {
-      "path": "backend/tests/integration/standard/assistant/test_harness_live.py",
+      "path": "backend/tests/integration/standard/assistant/test_agent_runtime_live.py",
       "features": [
         "standard.agent",
         "standard.assistant"
@@ -13681,53 +13675,8 @@
       "runner": "mysql",
       "level": "live",
       "requires": [
-        "RUN_HARNESS_LIVE"
+        "RUN_AGENT_RUNTIME_LIVE"
       ],
-      "support": [
-        "backend/tests/__init__.py",
-        "backend/tests/conftest.py",
-        "backend/tests/integration/conftest.py",
-        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
-        "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
-        "backend/tests/support/integration/identity.py",
-        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py"
-      ]
-    },
-    {
-      "path": "backend/tests/unit/standard/agent/test_agent_task_intake.py",
-      "features": [
-        "standard.assistant"
-      ],
-      "runner": "pytest",
-      "level": "fast",
-      "requires": [],
-      "support": [
-        "backend/tests/__init__.py",
-        "backend/tests/conftest.py"
-      ]
-    },
-    {
-      "path": "backend/tests/unit/standard/agent/test_harness_supervision.py",
-      "features": [
-        "standard.agent"
-      ],
-      "runner": "pytest",
-      "level": "fast",
-      "requires": [],
-      "support": [
-        "backend/tests/__init__.py",
-        "backend/tests/conftest.py"
-      ]
-    },
-    {
-      "path": "backend/tests/integration/standard/assistant/test_harness_supervision.py",
-      "features": [
-        "standard.agent",
-        "standard.assistant"
-      ],
-      "runner": "mysql",
-      "level": "mysql",
-      "requires": [],
       "support": [
         "backend/tests/__init__.py",
         "backend/tests/conftest.py",
@@ -13736,11 +13685,11 @@
         "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
         "backend/tests/support/integration/identity.py",
         "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
-        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
-        "backend/tests/unit/standard/agent/test_agent_model_gateway.py",
-        "backend/tests/unit/standard/agent/test_harness_resources.py",
-        "backend/tests/integration/standard/assistant/test_harness_runtime.py"
-      ]
+        "backend/tests/support/assistant_live.py",
+        "backend/tests/support/agent_runtime_live.py",
+        "backend/tests/support/agent_runtime_live_worker.py"
+      ],
+      "previous_path": "backend/tests/integration/standard/assistant/test_harness_live.py"
     },
     {
       "path": "backend/tests/unit/standard/writing/test_writing_generation.py",
@@ -13784,9 +13733,11 @@
         "backend/tests/support/integration/identity.py",
         "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
         "backend/tests/integration/standard/assistant/test_assistant_skills.py",
-        "backend/tests/unit/standard/agent/test_agent_model_gateway.py",
+        "backend/tests/support/assistant_http.py",
         "backend/tests/unit/standard/agent/test_harness_resources.py",
-        "backend/tests/integration/standard/assistant/test_harness_runtime.py"
+        "backend/tests/integration/standard/assistant/test_agent_runtime.py",
+        "backend/tests/integration/standard/assistant/test_execution_scopes.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py"
       ]
     },
     {
@@ -13829,9 +13780,683 @@
       "level": "fast",
       "requires": [],
       "support": []
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_graph_checkpointer.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/support/assistant_http.py",
+        "backend/tests/unit/standard/agent/test_harness_resources.py",
+        "backend/tests/support/assistant_model.py",
+        "backend/tests/integration/standard/assistant/test_execution_scopes.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_execution_scopes.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/support/assistant_http.py",
+        "backend/tests/unit/standard/agent/test_harness_resources.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_tool_catalog.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_business_invocations.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant",
+        "standard.identity",
+        "standard.assets",
+        "standard.writing",
+        "shared.generation",
+        "shared.media",
+        "canvas.document"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/canvas/document/test_canvas_workspace.py",
+        "backend/tests/integration/standard/assistant/test_execution_scopes.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_business_execution_boundaries.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant",
+        "standard.identity",
+        "standard.assets",
+        "standard.writing",
+        "shared.generation",
+        "shared.media"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_business_invocations.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_business_media_completion.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant",
+        "standard.sound",
+        "shared.generation",
+        "canvas.generation"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/integration/canvas/generation/test_canvas_generation_media_runtime.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_business_invocations.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_assistant_model_ledger.py",
+      "features": [
+        "standard.assistant",
+        "standard.agent"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py",
+        "backend/tests/support/assistant_model.py",
+        "backend/tests/integration/standard/assistant/test_agent_context_compaction.py",
+        "backend/tests/unit/standard/agent/test_assistant_model_factory.py",
+        "backend/tests/unit/standard/agent/test_assistant_model_protocols.py",
+        "backend/tests/support/assistant_http.py",
+        "backend/tests/support/assistant_runtime.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_graph_skills.py",
+      "features": [
+        "standard.assistant",
+        "standard.agent"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py",
+        "backend/tests/support/assistant_model.py",
+        "backend/tests/integration/standard/assistant/test_agent_context_compaction.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/integration/standard/assistant/test_business_invocations.py",
+        "backend/tests/integration/standard/assistant/test_assistant_memory.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_graph_answer_sources.py",
+      "features": [
+        "standard.assistant",
+        "standard.agent"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_agent_questions.py",
+        "backend/tests/integration/standard/assistant/test_agent_runtime.py",
+        "backend/tests/integration/standard/assistant/test_agent_subtasks.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/integration/standard/assistant/test_assistant_memory.py",
+        "backend/tests/support/assistant_runtime.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_agent_trace.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/support/assistant_trace.py",
+        "backend/tests/integration/standard/assistant/test_agent_runtime.py",
+        "backend/tests/integration/standard/assistant/test_agent_questions.py",
+        "backend/tests/integration/standard/assistant/test_agent_subtasks.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/support/assistant_http.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_agent_runtime_migration.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        ".gitattributes",
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/support/assistant_tools.py",
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/fixtures/agent_runtime_legacy/schema.mysql8.sql",
+        "backend/tests/fixtures/agent_runtime_legacy/README.md"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_agent_media_budget.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_assistant_settings.py",
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/unit/standard/agent/test_harness_resources.py",
+        "backend/tests/unit/standard/agent/test_assistant_model_protocols.py",
+        "backend/tests/integration/standard/assistant/test_agent_context_compaction.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py",
+        "backend/tests/support/assistant_http.py",
+        "backend/tests/support/assistant_model.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_agent_runtime.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/support/agent_runtime_live.py",
+        "backend/tests/support/agent_runtime_live_worker.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/integration/standard/assistant/test_agent_subtasks.py",
+        "backend/tests/integration/standard/assistant/test_agent_trace.py",
+        "backend/tests/integration/standard/assistant/test_agent_runtime_live.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_model_receipt_identity.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_agent_runtime.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/integration/standard/assistant/test_agent_context_compaction.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py",
+        "backend/tests/unit/standard/agent/test_assistant_model_protocols.py",
+        "backend/tests/support/assistant_http.py",
+        "backend/tests/support/assistant_model.py",
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/support/agent_runtime_live.py",
+        "backend/tests/support/agent_runtime_live_worker.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_subtask_delivery.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_agent_subtasks.py",
+        "backend/tests/integration/standard/assistant/test_agent_runtime.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_agent_questions.py",
+        "backend/tests/integration/standard/assistant/test_generation_waiting.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/support/assistant_runtime.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_agent_subtasks.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_agent_runtime.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_agent_questions.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/integration/standard/assistant/test_generation_waiting.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/support/assistant_runtime.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_agent_questions.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_agent_runtime.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/integration/standard/assistant/test_assistant_memory.py",
+        "backend/tests/integration/standard/assistant/test_assistant_skills.py",
+        "backend/tests/integration/standard/assistant/test_agent_context_compaction.py",
+        "backend/tests/integration/standard/assistant/test_business_invocations.py",
+        "backend/tests/integration/standard/assistant/test_execution_scopes.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py",
+        "backend/tests/support/assistant_model.py",
+        "backend/tests/support/agent_runtime_live.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_generation_waiting.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_agent_runtime.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/integration/standard/assistant/test_agent_questions.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py"
+      ]
+    },
+    {
+      "path": "backend/tests/api/shared/assistant/test_agent_answers_api.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/integration/identity.py",
+        "backend/tests/integration/standard/assistant/test_agent_runtime.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/integration/standard/assistant/test_agent_questions.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/assistant/test_agent_questions.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/support/assistant_model.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_agent_trace_events.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/support/assistant_http.py",
+        "backend/tests/unit/standard/agent/test_assistant_model_protocols.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_sandbox_resources.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/agent/test_agent_sandbox.py",
+      "features": [
+        "standard.agent",
+        "shared.media"
+      ],
+      "runner": "mysql",
+      "level": "infra",
+      "requires": [
+        "RUN_AGENT_SANDBOX_INTEGRATION"
+      ],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/integration/standard/assistant/test_agent_context_compaction.py",
+        "backend/tests/integration/standard/assistant/test_execution_scopes.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/standard/assistant/test_agent_questions.py",
+        "backend/tests/integration/standard/assistant/test_agent_subtasks.py",
+        "backend/tests/integration/standard/assistant/test_graph_checkpointer.py",
+        "backend/tests/integration/standard/assistant/test_business_invocations.py"
+      ]
+    },
+    {
+      "path": "backend/tests/api/shared/identity/test_mcp_tokens_api.py",
+      "features": [
+        "standard.identity",
+        "standard.agent"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/support/integration/identity.py"
+      ]
+    },
+    {
+      "path": "backend/tests/api/shared/mcp/test_business_mcp.py",
+      "features": [
+        "standard.identity",
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/identity/test_mcp_proxy_tcp.py",
+      "features": [
+        "standard.identity",
+        "standard.agent"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/identity/test_mcp_tokens.py",
+        "backend/tests/support/integration/identity.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/identity/test_mcp_tokens.py",
+      "features": [
+        "standard.identity",
+        "standard.agent"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/integration/standard/assets/test_asset_image_generation.py",
+        "backend/tests/support/integration/identity.py"
+      ]
+    },
+    {
+      "path": "frontend/tests/assistant/assistant-trace-state.test.mjs",
+      "features": [
+        "standard.assistant"
+      ],
+      "runner": "node",
+      "level": "fast",
+      "requires": [],
+      "support": []
+    },
+    {
+      "path": "frontend/tests/assistant/assistant-settings.test.mjs",
+      "features": [
+        "standard.assistant"
+      ],
+      "runner": "node",
+      "level": "fast",
+      "requires": [],
+      "support": []
+    },
+    {
+      "path": "frontend/tests/assistant/assistant-questions.test.mjs",
+      "features": [
+        "standard.assistant"
+      ],
+      "runner": "node",
+      "level": "fast",
+      "requires": [],
+      "support": []
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_task_sources.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_agent_context_capacity.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_agent_summary_budget.py",
+      "features": [
+        "standard.agent"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py",
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/support/agent_runtime_live.py",
+        "backend/tests/integration/standard/assistant/test_agent_runtime_live.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_agent_acceptance_runner.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "support": [
+        "backend/tests/support/agent_runtime_live.py",
+        "backend/tests/support/agent_runtime_live_worker.py",
+        "backend/tests/integration/standard/assistant/test_agent_runtime_live.py",
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/integration/standard/assistant/test_agent_questions.py",
+        "backend/tests/integration/standard/assistant/test_global_assistant_tasks.py",
+        "backend/tests/integration/conftest.py",
+        "backend/tests/conftest.py"
+      ]
     }
   ],
   "auxiliary": [
+    {
+      "path": ".gitattributes",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
     {
       "path": "frontend/e2e/creation/fixtures/feedback-fixture.html",
       "features": [
@@ -13935,6 +14560,24 @@
         "standard.writing"
       ],
       "kind": "helper",
+      "status": "active"
+    },
+    {
+      "path": "backend/tests/fixtures/agent_runtime_legacy/schema.mysql8.sql",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "kind": "sample",
+      "status": "active"
+    },
+    {
+      "path": "backend/tests/fixtures/agent_runtime_legacy/README.md",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "kind": "sample",
       "status": "active"
     },
     {
@@ -15357,6 +16000,14 @@
       "status": "active"
     },
     {
+      "path": "backend/tests/support/assistant_model.py",
+      "features": [
+        "standard.agent"
+      ],
+      "kind": "support",
+      "status": "active"
+    },
+    {
       "path": "backend/tests/support/assistant_workspace.py",
       "features": [
         "standard.assistant"
@@ -15379,6 +16030,72 @@
         "standard.assistant"
       ],
       "kind": "helper",
+      "status": "active"
+    },
+    {
+      "path": "backend/tests/support/chat_transport.py",
+      "features": [
+        "standard.assistant",
+        "standard.agent"
+      ],
+      "kind": "support",
+      "status": "active"
+    },
+    {
+      "path": "backend/tests/support/assistant_runtime.py",
+      "features": [
+        "standard.agent"
+      ],
+      "kind": "support",
+      "status": "active"
+    },
+    {
+      "path": "backend/tests/support/assistant_trace.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "kind": "support",
+      "status": "active"
+    },
+    {
+      "path": "backend/tests/support/assistant_live.py",
+      "features": [
+        "standard.agent"
+      ],
+      "kind": "support",
+      "status": "active"
+    },
+    {
+      "path": "backend/tests/support/assistant_http.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ]
+    },
+    {
+      "path": "backend/tests/support/assistant_tools.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ]
+    },
+    {
+      "path": "backend/tests/support/agent_runtime_live.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "kind": "support",
+      "status": "active"
+    },
+    {
+      "path": "backend/tests/support/agent_runtime_live_worker.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "kind": "support",
       "status": "active"
     }
   ],
@@ -16119,17 +16836,67 @@
         "standard.agent"
       ],
       "reason": "scope_version=2 项目聊天入口已退役，现行 global/Harness 测试保留"
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_harness_supervision.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧逐轮 Harness 与强制 reviewer 入口已删除；业务有效场景改由正式 AgentRuntime.execute 与设置测试覆盖。"
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_harness_runtime.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧逐轮 Harness 与强制 reviewer 入口已删除；业务有效场景改由正式 AgentRuntime.execute 与设置测试覆盖。"
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_harness_gateway.py",
+      "features": [
+        "standard.agent"
+      ],
+      "reason": "旧 gateway.decide 入口已删除；协议、水合、受理事实和探测迁至唯一模型工厂测试。"
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_agent_model_gateway.py",
+      "features": [
+        "standard.agent"
+      ],
+      "reason": "旧PydanticAI分段网关已退役；正式模型协议、传输保护与重放迁至assistant_model_factory/model_protocols/trace_events，HTTP共享夹具迁tests/support/assistant_http.py。"
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_agent_task_intake.py",
+      "features": [
+        "standard.assistant"
+      ],
+      "reason": "自然语言requirements草稿解析器已退役；真实用户原文和更正顺序改由workspace_reliability及正式图上下文测试验证。"
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_harness_supervision.py",
+      "features": [
+        "standard.agent"
+      ],
+      "reason": "旧强制reviewer/progress投影已退役；来源额度迁test_task_sources，真实像素与笔记迁正式runtime，模型容量迁test_agent_context_capacity，目录边界由test_tool_catalog覆盖。"
     }
   ],
   "removed_auxiliary": [
     {
       "path": "backend/tests/support/integration/assistant_broker_worker.py",
-      "features": ["standard.assistant", "canvas.assistant"],
+      "features": [
+        "standard.assistant",
+        "canvas.assistant"
+      ],
       "reason": "旧网关观测器已退役，隔离验收直接启动正式 Agent Worker。"
     },
     {
       "path": "backend/tests/integration/assistant_broker_worker.py",
-      "features": ["standard.assistant", "canvas.assistant"],
+      "features": [
+        "standard.assistant",
+        "canvas.assistant"
+      ],
       "reason": "旧网关观测器已退役，隔离验收直接启动正式 Agent Worker。"
     },
     {
@@ -16235,17 +17002,23 @@
     },
     {
       "path": "frontend/canvas/src/lib/canvas/director/director-node-migration.ts",
-      "features": ["canvas.tools"],
+      "features": [
+        "canvas.tools"
+      ],
       "reason": "导演节点不再转换旧数据字段。"
     },
     {
       "path": "backend/src/short_drama/schemas/editor_document.py",
-      "features": ["standard.writing"],
+      "features": [
+        "standard.writing"
+      ],
       "reason": "纯文本剧本退役 Quill Delta 校验。"
     },
     {
       "path": "backend/src/short_drama/schemas/creation/writing/script/editor_document.py",
-      "features": ["standard.writing"],
+      "features": [
+        "standard.writing"
+      ],
       "reason": "纯文本剧本退役 Quill Delta 校验。"
     },
     {
@@ -16548,6 +17321,278 @@
         "standard.writing"
       ],
       "reason": "已退役功能的专属源码，不保留运行时兼容层。"
+    },
+    {
+      "path": "backend/src/short_drama/domain/agent_task_requirement.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧requirements专属表与编排已退役，真实用户消息和输入顺序保留于TaskInput及正式图。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/context/assembly.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/context/transcript.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/gateway/history.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/gateway/protocol.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/harness/checkpointer.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/harness/evidence.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/harness/runtime.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/harness/supervision.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/native/context.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/runtime/claiming.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/runtime/decision_input.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/runtime/decisions.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/runtime/operations.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/runtime/sending.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/runtime/settlement.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/task/contract.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/task/intake.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/task/requirements.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/tools/autonomous.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/tools/canvas.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/tools/digest.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/tools/image.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/tools/media.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/tools/script.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/tools/standard.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/ai/prompts/assistant/continuation.md",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/ai/prompts/assistant/verification-evidence.md",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/domain/assistant/tasks/task_requirement.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧分段执行、强制reviewer与requirements协议已退役；现由唯一正式executor/create_agent、上下文和工具目录承担。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/task/canvas_directives.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧中文语法指令授权已退役；当前工具按实际执行scope、显式选择与业务收据授权，相关测试迁到正式图。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/task/image_directives.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧中文语法指令授权已退役；当前工具按实际执行scope、显式选择与业务收据授权，相关测试迁到正式图。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/task/media_directives.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧中文语法指令授权已退役；当前工具按实际执行scope、显式选择与业务收据授权，相关测试迁到正式图。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/task/standard_directives.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧中文语法指令授权已退役；当前工具按实际执行scope、显式选择与业务收据授权，相关测试迁到正式图。"
+    },
+    {
+      "path": "backend/src/short_drama/agent/context/media_scope.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "reason": "旧中文语法指令授权已退役；当前工具按实际执行scope、显式选择与业务收据授权，相关测试迁到正式图。"
     }
   ]
 }

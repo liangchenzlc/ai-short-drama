@@ -7,24 +7,16 @@ from short_drama.agent.context.attachments import (
     task_attachments,
     validate_attachment_budget,
 )
+from short_drama.agent.core import ENGINE_VERSION
 from short_drama.agent.core.items import KIND_REPLY, allocate_item_seq
-from short_drama.agent.harness import ENGINE_VERSION
-from short_drama.agent.task.state import (
-    task_event,
-)
+from short_drama.agent.task.state import task_event
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.dao.assistant.tasks.task import AgentTaskDAO
 from short_drama.db.scope.resource_scope import require_project
 from short_drama.domain import Project, ProjectCanvas
-from short_drama.domain.assistant.conversations.models import (
-    AgentMessage,
-)
-from short_drama.domain.assistant.tasks.task import (
-    AgentTaskInput,
-)
-from short_drama.schemas.assistant.tasks.task import (
-    TaskExecutionTarget,
-)
+from short_drama.domain.assistant.conversations.models import AgentMessage
+from short_drama.domain.assistant.tasks.task import AgentTaskInput
+from short_drama.schemas.assistant.tasks.task import TaskExecutionTarget
 from short_drama.service.assistant.context.attachment import freeze_attachments
 from short_drama.service.assistant.context.subject import (
     freeze_selection,
@@ -70,11 +62,12 @@ class TaskInputOperations(TaskServiceBase):
         )
 
     def _validate_bindings(self, inputs):
+        # 这里只保存 JSON 上下文，不能在持有会话锁后再请求作品写锁。
         for project_id in inputs.memory_project_ids:
-            require_project(self.session, project_id)
+            require_project(self.session, project_id, lock=False)
         target = inputs.execution_target
         if target is not None:
-            require_project(self.session, target.project_id)
+            require_project(self.session, target.project_id, lock=False)
             project = self.session.get(Project, target.project_id)
             if project.workspace_mode != target.mode:
                 raise WorkflowError("scope_mismatch", "写入目标的创作模式不匹配", 422)
@@ -130,7 +123,7 @@ class TaskInputOperations(TaskServiceBase):
         payload["video_audio"] = inputs.video_audio
         if "skills" in inputs.model_fields_set:
             payload["selected_skills"] = self._freeze_task_skills(conversation, task, inputs.skills)
-        for field in ("execution_target", "memory_project_ids", "media_limits"):
+        for field in ("execution_target", "memory_project_ids"):
             if field in inputs.model_fields_set:
                 payload[field] = inputs.model_dump(mode="json")[field]
         target = task.execution_target
@@ -138,13 +131,13 @@ class TaskInputOperations(TaskServiceBase):
             target = item.payload.get("execution_target", target)
         target = payload.get("execution_target", target)
         if "script_reference" in inputs.model_fields_set:
-            from short_drama.agent.tools.script import bound_document
+            from short_drama.service.assistant.operations.script_read import bound_document
 
             reference = (
                 inputs.script_reference.model_dump(mode="json") if inputs.script_reference else None
             )
             if reference:
-                bound_document(self.session, target, reference)
+                bound_document(self.session, target, reference, for_update=False)
             payload["script_reference"] = reference
         if target and target.get("mode") == "standard":
             from short_drama.service.assistant.operations.dialogue import sound_document_binding
@@ -152,6 +145,11 @@ class TaskInputOperations(TaskServiceBase):
             payload["sound_write_binding"] = sound_document_binding(
                 self.session, target["project_id"], lock=True
             )
+        if task.status in {"stopped", "paused_error", "paused_budget"}:
+            from short_drama.service.assistant.execution.results import carry_results_locked
+
+            previous = AgentTaskDAO(self.session).latest_run(task.id)
+            carry_results_locked(self.session, conversation, task, previous, payload)
         now = utcnow()
         message = AgentMessage(
             id=next_id(),
@@ -198,24 +196,17 @@ class TaskInputOperations(TaskServiceBase):
         return message
 
     def _freeze_task_skills(self, conversation, task, selections):
-        from short_drama.agent.skill.contracts import activations
-
-        automatic = [
-            item["skill"]
-            for item in activations(task)
-            if item["active"] and item["source"] == "auto"
-        ]
         retained = task.selected_skills
         for item in AgentTaskDAO(self.session).inputs(task):
             if "selected_skills" in item.payload:
                 retained = item.payload["selected_skills"]
-        frozen = {
-            (item["id"], str(item["content_version"])): item for item in [*automatic, *retained]
-        }
+        frozen = {(item["id"], str(item["content_version"])): item for item in retained}
         added = freeze_skills(
             self.session,
             conversation.owner_user_id,
             [item for item in selections if (item.id, str(item.content_version)) not in frozen],
+            tool_lookup=self.tool_lookup,
+            metadata_only=task.effective_state.get("engine") == ENGINE_VERSION,
         )
         frozen.update(((item["id"], str(item["content_version"])), item) for item in added)
         result = [deepcopy(frozen[item.id, str(item.content_version)]) for item in selections]

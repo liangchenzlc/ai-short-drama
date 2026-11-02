@@ -1,6 +1,7 @@
 import hashlib
 import json
 from contextlib import contextmanager
+from typing import Any
 
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.base import BaseDAO
@@ -103,24 +104,37 @@ class AssetLibraryService(BaseService):
     def list(
         self, kind, parent_id=None, project_id=None, *, asset_kind=None, q="", offset=0, limit=20
     ):
-        self.assets.validate_pagination(offset, limit)
         with self._transaction(read_only=True):
-            self._validate_scope(kind, parent_id, project_id, for_update=False)
-            rows, total = self.library.links(
-                kind, parent_id, asset_kind=asset_kind, query=q, offset=offset, limit=limit
+            return self.list_locked(
+                kind, parent_id, project_id, asset_kind=asset_kind, q=q, offset=offset, limit=limit
             )
-            counts = self.library.reference_counts([asset.id for _link, asset, _media in rows])
-            return {
-                "items": [
-                    self._read(
-                        asset, media, link=link, library=True, reference_count=counts[asset.id]
-                    )
-                    for link, asset, media in rows
-                ],
-                "total": total,
-                "offset": offset,
-                "limit": limit,
-            }
+
+    def list_locked(
+        self,
+        kind: str,
+        parent_id: int | str | None = None,
+        project_id: int | str | None = None,
+        *,
+        asset_kind: str | None = None,
+        q: str = "",
+        offset: int = 0,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        self.assets.validate_pagination(offset, limit)
+        self._validate_scope(kind, parent_id, project_id, for_update=False)
+        rows, total = self.library.links(
+            kind, parent_id, asset_kind=asset_kind, query=q, offset=offset, limit=limit
+        )
+        counts = self.library.reference_counts([asset.id for _link, asset, _media in rows])
+        return {
+            "items": [
+                self._read(asset, media, link=link, library=True, reference_count=counts[asset.id])
+                for link, asset, media in rows
+            ],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
 
     def create(self, kind, parent_id, project_id, payload, idempotency_key):
         key = idempotency_key.strip() if isinstance(idempotency_key, str) else ""
@@ -184,7 +198,7 @@ class AssetLibraryService(BaseService):
         asset = self.assets.create(self._creation_audit(values))
         from short_drama.service.creation.assets.management.version import AssetVersionService
 
-        AssetVersionService(self.session).append_locked(asset)
+        AssetVersionService(self.session).append_locked(asset, initial=True)
         return asset, asset
 
     def link_locked(self, kind, parent, asset_id):

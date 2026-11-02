@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import event, func, select, update
 
 from short_drama.core.exceptions import NotFound
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.domain import CanvasBinaryResource, MediaFile, ProjectCanvas
 from short_drama.domain.canvas.document.canvas import CanvasRevision, CanvasUserMediaReference
 from short_drama.domain.canvas.resources.resource import CanvasUserBinaryReference
@@ -53,16 +53,16 @@ pytestmark = [
 KINDS = ("media", "binary")
 
 
-def trusted_actor(user: dict[str, Any]) -> ActorContext:
+def trusted_actor(user: dict[str, Any]) -> SessionActorContext:
     identifier = int(user["id"])
-    return ActorContext(
-        identifier,
-        user["username"],
-        user["email"],
-        True,
-        identifier,
-        "test-csrf",
-        f"snapshot-reference-{identifier}",
+    return SessionActorContext(
+        user_id=identifier,
+        username=user["username"],
+        email=user["email"],
+        verified=True,
+        session_id=identifier,
+        csrf_hash="test-csrf",
+        request_id=f"snapshot-reference-{identifier}",
     )
 
 

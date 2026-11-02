@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from short_drama.ai import GenerationResult
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.domain import (
     AIModelConfig,
     ImageGroup,
@@ -37,8 +37,14 @@ pytestmark = pytest.mark.integration
 
 
 def actor(identifier=1):
-    return ActorContext(
-        identifier, f"artist{identifier}", "fixture@example.test", True, 1, "", "test"
+    return SessionActorContext(
+        user_id=identifier,
+        username=f"artist{identifier}",
+        email="fixture@example.test",
+        verified=True,
+        session_id=1,
+        csrf_hash="",
+        request_id="test",
     )
 
 

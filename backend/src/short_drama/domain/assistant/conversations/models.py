@@ -177,7 +177,9 @@ class AgentMessage(Base):
         CheckConstraint("seq > 0", name="ck_agent_messages_seq"),
         CheckConstraint("row_version > 0", name="ck_agent_messages_version"),
         CheckConstraint("role IN ('user','assistant')", name="ck_agent_messages_role"),
-        CheckConstraint("kind IN ('reply','narration','notice')", name="ck_agent_messages_kind"),
+        CheckConstraint(
+            "kind IN ('reply','narration','notice','tool_answer')", name="ck_agent_messages_kind"
+        ),
         CheckConstraint(
             "JSON_TYPE(`references`) = 'ARRAY' AND JSON_TYPE(artifacts) = 'ARRAY'",
             name="ck_agent_messages_arrays",

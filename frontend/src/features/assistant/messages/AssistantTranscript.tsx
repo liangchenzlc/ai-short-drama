@@ -1,12 +1,14 @@
 import { Bubble, Prompts, Welcome } from '@ant-design/x';
-import { timelineBubbles } from '@host/features/assistant/messages/AgentTimeline';
+import { timelineBubbles, traceOperationResults } from '@host/features/assistant/messages/AgentTimeline';
 import { AssistantLoading } from '@host/features/assistant/messages/AssistantLoading';
 import { AssistantReply } from '@host/features/assistant/messages/AssistantMessage';
+import { AssistantTraceBlock } from '@host/features/assistant/messages/AssistantTraceBlock';
 import type { AssistantTranscriptProps } from '@host/types/assistant/messages/transcript';
 import { Button, Skeleton } from 'antd';
 import { ArrowUpRight, Clapperboard } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 export function AssistantTranscript({
+  conversationId,
   pinned,
   runtime,
   layout,
@@ -35,6 +37,7 @@ export function AssistantTranscript({
     };
   }, [queuedRunId]);
   const [newContent, setNewContent] = useState(false);
+  const renderResults = traceOperationResults({ operations: runtime.operations, layout, onUndo: setUndoRequest, undoDisabled: contextDisabled || runtime.accessEnded });
   const transcript = useRef<HTMLDivElement>(null);
   const prepend = useRef<{ height: number; top: number } | null>(null);
   useLayoutEffect(() => {
@@ -45,7 +48,7 @@ export function AssistantTranscript({
       prepend.current = null;
     } else if (pinned.current) node.scrollTop = node.scrollHeight;
     else setNewContent(true);
-  }, [runtime.messages, runtime.delta, runtime.run?.status]);
+  }, [runtime.messages, runtime.delta, runtime.traceBlocks, runtime.pendingQuestions, runtime.run?.status]);
   const queuedRuns = runtime.queuedRuns.filter((run) => run.id !== runtime.run?.id);
   // 会话连接仍监听其他标签页，但终态任务不再显示持续加载，避免误示成果尚未完成。
   const reconnecting =
@@ -66,7 +69,7 @@ export function AssistantTranscript({
           if (pinned.current) setNewContent(false);
         }}
       >
-        {runtime.messages.length < runtime.total || runtime.hasMoreTasks ? (
+        {runtime.messages.length < runtime.total || runtime.hasMoreTasks || runtime.hasMoreTrace ? (
           <Button
             size="small"
             loading={runtime.olderLoading}
@@ -78,6 +81,7 @@ export function AssistantTranscript({
                   top: node.scrollTop,
                 };
               if (runtime.messages.length < runtime.total) void runtime.older();
+              else if (runtime.hasMoreTrace) void runtime.olderTrace();
               else void runtime.olderTasks();
             }}
           >
@@ -86,7 +90,7 @@ export function AssistantTranscript({
         ) : null}
         {runtime.loading ? (
           <Skeleton active title={false} paragraph={{ rows: 5 }} />
-        ) : !runtime.messages.length && !active ? (
+        ) : !runtime.messages.length && !active && !runtime.traceBlocks.length ? (
           <div className="ai-assistant-empty">
             <Welcome
               variant="borderless"
@@ -118,7 +122,7 @@ export function AssistantTranscript({
             ) : null}
           </div>
         ) : null}
-        {!runtime.loading && (runtime.messages.length > 0 || active) ? (
+        {!runtime.loading && (runtime.messages.length > 0 || active || runtime.traceBlocks.length > 0) ? (
           <Bubble.List
             className="ai-assistant-bubbles"
             autoScroll={false}
@@ -126,6 +130,9 @@ export function AssistantTranscript({
               ...timelineBubbles({
                 messages: runtime.messages,
                 operations: runtime.operations,
+                traceBlocks: runtime.traceBlocks,
+                runs: runtime.runs,
+                conversationId,
                 layout,
                 onUndo: setUndoRequest,
                 undoDisabled: contextDisabled || runtime.accessEnded,
@@ -136,8 +143,8 @@ export function AssistantTranscript({
                         if (message.task_id) setHistoryRequest({ message, mode });
                       }
                     : undefined,
-              }),
-              ...(active && runtime.run && (runtime.delta || (!reconnecting && !stopping))
+              }, renderResults),
+              ...(active && runtime.run && runtime.run.status !== 'waiting_input' && (runtime.delta || (!reconnecting && !stopping))
                 ? [
                     {
                       key: `stream:${runtime.run.id}`,
@@ -160,6 +167,9 @@ export function AssistantTranscript({
             ]}
           />
         ) : null}
+        {runtime.traceBlocks.some(block => block.parent_call_id && !runtime.traceBlocks.some(parent => parent.run_id === block.run_id && parent.tool_call_id === block.parent_call_id)) && <section className="assistant-subtask-children" aria-label="子任务轨迹（父步骤在更早记录中）">
+          {runtime.traceBlocks.filter(block => block.parent_call_id && !runtime.traceBlocks.some(parent => parent.run_id === block.run_id && parent.tool_call_id === block.parent_call_id)).map(block => <AssistantTraceBlock key={block.block_id} block={block} blocks={runtime.traceBlocks} conversationId={conversationId} renderResults={renderResults} />)}
+        </section>}
         {queuedStalled && runtime.connection === 'live' && (
           <div className="ai-assistant-connection ai-assistant-stalled" role="status">
             <span>消息已提交，但迟迟未被调度。请确认后端调度进程正在运行。</span>
@@ -173,7 +183,7 @@ export function AssistantTranscript({
             {runtime.run.error?.message || '本次任务尚未完成，已有成果和消息已保留。请根据上方提示处理后继续。'}
           </p>
         ) : null}
-        {stopping && <AssistantLoading label="当前工具完整结束后停止" />}
+        {stopping && <AssistantLoading label="正在停止执行，已提交的生成任务将继续保存结果" />}
         {reconnecting && (
           <div className="ai-assistant-connection">
             <AssistantLoading label="正在恢复连接" />
@@ -195,7 +205,7 @@ export function AssistantTranscript({
           </div>
         )}
         {runtime.run?.status === 'cancelled' ? (
-          <p className="ai-assistant-meta">已中断，已生成的内容已保留；可以补充要求继续。</p>
+          <p className="ai-assistant-meta">助手已停止，已提交的生成任务仍会继续并保存结果；可以补充要求继续。</p>
         ) : null}
       </div>
       {newContent ? (

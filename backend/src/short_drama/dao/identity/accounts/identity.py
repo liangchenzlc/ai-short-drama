@@ -21,8 +21,8 @@ class IdentityDAO:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def user(self, user_id: int) -> User | None:
-        return self.session.get(User, user_id)
+    def user(self, user_id: int, *, refresh: bool = False) -> User | None:
+        return self.session.get(User, user_id, populate_existing=refresh)
 
     def revoke_session(self, session_id: int, revoked_at: datetime) -> None:
         self.session.execute(

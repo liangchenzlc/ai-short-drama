@@ -1,6 +1,7 @@
 import asyncio
 
 import httpx
+from sqlalchemy.orm import Session
 
 from short_drama.core.config import Settings
 from short_drama.main import create_app
@@ -9,11 +10,12 @@ from short_drama.main import create_app
 def send(method, path, **kwargs):
     async def run():
         app = create_app(Settings(_env_file=None))
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app), base_url="http://testserver"
-            ) as client:
-                return await client.request(method, path, **kwargs)
+        app.state.session_factory = Session
+        app.state.storage = None
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://testserver"
+        ) as client:
+            return await client.request(method, path, **kwargs)
 
     return asyncio.run(run())
 

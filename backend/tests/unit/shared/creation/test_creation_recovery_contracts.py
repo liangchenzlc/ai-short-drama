@@ -8,7 +8,7 @@ from short_drama.agent.core import state
 from short_drama.domain import AgentEvent, AgentMessage
 from short_drama.schemas.assistant.conversations.engine import ConversationPatch
 from short_drama.schemas.assistant.operations.artifacts import ArtifactAdopt
-from short_drama.schemas.assistant.operations.runtime import ReviewDecision, RunContinue
+from short_drama.schemas.assistant.operations.questions import AskUserAnswer
 from short_drama.schemas.creation.sound.tracks.sound import SoundAdopt, SoundEdit, VoiceDefaultsEdit
 from short_drama.service.assistant.operations.artifact import AgentArtifactService
 
@@ -70,8 +70,7 @@ def test_agent_and_sound_versions_accept_legacy_int_but_serialize_decimal_string
             storyboard_version=version,
             target_row_version=version,
         ),
-        ReviewDecision(review_version=version, review_hash="a" * 64, decision="approved"),
-        RunContinue(artifact_id="1", artifact_row_version=version),
+        AskUserAnswer(question_version=version, outcome="answered", values={"ending": "团圆"}),
         SoundAdopt(row_version=version, line_id="line", media_id="1"),
         VoiceDefaultsEdit(row_version=version, voices={}),
     ]

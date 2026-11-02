@@ -4,8 +4,11 @@ from short_drama.api.v1.assistant.context.attachments import router as router_3
 from short_drama.api.v1.assistant.conversations.management import router as router_0
 from short_drama.api.v1.assistant.conversations.messages import router as router_1
 from short_drama.api.v1.assistant.conversations.revisions import router as router_2
+from short_drama.api.v1.assistant.conversations.trace import router as trace_router
 from short_drama.api.v1.assistant.memory.memory import router as router_8
+from short_drama.api.v1.assistant.operations.questions import router as router_10
 from short_drama.api.v1.assistant.operations.script import router as router_6
+from short_drama.api.v1.assistant.settings.preferences import router as router_9
 from short_drama.api.v1.assistant.tasks.operations import router as router_4
 from short_drama.api.v1.assistant.tasks.policy import router as router_5
 from short_drama.api.v1.assistant.undo.undo import router as router_7
@@ -20,3 +23,6 @@ router.include_router(router_5)
 router.include_router(router_6)
 router.include_router(router_7)
 router.include_router(router_8)
+router.include_router(router_9)
+router.include_router(router_10)
+router.include_router(trace_router)

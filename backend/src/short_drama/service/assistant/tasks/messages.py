@@ -1,9 +1,8 @@
 from sqlalchemy import select
 
+from short_drama.agent.core import ENGINE_VERSION
 from short_drama.agent.core.access import model_unchanged
 from short_drama.agent.gateway.contracts import AgentGatewayError
-from short_drama.agent.harness import ENGINE_VERSION
-from short_drama.agent.task.policy import new_policy_from_settings
 from short_drama.agent.task.state import (
     close_unstarted_calls,
     new_attempt_locked,
@@ -26,6 +25,7 @@ from short_drama.service.ai_config.management.assistant_models import (
 )
 from short_drama.service.assistant.context.attachment import attachment_key
 from short_drama.service.assistant.execution.run import read_run
+from short_drama.service.assistant.settings.preferences import settings_locked
 from short_drama.service.assistant.tasks.base import TaskServiceBase
 from short_drama.service.base import utcnow
 from short_drama.utils.json_digest import digest
@@ -71,7 +71,7 @@ class TaskMessageOperations(TaskServiceBase):
                 )
                 snapshot = model_snapshot(model)
                 try:
-                    from short_drama.agent.gateway.langchain import select_protocol
+                    from short_drama.agent.gateway.inputs import select_protocol
 
                     select_protocol(snapshot)
                 except AgentGatewayError:
@@ -98,9 +98,15 @@ class TaskMessageOperations(TaskServiceBase):
                     selected_skills=[],
                     effective_state={
                         "engine": ENGINE_VERSION,
-                        "agent_policy": new_policy_from_settings(self.settings),
+                        "agent_policy": {"stop": "boundary.v1"},
                     },
-                    media_limits=inputs.media_limits.model_dump(),
+                    media_limits=(
+                        inputs.media_limits
+                        if "media_limits" in inputs.model_fields_set
+                        else settings_locked(
+                            self.session, conversation.owner_user_id, self.settings
+                        ).default_media_limits
+                    ).model_dump(),
                     media_usage={},
                     created_at=now,
                     updated_at=now,
@@ -108,6 +114,12 @@ class TaskMessageOperations(TaskServiceBase):
                 self.session.add(task)
                 self.session.flush()
             else:
+                if "media_limits" in inputs.model_fields_set:
+                    raise WorkflowError(
+                        "assistant_task_media_limits_frozen",
+                        "任务创建后媒体数量固定，请新建任务调整",
+                        409,
+                    )
                 model, snapshot = None, previous.config_snapshot
                 if previous.checkpoint.get("discussion_revision"):
                     raise WorkflowError(
@@ -142,13 +154,9 @@ class TaskMessageOperations(TaskServiceBase):
                         "当前任务的模型配置已被修改，请新建任务后继续。已有成果仍然保留。",
                         409,
                     )
-                if dao.active_operation(task.id) is not None:
+                if dao.has_active_operations(task.id):
                     raise Conflict("当前操作尚未结算，请先核对原任务状态")
             message = self._input_locked(conversation, task, inputs, key, request_hash, snapshot)
-            if task.effective_state.get("engine") == ENGINE_VERSION:
-                from short_drama.agent.task.requirements import seed_requirements_locked
-
-                seed_requirements_locked(self.session, task, message)
             if continuing:
                 close_unstarted_calls(self.session, previous)
                 run = new_attempt_locked(
@@ -159,11 +167,20 @@ class TaskMessageOperations(TaskServiceBase):
                     previous.model_config_id,
                     snapshot,
                     previous,
+                    settings=self.settings,
+                    tool_lookup=self.tool_lookup,
                 )
                 task_event(self.session, conversation, task, "task.resumed", run=run)
             else:
                 run = previous or new_attempt_locked(
-                    self.session, conversation, task, message, model.id, snapshot
+                    self.session,
+                    conversation,
+                    task,
+                    message,
+                    model.id,
+                    snapshot,
+                    settings=self.settings,
+                    tool_lookup=self.tool_lookup,
                 )
             self.session.flush()
             return self._accepted(conversation, task, run, message)

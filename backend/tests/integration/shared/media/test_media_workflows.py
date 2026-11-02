@@ -41,6 +41,7 @@ def media_context(session):
 
     project = ProjectService(session).create_project({"name": "Media"})
     shot = ShotScriptService(session).create({"project_id": project.id, "position": 1})
+    session.info["resource_scope"] = (None, project.id)
     media = MediaFileService(session)
     first = media.create({"format_code": "image/png", "storage_locator": "test/image1.png"})
     second = media.create({"format_code": "image/png", "storage_locator": "test/image2.png"})

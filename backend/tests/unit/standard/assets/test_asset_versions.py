@@ -436,7 +436,7 @@ def test_backfill_missing_media_is_reported_without_pointer_or_false_history(ses
 
 @pytest.mark.parametrize("published_at", [None, datetime(2026, 10, 11, 2, 39, 5, 441710)])
 def test_media_import_freezes_publication_time_and_preserves_metadata(session, published_at):
-    from short_drama.core.identity import ActorContext
+    from short_drama.core.identity import SessionActorContext
     from short_drama.domain import ResourceImport
 
     source = media(session, personal=True)
@@ -444,7 +444,7 @@ def test_media_import_freezes_publication_time_and_preserves_metadata(session, p
         source.published_at = published_at
         source.byte_size, source.checksum_sha256 = 4, "b" * 64
     project = ProjectService(session).create({"name": "Target"})
-    session.info["actor"] = ActorContext(
+    session.info["actor"] = SessionActorContext(
         user_id=1,
         username="legacy_fixture",
         email="legacy@example.test",
@@ -509,10 +509,10 @@ def test_publication_json_preserves_utc_instant_microseconds_and_null(value, exp
 
 
 def test_history_scope_follows_asset_and_private_owner_cannot_be_bypassed(session):
-    from short_drama.core.identity import ActorContext
+    from short_drama.core.identity import SessionActorContext
 
     item = character(session)
-    session.info["actor"] = ActorContext(
+    session.info["actor"] = SessionActorContext(
         user_id=2,
         username="outsider",
         email="outsider@example.test",

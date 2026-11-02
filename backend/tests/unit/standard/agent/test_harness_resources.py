@@ -11,14 +11,13 @@ from zipfile import ZipFile
 import pytest
 from PIL import Image
 
-from short_drama.agent.context import transcript
-from short_drama.agent.context.transcript import model_messages, select_groups
 from short_drama.agent.resources.contracts import (
     HydrationIntent,
     ResourceRef,
     assert_reference_payload,
 )
 from short_drama.agent.resources.resolver import ResourceResolver, request_template
+from short_drama.agent.tools.registry import get_spec
 from short_drama.core.exceptions import WorkflowError
 from short_drama.schemas.skills.catalog.skill import SkillCreate
 from short_drama.service.skills.packages.skill_package import parse_skill_import
@@ -50,7 +49,122 @@ class ObjectStore:
         return self.upload(io.BytesIO(data), length=len(data), content_type=content_type)
 
 
+@pytest.mark.parametrize("protocol", ["chat", "responses", "claude"])
+@pytest.mark.parametrize("detail,allowance", [("low", 2048), ("high", 4096)])
+@pytest.mark.parametrize("position", ["current", "stale", "withdrawn"])
+def test_graph_media_projection_counts_only_the_current_frozen_group_without_io(
+    protocol, detail, allowance, position
+):
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    from short_drama.agent.context.budget import estimate_input_tokens
+    from short_drama.agent.resources.graph import GraphResources
+    from tests.unit.standard.agent.test_assistant_model_protocols import configured
+
+    resolver = ResourceResolver(ObjectStore())
+    intents = resolver.freeze(
+        HydrationIntent(
+            resource=ResourceRef(
+                kind="image",
+                ref_id="image:1",
+                uri="minio://test/original.png",
+                source="task_attachment",
+                checksum=hashlib.sha256(png()).hexdigest(),
+            ),
+            purpose="比较细节",
+            tool_call_id="pixels",
+            invocation_id="turn:1",
+            detail=detail,
+        )
+    )
+    call = AIMessage(
+        content="",
+        id="old-group",
+        tool_calls=[{"name": "workbench__read_image_content", "id": "pixels", "args": {}}],
+    )
+    result = ToolMessage(
+        name="workbench__read_image_content",
+        tool_call_id="pixels",
+        id="old-image",
+        content=json.dumps(
+            {"hydration_intents": [intent.model_dump(mode="json") for intent in intents]}
+        ),
+    )
+    messages = [HumanMessage(content="核对"), call, result]
+    if position == "stale":
+        messages.extend(
+            [
+                AIMessage(
+                    content="已交付上一轮像素观察",
+                    id="new-group",
+                    tool_calls=[
+                        {"name": "runtime__get_generation_policy", "id": "pixels", "args": {}}
+                    ],
+                ),
+                ToolMessage(
+                    content="{}",
+                    id="new-policy",
+                    tool_call_id="pixels",
+                    name="runtime__get_generation_policy",
+                ),
+            ]
+        )
+    if position == "withdrawn":
+        messages = messages[:1]
+    messages.extend(
+        [
+            AIMessage(content="工作笔记", additional_kwargs={"task_context_kind": "working_notes"}),
+            HumanMessage(content="当前目标"),
+        ]
+    )
+    resources = GraphResources(
+        None,
+        configured("http://127.0.0.1:9", protocol),
+        lambda: pytest.fail("容量计量不得读取媒体或访问存储"),
+    )
+    projection = {"messages": resources.project_input(messages)}
+    assert_reference_payload(projection)
+    text = json.dumps(projection, ensure_ascii=False)
+    assert "data:image/" not in text
+    if position == "current":
+        assert '"image_ref"' in text
+        assert intents[0].resource.checksum in text
+        assert (
+            estimate_input_tokens(projection, references=True) - estimate_input_tokens(projection)
+            == allowance
+        )
+    else:
+        assert '"image_ref"' not in text
+        assert estimate_input_tokens(projection, references=True) == estimate_input_tokens(
+            projection
+        )
+    if position == "stale":
+        import asyncio
+
+        candidate = [
+            message for message in messages if message.id not in {"new-group", "new-policy"}
+        ]
+
+        async def scoped_projection(original):
+            with resources.input_scope(original):
+                await asyncio.sleep(0)
+                value = await asyncio.to_thread(resources.project_input, candidate)
+                return '"image_ref"' in json.dumps(value)
+
+        async def parallel_candidates():
+            return await asyncio.gather(scoped_projection(messages), scoped_projection(candidate))
+
+        assert asyncio.run(parallel_candidates()) == [False, True]
+        with pytest.raises(RuntimeError, match="cancelled input"):
+            with resources.input_scope(messages):
+                assert '"image_ref"' not in json.dumps(resources.project_input(candidate))
+                raise RuntimeError("cancelled input")
+        assert '"image_ref"' in json.dumps(resources.project_input(candidate))
+
+
 def test_different_views_of_same_image_remain_distinct_and_ephemeral():
+    from short_drama.agent.resources.resolver import image_block
+
     storage = ObjectStore()
     resolver = ResourceResolver(storage)
     original = ResourceRef(
@@ -73,38 +187,16 @@ def test_different_views_of_same_image_remain_distinct_and_ephemeral():
         )
         for i, crop in enumerate([(0, 0, 20, 20), (20, 20, 60, 40)])
     ]
-    hydrated = {
-        item.tool_call_id: resolver.hydrate(item, protocol="claude_messages.v1") for item in intents
-    }
-    group = {
-        "turn_id": "1",
-        "content": "",
-        "calls": [
-            {
-                "tool_name": "read_resource",
-                "args": {"ref_id": "image:1"},
-                "tool_call_id": item.tool_call_id,
-            }
-            for item in intents
-        ],
-        "results": [
-            {
-                "name": "read_resource",
-                "operation_id": str(i),
-                "tool_call_id": item.tool_call_id,
-                "result": {"image_ref": original.model_dump(mode="json")},
-            }
-            for i, item in enumerate(intents)
-        ],
-    }
-    messages = model_messages("Inspect", {}, [group], hydrated, intents, "claude_messages.v1")
-    entities = [item.content[-1]["source"]["data"] for item in messages if item.type == "tool"]
+    hydrated = [resolver.hydrate(item, protocol="claude_messages.v1") for item in intents]
+    entities = [item.content for item in hydrated]
     assert entities[0] != entities[1]
-    request = {"messages": [{"content": item.content} for item in messages]}
-    template = request_template(request, list(hydrated.values()))
+    template = request_template(
+        {"messages": [{"content": [image_block(item, "claude_messages.v1")]} for item in hydrated]},
+        hydrated,
+    )
     assert_reference_payload(template)
     assert all(entity not in json.dumps(template) for entity in entities)
-    assert_reference_payload(group)
+    assert [item.reference.metadata["tool_call_id"] for item in hydrated] == ["call_0", "call_1"]
 
 
 @pytest.mark.parametrize(
@@ -126,196 +218,26 @@ def test_schema_fields_named_type_are_not_mistaken_for_media_blocks():
     assert_reference_payload({"type": ["string", "null"]})
 
 
-def test_compaction_pins_real_skill_pair_and_keeps_latest_complete_result():
-    skill = {
-        "turn_id": "1",
-        "content": "loaded",
-        "calls": [
-            {"tool_name": "load_skill", "args": {}, "tool_call_id": "skill"},
-            {"tool_name": "lookup", "args": {}, "tool_call_id": "other"},
-        ],
-        "results": [
-            {
-                "operation_id": "1",
-                "tool_call_id": "skill",
-                "result": {"instructions": "完整方法正文"},
-            },
-            {"operation_id": "2", "tool_call_id": "other", "result": {"content": "old data"}},
-        ],
-    }
-    latest = {
-        "turn_id": "2",
-        "content": "",
-        "calls": [],
-        "results": [
-            {"operation_id": "3", "tool_call_id": "latest", "result": {"content": "x" * 900}}
-        ],
-    }
-    selected, metrics = select_groups([skill, latest], {"1"}, recent_tokens=100)
-    assert len(selected) == 2
-    assert selected[0]["calls"] == skill["calls"][:1]
-    assert selected[0]["results"] == skill["results"][:1]
-    assert selected[1] == latest
-    assert metrics["retained_skills"] == 1
-
-
-def test_compacted_progress_retains_sourced_excerpts_without_media_or_skill_copies():
-    fact = "本步事实：失物是铜钥匙。"
-    source = {
-        "turn_id": "1",
-        "content": "已看清示例图的蓝条位于左侧，继续保存角色。",
-        "results": [
-            {
-                "operation_id": "11",
-                "name": "load_skill",
-                "result": {"instructions": "不能重复的完整方法正文"},
-            },
-            {
-                "operation_id": "12",
-                "name": "read_skill_resource",
-                "result": {
-                    "activation_id": "10",
-                    "path": "references/clue.md",
-                    "offset": 0,
-                    "next_offset": None,
-                    "content": fact + "节奏说明。" * 300,
-                },
-            },
-            {
-                "operation_id": "13",
-                "name": "read_skill_resource",
-                "result": {"image_ref": {"ref_id": "picture"}, "hydration_intent": {}},
-            },
-        ],
-    }
-    pinned = {**source, "content": "", "results": source["results"][:1]}
-    progress = transcript.compact_progress([source], [pinned])
-    payload = json.dumps(progress, ensure_ascii=False)
-    assert fact in payload and "蓝条位于左侧" in payload
-    note = progress["items"][0]
-    assert note["turn_id"] == "1"
-    assert note["reads"][0]["operation_id"] == "12"
-    assert note["reads"][0]["path"] == "references/clue.md"
-    assert note["reads"][0]["next_offset"] is None
-    assert note["reads"][0]["excerpt"]["truncated"]
-    assert source["results"][1]["result"]["content"] not in payload
-    assert "完整方法正文" not in payload and "hydration_intent" not in payload
-    assert_reference_payload(progress)
-    assert transcript.compact_progress([source], [source])["items"] == []
-
-
-def test_compacted_progress_is_bounded_and_does_not_invent_missing_observations(monkeypatch):
-    monkeypatch.setattr(transcript, "PROGRESS_TOKENS", 400)
-    groups = [{"turn_id": str(i), "content": "阶段结论" * 300, "results": []} for i in range(30)]
-    progress = transcript.compact_progress(groups, [])
-    assert 0 < len(progress["items"]) < 30
-    assert progress["items"][-1]["turn_id"] == "29"
-    assert progress["omitted_notes"] == 30 - len(progress["items"])
-    assert progress["estimated_tokens"] <= 400
-    assert transcript.compact_progress([], [])["items"] == []
-
-
-def test_compacted_progress_retains_nested_read_evidence_and_original_source():
-    group = {
-        "turn_id": "10",
-        "content": "",
-        "results": [
-            {
-                "operation_id": "read-12",
-                "name": "read_task_results",
-                "result": {
-                    "operation_id": "save-3",
-                    "results": [
-                        {
-                            "id": "shot-4",
-                            "kind": "shot",
-                            "row_version": "2",
-                            "content": "林晚持铜钥匙从左侧入画。",
-                            "range": {"offset": 0, "length": 13, "total": 13},
-                        }
-                    ],
-                    "next": None,
-                },
-            }
-        ],
-    }
-    progress = transcript.compact_progress([group], [])
-    read = progress["items"][0]["reads"][0]
-    assert read["source_operation_id"] == "save-3"
-    assert read["id"] == "shot-4" and read["row_version"] == "2"
-    assert read["excerpt"]["text"] == "林晚持铜钥匙从左侧入画。"
-    assert read["next"] is None
-    assert_reference_payload(progress)
-
-
-def test_harness_budget_requires_finite_decisions_and_output_but_allows_unlimited_time():
-    import pytest
-
+def test_runtime_budget_requires_finite_decisions_and_output_but_allows_unlimited_time():
+    from short_drama.agent.core import ENGINE_VERSION
     from short_drama.agent.core.events import budget_limits, initial_usage
-    from short_drama.agent.gateway.protocol import AgentGatewayError
-    from short_drama.agent.harness import ENGINE_VERSION
-    from short_drama.agent.runtime.claims import freeze_input
+    from short_drama.agent.gateway.contracts import AgentGatewayError
+    from short_drama.agent.runtime.claims import checked_budget
 
-    caps = {"decision_calls": 32, "output_tokens": 131072}
-    frozen = budget_limits("harness", caps=caps)
-    exhausted = SimpleNamespace(
-        checkpoint={"engine": ENGINE_VERSION},
-        budget=frozen,
-        usage={
-            **initial_usage(),
-            "decision_calls": 100,
-            "output_tokens": 500000,
-        },
-    )
-    with pytest.raises(AgentGatewayError, match="agent_budget_exhausted"):
-        freeze_input(
-            {"tools": [], "max_tool_calls": 16, "harness_version": ENGINE_VERSION}, exhausted
-        )
-
+    frozen = budget_limits("harness", caps={"decision_calls": 32, "output_tokens": 131072})
     available = SimpleNamespace(
         checkpoint={"engine": ENGINE_VERSION},
         budget=frozen,
-        usage={
-            **initial_usage(),
-            "tool_calls": 400,
-            "active_seconds": 7200,
-        },
+        usage={**initial_usage(), "tool_calls": 400, "active_seconds": 7200},
     )
-    values = freeze_input(
-        {"tools": [], "max_tool_calls": 16, "harness_version": ENGINE_VERSION}, available
-    )
-    assert values["kwargs"]["max_tool_calls"] == 16
-    assert values["kwargs"]["max_output_tokens"] == 8192
-    assert values["kwargs"]["timeout_seconds"] == 120
+    assert checked_budget(available) == frozen
     for key in ("decision_calls", "output_tokens"):
-        invalid = SimpleNamespace(
-            checkpoint={"engine": ENGINE_VERSION},
-            budget={**frozen, key: None},
-            usage=initial_usage(),
-        )
+        available.budget = {**frozen, key: None}
         with pytest.raises(AgentGatewayError, match="invalid_agent_budget"):
-            freeze_input(
-                {"tools": [], "max_tool_calls": 16, "harness_version": ENGINE_VERSION}, invalid
-            )
+            checked_budget(available)
 
 
-def test_continuation_follows_complete_tool_pairs_and_current_context():
-    group = {
-        "turn_id": "1",
-        "content": "阶段观察",
-        "calls": [{"tool_name": "lookup", "args": {}, "tool_call_id": "read"}],
-        "results": [{"operation_id": "11", "tool_call_id": "read", "name": "lookup", "result": {}}],
-    }
-    arguments = ("System", {"task_id": "1"}, [group], {}, [], "openai_chat.v1")
-    original = model_messages(*arguments)
-    assert [message.type for message in original] == ["system", "human", "ai", "tool", "human"]
-    assert json.loads(original[-1].content) == {"task_id": "1"}
-    current = model_messages(*arguments, continuation_prompt="冻结的本轮继续指引")
-    assert current[:-1] == original
-    assert current[-1].type == "human" and current[-1].content == "冻结的本轮继续指引"
-
-
-def test_skill_zip_import_rejects_new_scripts_and_keeps_images_managed():
+def test_skill_zip_import_keeps_scripts_inert_and_images_managed():
     archive = io.BytesIO()
     with ZipFile(archive, "w") as package:
         package.writestr(
@@ -324,7 +246,7 @@ def test_skill_zip_import_rejects_new_scripts_and_keeps_images_managed():
             "按需读取[示例图](assets/example.png)。",
         )
         package.writestr("assets/example.png", png())
-    preview = parse_skill_import(archive.getvalue(), "method.zip")
+    preview = parse_skill_import(archive.getvalue(), "method.zip", tool_lookup=get_spec)
     assert preview.compatible, preview.issues
     content = SkillCreate.model_validate(preview.draft.model_dump())
     (image,) = content.resources
@@ -333,8 +255,12 @@ def test_skill_zip_import_rejects_new_scripts_and_keeps_images_managed():
     assert base64.b64decode(image.content) == png()
     with ZipFile(archive, "a") as package:
         package.writestr("scripts/check.py", "raise RuntimeError('must never execute')")
-    with pytest.raises(WorkflowError, match="scripts/check.py"):
-        parse_skill_import(archive.getvalue(), "method.zip")
+    imported = parse_skill_import(archive.getvalue(), "method.zip", tool_lookup=get_spec)
+    assert imported.compatible, imported.issues
+    resources = SkillCreate.model_validate(imported.draft.model_dump()).resources
+    script = next(item for item in resources if item.path == "scripts/check.py")
+    assert script.kind == "script"
+    assert script.resource_bytes() == b"raise RuntimeError('must never execute')"
 
 
 @pytest.mark.parametrize("kind,visual_only", [("audio", False), ("video", False), ("video", True)])

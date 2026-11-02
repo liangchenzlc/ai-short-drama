@@ -19,6 +19,7 @@ from short_drama.service.skills.catalog.versions import (
 )
 from short_drama.service.skills.packages.skill_package import package_digest, validate_package_size
 from short_drama.service.skills.resources.skill_resource import (
+    builtin_catalog_anchor,
     lock_builtin_catalog,
     validate_staged_resources_locked,
 )
@@ -31,9 +32,11 @@ def publish_builtin_skills(
     settings: Settings,
     storage: MinioStorage,
     packages: Sequence[BuiltinSkillPackage] | None = None,
+    *,
+    tool_lookup=None,
 ) -> dict:
-    packages = builtin_skill_packages() if packages is None else packages
-    library = AgentSkillService(None, settings, storage)
+    packages = builtin_skill_packages(tool_lookup=tool_lookup) if packages is None else packages
+    library = AgentSkillService(None, settings, storage, tool_lookup=tool_lookup)
     prepared = []
     for package in packages:
         content = SkillCreate.model_validate(package.content.model_dump())
@@ -71,10 +74,11 @@ def publish_builtin_skills(
             )
         staged.append((package, metadata, manifest))
     published, existing = [], []
+    anchor_id = builtin_catalog_anchor(factory)
     with factory.begin() as session:
         # The explicit 005 migration seeds this immutable row. It serializes
         # publishers without holding a SQL connection during resource I/O.
-        lock_builtin_catalog(session)
+        lock_builtin_catalog(session, anchor_id)
         for package, metadata, manifest in staged:
             checksum = package_digest(metadata, package.content.instructions, manifest)
             original = current_version(session, package.key, package.content_version)

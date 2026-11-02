@@ -141,13 +141,19 @@ def condition(table, user_id):
         "agent_batch_undos",
     }:
         return c.conversation_id.in_(allowed_ids("agent_conversations", user_id))
-    if name in {"agent_turns", "agent_tool_calls"}:
+    if name in {"agent_turns", "agent_tool_calls", "agent_execution_scopes"}:
         return c.run_id.in_(allowed_ids("agent_runs", user_id))
     if name == "agent_artifacts":
         return and_(c.created_by == user_id, c.project_id.in_(project_ids(user_id)))
     if name == "agent_skill_versions":
         return or_(c.owner_user_id == user_id, c.owner_user_id.is_(None))
-    if name in {"agent_skills", "agent_preferences", "agent_skill_settings"}:
+    if name in {
+        "agent_skills",
+        "agent_preferences",
+        "agent_skill_settings",
+        "business_tool_invocations",
+        "mcp_access_tokens",
+    }:
         return c.owner_user_id == user_id
     if name == "agent_attachments":
         return and_(
@@ -335,4 +341,60 @@ def _scope_options(
             include_aliases=True,
         )
         for mapper in mappers
+    )
+
+
+def invocation_condition(table, projects: frozenset[int]):
+    """可信调用项目交集同时约束实体读取、列表及其总数。"""
+    if table.name == "projects":
+        return table.c.id.in_(projects)
+    if "project_id" in table.c:
+        return table.c.project_id.in_(projects)
+    for field, parent in (
+        ("group_id", "image_groups"),
+        ("shot_id", "shot_scripts"),
+        ("asset_id", "assets"),
+        ("assembly_id", "project_assemblies"),
+        ("task_id", "async_tasks"),
+        ("record_id", "ai_generation_records"),
+        ("script_id", "project_scripts"),
+        ("batch_id", "generation_batches"),
+    ):
+        if field in table.c and not table.name.startswith("agent_"):
+            parent_table = Base.metadata.tables[parent]
+            return table.c[field].in_(
+                select(parent_table.c.id).where(invocation_condition(parent_table, projects))
+            )
+    return True
+
+
+@lru_cache(maxsize=128)
+def invocation_scope_options(
+    projects: frozenset[int], mappers: tuple[Mapper, ...]
+) -> tuple[ORMOption, ...]:
+    return tuple(
+        with_loader_criteria(
+            mapper.class_,
+            invocation_condition(mapper.local_table, projects),
+            include_aliases=True,
+        )
+        for mapper in mappers
+        if (
+            mapper.local_table.name == "projects"
+            or "project_id" in mapper.local_table.c
+            or not mapper.local_table.name.startswith("agent_")
+            and any(
+                field in mapper.local_table.c
+                for field in (
+                    "group_id",
+                    "shot_id",
+                    "asset_id",
+                    "assembly_id",
+                    "task_id",
+                    "record_id",
+                    "script_id",
+                    "batch_id",
+                )
+            )
+        )
     )

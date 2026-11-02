@@ -5,52 +5,35 @@ from short_drama.agent.context.attachments import (
     available_attachment_ids,
     task_attachments,
 )
-from short_drama.agent.context.subjects import snapshot_subjects, subject_memory_keys
+from short_drama.agent.context.canvas_scope import canvas_result_keys
+from short_drama.agent.context.delegation import scope_snapshot_locked
+from short_drama.agent.context.standard_scope import standard_result_keys
+from short_drama.agent.context.subjects import (
+    eligible_snapshot,
+    snapshot_subjects,
+    subject_memory_keys,
+)
 from short_drama.agent.core.fence import owns_execution as owns_execution
-from short_drama.agent.harness import ENGINE_VERSION
 from short_drama.agent.memory.context import history_projection_locked
 from short_drama.agent.memory.sources import restricted_messages
-from short_drama.agent.tools.canvas import (
-    canvas_requests_locked,
-    canvas_result_keys,
-)
-from short_drama.agent.tools.contracts import (
-    CANVAS_TOOL,
-    IMAGE_PRIMARY_TOOL,
-    MEDIA_STATUS_TOOL,
-    MEDIA_TOOL,
-    STANDARD_TOOL,
-)
 from short_drama.agent.tools.contracts import MEMORY_READ_LIMIT as MEMORY_READ_LIMIT
-from short_drama.agent.tools.contracts import TOOL_SCHEMAS as TOOL_SCHEMAS
-from short_drama.agent.tools.contracts import DescribeTarget as DescribeTarget
-from short_drama.agent.tools.contracts import MemoryCatalog as MemoryCatalog
-from short_drama.agent.tools.contracts import ReadHistory as ReadHistory
-from short_drama.agent.tools.contracts import ReadMemory as ReadMemory
-from short_drama.agent.tools.contracts import ReadReceipt as ReadReceipt
-from short_drama.agent.tools.contracts import ReadSelectedSubjects as ReadSelectedSubjects
-from short_drama.agent.tools.contracts import SearchMemory as SearchMemory
-from short_drama.agent.tools.contracts import tool_manifest as tool_manifest
-from short_drama.agent.tools.image import (
-    image_primary_requests_locked,
-)
-from short_drama.agent.tools.media import (
-    media_requests_locked,
-)
-from short_drama.agent.tools.standard import (
-    standard_requests_locked,
-    standard_result_keys,
-)
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain import AIModelConfig, Project, ProjectCanvas
+from short_drama.schemas.assistant.operations.tool_inputs import DescribeTarget as DescribeTarget
+from short_drama.schemas.assistant.operations.tool_inputs import MemoryCatalog as MemoryCatalog
+from short_drama.schemas.assistant.operations.tool_inputs import ReadHistory as ReadHistory
+from short_drama.schemas.assistant.operations.tool_inputs import ReadMemory as ReadMemory
+from short_drama.schemas.assistant.operations.tool_inputs import ReadReceipt as ReadReceipt
+from short_drama.schemas.assistant.operations.tool_inputs import (
+    ReadSelectedSubjects as ReadSelectedSubjects,
+)
+from short_drama.schemas.assistant.operations.tool_inputs import SearchMemory as SearchMemory
 from short_drama.service.assistant.context.subject import read_selected_snapshot, selection_metadata
 from short_drama.service.assistant.operations.canvas import CANVAS_NODE_SPECS
-from short_drama.service.assistant.tasks.policy import generation_policy_locked
 
 
-def _describe(session, conversation, task, values):
+def _describe(session, conversation, task, operation, values):
     target = task.execution_target
-    harness = task.effective_state.get("engine") == ENGINE_VERSION
     if target is None:
         return {"target": None, "write_authorized": False}
     project = session.scalar(
@@ -70,24 +53,6 @@ def _describe(session, conversation, task, values):
     }
     if target["mode"] == "standard":
         result["storyboard_version"] = str(project.storyboard_version)
-        requests = [] if harness else standard_requests_locked(session, conversation, task)
-        result["write_authorized"] = bool(requests)
-        result["available_tools"] = [STANDARD_TOOL] if requests else []
-        primary_requests = (
-            [] if harness else image_primary_requests_locked(session, conversation, task)
-        )
-        if primary_requests:
-            result["write_authorized"] = True
-            result["available_tools"].append(IMAGE_PRIMARY_TOOL)
-        if (
-            not harness
-            and media_requests_locked(session, conversation, task)
-            and generation_policy_locked(
-                session, conversation.owner_user_id
-            ).media_generation_enabled
-        ):
-            result["write_authorized"] = True
-            result["available_tools"].append(MEDIA_TOOL)
         models = session.scalars(
             select(AIModelConfig)
             .where(
@@ -175,13 +140,6 @@ def _describe(session, conversation, task, values):
         if canvas is None:
             raise NotFound("目标画布不存在或无权访问")
         result["canvas_revision"] = str(canvas.row_version)
-        requests = [] if harness else canvas_requests_locked(session, conversation, task)
-        media = [] if harness else media_requests_locked(session, conversation, task)
-        policy = generation_policy_locked(session, conversation.owner_user_id)
-        result["write_authorized"] = bool(requests or (media and policy.media_generation_enabled))
-        result["available_tools"] = [CANVAS_TOOL] if requests else []
-        if media and policy.media_generation_enabled:
-            result["available_tools"].extend([MEDIA_TOOL, MEDIA_STATUS_TOOL])
         result["node_specs"] = {"version": 1, "types": CANVAS_NODE_SPECS}
         models = session.scalars(
             select(AIModelConfig)
@@ -244,27 +202,25 @@ def _describe(session, conversation, task, values):
         result["next_model_offset"] = (
             values.model_offset + values.model_limit if len(models) > values.model_limit else None
         )
-    if harness:
-        from short_drama.agent.tools.autonomous import describe_scope
-        from short_drama.agent.tools.registry import tool_manifest
-        from short_drama.agent.tools.results import result_sources_locked
+    from short_drama.agent.context.tool_scope import describe_scope
+    from short_drama.agent.tools.results import result_sources_locked
 
-        enabled = generation_policy_locked(
-            session, conversation.owner_user_id
-        ).media_generation_enabled
-        result.update(describe_scope(session, task))
-        result["result_sources"] = result_sources_locked(
-            session, task, before_id=values.result_before_id, limit=values.result_limit
-        )
-        result["write_authorized"] = True
-        result["available_tools"] = [
-            item["name"] for item in tool_manifest(task, media_enabled=enabled)
-        ]
+    result.update(describe_scope(session, conversation, task, operation))
+    result["result_sources"] = result_sources_locked(
+        session,
+        task,
+        before_id=values.result_before_id,
+        limit=values.result_limit,
+        operation=operation,
+    )
+    result["write_authorized"] = True
+    result["available_tools"] = task.effective_state.get("available_tool_names", [])
     return result
 
 
 def _read_selected(session, conversation, task, values):
-    source = task.context_snapshot
+    restricted, _ = restricted_messages(session, conversation.id)
+    source = eligible_snapshot(scope_snapshot_locked(session, task), restricted)
     if source is None:
         raise WorkflowError("selection_required", "本任务尚未选入参考主体", 409)
     return read_selected_snapshot(session, conversation.owner_user_id, source, values)

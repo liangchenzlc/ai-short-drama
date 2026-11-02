@@ -11,7 +11,7 @@ from short_drama.tasks.identity.email import smtp_send
 
 
 def test_model_preferences_keep_service_transaction_and_actor_scope():
-    from short_drama.core.identity import ActorContext
+    from short_drama.core.identity import SessionActorContext
     from short_drama.service.ai_config.preferences.preferences import ModelPreferenceService
     from tests.support.generation_fixtures import config, generation_session
 
@@ -19,8 +19,14 @@ def test_model_preferences_keep_service_transaction_and_actor_scope():
         model = config(session)
         model.owner_user_id = 1
         session.commit()
-        session.info["actor"] = ActorContext(
-            1, "legacy_fixture", "legacy@example.test", True, 1, "", "test"
+        session.info["actor"] = SessionActorContext(
+            user_id=1,
+            username="legacy_fixture",
+            email="legacy@example.test",
+            verified=True,
+            session_id=1,
+            csrf_hash="",
+            request_id="test",
         )
         service = ModelPreferenceService(session)
         assert service.list_preferences() == {"items": []}

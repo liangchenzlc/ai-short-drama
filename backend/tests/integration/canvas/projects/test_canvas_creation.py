@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.core.exceptions import NotFound, StorageUnavailable, WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.domain import CanvasCreationAttempt, CanvasCreationResource, MediaFile, Project
 from short_drama.service.base import utcnow
 from short_drama.service.canvas.document.canvas import CanvasService
@@ -343,7 +343,15 @@ def test_preparation_rows_are_private_and_request_identity_cannot_change(resourc
     )
 
     def actor(row):
-        return ActorContext(int(row["id"]), "test", "test@example.test", True, 1, "csrf", "scope")
+        return SessionActorContext(
+            user_id=int(row["id"]),
+            username="test",
+            email="test@example.test",
+            verified=True,
+            session_id=1,
+            csrf_hash="csrf",
+            request_id="scope",
+        )
 
     with resource_app[1]() as session:
         session.info["actor"] = actor(other)

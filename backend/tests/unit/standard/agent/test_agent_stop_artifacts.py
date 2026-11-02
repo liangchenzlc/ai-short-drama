@@ -57,7 +57,7 @@ def messages(session):
     ).all()
 
 
-@pytest.mark.parametrize("status", ["running", "waiting_generation", "waiting_review"])
+@pytest.mark.parametrize("status", ["running", "waiting_generation", "waiting_input"])
 def test_cancellation_persists_existing_candidates_and_keeps_the_run_terminal(monkeypatch, status):
     with generation_session() as session:
         conversation, run = flow(session, monkeypatch, status)

@@ -8,9 +8,6 @@ import time
 
 import httpx2
 from openai._streaming import SSEDecoder
-from pydantic_ai.messages import (
-    TextPart,
-)
 
 from short_drama.agent.gateway.contracts import (
     FRAMEWORK_VERSION,
@@ -18,8 +15,17 @@ from short_drama.agent.gateway.contracts import (
     AgentGatewayError,
     provider_failure_code,
 )
-from short_drama.agent.gateway.history import _json_value
 from short_drama.ai.types import GenerationError
+
+
+def _json_value(value):
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) > MAX_REQUEST_BYTES:
+            raise ValueError
+        return json.loads(encoded)
+    except (TypeError, ValueError, OverflowError):
+        raise AgentGatewayError("agent_request_too_large") from None
 
 
 def _raw_response(status, headers, content):
@@ -92,34 +98,6 @@ def _usage_evidence(raw, protocol):
 class _ReplaySafeTransport:
     """Saved responses only. No networking dependency or live transport is retained."""
 
-    def __init__(self, request_payload, raw_response, max_bytes):
-        if (
-            not isinstance(request_payload, dict)
-            or request_payload.get("codec") != "agent.request"
-            or request_payload.get("version") != 1
-            or request_payload.get("framework_version") != FRAMEWORK_VERSION
-            or request_payload.get("protocol") not in {"openai_chat.v1", "openai_responses.v1"}
-            or not isinstance(request_payload.get("url"), str)
-            or not isinstance(request_payload.get("body"), dict)
-            or not isinstance(raw_response, dict)
-            or raw_response.get("codec") != "agent.raw-response"
-            or raw_response.get("version") != 1
-            or type(raw_response.get("status_code")) is not int
-            or not 100 <= raw_response["status_code"] <= 599
-            or not isinstance(raw_response.get("content_type"), str)
-            or not isinstance(raw_response.get("body_b64"), str)
-            or len(raw_response["body_b64"]) > 4 * ((max_bytes + 2) // 3)
-        ):
-            raise AgentGatewayError("invalid_agent_replay")
-        try:
-            self.content = base64.b64decode(raw_response["body_b64"], validate=True)
-        except ValueError:
-            raise AgentGatewayError("invalid_agent_replay") from None
-        if len(self.content) > max_bytes:
-            raise AgentGatewayError("invalid_agent_replay")
-        self.expected = _json_value(request_payload)
-        self.raw = raw_response
-
     def request(self, method, url, *, body, on_headers=None, on_chunk=None, on_send=None, **kwargs):
         if method != "POST" or url != self.expected["url"] or body != self.expected["body"]:
             raise AgentGatewayError("agent_replay_request_mismatch")
@@ -158,14 +136,6 @@ class _CapturedStream(httpx2.AsyncByteStream):
             await self.bridge.feed_task
 
 
-def _narration_text(response, secrets):
-    """Text the model emitted alongside tool calls, redacted and trimmed."""
-    parts = [part.content for part in response.parts if isinstance(part, TextPart) and part.content]
-    if not parts:
-        return ""
-    return _TextRedactor(secrets).add("".join(parts), final=True).strip()
-
-
 class _TextRedactor:
     def __init__(self, secrets):
         self.secrets = tuple(sorted(set(filter(None, secrets)), key=len, reverse=True))
@@ -177,12 +147,14 @@ class _TextRedactor:
             ready, self.pending = self.pending, ""
             return ready
         ready, index = [], 0
+        maximum = max(map(len, self.secrets))
         while index < len(self.pending):
-            remaining = self.pending[index:]
-            if not final and any(secret.startswith(remaining) for secret in self.secrets):
-                break
+            if not final and len(self.pending) - index <= maximum:
+                remaining = self.pending[index:]
+                if any(secret.startswith(remaining) for secret in self.secrets):
+                    break
             matched = next(
-                (secret for secret in self.secrets if remaining.startswith(secret)), None
+                (secret for secret in self.secrets if self.pending.startswith(secret, index)), None
             )
             if matched:
                 ready.append("[redacted]")
@@ -239,6 +211,7 @@ class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
                 error.code,
                 requests=self.requests,
                 accepted_unknown=bool(self.requests) or error.accepted_unknown,
+                context_budget=error.context_budget,
             )
             raise self.last_error from None
         except Exception:

@@ -62,7 +62,8 @@ class ResourceResolver:
         self.storage = storage
         self.settings = settings
 
-    def _bytes(self, reference: ResourceRef, limit: int) -> bytes:
+    def read_bytes(self, reference: ResourceRef, limit: int) -> bytes:
+        """Read verified bytes after the caller authorizes a managed reference."""
         if reference.availability != "available" or not reference.checksum:
             raise WorkflowError("agent_resource_unavailable", "资源不可用或缺少校验值", 409)
         try:
@@ -97,6 +98,7 @@ class ResourceResolver:
                 "mime_type": mime,
                 "byte_size": len(data),
                 "original_ref": intent.resource.model_dump(mode="json"),
+                "tool_call_id": intent.tool_call_id,
                 "detail": intent.detail,
                 "crop": list(intent.crop) if intent.crop else None,
             },
@@ -163,7 +165,7 @@ class ResourceResolver:
     def freeze_image(self, intent: HydrationIntent) -> HydrationIntent:
         if intent.resource.kind != "image":
             raise WorkflowError("agent_resource_kind", "此水合策略只处理图片", 422)
-        data = self._bytes(intent.resource, MAX_IMAGE_BYTES)
+        data = self.read_bytes(intent.resource, MAX_IMAGE_BYTES)
         try:
             with Image.open(io.BytesIO(data)) as image:
                 if image.width * image.height > 40_000_000:
@@ -213,7 +215,7 @@ class ResourceResolver:
             raise WorkflowError("agent_resource_unprepared", "媒体必须先冻结处理结果", 409)
         if reference.kind == "audio" and protocol != "openai_chat.v1":
             raise WorkflowError("agent_resource_modality", "此协议不支持音频理解", 422)
-        data = self._bytes(reference, MAX_HYDRATED_BYTES)
+        data = self.read_bytes(reference, MAX_HYDRATED_BYTES)
         logger.info(
             "agent_resource_hydrated",
             extra={

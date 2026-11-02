@@ -1,0 +1,715 @@
+{
+  "at": "2026-10-31T13:39:16.743158+00:00",
+  "status": "in_progress",
+  "engine": "assistant-runtime.1",
+  "prompt": "assistant-runtime-v17",
+  "prior_frozen_tree": "2e0e323c44197c6ac6fff51e67a2198e165b4637",
+  "production_modified_this_followup": false,
+  "short": {
+    "source": {
+      "path": "final-short42-closed-selected-proof.json",
+      "sha256": "275703be9b5ebd8dbb4f4474844ddb29d399fc5bc2bb5f89e5017911d9431b83",
+      "bytes": 64442
+    },
+    "selected_unique_nodes": 42,
+    "selected_attempts": 50,
+    "selected_positive_attempts": 42,
+    "selected_failed_or_incomplete_attempts": 8,
+    "nodes": [
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_protocol_streaming_parallel_tools_and_actual_usage[0]",
+        "source": {
+          "path": "task-12-live-protocol-final27-reports/test_live_protocol_streaming_parallel_tools_and_actual_usage-0-4cf046bf39.json",
+          "sha256": "92a58e64f7af8e06ed785ed5b6d471759c2f20373c984303cb7f8835fcc4f92d",
+          "bytes": 10898
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_protocol_streaming_parallel_tools_and_actual_usage[1]",
+        "source": {
+          "path": "task-12-live-protocol-final27-reports/test_live_protocol_streaming_parallel_tools_and_actual_usage-1-bcc2b0878e.json",
+          "sha256": "59c42d39da4cd4afbc20644f83c0ba27910b1f96e3f2688b5899745899690010",
+          "bytes": 11029
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_question_api_and_cross_worker_resume[False-answered-0]",
+        "source": {
+          "path": "task-12-live-question-root-answered-final27-reports/test_live_question_api_and_cross_worker_resume-False-answered-0-bd31a64eb9.json",
+          "sha256": "99b14cb1dac5f8a14c087d039cc43638cf8756d760f88e8b855d699e0a6f3664",
+          "bytes": 30919
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_question_api_and_cross_worker_resume[False-answered-1]",
+        "source": {
+          "path": "task-12-live-question-root-answered-final27-reports/test_live_question_api_and_cross_worker_resume-False-answered-1-5430b5681d.json",
+          "sha256": "2c301cd4b8c357dc7c6371e09a42fba51f7de7a2ac8cdf89e76386c9bb9f1fa1",
+          "bytes": 26729
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_question_api_and_cross_worker_resume[False-skipped-0]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_question_api_and_cross_worker_resume-False-skipped-0-c8c93b4b53.json",
+          "sha256": "f78227d8b551c70af9bafd38b0bcad824c5459147e94c805d1d259ea8c4375b0",
+          "bytes": 26234
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_question_api_and_cross_worker_resume[False-skipped-1]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_question_api_and_cross_worker_resume-False-skipped-1-a76af2f2e5.json",
+          "sha256": "29b3847f352c232e599909de3810badee37af6c7f2fed078fd2bdb8bd1bd2442",
+          "bytes": 25742
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_question_api_and_cross_worker_resume[True-answered-0]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_question_api_and_cross_worker_resume-True-answered-0-cd07f93eb5.json",
+          "sha256": "8d9e6d0453257c8682a07b767e19e1c88359c772a508e45319aa8d5ad43bace4",
+          "bytes": 40995
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_question_api_and_cross_worker_resume[True-answered-1]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_question_api_and_cross_worker_resume-True-answered-1-9d235f4fa1.json",
+          "sha256": "7537ecad0edabd60227de76a01658730339742004719255676e3deae672057c5",
+          "bytes": 41485
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_question_api_and_cross_worker_resume[True-skipped-0]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_question_api_and_cross_worker_resume-True-skipped-0-3e5cbcc91e.json",
+          "sha256": "9e9d39e4f1e070af37e75cef9fdede3ce528709e191fcf08a5e83ae0fe94b02b",
+          "bytes": 42663
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_question_api_and_cross_worker_resume[True-skipped-1]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_question_api_and_cross_worker_resume-True-skipped-1-e17bf51796.json",
+          "sha256": "17c95536ccc39b5771179ba3252f6af6b28aa739ea6b9a6331776337a807ed8b",
+          "bytes": 36839
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_three_parallel_children_save_isolated_results[0]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_three_parallel_children_save_isolated_results-0-2e12c9b2e2.json",
+          "sha256": "9f66c8e125bd3000cca37b12f03b0e64bf45fd10b63c5342c352c850d0cd19e1",
+          "bytes": 91910
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_three_parallel_children_save_isolated_results[1]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_three_parallel_children_save_isolated_results-1-18104289bb.json",
+          "sha256": "9295b929a97b9358c29b1e4469575f752b635b46ceaad909cac08c05a6395cf9",
+          "bytes": 158907
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_native_async_wait_rebuilds_worker_without_repeating_business[0]",
+        "source": {
+          "path": "task-12-live-native-0-final27-budget-probe1-reports/test_live_native_async_wait_rebuilds_worker_without_repeating_business-0-5660950ac0.json",
+          "sha256": "6d320e33c0f3bfc4f4b6c105c67cc0a505ca0356a698ecf316d853ad12a1c106",
+          "bytes": 28914
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_native_async_wait_rebuilds_worker_without_repeating_business[1]",
+        "source": {
+          "path": "task-12-live-native-1-final27-budget-probe1-reports/test_live_native_async_wait_rebuilds_worker_without_repeating_business-1-ef407d410b.json",
+          "sha256": "2764640682be45fa08fda44db6ccbc2ff95571739a3524599752dfe9b7ee9ac7",
+          "bytes": 47352
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_stop_boundaries_and_new_message_use_a_new_run[stream-0]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_stop_boundaries_and_new_message_use_a_new_run-stream-0-a1c2dc9f76.json",
+          "sha256": "f3258925c0f71a5a401fcabe19b36c6472a34d8b66cbe7042d7553407dbc4e35",
+          "bytes": 21272
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_stop_boundaries_and_new_message_use_a_new_run[stream-1]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_stop_boundaries_and_new_message_use_a_new_run-stream-1-a7668a9c93.json",
+          "sha256": "043146dddc70e962c88fea8f27c9253e365b923f5e72d0b8cc75dd3a48fec9c1",
+          "bytes": 21607
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_stop_boundaries_and_new_message_use_a_new_run[tool-0]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_stop_boundaries_and_new_message_use_a_new_run-tool-0-ce4d4c3d9c.json",
+          "sha256": "c8293d8af9aa06297147fda4ba5bca846ec41923364a897641f5192e13bcde27",
+          "bytes": 22141
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_stop_boundaries_and_new_message_use_a_new_run[tool-1]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_stop_boundaries_and_new_message_use_a_new_run-tool-1-466eddb4da.json",
+          "sha256": "d816b4a66aae92be89e91fb94cbfaee0f55eb8d58906156fe5b9154e166399a1",
+          "bytes": 26219
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_stop_boundaries_and_new_message_use_a_new_run[code-0]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_stop_boundaries_and_new_message_use_a_new_run-code-0-ee35306e31.json",
+          "sha256": "44e92fc32afa5e4bf1083582b238c086369fba7691dec68f794cdc9a6b9cf1d5",
+          "bytes": 16943
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_stop_boundaries_and_new_message_use_a_new_run[code-1]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_stop_boundaries_and_new_message_use_a_new_run-code-1-895c9505e8.json",
+          "sha256": "ba6ccd8bc56fd1a896498e0b225fe3d43043a96ebe65033acb71bf39a7f31f85",
+          "bytes": 26542
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_stop_boundaries_and_new_message_use_a_new_run[media-0]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_stop_boundaries_and_new_message_use_a_new_run-media-0-be5e32c91e.json",
+          "sha256": "1786201ba23f3799a82e527e06a2ebebff1b87cb30f54afe63d411692259ae9a",
+          "bytes": 27388
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_stop_boundaries_and_new_message_use_a_new_run[media-1]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_stop_boundaries_and_new_message_use_a_new_run-media-1-a4348d7d0e.json",
+          "sha256": "539f6af03863d0b63d3bf60ff9f90f2deb916b10848193078a7deaf70c09f804",
+          "bytes": 22629
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_stop_boundaries_and_new_message_use_a_new_run[question-0]",
+        "source": {
+          "path": "task-12-live-stop-question-final27-independent1-reports/test_live_stop_boundaries_and_new_message_use_a_new_run-question-0-b416a63561.json",
+          "sha256": "a9cf1ba06b0cb25dbd1c5b451e465391eecbbcd68619536997d5e809a2ea4baf",
+          "bytes": 16628
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_stop_boundaries_and_new_message_use_a_new_run[question-1]",
+        "source": {
+          "path": "task-12-live-rest-a-final27-reports/test_live_stop_boundaries_and_new_message_use_a_new_run-question-1-7fa101ebbe.json",
+          "sha256": "b59dcbe5c50e902b6a3c498b9dc68a2c9d5e6f3def61cdf06b2541799e13066d",
+          "bytes": 17038
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_crash_windows_keep_one_business_or_answer_identity[business_committed-0]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_crash_windows_keep_one_business_or_answer_identity-business_committed-0-4432c5859b.json",
+          "sha256": "9816e6677a5fcd70717b85b9cecb3a37df588a760753a6e087b304c05e0253c6",
+          "bytes": 19903
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_crash_windows_keep_one_business_or_answer_identity[business_committed-1]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_crash_windows_keep_one_business_or_answer_identity-business_committed-1-9de92492c4.json",
+          "sha256": "5ddfe63bcc7c5b562debedd8720d45d50244d8f8d73c1236ea0ecaf8f8b9087c",
+          "bytes": 29410
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_crash_windows_keep_one_business_or_answer_identity[interrupt_registered-0]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_crash_windows_keep_one_business_or_answer_identity-interrupt_registered-0-dcd78a5f02.json",
+          "sha256": "3f244eff1a3a478ac881fb9d4ce98a378dc9fa1f63d0d6de48cec6695bfdaa3d",
+          "bytes": 36399
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_crash_windows_keep_one_business_or_answer_identity[interrupt_registered-1]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_crash_windows_keep_one_business_or_answer_identity-interrupt_registered-1-ae87bdd451.json",
+          "sha256": "4befa50c1ac839e0919d5217629fa235f4b799270f91905fcc7141deb689731a",
+          "bytes": 26833
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_crash_windows_keep_one_business_or_answer_identity[answer_committed-0]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_crash_windows_keep_one_business_or_answer_identity-answer_committed-0-69afbc469f.json",
+          "sha256": "5a3cc4313cd0b03d47f88f494d07b83eaf79849bdd5abfd8bbe8e49d7fb39a2f",
+          "bytes": 36774
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_crash_windows_keep_one_business_or_answer_identity[answer_committed-1]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_crash_windows_keep_one_business_or_answer_identity-answer_committed-1-43ce6d0fa4.json",
+          "sha256": "f00ce3e0438f48dce751e11c8b090e8ac1b67d739b56a588184f7e57b7555506",
+          "bytes": 31731
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_two_waiting_children_resume_by_scope_and_keep_completed_sibling[0]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_two_waiting_children_resume_by_scope_and_keep_completed_sibling-0-3f1de17105.json",
+          "sha256": "75804cfb458f90e3144a19a32e5fadafddcc7119c457b42ca91bac8868d7f8b1",
+          "bytes": 90666
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_two_waiting_children_resume_by_scope_and_keep_completed_sibling[1]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_two_waiting_children_resume_by_scope_and_keep_completed_sibling-1-e6f85f61ad.json",
+          "sha256": "006678cc171120306e89b4e9b5c8c4be1e9852eb03e6375a6a8cf55ae17ffc63",
+          "bytes": 94734
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_skill_canonical_reload_frozen_directory_and_trace[0]",
+        "source": {
+          "path": "task-12-live-canonical-0-final27-oracle29-reports/test_live_skill_canonical_reload_frozen_directory_and_trace-0-5f474a4c24.json",
+          "sha256": "a24e2c150e20eddf3a3248ea3ed4f7251259a13c32ac4c2aebd35c3d16e49c7f",
+          "bytes": 223018
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_skill_canonical_reload_frozen_directory_and_trace[1]",
+        "source": {
+          "path": "task-12-live-canonical-1-final27-oracle29-reports/test_live_skill_canonical_reload_frozen_directory_and_trace-1-6cb90b7cb2.json",
+          "sha256": "f75fea9d914a348bca78c1cbbbc9e6cf160dc541d8adbce6cfa0d1a69922e759",
+          "bytes": 53675
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_skill_withdrawal_removes_body_resources_and_notes[selection-0]",
+        "source": {
+          "path": "task-12-live-selection-final27-independent1-reports/test_live_skill_withdrawal_removes_body_resources_and_notes-selection-0-81c8865619.json",
+          "sha256": "db051f61e020c86b841e2975415d47ef862ec0f84c14551f2029de5250f9182f",
+          "bytes": 26775
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_skill_withdrawal_removes_body_resources_and_notes[selection-1]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_skill_withdrawal_removes_body_resources_and_notes-selection-1-18d31963aa.json",
+          "sha256": "94ba90d94c1d56963baa0feaedef9a5d63cfa9516dc14bb40af48fa144ede164",
+          "bytes": 26694
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_skill_withdrawal_removes_body_resources_and_notes[forget-0]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_skill_withdrawal_removes_body_resources_and_notes-forget-0-f4254e14f2.json",
+          "sha256": "0f3351849923902ca389dac3ab9df8c67ab8b699c3be78d32925655f6827d872",
+          "bytes": 41036
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_skill_withdrawal_removes_body_resources_and_notes[forget-1]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_skill_withdrawal_removes_body_resources_and_notes-forget-1-512a9cb501.json",
+          "sha256": "0834a35706afd52039529a35434b019853a6f24dcbf4059ddd00473738d4dcbb",
+          "bytes": 41665
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_parent_child_skill_activation_and_history_are_isolated[0]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_parent_child_skill_activation_and_history_are_isolated-0-8a50cdc72e.json",
+          "sha256": "f18b162992661ea05e87792722771354d8a89db45d60201bcc46e0a881efeaec",
+          "bytes": 24492
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_parent_child_skill_activation_and_history_are_isolated[1]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_parent_child_skill_activation_and_history_are_isolated-1-7fd2b19a44.json",
+          "sha256": "9834bc30007f31aa2f3ab7193bb62618dd19ea8a6f44b26ea9a7e1cabdf71b40",
+          "bytes": 34693
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_settings_freeze_realtime_media_policy_and_quantity_objects[0]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_settings_freeze_realtime_media_policy_and_quantity_objects-0-da993811c9.json",
+          "sha256": "4bb1311be9097fc8d1fb20ac375bd5f05b2ae27388bd08d54684072a031d64af",
+          "bytes": 32780
+        },
+        "passed": true
+      },
+      {
+        "node": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_settings_freeze_realtime_media_policy_and_quantity_objects[1]",
+        "source": {
+          "path": "task-12-live-rest-b-final27-reports/test_live_settings_freeze_realtime_media_policy_and_quantity_objects-1-f75d10909e.json",
+          "sha256": "8bfbb14d2c3905e27cd6c7cfb6a80b2e6e7c55db3405288ed29e19eb660517fa",
+          "bytes": 33776
+        },
+        "passed": true
+      }
+    ]
+  },
+  "long": {
+    "closed": {
+      "label": "task-12-live-long-final33-oracle31",
+      "pid": 23476,
+      "supervisor_pid": 35328,
+      "exitCode": 1,
+      "ended": "2026-10-31T13:19:41.918839+00:00",
+      "processClosed": true,
+      "originalLauncherExitObserved": true
+    },
+    "passed": 0,
+    "failed": 3,
+    "nodes": [
+      {
+        "source": {
+          "path": "task-12-live-long-final33-oracle31-reports/test_live_long_creation_with_two_real_summaries_and_dependency_chain-0-c7d7b9f75b.json",
+          "sha256": "a856cbf372259b419838fb2552879a07fc42788e198623e5b7d7621987e4f230",
+          "bytes": 126953
+        },
+        "scenario_id": "test_live_long_creation_with_two_real_summaries_and_dependency_chain-0-c7d7b9f75b",
+        "passed": false,
+        "duration_seconds": 340.59,
+        "runs": [
+          {
+            "id": "374908664182165504",
+            "status": "failed",
+            "error": {
+              "code": "agent_provider_rejected"
+            },
+            "usage": {
+              "images": 0,
+              "videos": 0,
+              "tool_calls": 30,
+              "input_tokens": 522853,
+              "cached_tokens": 86016,
+              "output_tokens": 15636,
+              "active_seconds": 314.222695,
+              "decision_calls": 47,
+              "last_context_budget": {
+                "input_limit_tokens": 51200,
+                "reserved_tool_tokens": 4096,
+                "context_window_tokens": 65536,
+                "estimated_input_tokens": 42565,
+                "reserved_output_tokens": 8192,
+                "reserved_safety_tokens": 2048
+              },
+              "uncached_input_tokens": 436837,
+              "reserved_output_tokens": 0
+            }
+          }
+        ],
+        "calls_by_source": {
+          "tool_selection": 23,
+          "assistant": 23,
+          "summarization": 1
+        },
+        "failed_requests": [
+          {
+            "id": "374910013363933184",
+            "run_id": "374908664182165504",
+            "scope_id": "374908664635150336",
+            "source": "assistant",
+            "model_call_id": "0262a7de40524b1f82c828fa54c0bbc1",
+            "http_status": 402,
+            "error": {
+              "code": "agent_provider_rejected",
+              "accepted_unknown": false,
+              "not_accepted": true,
+              "requests": 1
+            }
+          }
+        ],
+        "sandbox_cleanup": [
+          true
+        ],
+        "minio_namespace_cleaned": true
+      },
+      {
+        "source": {
+          "path": "task-12-live-long-final33-oracle31-reports/test_live_long_creation_with_two_real_summaries_and_dependency_chain-1-7f28e1f417.json",
+          "sha256": "a54f167df874fb3beab481db7a3cf68665ab9e1d24d6adb83e32f73acbf4c8a7",
+          "bytes": 6817
+        },
+        "scenario_id": "test_live_long_creation_with_two_real_summaries_and_dependency_chain-1-7f28e1f417",
+        "passed": false,
+        "duration_seconds": 29.38,
+        "runs": [
+          {
+            "id": "374910093999427584",
+            "status": "failed",
+            "error": {
+              "code": "agent_provider_rejected"
+            },
+            "usage": {
+              "images": 0,
+              "videos": 0,
+              "tool_calls": 0,
+              "input_tokens": 2263,
+              "cached_tokens": 0,
+              "output_tokens": 370,
+              "active_seconds": 19.00989,
+              "decision_calls": 2,
+              "last_context_budget": {
+                "input_limit_tokens": 51200,
+                "reserved_tool_tokens": 4096,
+                "context_window_tokens": 65536,
+                "estimated_input_tokens": 13383,
+                "reserved_output_tokens": 8192,
+                "reserved_safety_tokens": 2048
+              },
+              "uncached_input_tokens": 2263,
+              "reserved_output_tokens": 0
+            }
+          }
+        ],
+        "calls_by_source": {
+          "tool_selection": 1,
+          "assistant": 1
+        },
+        "failed_requests": [
+          {
+            "id": "374910206259974144",
+            "run_id": "374910093999427584",
+            "scope_id": "374910094435635200",
+            "source": "assistant",
+            "model_call_id": "92b9406819114724b6df9ff3b7aa394b",
+            "http_status": 402,
+            "error": {
+              "code": "agent_provider_rejected",
+              "accepted_unknown": false,
+              "not_accepted": true,
+              "requests": 1
+            }
+          }
+        ],
+        "sandbox_cleanup": [
+          true
+        ],
+        "minio_namespace_cleaned": true
+      },
+      {
+        "source": {
+          "path": "task-12-live-long-final33-oracle31-reports/test_live_long_creation_with_two_real_summaries_and_dependency_chain-2-4f79e003d2.json",
+          "sha256": "a7985ab42bf9ea1da2297d90583164ab9f2d9d3c9d613431385369d53d621dcd",
+          "bytes": 6665
+        },
+        "scenario_id": "test_live_long_creation_with_two_real_summaries_and_dependency_chain-2-4f79e003d2",
+        "passed": false,
+        "duration_seconds": 14.19,
+        "runs": [
+          {
+            "id": "374910217685258240",
+            "status": "failed",
+            "error": {
+              "code": "agent_provider_rejected"
+            },
+            "usage": {
+              "images": 0,
+              "videos": 0,
+              "tool_calls": 0,
+              "input_tokens": 2263,
+              "cached_tokens": 0,
+              "output_tokens": 68,
+              "active_seconds": 3.888156,
+              "decision_calls": 2,
+              "last_context_budget": {
+                "input_limit_tokens": 51200,
+                "reserved_tool_tokens": 4096,
+                "context_window_tokens": 65536,
+                "estimated_input_tokens": 13811,
+                "reserved_output_tokens": 8192,
+                "reserved_safety_tokens": 2048
+              },
+              "uncached_input_tokens": 2263,
+              "reserved_output_tokens": 0
+            }
+          }
+        ],
+        "calls_by_source": {
+          "tool_selection": 1,
+          "assistant": 1
+        },
+        "failed_requests": [
+          {
+            "id": "374910266762809344",
+            "run_id": "374910217685258240",
+            "scope_id": "374910218050162688",
+            "source": "assistant",
+            "model_call_id": "39fb2c3e7150466bbf4b9fd670c0de44",
+            "http_status": 402,
+            "error": {
+              "code": "agent_provider_rejected",
+              "accepted_unknown": false,
+              "not_accepted": true,
+              "requests": 1
+            }
+          }
+        ],
+        "sandbox_cleanup": [
+          true
+        ],
+        "minio_namespace_cleaned": true
+      }
+    ]
+  },
+  "provider_checks": [
+    {
+      "source": {
+        "path": "provider-402-check-result.json",
+        "sha256": "5766709145c62424f403ee43c79a772ca5c920c01e492b47b9364d5a8ee59a03",
+        "bytes": 791
+      },
+      "facts": {
+        "at": "2026-10-31T13:34:46.198405+00:00",
+        "purpose": "fresh bounded text-only check after final33 HTTP 402, not acceptance replay",
+        "media_requests": 0,
+        "results": [
+          {
+            "site": "https://t8api.com",
+            "model": "gpt-6.1-terra",
+            "max_tokens": 8192,
+            "requests": 1,
+            "http_status": 200,
+            "usage": {
+              "prompt_tokens": 11,
+              "completion_tokens": 5,
+              "total_tokens": 16
+            },
+            "completed": true,
+            "duration_seconds": 8.093
+          },
+          {
+            "site": "https://sub2.de5.net",
+            "model": "gpt-6.1-terra",
+            "max_tokens": 8192,
+            "requests": 1,
+            "http_status": 401,
+            "balance_or_quota_message": false,
+            "completed": false,
+            "duration_seconds": 1.532
+          }
+        ]
+      }
+    },
+    {
+      "source": {
+        "path": "provider-402-context-check-result.json",
+        "sha256": "2b478f99fe6484e300406e34bb3033f4c1f6e78e1bdf2f1037a06cb169446781",
+        "bytes": 522
+      },
+      "facts": {
+        "at": "2026-10-31T13:35:36.645376+00:00",
+        "purpose": "fresh bounded text-only check after final33 HTTP 402, not acceptance replay",
+        "media_requests": 0,
+        "results": [
+          {
+            "site": "https://t8api.com",
+            "model": "gpt-6.1-terra",
+            "max_tokens": 8192,
+            "requests": 1,
+            "http_status": 402,
+            "balance_or_quota_message": true,
+            "completed": false,
+            "insufficient_balance": false,
+            "insufficient_quota": true,
+            "duration_seconds": 0.344
+          }
+        ]
+      }
+    }
+  ],
+  "unreported_diagnostic_requests": {
+    "count": 2,
+    "outcome": "unknown",
+    "usage": "unknown",
+    "reason": "local report path encoding failed after requests completed"
+  },
+  "actual_provider_bill": "unknown",
+  "real_media_requests": 0,
+  "application_database_migrated": false,
+  "full_celery_deployment_verified": false,
+  "final_archive_completed": false,
+  "final_resource_cleanup_completed": false,
+  "followup_checks": [
+    {
+      "command": "node scripts/test.mjs --changed --dry-run",
+      "exit_code": 0,
+      "selected_tests": 269,
+      "business_tests_executed": false
+    },
+    {
+      "command": "node scripts/test.mjs --check",
+      "exit_code": 0,
+      "tests": 535,
+      "auxiliary": 159,
+      "features": 41
+    },
+    {
+      "command": "node scripts/check-docs.mjs",
+      "exit_code": 0,
+      "maintenance_docs": 35,
+      "tables": 121,
+      "route_modules": 48
+    },
+    {
+      "command": "node scripts/check-quality.mjs",
+      "exit_code": 0,
+      "source_files": 1701,
+      "known_structure_issues": 0,
+      "size_signals": 118
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ]
+}

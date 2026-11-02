@@ -4,6 +4,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from short_drama.api.mcp.auth import McpBearerAuth, authenticate
+from short_drama.api.mcp.server import create_mcp_app
 from short_drama.api.v1.router import router
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import BusinessError
@@ -22,11 +24,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from short_drama.db.readiness import (
             assert_agent_ready,
             assert_identity_ready,
+            assert_mcp_ready,
             inspect_agent_schema,
         )
 
         try:
             assert_identity_ready(engine, settings)
+            assert_mcp_ready(engine)
             assert_agent_ready(engine, settings)
             app.state.agent_schema_ready = False
             if settings.auth_enabled:
@@ -39,7 +43,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             storage = MinioStorage(settings)
             app.state.storage = storage
             try:
-                yield
+                async with mcp_http.lifespan(mcp_http):
+                    yield
             finally:
                 storage.close()
         finally:
@@ -48,6 +53,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
 
     app.state.settings = settings
+    mcp_http = create_mcp_app(app.state)
+    app.mount("/mcp", mcp_http)
+    app.add_middleware(McpBearerAuth, authenticate=authenticate)
     from short_drama.api.identity_middleware import install_identity
 
     install_identity(app, settings)

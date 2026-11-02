@@ -5,13 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
-from pydantic_ai.tools import ToolDefinition
 
-from short_drama.agent.core.events import budget_limits, initial_usage
-from short_drama.agent.gateway.protocol import AgentGatewayError
+from short_drama.agent.gateway.contracts import AgentGatewayError
 from short_drama.agent.memory.context import validated_facts
 from short_drama.agent.memory.sources import token_estimate
-from short_drama.agent.runtime.claims import freeze_input
+from short_drama.agent.tools.registry import TOOL_SPECS, get_spec
 from short_drama.schemas.assistant.memory.memory import MemoryMaintenanceResult
 from short_drama.schemas.assistant.tasks.task import (
     AssistantTaskMessage,
@@ -19,37 +17,6 @@ from short_drama.schemas.assistant.tasks.task import (
     TaskControlRequest,
     TaskExecutionTarget,
 )
-
-
-def test_manual_method_availability_rechecks_target_and_required_tools_without_changing_version():
-    from short_drama.agent.skill.runtime import apply_manual_skills, refresh_skill_context
-
-    task = SimpleNamespace(
-        id=1,
-        effective_state={},
-        plan_revision=1,
-        row_version=1,
-        execution_target={"mode": "infinite_canvas"},
-    )
-    skill = {
-        "id": "script.v1",
-        "name": "对白方法",
-        "content_version": "2",
-        "instructions": "使用明确选入的正文。",
-        "modes": ["standard"],
-        "required_tools": ["apply_standard_patch"],
-        "resources": [],
-    }
-    apply_manual_skills(task, [skill], 2)
-    blocked = refresh_skill_context(task, ["describe_creation_target"])
-    assert blocked[0]["issue"] and blocked[0]["instructions"] is None
-    activation = blocked[0]["activation_id"]
-    task.execution_target = {"mode": "standard"}
-    still_blocked = refresh_skill_context(task, ["describe_creation_target"])
-    assert "apply_standard_patch" in still_blocked[0]["issue"]
-    ready = refresh_skill_context(task, ["describe_creation_target", "apply_standard_patch"])
-    assert ready[0]["activation_id"] == activation and ready[0]["content_version"] == "2"
-    assert ready[0]["instructions"] == skill["instructions"] and ready[0]["issue"] is None
 
 
 def test_task_conversation_accepts_project_scope_and_preserves_legacy_creation():
@@ -60,23 +27,26 @@ def test_task_conversation_accepts_project_scope_and_preserves_legacy_creation()
         GlobalConversationCreate(project_id="1.5")
 
 
-def test_skill_tools_are_bounded_and_never_accept_owner_storage_or_executable_inputs():
-    from short_drama.agent.tools.contracts import TOOL_SCHEMAS
+def test_skill_tools_are_bounded_and_never_accept_owner_storage_or_execution_flags():
 
-    assert {"search_skills", "load_skill", "read_skill_resource"}.issubset(TOOL_SCHEMAS)
-    search = TOOL_SCHEMAS["search_skills"][0]
-    load = TOOL_SCHEMAS["load_skill"][0]
-    resource = TOOL_SCHEMAS["read_skill_resource"][0]
+    assert {
+        "runtime__search_skills",
+        "runtime__load_skill",
+        "runtime__read_skill_resource",
+    }.issubset({spec.name for spec in TOOL_SPECS})
+    search = get_spec("runtime__search_skills").args_schema
+    load = get_spec("runtime__load_skill").args_schema
+    resource = get_spec("runtime__read_skill_resource").args_schema
     assert search().limit <= 20
-    assert load(skill_id="script.v1", content_version="1").skill_id == "script.v1"
+    assert load(name="script.v1", content_version="1", purpose="读取对白方法").name == "script.v1"
     assert resource(activation_id="9007199254740993", path="assets/example.json").offset == 0
+    assert resource(activation_id="1", path="scripts/run.py").path == "scripts/run.py"
     for schema, body in (
         (search, {"limit": 10000}),
         (search, {"owner_user_id": "2"}),
         (load, {"skill_id": "script.v1", "content_version": "1", "source": "manual"}),
         (resource, {"activation_id": "1", "path": "../secret.txt"}),
         (resource, {"activation_id": "1", "path": "https://example.invalid/secret.txt"}),
-        (resource, {"activation_id": "1", "path": "scripts/run.py"}),
         (resource, {"activation_id": "1", "path": "assets/example.json", "execute": True}),
         (resource, {"activation_id": "1", "path": "assets/example.json", "command": "run"}),
         (resource, {"activation_id": "1", "path": "assets/example.json", "bucket": "private"}),
@@ -86,26 +56,31 @@ def test_skill_tools_are_bounded_and_never_accept_owner_storage_or_executable_in
 
 
 def test_image_content_read_requires_exact_frozen_identity_and_one_source():
-    from short_drama.agent.tools.contracts import ReadImageContent
+    from short_drama.schemas.assistant.operations.image import ReadImageContent
 
-    fields = {"group_id": "1", "item_id": "2", "media_id": "3"}
-    key = "subject:" + "a" * 64
-    assert ReadImageContent(subject_key=key, **fields).media_id == 3
-    assert ReadImageContent(operation_id="4", **fields).operation_id == 4
-    assert ReadImageContent(operation_id="4", media_id="3").group_id is None
+    fields = {
+        "project_id": "4",
+        "target_kind": "asset",
+        "target_id": "5",
+        "group_id": "1",
+        "item_id": "2",
+        "media_id": "3",
+        "purpose": "核对构图",
+    }
+    assert ReadImageContent(**fields).media_id == 3
     for invalid in (
-        fields,
-        {**fields, "subject_key": key, "operation_id": "4"},
-        {**fields, "subject_key": key, "url": "https://example.invalid/image.png"},
-        {"subject_key": key, "group_id": "1", "media_id": "3"},
-        {**fields, "subject_key": key, "media_id": True},
+        {key: value for key, value in fields.items() if key != "purpose"},
+        {**fields, "operation_id": "4"},
+        {**fields, "url": "https://example.invalid/image.png"},
+        {key: value for key, value in fields.items() if key != "item_id"},
+        {**fields, "media_id": True},
     ):
         with pytest.raises(ValidationError):
             ReadImageContent.model_validate(invalid)
 
 
 def test_generation_policy_is_versioned_and_cannot_be_changed_by_a_tool():
-    from short_drama.agent.tools.contracts import TOOL_SCHEMAS
+
     from short_drama.schemas.assistant.tasks.policy import (
         GenerationPolicyPatch,
         ReadGenerationPolicy,
@@ -116,8 +91,8 @@ def test_generation_policy_is_versioned_and_cannot_be_changed_by_a_tool():
         "media_generation_enabled": False,
         "policy_version": "0",
     }
-    assert TOOL_SCHEMAS["get_generation_policy"][0] is ReadGenerationPolicy
-    assert "set_generation_policy" not in TOOL_SCHEMAS
+    assert get_spec("runtime__get_generation_policy").args_schema is ReadGenerationPolicy
+    assert "set_generation_policy" not in {spec.name for spec in TOOL_SPECS}
     for value in ("false", 0, None):
         with pytest.raises(ValidationError):
             GenerationPolicyPatch(media_generation_enabled=value, policy_version="0")
@@ -127,43 +102,8 @@ def test_generation_policy_is_versioned_and_cannot_be_changed_by_a_tool():
         GenerationPolicyPatch(media_generation_enabled=True, policy_version="0", owner_user_id="2")
 
 
-@pytest.mark.parametrize(
-    ("content", "kind", "selector", "count"),
-    [
-        ("为已选素材生成图片：冷色人物设定", "asset", "selected", 1),
-        ("请给已选分镜各生成两张图片", "shot", "selected", 2),
-        ("为本任务素材生成4张图", "asset", "results", 4),
-        ("为分镜 ID 9007199254740993生成图片", "shot", "ID 9007199254740993", 1),
-    ],
-)
-def test_media_directive_defaults_to_one_per_explicit_target(content, kind, selector, count):
-    from short_drama.agent.tools.media import parse_media_directive
-
-    directive = parse_media_directive(content)
-    assert directive.kind == kind and directive.selector == selector and directive.count == count
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        "只搭建图片流程",
-        "为已选素材生成图片？",
-        "不要为已选素材生成图片",
-        "引用：为已选素材生成图片",
-        "为所有素材生成图片",
-        "为已选素材生成0张图",
-        "为已选素材生成5张图",
-        "为已选素材生成图片并生成视频",
-    ],
-)
-def test_media_directive_never_grants_quoted_ambiguous_or_excessive_generation(content):
-    from short_drama.agent.tools.media import parse_media_directive
-
-    assert parse_media_directive(content) is None
-
-
 def test_media_tool_schema_keeps_versions_and_rejects_private_or_unbounded_parameters():
-    from short_drama.agent.tools.contracts import TOOL_SCHEMAS
+
     from short_drama.schemas.assistant.operations.media import SubmitGenerationBatch
 
     item = {
@@ -174,8 +114,8 @@ def test_media_tool_schema_keeps_versions_and_rejects_private_or_unbounded_param
         "model_version": "1",
         "prompt": "人物设定",
     }
-    body = {"request_message_id": "3", "request_hash": "a" * 64, "requests": [item]}
-    assert TOOL_SCHEMAS["submit_generation_batch"][0] is SubmitGenerationBatch
+    body = {"project_id": "3", "requests": [item]}
+    assert get_spec("workbench__submit_generation_batch").args_schema is SubmitGenerationBatch
     assert SubmitGenerationBatch.model_validate(body).requests[0].count == 1
     for invalid in (
         {**body, "owner_user_id": "2"},
@@ -188,54 +128,13 @@ def test_media_tool_schema_keeps_versions_and_rejects_private_or_unbounded_param
             SubmitGenerationBatch.model_validate(invalid)
 
 
-@pytest.mark.parametrize(
-    ("content", "selector", "index"),
-    [
-        ("把第二张设为主图", "selected", 2),
-        ("请把已选图片组的第25张设为主图：保留其他历史", "image_group", 25),
-        ("将已选图位设为主图", "image_slot", None),
-        ("把已选素材的第一张设为主图", "asset", 1),
-        ("把已选分镜的第三张设为主图", "shot", 3),
-        ("把图片组 ID 9007199254740993的第二张设为主图", "9007199254740993", 2),
-        ("把图片组 ID 123 的第二张设为主图", "123", 2),
-    ],
-)
-def test_image_primary_directive_has_one_explicit_image_choice(content, selector, index):
-    from short_drama.agent.tools.image import parse_primary_directive
-
-    directive = parse_primary_directive(content)
-    assert directive is not None
-    assert directive.selector == selector and directive.output_index == index
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        "把第二张设为主图？",
-        "能不能把第二张设为主图",
-        "不要把第二张设为主图",
-        "引用：把第二张设为主图",
-        "“把第二张设为主图”",
-        "把所有图片设为主图",
-        "把第0张设为主图",
-        "把第26张设为主图",
-        "把第二张和第三张设为主图",
-        "把第二张设为主图并生成视频",
-    ],
-)
-def test_image_primary_directive_does_not_infer_ambiguous_or_quoted_authority(content):
-    from short_drama.agent.tools.image import parse_primary_directive
-
-    assert parse_primary_directive(content) is None
-
-
 def test_image_tools_keep_real_identifiers_and_reject_unbounded_or_untrusted_inputs():
-    from short_drama.agent.tools.contracts import ReadImageGroup, SetImageGroupPrimary
+    from short_drama.schemas.assistant.operations.image import ReadImageGroup, SetImageGroupPrimary
 
     values = {
-        "request_message_id": "9007199254740993",
-        "request_hash": "a" * 64,
-        "subject_key": "subject:" + "b" * 64,
+        "project_id": "9007199254740993",
+        "target_kind": "asset",
+        "target_id": "9007199254740994",
         "group_id": "9007199254740995",
         "item_id": "9007199254740997",
         "expected_primary_version": "2",
@@ -243,13 +142,10 @@ def test_image_tools_keep_real_identifiers_and_reject_unbounded_or_untrusted_inp
         "expected_target_version": "4",
     }
     assert SetImageGroupPrimary.model_validate(values).model_dump(mode="json") == values
-    read = {"subject_key": values["subject_key"], "view": "history", "limit": 10}
+    read = {key: values[key] for key in ("project_id", "target_kind", "target_id")}
+    read.update(view="history", limit=10)
     assert ReadImageGroup.model_validate(read).limit == 10
-    generated = {"operation_id": "9007199254740993", "group_id": "9007199254740995"}
-    assert (
-        ReadImageGroup.model_validate(generated).model_dump(mode="json")["operation_id"]
-        == generated["operation_id"]
-    )
+    generated = {"operation_id": "9007199254740993"}
     for invalid in (
         {**values, "owner_user_id": "2"},
         {**values, "media_url": "https://invalid/image.png"},
@@ -262,7 +158,7 @@ def test_image_tools_keep_real_identifiers_and_reject_unbounded_or_untrusted_inp
         {**read, "view": "all_projects"},
         {**read, "limit": 11},
         {**read, "character_limit": 6001},
-        {**read, "subject_key": "not-selected"},
+        {**read, "target_kind": "image_slot"},
         {**read, "include_private_prompt": True},
         {**read, **generated},
         {"operation_id": generated["operation_id"]},
@@ -401,7 +297,7 @@ def test_standard_patch_resolves_typed_earlier_references_and_preserves_large_id
 
 
 def test_created_result_reader_uses_receipt_identity_and_bounded_ranges():
-    from short_drama.agent.tools.contracts import ReadTaskResults
+    from short_drama.schemas.assistant.operations.tool_inputs import ReadTaskResults
 
     values = ReadTaskResults.model_validate(
         {
@@ -568,74 +464,6 @@ def test_canvas_delete_rejects_references_outside_its_increment(location):
     assert "target" in nodes and "assetBindings" not in str(error.value.details)
 
 
-@pytest.mark.parametrize(
-    "text,action,limits,selector,fields,connect",
-    [
-        (
-            "请创建一个文本节点和两个图片节点并连线：雨夜",
-            "create",
-            {"text": 1, "image": 2},
-            None,
-            None,
-            True,
-        ),
-        (
-            "搭建文本节点、图片节点、视频节点和音频节点",
-            "create",
-            {"text": 1, "image": 1, "video": 1, "audio": 1},
-            None,
-            None,
-            False,
-        ),
-        ("修改已选节点的提示词：逆光", "update_node", {}, "selected", {"prompt"}, False),
-        ("更新本任务节点的正文：故事", "update_node", {}, "results", {"content"}, False),
-        ("删除节点“旧开场”", "delete_node", {}, "旧开场", None, False),
-        ("移动已选节点：向右", "move_node", {}, "selected", None, False),
-        ("连接已选节点", "connect_nodes", {}, "selected", None, False),
-        ("断开本任务节点", "disconnect_nodes", {}, "results", None, False),
-        ("改为创建一个音频节点：补充", "create", {"audio": 1}, None, None, False),
-    ],
-)
-def test_canvas_directives_bind_only_the_explicit_effects(
-    text, action, limits, selector, fields, connect
-):
-    from short_drama.agent.tools.canvas import parse_canvas_directive
-
-    value = parse_canvas_directive(text)
-    assert value is not None
-    assert (value.action, value.limits, value.selector, value.fields, value.connect) == (
-        action,
-        limits,
-        selector,
-        frozenset(fields) if fields else None,
-        connect,
-    )
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "只讨论创建一个文本节点",
-        "不要删除已选节点",
-        "请翻译：删除已选节点",
-        "创建一个图片节点是什么意思？",
-        "他说：连接已选节点",
-        "“删除已选节点”",
-        "创建所有节点",
-        "创建零个文本节点",
-        "创建51个图片节点",
-        "删除已选节点的正文",
-        "创建一个分镜节点",
-        "创建一个图片节点并生成",
-        "移动全部节点",
-    ],
-)
-def test_canvas_directives_do_not_infer_authority_from_discussion_or_data(text):
-    from short_drama.agent.tools.canvas import parse_canvas_directive
-
-    assert parse_canvas_directive(text) is None
-
-
 @pytest.mark.parametrize("speed", ["nan", "inf", "0", "0.1", "5", "快"])
 def test_canvas_settings_reject_non_native_audio_speed(speed):
     from short_drama.schemas.assistant.operations.canvas import AssistantNodeSettings
@@ -687,109 +515,54 @@ def test_canvas_target_is_explicit_and_ids_keep_full_precision():
         TaskExecutionTarget(mode="standard", project_id="1", canvas_id="canvas-key")
 
 
-def test_resume_requires_the_exact_stop_or_pause_control_version():
-    with pytest.raises(ValidationError):
-        TaskControlRequest(kind="resume")
-    request = TaskControlRequest(kind="resume", expected_control_seq="0")
-    assert request.model_dump(mode="json")["expected_control_seq"] == "0"
-    with pytest.raises(ValidationError):
-        TaskControlRequest(kind="redirect")
-
-
-def test_whole_segment_budget_includes_history_skills_tools_and_pending_results():
-    run = SimpleNamespace(
-        checkpoint={"purpose": "global_assistant"},
-        budget=budget_limits("global_assistant"),
-        usage=initial_usage(),
-    )
-    values = {
-        "instructions": "确认约束" * 3000,
-        "user_prompt": "最新补充不能丢失",
-        "history": {"messages": [{"parts": [{"content": "历史" * 16000}]}]},
-        "deferred_results": {"calls": {"pending": {"content": "完整工具结果" * 1000}}},
-        "tools": [
-            ToolDefinition(
-                name="method", parameters_json_schema={"description": "Skill 资料" * 3000}
-            )
-        ],
-        "max_output_tokens": 8192,
-    }
-    before = deepcopy(values)
-    with pytest.raises(AgentGatewayError) as caught:
-        freeze_input(values, run)
-    assert caught.value.code == "agent_context_budget_exhausted"
-    assert values == before and run.checkpoint == {"purpose": "global_assistant"}
-
-
-def test_task_constraint_projection_preserves_tool_pairs_and_unrelated_user_content():
-    from pydantic_ai.messages import (
-        ModelRequest,
-        ModelResponse,
-        ToolCallPart,
-        ToolReturnPart,
-        UserPromptPart,
-    )
-
-    from short_drama.agent.gateway.protocol import deserialize_history, serialize_history
-    from short_drama.agent.task.compaction import COMPACTED_GOAL, compacted_history
-
-    goal = "不能丢失的早期要求" * 1000
-    history = serialize_history(
-        [
-            ModelRequest(parts=[UserPromptPart(content=goal)]),
-            ModelResponse(parts=[ToolCallPart("describe_creation_target", {}, "pair-1")]),
-            ModelRequest(parts=[ToolReturnPart("describe_creation_target", {"id": "1"}, "pair-1")]),
-            ModelRequest(parts=[UserPromptPart(content="未压缩的近期纠正")]),
-            ModelResponse(parts=[ToolCallPart("read_operation_receipt", {"id": "2"}, "pair-2")]),
-        ]
-    )
-    before = deepcopy(history)
-    projected = compacted_history(history, goal)
-    restored = deserialize_history(projected)
-    assert restored[0].parts[0].content == COMPACTED_GOAL
-    assert projected["messages"][1:] == before["messages"][1:]
-    assert restored[-1].parts[0].tool_call_id == "pair-2"
-    assert history == before
+def test_control_contract_accepts_only_stop_without_retired_fields():
+    assert TaskControlRequest(kind="stop").model_dump(mode="json") == {"kind": "stop"}
+    for values in (
+        {"kind": "resume", "expected_control_seq": "0"},
+        {"kind": "redirect", "content": "新方向"},
+        {"kind": "stop", "message_id": "1"},
+        {"kind": "stop", "content": "停止"},
+    ):
+        with pytest.raises(ValidationError):
+            TaskControlRequest.model_validate(values)
 
 
 def test_context_budget_preserves_a_complete_tool_pair_and_counts_tool_json_as_text():
-    from short_drama.agent.context.budget import segment_budget
+    from short_drama.agent.context.budget import provider_budget
 
     values = {
-        "instructions": "边界",
-        "history": {
-            "messages": [
-                {"parts": [{"part_kind": "tool-call", "tool_call_id": "pair", "args": {"id": "1"}}]}
-            ]
-        },
-        "deferred_results": {"calls": {"pair": {"content": "实际回执"}}},
-        "max_output_tokens": 8192,
+        "messages": [
+            {"role": "system", "content": "边界"},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "pair",
+                        "type": "function",
+                        "function": {"name": "read", "arguments": '{"id":"1"}'},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "pair", "content": "实际回执"},
+        ],
     }
     before = deepcopy(values)
-    admitted = segment_budget(values)
+    admitted = provider_budget(values, 8192)
     assert admitted["estimated_input_tokens"] < admitted["input_limit_tokens"]
     assert admitted["reserved_tool_tokens"] > 0 and admitted["reserved_safety_tokens"] > 0
     assert values == before
-    values["deferred_results"]["calls"]["pair"] = {
+    values["messages"][-1]["content"] = {
         "kind": "binary",
         "media_type": "image/png",
         "data": "不能把工具正文伪装为媒体以绕过预算" * 12000,
     }
     with pytest.raises(AgentGatewayError):
-        segment_budget(values)
+        provider_budget(values, 8192)
 
 
 def test_context_budget_discounts_binary_only_in_a_real_user_prompt():
-    from short_drama.agent.context.budget import provider_budget, segment_budget
+    from short_drama.agent.context.budget import provider_budget
 
-    binary = {"kind": "binary", "media_type": "image/png", "data": "A" * 400000}
-    values = {
-        "instructions": "分析选入的图片",
-        "user_prompt": ["这幅图", binary],
-        "max_output_tokens": 8192,
-    }
-    first = segment_budget(values)
-    assert 2000 <= first["estimated_input_tokens"] < 4000
     provider = {
         "messages": [
             {
@@ -1009,83 +782,6 @@ def test_memory_commands_cannot_be_authorized_by_quoted_negated_or_ambiguous_dat
     assert parse_memory_directive(text) is None
 
 
-@pytest.mark.parametrize(
-    "text,action,limits,selector,fields,associate",
-    [
-        (
-            "请创建一个角色和两个分镜并关联：雨夜开场",
-            "create",
-            {"character": 1, "shot": 2},
-            None,
-            None,
-            True,
-        ),
-        ("新增十一张素材卡", "create", {"asset": 11}, None, None, False),
-        (
-            "修改已选素材的提示词：逆光",
-            "update_asset",
-            {},
-            "selected",
-            {"prompt", "video_prompt"},
-            False,
-        ),
-        ("删除素材“林晚”", "delete_asset", {}, "林晚", None, False),
-        (
-            "更新分镜 ID 9007199254740993的正文：开场",
-            "update_shot",
-            {},
-            "ID 9007199254740993",
-            {"script"},
-            False,
-        ),
-        ("修改本任务素材：统一命名", "update_asset", {}, "results", None, False),
-        ("关联已选分镜和素材", "set_shot_assets", {}, "selected", None, True),
-        ("调整已选分镜顺序：末尾移到开头", "reorder_shots", {}, "selected", None, False),
-    ],
-)
-def test_standard_direct_commands_bound_effects_and_keep_large_ids(
-    text, action, limits, selector, fields, associate
-):
-    from short_drama.agent.tools.standard import parse_standard_directive
-
-    value = parse_standard_directive(text)
-    assert value is not None
-    assert (value.action, value.limits, value.selector, value.fields, value.associate) == (
-        action,
-        limits,
-        selector,
-        frozenset(fields) if fields else None,
-        associate,
-    )
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "讨论一下角色",
-        "不要创建角色",
-        "创建角色是什么意思？",
-        "创建角色后会怎样",
-        "他说：创建一个角色",
-        "请翻译：删除素材甲",
-        "“创建一个角色”",
-        "> 删除已选素材",
-        "```\n创建一个角色\n```",
-        "创建51个分镜",
-        "创建零个角色",
-        "创建全部角色",
-        "修改未选素材",
-        "删除素材",
-        "删除已选素材的名称",
-        "创建一个角色并删除其他素材",
-    ],
-)
-def test_standard_directives_cannot_come_from_data_questions_or_ambiguous_scope(text):
-    from short_drama.agent.tools.standard import parse_standard_directive
-
-    assert parse_standard_directive(text) is None
-
-
 def test_standard_dialogue_uses_typed_temporary_characters_and_native_document_rules():
     from short_drama.schemas.assistant.operations.standard import StandardPatch
 
@@ -1118,39 +814,6 @@ def test_standard_dialogue_uses_typed_temporary_characters_and_native_document_r
             StandardPatch(storyboard_version="1", actions=[*prefix, invalid])
 
 
-@pytest.mark.parametrize(
-    "content,kind,count",
-    [
-        ("为已选图片节点生成2个结果：雨中的人物", "image", 2),
-        ("为本任务图片节点生成两张图片", "image", 2),
-        ("为已选视频节点生成视频", "video", 1),
-        ("为已选音频节点生成一段音频", "audio", 1),
-    ],
-)
-def test_canvas_media_directive_keeps_explicit_kind_and_native_quantity(content, kind, count):
-    from short_drama.agent.tools.media import parse_media_directive
-
-    directive = parse_media_directive(content)
-    assert directive.kind == "node" and directive.media_kind == kind and directive.count == count
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        "为已选图片节点生成视频",
-        "为已选节点生成结果",
-        "为已选音频节点生成两段音频",
-        "为已选节点生成视频吗？",
-        "只搭建图片节点",
-        "不要为已选图片节点生成图片",
-    ],
-)
-def test_canvas_media_directive_rejects_ambiguous_or_mismatched_generation(content):
-    from short_drama.agent.tools.media import parse_media_directive
-
-    assert parse_media_directive(content) is None
-
-
 def test_canvas_media_schema_preserves_string_keys_and_rejects_untrusted_transport():
     from short_drama.schemas.assistant.operations.media import SubmitGenerationBatch
 
@@ -1164,7 +827,7 @@ def test_canvas_media_schema_preserves_string_keys_and_rejects_untrusted_transpo
         "media_kind": "image",
         "prompt": "雨中的人物",
     }
-    body = {"request_message_id": "3", "request_hash": "a" * 64, "requests": [item]}
+    body = {"project_id": "3", "canvas_id": "canvas-test", "requests": [item]}
     saved = SubmitGenerationBatch.model_validate(body)
     assert saved.requests[0].target_id == "canvas-node-001"
     assert saved.model_dump(mode="json")["requests"][0]["row_version"] == "9007199254740993"
@@ -1177,43 +840,6 @@ def test_canvas_media_schema_preserves_string_keys_and_rejects_untrusted_transpo
     ):
         with pytest.raises(ValidationError):
             SubmitGenerationBatch.model_validate({**body, "requests": [{**item, **patch}]})
-
-
-@pytest.mark.parametrize(
-    "content,selector",
-    [
-        ("为已选角色生成一个音色：沉稳男声", "selected"),
-        ("给本任务角色各生成音色", "results"),
-        ("请为角色 ID 9007199254740993 生成音色", "ID 9007199254740993"),
-    ],
-)
-def test_character_voice_directive_requires_one_explicit_sample(content, selector):
-    from short_drama.agent.tools.media import parse_media_directive
-
-    directive = parse_media_directive(content)
-    assert (directive.kind, directive.media_kind, directive.count, directive.selector) == (
-        "asset",
-        "audio",
-        1,
-        selector,
-    )
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        "为已选角色生成两个音色",
-        "为已选角色生成音色吗？",
-        "不要为已选角色生成音色",
-        "考虑给已选角色生成音色",
-        "为已选场景生成音色",
-        "为全部角色生成音色",
-    ],
-)
-def test_character_voice_directive_does_not_infer_generation_authority(content):
-    from short_drama.agent.tools.media import parse_media_directive
-
-    assert parse_media_directive(content) is None
 
 
 def test_character_voice_schema_keeps_own_version_and_bounded_explicit_input():
@@ -1249,18 +875,6 @@ def test_character_voice_schema_keeps_own_version_and_bounded_explicit_input():
             AssistantCharacterVoiceRequest.model_validate({**values, **patch})
 
 
-def test_native_shot_video_directive_requires_explicit_speech_authority():
-    from short_drama.agent.tools.media import parse_media_directive
-
-    for text in ("为已选分镜生成一段有声视频", "为本任务分镜生成原生有声视频"):
-        directive = parse_media_directive(text)
-        assert directive is not None and directive.native_speech
-        assert directive.kind == "shot" and directive.media_kind == "video"
-    assert not parse_media_directive("为已选分镜生成视频").native_speech
-    assert parse_media_directive("为已选分镜生成两段有声视频") is None
-    assert parse_media_directive("考虑为已选分镜生成有声视频") is None
-
-
 def test_native_shot_video_schema_bounds_dialogue_and_voice_versions():
     from short_drama.schemas.assistant.operations.media import AssistantShotVideoRequest
 
@@ -1291,7 +905,7 @@ def test_native_shot_video_schema_bounds_dialogue_and_voice_versions():
 def test_native_video_source_refresh_keeps_newer_voice_than_earlier_task_adoption():
     from types import SimpleNamespace
 
-    from short_drama.agent.tools.media import _native_sources
+    from short_drama.agent.context.business_scope import selected_scope_subjects
 
     subject = {
         "subject_key": "asset:1",
@@ -1317,10 +931,10 @@ def test_native_video_source_refresh_keeps_newer_voice_than_earlier_task_adoptio
             },
         ],
     )
-    source = _native_sources(task, {"snapshot": snapshot}, [prior])[("asset", "1")]
+    source = selected_scope_subjects(snapshot["subjects"], "2", [prior])[2]["asset:1"]
     assert source["revision"] == "5" and source["voice_binding"] == subject["voice_binding"]
     task.context_snapshot = {"schema_version": 2, "subjects": []}
-    assert _native_sources(task, {"snapshot": snapshot}, [prior]) == {}
+    assert selected_scope_subjects([], "2", [prior])[2] == {}
 
 
 def test_sound_line_reference_preserves_real_string_identity():
@@ -1373,27 +987,6 @@ def test_dialogue_audio_schema_accepts_only_identity_and_trusted_versions():
             AssistantDialogueAudioRequest.model_validate({**values, **patch})
 
 
-def test_dialogue_audio_directives_do_not_authorize_discussion_or_unselected_sources():
-    from short_drama.agent.tools.media import parse_media_directive
-
-    for content in (
-        "为已选台词生成配音",
-        "请为已选台词各生成一段配音",
-        "为台词 ID line_a-9生成配音",
-    ):
-        directive = parse_media_directive(content)
-        assert directive is not None and directive.kind == "sound_line"
-        assert directive.media_kind == "audio" and directive.count == 1
-    for content in (
-        "为已选分镜生成配音",
-        "考虑为已选台词生成配音",
-        "为已选台词生成两段配音",
-        "为已选台词生成配音？",
-        "引用：为已选台词生成配音",
-    ):
-        assert parse_media_directive(content) is None
-
-
 def test_dialogue_audio_adoptions_follow_committed_versions_instead_of_item_order():
     from short_drama.service.assistant.operations.dialogue import advance_sound_binding
 
@@ -1440,21 +1033,6 @@ def test_sound_text_patch_is_incremental_and_requires_both_saved_versions():
     ):
         with pytest.raises(ValidationError):
             StandardPatch.model_validate(invalid)
-
-
-def test_sound_text_directive_limits_fields_and_keeps_generation_separate():
-    from short_drama.agent.tools.media import parse_media_directive
-    from short_drama.agent.tools.standard import parse_standard_directive
-
-    directive = parse_standard_directive("请创建两条台词：雨夜敲门")
-    assert directive is not None and directive.limits == {"sound_line": 2}
-    edit = parse_standard_directive("修改台词 ID line_a-9的音色：calm")
-    assert edit is not None and edit.kind == "sound_line" and edit.fields == {"voice"}
-    assert edit.selector == "line_a-9"
-    assert parse_standard_directive("编辑本任务台词的正文").selector == "results"
-    assert parse_media_directive("为本任务台词生成配音").selector == "results"
-    for text in ("讨论创建两条台词", "创建台词？", "删除已选台词", "修改全部台词", "创建301条台词"):
-        assert parse_standard_directive(text) is None
 
 
 def test_sound_text_batch_transitions_advance_all_lines_without_reading_neighbours():

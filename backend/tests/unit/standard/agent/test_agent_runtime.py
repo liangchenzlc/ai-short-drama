@@ -4,9 +4,7 @@ import pytest
 
 from short_drama.agent.coordinator import publisher
 from short_drama.agent.coordinator.recovery import recover
-from short_drama.agent.core.events import budget_limits
 from short_drama.agent.runtime.delta_buffer import _DeltaBuffer
-from short_drama.agent.runtime.executor import AgentRuntimeStore
 from short_drama.tasks.celery_app import agent_queue, make_celery, topology
 
 
@@ -72,15 +70,20 @@ def test_native_collector_selects_finished_tasks_past_active_prefix(
         engine.dispose()
 
 
-def test_agent_disabled_never_reads_new_tables():
+def test_agent_disabled_keeps_workspace_maintenance_and_skips_new_decisions(monkeypatch):
+    from short_drama.agent.sandbox import workspace
+
+    cleaned = []
+    monkeypatch.setattr(workspace, "cleanup_terminal_runs", lambda *args: cleaned.append(args))
     settings = SimpleNamespace(agent_enabled=False)
     assert recover(None, settings) == 0
-    store = AgentRuntimeStore(None, settings)
-    assert store.claim_publish() is None
-    assert store.claim_execution(1, 1, None) is None
+    assert cleaned == [(None, settings, 100)]
+    from short_drama.service.assistant.execution.run import AgentRunService
+
+    assert AgentRunService(None, settings).claim(1, 1) is None
 
 
-def test_worker_dispatches_agent_delivery_to_harness(monkeypatch):
+def test_worker_dispatches_agent_delivery_to_framework_runtime(monkeypatch):
     from short_drama.tasks.assistant import agent_worker
 
     factory, settings = object(), object()
@@ -90,11 +93,11 @@ def test_worker_dispatches_agent_delivery_to_harness(monkeypatch):
         def __init__(self, received_factory, received_settings):
             assert received_factory is factory and received_settings is settings
 
-        def execute_one(self, run_id, message_version):
+        def execute(self, run_id, message_version):
             deliveries.append((run_id, message_version))
 
     monkeypatch.setattr(agent_worker, "runtime", lambda: (factory, settings))
-    monkeypatch.setattr(agent_worker, "HarnessRuntime", Runtime)
+    monkeypatch.setattr(agent_worker, "AgentRuntime", Runtime)
     agent_worker.execute_agent.run("12", "3")
     assert deliveries == [("12", "3")]
 
@@ -114,15 +117,6 @@ def test_agent_queue_is_distinct_and_uses_confirmed_no_retry_transport():
     assert app.conf.task_publish_retry is False
     assert app.conf.broker_transport_options["confirm_publish"] is True
     assert "short_drama.tasks.assistant.agent_worker" in app.conf.include
-
-
-def test_reviewed_workflow_has_only_the_documented_higher_limits():
-    assert budget_limits()["decision_calls"] == 8
-    assert budget_limits()["output_tokens"] == 32768
-    assert budget_limits("workflow")["decision_calls"] == 16
-    assert budget_limits("workflow")["tool_calls"] == 32
-    assert budget_limits("workflow")["output_tokens"] == 65536
-    assert budget_limits("workflow")["active_seconds"] == 600
 
 
 def test_stream_display_preserves_gateway_redaction_without_a_second_replace():

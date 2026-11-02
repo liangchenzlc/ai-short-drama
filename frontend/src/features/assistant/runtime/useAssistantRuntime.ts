@@ -16,21 +16,31 @@ import {
   mergeTaskSnapshot,
   selectedTask,
 } from '@host/features/assistant/runtime/assistant-task-state';
+import { mergeTraceBlocks } from '@host/features/assistant/runtime/assistant-trace';
 import type {
   AssistantControlAccepted,
   AssistantTaskAccepted,
   AssistantTaskInputState,
+  AssistantPendingQuestion,
+  AssistantTaskSnapshot,
 } from '@host/types/assistant/api';
 import type { AgentEvent, AgentMessage, AgentRun } from '@host/types/assistant/engine';
 import type { DeltaChunk } from '@host/types/assistant/runtime/agent-events';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RunTracePagination } from '@host/types/assistant/runtime/assistant-task-state';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 export function useAssistantRuntime(conversationId: string) {
   const [projection, setProjection] = useState(() => emptyTaskProjection(conversationId));
+  const traceBlocks = useMemo(() => Object.values(projection.traceBlocks), [projection.traceBlocks]);
   const [inputs, setInputs] = useState<AssistantTaskInputState[]>([]);
   const [hasMoreTasks, setHasMoreTasks] = useState(false);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [total, setTotal] = useState(0);
   const [queuedRuns, setQueuedRuns] = useState<AgentRun[]>([]);
+  const [runs, setRuns] = useState<AgentRun[]>([]);
+  const [pendingQuestions, setPendingQuestions] = useState<AssistantPendingQuestion[]>([]);
+  const [hasMoreTrace, setHasMoreTrace] = useState(false);
+  const tracePages = useRef<Record<string, RunTracePagination>>({});
+  const taskBeforeId = useRef<string | null>(null);
   const [run, setRun] = useState<AgentRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [olderLoading, setOlderLoading] = useState(false);
@@ -56,7 +66,7 @@ export function useAssistantRuntime(conversationId: string) {
     for (const operation of Object.values(projection.operations)) {
       if (
         operation.outcome !== 'succeeded' ||
-        !['apply_standard_patch', 'submit_generation_batch', 'set_image_group_primary'].includes(operation.tool_name)
+        !['workbench__apply_standard_patch', 'workbench__submit_generation_batch', 'workbench__set_image_group_primary'].includes(operation.tool_name)
       )
         continue;
       const target = projection.tasks[operation.task_id]?.execution_target;
@@ -92,6 +102,12 @@ export function useAssistantRuntime(conversationId: string) {
       setTotal(0);
       setRun(null);
       setQueuedRuns([]);
+      setRuns([]);
+      setPendingQuestions([]);
+      setHasMoreTrace(false);
+      setHasMoreTasks(false);
+      tracePages.current = {};
+      taskBeforeId.current = null;
       setDeltas({});
       setLoading(false);
       setOlderLoading(false);
@@ -102,6 +118,13 @@ export function useAssistantRuntime(conversationId: string) {
     },
     [conversationId],
   );
+  const rememberTraceHistory = useCallback((snapshot: AssistantTaskSnapshot) => {
+    const ids = new Set([...snapshot.runs.map(item => item.id), ...snapshot.trace_blocks.map(item => item.run_id)]);
+    for (const id of ids) {
+      tracePages.current[id] ??= { has_more: snapshot.has_more_trace, next_before_seq: snapshot.trace_before_seq };
+    }
+    setHasMoreTrace(Object.values(tracePages.current).some(page => page.has_more));
+  }, []);
   const reload = useCallback(async () => {
     if (accessEndedRef.current) return;
     const request = ++refreshRequest.current;
@@ -133,8 +156,16 @@ export function useAssistantRuntime(conversationId: string) {
       }
       setProjection((old) => mergeTaskSnapshot(old, snapshot));
       setInputs(snapshot.inputs);
-      setHasMoreTasks(snapshot.has_more_tasks);
-      const activeRun = snapshot.runs.find((item) => ['running', 'waiting_generation'].includes(item.status));
+      setRuns(old => [...new Map([...old, ...snapshot.runs].map(item => [item.id, item])).values()]);
+      setPendingQuestions([...new Map((snapshot.pending_questions ?? []).map(item => [item.operation_id, item])).values()]);
+      // 普通刷新保留进度；流缺口重建页边界，补回断流期间旧 Task 的新 Run，已读块继续保留。
+      if (initial) {
+        tracePages.current = {};
+        taskBeforeId.current = oldestTaskId(snapshot.tasks);
+        setHasMoreTasks(snapshot.has_more_tasks);
+      }
+      rememberTraceHistory(snapshot);
+      const activeRun = snapshot.runs.find((item) => ['running', 'waiting_generation', 'waiting_input'].includes(item.status));
       const queued = snapshot.runs.filter((item) => item.status === 'queued');
       setMessages((old) => mergeMessages(old, snapshot.messages.items));
       setTotal(snapshot.messages.total);
@@ -158,6 +189,7 @@ export function useAssistantRuntime(conversationId: string) {
           }
         }
       }
+      return snapshot;
     } catch (cause) {
       if (!alive.current || controller.signal.aborted) return;
       if (cause instanceof ApiError && cause.status && [401, 403, 404].includes(cause.status))
@@ -169,7 +201,7 @@ export function useAssistantRuntime(conversationId: string) {
     } finally {
       if (alive.current && !controller.signal.aborted) setLoading(false);
     }
-  }, [conversationId, endAccess]);
+  }, [conversationId, endAccess, rememberTraceHistory]);
   useEffect(() => {
     void reload();
   }, [reload]);
@@ -275,6 +307,7 @@ export function useAssistantRuntime(conversationId: string) {
       }
       cursor.current = event.seq;
       setProjection((old) => applyTaskEvent(old, event));
+      if (event.event_type === 'trace.block' || event.event_type === 'trace.delta') return;
       if (event.event_type === 'assistant.delta' && event.run_id) {
         setDeltas((old) => ({
           ...old,
@@ -369,17 +402,21 @@ export function useAssistantRuntime(conversationId: string) {
     };
   }, [conversationId, reload, streamRevision, streamReady, endAccess]);
   async function olderTasks() {
-    const ids = Object.keys(projection.tasks).sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : 1));
-    if (!hasMoreTasks || !ids.length || olderLoading) return;
+    const beforeTaskId = taskBeforeId.current;
+    if (!hasMoreTasks || !beforeTaskId || olderLoading || accessEndedRef.current) return;
+    const history = tracePages.current;
     setOlderLoading(true);
     try {
-      const snapshot = await assistantApi.taskState(conversationId, undefined, ids[0]);
-      if (alive.current && !accessEndedRef.current) {
+      const snapshot = await assistantApi.taskState(conversationId, undefined, beforeTaskId);
+      if (alive.current && !accessEndedRef.current && history === tracePages.current) {
         setProjection((old) => mergeTaskSnapshot(old, snapshot, { historical: true }));
+        setRuns(old => [...new Map([...old, ...snapshot.runs].map(item => [item.id, item])).values()]);
+        rememberTraceHistory(snapshot);
+        taskBeforeId.current = oldestTaskId(snapshot.tasks);
         setHasMoreTasks(snapshot.has_more_tasks);
       }
     } catch (cause) {
-      if (alive.current && !accessEndedRef.current) {
+      if (alive.current && !accessEndedRef.current && history === tracePages.current) {
         if (cause instanceof ApiError && cause.status && [401, 403, 404].includes(cause.status))
           endAccess('对话访问已结束，请核对登录与项目权限。');
         else setError(errorMessage(cause));
@@ -387,6 +424,33 @@ export function useAssistantRuntime(conversationId: string) {
     } finally {
       if (alive.current) setOlderLoading(false);
     }
+  }
+  async function olderTrace() {
+    if (olderLoading || accessEndedRef.current || !hasMoreTrace) return;
+    const history = tracePages.current;
+    setOlderLoading(true);
+    try {
+      const pending = Object.entries(history).filter(([, page]) => page.has_more);
+      const pages = await Promise.all(pending.map(([id, page]) => assistantApi.tracePage(conversationId, id, page.next_before_seq ?? undefined)));
+      // resync 已换过页边界时，旧请求不得推进新一轮历史游标。
+      if (!alive.current || accessEndedRef.current || history !== tracePages.current) return;
+      const items = pages.flatMap(page => page.items);
+      setProjection(old => mergeTraceBlocks(old, items));
+      pages.forEach((page, index) => { tracePages.current[pending[index][0]] = { has_more: page.has_more, next_before_seq: page.next_before_seq }; });
+      setHasMoreTrace(Object.values(tracePages.current).some(page => page.has_more));
+    } catch (cause) {
+      if (alive.current && !accessEndedRef.current && history === tracePages.current) {
+        if (cause instanceof ApiError && cause.status && [401, 403, 404].includes(cause.status))
+          endAccess('对话访问已结束，请核对登录与项目权限。');
+        else setError(`读取早期轨迹失败：${errorMessage(cause)}`);
+      }
+    }
+    finally { if (alive.current) setOlderLoading(false); }
+  }
+  async function refreshQuestion(operationId: string) {
+    const snapshot = await reload();
+    if (!snapshot) return null;
+    return snapshot.pending_questions?.find(item => item.operation_id === operationId) ?? null;
   }
   return {
     messages,
@@ -404,6 +468,12 @@ export function useAssistantRuntime(conversationId: string) {
     task: selectedTask(projection.tasks),
     tasks: Object.values(projection.tasks),
     operations: Object.values(projection.operations),
+    traceBlocks,
+    pendingQuestions,
+    refreshQuestion,
+    runs,
+    hasMoreTrace,
+    olderTrace,
     inputs,
     hasMoreTasks,
     olderTasks,
@@ -421,4 +491,8 @@ export function useAssistantRuntime(conversationId: string) {
     },
     delta: run ? latestDelta(deltas[run.id] ?? []) : '',
   };
+}
+
+function oldestTaskId(tasks: AssistantTaskSnapshot['tasks']) {
+  return tasks.map(task => task.id).sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : 1))[0] ?? null;
 }

@@ -316,7 +316,8 @@ export function SkillImportDialog({
           </Button>
           <details>
             <summary>格式要求</summary>
-            <p>SKILL.md 提供名称、用途和正文。附加资料一起打包为 ZIP；暂不接受脚本。</p>
+            <p>SKILL.md 提供名称、用途和正文。资料与 scripts/ 下的 .py、.js、.mjs 可一起打包为 ZIP；导入和读取不会执行脚本。</p>
+            <p>脚本按需导入沙箱后执行。环境提供 Python 3.12、Node.js 24 LTS、pip 与 npm，可联网安装依赖；所需业务工具须在当前模式真实可用。</p>
             <p>上传最多 4 MiB，展开后最多 32 个文件、合计 1 MiB。</p>
           </details>
         </div>

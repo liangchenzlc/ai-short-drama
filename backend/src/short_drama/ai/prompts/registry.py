@@ -11,7 +11,8 @@ _ASSET_RULES = {
 }
 
 PROMPT_VERSIONS = {
-    "assistant": "assistant-harness-v10",
+    "assistant": "assistant-runtime-v17",
+    "assistant_tool_selection": "assistant-tool-selection-v1",
     "script_rewrite": "script-rewrite-v2",
     "script_assets": "script-assets-v2",
     "script_shots": "script-shots-v2",
@@ -70,6 +71,14 @@ def system_prompt(scene: str, *, kinds: Iterable[str] = ()) -> str:
             "common/structured_output.md",
         )
     raise ValueError("Unsupported text scene")
+
+
+def assistant_prompt(instructions: str) -> str:
+    return system_prompt("assistant") + "\n\n## 本次冻结的用户指令\n\n" + instructions
+
+
+def assistant_tool_selection_prompt() -> str:
+    return load_prompt("assistant/tool_selection.md")
 
 
 def asset_image_system_prompt(kind: str) -> str:

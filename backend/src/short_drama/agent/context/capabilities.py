@@ -1,6 +1,6 @@
 """Input declarations are hints; actual requests reveal model compatibility."""
 
-from short_drama.agent.gateway.langchain import select_protocol
+from short_drama.agent.gateway.inputs import select_protocol
 from short_drama.ai.types import GenerationError
 
 

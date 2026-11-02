@@ -11,81 +11,39 @@ SAFETY_TOKENS = 2048
 MEDIA_TOKENS = {"image": 2048, "video": 8192, "audio": 16000}
 
 
-def _measure(value, output_tokens, media_tokens=0, *, context_window=CONTEXT_TOKENS):
-    # This is a platform estimate, not a vendor tokenizer or advertised model window.
-    size = len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
-    estimate = (size + 2) // 3 + media_tokens
-    limit = context_window - output_tokens - TOOL_RESULT_TOKENS - SAFETY_TOKENS
-    if estimate > limit:
-        raise AgentGatewayError("agent_context_budget_exhausted")
-    return {
-        "estimated_input_tokens": estimate,
-        "context_window_tokens": context_window,
-        "input_limit_tokens": limit,
-        "reserved_output_tokens": output_tokens,
-        "reserved_tool_tokens": TOOL_RESULT_TOKENS,
-        "reserved_safety_tokens": SAFETY_TOKENS,
-    }
+def input_limit(output_tokens, *, context_window=CONTEXT_TOKENS):
+    return context_window - output_tokens - TOOL_RESULT_TOKENS - SAFETY_TOKENS
 
 
-def _user_content(content, *, provider=False):
+def _user_content(content):
     if not isinstance(content, list):
         return content, 0
     result, reserved = [], 0
     for part in content:
         value = deepcopy(part)
         if isinstance(value, dict):
+            kind = value.get("type")
             if (
-                not provider
-                and value.get("kind") == "binary"
-                and isinstance(value.get("data"), str)
-                and value.get("media_type", "").startswith(("image/", "audio/"))
+                kind == "image_url"
+                and isinstance(value.get("image_url"), dict)
+                and str(value["image_url"].get("url", "")).startswith("data:image/")
             ):
-                reserved += MEDIA_TOKENS[value["media_type"].split("/", 1)[0]]
-                value["data"] = "[managed binary]"
-            elif provider:
-                kind = value.get("type")
-                if (
-                    kind == "image_url"
-                    and isinstance(value.get("image_url"), dict)
-                    and str(value["image_url"].get("url", "")).startswith("data:image/")
-                ):
-                    reserved += MEDIA_TOKENS["image"]
-                    value["image_url"]["url"] = "[managed binary]"
-                elif kind == "input_image" and str(value.get("image_url", "")).startswith(
-                    "data:image/"
-                ):
-                    reserved += MEDIA_TOKENS["image"]
-                    value["image_url"] = "[managed binary]"
-                elif kind == "input_audio" and isinstance(value.get("input_audio"), dict):
-                    reserved += MEDIA_TOKENS["audio"]
-                    value["input_audio"]["data"] = "[managed binary]"
+                reserved += MEDIA_TOKENS["image"]
+                value["image_url"]["url"] = "[managed binary]"
+            elif kind == "input_image" and str(value.get("image_url", "")).startswith(
+                "data:image/"
+            ):
+                reserved += MEDIA_TOKENS["image"]
+                value["image_url"] = "[managed binary]"
+            elif kind == "input_audio" and isinstance(value.get("input_audio"), dict):
+                reserved += MEDIA_TOKENS["audio"]
+                value["input_audio"]["data"] = "[managed binary]"
         result.append(value)
     return result, reserved
 
 
-def segment_budget(values):
-    payload = deepcopy(values)
-    prompt = payload.get("user_prompt")
-    if isinstance(prompt, dict) and prompt.get("codec") == "agent.attachments":
-        reserved = sum(MEDIA_TOKENS.get(item.get("kind"), 0) for item in prompt["attachments"])
-    else:
-        payload["user_prompt"], reserved = _user_content(prompt)
-    history = payload.get("history") or {}
-    for message in history.get("messages", []):
-        for part in message.get("parts", []):
-            if part.get("part_kind") == "user-prompt":
-                part["content"], count = _user_content(part.get("content"))
-                reserved += count
-    return _measure(
-        payload,
-        values.get("max_output_tokens", 8192),
-        reserved,
-        context_window=values.get("context_window_tokens", CONTEXT_TOKENS),
-    )
-
-
-def provider_budget(body, output_tokens, *, references=False, context_window=CONTEXT_TOKENS):
+def estimate_input_tokens(body, *, references=False):
+    # Platform UTF-8 estimate, shared with native summarization; not a vendor tokenizer.
     payload = deepcopy(body)
     reserved = 0
     if references:
@@ -105,13 +63,67 @@ def provider_budget(body, output_tokens, *, references=False, context_window=CON
                 return sum(count_media(child) for child in value)
             return 0
 
-        return _measure(payload, output_tokens, count_media(payload), context_window=context_window)
+        reserved = count_media(payload)
     # Only actual user media parts receive a binary allowance. Tool JSON, including
     # arbitrary objects named data/kind/media_type, is always counted in full.
     messages = payload.get("messages", payload.get("input", []))
-    if isinstance(messages, list):
+    if not references and isinstance(messages, list):
         for message in messages:
             if isinstance(message, dict) and message.get("role") == "user":
-                message["content"], count = _user_content(message.get("content"), provider=True)
+                message["content"], count = _user_content(message.get("content"))
                 reserved += count
-    return _measure(payload, output_tokens, reserved, context_window=context_window)
+    size = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    return (size + 2) // 3 + reserved
+
+
+def provider_budget(body, output_tokens, *, references=False, context_window=CONTEXT_TOKENS):
+    estimate = estimate_input_tokens(body, references=references)
+    limit = input_limit(output_tokens, context_window=context_window)
+    budget = {
+        "estimated_input_tokens": estimate,
+        "context_window_tokens": context_window,
+        "input_limit_tokens": limit,
+        "reserved_output_tokens": output_tokens,
+        "reserved_tool_tokens": TOOL_RESULT_TOKENS,
+        "reserved_safety_tokens": SAFETY_TOKENS,
+    }
+    if estimate > limit:
+        messages = body.get("messages", body.get("input", []))
+        fixed = {**body, "messages": [item for item in messages if item.get("role") == "system"]}
+        fixed.pop("input", None)
+        raise AgentGatewayError(
+            "agent_context_budget_exhausted",
+            context_budget={
+                **budget,
+                "fixed_estimated_input_tokens": estimate_input_tokens(fixed, references=references),
+                "fixed_kind": "system_and_tools",
+                "message_count": len(messages),
+                **wire_tool_counts(messages),
+            },
+        )
+    return budget
+
+
+def wire_tool_counts(messages):
+    groups, results = [], set()
+    for message in messages:
+        calls = {item["id"] for item in message.get("tool_calls", [])}
+        if message.get("role") == "tool":
+            results.add(message.get("tool_call_id"))
+        if message.get("type") == "function_call":
+            calls.add(message.get("call_id"))
+        elif message.get("type") == "function_call_output":
+            results.add(message.get("call_id"))
+        content = message.get("content")
+        for block in content if isinstance(content, list) else []:
+            if block.get("type") == "tool_use":
+                calls.add(block.get("id"))
+            elif block.get("type") == "tool_result":
+                results.add(block.get("tool_use_id"))
+        if calls:
+            groups.append(calls)
+    return {
+        "tool_call_count": sum(len(group) for group in groups),
+        "tool_result_count": len(results),
+        "complete_tool_group_count": sum(group <= results for group in groups),
+    }

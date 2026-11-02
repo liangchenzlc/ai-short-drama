@@ -13,7 +13,7 @@ from short_drama.schemas.assistant.conversations.engine import (
 from short_drama.schemas.base import parse_identifier
 from short_drama.service.base import BaseService
 
-ACTIVE_RUN_STATES = ("queued", "running", "waiting_generation", "waiting_review")
+ACTIVE_RUN_STATES = ("queued", "running", "waiting_generation", "waiting_input")
 _UNSET = object()
 
 

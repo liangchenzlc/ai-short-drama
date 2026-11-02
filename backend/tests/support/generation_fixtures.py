@@ -2,7 +2,18 @@ import json
 from datetime import datetime
 from types import SimpleNamespace
 
-from sqlalchemy import JSON, DateTime, Float, Integer, MetaData, String, create_engine, event, text
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    Float,
+    Integer,
+    LargeBinary,
+    MetaData,
+    String,
+    create_engine,
+    event,
+    text,
+)
 from sqlalchemy.orm import Session
 
 from short_drama.domain import AIModelConfig, Base
@@ -40,9 +51,14 @@ def generation_session():
         table = original.to_metadata(metadata)
         for column in table.columns:
             kind = column.type.python_type
-            column.type = {int: Integer, float: Float, str: String, datetime: DateTime, dict: JSON}[
-                kind
-            ]()
+            column.type = {
+                int: Integer,
+                float: Float,
+                str: String,
+                datetime: DateTime,
+                dict: JSON,
+                bytes: LargeBinary,
+            }[kind]()
             if column.server_default is not None and column.computed is None:
                 if "CURRENT_TIMESTAMP" in str(column.server_default.arg):
                     column.server_default.arg = text("CURRENT_TIMESTAMP")

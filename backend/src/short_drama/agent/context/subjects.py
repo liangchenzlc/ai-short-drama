@@ -15,6 +15,19 @@ def snapshot_subjects(snapshot):
     return snapshot["subjects"]
 
 
+def eligible_snapshot(snapshot, restricted):
+    if not snapshot:
+        return snapshot
+    return {
+        **snapshot,
+        "subjects": [
+            item
+            for item in snapshot_subjects(snapshot)
+            if int(item.get("carried_source_message_id", "0")) not in restricted
+        ],
+    }
+
+
 def subject_catalog(snapshot):
     return [
         {

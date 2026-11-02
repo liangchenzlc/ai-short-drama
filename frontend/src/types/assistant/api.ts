@@ -5,6 +5,7 @@ import type {
   AgentSendInput,
   AgentSendResult,
 } from '@host/types/assistant/engine';
+import type { AssistantExecutionDisplay, AssistantTraceBlock } from '@host/types/assistant/trace';
 export interface AssistantGenerationPolicy {
   media_generation_enabled: boolean;
   policy_version: string;
@@ -59,6 +60,20 @@ export interface TaskMediaLimits {
   images: number | null;
   videos: number | null;
   audio: number | null;
+}
+export interface AssistantRuntimeLimits {
+  model_call_limit: number;
+  output_token_limit: number;
+  subagent_max_concurrency: number;
+}
+export interface AssistantSettingsPatch extends AssistantRuntimeLimits {
+  custom_instructions: string | null;
+  default_media_limits: TaskMediaLimits;
+  settings_version: string;
+}
+export interface AssistantSettings extends AssistantSettingsPatch {
+  default_instructions: string;
+  deployment_limits: AssistantRuntimeLimits;
 }
 export type AssistantSubjectKind = 'asset' | 'shot' | 'node' | 'image_group' | 'image_slot' | 'sound_line';
 export interface AssistantSubjectReference {
@@ -139,6 +154,7 @@ export type AssistantTaskStatus =
   | 'queued'
   | 'running'
   | 'waiting_media'
+  | 'waiting_input'
   | 'succeeded'
   | 'stopped'
   | 'paused_error'
@@ -147,6 +163,7 @@ export type AssistantTaskPhase =
   | 'deciding'
   | 'tool_running'
   | 'waiting_media'
+  | 'waiting_input'
   | 'settling_result'
   | 'reconciling'
   | 'at_boundary'
@@ -164,7 +181,8 @@ export interface AssistantSkillActivation {
   created_at: string;
   issue?: string | null;
 }
-export interface AssistantOperation {
+export interface AssistantOperation extends Partial<Omit<AssistantExecutionDisplay, 'target'>> {
+  target?: AssistantExecutionDisplay['target'] | null;
   id: string;
   task_id: string;
   run_id: string;
@@ -177,7 +195,7 @@ export interface AssistantOperation {
   plan_revision: string;
   state_version: string;
   phase: AssistantTaskPhase;
-  outcome: 'running' | 'waiting_media' | 'reconciling' | 'succeeded' | 'failed' | 'conflict';
+  outcome: 'running' | 'waiting_media' | 'waiting_input' | 'reconciling' | 'succeeded' | 'failed' | 'conflict';
   result_refs: Record<string, unknown>[];
   error: { code: string; message?: string } | null;
   undo_receipts?: AssistantUndoReceipt[];
@@ -295,6 +313,10 @@ export interface AssistantTaskInputState {
   applied_plan_revision: string | null;
 }
 export interface AssistantTaskSnapshot {
+  trace_blocks: AssistantTraceBlock[];
+  has_more_trace: boolean;
+  trace_before_seq: number | null;
+  pending_questions: AssistantPendingQuestion[];
   conversation_id: string;
   snapshot_cursor: number;
   resume_cursor: number;
@@ -305,6 +327,44 @@ export interface AssistantTaskSnapshot {
   inputs: AssistantTaskInputState[];
   has_more_tasks: boolean;
   has_more_operations: boolean;
+}
+export interface AssistantQuestionField {
+  key: string;
+  label: string;
+  type: 'single_select' | 'multi_select';
+  required: boolean;
+  placeholder: string | null;
+  options: { value: string; label: string; recommended: boolean; description?: string | null }[];
+}
+export interface AssistantQuestionRequest {
+  title: string;
+  question: string;
+  fields: AssistantQuestionField[];
+  allow_skip: boolean;
+}
+export interface AssistantPendingQuestion {
+  operation_id: string;
+  run_id: string;
+  scope_id: string;
+  parent_tool_call_id: string | null;
+  question_version: string;
+  request: AssistantQuestionRequest | null;
+  status: 'pending' | 'answered' | 'skipped' | 'cancelled';
+  can_answer: boolean;
+  answer_message_id: string | null;
+  answered_at: string | null;
+}
+export interface AssistantQuestionAnswer {
+  question_version: string;
+  outcome: 'answered' | 'skipped';
+  values: Record<string, string | string[] | null>;
+  additional_text?: string;
+}
+export interface AssistantQuestionAnswerReceipt {
+  operation_id: string;
+  answer_message_id: string;
+  run_id: string;
+  cursor: number;
 }
 export interface DiscussionRevisionInput {
   kind: 'edit' | 'regenerate';

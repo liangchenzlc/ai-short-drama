@@ -308,9 +308,17 @@ def test_scopes_and_input_validation():
 
 
 def test_story_settings_respect_project_ownership_and_archive_scope():
-    from short_drama.core.identity import ActorContext
+    from short_drama.core.identity import SessionActorContext
 
-    owner = ActorContext(1, "owner", "owner@example.test", True, 1, "", "settings-test")
+    owner = SessionActorContext(
+        user_id=1,
+        username="owner",
+        email="owner@example.test",
+        verified=True,
+        session_id=1,
+        csrf_hash="",
+        request_id="settings-test",
+    )
     with generation_session() as session:
         session.info["actor"] = owner
         project_id, service = setup(session)
@@ -318,8 +326,14 @@ def test_story_settings_respect_project_ownership_and_archive_scope():
         empty = service.story_settings(project_id)
         saved = service.save_story_settings(project_id, {**empty, "logline": "owner's story"})
         assert service.story_settings(other_id) == empty
-        session.info["actor"] = ActorContext(
-            2, "other", "other@example.test", True, 2, "", "settings-test"
+        session.info["actor"] = SessionActorContext(
+            user_id=2,
+            username="other",
+            email="other@example.test",
+            verified=True,
+            session_id=2,
+            csrf_hash="",
+            request_id="settings-test",
         )
         with pytest.raises(NotFound):
             service.story_settings(project_id)

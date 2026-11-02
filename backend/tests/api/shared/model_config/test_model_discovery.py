@@ -3,6 +3,7 @@ import socket
 
 import httpx
 import pytest
+from sqlalchemy.orm import Session
 
 from short_drama.core.config import Settings
 from short_drama.main import create_app
@@ -15,11 +16,11 @@ def discover(payload, allow_local=False):
             model_discovery_allowed_hosts=["127.0.0.1", "catalog.invalid"] if allow_local else [],
         )
         app = create_app(settings)
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app), base_url="http://testserver"
-            ) as client:
-                return await client.post("/api/v1/ai-model-configs/discover-models", json=payload)
+        app.state.session_factory = Session
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://testserver"
+        ) as client:
+            return await client.post("/api/v1/ai-model-configs/discover-models", json=payload)
 
     return asyncio.run(run())
 

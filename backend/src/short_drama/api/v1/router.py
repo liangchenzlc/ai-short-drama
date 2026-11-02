@@ -38,6 +38,7 @@ from short_drama.api.v1.generations.batches.batches import router as generation_
 from short_drama.api.v1.generations.references.references import (
     router as generation_references_router,
 )
+from short_drama.api.v1.identity.accounts.mcp_tokens import router as mcp_tokens_router
 from short_drama.api.v1.identity.authentication.auth import router as auth_router
 from short_drama.api.v1.media.image_groups.router import router as image_groups_router
 from short_drama.api.v1.media.imports.router import router as personal_resources_router
@@ -83,6 +84,7 @@ router.include_router(generation_references_router)
 router.include_router(generation_batches_router)
 
 router.include_router(auth_router)
+router.include_router(mcp_tokens_router)
 
 router.include_router(user_creation_drafts_router)
 router.include_router(image_groups_router)

@@ -12,6 +12,24 @@ async function configsFixture(page: Page) {
     credential_source: 'manual', runtime_profile: null as AiRuntimeProfileDto | null,
   };
   const state = { config, creates: 0, updates: [] as Record<string, unknown>[], defaults: [] as Record<string, unknown>[], defaultFailures: 0, updateConflicts: 0 };
+  const assistant = { value: { custom_instructions: null as string | null, default_instructions: '系统默认指令', model_call_limit: 100, output_token_limit: 1000000, subagent_max_concurrency: 3, default_media_limits: { images: null, videos: 0, audio: 2 }, settings_version: '9007199254740993', deployment_limits: { model_call_limit: 2000, output_token_limit: 20000000, subagent_max_concurrency: 3 } }, patches: [] as Record<string, any>[], conflict: false };
+  const tokenState = { items: [] as Record<string, any>[], creates: [] as Record<string, any>[], deletions: [] as string[], deleteFailure: false };
+  await page.route('**/api/v1/assistant/settings', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: assistant.value });
+    const body = route.request().postDataJSON(); assistant.patches.push(body);
+    if (assistant.conflict) { assistant.conflict = false; assistant.value.settings_version = String(BigInt(assistant.value.settings_version) + 1n); return route.fulfill({ status: 409, json: { error: { code: 'conflict' } } }); }
+    Object.assign(assistant.value, body, { settings_version: String(BigInt(assistant.value.settings_version) + 1n) });
+    return route.fulfill({ json: assistant.value });
+  });
+  await page.route('**/api/v1/account/mcp-tokens**', route => {
+    const request = route.request(), url = new URL(request.url());
+    if (url.pathname.endsWith('/options')) return route.fulfill({ json: { projects: [{ id: '10', name: '测试作品' }], tools: [{ name: 'workbench__read_project', description: '读取测试作品', modes: ['standard'], mutating: false }] } });
+    if (request.method() === 'GET') return route.fulfill({ json: tokenState.items });
+    if (request.method() === 'POST') { const body = request.postDataJSON(); tokenState.creates.push(body); const token = { ...body, id: String(301 + tokenState.items.length), token_hint: 'sdmcp_…abcd', created_at: '2026-10-29T00:00:00Z' }; tokenState.items.push(token); return route.fulfill({ status: 201, json: { ...token, secret: 'fixture-once-secret' } }); }
+    const id = url.pathname.split('/').at(-1)!; tokenState.deletions.push(id);
+    if (tokenState.deleteFailure) { tokenState.deleteFailure = false; return route.fulfill({ status: 403, json: { error: { code: 'permission_denied' } } }); }
+    tokenState.items = tokenState.items.filter(item => item.id !== id); return route.fulfill({ status: 204 });
+  });
   function apply(body: Record<string, unknown>) {
     const { apikey, secret_key, headers, ...publicFields } = body;
     Object.assign(state.config, publicFields);
@@ -52,7 +70,7 @@ async function configsFixture(page: Page) {
     }
     return route.fallback();
   });
-  return { ...base, state };
+  return { ...base, state, assistant, tokenState };
 }
 
 const runtimeProfile: AiRuntimeProfileDto = {
@@ -64,6 +82,65 @@ const runtimeProfile: AiRuntimeProfileDto = {
   logical_capability_profiles: [{ model: 'fixture-text', capability: 'text', protocol: 'chat-completion' }],
   video_capabilities_version: 'fixture-v1', concurrency_limit: 2,
 };
+
+test('Task11 runtime settings retain conflict drafts, refresh version and preserve null versus zero', async ({ page }, info) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const data = await generationPolicyFixture(page); data.assistant.conflict = true;
+  await page.goto('/ai_config'); await page.getByRole('tab', { name: '创作助手', exact: true }).click();
+  const input = page.getByRole('textbox', { name: '自定义指令', exact: true }); await expect(input).toBeVisible(); await input.fill('保留的自定义指令🙂');
+  await page.getByRole('button', { name: '保存运行设置', exact: true }).click();
+  await expect(page.getByText('设置已在其他窗口变化，草稿已保留。请读取最新版本后核对并保存。', { exact: true })).toBeVisible();
+  await expect(input).toHaveValue('保留的自定义指令🙂');
+  await page.getByRole('button', { name: '读取最新版本', exact: true }).click(); await expect(input).toHaveValue('保留的自定义指令🙂');
+  await page.getByRole('button', { name: '保存运行设置', exact: true }).click();
+  await expect.poll(() => data.assistant.value.custom_instructions).toBe('保留的自定义指令🙂');
+  expect(data.assistant.patches[1].settings_version).toBe('9007199254740994'); expect(data.assistant.patches[1].default_media_limits).toEqual({ images: null, videos: 0, audio: 2 });
+  await page.getByRole('button', { name: '恢复默认指令', exact: true }).click(); await page.getByRole('button', { name: '保存运行设置', exact: true }).click();
+  await expect.poll(() => data.assistant.value.custom_instructions).toBeNull();
+  await input.fill('刷新读取也须保留'); await page.getByRole('button', { name: '读取最新版本', exact: true }).click(); await expect(input).toHaveValue('刷新读取也须保留');
+  for (const close of await page.getByRole('button', { name: '关闭提示', exact: true }).all()) await close.click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: info.outputPath('task11-settings-desktop.png'), fullPage: true });
+  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+});
+
+test('Task11 MCP token uses server scopes, one-time secret and confirmed delete with failure feedback', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const data = await generationPolicyFixture(page);
+  data.tokenState.items.push({ id: '300', name: '过期令牌', token_hint: 'sdmcp_…old', project_ids: ['10'], tool_names: ['workbench__read_project'], expires_at: '2020-01-01T00:00:00Z', allowed_ips: [], created_at: '2019-01-01T00:00:00Z' });
+  await page.goto('/ai_config'); await page.getByRole('tab', { name: '创作助手', exact: true }).click();
+  await expect(page.getByRole('row').filter({ hasText: '过期令牌' })).toContainText('已过期');
+  await page.getByRole('button', { name: '创建令牌', exact: true }).click(); const form = page.getByRole('dialog', { name: '创建 MCP 令牌', exact: true });
+  await form.getByRole('textbox', { name: '令牌名称', exact: true }).fill('桌面客户端');
+  await form.getByRole('textbox', { name: 'IP / CIDR 白名单（可选）', exact: true }).fill('192.0.2.1\n192.0.2.0/24');
+  await form.getByRole('combobox', { name: '授权项目', exact: true }).click(); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); await page.keyboard.press('Escape');
+  await form.getByRole('combobox', { name: '授权工具', exact: true }).click(); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); await page.keyboard.press('Escape');
+  await form.getByRole('button', { name: '创建', exact: true }).click(); const secret = page.getByRole('dialog', { name: '保存 MCP 密钥', exact: true });
+  await expect(secret.getByLabel('一次性 MCP 密钥')).toHaveText('fixture-once-secret');
+  expect(data.tokenState.creates[0]).toEqual({ name: '桌面客户端', expires_at: null, allowed_ips: ['192.0.2.1', '192.0.2.0/24'], project_ids: ['10'], tool_names: ['workbench__read_project'] });
+  expect(await page.evaluate(() => Object.values(localStorage).join('').includes('fixture-once-secret'))).toBe(false);
+  await secret.getByRole('button', { name: '已保存，关闭', exact: true }).click(); await expect(page.getByText('fixture-once-secret', { exact: true })).toHaveCount(0);
+  await page.reload(); await page.getByRole('tab', { name: '创作助手', exact: true }).click(); await expect(page.getByText('fixture-once-secret', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '删除 桌面客户端', exact: true }).click(); data.tokenState.deleteFailure = true;
+  const confirmation = page.getByRole('dialog', { name: '删除 MCP 令牌', exact: true }); await confirmation.getByRole('button', { name: '确认删除', exact: true }).click();
+  await expect(confirmation).toContainText('删除未确认'); await expect(page.getByRole('row').filter({ hasText: '桌面客户端' })).toHaveCount(1);
+  await confirmation.getByRole('button', { name: '确认删除', exact: true }).click(); await expect(confirmation).toHaveCount(0); await expect(page.getByRole('row').filter({ hasText: '桌面客户端' })).toHaveCount(0);
+  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+});
+
+test('Task11 MCP waits for a list refresh before allowing deletion of its old rows', async ({ page }) => {
+  const data = await generationPolicyFixture(page);
+  data.tokenState.items.push({ id: '300', name: '列表读取中的令牌', token_hint: 'sdmcp_…old', project_ids: ['10'], tool_names: ['workbench__read_project'], expires_at: null, allowed_ips: [], created_at: '2026-10-29T00:00:00Z' });
+  await page.goto('/ai_config'); await page.getByRole('tab', { name: '创作助手', exact: true }).click();
+  const remove = page.getByRole('button', { name: '删除 列表读取中的令牌', exact: true }); await expect(remove).toBeEnabled();
+  let release!: () => void, started!: () => void;
+  const wait = new Promise<void>(resolve => { release = resolve; }); const requested = new Promise<void>(resolve => { started = resolve; });
+  await page.route('**/api/v1/account/mcp-tokens', async route => { started(); await wait; return route.fulfill({ json: data.tokenState.items }); });
+  await page.getByRole('button', { name: '读取令牌列表', exact: true }).click(); await requested;
+  try { await expect(remove).toBeDisabled(); } finally { release(); }
+  await expect(remove).toBeEnabled();
+  expect(data.tokenState.deletions).toHaveLength(0); expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+});
 
 async function toolsFixture(page: Page) {
   const data = await configsFixture(page);

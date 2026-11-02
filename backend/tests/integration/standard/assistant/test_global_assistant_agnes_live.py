@@ -9,9 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 import tests.integration.standard.assistant.test_global_assistant_tasks as task_tests
-from short_drama.agent.gateway.langchain import LangChainGateway
-from short_drama.agent.harness.runtime import HarnessRuntime
 from short_drama.agent.memory.runtime import AgentMemoryRuntime
+from short_drama.agent.runtime.executor import AgentRuntime
+from short_drama.agent.tools.registry import get_spec
 from short_drama.core.config import Settings
 from short_drama.domain import Asset, ShotScript
 from short_drama.domain.assistant.conversations.models import AgentMessage
@@ -26,6 +26,7 @@ from short_drama.service.creation.assets.management.assets import AssetService
 from short_drama.service.projects.management.project import ProjectService
 from short_drama.service.skills.catalog.skill import AgentSkillService
 from tests.integration.canvas.assistant.test_canvas_agnes_live import assert_no_secret, live_key
+from tests.support.assistant_live import RunLedgerObservation
 
 pytestmark = [
     pytest.mark.integration,
@@ -56,35 +57,19 @@ def global_live_workspace(db_session, request):
     return factory, settings, model.id
 
 
-class _ObservedGateway(LangChainGateway):
-    def __init__(self, settings):
-        super().__init__(settings)
-        self.inputs, self.outputs = [], []
-
-    async def decide(self, snapshot, credential, **kwargs):
-        # Never save the snapshot or credential. All calls use the actual gateway and transport.
-        self.inputs.append([item.model_dump(mode="json") for item in kwargs["messages"]])
-        result = await super().decide(snapshot, credential, **kwargs)
-        self.outputs.append({"protocol": result["protocol"], "usage": result["usage"]})
-        return result
-
-
-def _finish(runtime, run_id, *, maximum=12):
-    for _index in range(maximum):
-        with runtime.factory() as session:
-            run = session.get(AgentRun, run_id)
-            if run.status == "succeeded":
-                return
-            assert run.status in {"queued", "running"}, run.error
-            version = run.message_version
-        runtime.execute_one(run_id, version)
-    pytest.fail("The real V3 task did not finish within the bounded decision count")
+def _finish(runtime, run_id):
+    with runtime.factory() as session:
+        version = session.get(AgentRun, run_id).message_version
+    runtime.execute(run_id, version)
+    with runtime.factory() as session:
+        run = session.get(AgentRun, run_id)
+        assert run.status == "succeeded", run.error
 
 
 def _write_report(directory: Path, gateway, **facts):
     report = {
         "model": "agnes-3.0-flash",
-        "scope": "real HarnessRuntime and LangChainGateway; disposable MySQL",
+        "scope": "real AgentRuntime and RunModelLedger; disposable MySQL",
         "submissions": len(gateway.outputs),
         "segments": gateway.outputs,
         **facts,
@@ -155,8 +140,8 @@ def test_global_assistant_agnes_creates_real_structures_without_implicit_body_or
             {"content": content, "model_config_id": model, "execution_target": target},
             "live-structure-message",
         )
-    gateway = _ObservedGateway(settings)
-    runtime = HarnessRuntime(factory, settings, gateway)
+    gateway = RunLedgerObservation(factory, settings)
+    runtime = AgentRuntime(factory, settings, transport=gateway.transport)
     _finish(runtime, accepted.run.id)
     with factory() as session:
         operations = session.scalars(
@@ -165,10 +150,10 @@ def test_global_assistant_agnes_creates_real_structures_without_implicit_body_or
         writes = [
             row
             for row in operations
-            if row.tool_name in {"apply_standard_patch", "apply_canvas_patch"}
+            if row.tool_name in {"workbench__apply_standard_patch", "workbench__apply_canvas_patch"}
         ]
         assert writes and all(row.status == "succeeded" for row in writes)
-        assert not any(row.tool_name == "submit_generation_batch" for row in operations)
+        assert not any(row.tool_name == "workbench__submit_generation_batch" for row in operations)
         if mode == "standard":
             assets = session.scalars(
                 select(Asset).where(Asset.project_id == project.id, Asset.kind == "character")
@@ -185,7 +170,7 @@ def test_global_assistant_agnes_creates_real_structures_without_implicit_body_or
             assert len(nodes) == 3 and {node.kind for node in nodes} == {"text", "image"}
         before = len(operations)
         version = session.get(AgentRun, accepted.run.id).message_version
-    runtime.execute_one(accepted.run.id, version)
+    runtime.execute(accepted.run.id, version)
     assert "PRIVATE_UNSELECTED" not in json.dumps(gateway.inputs, ensure_ascii=False)
     with factory() as session:
         assert len(session.scalars(select(AgentOperation)).all()) == before
@@ -216,11 +201,11 @@ def test_global_assistant_agnes_reads_real_memory_before_answering(global_live_w
             },
             "live-memory-question",
         )
-    gateway = _ObservedGateway(settings)
-    _finish(HarnessRuntime(factory, settings, gateway), accepted.run.id)
+    gateway = RunLedgerObservation(factory, settings)
+    _finish(AgentRuntime(factory, settings, transport=gateway.transport), accepted.run.id)
     with factory() as session:
         reads = session.scalars(
-            select(AgentOperation).where(AgentOperation.tool_name == "read_memory")
+            select(AgentOperation).where(AgentOperation.tool_name == "runtime__read_memory")
         ).all()
         assert reads and all(row.status == "succeeded" for row in reads)
         assert str(memory.id) in json.dumps([row.arguments for row in reads])
@@ -238,8 +223,8 @@ def test_global_assistant_agnes_task_compaction_keeps_early_constraints(
     _conversation, accepted, _store, _claim, job = task_tests.task_constraint_job(
         global_live_workspace, repeat=80
     )
-    gateway = _ObservedGateway(settings)
-    AgentMemoryRuntime(factory, settings, gateway).execute_one(job.id, 1)
+    gateway = RunLedgerObservation(factory, settings)
+    AgentMemoryRuntime(factory, settings, transport=gateway.transport).execute_one(job.id, 1)
     with factory() as session:
         settled = session.get(AgentMemoryJob, job.id)
         assert settled.status == "succeeded", settled.error
@@ -260,7 +245,7 @@ def test_global_assistant_agnes_asks_about_incompatible_manual_methods(
         skills = []
         for index, (title, ending) in enumerate((("团圆方法", "团圆"), ("永别方法", "永别"))):
             skills.append(
-                AgentSkillService(session, settings).create(
+                AgentSkillService(session, settings, tool_lookup=get_spec).create(
                     {
                         "name": title,
                         "slug": f"ending-{index}",
@@ -283,8 +268,8 @@ def test_global_assistant_agnes_asks_about_incompatible_manual_methods(
             },
             "live-method-conflict",
         )
-    gateway = _ObservedGateway(settings)
-    _finish(HarnessRuntime(factory, settings, gateway), accepted.run.id)
+    gateway = RunLedgerObservation(factory, settings)
+    _finish(AgentRuntime(factory, settings, transport=gateway.transport), accepted.run.id)
     with factory() as session:
         answer = session.scalar(
             select(AgentMessage.content).where(AgentMessage.role == "assistant")
@@ -292,8 +277,12 @@ def test_global_assistant_agnes_asks_about_incompatible_manual_methods(
         assert "团圆" in answer and "永别" in answer
         assert any(word in answer for word in ("选择", "优先", "主要", "为准"))
         assert "？" in answer or "?" in answer
-        task = session.get(AgentTask, accepted.task.id)
-        assert (
-            len([item for item in task.effective_state["skill_activations"] if item["active"]]) == 2
-        )
+        loads = session.scalars(
+            select(AgentOperation).where(
+                AgentOperation.run_id == accepted.run.id,
+                AgentOperation.tool_name == "runtime__load_skill",
+                AgentOperation.status == "succeeded",
+            )
+        ).all()
+        assert len({item.result["activation_id"] for item in loads}) == 2
     _write_report(tmp_path, gateway, answer=answer)

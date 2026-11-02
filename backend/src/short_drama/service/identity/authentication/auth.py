@@ -15,7 +15,12 @@ from sqlalchemy.exc import IntegrityError
 
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import ConfigurationError, WorkflowError
-from short_drama.core.identity import ActorContext, token_hash
+from short_drama.core.identity import (
+    ActorContext,
+    SessionActorContext,
+    require_session_actor,
+    token_hash,
+)
 from short_drama.dao.identity.accounts.identity import IdentityDAO
 from short_drama.db.scope.resource_scope import scope_of
 from short_drama.domain.identity.accounts.user import User, UserSession
@@ -49,8 +54,9 @@ class AuthService:
                 raise WorkflowError("authentication_required", "Please sign in", 401)
             return user_dto(user)
 
-    def logout(self, actor: ActorContext | None) -> None:
+    def logout(self, actor: SessionActorContext | None) -> None:
         if actor is not None:
+            actor = require_session_actor(actor)
             with self.factory.begin() as session:
                 IdentityDAO(session).revoke_session(actor.session_id, utcnow())
 
@@ -285,12 +291,12 @@ class AuthService:
             if not row:
                 raise WorkflowError("authentication_required", "Please sign in", 401)
             login, user = row
-            return ActorContext(
-                user.id,
-                user.username,
-                user.email,
-                user.email_verified_at is not None,
-                login.id,
-                login.csrf_hash,
-                request_id,
+            return SessionActorContext(
+                user_id=user.id,
+                username=user.username,
+                email=user.email,
+                verified=user.email_verified_at is not None,
+                session_id=login.id,
+                csrf_hash=login.csrf_hash,
+                request_id=request_id,
             )

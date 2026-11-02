@@ -11,7 +11,7 @@ from sqlalchemy import event, func, select, update
 from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.domain import Project, ProjectCanvas, ProjectCanvasSettings
 from short_drama.domain.canvas.document.canvas import (
     CanvasEdge,
@@ -67,14 +67,14 @@ def test_workspace_batches_paged_documents_and_keeps_private_projection_scoped(d
 
 
 def actor(user_id=1):
-    return ActorContext(
-        user_id,
-        f"canvas{user_id}",
-        f"canvas{user_id}@example.test",
-        True,
-        user_id,
-        "csrf",
-        f"canvas-test-{user_id}",
+    return SessionActorContext(
+        user_id=user_id,
+        username=f"canvas{user_id}",
+        email=f"canvas{user_id}@example.test",
+        verified=True,
+        session_id=user_id,
+        csrf_hash="csrf",
+        request_id=f"canvas-test-{user_id}",
     )
 
 
@@ -199,9 +199,10 @@ def test_workspace_model_preferences_are_private_and_never_force_conflicts(db_se
     service = CanvasWorkspaceService(session)
     assert service.read_models()["row_version"] == "0"
     request = CanvasWorkspacePreferencesRequest(
-        expected_row_version="0", preferences={"systemPrompt": "私人生成指令", "size": "16:9"}
+        expected_row_version="0", preferences={"audioInstructions": "私人生成指令", "size": "16:9"}
     )
-    assert service.save_preferences(request)["row_version"] == "1"
+    saved = service.save_preferences(request)
+    assert saved["row_version"] == "1" and saved["preferences"] == request.preferences
     with pytest.raises(WorkflowError) as error:
         service.save_preferences(request)
     assert error.value.code == "canvas_model_preferences_conflict"

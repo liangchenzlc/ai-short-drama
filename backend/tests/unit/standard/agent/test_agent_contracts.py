@@ -5,6 +5,25 @@ from short_drama.core.config import Settings
 from short_drama.schemas.assistant.conversations.engine import ConversationCreate, ConversationPatch
 
 
+def test_agent_model_timeout_defaults_to_120_without_dotenv(monkeypatch):
+    for name in ("AGENT_MODEL_TIMEOUT_SECONDS", "AUTH_ENABLED", "AGENT_ENABLED"):
+        monkeypatch.delenv(name, raising=False)
+    assert Settings(_env_file=None).agent_model_timeout_seconds == 120
+
+
+@pytest.mark.parametrize("value", [1, 300, 600])
+def test_agent_model_timeout_reads_bounded_environment(monkeypatch, value):
+    monkeypatch.setenv("AGENT_MODEL_TIMEOUT_SECONDS", str(value))
+    assert Settings(_env_file=None).agent_model_timeout_seconds == value
+
+
+@pytest.mark.parametrize("value", [0, 601])
+def test_agent_model_timeout_rejects_out_of_range(monkeypatch, value):
+    monkeypatch.setenv("AGENT_MODEL_TIMEOUT_SECONDS", str(value))
+    with pytest.raises(ValidationError, match="agent_model_timeout_seconds"):
+        Settings(_env_file=None)
+
+
 def test_agent_defaults_on_and_allows_explicit_opt_out(monkeypatch):
     monkeypatch.delenv("AGENT_ENABLED", raising=False)
     monkeypatch.delenv("AUTH_ENABLED", raising=False)

@@ -13,8 +13,9 @@ test('project assistant conversation survives stage navigation with decimal stri
 });
 
 test('backend waiting states keep the task active while terminal states permit conversation archive', () => {
-  for (const status of ['queued', 'running', 'waiting_generation', 'waiting_review']) assert.equal(isAgentRunActive(status), true);
-  for (const status of ['succeeded', 'failed', 'cancelled', null]) assert.equal(isAgentRunActive(status), false);
+  for (const status of ['queued', 'running', 'waiting_generation', 'waiting_input']) assert.equal(isAgentRunActive(status), true);
+  for (const status of ['succeeded', 'failed', 'cancelled', 'waiting_review', null]) assert.equal(isAgentRunActive(status), false);
   assert.equal(agentRunLabel('waiting_generation'), '等待生成结果');
-  assert.equal(agentRunLabel('waiting_review'), '等待确认');
+  assert.equal(agentRunLabel('waiting_input'), '等待回答');
+  assert.equal(agentRunLabel('waiting_review'), '状态待核对');
 });

@@ -255,7 +255,9 @@ class MediaAssetService(BaseService):
                 "expected_context_hash": digest,
             }
         )
-        return self._apply_shot_video(asset, record, parsed)
+        before_storyboard_version = str(creation.storyboard_version)
+        result = self._apply_shot_video(asset, record, parsed)
+        return {"before_storyboard_version": before_storyboard_version, **result}
 
     def _apply_shot_video(self, asset, record, parsed):
         from short_drama.service.creation.storyboard.videos.video_context import video_context_hash

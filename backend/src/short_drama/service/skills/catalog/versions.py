@@ -5,6 +5,7 @@ from pathlib import PurePath
 
 from pydantic import ValidationError
 from sqlalchemy import and_, func, select
+from sqlalchemy.orm import defer
 
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.skill_catalog import BUILTIN_NAMES as BUILTIN_NAMES
@@ -44,8 +45,10 @@ def read_resource_manifest(item: dict) -> SkillResourceRead:
         ) from error
 
 
-def skill_issues(metadata: dict, instructions: str, resources: list[dict]) -> list[str]:
-    issues = platform_tool_issues(metadata.get("required_tools", []))
+def skill_issues(
+    metadata: dict, instructions: str, resources: list[dict], *, tool_lookup=None
+) -> list[str]:
+    issues = platform_tool_issues(metadata.get("required_tools", []), tool_lookup)
     issues.extend(
         local_reference_issues(
             instructions,
@@ -111,13 +114,17 @@ def builtin_skills(session, *, summary=False):
     return [result[key] for key in BUILTIN_NAMES if key in result]
 
 
-def current_version(session, skill_key: str, version: int):
-    return session.scalar(
-        select(AgentSkillVersion).where(
-            AgentSkillVersion.skill_key == skill_key,
-            AgentSkillVersion.content_version == version,
-        )
+def current_version(session, skill_key: str, version: int, *, metadata_only=False):
+    query = select(AgentSkillVersion).where(
+        AgentSkillVersion.skill_key == skill_key,
+        AgentSkillVersion.content_version == version,
     )
+    if metadata_only:
+        query = query.options(
+            defer(AgentSkillVersion.instructions, raiseload=True),
+            defer(AgentSkillVersion.resources, raiseload=True),
+        )
+    return session.scalar(query)
 
 
 def skill_setting(session, owner: int, key: str, *, lock: bool = False):
@@ -151,7 +158,9 @@ def publish_version_locked(session, row, metadata: dict, instructions: str, reso
     return version
 
 
-def read_skill(row, version=None, setting=None, *, summary=False, resource_count=0):
+def read_skill(
+    row, version=None, setting=None, *, summary=False, resource_count=0, tool_lookup=None
+):
     if version is None:
         raise WorkflowError("agent_skill_version_missing", "Skill 内容版本不存在，请重新导入", 409)
     metadata = dict(version.package_metadata)
@@ -179,7 +188,9 @@ def read_skill(row, version=None, setting=None, *, summary=False, resource_count
         instructions=version.instructions,
         resources=[read_resource_manifest(item) for item in resources],
     )
-    values["issues"] = skill_issues(metadata, values["instructions"], resources)
+    values["issues"] = skill_issues(
+        metadata, values["instructions"], resources, tool_lookup=tool_lookup
+    )
     values["compatible"] = not values["issues"]
     return SkillRead.model_validate(values)
 
@@ -197,10 +208,10 @@ def markdown_content(data, filename):
     return name[:255], content
 
 
-def freeze_skills(session, owner_user_id, selections):
+def freeze_skills(session, owner_user_id, selections, *, tool_lookup=None, metadata_only=False):
     """Called inside the caller's transaction; selected versions cannot drift."""
     lock_skill_owner(session, owner_user_id)
-    builtins = {item.id: item for item in builtin_skills(session)}
+    builtins = {item.id: item for item in builtin_skills(session, summary=metadata_only)}
     frozen = []
     for selection in selections:
         if selection.id in builtins:
@@ -213,7 +224,9 @@ def freeze_skills(session, owner_user_id, selections):
                         "settings_version": setting.row_version,
                     }
                 )
-            version = current_version(session, selection.id, skill.content_version)
+            version = current_version(
+                session, selection.id, skill.content_version, metadata_only=metadata_only
+            )
         else:
             try:
                 identifier = parse_identifier(selection.id)
@@ -231,9 +244,15 @@ def freeze_skills(session, owner_user_id, selections):
             )
             if row is None:
                 raise NotFound("Skill does not exist")
-            version = current_version(session, str(row.id), row.content_version)
+            version = current_version(
+                session, str(row.id), row.content_version, metadata_only=metadata_only
+            )
             skill = read_skill(
-                row, version, skill_setting(session, owner_user_id, str(row.id), lock=True)
+                row,
+                version,
+                skill_setting(session, owner_user_id, str(row.id), lock=True),
+                tool_lookup=tool_lookup,
+                summary=metadata_only,
             )
         if not skill.enabled:
             raise WorkflowError("agent_skill_disabled", "所选技能已停用，请重新选择", 422)
@@ -247,6 +266,6 @@ def freeze_skills(session, owner_user_id, selections):
         if version:
             item["version_id"] = str(version.id)
         frozen.append(item)
-    if sum(len(item["instructions"].encode("utf-8")) for item in frozen) > 131072:
+    if sum(len(item.get("instructions", "").encode("utf-8")) for item in frozen) > 131072:
         raise WorkflowError("agent_skills_too_large", "已加载技能正文合计不能超过 128 KiB", 422)
     return frozen

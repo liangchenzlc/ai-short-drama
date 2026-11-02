@@ -298,8 +298,7 @@ class AgentMemoryJob(Base):
         UniqueConstraint("owner_user_id", "request_key", name="uk_agent_memory_job_request"),
         Index("idx_agent_memory_jobs_due", "status", "message_status", "next_run_at", "id"),
         CheckConstraint(
-            "kind IN ('summary','extract','task_state','purge') "
-            "AND from_seq > 0 AND to_seq >= from_seq",
+            "kind IN ('summary','extract','purge') AND from_seq > 0 AND to_seq >= from_seq",
             name="ck_agent_memory_job_kind",
         ),
         CheckConstraint(

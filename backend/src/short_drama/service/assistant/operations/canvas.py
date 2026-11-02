@@ -9,7 +9,6 @@ from typing import Any
 from sqlalchemy import select
 
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
 from short_drama.domain import AIModelConfig, Project, ProjectCanvas
 from short_drama.domain.canvas.document.canvas import CanvasNode, CanvasNodeUserState
 from short_drama.schemas.assistant.operations.canvas import AssistantCanvasPatch
@@ -18,6 +17,7 @@ from short_drama.schemas.canvas.document.canvas import CanvasDocument
 from short_drama.service.base import BaseService
 from short_drama.service.canvas.document.canvas import CanvasService
 from short_drama.service.canvas.document.document import split_document
+from short_drama.service.identity.authentication.actor import business_actor_locked
 
 # Version 1 matches the four native NODE_SPECS; no source interaction or styling is replaced.
 CANVAS_NODE_SPECS = {
@@ -182,8 +182,8 @@ class AssistantCanvasService(BaseService):
         if original_actor is not None and original_actor.user_id != owner:
             raise NotFound("画布写入账号不匹配")
         # Worker sessions are unscoped; this identity comes only from the durable task owner.
-        self.session.info["actor"] = original_actor or ActorContext(
-            owner, "", "", True, 0, "", f"assistant:{operation_id}"
+        self.session.info["actor"] = original_actor or business_actor_locked(
+            self.session, user_id=owner, request_id=f"assistant:{operation_id}"
         )
         try:
             return self._apply(
@@ -592,3 +592,28 @@ def canvas_node_references(value, *, reference=False) -> set[str]:
                 result.add(field.removeprefix("field:").rsplit(":", 1)[0])
         return result
     return set()
+
+
+def apply_canvas_patch_locked(session, identity, values, receipt_id, settings):
+    from short_drama.dao.assistant.operations.invocation import BusinessInvocationDAO
+
+    if identity.scope.subject_policy == "selected":
+        selected = identity.scope.allowed_subjects.get("canvas_node", frozenset())
+        allowed = {
+            key: snapshot["write_versions"]
+            for key in selected
+            if (snapshot := identity.scope.subject_snapshots.get(f"canvas_node:{key}"))
+            and snapshot.get("source_id") == values.canvas_id
+        }
+    else:
+        allowed = BusinessInvocationDAO(session).canvas_versions(
+            values.project_id, values.canvas_id, identity.actor.user_id
+        )
+    return AssistantCanvasService(session).apply_locked(
+        values.project_id,
+        values.canvas_id,
+        values.patch,
+        owner_user_id=identity.actor.user_id,
+        operation_id=receipt_id,
+        allowed_node_versions=allowed,
+    )

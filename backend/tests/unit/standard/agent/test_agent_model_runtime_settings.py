@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 from pydantic import SecretStr
 
+from short_drama.agent.gateway.contracts import AgentCapabilityEvidence
 from short_drama.agent.gateway.langchain import FRAMEWORK_VERSION
-from short_drama.agent.gateway.protocol import AgentCapabilityEvidence
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import WorkflowError
 from short_drama.service.ai_config.management.assistant_models import (

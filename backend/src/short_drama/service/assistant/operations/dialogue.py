@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
 from short_drama.dao.assistant.context.context import AssistantContextDAO
 from short_drama.domain import AIModelConfig, AsyncTask, MediaAsset, Project
 from short_drama.domain.assistant.operations.media import AgentMediaRequest
@@ -22,6 +21,7 @@ from short_drama.schemas.creation.sound.tracks.sound import Dialogue, SoundDocum
 from short_drama.service.creation.assembly.document.assembly import ProjectAssemblyService
 from short_drama.service.creation.sound.tracks.sound import ProjectSoundService, line_hash
 from short_drama.service.creation.sound.voices.voices import project_mode
+from short_drama.service.identity.authentication.actor import business_actor_locked
 from short_drama.utils.json_digest import digest
 
 SOUND_FIELDS = frozenset(
@@ -151,8 +151,8 @@ def apply_sound_lines_locked(
     original = {
         key: session.info[key] for key in ("actor", "resource_scope") if key in session.info
     }
-    session.info["actor"] = actor or ActorContext(
-        owner_user_id, "", "", True, 0, "", f"assistant-sound:{operation_id}"
+    session.info["actor"] = actor or business_actor_locked(
+        session, user_id=owner_user_id, request_id=f"assistant-sound:{operation_id}"
     )
     try:
         return _apply_sound_lines_locked(
@@ -402,7 +402,17 @@ def dialogue_audio_may_submit(
     settings: Settings | None = None,
     check_flags: bool = True,
 ) -> bool:
-    target = intent.frozen_target
+    return dialogue_target_matches(
+        session,
+        owner,
+        intent.frozen_target,
+        _expected_binding(session, intent),
+        settings=settings,
+        check_flags=check_flags,
+    )
+
+
+def dialogue_target_matches(session, owner, target, expected, *, settings=None, check_flags=True):
     try:
         _fields, binding = _current(
             session,
@@ -414,7 +424,7 @@ def dialogue_audio_may_submit(
         )
     except BusinessError:
         return False
-    return binding == _expected_binding(session, intent)
+    return binding == expected
 
 
 def settle_dialogue_audio_locked(
@@ -471,8 +481,8 @@ def settle_dialogue_audio_locked(
     original = {
         key: session.info[key] for key in ("actor", "resource_scope") if key in session.info
     }
-    session.info["actor"] = actor or ActorContext(
-        owner, "", "", True, 0, "", f"assistant-media:{intent.operation_id}"
+    session.info["actor"] = actor or business_actor_locked(
+        session, user_id=owner, request_id=f"assistant-media:{intent.operation_id}"
     )
     before = _expected_binding(session, intent)
     undo_before = sound_audio_state(session, target["project_id"], target["id"])

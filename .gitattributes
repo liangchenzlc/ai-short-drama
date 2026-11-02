@@ -2,3 +2,5 @@
 /frontend/canvas/** text=auto eol=lf
 # 第三方图标清单校验 npm 包的原始字节（包含 CRLF），不得归一化。
 /frontend/canvas/vendor/lobehub-icons/** -text
+# 历史迁移夹具按原始 LF 字节校验 SHA256，Windows 签出也须保持相同字节。
+/backend/tests/fixtures/agent_runtime_legacy/schema.mysql8.sql text eol=lf

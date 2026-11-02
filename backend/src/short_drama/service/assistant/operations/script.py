@@ -5,12 +5,12 @@ from copy import deepcopy
 from sqlalchemy import select
 
 from short_drama.agent.task.state import task_event
-from short_drama.agent.tools.script import bound_document
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain.assistant.tasks.task import AgentOperation
 from short_drama.schemas.assistant.operations.script import ScriptProposalRead
 from short_drama.schemas.base import parse_identifier
 from short_drama.schemas.creation.writing.script.documents import WritingVersion
+from short_drama.service.assistant.operations.script_read import bound_document
 from short_drama.service.creation.writing.script.documents import ProjectWritingService
 
 
@@ -27,7 +27,7 @@ def _load(service, operation_id):
         .execution_options(populate_existing=True)
     )
     if (
-        operation.tool_name != "propose_script_patch"
+        operation.tool_name != "runtime__propose_script_patch"
         or operation.status != "succeeded"
         or not operation.changes
     ):

@@ -16,10 +16,10 @@ from short_drama.domain import (
 )
 from short_drama.domain.assistant.operations.media import AgentMediaRequest
 from short_drama.schemas.base import UINT64_MAX
-from short_drama.service.assistant.operations.media import lock_media_project
 from short_drama.service.creation.sound.voices.context import native_context
 from short_drama.service.creation.storyboard.videos.video_context import video_context_hash
 from short_drama.service.generations.admission.context import GenerationContextService
+from short_drama.service.generations.admission.project_scope import lock_media_project
 from short_drama.service.media.image_tools.adoption import _target_state
 
 
@@ -96,7 +96,10 @@ def shot_video_may_submit(
     *,
     settings: Settings | None = None,
 ) -> bool:
-    target = intent.frozen_target
+    return shot_video_target_matches(session, owner, intent.frozen_target, settings=settings)
+
+
+def shot_video_target_matches(session, owner, target, *, settings=None):
     try:
         _project, shot, image, context, native = _current(
             session, owner, target["project_id"], target["id"], settings=settings

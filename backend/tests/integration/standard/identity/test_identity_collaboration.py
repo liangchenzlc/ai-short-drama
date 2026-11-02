@@ -325,11 +325,17 @@ def test_owner_filters_cover_aliases_counts_and_bulk_writes(identity_app):
     owner, _ = account(identity_app, "query_owner")
     _, outsider = account(identity_app, "query_outsider")
     work = project(owner)
-    from short_drama.core.identity import ActorContext
+    from short_drama.core.identity import SessionActorContext
 
     with identity_app[1].begin() as session:
-        session.info["actor"] = ActorContext(
-            int(outsider["id"]), "outsider", outsider["email"], True, 1, "", "test"
+        session.info["actor"] = SessionActorContext(
+            user_id=int(outsider["id"]),
+            username="outsider",
+            email=outsider["email"],
+            verified=True,
+            session_id=1,
+            csrf_hash="",
+            request_id="test",
         )
         alias = aliased(Project)
         assert session.scalar(select(func.count()).select_from(alias)) == 0

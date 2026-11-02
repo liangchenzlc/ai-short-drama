@@ -59,17 +59,34 @@ def validate_staged_resources_locked(session, resources: list[dict]) -> None:
             )
 
 
-def lock_builtin_catalog(session) -> None:
-    anchor = session.scalar(
-        select(AgentSkillVersion.id)
-        .where(
-            AgentSkillVersion.skill_key == "novel.v1",
-            AgentSkillVersion.content_version == 1,
-            AgentSkillVersion.owner_user_id.is_(None),
+def builtin_catalog_anchor(factory) -> int:
+    # 独立短读先结束，互斥事务等待后才能建立最新的 RR 引用快照。
+    with factory.begin() as session:
+        anchor = session.scalar(
+            select(AgentSkillVersion.id).where(
+                AgentSkillVersion.skill_key == "novel.v1",
+                AgentSkillVersion.content_version == 1,
+                AgentSkillVersion.owner_user_id.is_(None),
+            )
         )
-        .with_for_update()
-    )
     if anchor is None:
+        raise WorkflowError(
+            "agent_skill_catalog_not_ready", "请先执行 Agent 005 迁移并回填旧内置版本", 503
+        )
+    return anchor
+
+
+def lock_builtin_catalog(session, anchor_id: int) -> None:
+    # 主键点锁避免发布者在版本次键 next-key 队列中阻挡对方的追加插入。
+    anchor = session.scalar(
+        select(AgentSkillVersion).where(AgentSkillVersion.id == anchor_id).with_for_update()
+    )
+    if (
+        anchor is None
+        or anchor.skill_key != "novel.v1"
+        or anchor.content_version != 1
+        or anchor.owner_user_id is not None
+    ):
         raise WorkflowError(
             "agent_skill_catalog_not_ready", "请先执行 Agent 005 迁移并回填旧内置版本", 503
         )
@@ -131,9 +148,10 @@ def collect_unreferenced_skill_resources(
             "agent_skill_gc_storage_unavailable", f"列举 Skill 暂存资料失败：{error}", 503
         ) from error
     for owner, objects in grouped.items():
+        anchor_id = builtin_catalog_anchor(factory) if owner == "builtin" else None
         with factory.begin() as session:
             if owner == "builtin":
-                lock_builtin_catalog(session)
+                lock_builtin_catalog(session, anchor_id)
                 condition = AgentSkillVersion.owner_user_id.is_(None)
             else:
                 session.scalar(select(User.id).where(User.id == int(owner)).with_for_update())

@@ -1,14 +1,24 @@
 """Authenticated messages, reviews and cancellation; execution belongs to workers."""
 
 from copy import deepcopy
+from datetime import timedelta
+from uuid import uuid4
 
 from sqlalchemy import func, select
 
+from short_drama.agent.core.access import LeaseLost, lock_run, may_decide
 from short_drama.agent.core.events import (
     budget_limits,
     initial_usage,
+    public_event_payload,
 )
+from short_drama.agent.core.fence import owns_execution
+from short_drama.agent.core.state import finish_locked, mark_scheduled, wait_locked
+from short_drama.agent.runtime.events import finish_trace_locked, run_state_locked
+from short_drama.agent.runtime.lease import ExecutionClaim
+from short_drama.agent.session.lifecycle import finalize_deletion_locked
 from short_drama.core.exceptions import NotFound, WorkflowError
+from short_drama.core.identity import require_session_actor
 from short_drama.dao.assistant.execution.run import AgentRunDAO
 from short_drama.domain.assistant.conversations.models import (
     AgentConversation,
@@ -61,7 +71,7 @@ def read_run(session, run, *, queue_position=None):
                     select(func.count(AgentRun.id)).where(
                         AgentRun.conversation_id == run.conversation_id,
                         AgentRun.id != run.id,
-                        AgentRun.status.in_(("running", "waiting_generation"))
+                        AgentRun.status.in_(("running", "waiting_generation", "waiting_input"))
                         | ((AgentRun.status == "queued") & (AgentRun.id < run.id)),
                     )
                 )
@@ -80,7 +90,6 @@ def read_run(session, run, *, queue_position=None):
         error={"code": run.error.get("code", "agent_failed")} if run.error else None,
         usage={key: (run.usage or {}).get(key, 0) for key in initial_usage()},
         budget={key: (run.budget or {}).get(key, 0) for key in budget_limits()},
-        review=None,
         awaiting_artifact_ids=run.checkpoint.get("awaiting_artifacts", []),
         created_at=run.created_at,
         updated_at=run.updated_at,
@@ -91,9 +100,255 @@ def read_run(session, run, *, queue_position=None):
 
 
 class AgentRunService(AgentConversationService):
-    def __init__(self, session, settings, storage=None):
+    def __init__(self, session, settings, storage=None, *, tool_lookup=None):
         super().__init__(session, settings)
         self._storage = storage
+        self.tool_lookup = tool_lookup
+
+    def claim(self, run_id: int, message_version: int) -> ExecutionClaim | None:
+        from short_drama.agent.core.events import TERMINAL, append_event
+        from short_drama.agent.runtime.claims import preceding_execution
+        from short_drama.agent.task.queries import task_for_run
+        from short_drama.agent.task.state import pending_task_locked
+        from short_drama.agent.tools.registry import available_specs
+        from short_drama.service.assistant.execution.scope import root_scope_locked
+
+        if not self.settings.agent_enabled:
+            return None
+        with self.session.begin():
+            rows = lock_run(self.session, run_id)
+            if rows is None:
+                return None
+            project, conversation, run = rows
+            now = utcnow()
+            if (
+                run.status not in {"queued", "running", "waiting_generation", "waiting_input"}
+                or run.message_version != message_version
+                or run.message_status not in {"pending", "publishing", "published"}
+                or run.lease_token is not None
+                and run.message_status != "publishing"
+                or run.next_run_at is None
+                or run.next_run_at > now
+            ):
+                return None
+            task = task_for_run(self.session, run)
+            if run.cancel_requested or not may_decide(self.session, project, conversation, run):
+                self._finish_interrupted_locked(
+                    conversation,
+                    task,
+                    run,
+                    "cancelled",
+                    {"code": "agent_stopped" if run.cancel_requested else "access_revoked"},
+                )
+                return None
+            if preceding_execution(self.session, run) is not None:
+                return None
+            if task.control_state == "stop_pending":
+                from short_drama.agent.task.controls import apply_controls_locked
+
+                apply_controls_locked(
+                    self.session,
+                    conversation,
+                    task,
+                    run,
+                )
+                if run.status in TERMINAL or run.cancel_requested:
+                    return None
+            root = root_scope_locked(self.session, run)
+            names = (run.checkpoint or {}).get("permitted_tool_names")
+            if names is None:
+                specs = available_specs(pending_task_locked(self.session, task), media_enabled=True)
+                names = [spec.name for spec in specs]
+                run.config_snapshot = {
+                    **run.config_snapshot,
+                    "assistant_settings": {
+                        **run.config_snapshot["assistant_settings"],
+                        "tool_descriptions": {spec.name: spec.description for spec in specs},
+                    },
+                }
+            run.checkpoint = {
+                **run.checkpoint,
+                "permitted_tool_names": names,
+                "runtime": {"active_since": now.isoformat()},
+            }
+            if run.status == "queued":
+                append_event(
+                    self.session,
+                    conversation,
+                    "run.started",
+                    {"run_id": str(run.id)},
+                    run_id=run.id,
+                )
+            run.status, run.phase, run.message_status = "running", "model", "idle"
+            run.lease_token = uuid4().hex
+            run.lease_until = now + timedelta(seconds=self.settings.agent_lease_seconds)
+            run.started_at, run.updated_at = run.started_at or now, now
+            run_state_locked(self.session, conversation, run)
+            task.status, task.phase = "running", "deciding"
+            task.updated_at, task.row_version = now, task.row_version + 1
+            return ExecutionClaim(
+                run_id=run.id,
+                task_id=task.id,
+                owner_id=run.initiated_by,
+                scope_id=root.id,
+                version=run.message_version,
+                token=run.lease_token,
+                snapshot=deepcopy(run.config_snapshot),
+                budget=deepcopy(run.budget),
+                tool_names=tuple(names),
+                discussion_revision=bool(run.checkpoint.get("discussion_revision")),
+                pending_input=(
+                    not run.checkpoint.get("discussion_revision")
+                    and task.input_revision > task.applied_input_revision
+                ),
+            )
+
+    def renew(self, claim: ExecutionClaim) -> bool:
+        from short_drama.agent.task.queries import task_for_run
+
+        with self.session.begin():
+            rows = lock_run(self.session, claim.run_id)
+            if rows is None:
+                return False
+            project, conversation, run = rows
+            if not owns_execution(run, claim.fence) or run.lease_token is None:
+                return False
+            task = task_for_run(self.session, run)
+            if (
+                not self.settings.agent_enabled
+                or run.cancel_requested
+                or task.control_state == "stop_pending"
+                or not may_decide(self.session, project, conversation, run)
+            ):
+                return False
+            run.lease_until = utcnow() + timedelta(seconds=self.settings.agent_lease_seconds)
+            return True
+
+    def finish(self, claim: ExecutionClaim, *, status: str, content: str = "", error=None):
+        from short_drama.agent.core.events import append_event
+        from short_drama.agent.core.items import KIND_REPLY, allocate_item_seq
+        from short_drama.agent.task.queries import task_for_run
+        from short_drama.utils.snowflake import next_id
+
+        with self.session.begin():
+            rows = lock_run(self.session, claim.run_id)
+            if rows is None:
+                return False
+            project, conversation, run = rows
+            if not run.lease_token or not owns_execution(run, claim.fence):
+                return False
+            task = task_for_run(self.session, run)
+            cancellation = self._cancellation_locked(project, conversation, task, run)
+            if cancellation:
+                status, content, error = "cancelled", "", cancellation
+            if status != "succeeded":
+                return self._finish_interrupted_locked(conversation, task, run, status, error)
+            if not claim.discussion_revision and task.input_revision > task.applied_input_revision:
+                # 与消息受理共用同一把锁；已完成图之外的新输入交给同 Run 下一投递。
+                return mark_scheduled(run, phase="model")
+            if status == "succeeded":
+                if run.checkpoint.get("discussion_revision"):
+                    from short_drama.agent.task.discussion import replace_reply_locked
+
+                    replace_reply_locked(self.session, conversation, run, content)
+                else:
+                    message = AgentMessage(
+                        id=next_id(),
+                        conversation_id=conversation.id,
+                        task_id=run.task_id,
+                        seq=conversation.next_message_seq,
+                        item_seq=allocate_item_seq(conversation),
+                        role="assistant",
+                        kind=KIND_REPLY,
+                        content=content,
+                        references=[],
+                        artifacts=[],
+                        created_at=utcnow(),
+                    )
+                    conversation.next_message_seq += 1
+                    self.session.add(message)
+                    append_event(
+                        self.session,
+                        conversation,
+                        "message.created",
+                        {
+                            "id": str(message.id),
+                            "run_id": str(run.id),
+                            "seq": message.seq,
+                            "item_seq": message.item_seq,
+                            "kind": message.kind,
+                            "role": "assistant",
+                            "content": content,
+                            "artifacts": [],
+                        },
+                        run_id=run.id,
+                    )
+            finished = finish_locked(self.session, conversation, run, status, error)
+            finish_trace_locked(self.session, conversation, run)
+            finalize_deletion_locked(self.session, conversation)
+            return finished
+
+    def wait(self, claim: ExecutionClaim):
+        from short_drama.agent.task.queries import task_for_run
+
+        with self.session.begin():
+            rows = lock_run(self.session, claim.run_id)
+            if rows is None or not rows[2].lease_token or not owns_execution(rows[2], claim.fence):
+                raise LeaseLost()
+            project, conversation, run = rows
+            task = task_for_run(self.session, run)
+            cancellation = self._cancellation_locked(project, conversation, task, run)
+            if cancellation:
+                return self._finish_interrupted_locked(
+                    conversation, task, run, "cancelled", cancellation
+                )
+            from short_drama.dao.assistant.execution.waiting import AgentWaitingDAO
+            from short_drama.service.assistant.execution.waiting import schedule_ready_locked
+
+            pending = [
+                operation
+                for operation in AgentWaitingDAO(self.session).for_run(run.id)
+                if not operation.wait_state["consumed"] and not operation.finished_at
+            ]
+            user_input = any(operation.wait_state["kind"] == "user_input" for operation in pending)
+            task.status = task.phase = "waiting_input" if user_input else "waiting_media"
+            task.row_version += 1
+            task.updated_at = utcnow()
+            wait_locked(
+                self.session,
+                conversation,
+                run,
+                "waiting_input" if user_input else "waiting_generation",
+            )
+            run_state_locked(self.session, conversation, run)
+            schedule_ready_locked(self.session, conversation, task, run)
+            return True
+
+    def _cancellation_locked(self, project, conversation, task, run):
+        if run.cancel_requested or task.control_state == "stop_pending":
+            return {"code": "agent_stopped"}
+        if not may_decide(self.session, project, conversation, run):
+            return {"code": "access_revoked"}
+        return None
+
+    def _finish_interrupted_locked(self, conversation, task, run, status, error):
+        from short_drama.agent.task.controls import apply_controls_locked
+        from short_drama.service.assistant.execution.interruptions import settle_interrupted_locked
+
+        settle_interrupted_locked(
+            self.session, conversation, run, (error or {}).get("code", "agent_stopped")
+        )
+        if task.control_state == "stop_pending":
+            apply_controls_locked(
+                self.session,
+                conversation,
+                task,
+                run,
+            )
+        finished = finish_locked(self.session, conversation, run, status, error)
+        finish_trace_locked(self.session, conversation, run)
+        finalize_deletion_locked(self.session, conversation)
+        return finished
 
     @property
     def storage(self):
@@ -181,11 +436,14 @@ class AgentRunService(AgentConversationService):
                 key=lambda row: row.id,
             )
             running = next(
-                (row for row in rows if row.status in {"running", "waiting_generation"}), None
+                (
+                    row
+                    for row in rows
+                    if row.status in {"running", "waiting_generation", "waiting_input"}
+                ),
+                None,
             )
-            active = running or next(
-                (row for row in reversed(rows) if row.status == "waiting_review"), None
-            )
+            active = running
             queued = [row for row in rows if row.status == "queued"]
             public = {row.id: row for row in read_runs(self.session, rows)}
             snapshot_cursor = conversation.next_event_seq - 1
@@ -212,6 +470,7 @@ class AgentRunService(AgentConversationService):
         with self._transaction():
             actor = self._actor()
             if verify_session:
+                actor = require_session_actor(actor)
                 user = self.session.get(User, actor.user_id)
                 login = self.session.get(UserSession, actor.session_id)
                 if (
@@ -248,4 +507,13 @@ class AgentRunService(AgentConversationService):
                     raise WorkflowError(
                         "agent_event_resync_required", "事件游标已失效，请重新读取会话快照", 409
                     )
-            return [EventRead.model_validate(row) for row in rows]
+            return [
+                EventRead(
+                    seq=row.seq,
+                    event_type=row.event_type,
+                    run_id=row.run_id,
+                    payload=public_event_payload(row.event_type, row.payload),
+                    created_at=row.created_at,
+                )
+                for row in rows
+            ]

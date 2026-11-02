@@ -1,0 +1,54 @@
+{
+  "at": "2026-10-31T17:43:12.542423+00:00",
+  "actual_parent_cleanup": true,
+  "closed_workers_before_cleanup": true,
+  "owned_containers_stopped": [
+    {
+      "name": "codex-assistant-opensandbox-live-20261030",
+      "id": "c87625e6a5102f351a399a63c03417ed21e26c6cf48e617b37b5ca6336a34490",
+      "stop_exit_code": 0,
+      "running_after": false,
+      "mounts_unchanged": true,
+      "container_retained": true
+    },
+    {
+      "name": "codex-assistant-opensandbox-20261030",
+      "id": "f93e322cda0ab3ae6c2da3684b4ade554e3dbd34382ad98840ca1f15de4dc6fa",
+      "stop_exit_code": 0,
+      "running_after": false,
+      "mounts_unchanged": true,
+      "container_retained": true
+    },
+    {
+      "name": "codex-assistant-rabbitmq-20261029",
+      "id": "719c27c6bcc69ba8d8d290b97238da7bf3172884d6cf4df47acda86496ea1d47",
+      "stop_exit_code": 0,
+      "running_after": false,
+      "mounts_unchanged": true,
+      "container_retained": true
+    },
+    {
+      "name": "codex-assistant-minio-20261029",
+      "id": "0f0f055f814b8cc4f1f4eaa2ccb972f0038cdf49013ec8cf56a0c88ad577fefc",
+      "stop_exit_code": 0,
+      "running_after": false,
+      "mounts_unchanged": true,
+      "container_retained": true
+    },
+    {
+      "name": "codex-assistant-mysql-20261029",
+      "id": "c05b907ffc00ea8b156b0272c9163e4a5da6562b9285b60d57b151e40e224b07",
+      "stop_exit_code": 0,
+      "running_after": false,
+      "mounts_unchanged": true,
+      "container_retained": true
+    }
+  ],
+  "protected_user_services_unchanged": true,
+  "protected_service_count": 4,
+  "volumes_or_data_deleted": false,
+  "application_database_or_services_modified": false,
+  "workspace_and_sdd_retained": true,
+  "git_commit_or_index_mutation": false,
+  "scope": "stop only five exact preverified task containers; preserve containers, mounts and volumes for deferred acceptance"
+}

@@ -1,0 +1,70 @@
+{
+  "at": "2026-10-31T17:49:57.854984+00:00",
+  "actual_parent_commands": true,
+  "all_processes_closed": true,
+  "all_exit_codes_zero": true,
+  "gates": [
+    {
+      "process_closed": true,
+      "ended": "2026-10-31T17:47:56.1192775Z",
+      "exit_code": 0,
+      "command": "node scripts/check-docs.mjs",
+      "started": "2026-10-31T17:47:55.4483947Z",
+      "kind": "docs",
+      "log_source": ".runtime/sdd/2026-10-29-创作助手运行时与工具扩展重构实施/closing-final-docs.log",
+      "log_bytes": 81,
+      "log_sha256": "0ae10ae5a7394a17204cb25f4f92aa6dc34b8ab2ed1d900d29896acc21e631f7",
+      "exit_evidence_sha256": "f1e0e79a3ba7aae1d5c77e28d7e8dd0cbbe6645379844d94a1f22f7207aa93a8"
+    },
+    {
+      "process_closed": true,
+      "ended": "2026-10-31T17:48:00.3640594Z",
+      "started": "2026-10-31T17:47:55.4248412Z",
+      "exit_code": 0,
+      "command": "node scripts/check-quality.mjs",
+      "kind": "quality",
+      "log_source": ".runtime/sdd/2026-10-29-创作助手运行时与工具扩展重构实施/closing-final-quality.log",
+      "log_bytes": 514,
+      "log_sha256": "279f935be236fd0aa81e9f9b82f56d53fb5bb85a8e3daa4cfba1ede1ec8b8a10",
+      "exit_evidence_sha256": "ddbf5cde2249aef33194b2aaa78eb3c2c13a273851952982ac1dd752da2ce7e7"
+    },
+    {
+      "ended": "2026-10-31T17:47:58.1076247Z",
+      "command": "node scripts/test.mjs --changed --dry-run",
+      "started": "2026-10-31T17:47:55.4659044Z",
+      "exit_code": 0,
+      "process_closed": true,
+      "kind": "changed-dry-run",
+      "log_source": ".runtime/sdd/2026-10-29-创作助手运行时与工具扩展重构实施/closing-final-changed-dry-run.log",
+      "log_bytes": 374992,
+      "log_sha256": "47832b20dd615d0b5ec1eed020134a291bf68eb0c0b13c606dfdb4a528dbc6a4",
+      "exit_evidence_sha256": "fec62b0f43bcf9dcc7d7cc97f910683e89bfe58cb6f369abd21d49268be0de11"
+    },
+    {
+      "started": "2026-10-31T17:47:55.4769950Z",
+      "process_closed": true,
+      "exit_code": 0,
+      "ended": "2026-10-31T17:47:55.9248786Z",
+      "command": "node scripts/test.mjs --check",
+      "kind": "test-map",
+      "log_source": ".runtime/sdd/2026-10-29-创作助手运行时与工具扩展重构实施/closing-final-test-map.log",
+      "log_bytes": 62,
+      "log_sha256": "fa4d135c8fa7836c3105fffe3cc15bb7f4e22a072c0e12d3d49c3efd46db1513",
+      "exit_evidence_sha256": "e1c0cdd8af1c3e1a4d5c01c60041f665c21a568bf1057b449aaf1158c08799e9"
+    },
+    {
+      "ended": "2026-10-31T17:47:55.9546446Z",
+      "exit_code": 0,
+      "command": "git diff --check",
+      "process_closed": true,
+      "started": "2026-10-31T17:47:55.4847832Z",
+      "kind": "diff",
+      "log_source": ".runtime/sdd/2026-10-29-创作助手运行时与工具扩展重构实施/closing-final-diff.log",
+      "log_bytes": 3089,
+      "log_sha256": "044782b2eeb648bfc42179e5c9555168e8886cd2bcc305919e0b5bef144be9fe",
+      "exit_evidence_sha256": "8b9c32c5d7c86d9aeb441f6cab710fd6af86bbb4683d71e50f17f3c1f6b7a83e"
+    }
+  ],
+  "dry_run_is_not_test_execution": true,
+  "full45_passed": false
+}

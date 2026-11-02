@@ -23,6 +23,7 @@ from short_drama.schemas.skills.catalog.skill import (
     MAX_PACKAGE_FILES,
     MAX_RESOURCE_BYTES,
     MAX_SKILL_BYTES,
+    SCRIPT_SUFFIXES,
     TEXT_SUFFIXES,
     SkillCreate,
     SkillImportDraft,
@@ -138,25 +139,38 @@ def package_digest(metadata: dict, instructions: str, resources: list[dict]) -> 
     ).hexdigest()
 
 
-def platform_tool_issues(names: list[str]) -> list[str]:
-    from short_drama.agent.tools.registry import REGISTRY
+def _tool_modes(name, tool_lookup):
+    if tool_lookup is None:
+        raise WorkflowError("tool_catalog_unavailable", "平台工具目录尚未初始化", 503)
+    spec = tool_lookup(name)
+    if spec is None:
+        raise KeyError(name)
+    return spec.modes
 
-    return [f"平台未提供必需工具：{name}" for name in names if name not in REGISTRY]
+
+def platform_tool_issues(names: list[str], tool_lookup=None) -> list[str]:
+    issues = []
+    for name in names:
+        try:
+            _tool_modes(name, tool_lookup)
+        except KeyError:
+            issues.append(
+                f"外部工具来源尚未接入：{name}"
+                if name.startswith(("mcp__", "external__"))
+                else f"平台未提供必需工具：{name}"
+            )
+    return issues
 
 
-def mode_tool_issues(names: list[str], modes: list[str]) -> list[str]:
-    from short_drama.agent.tools.contracts import CANVAS_TOOL, IMAGE_PRIMARY_TOOL, STANDARD_TOOL
-
-    supported = {
-        CANVAS_TOOL: {"infinite_canvas"},
-        STANDARD_TOOL: {"standard"},
-        IMAGE_PRIMARY_TOOL: {"standard"},
-    }
-    return [
-        "所选模式不支持这个方法需要的能力"
-        for name in names
-        if name in supported and not set(modes) <= supported[name]
-    ][:1]
+def mode_tool_issues(names: list[str], modes: list[str], tool_lookup=None) -> list[str]:
+    for name in names:
+        try:
+            supported = _tool_modes(name, tool_lookup)
+        except KeyError:
+            continue
+        if supported and not set(modes) <= supported:
+            return ["所选模式不支持这个方法需要的能力"]
+    return []
 
 
 def package_markdown(metadata: dict, instructions: str, resources: list[dict]) -> str:
@@ -244,7 +258,7 @@ def _archive(data: bytes) -> dict[str, bytes]:
         raise invalid_package("无法读取 Skill ZIP 包；请核对压缩格式和文件完整性") from None
 
 
-def parse_skill_import(data: bytes, filename: str) -> SkillImportPreview:
+def parse_skill_import(data: bytes, filename: str, *, tool_lookup=None) -> SkillImportPreview:
     name = PurePosixPath(filename.replace("\\", "/")).name[:255]
     if not 0 < len(data) <= MAX_IMPORT_BYTES:
         raise invalid_package("导入文件须大于零且不超过 4 MiB")
@@ -277,9 +291,7 @@ def parse_skill_import(data: bytes, filename: str) -> SkillImportPreview:
             descriptions.append({"path": path, "byte_size": len(content), "supported": True})
             continue
         suffix = PurePosixPath(path).suffix.lower()
-        if "scripts" in path.casefold().split("/") or kinds.get(path) == "script":
-            raise invalid_package(f"暂不支持脚本：{path}")
-        supported = suffix in TEXT_SUFFIXES | IMAGE_SUFFIXES
+        supported = suffix in TEXT_SUFFIXES | IMAGE_SUFFIXES | SCRIPT_SUFFIXES
         descriptions.append({"path": path, "byte_size": len(content), "supported": supported})
         if not supported:
             raise invalid_package(f"暂不支持此文件：{path}")
@@ -289,7 +301,9 @@ def parse_skill_import(data: bytes, filename: str) -> SkillImportPreview:
                     path=path,
                     kind=kinds.get(
                         path,
-                        "image"
+                        "script"
+                        if suffix in SCRIPT_SUFFIXES
+                        else "image"
                         if suffix in IMAGE_SUFFIXES
                         else "template"
                         if path.startswith("assets/")
@@ -322,9 +336,9 @@ def parse_skill_import(data: bytes, filename: str) -> SkillImportPreview:
     except ValidationError:
         raise invalid_package("Skill 名称、用途、适用模式或工具声明格式不正确") from None
     if metadata.get("compatibility"):
-        issues.append("包声明了额外运行依赖，请适配为平台无脚本方法后发布")
+        issues.append("包声明了额外运行依赖，请核对沙箱环境与依赖清单后发布")
     issues.extend(local_reference_issues(instructions, resources))
-    issues.extend(platform_tool_issues(draft.required_tools))
+    issues.extend(platform_tool_issues(draft.required_tools, tool_lookup))
     return SkillImportPreview(
         filename=name,
         draft=draft,
@@ -334,8 +348,12 @@ def parse_skill_import(data: bytes, filename: str) -> SkillImportPreview:
         byte_size=sum(len(content) for content in files.values()),
         tags_provided="short-drama-tags" in extra,
         mode_issues={
-            "general": mode_tool_issues(draft.required_tools, ["standard", "infinite_canvas"]),
-            "standard": mode_tool_issues(draft.required_tools, ["standard"]),
-            "infinite_canvas": mode_tool_issues(draft.required_tools, ["infinite_canvas"]),
+            "general": mode_tool_issues(
+                draft.required_tools, ["standard", "infinite_canvas"], tool_lookup
+            ),
+            "standard": mode_tool_issues(draft.required_tools, ["standard"], tool_lookup),
+            "infinite_canvas": mode_tool_issues(
+                draft.required_tools, ["infinite_canvas"], tool_lookup
+            ),
         },
     )

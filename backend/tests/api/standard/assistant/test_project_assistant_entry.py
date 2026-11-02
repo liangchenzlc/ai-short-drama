@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from short_drama.api.dependencies.session import get_session
 from short_drama.core.config import Settings
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.main import create_app
 
 
@@ -16,12 +16,19 @@ def client():
 
     def session():
         with Session() as value:
-            value.info["actor"] = ActorContext(1, "test", "test@example.test", True, 1, "", "test")
+            value.info["actor"] = SessionActorContext(
+                user_id=1,
+                username="test",
+                email="test@example.test",
+                verified=True,
+                session_id=1,
+                csrf_hash="",
+                request_id="test",
+            )
             yield value
 
     app.dependency_overrides[get_session] = session
-    with TestClient(app) as client:
-        yield client
+    yield TestClient(app)
 
 
 def test_assistant_status_and_disabled_creation_never_invokes_a_model(client):
@@ -47,7 +54,7 @@ def test_assistant_status_and_disabled_creation_never_invokes_a_model(client):
         {"kind": "resume", "expected_control_seq": "1", "message_id": "2", "content": "重复"},
     ],
 )
-def test_resume_message_reuse_rejects_ambiguous_or_invalid_sources(client, payload):
+def test_control_rejects_retired_kinds_and_fields(client, payload):
     response = client.post(
         "/api/v1/assistant/tasks/1/control",
         headers={"Idempotency-Key": "reuse-source"},
@@ -56,27 +63,22 @@ def test_resume_message_reuse_rejects_ambiguous_or_invalid_sources(client, paylo
     assert response.status_code == 422
 
 
-def test_resume_message_reuse_forwards_exact_decimal_identities(client):
+def test_stop_forwards_exact_decimal_identity(client):
     from short_drama.api.dependencies.assistant import task_service
     from short_drama.core.exceptions import Conflict
 
     class Tasks:
         def control_task(self, identifier, payload, key):
             assert identifier == 9007199254740993
-            assert payload.message_id == 9007199254740995
-            assert payload.expected_control_seq == 9007199254740997
-            assert payload.kind == "resume" and payload.content is None and key == "reuse-source"
+            assert payload.model_dump(mode="json") == {"kind": "stop"}
+            assert key == "reuse-source"
             raise Conflict("停止状态已变化")
 
     client.app.dependency_overrides[task_service] = Tasks
     response = client.post(
         "/api/v1/assistant/tasks/9007199254740993/control",
         headers={"Idempotency-Key": "reuse-source"},
-        json={
-            "kind": "resume",
-            "expected_control_seq": "9007199254740997",
-            "message_id": "9007199254740995",
-        },
+        json={"kind": "stop"},
     )
     assert response.status_code == 409
 

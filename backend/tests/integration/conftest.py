@@ -7,13 +7,13 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 
 from short_drama.db.session import AppSession, configure_mysql
 
 
-def isolated_mysql_database():
+def isolated_mysql_database(*, schema_path=None):
     configured = os.environ.get("TEST_DATABASE_URL")
     if not configured:
         pytest.skip("TEST_DATABASE_URL is absent; real MySQL integration tests skipped")
@@ -48,7 +48,9 @@ def isolated_mysql_database():
                 hide_parameters=True,
             )
         )
-        sql_path = next((Path(__file__).resolve().parents[3] / "docs").rglob("schema.mysql8.sql"))
+        sql_path = schema_path or next(
+            (Path(__file__).resolve().parents[3] / "docs").rglob("schema.mysql8.sql")
+        )
         # This canonical DDL has no semicolons in quoted values or multiline comments.
         source = re.sub(r"(?m)^\s*--.*$", "", sql_path.read_text(encoding="utf-8"))
         with engine.begin() as connection:
@@ -126,6 +128,21 @@ def db_session(mysql_engine):
         connection.execute(conversations.update().values(active_summary_id=None))
         summaries = Base.metadata.tables["agent_conversation_summaries"]
         connection.execute(summaries.update().values(base_summary_id=None))
+        scopes = Base.metadata.tables["agent_execution_scopes"]
+        # Child calls reference their scope, which itself references the parent's call.
+        # Remove child execution dependants before releasing this real FK cycle.
+        for name in (
+            "agent_artifacts",
+            "agent_batch_undos",
+            "agent_media_requests",
+            "agent_operations",
+        ):
+            connection.execute(Base.metadata.tables[name].delete())
+        child_scopes = select(scopes.c.id).where(scopes.c.parent_scope_id.is_not(None))
+        for name in ("agent_tool_calls", "agent_turns"):
+            table = Base.metadata.tables[name]
+            connection.execute(table.delete().where(table.c.scope_id.in_(child_scopes)))
+        connection.execute(scopes.delete().where(scopes.c.parent_scope_id.is_not(None)))
         for table in reversed(Base.metadata.sorted_tables):
             if table.name == "async_tasks":
                 # MySQL checks RESTRICT per row, including rows deleted in this statement.

@@ -22,7 +22,7 @@ class ScriptReference(InputModel):
         return self
 
 
-class ReadCurrentScript(InputModel):
+class ReadCurrentScript(ScriptReference):
     offset: Annotated[int, Field(ge=0)] = 0
     limit: Annotated[int, Field(ge=1, le=6000)] = 4000
 

@@ -103,9 +103,11 @@ def submit_through_http(flow, kind, body):
         app = create_app(flow.settings)
         app.state.settings = flow.settings
         app.state.storage = flow.storage
+        app.state.session_factory = flow.factory
 
         def session():
             with flow.factory() as database:
+                database.info["actor"] = flow.session.info["actor"]
                 yield database
 
         app.dependency_overrides[get_session] = session

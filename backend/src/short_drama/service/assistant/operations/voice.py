@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
 from short_drama.domain import (
     AIGenerationRecord,
     AIModelConfig,
@@ -22,6 +21,7 @@ from short_drama.domain.creation.sound.voices.voices import CharacterVoice
 from short_drama.schemas.assistant.operations.media import AssistantCharacterVoiceRequest
 from short_drama.schemas.base import UINT64_MAX
 from short_drama.service.creation.sound.voices.voices import NativeVoiceService
+from short_drama.service.identity.authentication.actor import business_actor_locked
 
 
 def voice_binding_state(
@@ -146,7 +146,12 @@ def voice_design_may_submit(
     settings: Settings | None = None,
     check_flags: bool = True,
 ) -> bool:
-    target = intent.frozen_target
+    return voice_target_matches(
+        session, owner, intent.frozen_target, settings=settings, check_flags=check_flags
+    )
+
+
+def voice_target_matches(session, owner, target, *, settings=None, check_flags=True):
     try:
         asset, binding = _current(
             session,
@@ -215,8 +220,8 @@ def settle_voice_design_locked(
     actor = session.info.get("actor")
     if actor is not None and actor.user_id != owner:
         raise NotFound("音色采用账号不匹配")
-    session.info["actor"] = actor or ActorContext(
-        owner, "", "", True, 0, "", f"assistant-media:{intent.operation_id}"
+    session.info["actor"] = actor or business_actor_locked(
+        session, user_id=owner, request_id=f"assistant-media:{intent.operation_id}"
     )
     try:
         try:

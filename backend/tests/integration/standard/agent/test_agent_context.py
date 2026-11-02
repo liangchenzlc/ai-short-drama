@@ -1,4 +1,4 @@
-"""Disposable MySQL context ownership; real MinIO is opt-in, models are never invoked."""
+"""Disposable MySQL context; opt-in real MinIO and explicit controlled model replies."""
 
 import hashlib
 import io
@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 import tests.support.assistant_workspace as conversation_tests
+from short_drama.agent.tools.registry import get_spec
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.db.readiness import assert_agent_ready, assert_identity_ready, inspect_agent_schema
@@ -27,7 +28,7 @@ workspace = conversation_tests.workspace
 
 def skills(session, owner=1):
     session.info["actor"] = actor(owner)
-    return AgentSkillService(session, settings())
+    return AgentSkillService(session, settings(), tool_lookup=get_spec)
 
 
 def attachments(session, owner=1):
@@ -60,16 +61,14 @@ class TrackedAttachmentStorage(MinioStorage):
     reason="Set RUN_AGENT_INFRA_INTEGRATION=1 for configured local MinIO",
 )
 def test_real_minio_skill_package_versions_keep_exact_resources(workspace):
-    """Exercise immutable resources through the explicitly frozen legacy V2 engine."""
+    """The real graph reads its frozen resource after the directory changes and is deleted."""
     from sqlalchemy import select
 
-    from short_drama.agent.runtime.decision_input import prepare_decision
-    from short_drama.agent.runtime.executor import AgentRuntimeStore
-    from short_drama.agent.runtime.operations import claim_operation, complete_operation
-    from short_drama.agent.skill.contracts import activations
-    from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
+    from short_drama.agent.runtime.executor import AgentRuntime
+    from short_drama.domain.assistant.execution.models import AgentRun
+    from short_drama.domain.assistant.tasks.task import AgentOperation
     from short_drama.service.assistant.tasks.task import AssistantTaskService
-    from tests.integration.standard.assistant.test_global_assistant_tasks import legacy_task_engine
+    from tests.support.assistant_runtime import RuntimeTransport, calls, tool_result
 
     factory, project_id, _ = workspace
     with factory() as session:
@@ -90,9 +89,9 @@ def test_real_minio_skill_package_versions_keep_exact_resources(workspace):
     configured = Settings(auth_enabled=True, agent_enabled=True)
     storage = TrackedAttachmentStorage(configured)
     try:
-        with legacy_task_engine(factory), factory() as session:
+        with factory() as session:
             session.info["actor"] = actor(1)
-            library = AgentSkillService(session, configured, storage)
+            library = AgentSkillService(session, configured, storage, tool_lookup=get_spec)
             original = library.create(
                 {
                     "name": "真实资料测试",
@@ -105,7 +104,7 @@ def test_real_minio_skill_package_versions_keep_exact_resources(workspace):
                 },
                 "minio-package",
             )
-            task_service = AssistantTaskService(session, configured)
+            task_service = AssistantTaskService(session, configured, tool_lookup=get_spec)
             conversation = task_service.create_global_conversation({}, "minio-task-conversation")
             accepted = task_service.send_task_message(
                 conversation.id,
@@ -116,61 +115,70 @@ def test_real_minio_skill_package_versions_keep_exact_resources(workspace):
                 },
                 "minio-task-message",
             )
-        runtime = AgentRuntimeStore(factory, configured)
-        claim = runtime.claim_execution(accepted.run.id, 1, prepare_decision)
-        assert claim is not None
-        with factory() as session:
-            activation = activations(session.get(AgentTask, accepted.task.id))[0]["id"]
-        runtime.before_send(claim, {"fixture": "no-provider-http"})
-        runtime.save_raw(claim, {"fixture": "no-provider-http"})
-        assert runtime.save_result(
-            claim,
-            {
-                "output_kind": "tool_requests",
-                "output": {
-                    "calls": [
-                        {
-                            "tool_call_id": "read-original-resource",
-                            "tool_name": "read_skill_resource",
-                            "args": {"activation_id": activation, "path": "references/notes.md"},
-                        }
-                    ]
-                },
-                "history": {},
-                "usage": {"output_tokens": 1, "output_tokens_reported": True},
-            },
-        )
-        fence = claim.version, claim.token
-        operation_id = claim_operation(factory, configured, accepted.run.id, fence=fence)
-        assert operation_id is not None
-        with factory() as session:
-            session.info["actor"] = actor(1)
-            library = AgentSkillService(session, configured, storage)
-            revised = library.patch(
-                original.id,
-                {
-                    "row_version": "1",
-                    "resources": [
-                        {"path": "references/notes.md", "content": "# 新资料\n仍保留原版本。"}
-                    ],
-                },
+
+        receipts = []
+
+        def read_frozen_resource(body):
+            loaded = tool_result(body, "load-original-resource")
+            receipts.append(loaded)
+            assert loaded.get("content_version") == "1", loaded
+            with factory() as session:
+                session.info["actor"] = actor(1)
+                library = AgentSkillService(session, configured, storage, tool_lookup=get_spec)
+                revised = library.patch(
+                    original.id,
+                    {
+                        "row_version": "1",
+                        "resources": [
+                            {"path": "references/notes.md", "content": "# 新资料\n仍保留原版本。"}
+                        ],
+                    },
+                )
+                assert revised.content_version == 2
+                old = library.resource_content(original.id, "1", "references/notes.md")
+                new = library.resource_content(original.id, "2", "references/notes.md")
+                assert old.content == "# 原资料\n仅供本次测试。"
+                assert new.content == "# 新资料\n仍保留原版本。"
+                assert old.checksum_sha256 != new.checksum_sha256
+                assert len(storage.written) == 2
+                library.delete(original.id, {"row_version": str(revised.row_version)})
+            return calls(
+                (
+                    "read-original-resource",
+                    "runtime__read_skill_resource",
+                    {"activation_id": loaded["activation_id"], "path": "references/notes.md"},
+                )
             )
-            assert revised.content_version == 2
-            old = library.resource_content(original.id, "1", "references/notes.md")
-            new = library.resource_content(original.id, "2", "references/notes.md")
-            assert old.content == "# 原资料\n仅供本次测试。"
-            assert new.content == "# 新资料\n仍保留原版本。"
-            assert old.checksum_sha256 != new.checksum_sha256
-            assert len(storage.written) == 2
-            library.delete(original.id, {"row_version": str(revised.row_version)})
-        complete_operation(factory, configured, accepted.run.id, operation_id, fence=fence)
+
+        transport = RuntimeTransport(
+            [
+                calls(
+                    (
+                        "load-original-resource",
+                        "runtime__load_skill",
+                        {"name": str(original.id), "content_version": "1", "purpose": "核对原资料"},
+                    )
+                ),
+                read_frozen_resource,
+                {"text": "已核对原版本资料"},
+            ]
+        )
+        AgentRuntime(factory, configured, transport=transport).execute(accepted.run.id, 1)
         with factory() as session:
+            run = session.get(AgentRun, accepted.run.id)
+            assert run.status == "succeeded", (run.error, receipts)
             operation = session.scalar(
-                select(AgentOperation).where(AgentOperation.id == operation_id)
+                select(AgentOperation).where(
+                    AgentOperation.run_id == accepted.run.id,
+                    AgentOperation.tool_name == "runtime__read_skill_resource",
+                )
             )
             assert operation.status == "succeeded"
             assert operation.result["content"] == "# 原资料\n仅供本次测试。"
-            assert operation.result["checksum_sha256"] == old.checksum_sha256
+            assert (
+                operation.result["checksum_sha256"]
+                == hashlib.sha256("# 原资料\n仅供本次测试。".encode()).hexdigest()
+            )
     finally:
         try:
             for (bucket, key), version in storage.written.items():
@@ -195,13 +203,23 @@ def test_real_minio_builtin_skill_publication_and_exact_resource_reads(workspace
     storage = TrackedAttachmentStorage(configured)
     packages = builtin_skill_packages()
     try:
-        assert len(publish_builtin_skills(factory, configured, storage)["published"]) == 12
+        assert (
+            len(
+                publish_builtin_skills(factory, configured, storage, tool_lookup=get_spec)[
+                    "published"
+                ]
+            )
+            == 12
+        )
         assert len(storage.written) == 25
-        assert publish_builtin_skills(factory, configured, storage)["published"] == []
+        assert (
+            publish_builtin_skills(factory, configured, storage, tool_lookup=get_spec)["published"]
+            == []
+        )
         assert len(storage.written) == 25
         with factory() as session:
             session.info["actor"] = actor(1)
-            library = AgentSkillService(session, configured, storage)
+            library = AgentSkillService(session, configured, storage, tool_lookup=get_spec)
             for package in packages:
                 detail = library.detail(package.key)
                 assert detail.content_version == package.content_version
@@ -247,7 +265,7 @@ def test_real_minio_skill_gc_removes_exact_orphan_version_and_keeps_history(work
     try:
         with factory() as session:
             session.info["actor"] = actor(1)
-            library = AgentSkillService(session, configured, storage)
+            library = AgentSkillService(session, configured, storage, tool_lookup=get_spec)
             created = library.create(content, "minio-gc-package")
             orphan = library._store_resources(1, SkillCreate.model_validate(content).resources)[0]
             identity = (orphan["bucket"], orphan["object_name"])
@@ -322,17 +340,32 @@ def test_skill_owner_crud_version_freeze_and_disabled_selection(workspace):
         with pytest.raises(NotFound):
             owner.detail("unknown.v1")
         with session.begin():
-            frozen = freeze_skills(session, 1, [SkillSelection(id=created.id, content_version="1")])
+            frozen = freeze_skills(
+                session,
+                1,
+                [SkillSelection(id=created.id, content_version="1")],
+                tool_lookup=get_spec,
+            )
         updated = owner.patch(created.id, {"row_version": "1", "instructions": "# Revised"})
         assert updated.content_version == updated.row_version == 2
         assert frozen[0]["instructions"] == "# Original\nUse a quiet tone."
         with pytest.raises(Conflict):
             owner.patch(created.id, {"row_version": "1", "name": "Stale"})
         with session.begin(), pytest.raises(Conflict):
-            freeze_skills(session, 1, [SkillSelection(id=created.id, content_version="1")])
+            freeze_skills(
+                session,
+                1,
+                [SkillSelection(id=created.id, content_version="1")],
+                tool_lookup=get_spec,
+            )
         disabled = owner.patch(created.id, {"row_version": "2", "enabled": False})
         with session.begin(), pytest.raises(WorkflowError) as caught:
-            freeze_skills(session, 1, [SkillSelection(id=created.id, content_version="2")])
+            freeze_skills(
+                session,
+                1,
+                [SkillSelection(id=created.id, content_version="2")],
+                tool_lookup=get_spec,
+            )
         assert caught.value.code == "agent_skill_disabled"
         owner.delete(created.id, {"row_version": str(disabled.row_version)})
         with pytest.raises(NotFound):

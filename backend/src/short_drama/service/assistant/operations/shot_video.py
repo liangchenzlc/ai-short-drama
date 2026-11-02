@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
 from short_drama.domain import (
     AIModelConfig,
     Asset,
@@ -25,6 +24,7 @@ from short_drama.service.creation.storyboard.videos.video_admission import (
     shot_video_may_submit as shot_video_may_submit,
 )
 from short_drama.service.creation.storyboard.videos.video_context import DEFAULT_VIDEO_SETTINGS
+from short_drama.service.identity.authentication.actor import business_actor_locked
 from short_drama.service.media.library.assets import MediaAssetService
 
 
@@ -226,8 +226,8 @@ def settle_shot_video_locked(
     actor = session.info.get("actor")
     if actor is not None and actor.user_id != owner:
         raise NotFound("视频采用账号不匹配")
-    session.info["actor"] = actor or ActorContext(
-        owner, "", "", True, 0, "", f"assistant-media:{intent.operation_id}"
+    session.info["actor"] = actor or business_actor_locked(
+        session, user_id=owner, request_id=f"assistant-media:{intent.operation_id}"
     )
     try:
         try:

@@ -19,10 +19,10 @@ const resultStates: Record<string, string> = {
 };
 
 const UNDOABLE = new Set([
-  'apply_standard_patch',
-  'apply_canvas_patch',
-  'set_image_group_primary',
-  'submit_generation_batch',
+  'workbench__apply_standard_patch',
+  'workbench__apply_canvas_patch',
+  'workbench__set_image_group_primary',
+  'workbench__submit_generation_batch',
 ]);
 const TERMINAL = new Set(['succeeded', 'failed', 'conflict']);
 

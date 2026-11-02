@@ -6,16 +6,21 @@ import httpx
 def request_minio(settings, storage_service=None):
     from short_drama.api.dependencies.media import get_storage_service
     from short_drama.main import create_app
+    from short_drama.storage.minio import MinioStorage
 
     async def run():
         app = create_app(settings)
+        storage = MinioStorage(settings)
+        app.state.storage = storage
         if storage_service is not None:
             app.dependency_overrides[get_storage_service] = lambda: storage_service
-        async with app.router.lifespan_context(app):
+        try:
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app), base_url="http://testserver"
             ) as client:
                 return await client.get("/api/v1/test/minio")
+        finally:
+            storage.close()
 
     return asyncio.run(run())
 

@@ -1,0 +1,35 @@
+.assistant-trace-block { margin-block: 6px; min-width: 0; }
+.assistant-trace-list { margin: 0; padding: 0; list-style: none; }
+.assistant-trace-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-block: 4px; line-height: 1.6; }
+.assistant-trace-title { min-width: 0; overflow-wrap: anywhere; color: var(--assistant-foreground, var(--ink)); }
+.assistant-trace-status { flex: none; margin-left: auto; font-size: 12px; color: var(--assistant-secondary, var(--sub)); }
+.assistant-trace-block > summary { display: list-item; cursor: pointer; overflow-wrap: anywhere; padding: 4px 0; color: var(--assistant-foreground, var(--ink)); }
+.assistant-trace-block > summary > span + span { margin-left: 8px; font-size: 12px; color: var(--assistant-secondary, var(--sub)); }
+.assistant-trace-block summary:focus-visible, .assistant-trace-log:focus-visible { outline: 2px solid var(--assistant-ring, var(--accent-border)); outline-offset: 2px; border-radius: 4px; }
+.assistant-trace-log { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; overscroll-behavior: contain; padding: 8px; background: var(--assistant-muted, var(--surface)); color: var(--assistant-foreground, var(--ink)); font-size: 12px; line-height: 1.6; }
+.assistant-subtask-children { padding-left: 10px; border-left: 1px solid var(--assistant-border, var(--hair)); }
+.assistant-question-dock { min-width: 0; border-radius: 12px; padding: 10px; background: var(--assistant-card, var(--surface)); color: var(--assistant-foreground, var(--ink)); }
+.assistant-question-groups { display: flex; gap: 4px; overflow-x: auto; margin-bottom: 8px; }
+.assistant-question-groups [aria-pressed='true'] { background: var(--assistant-muted, var(--surface)); }
+.assistant-question-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
+.assistant-question-head strong { flex: 1; min-width: 0; padding-block: 3px; font-size: 13px; overflow-wrap: anywhere; }
+.assistant-question-head nav { flex: none; display: flex; align-items: center; gap: 2px; color: var(--assistant-secondary, var(--sub)); font-size: 12px; }
+.assistant-question-content { max-height: min(30dvh, 300px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.assistant-question-options { min-width: 0; margin: 0; padding: 0; border: 0; }
+.assistant-question-mode { margin-bottom: 4px; padding: 0; color: var(--assistant-secondary, var(--sub)); font-size: 12px; }
+.assistant-question-choice { position: relative; display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 7px 6px; border-radius: 6px; cursor: pointer; }
+.assistant-question-choice:hover, .assistant-question-choice[data-selected='true'] { background: var(--assistant-muted, var(--surface)); }
+.assistant-question-choice:focus-within { outline: 2px solid var(--assistant-ring, var(--accent-border)); outline-offset: -2px; }
+.assistant-question-choice input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.assistant-question-number { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 5px; background: var(--assistant-background, var(--bg)); font-size: 12px; }
+.assistant-question-option-copy { min-width: 0; overflow-wrap: anywhere; }
+.assistant-question-option-copy small { display: block; margin-top: 2px; font-size: 12px; color: var(--assistant-secondary, var(--sub)); }
+.assistant-question-recommended { margin-left: 6px; font-size: 11px; color: var(--assistant-secondary, var(--sub)); white-space: nowrap; }
+.assistant-question-other { color: var(--assistant-secondary, var(--sub)); }
+.assistant-question-options:disabled .assistant-question-choice { cursor: not-allowed; opacity: 0.6; }
+.assistant-question-issue { margin: 6px 0; font-size: 12px; color: var(--assistant-danger, var(--ink)); }
+.assistant-question-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+.assistant-task-media-limits { width: 320px; max-width: 100%; }
+.assistant-task-media-limits .assistant-media-limit-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.assistant-task-media-limits .assistant-media-limit-fields label { display: grid; gap: 6px; }
+.assistant-task-media-limits .ant-input-number { width: 100%; }

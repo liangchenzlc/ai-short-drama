@@ -14,6 +14,7 @@ from sqlalchemy import event, func, inspect, select, update
 from sqlalchemy.exc import OperationalError
 
 import tests.support.assistant_workspace as conversation_tests
+from short_drama.agent.tools.registry import get_spec
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import token_hash
@@ -30,6 +31,41 @@ from tests.support.assistant_workspace import actor, settings
 
 pytestmark = pytest.mark.integration
 workspace = conversation_tests.workspace
+
+
+def test_script_zip_import_roundtrips_immutable_manifest_and_reads_without_execution(workspace):
+    from zipfile import ZipFile
+
+    factory, _project, _canvas = workspace
+    source = io.BytesIO()
+    with ZipFile(source, "w") as archive:
+        archive.writestr(
+            "SKILL.md",
+            "---\nname: script-method\ndescription: 按需处理资料\n---\n读取脚本后再决定执行。",
+        )
+        archive.writestr("scripts/prepare.py", "raise RuntimeError('must never execute on host')\n")
+        archive.writestr("scripts/prepare.js", "throw new Error('must never execute on host');\n")
+        archive.writestr("scripts/module.mjs", "export const answer = 42;\n")
+        archive.writestr("scripts/requirements.txt", "Pillow==11.0.0\n")
+        archive.writestr("scripts/package.json", '{"dependencies":{}}')
+    with factory() as session:
+        session.info["actor"] = actor(1)
+        storage = _SkillTextStorage(session)
+        service = AgentSkillService(session, settings(), storage, tool_lookup=get_spec)
+        preview = service.preview_import(io.BytesIO(source.getvalue()), "script-method.zip")
+        kinds = {item.path: item.kind for item in preview.draft.resources}
+        assert kinds["scripts/prepare.py"] == kinds["scripts/prepare.js"] == "script"
+        assert kinds["scripts/module.mjs"] == "script"
+        assert kinds["scripts/requirements.txt"] == kinds["scripts/package.json"] == "reference"
+        saved = service.create(preview.draft.model_dump(), "script-import")
+        assert saved.resource_count == 5
+        read = service.resource_content(saved.id, saved.content_version, "scripts/prepare.py")
+        assert read.content.startswith("raise RuntimeError")
+        assert read.checksum_sha256 == next(
+            item.checksum_sha256 for item in saved.resources if item.path == "scripts/prepare.py"
+        )
+        exported = service.export(saved.id, saved.content_version)
+        assert exported
 
 
 class _SkillTextStorage:
@@ -125,7 +161,7 @@ def test_builtin_package_publication_is_idempotent_and_preserves_personal_settin
     factory, configured, storage = builtin_workspace
     with factory() as session:
         session.info["actor"] = actor(1)
-        library = AgentSkillService(session, configured, storage)
+        library = AgentSkillService(session, configured, storage, tool_lookup=get_spec)
         assert library.list(source="builtin").total == 0
         with pytest.raises(NotFound):
             library.detail("script.v1")
@@ -140,14 +176,14 @@ def test_builtin_package_publication_is_idempotent_and_preserves_personal_settin
                 updated_at=utcnow(),
             )
         )
-    first = publish_builtin_skills(factory, configured, storage)
-    second = publish_builtin_skills(factory, configured, storage)
+    first = publish_builtin_skills(factory, configured, storage, tool_lookup=get_spec)
+    second = publish_builtin_skills(factory, configured, storage, tool_lookup=get_spec)
     assert len(first["published"]) == 12 and first["existing"] == []
     assert second["published"] == [] and len(second["existing"]) == 12
     assert len(storage.objects) == 25
     with factory() as session:
         session.info["actor"] = actor(1)
-        library = AgentSkillService(session, configured, storage)
+        library = AgentSkillService(session, configured, storage, tool_lookup=get_spec)
         page = library.list(source="builtin")
         assert page.total == 12
         assert all("instructions" not in item.model_dump() for item in page.items)
@@ -162,7 +198,10 @@ def test_builtin_package_publication_is_idempotent_and_preserves_personal_settin
         assert content.content.startswith("# 剧本标题")
         with session.begin():
             frozen = freeze_skills(
-                session, 2, [SkillSelection(id="script.v1", content_version="2")]
+                session,
+                2,
+                [SkillSelection(id="script.v1", content_version="2")],
+                tool_lookup=get_spec,
             )
         assert frozen[0]["version_id"] and frozen[0]["instructions"] == other.instructions
         with session.begin():
@@ -182,7 +221,7 @@ def test_builtin_publication_rejects_same_version_changes_and_rolls_back_batch(b
 
     factory, configured, storage = builtin_workspace
     packages = builtin_skill_packages()
-    publish_builtin_skills(factory, configured, storage, packages)
+    publish_builtin_skills(factory, configured, storage, packages, tool_lookup=get_spec)
     future = packages[0].model_copy(update={"content_version": 2})
     original = next(item for item in packages if item.key == "script.v1")
     changed = original.model_copy(
@@ -193,7 +232,9 @@ def test_builtin_publication_rejects_same_version_changes_and_rolls_back_batch(b
         }
     )
     with pytest.raises(Conflict, match="增加版本"):
-        publish_builtin_skills(factory, configured, storage, [future, changed])
+        publish_builtin_skills(
+            factory, configured, storage, [future, changed], tool_lookup=get_spec
+        )
     with factory() as session:
         assert (
             session.scalar(
@@ -214,7 +255,7 @@ def test_builtin_publication_storage_failure_publishes_no_new_version(builtin_wo
     factory, configured, storage = builtin_workspace
     storage.fail_put = True
     with pytest.raises(WorkflowError, match="发布 Skill 资料"):
-        publish_builtin_skills(factory, configured, storage)
+        publish_builtin_skills(factory, configured, storage, tool_lookup=get_spec)
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(AgentSkillVersion)) == 8
 
@@ -225,7 +266,12 @@ def test_concurrent_builtin_publishers_reuse_one_immutable_release(builtin_works
     factory, configured, storage = builtin_workspace
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(
-            pool.map(lambda _: publish_builtin_skills(factory, configured, storage), range(2))
+            pool.map(
+                lambda _: publish_builtin_skills(
+                    factory, configured, storage, tool_lookup=get_spec
+                ),
+                range(2),
+            )
         )
     assert sorted(len(item["published"]) for item in results) == [0, 12]
     with factory() as session:
@@ -237,7 +283,7 @@ def test_skill_package_create_summary_idempotency_and_account_isolation(workspac
     with factory() as session:
         session.info["actor"] = actor(1)
         storage = _SkillTextStorage(session)
-        library = AgentSkillService(session, settings(), storage)
+        library = AgentSkillService(session, settings(), storage, tool_lookup=get_spec)
         created = library.create(_skill_package(), "create-package")
         assert created.enabled and created.settings_version == 1
         assert created.resource_count == 1 and created.compatible
@@ -254,7 +300,7 @@ def test_skill_package_create_summary_idempotency_and_account_isolation(workspac
             library.resource_content(created.id, "1", "assets/shots.json").content == '{"shots":[]}'
         )
         session.info["actor"] = actor(2)
-        other = AgentSkillService(session, settings(), storage)
+        other = AgentSkillService(session, settings(), storage, tool_lookup=get_spec)
         assert other.list(source="personal").total == 0
         with pytest.raises(NotFound):
             other.detail(created.id)
@@ -272,7 +318,7 @@ def test_skill_upload_does_not_reuse_an_unpublished_object(workspace):
     factory, _, _ = workspace
     with factory() as session:
         storage = _SkillTextStorage(session)
-        library = AgentSkillService(session, settings(), storage)
+        library = AgentSkillService(session, settings(), storage, tool_lookup=get_spec)
         resources = SkillCreate.model_validate(_skill_package()).resources
         first = library._store_resources(1, resources)
         second = library._store_resources(1, resources)
@@ -289,7 +335,7 @@ def test_skill_gc_keeps_all_history_and_previews_expired_orphans(workspace, monk
     with factory() as session:
         session.info["actor"] = actor(1)
         storage = _SkillTextStorage(session)
-        library = AgentSkillService(session, configured, storage)
+        library = AgentSkillService(session, configured, storage, tool_lookup=get_spec)
         created = library.create(_skill_package(), "gc-package")
         library.patch(
             created.id,
@@ -333,7 +379,7 @@ def test_skill_expired_upload_cannot_publish_after_gc_snapshot(workspace, monkey
     with factory() as session:
         session.info["actor"] = actor(1)
         storage = _SkillTextStorage(session)
-        library = AgentSkillService(session, configured, storage)
+        library = AgentSkillService(session, configured, storage, tool_lookup=get_spec)
         staged = library._store_resources(1, SkillCreate.model_validate(_skill_package()).resources)
         future = utcnow() + timedelta(days=2)
         monkeypatch.setattr(resources, "database_now", lambda _session: future)
@@ -389,7 +435,7 @@ def test_skill_gc_waits_for_publication_commit_before_reading_references(workspa
         def publish():
             with factory() as session:
                 session.info["actor"] = actor(1)
-                return AgentSkillService(session, configured, storage).create(
+                return AgentSkillService(session, configured, storage, tool_lookup=get_spec).create(
                     _skill_package(), "gc-concurrent-publication"
                 )
 
@@ -424,7 +470,7 @@ def test_skill_gc_bounds_scope_age_limit_and_storage_errors(workspace, monkeypat
     configured = settings()
     with factory() as session:
         storage = _SkillTextStorage(session)
-        library = AgentSkillService(session, configured, storage)
+        library = AgentSkillService(session, configured, storage, tool_lookup=get_spec)
         fresh = library._store_resources(1, SkillCreate.model_validate(_skill_package()).resources)
         bucket = fresh[0]["bucket"]
         # An old Last-Modified alone cannot make a newly staged key collectible.
@@ -469,11 +515,14 @@ def test_skill_package_versions_resources_and_old_task_snapshot_survive_edits(wo
     with factory() as session:
         session.info["actor"] = actor(1)
         storage = _SkillTextStorage(session)
-        library = AgentSkillService(session, settings(), storage)
+        library = AgentSkillService(session, settings(), storage, tool_lookup=get_spec)
         created = library.create(_skill_package(), "version-package")
         with session.begin():
             frozen = freeze_skills(
-                session, 1, [SkillSelection(id=created.id, content_version="1")]
+                session,
+                1,
+                [SkillSelection(id=created.id, content_version="1")],
+                tool_lookup=get_spec,
             )[0]
         revised = library.patch(
             created.id,
@@ -505,24 +554,34 @@ def test_skill_package_versions_resources_and_old_task_snapshot_survive_edits(wo
         with pytest.raises(NotFound):
             library.resource_content(created.id, "1", "assets/shots.json")
         with session.begin(), pytest.raises(NotFound):
-            freeze_skills(session, 1, [SkillSelection(id=created.id, content_version="1")])
+            freeze_skills(
+                session,
+                1,
+                [SkillSelection(id=created.id, content_version="1")],
+                tool_lookup=get_spec,
+            )
 
 
 def test_skill_package_personal_settings_builtin_readonly_and_copy(builtin_workspace):
     from short_drama.service.skills.catalog.builtin_skill import publish_builtin_skills
 
     factory, configured, storage = builtin_workspace
-    publish_builtin_skills(factory, configured, storage)
+    publish_builtin_skills(factory, configured, storage, tool_lookup=get_spec)
     with factory() as session:
         session.info["actor"] = actor(1)
-        library = AgentSkillService(session, configured, storage)
+        library = AgentSkillService(session, configured, storage, tool_lookup=get_spec)
         changed = library.patch_settings("script.v1", {"row_version": "0", "enabled": False})
         assert (
             not changed.enabled and changed.settings_version == 1 and changed.content_version == 2
         )
         assert library.list(enabled=False).total == 1
         with session.begin(), pytest.raises(WorkflowError) as caught:
-            freeze_skills(session, 1, [SkillSelection(id="script.v1", content_version="2")])
+            freeze_skills(
+                session,
+                1,
+                [SkillSelection(id="script.v1", content_version="2")],
+                tool_lookup=get_spec,
+            )
         assert caught.value.code == "agent_skill_disabled"
         with pytest.raises(Conflict):
             library.patch_settings("script.v1", {"row_version": "0", "enabled": True})
@@ -542,7 +601,7 @@ def test_skill_package_storage_failure_and_corrupt_resource_never_publish(worksp
     with factory() as session:
         session.info["actor"] = actor(1)
         storage = _SkillTextStorage(session)
-        library = AgentSkillService(session, settings(), storage)
+        library = AgentSkillService(session, settings(), storage, tool_lookup=get_spec)
         storage.fail_put = True
         with pytest.raises(WorkflowError) as caught:
             library.create(_skill_package(), "storage-package")
@@ -565,7 +624,7 @@ def test_skill_package_versions_cannot_be_mutated_by_scoped_or_worker_session(wo
     factory, _, _ = workspace
     with factory() as session:
         session.info["actor"] = actor(1)
-        library = AgentSkillService(session, settings())
+        library = AgentSkillService(session, settings(), tool_lookup=get_spec)
         created = library.create(
             _skill_package(instructions="方法正文", resources=[]), "immutable-package"
         )
@@ -586,7 +645,9 @@ def test_skill_package_export_import_and_copy_keep_all_resources(workspace):
     factory, _, _ = workspace
     with factory() as session:
         session.info["actor"] = actor(1)
-        library = AgentSkillService(session, settings(), _SkillTextStorage(session))
+        library = AgentSkillService(
+            session, settings(), _SkillTextStorage(session), tool_lookup=get_spec
+        )
         created = library.create(
             _skill_package(
                 enabled=False,
@@ -619,7 +680,7 @@ def test_skill_package_setting_changes_do_not_publish_content_and_unknown_tools_
     factory, _, _ = workspace
     with factory() as session:
         session.info["actor"] = actor(1)
-        library = AgentSkillService(session, settings())
+        library = AgentSkillService(session, settings(), tool_lookup=get_spec)
         created = library.create(
             _skill_package(instructions="方法正文", resources=[], enabled=False),
             "settings-package",
@@ -652,13 +713,13 @@ def test_incompatible_skill_can_be_disabled_but_not_enabled(workspace, monkeypat
     factory, _, _ = workspace
     with factory() as session:
         session.info["actor"] = actor(1)
-        library = AgentSkillService(session, settings())
+        library = AgentSkillService(session, settings(), tool_lookup=get_spec)
         created = library.create(
             _skill_package(instructions="方法正文", resources=[]), "retired-capability"
         )
         monkeypatch.setattr(
             "short_drama.service.skills.catalog.versions.platform_tool_issues",
-            lambda _tools: ["所需能力已退役"],
+            lambda _tools, _lookup: ["所需能力已退役"],
         )
         disabled = library.patch_settings(created.id, {"row_version": "1", "enabled": False})
         assert not disabled.enabled and not disabled.compatible
@@ -673,13 +734,13 @@ def test_skill_package_concurrent_create_and_settings_are_serialized(builtin_wor
     from short_drama.service.skills.catalog.builtin_skill import publish_builtin_skills
 
     factory, configured, storage = builtin_workspace
-    publish_builtin_skills(factory, configured, storage)
+    publish_builtin_skills(factory, configured, storage, tool_lookup=get_spec)
 
     def create():
         with factory() as session:
             session.info["actor"] = actor(1)
             return (
-                AgentSkillService(session, settings())
+                AgentSkillService(session, settings(), tool_lookup=get_spec)
                 .create(_skill_package(instructions="方法正文", resources=[]), "concurrent-create")
                 .id
             )
@@ -693,7 +754,7 @@ def test_skill_package_concurrent_create_and_settings_are_serialized(builtin_wor
             session.info["actor"] = actor(1)
             try:
                 return (
-                    AgentSkillService(session, configured, storage)
+                    AgentSkillService(session, configured, storage, tool_lookup=get_spec)
                     .patch_settings(
                         "script.v1",
                         {"row_version": "0", "enabled": False},
@@ -737,7 +798,9 @@ def test_skill_package_offline_backfill_preserves_legacy_identity_and_settings(w
     assert not any(second.values())
     with factory() as session:
         session.info["actor"] = actor(1)
-        legacy = AgentSkillService(session, settings()).detail(str(identifier))
+        legacy = AgentSkillService(session, settings(), tool_lookup=get_spec).detail(
+            str(identifier)
+        )
         assert (
             legacy.id == str(identifier) and legacy.content_version == 7 and legacy.row_version == 9
         )
@@ -839,7 +902,7 @@ def test_import_replacement_preserves_hidden_tags_unless_explicitly_cleared(work
     factory, _, _ = workspace
     with factory() as session:
         session.info["actor"] = actor(1)
-        library = AgentSkillService(session, settings())
+        library = AgentSkillService(session, settings(), tool_lookup=get_spec)
         created = library.create(
             _skill_package(instructions="正文", resources=[], tags=["隐藏标签"], enabled=False),
             "tags-original",
@@ -868,7 +931,7 @@ def test_mode_incompatibility_and_missing_references_are_rejected_before_storage
     with factory() as session:
         session.info["actor"] = actor(1)
         storage = _SkillTextStorage(session)
-        library = AgentSkillService(session, settings(), storage)
+        library = AgentSkillService(session, settings(), storage, tool_lookup=get_spec)
         for changes in (
             {"required_tools": [STANDARD_TOOL], "modes": ["standard", "infinite_canvas"]},
             {"instructions": "[缺失](references/missing.md)"},

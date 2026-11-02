@@ -1,3 +1,4 @@
+from ipaddress import ip_network
 from typing import Literal
 from urllib.parse import quote, urlsplit
 
@@ -11,6 +12,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     auth_enabled: bool = True
+    mcp_trusted_proxy_cidrs: list[str] = Field(default_factory=list)
     auth_cookie_secure: bool = True
     public_origin: str = "https://localhost"
     auth_session_days: int = Field(default=7, ge=1, le=30)
@@ -76,15 +78,21 @@ class Settings(BaseSettings):
     generation_audio_budget_seconds: int = 300
     generation_batches_enabled: bool = False
     agent_enabled: bool = True
+    agent_model_timeout_seconds: int = Field(default=120, ge=1, le=600)
     agent_lease_seconds: int = Field(default=180, ge=150, le=3600)
     agent_poll_seconds: int = Field(default=5, ge=3, le=60)
     agent_run_decision_cap: int = Field(default=240, ge=20, le=2000)
     agent_run_output_token_cap: int = Field(default=2_000_000, ge=100_000, le=20_000_000)
-    agent_progress_window_operations: int = Field(default=24, ge=8, le=100)
-    agent_progress_zero_windows: int = Field(default=2, ge=1, le=5)
-    agent_requirement_attempt_cap: int = Field(default=4, ge=2, le=10)
-    agent_reviewer_mode: Literal["auto", "same_model"] = "auto"
     agent_stop_at_boundary: bool = True
+    agent_sandbox_domain: str = ""
+    agent_sandbox_protocol: Literal["http", "https"] = "http"
+    agent_sandbox_api_key: SecretStr | None = None
+    agent_sandbox_image: str = "ai-short-drama/agent-sandbox:py3.12.16-node24.22.2"
+    agent_sandbox_cpu: str = "2"
+    agent_sandbox_memory: str = "2Gi"
+    agent_sandbox_command_timeout_seconds: int = Field(default=120, ge=1, le=3600)
+    agent_sandbox_output_max_bytes: int = Field(default=65536, ge=1024, le=1048576)
+    agent_sandbox_workspace_root: str = "/var/lib/short-drama/agent-workspaces"
     generation_batch_image_concurrency: int = Field(default=2, ge=1, le=8)
     generation_batch_video_concurrency: int = Field(default=1, ge=1, le=4)
     generation_download_timeout: int = Field(default=60, ge=10, le=600)
@@ -110,6 +118,11 @@ class Settings(BaseSettings):
         if ":" in host and not host.startswith("["):
             host = f"[{host}]"
         return SecretStr(f"{scheme}://{user}:{password}@{host}:{self.rabbitmq_port}/{vhost}")
+
+    @field_validator("mcp_trusted_proxy_cidrs")
+    @classmethod
+    def valid_mcp_proxies(cls, values: list[str]) -> list[str]:
+        return [str(ip_network(value, strict=False)) for value in values]
 
     @field_validator("minio_image_bucket", "minio_video_bucket", "minio_audio_bucket")
     @classmethod

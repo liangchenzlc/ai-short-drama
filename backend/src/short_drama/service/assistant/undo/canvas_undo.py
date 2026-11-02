@@ -48,8 +48,16 @@ def canvas_undo_context(
         row.node_key: row
         for row in native.canvas_dao.children(CanvasNode, canvas.id, lock=True, refresh=True)
     }
+    canvas_revision = next(
+        (
+            change["after"]["row_version"]
+            for change in reversed(operation.changes)
+            if change["kind"] == "canvas_document" and change["id"] == canvas.source_key
+        ),
+        str((operation.result or {}).get("canvas_revision")),
+    )
     expected = advance_document(
-        {"row_version": str((operation.result or {}).get("canvas_revision"))},
+        {"row_version": canvas_revision},
         "canvas_document",
         canvas.source_key,
         receipts,

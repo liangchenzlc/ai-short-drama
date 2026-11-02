@@ -3,6 +3,7 @@
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
+from typing import Any
 
 from pydantic import TypeAdapter
 
@@ -260,33 +261,38 @@ class ProjectStoryboardService(BaseService):
         ).model_dump(mode="json")
 
     def list(self, project_id, offset=0, limit=100):
-        self.dao.validate_pagination(offset, limit)
         with self._transaction(read_only=True):
-            creation = self.lock_project(project_id, for_update=False)
-            rows, total = self.dao.list_rows(creation.id, offset, limit)
-            assets_by_shot, images_by_shot = self.dao.list_details([row.id for row in rows])
-            videos_by_shot = self.dao.video_rows([row.id for row in rows])
-            from short_drama.service.creation.sound.voices.context import native_contexts
+            return self.list_locked(project_id, offset, limit)
 
-            speech_by_shot = native_contexts(self.session, creation, rows, settings=self.settings)
-            return {
-                "project_id": str(creation.id),
-                "storyboard_version": str(creation.storyboard_version),
-                "items": [
-                    self._shot(
-                        creation,
-                        row,
-                        assets=assets_by_shot[row.id],
-                        image_row=images_by_shot.get(row.id),
-                        video_row=videos_by_shot.get(row.id),
-                        native_speech=speech_by_shot[row.id],
-                    )
-                    for row in rows
-                ],
-                "total": total,
-                "offset": offset,
-                "limit": limit,
-            }
+    def list_locked(
+        self, project_id: int | str, offset: int = 0, limit: int = 100
+    ) -> dict[str, Any]:
+        self.dao.validate_pagination(offset, limit)
+        creation = self.lock_project(project_id, for_update=False)
+        rows, total = self.dao.list_rows(creation.id, offset, limit)
+        assets_by_shot, images_by_shot = self.dao.list_details([row.id for row in rows])
+        videos_by_shot = self.dao.video_rows([row.id for row in rows])
+        from short_drama.service.creation.sound.voices.context import native_contexts
+
+        speech_by_shot = native_contexts(self.session, creation, rows, settings=self.settings)
+        return {
+            "project_id": str(creation.id),
+            "storyboard_version": str(creation.storyboard_version),
+            "items": [
+                self._shot(
+                    creation,
+                    row,
+                    assets=assets_by_shot[row.id],
+                    image_row=images_by_shot.get(row.id),
+                    video_row=videos_by_shot.get(row.id),
+                    native_speech=speech_by_shot[row.id],
+                )
+                for row in rows
+            ],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
 
     def get(self, project_id, shot_id):
         with self._transaction(read_only=True):

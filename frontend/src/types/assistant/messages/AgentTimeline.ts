@@ -1,12 +1,16 @@
 import type { Bubble } from '@ant-design/x';
 import type { AssistantOperation } from '@host/types/assistant/api';
-import type { AgentMessage } from '@host/types/assistant/engine';
+import type { AgentMessage, AgentRun } from '@host/types/assistant/engine';
+import type { AssistantTraceBlock } from '@host/types/assistant/trace';
 
 export type BubbleItems = NonNullable<React.ComponentProps<typeof Bubble.List>['items']>;
 
 export interface TimelineProps {
   messages: readonly AgentMessage[];
   operations: readonly AssistantOperation[];
+  traceBlocks?: readonly AssistantTraceBlock[];
+  runs?: readonly AgentRun[];
+  conversationId?: string;
   layout?: 'standard';
   onUndo?: (id: string) => void;
   undoDisabled?: boolean;

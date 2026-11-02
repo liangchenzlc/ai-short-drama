@@ -37,7 +37,7 @@ class AssetService(BaseService):
                 if media.project_id != project.id:
                     raise BusinessError("Asset media must belong to the same project")
             asset = self.dao.create(self._creation_audit(values))
-            AssetVersionService(self.session).append_locked(asset)
+            AssetVersionService(self.session).append_locked(asset, initial=True)
             return self._read(asset)
 
     def _validate_create(self, values):

@@ -8,7 +8,13 @@ from pydantic import Field, field_validator, model_validator
 from short_drama.schemas.base import Identifier, InputModel, ReadModel
 
 AgentRunStatus = Literal[
-    "queued", "running", "waiting_generation", "waiting_review", "succeeded", "failed", "cancelled"
+    "queued",
+    "running",
+    "waiting_generation",
+    "waiting_input",
+    "succeeded",
+    "failed",
+    "cancelled",
 ]
 Title = Annotated[str, Field(min_length=1, max_length=120)]
 ConversationStage = Literal["source", "assets", "storyboard"]

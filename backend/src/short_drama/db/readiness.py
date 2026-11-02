@@ -94,7 +94,7 @@ def _type_signature(column_type):
     )
 
 
-def inspect_agent_schema(connection):
+def _inspect_schema(connection, required):
     """Read-only structural verification, independent of the feature switch.
 
     A disabled Agent must not make an otherwise migrated prompt-only database
@@ -102,10 +102,10 @@ def inspect_agent_schema(connection):
     execution feature is disabled. Names alone do not establish readiness.
     """
     inspector = inspect(connection)
-    present = set(inspector.get_table_names()) & AGENT_TABLES
+    present = set(inspector.get_table_names()) & required
     if not present:
-        return {"status": "absent", "gaps": sorted(AGENT_TABLES)}
-    gaps = [name for name in AGENT_TABLES if name not in present]
+        return {"status": "absent", "gaps": sorted(required)}
+    gaps = [name for name in required if name not in present]
     for name in sorted(present):
         expected = Base.metadata.tables[name]
         columns = {column["name"]: column for column in inspector.get_columns(name)}
@@ -145,6 +145,8 @@ def inspect_agent_schema(connection):
         }
         if name == "agent_runs" and "uk_agent_runs_active_conversation" in indexes:
             gaps.append("agent_runs.uk_agent_runs_active_conversation:legacy_unique_index")
+        if name == "agent_operations" and "uk_agent_operations_active" in indexes:
+            gaps.append("agent_operations.uk_agent_operations_active:legacy_unique_index")
         required_indexes = {
             index.name: (tuple(column.name for column in index.columns), bool(index.unique))
             for index in expected.indexes
@@ -209,6 +211,44 @@ def inspect_agent_schema(connection):
     return {"status": "partial" if gaps else "ready", "gaps": sorted(set(gaps))}
 
 
+def inspect_agent_schema(connection):
+    state = _inspect_schema(connection, AGENT_TABLES)
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    retired = {
+        "agent_tool_calls": {
+            "review_payload",
+            "review_hash",
+            "review_version",
+            "review_decision",
+            "reviewed_by",
+            "reviewed_at",
+        },
+        "agent_operations": {"result_digest", "evidence_kind"},
+    }
+    gaps = list(state["gaps"])
+    if "agent_task_requirements" in tables:
+        gaps.append("agent_task_requirements:retired_table")
+    for table, columns in retired.items():
+        if table in tables:
+            actual = {column["name"] for column in inspector.get_columns(table)}
+            gaps.extend(f"{table}.{name}:retired_column" for name in actual & columns)
+    if gaps and state["status"] != "absent":
+        return {"status": "partial", "gaps": sorted(set(gaps))}
+    return state
+
+
+def inspect_mcp_schema(connection):
+    return _inspect_schema(connection, {"mcp_access_tokens", "audit_events"})
+
+
+def assert_mcp_ready(engine):
+    with engine.connect() as connection:
+        state = inspect_mcp_schema(connection)
+    if state["status"] != "ready":
+        raise RuntimeError("MCP schema incomplete. Apply the account MCP token migration first.")
+
+
 def assert_agent_ready(engine, settings):
     if not getattr(settings, "agent_enabled", False):
         return
@@ -218,8 +258,8 @@ def assert_agent_ready(engine, settings):
         state = inspect_agent_schema(connection)
     if state["status"] != "ready":
         raise RuntimeError(
-            "Agent schema incomplete or changed. Run scripts/agent_migration.py --precheck "
-            "and --apply before enabling Agent mode."
+            "Agent schema incomplete or changed. Follow the runtime migration README and run "
+            "scripts/agent_runtime_migration.py --precheck before enabling Agent mode."
         )
 
 

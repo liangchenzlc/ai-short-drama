@@ -22,13 +22,10 @@ from short_drama.agent.memory.runtime import (
     AgentMemoryStore,
 )
 from short_drama.agent.memory.sources import message_sources
-from short_drama.agent.runtime.decision_input import prepare_decision
-from short_drama.agent.runtime.decisions import execute_tools
-from short_drama.agent.runtime.executor import AgentRuntimeStore
-from short_drama.agent.runtime.operations import claim_operation, complete_operation
 from short_drama.agent.task.state import apply_inputs_locked
+from short_drama.agent.tools.registry import get_spec
 from short_drama.core.exceptions import Conflict, NotFound
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.dao.assistant.memory.memory import MemoryScopeContext
 from short_drama.domain import MediaFile
 from short_drama.domain.assistant.context.context import AgentAttachment
@@ -50,19 +47,25 @@ from short_drama.service.assistant.memory.memory import (
 from short_drama.service.assistant.tasks.task import AssistantTaskService
 from short_drama.service.base import utcnow
 from short_drama.service.projects.management.project import ProjectService
-from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 pytestmark = pytest.mark.integration
 
 
 def actor(owner=1):
-    return ActorContext(owner, "creator", "creator@example.test", True, 1, "hash", "test")
+    return SessionActorContext(
+        user_id=owner,
+        username="creator",
+        email="creator@example.test",
+        verified=True,
+        session_id=1,
+        csrf_hash="hash",
+        request_id="test",
+    )
 
 
 @pytest.fixture
 def memory_workspace(db_session):
-    from tests.integration.standard.assistant.test_global_assistant_tasks import legacy_task_engine
 
     db_session.info["actor"] = actor()
     projects = [
@@ -76,12 +79,11 @@ def memory_workspace(db_session):
         with factory() as session:
             session.info["actor"] = actor()
             conversations.append(
-                AssistantTaskService(session, settings)
+                AssistantTaskService(session, settings, tool_lookup=get_spec)
                 .create_global_conversation({}, f"conversation-{index}")
                 .id
             )
-    with legacy_task_engine(factory):
-        yield factory, projects, conversations
+    yield factory, projects, conversations
 
 
 def service(session, owner=1):
@@ -336,7 +338,7 @@ def seeded_run(workspace, *, count=10):
             }
         )
         accepted = AssistantTaskService(
-            session, SimpleNamespace(agent_enabled=True)
+            session, SimpleNamespace(agent_enabled=True), tool_lookup=get_spec
         ).send_task_message(
             conversations[0], {"content": "以后对白要短", "model_config_id": model.id}, "seed"
         )
@@ -389,7 +391,9 @@ def test_deletion_previews_shared_memory_and_checks_selected_versions(memory_wor
             "edited",
         )
         manager.patch_item(edited.id, {"content_version": "1", "content": "后来修订的作品设定"})
-        tasks = AssistantTaskService(session, SimpleNamespace(agent_enabled=True))
+        tasks = AssistantTaskService(
+            session, SimpleNamespace(agent_enabled=True), tool_lookup=get_spec
+        )
         preview = tasks.deletion_memory_preview(conversations[0])
         by_id = {int(item["id"]): item for item in preview["items"]}
         assert set(by_id) == {shared.id, edited.id}
@@ -451,7 +455,9 @@ def test_deletion_default_preserves_shared_memory_and_purges_source_offline(memo
             ),
             "retained",
         )
-        tasks = AssistantTaskService(session, SimpleNamespace(agent_enabled=True))
+        tasks = AssistantTaskService(
+            session, SimpleNamespace(agent_enabled=True), tool_lookup=get_spec
+        )
         current = tasks.get_conversation(conversations[0])
         tasks.delete_global_conversation(
             conversations[0], {"row_version": current.row_version}, "delete"
@@ -506,7 +512,9 @@ def test_deletion_preview_protects_independent_sources_and_unrelated_facts(memor
                 origin="extracted",
                 sources=source_rows(session, 1, conversations[1], [other_id]),
             )
-        tasks = AssistantTaskService(session, SimpleNamespace(agent_enabled=True))
+        tasks = AssistantTaskService(
+            session, SimpleNamespace(agent_enabled=True), tool_lookup=get_spec
+        )
         preview = tasks.deletion_memory_preview(conversations[0])
         assert preview["items"][0]["id"] == str(sourced.id)
         assert preview["items"][0]["protection_reasons"] == ["independent_sources"]
@@ -585,7 +593,9 @@ def test_purge_releases_only_owned_unreferenced_uploads_and_retries_storage(memo
         orphan_id, shared_id, other_owner_id = (row.id for row in media)
     with factory() as session:
         session.info["actor"] = actor()
-        tasks = AssistantTaskService(session, SimpleNamespace(agent_enabled=True))
+        tasks = AssistantTaskService(
+            session, SimpleNamespace(agent_enabled=True), tool_lookup=get_spec
+        )
         current = tasks.get_conversation(conversations[0])
         tasks.delete_global_conversation(
             conversations[0], {"row_version": current.row_version}, "purge"
@@ -615,40 +625,37 @@ def test_purge_releases_only_owned_unreferenced_uploads_and_retries_storage(memo
 
 
 def test_late_model_receipts_cannot_restore_purged_conversation_content(memory_workspace):
+    from short_drama.agent.gateway.contracts import AgentGatewayError
+    from short_drama.agent.runtime.model_ledger import RunModelLedger
     from short_drama.agent.session.purge import purge_one
+    from tests.integration.standard.assistant.test_agent_context_compaction import runtime
 
     factory, _projects, conversations = memory_workspace
     accepted = seeded_run(memory_workspace, count=2)
     with factory.begin() as session:
-        turn = AgentTurn(
-            id=next_id(),
-            run_id=accepted.run.id,
-            turn_no=1,
-            status="sent",
-            request_messages=[{"private": "original"}],
-            response={"raw": {"private": "original"}},
-            usage={},
-            created_at=utcnow(),
-            updated_at=utcnow(),
-        )
-        session.add(turn)
-        turn_id = turn.id
+        run = session.get(AgentRun, accepted.run.id)
+        task = session.get(AgentTask, accepted.task.id)
+        run.status, run.finished_at = "queued", None
+        task.status, task.finished_at = "queued", None
+    _saver, context = runtime((factory, runtime_settings(), accepted.run.model_config_id), accepted)
+    ledger = RunModelLedger(context)
+    ledger.before_send(
+        {
+            "model_call_id": "late-private",
+            "source": "assistant",
+            "body": {"max_tokens": 8, "messages": [{"role": "user", "content": "私有"}]},
+        }
+    )
     with factory() as session:
         session.info["actor"] = actor()
-        tasks = AssistantTaskService(session, SimpleNamespace(agent_enabled=True))
+        tasks = AssistantTaskService(session, runtime_settings(), tool_lookup=get_spec)
         current = tasks.get_conversation(conversations[0])
-        tasks.delete_global_conversation(
-            conversations[0], {"row_version": current.row_version}, "purge"
-        )
+        tasks.delete_global_conversation(current.id, {"row_version": current.row_version}, "purge")
     assert purge_one(factory, None)
-    store = AgentRuntimeStore(factory, runtime_settings())
-    claim = SimpleNamespace(run_id=accepted.run.id, turn_id=turn_id)
-    with pytest.raises(LeaseLost):
-        store.save_raw(claim, {"private": "late"})
-    with pytest.raises(LeaseLost):
-        store.save_result(claim, {"output": "late"})
-    with factory.begin() as session:
-        turn = session.get(AgentTurn, turn_id)
+    with pytest.raises(AgentGatewayError, match="agent_admission_denied"):
+        ledger.save_raw({"model_call_id": "late-private", "private": "late"})
+    with factory() as session:
+        turn = session.scalar(select(AgentTurn).where(AgentTurn.run_id == accepted.run.id))
         assert turn.response is None and turn.request_messages == []
 
 
@@ -658,7 +665,7 @@ def test_late_model_receipts_cannot_restore_purged_conversation_content(memory_w
 def test_memory_credential_failure_is_terminal_before_provider_send(
     memory_workspace, monkeypatch, kind, prior_attempts, code
 ):
-    from short_drama.agent.gateway.protocol import AgentGatewayError
+    from short_drama.agent.gateway.contracts import AgentGatewayError
     from short_drama.core.exceptions import WorkflowError
 
     factory, _projects, _conversations = memory_workspace
@@ -673,7 +680,7 @@ def test_memory_credential_failure_is_terminal_before_provider_send(
         raise WorkflowError("model_credentials_unavailable", "credential fixture")
 
     monkeypatch.setattr("short_drama.agent.memory.runtime.model_credentials", unavailable)
-    runtime = AgentMemoryRuntime(factory, runtime_settings(), None)
+    runtime = AgentMemoryRuntime(factory, runtime_settings())
     runtime.execute_one(identifier, 1)
     assert runtime.store.recover() == 0
     with factory.begin() as session:
@@ -703,7 +710,7 @@ def test_memory_credential_failure_is_terminal_before_provider_send(
 def test_memory_retry_classification_preserves_terminal_and_unknown_failures(
     memory_workspace, kind, code, receipt, accepted_unknown, attempts, status
 ):
-    from short_drama.agent.gateway.protocol import AgentGatewayError
+    from short_drama.agent.gateway.contracts import AgentGatewayError
 
     factory, _projects, _conversations = memory_workspace
     accepted = seeded_run(memory_workspace, count=2)
@@ -928,69 +935,6 @@ def runtime_settings():
     )
 
 
-@pytest.mark.parametrize("oversized", ["input", "tool_result"])
-def test_whole_context_budget_pauses_without_losing_inputs_or_open_tool_results(
-    memory_workspace, oversized
-):
-    factory, _projects, conversations = memory_workspace
-    accepted = seeded_run(memory_workspace, count=2)
-    settings = runtime_settings()
-    content = "明确约束" * 7000 if oversized == "input" else "保留工具回执再回答"
-    with factory() as session:
-        session.info["actor"] = actor()
-        following = AssistantTaskService(session, settings).send_task_message(
-            conversations[1],
-            {"content": content, "model_config_id": accepted.run.model_config_id},
-            "bounded-task",
-        )
-    pending = {"calls": {"original-call": {"content": "完整回执" * 20000}}}
-    if oversized == "tool_result":
-        with factory.begin() as session:
-            run = session.get(AgentRun, following.run.id)
-            run.checkpoint = {
-                **run.checkpoint,
-                "history": {"original": True},
-                "pending_results": pending,
-            }
-    store = AgentRuntimeStore(factory, settings)
-    assert store.claim_execution(following.run.id, 1, prepare_decision) is None
-    with factory.begin() as session:
-        run = session.get(AgentRun, following.run.id)
-        task = session.get(AgentTask, following.task.id)
-        assert task.status == "paused_budget"
-        assert run.error["code"] == "agent_context_budget_exhausted"
-        assert run.usage["decision_calls"] == 0
-        assert session.get(AgentMessage, following.message.id).content == content
-        assert not session.scalars(select(AgentTurn).where(AgentTurn.run_id == run.id)).all()
-        if oversized == "tool_result":
-            assert run.checkpoint["pending_results"] == pending
-
-
-def test_provider_envelope_budget_is_checked_before_a_request_is_marked_sent(memory_workspace):
-    from short_drama.agent.gateway.protocol import AgentGatewayError
-
-    factory, _projects, conversations = memory_workspace
-    accepted = seeded_run(memory_workspace, count=2)
-    settings = runtime_settings()
-    with factory() as session:
-        session.info["actor"] = actor()
-        following = AssistantTaskService(session, settings).send_task_message(
-            conversations[1],
-            {"content": "小输入", "model_config_id": accepted.run.model_config_id},
-            "provider-budget",
-        )
-    store = AgentRuntimeStore(factory, settings)
-    claim = store.claim_execution(following.run.id, 1, prepare_decision)
-    with pytest.raises(AgentGatewayError) as caught:
-        store.before_send(
-            claim, {"body": {"messages": [{"role": "user", "content": "扩展" * 80000}]}}
-        )
-    assert caught.value.code == "agent_context_budget_exhausted"
-    with factory.begin() as session:
-        assert session.get(AgentTurn, claim.turn_id).status == "prepared"
-        assert session.get(AgentRun, claim.run_id).usage["decision_calls"] == 0
-
-
 def maintenance_job(workspace, accepted, *, kind="extract"):
     factory, _projects, conversations = workspace
     with factory.begin() as session:
@@ -1045,50 +989,42 @@ def test_memory_context_details_hide_frozen_provider_data_and_other_accounts(mem
 
 
 def test_complete_memory_receipt_recovers_by_local_replay_only(memory_workspace):
+    import asyncio
+
+    from tests.support.chat_transport import JSONChatTransport
+
     factory, _projects, _conversations = memory_workspace
     accepted = seeded_run(memory_workspace, count=2)
     identifier = maintenance_job(memory_workspace, accepted)
     settings = runtime_settings()
     store = AgentMemoryStore(factory, settings)
     claim = store.claim_execution(identifier, 1)
-    store.before_send(claim, {"original": "request"})
-    store.save_raw(claim, {"original": "receipt"})
+    transport = JSONChatTransport(
+        {
+            "memories": [
+                {
+                    "kind": "preference",
+                    "memory_key": "dialogue",
+                    "title": "对白偏好",
+                    "content": "对白要短",
+                    "source_message_ids": [str(accepted.message.id)],
+                }
+            ]
+        }
+    )
+    runtime = AgentMemoryRuntime(factory, settings, transport=transport)
+    output, usage = asyncio.run(runtime._model_result(claim, ""))
+    assert json.loads(output)["memories"][0]["content"] == "对白要短"
+    assert usage["output_tokens"] == 12
     with factory.begin() as session:
         session.get(AgentMemoryJob, identifier).lease_until = utcnow() - timedelta(seconds=1)
     assert store.recover() == 1
     with pytest.raises(LeaseLost):
         store.settle(claim, {}, {})
 
-    class ReplayGateway:
-        calls = 0
-
-        async def decide(self, *args, request, raw, **kwargs):
-            self.calls += 1
-            assert request == {"original": "request"}
-            assert raw == {"original": "receipt"}
-            return {
-                "output_kind": "text",
-                "output": json.dumps(
-                    {
-                        "memories": [
-                            {
-                                "kind": "preference",
-                                "memory_key": "dialogue",
-                                "title": "对白偏好",
-                                "content": "对白要短",
-                                "source_message_ids": [str(accepted.message.id)],
-                            }
-                        ]
-                    }
-                ),
-                "usage": {"output_tokens": 12},
-            }
-
-    gateway = ReplayGateway()
-    runtime = AgentMemoryRuntime(factory, settings, gateway)
     runtime.execute_one(identifier, 2)
     runtime.execute_one(identifier, 2)
-    assert gateway.calls == 1
+    assert len(transport.requests) == 1
     with factory.begin() as session:
         job = session.get(AgentMemoryJob, identifier)
         assert job.status == "succeeded" and job.attempts == 1
@@ -1137,119 +1073,47 @@ def test_late_memory_receipt_cannot_restore_a_forgotten_source(memory_workspace)
         assert service(session).list_items().total == 0
 
 
-def test_forgetting_user_memory_fences_another_conversation_response(memory_workspace):
-    from short_drama.domain.assistant.conversations.models import AgentEvent
-
-    factory, _projects, conversations = memory_workspace
-    accepted = seeded_run(memory_workspace, count=2)
-    settings = runtime_settings()
-    with factory() as session:
-        item = service(session).create_item(memory(), "global-before-flight")
-        following = AssistantTaskService(session, settings).send_task_message(
-            conversations[1],
-            {"content": "继续讨论", "model_config_id": accepted.run.model_config_id},
-            "flight",
-        )
-    store = AgentRuntimeStore(factory, settings)
-    claim = store.claim_execution(following.run.id, 1, prepare_decision)
-    store.before_send(claim, {"fixture": True})
-    with factory() as session:
-        service(session).forget_item(item.id, {"content_version": "1"})
-    assert store.save_delta(claim, "旧记忆输出", 0) == "stale"
-    with factory() as session:
-        assert (
-            session.scalar(
-                select(AgentEvent.id).where(
-                    AgentEvent.conversation_id == conversations[1],
-                    AgentEvent.event_type == "assistant.delta",
-                )
-            )
-            is None
-        )
-    store.save_raw(claim, {"fixture_receipt": True})
-    assert not store.save_result(
-        claim,
-        {
-            "output_kind": "text",
-            "output": "旧记忆输出",
-            "history": {"old": True},
-            "usage": {"output_tokens": 3, "output_tokens_reported": True},
-        },
-    )
-    with factory.begin() as session:
-        run = session.get(AgentRun, following.run.id)
-        version = run.message_version
-        assert run.status == "running" and run.checkpoint["memory_epoch"] == 1
-        assert not session.scalars(
-            select(AgentMessage).where(
-                AgentMessage.conversation_id == conversations[1],
-                AgentMessage.role == "assistant",
-            )
-        ).all()
-    resumed = store.claim_execution(following.run.id, version, prepare_decision)
-    assert resumed.inputs["kwargs"]["history"] is None
-    assert resumed.inputs["memory_epoch"] == 1
-
-
 @pytest.mark.parametrize("bad_version", [False, True])
 def test_memory_tool_result_is_paired_and_allows_a_following_answer(memory_workspace, bad_version):
+    from short_drama.agent.runtime.executor import AgentRuntime
+    from tests.support.assistant_runtime import RuntimeTransport, calls, tool_result
+
     factory, _projects, conversations = memory_workspace
     accepted = seeded_run(memory_workspace, count=2)
     settings = runtime_settings()
     with factory() as session:
         item = service(session).create_item(memory(), "readable")
-        following = AssistantTaskService(session, settings).send_task_message(
+        following = AssistantTaskService(session, settings, tool_lookup=get_spec).send_task_message(
             conversations[1],
             {"content": "查记忆后回答", "model_config_id": accepted.run.model_config_id},
             "read",
         )
-    store = AgentRuntimeStore(factory, settings)
-    claim = store.claim_execution(following.run.id, 1, prepare_decision)
-    store.before_send(claim, {"fixture": True})
-    store.save_raw(claim, {"fixture_receipt": True})
-    assert store.save_result(
-        claim,
-        {
-            "output_kind": "tool_requests",
-            "output": {
-                "calls": [
+    transport = RuntimeTransport(
+        [
+            calls(
+                (
+                    "memory-call",
+                    "runtime__read_memory",
                     {
-                        "tool_call_id": "memory-call",
-                        "tool_name": "read_memory",
-                        "args": {
-                            "ids": [str(item.id)],
-                            "versions": {str(item.id): "99" if bad_version else "1"},
-                        },
-                    }
-                ]
-            },
-            "history": {"fixture_history": True},
-            "usage": {"output_tokens": 3, "output_tokens_reported": True},
-        },
+                        "ids": [str(item.id)],
+                        "versions": {str(item.id): "99" if bad_version else "1"},
+                    },
+                )
+            ),
+            {"text": "已依据读取结果回答"},
+        ]
     )
-    execute_tools(factory, settings, claim.run_id, fence=(claim.version, claim.token))
-    with factory.begin() as session:
-        run = session.get(AgentRun, claim.run_id)
-        version = run.message_version
-    following_claim = store.claim_execution(claim.run_id, version, prepare_decision)
-    result = following_claim.inputs["kwargs"]["deferred_results"]["calls"]["memory-call"]
-    if bad_version:
-        assert result["error"]["code"] == "conflict"
-    else:
-        assert result["items"][0]["content"] == item.content
-    store.before_send(following_claim, {"fixture": "answer"})
-    store.save_raw(following_claim, {"fixture_receipt": "answer"})
-    store.save_result(
-        following_claim,
-        {
-            "output_kind": "text",
-            "output": "已依据读取结果回答",
-            "history": {"fixture_history": True},
-            "usage": {"output_tokens": 3, "output_tokens_reported": True},
-        },
+    AgentRuntime(factory, settings, transport=transport).execute(following.run.id, 1)
+    result = tool_result(transport.main_requests[-1], "memory-call")
+    assert (
+        result["error"]["code"] == "conflict"
+        if bad_version
+        else result["items"][0]["content"] == item.content
     )
+    calls_in_request = [m for m in transport.main_requests[-1]["messages"] if m.get("tool_calls")]
+    assert any(call["id"] == "memory-call" for m in calls_in_request for call in m["tool_calls"])
     with factory() as session:
-        assert session.get(AgentRun, claim.run_id).status == "succeeded"
+        assert session.get(AgentRun, following.run.id).status == "succeeded"
 
 
 def run_memory_command(
@@ -1264,11 +1128,14 @@ def run_memory_command(
     repeat=1,
     before_execute=None,
 ):
+    from short_drama.agent.runtime.executor import AgentRuntime
+    from tests.support.assistant_runtime import RuntimeTransport, calls
+
     factory, _projects, conversations = workspace
     settings = runtime_settings()
     with factory() as session:
         service(session)
-        accepted = AssistantTaskService(session, settings).send_task_message(
+        accepted = AssistantTaskService(session, settings, tool_lookup=get_spec).send_task_message(
             conversations[1],
             {
                 "content": content,
@@ -1278,63 +1145,31 @@ def run_memory_command(
             },
             key,
         )
-    store = AgentRuntimeStore(factory, settings)
-    claim = store.claim_execution(accepted.run.id, 1, prepare_decision)
-    assert claim is not None
-    inputs = claim.inputs["kwargs"]
-    request = {
-        "request_message_id": str(accepted.message.id),
-        "request_hash": digest({"role": "user", "content": content}),
-        **arguments,
-    }
-    store.before_send(claim, {"fixture": "memory-command"})
-    store.save_raw(claim, {"fixture_receipt": True})
-    assert store.save_result(
-        claim,
-        {
-            "output_kind": "tool_requests",
-            "output": {
-                "calls": [
-                    {"tool_call_id": f"memory-{index}", "tool_name": tool_name, "args": request}
-                    for index in range(repeat)
-                ]
-            },
-            "history": {"fixture_history": True},
-            "usage": {"output_tokens": 3, "output_tokens_reported": True},
-        },
+    arguments = arguments(accepted) if callable(arguments) else arguments
+    request = {"source_message_ids": [str(accepted.message.id)], **arguments}
+    changed = False
+
+    def boundary(_body, index):
+        nonlocal changed
+        if before_execute and not changed:
+            changed = True
+            before_execute(accepted)
+
+    transport = RuntimeTransport(
+        [
+            *[calls((f"memory-{index}", tool_name, request)) for index in range(repeat)],
+            {"text": "已按真实回执处理"},
+        ],
+        before_reply=boundary,
     )
-    operation_id = claim_operation(factory, settings, accepted.run.id)
-    assert operation_id is not None
-    if before_execute:
-        before_execute(accepted)
-    complete_operation(factory, settings, accepted.run.id, operation_id)
-    complete_operation(factory, settings, accepted.run.id, operation_id)
-    execute_tools(factory, settings, accepted.run.id)
-    with factory.begin() as session:
-        run = session.get(AgentRun, accepted.run.id)
+    AgentRuntime(factory, settings, transport=transport).execute(accepted.run.id, 1)
+    with factory() as session:
         operations = session.scalars(
             select(AgentOperation)
-            .where(AgentOperation.run_id == run.id)
+            .where(AgentOperation.run_id == accepted.run.id)
             .order_by(AgentOperation.id)
         ).all()
-        version, status = run.message_version, run.status
-    if status == "running":
-        answer = store.claim_execution(accepted.run.id, version, prepare_decision)
-        assert answer is not None
-        store.before_send(answer, {"fixture": "answer"})
-        store.save_raw(answer, {"fixture_receipt": "answer"})
-        store.save_result(
-            answer,
-            {
-                "output_kind": "text",
-                "output": "已按真实回执处理",
-                "history": {"fixture_history": True},
-                "usage": {"output_tokens": 3, "output_tokens_reported": True},
-            },
-        )
-        with factory() as session:
-            assert session.get(AgentRun, accepted.run.id).status == "succeeded"
-    return accepted, inputs, operations
+    return accepted, transport, operations
 
 
 @pytest.mark.parametrize("scope", ["conversation", "user", "project"])
@@ -1348,15 +1183,58 @@ def test_explicit_memory_tools_use_real_user_text_scope_and_one_durable_effect(
         memory_workspace,
         model_id,
         f"{prefix}：对白简短",
-        "remember_memory",
-        {"kind": "preference", "memory_key": "dialogue", "title": "对白节奏"},
+        "runtime__remember_memory",
+        {
+            "scope_type": scope,
+            "kind": "preference",
+            "memory_key": "dialogue",
+            "title": "对白节奏",
+            "content": "对白简短",
+        },
         key="explicit",
         projects=[str(projects[0])] if scope == "project" else [],
         repeat=2,
     )
     assert len(operations) == 2 and all(row.status == "succeeded" for row in operations)
     assert operations[1].result["already_applied"] is True
-    assert "memory_write_requests" in inputs["instructions"]
+    assert any(
+        message["role"] == "user" and message["content"] == accepted.message.content
+        for message in inputs.main_requests[0]["messages"]
+    )
+    assert all(
+        operation.arguments["source_message_ids"] == [str(accepted.message.id)]
+        for operation in operations
+    )
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+    from short_drama.domain.assistant.execution.graph import AgentGraphCheckpoint
+    from short_drama.domain.assistant.tasks.task import AgentTaskInput
+
+    with factory() as session:
+        source_input = session.scalar(
+            select(AgentTaskInput).where(
+                AgentTaskInput.message_id == accepted.message.id,
+            )
+        )
+        assert source_input.applied_plan_revision is not None
+        snapshots = session.scalars(
+            select(AgentGraphCheckpoint).where(
+                AgentGraphCheckpoint.run_id == accepted.run.id,
+            )
+        ).all()
+        graph_messages = [
+            message
+            for snapshot in snapshots
+            for message in JsonPlusSerializer(pickle_fallback=False)
+            .loads_typed((snapshot.codec, snapshot.payload))
+            .get("channel_values", {})
+            .get("messages", [])
+        ]
+        assert any(
+            message.id == f"task-input:{source_input.id}"
+            and message.additional_kwargs["source_message_ids"] == [str(accepted.message.id)]
+            for message in graph_messages
+        )
     with factory() as session:
         item = service(session).get_item(operations[0].result["memory"]["id"])
         assert item.content == "对白简短" and item.scope_type == scope and item.content_version == 1
@@ -1406,8 +1284,14 @@ def test_explicit_memory_lifecycle_protects_old_sources_and_requires_new_restore
         memory_workspace,
         model_id,
         text,
-        "remember_memory",
-        {"kind": "preference", "memory_key": "dialogue", "title": "对白节奏"},
+        "runtime__remember_memory",
+        {
+            "scope_type": "user",
+            "kind": "preference",
+            "memory_key": "dialogue",
+            "title": "对白节奏",
+            "content": "对白简短",
+        },
         key="remember",
     )
     identifier = operations[0].result["memory"]["id"]
@@ -1415,8 +1299,8 @@ def test_explicit_memory_lifecycle_protects_old_sources_and_requires_new_restore
         memory_workspace,
         model_id,
         "修改记忆“对白节奏”为：对白长短按场景",
-        "update_memory",
-        {"memory_id": identifier, "content_version": "1"},
+        "runtime__update_memory",
+        {"memory_id": identifier, "content_version": "1", "content": "对白长短按场景"},
         key="update",
     )
     assert operations[0].status == "succeeded"
@@ -1424,7 +1308,7 @@ def test_explicit_memory_lifecycle_protects_old_sources_and_requires_new_restore
         memory_workspace,
         model_id,
         "忘掉账号记忆“对白节奏”",
-        "forget_memory",
+        "runtime__forget_memory",
         {"memory_id": identifier, "content_version": "2"},
         key="forget",
     )
@@ -1433,8 +1317,14 @@ def test_explicit_memory_lifecycle_protects_old_sources_and_requires_new_restore
         memory_workspace,
         model_id,
         text,
-        "remember_memory",
-        {"kind": "preference", "memory_key": "renamed", "title": "换标题"},
+        "runtime__remember_memory",
+        {
+            "scope_type": "user",
+            "kind": "preference",
+            "memory_key": "dialogue",
+            "title": "换标题",
+            "content": "对白简短",
+        },
         key="old-remember",
     )
     assert denied[0].status == "failed" and denied[0].error["code"] == "conflict"
@@ -1442,7 +1332,7 @@ def test_explicit_memory_lifecycle_protects_old_sources_and_requires_new_restore
         memory_workspace,
         model_id,
         "重新记住账号记忆“对白节奏”",
-        "restore_memory",
+        "runtime__restore_memory",
         {"memory_id": identifier, "content_version": "3"},
         key="restore",
     )
@@ -1458,25 +1348,31 @@ def test_explicit_memory_lifecycle_protects_old_sources_and_requires_new_restore
         assert len(item.sources) == 3
 
 
-@pytest.mark.parametrize("forgery", ["other_task", "hash", "body", "project_scope"])
+@pytest.mark.parametrize("forgery", ["other_task", "hash", "identity", "project_scope"])
 def test_explicit_memory_tool_rejects_forged_authority_or_content(memory_workspace, forgery):
     factory, _projects, _conversations = memory_workspace
     old = seeded_run(memory_workspace, count=2)
-    arguments = {"kind": "preference", "memory_key": "forged", "title": "伪造"}
+    arguments = {
+        "kind": "preference",
+        "memory_key": "forged",
+        "title": "伪造",
+        "content": "真实原文",
+    }
     content = "记住：真实原文"
     if forgery == "other_task":
-        arguments["request_message_id"] = str(old.message.id)
+        arguments["source_message_ids"] = [str(old.message.id)]
     if forgery == "hash":
         arguments["request_hash"] = "0" * 64
-    if forgery == "body":
-        arguments["content"] = "模型自己补出的内容"
+    if forgery == "identity":
+        arguments["user_id"] = "2"
     if forgery == "project_scope":
         content = "记住当前作品：无绑定作品"
+        arguments["scope_type"] = "project"
     _accepted, _inputs, operations = run_memory_command(
         memory_workspace,
         old.run.model_config_id,
         content,
-        "remember_memory",
+        "runtime__remember_memory",
         arguments,
         key=forgery,
     )
@@ -1485,7 +1381,7 @@ def test_explicit_memory_tool_rejects_forged_authority_or_content(memory_workspa
         assert service(session).list_items().total == 0
 
 
-def test_explicit_memory_tool_rejects_a_newer_edit_even_if_model_guesses_its_version(
+def test_explicit_memory_tool_rejects_a_stale_version_after_a_human_edit(
     memory_workspace,
 ):
     factory, _projects, _conversations = memory_workspace
@@ -1503,8 +1399,8 @@ def test_explicit_memory_tool_rejects_a_newer_edit_even_if_model_guesses_its_ver
         memory_workspace,
         model_id,
         "修改记忆“对白节奏”为：旧指令内容",
-        "update_memory",
-        {"memory_id": str(item.id), "content_version": "2"},
+        "runtime__update_memory",
+        {"memory_id": str(item.id), "content_version": "1", "content": "旧指令内容"},
         key="stale-source",
         before_execute=newer_edit,
     )

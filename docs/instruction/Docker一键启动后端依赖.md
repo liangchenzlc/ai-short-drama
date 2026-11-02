@@ -6,9 +6,10 @@
 
 | 服务 | 用途 | Compose 镜像 | 默认本机端口 |
 | --- | --- | --- | --- |
-| MySQL | 119 张表：账号与项目权限、业务数据、异步任务和媒体元数据 | `mysql:8.4`（满足 8.0.21+ 要求） | 3306 |
+| MySQL | 121 张表：账号与项目权限、业务数据、异步任务和媒体元数据 | `mysql:8.4`（满足 8.0.21+ 要求） | 3306 |
 | RabbitMQ | Celery 原生、成片、Agent 任务消息和死信交换机 | `rabbitmq:4.1-management` | 5672；管理页面 15672 |
 | MinIO | 图片、视频对象存储和临时签名 URL | `minio/minio:RELEASE.2025-04-22T22-12-26Z` | S3 API 9000；控制台 9001 |
+| OpenSandbox | Agent代码容器控制、服务代理与SQLite绑定 | 固定 `release-1.2.0` digest，配置见 `docker/opensandbox/config.toml` | 18080 |
 
 Celery 是后端 Python 进程，不是额外的数据库服务；任务结果由 MySQL 保存，当前没有 Redis 依赖。队列由后端调度器和 Worker 声明。RabbitMQ 配置将消费确认超时设为 25 小时，覆盖应用允许的最长 24 小时视频执行预算。
 
@@ -19,15 +20,19 @@ Python 3.12+ 及 FastAPI、Uvicorn、SQLAlchemy/PyMySQL、Pydantic、Cryptograph
 安装并启动 Docker Desktop（Windows 使用 Linux 容器），或安装 Docker Engine 和 Compose v2。在**仓库根目录**执行：
 
 ```powershell
+# 已有根 .env 时只补配置，勿覆盖；填写独立 AGENT_SANDBOX_API_KEY。
+Copy-Item .env.example .env
+docker build -t ai-short-drama/agent-sandbox:py3.12.16-node24.22.2 -f docker/agent-sandbox/Dockerfile .
 docker compose up -d
 ```
 
-无需先创建根目录 `.env`，Compose 内置了本地开发默认值。首次启动会拉取镜像，并执行以下初始化：
+数据库／队列／存储保留本地开发默认值；OpenSandbox没有默认密钥，根 `.env` 必须填写。根 `.env` 只供Compose插值，backend的Settings需另填相同控制密钥与 `AGENT_SANDBOX_DOMAIN=127.0.0.1:18080`。首次启动会拉取固定服务镜像，并执行以下初始化：
 
-- MySQL 创建 `short_drama` 数据库和同名应用用户；仅在数据卷为空时执行仓库的完整 `schema.mysql8.sql`，创建 119 张表。已有卷不会自动补齐结构：旧版本库按[创作模式维护说明](创作模式维护说明.md)备份、预演并重建，容器重启也不会迁移。
+- MySQL 创建 `short_drama` 数据库和同名应用用户；仅在数据卷为空时执行仓库的完整 `schema.mysql8.sql`，创建 121 张表。已有卷不会自动补齐结构：已达119表基线的库先备份，再按[当前运行时001–006增量](../database/migrations/2026-10-29-assistant-runtime/README.md)保留消息、业务成果和已受理原生任务完成切换；更早结构先按[迁移索引](../database/migrations/README.md)核实并补齐缺口。更早[创作模式重建说明](创作模式维护说明.md)仅适用于对应切换，不作为本次运行时增量步骤；容器重启也不会迁移。
 - RabbitMQ 创建 `short_drama` 用户，使用 `/` vhost。
 - `minio-init` 等待 MinIO 健康后创建 `image`、`video` 两个私有 bucket，重复执行不会删除已有对象。
 - 三个服务使用独立命名数据卷，并配置健康检查和自动重启。
+- OpenSandbox控制服务单独挂Docker socket与SQLite卷，执行容器使用独立代码网络和Docker宿主的持久目录；API／scheduler／Worker仍在本机启动。路径、运行用户与清理方式见[Agent代码环境部署](Agent模式部署与排障.md#代码环境与持久工作区)。
 
 检查启动结果；首次建库可能需要一两分钟：
 
@@ -82,7 +87,9 @@ MINIO_VIDEO_BUCKET=video
 uv run python -c "import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"
 ```
 
-随后按[开发指南](开发运行与验证.md#启动后端)启动 API、调度器及所用队列的独立 Worker（默认文本、图片、视频、成片与 Agent；音频按启用情况增加），并给各进程分配不同的 `SNOWFLAKE_WORKER_ID`。成片 Worker 还需要宿主机安装 FFmpeg / FFprobe。本 Compose 只启动外部依赖。Agent 默认开启，已有库启动前需显式七表迁移并准备独立 Worker；迁移期间或暂不使用时显式设置 `AGENT_ENABLED=false`，详见 [Agent 部署](Agent模式部署与排障.md)；不增加新的依赖容器。API 启动后可用 `/api/v1/test/db` 和 `/api/v1/test/minio` 检查连接。
+随后按[开发指南](开发运行与验证.md#启动后端)启动 API、调度器及所用队列的独立 Worker（默认文本、图片、视频、成片与 Agent；音频按启用情况增加），并给各进程分配不同的 `SNOWFLAKE_WORKER_ID`。成片 Worker 还需要宿主机安装 FFmpeg / FFprobe。本 Compose 只启动外部依赖。Agent 默认开启，已有库启动前须按[运行时001–006迁移说明](../database/migrations/2026-10-29-assistant-runtime/README.md)核实实际结构及已审阶段，完成所需增量并准备独立 Worker；迁移期间或暂不使用时显式设置 `AGENT_ENABLED=false`，详见 [Agent 部署](Agent模式部署与排障.md)；不增加新的依赖容器。API 启动后可用 `/api/v1/test/db` 和 `/api/v1/test/minio` 检查连接。
+
+本次运行时001–006仅在专用随机测试库完成演练，应用库未迁移；完整真实 Celery Worker 部署尚未验收，Compose 依赖健康不代表该链路已验收。
 
 默认 MySQL 应用用户仅有 `short_drama` 库权限，足以运行应用；创建随机数据库的集成测试需要另行配置具有 CREATE/DROP DATABASE 权限的测试用户。
 

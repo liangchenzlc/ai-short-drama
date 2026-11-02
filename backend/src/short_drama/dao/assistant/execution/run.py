@@ -3,10 +3,10 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,41 @@ class RunProjection:
 class AgentRunDAO:
     def __init__(self, session: Session):
         self.session = session
+
+    def latest_model(self, run_id, scope_id):
+        return self.session.scalar(
+            select(AgentTurn)
+            .where(
+                AgentTurn.run_id == run_id,
+                AgentTurn.scope_id == scope_id,
+                AgentTurn.usage["source"].as_string() == "assistant",
+            )
+            .order_by(AgentTurn.turn_no.desc())
+            .limit(1)
+        )
+
+    def model_result(self, run_id, scope_id, signature):
+        return self.session.scalar(
+            select(AgentTurn)
+            .where(
+                AgentTurn.run_id == run_id,
+                AgentTurn.scope_id == scope_id,
+                AgentTurn.response["graph_input_hash"].as_string() == signature,
+            )
+            .order_by(AgentTurn.turn_no.desc())
+            .limit(1)
+        )
+
+    def tool_call(self, run_id, scope_id, provider_call_id):
+        return self.session.scalar(
+            select(AgentToolCall)
+            .where(
+                AgentToolCall.run_id == run_id,
+                AgentToolCall.scope_id == scope_id,
+                AgentToolCall.provider_call_id == provider_call_id,
+            )
+            .with_for_update()
+        )
 
     def projections(self, conversation_id: int, *, task_ids=None, run_ids=None, active=False):
         query = select(
@@ -57,7 +92,7 @@ class AgentRunDAO:
             query = query.where(AgentRun.id.in_(run_ids))
         if active:
             query = query.where(
-                AgentRun.status.in_(("queued", "running", "waiting_generation", "waiting_review"))
+                AgentRun.status.in_(("queued", "running", "waiting_generation", "waiting_input"))
             )
         # JSON extraction can still make a MySQL filesort carry the source JSON.
         # Only IDs may be sorted/paginated in SQL; sort public rows after materialization.
@@ -83,26 +118,10 @@ class AgentRunDAO:
             )
         )
 
-    def reviews(self, run_ids: list[int]) -> dict:
-        if not run_ids:
-            return {}
-        first = (
-            select(func.min(AgentToolCall.id).label("id"))
-            .where(AgentToolCall.run_id.in_(run_ids), AgentToolCall.status == "waiting_review")
-            .group_by(AgentToolCall.run_id)
-            .subquery()
-        )
-        return {
-            row.run_id: row
-            for row in self.session.scalars(
-                select(AgentToolCall).join(first, AgentToolCall.id == first.c.id)
-            )
-        }
-
     def queue(self, conversation_ids: set[int]):
         return self.session.execute(
             select(AgentRun.id, AgentRun.conversation_id, AgentRun.status).where(
                 AgentRun.conversation_id.in_(conversation_ids),
-                AgentRun.status.in_(("queued", "running", "waiting_generation")),
+                AgentRun.status.in_(("queued", "running", "waiting_generation", "waiting_input")),
             )
         ).all()

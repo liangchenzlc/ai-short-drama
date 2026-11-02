@@ -121,9 +121,8 @@ class AssistantDialogueAudioRequest(InputModel):
 
 
 class SubmitGenerationBatch(InputModel):
-    request_message_id: Identifier
-    request_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    retry_operation_id: Identifier | None = None
+    project_id: Identifier
+    canvas_id: Annotated[str, Field(min_length=1, max_length=128)] | None = None
     requests: Annotated[
         list[
             Annotated[
@@ -147,4 +146,5 @@ class SubmitGenerationBatch(InputModel):
 
 
 class GetGenerationStatus(InputModel):
-    operation_id: Identifier
+    project_id: Identifier
+    generation_ids: Annotated[list[Identifier], Field(min_length=1, max_length=16)]

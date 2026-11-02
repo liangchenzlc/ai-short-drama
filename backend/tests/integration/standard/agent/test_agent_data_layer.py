@@ -9,7 +9,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.db.readiness import assert_agent_ready, assert_identity_ready, inspect_agent_schema
 from short_drama.domain import (
     AGENT_TABLES,
@@ -37,14 +37,14 @@ pytestmark = pytest.mark.integration
 
 
 def actor(user_id):
-    return ActorContext(
-        user_id,
-        f"user{user_id}",
-        f"user{user_id}@example.test",
-        True,
-        user_id,
-        "csrf",
-        f"agent-test-{user_id}",
+    return SessionActorContext(
+        user_id=user_id,
+        username=f"user{user_id}",
+        email=f"user{user_id}@example.test",
+        verified=True,
+        session_id=user_id,
+        csrf_hash="csrf",
+        request_id=f"agent-test-{user_id}",
     )
 
 
@@ -135,7 +135,7 @@ def test_missing_agent_tables_do_not_block_prompt_readiness_and_migrate_twice(
     assert_agent_ready(engine, SimpleNamespace(auth_enabled=True, agent_enabled=False))
     with engine.connect() as connection:
         assert inspect_agent_schema(connection)["status"] == "absent"
-    with pytest.raises(RuntimeError, match="agent_migration"):
+    with pytest.raises(RuntimeError, match="agent_runtime_migration"):
         assert_agent_ready(engine, SimpleNamespace(auth_enabled=True, agent_enabled=True))
     migration = migration_module()
     assert migration.apply(engine)["status"] == "ready"
@@ -246,10 +246,14 @@ def seed(session):
             initiated_by=1,
             model_config_id=model.id,
         )
-        turn = AgentTurn(id=13, run_id=12, turn_no=1)
+        from short_drama.domain.assistant.execution.scope import AgentExecutionScope
+
+        scope = AgentExecutionScope(id=20, owner_user_id=1, run_id=12, scope_key="root")
+        turn = AgentTurn(id=13, run_id=12, scope_id=20, turn_no=1)
         tool = AgentToolCall(
             id=14,
             run_id=12,
+            scope_id=20,
             turn_id=13,
             call_index=1,
             provider_call_id="call1",
@@ -267,7 +271,7 @@ def seed(session):
             created_by=1,
         )
         # Scalar FKs intentionally have no ORM relationships. Flush in dependency order.
-        for entity in (conversation, message, run, turn, tool, artifact):
+        for entity in (conversation, message, run, scope, turn, tool, artifact):
             session.add(entity)
             session.flush()
         session.add(

@@ -34,7 +34,7 @@ def test_all_tables_and_columns_match_authoritative_sql():
             name: declaration.split(" COMMENT ")[0].rstrip(",")
             for name, declaration in re.findall(
                 r"^  `?(\w+)`? ((?:BIGINT|INT|TINYINT|VARCHAR|CHAR|DATETIME|JSON|"
-                r"MEDIUMTEXT|TEXT|DOUBLE)\b.*)$",
+                r"MEDIUMTEXT|TEXT|DOUBLE|BINARY|LONGBLOB)\b.*)$",
                 body,
                 re.M,
             )

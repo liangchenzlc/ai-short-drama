@@ -201,14 +201,14 @@ class ConversationOperations(TaskServiceBase):
                 select(AgentTask)
                 .where(
                     AgentTask.conversation_id == conversation.id,
-                    AgentTask.status.in_(("queued", "running", "waiting_media")),
+                    AgentTask.status.in_(("queued", "running", "waiting_media", "waiting_input")),
                 )
                 .order_by(AgentTask.id)
                 .with_for_update()
             ).all()
             for task in tasks:
                 run = dao.latest_run(task.id)
-                active = dao.active_operation(task.id)
+                active = dao.active_operations(task.id)
                 task.control_seq += 1
                 task.control_state = "delete_pending"
                 task.row_version += 1
@@ -220,12 +220,26 @@ class ConversationOperations(TaskServiceBase):
                         kind="delete",
                         request_key=key,
                         request_hash=request_hash,
-                        requested_after_operation_id=active.id if active else None,
+                        requested_after_operation_id=active[-1].id if active else None,
                         created_at=utcnow(),
                     )
                 )
                 self.session.flush()
-                apply_controls_locked(self.session, conversation, task, run)
+                if run.lease_token is None and any(
+                    operation.run_id == run.id and operation.wait_state for operation in active
+                ):
+                    from short_drama.service.assistant.execution.interruptions import (
+                        settle_interrupted_locked,
+                    )
+
+                    # 无租约持久等待没有 Worker 收尾；已受理原生媒体仍独立执行。
+                    settle_interrupted_locked(self.session, conversation, run, "agent_cancelled")
+                apply_controls_locked(
+                    self.session,
+                    conversation,
+                    task,
+                    run,
+                )
             self.session.flush()
             finalize_deletion_locked(self.session, conversation)
             self.session.flush()

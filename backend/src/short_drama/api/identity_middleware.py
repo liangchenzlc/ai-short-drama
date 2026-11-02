@@ -5,7 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from short_drama.core.exceptions import BusinessError, WorkflowError
-from short_drama.core.identity import token_hash
+from short_drama.core.identity import require_session_actor, token_hash
 from short_drama.service.identity.authentication.auth import AuthService
 
 PUBLIC = {
@@ -46,6 +46,7 @@ def install_identity(app, settings):
                     if not public:
                         raise
                 else:
+                    actor = require_session_actor(actor)
                     request.state.actor = actor
                     if request.method not in {"GET", "HEAD", "OPTIONS"} and not hmac.compare_digest(
                         actor.csrf_hash, token_hash(request.headers.get("x-csrf-token", ""))

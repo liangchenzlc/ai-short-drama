@@ -9,6 +9,7 @@ from short_drama.domain.assistant.conversations.models import (
 )
 from short_drama.domain.assistant.execution.graph import AgentGraphCheckpoint, AgentGraphWrite
 from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
+from short_drama.domain.assistant.execution.scope import AgentExecutionScope
 from short_drama.domain.assistant.memory.memory import (
     AgentConversationSummary,
     AgentMemoryForgetRule,
@@ -17,6 +18,7 @@ from short_drama.domain.assistant.memory.memory import (
     AgentMemoryRevision,
     AgentMemorySource,
 )
+from short_drama.domain.assistant.operations.invocation import BusinessToolInvocation
 from short_drama.domain.assistant.operations.media import AgentMediaRequest
 from short_drama.domain.assistant.operations.preference import AgentPreference
 from short_drama.domain.assistant.tables import AGENT_PRIVATE_TABLES, AGENT_TABLES
@@ -26,7 +28,6 @@ from short_drama.domain.assistant.tasks.task import (
     AgentTaskControl,
     AgentTaskInput,
 )
-from short_drama.domain.assistant.tasks.task_requirement import AgentTaskRequirement
 from short_drama.domain.assistant.undo.undo import AgentBatchUndo
 from short_drama.domain.base import Base
 from short_drama.domain.canvas.document.canvas import (
@@ -114,6 +115,7 @@ from short_drama.domain.projects.management.project import Project
 from short_drama.domain.skills.catalog.skill import AgentSkillSetting, AgentSkillVersion
 
 __all__ = [
+    "BusinessToolInvocation",
     "AgentSkillSetting",
     "AgentSkillVersion",
     "AgentPreference",
@@ -123,7 +125,6 @@ __all__ = [
     "AgentBatchUndo",
     "AgentTaskInput",
     "AgentTaskControl",
-    "AgentTaskRequirement",
     "AgentGraphCheckpoint",
     "AgentGraphWrite",
     "AgentOperation",
@@ -210,6 +211,7 @@ from short_drama.domain.creation.sound.voices.voices import (
     ShotDialogue,
 )
 from short_drama.domain.creation.writing.script.revisions import ProjectScriptRevision
+from short_drama.domain.identity.accounts.mcp_token import McpAccessToken
 from short_drama.domain.identity.accounts.user import User, UserSession
 from short_drama.domain.identity.audit.models import AuditEvent
 from short_drama.domain.identity.email.models import AuthRateLimit, EmailChallenge, EmailOutbox
@@ -219,6 +221,7 @@ from short_drama.domain.media.imports.scope import ResourceImport
 __all__ += ["ProjectScriptRevision"]
 
 __all__ += [
+    "McpAccessToken",
     "ImageGroup",
     "ImageGroupItem",
     "ImageOperation",
@@ -238,6 +241,7 @@ __all__ += [
     "AgentConversation",
     "AgentMessage",
     "AgentRun",
+    "AgentExecutionScope",
     "AgentTurn",
     "AgentToolCall",
     "AgentEvent",

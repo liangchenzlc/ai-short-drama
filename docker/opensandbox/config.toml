@@ -1,0 +1,29 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+max_sandbox_timeout_seconds = 86400
+
+[proxy]
+resolve_internal = true
+
+[runtime]
+type = "docker"
+execd_image = "docker.m.daocloud.io/opensandbox/execd:v1.1.0@sha256:6cf7dba2f21f0b536e100563d841ac58a9f31c2b0a081b7ac76796a24d6f47e2"
+
+[storage]
+allowed_host_paths = ["/var/lib/short-drama/agent-workspaces"]
+
+[store]
+type = "sqlite"
+path = "/var/lib/opensandbox/opensandbox.db"
+
+[docker]
+network_mode = "ai-short-drama-agent-sandbox"
+publish_host = "127.0.0.1"
+port_range_min = 18100
+port_range_max = 18200
+no_new_privileges = true
+
+[egress]
+image = "docker.m.daocloud.io/opensandbox/egress:v1.1.7@sha256:db7345d567b0970f384b8e3fa7a93a71b7f43d4b16bb2009de34096e9a87b3b5"
+mode = "dns"

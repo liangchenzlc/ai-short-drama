@@ -1,7 +1,6 @@
 """Opt-in real broker delivery and physical storage cleanup in disposable namespaces."""
 
 import io
-import json
 import os
 import threading
 from uuid import uuid4
@@ -18,6 +17,7 @@ import tests.integration.standard.assistant.test_assistant_memory as memory_test
 from short_drama.agent.coordinator.publisher import AgentRabbitSender
 from short_drama.agent.memory.runtime import AgentMemoryPublisher, AgentMemoryRuntime
 from short_drama.agent.session.purge import purge_one
+from short_drama.agent.tools.registry import get_spec
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import NotFound
 from short_drama.domain import MediaFile
@@ -69,33 +69,22 @@ def test_real_memory_worker_consumes_a_published_job_and_deduplicates_redelivery
     accepted = memory_tests.seeded_run(memory_workspace, count=2)
     identifier = memory_tests.maintenance_job(memory_workspace, accepted)
 
-    class Gateway:
-        calls = 0
+    from tests.support.chat_transport import JSONChatTransport
 
-        async def decide(self, _snapshot, _credential, *, on_request, on_response, **_kwargs):
-            self.calls += 1
-            await on_request({"fixture": "memory-infrastructure-request"})
-            await on_response({"fixture": "memory-infrastructure-receipt"})
-            return {
-                "output_kind": "text",
-                "output": json.dumps(
-                    {
-                        "memories": [
-                            {
-                                "kind": "preference",
-                                "memory_key": "dialogue",
-                                "title": "对白偏好",
-                                "content": "对白要短",
-                                "source_message_ids": [str(accepted.message.id)],
-                            }
-                        ]
-                    }
-                ),
-                "usage": {"output_tokens": 16},
-            }
-
-    gateway = Gateway()
-    runtime = AgentMemoryRuntime(factory, memory_tests.runtime_settings(), gateway)
+    transport = JSONChatTransport(
+        {
+            "memories": [
+                {
+                    "kind": "preference",
+                    "memory_key": "dialogue",
+                    "title": "对白偏好",
+                    "content": "对白要短",
+                    "source_message_ids": [str(accepted.message.id)],
+                }
+            ]
+        }
+    )
+    runtime = AgentMemoryRuntime(factory, memory_tests.runtime_settings(), transport=transport)
     monkeypatch.setattr(agent_worker, "memory_runtime", lambda: runtime)
     settings = Settings(
         auth_enabled=True,
@@ -134,13 +123,13 @@ def test_real_memory_worker_consumes_a_published_job_and_deduplicates_redelivery
             with factory() as session:
                 job = session.get(AgentMemoryJob, identifier)
                 assert job.status == "succeeded" and job.provider_state == "received"
-                assert job.attempts == 1 and job.raw_result["raw"]["fixture"]
+                assert job.attempts == 1 and job.raw_result["raw"]["codec"] == "agent.raw-response"
                 item = session.scalar(select(AgentMemoryItem))
                 assert item.content == "对白要短" and item.content_version == 1
             done.clear()
             sender(identifier, 1)
             assert done.wait(30), "The duplicate memory delivery was not consumed"
-            assert states == ["SUCCESS", "SUCCESS"] and gateway.calls == 1
+            assert states == ["SUCCESS", "SUCCESS"] and len(transport.requests) == 1
         with sender.app.connection_for_read() as broker:
             channel = broker.channel()
             try:
@@ -195,7 +184,7 @@ def test_real_minio_conversation_purge_physically_removes_only_unreferenced_uplo
             library.reference(
                 conversations[1], {"source_type": "media", "source_id": shared.media_id}, "keep"
             )
-            tasks = AssistantTaskService(session, settings)
+            tasks = AssistantTaskService(session, settings, tool_lookup=get_spec)
             current = tasks.get_conversation(conversations[0])
             tasks.delete_global_conversation(
                 conversations[0], {"row_version": current.row_version}, "purge"

@@ -14,10 +14,14 @@ def finalize_deletion_locked(session, conversation):
 
     if conversation.status != "deleting":
         return False
+    # 调用方完成 trace 和业务回执后，先持久化终态再判断是否仍有在途工作。
+    session.flush()
     tasks = session.scalars(
         select(AgentTask).where(AgentTask.conversation_id == conversation.id).with_for_update()
     ).all()
-    if any(task.status in {"queued", "running", "waiting_media"} for task in tasks):
+    if any(
+        task.status in {"queued", "running", "waiting_media", "waiting_input"} for task in tasks
+    ):
         return False
     # 任务可先进入 stopped，但在途模型分段仍持有租约；必须等运行落库后才能擦除上下文。
     runs = session.scalars(
@@ -31,7 +35,9 @@ def finalize_deletion_locked(session, conversation):
             select(AgentOperation.id)
             .where(
                 AgentOperation.task_id.in_([task.id for task in tasks]),
-                AgentOperation.status.in_(("running", "waiting_media", "reconciling")),
+                AgentOperation.status.in_(
+                    ("running", "waiting_media", "waiting_input", "reconciling")
+                ),
             )
             .limit(1)
         )
@@ -52,9 +58,11 @@ def finalize_deletion_locked(session, conversation):
     ).all()
     for attachment in attachments:
         attachment.deleted_at = utcnow()
-    conversation.status = "deleted"
     conversation.row_version += 1
     conversation.updated_at = utcnow()
     append_event(session, conversation, "conversation.deleted", {"id": str(conversation.id)})
     enqueue_purge_locked(session, conversation)
+    # 同事务先写完终态事件；deleted 会被正常父资源读隔离过滤。
+    session.flush()
+    conversation.status = "deleted"
     return True

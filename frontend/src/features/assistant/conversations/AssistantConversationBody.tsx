@@ -2,9 +2,11 @@ import { assistantApi } from '@host/api/assistant/conversations/requests';
 import { AgentContextComposer } from '@host/features/assistant/attachments/AgentContextComposer';
 import { AssistantComposerTools } from '@host/features/assistant/composer/AssistantComposerTools';
 import { AssistantMentionTextarea } from '@host/features/assistant/composer/AssistantMentionTextarea';
+import { TaskMediaLimits } from '@host/features/assistant/composer/TaskMediaLimits';
 import { useAssistantComposer } from '@host/features/assistant/composer/useAssistantComposer';
 import { AssistantDiscussionHistory } from '@host/features/assistant/history/AssistantDiscussionHistory';
 import { AssistantTranscript } from '@host/features/assistant/messages/AssistantTranscript';
+import { AssistantQuestionDock } from '@host/features/assistant/questions/AssistantQuestionDock';
 import { AssistantBatchUndo } from '@host/features/assistant/operations/AssistantBatchUndo';
 import { materialIdentity } from '@host/features/assistant/references/assistant-materials';
 import { skillToken } from '@host/features/assistant/skills/assistant-skill-token';
@@ -46,6 +48,8 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
     skills,
     setSkills,
     setSkillsDirty,
+    mediaLimits,
+    setMediaLimits,
     draftError,
     setDraftError,
     models,
@@ -128,7 +132,7 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
   const toolsDisabled = contextDisabled || contextBusy || runtime.loading || runtime.accessEnded;
   const toolsRef = useRef<AssistantComposerToolsController>(null);
   const toolControl = (
-    <AssistantComposerTools
+    <><AssistantComposerTools
       ref={toolsRef}
       layout={layout}
       task={task}
@@ -141,7 +145,7 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
       setActionError={setActionError}
       selectedSkills={selectedSkills}
       changeSkills={changeSkills}
-    />
+    /><TaskMediaLimits value={mediaLimits} frozen={task?.media_limits} onChange={setMediaLimits} disabled={toolsDisabled} /></>
   );
   return (
     <div className="ai-assistant-runtime">
@@ -242,6 +246,8 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
         )
       ) : null}
       <AssistantTranscript
+        accountId={accountId}
+        conversationId={conversation.id}
         pinned={pinned}
         runtime={runtime}
         layout={layout}
@@ -295,14 +301,6 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
             }
           />
         )}
-        {task && (
-          <div className="ai-assistant-task-context">
-            <span title={task.goal}>当前任务：{task.goal}</span>
-            <Button size="small" type="text" disabled={contextDisabled || !!stopTaskId} onClick={newTask}>
-              开始新任务
-            </Button>
-          </div>
-        )}
         {task && task.input_revision !== task.applied_input_revision && (
           <p className="ai-assistant-meta" role="status">
             补充要求已排队，将在当前步骤结束后生效。
@@ -313,6 +311,9 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
             {contextBlockReason}
           </p>
         ) : null}
+        <AssistantQuestionDock key={conversation.id} accountId={accountId} conversationId={conversation.id}
+          questions={runtime.pendingQuestions} runs={runtime.runs} tasks={runtime.tasks}
+          disabled={readOnly || runtime.accessEnded || stopping} refresh={runtime.refreshQuestion} />
         <AgentContextComposer
           key={composerVersion}
           ref={inputContext}

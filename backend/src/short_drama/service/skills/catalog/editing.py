@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 
 from short_drama.core.exceptions import Conflict, WorkflowError
@@ -105,7 +106,7 @@ class SkillEditing(SkillServiceBase):
                 enabled=content.enabled,
             )
             self.session.flush()
-            return read_skill(row, version, setting)
+            return read_skill(row, version, setting, tool_lookup=self.tool_lookup)
 
     def patch(self, identifier, payload):
         if str(identifier) in BUILTIN_NAMES:
@@ -133,7 +134,12 @@ class SkillEditing(SkillServiceBase):
         content = SkillCreate.model_validate(basis)
         manifest = (
             [
-                {"path": item.path, "kind": item.kind, "byte_size": len(item.resource_bytes())}
+                {
+                    "path": item.path,
+                    "kind": item.kind,
+                    "byte_size": len(item.resource_bytes()),
+                    "checksum_sha256": hashlib.sha256(item.resource_bytes()).hexdigest(),
+                }
                 for item in content.resources
             ]
             if "resources" in values
@@ -150,8 +156,10 @@ class SkillEditing(SkillServiceBase):
         if "resources" not in values:
             metadata["issues"] = list(
                 dict.fromkeys(
-                    skill_issues(metadata, content.instructions, manifest)
-                    + mode_tool_issues(content.required_tools, content.modes)
+                    skill_issues(
+                        metadata, content.instructions, manifest, tool_lookup=self.tool_lookup
+                    )
+                    + mode_tool_issues(content.required_tools, content.modes, self.tool_lookup)
                 )
             )
         self._validate_write(metadata, manifest)
@@ -191,7 +199,7 @@ class SkillEditing(SkillServiceBase):
             row.row_version += 1
             row.updated_at = utcnow()
             self.session.flush()
-            return read_skill(row, version, setting)
+            return read_skill(row, version, setting, tool_lookup=self.tool_lookup)
 
     def patch_settings(self, identifier, payload):
         values = SkillSettingsPatch.model_validate(self._payload(SkillSettingsPatch, payload))

@@ -66,6 +66,22 @@ def _guard_memory_write(session, entity, actor, new):
 
 def _guard_agent_write(session, entity, actor, new):
     name = inspect(type(entity)).local_table.name
+    if name == "business_tool_invocations":
+        if entity.owner_user_id != actor.user_id:
+            raise NotFound("业务调用收据不存在")
+        if not new and any(
+            inspect(entity).attrs[field].history.has_changes()
+            for field in (
+                "owner_user_id",
+                "tool_name",
+                "request_id",
+                "arguments_hash",
+                "source",
+                "token_id",
+            )
+        ):
+            raise WorkflowError("business_invocation_immutable", "业务调用身份不能修改", 403)
+        return
     if name in {
         "agent_memory_items",
         "agent_memory_revisions",
@@ -136,15 +152,45 @@ def _guard_agent_write(session, entity, actor, new):
             call = _agent_parent(session, "agent_tool_calls", entity.tool_call_id)
             if run.task_id != entity.task_id or call.run_id != run.id:
                 raise NotFound("Operation does not belong to this task and run")
-        if name in {"agent_graph_checkpoints", "agent_graph_writes"}:
+            if entity.business_invocation_id is not None:
+                receipt = _agent_parent(
+                    session, "business_tool_invocations", entity.business_invocation_id
+                )
+                if receipt.owner_user_id != actor.user_id or receipt.tool_name != entity.tool_name:
+                    raise NotFound("业务收据不属于当前工具和账号")
+        if name in {"agent_graph_checkpoints", "agent_graph_writes", "agent_execution_scopes"}:
             run = _agent_parent(session, "agent_runs", entity.run_id)
             if (
                 entity.owner_user_id != actor.user_id
-                or run.task_id != entity.task_id
+                or (name != "agent_execution_scopes" and run.task_id != entity.task_id)
                 or run.initiated_by != actor.user_id
                 or run.conversation_id != conversation.id
             ):
                 raise NotFound("Graph record does not belong to this task and run")
+        if name in {"agent_turns", "agent_tool_calls", "agent_operations"}:
+            scope = _agent_parent(session, "agent_execution_scopes", entity.scope_id)
+            if scope.run_id != entity.run_id:
+                raise NotFound("Execution scope does not belong to this run")
+            if name == "agent_tool_calls":
+                turn = _agent_parent(session, "agent_turns", entity.turn_id)
+                if turn.scope_id != entity.scope_id:
+                    raise NotFound("Tool call does not belong to this execution scope")
+            if name == "agent_operations":
+                call = _agent_parent(session, "agent_tool_calls", entity.tool_call_id)
+                if call.scope_id != entity.scope_id:
+                    raise NotFound("Operation does not belong to this execution scope")
+        if name == "agent_execution_scopes" and entity.parent_scope_id is not None:
+            parent = _agent_parent(session, "agent_execution_scopes", entity.parent_scope_id)
+            call = _agent_parent(session, "agent_tool_calls", entity.parent_tool_call_id)
+            if (
+                parent.run_id != entity.run_id
+                or parent.parent_scope_id is not None
+                or call.scope_id != parent.id
+                or call.run_id != entity.run_id
+                or call.tool_name != "task"
+                or entity.scope_key != f"tool:{call.id}"
+            ):
+                raise NotFound("Child scope does not belong to this delegation")
         if name == "agent_batch_undos":
             operation = _agent_parent(session, "agent_operations", entity.operation_id)
             task = _agent_parent(session, "agent_tasks", entity.task_id)
@@ -172,7 +218,7 @@ def _guard_agent_write(session, entity, actor, new):
             operation = _agent_parent(session, "agent_operations", entity.operation_id)
             if (
                 operation.task_id != entity.task_id
-                or operation.tool_name != "submit_generation_batch"
+                or operation.tool_name != "workbench__submit_generation_batch"
             ):
                 raise NotFound("Media intent does not belong to this operation")
             if entity.generation_task_id is not None:
@@ -273,6 +319,16 @@ def _guard_agent_write(session, entity, actor, new):
                 "created_at",
             },
         }.get(name, set())
+        if name in {"agent_turns", "agent_tool_calls", "agent_operations"}:
+            frozen = frozen | {"scope_id"}
+        if name == "agent_execution_scopes":
+            frozen = frozen | {
+                "owner_user_id",
+                "run_id",
+                "scope_key",
+                "parent_scope_id",
+                "parent_tool_call_id",
+            }
         if name == "agent_messages" and session.info.get("assistant_discussion_edit") == entity.id:
             version = inspect(entity).attrs.row_version.history
             if (

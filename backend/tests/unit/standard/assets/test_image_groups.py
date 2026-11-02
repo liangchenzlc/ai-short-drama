@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.domain import AssetImageCandidate, ImageGroup
 from short_drama.service.ai_config.management.models import AIModelConfigService
 from short_drama.service.creation.assets.management.library import AssetLibraryService
@@ -74,7 +74,15 @@ class Storage:
 @pytest.fixture
 def flow():
     session = generation_session()
-    session.info["actor"] = ActorContext(1, "fixture", "test@example.test", True, 1, "", "test")
+    session.info["actor"] = SessionActorContext(
+        user_id=1,
+        username="fixture",
+        email="test@example.test",
+        verified=True,
+        session_id=1,
+        csrf_hash="",
+        request_id="test",
+    )
     settings = Settings(_env_file=None, auth_enabled=False, agent_enabled=False)
     storage = Storage()
     project = ProjectService(session).create({"name": "图片组"})

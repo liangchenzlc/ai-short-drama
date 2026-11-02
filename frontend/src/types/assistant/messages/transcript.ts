@@ -1,12 +1,23 @@
 import type { AssistantOperation } from '@host/types/assistant/api';
 import type { AgentMessage, AgentRun } from '@host/types/assistant/engine';
+import type { AssistantPendingQuestion, AssistantTask } from '@host/types/assistant/api';
+import type { AssistantTraceBlock } from '@host/types/assistant/trace';
 import type { HistoryRequest } from '@host/types/assistant/history/AssistantDiscussionHistory';
 export interface AssistantTranscriptProps {
+  accountId: string;
+  conversationId: string;
   pinned: import('react').MutableRefObject<boolean>;
   runtime: {
     run: AgentRun | null;
     messages: AgentMessage[];
     operations: AssistantOperation[];
+    traceBlocks: AssistantTraceBlock[];
+    runs: AgentRun[];
+    tasks: AssistantTask[];
+    pendingQuestions: AssistantPendingQuestion[];
+    refreshQuestion: (operationId: string) => Promise<AssistantPendingQuestion | null>;
+    hasMoreTrace: boolean;
+    olderTrace: () => Promise<unknown>;
     queuedRuns: AgentRun[];
     connection: string;
     error: string;

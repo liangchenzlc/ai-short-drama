@@ -1,6 +1,7 @@
 """Credential replacement remains possible after a master-key change or corrupt envelope."""
 
 import base64
+from contextlib import closing
 
 import pytest
 from fastapi.testclient import TestClient
@@ -59,8 +60,9 @@ def test_http_credential_repair(
             yield session
 
     app = create_app(Settings(_env_file=None, encryption_key=current_key))
+    app.state.session_factory, app.state.storage = factory, None
     app.dependency_overrides[get_session] = test_session
-    with TestClient(app) as client:
+    with closing(TestClient(app)) as client:
         response = client.patch(
             f"/api/v1/ai-model-configs/{item.id}",
             json={"row_version": "1", **changes},

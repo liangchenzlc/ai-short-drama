@@ -27,59 +27,58 @@ def test_saved_key_discovery_is_read_only_and_cannot_redirect_key(
             )
         )
         factory = session_factory(mysql_engine)
+        app.state.session_factory = factory
+        app.state.storage = None
 
         def session():
             with factory() as value:
                 yield value
 
         app.dependency_overrides[get_session] = session
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app), base_url="http://testserver"
-            ) as client:
-                root = "/api/v1/ai-model-configs"
-                item = (
-                    await client.post(
-                        root,
-                        json={
-                            "service_type": "text",
-                            "name": "discovery",
-                            "provider": "test",
-                            "model_key": "manual",
-                            "base_url": base + "/v1",
-                            "apikey": "stored-test-secret",
-                        },
-                    )
-                ).json()
-                payload = {"config_id": item["id"], "base_url": base + "/v1/"}
-                response = await client.post(root + "/discover-models", json=payload)
-                assert response.status_code == 200 and response.json()["items"]
-                assert calls[-1][1] == "Bearer stored-test-secret"
-                assert "stored-test-secret" not in response.text
-                call_count = len(calls)
-                moved = {**payload, "base_url": base + "/elsewhere"}
-                response = await client.post(root + "/discover-models", json=moved)
-                assert response.status_code == 400
-                assert response.json()["error"]["code"] == "model_discovery_key_address_changed"
-                assert len(calls) == call_count
-                for override, expected in [
-                    ("new-test-secret", "Bearer new-test-secret"),
-                    (None, None),
-                ]:
-                    response = await client.post(
-                        root + "/discover-models", json={**moved, "apikey": override}
-                    )
-                    assert response.status_code == 200
-                    assert calls[-1][1] == expected
-                assert (await client.get(root + "/" + item["id"])).json() == item
-                await client.patch(
-                    root + "/" + item["id"],
-                    json={"row_version": item["row_version"], "apikey": None},
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://testserver"
+        ) as client:
+            root = "/api/v1/ai-model-configs"
+            item = (
+                await client.post(
+                    root,
+                    json={
+                        "service_type": "text",
+                        "name": "discovery",
+                        "provider": "test",
+                        "model_key": "manual",
+                        "base_url": base + "/v1",
+                        "apikey": "stored-test-secret",
+                    },
                 )
-                response = await client.post(root + "/discover-models", json=moved)
-                assert response.status_code == 200, (
-                    "Moving a keyless config must not require a new key"
+            ).json()
+            payload = {"config_id": item["id"], "base_url": base + "/v1/"}
+            response = await client.post(root + "/discover-models", json=payload)
+            assert response.status_code == 200 and response.json()["items"]
+            assert calls[-1][1] == "Bearer stored-test-secret"
+            assert "stored-test-secret" not in response.text
+            call_count = len(calls)
+            moved = {**payload, "base_url": base + "/elsewhere"}
+            response = await client.post(root + "/discover-models", json=moved)
+            assert response.status_code == 400
+            assert response.json()["error"]["code"] == "model_discovery_key_address_changed"
+            assert len(calls) == call_count
+            for override, expected in [
+                ("new-test-secret", "Bearer new-test-secret"),
+                (None, None),
+            ]:
+                response = await client.post(
+                    root + "/discover-models", json={**moved, "apikey": override}
                 )
-                assert calls[-1][1] is None
+                assert response.status_code == 200
+                assert calls[-1][1] == expected
+            assert (await client.get(root + "/" + item["id"])).json() == item
+            await client.patch(
+                root + "/" + item["id"],
+                json={"row_version": item["row_version"], "apikey": None},
+            )
+            response = await client.post(root + "/discover-models", json=moved)
+            assert response.status_code == 200, "Moving a keyless config must not require a new key"
+            assert calls[-1][1] is None
 
     asyncio.run(run())

@@ -4,14 +4,21 @@ import httpx
 
 
 def request_paths(app, paths):
-    async def request():
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app), base_url="http://testserver"
-            ) as client:
-                return [await client.get(path) for path in paths]
+    from short_drama.db.session import build_engine, session_factory
 
-    return asyncio.run(request())
+    engine = build_engine(app.state.settings)
+    app.state.session_factory = session_factory(engine)
+
+    async def request():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            return [await client.get(path) for path in paths]
+
+    try:
+        return asyncio.run(request())
+    finally:
+        engine.dispose()
 
 
 def test_liveness_does_not_require_database():

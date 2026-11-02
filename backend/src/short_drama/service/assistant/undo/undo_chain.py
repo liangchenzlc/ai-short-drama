@@ -178,14 +178,26 @@ def record_restorations(operation, changes, selected, receipts, inverse):
         key = f"{item['kind']}:{item['id']}"
         if key in selected:
             item["restored_from"] = deepcopy(changes[key]["before"])
-            if operation.tool_name == "apply_standard_patch":
+            if operation.tool_name == "workbench__apply_standard_patch":
                 item["applied_state"] = deepcopy(changes[key]["after"])
         elif item["kind"] == "canvas_document":
             keys = {key for key in changes if key.startswith(("canvas_node:", "canvas_edge:"))}
+            before = next(
+                (
+                    change["before"]
+                    for change in operation.changes
+                    if (change["kind"], change["id"]) == (item["kind"], item["id"])
+                ),
+                None,
+            )
             revision = (
-                (operation.arguments.get("patch") or {}).get("expected_revision")
-                if operation.tool_name == "apply_canvas_patch"
-                else (operation.result or {}).get("before_canvas_revision")
+                before["row_version"]
+                if before is not None
+                else (
+                    (operation.arguments.get("patch") or {}).get("expected_revision")
+                    if operation.tool_name == "workbench__apply_canvas_patch"
+                    else (operation.result or {}).get("before_canvas_revision")
+                )
             )
             if revision is not None and keys.issubset(completed):
                 item["restored_from"] = {"row_version": str(revision)}
@@ -202,13 +214,27 @@ def record_restorations(operation, changes, selected, receipts, inverse):
                 item["restored_from"] = {key: before[key] for key in COMMON_VERSIONS}
         elif item["kind"] == "storyboard_document":
             keys = {key for key in changes if key.startswith("shot:")}
+            document = next(
+                (
+                    change
+                    for change in operation.changes
+                    if (change["kind"], change["id"]) == (item["kind"], item["id"])
+                ),
+                None,
+            )
             revision = (
-                (operation.arguments.get("patch") or {}).get("storyboard_version")
-                if operation.tool_name == "apply_standard_patch"
-                else (operation.result or {}).get("before_storyboard_version")
+                document["before"]["row_version"]
+                if document
+                else (
+                    (operation.arguments.get("patch") or {}).get("storyboard_version")
+                    if operation.tool_name == "workbench__apply_standard_patch"
+                    else (operation.result or {}).get("before_storyboard_version")
+                )
             )
             expected = advance_document(
-                {"row_version": str((operation.result or {}).get("storyboard_version"))},
+                document["after"]
+                if document
+                else {"row_version": str((operation.result or {}).get("storyboard_version"))},
                 "storyboard_document",
                 item["id"],
                 receipts,

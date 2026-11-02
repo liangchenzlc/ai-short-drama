@@ -129,7 +129,7 @@ def test_completed_history_starts_at_latest_cursor_without_an_event_scan(status)
         assert not any("min(agent_events.seq)" in statement for statement in statements)
 
 
-@pytest.mark.parametrize("status", ["queued", "running", "waiting_generation", "waiting_review"])
+@pytest.mark.parametrize("status", ["queued", "running", "waiting_generation", "waiting_input"])
 def test_active_recovery_ignores_completed_other_conversation_and_future_events(status):
     with generation_session() as session:
         seed(session, status)

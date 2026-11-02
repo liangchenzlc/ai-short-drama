@@ -25,13 +25,15 @@ class SkillImports(SkillServiceBase):
         self._actor()
         data = stream.read(MAX_SKILL_BYTES + 1)
         name, _instructions = markdown_content(data, filename)
-        draft = parse_skill_import(data, name).draft.model_dump()
+        draft = parse_skill_import(data, name, tool_lookup=self.tool_lookup).draft.model_dump()
         draft["modes"] = ["standard", "infinite_canvas"]
         return self.create(draft, filename=name)
 
     def preview_import(self, stream, filename):
         self._actor()
-        return parse_skill_import(stream.read(MAX_IMPORT_BYTES + 1), filename)
+        return parse_skill_import(
+            stream.read(MAX_IMPORT_BYTES + 1), filename, tool_lookup=self.tool_lookup
+        )
 
     def request_receipt(self, key: str) -> SkillRead:
         """Read an account-scoped create receipt without replaying a retired payload."""

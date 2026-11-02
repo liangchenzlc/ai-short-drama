@@ -247,3 +247,8 @@ class StandardPatch(InputModel):
         ):
             raise ValueError("structural patch exceeds 1 MiB")
         return self
+
+
+class ApplyStandardPatch(InputModel):
+    project_id: Identifier
+    patch: StandardPatch

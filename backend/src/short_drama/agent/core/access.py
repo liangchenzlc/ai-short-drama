@@ -83,7 +83,7 @@ def may_decide(session, project, conversation, run):
             )
             and task is not None
             and task.conversation_id == conversation.id
-            and task.status in {"queued", "running", "waiting_media"}
+            and task.status in {"queued", "running", "waiting_media", "waiting_input"}
             and (run.checkpoint or {}).get("purpose") == "global_assistant"
         )
     return False

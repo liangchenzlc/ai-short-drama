@@ -1,81 +1,30 @@
 """协议选择、托管媒体输入与冻结凭据校验。"""
 
-from pydantic import TypeAdapter, ValidationError
-from pydantic_ai.messages import (
-    BinaryContent,
-)
+from pydantic import ValidationError
 
 from short_drama.agent.gateway.contracts import AgentGatewayError
 from short_drama.ai.adapters.catalog import select_adapter
 from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
-from short_drama.ai.types import GenerationError
-from short_drama.schemas.ai_config.management.runtime_profile import ModelRuntimeProfile
-
-_BINARY_ADAPTER = TypeAdapter(BinaryContent)
 
 
-def select_agent_protocol(snapshot):
-    profile = snapshot.get("runtime_profile")
-    if profile is None:
-        protocol = select_adapter(snapshot)
-    else:
-        try:
-            profile = ModelRuntimeProfile.model_validate(profile)
-        except (ValidationError, TypeError):
-            raise AgentGatewayError("unsupported_agent_protocol") from None
+def select_protocol(snapshot: dict) -> str:
+    profile = snapshot.get("runtime_profile") or {}
+    if profile:
         protocol = {
-            "chat-completion": "openai_chat.v1",
-            "openai-response": "openai_responses.v1",
-        }.get(profile.protocol)
-        if profile.api_format != "openai":
-            raise AgentGatewayError("unsupported_agent_protocol")
+            ("openai", "chat-completion"): "openai_chat.v1",
+            ("openai", "openai-response"): "openai_responses.v1",
+            ("claude", "claude-messages"): "claude_messages.v1",
+            ("claude", "messages"): "claude_messages.v1",
+        }.get((profile.get("api_format"), profile.get("protocol")))
+    else:
+        protocol = select_adapter(snapshot)
     if snapshot.get("service_type") != "text" or protocol not in {
         "openai_chat.v1",
         "openai_responses.v1",
+        "claude_messages.v1",
     }:
         raise AgentGatewayError("unsupported_agent_protocol")
     return protocol
-
-
-def _prompt_content(value, snapshot):
-    """Only inline managed bytes are accepted; SDK URL objects remain forbidden."""
-    if value is None or isinstance(value, str):
-        return value
-    if not isinstance(value, list) or not value or len(value) > 80:
-        raise AgentGatewayError("unsupported_agent_history_content")
-    try:
-        protocol = select_agent_protocol(snapshot)
-    except (GenerationError, KeyError, TypeError):
-        raise AgentGatewayError("unsupported_agent_protocol") from None
-    parts = []
-    total = 0
-    for item in value:
-        if isinstance(item, str):
-            total += len(item.encode("utf-8"))
-            parts.append(item)
-            continue
-        if isinstance(item, dict):
-            if item.keys() - {"kind", "data", "media_type", "identifier", "vendor_metadata"}:
-                raise AgentGatewayError("unsupported_agent_history_content")
-            try:
-                item = _BINARY_ADAPTER.validate_python(item)
-            except ValidationError:
-                raise AgentGatewayError("unsupported_agent_history_content") from None
-        if not isinstance(item, BinaryContent):
-            raise AgentGatewayError("unsupported_agent_history_content")
-        if item.media_type in {"image/jpeg", "image/png", "image/webp"}:
-            supported = True
-        elif item.media_type in {"audio/wav", "audio/mpeg"}:
-            supported = protocol == "openai_chat.v1"
-        else:
-            supported = False
-        if not supported or not item.data:
-            raise AgentGatewayError("unsupported_agent_input_modality")
-        total += len(item.data)
-        parts.append(item)
-    if total > 4 * 1024**2 + 262144:
-        raise AgentGatewayError("agent_request_too_large")
-    return parts
 
 
 def _credential(value):

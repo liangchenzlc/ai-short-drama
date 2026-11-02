@@ -1,11 +1,13 @@
 from sqlalchemy import func, select
 
+from short_drama.agent.runtime.trace_content import display_safe
 from short_drama.agent.task.state import (
     read_operations,
     read_task,
 )
 from short_drama.core.exceptions import NotFound
 from short_drama.dao.assistant.execution.run import AgentRunDAO
+from short_drama.dao.assistant.execution.trace import AssistantTraceDAO
 from short_drama.dao.assistant.tasks.task import AgentTaskDAO
 from short_drama.domain.assistant.conversations.models import AgentEvent, AgentMessage
 from short_drama.domain.assistant.tasks.task import (
@@ -19,6 +21,7 @@ from short_drama.schemas.assistant.tasks.task import (
 )
 from short_drama.schemas.base import parse_identifier
 from short_drama.service.assistant.execution.run import read_runs
+from short_drama.service.assistant.operations.questions import pending_questions
 from short_drama.service.assistant.tasks.base import TaskServiceBase
 
 
@@ -52,6 +55,7 @@ class TaskQueryOperations(TaskServiceBase):
                 .limit(50)
             ).all()
             cursor = conversation.next_event_seq - 1
+            trace = AssistantTraceDAO(self.session).page(conversation.id, None, cursor)
             first_delta = self.session.scalar(
                 select(func.min(AgentEvent.seq)).where(
                     AgentEvent.conversation_id == conversation.id,
@@ -77,6 +81,10 @@ class TaskQueryOperations(TaskServiceBase):
                 else []
             )
             return TaskRuntimeState(
+                trace_blocks=trace.items,
+                has_more_trace=trace.has_more,
+                trace_before_seq=trace.next_before_seq,
+                pending_questions=pending_questions(self.session, task_ids),
                 conversation_id=conversation.id,
                 snapshot_cursor=cursor,
                 resume_cursor=first_delta - 1 if first_delta is not None else cursor,
@@ -138,7 +146,8 @@ class TaskQueryOperations(TaskServiceBase):
             task = AgentTaskDAO(self.session).task(row.task_id)
             self._conversation(task.conversation_id)
             return OperationDetailRead(
-                **read_operations(self.session, [row])[0].model_dump(), result=row.result
+                **read_operations(self.session, [row])[0].model_dump(),
+                result=display_safe(row.result),
             )
 
     def script_proposal(self, operation_id):

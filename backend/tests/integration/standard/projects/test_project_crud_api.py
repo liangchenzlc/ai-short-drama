@@ -8,6 +8,7 @@ from sqlalchemy import select
 from short_drama.domain import AsyncTask, MediaFile, Project, ProjectCanvas, ProjectScript
 from short_drama.service.generations.runtime.access import may_submit
 from tests.integration.standard.identity.test_identity_collaboration import account, identity_app
+from tests.support.integration.identity import actor
 
 pytestmark = pytest.mark.integration
 __all__ = ["identity_app"]
@@ -16,6 +17,7 @@ __all__ = ["identity_app"]
 def test_project_crud_delete_permissions_versions_and_retained_history(identity_app, db_session):
     owner, user = account(identity_app, "project_delete_owner")
     other, _ = account(identity_app, "project_delete_other")
+    db_session.info["actor"] = actor(int(user["id"]))
     root = "/api/v1/projects"
     first = owner.post(root, json={"name": "story%one"})
     second = owner.post(root, json={"name": "other"})
@@ -98,12 +100,25 @@ def test_project_crud_delete_permissions_versions_and_retained_history(identity_
     assert owner.get(path + "/shots").status_code == 404
     assert owner.delete(path, params={"row_version": "2"}).status_code == 404
     assert [item["id"] for item in owner.get(root).json()["items"]] == [other_id]
+    with db_session.get_bind().connect() as connection:
+        project = (
+            connection.execute(select(Project.__table__).where(Project.id == int(project_id)))
+            .mappings()
+            .one()
+        )
+        assert project["archived_at"] is not None and project["row_version"] == 3
+        assert (
+            connection.scalar(
+                select(ProjectScript.content).where(ProjectScript.project_id == int(project_id))
+            )
+            == "preserved script"
+        )
+        assert connection.scalar(select(AsyncTask.status).where(AsyncTask.id == 8001)) == "running"
+        assert (
+            connection.scalar(select(MediaFile.storage_locator).where(MediaFile.id == 8002))
+            == "minio://test/keep.png"
+        )
     with db_session.begin():
-        project = db_session.scalar(select(Project).where(Project.id == int(project_id)))
-        assert project.archived_at is not None and project.row_version == 3
-        assert db_session.scalar(select(ProjectScript.content)) == "preserved script"
-        assert db_session.get(AsyncTask, 8001).status == "running"
-        assert db_session.get(MediaFile, 8002).storage_locator == "minio://test/keep.png"
         assert not may_submit(db_session, source)
 
 
@@ -143,6 +158,10 @@ def test_canvas_project_delete_hides_workspace_and_invalidates_recycle(identity_
     )
     assert restored.status_code == 409, restored.text
     assert owner.get(root).json()["total"] == 0
-    with db_session.begin():
-        rows = list(db_session.scalars(select(ProjectCanvas)))
-        assert len(rows) == 2 and all(row.archived_at is not None for row in rows)
+    with db_session.get_bind().connect() as connection:
+        archived = list(
+            connection.scalars(
+                select(ProjectCanvas.archived_at).where(ProjectCanvas.project_id == int(project_id))
+            )
+        )
+        assert len(archived) == 2 and all(value is not None for value in archived)

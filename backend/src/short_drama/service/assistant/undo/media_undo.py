@@ -48,14 +48,16 @@ def preview_media_change(
     role = change.get("media_role")
     if change["kind"] == "character_voice":
         current = voice_binding_state(session, project.id, row.id, lock=True)
-        intent = session.scalar(
-            select(AgentMediaRequest).where(
-                AgentMediaRequest.operation_id == operation.id,
-                AgentMediaRequest.media_kind == "audio",
-                AgentMediaRequest.frozen_target["id"].as_string() == str(row.id),
+        version = change.get("target_version")
+        if version is None:
+            intent = session.scalar(
+                select(AgentMediaRequest).where(
+                    AgentMediaRequest.operation_id == operation.id,
+                    AgentMediaRequest.media_kind == "audio",
+                    AgentMediaRequest.frozen_target["id"].as_string() == str(row.id),
+                )
             )
-        )
-        version = (intent.frozen_target if intent else {}).get("row_version")
+            version = (intent.frozen_target if intent else {}).get("row_version")
         if version is not None:
             version = advance_target_version(version, change, receipts)
         if version is None or str(row.row_version) != version:

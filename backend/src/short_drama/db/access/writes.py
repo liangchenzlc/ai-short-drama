@@ -2,6 +2,7 @@ from sqlalchemy import event, inspect, select
 from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import NotFound, WorkflowError
+from short_drama.core.identity import SessionActorContext
 from short_drama.core.time import utcnow
 from short_drama.db.access.agent_writes import _guard_agent_write
 from short_drama.db.access.canvas_writes import _canvas_snapshot_reads, _guard_canvas_write
@@ -63,6 +64,27 @@ def guard_writes(session, _context, _instances):
         }:
             continue
         new = entity in session.new
+        if (
+            name == "mcp_access_tokens"
+            and not new
+            and any(
+                inspect(entity).attrs[field].history.has_changes()
+                for field in (
+                    "owner_user_id",
+                    "name",
+                    "token_hash",
+                    "token_hint",
+                    "project_ids",
+                    "tool_names",
+                    "expires_at",
+                    "allowed_ips",
+                    "created_at",
+                )
+            )
+        ):
+            raise WorkflowError(
+                "mcp_token_immutable", "令牌身份和授权范围不可修改，请新建令牌", 403
+            )
         if name == "user_creation_drafts":
             if entity.user_id != actor.user_id:
                 raise NotFound("私人创作草稿不存在")
@@ -310,6 +332,18 @@ def guard_writes(session, _context, _instances):
                 object_id=str(getattr(entity, "id", getattr(entity, "project_id", ""))),
                 action=action,
                 request_id=actor.request_id,
+                source=(
+                    session.info["business_invocation"].source
+                    if "business_invocation" in session.info
+                    else "browser"
+                    if isinstance(actor, SessionActorContext)
+                    else "assistant"
+                ),
+                token_id=(
+                    session.info["business_invocation"].token_id
+                    if "business_invocation" in session.info
+                    else None
+                ),
                 created_at=utcnow(),
             )
         )

@@ -1,4 +1,138 @@
-# AI 创作助手 Harness 运行机制
+# AI 创作助手框架运行机制
+
+2026-10-30：正式 Agent Worker 已切换为 `AgentRuntime.execute`，旧文件路径保留供已有链接定位。当前框架连续执行、持久恢复及账本规则如下；文末保留旧 Harness 原文，仅供历史比较。
+
+当前新 Run 引擎固定 `assistant-runtime.1`。旧 `langgraph-harness.1` 及无引擎标记的运行经 [006离线切换](../database/migrations/2026-10-29-assistant-runtime/README.md)终结编排，保留消息、业务成果、已受理生成和人工审核审计，并持久显示“执行引擎已更新，请重新发送继续”。仅旧引擎的typed图会清理；新引擎图保留。下方关于旧引擎共存、句式授权、contract与reviewer的内容均为对应日期历史记录。
+
+## 当前目录与职责
+
+| 入口（相对 backend/src/short_drama/） | 职责 |
+| --- | --- |
+| `tasks/assistant/agent_worker.py`、`agent/runtime/executor.py` | 同步 Worker 入口，一次投递运行或恢复完整 async graph |
+| `agent/runtime/agent.py`、`middleware.py` | 唯一 create_agent 工厂、公开框架中间件与工具审计边界 |
+| `agent/runtime/summarization.py` | 官方 summarizer 公开回调，依摘要模型实际容量连续分批处理选中历史 |
+| `agent/runtime/context.py`、`service/assistant/execution/scope.py`、`agent/context/delegation.py` | 调用局部 scope、可信委派身份、明确交接与一层边界 |
+| `agent/runtime/lease.py`、`checkpointer.py` | 并发心跳／取消、带有效 fence 的同步图持久化 |
+| `agent/runtime/model_ledger.py`、`agent/gateway/langchain.py` | 父 Run 模型预算、唯一模型工厂、实际发送及受理事实 |
+| `service/assistant/execution/run.py`、`tools.py` | 短事务领取／续租／终态、逐工具登记与结算 |
+| `service/assistant/execution/interruptions.py`、`results.py` | 中断时保留真实业务收据、新 Run 的明确成果身份 |
+| `agent/runtime/waiting.py`、`service/assistant/execution/waiting.py`、`dao/assistant/execution/waiting.py` | 真实 interrupt 关联、依赖就绪、定向恢复与持久消费 |
+| `service/assistant/operations/questions.py`、`media_settlement.py` | 真实用户答案与历史媒体业务结算 |
+| `agent/context/graph.py`、`agent/resources/graph.py` | scope 输入、Skill 和遗忘；冻结媒体引用并水合下一请求 |
+| `agent/coordinator/publisher.py`、`recovery.py` | 投递账本、启动／故障恢复；普通工具不调度下一轮 |
+| `agent/sandbox/workspace.py`、`backend.py`、`resources.py` | OpenSandbox 生命周期、上游代码／文件工具、实时日志与取消、授权资源交接 |
+
+## 连续执行与状态结算
+
+claim 固定 owner、Task／Run／scope、消息版本及租约 token、模型快照、预算和工具目录。每次模型与工具边界实时核对 fence、停止及账号权限，数据库事务不跨网络请求，Session 不跨线程共享。框架直接管理 model → tools → model，图 recursion_limit 按冻结调用预算容纳中间节点，所有实际主／selector／summary 请求仍先在父 Run 原子预留额度。
+
+模型工厂仅在 `openai_chat.v1` 且冻结快照 `provider=deepseek` 时选官方 ChatDeepSeek，保留同一受保护 AsyncOpenAI／HTTP 客户端及零自动重试。薄适配只在官方请求序列化后，为强制工具选择合入 `thinking.type=disabled`，并将原 AIMessage 的 `reasoning_content` 回填到对应 assistant 消息；主助手默认、`auto`、`none` 不关闭思考。工厂另按 `metadata.lc_source=summarization` 为同一 DeepSeek chat 摘要请求显式关闭思考，不改变摘要提示、输出额度或其他 provider、协议与来源。官方 SDK 负责读取流式与普通响应中的真实思考，原 `on_model_content` 单独发布 reasoning，正文不混入思考；结果、原始回执和 typed checkpoint 沿现有脱敏与恢复路径保存，重放不再次 POST。不新增运行参数或绕开框架 selector、循环和 checkpoint。
+
+DeepSeek chat 的 SDK 出站历史与 GraphResources 引用计量投影共用 `with_reasoning_content`，保留已存在的历史思考、空值和消息顺序，原消息对象不变；引用水合和 request_template 继续处理媒体。其他 provider／协议不新增此字段。摘要触发计量因此包含实际会发送的历史 reasoning，最终真实 SDK body 仍由原准入守卫独立校验；这不等于供应商 tokenizer 或其 reasoning 输入计费语义。
+
+保护模型的框架 `ls_provider` 与实际 SDK 对齐：DeepSeek chat 为 deepseek、Claude Messages 为 anthropic、其余 ChatOpenAI 路径为 openai（包括 compatible chat 和 DeepSeek Responses）。保留基类已有 LS 字段，不启用外部跟踪。官方摘要可据此识别同 provider 的真实 reported-token 兜底，错 provider 仍不匹配；窗口、输出／工具／安全预留和原摘要算法不变。
+
+Run 首次 claim 在原工具目录冻结事务中，将获准目录的名称与描述同时写入 permitted_tool_names 和既有 config_snapshot 的 assistant_settings.tool_descriptions；构图时以冻结正文创建 Run 专属工具实例，原生 BaseTool 使用公开 model_copy，task 使用公开 task_description 参数。根／子助手、selector 候选和 Skill 追加工具共用冻结实例池；已创建但尚未首次 claim 的 Run 取领取时的目录正文，已领取 Run 跨 Worker 沿原冻结值。prompt 仍在创建 Run 时冻结，目录描述不扩展 permitted_tool_names，不冻结 handler 代码或 schema。
+
+assistant-runtime-v17 要求主／子助手按剩余目标、已保存成果和真实回执持续使用现有工具；规模或阶段性进展本身不是结束理由，可修正的失败自主修正后继续。主模型判断完成并简洁交付真实成果与验证，无法继续时说明具体阻碍；ask／wait、停止、权限、预算及受理不明规则保持有效。此为创建 Run 时冻结的提示约束，不增加 reviewer、continuation 或进度账本。
+
+本版提示另明确停止后新输入决定当前目标，只读复核不自动延续旧创作或追问，明确继续仍在当前授权内推进。Skill释放或压缩不表示已回答／已完成步骤未发生；摘要漏记或父未见完整子对话不能单独作为重问／再委派的依据，仍须在获准来源、原操作和真实成果内核验。显式观察笔记使用已有record_task_observation，普通说明不算已保存；撤回、遗忘、skip和必要提问边界不变。compaction.md澄清主助手使用摘要的规则，没有改变摘要生成算法、来源投影或业务收据机制。
+
+提示要求委派保留必需操作、方法、来源与验收要求，不能弱化为可选或通用建议；用户明确指定主助手亲自完成的部分由主助手完成。必要方法或工具不可用／不适用时如实说明尝试、阻碍和未完成部分，父按原要求核对交付；普通讨论仍按需选择方法，权限、排除条件和跳过规则继续生效。委派提示区分用户目标与父助手自行读取的集合版本快照。子任务保留目标、对象范围和交付要求，写前取得可信当前版本；确认原写入未成功且仅集合版本冲突时，在原授权内刷新元数据并继续未完成目标。用户明确版本、交接对象版本／选区及既有对象权限不因刷新而改变；受理不明先查原操作，不换键盲目重发。task 参数、持久交接身份和服务端版本校验保持原实现。
+
+提示仍区分 ProjectScript 项目原稿与 ShotScript 分镜分场：read_current_script 只读用户已授权的原稿或选区，原稿建议走 propose_script_patch 与用户审阅采用；create_shot.values.script 则保存分场正文，新建分场不以前述引用／读取为前置。patch.storyboard_version 来自 describe_creation_target，既有对象关联及修改仍按原权限校验。
+
+逐工具边界登记 ToolCall、Operation 与 step.started；业务 Service 在真实权限／版本范围内提交效果和收据。公共结算写真实 ToolMessage 或 Command、Operation 终态、结果引用与 step.finished，但保留 Run 执行租约。已成功 Operation 而 graph 尚未写回时，恢复补回同一 ToolMessage 和状态更新；Skill activation 身份保持稳定。
+
+`finish_tool` 为既有 `READ_TOOLS` 和 `WRITE_TOOLS` 的实际 ToolMessage 补充 `receipt_operation_id`，取本次真实 `AgentOperation.id`，与 Operation.result 及持久回放一致。业务写入结果中的 `business_invocation_id` 继续指向 BusinessToolInvocation，不能作为助手原操作身份读取；同一范围或可信交付范围按原写 ID 调用现有 `read_operation_receipt`／`read_task_results`。返回的 `receipt.id` 与成果 `operation_id` 均指向被读原操作，成果读取自身的 `receipt_operation_id` 是另一次读取身份。成功 task 的 `business_receipts[].operation_id` 仍来自真实子业务原 Operation，不改为 task 或读取操作身份，root／child／兄弟授权边界保持原实现。
+
+完整 `graph.astream` 使用 messages／updates／custom、subgraphs=True、durability="sync"。全部 checkpoint／pending writes 退出后，executor 才 finish 或持久等待并释放租约。正常最终 AIMessage 直接保存为消息；无候选验收、强制 reviewer 或 completion contract。账本和框架调用上限都按 paused_budget 处理，不通过额外 reviewer 重试。
+
+最终答复途中已受理的 root 输入由 ContextMiddleware.after_model 通过公开 jump_to="model" 继续；最终 checkpoint 写完后才到达的输入由 finish 与消息受理共用的行锁检查。若 Task 水位落后，finish 不发布旧答复，而将同 Run 安排为下一次输入投递；claim 的进程内 pending_input 标记使已完成 checkpoint 通过公开新调用重入，保留历史、线程、scope 和冻结配置，水位仍只在 model_input 前移。ModelCallLimit 使用与产品 Run 一一对应的 thread_limit，重入不能重置额度；父账本仍覆盖所有实际请求。不新增 Run.checkpoint 产品字段。
+
+## 停止、等待与故障恢复
+
+当前控制 DTO 仅接受 `kind='stop'`；旧 resume／redirect 和其专用字段在入口返回422，历史 Control 只保留审计。旧中文语法指令文件已经退役，业务工具依实际scope、主体选择和真实收据校验。停止后普通消息创建新Run。
+
+wait 和 finish 共用持锁取消判定与中断收尾，先重查 stop_pending／cancel_requested 和实时 may_decide，停止或失权不能覆盖为无租约等待。
+
+`runtime__ask_user` 与 `runtime__wait_generation` 是固定保留的真实工具名，复用 Operation.wait_state。saver在pending writes事务中保存真实namespace／checkpoint／graph task及Interrupt.id/value；子图再次冒泡不覆盖首次持久暂停位置。bind_snapshot核对可见snapshot，工具内子图不可递归发现时仍以saver事实为准。首次未完成的调用恢复时必经原interrupt，Command(resume=map)只包含当前就绪身份，工具结果从数据库读回；真正ToolMessage持久写入后才标consumed。公共结算将真实wait_operation_id写入消息元数据，消费按Operation身份定位，不能用可能在不同scope重复的供应商tool_call_id匹配整个Run。
+
+多依赖全部终态才ready；根图仍执行时只记录ready，不清租约或重排。Worker完整退出后才安排一次恢复，recovery也扫描未消费的就绪等待。ask_user答案以自然语言user/tool_answer消息保留来源，结构化values仍用于工具结果与原图恢复；pending_questions仅可答时返回request，已答或不可答时为null。前端在输入框上方汇总多题单选／多选与“其他”，支持题目和并行问题组切换，成功后隐藏；工具轨迹仅显示操作、对象和状态，实际公开思考仍可展开；取消保留关联并拒绝迟到新答案，已受理相同答案在Run终态仍可重放。详见[问题与生成等待](../api/assistant.md#问题与生成等待)。
+
+删除会话时，当前 Run 无租约且存在持久等待的 Operation，沿停止收尾先终结助手等待，再应用 delete 控制并完成删除；持租约图仍由 Worker 完整退出后收尾。已受理原生生成任务继续独立归档。终态后的 purge 同事务清空整个 Operation.wait_state，包括问题、答案及恢复绑定，保留必要实体身份；删除收尾前不提前清除绑定。
+
+心跳与图并发；续租失败或停止取消图协程，并在存在真实沙箱服务时请求取消。工具写事务再次检查 fence；旧 Worker 的迟到 finish 不得覆盖新租约。取消模型连接不等于供应商未受理，unknown、实际消耗及未结算预占照实保留。
+
+恢复区分过期运行、持久等待和终态。没有 interrupt 的故障从 checkpoint 以 None 继续；存在未就绪 interrupt 且没有 resume 值时保持等待，不能误恢复。已完成 checkpoint 可直接保存唯一最终答复，无需再发模型。模型 sent 或缺少可确认图回执的窗口记为受理不明并暂停，禁止盲目重发；业务效果依稳定调用身份和真实收据幂等重放。停止持久等待立即终结助手编排，原生已受理媒体任务保留独立生命周期。
+
+模型图回执在既有 Run／scope 分区内，以公开 `Runtime.execution_info` 的 `thread_id`、`checkpoint_id`、完整 `checkpoint_ns`、`task_id` 及输入消息共同计算 `graph_input_hash`。只提取必要稳定字段，不保存 Runtime／SDK 对象；不使用每次 invoke 的 run_id、尝试次数或时间。相同图任务和内容的跨 Worker 恢复复用已持久模型结果及压缩 Command；新图任务即使消息逐字相同也进入新决策。来源撤回仍删除相关完整 AI／Tool 组，Skill 正文资格不因缓存而放宽。selector／summary 继续按各自 source 和 model_call_id 结算，普通工具和业务收据继续按原调用身份幂等。
+
+停止或暂停后普通消息在同 Task 创建新 Run。TaskInput 插入前从前一 Run 的真实创建收据冻结明确资源身份，并校验账号、项目、版本和合格用户来源；不直接跨 Run 混入全部 Operation 或 sibling 成果。历史重答禁用工具，只用原位置以前的输入与历史。
+
+## 输入、Skill 与瞬态媒体
+
+补充输入先写 graph 再推进 Task.applied_input_revision，稳定 TaskInput ID 防止重复。当前 Skill 激活、正文和排除记录只属于 scope state，Task.selected_skills 仅表示产品手选冻结元数据。来源遗忘使旧消息、摘要和后续推导退出，再由合格来源重建；canonical Skill 回执逐结果核对自身 activation，不借用兄弟来源。
+
+原始目标和最新更正从真实消息恢复为有界 `task_user_sources`，工作笔记恢复为当前 scope 的 `task_working_notes`；两者使用固定消息ID并在框架摘要时保留。读取工具返回真实 `receipt_operation_id`，`record_task_observation` 必须引用该成功读取及连续原文或实际像素交付事实。笔记最多32条、估算3000 tokens，核对原结果checksum与成功记录操作，仅属于当前Run及scope。服务器来源epoch、主体可访问性、来源消息与活动方法身份决定其资格；移除、遗忘、失权及方法退出会撤回笔记正文和相关旧摘要，子范围不借用父笔记。
+
+同一 root pinned Human 在首 key `task_user_sources` 后提供 `current_run`：run_id、trigger_message_id、trigger_seq分别取当前锁内 Run 及其可信启动 Message，供实际 selector 与主模型区分本轮起点。规范来源仍保留历史、最新后补和已消费答案，trigger 不随后补或答案改变，也不使旧授权／约束统一失效。沿原12KiB／条数配额省略正文时保留合格触发身份，并将其加入同一 Human 的 source_message_ids；撤回该来源时仅保留 run_id 和 trigger_source_withheld=true，不输出触发 ID／seq／正文。原每轮重建、memory_epoch 失效和官方摘要路径负责更新，无新状态副本、表或进度账本；child 分支不注入根 current_run。
+
+`task_user_sources` 同时保留仍合格的真实问答原文：DAO 仅通过同 Task／Run／scope、已成功消费的 ask Operation 的 answer_message_id 读取 user/tool_answer，先排除 restricted 来源，按小列身份排序取最新32条再读正文。根范围与现有 TaskInput 合并后复用原12KiB投影；子范围把自己的答案与冻结 task_delegation_sources 放在同一 delegation-sources Human，避免 selector 末输入只有回答值而失去目标。Skill 整组撤回保持原规则，不借答案恢复旧问题参数、方法正文或 AI 确认；忘答后不重新注入数据库中的原文。
+
+同一 pinned Human 的 `current_skill_activations` 明确提供当前图状态，最多32条，仅含 activation_id、skill_id、content_version、body_operation_id、active，筛除其他 Task／scope、restricted 来源与 excluded 方法。原 canonical 加载回执仍原样保留当时的 activation／active，重载后的新身份及旧身份失活从当前投影读取；用途、issue、名称、描述和正文不进入该投影，也不新增存储或生命周期账本。
+
+摘要容量包含本轮 system、实际 schema、完整活动 Skill load 组和 pinned 来源。官方 SummarizationMiddleware 继续决定触发与状态更新；超大最新纯文本完整 AI／Tool 组以已有真实目标 Human 为公开 keep 边界整体送入摘要，既有无 I/O 资源投影确认仍待交付媒体时继续保留真实组。BoundedSummary 使用公开 XML 历史和摘要提示，按 helper 自己的窗口／输出／提示包络连续分片，前次摘要参与下一批，全部片段完成才替换原组。摘要保存来源／Skill／主体和 helper 调用数；一次压缩内的分批不凑多次压缩。fixed、helper、post_summary 或 SDK main／selector 拒绝只记录脱敏数字事实到 Run.error，发送前拒绝不新增已发送 Turn，实际 helper 请求仍按原父账本结算。
+
+`_pinned_pairs` 仅以含真实 instructions 且被活动身份引用的 canonical 原加载组锚定正文，继续保留其整组兄弟及原顺序。独立 metadata-only reload／already_loaded 组不因复用同一 body_operation_id 永久固定，由官方摘要决定保留或压缩；不强制删除历史，不重写 canonical 当时的 activation／active。当前身份与真实问答沿上文原有投影，来源撤回仍撤回。
+
+`finish_locked` 的持久 Run.error 和 run.finished 共用内部预算白名单：phase 为 fixed／post_summary／main／selector／helper，source 为 assistant／tool_selection／summarization，fixed_kind 为 system_tools_and_pinned／system_and_tools／helper_prompt_and_prior_summary。数值仅收非负整数的窗口、输入上限、输出／工具／安全预留、估算／固定估算、helper 输入上限、消息／call／result／完整组计数以及 covered／total 字符数，排除 bool 和未知键，不透传正文、details、URL、密钥或供应商原文。新 Session ORM 重读与终态事件一致；公共 RunRead.error 继续只给原 code，不扩前端或 API 契约。已发送 helper 仍结算，未发送的拒绝请求不制造 Turn。
+
+BoundedSummary 逐片检查 strip 后的输出。空文本或纯空白先于摘要覆盖和游标推进被拒绝，错误码为 `agent_summary_empty`；不发布压缩 Command／`graph_compaction` 或继续主请求，原检查点历史保留，已发送 helper 的回执和费用不撤销，不自动重试。
+
+资源工具只持久冻结 ResourceRef／HydrationIntent，实体在下一主模型请求前授权读取并水合。摘要入口以完整请求确定本轮 ToolMessage 的稳定消息／调用身份；固定成本、所有候选与摘要后真实发送共用同一进程局部作用域，finally 恢复，子并发及线程继承各自上下文。摘要移除较新的 AI 后，旧的活动 Skill 并行图片组仍不重新水合。Chat 用临时用户媒体块，Responses／Claude 用原生工具多模态结果；下一轮不再重复附带像素。请求、Operation 与 typed checkpoint 不保存媒体字节或签名 URL。
+
+## 同步隔离子 Agent
+
+`runtime/agent.py` 构建唯一 `workbench-task` compiled 子图，`checkpointer=None` 继承父 saver 并按调用隔离 namespace。根图的原生 SubAgentMiddleware 提供实际 task 工具，子图不装该中间件；目录只存上游构造器和 TaskToolSchema。公开 private_state_keys 双向隔离 scope、Skill、输入水位、工具池与中间件计数，子图只接收明确任务说明，不复制父历史或父 Skill 正文。
+
+父 ExecutionMiddleware 先登记 ToolCall／Operation，TaskScopeMiddleware 再通过 `for_delegation(run_id,parent_scope_id,provider_call_id,*,fence)` 解析数据库调用身份，幂等关联 `tool:<数据库call_id>`。中间件只占冻结 Semaphore（默认3）、绑定 ContextVar 并在 finally 重置；RuntimeContext 不被并发分支改写，child 模型／工具缺少真实绑定时拒绝执行。子图实际工具池排除 task、会话历史和全局记忆，Skill.required_tools 与 selector 只能合并实际池内工具。
+
+明确交接使用 description 末尾唯一的 workbench-inputs JSON 块，字段为 subjects／resources／generation_ids／script。服务端按父真实主体、生成、剧本及完整资源引用校验并冻结到父委派 Operation.result；无交接时子既有输入为空，可在原目标新建。子业务权限取明确交接和自己成功保存的成果，父回执还须全部成果位于交接白名单；兄弟回执不可读。成功 task 从真实子业务 Operation 及其成功 BusinessToolInvocation 生成 business_receipts 与 result_refs；父按该清单及真实父 ToolCall／子 scope 关系接收主体快照、版本与生成身份，可读回、修改、查询／等待及再次明确交接。文本摘要不授权对象或操作，未交付子 Operation 不开放；归档文件仍经 ResourceRef 导入。剧本提案同读取入口一样取当前 scope 的冻结 script_reference，省略或 false 拒绝，跨 Worker 保持原身份、版本和选区。purge 沿现有 Operation／ToolCall／Turn 清除私人委派内容。
+
+所有模型请求记父 Run 账本；媒体数量按整个 Task 的真实成功原生业务受理收据计数并串行受理，不依赖旧 AgentMediaRequest。子问题或生成等待仍沿真实叶子 namespace／interrupt，父委派轨迹派生 waiting_input／waiting_media，不新增等待种类。全部可执行分支退出且持久写入完成后才释放根租约；定向唤醒只恢复对应分支，停止取消全部分支。跨 scope 文件仅经显式归档／导入交接，各自工作区独立，持久等待恢复同一 scope 文件。
+
+## 代码环境与资源交接
+
+`SandboxWorkspaceService` 只在首次代码／文件／物化调用时创建 scope 环境。创建配置直接使用锁定 SDK 类型，事务内保存 creating 和固定镜像／服务／宿主目录，事务外调用 SDK，再持有效 fence 保存 sandbox ID。响应丢失保留 creating，重试按可信 metadata 查回，未知或多匹配不会再次创建。重连与每条命令重新核对租约、停止和账号权限。官方文件工具保留真实 BaseTool 对象，模型不能指定其他 scope、宿主卷或网络策略。
+
+工作区为 Docker 宿主部署目录下 `run-<id>/scope-<id>`，映射 `/workspace`；Python venv、npm 依赖与文件均在持久目录。完整图和前台命令退出后，在 Run.wait 释放租约前销毁容器，scope 记为 released；恢复按固定镜像重新挂载。终态清理失败为 cleanup_pending，现有 recovery／scheduler 即使 Agent 关闭仍回收无租约终态及 deleted 会话，不调用要求活跃图租约的读取入口，不放松图授权。维护容器只挂部署根目录，核对精确 scope 路径并拒绝父目录 symlink，删除后标 closed。
+
+命令使用 SDK timeout、ExecutionHandlersSync 与远端 interrupt，输出默认 64 KiB；大日志最多 4 MiB 归档 MinIO。停止及失权取消真实命令，取消本地 await 后仍等待 I/O 线程退出再收尾；SDK 取消失败最终销毁远端容器。SQL 事务不跨命令／存储 I/O，Session 不跨线程。
+
+`runtime__import_resources` 只接受当前会话合格 ResourceRef 的完整匹配；`runtime__export_artifacts` 只接受当前工作区相对路径清单，拒绝越界 symlink，单文件上限 4 MiB。普通成果经 `freeze_agent_resource` 关联 Operation／AgentEvent，新增 file 种类不直接水合二进制；PNG/JPEG/WebP、MP4/WebM、MP3/WAV/M4A 经既有图片校验／音视频探测后由 StorageService 上传、MediaFileService 保存本人私有 MediaFile，返回含 media_id 的 ResourceRef；同 Operation／路径／checksum 重投复用身份，非法媒体在上传前拒绝。普通文件不写媒体表。`runtime__materialize_skill_resource` 校验当前 scope 的活动 activation／冻结 path／checksum，在 `.skills/<scope>/<activation>/<checksum>/` 物化，重投复用原内容，代码修改后冲突；释放 activation 即失去源读取资格，子 scope 不借父 activation。三个入口均不外放 MCP。
+
+## 后续接线与验证界限
+
+GenerationWaitService、ask_user、原生 task 与沙箱已注入正式 RuntimeContext；完整轨迹界面按后续任务接线。旧 AgentRuntimeStore 只留给尚未迁移的测试 helper，旧 media_runtime 仅结算历史已受理媒体，不属于新 Worker 循环，后续整体清除。
+
+正式回归入口是 `test_agent_runtime.py` 和 `test_workspace_reliability.py`，经真实图、SDK、Service、saver 与隔离 MySQL，HTTP 模型受控。两份 live 测试已改用正式 execute 和持久 Run 账本观测，但默认跳过，迁移与收集不能视为真实模型、多模态供应商、队列 Worker 或 OpenSandbox 验收。
+
+验收 Worker 的 `business_committed` 注入先重读匹配的 `workbench__apply_standard_patch` 操作，确认其持久状态和关联业务收据均为 `succeeded`，再消耗一次故障机会。错误工具结果不消耗该机会；受控回归覆盖 schema 校验失败、合法结构业务拒绝后再成功，并沿用同一真实崩溃恢复断言。`stop_tool` 仍在匹配工具返回后停止，媒体供应商继续使用替身。
+
+live 报告先原子保存小型 Run、facts 和已知用量，再读取诊断。排序仅投影 ID／小列，大 JSON 按确定 ID 最多读取128条；收集失败保留小报告及阶段／异常类型／数据库错误码并向测试重抛。未完整取得的调用或用量为未知，不以0或测试体通过覆盖收集失败。
+
+`test_agent_subtasks.py` 验证真实 scope、并发、预算、交接与跨 Worker 恢复；`test_subtask_delivery.py` 验证子业务成果向父可信交付、接续及再次交接、生成查询／等待／读回、伪造摘要拒绝和子剧本提案冻结边界；`test_framework_runtime.py` 验证 compiled 子图 namespace 和双向私有 state。均由受控模型驱动，真实供应商自主选择 task 仍需独立 live 验收。
+
+真实代码基础设施由 `test_agent_sandbox.py` 独立 infra 开关验证，使用真实 MySQL／MinIO／OpenSandbox／Docker，受控文本模型仅驱动正式 ToolNode；这不代表真实文本或媒体供应商验收。部署和测试命令见[Agent 部署](Agent模式部署与排障.md#代码环境与持久工作区)。
+
+## 历史 Harness 原文
+
+<details>
+<summary>2026-10-30 以前的执行流程（已退役，不作为当前行为）</summary>
+
+> 以下原文中的逐轮 broker、Task Skill 投影、不取消模型连接、等待媒体停止、强制 reviewer 和自研 continuation 均已被上述正式图执行替代。
+
 
 > 2026-10-28 兼容清理：Worker 统一使用 Harness，记忆任务使用同一模型网关；消息布局固定为稳定前缀加末尾动态 frame，不再冻结布局版本字段。`interruptions_supported` 和消息附带的旧 resume 控制已移除；决策次数及输出 token 不再接受无限预算。交付要求以需求表为准，完成验收统一使用证据包。下文对应的旧引擎、布局及预算描述仅作历史背景。
 
@@ -12,7 +146,7 @@
 | `agent/gateway/langchain.py` | Chat Completions、Responses、Claude 单次决策、保护传输与回执重放 |
 | `agent/resources/` | `ResourceRef`、`HydrationIntent`、资源目录与唯一实体水合边界 |
 | `agent/context/assembly.py`、`transcript.py`、`working_set.py` | L1–L5 投影、有界完整工具组、增量进度及有来源工作笔记 |
-| `agent/task/contract.py` | 用户来源交付要求、结构化完成检查及证据核验 |
+| agent/task/contract.py（已退役） | 用户来源交付要求、结构化完成检查及证据核验 |
 | `agent/skill/progressive.py` | 小目录分页、不可变版本加载、去重、释放／复用及独立配额 |
 | `agent/tools/registry.py`、`autonomous.py`、`scope.py` | v4 工具 schema、按需能力组、处理器、可信任务范围；旧冻结请求保留原版本 |
 | `agent/coordinator/`、`task/`、`memory/` | 复用 Run／Turn／Operation、可靠调度、记忆水位与 CAS |
@@ -116,3 +250,5 @@ Harness 采用"单 Run 有限、可续期"的预算：任务创建时把 `AGENT_
 部署须执行 [Harness 增量](../database/migrations/2026-10-26-agent-harness/README.md)，同步 API、scheduler、Agent Worker 与前端。验证证据及供应商范围以 [验收记录](../reviews/2026-10-26-AI创作助手Harness重构验收.md) 为准。
 
 长任务回读、普通消息续执行与累计预算策略的后续修复证据见 [修复验收](../reviews/2026-10-26-Harness长任务回读与续执行修复验收.md)。
+
+</details>

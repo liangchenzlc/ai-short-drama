@@ -12,9 +12,19 @@ class ActorContext:
     username: str
     email: str
     verified: bool
+    request_id: str
+
+
+@dataclass(frozen=True)
+class SessionActorContext(ActorContext):
     session_id: int
     csrf_hash: str
-    request_id: str
+
+
+def require_session_actor(actor: ActorContext) -> SessionActorContext:
+    if not isinstance(actor, SessionActorContext):
+        raise WorkflowError("authentication_required", "Please sign in", 401)
+    return actor
 
 
 def token_hash(value: str) -> str:

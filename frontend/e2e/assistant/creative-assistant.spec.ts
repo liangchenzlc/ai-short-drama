@@ -11,6 +11,376 @@ async function openSaveDetails(page: Page) {
 
 const time = '2026-10-06T12:00:00Z';
 
+const runtimeTraceBlock = (id: string, patch: Record<string, unknown> = {}) => ({
+  block_id: id, block_version: '9007199254740993', run_id: '901', execution_scope_id: '701', parent_call_id: null,
+  tool_call_id: id, subtask_id: null, operation_id: id, tool_name: 'read_skill_resource', kind: 'skill', source: 'assistant', visibility: 'silent',
+  status: 'succeeded', started_seq: Number(id), started_at: time, updated_at: time, finished_at: time, duration_ms: 32,
+  action: typeof patch.title === 'string' ? patch.title : '读取创作方法', title: '读取创作方法', target: { kind: 'skill', id: '11', display_name: '节奏方法', version: '7', path: 'references/节奏.md', offset: 0, length: 4000 },
+  channels: { input: { preview: '{"offset":0}', offset: 0, total_bytes: 12, truncated: false }, output: { preview: '本次实际片段', offset: 0, total_bytes: 18, truncated: false } }, resources: [], result_refs: [], ...patch,
+});
+
+test('compact trace shows action target and status while keeping child reasoning and business results', async ({ page }, info) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const state = await assistantFixture(page); state.beginReply('');
+  state.traceBlocks.push(runtimeTraceBlock('201', { action: '查看 Skill', title: '查看 Skill · v7 / references/节奏.md' }),
+    runtimeTraceBlock('202', { action: '查看 Skill', target: { kind: 'skill', id: '12', display_name: '对白方法', version: '9', path: 'scripts/dialogue.py' } }),
+    runtimeTraceBlock('203', { kind: 'subtask', action: '执行子任务', tool_name: 'task', target: { kind: 'subtask', id: '203', display_name: '核对角色动机' } }),
+    runtimeTraceBlock('204', { kind: 'reasoning', parent_call_id: '203', execution_scope_id: '702', title: '思考', target: { kind: 'model', id: '204', display_name: '文本模型' }, channels: { reasoning: { preview: '实际公开思考：角色需要动机。', offset: 0, total_bytes: 42, truncated: false } } }),
+    runtimeTraceBlock('205', { kind: 'sandbox', action: '执行代码', tool_name: 'execute', target: { kind: 'command', id: '205', display_name: 'python scripts/dialogue.py --secret hidden' }, channels: { stdout: { preview: '内部日志不应展示', offset: 0, total_bytes: 27, truncated: false } } }));
+  await page.goto(`${root}/source?assistant=open`);
+  const log = page.getByLabel('助手消息', { exact: true });
+  await expect(log).toBeVisible({ timeout: 15000 });
+  await expect(log.getByText('查看 Skill《节奏方法》', { exact: true })).toBeVisible();
+  await expect(log.getByText('查看 Skill《对白方法》', { exact: true })).toBeVisible();
+  await expect(log.locator('.assistant-trace-row')).toHaveCount(4);
+  await expect(log).not.toContainText('版本 7'); await expect(log).not.toContainText('references/节奏.md');
+  await expect(log).not.toContainText('内部日志不应展示'); await expect(log).not.toContainText('--secret');
+  await expect(log.getByText('参数', { exact: true })).toHaveCount(0); await expect(log.getByText('结果', { exact: true })).toHaveCount(0);
+  await expect(log.getByRole('button', { name: /查看冻结|读取完整归档/ })).toHaveCount(0);
+  const child = log.getByLabel('子任务轨迹', { exact: true });
+  await child.locator('summary').click(); await expect(child.getByText('实际公开思考：角色需要动机。', { exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('compact-trace-desktop.png') });
+  await page.reload(); await expect(log.getByText('查看 Skill《节奏方法》', { exact: true })).toHaveCount(1);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+const choiceFields = () => [
+  { key: 'direction', label: '选择反转方向', type: 'single_select', required: true, placeholder: null, options: [{ value: 'warm', label: '温情反转', recommended: true, description: '保留人物关系的温度' }, { value: 'dark', label: '惊悚反转', recommended: false }] },
+  { key: 'mood', label: '选择画面氛围', type: 'multi_select', required: true, placeholder: null, options: [{ value: 'rain', label: '雨夜', recommended: true }, { value: 'shadow', label: '暗影', recommended: true }, { value: 'bright', label: '明亮', recommended: false }] },
+  { key: 'ending', label: '选择结尾', type: 'single_select', required: true, placeholder: null, options: [{ value: 'open', label: '开放结尾', recommended: true }, { value: 'closed', label: '完整收束', recommended: false }] },
+];
+
+test('docked questions retain single multi other and question switching across refresh then disappear after answers', async ({ page }, info) => {
+  const state = await assistantFixture(page); state.beginReply(''); Object.assign(state.tasks[0], { status: 'waiting_input', phase: 'waiting_input' });
+  const question = (id: string, fields = choiceFields()) => ({ operation_id: id, run_id: '901', scope_id: id, parent_tool_call_id: '203', question_version: '9007199254740993', status: 'pending', can_answer: true, answer_message_id: null, answered_at: null, request: { title: `子任务问题${id}`, question: '请确认创作方向', allow_skip: true, fields } });
+  state.pendingQuestions.push(question('211'), question('212', choiceFields().slice(0, 1)));
+  const answers: { key: string | undefined; body: any }[] = []; let lost = true;
+  await page.route('**/api/v1/assistant/operations/*/answer', async route => {
+    const id = new URL(route.request().url()).pathname.split('/').at(-2)!; const item = state.pendingQuestions.find(item => item.operation_id === id)!;
+    const body = route.request().postDataJSON(); answers.push({ key: route.request().headers()['idempotency-key'], body });
+    item.status = body.outcome; item.can_answer = false; item.answer_message_id = '6001';
+    if (lost) { lost = false; return route.abort('failed'); }
+    return route.fulfill({ json: { operation_id: id, answer_message_id: '6001', run_id: '901', cursor: 1 } });
+  });
+  await page.goto(`${root}/source?assistant=open`);
+  const dock = page.getByRole('complementary', { name: '待答问题', exact: true });
+  const first = dock.getByRole('region', { name: '子任务问题211', exact: true });
+  const log = page.getByLabel('助手消息', { exact: true });
+  await expect(log.getByRole('region', { name: '子任务问题211', exact: true })).toHaveCount(0);
+  await expect(page.locator('.ai-assistant-task-context')).toHaveCount(0);
+  await expect(first.getByRole('radio', { name: '温情反转', exact: true })).not.toBeChecked();
+  await first.getByRole('radio', { name: '惊悚反转', exact: true }).check();
+  await first.getByRole('button', { name: '下一题', exact: true }).click();
+  await first.getByRole('checkbox', { name: '雨夜', exact: true }).check(); await first.getByRole('checkbox', { name: '暗影', exact: true }).check();
+  await first.getByRole('checkbox', { name: '其他', exact: true }).check(); await first.getByRole('textbox', { name: '选择画面氛围：其他回答', exact: true }).fill('铜钥匙🙂');
+  await first.getByRole('button', { name: '上一题', exact: true }).click(); await expect(first.getByRole('radio', { name: '惊悚反转', exact: true })).toBeChecked();
+  await first.getByRole('button', { name: '下一题', exact: true }).click(); await first.getByRole('button', { name: '下一题', exact: true }).click();
+  await first.getByRole('radio', { name: '开放结尾', exact: true }).check();
+  await page.reload(); await expect(first).toContainText('3 / 3'); await expect(first.getByRole('radio', { name: '开放结尾', exact: true })).toBeChecked();
+  await first.getByRole('button', { name: '上一题', exact: true }).click(); await expect(first.getByRole('checkbox', { name: '暗影', exact: true })).toBeChecked(); await expect(first.getByRole('textbox')).toHaveValue('铜钥匙🙂');
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    const before = (await dock.boundingBox())!; await log.evaluate(node => { node.scrollTop = 0; });
+    expect(Math.abs((await dock.boundingBox())!.y - before.y)).toBeLessThanOrEqual(1);
+    const sender = (await page.locator('.ai-assistant-sender').boundingBox())!;
+    expect(before.y + before.height).toBeLessThanOrEqual(sender.y);
+    expect(sender.y + sender.height).toBeLessThanOrEqual(viewport.height);
+    await page.screenshot({ path: info.outputPath(`docked-questions-${viewport.width}.png`) });
+  }
+  await dock.getByRole('button', { name: '问题组 2', exact: true }).click();
+  const second = dock.getByRole('region', { name: '子任务问题212', exact: true });
+  await second.getByRole('radio', { name: '其他', exact: true }).check(); await second.getByRole('textbox').fill('保留第二组草稿');
+  await dock.getByRole('button', { name: '问题组 1', exact: true }).click();
+  await first.getByRole('button', { name: '下一题', exact: true }).click(); await first.getByRole('button', { name: '提交回答', exact: true }).click();
+  await expect(first).toHaveCount(0); await expect(second.getByRole('textbox')).toHaveValue('保留第二组草稿');
+  expect(answers[0].body).toEqual({ question_version: '9007199254740993', outcome: 'answered', values: { direction: 'dark', mood: ['rain', 'shadow', '铜钥匙🙂'], ending: 'open' }, additional_text: '' });
+  expect(answers[0].key).toBeTruthy();
+  await second.getByRole('button', { name: '跳过', exact: true }).click(); await expect(dock).toHaveCount(0);
+  await page.reload(); await expect(dock).toHaveCount(0);
+  expect(answers[1].body).toEqual({ question_version: '9007199254740993', outcome: 'skipped', values: {}, additional_text: '' });
+  state.pendingQuestions.push(question('213', choiceFields().slice(0, 1))); await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
+  const third = dock.getByRole('region', { name: '子任务问题213', exact: true }); await expect(third).toBeVisible();
+  await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click();
+  await expect(third.getByRole('button', { name: '提交回答', exact: true })).toBeDisabled(); expect(answers).toHaveLength(2);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('uncertain docked answers retain their exact request across refresh and conflicts keep other text', async ({ page }) => {
+  const state = await assistantFixture(page); state.beginReply('');
+  const item = { operation_id: '211', run_id: '901', scope_id: '701', parent_tool_call_id: null, question_version: '7', status: 'pending', can_answer: true, answer_message_id: null, answered_at: null, request: { title: '核对创作方向', question: '请选择方向', allow_skip: false, fields: choiceFields().slice(0, 1) } };
+  state.pendingQuestions.push(item);
+  const attempts: { key: string; body: any }[] = [];
+  await page.route('**/api/v1/assistant/operations/211/answer', route => {
+    attempts.push({ key: route.request().headers()['idempotency-key'], body: route.request().postDataJSON() });
+    if (attempts.length === 1) return route.abort('failed');
+    return route.fulfill({ status: 409, json: { error: { code: 'conflict', message: '问题已处理' } } });
+  });
+  await page.goto(`${root}/source?assistant=open`); const card = page.getByRole('region', { name: '核对创作方向', exact: true });
+  await card.getByRole('radio', { name: '其他', exact: true }).check(); await card.getByRole('textbox').fill('保留雨夜草稿'); await card.getByRole('button', { name: '提交回答', exact: true }).click();
+  await expect(card.getByRole('button', { name: '重试原回答', exact: true })).toBeEnabled();
+  await page.reload(); await expect(card.getByRole('textbox')).toHaveValue('保留雨夜草稿');
+  await card.getByRole('button', { name: '重试原回答', exact: true }).click();
+  await expect(card).toContainText('回答草稿已保留'); await expect(card.getByRole('textbox')).toHaveValue('保留雨夜草稿');
+  expect(attempts).toHaveLength(2); expect(attempts[1]).toEqual(attempts[0]);
+  await expect(card.getByRole('button', { name: '跳过', exact: true })).toHaveCount(0);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('docked answer retry unlocks when a later status check confirms the original question is answerable', async ({ page }) => {
+  const state = await assistantFixture(page); state.beginReply('');
+  state.pendingQuestions.push({ operation_id: '211', run_id: '901', scope_id: '701', parent_tool_call_id: null, question_version: '7', status: 'pending', can_answer: true, answer_message_id: null, answered_at: null, request: { title: '核对网络恢复', question: '请选择方向', allow_skip: false, fields: choiceFields().slice(0, 1) } });
+  let unavailable = false;
+  const attempts: { key: string; body: any }[] = [];
+  await page.route('**/api/v1/assistant/global/conversations/301/state?**', route => unavailable ? route.fulfill({ status: 503, json: { error: { code: 'unavailable', message: '暂时无法读取' } } }) : route.fallback());
+  await page.route('**/api/v1/assistant/operations/211', route => route.fulfill({ json: { result: null, error: null } }));
+  await page.route('**/api/v1/assistant/operations/211/answer', route => {
+    attempts.push({ key: route.request().headers()['idempotency-key'], body: route.request().postDataJSON() });
+    if (attempts.length === 1) { unavailable = true; return route.abort('failed'); }
+    state.pendingQuestions[0].status = 'answered'; state.pendingQuestions[0].can_answer = false;
+    return route.fulfill({ json: { operation_id: '211', answer_message_id: '6001', run_id: '901', cursor: 1 } });
+  });
+  await page.goto(`${root}/source?assistant=open`);
+  const card = page.getByRole('region', { name: '核对网络恢复', exact: true });
+  await card.getByRole('radio', { name: '其他', exact: true }).check(); await card.getByRole('textbox').fill('网络恢复后保留原回答');
+  await card.getByRole('button', { name: '提交回答', exact: true }).click();
+  await expect(card).toContainText('回答结果尚不能确认');
+  await expect(card.getByRole('button', { name: '重试原回答', exact: true })).toHaveCount(0);
+  unavailable = false;
+  await card.getByRole('button', { name: '核对回答状态', exact: true }).click();
+  await expect(card).toContainText('可使用原请求重试');
+  await card.getByRole('button', { name: '重试原回答', exact: true }).click();
+  await expect(card).toHaveCount(0); expect(attempts).toHaveLength(2); expect(attempts[1]).toEqual(attempts[0]);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('Task11 trace history pages and reconnect replay keep one byte-accurate reasoning block', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const state = await assistantFixture(page); state.beginReply(''); state.tracePaging.more = true; state.tracePaging.before = 201;
+  state.traceBlocks.push(...Array.from({ length: 49 }, (_, index) => runtimeTraceBlock(String(201 + index), { kind: 'tool', title: `读取目标 ${index + 1}` })));
+  const reasoning = runtimeTraceBlock('250', { kind: 'reasoning', title: '思考', status: 'running', block_version: '1', finished_at: null, target: { kind: 'model', id: '250', display_name: '文本模型' }, channels: { reasoning: { preview: '雨🙂', offset: 0, total_bytes: 7, truncated: false } } }); state.traceBlocks.push(reasoning);
+  let pages = 0;
+  await page.route('**/api/v1/assistant/conversations/301/runs/901/trace?**', route => {
+    expect(new URL(route.request().url()).searchParams.get('before_seq')).toBe('201'); pages++;
+    return route.fulfill({ json: { items: [runtimeTraceBlock('150', { title: '最早的目标记录' })], has_more: false, next_before_seq: null, snapshot_cursor: 1 } });
+  });
+  await page.goto(`${root}/source?assistant=open`); const log = page.getByLabel('助手消息', { exact: true });
+  await log.getByRole('button', { name: '载入更早', exact: true }).click(); await expect(log.getByText('最早的目标记录《节奏方法》', { exact: true })).toBeVisible(); expect(pages).toBe(1);
+  const thinking = log.locator('summary').filter({ hasText: /^思考$/ }); await thinking.click(); await expect(log.getByText('雨🙂', { exact: true })).toBeVisible();
+  const payload = { block_id: '250', block_version: '2', execution_scope_id: '701', parent_call_id: null, source: 'assistant', channel: 'reasoning', offset: 7, delta: '声' };
+  state.emit('trace.delta', payload); const frame = `data: ${JSON.stringify({ seq: 2, event_type: 'trace.delta', run_id: '901', payload, created_at: time })}\n\n`; state.nextStream(frame + frame);
+  await expect(log.getByText('雨🙂声', { exact: true })).toBeVisible(); await expect(thinking).toHaveCount(1);
+  Object.assign(reasoning, { block_version: '2', channels: { reasoning: { preview: '雨🙂声', offset: 0, total_bytes: 10, truncated: false } } });
+  state.nextStream('event: resync\ndata: {"code":"agent_event_resync_required"}\n\n'); await expect.poll(() => state.cursors.filter(value => value === 0).length).toBeGreaterThanOrEqual(2);
+  await page.reload(); await thinking.click(); await expect(log.getByText('雨🙂声', { exact: true })).toBeVisible();
+  expect(state.calls.filter(call => call.method !== 'GET')).toHaveLength(0); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('Task11 media quantity overrides survive refresh and omission inherits account defaults', async ({ page }) => {
+  const state = await assistantFixture(page); await page.goto(`${root}/source?assistant=open`);
+  await page.getByRole('button', { name: '媒体数量', exact: true }).click(); const options = page.getByRole('region', { name: '本任务媒体数量', exact: true });
+  await options.getByRole('checkbox', { name: '为本任务覆盖数量', exact: true }).check(); await options.getByRole('spinbutton', { name: '图片数量', exact: true }).fill('0'); await options.getByRole('spinbutton', { name: '视频数量', exact: true }).fill('2'); await options.getByRole('button', { name: '完成', exact: true }).click();
+  const input = page.getByRole('textbox', { name: '给助手的消息', exact: true }); await input.fill('覆盖这次数量'); await page.reload(); await page.getByRole('button', { name: '发送', exact: true }).click(); await expect(input).toHaveValue('');
+  expect(state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages')).at(-1)!.body.media_limits).toEqual({ images: 0, videos: 2, audio: null });
+  await page.getByRole('button', { name: '媒体数量', exact: true }).click(); await options.getByRole('checkbox', { name: '为本任务覆盖数量', exact: true }).uncheck(); await options.getByRole('button', { name: '完成', exact: true }).click();
+  await input.fill('沿用默认数量'); await page.getByRole('button', { name: '发送', exact: true }).click(); await expect(input).toHaveValue('');
+  expect(state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages')).at(-1)!.body).not.toHaveProperty('media_limits');
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('Task11 fix1 trace history keeps per-run cursors and discovers runs beyond twenty tasks', async ({ page }) => {
+  const state = await assistantFixture(page); const sampleRun = state.beginReply(''); const sampleTask = state.tasks[0];
+  state.tasks.splice(0, 1, ...Array.from({ length: 21 }, (_, index) => ({ ...sampleTask, id: String(501 + index), status: 'succeeded' })));
+  const runs = ['899', '900', '901'].map((id, index) => ({ ...sampleRun, id, task_id: ['501', '520', '521'][index], status: 'succeeded' }));
+  const blocks = Array.from({ length: 305 }, (_, index) => runtimeTraceBlock(String(index + 1), { run_id: index < 55 ? '899' : index < 155 ? '900' : '901', title: `分页轨迹 ${index + 1}` }));
+  const traceRequests: { run: string; before: number | null }[] = []; const taskRequests: (string | null)[] = [];
+  await page.route('**/api/v1/assistant/global/conversations/301/state?**', route => {
+    const before = new URL(route.request().url()).searchParams.get('before_task_id'); taskRequests.push(before);
+    const tasks = state.tasks.filter(item => !before || BigInt(item.id) < BigInt(before)).slice(-20);
+    return route.fulfill({ json: { conversation_id: '301', snapshot_cursor: 1, resume_cursor: 0, messages: { items: [], total: 0, offset: 0, limit: 50 }, tasks, runs: runs.filter(run => tasks.some(task => task.id === run.task_id)), operations: [], inputs: [], trace_blocks: blocks.slice(-50), pending_questions: [], has_more_trace: true, trace_before_seq: 256, has_more_tasks: tasks[0]?.id !== '501', has_more_operations: false } });
+  });
+  await page.route('**/api/v1/assistant/conversations/301/runs/*/trace?**', route => {
+    const url = new URL(route.request().url()); const run = url.pathname.split('/').at(-2)!; const before = url.searchParams.has('before_seq') ? Number(url.searchParams.get('before_seq')) : null;
+    traceRequests.push({ run, before });
+    const remaining = blocks.filter(block => block.run_id === run && (before === null || block.started_seq < before)).reverse(); const items = remaining.slice(0, 50); const has_more = remaining.length > 50;
+    return route.fulfill({ json: { items, has_more, next_before_seq: has_more ? items.at(-1)!.started_seq : null, snapshot_cursor: 1 } });
+  });
+  await page.goto(`${root}/source?assistant=open`); const log = page.getByLabel('助手消息', { exact: true });
+  const earlier = log.getByRole('button', { name: /载入更早$/ });
+  await expect(log.locator('.assistant-trace-title').filter({ hasText: /^分页轨迹 / })).toHaveCount(50);
+  for (const expectedCount of [150, 250, 250, 300, 305]) {
+    await log.evaluate(node => { node.scrollTop = 0; node.dispatchEvent(new Event('scroll')); });
+    const anchor = log.getByText('分页轨迹 256《节奏方法》', { exact: true }); const anchorBefore = (await anchor.boundingBox())!.y;
+    const loaded = page.waitForResponse(response => /\/assistant\/(?:global\/conversations\/301\/state|conversations\/301\/runs\/\d+\/trace)\?/.test(response.url()));
+    await earlier.click(); await loaded;
+    await expect(log.locator('.assistant-trace-title').filter({ hasText: /^分页轨迹 / })).toHaveCount(expectedCount); await expect(log.locator('.ant-btn-loading')).toHaveCount(0);
+    expect(Math.abs((await anchor.boundingBox())!.y - anchorBefore)).toBeLessThanOrEqual(1);
+  }
+  const titles = await log.locator('.assistant-trace-title').filter({ hasText: /^分页轨迹 / }).allTextContents();
+  expect(titles).toHaveLength(305); expect(new Set(titles).size).toBe(305); await expect(earlier).toHaveCount(0);
+  expect(traceRequests.filter(item => item.run === '900').map(item => item.before)).toEqual([256, 106]);
+  expect(traceRequests.filter(item => item.run === '901').map(item => item.before)).toEqual([256, 206]);
+  expect(traceRequests.filter(item => item.run === '899').map(item => item.before)).toEqual([256, 6]);
+  expect(taskRequests.filter(Boolean)).toEqual(['502']);
+  const refreshes = taskRequests.length; await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
+  await expect.poll(() => taskRequests.length).toBeGreaterThan(refreshes); await expect(earlier).toHaveCount(0);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('Task11 fix1 resync recovers a known run gap larger than the snapshot page', async ({ page }) => {
+  test.setTimeout(45000);
+  const state = await assistantFixture(page); const run = state.beginReply('');
+  const blocks = Array.from({ length: 50 }, (_, index) => runtimeTraceBlock(String(index + 1), { title: `断流轨迹 ${index + 1}` })); const cursors: number[] = [];
+  await page.route('**/api/v1/assistant/global/conversations/301/state?**', route => route.fulfill({ json: { conversation_id: '301', snapshot_cursor: blocks.length, resume_cursor: blocks.length, messages: { items: [], total: 0, offset: 0, limit: 50 }, tasks: state.tasks, runs: [run], operations: [], inputs: [], trace_blocks: blocks.slice(-50), pending_questions: [], has_more_trace: blocks.length > 50, trace_before_seq: blocks.length > 50 ? blocks.at(-50)!.started_seq : null, has_more_tasks: false, has_more_operations: false } }));
+  await page.route('**/api/v1/assistant/conversations/301/runs/901/trace?**', route => {
+    const before = Number(new URL(route.request().url()).searchParams.get('before_seq')); cursors.push(before);
+    const remaining = blocks.filter(block => block.started_seq < before).reverse(); const items = remaining.slice(0, 50); const has_more = remaining.length > 50;
+    return route.fulfill({ json: { items, has_more, next_before_seq: has_more ? items.at(-1)!.started_seq : null, snapshot_cursor: blocks.length } });
+  });
+  await page.goto(`${root}/source?assistant=open`); const log = page.getByLabel('助手消息', { exact: true }); const earlier = log.getByRole('button', { name: /载入更早$/ });
+  await expect(log.locator('.assistant-trace-title').filter({ hasText: /^断流轨迹 / })).toHaveCount(50); await expect(earlier).toHaveCount(0);
+  blocks.push(...Array.from({ length: 101 }, (_, index) => runtimeTraceBlock(String(index + 51), { title: `断流轨迹 ${index + 51}` })));
+  state.nextStream('event: resync\ndata: {"code":"agent_event_resync_required"}\n\n');
+  await expect(log.getByText('断流轨迹 151《节奏方法》', { exact: true })).toHaveCount(1); await expect.poll(() => state.cursors.includes(151)).toBe(true);
+  await expect(log.locator('.assistant-trace-title').filter({ hasText: /^断流轨迹 / })).toHaveCount(100); await expect(earlier).toBeVisible();
+  for (const expectedCount of [150, 151, 151]) {
+    const loaded = page.waitForResponse(response => response.url().includes('/runs/901/trace?'));
+    await earlier.click(); await loaded; await expect(log.locator('.assistant-trace-title').filter({ hasText: /^断流轨迹 / })).toHaveCount(expectedCount); await expect(log.locator('.ant-btn-loading')).toHaveCount(0);
+  }
+  const titles = await log.locator('.assistant-trace-title').filter({ hasText: /^断流轨迹 / }).allTextContents();
+  expect(new Set(titles).size).toBe(151); expect(cursors).toEqual([102, 52, 2]); await expect(earlier).toHaveCount(0);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('Task11 fix1 resync discovers a new run in an already loaded older task', async ({ page }) => {
+  test.setTimeout(45000);
+  const state = await assistantFixture(page); const sampleRun = state.beginReply(''); const sampleTask = state.tasks[0];
+  state.tasks.splice(0, 1, ...Array.from({ length: 21 }, (_, index) => ({ ...sampleTask, id: String(501 + index), status: 'succeeded' })));
+  const runs = [{ ...sampleRun, id: '899', task_id: '501', status: 'cancelled' }, { ...sampleRun, id: '901', task_id: '521', status: 'succeeded' }];
+  const blocks = Array.from({ length: 50 }, (_, index) => runtimeTraceBlock(String(index + 1), { title: `旧任务续跑轨迹 ${index + 1}` }));
+  const taskRequests: (string | null)[] = []; const oldRunCursors: number[] = [];
+  await page.route('**/api/v1/assistant/global/conversations/301/state?**', route => {
+    const before = new URL(route.request().url()).searchParams.get('before_task_id'); taskRequests.push(before);
+    const eligible = state.tasks.filter(task => !before || BigInt(task.id) < BigInt(before)); const tasks = eligible.slice(-20);
+    return route.fulfill({ json: { conversation_id: '301', snapshot_cursor: blocks.length, resume_cursor: blocks.length, messages: { items: [], total: 0, offset: 0, limit: 50 }, tasks, runs: runs.filter(run => tasks.some(task => task.id === run.task_id)), operations: [], inputs: [], trace_blocks: blocks.slice(-50), pending_questions: [], has_more_trace: blocks.length > 50, trace_before_seq: blocks.length > 50 ? blocks.at(-50)!.started_seq : null, has_more_tasks: eligible.length > 20, has_more_operations: false } });
+  });
+  await page.route('**/api/v1/assistant/conversations/301/runs/*/trace?**', route => {
+    const url = new URL(route.request().url()); const run = url.pathname.split('/').at(-2)!; const before = Number(url.searchParams.get('before_seq')); if (run === '898') oldRunCursors.push(before);
+    const remaining = blocks.filter(block => block.run_id === run && block.started_seq < before).reverse(); const items = remaining.slice(0, 50); const has_more = remaining.length > 50;
+    return route.fulfill({ json: { items, has_more, next_before_seq: has_more ? items.at(-1)!.started_seq : null, snapshot_cursor: blocks.length } });
+  });
+  await page.goto(`${root}/source?assistant=open`); const log = page.getByLabel('助手消息', { exact: true }); const earlier = log.getByRole('button', { name: /载入更早$/ });
+  await earlier.click(); await expect(earlier).toHaveCount(0); expect(taskRequests.filter(Boolean)).toEqual(['502']);
+  runs.push({ ...sampleRun, id: '898', task_id: '501', status: 'succeeded' }, { ...sampleRun, id: '902', task_id: '521', status: 'running' });
+  blocks.push(...Array.from({ length: 120 }, (_, index) => runtimeTraceBlock(String(index + 51), { run_id: index < 60 ? '898' : '902', title: `旧任务续跑轨迹 ${index + 51}` })));
+  state.nextStream('event: resync\ndata: {"code":"agent_event_resync_required"}\n\n');
+  await expect(log.getByText('旧任务续跑轨迹 170《节奏方法》', { exact: true })).toHaveCount(1); await expect.poll(() => state.cursors.includes(170)).toBe(true);
+  for (const expectedCount of [110, 110, 160, 170]) {
+    await expect(earlier).toBeVisible(); const loaded = page.waitForResponse(response => /\/assistant\/(?:global\/conversations\/301\/state|conversations\/301\/runs\/\d+\/trace)\?/.test(response.url()));
+    await earlier.click(); await loaded; await expect(log.locator('.assistant-trace-title').filter({ hasText: /^旧任务续跑轨迹 / })).toHaveCount(expectedCount); await expect(log.locator('.ant-btn-loading')).toHaveCount(0);
+  }
+  expect(taskRequests.filter(Boolean)).toEqual(['502', '502']); expect(oldRunCursors).toEqual([121, 61]);
+  const titles = await log.locator('.assistant-trace-title').filter({ hasText: /^旧任务续跑轨迹 / }).allTextContents(); expect(new Set(titles).size).toBe(170); await expect(earlier).toHaveCount(0);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('Task11 fix1 frozen task quantities allow active and stopped continuation while retries retain the original request', async ({ page }) => {
+  const state = await assistantFixture(page); state.holdNextReply(); await page.goto(`${root}/source?assistant=open`);
+  await page.getByRole('button', { name: '媒体数量', exact: true }).click(); const options = page.getByRole('region', { name: '本任务媒体数量', exact: true });
+  await options.getByRole('checkbox', { name: '为本任务覆盖数量', exact: true }).check();
+  await options.getByRole('spinbutton', { name: '图片数量', exact: true }).fill('0'); await options.getByRole('spinbutton', { name: '视频数量', exact: true }).fill('2');
+  await options.getByRole('button', { name: '完成', exact: true }).click();
+  const input = page.getByRole('textbox', { name: '给助手的消息', exact: true }); await input.fill('按本次数量创作'); await page.reload();
+  state.abortNextSend(); await page.getByRole('button', { name: '发送', exact: true }).click();
+  const retry = page.getByRole('button', { name: '重发原消息', exact: true }); await expect(retry).toBeEnabled(); await page.reload(); await retry.click(); await expect(input).toHaveValue('');
+  const sends = () => state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'));
+  expect(sends()).toHaveLength(2); expect(sends()[0].body.media_limits).toEqual({ images: 0, videos: 2, audio: null });
+  expect(sends()[1].body).toEqual(sends()[0].body); expect(sends()[1].key).toBe(sends()[0].key); expect(state.tasks).toHaveLength(1);
+  await input.fill('补充当前任务的角色动机'); await page.getByRole('button', { name: '发送补充要求', exact: true }).click();
+  await expect.poll(() => sends().length).toBe(3); expect(sends()[2].body.task_id).toBe('501'); expect(sends()[2].body).not.toHaveProperty('media_limits'); await expect(input).toHaveValue('');
+  await page.getByRole('button', { name: '媒体数量', exact: true }).click();
+  await expect(options).toContainText('当前任务数量已固定'); await expect(options.getByRole('spinbutton', { name: '图片数量', exact: true })).toBeDisabled();
+  await expect(options.getByRole('spinbutton', { name: '图片数量', exact: true })).toHaveValue('0'); await expect(options.getByRole('spinbutton', { name: '视频数量', exact: true })).toHaveValue('2');
+  await options.getByRole('button', { name: '完成', exact: true }).click();
+  await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click(); await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible(); await page.reload();
+  await input.fill('停止后继续这个任务'); await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect.poll(() => sends().length).toBe(4); expect(sends()[3].body.task_id).toBe('501'); expect(sends()[3].body).not.toHaveProperty('media_limits'); await expect(input).toHaveValue('');
+  await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click(); await page.getByRole('button', { name: '新对话', exact: true }).click();
+  await page.getByRole('button', { name: '媒体数量', exact: true }).click();
+  await options.getByRole('checkbox', { name: '为本任务覆盖数量', exact: true }).check();
+  await options.getByRole('spinbutton', { name: '图片数量', exact: true }).fill('3'); await options.getByRole('spinbutton', { name: '视频数量', exact: true }).fill('2'); await options.getByRole('button', { name: '完成', exact: true }).click();
+  await input.fill('新任务使用三张图片'); await page.getByRole('button', { name: '发送', exact: true }).click(); await expect(input).toHaveValue('');
+  expect(sends()[4].body).toMatchObject({ new_task: true, media_limits: { images: 3, videos: 2, audio: null } }); expect(sends()[4].body).not.toHaveProperty('task_id');
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('Task11 fix1 trace history ends access and clears prior data after permission loss', async ({ page }) => {
+  const state = await assistantFixture(page); state.beginReply(''); state.tracePaging.more = true; state.tracePaging.before = 201;
+  state.traceBlocks.push(runtimeTraceBlock('201', { title: '失权后不可保留的轨迹' }));
+  await page.route('**/api/v1/assistant/conversations/301/runs/901/trace?**', route => route.fulfill({ status: 403, json: { error: { code: 'forbidden', message: '对话访问已结束' } } }));
+  await page.goto(`${root}/source?assistant=open`); const log = page.getByLabel('助手消息', { exact: true });
+  await expect(log.getByText('失权后不可保留的轨迹《节奏方法》', { exact: true })).toBeVisible(); await log.getByRole('button', { name: '载入更早', exact: true }).click();
+  await expect(log.getByText('失权后不可保留的轨迹《节奏方法》', { exact: true })).toHaveCount(0); await expect(log.getByRole('button', { name: '载入更早', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: '给助手的消息', exact: true })).toBeDisabled();
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('Task11 trace replacement retains historical null-target messages and native result access', async ({ page }, info) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const state = await assistantFixture(page); state.beginReply(''); state.startOperation();
+  const refs = [{ kind: 'asset', id: '501', project_id: '10', name: '林晚', status: 'adopted', row_version: '2', media_role: 'character_voice', media_kind: 'audio', media_id: '701', generation_id: '601', voice_version: '2' }];
+  Object.assign(state.operations[0], { tool_name: 'workbench__submit_generation_batch', visibility: 'artifact', label: '保存素材林晚', target: null, result_refs: refs }); state.finishOperation();
+  await page.route('**/api/v1/projects/10/characters/501/voice', route => route.fulfill({ json: { row_version: 2, record_id: 'saved-voice', candidates: [{ record_id: 'saved-voice', task_id: '601', status: 'succeeded', can_resume: false, voice_id: null, media_id: '701', duration_ms: 3200, url: 'data:audio/wav;base64,UklGRg==', description: '本次保存的林晚音色', preview_text: '请继续讲这个故事', adoptable: true }] } }));
+  state.messages['301'].push({ id: 'historical-user', seq: 1, role: 'user', content: '历史要求仍可读', references: [], artifacts: [], created_at: time }, { id: 'historical-reply', seq: 2, role: 'assistant', content: '历史答复仍可读', references: [], artifacts: [], created_at: time });
+  await page.goto(`${root}/source?assistant=open`); const log = page.getByLabel('助手消息', { exact: true });
+  await expect(log.getByText('历史要求仍可读', { exact: true })).toBeVisible(); await expect(log.getByText('历史答复仍可读', { exact: true })).toBeVisible();
+  const result = log.getByRole('article', { name: '素材成果：林晚', exact: true }); await expect(result).toBeVisible();
+  state.traceBlocks.push(runtimeTraceBlock('801', { kind: 'tool', tool_name: 'workbench__submit_generation_batch', visibility: 'artifact', title: '保存素材林晚', target: { kind: 'asset', id: '501', display_name: '林晚', version: '2' }, result_refs: refs }));
+  await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
+  await expect(log.locator('.assistant-trace-row').filter({ hasText: '保存素材林晚' })).toBeVisible();
+  await expect(result).toHaveCount(1); await expect(result.getByRole('link', { name: '林晚', exact: true })).toHaveAttribute('href', '/projects/10/assets?asset=501');
+  await expect(log.locator('.ai-assistant-artifact')).toHaveCount(0);
+  await page.reload(); await expect(log.locator('.assistant-trace-row').filter({ hasText: '保存素材林晚' })).toBeVisible(); await expect(result).toHaveCount(1);
+  await page.screenshot({ path: info.outputPath('task11-native-result-desktop.png') });
+  await result.getByRole('button', { name: '试听生成音色', exact: true }).click();
+  const preview = page.getByRole('dialog', { name: '试听生成音色', exact: true }); await expect(preview).toContainText('本次保存的林晚音色');
+  await expect(preview.getByLabel('试听本次生成音色')).toHaveAttribute('src', 'data:audio/wav;base64,UklGRg==');
+  await preview.getByRole('button', { name: '关闭', exact: true }).click();
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+for (const parent of [null, 'earlier-parent', 'loaded-parent']) test(`Task11 canonical artifact keeps batch undo in ${parent === 'loaded-parent' ? 'its nested child trace' : parent ? 'a paged child trace' : 'its root trace'}`, async ({ page }) => {
+  const state = await undoFixture(page); state.operations[0].tool_name = 'workbench__apply_standard_patch';
+  if (parent === 'loaded-parent') state.traceBlocks.push(runtimeTraceBlock('802', { kind: 'subtask', tool_name: 'task', tool_call_id: parent, operation_id: null, title: '核对生成成果', target: { kind: 'subtask', id: '802', display_name: '核对生成成果' } }));
+  state.traceBlocks.push(runtimeTraceBlock('801', { kind: 'tool', parent_call_id: parent, operation_id: state.operations[0].id, tool_name: 'workbench__apply_standard_patch', visibility: 'artifact', title: '保存到正文' }));
+  const dialog = await openUndo(page);
+  await expect(dialog.getByRole('checkbox', { name: '新角色', exact: true })).toBeEnabled();
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('Task11 canonical script proposal remains visibly reviewable', async ({ page }) => {
+  const state = await assistantFixture(page); state.beginReply(''); state.startOperation();
+  state.messages['301'].push({ id: 'proposal-request', task_id: '501', seq: 1, role: 'user', content: '请建议修改这段剧本', references: [], artifacts: [], created_at: time });
+  Object.assign(state.operations[0], { tool_name: 'runtime__propose_script_patch', visibility: 'artifact', label: '准备剧本修改建议' }); state.finishOperation();
+  await page.goto(`${root}/source?assistant=open`);
+  await expect(page.locator('.ai-assistant-artifact').filter({ hasText: '准备剧本修改建议' })).toContainText('可审阅');
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('Task11 canonical saved receipts notify the open project once across snapshot replay', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).__businessChanges = [];
+    window.addEventListener('assistant-business-changed', event => (window as any).__businessChanges.push((event as CustomEvent).detail));
+  });
+  const state = await assistantFixture(page); state.beginReply(''); state.startOperation();
+  Object.assign(state.operations[0], { tool_name: 'workbench__apply_standard_patch', result_refs: [{ kind: 'asset', id: '501', project_id: '10', name: '林晚', status: 'updated' }] }); state.finishOperation();
+  await page.goto(`${root}/source?assistant=open`);
+  await expect.poll(() => page.evaluate(() => (window as any).__businessChanges)).toEqual([{ projectId: '10', kinds: ['asset'] }]);
+  await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
+  await expect(page.getByText('助手已停止，已提交的生成任务仍会继续并保存结果；可以补充要求继续。', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__businessChanges)).toEqual([{ projectId: '10', kinds: ['asset'] }]);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
 for (const width of [1440, 1280]) test(`Skill selection uses the single management route at ${width}px`, async ({ page }) => {
   const state = await assistantFixture(page);
   state.skills.push({ ...state.skills[0], id: '801', name: '我的对白方法', builtin: false });
@@ -37,6 +407,8 @@ async function assistantFixture(page: Page) {
   const conversations = [conversation('301')];
   const messages: Record<string, any[]> = { '301': [] };
   const attachments: any[] = []; const tasks: any[] = []; const operations: any[] = []; const inputs: any[] = [];
+  const traceBlocks: any[] = []; const pendingQuestions: any[] = [];
+  const tracePaging = { more: false, before: null as number | null };
   const subjectOptions: any[] = [{ project_id: '10', source_kind: 'project', source_id: '10', kind: 'asset', id: '501', revision: '1', name: '林晚', project_name: '测试项目', source_name: '测试项目' }];
   const subject = (item: any) => ({ ...item, subject_key: `subject:${item.id.padStart(64, '0')}`, snapshot_id: 'b'.repeat(64), checksum: 'a'.repeat(64), allowed_fields: ['name', 'description'], availability: 'current', current_revision: item.revision, current_checksum: 'a'.repeat(64) });
   const deletionMemories: any[] = [];
@@ -44,13 +416,13 @@ async function assistantFixture(page: Page) {
   const receipts = new Map<string, any>();
   const discussionRevisions: any[] = [];
   let abortRevision = false; let conflictRevision = false; let historyDenied = false;
-  let abortSend = false; let abortControl = false; let abortDeletion = false; let activeRun: any = null; let latestRun: any = null;
+  let abortSend = false; let abortControl = false; let abortDeletion = false; let holdReply = false; let activeRun: any = null; let latestRun: any = null;
   const queuedRuns: any[] = []; const events: any[] = [];
   const cursors: number[] = [];
   let nextStreamFrames: string | null = null;
   let nextStreamStatus = 200;
   let snapshotGate: { started: () => void; wait: Promise<void> } | null = null;
-  const run = (id: string, status: string, task_id = '501', queue_position = 0) => ({ id, task_id, conversation_id: '301', status, phase: status === 'succeeded' ? 'finished' : 'model', row_version: '1', mode: 'discuss', model_config_id: '71', model_name: '对话模型', error: null, usage: {}, budget: {}, review: null, awaiting_artifact_ids: [], created_at: time, updated_at: time, finished_at: status === 'succeeded' ? time : null, queue_position, waiting_reason: null });
+  const run = (id: string, status: string, task_id = '501', queue_position = 0) => ({ id, task_id, conversation_id: '301', status, phase: status === 'succeeded' ? 'finished' : 'model', row_version: '1', mode: 'discuss', model_config_id: '71', model_name: '对话模型', error: null, usage: {}, budget: {}, awaiting_artifact_ids: [], created_at: time, updated_at: time, finished_at: status === 'succeeded' ? time : null, queue_position, waiting_reason: null });
   const task = (id = '501', goal = '讨论故事', status = 'running', conversation_id = '301') => ({ id, conversation_id, goal, status, phase: status === 'succeeded' ? 'terminal' : 'deciding', row_version: '1', plan_revision: '1', input_revision: '1', applied_input_revision: '1', control_seq: '0', applied_control_seq: '0', control_state: 'none', execution_target: { mode: 'standard', project_id: '10' }, memory_project_ids: ['10'], source_context: null, selected_subjects: [], skills: [], media_limits: { images: null, videos: null, audio: null }, media_usage: {}, active_operation: null, error: null, created_at: time, updated_at: time });
   const skills = [{ id: 'builtin:continuity', name: '人物连续性', builtin: true, content_version: '1', row_version: null, enabled: true, filename: null, checksum_sha256: 'a'.repeat(64), package_checksum: 'b'.repeat(64), slug: 'continuity', description: '核对人物动机与连续性。', tags: [], modes: ['standard', 'infinite_canvas'], exclusions: '', required_tools: [], source: '', settings_version: '0', compatible: true, issues: [], resource_count: 0, updated_at: time }];
   const emit = (event_type: string, payload: any, run_id = '901') => events.push({ seq: events.length + 1, event_type, run_id, payload, created_at: time });
@@ -131,7 +503,7 @@ async function assistantFixture(page: Page) {
     }
     if (path.endsWith('/state')) {
       const all = messages[id] ?? []; const runs = [...new Map([activeRun, ...queuedRuns, latestRun].filter(Boolean).map(value => [value.id, value])).values()];
-      const body = JSON.stringify({ conversation_id: id, snapshot_cursor: events.length, resume_cursor: 0, messages: { items: all.slice(-50), total: all.length, offset: 0, limit: 50 }, tasks: tasks.filter(item => item.conversation_id === id), runs, operations: operations.map(operationView), inputs, has_more_tasks: false, has_more_operations: false });
+      const body = JSON.stringify({ conversation_id: id, snapshot_cursor: events.length, resume_cursor: 0, messages: { items: all.slice(-50), total: all.length, offset: 0, limit: 50 }, tasks: tasks.filter(item => item.conversation_id === id), runs, operations: operations.map(operationView), inputs, trace_blocks: traceBlocks, pending_questions: pendingQuestions, has_more_trace: tracePaging.more, trace_before_seq: tracePaging.before, has_more_tasks: false, has_more_operations: false });
       if (snapshotGate) { const gate = snapshotGate; snapshotGate = null; gate.started(); await gate.wait; }
       return route.fulfill({ contentType: 'application/json', body });
     }
@@ -167,6 +539,7 @@ async function assistantFixture(page: Page) {
     if (path.endsWith('/messages') && method === 'POST') {
       if (receipts.has(key)) return reply(receipts.get(key), 201);
       let current = body.task_id ? tasks.find(item => item.id === body.task_id) : null;
+      if (current && 'media_limits' in body) return reply({ error: { code: 'assistant_task_media_limits_frozen', message: '任务创建后媒体数量固定，请新建任务调整' } }, 409);
       if (current?.control_state === 'stop_pending') return reply({ error: { code: 'assistant_task_stopping', message: '正在停止当前操作，请等待结算后发送补充要求' } }, 409);
       if (!current) { current = task(String(501 + tasks.length), body.content, activeRun ? 'queued' : 'running', id); tasks.push(current); }
       else current.input_revision = String(BigInt(current.input_revision) + 1n);
@@ -176,6 +549,7 @@ async function assistantFixture(page: Page) {
         attachments.forEach(item => { if (body.attachment_ids.includes(item.id)) item.pending = false; });
       }
       if ('execution_target' in body) current.execution_target = body.execution_target;
+      if ('media_limits' in body) current.media_limits = body.media_limits;
       if ('skills' in body) current.skills = body.skills.map((reference: any) => ({ ...(current.skills.find((item: any) => item.id === reference.id && item.content_version === reference.content_version) ?? skills.find(item => item.id === reference.id)), ...reference }));
       if (body.memory_project_ids) current.memory_project_ids = body.memory_project_ids;
       if (body.subject_selection) current.selected_subjects = [
@@ -188,9 +562,10 @@ async function assistantFixture(page: Page) {
         current.status = 'queued'; current.phase = 'at_boundary';
         activeRun = run('903', 'queued', current.id); latestRun = activeRun;
       }
+      if (holdReply && !activeRun) { holdReply = false; activeRun = run('901', 'running', current.id); latestRun = activeRun; }
       if (activeRun) {
         let acceptedRun = activeRun;
-        if (body.new_task) { acceptedRun = run(String(902 + queuedRuns.length), 'queued', current.id, queuedRuns.length + 1); queuedRuns.push(acceptedRun); }
+        if (body.new_task && activeRun.task_id !== current.id) { acceptedRun = run(String(902 + queuedRuns.length), 'queued', current.id, queuedRuns.length + 1); queuedRuns.push(acceptedRun); }
         const result = { message, run: acceptedRun, task: current, cursor: events.length }; receipts.set(key, result);
         if (abortSend) { abortSend = false; return route.abort('failed'); }
         return reply(result, 201);
@@ -204,7 +579,7 @@ async function assistantFixture(page: Page) {
     }
     base.unexpected.push(`${method} assistant${path}`); return reply({ error: { code: 'UNEXPECTED' } }, 501);
   });
-  return { ...base, calls, conversations, messages, attachments, tasks, operations, skills, deletionMemories, subjectOptions, subject, cursors, emit,
+  return { ...base, calls, conversations, messages, attachments, tasks, operations, skills, deletionMemories, subjectOptions, subject, cursors, emit, traceBlocks, pendingQuestions, tracePaging,
     abortNextRevision: () => { abortRevision = true; }, conflictNextRevision: () => { conflictRevision = true; }, denyHistory: () => { historyDenied = true; },
     nextStream: (frames: string, status = 200) => { nextStreamFrames = frames; nextStreamStatus = status; },
     delaySnapshot: () => {
@@ -214,9 +589,11 @@ async function assistantFixture(page: Page) {
       snapshotGate = { started, wait }; return { requested, release };
     },
     abortNextSend: () => { abortSend = true; }, abortNextControl: () => { abortControl = true; }, abortNextDeletion: () => { abortDeletion = true; },
+    holdNextReply: () => { holdReply = true; },
     beginReply: (text: string) => {
       if (!tasks.length) tasks.push(task()); activeRun = run('901', 'running'); latestRun = activeRun;
       emit('assistant.delta', { turn_id: 'reply-901', offset: 0, delta: text });
+      return activeRun;
     },
     startOperation: () => {
       const op = { id: '801', task_id: '501', run_id: '901', call_id: '601', tool_name: 'describe_creation_target', tool_version: '1', plan_revision: '1', state_version: '1', phase: 'tool_running', outcome: 'running', result_refs: [], error: null, created_at: time, finished_at: null };
@@ -319,23 +696,21 @@ test.describe('assistant UX', () => {
     expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
   });
 
-  test('keeps different failure reasons visible and respects manual collapse', async ({ page }, info) => {
+  test('keeps separate failure statuses without technical details or expansion controls', async ({ page }, info) => {
     const state = await assistantFixture(page); state.beginReply(''); state.startOperation(); state.finishOperation();
     state.messages['301'].push({ id: 'question', seq: 1, role: 'user', content: '生成两个镜头', references: [], artifacts: [], created_at: time });
     Object.assign(state.operations[0], { visibility: 'step', label: '生成分镜图片', item_seq: 2, outcome: 'failed', state_version: '3', error: { code: 'timeout', message: '镜头 1 服务超时，请重试。' } });
     state.operations.push({ ...state.operations[0], id: '802', item_seq: 3, error: { code: 'invalid_content', message: '镜头 2 内容校验未通过，请调整描述。' } });
     await page.goto(`${root}/source?assistant=open`);
-    const group = page.getByRole('region', { name: '执行步骤', exact: true }); const head = group.getByRole('button');
-    await expect(head).toHaveAttribute('aria-expanded', 'true');
+    const group = page.getByRole('region', { name: '执行步骤', exact: true });
     await expect(group.getByRole('listitem')).toHaveCount(2);
-    await expect(group).toContainText('镜头 1 服务超时'); await expect(group).toContainText('镜头 2 内容校验未通过');
+    await expect(group.locator('.assistant-trace-status')).toHaveText(['失败', '失败']);
+    await expect(group.getByRole('button')).toHaveCount(0);
+    await expect(group).not.toContainText('服务超时'); await expect(group).not.toContainText('内容校验');
     await page.screenshot({ path: info.outputPath('assistant-failures.png') });
-    await head.click(); await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
-    await expect(head).toHaveAttribute('aria-expanded', 'false');
     for (const operation of state.operations) Object.assign(operation, { outcome: 'succeeded', error: null, state_version: '4' });
     await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
-    await expect(head).toHaveText('已完成 2 步'); await expect(head).toHaveAttribute('aria-expanded', 'false');
-    await head.click(); await expect(group.getByRole('listitem')).toHaveCount(1); await expect(group).toContainText('×2');
+    await expect(group.locator('.assistant-trace-status')).toHaveText(['已完成', '已完成']);
     expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
   });
 
@@ -696,7 +1071,7 @@ async function undoFixture(page: Page) {
   const state = await assistantFixture(page);
   state.beginReply('结构已保存。'); state.startOperation();
   state.messages['301'].push({ id: 'undo-question', task_id: '501', seq: 1, role: 'user', content: '创建两个角色', references: [], artifacts: [], created_at: time });
-  Object.assign(state.operations[0], { id: '9007199254740999', visibility: 'artifact', label: '保存到正文', tool_name: 'apply_standard_patch', result_refs: [{ kind: 'asset', id: '9007199254740993', project_id: '10', name: '新角色', row_version: '1', status: 'created' }] });
+  Object.assign(state.operations[0], { id: '9007199254740999', visibility: 'artifact', label: '保存到正文', tool_name: 'workbench__apply_standard_patch', result_refs: [{ kind: 'asset', id: '9007199254740993', project_id: '10', name: '新角色', row_version: '1', status: 'created' }] });
   state.finishOperation();
   const calls: any[] = [], receipts: any[] = []; const accepted = new Map<string, any>();
   let hash = 'a'.repeat(64), abort = false, conflict = false;
@@ -724,7 +1099,8 @@ async function undoFixture(page: Page) {
 async function openUndo(page: Page) {
   await page.goto(`${root}/source?assistant=open`);
   const trace = page.getByLabel('助手消息', { exact: true });
-  await trace.getByText('保存到正文', { exact: true }).click();
+  await expect(trace.getByText(/^保存到正文(?:《.*》)?$/)).toHaveCount(1);
+  await expect(trace.getByRole('button', { name: '预览批次撤销', exact: true })).toBeVisible();
   await trace.getByRole('button', { name: '预览批次撤销', exact: true }).click();
   return page.getByRole('dialog', { name: '撤销操作批次', exact: true });
 }
@@ -755,7 +1131,7 @@ for (const kind of ['canvas_node', 'sound_line']) test(`batch undo keeps explici
   state.messages['301'].push({ id: 'native-undo-question', task_id: '501', seq: 1, role: 'user', content: '创建内容', references: [], artifacts: [], created_at: time });
   const native = kind === 'canvas_node'; const title = native ? '更新画布' : '保存到正文';
   const ref = { kind, id: 'native_piece', project_id: '10', canvas_id: 'saved-canvas', name: native ? '雨夜节点' : '旁白 · 雨夜台词', status: 'created' };
-  Object.assign(state.operations[0], { visibility: 'artifact', label: title, tool_name: native ? 'apply_canvas_patch' : 'apply_standard_patch', result_refs: [ref] }); state.finishOperation();
+  Object.assign(state.operations[0], { visibility: 'artifact', label: title, tool_name: native ? 'workbench__apply_canvas_patch' : 'workbench__apply_standard_patch', result_refs: [ref] }); state.finishOperation();
   const receipts: any[] = [], requests: any[] = [];
   await page.route('**/api/v1/assistant/operations/801/undo*', async route => {
     const request = route.request();
@@ -797,7 +1173,7 @@ for (const outcome of ['succeeded', 'failed']) test(`media batch undo restores a
   state.beginReply('已保存媒体产物。'); state.startOperation();
   state.messages['301'].push({ id: 'media-undo-question', task_id: '501', seq: 1, role: 'user', content: '生成角色音色', references: [], artifacts: [], created_at: time });
   const ref = { kind: 'asset', id: state.asset.id, project_id: '10', name: '雨夜音色', status: 'adopted', media_role: 'character_voice', media_kind: 'audio', media_id: '7001', voice_version: '1' };
-  Object.assign(state.operations[0], { tool_name: 'submit_generation_batch', result_refs: [ref] }); state.finishOperation();
+  Object.assign(state.operations[0], { tool_name: 'workbench__submit_generation_batch', result_refs: [ref] }); state.finishOperation();
   Object.assign(state.operations[0], { outcome, state_version: '3' });
   const receipts: any[] = [], requests: any[] = [];
   await page.route('**/api/v1/assistant/operations/801/undo*', async route => {
@@ -1200,11 +1576,10 @@ test('a delayed snapshot cannot rewind a settled trace or a stopped task', async
   try {
     state.finishOperation();
     await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
-    await expect(page.getByText('已中断，已生成的内容已保留；可以补充要求继续。', { exact: true })).toBeVisible();
+    await expect(page.getByText('助手已停止，已提交的生成任务仍会继续并保存结果；可以补充要求继续。', { exact: true })).toBeVisible();
   } finally { delayed.release(); }
-  await expect(page.getByText('已中断，已生成的内容已保留；可以补充要求继续。', { exact: true })).toBeVisible();
-  await expect(trace.getByRole('button')).toHaveText('已完成 1 步');
-  await expect(trace).toHaveAttribute('data-state', 'done');
+  await expect(page.getByText('助手已停止，已提交的生成任务仍会继续并保存结果；可以补充要求继续。', { exact: true })).toBeVisible();
+  await expect(trace.locator('.assistant-trace-status')).toHaveText('已完成');
   expect(state.calls.filter(call => call.method !== 'GET')).toEqual([]);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
@@ -1361,12 +1736,12 @@ test('stopping a claimed operation retains its receipt and the next direction re
   state.messages['301'].push({ id: 'task-question', task_id: '501', seq: 1, role: 'user', content: '讨论故事', references: [], artifacts: [], created_at: time });
   await page.goto(root + '/source?assistant=open');
   const trace = page.getByLabel('助手消息', { exact: true });
-  await expect(trace).toContainText('核对写入目标'); await expect(trace).toContainText('正在处理 1 步');
+  await expect(trace).toContainText('核对写入目标'); await expect(trace).toContainText('执行中');
   await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click();
-  await expect(page.getByText('当前工具完整结束后停止', { exact: true })).toBeVisible();
-  await expect(trace).toContainText('正在处理 1 步'); expect(state.operations[0].outcome).toBe('running');
+  await expect(page.getByText('正在停止执行，已提交的生成任务将继续保存结果', { exact: true })).toBeVisible();
+  await expect(trace).toContainText('执行中'); expect(state.operations[0].outcome).toBe('running');
   state.finishOperation(); await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
-  await expect(trace.getByRole('region', { name: '执行步骤', exact: true })).toHaveAttribute('data-state', 'done');
+  await expect(trace.getByRole('region', { name: '执行步骤', exact: true })).toContainText('已完成');
   await expect(page.getByRole('button', { name: '明确继续', exact: true })).toHaveCount(0);
   const input = page.getByRole('textbox', { name: '给助手的消息', exact: true });
   await input.fill('改成悬疑方向，保留已保存内容'); await page.getByRole('button', { name: '发送', exact: true }).click();
@@ -1396,18 +1771,15 @@ for (const width of [1440, 1280]) test(`skill steps keep frozen execution detail
   await page.goto(root + '/source?assistant=open');
 
   const steps = page.getByRole('region', { name: '执行步骤', exact: true });
-  const toggle = steps.getByRole('button');
-  await expect(toggle).toHaveText('已完成 2 步');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await toggle.click();
-  await expect(steps.getByRole('listitem')).toHaveCount(1);
-  await expect(steps).toContainText('读取创作方法 ×2');
+  await expect(steps.getByRole('button')).toHaveCount(0);
+  await expect(steps.locator('.assistant-trace-status')).toHaveText(['已完成', '已完成', '已完成']);
+  await expect(steps.getByRole('listitem')).toHaveCount(3);
+  await expect(steps).not.toContainText('×2');
   await expect(page.getByRole('button', { name: '查看回执', exact: true })).toHaveCount(0);
   await expect(page.getByText('冻结版本七的连续性资料片段。', { exact: true })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('skill-steps.png') });
   await page.reload();
-  await expect(toggle).toHaveText('已完成 2 步');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(steps.locator('.assistant-trace-status')).toHaveText(['已完成', '已完成', '已完成']);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -1424,7 +1796,7 @@ for (const width of [1440, 1280]) test(`standard result cards recover real refer
   ];
   state.beginReply('已保存。'); state.startOperation();
   state.messages['301'].push({ id: 'standard-question', task_id: '501', seq: 1, role: 'user', content: '创建素材与分镜', references: [], artifacts: [], created_at: time });
-  Object.assign(state.operations[0], { id: '9007199254740999', tool_name: 'apply_standard_patch', result_refs: refs });
+  Object.assign(state.operations[0], { id: '9007199254740999', tool_name: 'workbench__apply_standard_patch', result_refs: refs });
   state.finishOperation();
   await page.route('**/api/v1/assistant/operations/9007199254740999', route => route.fulfill({ json: { ...state.operations[0], result: { project_id: '10', result_refs: refs, already_applied: false } } }));
   await page.goto(root + '/source?assistant=open');
@@ -1457,14 +1829,14 @@ for (const width of [1440, 1280]) test(`media batches retain a pending stop unti
   const state = await assistantFixture(page);
   state.beginReply('正在生成图片。'); state.startOperation();
   state.messages['301'].push({ id: 'media-question', task_id: '501', seq: 1, role: 'user', content: '为已选素材生成两张图片', references: [], artifacts: [], created_at: time });
-  Object.assign(state.operations[0], { tool_name: 'submit_generation_batch', outcome: 'waiting_media', phase: 'waiting_media', state_version: '2' });
+  Object.assign(state.operations[0], { tool_name: 'workbench__submit_generation_batch', outcome: 'waiting_media', phase: 'waiting_media', state_version: '2' });
   Object.assign(state.tasks[0], { status: 'waiting_media', phase: 'waiting_media' });
   await page.goto(root + '/source?assistant=open');
   const trace = page.getByLabel('助手消息', { exact: true });
   await expect(trace.getByText('生成媒体', { exact: true })).toBeVisible();
   await expect(trace.getByText('生成中', { exact: true })).toBeVisible();
   await page.locator('.ai-assistant-sender').getByRole('button', { name: '停止', exact: true }).click();
-  await expect(page.getByText('当前工具完整结束后停止', { exact: true })).toBeVisible();
+  await expect(page.getByText('正在停止执行，已提交的生成任务将继续保存结果', { exact: true })).toBeVisible();
   expect(state.operations[0].outcome).toBe('waiting_media');
   const ref = { kind: 'asset', id: '9007199254740993', project_id: '10', name: '图片组 9007199254740995', status: 'adopted', row_version: '2', image_group_id: '9007199254740995', primary_version: '2', generated_count: 2, requested_count: 2 };
   state.operations[0].result_refs = [ref]; state.finishOperation();
@@ -1487,7 +1859,7 @@ for (const width of [1440, 1280]) test(`character voice results preview the actu
   state.beginReply('角色音色已生成并采用。'); state.startOperation();
   state.messages['301'].push({ id: 'voice-question', task_id: '501', seq: 1, role: 'user', content: '为已选角色生成一个音色', references: [], artifacts: [], created_at: time });
   const ref = { kind: 'asset', id: state.asset.id, project_id: '10', name: '林晚 · 角色音色', status: 'adopted', row_version: '2', voice_version: '9007199254740993', media_kind: 'audio', media_role: 'character_voice', media_id: '9007199254740997', generation_id: '9007199254740995', generated_count: 1, requested_count: 1 };
-  Object.assign(state.operations[0], { tool_name: 'submit_generation_batch', result_refs: [ref] }); state.finishOperation();
+  Object.assign(state.operations[0], { tool_name: 'workbench__submit_generation_batch', result_refs: [ref] }); state.finishOperation();
   let fail = true, sampleUrl: string | null = null;
   await page.route(`**/api/v1/projects/10/characters/${state.asset.id}/voice`, route => {
     if (fail) { fail = false; return route.fulfill({ status: 503, json: { error: { code: 'unavailable', message: '样音读取暂时失败' } } }); }
@@ -1532,7 +1904,7 @@ for (const width of [1440, 1280]) test(`standard video result opens the saved sh
   state.beginReply('视频已生成并采用。'); state.startOperation();
   state.messages['301'].push({ id: 'video-question', task_id: '501', seq: 1, role: 'user', content: '为已选分镜生成视频', references: [], artifacts: [], created_at: time });
   const ref = { kind: 'shot', id: state.shots[0].id, project_id: '10', name: '雨夜站台视频', status: 'adopted', row_version: '6', media_kind: 'video', generation_id: '9007199254740995', generated_count: 1, requested_count: 1 };
-  Object.assign(state.operations[0], { tool_name: 'submit_generation_batch', result_refs: [ref] }); state.finishOperation();
+  Object.assign(state.operations[0], { tool_name: 'workbench__submit_generation_batch', result_refs: [ref] }); state.finishOperation();
   await page.goto(root + '/source?assistant=open');
   const trace = page.getByLabel('助手消息', { exact: true });
   await trace.getByText('生成媒体', { exact: true }).click();
@@ -1558,7 +1930,7 @@ for (const width of [1440, 1280]) for (const mediaKind of ['image', 'video', 'au
   state.beginReply('媒体已生成并回填。'); state.startOperation();
   state.messages['301'].push({ id: 'canvas-media-question', task_id: '501', seq: 1, role: 'user', content: '为已选节点生成媒体', references: [], artifacts: [], created_at: time });
   const ref = { kind: 'canvas_node', id: 'node-9007199254740993', project_id: '10', canvas_id: 'canvas-key', name: '雨夜画面与声音', status: 'bound', row_version: '6', private_revision: '8', media_kind: mediaKind, generation_id: '9007199254740995', generated_count: 1, requested_count: 1 };
-  Object.assign(state.operations[0], { tool_name: 'submit_generation_batch', result_refs: [ref] }); state.finishOperation();
+  Object.assign(state.operations[0], { tool_name: 'workbench__submit_generation_batch', result_refs: [ref] }); state.finishOperation();
   await page.route('**/api/v1/assistant/operations/801', route => route.fulfill({ json: { ...state.operations[0], result: { operation_id: '801', settled: true, items: [{ media_kind: mediaKind, generation_id: ref.generation_id, status: 'succeeded', result: { bound: true } }] } } }));
   await page.goto(root + '/source?assistant=open');
   const trace = page.getByLabel('助手消息', { exact: true });
@@ -1583,7 +1955,7 @@ test('media reconciliation and adoption conflicts keep the original receipt and 
   const state = await assistantFixture(page);
   state.beginReply('核对原请求'); state.startOperation();
   state.messages['301'].push({ id: 'media-unknown-question', task_id: '501', seq: 1, role: 'user', content: '为已选素材生成两张图片', references: [], artifacts: [], created_at: time });
-  Object.assign(state.operations[0], { tool_name: 'submit_generation_batch', outcome: 'reconciling', phase: 'reconciling', state_version: '3' });
+  Object.assign(state.operations[0], { tool_name: 'workbench__submit_generation_batch', outcome: 'reconciling', phase: 'reconciling', state_version: '3' });
   Object.assign(state.tasks[0], { status: 'waiting_media', phase: 'reconciling' });
   await page.goto(root + '/source?assistant=open');
   const trace = page.getByLabel('助手消息', { exact: true });
@@ -1600,7 +1972,7 @@ test('media reconciliation and adoption conflicts keep the original receipt and 
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-for (const width of [1440, 1280]) test(`on demand image reads show a collapsible summary without raw receipts at ${width}px`, async ({ page }, info) => {
+for (const width of [1440, 1280]) test(`on demand image reads show a simple status row without raw receipts at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await assistantFixture(page);
   state.beginReply('按已选图位读取图片。'); state.startOperation();
@@ -1611,15 +1983,13 @@ for (const width of [1440, 1280]) test(`on demand image reads show a collapsible
   await page.goto(root + '/source?assistant=open');
 
   const steps = page.getByRole('region', { name: '执行步骤', exact: true });
-  const toggle = steps.getByRole('button');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await toggle.click();
+  await expect(steps.getByRole('button')).toHaveCount(0);
   await expect(steps).toContainText('读取图片');
   await expect(page.getByRole('button', { name: '查看回执', exact: true })).toHaveCount(0);
   await expect(page.locator('.ai-assistant-receipt')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('image-read-step.png') });
   await page.reload();
-  await expect(toggle).toHaveText('已完成 1 步');
+  await expect(steps.locator('.assistant-trace-status')).toHaveText('已完成');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
@@ -1630,7 +2000,7 @@ for (const width of [1440, 1280]) test(`image primary cards show adoption, versi
     row_version: '6', status: 'adopted', image_group_id: '9007199254740995', image_slot_id: '9007199254740997', primary_version: '3', item_version: '2' };
   state.beginReply('已将第二张设为主图。'); state.startOperation();
   state.messages['301'].push({ id: 'primary-question', task_id: '501', seq: 1, role: 'user', content: '把第二张设为主图', references: [], artifacts: [], created_at: time });
-  Object.assign(state.operations[0], { id: '9007199254740999', tool_name: 'set_image_group_primary', result_refs: [ref] });
+  Object.assign(state.operations[0], { id: '9007199254740999', tool_name: 'workbench__set_image_group_primary', result_refs: [ref] });
   state.finishOperation();
   await page.route('**/api/v1/assistant/operations/9007199254740999', route => route.fulfill({ json: { ...state.operations[0], result: { adopted: true, result_refs: [ref], already_applied: false } } }));
   await page.goto(root + '/source?assistant=open');
@@ -1663,7 +2033,7 @@ for (const width of [1440, 1280]) test(`canvas result cards preserve node locati
   ];
   state.beginReply('节点已保存。'); state.startOperation();
   state.messages['301'].push({ id: 'canvas-question', task_id: '501', seq: 1, role: 'user', content: '创建文本节点', references: [], artifacts: [], created_at: time });
-  Object.assign(state.operations[0], { id: '9007199254740999', tool_name: 'apply_canvas_patch', result_refs: refs });
+  Object.assign(state.operations[0], { id: '9007199254740999', tool_name: 'workbench__apply_canvas_patch', result_refs: refs });
   state.finishOperation();
   await page.route('**/api/v1/assistant/operations/9007199254740999', route => route.fulfill({ json: { ...state.operations[0], result: { project_id: '10', canvas_id: 'canvas-key', canvas_revision: '4', result_refs: refs, already_applied: false } } }));
   await page.goto(root + '/source?assistant=open');
@@ -1824,7 +2194,7 @@ for (const width of [1440, 1280]) test(`dialogue audio results restore native so
   const state = await assistantFixture(page); state.beginReply('所选台词已配音并采用。'); state.startOperation();
   state.messages['301'].push({ id: 'dubbing-question', task_id: '501', seq: 1, role: 'user', content: '为已选台词生成配音', references: [], artifacts: [], created_at: time });
   const ref = { kind: 'sound_line', id: 'line_a-9', project_id: '10', name: '林晚 · line_a-9', status: 'adopted', row_version: '9007199254740993', media_kind: 'audio', media_role: 'dialogue_audio', media_id: '9007199254740997', generation_id: '9007199254740995', generated_count: 1, requested_count: 1 };
-  Object.assign(state.operations[0], { tool_name: 'submit_generation_batch', result_refs: [ref] }); state.finishOperation();
+  Object.assign(state.operations[0], { tool_name: 'workbench__submit_generation_batch', result_refs: [ref] }); state.finishOperation();
   await page.route('**/api/v1/assistant/operations/801', route => route.fulfill({ json: { ...state.operations[0], result: { settled: true, items: [{ target_kind: 'sound_line', target_id: ref.id, generation_id: ref.generation_id }] } } }));
   await page.goto(root + '/source?assistant=open');
   const trace = page.getByLabel('助手消息', { exact: true });
@@ -1849,7 +2219,7 @@ for (const width of [1440, 1280]) test(`sound text results recover saved lines a
     { kind: 'sound_line', id: lineId, project_id: '10', name: `林晚 · ${lineId}`, status: 'created', row_version: '9007199254740993', assembly_version: '9007199254740995' },
     { kind: 'sound_line', id: 'line_a-9', project_id: '10', name: '旁白 · line_a-9', status: 'updated', row_version: '9007199254740993', assembly_version: '9007199254740995' },
   ];
-  Object.assign(state.operations[0], { tool_name: 'apply_standard_patch', result_refs: refs }); state.finishOperation();
+  Object.assign(state.operations[0], { tool_name: 'workbench__apply_standard_patch', result_refs: refs }); state.finishOperation();
   await page.route('**/api/v1/assistant/operations/801', route => route.fulfill({ json: { ...state.operations[0], result: { project_id: '10', result_refs: refs, sound_revision: { row_version: '9007199254740993', assembly_version: '9007199254740995', timeline_hash: 'a'.repeat(64) } } } }));
   await page.goto(root + '/source?assistant=open');
   const trace = page.getByLabel('助手消息', { exact: true });

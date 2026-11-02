@@ -232,8 +232,9 @@ def freeze_subject(dao, owner, reference):
         "allowed_fields": sorted(current["fields"]),
         "media": media,
     }
+    # 主体及图位版本仍需稳定，纯选入不能在会话锁后再请求作品写锁。
     if catalog := freeze_image_catalog(
-        dao.session, owner, project.id, reference.kind, reference.id, lock=True
+        dao.session, owner, project.id, reference.kind, reference.id, lock=True, lock_project=False
     ):
         result["image_catalog"] = catalog
     result["snapshot_id"] = digest(result)

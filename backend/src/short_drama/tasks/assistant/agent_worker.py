@@ -4,9 +4,8 @@ from functools import lru_cache
 
 from celery.exceptions import Reject
 
-from short_drama.agent.gateway.langchain import LangChainGateway
-from short_drama.agent.harness.runtime import HarnessRuntime
 from short_drama.agent.memory.runtime import AgentMemoryRuntime
+from short_drama.agent.runtime.executor import AgentRuntime
 from short_drama.core.config import Settings
 from short_drama.db.readiness import assert_agent_ready, assert_identity_ready
 from short_drama.db.session import build_engine, session_factory
@@ -28,7 +27,7 @@ def runtime():
 def execute_agent(run_id, message_version):
     try:
         factory, settings = runtime()
-        HarnessRuntime(factory, settings).execute_one(run_id, message_version)
+        AgentRuntime(factory, settings).execute(run_id, message_version)
     except Exception:
         raise Reject(
             "Agent action interrupted; database recovery will reconcile", requeue=False
@@ -38,7 +37,7 @@ def execute_agent(run_id, message_version):
 @lru_cache(maxsize=1)
 def memory_runtime():
     factory, settings = runtime()
-    return AgentMemoryRuntime(factory, settings, LangChainGateway(settings))
+    return AgentMemoryRuntime(factory, settings)
 
 
 @app.task(

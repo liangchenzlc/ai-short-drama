@@ -17,7 +17,7 @@ HARNESS_DECISION_CAP = 240
 HARNESS_OUTPUT_TOKEN_CAP = 2_000_000
 
 
-ACTIVE = frozenset({"queued", "running", "waiting_review", "waiting_generation"})
+ACTIVE = frozenset({"queued", "running", "waiting_generation", "waiting_input"})
 
 
 def budget_limits(mode="discuss", *, images=0, videos=0, caps=None):
@@ -70,7 +70,7 @@ def initial_usage():
 
 
 def append_event(session, conversation, event_type, payload, *, run_id=None):
-    """Caller holds Project -> Conversation/Run; payload is display-safe data."""
+    """Caller holds Project -> Conversation/Run; private trace bindings stay server-side."""
     now = utcnow()
     row = AgentEvent(
         id=next_id(),
@@ -85,3 +85,14 @@ def append_event(session, conversation, event_type, payload, *, run_id=None):
     conversation.updated_at = now
     session.add(row)
     return row
+
+
+def public_event_payload(event_type, payload):
+    from short_drama.agent.runtime.trace_content import display_refs, display_safe, utf8_preview
+
+    public = display_safe(payload)
+    if "result_refs" in public:
+        public["result_refs"] = display_refs(public["result_refs"])
+    if event_type == "sandbox.log":
+        public["content"] = utf8_preview(public["content"])
+    return public

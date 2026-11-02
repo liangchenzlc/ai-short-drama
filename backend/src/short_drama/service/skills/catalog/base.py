@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
@@ -8,7 +9,7 @@ from short_drama.core.skill_catalog import BUILTIN_NAMES as BUILTIN_NAMES
 from short_drama.domain.assistant.context.context import AgentSkill
 from short_drama.domain.skills.catalog.skill import AgentSkillSetting
 from short_drama.schemas.base import UINT64_MAX, parse_identifier
-from short_drama.schemas.skills.catalog.skill import resource_path
+from short_drama.schemas.skills.catalog.skill import SkillResourceRead
 from short_drama.service.base import BaseService, utcnow
 from short_drama.service.skills.catalog.versions import (
     builtin_skills,
@@ -27,10 +28,11 @@ from short_drama.utils.snowflake import next_id
 class SkillServiceBase(BaseService):
     model = AgentSkill
 
-    def __init__(self, session, settings, storage=None):
+    def __init__(self, session, settings, storage=None, *, tool_lookup=None):
         super().__init__(session)
         self.settings = settings
         self.storage = storage
+        self.tool_lookup = tool_lookup
 
     def _actor(self):
         actor = require_actor(self.session)
@@ -61,6 +63,7 @@ class SkillServiceBase(BaseService):
             row,
             current_version(self.session, str(row.id), row.content_version),
             skill_setting(self.session, row.owner_user_id, str(row.id)),
+            tool_lookup=self.tool_lookup,
         )
 
     def _builtin(self, identifier, owner):
@@ -84,9 +87,9 @@ class SkillServiceBase(BaseService):
         manifest = [{"path": item.path, "kind": item.kind} for item in content.resources]
         metadata["issues"] = list(
             dict.fromkeys(
-                skill_issues(metadata, content.instructions, manifest)
+                skill_issues(metadata, content.instructions, manifest, tool_lookup=self.tool_lookup)
                 + local_reference_issues(content.instructions, content.resources)
-                + mode_tool_issues(content.required_tools, content.modes)
+                + mode_tool_issues(content.required_tools, content.modes, self.tool_lookup)
             )
         )
         return metadata
@@ -95,10 +98,10 @@ class SkillServiceBase(BaseService):
     def _validate_write(metadata: dict, resources: list[dict]) -> None:
         for resource in resources:
             try:
-                resource_path(resource["path"])
-                if resource["kind"] not in {"reference", "template", "image"}:
-                    raise ValueError("Skill 资料类型不受支持")
-            except ValueError as error:
+                SkillResourceRead.model_validate(
+                    {key: resource[key] for key in ("path", "kind", "byte_size", "checksum_sha256")}
+                )
+            except (ValueError, ValidationError) as error:
                 raise WorkflowError("invalid_agent_skill_package", str(error), 422) from None
         if metadata["issues"]:
             raise WorkflowError("agent_skill_incompatible", "；".join(metadata["issues"]), 422)

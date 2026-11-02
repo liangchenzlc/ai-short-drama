@@ -80,32 +80,35 @@ class ProjectService(BaseService):
 
     def list_projects(self, offset=0, limit=20, query=""):
         with self._transaction(read_only=True):
-            rows, total = ProjectDAO(self.session).list_recent(offset, limit, query)
-            from short_drama.dao.canvas.document.canvas import CanvasDAO
+            return self.list_projects_locked(offset, limit, query)
 
-            summaries = CanvasDAO(self.session).summaries(
-                [row.id for row in rows if row.workspace_mode == "infinite_canvas"]
+    def list_projects_locked(self, offset: int = 0, limit: int = 20, query: str = "") -> Page:
+        rows, total = ProjectDAO(self.session).list_recent(offset, limit, query)
+        from short_drama.dao.canvas.document.canvas import CanvasDAO
+
+        summaries = CanvasDAO(self.session).summaries(
+            [row.id for row in rows if row.workspace_mode == "infinite_canvas"]
+        )
+        covers = (
+            ProjectDAO(self.session).covers(
+                [row.id for row in rows if row.workspace_mode == "standard"]
             )
-            covers = (
-                ProjectDAO(self.session).covers(
-                    [row.id for row in rows if row.workspace_mode == "standard"]
+            if self.storage is not None
+            else {}
+        )
+        return Page(
+            items=[
+                ProjectSummary(
+                    **self._read(
+                        row, canvas_summary=summaries.get(row.id, {}), cover=covers.get(row.id)
+                    ).model_dump()
                 )
-                if self.storage is not None
-                else {}
-            )
-            return Page(
-                items=[
-                    ProjectSummary(
-                        **self._read(
-                            row, canvas_summary=summaries.get(row.id, {}), cover=covers.get(row.id)
-                        ).model_dump()
-                    )
-                    for row in rows
-                ],
-                total=total,
-                offset=offset,
-                limit=limit,
-            )
+                for row in rows
+            ],
+            total=total,
+            offset=offset,
+            limit=limit,
+        )
 
     def update_project(self, identifier, payload):
         values = self._payload(ProjectPatchRequest, payload)

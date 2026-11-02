@@ -23,6 +23,22 @@ def lock_resource_project(session, model, identifier):
             )
             or {}
         )
+        if snapshot.get("business_invocation_id") is not None:
+            from short_drama.dao.assistant.operations.invocation import BusinessInvocationDAO
+
+            session.info.setdefault("business_media_invocations", {})[identifier] = snapshot[
+                "business_invocation_id"
+            ]
+            owner = session.scalar(select(model.initiated_by).where(model.id == identifier))
+            dao = BusinessInvocationDAO(session)
+            # 原生受理与归档统一按作品→账号→业务收据→任务加锁。
+            dao.account(owner, lock=True)
+            session.info.setdefault("business_media_receipts", {})[identifier] = dao.media_receipt(
+                int(snapshot["business_invocation_id"]), owner
+            )
+            session.info.setdefault("business_media_targets", {})[identifier] = snapshot[
+                "business_media"
+            ]
         if snapshot.get("agent_managed") is True:
             from short_drama.domain.assistant.operations.media import AgentMediaRequest
             from short_drama.domain.assistant.tasks.task import AgentOperation
@@ -85,7 +101,6 @@ def may_submit(session, task, *, agent_enabled=None, settings=None):
     media_owner = None
     if getattr(task, "id", None) in media_parents:
         from short_drama.agent.core.events import TERMINAL
-        from short_drama.service.assistant.tasks.policy import policy_state_locked
 
         rows, operation, intent = media_parents[task.id]
         if rows is None or operation is None or intent is None or agent_enabled is False:
@@ -104,7 +119,7 @@ def may_submit(session, task, *, agent_enabled=None, settings=None):
             or intent.media_kind != task.service_type
             or intent.reservation_state != "reserved"
             or intent.status != "accepted"
-            or operation.tool_name != "submit_generation_batch"
+            or operation.tool_name != "workbench__submit_generation_batch"
             or operation.status not in {"waiting_media", "reconciling"}
             or str(task.project_id) != intent.frozen_target.get("project_id")
             or task.initiated_by != conversation.owner_user_id
@@ -197,12 +212,31 @@ def may_submit(session, task, *, agent_enabled=None, settings=None):
     )
     if user is None or user.status != "active" or not user.email_verified_at:
         return False
-    if media_owner is not None and not policy_state_locked(session, media_owner, lock=True)[0]:
-        session.info.setdefault("assistant_submission_errors", {})[task.id] = {
-            "code": "assistant_media_disabled",
-            "message": "助手媒体生成已关闭，任务尚未外发",
-        }
-        return False
+    business_invocation_id = session.info.get("business_media_invocations", {}).get(task_id)
+    if business_invocation_id is not None:
+        from short_drama.service.generations.runtime.business_media import business_media_may_submit
+
+        receipt = session.info["business_media_receipts"].get(task_id)
+        if receipt is None or not any(
+            ref["kind"] == "generation"
+            and ref["id"] == str(task.id)
+            and ref["project_id"] == str(task.project_id)
+            for ref in receipt.result_refs
+        ):
+            return False
+        if not business_media_may_submit(session, task, receipt, settings):
+            return False
+        media_owner = user.id
+    if media_owner is not None:
+        from short_drama.service.assistant.tasks.policy import policy_state_locked
+
+        # 任务查询已建立 RR 快照；新发送必须在账号锁后读取当前政策。
+        if not policy_state_locked(session, media_owner, lock=True)[0]:
+            session.info.setdefault("assistant_submission_errors", {})[task.id] = {
+                "code": "assistant_media_disabled",
+                "message": "助手媒体生成已关闭，任务尚未外发",
+            }
+            return False
     if task.project_id:
         project = session.scalar(
             select(Project).where(Project.id == task.project_id).with_for_update()

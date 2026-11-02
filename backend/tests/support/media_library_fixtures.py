@@ -4,14 +4,14 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.domain import AIGenerationRecord, AsyncTask, MediaAsset, MediaFile, Project
 from short_drama.domain.identity.accounts.user import User
 from short_drama.service.base import utcnow
 from tests.support.generation_fixtures import config
 
 
-def seed_media_library(session: Session) -> ActorContext:
+def seed_media_library(session: Session) -> SessionActorContext:
     config(session, identifier=100)
     # 使用系统会话构造跨账号样本，随后由调用方按返回的账号执行查询。
     session.info.pop("actor", None)
@@ -116,4 +116,12 @@ def seed_media_library(session: Session) -> ActorContext:
             )
         )
     session.commit()
-    return ActorContext(1, "legacy_fixture", "legacy@example.test", True, 1, "fixture", "library")
+    return SessionActorContext(
+        user_id=1,
+        username="legacy_fixture",
+        email="legacy@example.test",
+        verified=True,
+        session_id=1,
+        csrf_hash="fixture",
+        request_id="library",
+    )

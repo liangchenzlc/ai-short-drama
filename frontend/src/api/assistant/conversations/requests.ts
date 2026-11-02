@@ -5,6 +5,10 @@ import type {
   AssistantControlInput,
   AssistantDeletionPreview,
   AssistantGenerationPolicy,
+  AssistantSettings,
+  AssistantSettingsPatch,
+  AssistantQuestionAnswer,
+  AssistantQuestionAnswerReceipt,
   AssistantMemorySelection,
   AssistantOperation,
   AssistantSubjectKind,
@@ -24,11 +28,37 @@ import type {
 } from '@host/types/assistant/api';
 import type { AgentAttachment, AgentMessagePage } from '@host/types/assistant/engine';
 import type { Page } from '@host/types/generations/api';
+import type { AssistantTracePage, AssistantTraceResourceRead } from '@host/types/assistant/trace';
 const root = '/assistant';
 const conversationPath = (id: string) => `${root}/conversations/${encodeURIComponent(id)}`;
 const globalPath = (id: string) => `${root}/global/conversations/${encodeURIComponent(id)}`;
 
 export const assistantApi = {
+  async tracePage(id: string, runId: string, beforeSeq?: number, signal?: AbortSignal) {
+    return (await http.get<AssistantTracePage>(
+      `${conversationPath(id)}/runs/${encodeURIComponent(runId)}/trace`,
+      { params: { before_seq: beforeSeq, limit: 50 }, signal },
+    )).data;
+  },
+  async traceResource(id: string, runId: string, blockId: string, resourceId: string, signal?: AbortSignal) {
+    return (await http.get<AssistantTraceResourceRead>(
+      `${conversationPath(id)}/runs/${encodeURIComponent(runId)}/trace/${encodeURIComponent(blockId)}/resources/${encodeURIComponent(resourceId)}`,
+      { signal },
+    )).data;
+  },
+  async answerQuestion(id: string, body: AssistantQuestionAnswer, key: string) {
+    return (
+      await http.post<AssistantQuestionAnswerReceipt>(`${root}/operations/${encodeURIComponent(id)}/answer`, body, {
+        headers: { 'Idempotency-Key': key },
+      })
+    ).data;
+  },
+  async settings(signal?: AbortSignal) {
+    return (await http.get<AssistantSettings>(`${root}/settings`, { signal })).data;
+  },
+  async updateSettings(body: AssistantSettingsPatch) {
+    return (await http.patch<AssistantSettings>(`${root}/settings`, body)).data;
+  },
   async undoPreview(id: string, signal?: AbortSignal) {
     return (
       await http.get<AssistantUndoPreview>(`${root}/operations/${encodeURIComponent(id)}/undo-preview`, { signal })

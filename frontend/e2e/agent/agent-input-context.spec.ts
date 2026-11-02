@@ -133,7 +133,7 @@ async function contextFixture(page: Page, stage: 'source' | 'assets' = 'source')
         state.tasks.push(task);
         const message = { id: String(2001 + state.messages.length), task_id: task.id, seq: state.messages.length + 1, role: 'user', content: body.content, references, artifacts: [], created_at: time };
         state.messages.push(message);
-        const run = { id: String(901 + state.runs.length), task_id: task.id, conversation_id: '301', status: 'succeeded', phase: 'finished', row_version: '1', mode: 'discuss', model_config_id: body.model_config_id, model_name: '测试协作模型', error: null, usage: {}, budget: {}, review: null, awaiting_artifact_ids: [], queue_position: 0, waiting_reason: null, created_at: time, updated_at: time, finished_at: time };
+        const run = { id: String(901 + state.runs.length), task_id: task.id, conversation_id: '301', status: 'succeeded', phase: 'finished', row_version: '1', mode: 'discuss', model_config_id: body.model_config_id, model_name: '测试协作模型', error: null, usage: {}, budget: {}, awaiting_artifact_ids: [], queue_position: 0, waiting_reason: null, created_at: time, updated_at: time, finished_at: time };
         state.runs.push(run);
         const result = { message, run, task, cursor: 0 };
         receipts.set(key, { body: JSON.stringify(body), result });

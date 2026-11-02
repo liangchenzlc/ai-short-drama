@@ -2,10 +2,16 @@ from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound
-from short_drama.domain import Asset, AssetVersion, AssetVersionMediaReference
+from short_drama.domain import (
+    AIModelConfig,
+    Asset,
+    AssetVersion,
+    AssetVersionMediaReference,
+    Project,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -67,7 +73,7 @@ def test_crud_audit_pagination_and_restrict(db_session):
         page = service.list(limit=1)
         assert len(page.items) == page.total == 1
         assert row.created_at is not None
-        assert row.created_by is None
+        assert row.created_by == db_session.info["actor"].user_id
         version = {"row_version": before.row_version} if name == "Asset" else {}
         unchanged = service.update(row.id, version)
         if hasattr(row, "updated_at"):
@@ -189,10 +195,7 @@ def test_project_open_does_not_modify_content_audit(db_session):
 def test_large_ids_serialize_without_precision_loss(db_session):
     large_id = 2**63 + 7
     with db_session.begin():
-        db_session.execute(
-            text("INSERT INTO projects (id,owner_user_id,name) VALUES (:id,1,'large')"),
-            {"id": large_id},
-        )
+        db_session.add(Project(id=large_id, owner_user_id=1, name="large"))
     row = services(db_session)["Project"].get(large_id)
     assert row.model_dump(mode="json")["id"] == str(large_id)
 
@@ -249,9 +252,7 @@ def test_disabled_historical_model_allows_unrelated_asset_edits(db_session):
         original.id, {"model_id": model_id, "row_version": original.row_version}
     )
     with db_session.begin():
-        db_session.execute(
-            text("UPDATE ai_model_configs SET enabled=0 WHERE id=:id"), {"id": model_id}
-        )
+        db_session.get(AIModelConfig, model_id).enabled = 0
     renamed = assets.update(original.id, {"name": "renamed", "row_version": original.row_version})
     assert renamed.name == "renamed"
     assert renamed.model_id == model_id

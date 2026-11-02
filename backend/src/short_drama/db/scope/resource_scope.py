@@ -65,6 +65,8 @@ def scope_of(session, entity):
         "agent_preferences",
         "agent_skill_settings",
         "agent_skill_versions",
+        "business_tool_invocations",
+        "mcp_access_tokens",
     }:
         return (entity.owner_user_id, None)
     if name in {"agent_memory_items", "agent_memory_jobs", "agent_conversation_summaries"}:
@@ -164,7 +166,7 @@ def _agent_conversation(session, entity):
     }:
         task = _agent_parent(session, "agent_tasks", entity.task_id)
         return _agent_parent(session, "agent_conversations", task.conversation_id)
-    if name == "agent_turns" or name == "agent_tool_calls":
+    if name in {"agent_turns", "agent_tool_calls", "agent_execution_scopes"}:
         run = _agent_parent(session, "agent_runs", entity.run_id)
         return _agent_parent(session, "agent_conversations", run.conversation_id)
     raise NotFound("Agent parent does not exist")

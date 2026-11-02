@@ -15,9 +15,9 @@ from short_drama.domain.assistant.tasks.task import (
     AgentTaskInput,
 )
 
-OPEN_OPERATIONS = ("running", "waiting_media", "reconciling")
+OPEN_OPERATIONS = ("running", "waiting_media", "waiting_input", "reconciling")
 RESUMABLE_TASKS = ("stopped", "paused_error", "paused_budget")
-ACTIVE_TASKS = ("queued", "running", "waiting_media")
+ACTIVE_TASKS = ("queued", "running", "waiting_media", "waiting_input")
 
 
 class _CatalogArray(FunctionElement):
@@ -93,6 +93,25 @@ def _fields(names):
 
 
 class AgentTaskDAO:
+    def media_admission_receipts(self, task_id, operation_id):
+        from short_drama.domain.assistant.operations.invocation import BusinessToolInvocation
+
+        return self.session.execute(
+            select(
+                BusinessToolInvocation.id, BusinessToolInvocation.result, AgentOperation.arguments
+            )
+            .join(
+                AgentOperation, AgentOperation.business_invocation_id == BusinessToolInvocation.id
+            )
+            .where(
+                AgentOperation.task_id == task_id,
+                AgentOperation.id != operation_id,
+                AgentOperation.tool_name == "workbench__submit_generation_batch",
+                BusinessToolInvocation.status == "succeeded",
+            )
+            .with_for_update()
+        ).all()
+
     def __init__(self, session):
         self.session = session
 
@@ -104,19 +123,31 @@ class AgentTaskDAO:
             query = query.with_for_update().execution_options(populate_existing=refresh)
         return self.session.scalar(query)
 
-    def result_sources(self, task_id, *, before_id=None, limit=10):
+    def result_sources(
+        self, task_id, *, before_id=None, limit=10, run_id=None, scope_ids=None, delivered_ids=()
+    ):
         query = select(AgentOperation.id).where(
             AgentOperation.task_id == task_id,
-            AgentOperation.tool_name.in_(("apply_standard_patch", "apply_canvas_patch")),
+            AgentOperation.tool_name.in_(
+                ("workbench__apply_standard_patch", "workbench__apply_canvas_patch")
+            ),
             AgentOperation.status == "succeeded",
         )
+        if run_id is not None:
+            query = query.where(
+                (AgentOperation.run_id == run_id) & AgentOperation.scope_id.in_(scope_ids)
+                | AgentOperation.id.in_(delivered_ids)
+            )
         if before_id is not None:
             query = query.where(AgentOperation.id < before_id)
         ids = list(self.session.scalars(query.order_by(AgentOperation.id.desc()).limit(limit + 1)))
         rows = self.session.execute(
-            select(AgentOperation.id, AgentOperation.tool_name, AgentOperation.result_refs).where(
-                AgentOperation.task_id == task_id, AgentOperation.id.in_(ids[:limit])
-            )
+            select(
+                AgentOperation.id,
+                AgentOperation.scope_id,
+                AgentOperation.tool_name,
+                AgentOperation.result_refs,
+            ).where(AgentOperation.task_id == task_id, AgentOperation.id.in_(ids[:limit]))
         ).all()
         return sorted(rows, key=lambda row: row.id, reverse=True), len(ids) > limit
 
@@ -196,12 +227,14 @@ class AgentTaskDAO:
             select(
                 *columns,
                 AgentOperation.result["skill_activations"].label("skill_activations"),
+                AgentOperation.result["_display"].label("display"),
             ).where(AgentOperation.id.in_(ids))
         )
         by_id = {}
         for row in rows:
             values = dict(row._mapping)
             values["result"] = {"skill_activations": values.pop("skill_activations") or []}
+            values["result"]["_display"] = values.pop("display") or {}
             by_id[row.id] = SimpleNamespace(**values)
         return [by_id[identifier] for identifier in ids]
 
@@ -213,7 +246,10 @@ class AgentTaskDAO:
                 AgentTask.status.in_((*ACTIVE_TASKS, *RESUMABLE_TASKS)),
             )
             .order_by(
-                case((AgentTask.status.in_(("running", "waiting_media")), 0), else_=1),
+                case(
+                    (AgentTask.status.in_(("running", "waiting_media", "waiting_input")), 0),
+                    else_=1,
+                ),
                 AgentTask.id.desc(),
             )
             .limit(1)
@@ -231,13 +267,16 @@ class AgentTaskDAO:
             .execution_options(populate_existing=True)
         )
 
-    def active_operation(self, task_id, *, lock=True):
+    def active_operations(self, task_id, *, lock=True):
         query = select(AgentOperation).where(
             AgentOperation.task_id == task_id, AgentOperation.status.in_(OPEN_OPERATIONS)
         )
         if lock:
             query = query.with_for_update().execution_options(populate_existing=True)
-        return self.session.scalar(query)
+        return list(self.session.scalars(query.order_by(AgentOperation.id)))
+
+    def has_active_operations(self, task_id, *, lock=True):
+        return bool(self.active_operations(task_id, lock=lock))
 
     def inputs(self, task):
         return self.session.scalars(

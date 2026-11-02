@@ -179,7 +179,9 @@ class ExecutionSettlement(ExecutionServiceBase):
                     call.response_data = response
                     call.updated_at = utcnow()
         with self.factory.begin() as session:
-            if request_source == "shot_video":
+            if request_source == "shot_video" or record.config_snapshot.get(
+                "business_invocation_id"
+            ):
                 from short_drama.service.generations.runtime.access import lock_resource_project
 
                 lock_resource_project(session, AsyncTask, task.id)
@@ -280,6 +282,12 @@ class ExecutionSettlement(ExecutionServiceBase):
 
                     error["message"] = safe_error(error)["message"]
                 finish(current, "failed", error)
+            if current.status in {"succeeded", "failed"}:
+                from short_drama.service.generations.runtime.business_media import (
+                    adopt_business_media_locked,
+                )
+
+                adopt_business_media_locked(session, current, call, self.settings)
 
     def _save_text(self, task, record, version, token):
         from short_drama.service.creation.writing.rewrite.generation import (

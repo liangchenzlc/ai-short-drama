@@ -11,5 +11,7 @@
   native/       原生配音媒体
   session/      会话生命周期
   coordinator/  顶层执行协调
-  legacy/       V2 遗留路径（只维护不演化）
+  resources/    资源目录与媒体水合
+  runtime/      框架执行与持久恢复
+  sandbox/      代码环境与持久工作区
 """

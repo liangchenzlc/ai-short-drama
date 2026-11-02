@@ -73,7 +73,7 @@ async function safetyFixture(page: Page) {
           task,
           run: { id: '901', task_id: '501', conversation_id: '301', status: 'succeeded', phase: 'finished', row_version: '1',
             mode: 'discuss', model_config_id: '71', model_name: '创作协作模型', error: null,
-            usage: {}, budget: {}, review: null, created_at: time, updated_at: time, finished_at: time }, cursor: 1,
+            usage: {}, budget: {}, created_at: time, updated_at: time, finished_at: time }, cursor: 1,
         }, 201);
       }
       return reply({ items: [], total: 0, offset: 0, limit: 50 });

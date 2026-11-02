@@ -13,7 +13,9 @@ const historyDrafts = await import(`data:text/javascript;base64,${Buffer.from(co
 const undoSource = readFileSync(new URL('../../src/features/assistant/recovery/assistant-undo-draft.ts', import.meta.url), 'utf8');
 const undoDrafts = await import(`data:text/javascript;base64,${Buffer.from(compile(undoSource)).toString('base64')}`);
 const projectionCode = readFileSync(new URL('../../src/features/assistant/runtime/assistant-task-state.ts', import.meta.url), 'utf8');
-const projection = await import(`data:text/javascript;base64,${Buffer.from(compile(projectionCode)).toString('base64')}`);
+const traceCode = readFileSync(new URL('../../src/features/assistant/runtime/assistant-trace.ts', import.meta.url), 'utf8');
+const traceModule = `data:text/javascript;base64,${Buffer.from(compile(traceCode)).toString('base64')}`;
+const projection = await import(`data:text/javascript;base64,${Buffer.from(compile(projectionCode).replace('@host/features/assistant/runtime/assistant-trace', traceModule)).toString('base64')}`);
 const receiptCode = readFileSync(new URL('../../src/features/assistant/runtime/assistant-receipt.ts', import.meta.url), 'utf8');
 const receipts = await import(`data:text/javascript;base64,${Buffer.from(compile(receiptCode)).toString('base64')}`);
 
@@ -313,6 +315,11 @@ test('assistant HTTP contracts use project scope, separate attachment paths and 
   await assistantApi.referenceAttachment('20', 'asset', '9007199254740997', 'reference-key');
   assert.equal(calls[2].args[0], '/assistant/conversations/20/attachments/references');
   assert.equal(calls[2].args[1].source_id, '9007199254740997');
+  await assistantApi.tracePage('20', '9007199254740997', 42);
+  assert.equal(calls[3].args[0], '/assistant/conversations/20/runs/9007199254740997/trace');
+  assert.deepEqual(calls[3].args[1].params, { before_seq: 42, limit: 50 });
+  await assistantApi.traceResource('20', '9007199254740997', '9007199254740999', '9007199254741001');
+  assert.equal(calls[4].args[0], '/assistant/conversations/20/runs/9007199254740997/trace/9007199254740999/resources/9007199254741001');
   delete globalThis.__assistantHttp;
 });
 
@@ -370,6 +377,91 @@ test('late message pages cannot replace revised text and preserve exact decimal 
 const op = (state_version = '1', outcome = 'running') => ({ id: '9007199254740999', task_id: '5', run_id: '7', call_id: '8', tool_name: 'describe_creation_target', tool_version: '1', plan_revision: '1', state_version, phase: outcome === 'running' ? 'tool_running' : 'terminal', outcome, result_refs: [], error: null, created_at: '2026-10-21', finished_at: null });
 const snapshot = (cursor, operations = []) => ({ conversation_id: '3', snapshot_cursor: cursor, tasks: [], operations });
 const step = (seq, event_type, trace_version, outcome) => ({ seq, event_type, run_id: '7', created_at: '2026-10-21', payload: { operation_id: op().id, call_id: '8', task_id: '5', tool_name: 'describe_creation_target', trace_version, phase: outcome === 'succeeded' ? 'terminal' : 'tool_running', outcome } });
+
+const traceBlock = (block_version = '9007199254740993', preview = '雨🙂', status = 'running') => ({
+  block_id: '9007199254740995', block_version, run_id: '7', execution_scope_id: '11', parent_call_id: null,
+  kind: 'reasoning', source: 'assistant', action: '模型思考', target: { kind: 'model', id: '13', display_name: '模型' },
+  title: '模型提供的思考', status, started_seq: 1, started_at: '2026-10-30', updated_at: '2026-10-30',
+  finished_at: status === 'succeeded' ? '2026-10-30' : null, visibility: 'step', resources: [], result_refs: [],
+  channels: { reasoning: { preview, offset: 0, total_bytes: Buffer.byteLength(preview), truncated: false } },
+});
+const traceEvent = (seq, event_type, payload) => ({ seq, event_type, run_id: '7', created_at: '2026-10-30', payload });
+const traceDelta = (offset, delta, block_version = '9007199254740994') => ({
+  block_id: traceBlock().block_id, block_version, execution_scope_id: '11', parent_call_id: null,
+  source: 'assistant', channel: 'reasoning', offset, delta, created_at: '2026-10-30',
+});
+
+test('unified trace snapshot plus replay equals full replay and retains frozen target display', () => {
+  const block = traceBlock();
+  let refreshed = projection.mergeTaskSnapshot(projection.emptyTaskProjection('3'), { ...snapshot(10), trace_blocks: [block] });
+  let replayed = projection.applyTaskEvent(projection.emptyTaskProjection('3'), traceEvent(9, 'trace.block', block));
+  const event = traceEvent(11, 'trace.delta', traceDelta(7, '声'));
+  refreshed = projection.applyTaskEvent(refreshed, event);
+  refreshed = projection.applyTaskEvent(refreshed, event);
+  replayed = projection.applyTaskEvent(replayed, event);
+  assert.deepEqual(refreshed.traceBlocks, replayed.traceBlocks);
+  assert.equal(refreshed.traceBlocks[block.block_id].channels.reasoning.preview, '雨🙂声');
+  assert.equal(refreshed.traceBlocks[block.block_id].channels.reasoning.total_bytes, 10);
+  assert.deepEqual(refreshed.traceBlocks[block.block_id].target, block.target);
+});
+
+test('unified trace orders byte offsets, handles same-version channels and bounds every preview', () => {
+  const block = traceBlock();
+  let state = projection.applyTaskEvent(projection.emptyTaskProjection('3'), traceEvent(1, 'trace.block', block));
+  state = projection.applyTaskEvent(state, traceEvent(3, 'trace.delta', traceDelta(10, '后', '9007199254740995')));
+  state = projection.applyTaskEvent(state, traceEvent(2, 'trace.delta', traceDelta(7, '声')));
+  assert.equal(state.traceBlocks[block.block_id].channels.reasoning.preview, '雨🙂声后');
+  state = projection.applyTaskEvent(state, traceEvent(4, 'trace.delta', { ...traceDelta(0, '错误🙂', '9007199254740995'), channel: 'stderr' }));
+  assert.equal(state.traceBlocks[block.block_id].channels.stderr.total_bytes, 10);
+  state = projection.applyTaskEvent(state, traceEvent(5, 'trace.delta', traceDelta(13, '雨🙂'.repeat(4000), '9007199254740996')));
+  const channel = state.traceBlocks[block.block_id].channels.reasoning;
+  assert.ok(Buffer.byteLength(channel.preview) <= 16384);
+  assert.equal(channel.total_bytes, 28013);
+  assert.equal(channel.truncated, true);
+  assert.ok(!channel.preview.includes('\ufffd'));
+});
+
+test('unified trace drains pending channels when a snapshot fills their byte gaps', () => {
+  for (const source of ['runtime snapshot', 'trace.block']) {
+    const first = traceBlock('1', '雨');
+    let state = projection.mergeTaskSnapshot(projection.emptyTaskProjection('3'), { ...snapshot(10), trace_blocks: [first] });
+    state = projection.applyTaskEvent(state, traceEvent(13, 'trace.delta', traceDelta(6, '后', '3')));
+    state = projection.applyTaskEvent(state, traceEvent(14, 'trace.delta', { ...traceDelta(6, '🙂', '3'), channel: 'stderr' }));
+    assert.equal(state.traceDeltas[first.block_id].length, 2);
+    const filled = traceBlock('2', '雨声');
+    filled.channels.stderr = { preview: '错误', offset: 0, total_bytes: 6, truncated: false };
+    state = source === 'runtime snapshot'
+      ? projection.mergeTaskSnapshot(state, { ...snapshot(11), trace_blocks: [filled] })
+      : projection.applyTaskEvent(state, traceEvent(11, 'trace.block', filled));
+    const block = state.traceBlocks[first.block_id];
+    assert.equal(block.channels.reasoning.preview, '雨声后', source);
+    assert.equal(block.channels.reasoning.total_bytes, 9, source);
+    assert.equal(block.channels.stderr.preview, '错误🙂', source);
+    assert.equal(block.channels.stderr.total_bytes, 10, source);
+    assert.equal(block.block_version, '3', source);
+    assert.deepEqual(state.traceDeltas[first.block_id], [], source);
+    state = projection.applyTaskEvent(state, traceEvent(16, 'trace.delta', traceDelta(12, '迟到', '5')));
+    state = projection.mergeTaskSnapshot(state, { ...snapshot(15), trace_blocks: [{ ...block, block_version: '4', status: 'succeeded' }] });
+    assert.equal(state.traceBlocks[first.block_id].status, 'succeeded');
+    assert.equal(state.traceBlocks[first.block_id].block_version, '4');
+    assert.deepEqual(state.traceDeltas[first.block_id], []);
+  }
+});
+
+test('unified trace does not rewind terminal versions or mix execution scopes after refresh', () => {
+  const settled = traceBlock('9007199254740996', '已结束', 'succeeded');
+  let state = projection.mergeTaskSnapshot(projection.emptyTaskProjection('3'), { ...snapshot(10), trace_blocks: [settled] });
+  state = projection.applyTaskEvent(state, traceEvent(11, 'trace.block', traceBlock('9007199254740995')));
+  state = projection.applyTaskEvent(state, traceEvent(12, 'trace.block', traceBlock('9007199254740997')));
+  state = projection.applyTaskEvent(state, traceEvent(13, 'trace.delta', traceDelta(9, '迟到', '9007199254740998')));
+  assert.deepEqual(state.traceBlocks[settled.block_id], settled);
+  const deleted = projection.applyTaskEvent(state, traceEvent(14, 'conversation.deleted', {}));
+  assert.deepEqual(deleted.traceBlocks, {});
+  assert.equal(projection.applyTaskEvent(deleted, traceEvent(15, 'trace.block', traceBlock())), deleted);
+  let fresh = projection.applyTaskEvent(projection.emptyTaskProjection('3'), traceEvent(1, 'trace.block', traceBlock()));
+  const wrongScope = traceEvent(2, 'trace.delta', { ...traceDelta(7, '串范围'), execution_scope_id: '99' });
+  assert.equal(projection.applyTaskEvent(fresh, wrongScope), fresh);
+});
 
 test('undo receipts survive duplicate events, stale pages and terminal operation replay', () => {
   const receipt = { id: '9007199254741001', operation_id: op().id, selected_keys: ['asset:17'], result_refs: [{ kind: 'asset', id: '17', status: 'deleted' }], created_at: '2026-10-22' };

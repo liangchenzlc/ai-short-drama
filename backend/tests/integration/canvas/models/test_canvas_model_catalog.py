@@ -92,7 +92,7 @@ def test_catalog_encryption_redaction_and_stable_host_projection(db_session):
     model = public["models"][0]
     assert model["id"] == identifier and isinstance(identifier, str) and len(identifier) >= 16
     assert model["has_secret_key"] and model["headers"] == [{"name": "X-Key", "has_value": True}]
-    assert model["selection_aliases"] == ["custom-provider::gpt-image-1"]
+    assert model["model_key"] == "gpt-image-1" and model["has_api_key"]
     with db_session.begin():
         config = db_session.get(AIModelConfig, int(identifier))
         catalog = db_session.scalar(select(CanvasModelCatalog))

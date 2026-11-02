@@ -3,6 +3,24 @@ from short_drama.agent.context.prompt import build_segment_prompt, remember_dige
 STABLE = "固定系统提示：只使用允许的工具。"
 
 
+def test_single_assistant_prompt_has_no_forced_review_and_supports_user_instructions():
+    from short_drama.ai.prompts.registry import assistant_prompt
+
+    prompt = assistant_prompt("先给对白，再给场面调度。")
+    assert "先给对白，再给场面调度。" in prompt
+    assert "提交不等于交付" in prompt
+    assert "需要结果" in prompt
+    assert "普通讨论" in prompt
+    for removed in (
+        "confirm_requirements",
+        "submit_completion_review",
+        "completion_feedback",
+        "enable_tool_group",
+        "独立验收",
+    ):
+        assert removed not in prompt
+
+
 def test_first_segment_carries_state_then_user_text():
     result = build_segment_prompt(
         stable=STABLE, dynamic={"step": 1}, first_prompt="写第一集", has_history=False

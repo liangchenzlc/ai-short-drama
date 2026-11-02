@@ -8,6 +8,7 @@ from sqlalchemy import event, update
 from sqlalchemy.orm import Session
 
 import short_drama.db.access  # noqa: F401
+from short_drama.agent.tools.registry import get_spec
 from short_drama.domain import (
     AIGenerationRecord,
     AsyncTask,
@@ -481,9 +482,9 @@ def test_agent_conversation_and_shared_artifact_lists_batch_details(size):
         project_id = agent_rows(session, size)
         cfg = SimpleNamespace(agent_enabled=True)
         with select_queries(session) as statements:
-            page = AssistantTaskService(session, cfg).list_global_conversations(
-                project_id=project_id
-            )
+            page = AssistantTaskService(
+                session, cfg, tool_lookup=get_spec
+            ).list_global_conversations(project_id=project_id)
         assert len(page.items) == size
         assert page.items[-1].last_run_status is None
         assert all(row.last_run_status == "succeeded" for row in page.items[:-1])
@@ -526,16 +527,15 @@ def test_agent_runtime_batches_active_run_metadata(size):
                         AgentToolCall(
                             id=300 + 2 * index + call,
                             run_id=200 + index,
+                            scope_id=200 + index,
                             turn_id=1000 + index,
                             call_index=call,
                             provider_call_id=f"call-{call}",
-                            tool_name="plan",
+                            tool_name="runtime__ask_user",
                             arguments={},
                             arguments_hash="0" * 64,
                             idempotency_key=f"{index:032}{call:032}",
-                            status="waiting_review",
-                            review_payload={"title": f"review-{call}", "summary": "S", "steps": []},
-                            review_hash="0" * 64,
+                            status="waiting_input",
                             created_at=now,
                             updated_at=now,
                         )

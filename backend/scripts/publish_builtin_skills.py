@@ -5,6 +5,7 @@ import json
 import sys
 
 from short_drama.agent.skill.packages import builtin_skill_packages
+from short_drama.agent.tools.registry import get_spec
 from short_drama.core.config import Settings
 from short_drama.db.session import build_engine, session_factory
 from short_drama.service.skills.catalog.builtin_skill import publish_builtin_skills
@@ -25,6 +26,7 @@ def main() -> None:
                 configured,
                 MinioStorage(configured),
                 packages,
+                tool_lookup=get_spec,
             )
             result["database"] = engine.url.database
         finally:

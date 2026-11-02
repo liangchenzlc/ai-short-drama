@@ -2,3 +2,4 @@
 @import './styles/ai-assistant/conversation.css';
 @import './styles/ai-assistant/composer.css';
 @import './styles/ai-assistant/attachments.css';
+@import '../messages/assistant-trace.css';

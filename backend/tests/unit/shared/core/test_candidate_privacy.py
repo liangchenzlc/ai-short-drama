@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 import short_drama.db.access  # noqa: F401
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.domain import (
     AgentArtifact,
     AIGenerationRecord,
@@ -196,14 +196,14 @@ def test_published_agent_script_still_requires_adoption_for_owner(status, operat
             session.get(ProjectScript, 500).published_at = utcnow()
             session.get(Project, project_id).editing_script_id = 500
             session.get(AgentArtifact, 800).status = status
-        session.info["actor"] = ActorContext(
-            user_id,
-            f"member{user_id}",
-            f"member{user_id}@example.test",
-            True,
-            user_id,
-            "hash",
-            "test",
+        session.info["actor"] = SessionActorContext(
+            user_id=user_id,
+            username=f"member{user_id}",
+            email=f"member{user_id}@example.test",
+            verified=True,
+            session_id=user_id,
+            csrf_hash="hash",
+            request_id="test",
         )
         with session.begin():
             private_artifact = session.scalar(
@@ -250,8 +250,14 @@ def test_adopted_agent_script_keeps_owner_editor_operations(operation):
             artifact = session.get(AgentArtifact, 800)
             artifact.status, artifact.applied_by = "applied", 1
             artifact.applied_at, artifact.apply_receipt = utcnow(), {"action": "select_script"}
-        session.info["actor"] = ActorContext(
-            1, "owner", "owner@example.test", True, 1, "hash", "test"
+        session.info["actor"] = SessionActorContext(
+            user_id=1,
+            username="owner",
+            email="owner@example.test",
+            verified=True,
+            session_id=1,
+            csrf_hash="hash",
+            request_id="test",
         )
         before = writing.get(project_id)
         payload = {"script_id": "500", "content_version": before["content_version"]}
@@ -291,8 +297,14 @@ def test_agent_adoption_provenance_does_not_expose_inaccessible_scripts(visibili
         if visibility == "published":
             with session.begin():
                 session.get(ProjectScript, 500).published_at = utcnow()
-        session.info["actor"] = ActorContext(
-            2, "member2", "member2@example.test", True, 2, "hash", "test"
+        session.info["actor"] = SessionActorContext(
+            user_id=2,
+            username="member2",
+            email="member2@example.test",
+            verified=True,
+            session_id=2,
+            csrf_hash="hash",
+            request_id="test",
         )
         with session.begin():
             assert writing._requires_agent_adoption(500) is False

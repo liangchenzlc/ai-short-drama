@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
+from short_drama.dao.assistant.operations.invocation import BusinessInvocationDAO
 from short_drama.dao.creation.assets.management.library import AssetLibraryDAO
 from short_drama.dao.creation.storyboard.management.storyboard import (
     advance_shot_version,
@@ -21,12 +22,16 @@ from short_drama.domain import Asset, Project, ShotDialogue, ShotScript
 from short_drama.domain.creation.sound.voices.voices import CharacterVoice
 from short_drama.domain.creation.storyboard.images.image import ShotImage
 from short_drama.domain.creation.storyboard.videos.video import ShotVideo
-from short_drama.schemas.assistant.operations.standard import StandardPatch
+from short_drama.schemas.assistant.operations.standard import ApplyStandardPatch, StandardPatch
 from short_drama.schemas.base import UINT64_MAX, parse_identifier
 from short_drama.schemas.creation.storyboard.management.storyboard import StoryboardGeneratedShot
 from short_drama.service.assistant.operations.dialogue import (
     SOUND_ACTIONS,
     apply_sound_lines_locked,
+)
+from short_drama.service.assistant.operations.invocation import (
+    BusinessInvocation,
+    require_invocation_subject,
 )
 from short_drama.service.base import BaseService, utcnow
 from short_drama.service.creation.assets.management.assets import AssetService
@@ -43,6 +48,69 @@ def patch_hash(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
+
+
+def apply_standard_patch_locked(
+    session: Session,
+    identity: BusinessInvocation,
+    values: ApplyStandardPatch,
+    receipt_id: int,
+    settings: Settings | None,
+) -> dict[str, Any]:
+    if identity.scope.subject_policy == "selected":
+        _require_selected_versions(identity, values.patch)
+    allowed = (
+        BusinessInvocationDAO(session).subjects(values.project_id)
+        if identity.scope.subject_policy == "project"
+        else identity.scope.allowed_subjects
+    )
+    return AssistantStandardService(session, settings).apply_locked(
+        values.project_id,
+        values.patch,
+        owner_user_id=identity.actor.user_id,
+        operation_id=receipt_id,
+        allowed_asset_ids=allowed.get("asset", frozenset()),
+        allowed_shot_ids=allowed.get("shot", frozenset()),
+        allowed_sound_line_ids=allowed.get("sound_line", frozenset()),
+    )
+
+
+def _require_selected_versions(identity, patch):
+    snapshots = identity.scope.subject_snapshots
+    checked = set()
+    for action in patch.actions:
+        references = []
+        for kind in ("asset", "shot"):
+            identifier = getattr(action, kind, None)
+            if identifier is not None:
+                version = (
+                    action.patch.row_version if hasattr(action, "patch") else action.row_version
+                )
+                references.append((kind, identifier, version))
+        if action.action == "reorder_shots":
+            references.extend(("shot", key, version) for key, version in action.versions.items())
+        for kind, identifier, version in references:
+            key = f"{kind}:{identifier}"
+            if identifier.startswith("$") or key in checked:
+                continue
+            require_invocation_subject(identity, kind, identifier)
+            snapshot = snapshots.get(key)
+            if snapshot is None or str(version) != snapshot["revision"]:
+                raise Conflict("写入版本与获准主体快照不一致，请主动刷新引用")
+            checked.add(key)
+        if action.action == "edit_dialogue" and not action.shot.startswith("$"):
+            snapshot = snapshots.get(f"shot:{action.shot}", {})
+            dialogue = snapshot.get("fields", {}).get("dialogue")
+            if dialogue is None or str(action.dialogue_version) != str(dialogue["row_version"]):
+                raise Conflict("对白版本与获准分镜快照不一致，请主动刷新引用")
+        if action.action == "update_sound_line" and not action.line.startswith("$"):
+            require_invocation_subject(identity, "sound_line", action.line)
+            binding = snapshots.get(f"sound_line:{action.line}", {}).get("sound_binding")
+            if binding is None or any(
+                str(value) != str(binding[key])
+                for key, value in patch.sound_revision.model_dump().items()
+            ):
+                raise Conflict("台词版本与获准声音快照不一致，请主动刷新引用")
 
 
 class AssistantStandardService(BaseService):

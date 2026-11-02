@@ -1,5 +1,7 @@
 # Skill API
 
+2026-10-30：Run 创建时只冻结 L1 元数据和不可变版本身份；模型目录摘要每项最多 180 字符，search 提供最多 800 字符及命中片段并标记 `truncated`。load 才读取完整正文、exclusions 与资源目录。活动、释放、资源读取均使用可信 scope 的显式图状态；释放后重载仍用本 Run 冻结版。已冻结 Run 不随目录更新或停用漂移，新增 Run 重新冻结目录，手选版本保持其明确身份。资源 manifest 的 activation、path、版本与 checksum 授权读取已提供；runtime__materialize_skill_resource 可将当前 scope 的活动 Skill 冻结资源物化到沙箱，重投复用原身份，具体契约见助手 API 的代码与文件资源。
+
 当前路由位于 `api/v1/skills/catalog/router.py`，Service 位于 `service/skills/catalog/`，前端请求与类型分别在 `api/skills/` 和 `types/skills/`。HTTP 仍使用 `/api/v1/agent/skills`，源码业务命名与有效公开协议不强制相同。
 
 ## 内置与个人 Skill 管理
@@ -16,7 +18,7 @@
 | GET | `/agent/skills/{skill_id}` | 按需读取主指令及资源目录；不一次返回全部文件正文 |
 | PATCH | `/agent/skills/{skill_id}` | 必带内容行 `row_version`；前端更新上传完整包，资源数组整体替换；模式可独立修改 |
 | PATCH | `/agent/skills/{skill_id}/settings` | 本人的 `enabled` 设置，必带独立设置 `row_version` |
-| POST | `/agent/skills/{skill_id}/copy` | 兼容固定 `content_version` 复制；必带 `Idempotency-Key`，同样拒绝脚本；当前 UI 不提供入口 |
+| POST | `/agent/skills/{skill_id}/copy` | 兼容固定 `content_version` 复制；必带 `Idempotency-Key`，同样校验脚本路径与类型；当前 UI 不提供入口 |
 | GET | `/agent/skills/{skill_id}/export` | 带 `content_version` 导出 ZIP；来源已更新返回 409 |
 | GET | `/agent/skills/{skill_id}/versions/{version}/resources` | 按 manifest 的 `path` 只读获取文件；文本 `offset/limit` 按 Unicode 字符分段，limit 最多 6000；图片完整返回 Base64 |
 | DELETE | `/agent/skills/{skill_id}` | JSON body 必带 `row_version`；软删除并停用，返回 204 |
@@ -27,9 +29,9 @@
 
 不再接收、输出或使用 `invocation_mode`。`tags` 保留在版本及导入导出中，更新缺省保留原标签，显式 `[]` 清空；UI 不填写、筛选或搜索标签。模式单选映射：通用为 `["standard","infinite_canvas"]`，创作为 `["standard"]`，画布为 `["infinite_canvas"]`；新导入默认通用，更新回显当前模式与启停。服务端验证所选模式所需的工具能力，修改模式会发布内容版本。
 
-导入要求 SKILL.md 的 frontmatter 提供 `name` 和 `description`，正文非空、无 NUL、UTF-8 最多 64 KiB。文件上传最多 4 MiB；ZIP 根目录或共同的单层外目录内恰有一个 SKILL.md，展开后最多 32 文件／1 MiB，主文件含元数据最多 128 KiB、frontmatter 最多 64 KiB，单资源最多 128 KiB。支持 md/txt/json/csv/yaml/yml 和 PNG/JPEG/WebP；路径最多六段，拒绝路径穿越、链接、大小写重复、文件／目录重名和危险 YAML。脚本后缀、`scripts/` 下文件、`kind=script` 或未知格式拒绝整个包，不忽略后继续。历史脚本资源已不受支持，涉及的旧方法需重新导入或发布。
+导入要求 SKILL.md 的 frontmatter 提供 `name` 和 `description`，正文非空、无 NUL、UTF-8 最多 64 KiB。文件上传最多 4 MiB；ZIP 根目录或共同的单层外目录内恰有一个 SKILL.md，展开后最多 32 文件／1 MiB，主文件含元数据最多 128 KiB、frontmatter 最多 64 KiB，单资源最多 128 KiB。支持 md/txt/json/csv/yaml/yml 和 PNG/JPEG/WebP；路径最多六段，拒绝路径穿越、链接、大小写重复、文件／目录重名和危险 YAML。支持 `scripts/` 下 `.py`、`.js`、`.mjs` 与 `kind=script`，其内容按 UTF-8 资源导入、读取、复制和导出，不执行。依赖清单仍为 reference，未知格式仍整包拒绝。
 
-预览返回 `draft/files/byte_size/compatible/issues`，增加 `tags_provided` 区分缺省与显式空标签，以及 `mode_issues`（`general/standard/infinite_canvas`）供三段模式切换时显示兼容问题。相对引用支持包内合法的 `../`，缺失引用、未知工具及附加运行依赖阻止提交。前端预览成功不替代正式写入检查；全部写入口重新验证文件、引用、体积及工具模式兼容性。
+预览返回 `draft/files/byte_size/compatible/issues`，增加 `tags_provided` 区分缺省与显式空标签，以及 `mode_issues`（`general/standard/infinite_canvas`）供三段模式切换时显示兼容问题。相对引用支持包内合法的 `../`，缺失引用、未知平台工具阻止提交；外部工具前缀 `mcp__/external__` 明确提示来源尚未接入。脚本运行依赖需由沙箱能力核对，读取接口不安装或执行。前端预览成功不替代正式写入检查；全部写入口重新验证文件、引用、体积及工具模式兼容性。
 
 目录树和只读编辑区共用一个文件浏览器，默认打开 SKILL.md 正文，不显示 frontmatter；文本源码、行号和复制可用，不允许修改。前端依据 manifest 路径构树，按准确版本读取文件并核验实际内容 SHA-256；文件切换取消旧请求，迟到响应不覆盖当前文件，失败仅在读取区重试。
 

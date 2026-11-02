@@ -192,7 +192,7 @@ class AgentMemoryService(BaseService):
                 .where(
                     AgentMemoryJob.id == parse_identifier(identifier),
                     AgentMemoryJob.owner_user_id == owner,
-                    AgentMemoryJob.kind.in_(("summary", "extract", "task_state")),
+                    AgentMemoryJob.kind.in_(("summary", "extract")),
                 )
                 .with_for_update()
             )
@@ -217,17 +217,12 @@ class AgentMemoryService(BaseService):
             if job.source_snapshot.get("retry_job_id"):
                 raise Conflict("这条记录已安排重试，请刷新查看后续整理记录")
             conversation = self.session.get(AgentConversation, job.conversation_id)
-            if job.kind == "task_state":
-                from short_drama.agent.task.compaction import task_job_current_locked
-
-                current_source = task_job_current_locked(self.session, conversation, job)
-            else:
-                current_source = (
-                    source_hash(
-                        message_sources(self.session, job.conversation_id, job.from_seq, job.to_seq)
-                    )
-                    == job.source_hash
+            current_source = (
+                source_hash(
+                    message_sources(self.session, job.conversation_id, job.from_seq, job.to_seq)
                 )
+                == job.source_hash
+            )
             if (
                 not current_source
                 or job.kind == "summary"
@@ -242,8 +237,6 @@ class AgentMemoryService(BaseService):
             if run is None or not model_unchanged(self.session, run):
                 raise Conflict("原模型配置已变化，请通过新的任务使用当前模型")
             fields = ["messages", "prior_facts", "model"]
-            if job.kind == "task_state":
-                fields.extend(["task_id", "base_job_id", "base_revision", "through_revision"])
             snapshot = {field: deepcopy(job.source_snapshot[field]) for field in fields}
             snapshot.update(manual_retry_of=str(job.id), retry_request_hash=request_hash)
             child = AgentMemoryJob(

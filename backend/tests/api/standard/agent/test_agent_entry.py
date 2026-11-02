@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from short_drama.api.dependencies.session import get_session
 from short_drama.core.config import Settings
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.main import create_app
 
 
@@ -14,11 +14,20 @@ def test_disabled_agent_status_and_mutation_without_agent_schema():
 
     def session():
         with Session() as value:
-            value.info["actor"] = ActorContext(1, "test", "test@example.test", True, 1, "", "test")
+            value.info["actor"] = SessionActorContext(
+                user_id=1,
+                username="test",
+                email="test@example.test",
+                verified=True,
+                session_id=1,
+                csrf_hash="",
+                request_id="test",
+            )
             yield value
 
     app.dependency_overrides[get_session] = session
-    with TestClient(app, raise_server_exceptions=True) as client:
+    client = TestClient(app, raise_server_exceptions=True)
+    try:
         status = client.get("/api/v1/agent/status")
         assert status.status_code == 200
         assert status.json() == {"enabled": False, "schema_ready": False}
@@ -31,6 +40,8 @@ def test_disabled_agent_status_and_mutation_without_agent_schema():
         )
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "agent_disabled"
+    finally:
+        client.close()
 
 
 def test_invalid_agent_payload_is_rejected_without_database_access():

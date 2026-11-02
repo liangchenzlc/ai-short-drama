@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.db.access.policies.canvas_recycle_access import recycle_scope
-from short_drama.db.access.predicates import _scope_options
+from short_drama.db.access.predicates import _scope_options, invocation_scope_options
 from short_drama.db.scope.resource_scope import (
     require_project as require_project,
 )
@@ -91,7 +91,7 @@ def restrict_queries(state):
             )
             if (
                 operation is None
-                or operation.tool_name != "apply_standard_patch"
+                or operation.tool_name != "workbench__apply_standard_patch"
                 or operation.status != "succeeded"
             ):
                 raise NotFound("原撤销批次不存在")
@@ -122,3 +122,10 @@ def restrict_queries(state):
                 undo_asset_ids,
             )
         )
+        invocation_scope = state.session.info.get("invocation_scope")
+        if invocation_scope is not None:
+            state.statement = state.statement.options(
+                *invocation_scope_options(
+                    invocation_scope.project_ids, tuple(Base.registry.mappers)
+                )
+            )

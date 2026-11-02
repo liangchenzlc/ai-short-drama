@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from short_drama.agent.gateway.protocol import AgentModelGateway
+from short_drama.agent.gateway.langchain import LangChainGateway, ProtectedChatModel
 from short_drama.api.dependencies.session import get_session
 from short_drama.core.config import Settings
 from short_drama.main import create_app
@@ -74,8 +74,8 @@ def client(monkeypatch):
         execute = forbidden
         _execute_internal = forbidden
 
-    monkeypatch.setattr(AgentModelGateway, "run_segment", forbidden)
-    monkeypatch.setattr(AgentModelGateway, "validate_capability", forbidden)
+    monkeypatch.setattr(ProtectedChatModel, "_agenerate", forbidden)
+    monkeypatch.setattr(LangChainGateway, "validate_capability", forbidden)
     app = create_app(Settings(_env_file=None, auth_enabled=False, agent_enabled=False))
     app.state.session_factory = GuardedSession
 
@@ -84,8 +84,12 @@ def client(monkeypatch):
             yield value
 
     app.dependency_overrides[get_session] = session
-    with TestClient(app) as value:
+    # Pure request validation must not start schema readiness or network clients.
+    value = TestClient(app)
+    try:
         yield value
+    finally:
+        value.close()
 
 
 @pytest.mark.parametrize(

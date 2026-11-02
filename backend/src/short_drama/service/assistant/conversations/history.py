@@ -229,6 +229,8 @@ def revise_discussion(service, identifier, message_id, payload, idempotency_key)
             previous.model_config_id,
             previous.config_snapshot,
             trigger_revision=revision_id,
+            settings=service.settings,
+            tool_lookup=service.tool_lookup,
         )
         revision = AgentDiscussionRevision(
             id=revision_id,

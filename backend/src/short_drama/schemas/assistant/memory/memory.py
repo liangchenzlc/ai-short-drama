@@ -152,31 +152,6 @@ class MemoryMaintenanceResult(InputModel):
     memories: Annotated[list[MemoryExtraction], Field(max_length=12)] = Field(default_factory=list)
 
 
-class TaskConstraintFact(InputModel):
-    text: Annotated[str, Field(min_length=1, max_length=2000)]
-    source_message_ids: Annotated[list[Identifier], Field(max_length=128)] = Field(
-        default_factory=list
-    )
-    prior_fact_indexes: Annotated[
-        list[Annotated[int, Field(strict=True, ge=0, le=23)]], Field(max_length=24)
-    ] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def real_unique_sources(self):
-        if not self.source_message_ids and not self.prior_fact_indexes:
-            raise ValueError("Task constraint requires a source")
-        if any(
-            len(set(values)) != len(values)
-            for values in (self.source_message_ids, self.prior_fact_indexes)
-        ):
-            raise ValueError("Task constraint sources cannot repeat")
-        return self
-
-
-class TaskConstraintResult(InputModel):
-    facts: Annotated[list[TaskConstraintFact], Field(max_length=24)] = Field(default_factory=list)
-
-
 class MemorySummaryFactRead(ReadModel):
     kind: Literal["user_fact", "proposal", "completed", "pending"]
     text: str
@@ -198,7 +173,7 @@ class MemorySummaryRead(ReadModel):
 
 class MemoryJobRead(ReadModel):
     id: Identifier
-    kind: Literal["summary", "extract", "task_state", "purge"]
+    kind: Literal["summary", "extract", "purge"]
     status: Literal["pending", "running", "succeeded", "failed", "stale", "cancelled", "abandoned"]
     provider_state: Literal["not_started", "sending", "received", "unknown"]
     message_version: Identifier

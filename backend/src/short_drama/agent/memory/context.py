@@ -145,7 +145,7 @@ def schedule_maintenance_locked(session, conversation, run):
         .join(AgentRun, AgentRun.trigger_message_id == AgentMessage.id)
         .where(
             AgentRun.conversation_id == conversation.id,
-            AgentRun.status.in_(("queued", "running", "waiting_generation", "waiting_review")),
+            AgentRun.status.in_(("queued", "running", "waiting_generation", "waiting_input")),
         )
     )
     latest = min(latest, active_seq - 1) if active_seq is not None else latest
@@ -267,10 +267,6 @@ def settle_maintenance_locked(session, conversation, job, payload, usage):
     if conversation.status != "active":
         job.status = "cancelled"
         return False
-    if job.kind == "task_state":
-        from short_drama.agent.task.compaction import settle_task_compaction_locked
-
-        return settle_task_compaction_locked(session, conversation, job, payload, usage)
     current = message_sources(session, conversation.id, job.from_seq, job.to_seq)
     if (
         source_hash(current) != job.source_hash
@@ -395,7 +391,7 @@ def history_projection_locked(
         if (
             not row["input_applied"]
             or row["task_id"] != str(task.id)
-            and row["task_status"] in {"queued", "running", "waiting_media"}
+            and row["task_status"] in {"queued", "running", "waiting_media", "waiting_input"}
         ):
             continue
         permitted = not row["memory_restricted"] and (

@@ -4,7 +4,7 @@ import json
 
 from sqlalchemy import func, or_, select
 
-from short_drama.agent.harness import ENGINE_VERSION
+from short_drama.agent.core import ENGINE_VERSION
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.assistant.memory.memory import AgentMemoryDAO, MemoryScopeContext
 from short_drama.domain import Project
@@ -367,7 +367,7 @@ def invalidate_memory_runs(session, row, source_conversations=()):
         .where(
             AgentRun.initiated_by == row.owner_user_id,
             or_(
-                AgentRun.status.in_(("queued", "running", "waiting_generation", "waiting_review")),
+                AgentRun.status.in_(("queued", "running", "waiting_generation", "waiting_input")),
                 # A paused Harness can receive a normal continuation message.
                 # Its latest attempt must carry invalidation into that new Run.
                 (AgentTask.status.in_(("paused_error", "paused_budget")))

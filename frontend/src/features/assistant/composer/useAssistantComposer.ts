@@ -24,7 +24,7 @@ import { useAssistantRuntime } from '@host/features/assistant/runtime/useAssista
 import { ensureSkillTokens, removeSkillToken, skillToken } from '@host/features/assistant/skills/assistant-skill-token';
 import { workflowStorage } from '@host/features/identity/storage/account-storage';
 import { attemptStorage, clearAttempt, requestAttempt } from '@host/features/shared/async/request-receipt';
-import type { AssistantControlInput, AssistantMentionReference } from '@host/types/assistant/api';
+import type { AssistantControlInput, AssistantMentionReference, TaskMediaLimits } from '@host/types/assistant/api';
 import type { AgentContextController } from '@host/types/assistant/attachments/AgentContextComposer';
 import type { AssistantConversationProps } from '@host/types/assistant/conversations/AssistantConversationBody';
 import type { HistoryRequest } from '@host/types/assistant/history/AssistantDiscussionHistory';
@@ -61,6 +61,7 @@ export function useAssistantComposer({
   const [draft, setDraft] = useState(() => ensureSkillTokens(restored.text, restored.skills));
   const [skills, setSkills] = useState(restored.skills);
   const [skillsDirty, setSkillsDirty] = useState(restored.skillsDirty ?? restored.skills.length > 0);
+  const [mediaLimits, setMediaLimits] = useState<TaskMediaLimits | undefined>(restored.mediaLimits);
   const [draftError, setDraftError] = useState('');
   const { models, modelId, setModelId, modelsLoading, modelsError, setModelRevision } = useAssistantModels(
     restored.modelId,
@@ -191,6 +192,7 @@ export function useAssistantComposer({
           skillsDirty,
           taskId,
           newTask: independent,
+          mediaLimits,
           materials: restoreMaterials.length
             ? restoreMaterials
             : materials.map((item) => ({
@@ -212,6 +214,7 @@ export function useAssistantComposer({
     skillsDirty,
     taskId,
     independent,
+    mediaLimits,
     materials,
     restoreMaterials,
     materialsError,
@@ -264,6 +267,7 @@ export function useAssistantComposer({
         modelId,
         projectId,
         executionTarget,
+        mediaLimits,
         skillsDirty,
         skills,
         attemptScope,
@@ -454,7 +458,7 @@ export function useAssistantComposer({
     !!materialsError;
   const stopTaskId = active
     ? (runtime.run?.task_id ?? task?.id)
-    : task && ['queued', 'running', 'waiting_media'].includes(task.status)
+    : task && ['queued', 'running', 'waiting_media', 'waiting_input'].includes(task.status)
       ? task.id
       : undefined;
   const stopping =
@@ -503,6 +507,8 @@ export function useAssistantComposer({
     skills,
     setSkills,
     setSkillsDirty,
+    mediaLimits,
+    setMediaLimits,
     draftError,
     setDraftError,
     models,

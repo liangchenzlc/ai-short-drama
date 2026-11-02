@@ -277,16 +277,3 @@
   font-size: 12px;
   color: var(--assistant-danger, #f87171);
 }
-.ai-assistant-task-context {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-}
-.ai-assistant-task-context > span {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}

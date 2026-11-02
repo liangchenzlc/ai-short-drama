@@ -1,5 +1,11 @@
 # HTTP API 约定
 
+本人助手非实时设置使用 `GET/PATCH /assistant/settings`，PATCH 为完整设置替换并核对 `settings_version`，部署上限超出返回 422；与实时媒体开关的 `policy_version` 分开。完整字段、冻结时点及 409 处理见[助手设置](assistant.md#单助手设置)。
+
+结构化问题使用 `POST /assistant/operations/{operation_id}/answer`，要求 Cookie、同源 Origin、CSRF 与 Idempotency-Key。问题支持多题单选／多选，每题 2–4 项与推荐标记；“其他”以自定义字符串提交。答案定向恢复原 Run，保存自然语言用户消息；一致快照含 `pending_questions`，不可答时 request 为 null。完整字段、跳过及终态幂等见[问题与生成等待](assistant.md#问题与生成等待)。
+
+执行轨迹通过 `GET /assistant/conversations/{conversation_id}/runs/{run_id}/trace` 分页读取，默认50、最大100；块内受控详情使用其下 `/{block_id}/resources/{resource_id}`，不能提交存储定位。快照含有界轨迹，SSE 保持原事件信封、Cookie 验权和409重新同步机制；界面仅显示操作、对象和状态，不提供工具详情入口，见[统一执行轨迹](assistant.md#统一执行轨迹)。
+
 当前接口统一使用 `/api/v1`。本文描述已实现契约；完整字段、类型和默认值以运行中的 `/openapi.json`、`/docs` 及 [Pydantic schemas](../../backend/src/short_drama/schemas) 为准。账号验证默认启用；两种模式的项目均仅所有者可访问；模型配置和私人资源仅本人可读。
 
 下文 `E` 表示 `/projects/{project_id}`；`L` 表示流程素材 `/projects/{project_id}/assets`。角色、场景、道具直接属于项目，不再存在分集、项目素材库或全局素材库。`asset_id` 在素材接口表示业务素材，在 `/media-library/items` 表示生成媒体资产；`media_id` 表示文件。
@@ -27,15 +33,20 @@
 | POST | `/auth/verification/request`、`/auth/verification/confirm` | 注册邮箱证明，发送请求不泄露邮箱是否存在 |
 | POST | `/auth/login`、`/auth/logout` | 账号名/密码登录，退出撤销会话 |
 | GET | `/auth/me` | 当前账号信息 |
+| GET / POST | `/account/mcp-tokens` | 本人具名 MCP 令牌；创建响应仅一次返回完整密钥 |
+| GET | `/account/mcp-tokens/options` | 当前可授权作品和唯一业务工具目录，无密钥 |
+| DELETE | `/account/mcp-tokens/{id}` | 204，软删除并立即撤销后续访问 |
 | POST | `/auth/password/request`、`/auth/password/reset` | 邮箱证明重置密码，并撤销既有会话 |
 | GET / PUT | `/users/me/model-preferences` | 按 context_key 保存本人 config_id；null 清除偏好 |
 | POST / GET | `/projects/{project_id}/imports[/{import_id}]` | 异步独立复制本人媒体；POST 需要 Idempotency-Key，202 返回可查询收据 |
 
 项目 PATCH 仅接受 `{name,row_version}`。手动项目归档和分镜归档接口已删除。任务与媒体历史保留 `resource_scope=all|personal|project`，筛选按真实归属执行。项目内媒体复制仅支持当前用户有权使用的媒体，不支持素材跨库共享。API 不接受 owner、scope_user_id、initiated_by 或操作人字段。
 
+`/mcp` 是 API 前缀外的 Streamable HTTP 入口，每次请求只使用 Bearer 认证。令牌项目和工具必须各至少一项，新增项目不会自动授权；完整令牌契约、12 项业务工具及错误语义见 [MCP API](mcp.md)。
+
 ## 项目 AI 创作助手与私有候选
 
-创作模式与画布共用 [助手 API](assistant.md)，现行会话路径保留 `/assistant/global/conversations` 前缀，按本人及当前项目过滤。新任务使用 Harness，已有有效 V3 任务保留原控制链；scope 0–2 专属 HTTP 入口已删除。附件仅接收当前会话，模型能力仍在 `/agent/models`，方法包独立见 [Skill API](skills.md)。
+创作模式与画布共用 [助手 API](assistant.md)，现行会话路径保留 `/assistant/global/conversations` 前缀，按本人及当前项目过滤。唯一执行引擎为 `assistant-runtime.1`；控制只接受 stop，成功终态拒绝新的停止请求。普通消息继续未完成任务或在停止后建立新 Run；resume/redirect 等旧控制返回422。006离线切换终结旧引擎活动编排，保留历史消息和业务成果，旧图不恢复；scope 0–2 专属 HTTP 入口已删除。附件仅接收当前会话，模型能力仍在 `/agent/models`，方法包独立见 [Skill API](skills.md)。
 
 发送／控制／重试的受理不明必须核对原请求与原幂等键，不能根据当前页面重建载荷。任务成果仍属于受理时冻结的项目及画布，切换页面不改变目标。候选只有明确采用后才写入作品。
 

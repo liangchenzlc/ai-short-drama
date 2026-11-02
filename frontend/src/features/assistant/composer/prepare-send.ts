@@ -19,6 +19,7 @@ export async function prepareAssistantSend({
   modelId,
   projectId,
   executionTarget,
+  mediaLimits,
   skillsDirty,
   skills,
   attemptScope,
@@ -58,6 +59,7 @@ export async function prepareAssistantSend({
     ...(layout === 'standard' ? { script_reference: null } : {}),
     ...(task ? { task_id: task.id } : { new_task: true, model_config_id: modelId }),
     ...(selection ? { subject_selection: selection } : {}),
+    ...(!task && mediaLimits !== undefined ? { media_limits: mediaLimits } : {}),
     ...(!task
       ? {
           execution_target: executionTarget ?? {

@@ -122,11 +122,19 @@ def test_http_contract_closes_episode_and_archive_routes():
 
 def test_project_deletion_fences_old_version_and_hides_owned_content():
     from short_drama.core.exceptions import NotFound
-    from short_drama.core.identity import ActorContext
+    from short_drama.core.identity import SessionActorContext
     from short_drama.service.creation.writing.script.documents import ProjectWritingService
 
     with generation_session() as session:
-        session.info["actor"] = ActorContext(1, "owner", "owner@example.test", True, 1, "", "test")
+        session.info["actor"] = SessionActorContext(
+            user_id=1,
+            username="owner",
+            email="owner@example.test",
+            verified=True,
+            session_id=1,
+            csrf_hash="",
+            request_id="test",
+        )
         service = ProjectService(session)
         created = service.create_project({"name": "original"})
         ProjectWritingService(session).save_script(
@@ -137,10 +145,26 @@ def test_project_deletion_fences_old_version_and_hides_owned_content():
             service.delete_project(created.id, "1")
         assert stale.value.code == "project_version_conflict"
         assert service.get(created.id).name == "renamed"
-        session.info["actor"] = ActorContext(2, "other", "other@example.test", True, 2, "", "test")
+        session.info["actor"] = SessionActorContext(
+            user_id=2,
+            username="other",
+            email="other@example.test",
+            verified=True,
+            session_id=2,
+            csrf_hash="",
+            request_id="test",
+        )
         with pytest.raises(NotFound):
             service.delete_project(created.id, str(renamed.row_version))
-        session.info["actor"] = ActorContext(1, "owner", "owner@example.test", True, 1, "", "test")
+        session.info["actor"] = SessionActorContext(
+            user_id=1,
+            username="owner",
+            email="owner@example.test",
+            verified=True,
+            session_id=1,
+            csrf_hash="",
+            request_id="test",
+        )
         service.delete_project(created.id, str(renamed.row_version))
         assert service.list_projects().total == 0
         with pytest.raises(NotFound):
@@ -157,13 +181,21 @@ def test_project_deletion_fences_old_version_and_hides_owned_content():
 
 
 def test_deleting_canvas_project_invalidates_all_prior_recycle_receipts():
-    from short_drama.core.identity import ActorContext
+    from short_drama.core.identity import SessionActorContext
     from short_drama.domain import ProjectCanvas
     from short_drama.service.canvas.document.canvas import CanvasService
     from short_drama.service.canvas.resources.recycle.recycle import CanvasRecycleService
 
     with generation_session() as session:
-        session.info["actor"] = ActorContext(1, "owner", "owner@example.test", True, 1, "", "test")
+        session.info["actor"] = SessionActorContext(
+            user_id=1,
+            username="owner",
+            email="owner@example.test",
+            verified=True,
+            session_id=1,
+            csrf_hash="",
+            request_id="test",
+        )
         service = ProjectService(session)
         project = service.create_project(
             {"name": "canvas", "workspace_mode": "infinite_canvas"}, idempotency_key="create-canvas"

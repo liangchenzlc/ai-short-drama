@@ -4,14 +4,22 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 from short_drama.core.config import Settings
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.domain.identity.accounts.user import User
 from short_drama.service.base import utcnow
 from short_drama.service.projects.management.project import ProjectService
 
 
 def actor(identifier):
-    return ActorContext(identifier, "creator", "creator@example.test", True, 1, "hash", "test")
+    return SessionActorContext(
+        user_id=identifier,
+        username="creator",
+        email="creator@example.test",
+        verified=True,
+        session_id=1,
+        csrf_hash="hash",
+        request_id="test",
+    )
 
 
 @pytest.fixture

@@ -7,7 +7,7 @@ export type AgentRunStatus =
   | 'queued'
   | 'running'
   | 'waiting_generation'
-  | 'waiting_review'
+  | 'waiting_input'
   | 'succeeded'
   | 'failed'
   | 'cancelled';
@@ -87,7 +87,7 @@ export interface AgentMessage {
   id: string;
   seq: number;
   item_seq?: number | null;
-  kind?: 'reply' | 'narration' | 'notice';
+  kind?: 'reply' | 'narration' | 'notice' | 'tool_answer';
   role: string;
   content: string;
   row_version?: string;
@@ -100,36 +100,6 @@ export interface AgentMessagePage {
   total: number;
   offset: number;
   limit: number;
-}
-export type AgentTaskKind =
-  | 'novel'
-  | 'script'
-  | 'extract'
-  | 'storyboard'
-  | 'asset_patch'
-  | 'shot_patch'
-  | 'image'
-  | 'video';
-export interface AgentReviewStep {
-  id: string;
-  kind: AgentTaskKind;
-  target_id: string | null;
-  target_kind?: 'project' | 'asset' | 'shot';
-  target_label?: string | null;
-  instructions: string;
-  count: number;
-  model_config_id: string | null;
-  model_name: string | null;
-  source: Record<string, unknown>;
-  parameters: Record<string, unknown>;
-}
-export interface AgentReview {
-  tool_call_id: string;
-  review_version: string;
-  review_hash: string;
-  title: string;
-  summary: string;
-  steps: AgentReviewStep[];
 }
 export interface AgentRun {
   task_id?: string | null;
@@ -144,7 +114,6 @@ export interface AgentRun {
   error: { code: string; message?: string } | null;
   usage: Record<string, unknown>;
   budget: Record<string, unknown>;
-  review: AgentReview | null;
   awaiting_artifact_ids: string[];
   created_at: string;
   updated_at: string;
@@ -226,7 +195,7 @@ export interface AgentSkill {
 }
 export interface AgentSkillResource {
   path: string;
-  kind: 'reference' | 'template' | 'image';
+  kind: 'reference' | 'template' | 'image' | 'script';
   byte_size: number;
   checksum_sha256: string;
 }

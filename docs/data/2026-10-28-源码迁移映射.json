@@ -504,7 +504,7 @@
     "frontend/src/features/assistant/messages/AssistantLoading.tsx",
     "frontend/src/features/assistant/messages/AssistantMessage.tsx",
     "frontend/src/features/assistant/messages/AssistantTranscript.tsx",
-    "frontend/src/features/assistant/messages/ThinkBlock.tsx",
+    "frontend/src/features/assistant/messages/ToolExecutionBlock.tsx",
     "frontend/src/features/assistant/messages/agent-timeline.ts",
     "frontend/src/types/assistant/composer/tools.ts",
     "frontend/src/types/assistant/conversations/AssistantConversationBody.ts"
@@ -567,9 +567,9 @@
     "frontend/src/features/assistant/panel/standard-assistant.css"
   ],
   "frontend/src/features/ai-assistant/ThinkBlock.tsx": [
-    "frontend/src/features/assistant/messages/ThinkBlock.tsx",
+    "frontend/src/features/assistant/messages/ToolExecutionBlock.tsx",
     "frontend/src/types/assistant/api.ts",
-    "frontend/src/types/assistant/messages/ThinkBlock.ts"
+    "frontend/src/types/assistant/messages/trace.ts"
   ],
   "frontend/src/features/ai-assistant/useAssistantRuntime.ts": [
     "frontend/src/features/assistant/runtime/useAssistantRuntime.ts",
@@ -2029,9 +2029,7 @@
   "backend/src/short_drama/domain/agent_task.py": [
     "backend/src/short_drama/domain/assistant/tasks/task.py"
   ],
-  "backend/src/short_drama/domain/agent_task_requirement.py": [
-    "backend/src/short_drama/domain/assistant/tasks/task_requirement.py"
-  ],
+  "backend/src/short_drama/domain/agent_task_requirement.py": [],
   "backend/src/short_drama/domain/agent_undo.py": [
     "backend/src/short_drama/domain/assistant/undo/undo.py"
   ],
@@ -2682,21 +2680,15 @@
   ],
   "backend/src/short_drama/agent/coordinator/runtime.py": [
     "backend/src/short_drama/agent/runtime/base.py",
-    "backend/src/short_drama/agent/runtime/claiming.py",
+    "backend/src/short_drama/agent/runtime/executor.py",
     "backend/src/short_drama/agent/runtime/claims.py",
     "backend/src/short_drama/agent/runtime/delta_buffer.py",
-    "backend/src/short_drama/agent/harness/runtime.py",
-    "backend/src/short_drama/agent/runtime/executor.py",
-    "backend/src/short_drama/agent/runtime/publishing.py",
-    "backend/src/short_drama/agent/runtime/sending.py",
-    "backend/src/short_drama/agent/runtime/settlement.py"
+    "backend/src/short_drama/agent/runtime/publishing.py"
   ],
   "backend/src/short_drama/agent/coordinator/assistant.py": [
-    "backend/src/short_drama/agent/runtime/decision_input.py",
-    "backend/src/short_drama/agent/runtime/decisions.py",
-    "backend/src/short_drama/agent/runtime/operations.py",
+    "backend/src/short_drama/agent/runtime/executor.py",
     "backend/src/short_drama/agent/runtime/read_tools.py",
-    "backend/src/short_drama/agent/runtime/tool_execution.py"
+    "backend/src/short_drama/service/assistant/execution/tools.py"
   ],
   "backend/src/short_drama/tasks/agent_worker.py": [
     "backend/src/short_drama/tasks/assistant/agent_worker.py"
@@ -2740,5 +2732,23 @@
   "backend/src/short_drama/ai/prompts/story_outline/system.md": [],
   "backend/src/short_drama/ai/prompts/script_generate/system.md": [],
   "backend/src/short_drama/agent/skill/builtin.py": [],
-  "backend/src/short_drama/ai/prompts/assistant/verification.md": []
+  "backend/src/short_drama/ai/prompts/assistant/verification.md": [],
+  "backend/src/short_drama/agent/harness/runtime.py": [
+    "backend/src/short_drama/agent/runtime/executor.py",
+    "backend/src/short_drama/agent/runtime/lease.py"
+  ],
+  "backend/src/short_drama/agent/harness/checkpointer.py": [
+    "backend/src/short_drama/agent/runtime/checkpointer.py"
+  ],
+  "frontend/src/features/assistant/messages/ThinkBlock.tsx": [
+    "frontend/src/features/assistant/messages/ToolExecutionBlock.tsx"
+  ],
+  "frontend/src/types/assistant/messages/ThinkBlock.ts": [
+    "frontend/src/types/assistant/messages/trace.ts"
+  ],
+  "backend/src/short_drama/agent/task/canvas_directives.py": [],
+  "backend/src/short_drama/agent/task/image_directives.py": [],
+  "backend/src/short_drama/agent/task/media_directives.py": [],
+  "backend/src/short_drama/agent/task/standard_directives.py": [],
+  "backend/src/short_drama/agent/context/media_scope.py": []
 }

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.db.access.policies.canvas_local_access import canvas_local_write
 from short_drama.domain import AsyncTask, CanvasLocalJob, MediaFile
 from short_drama.service.base import utcnow
@@ -271,8 +271,14 @@ def test_http_actor_cannot_mutate_frozen_inputs_or_executor_receipt(
     owner, user, _, body = local_scope
     task = create(owner, body)
     with identity_app[1]() as session:
-        session.info["actor"] = ActorContext(
-            int(user["id"]), "owner", user["email"], True, 1, "", "local-guard-test"
+        session.info["actor"] = SessionActorContext(
+            user_id=int(user["id"]),
+            username="owner",
+            email=user["email"],
+            verified=True,
+            session_id=1,
+            csrf_hash="",
+            request_id="local-guard-test",
         )
         with pytest.raises(WorkflowError):
             with session.begin(), canvas_local_write(session):

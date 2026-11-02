@@ -7,6 +7,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from short_drama.agent.tools.registry import get_spec
 from short_drama.schemas.skills.catalog.skill import SkillCreate
 from short_drama.service.skills.packages.skill_package import parse_skill_import
 
@@ -20,7 +21,7 @@ class BuiltinSkillPackage(BaseModel):
     content: SkillCreate
 
 
-def builtin_skill_packages() -> list[BuiltinSkillPackage]:
+def builtin_skill_packages(*, tool_lookup=get_spec) -> list[BuiltinSkillPackage]:
     root = files("short_drama").joinpath("agent", "skill", "builtin_skill_data")
     catalog = json.loads(root.joinpath("catalog.json").read_text(encoding="utf-8"))
     result = []
@@ -35,7 +36,9 @@ def builtin_skill_packages() -> list[BuiltinSkillPackage]:
                     "references/upstream-license.txt",
                     root.joinpath("LICENSE-drama-skills.txt").read_text(encoding="utf-8"),
                 )
-        preview = parse_skill_import(output.getvalue(), item["directory"] + ".zip")
+        preview = parse_skill_import(
+            output.getvalue(), item["directory"] + ".zip", tool_lookup=tool_lookup
+        )
         if not preview.compatible:
             raise ValueError(f"Builtin Skill {item['key']} is incompatible: {preview.issues}")
         result.append(

@@ -19,8 +19,9 @@ MAX_PACKAGE_BYTES = 1048576
 MAX_PACKAGE_FILES = 32
 TEXT_SUFFIXES = {".md", ".txt", ".json", ".csv", ".yaml", ".yml"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+SCRIPT_SUFFIXES = {".py", ".js", ".mjs"}
 SkillMode = Literal["standard", "infinite_canvas"]
-ResourceKind = Literal["reference", "template", "image"]
+ResourceKind = Literal["reference", "template", "image", "script"]
 
 
 def resource_path(value: str) -> str:
@@ -32,12 +33,20 @@ def resource_path(value: str) -> str:
         or len(parts) > 6
         or any(part in {"", ".", ".."} or part.endswith((".", " ")) for part in parts)
         or any(ord(character) < 32 or character in "\\:%?#" for character in value)
-        or "scripts" in (part.casefold() for part in parts)
-        or PurePosixPath(value).suffix.lower() not in TEXT_SUFFIXES | IMAGE_SUFFIXES
+        or PurePosixPath(value).suffix.lower()
+        not in TEXT_SUFFIXES | IMAGE_SUFFIXES | SCRIPT_SUFFIXES
+        or PurePosixPath(value).suffix.lower() in SCRIPT_SUFFIXES
+        and parts[0] != "scripts"
         or any(part.casefold() == "skill.md" for part in parts)
     ):
         raise ValueError("Resource path must be a bounded relative path")
     return value
+
+
+def resource_kind(path: str, kind: str) -> None:
+    script = PurePosixPath(path).suffix.lower() in SCRIPT_SUFFIXES
+    if (kind == "script") != script or script and not path.startswith("scripts/"):
+        raise ValueError("Script resources require scripts/*.py, *.js or *.mjs")
 
 
 def bounded_text(value: str, maximum: int) -> str:
@@ -63,6 +72,7 @@ class SkillResourceInput(InputModel):
 
     @model_validator(mode="after")
     def validate_content(self):
+        resource_kind(self.path, self.kind)
         suffix = PurePosixPath(self.path).suffix.lower()
         if self.kind == "image":
             if self.encoding != "base64" or suffix not in IMAGE_SUFFIXES:
@@ -207,6 +217,11 @@ class SkillResourceRead(ReadModel):
     checksum_sha256: str
 
     _path = field_validator("path")(resource_path)
+
+    @model_validator(mode="after")
+    def matching_kind(self):
+        resource_kind(self.path, self.kind)
+        return self
 
 
 class SkillSummary(ReadModel):

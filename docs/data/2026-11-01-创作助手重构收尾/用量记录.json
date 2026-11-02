@@ -1,0 +1,1175 @@
+{
+  "schema_version": 1,
+  "at": "2026-10-31T17:42:47.955Z",
+  "kind": "final_closing_usage_after_closed_short_v35",
+  "source_base": ".runtime/sdd/2026-10-29-创作助手运行时与工具扩展重构实施",
+  "previous_history": {
+    "source": {
+      "path": "task-closing-usage-v34.json",
+      "sha256": "3ca91406003a00c72934918fe44a0f572b5f84abc2a85c42fc70dbaeffe03eb7",
+      "bytes": 32309
+    },
+    "totals": {
+      "unique_runs": 388,
+      "unique_receipts": 5995,
+      "unique_model_call_ids": 5995,
+      "run_usage": {
+        "present_field_sum": {
+          "input_tokens": 43792761,
+          "output_tokens": 1790811,
+          "cached_tokens": 13281055,
+          "reserved_output_tokens": 114688
+        },
+        "not_recorded_field_count": {
+          "input_tokens": 2,
+          "output_tokens": 0,
+          "cached_tokens": 0,
+          "reserved_output_tokens": 0
+        }
+      }
+    },
+    "identity_chain": {
+      "source": {
+        "path": "deepseek-history-after33.json",
+        "sha256": "c74e1124a4a6d329df7eaf15559d06186a984fbc46c4b94082ac39a3c4b1ccff",
+        "bytes": 37232
+      },
+      "totals": {
+        "unique_runs": 386,
+        "unique_receipts": 5981,
+        "unique_model_call_ids": 5981,
+        "run_usage": {
+          "present_field_sum": {
+            "input_tokens": 43694460,
+            "output_tokens": 1786543,
+            "cached_tokens": 13195167,
+            "reserved_output_tokens": 114688
+          },
+          "not_recorded_field_count": {
+            "input_tokens": 2,
+            "output_tokens": 0,
+            "cached_tokens": 0,
+            "reserved_output_tokens": 0
+          }
+        }
+      },
+      "identity_sources": [
+        {
+          "source": {
+            "path": "deepseek-history-before33.json",
+            "sha256": "0d4d7e0eb038d07981ab526a7d042e8e0711bc9156cf5a7c1e40b3b9a460e971",
+            "bytes": 100414,
+            "recorded_sha256_matched": true
+          },
+          "baseline_reference": "baseline.identity_source (SHA fixed) plus new_case_identities[].runs/receipts"
+        },
+        {
+          "source": {
+            "path": "deepseek-closed-version33.json",
+            "sha256": "deaca9ab5eb8d9460f320f481e444a1655c182ca192101ea2ddd2acaba86239d",
+            "bytes": 628538
+          },
+          "run_ids": "cases[].runs[].id",
+          "receipt_ids": "cases[].model_receipts[].id",
+          "model_call_ids": "cases[].model_receipts[].usage.model_call_id"
+        }
+      ],
+      "legacy_identity_source": {
+        "identity_source": "final-usage-after-final32-failed50-full-identities.json",
+        "identity_source_sha256": "c9352fd2602d2d58491e25580922c4c926711dc0e0c3d6203e49eaf5857eccaf",
+        "parent_verification_source": "full-history-identities-parent-verified56.json",
+        "unique_runs": 310,
+        "unique_receipts": 4996,
+        "unique_model_call_ids": 4996,
+        "run_usage": {
+          "present_field_sum": {
+            "input_tokens": 36412734,
+            "output_tokens": 1428484,
+            "cached_tokens": 8655915,
+            "reserved_output_tokens": 106496
+          },
+          "not_recorded_field_count": {
+            "input_tokens": 1,
+            "output_tokens": 0,
+            "cached_tokens": 0,
+            "reserved_output_tokens": 0
+          }
+        },
+        "identity_arrays": "Use pinned full identity source runs[].id, receipts[].id, receipts[].modelCallId; all new identities are listed below."
+      }
+    }
+  },
+  "new_batch": {
+    "label": "deepseek-close-v35a",
+    "backend_source_identity": "57e6b05c7b0b429fe6c3f70e17e7f2e7fe03b218184c46d0c84c1b0de9813ff3",
+    "test_source_sha256": "bd6ade134fbda1377983ed3b5e32734ea1d7d30e3fbb1d2f2d4e7da0385e5ebe",
+    "site": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "process_closed": true,
+    "exit_code": 0,
+    "ended_at": "2026-10-31T17:40:06.472582+00:00",
+    "pid": 8380,
+    "reported_cases": 2,
+    "passed_cases": 2,
+    "failed_cases": 0,
+    "unique_runs": 2,
+    "unique_receipts": 20,
+    "unique_model_call_ids": 20,
+    "run_usage": {
+      "present_field_sum": {
+        "input_tokens": 140853,
+        "output_tokens": 3935,
+        "cached_tokens": 121600,
+        "reserved_output_tokens": 0
+      },
+      "not_recorded_field_count": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_tokens": 0,
+        "reserved_output_tokens": 0
+      }
+    },
+    "cases": [
+      {
+        "scenario_id": "test_live_crash_windows_keep_one_business_or_answer_identity-answer_committed-1-cdcbeb5df7",
+        "passed": true,
+        "test_body_passed": true,
+        "source": {
+          "path": "deepseek-close-v35a-reports/test_live_crash_windows_keep_one_business_or_answer_identity-answer_committed-1-cdcbeb5df7.json",
+          "sha256": "bbdd40175ab09e4684f17b763b444874d9180fcf07be7a3edd30492a242c88d8",
+          "bytes": 28453
+        },
+        "calls_by_source": {
+          "tool_selection": 5,
+          "assistant": 5
+        },
+        "runs": [
+          {
+            "id": "374975590212407296",
+            "status": "succeeded",
+            "usage": {
+              "images": 0,
+              "videos": 0,
+              "tool_calls": 4,
+              "input_tokens": 70063,
+              "cached_tokens": 59136,
+              "output_tokens": 1934,
+              "active_seconds": 24.647900999999997,
+              "decision_calls": 10,
+              "uncached_input_tokens": 10927,
+              "reserved_output_tokens": 0
+            }
+          }
+        ],
+        "receipts": [
+          {
+            "id": "374975624102383616",
+            "source": "tool_selection",
+            "status": "succeeded",
+            "model_call_id": "518d8bfa06994d469c5acdf70ab2e117",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 2652,
+                "total_tokens": 2728,
+                "cached_tokens": 2304,
+                "output_tokens": 76,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975629122965504",
+            "source": "assistant",
+            "status": "succeeded",
+            "model_call_id": "0cafc40921db437cbb2cb0e92fe61afe",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 10210,
+                "total_tokens": 10448,
+                "cached_tokens": 9600,
+                "output_tokens": 238,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975720105807872",
+            "source": "tool_selection",
+            "status": "succeeded",
+            "model_call_id": "594251af8c3740afad5d1277246e95fb",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 2715,
+                "total_tokens": 2791,
+                "cached_tokens": 2560,
+                "output_tokens": 76,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975725789089792",
+            "source": "assistant",
+            "status": "succeeded",
+            "model_call_id": "6269e0ea2e854319a9d536e16ad2cb31",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 10579,
+                "total_tokens": 10725,
+                "cached_tokens": 9856,
+                "output_tokens": 146,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975736803332096",
+            "source": "tool_selection",
+            "status": "succeeded",
+            "model_call_id": "ce38f508e94c4f8484ccc1dd88525c64",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 2715,
+                "total_tokens": 2810,
+                "cached_tokens": 2560,
+                "output_tokens": 95,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975742184624128",
+            "source": "assistant",
+            "status": "succeeded",
+            "model_call_id": "66b25efbbc0a4d4493aa736e6569dbb5",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 11203,
+                "total_tokens": 11849,
+                "cached_tokens": 9856,
+                "output_tokens": 646,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975767912484864",
+            "source": "tool_selection",
+            "status": "succeeded",
+            "model_call_id": "296ba3c9c43f41a6a3076bbacf59ea90",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 2715,
+                "total_tokens": 2819,
+                "cached_tokens": 2560,
+                "output_tokens": 104,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975773516075008",
+            "source": "assistant",
+            "status": "succeeded",
+            "model_call_id": "d50629a0bd1046c49b95c5f82bef3672",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 12050,
+                "total_tokens": 12156,
+                "cached_tokens": 7296,
+                "output_tokens": 106,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975781090988032",
+            "source": "tool_selection",
+            "status": "succeeded",
+            "model_call_id": "bc0fe0ba156b4e1fb3cb8fed6a9e9784",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 2715,
+                "total_tokens": 2799,
+                "cached_tokens": 2560,
+                "output_tokens": 84,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975787021733888",
+            "source": "assistant",
+            "status": "succeeded",
+            "model_call_id": "2bb69b8963304fd4b9fa7b4d8c10788a",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 12509,
+                "total_tokens": 12872,
+                "cached_tokens": 9984,
+                "output_tokens": 363,
+                "external_requests": 1
+              }
+            }
+          }
+        ]
+      },
+      {
+        "scenario_id": "test_live_crash_windows_keep_one_business_or_answer_identity-interrupt_registered-1-53c4151796",
+        "passed": true,
+        "test_body_passed": true,
+        "source": {
+          "path": "deepseek-close-v35a-reports/test_live_crash_windows_keep_one_business_or_answer_identity-interrupt_registered-1-53c4151796.json",
+          "sha256": "ed3bb830cde20dc94b96312e536e4752d5854c2d41856017e2063a00b325a29b",
+          "bytes": 29025
+        },
+        "calls_by_source": {
+          "tool_selection": 5,
+          "assistant": 5
+        },
+        "runs": [
+          {
+            "id": "374975360519737344",
+            "status": "succeeded",
+            "usage": {
+              "images": 0,
+              "videos": 0,
+              "tool_calls": 4,
+              "input_tokens": 70790,
+              "cached_tokens": 62464,
+              "output_tokens": 2001,
+              "active_seconds": 27.392456,
+              "decision_calls": 10,
+              "uncached_input_tokens": 8326,
+              "reserved_output_tokens": 0
+            }
+          }
+        ],
+        "receipts": [
+          {
+            "id": "374975397018570752",
+            "source": "tool_selection",
+            "status": "succeeded",
+            "model_call_id": "609156db6fa2449e93041d573d8bd4a4",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 2652,
+                "total_tokens": 2765,
+                "cached_tokens": 2304,
+                "output_tokens": 113,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975403209363456",
+            "source": "assistant",
+            "status": "succeeded",
+            "model_call_id": "c54b01d75e0d45b1b1806d1fbbc6f8aa",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 10830,
+                "total_tokens": 11161,
+                "cached_tokens": 10240,
+                "output_tokens": 331,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975496536821760",
+            "source": "tool_selection",
+            "status": "succeeded",
+            "model_call_id": "6dd0e4f992e04b59a19f62449a310d72",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 2728,
+                "total_tokens": 2813,
+                "cached_tokens": 2560,
+                "output_tokens": 85,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975501586763776",
+            "source": "assistant",
+            "status": "succeeded",
+            "model_call_id": "877befa55c87403081d5d61e24507798",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 10808,
+                "total_tokens": 10914,
+                "cached_tokens": 9728,
+                "output_tokens": 106,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975513871880192",
+            "source": "tool_selection",
+            "status": "succeeded",
+            "model_call_id": "4e0cf61879bc4389a203312e15caa9eb",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 2728,
+                "total_tokens": 2814,
+                "cached_tokens": 2560,
+                "output_tokens": 86,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975519077011456",
+            "source": "assistant",
+            "status": "succeeded",
+            "model_call_id": "0f441a472adf4af483d383a77aeee80a",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 11170,
+                "total_tokens": 11773,
+                "cached_tokens": 9856,
+                "output_tokens": 603,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975544037314560",
+            "source": "tool_selection",
+            "status": "succeeded",
+            "model_call_id": "ca60c9f792e44c61a4af6fe54316c534",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 2728,
+                "total_tokens": 2813,
+                "cached_tokens": 2560,
+                "output_tokens": 85,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975548411973632",
+            "source": "assistant",
+            "status": "succeeded",
+            "model_call_id": "45cfc9fceafd4c328f9f5c90389c1c91",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 11869,
+                "total_tokens": 11983,
+                "cached_tokens": 10368,
+                "output_tokens": 114,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975557991763968",
+            "source": "tool_selection",
+            "status": "succeeded",
+            "model_call_id": "977d16d4a916461ebf5fdda7906a542b",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 2728,
+                "total_tokens": 2813,
+                "cached_tokens": 2560,
+                "output_tokens": 85,
+                "external_requests": 1
+              }
+            }
+          },
+          {
+            "id": "374975563394027520",
+            "source": "assistant",
+            "status": "succeeded",
+            "model_call_id": "af3ca210a44743969661205cc641e92c",
+            "settled": true,
+            "usage": {
+              "reserved_output_tokens": 8192,
+              "provider_usage": {
+                "input_tokens": 12549,
+                "total_tokens": 12942,
+                "cached_tokens": 9728,
+                "output_tokens": 393,
+                "external_requests": 1
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "totals": {
+    "unique_runs": 390,
+    "unique_receipts": 6015,
+    "unique_model_call_ids": 6015,
+    "run_usage": {
+      "present_field_sum": {
+        "input_tokens": 43933614,
+        "output_tokens": 1794746,
+        "cached_tokens": 13402655,
+        "reserved_output_tokens": 114688
+      },
+      "not_recorded_field_count": {
+        "input_tokens": 2,
+        "output_tokens": 0,
+        "cached_tokens": 0,
+        "reserved_output_tokens": 0
+      }
+    }
+  },
+  "deduplication": {
+    "keys": [
+      "Run id",
+      "receipt id",
+      "model_call_id"
+    ],
+    "new_run_id_duplicates": 0,
+    "new_receipt_id_duplicates": 0,
+    "new_model_call_id_duplicates": 0,
+    "baseline_identity_collisions": 0,
+    "new_run_ids": [
+      "374975590212407296",
+      "374975360519737344"
+    ],
+    "new_receipt_ids": [
+      "374975624102383616",
+      "374975629122965504",
+      "374975720105807872",
+      "374975725789089792",
+      "374975736803332096",
+      "374975742184624128",
+      "374975767912484864",
+      "374975773516075008",
+      "374975781090988032",
+      "374975787021733888",
+      "374975397018570752",
+      "374975403209363456",
+      "374975496536821760",
+      "374975501586763776",
+      "374975513871880192",
+      "374975519077011456",
+      "374975544037314560",
+      "374975548411973632",
+      "374975557991763968",
+      "374975563394027520"
+    ],
+    "new_model_call_ids": [
+      "518d8bfa06994d469c5acdf70ab2e117",
+      "0cafc40921db437cbb2cb0e92fe61afe",
+      "594251af8c3740afad5d1277246e95fb",
+      "6269e0ea2e854319a9d536e16ad2cb31",
+      "ce38f508e94c4f8484ccc1dd88525c64",
+      "66b25efbbc0a4d4493aa736e6569dbb5",
+      "296ba3c9c43f41a6a3076bbacf59ea90",
+      "d50629a0bd1046c49b95c5f82bef3672",
+      "bc0fe0ba156b4e1fb3cb8fed6a9e9784",
+      "2bb69b8963304fd4b9fa7b4d8c10788a",
+      "609156db6fa2449e93041d573d8bd4a4",
+      "c54b01d75e0d45b1b1806d1fbbc6f8aa",
+      "6dd0e4f992e04b59a19f62449a310d72",
+      "877befa55c87403081d5d61e24507798",
+      "4e0cf61879bc4389a203312e15caa9eb",
+      "0f441a472adf4af483d383a77aeee80a",
+      "ca60c9f792e44c61a4af6fe54316c534",
+      "45cfc9fceafd4c328f9f5c90389c1c91",
+      "977d16d4a916461ebf5fdda7906a542b",
+      "af3ca210a44743969661205cc641e92c"
+    ]
+  },
+  "retained_unknowns": {
+    "historical_unresolved_receipt_call_identities": 13,
+    "historical_reserved_output_tokens": 106496,
+    "unknown_reservations_released": false,
+    "unknown_requests_replayed": false,
+    "historical_unknown_identity_source": "final-usage-after-final32-failed50-facts.json#unknownRequests",
+    "historical_long1_coverage_gaps": [
+      {
+        "nodeid": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_long_creation_with_two_real_summaries_and_dependency_chain[1]",
+        "classification": "started_then_aborted_not_reported",
+        "report": null,
+        "runId": null,
+        "usage": {
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "reserved_output_tokens": null
+        },
+        "actualProviderRequests": "unknown",
+        "reservedOutput": null,
+        "evidence": "parent closure and pytest header; absent report is not zero usage",
+        "observerCoverage": {
+          "independentRunIdObserved": [],
+          "unreportedModelCallIds": [],
+          "conclusion": "No independent long1 request identity in original observer; actual usage/reservation remain unknown because no Run report exists"
+        }
+      }
+    ],
+    "actual_bill": "unknown",
+    "new_unresolved_receipt_call_identities": 1,
+    "total_unresolved_receipt_call_identities": 14,
+    "new_run_reserved_output_tokens": 8192,
+    "total_run_reserved_output_tokens": 114688,
+    "new_unresolved_identities": [
+      {
+        "source": "deepseek-rest-a-v33a-reports/test_live_three_parallel_children_save_isolated_results-0-a8e62e0e28.json",
+        "scenario_id": "test_live_three_parallel_children_save_isolated_results-0-a8e62e0e28",
+        "receipt_id": "374954297022828544",
+        "model_call_id": "f82722fe7f6244ad85a46befd037d3b8",
+        "status": "unknown",
+        "settled": false,
+        "accepted_unknown": "not_recorded",
+        "not_accepted": "not_recorded",
+        "receipt_reserved_output_tokens": 8192,
+        "run_ids": [
+          "374954016474222592"
+        ],
+        "run_association": "report contains exactly one Run"
+      }
+    ]
+  },
+  "new_unresolved_receipt_call_identities": 0,
+  "outside_run_totals": {
+    "deepseek_probes": {
+      "known_successful_POSTs": 7,
+      "known_rejected_POSTs": 1,
+      "known_POSTs": 8,
+      "successful_reported_usage": {
+        "input_tokens": 2531,
+        "output_tokens": 303,
+        "cached_tokens": 1024
+      },
+      "missing_usage_for_rejected_POSTs": 1,
+      "reserved_output_tokens": "not_recorded",
+      "items": [
+        {
+          "source": "deepseek-gateway-before.json",
+          "label": "deepseek-gateway-before",
+          "site": "https://api.deepseek.com",
+          "model": "deepseek-flash",
+          "method": "POST",
+          "run_or_formal_matrix": false,
+          "passed": true,
+          "requests": 2,
+          "http_statuses": [
+            200,
+            200
+          ],
+          "usage": [
+            {
+              "model_call_id": "ff91016d2c52402ab50005149818e358",
+              "input_tokens": 335,
+              "output_tokens": 46,
+              "cached_tokens": 0,
+              "total_tokens": 381
+            },
+            {
+              "model_call_id": "28f929e8e1514d37893945962083dea8",
+              "input_tokens": 400,
+              "output_tokens": 8,
+              "cached_tokens": 256,
+              "total_tokens": 408
+            }
+          ]
+        },
+        {
+          "source": "deepseek-structured-probe.json",
+          "label": "default",
+          "site": "https://api.deepseek.com",
+          "model": "deepseek-flash",
+          "method": "POST",
+          "run_or_formal_matrix": false,
+          "passed": false,
+          "requests": 1,
+          "http_statuses": [
+            400
+          ],
+          "usage": [],
+          "error_code": "agent_tools_unsupported"
+        },
+        {
+          "source": "deepseek-structured-probe.json",
+          "label": "thinking_disabled",
+          "site": "https://api.deepseek.com",
+          "model": "deepseek-flash",
+          "method": "POST",
+          "run_or_formal_matrix": false,
+          "passed": true,
+          "requests": 1,
+          "http_statuses": [
+            200
+          ],
+          "usage": [
+            {
+              "model_call_id": "7fb7ad285cd5439193bc357bde5bffc7",
+              "input_tokens": 273,
+              "output_tokens": 34,
+              "cached_tokens": 0,
+              "total_tokens": 307
+            }
+          ]
+        },
+        {
+          "source": "deepseek-thinking-tool-probe-r2.json",
+          "label": "deepseek-thinking-tool-probe-r2",
+          "site": "https://api.deepseek.com",
+          "model": "deepseek-flash",
+          "method": "POST",
+          "run_or_formal_matrix": false,
+          "passed": true,
+          "requests": 2,
+          "http_statuses": [
+            200,
+            200
+          ],
+          "usage": [
+            {
+              "model_call_id": "e4525a8cebda4ce3a4bbb42526e02527",
+              "input_tokens": 324,
+              "output_tokens": 102,
+              "cached_tokens": 128,
+              "total_tokens": 426
+            },
+            {
+              "model_call_id": "2855e361be35450ab7f4aef6f5e6fcfc",
+              "input_tokens": 439,
+              "output_tokens": 7,
+              "cached_tokens": 256,
+              "total_tokens": 446
+            }
+          ]
+        },
+        {
+          "source": "deepseek-thinking-tool-after.json",
+          "label": "deepseek-thinking-tool-after",
+          "site": "https://api.deepseek.com",
+          "model": "deepseek-flash",
+          "method": "POST",
+          "run_or_formal_matrix": false,
+          "passed": true,
+          "requests": 2,
+          "http_statuses": [
+            200,
+            200
+          ],
+          "usage": [
+            {
+              "model_call_id": "7c4402d6b51944a2b80fab9cafc23cba",
+              "input_tokens": 324,
+              "output_tokens": 99,
+              "cached_tokens": 128,
+              "total_tokens": 423
+            },
+            {
+              "model_call_id": "370a58b940d74db08bb7cc51e6045d51",
+              "input_tokens": 436,
+              "output_tokens": 7,
+              "cached_tokens": 256,
+              "total_tokens": 443
+            }
+          ]
+        }
+      ],
+      "initial_thinking_probe": {
+        "requests": "unknown",
+        "result": "unknown",
+        "usage": "unknown",
+        "reason": "Initial probe lost its result and usage; request count was not recovered; preserved from parent task evidence",
+        "included_in_known_POST_count": false
+      }
+    },
+    "legacy_provider_diagnostics": {
+      "known_requests": 3,
+      "items": [
+        {
+          "source": "provider-402-check-result.json",
+          "site": "https://t8api.com",
+          "model": "gpt-6.1-terra",
+          "requests": 1,
+          "http_status": 200,
+          "completed": true,
+          "usage": {
+            "prompt_tokens": 11,
+            "completion_tokens": 5,
+            "total_tokens": 16
+          }
+        },
+        {
+          "source": "provider-402-check-result.json",
+          "site": "https://sub2.de5.net",
+          "model": "gpt-6.1-terra",
+          "requests": 1,
+          "http_status": 401,
+          "completed": false,
+          "usage": "not_recorded"
+        },
+        {
+          "source": "provider-402-context-check-result.json",
+          "site": "https://t8api.com",
+          "model": "gpt-6.1-terra",
+          "requests": 1,
+          "http_status": 402,
+          "completed": false,
+          "usage": "not_recorded"
+        }
+      ],
+      "known_successful_reported_usage": {
+        "input_tokens": 11,
+        "output_tokens": 5,
+        "cached_tokens": "not_recorded"
+      },
+      "known_requests_with_usage_not_recorded": 2,
+      "unreported_diagnostic_requests": {
+        "count": 2,
+        "outcome": "unknown",
+        "usage": "unknown",
+        "reason": "local report path encoding failed after requests completed"
+      },
+      "run_or_formal_matrix": false
+    },
+    "model_discovery": {
+      "source": "deepseek-model-discovery.json",
+      "at": "2026-10-31T14:19:23.115200+00:00",
+      "site": "https://api.deepseek.com",
+      "method": "GET",
+      "http_status": 200,
+      "models": [
+        "deepseek-flash",
+        "deepseek-v4-pro"
+      ],
+      "known_GETs": 1,
+      "text_model_request_count": 0,
+      "run_or_formal_matrix": false
+    },
+    "deepseek_summary_sanity": {
+      "source": "deepseek-summary-sanity.json",
+      "exit_source": "deepseek-summary-sanity-exit.json",
+      "site": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "source_role": "summarization",
+      "method": "POST",
+      "process_closed": true,
+      "exit_code": 0,
+      "requests": 1,
+      "passed": true,
+      "http_statuses": [
+        200
+      ],
+      "run_or_formal_matrix": false,
+      "usage": [
+        {
+          "model_call_id": "2ec286e00c564f2ba59a25705bfec195",
+          "input_tokens": 908,
+          "output_tokens": 46,
+          "cached_tokens": 0,
+          "total_tokens": 954
+        }
+      ],
+      "reserved_output_tokens": "not_recorded"
+    }
+  },
+  "not_executed": [
+    {
+      "batch": "deepseek-long-v33a",
+      "nodeid": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_long_creation_with_two_real_summaries_and_dependency_chain[1]",
+      "status": "not_executed_after_long0_fail_fast",
+      "report": null,
+      "run_ids": [],
+      "usage": "not_recorded",
+      "basis": "closed long log: 3 selected, one [0] failure, --maxfail=1; parent closure proof confirms 2 not run"
+    },
+    {
+      "batch": "deepseek-long-v33a",
+      "nodeid": "tests/integration/standard/assistant/test_agent_runtime_live.py::test_live_long_creation_with_two_real_summaries_and_dependency_chain[2]",
+      "status": "not_executed_after_long0_fail_fast",
+      "report": null,
+      "run_ids": [],
+      "usage": "not_recorded",
+      "basis": "closed long log: 3 selected, one [0] failure, --maxfail=1; parent closure proof confirms 2 not run"
+    }
+  ],
+  "groups": [
+    {
+      "group": "audited_baseline",
+      "model": "not_recorded_in_full_identity_projection",
+      "unique_runs": 310,
+      "unique_receipts": 4996,
+      "unique_model_call_ids": 4996,
+      "run_usage": {
+        "present_field_sum": {
+          "input_tokens": 36412734,
+          "output_tokens": 1428484,
+          "cached_tokens": 8655915,
+          "reserved_output_tokens": 106496
+        },
+        "not_recorded_field_count": {
+          "input_tokens": 1,
+          "output_tokens": 0,
+          "cached_tokens": 0,
+          "reserved_output_tokens": 0
+        }
+      }
+    },
+    {
+      "group": "deepseek_task32",
+      "site": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "reported_attempts": 15,
+      "passed_attempts": 10,
+      "failed_or_stopped_attempts": 5,
+      "unique_runs": 15,
+      "unique_receipts": 197,
+      "unique_model_call_ids": 197,
+      "run_usage": {
+        "present_field_sum": {
+          "input_tokens": 1560005,
+          "output_tokens": 76174,
+          "cached_tokens": 996736,
+          "reserved_output_tokens": 0
+        },
+        "not_recorded_field_count": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cached_tokens": 0,
+          "reserved_output_tokens": 0
+        }
+      }
+    },
+    {
+      "group": "terra_legacy_final33",
+      "site": "https://t8api.com",
+      "model": "gpt-6.1-terra",
+      "reported_attempts": 3,
+      "passed_attempts": 0,
+      "failed_or_stopped_attempts": 3,
+      "unique_runs": 3,
+      "unique_receipts": 51,
+      "unique_model_call_ids": 51,
+      "run_usage": {
+        "present_field_sum": {
+          "input_tokens": 527379,
+          "output_tokens": 16074,
+          "cached_tokens": 86016,
+          "reserved_output_tokens": 0
+        },
+        "not_recorded_field_count": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cached_tokens": 0,
+          "reserved_output_tokens": 0
+        }
+      }
+    },
+    {
+      "group": "deepseek_protocol_main2",
+      "site": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "reported_attempts": 1,
+      "passed_attempts": 0,
+      "failed_or_stopped_attempts": 1,
+      "unique_runs": 1,
+      "unique_receipts": 1,
+      "unique_model_call_ids": 1,
+      "run_usage": {
+        "present_field_sum": {
+          "input_tokens": null,
+          "output_tokens": 0,
+          "cached_tokens": 0,
+          "reserved_output_tokens": 0
+        },
+        "not_recorded_field_count": {
+          "input_tokens": 1,
+          "output_tokens": 0,
+          "cached_tokens": 0,
+          "reserved_output_tokens": 0
+        },
+        "note": "No Run in this group recorded input_tokens; null means not recorded, not zero."
+      }
+    },
+    {
+      "group": "deepseek_task33",
+      "site": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "reported_attempts": 43,
+      "passed_attempts": 34,
+      "failed_attempts": 9,
+      "not_executed_cases": 2,
+      "unique_runs": 57,
+      "unique_receipts": 736,
+      "unique_model_call_ids": 736,
+      "run_usage": {
+        "present_field_sum": {
+          "input_tokens": 5194342,
+          "output_tokens": 265811,
+          "cached_tokens": 3456500,
+          "reserved_output_tokens": 8192
+        },
+        "not_recorded_field_count": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cached_tokens": 0,
+          "reserved_output_tokens": 0
+        }
+      }
+    },
+    {
+      "group": "deepseek_wire_v34",
+      "site": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "reported_attempts": 2,
+      "passed_attempts": 1,
+      "failed_attempts": 1,
+      "unique_runs": 2,
+      "unique_receipts": 14,
+      "unique_model_call_ids": 14,
+      "run_usage": {
+        "present_field_sum": {
+          "input_tokens": 98301,
+          "output_tokens": 4268,
+          "cached_tokens": 85888,
+          "reserved_output_tokens": 0
+        },
+        "not_recorded_field_count": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cached_tokens": 0,
+          "reserved_output_tokens": 0
+        }
+      }
+    },
+    {
+      "group": "deepseek_close_v35",
+      "site": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "reported_attempts": 2,
+      "passed_attempts": 2,
+      "failed_attempts": 0,
+      "unique_runs": 2,
+      "unique_receipts": 20,
+      "unique_model_call_ids": 20,
+      "run_usage": {
+        "present_field_sum": {
+          "input_tokens": 140853,
+          "output_tokens": 3935,
+          "cached_tokens": 121600,
+          "reserved_output_tokens": 0
+        },
+        "not_recorded_field_count": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cached_tokens": 0,
+          "reserved_output_tokens": 0
+        }
+      }
+    }
+  ],
+  "sources": [
+    {
+      "path": "task-closing-usage-v34.json",
+      "sha256": "3ca91406003a00c72934918fe44a0f572b5f84abc2a85c42fc70dbaeffe03eb7",
+      "bytes": 32309
+    },
+    {
+      "path": "task-closing-usage-v34.md",
+      "sha256": "e8ee18bf3eb4d6451a0176889c4686904fe7043bf4b87f0873a9ffca6a2daebd",
+      "bytes": 1032
+    },
+    {
+      "path": "deepseek-history-after33.json",
+      "sha256": "c74e1124a4a6d329df7eaf15559d06186a984fbc46c4b94082ac39a3c4b1ccff",
+      "bytes": 37232
+    },
+    {
+      "path": "deepseek-history-before33.json",
+      "sha256": "0d4d7e0eb038d07981ab526a7d042e8e0711bc9156cf5a7c1e40b3b9a460e971",
+      "bytes": 100414
+    },
+    {
+      "path": "deepseek-closed-version33.json",
+      "sha256": "deaca9ab5eb8d9460f320f481e444a1655c182ca192101ea2ddd2acaba86239d",
+      "bytes": 628538
+    },
+    {
+      "path": "final-usage-after-final32-failed50-full-identities.json",
+      "sha256": "c9352fd2602d2d58491e25580922c4c926711dc0e0c3d6203e49eaf5857eccaf",
+      "bytes": 1689497
+    },
+    {
+      "path": "deepseek-close-v35a-exit.json",
+      "sha256": "4fdfd0540f0ef4477115de38a1ef79c3e9c40c71b8458173c64befaa09093019",
+      "bytes": 173
+    },
+    {
+      "path": "deepseek-close-v35a-launch.json",
+      "sha256": "9cddda7adfbbac00d3600e720012ad50c91008aae82c12094943695ca35aa8bb",
+      "bytes": 163360
+    },
+    {
+      "path": "deepseek-close-v35a.log",
+      "sha256": "85a5ddabf82c53a5ee45cde5acbbbd236f3d2d99453376ce8c34191f0afb20cd",
+      "bytes": 1795
+    },
+    {
+      "path": "deepseek-close-v35a-reports/test_live_crash_windows_keep_one_business_or_answer_identity-answer_committed-1-cdcbeb5df7.json",
+      "sha256": "bbdd40175ab09e4684f17b763b444874d9180fcf07be7a3edd30492a242c88d8",
+      "bytes": 28453
+    },
+    {
+      "path": "deepseek-close-v35a-reports/test_live_crash_windows_keep_one_business_or_answer_identity-interrupt_registered-1-53c4151796.json",
+      "sha256": "ed3bb830cde20dc94b96312e536e4752d5854c2d41856017e2063a00b325a29b",
+      "bytes": 29025
+    }
+  ],
+  "scope": {
+    "final_short_check_only": true,
+    "task12_acceptance_claimed": false,
+    "cross_revision_45_success_claimed": false,
+    "previous_unknowns_and_missing_fields_preserved": true,
+    "only_unique_Run_usage_added": true,
+    "independent_requests_excluded_from_Run_totals": true,
+    "actual_provider_bill": "unknown",
+    "tests_rerun": false,
+    "network_database_docker_or_secrets_accessed": false
+  }
+}

@@ -15,6 +15,20 @@ from short_drama.domain.assistant.tasks.task import AgentTaskInput
 from short_drama.service.assistant.tasks.policy import policy_state_locked
 
 
+def build_revision_agent(*, model, system_prompt=None, checkpointer=None):
+    from langchain.agents.middleware import ModelCallLimitMiddleware
+
+    from short_drama.agent.runtime.agent import build_agent
+
+    return build_agent(
+        model=model,
+        tools=[],
+        middleware=[ModelCallLimitMiddleware(run_limit=1)],
+        system_prompt=system_prompt,
+        checkpointer=checkpointer,
+    )
+
+
 def prepare_revision(session, conversation, run):
     task = task_for_run(session, run)
     revision = run.checkpoint["discussion_revision"]

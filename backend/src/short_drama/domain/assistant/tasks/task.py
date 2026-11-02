@@ -2,8 +2,8 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Computed, Index, UniqueConstraint, text
-from sqlalchemy.dialects.mysql import BIGINT, MEDIUMTEXT, VARCHAR
+from sqlalchemy import CheckConstraint, Index, UniqueConstraint, text
+from sqlalchemy.dialects.mysql import MEDIUMTEXT, VARCHAR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from short_drama.domain.assistant.columns import _fk, _hash, _id, _json, _number, _time
@@ -42,12 +42,12 @@ class AgentTask(Base):
         UniqueConstraint("id", "conversation_id", name="uk_agent_tasks_parent"),
         Index("idx_agent_tasks_queue", "conversation_id", "status", "id"),
         CheckConstraint(
-            "status IN ('queued','running','waiting_media','succeeded','stopped',"
+            "status IN ('queued','running','waiting_media','waiting_input','succeeded','stopped',"
             "'paused_error','paused_budget')",
             name="ck_agent_tasks_status",
         ),
         CheckConstraint(
-            "phase IN ('deciding','tool_running','waiting_media','settling_result',"
+            "phase IN ('deciding','tool_running','waiting_media','waiting_input','settling_result',"
             "'reconciling','at_boundary','terminal')",
             name="ck_agent_tasks_phase",
         ),
@@ -128,7 +128,9 @@ class AgentOperation(Base):
     id: Mapped[int] = _id()
     task_id: Mapped[int] = _number()
     run_id: Mapped[int] = _number()
+    scope_id: Mapped[int] = _number()
     tool_call_id: Mapped[int] = _number()
+    business_invocation_id: Mapped[int | None] = _number(nullable=True)
     tool_name: Mapped[str] = mapped_column(VARCHAR(80))
     item_seq: Mapped[int | None] = _number(nullable=True)
     tool_version: Mapped[int] = _number(1)
@@ -136,24 +138,12 @@ class AgentOperation(Base):
     input_revision: Mapped[int] = _number()
     payload_hash: Mapped[str] = _hash()
     arguments: Mapped[dict] = _json()
+    wait_state: Mapped[dict | None] = _json(nullable=True)
     status: Mapped[str] = mapped_column(VARCHAR(24), server_default=text("'running'"))
     phase: Mapped[str] = mapped_column(VARCHAR(24), server_default=text("'tool_running'"))
     row_version: Mapped[int] = _number(1)
     execution_epoch: Mapped[int] = _number(1)
-    active_task_id: Mapped[int | None] = mapped_column(
-        BIGINT(unsigned=True),
-        Computed(
-            "CASE WHEN status IN ('running','waiting_media','reconciling') "
-            "THEN task_id ELSE NULL END",
-            persisted=True,
-        ),
-        nullable=True,
-    )
     result: Mapped[dict | None] = _json(nullable=True)
-    result_digest: Mapped[str | None] = _hash(nullable=True)
-    evidence_kind: Mapped[str | None] = mapped_column(
-        VARCHAR(16, charset="ascii", collation="ascii_bin"), nullable=True
-    )
     result_refs: Mapped[list] = _json(array=True)
     changes: Mapped[list] = _json(array=True)
     error: Mapped[dict | None] = _json(nullable=True)
@@ -165,24 +155,29 @@ class AgentOperation(Base):
         _fk(["task_id"], "agent_tasks", name="fk_agent_operations_task"),
         _fk(["run_id"], "agent_runs", name="fk_agent_operations_run"),
         _fk(["tool_call_id"], "agent_tool_calls", name="fk_agent_operations_call"),
+        _fk(
+            ["business_invocation_id"],
+            "business_tool_invocations",
+            name="fk_agent_operations_invocation",
+        ),
         UniqueConstraint("tool_call_id", name="uk_agent_operations_call"),
-        UniqueConstraint("active_task_id", name="uk_agent_operations_active"),
+        _fk(
+            ["scope_id", "run_id"],
+            "agent_execution_scopes",
+            ["id", "run_id"],
+            name="fk_agent_operations_scope",
+        ),
         Index("idx_agent_operations_task", "task_id", "id"),
         Index("idx_agent_operations_item", "item_seq"),
-        Index(
-            "idx_agent_operations_evidence",
-            "task_id",
-            "result_digest",
-            mysql_length={"result_digest": 64},
-        ),
         CheckConstraint(
-            "status IN ('running','waiting_media','reconciling','succeeded','failed','conflict')",
+            "status IN ('running','waiting_media','waiting_input','reconciling',"
+            "'succeeded','failed','conflict')",
             name="ck_agent_operations_status",
         ),
         CheckConstraint(
-            "evidence_kind IS NULL OR "
-            "evidence_kind IN ('write','read','observation','skill','none')",
-            name="ck_agent_operations_evidence",
+            "wait_state IS NULL OR (JSON_TYPE(wait_state) = 'OBJECT' AND "
+            "JSON_UNQUOTE(JSON_EXTRACT(wait_state, '$.kind')) IN ('generation','user_input'))",
+            name="ck_agent_operations_wait_state",
         ),
         CheckConstraint(
             "(status IN ('succeeded','failed','conflict')) = (finished_at IS NOT NULL)",

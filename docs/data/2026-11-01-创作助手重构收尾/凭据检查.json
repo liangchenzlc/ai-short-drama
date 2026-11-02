@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-31T17:46:50.293216+00:00",
+  "process_closed": true,
+  "exit_code": 0,
+  "actual_parent_private_scan": true,
+  "credential_values_written": false,
+  "changed_text_files_scanned": 501,
+  "stage_archive_entries_scanned": 177,
+  "archive_sha256": "1c89ed4c9f0053be75afe542bbe5cd21a1f05a47a2ed43f60f3905e33c6dd8bd",
+  "exact_matches": 0,
+  "matched_paths_only": [],
+  "scope": "changed and untracked deliverable text plus every stage ZIP entry; excludes application env and raw runtime data"
+}

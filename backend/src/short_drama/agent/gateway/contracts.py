@@ -1,21 +1,15 @@
-"""模型段落的结果、能力证据与安全错误契约。"""
+"""正式模型调用、能力证据与安全错误契约。"""
 
 import json
-from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from importlib.metadata import version
-from typing import Literal
-
-from pydantic_ai import DeferredToolRequests
+from typing import Any, Literal
 
 from short_drama.ai.types import GenerationError
 
-FRAMEWORK_VERSION = version("pydantic-ai-slim")
-
-
-HISTORY_CODEC_VERSION = 1
-
-
-MAX_HISTORY_BYTES = 8 * 1024**2
+FRAMEWORK_VERSION = f"langchain-core:{version('langchain-core')}"
 
 
 MAX_REQUEST_BYTES = 8 * 1024**2
@@ -27,9 +21,11 @@ MAX_TOOLS = 32
 class AgentGatewayError(GenerationError):
     """A safe error whose acceptance flag never authorizes automatic resubmission."""
 
-    def __init__(self, code, *, requests=0, accepted_unknown=False, http_status=None):
+    def __init__(
+        self, code, *, requests=0, accepted_unknown=False, http_status=None, context_budget=None
+    ):
         self.requests = requests
-        self.completed_segments = ()
+        self.context_budget = context_budget
         super().__init__(code, accepted_unknown=accepted_unknown, http_status=http_status)
 
 
@@ -57,17 +53,6 @@ def provider_failure_code(status, content):
     return "agent_provider_rejected"
 
 
-@dataclass(frozen=True, repr=False)
-class AgentSegmentResult:
-    output: str | DeferredToolRequests
-    history: dict
-    usage: dict
-    protocol: str
-    requests: int
-    streaming: bool = False
-    narration: str = ""
-
-
 @dataclass(frozen=True)
 class AgentCapabilityEvidence:
     protocol: str
@@ -76,4 +61,24 @@ class AgentCapabilityEvidence:
     streaming: Literal["verified", "not_tested"] = "not_tested"
     requests: int = 0
     framework_version: str = FRAMEWORK_VERSION
-    segments: tuple[AgentSegmentResult, ...] = field(default=(), repr=False)
+
+
+@dataclass(frozen=True, repr=False)
+class ModelCallbacks:
+    settings: Any
+    before_send: Callable[[dict], Awaitable[None]] | None = None
+    save_raw: Callable[[dict], Awaitable[None]] | None = None
+    usage: Callable[[dict], Awaitable[None]] | None = None
+    error: Callable[[dict], Awaitable[None]] | None = None
+    on_text_delta: Callable[[str], Awaitable[None]] | None = None
+    on_model_content: Callable[[dict], Awaitable[None]] | None = None
+    hydrate: Callable[[list], Awaitable[tuple]] | None = None
+    project_input: Callable[[list], list] | None = None
+    input_scope: Callable[[list], AbstractContextManager[None]] | None = None
+    max_output_tokens: int = 8192
+    timeout_seconds: float = 120
+    stream: bool = True
+    resources: tuple = ()
+    tool_results: dict | None = None
+    request: dict | None = None
+    raw: dict | None = None

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.db.access.policies.canvas_render_access import canvas_render_write
 from short_drama.domain import AsyncTask, CanvasRenderJob, CanvasRenderMediaReference, MediaFile
 from short_drama.service.base import utcnow
@@ -227,8 +227,14 @@ def test_orm_authority_and_snapshot_are_not_ordinary_project_writes(
     owner, user, _, _, body = render_scope
     created = create(owner, body)
     with identity_app[1]() as session:
-        session.info["actor"] = ActorContext(
-            int(user["id"]), "owner", "", True, 1, "", "render-test"
+        session.info["actor"] = SessionActorContext(
+            user_id=int(user["id"]),
+            username="owner",
+            email="",
+            verified=True,
+            session_id=1,
+            csrf_hash="",
+            request_id="render-test",
         )
         with pytest.raises(WorkflowError) as failure, session.begin():
             job = session.get(CanvasRenderJob, int(created["id"]))

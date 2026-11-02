@@ -1,18 +1,20 @@
 """Task boundaries are serialized with input/control receipt and operation claim."""
 
 from copy import deepcopy
+from types import SimpleNamespace
 
 from sqlalchemy import select
 
 from short_drama.agent.context.subjects import subject_catalog, subject_memory_keys
+from short_drama.agent.core import ENGINE_VERSION
 from short_drama.agent.core.events import append_event, budget_limits, initial_usage
-from short_drama.agent.harness import ENGINE_VERSION
-from short_drama.agent.task.policy import budget_caps
+from short_drama.agent.runtime.trace_content import display_refs, display_safe
 from short_drama.agent.task.queries import task_for_run as task_for_run
+from short_drama.agent.tools.contracts import TOOL_VERSION
 from short_drama.agent.tools.presentation import label as tool_label
 from short_drama.agent.tools.presentation import visibility as tool_visibility
 from short_drama.dao.assistant.tasks.task import AgentTaskDAO
-from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall
 from short_drama.domain.assistant.undo.undo import AgentBatchUndo
 from short_drama.schemas.assistant.tasks.task import OperationRead, TaskRead
 from short_drama.service.base import utcnow
@@ -21,6 +23,7 @@ from short_drama.utils.snowflake import next_id
 
 def read_operation(row, *, undo_receipts=()):
     return OperationRead(
+        **(row.result or {}).get("_display", {}),
         id=row.id,
         task_id=row.task_id,
         run_id=row.run_id,
@@ -34,10 +37,10 @@ def read_operation(row, *, undo_receipts=()):
         state_version=row.row_version,
         phase=row.phase,
         outcome=row.status,
-        result_refs=row.result_refs,
+        result_refs=display_refs(row.result_refs),
         skill_activations=(row.result or {}).get("skill_activations", []),
         undo_receipts=list(undo_receipts),
-        error=row.error,
+        error=display_safe(row.error),
         created_at=row.created_at,
         finished_at=row.finished_at,
     )
@@ -66,17 +69,13 @@ def task_capabilities(task):
     """Interruption support is per-engine and per-frozen-policy, never global."""
     from short_drama.agent.task.policy import policy
 
-    if task.effective_state.get("engine") != ENGINE_VERSION:
-        return {"stop": True, "redirect": True, "resume": True}
     stop = policy(task, "stop") == "boundary.v1"
     return {"stop": stop, "redirect": False, "resume": False}
 
 
 def read_task(session, task, *, active_operation=_UNSET_OPERATION):
-    from short_drama.agent.skill.contracts import activation_summary, activations
-
     operation = (
-        AgentTaskDAO(session).active_operation(task.id, lock=False)
+        next(iter(AgentTaskDAO(session).active_operations(task.id, lock=False)), None)
         if active_operation is _UNSET_OPERATION
         else active_operation
     )
@@ -111,7 +110,7 @@ def read_task(session, task, *, active_operation=_UNSET_OPERATION):
             {key: item[key] for key in ("id", "name", "content_version", "builtin") if key in item}
             for item in task.selected_skills
         ],
-        skill_activations=[activation_summary(item) for item in activations(task)],
+        skill_activations=[],
         media_limits=task.media_limits,
         media_usage=task.media_usage,
         active_operation=read_operation(operation) if operation else None,
@@ -137,9 +136,39 @@ def task_event(session, conversation, task, event_type, *, run=None, **payload):
 
 
 def new_attempt_locked(
-    session, conversation, task, message, model_id, snapshot, previous=None, *, trigger_revision=0
+    session,
+    conversation,
+    task,
+    message,
+    model_id,
+    snapshot,
+    previous=None,
+    *,
+    trigger_revision=0,
+    settings=None,
+    tool_lookup=None,
 ):
+    from short_drama.agent.skill.progressive import freeze_catalog_locked
+    from short_drama.service.assistant.settings.preferences import freeze_run_settings_locked
+
     now = utcnow()
+    frozen = freeze_run_settings_locked(
+        session, conversation.owner_user_id, settings, tool_catalog_version=TOOL_VERSION
+    )
+    selected = task.selected_skills
+    for item in AgentTaskDAO(session).inputs(task):
+        selected = item.payload.get("selected_skills", selected)
+    snapshot = {
+        **deepcopy(snapshot),
+        "assistant_settings": frozen,
+        "skill_catalog": freeze_catalog_locked(
+            session,
+            conversation.owner_user_id,
+            settings,
+            tool_lookup=tool_lookup,
+            selected=selected,
+        ),
+    }
     run = AgentRun(
         id=next_id(),
         conversation_id=conversation.id,
@@ -155,25 +184,16 @@ def new_attempt_locked(
         checkpoint_schema_version=1,
         checkpoint={
             "purpose": "global_assistant",
-            **(
-                {"engine": task.effective_state["engine"]}
-                if task.effective_state.get("engine")
-                else {}
-            ),
-            "history": None,
-            "pending_results": None,
+            "engine": ENGINE_VERSION,
             "task_input_revision": task.applied_input_revision,
             "task_plan_revision": task.plan_revision,
-            "authorization": {"mode": "discuss", "steps": []},
-            "user_prompt": task.goal,
         },
         budget=budget_limits(
-            "harness"
-            if task.effective_state.get("engine") == ENGINE_VERSION
-            else "global_assistant",
-            caps=budget_caps(task)
-            if task.effective_state.get("engine") == ENGINE_VERSION
-            else None,
+            "harness",
+            caps={
+                "decision_calls": frozen["model_call_limit"],
+                "output_tokens": frozen["output_token_limit"],
+            },
         ),
         usage=initial_usage(),
         message_status="pending",
@@ -188,10 +208,18 @@ def new_attempt_locked(
             **run.checkpoint,
             "discussion_revision": deepcopy(previous.checkpoint["discussion_revision"]),
         }
-    if previous is not None and task.effective_state.get("engine") == ENGINE_VERSION:
+    if previous is not None:
+        from short_drama.agent.context.delegation_results import visible_business_outputs_locked
+        from short_drama.service.assistant.execution.scope import root_scope_locked
+
+        previous_scope = root_scope_locked(session, previous)
         run.checkpoint = {
             **run.checkpoint,
             "resume_history": True,
+            "inherited_business_operation_ids": [
+                str(item.id)
+                for item in visible_business_outputs_locked(session, previous, previous_scope.id)
+            ],
             **{
                 key: deepcopy(value)
                 for key, value in previous.checkpoint.items()
@@ -202,6 +230,9 @@ def new_attempt_locked(
     task.status, task.phase, task.error = "queued", "at_boundary", None
     session.add(run)
     session.flush()
+    from short_drama.service.assistant.execution.scope import root_scope_locked
+
+    root_scope_locked(session, run)
     task_event(session, conversation, task, "task.queued", run=run)
     return run
 
@@ -217,32 +248,40 @@ def close_unstarted_calls(session, run):
         if call.status in {"prepared", "ready"}:
             call.status, call.updated_at = "cancelled", utcnow()
             call.result = {"skipped": "task_boundary_changed", "executed": False}
-    if calls:
-        latest = max(call.turn_id for call in calls)
-        checkpoint = deepcopy(run.checkpoint)
-        checkpoint["pending_results"] = {
-            "calls": {
-                call.provider_call_id: call.result or {"error": (call.error or {}).get("code")}
-                for call in calls
-                if call.turn_id == latest
-            }
-        }
-        run.checkpoint = checkpoint
 
 
-def apply_inputs_locked(session, conversation, task, run):
+def pending_task_locked(session, task):
+    """只预览已受理输入；检查点落盘之前不前移产品水位。"""
+    projection = SimpleNamespace(
+        **{key: deepcopy(value) for key, value in vars(task).items() if not key.startswith("_")}
+    )
+    for item in AgentTaskDAO(session).inputs(task):
+        for field in (
+            "context_snapshot",
+            "execution_target",
+            "memory_project_ids",
+            "selected_skills",
+        ):
+            if field in item.payload:
+                setattr(projection, field, deepcopy(item.payload[field]))
+        projection.applied_input_revision = item.input_revision
+    return projection
+
+
+def apply_inputs_locked(session, conversation, task, run, *, through_revision=None):
     if task.status in {"stopped", "paused_error", "paused_budget", "succeeded"}:
         return False
     dao = AgentTaskDAO(session)
-    if dao.active_operation(task.id) is not None:
+    if dao.has_active_operations(task.id):
         return False
     inputs = dao.inputs(task)
+    if through_revision is not None:
+        inputs = [item for item in inputs if item.input_revision <= through_revision]
     if not inputs:
         return False
     if task.applied_input_revision:
         task.plan_revision += 1
         close_unstarted_calls(session, run)
-    skills_changed = False
     for item in inputs:
         payload = item.payload
         if "script_reference" in payload:
@@ -259,76 +298,18 @@ def apply_inputs_locked(session, conversation, task, run):
             task.effective_state = state
             task.context_snapshot = payload["context_snapshot"]
         if "selected_skills" in payload:
-            from short_drama.agent.skill.runtime import apply_manual_skills
-
-            previous = {
-                (entry["id"], str(entry["content_version"])) for entry in task.selected_skills
-            }
             task.selected_skills = payload["selected_skills"]
-            if task.effective_state.get("engine") == ENGINE_VERSION:
-                selected = {
-                    (entry["id"], str(entry["content_version"])) for entry in task.selected_skills
-                }
-                skills_changed = skills_changed or previous != selected
-                selected_ids = {key for key, _version in selected}
-                removed_ids = {key for key, _version in previous} - selected_ids
-                state = deepcopy(task.effective_state)
-                state["excluded_skill_ids"] = sorted(
-                    (set(state.get("excluded_skill_ids", [])) | removed_ids) - selected_ids
-                )
-                for activation in state.get("skill_activations", []):
-                    key = (activation["skill"]["id"], str(activation["skill"]["content_version"]))
-                    if activation["source"] == "manual" or key[0] in selected_ids:
-                        if key not in selected:
-                            activation["active"] = False
-                        elif activation["active"]:
-                            activation["source"] = "manual"
-                            activation["source_message_id"] = str(item.message_id)
-                task.effective_state = state
-            else:
-                apply_manual_skills(task, task.selected_skills, item.message_id)
         if "execution_target" in payload:
             task.execution_target = payload["execution_target"]
         if "memory_project_ids" in payload:
             task.memory_project_ids = payload["memory_project_ids"]
-        if "media_limits" in payload:
-            task.media_limits = payload["media_limits"]
         item.applied_plan_revision = task.plan_revision
     task.applied_input_revision = inputs[-1].input_revision
-    if task.effective_state.get("engine") == ENGINE_VERSION:
-        task.effective_state = {**task.effective_state, "progress": {}}
-        if task.effective_state.get("task_contract"):
-            task.effective_state = {
-                **task.effective_state,
-                "task_contract": {**task.effective_state["task_contract"], "verified": False},
-            }
     task.row_version += 1
     task.updated_at = utcnow()
     checkpoint = deepcopy(run.checkpoint)
-    checkpoint.pop("completion_candidate", None)
-    checkpoint.pop("completion_stall", None)
-    if skills_changed:
-        # Old tool windows must not keep a removed/replaced SOP alive. Other
-        # active methods are restored separately by their canonical body pins.
-        checkpoint["history_floor_turn_id"] = (
-            session.scalar(
-                select(AgentTurn.id)
-                .where(AgentTurn.run_id.in_(select(AgentRun.id).where(AgentRun.task_id == task.id)))
-                .order_by(AgentTurn.id.desc())
-                .limit(1)
-            )
-            or 0
-        )
     checkpoint["task_input_revision"] = task.applied_input_revision
     checkpoint["task_plan_revision"] = task.plan_revision
-    if any(
-        {"context_snapshot", "memory_project_ids", "selected_skills"}.intersection(item.payload)
-        or "retained_attachment_ids" in item.payload
-        or item.payload.get("attachments")
-        for item in inputs
-    ):
-        checkpoint["history"] = None
-        checkpoint["pending_results"] = None
     run.checkpoint = checkpoint
     task_event(
         session,
@@ -345,7 +326,7 @@ def finish_task_attempt_locked(session, conversation, run, status, error):
     task = task_for_run(session, run)
     if task is None:
         return
-    if AgentTaskDAO(session).active_operation(task.id) is not None:
+    if AgentTaskDAO(session).has_active_operations(task.id):
         raise RuntimeError("Cannot finish an Agent attempt before its active operation settles")
     # Boundary controls set their disposition before closing the old attempt.
     if task.status not in {"stopped", "paused_error", "paused_budget"}:

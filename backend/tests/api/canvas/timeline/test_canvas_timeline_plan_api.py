@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from short_drama.api.dependencies.session import get_session
 from short_drama.core.config import Settings
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.main import create_app
 
 PATH = "/api/v1/canvas-runtime/timeline/render-plan"
@@ -37,7 +37,17 @@ def body():
 @pytest.fixture
 def runtime():
     app = create_app(Settings(_env_file=None, auth_enabled=False, agent_enabled=False))
-    state = {"actor": ActorContext(1, "test", "test@example.test", True, 1, "", "test")}
+    state = {
+        "actor": SessionActorContext(
+            user_id=1,
+            username="test",
+            email="test@example.test",
+            verified=True,
+            session_id=1,
+            csrf_hash="",
+            request_id="test",
+        )
+    }
     opened = []
 
     def session():
@@ -50,8 +60,11 @@ def runtime():
             assert not value.in_transaction()
 
     app.dependency_overrides[get_session] = session
-    with TestClient(app) as client:
+    client = TestClient(app)
+    try:
         yield client, state, opened
+    finally:
+        client.close()
 
 
 def test_authenticated_plan_is_side_effect_free_and_contains_only_opaque_sources(runtime):

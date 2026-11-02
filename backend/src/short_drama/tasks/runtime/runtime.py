@@ -127,6 +127,10 @@ def main():
                     from short_drama.agent.session.purge import purge_one
                     from short_drama.service.media.files.storage import StorageService
 
+                    if not agent_ready:
+                        from short_drama.agent.sandbox.workspace import cleanup_terminal_runs
+
+                        cleanup_terminal_runs(factory, settings)
                     purge_one(factory, StorageService(storage, settings))
                 if agent_ready:
                     recover_agent(factory, settings)

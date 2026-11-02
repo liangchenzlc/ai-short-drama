@@ -120,10 +120,10 @@ def preview_locked(service, conversation, task, operation):
         {"project_id": (operation.result or {}).get("project_id")}
         if operation.tool_name
         in {
-            "apply_standard_patch",
-            "apply_canvas_patch",
-            "set_image_group_primary",
-            "submit_generation_batch",
+            "workbench__apply_standard_patch",
+            "workbench__apply_canvas_patch",
+            "workbench__set_image_group_primary",
+            "workbench__submit_generation_batch",
         }
         else task.execution_target or {}
     )
@@ -173,7 +173,7 @@ def preview_locked(service, conversation, task, operation):
         if key in undone:
             reason = "这项内容已经撤销"
         elif operation.status != "succeeded" and not (
-            operation.tool_name == "submit_generation_batch"
+            operation.tool_name == "workbench__submit_generation_batch"
             and operation.status in {"failed", "conflict"}
         ):
             reason = "只能撤销已完整结算的批次"
@@ -182,27 +182,35 @@ def preview_locked(service, conversation, task, operation):
         elif project is None:
             reason = "写入目标已不可用"
         elif kind in {"canvas_node", "canvas_edge"} and operation.tool_name in {
-            "apply_canvas_patch",
-            "submit_generation_batch",
+            "workbench__apply_canvas_patch",
+            "workbench__submit_generation_batch",
         }:
             if project.workspace_mode != "infinite_canvas":
                 reason = "原批次不属于画布目标"
-            elif operation.tool_name == "submit_generation_batch" and not change.get("adopted"):
+            elif operation.tool_name == "workbench__submit_generation_batch" and not change.get(
+                "adopted"
+            ):
                 reason = "本项未采用媒体，不能作为已采用成果回退"
             else:
                 reason, current, requires = preview_canvas_change(canvas_context, change, by_key)
         elif kind == "sound_line" and operation.tool_name in {
-            "apply_standard_patch",
-            "submit_generation_batch",
+            "workbench__apply_standard_patch",
+            "workbench__submit_generation_batch",
         }:
             reason, current, requires = preview_sound_change(
                 service, project, change, history, changes, operation_id=operation.id
             )
-        elif operation.tool_name in {"submit_generation_batch", "set_image_group_primary"}:
+        elif operation.tool_name in {
+            "workbench__submit_generation_batch",
+            "workbench__set_image_group_primary",
+        }:
             reason, current, requires = preview_media_change(
                 service, project, operation, change, history
             )
-        elif operation.tool_name != "apply_standard_patch" or kind not in {"asset", "shot"}:
+        elif operation.tool_name != "workbench__apply_standard_patch" or kind not in {
+            "asset",
+            "shot",
+        }:
             reason = "这类成果的逆向操作尚未接入"
         elif project.workspace_mode != "standard":
             reason = "原批次不属于标准创作目标"
@@ -476,7 +484,10 @@ def apply(service, identifier, payload, idempotency_key):
             inverse, refs = restore_canvas_locked(
                 service, project, rows["canvas_context"], changes, selected
             )
-        elif operation.tool_name in {"submit_generation_batch", "set_image_group_primary"}:
+        elif operation.tool_name in {
+            "workbench__submit_generation_batch",
+            "workbench__set_image_group_primary",
+        }:
             sound = {key for key in selected if changes[key]["kind"] == "sound_line"}
             inverse, refs = restore_media_locked(service, project, changes, selected - sound)
             if sound:
@@ -509,7 +520,10 @@ def apply(service, identifier, payload, idempotency_key):
                 }
             )
         record_restorations(operation, changes, selected, current.receipts, inverse)
-        if operation.tool_name in {"submit_generation_batch", "set_image_group_primary"}:
+        if operation.tool_name in {
+            "workbench__submit_generation_batch",
+            "workbench__set_image_group_primary",
+        }:
             for ref in refs:
                 original = next(
                     (

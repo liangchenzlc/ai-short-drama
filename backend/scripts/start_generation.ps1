@@ -40,7 +40,7 @@ $originalNode = $env:SNOWFLAKE_WORKER_ID
 try {
     $env:SNOWFLAKE_WORKER_ID = $roleNodes[$Role]
     if ($Role -eq 'api') {
-        $processArguments = @('-m', 'uvicorn', 'short_drama.main:app', '--host', '127.0.0.1', '--port', '8000')
+        $processArguments = @('-m', 'uvicorn', 'short_drama.main:app', '--host', '127.0.0.1', '--port', '8000', '--no-proxy-headers')
     } elseif ($Role -eq 'scheduler') {
         $processArguments = @('-m', 'short_drama.tasks.runtime.runtime')
     } else {

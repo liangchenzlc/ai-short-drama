@@ -79,7 +79,7 @@ class MessageRead(ReadModel):
     item_seq: int | None = None
     row_version: Identifier = 1
     role: Literal["user", "assistant"]
-    kind: Literal["reply", "narration", "notice"] = "reply"
+    kind: Literal["reply", "narration", "notice", "tool_answer"] = "reply"
     content: str
     references: list[dict]
     artifacts: list[dict]
@@ -90,15 +90,6 @@ class PlanProposal(InputModel):
     title: Annotated[str, Field(min_length=1, max_length=120)]
     summary: Annotated[str, Field(min_length=1, max_length=2000)]
     steps: Annotated[list[TaskSpec], Field(min_length=1, max_length=12)]
-
-
-class PlanReviewRead(ReadModel):
-    tool_call_id: Identifier
-    review_version: Identifier
-    review_hash: str
-    title: str
-    summary: str
-    steps: list[dict]
 
 
 class RunRead(ReadModel):
@@ -114,7 +105,6 @@ class RunRead(ReadModel):
     error: dict | None
     usage: dict
     budget: dict
-    review: PlanReviewRead | None
     awaiting_artifact_ids: list[Identifier] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
@@ -135,17 +125,6 @@ class MessageAccepted(ReadModel):
     message: MessageRead
     run: RunRead
     cursor: int
-
-
-class ReviewDecision(InputModel):
-    review_version: Identifier
-    review_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    decision: Literal["approved", "rejected"]
-
-
-class RunContinue(InputModel):
-    artifact_id: Identifier
-    artifact_row_version: Identifier
 
 
 class ModelVerify(InputModel):

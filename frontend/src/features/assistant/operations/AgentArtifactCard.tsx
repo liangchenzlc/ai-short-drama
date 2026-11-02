@@ -37,7 +37,7 @@ export function AgentArtifactCard({
         )}
         <span className="ai-assistant-artifact-title">{operation.label || '查看成果'}</span>
         <span className="ai-assistant-artifact-state">
-          {operation.tool_name === 'propose_script_patch' && operation.outcome === 'succeeded'
+          {operation.tool_name === 'runtime__propose_script_patch' && operation.outcome === 'succeeded'
             ? '可审阅'
             : (stateText[operation.outcome] ?? '处理中')}
         </span>

@@ -8,8 +8,10 @@ from pydantic import Field, field_validator, model_validator
 
 from short_drama.schemas.assistant.context.inputs import AssistantMessageCreate
 from short_drama.schemas.assistant.conversations.engine import Title
+from short_drama.schemas.assistant.operations.questions import PendingQuestion
 from short_drama.schemas.assistant.operations.runtime import MessageRead, RunRead
 from short_drama.schemas.assistant.operations.script import ScriptReference
+from short_drama.schemas.assistant.operations.trace import ExecutionTarget, TraceBlock
 from short_drama.schemas.base import (
     Identifier,
     InputModel,
@@ -20,12 +22,20 @@ from short_drama.schemas.base import (
 from short_drama.schemas.common import PageResponse
 
 TaskStatus = Literal[
-    "queued", "running", "waiting_media", "succeeded", "stopped", "paused_error", "paused_budget"
+    "queued",
+    "running",
+    "waiting_media",
+    "waiting_input",
+    "succeeded",
+    "stopped",
+    "paused_error",
+    "paused_budget",
 ]
 TaskPhase = Literal[
     "deciding",
     "tool_running",
     "waiting_media",
+    "waiting_input",
     "settling_result",
     "reconciling",
     "at_boundary",
@@ -261,23 +271,13 @@ class AssistantTaskMessage(AssistantMessageCreate):
 
 
 class TaskControlRequest(InputModel):
-    kind: Literal["stop", "redirect", "resume"]
-    expected_control_seq: NonnegativeVersion | None = None
-    content: Annotated[str, Field(min_length=1, max_length=32000)] | None = None
-    message_id: Identifier | None = None
-
-    @model_validator(mode="after")
-    def required_control_inputs(self):
-        if self.kind == "resume" and self.expected_control_seq is None:
-            raise ValueError("Resume must identify the current stop or pause version")
-        if self.kind == "redirect" and (self.content is None or not self.content.strip()):
-            raise ValueError("Redirect requires the new user instruction")
-        if self.message_id is not None and (self.kind != "resume" or self.content is not None):
-            raise ValueError("Only resume may reuse an accepted message without new content")
-        return self
+    kind: Literal["stop"]
 
 
 class OperationRead(ReadModel):
+    action: str = ""
+    target: ExecutionTarget | None = None
+    title: str = ""
     id: Identifier
     task_id: Identifier
     run_id: Identifier
@@ -290,7 +290,15 @@ class OperationRead(ReadModel):
     plan_revision: Identifier
     state_version: Identifier
     phase: TaskPhase
-    outcome: Literal["running", "waiting_media", "reconciling", "succeeded", "failed", "conflict"]
+    outcome: Literal[
+        "running",
+        "waiting_media",
+        "waiting_input",
+        "reconciling",
+        "succeeded",
+        "failed",
+        "conflict",
+    ]
     result_refs: list[dict]
     skill_activations: list[dict] = Field(default_factory=list)
     undo_receipts: list[dict] = Field(default_factory=list)
@@ -344,6 +352,10 @@ class TaskControlAccepted(ReadModel):
 
 
 class TaskRuntimeState(ReadModel):
+    trace_blocks: list[TraceBlock] = Field(default_factory=list)
+    has_more_trace: bool = False
+    trace_before_seq: int | None = None
+    pending_questions: list[PendingQuestion] = Field(default_factory=list)
     conversation_id: Identifier
     snapshot_cursor: int
     resume_cursor: int

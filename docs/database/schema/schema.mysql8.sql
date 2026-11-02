@@ -1,4 +1,4 @@
--- Canonical MySQL 8 schema: 119 tables.
+-- Canonical MySQL 8 schema: 121 tables.
 -- Generated from short_drama.domain by backend/scripts/export_schema.py.
 -- Initialize an empty database; upgrade existing databases with versioned migrations.
 -- Creation-mode upgrades use the explicit offline reset and preservation workflow.
@@ -30,10 +30,19 @@ CREATE TABLE `agent_preferences` (
   `owner_user_id` BIGINT UNSIGNED NOT NULL,
   `media_generation_enabled` TINYINT UNSIGNED NOT NULL DEFAULT 1,
   `policy_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `custom_instructions` MEDIUMTEXT NULL,
+  `settings_version` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `model_call_limit` INT UNSIGNED NOT NULL DEFAULT 240,
+  `output_token_limit` INT UNSIGNED NOT NULL DEFAULT 2000000,
+  `subagent_max_concurrency` TINYINT UNSIGNED NOT NULL DEFAULT 3,
+  `default_media_limits` JSON NOT NULL DEFAULT (JSON_OBJECT()),
   `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`),
+  CONSTRAINT ck_agent_preferences_calls CHECK (model_call_limit BETWEEN 20 AND 2000),
+  CONSTRAINT ck_agent_preferences_concurrency CHECK (subagent_max_concurrency BETWEEN 1 AND 3),
   CONSTRAINT ck_agent_preferences_media_enabled CHECK (media_generation_enabled IN (0, 1)),
-  CONSTRAINT ck_agent_preferences_version CHECK (policy_version >= 1),
+  CONSTRAINT ck_agent_preferences_tokens CHECK (output_token_limit BETWEEN 100000 AND 20000000),
+  CONSTRAINT ck_agent_preferences_version CHECK (policy_version >= 0),
   CONSTRAINT fk_agent_preferences_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_agent_preferences_owner` (owner_user_id)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
@@ -97,6 +106,30 @@ CREATE TABLE `ai_model_configs` (
   UNIQUE KEY `uk_ai_default_service` (owner_user_id, default_service_type),
   KEY `idx_ai_type_available` (`service_type`, `is_deleted`, `enabled`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COMMENT='AI模型配置' COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE `business_tool_invocations` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `owner_user_id` BIGINT UNSIGNED NOT NULL,
+  `tool_name` VARCHAR(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `request_id` VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `arguments_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `source` VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_id` BIGINT UNSIGNED NULL,
+  `status` VARCHAR(24) NOT NULL DEFAULT 'running',
+  `result` JSON NULL,
+  `result_refs` JSON NOT NULL DEFAULT (JSON_ARRAY()),
+  `changes` JSON NOT NULL DEFAULT (JSON_ARRAY()),
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `finished_at` DATETIME(6) NULL,
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_business_invocations_objects CHECK (JSON_TYPE(result_refs) = 'ARRAY' AND JSON_TYPE(changes) = 'ARRAY'),
+  CONSTRAINT ck_business_invocations_source CHECK (source IN ('assistant','mcp')),
+  CONSTRAINT ck_business_invocations_status CHECK (status IN ('running','succeeded','reconciling')),
+  CONSTRAINT ck_business_invocations_terminal CHECK ((status = 'succeeded') = (finished_at IS NOT NULL)),
+  CONSTRAINT fk_business_invocations_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_business_invocations_request` (owner_user_id, tool_name, request_id),
+  KEY `idx_business_invocations_owner` (`owner_user_id`, `id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `canvas_library_folders` (
   `user_id` BIGINT UNSIGNED NOT NULL,
@@ -204,6 +237,25 @@ CREATE TABLE `email_challenges` (
   CONSTRAINT ck_challenge_purpose CHECK (purpose IN ('registration','password_reset')),
   CONSTRAINT fk_email_challenges_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   KEY `idx_challenges_user` (`user_id`, `purpose`, `created_at`)
+) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE `mcp_access_tokens` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `owner_user_id` BIGINT UNSIGNED NOT NULL,
+  `name` VARCHAR(80) NOT NULL,
+  `token_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_hint` VARCHAR(24) NOT NULL,
+  `project_ids` JSON NOT NULL,
+  `tool_names` JSON NOT NULL,
+  `expires_at` DATETIME(6) NULL,
+  `allowed_ips` JSON NOT NULL,
+  `created_at` DATETIME(6) NOT NULL,
+  `deleted_at` DATETIME(6) NULL,
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_mcp_tokens_scopes CHECK (JSON_TYPE(project_ids) = 'ARRAY' AND JSON_LENGTH(project_ids) > 0 AND JSON_TYPE(tool_names) = 'ARRAY' AND JSON_LENGTH(tool_names) > 0 AND JSON_TYPE(allowed_ips) = 'ARRAY'),
+  CONSTRAINT fk_mcp_access_tokens_owner_user_id FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_mcp_access_tokens_token_hash` (token_hash),
+  KEY `idx_mcp_tokens_owner` (`owner_user_id`, `deleted_at`, `id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `projects` (
@@ -380,10 +432,14 @@ CREATE TABLE `audit_events` (
   `object_id` VARCHAR(32) NOT NULL,
   `action` VARCHAR(32) NOT NULL,
   `request_id` VARCHAR(64) NOT NULL,
+  `source` VARCHAR(16) NULL,
+  `token_id` BIGINT UNSIGNED NULL,
   `created_at` DATETIME(6) NOT NULL,
   PRIMARY KEY (`id`),
+  CONSTRAINT ck_audit_source CHECK (source IN ('browser','assistant','mcp')),
   CONSTRAINT fk_audit_events_actor_user_id FOREIGN KEY (actor_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_audit_events_project_id FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_audit_events_token_id FOREIGN KEY (token_id) REFERENCES mcp_access_tokens (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   KEY `idx_audit_project` (`project_id`, `created_at`, `id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
@@ -841,8 +897,8 @@ CREATE TABLE `agent_tasks` (
   CONSTRAINT ck_agent_tasks_control CHECK (control_state IN ('none','stop_pending','redirect_pending','delete_pending')),
   CONSTRAINT ck_agent_tasks_goal CHECK (CHAR_LENGTH(TRIM(goal)) > 0),
   CONSTRAINT ck_agent_tasks_objects CHECK (JSON_TYPE(memory_project_ids) = 'ARRAY' AND JSON_TYPE(selected_skills) = 'ARRAY' AND JSON_TYPE(effective_state) = 'OBJECT' AND JSON_TYPE(media_limits) = 'OBJECT' AND JSON_TYPE(media_usage) = 'OBJECT'),
-  CONSTRAINT ck_agent_tasks_phase CHECK (phase IN ('deciding','tool_running','waiting_media','settling_result','reconciling','at_boundary','terminal')),
-  CONSTRAINT ck_agent_tasks_status CHECK (status IN ('queued','running','waiting_media','succeeded','stopped','paused_error','paused_budget')),
+  CONSTRAINT ck_agent_tasks_phase CHECK (phase IN ('deciding','tool_running','waiting_media','waiting_input','settling_result','reconciling','at_boundary','terminal')),
+  CONSTRAINT ck_agent_tasks_status CHECK (status IN ('queued','running','waiting_media','waiting_input','succeeded','stopped','paused_error','paused_budget')),
   CONSTRAINT ck_agent_tasks_versions CHECK (row_version > 0 AND plan_revision > 0 AND input_revision >= applied_input_revision AND control_seq >= applied_control_seq),
   CONSTRAINT fk_agent_tasks_conversation FOREIGN KEY (conversation_id) REFERENCES agent_conversations (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_agent_tasks_parent` (id, conversation_id),
@@ -1534,7 +1590,7 @@ CREATE TABLE `agent_messages` (
   PRIMARY KEY (`id`),
   CONSTRAINT ck_agent_messages_arrays CHECK (JSON_TYPE(`references`) = 'ARRAY' AND JSON_TYPE(artifacts) = 'ARRAY'),
   CONSTRAINT ck_agent_messages_content_size CHECK (OCTET_LENGTH(content) <= 1048576),
-  CONSTRAINT ck_agent_messages_kind CHECK (kind IN ('reply','narration','notice')),
+  CONSTRAINT ck_agent_messages_kind CHECK (kind IN ('reply','narration','notice','tool_answer')),
   CONSTRAINT ck_agent_messages_nonempty CHECK (CHAR_LENGTH(TRIM(content)) > 0 OR JSON_LENGTH(`references`) > 0 OR JSON_LENGTH(artifacts) > 0),
   CONSTRAINT ck_agent_messages_request_hash CHECK (idempotency_key IS NULL OR (role = 'user' AND CHAR_LENGTH(idempotency_key) = 64 AND CHAR_LENGTH(request_hash) = 64)),
   CONSTRAINT ck_agent_messages_request_pair CHECK ((idempotency_key IS NULL) = (request_hash IS NULL)),
@@ -2371,7 +2427,7 @@ CREATE TABLE `agent_runs` (
   `model_config_id` BIGINT UNSIGNED NOT NULL,
   `status` VARCHAR(24) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'queued',
   `phase` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'model',
-  `active_conversation_id` BIGINT UNSIGNED GENERATED ALWAYS AS (CASE WHEN status IN ('queued','running','waiting_generation','waiting_review') THEN conversation_id ELSE NULL END) STORED NULL,
+  `active_conversation_id` BIGINT UNSIGNED GENERATED ALWAYS AS (CASE WHEN status IN ('queued','running','waiting_generation','waiting_input') THEN conversation_id ELSE NULL END) STORED NULL,
   `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
   `checkpoint_schema_version` INT UNSIGNED NOT NULL DEFAULT 1,
   `checkpoint` JSON NOT NULL DEFAULT (JSON_OBJECT()),
@@ -2396,7 +2452,7 @@ CREATE TABLE `agent_runs` (
   CONSTRAINT ck_agent_runs_message_status CHECK (message_status IN ('pending','publishing','published','idle')),
   CONSTRAINT ck_agent_runs_objects CHECK (JSON_TYPE(checkpoint) = 'OBJECT' AND JSON_TYPE(config_snapshot) = 'OBJECT' AND JSON_TYPE(budget) = 'OBJECT' AND JSON_TYPE(`usage`) = 'OBJECT'),
   CONSTRAINT ck_agent_runs_phase CHECK (phase IN ('model','tools','wait')),
-  CONSTRAINT ck_agent_runs_status CHECK (status IN ('queued','running','waiting_generation','waiting_review','succeeded','failed','cancelled')),
+  CONSTRAINT ck_agent_runs_status CHECK (status IN ('queued','running','waiting_generation','waiting_input','succeeded','failed','cancelled')),
   CONSTRAINT ck_agent_runs_terminal_time CHECK ((status IN ('succeeded','failed','cancelled')) = (finished_at IS NOT NULL)),
   CONSTRAINT ck_agent_runs_time CHECK (updated_at >= created_at AND (started_at IS NULL OR started_at >= created_at) AND (finished_at IS NULL OR finished_at >= created_at) AND (started_at IS NULL OR finished_at IS NULL OR finished_at >= started_at)),
   CONSTRAINT ck_agent_runs_trigger_revision CHECK (trigger_revision = 0 OR task_id IS NOT NULL),
@@ -2452,38 +2508,6 @@ CREATE TABLE `agent_task_inputs` (
   CONSTRAINT fk_agent_task_inputs_task FOREIGN KEY (task_id) REFERENCES agent_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_agent_task_inputs_message` (message_id),
   UNIQUE KEY `uk_agent_task_inputs_revision` (task_id, input_revision)
-) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
-
-CREATE TABLE `agent_task_requirements` (
-  `id` BIGINT UNSIGNED NOT NULL,
-  `task_id` BIGINT UNSIGNED NOT NULL,
-  `requirement_key` VARCHAR(80) NOT NULL,
-  `description` VARCHAR(500) NOT NULL,
-  `kind` VARCHAR(16) NOT NULL,
-  `origin` VARCHAR(16) NOT NULL,
-  `state` VARCHAR(16) NOT NULL DEFAULT 'draft',
-  `minimum_count` BIGINT UNSIGNED NOT NULL DEFAULT 1,
-  `artifact_kind` VARCHAR(32) NULL,
-  `asset_kind` VARCHAR(32) NULL,
-  `source_message_id` BIGINT UNSIGNED NOT NULL,
-  `quote_start` BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  `quote_end` BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  `definition_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `attempts` BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  `input_revision` BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  PRIMARY KEY (`id`),
-  CONSTRAINT ck_agent_task_requirements_count CHECK (minimum_count >= 1),
-  CONSTRAINT ck_agent_task_requirements_kind CHECK (kind IN ('answer','read','write','image','skill','observation','contract')),
-  CONSTRAINT ck_agent_task_requirements_name CHECK (CHAR_LENGTH(TRIM(requirement_key)) > 0),
-  CONSTRAINT ck_agent_task_requirements_origin CHECK (origin IN ('server_draft','server_derived','agent','user')),
-  CONSTRAINT ck_agent_task_requirements_quote CHECK (quote_end >= quote_start),
-  CONSTRAINT ck_agent_task_requirements_state CHECK (state IN ('draft','confirmed','frozen','superseded')),
-  CONSTRAINT fk_agent_task_requirements_message FOREIGN KEY (source_message_id) REFERENCES agent_messages (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_agent_task_requirements_task FOREIGN KEY (task_id) REFERENCES agent_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_agent_task_requirements_key` (task_id, requirement_key),
-  KEY `idx_agent_task_requirements_state` (`task_id`, `state`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `asset_version_media_references` (
@@ -2623,23 +2647,48 @@ CREATE TABLE `agent_events` (
   KEY `idx_agent_events_run` (`run_id`, `seq`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
+CREATE TABLE `agent_execution_scopes` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `owner_user_id` BIGINT UNSIGNED NOT NULL,
+  `run_id` BIGINT UNSIGNED NOT NULL,
+  `scope_key` VARCHAR(96) COLLATE utf8mb4_0900_bin NOT NULL,
+  `parent_scope_id` BIGINT UNSIGNED NULL,
+  `parent_tool_call_id` BIGINT UNSIGNED NULL,
+  `sandbox_service` VARCHAR(255) NULL,
+  `sandbox_id` VARCHAR(255) NULL,
+  `workspace_volume` VARCHAR(255) NULL,
+  `image_version` VARCHAR(255) NULL,
+  `sandbox_status` VARCHAR(24) NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_agent_scopes_parent CHECK ((scope_key = 'root' AND parent_scope_id IS NULL AND parent_tool_call_id IS NULL) OR (scope_key <> 'root' AND parent_scope_id IS NOT NULL AND parent_tool_call_id IS NOT NULL)),
+  CONSTRAINT fk_agent_scopes_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_agent_scopes_parent FOREIGN KEY (parent_scope_id, run_id) REFERENCES agent_execution_scopes (id, run_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_agent_scopes_run FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_agent_scopes_key` (run_id, scope_key),
+  UNIQUE KEY `uk_agent_scopes_run` (id, run_id)
+) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
 CREATE TABLE `agent_graph_checkpoints` (
   `id` BIGINT UNSIGNED NOT NULL,
   `owner_user_id` BIGINT UNSIGNED NOT NULL,
   `task_id` BIGINT UNSIGNED NOT NULL,
   `run_id` BIGINT UNSIGNED NOT NULL,
-  `namespace` VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
+  `namespace` MEDIUMTEXT COLLATE utf8mb4_0900_bin NOT NULL,
+  `namespace_hash` BINARY(32) NOT NULL,
   `checkpoint_id` VARCHAR(80) COLLATE utf8mb4_0900_bin NOT NULL,
   `parent_id` VARCHAR(80) NULL,
   `graph_version` VARCHAR(40) NOT NULL,
-  `checkpoint` JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  `codec` VARCHAR(32) NOT NULL,
+  `payload` LONGBLOB NOT NULL,
   `checkpoint_metadata` JSON NOT NULL DEFAULT (JSON_OBJECT()),
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`),
   CONSTRAINT fk_agent_graph_checkpoints_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_agent_graph_checkpoints_run FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_agent_graph_checkpoints_task FOREIGN KEY (task_id) REFERENCES agent_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_agent_graph_checkpoint` (task_id, namespace, checkpoint_id),
+  UNIQUE KEY `uk_agent_graph_checkpoint` (run_id, namespace_hash, checkpoint_id),
   KEY `idx_agent_graph_checkpoints_run` (`run_id`, `id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
@@ -2648,19 +2697,21 @@ CREATE TABLE `agent_graph_writes` (
   `owner_user_id` BIGINT UNSIGNED NOT NULL,
   `task_id` BIGINT UNSIGNED NOT NULL,
   `run_id` BIGINT UNSIGNED NOT NULL,
-  `namespace` VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
+  `namespace` MEDIUMTEXT COLLATE utf8mb4_0900_bin NOT NULL,
+  `namespace_hash` BINARY(32) NOT NULL,
   `checkpoint_id` VARCHAR(80) COLLATE utf8mb4_0900_bin NOT NULL,
   `task_key` VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
   `write_index` INT NOT NULL,
-  `task_path` VARCHAR(512) NOT NULL,
+  `task_path` TEXT NOT NULL,
   `channel` VARCHAR(128) NOT NULL,
-  `payload` JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  `codec` VARCHAR(32) NOT NULL,
+  `payload` LONGBLOB NOT NULL,
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`),
   CONSTRAINT fk_agent_graph_writes_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_agent_graph_writes_run FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_agent_graph_writes_task FOREIGN KEY (task_id) REFERENCES agent_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_agent_graph_write` (task_id, namespace, checkpoint_id, task_key, write_index),
+  UNIQUE KEY `uk_agent_graph_write` (run_id, namespace_hash, checkpoint_id, task_key, write_index),
   KEY `idx_agent_graph_writes_run` (`run_id`, `id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
@@ -2694,7 +2745,7 @@ CREATE TABLE `agent_memory_jobs` (
   `finished_at` DATETIME(6) NULL,
   PRIMARY KEY (`id`),
   CONSTRAINT ck_agent_memory_job_content CHECK (JSON_TYPE(source_snapshot) = 'OBJECT' AND JSON_TYPE(`usage`) = 'OBJECT'),
-  CONSTRAINT ck_agent_memory_job_kind CHECK (kind IN ('summary','extract','task_state','purge') AND from_seq > 0 AND to_seq >= from_seq),
+  CONSTRAINT ck_agent_memory_job_kind CHECK (kind IN ('summary','extract','purge') AND from_seq > 0 AND to_seq >= from_seq),
   CONSTRAINT ck_agent_memory_job_message CHECK (message_version > 0 AND message_status IN ('queued','publishing','published','idle')),
   CONSTRAINT ck_agent_memory_job_status CHECK (status IN ('pending','running','succeeded','failed','stale','cancelled','abandoned') AND provider_state IN ('not_started','sending','received','unknown')),
   CONSTRAINT fk_agent_memory_jobs_conversation FOREIGN KEY (conversation_id) REFERENCES agent_conversations (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
@@ -2703,31 +2754,6 @@ CREATE TABLE `agent_memory_jobs` (
   CONSTRAINT fk_agent_memory_jobs_summary FOREIGN KEY (base_summary_id) REFERENCES agent_conversation_summaries (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_agent_memory_job_request` (owner_user_id, request_key),
   KEY `idx_agent_memory_jobs_due` (`status`, `message_status`, `next_run_at`, `id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
-
-CREATE TABLE `agent_turns` (
-  `id` BIGINT UNSIGNED NOT NULL,
-  `run_id` BIGINT UNSIGNED NOT NULL,
-  `turn_no` INT UNSIGNED NOT NULL,
-  `status` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'prepared',
-  `request_messages` JSON NOT NULL DEFAULT (JSON_ARRAY()),
-  `response` JSON NULL,
-  `usage` JSON NOT NULL DEFAULT (JSON_OBJECT()),
-  `provider_response_id` VARCHAR(255) COLLATE utf8mb4_0900_bin NULL,
-  `error` JSON NULL,
-  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `started_at` DATETIME(6) NULL,
-  `finished_at` DATETIME(6) NULL,
-  PRIMARY KEY (`id`),
-  CONSTRAINT ck_agent_turns_number CHECK (turn_no > 0),
-  CONSTRAINT ck_agent_turns_payload CHECK (JSON_TYPE(request_messages) = 'ARRAY' AND JSON_TYPE(`usage`) = 'OBJECT'),
-  CONSTRAINT ck_agent_turns_result CHECK ((response IS NULL OR JSON_TYPE(response) = 'OBJECT') AND (error IS NULL OR JSON_TYPE(error) = 'OBJECT')),
-  CONSTRAINT ck_agent_turns_status CHECK (status IN ('prepared','sent','succeeded','failed','unknown')),
-  CONSTRAINT ck_agent_turns_time CHECK (updated_at >= created_at AND (started_at IS NULL OR started_at >= created_at) AND (finished_at IS NULL OR finished_at >= created_at) AND (started_at IS NULL OR finished_at IS NULL OR finished_at >= started_at)),
-  CONSTRAINT fk_agent_turns_run FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_agent_turns_number` (run_id, turn_no),
-  UNIQUE KEY `uk_agent_turns_parent` (id, run_id)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `image_operations` (
@@ -2764,9 +2790,37 @@ CREATE TABLE `image_operations` (
   KEY `idx_image_operations_item` (`item_id`, `created_at`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
+CREATE TABLE `agent_turns` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `run_id` BIGINT UNSIGNED NOT NULL,
+  `scope_id` BIGINT UNSIGNED NOT NULL,
+  `turn_no` INT UNSIGNED NOT NULL,
+  `status` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'prepared',
+  `request_messages` JSON NOT NULL DEFAULT (JSON_ARRAY()),
+  `response` JSON NULL,
+  `usage` JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  `provider_response_id` VARCHAR(255) COLLATE utf8mb4_0900_bin NULL,
+  `error` JSON NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `started_at` DATETIME(6) NULL,
+  `finished_at` DATETIME(6) NULL,
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_agent_turns_number CHECK (turn_no > 0),
+  CONSTRAINT ck_agent_turns_payload CHECK (JSON_TYPE(request_messages) = 'ARRAY' AND JSON_TYPE(`usage`) = 'OBJECT'),
+  CONSTRAINT ck_agent_turns_result CHECK ((response IS NULL OR JSON_TYPE(response) = 'OBJECT') AND (error IS NULL OR JSON_TYPE(error) = 'OBJECT')),
+  CONSTRAINT ck_agent_turns_status CHECK (status IN ('prepared','sent','succeeded','failed','unknown')),
+  CONSTRAINT ck_agent_turns_time CHECK (updated_at >= created_at AND (started_at IS NULL OR started_at >= created_at) AND (finished_at IS NULL OR finished_at >= created_at) AND (started_at IS NULL OR finished_at IS NULL OR finished_at >= started_at)),
+  CONSTRAINT fk_agent_turns_run FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_agent_turns_scope FOREIGN KEY (scope_id, run_id) REFERENCES agent_execution_scopes (id, run_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_agent_turns_number` (scope_id, turn_no),
+  UNIQUE KEY `uk_agent_turns_parent` (id, run_id)
+) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
 CREATE TABLE `agent_tool_calls` (
   `id` BIGINT UNSIGNED NOT NULL,
   `run_id` BIGINT UNSIGNED NOT NULL,
+  `scope_id` BIGINT UNSIGNED NOT NULL,
   `turn_id` BIGINT UNSIGNED NOT NULL,
   `call_index` INT UNSIGNED NOT NULL,
   `provider_call_id` VARCHAR(255) COLLATE utf8mb4_0900_bin NOT NULL,
@@ -2777,30 +2831,20 @@ CREATE TABLE `agent_tool_calls` (
   `status` VARCHAR(24) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'prepared',
   `result` JSON NULL,
   `generation_task_id` BIGINT UNSIGNED NULL,
-  `review_payload` JSON NULL,
-  `review_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
-  `review_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
-  `review_decision` VARCHAR(16) COLLATE utf8mb4_0900_bin NULL,
-  `reviewed_by` BIGINT UNSIGNED NULL,
-  `reviewed_at` DATETIME(6) NULL,
   `error` JSON NULL,
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`),
-  CONSTRAINT ck_agent_tool_calls_numbers CHECK (call_index > 0 AND review_version > 0),
+  CONSTRAINT ck_agent_tool_calls_numbers CHECK (call_index > 0),
   CONSTRAINT ck_agent_tool_calls_objects CHECK (JSON_TYPE(arguments) = 'OBJECT' AND (result IS NULL OR JSON_TYPE(result) = 'OBJECT') AND (error IS NULL OR JSON_TYPE(error) = 'OBJECT')),
   CONSTRAINT ck_agent_tool_calls_required CHECK (CHAR_LENGTH(TRIM(provider_call_id)) > 0 AND CHAR_LENGTH(TRIM(tool_name)) > 0 AND CHAR_LENGTH(arguments_hash) = 64 AND CHAR_LENGTH(idempotency_key) = 64),
-  CONSTRAINT ck_agent_tool_calls_review_actor CHECK ((review_decision IS NULL AND reviewed_by IS NULL AND reviewed_at IS NULL) OR (review_decision IS NOT NULL AND review_payload IS NOT NULL AND reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL)),
-  CONSTRAINT ck_agent_tool_calls_review_decision CHECK (review_decision IS NULL OR review_decision IN ('approved','rejected')),
-  CONSTRAINT ck_agent_tool_calls_review_pair CHECK ((review_payload IS NULL) = (review_hash IS NULL)),
-  CONSTRAINT ck_agent_tool_calls_review_payload CHECK (review_payload IS NULL OR (JSON_TYPE(review_payload) = 'OBJECT' AND CHAR_LENGTH(review_hash) = 64)),
-  CONSTRAINT ck_agent_tool_calls_review_pending CHECK (status <> 'waiting_review' OR (review_payload IS NOT NULL AND review_decision IS NULL)),
-  CONSTRAINT ck_agent_tool_calls_status CHECK (status IN ('prepared','waiting_review','ready','running','waiting_generation','succeeded','failed','rejected','cancelled')),
-  CONSTRAINT ck_agent_tool_calls_time CHECK (updated_at >= created_at AND (reviewed_at IS NULL OR reviewed_at >= created_at)),
+  CONSTRAINT ck_agent_tool_calls_status CHECK (status IN ('prepared','ready','running','waiting_generation','waiting_input','succeeded','failed','rejected','cancelled')),
+  CONSTRAINT ck_agent_tool_calls_time CHECK (updated_at >= created_at),
+  CONSTRAINT fk_agent_calls_scope FOREIGN KEY (scope_id, run_id) REFERENCES agent_execution_scopes (id, run_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_agent_tool_calls_generation FOREIGN KEY (generation_task_id) REFERENCES async_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_agent_tool_calls_reviewer FOREIGN KEY (reviewed_by) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_agent_tool_calls_run FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_agent_tool_calls_turn FOREIGN KEY (turn_id, run_id) REFERENCES agent_turns (id, run_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_agent_calls_run` (id, run_id),
   UNIQUE KEY `uk_agent_tool_calls_generation` (generation_task_id),
   UNIQUE KEY `uk_agent_tool_calls_order` (turn_id, call_index),
   UNIQUE KEY `uk_agent_tool_calls_provider` (turn_id, provider_call_id),
@@ -2866,7 +2910,9 @@ CREATE TABLE `agent_operations` (
   `id` BIGINT UNSIGNED NOT NULL,
   `task_id` BIGINT UNSIGNED NOT NULL,
   `run_id` BIGINT UNSIGNED NOT NULL,
+  `scope_id` BIGINT UNSIGNED NOT NULL,
   `tool_call_id` BIGINT UNSIGNED NOT NULL,
+  `business_invocation_id` BIGINT UNSIGNED NULL,
   `tool_name` VARCHAR(80) NOT NULL,
   `item_seq` BIGINT UNSIGNED NULL,
   `tool_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
@@ -2874,14 +2920,12 @@ CREATE TABLE `agent_operations` (
   `input_revision` BIGINT UNSIGNED NOT NULL,
   `payload_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `arguments` JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  `wait_state` JSON NULL,
   `status` VARCHAR(24) NOT NULL DEFAULT 'running',
   `phase` VARCHAR(24) NOT NULL DEFAULT 'tool_running',
   `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
   `execution_epoch` BIGINT UNSIGNED NOT NULL DEFAULT 1,
-  `active_task_id` BIGINT UNSIGNED GENERATED ALWAYS AS (CASE WHEN status IN ('running','waiting_media','reconciling') THEN task_id ELSE NULL END) STORED NULL,
   `result` JSON NULL,
-  `result_digest` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
-  `evidence_kind` VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NULL,
   `result_refs` JSON NOT NULL DEFAULT (JSON_ARRAY()),
   `changes` JSON NOT NULL DEFAULT (JSON_ARRAY()),
   `error` JSON NULL,
@@ -2889,16 +2933,16 @@ CREATE TABLE `agent_operations` (
   `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   `finished_at` DATETIME(6) NULL,
   PRIMARY KEY (`id`),
-  CONSTRAINT ck_agent_operations_evidence CHECK (evidence_kind IS NULL OR evidence_kind IN ('write','read','observation','skill','none')),
-  CONSTRAINT ck_agent_operations_status CHECK (status IN ('running','waiting_media','reconciling','succeeded','failed','conflict')),
+  CONSTRAINT ck_agent_operations_status CHECK (status IN ('running','waiting_media','waiting_input','reconciling','succeeded','failed','conflict')),
   CONSTRAINT ck_agent_operations_terminal CHECK ((status IN ('succeeded','failed','conflict')) = (finished_at IS NOT NULL)),
   CONSTRAINT ck_agent_operations_versions CHECK (tool_version > 0 AND plan_revision > 0 AND row_version > 0 AND execution_epoch > 0),
+  CONSTRAINT ck_agent_operations_wait_state CHECK (wait_state IS NULL OR (JSON_TYPE(wait_state) = 'OBJECT' AND JSON_UNQUOTE(JSON_EXTRACT(wait_state, '$.kind')) IN ('generation','user_input'))),
   CONSTRAINT fk_agent_operations_call FOREIGN KEY (tool_call_id) REFERENCES agent_tool_calls (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_agent_operations_invocation FOREIGN KEY (business_invocation_id) REFERENCES business_tool_invocations (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_agent_operations_run FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_agent_operations_scope FOREIGN KEY (scope_id, run_id) REFERENCES agent_execution_scopes (id, run_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_agent_operations_task FOREIGN KEY (task_id) REFERENCES agent_tasks (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_agent_operations_active` (active_task_id),
   UNIQUE KEY `uk_agent_operations_call` (tool_call_id),
-  KEY `idx_agent_operations_evidence` (`task_id`, `result_digest`),
   KEY `idx_agent_operations_item` (`item_seq`),
   KEY `idx_agent_operations_task` (`task_id`, `id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
@@ -2954,5 +2998,7 @@ CREATE TABLE `agent_media_requests` (
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 ALTER TABLE agent_conversations ADD CONSTRAINT fk_agent_conversations_summary FOREIGN KEY(active_summary_id, id) REFERENCES agent_conversation_summaries (id, conversation_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+ALTER TABLE agent_execution_scopes ADD CONSTRAINT fk_agent_scopes_parent_call FOREIGN KEY(parent_tool_call_id, run_id) REFERENCES agent_tool_calls (id, run_id) ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 ALTER TABLE assets ADD CONSTRAINT fk_assets_current_version FOREIGN KEY(id, current_version_id) REFERENCES asset_versions (asset_id, id) ON DELETE RESTRICT ON UPDATE RESTRICT;

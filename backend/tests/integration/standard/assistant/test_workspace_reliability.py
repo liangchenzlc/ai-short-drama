@@ -1,20 +1,16 @@
 """Workspace regressions on disposable MySQL; the model protocol is a local double."""
 
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
 
-from short_drama.agent.harness.runtime import HarnessRuntime
-from short_drama.agent.task.contract import ConfirmRequirements
-from short_drama.agent.task.requirements import confirm_locked, load_task_requirements
+from short_drama.agent.runtime.executor import AgentRuntime
 from short_drama.agent.task.state import apply_inputs_locked
 from short_drama.core.exceptions import NotFound, WorkflowError
 from short_drama.domain.assistant.conversations.models import AgentConversation
 from short_drama.domain.assistant.execution.models import AgentRun
-from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
-from short_drama.domain.assistant.tasks.task_requirement import AgentTaskRequirement
+from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask, AgentTaskInput
 from short_drama.service.creation.writing.script.documents import ProjectWritingService
 from short_drama.service.projects.management.project import ProjectService
 from tests.integration.standard.assistant.test_global_assistant_tasks import (
@@ -23,8 +19,7 @@ from tests.integration.standard.assistant.test_global_assistant_tasks import (
     task_actor,
     task_service,
 )
-from tests.integration.standard.assistant.test_harness_runtime import advance, configured
-from tests.unit.standard.agent.test_agent_model_gateway import provider as provider
+from tests.support.assistant_runtime import RuntimeTransport, calls
 
 pytestmark = pytest.mark.integration
 task_workspace = harness_workspace
@@ -62,59 +57,10 @@ def test_stopped_harness_message_creates_one_fresh_attempt_and_replays(task_work
         )
 
 
-def test_new_messages_have_unique_drafts_and_explicit_revision_replaces_old_target(task_workspace):
-    factory, settings, model = task_workspace
-    with factory() as session:
-        service = task_service(session, settings)
-        conversation = service.create_global_conversation({}, uuid4().hex)
-        accepted = service.send_task_message(
-            conversation.id, {"content": "创建10个分镜", "model_config_id": model}, uuid4().hex
-        )
-        updated = service.send_task_message(
-            conversation.id,
-            {"task_id": accepted.task.id, "content": "分镜改为5个，补充一个角色"},
-            uuid4().hex,
-        )
-    apply_inputs(task_workspace, updated)
-    with factory.begin() as session:
-        task = session.get(AgentTask, accepted.task.id)
-        drafts = session.scalars(
-            select(AgentTaskRequirement).where(AgentTaskRequirement.task_id == task.id)
-        ).all()
-        assert len({row.requirement_key for row in drafts}) == len(drafts)
-        original = next(row for row in drafts if row.source_message_id == accepted.message.id)
-        original.state = "confirmed"
-        session.flush()
-        values = ConfirmRequirements.model_validate(
-            {
-                "additions": [
-                    {
-                        "key": original.requirement_key,
-                        "description": "按新指令改为五个分镜",
-                        "kind": "write",
-                        "source_message_id": str(updated.message.id),
-                        "source_quote": updated.message.content,
-                        "minimum_count": 5,
-                        "artifact_kind": "shot",
-                    }
-                ]
-            }
-        )
-        result = confirm_locked(
-            session, conversation, task, SimpleNamespace(result_refs=[]), values, settings
-        )
-        active = load_task_requirements(session, task)
-        assert original.state == "superseded"
-        assert len(active) == 1 and active[0].minimum_count == 5
-        assert result["added"] == [active[0].requirement_key]
-        with pytest.raises(WorkflowError, match="替代"):
-            confirm_locked(
-                session, conversation, task, SimpleNamespace(result_refs=[]), values, settings
-            )
-
-
 @pytest.mark.parametrize("correction", ["改为雨夜悬疑", "分镜改为一百个", "改为5个"])
-def test_revision_cannot_invent_quantity_or_reuse_the_original_input(task_workspace, correction):
+def test_user_corrections_keep_the_original_text_and_are_consumed_in_order(
+    task_workspace, correction
+):
     factory, settings, model = task_workspace
     with factory() as session:
         service = task_service(session, settings)
@@ -125,44 +71,27 @@ def test_revision_cannot_invent_quantity_or_reuse_the_original_input(task_worksp
         updated = service.send_task_message(
             conversation.id, {"task_id": accepted.task.id, "content": correction}, uuid4().hex
         )
-    apply_inputs(task_workspace, updated)
-    with factory.begin() as session:
+    transport = RuntimeTransport([{"text": "按用户最新更正继续"}])
+    AgentRuntime(factory, settings, transport=transport).execute(accepted.run.id, 1)
+    contents = [message["content"] for message in transport.main_requests[0]["messages"]]
+    assert contents.count(accepted.message.content) == contents.count(correction) == 1
+    assert contents.index(accepted.message.content) < contents.index(correction)
+    with factory() as session:
+        inputs = session.scalars(
+            select(AgentTaskInput)
+            .where(AgentTaskInput.task_id == accepted.task.id)
+            .order_by(AgentTaskInput.input_revision)
+        ).all()
+        assert [(item.input_revision, item.message_id) for item in inputs] == [
+            (1, accepted.message.id),
+            (2, updated.message.id),
+        ]
         task = session.get(AgentTask, accepted.task.id)
-        original = session.scalar(
-            select(AgentTaskRequirement).where(
-                AgentTaskRequirement.source_message_id == accepted.message.id
-            )
-        )
-        original.state = "confirmed"
-        session.flush()
-        if correction == "改为5个":
-            source, quote, count = accepted.message, accepted.message.content, 5
-        else:
-            source, quote, count = updated.message, correction, 1
-        values = ConfirmRequirements.model_validate(
-            {
-                "additions": [
-                    {
-                        "key": original.requirement_key,
-                        "description": "不能凭空缩减",
-                        "kind": "write",
-                        "source_message_id": str(source.id),
-                        "source_quote": quote,
-                        "minimum_count": count,
-                        "artifact_kind": "shot",
-                    }
-                ]
-            }
-        )
-        with pytest.raises(WorkflowError, match="明确新数量"):
-            confirm_locked(
-                session, conversation, task, SimpleNamespace(result_refs=[]), values, settings
-            )
-        assert original.minimum_count == 10 and original.state == "confirmed"
+        assert task.applied_input_revision == task.input_revision == 2
+        assert "task_contract" not in task.effective_state
 
 
-def proposal(task_workspace, provider, *, empty=False):
-    state = configured(task_workspace, provider)
+def proposal(task_workspace, *, empty=False):
     factory, settings, model = task_workspace
     with factory() as session:
         service = task_service(session, settings)
@@ -187,8 +116,6 @@ def proposal(task_workspace, provider, *, empty=False):
             {"content": "改写剧本", "model_config_id": model, "script_reference": reference},
             uuid4().hex,
         )
-    runtime = HarnessRuntime(factory, settings)
-    advance(runtime, accepted, state, calls=[("read-script", "read_current_script", {})])
     patch = {
         "content_version": reference["content_version"],
         "script_id": reference["script_id"],
@@ -196,12 +123,19 @@ def proposal(task_workspace, provider, *, empty=False):
         "end": 0 if empty else 4,
         "replacement": "新稿",
     }
-    advance(runtime, accepted, state, calls=[("propose-script", "propose_script_patch", patch)])
+    transport = RuntimeTransport(
+        [
+            calls(("read-script", "workbench__read_current_script", reference)),
+            calls(("propose-script", "runtime__propose_script_patch", patch)),
+            {"text": "建议已准备，等待用户采用"},
+        ]
+    )
+    AgentRuntime(factory, settings, transport=transport).execute(accepted.run.id, 1)
     with factory() as session:
         operation = session.scalar(
             select(AgentOperation).where(
                 AgentOperation.task_id == accepted.task.id,
-                AgentOperation.tool_name == "propose_script_patch",
+                AgentOperation.tool_name == "runtime__propose_script_patch",
             )
         )
         assert operation.status == "succeeded", operation.error
@@ -209,10 +143,8 @@ def proposal(task_workspace, provider, *, empty=False):
 
 
 @pytest.mark.parametrize("empty", [False, True])
-def test_proposal_requires_adoption_then_is_idempotent_and_recoverable(
-    task_workspace, provider, empty
-):
-    project_id, operation_id, document, reference = proposal(task_workspace, provider, empty=empty)
+def test_proposal_requires_adoption_then_is_idempotent_and_recoverable(task_workspace, empty):
+    project_id, operation_id, document, reference = proposal(task_workspace, empty=empty)
     factory, settings, _model = task_workspace
     with factory() as session:
         service = task_service(session, settings)
@@ -243,8 +175,8 @@ def test_proposal_requires_adoption_then_is_idempotent_and_recoverable(
             task_service(session, settings, owner=2).script_proposal(operation_id)
 
 
-def test_stale_proposal_never_overwrites_later_typing(task_workspace, provider):
-    project_id, operation_id, document, reference = proposal(task_workspace, provider)
+def test_stale_proposal_never_overwrites_later_typing(task_workspace):
+    project_id, operation_id, document, reference = proposal(task_workspace)
     factory, settings, _model = task_workspace
     with factory() as session:
         service = task_service(session, settings)
@@ -263,3 +195,62 @@ def test_stale_proposal_never_overwrites_later_typing(task_workspace, provider):
             )
         assert error.value.code == "assistant_script_changed"
         assert writing.get(project_id)["editing_script"]["content"] == "用户后续修改"
+
+
+def test_stop_waits_for_every_inflight_operation(task_workspace):
+    from short_drama.agent.task.controls import apply_controls_locked
+    from short_drama.core.time import utcnow
+    from short_drama.domain.assistant.execution.models import AgentToolCall
+    from short_drama.service.assistant.execution.scope import AgentExecutionScopeService
+    from short_drama.utils.snowflake import next_id
+    from tests.integration.standard.assistant.test_execution_scopes import calls_for
+    from tests.integration.standard.assistant.test_graph_checkpointer import bound
+
+    conversation, accepted = new_task(task_workspace)
+    graph = bound(task_workspace, accepted)
+    root = AgentExecutionScopeService(graph).root()
+    calls = calls_for(graph.factory, accepted, root.id)
+    with graph.factory.begin() as session:
+        session.get(AgentRun, accepted.run.id).status = "running"
+        for call_id in calls:
+            session.add(
+                AgentOperation(
+                    id=next_id(),
+                    task_id=accepted.task.id,
+                    run_id=accepted.run.id,
+                    scope_id=root.id,
+                    tool_call_id=call_id,
+                    tool_name="task",
+                    plan_revision=1,
+                    input_revision=1,
+                    payload_hash="a" * 64,
+                    arguments={},
+                    result_refs=[],
+                    changes=[],
+                )
+            )
+    _, settings, _ = task_workspace
+    with graph.factory() as session:
+        response = task_service(session, settings).control_task(
+            accepted.task.id, {"kind": "stop"}, uuid4().hex
+        )
+        assert response.task.control_state == "stop_pending"
+        assert response.run.status == "running"
+    with graph.factory() as session:
+        assert session.get(AgentRun, accepted.run.id).cancel_requested == 1
+    for index, call_id in enumerate(calls):
+        with graph.factory.begin() as session:
+            task = session.get(AgentTask, accepted.task.id)
+            run = session.get(AgentRun, accepted.run.id)
+            conv = session.get(AgentConversation, conversation.id)
+            op = session.scalar(
+                select(AgentOperation).where(AgentOperation.tool_call_id == call_id)
+            )
+            op.status, op.phase, op.finished_at = "succeeded", "terminal", utcnow()
+            session.get(AgentToolCall, call_id).status = "succeeded"
+            session.flush()
+            applied = apply_controls_locked(session, conv, task, run)
+            assert applied is (index == 2)
+            assert task.control_state == ("none" if index == 2 else "stop_pending")
+    with graph.factory() as session:
+        assert session.get(AgentTask, accepted.task.id).status == "stopped"

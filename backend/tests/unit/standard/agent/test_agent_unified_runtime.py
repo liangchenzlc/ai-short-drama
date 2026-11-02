@@ -6,7 +6,7 @@ import pytest
 
 from short_drama.agent.context.capabilities import input_capabilities
 from short_drama.agent.core.state import failure_message
-from short_drama.agent.gateway.protocol import provider_failure_code
+from short_drama.agent.gateway.contracts import provider_failure_code
 from short_drama.schemas.assistant.operations.runtime import MessageCreate
 from short_drama.service.ai_config.management.assistant_models import AgentModelService
 

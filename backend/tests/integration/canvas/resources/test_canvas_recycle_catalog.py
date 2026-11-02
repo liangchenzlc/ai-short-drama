@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.domain.canvas.document.canvas import CanvasWriteReceipt
 from short_drama.service.canvas.resources.recycle.recycle import CanvasRecycleService
 from tests.integration.canvas.projects.test_canvas_project_folders import (
@@ -179,8 +179,14 @@ def test_archive_receipt_cannot_be_rewritten_or_removed_by_actor(identity_app, o
     archive(client, path, document, "immutable-delete")
     assert restore(client, document["id"], "immutable-delete").status_code == 200
     with identity_app[1]() as session:
-        session.info["actor"] = ActorContext(
-            int(user["id"]), "test", "test@example.test", True, 1, "csrf", "scope"
+        session.info["actor"] = SessionActorContext(
+            user_id=int(user["id"]),
+            username="test",
+            email="test@example.test",
+            verified=True,
+            session_id=1,
+            csrf_hash="csrf",
+            request_id="scope",
         )
         receipt = session.scalar(
             select(CanvasWriteReceipt).where(

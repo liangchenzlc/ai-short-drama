@@ -1,0 +1,52 @@
+{
+  "at": "2026-10-31T17:46:27.157181+00:00",
+  "stage_only": true,
+  "full45_passed": false,
+  "task12_complete": false,
+  "archive": {
+    "path": "收尾阶段证据.zip",
+    "bytes": 704206,
+    "sha256": "1c89ed4c9f0053be75afe542bbe5cd21a1f05a47a2ed43f60f3905e33c6dd8bd",
+    "entry_count": 177,
+    "crc_and_source_bytes_verified": true
+  },
+  "rulings_count": 108,
+  "credential_scan": {
+    "status": "passed",
+    "exact_matches": 0,
+    "changed_text_files_scanned": 501,
+    "archive_entries_scanned": 177,
+    "evidence": "凭据检查.json",
+    "credential_values_written": false
+  },
+  "owned_resources": "资源状态.json",
+  "usage": "用量记录.json",
+  "local_tests": {
+    "model_output_capacity": 15,
+    "summary": 29,
+    "counts_not_summed": true
+  },
+  "short_real_text_tests": {
+    "passed": 2,
+    "deselected": 43,
+    "media_providers": "mock_only"
+  },
+  "latest_full_matrix_v33": {
+    "passed": 34,
+    "failed": 9,
+    "not_executed": 2
+  },
+  "unperformed": [
+    "full45 and three consecutive long tasks",
+    "five Skill natural scenario closure",
+    "application database migrations 001-006",
+    "user service switch",
+    "full Celery deployment"
+  ],
+  "final_gates": {
+    "path": "门禁结果.json",
+    "all_exit_codes_zero": true,
+    "commands": 5
+  },
+  "finalized_at": "2026-10-31T17:49:57.855985+00:00"
+}

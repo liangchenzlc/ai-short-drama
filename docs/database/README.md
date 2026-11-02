@@ -1,10 +1,16 @@
 # 数据库设计
 
-当前完整结构包含 **119 张表**，以 [SQLAlchemy Domain](../../backend/src/short_drama/domain) 和 [schema.mysql8.sql](schema/schema.mysql8.sql) 为准。后端保留 API → Service → DAO → ORM；ORM 按业务及具体功能组织。
+2026-10-30：[助手运行底座迁移](migrations/2026-10-29-assistant-runtime/README.md)按001→005升级为122表。003设置与004持久等待保持121表；005新增 `mcp_access_tokens` 及审计 nullable source／token_id，历史审计保留NULL。`agent_preferences` 的实时媒体政策使用 `policy_version`，助手完整设置使用独立 `settings_version`；默认调用240、输出2000000、子助手并发3、媒体数量空对象。004增加 `agent_operations.wait_state`，扩展 waiting_input 状态、活跃会话生成列和消息 tool_answer CHECK，不新增问题表。完整链已在119表基线的隔离测试库预演，Agent／MCP／identity结构就绪，9条原业务与审计记录保留，未修改应用库。
+
+006已追加离线切换：审计归档后删除退役要求表、ToolCall审核列及Operation监督列，当前完整结构为 **121 张表**；引擎 `assistant-runtime.1` 的新Run不恢复旧checkpoint。先停入口与Agent Worker、备份，再运行 `agent_runtime_migration.py --precheck/--apply`；有效租约、队列消费者、未知结构或未关闭Agent开关均拒绝执行。专用随机测试库已从冻结119表完整演练001→006，应用库未执行，详见上方迁移说明。
+
+当前完整结构包含 **121 张表**，以 [SQLAlchemy Domain](../../backend/src/short_drama/domain) 和 [schema.mysql8.sql](schema/schema.mysql8.sql) 为准。后端保留 API → Service → DAO → ORM；ORM 按业务及具体功能组织。
 
 2026-10-28 已在当前配置库执行[退役写作清理](migrations/2026-10-28-source-restructure/README.md)：清空获准测试业务数据，删除 project_novels、project_story_outlines、novel_script_records 三张退役表；保留账号、模型配置、助手偏好、个人 Skill 与有效画布偏好，核对保留数据指纹。不删除 MinIO 对象。旧说明保存在[历史记录](../reviews/2026-10-28-重构前数据库与写作契约记录.md)，其中旧分集、成员与多层素材表不能作为当前结构依据。
 
 同日已在当前库执行[剧本纯文本结构迁移](migrations/2026-10-28-plain-script/README.md)：移除当前剧本及历史快照中旧 Quill 格式列，正文和版本仍是权威数据。
+
+2026-10-29 新增[执行图与范围迁移](migrations/2026-10-29-assistant-runtime/README.md)：稳定 Run 线程、typed checkpoint 与父子执行范围，移除任务级单操作唯一约束。仅在专用 MySQL 临时库完成增量预演，应用库尚未执行。
 
 ## 当前表目录
 
@@ -13,11 +19,11 @@
 | 业务 | 数量 | 表 |
 | --- | --- | --- |
 | ai_config | 2 | `ai_model_configs`、`user_model_preferences` |
-| assistant | 26 | `agent_artifacts`、`agent_attachments`、`agent_batch_undos`、`agent_conversation_summaries`、`agent_conversations`、`agent_discussion_revisions`、`agent_events`、`agent_graph_checkpoints`、`agent_graph_writes`、`agent_media_requests`、`agent_memory_forget_rules`、`agent_memory_items`、`agent_memory_jobs`、`agent_memory_revisions`、`agent_memory_sources`、`agent_messages`、`agent_operations`、`agent_preferences`、`agent_runs`、`agent_skills`、`agent_task_controls`、`agent_task_inputs`、`agent_task_requirements`、`agent_tasks`、`agent_tool_calls`、`agent_turns` |
+| assistant | 27 | `business_tool_invocations`、`agent_artifacts`、`agent_attachments`、`agent_batch_undos`、`agent_conversation_summaries`、`agent_conversations`、`agent_discussion_revisions`、`agent_events`、`agent_execution_scopes`、`agent_graph_checkpoints`、`agent_graph_writes`、`agent_media_requests`、`agent_memory_forget_rules`、`agent_memory_items`、`agent_memory_jobs`、`agent_memory_revisions`、`agent_memory_sources`、`agent_messages`、`agent_operations`、`agent_preferences`、`agent_runs`、`agent_skills`、`agent_task_controls`、`agent_task_inputs`、`agent_tasks`、`agent_tool_calls`、`agent_turns` |
 | canvas | 49 | `canvas_binary_references`、`canvas_binary_resources`、`canvas_channel_models`、`canvas_creation_attempts`、`canvas_creation_resources`、`canvas_director_scenes`、`canvas_drawing_media_references`、`canvas_drawing_versions`、`canvas_drawings`、`canvas_edges`、`canvas_generation_media_deletions`、`canvas_library_asset_references`、`canvas_library_assets`、`canvas_library_folder_items`、`canvas_library_folders`、`canvas_local_jobs`、`canvas_media_references`、`canvas_model_catalogs`、`canvas_node_user_states`、`canvas_nodes`、`canvas_project_folder_items`、`canvas_project_folders`、`canvas_render_jobs`、`canvas_render_media_references`、`canvas_resource_chunks`、`canvas_resource_copy_sources`、`canvas_resource_deletions`、`canvas_resource_uploads`、`canvas_results`、`canvas_revision_drawing_references`、`canvas_revision_media_references`、`canvas_revision_user_states`、`canvas_revisions`、`canvas_style_media_references`、`canvas_style_preferences`、`canvas_style_profiles`、`canvas_task_bindings`、`canvas_task_media_references`、`canvas_task_text_deltas`、`canvas_timelines`、`canvas_tool_runs`、`canvas_tool_submissions`、`canvas_user_binary_references`、`canvas_user_media_references`、`canvas_user_states`、`canvas_workspace_user_states`、`canvas_write_receipts`、`project_canvas_settings`、`project_canvases` |
 | creation | 22 | `asset_image_candidates`、`asset_version_media_references`、`asset_versions`、`assets`、`character_voices`、`project_assemblies`、`project_assembly_clips`、`project_render_jobs`、`project_script_revisions`、`project_scripts`、`project_sound_modes`、`project_sounds`、`project_story_settings`、`project_voice_defaults`、`script_shot_records`、`shot_assets`、`shot_dialogues`、`shot_images`、`shot_scripts`、`shot_videos`、`sound_media_references`、`user_creation_drafts` |
 | generations | 4 | `ai_generation_records`、`async_tasks`、`generation_batch_items`、`generation_batches` |
-| identity | 6 | `audit_events`、`auth_rate_limits`、`email_challenges`、`email_outbox`、`user_sessions`、`users` |
+| identity | 7 | `audit_events`、`auth_rate_limits`、`email_challenges`、`email_outbox`、`mcp_access_tokens`、`user_sessions`、`users` |
 | media | 7 | `image_group_items`、`image_groups`、`image_operations`、`media_assets`、`media_files`、`media_recycle_bin`、`resource_imports` |
 | projects | 1 | `projects` |
 | skills | 2 | `agent_skill_settings`、`agent_skill_versions` |

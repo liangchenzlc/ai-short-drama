@@ -2,6 +2,24 @@ name: ai-short-drama-deps
 
 # Local development dependencies. See docs/instruction/Docker一键启动后端依赖.md for backend settings.
 services:
+  opensandbox:
+    image: docker.m.daocloud.io/opensandbox/server:release-1.2.0@sha256:25bebdcf1cf7724eb923faecbdbbf82d4038c6ab35c736151574726d14006f30
+    restart: unless-stopped
+    environment:
+      SANDBOX_CONFIG_PATH: /etc/opensandbox/config.toml
+      OPENSANDBOX_SERVER_API_KEY: ${AGENT_SANDBOX_API_KEY:?set AGENT_SANDBOX_API_KEY in root .env}
+    ports:
+      - "127.0.0.1:${AGENT_SANDBOX_PORT:-18080}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - opensandbox-data:/var/lib/opensandbox
+      - type: bind
+        source: ./docker/opensandbox/config.toml
+        target: /etc/opensandbox/config.toml
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [agent-sandbox]
   mysql:
     image: mysql:8.4
     restart: unless-stopped
@@ -109,6 +127,11 @@ services:
         echo "MinIO image/video/audio buckets are ready (private)."
 
 volumes:
+  opensandbox-data:
   mysql-data:
   rabbitmq-data:
   minio-data:
+
+networks:
+  agent-sandbox:
+    name: ai-short-drama-agent-sandbox

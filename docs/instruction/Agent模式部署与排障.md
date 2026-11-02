@@ -1,5 +1,29 @@
 # Agent 模式部署与排障
 
+账号业务 MCP 使用 [运行时增量005](../database/migrations/2026-10-29-assistant-runtime/README.md)，增加令牌和 nullable 审计来源，当前完整结构121表；已有库先完成001→005，再按006离线切换后发布同版API、Worker与前端。此链已在119表基线的专用随机测试库演练，应用库未执行。API 即使 `AUTH_ENABLED=false` 或 `AGENT_ENABLED=false` 仍检查 MCP schema 并强制每请求 Bearer。
+
+实际 API 启动脚本与手动 uvicorn 命令均须使用 `--no-proxy-headers`。`MCP_TRUSTED_PROXY_CIDRS=[]` 默认使用连接 peer 并忽略 X-Forwarded-For；有受控代理时配置其准确网段，由 MCP 从右向左解析一次。先被 Uvicorn 重写的 peer 不能再用于可信代理判断。认证失败401、IP拒绝403、无效可信链400发生在HTTP入口；工具范围／版本失败按MCP `isError=true` 返回。删除令牌后包括旧session的再次访问都拒绝，已受理的原生生成继续执行。详见 [MCP API](../api/mcp.md)。
+
+2026-10-30 运行底座升级按[执行图与范围迁移](../database/migrations/2026-10-29-assistant-runtime/README.md)顺序执行 001→002→003；003 为 `agent_preferences` 增加独立 `settings_version`、自定义指令、调用／输出／并发和默认媒体数量，不改变实时媒体 `policy_version`。已在授权随机 MySQL 测试库从119表基线预演并核对121表全部 Agent 列、约束和索引，未执行应用库。
+
+新主模型、selector、summary、记忆维护和能力 probe 共用 `build_chat_model`，SafeTransport 与临时资源水合只在发送边界执行，SDK／模型 `max_retries=0`。`_ProtectedAnthropic._async_client` 保留私有 SDK 注入：锁定版 LangChain Anthropic 无公开 HTTP client 注入接口；升级 `langchain-anthropic/anthropic` 后必须重验原生 tool_result、受控 HTTP 和回执脱敏。其余新 graph、ToolRuntime、Command、middleware 均走公开 API。当前提示词版本为 `assistant-runtime-v17`（版本来源为 `backend/src/short_drama/ai/prompts/registry.py`），新 Run 已保存完整系统提示词；正式 Worker 已统一调用 `AgentRuntime.execute`，由框架完成连续循环和持久恢复；受控模型、真实基础设施与真实供应商的验收结果须分别记录。
+
+`openai_chat.v1` 且模型快照 `provider=deepseek` 时使用官方 `langchain-deepseek==1.1.1`，复用原受保护异步客户端。`agent/gateway/deepseek.py` 只补 `_get_request_payload`：强制 `tool_choice`（`required` 或指定工具）合入 `thinking.type=disabled`，主助手默认、`auto` 和 `none` 保留原思考配置；已有 AIMessage 的真实 `reasoning_content` 按原消息位置回传，流入解析仍由官方 SDK 完成。模型工厂另对 `metadata.lc_source=summarization` 的 DeepSeek chat 辅助请求显式关闭思考，避免摘要输出额度被思考消耗；其他 provider、协议及来源保持原配置，摘要提示、输出额度和零自动重试不变。思考事件、深层脱敏、typed checkpoint 和原始回执重放沿用原边界；不扩大 `runtime_profile.default_options`。配置必须明确保存 DeepSeek provider，仅换模型名或地址不会启用该适配；真实验收夹具对 `deepseek-flash` 显式设置 provider，其余已授权文本目标保留 compatible。升级相关 LangChain 包时须复验结构化 selector、摘要关闭思考、思考与正文分流、工具续调及无重复 POST 的重放。
+
+DeepSeek 历史 reasoning 回填由同一小型纯函数供 SDK 与 GraphResources 引用投影共用，摘要前计量包含实际会发送的字段；不修改原消息或丢弃历史思考。其他 provider／协议保持原投影，最终 SDK 请求仍走原完整 JSON 准入守卫。平台 UTF-8 估算与供应商 token 用量分别记录，不能由字段字节数推断供应商是否把 reasoning 计作输入 tokens。
+
+`ProtectedChatModel._get_ls_params` 仅补实际 SDK 的 provider 身份并保留基类字段：DeepSeek chat→deepseek，Claude Messages→anthropic，其余 ChatOpenAI 路径（含 compatible chat／DeepSeek Responses）→openai。产品 provider 名称不直接作为框架身份；该字段让官方摘要的 reported-token 兜底匹配真实 SDK 消息，不开启外部 tracing，也不放宽预算或增加重试。
+
+主决策的官方 `ModelRetryMiddleware` 对无效工具选择保留原处理；对已真实发送且受理明确的 `invalid_agent_tool_calls` 最多额外生成两次，连续非法最多三次后保留原错退出。每次请求独立计量，不能把重试前的失败响应或摘要写入成功回执；摘要 compaction 在主模型成功后才提交。原回执重放的 `requests=0`、未知受理、取消、预算和其他错误不增加重试。SDK 自身仍为零自动重试，排障须区分框架有界再生成与 HTTP 发送重放；不应手工清洗非法 JSON 或释放 unknown 预留。
+
+v17 在 root 每轮规范来源中补可信 current_run 启动身份，排查停止后新 Run 时应同时核对实际 selector／主模型请求中的 run_id、trigger_message_id、trigger_seq 与来源正文；同轮后补和已消费答案不替换 trigger。trigger_source_withheld=true 只表示触发来源已被现有 restricted 资格撤回，不能因有界 items 未列出该源就判撤回或补回正文。摘要与新 Worker 沿现有重建恢复该关系，子范围没有这份根投影。新提示另要求委派保留必需步骤及验收、尊重主助手亲自范围，不可用／不适用时如实交付阻碍；普通讨论、授权、排除、skip 与必要 ask 仍有效。旧 Run 保持原冻结提示；受控消费者只证明事实交付与边界，不证明自然重问或委派语义已修，仍须新冻结同版45参数真实矩阵验收。
+
+正式验收入口为 `test_agent_runtime_live.py`，45项场景默认跳过；受控同入口断言在 `test_agent_acceptance_runner.py`。真实文本须显式注入 `RUN_AGENT_RUNTIME_LIVE`、`AGENT_LIVE_URL/MODEL/API_KEY`，只使用已授权站点和模型；具体命令、专用13307随机库、MinIO前缀、独立Worker进程及清理要求见[按功能执行测试](按功能执行测试.md)。独立OpenSandbox测试服务必须配置 `AGENT_SANDBOX_DOMAIN/PROTOCOL/API_KEY/IMAGE/WORKSPACE_ROOT`；验收强制default deny，仅允许pypi.org、files.pythonhosted.org、registry.npmjs.org及显式测试fixture主机。生产镜像与SDK网络配置不因测试被替换；真实媒体供应商仍使用替身，不发付费媒体请求。
+
+验收 Worker 的 `business_committed` 故障仅在匹配的标准写工具已持久化为 `succeeded`、且关联的业务收据也为 `succeeded` 后消耗一次注入机会。schema 校验失败或业务拒绝不触发该边界，后续真实成功仍能注入；`stop_tool` 保留匹配工具返回后停止的原语义。受控回归通过不能追认旧失败批次，也不能替代新版本真实45项或长测验收。
+
+> **历史记录（以下三段，2026-10-26／27旧引擎）**：旧 Harness、reviewer、Task JSON、`AGENT_PROGRESS_*` 等参数及“新增部署”指引仅记录当时流程，不适用于当前 `assistant-runtime.1`。已达119表基线的库按[当前运行时001–006增量](../database/migrations/2026-10-29-assistant-runtime/README.md)保留消息、业务成果与已受理原生任务后切换；更早结构须先按[迁移索引](../database/migrations/README.md)核实起点及缺口。应用库未执行本次迁移，完整真实 Celery Worker 部署尚未验收。
+
 2026-10-26 起新 V3 任务使用 [Harness 运行机制](AI创作助手Harness运行机制.md)：LangGraph 控制工作流、LangChain 单次决策，工具自主选择，图片／方法按需加载。2026-10-27 起新任务另开放边界停止，改向与恢复中断仍不支持；下文旧句式授权和中断流程仅适用于冻结原引擎的历史任务。新增部署须先执行 [图检查点迁移](../database/migrations/2026-10-26-agent-harness/README.md) 与 [交付要求增量](../database/migrations/2026-10-27-agent-contract/README.md)，API、scheduler、Agent Worker 和前端同版升级。
 
 Harness 可靠执行与上下文优化沿用 Task JSON 和既有账本。[交付要求增量](../database/migrations/2026-10-27-agent-contract/README.md)新增 `agent_task_requirements` 一张表，并为 `agent_operations` 增加两列及一个索引；任务创建时冻结 `agent_policy` 中的预算、停滞窗口和停止策略，使用 `AGENT_RUN_*`、`AGENT_PROGRESS_*`、`AGENT_REQUIREMENT_ATTEMPT_CAP`、`AGENT_REVIEWER_MODE`、`AGENT_STOP_AT_BOUNDARY` 环境变量。收尾增加[记忆抽取重试终态约束](../database/migrations/2026-10-26-agent-memory-retry/README.md)，已有库须先升级，允许运行时既有的 `abandoned` 状态。当前请求使用工具 v4、提示词 `assistant-harness-v10`，完成验收统一按需求表和证据包执行。API 与 Agent Worker 必须同版，以支持按需能力组、服务端交付要求 draft、发布守卫、证据包验收、工作笔记、Skill 释放和模型容量字段。候选最终答复在独立检查通过后发布，检查也会产生模型用量。
@@ -66,7 +90,7 @@ uv run python -m scripts.agent_system_migration --apply
 uv run python scripts/agent_migration.py --precheck
 ```
 
-此增量增加四张任务表、六张记忆表、账号助手偏好、私人媒体请求、Skill 版本／个人设置、讨论修订及批次撤销回执表、消息／Run 的 task_id、消息版本、运行修订身份与会话摘要字段，解除 V3 会话项目强绑定，并允许角色音色成对空绑定；保留旧记录和授权。记忆索引使用 MySQL ngram；本机 `@@ngram_token_size=2`，其他环境须实际核对。完整新库 [schema.mysql8.sql](../database/schema/schema.mysql8.sql) 当前为 119 张表，包含全部二十八张 Agent 表，直接做 precheck 即可，不重复执行旧库 ALTER。
+此增量增加四张任务表、六张记忆表、账号助手偏好、私人媒体请求、Skill 版本／个人设置、讨论修订及批次撤销回执表、消息／Run 的 task_id、消息版本、运行修订身份与会话摘要字段，解除 V3 会话项目强绑定，并允许角色音色成对空绑定；保留旧记录和授权。记忆索引使用 MySQL ngram；本机 `@@ngram_token_size=2`，其他环境须实际核对。完整新库 [schema.mysql8.sql](../database/schema/schema.mysql8.sql) 当前为 121 张表，包含全部二十八张 Agent 表，直接做 precheck 即可，不重复执行旧库 ALTER。
 
 2026-10-27 的 [Agent 加固增量](../database/migrations/2026-10-27-agent-contract/README.md)新增 `agent_task_requirements`，并给 `agent_operations` 加 `result_digest/evidence_kind` 与索引；这是 119 表／二十八张 Agent 表的来源。已有库须停写后执行 `010-task-requirements.sql` 再 `agent_migration.py --apply`，新库直接用完整 SQL。升级前的任务没有 `agent_policy`，继续按旧契约与旧预算解释；新任务冻结契约、预算、停滞窗口、验收与停止策略，因此 API、scheduler、Agent Worker 与前端必须同版升级。
 
@@ -85,12 +109,15 @@ uv run python scripts/publish_builtin_skills.py --apply
 | 设置 | 作用 |
 | --- | --- |
 | `AGENT_ENABLED` | 默认 `true`；启动要求完整二十八张 Agent 表 readiness 为 `ready`，且 `AUTH_ENABLED=true`；显式 `false` 关闭新决策和记忆模型整理，已开始媒体结算及删除清理仍由 scheduler 执行 |
+| `AGENT_MODEL_TIMEOUT_SECONDS` | 正式 Run 整次模型期限，默认120秒、允许1–600秒；可显式部署为300秒，根／子 main、selector、summary 的每次请求独立计时 |
 | `AGENT_LEASE_SECONDS` | 默认 180 秒，允许 150–3600；执行与恢复租约 |
 | `AGENT_POLL_SECONDS` | 默认 5 秒，允许 3–60；scheduler 收集原生任务结果的间隔 |
 | `GENERATION_QUEUE_NAMESPACE` | 默认 `short_drama`；所有进程保持一致，不同数据库使用不同 namespace |
 | `SNOWFLAKE_WORKER_ID` | 每个同时运行的后端进程唯一；下例 Agent 使用 7 |
 
 设置在进程启动时读取。完成结构迁移后准备 Agent Worker，确认 `AGENT_ENABLED` 未被显式关闭（或设置为 `true`），并重启 API、scheduler 及所有已配置 Worker；不能只刷新页面或只重启 API。显式关闭时原生模式不要求 Agent 表；若结构完整，scheduler 仍归档旧结果和执行删除清理。默认开启不会自动验证模型或发出生成任务。
+
+例如设置 `AGENT_MODEL_TIMEOUT_SECONDS=300` 后须重启上述相关进程；这是部署配置，不提供账号或 Run 动态修改接口，不调整后台记忆整理与能力 probe。每次绝对期限包含流式生成及 SDK／HTTP 收尾，收到新片段不续期。本地期限到期返回 `timeout`；主动停止仍及时取消，取消清理可能耗时，因此设置值不是严格的墙钟完成承诺。300秒是否足够须由新配置下的真实供应商验收证明，不能覆盖旧120秒批次的失败事实。
 
 ## 启动 Agent Worker
 
@@ -111,6 +138,37 @@ uv run celery -A short_drama.tasks.celery_app:app worker --pool=threads --concur
 Agent 队列始终是 `<GENERATION_QUEUE_NAMESPACE>.tasks.agent`，默认也保留 `short_drama.` 前缀；自定义 `studio_dev` 时用 `studio_dev.tasks.agent`。记忆摘要和抽取复用该队列、独立持久作业与租约；凭据在实际发送前解析，事务外调用模型。删除 purge 由 scheduler 本地执行，不需要模型或 RabbitMQ。它与默认原生队列 `tasks.ai.text/image/video/audio` 的命名规则不同。脚本按 Settings 自动解析。线程共用进程内雪花生成器，不要直接改成共用节点号的 prefork 或多进程；重启前确认旧进程已结束。API、scheduler、原生 Worker 的启动见[开发指南](开发运行与验证.md#启动后端)。
 
 记忆整理的完整回执优先本地重放，发送中或受理不明不换键重发。内部维护接口只允许对明确失败记录安排一个独立后继；来源、摘要代次及原模型配置须仍有效，原失败与供应商回执保留。长任务约束整理使用同队列的 `task_state` 作业，需补齐 [009 迁移](../database/migrations/2026-10-21-agent-system/009-task-compaction.sql)，仅扩展作业类型 CHECK；当前业务库 `short_drama` 已执行，009 阶段为117表、Agent25表；当前118表、Agent27表。作业冻结旧输入前缀，近期补充保留原文；原始前缀变化及父约束版本冲突会阻止激活，完成整理不恢复停止任务。抽取同键冲突保留为后台候选，版本和来源再校验后才应用，不能自动覆盖现有事实；前端不显示澄清或维护入口。总输入在冻结和实际发送前检查估算预算，超限先等待有效在途约束整理，无可推进作业或整理失败才以 `paused_budget` 保留输入暂停；平台估算不代表供应商 tokenizer 或模型窗口实测。
+
+## 代码环境与持久工作区
+
+OpenSandbox控制服务使用固定 `release-1.2.0` digest，execd／egress 镜像也在 `docker/opensandbox/config.toml` 固定。执行镜像由 `docker/agent-sandbox/Dockerfile` 固定Python3.12.16与Node24.22.2的基础镜像digest，包含pip／npm，不预装FFmpeg或批量媒体包。根目录先构建镜像，再启动依赖：
+
+```powershell
+# 根目录；已有根 .env 时仅补配置，切勿覆盖原凭据。
+Copy-Item .env.example .env
+# 在根 .env 中设置独立的 AGENT_SANDBOX_API_KEY，再执行：
+docker build -t ai-short-drama/agent-sandbox:py3.12.16-node24.22.2 -f docker/agent-sandbox/Dockerfile .
+docker compose config --quiet
+docker compose up -d
+```
+
+根 `.env` 的 `AGENT_SANDBOX_PORT` 默认18080，避开前端8080；密钥没有开发默认值，Compose解析会要求填写。将同一密钥另外填入 `backend/.env` 的 `AGENT_SANDBOX_API_KEY`，设置 `AGENT_SANDBOX_DOMAIN=127.0.0.1:18080`、`PROTOCOL=http`。跨主机使用Worker可达地址和部署TLS。项目SDK强制服务代理模式，Worker不需要直接访问Docker动态execd端口。API／scheduler／Worker继续在backend启动，Compose没有容器化这些应用进程。
+
+代码容器仅接入 `ai-short-drama-agent-sandbox` bridge，和MySQL／RabbitMQ／MinIO的Compose默认网络分开，允许公网出站；模型不能改为host网络。Docker socket只挂控制服务，执行容器无socket、控制密钥、后端env或数据库／MinIO凭据。CPU默认2、内存2Gi、命令120秒、可见输出64KiB；在backend的9项 `AGENT_SANDBOX_*` 配置集中调整，不由模型修改。控制服务的SQLite存入独立 `opensandbox-data` 卷。
+
+工作区使用Docker宿主目录 `/var/lib/short-drama/agent-workspaces/run-<RunID>/scope-<ScopeID>`，挂载为 `/workspace`；部署变更根目录时同步TOML的 `storage.allowed_host_paths` 与backend的 `AGENT_SANDBOX_WORKSPACE_ROOT`。Windows Docker Desktop也使用其Linux Docker宿主视角的绝对路径，不能填写 `C:\...`；Worker通过127.0.0.1控制代理访问。首次调用才创建环境并初始化 `/workspace/.venv`，PATH优先该venv；pip装入venv，npm依赖位于工作目录。当前镜像以uid0运行，允许持久目录写入，仍受容器与独立挂载边界限制，不暴露父scope目录。需要系统库的包可能安装失败，应由部署更新固定镜像，不承诺任意原生依赖。
+
+scope持久保存服务、镜像、sandbox ID及宿主目录；创建失败保留creating，通过metadata查回未知结果，不无限新建。等待前在有效fence内销毁容器保留文件，恢复用固定镜像重建，进程内存不恢复。终态／取消先完成归档，再清理容器与工作目录；失败为cleanup_pending，由现有scheduler补清。即使Agent关闭或会话deleted，可信维护仍回收无租约终态。不要手改creating／cleanup_pending为new，或用业务资源入口绕过图权限。
+
+脚本／CSV／JSON／普通文件及大日志归档MinIO并关联Operation／事件，二进制file引用不直接送模型。导入必须是当前会话获准引用，导出仅接受工作区相对清单且单文件最多4MiB；图片／音视频在同一导出入口复用既有内容检查与媒体服务，保存本人私有 MediaFile 并将媒体身份／ResourceRef 关联当前 Operation；音视频探测使用 Worker 已配置的 FFmpeg／ffprobe。Skill物化按scope／activation／checksum隔离，修改源文件后重投冲突，release后无法再次读取源；可执行脚本只有显式代码调用才运行。删除会话沿 purge 删除未采用且无其他引用的私有媒体、普通产物和日志；其他会话附件、业务外键引用及已采用媒体继续保留。
+
+真实infra验收需显式开启 `RUN_AGENT_SANDBOX_INTEGRATION=1`，使用隔离MySQL测试库和MinIO，后端执行：
+
+```powershell
+uv run python scripts/run_integration.py tests/integration/standard/agent/test_agent_sandbox.py -q
+```
+
+用例覆盖真实Python／Node、pip／npm、公网下载／HTTP、流日志、命令超时／停止、等待销毁与文件／包恢复、MinIO授权归档、图片／音视频真实媒体身份与非法内容拒绝、独立业务引用保留及终态／deleted回收；仅创建响应丢失使用测试包装器模拟返回丢失，容器创建、metadata找回、重连和清理仍调用真实SDK。受控文本模型只驱动真实ToolNode，不代表文本／媒体供应商验收。
 
 ## 模型与流式代理
 
@@ -136,6 +194,7 @@ uv run python scripts/check_generation_infra.py
 | `waiting_generation` 不结束 | 检查对应原生 Worker、scheduler、任务保存状态与 MinIO；已受理任务可能仍在运行 |
 | 旧 V1 `waiting_review` | 等待本人批准历史具体计划；修订后旧批准失效，补充不自动批准；不是 V3 工具授权方式 |
 | `agent_acceptance_unknown` / unknown Turn | 保留记录，结合供应商结果人工核对；不得将 sent/unknown 改回 prepared、删除记录、整体重放 broker 消息或自动重发 |
+| 模型 `timeout` | 核对整次期限与实际阶段；已发送但没有完整 raw 时保持 unknown、未结算及输出预留，不自动重试或跨站重发 |
 | 媒体失败需要再生成 | 通过新的明确付费任务或审核计划重试；Agent 管理任务不能用原生通用重试绕过授权和额度 |
 | 采用返回版本冲突 | 保留当前作品，重新读取候选与版本核对；不得自动覆盖或唤醒其他 Run |
 | 启用后启动失败 | 先核对 `AUTH_ENABLED`、Agent precheck、统一代码/依赖版本；重启不能修复缺失结构 |

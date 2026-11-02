@@ -1,23 +1,36 @@
 """Scoped checkpoint access. JSON snapshots are never involved in SQL sorting."""
 
-from sqlalchemy import select
+from hashlib import sha256
+
+from langgraph.checkpoint.base import writes_sort_key
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from short_drama.domain.assistant.execution.graph import AgentGraphCheckpoint, AgentGraphWrite
 
 
 class AgentGraphDAO:
-    def __init__(self, session: Session, owner: int, task: int, run: int, namespace: str):
+    def __init__(self, session: Session, owner: int, task: int, run: int, namespace: str | None):
         self.session = session
         self.owner, self.task, self.run, self.namespace = owner, task, run, namespace
 
     def _scope(self, model):
-        return select(model).where(
+        query = select(model).where(
             model.owner_user_id == self.owner,
             model.task_id == self.task,
             model.run_id == self.run,
-            model.namespace == self.namespace,
         )
+
+        if self.namespace is not None:
+            query = query.where(
+                model.namespace_hash == sha256(self.namespace.encode("utf-8")).digest(),
+                model.namespace == self.namespace,
+            )
+        return query
+
+    def delete_thread(self):
+        for model in (AgentGraphWrite, AgentGraphCheckpoint):
+            self.session.execute(delete(model).where(*self._scope(model).whereclause.clauses))
 
     def checkpoints(
         self, checkpoint_id=None, *, before=None, limit=100, metadata_filter=None, lock=False
@@ -37,7 +50,9 @@ class AgentGraphDAO:
             elif isinstance(value, str):
                 field = field.as_string()
             ids = ids.where(field == value)
-        ids = ids.order_by(model.checkpoint_id.desc()).limit(limit)
+        ids = ids.order_by(model.checkpoint_id.desc())
+        if limit is not None:
+            ids = ids.limit(limit)
         if lock:
             ids = ids.with_for_update()
         identifiers = self.session.scalars(ids).all()
@@ -51,10 +66,15 @@ class AgentGraphDAO:
         return [by_id[identifier] for identifier in identifiers]
 
     def writes(self, checkpoint_id):
+        # 与 checkpoint 一样使用当前读，避免 Run 锁等待前建立的 RR 快照漏掉新回执。
         rows = self.session.scalars(
-            self._scope(AgentGraphWrite).where(AgentGraphWrite.checkpoint_id == checkpoint_id)
+            self._scope(AgentGraphWrite)
+            .where(AgentGraphWrite.checkpoint_id == checkpoint_id)
+            .with_for_update()
         ).all()
-        return sorted(rows, key=lambda row: (row.task_key, row.write_index))
+        return sorted(
+            rows, key=lambda row: writes_sort_key(row.task_path, row.task_key, row.write_index)
+        )
 
     def write(self, checkpoint_id, task_key, index):
         return self.session.scalar(

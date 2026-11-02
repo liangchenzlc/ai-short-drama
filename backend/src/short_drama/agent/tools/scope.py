@@ -1,18 +1,19 @@
-"""Actor and applied-task boundaries shared by autonomous write handlers."""
+"""Trusted execution identity and applied input boundaries for all project tools."""
 
 from sqlalchemy import select
 
-from short_drama.agent.harness import ENGINE_VERSION
 from short_drama.agent.memory.sources import restricted_messages
-from short_drama.agent.tools.registry import TOOL_VERSION
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain.assistant.conversations.models import AgentConversation, AgentMessage
-from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall
+from short_drama.domain.assistant.execution.scope import AgentExecutionScope
 from short_drama.domain.assistant.tasks.task import AgentTaskInput
 
 
-def autonomous_scope(session, conversation, task, operation):
+def task_tool_scope(session, conversation, task, operation):
     run = session.get(AgentRun, operation.run_id)
+    scope = session.get(AgentExecutionScope, operation.scope_id)
+    call = session.get(AgentToolCall, operation.tool_call_id)
     owner = session.scalar(
         select(AgentConversation.owner_user_id).where(
             AgentConversation.id == task.conversation_id,
@@ -22,12 +23,19 @@ def autonomous_scope(session, conversation, task, operation):
     if (
         run is None
         or run.task_id != task.id
+        or operation.task_id != task.id
         or run.initiated_by != owner
         or owner != conversation.owner_user_id
-        or operation.tool_version not in {2, 3, TOOL_VERSION}
-        or (run.checkpoint or {}).get("engine") != ENGINE_VERSION
+        or scope is None
+        or scope.run_id != run.id
+        or scope.owner_user_id != owner
+        or call is None
+        or call.run_id != run.id
+        or call.scope_id != scope.id
+        or call.tool_name != operation.tool_name
     ):
         raise WorkflowError("assistant_tool_scope", "工具不属于当前可信任务", 403)
+    session.info["assistant_scope"] = (run.id, scope.id)
     source = session.execute(
         select(AgentMessage, AgentTaskInput)
         .join(

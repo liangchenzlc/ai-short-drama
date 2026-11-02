@@ -66,22 +66,37 @@ class StorageService:
         location = self._location(locator)
         return self.storage.stat(location.bucket, location.object_name)
 
-    def freeze_agent_resource(self, data: bytes, *, invocation_id: str, content_type: str):
-        """A retry of a prepared turn reuses the same immutable derived object."""
-        if not re.fullmatch(r"turn:[1-9][0-9]*", invocation_id) or not 0 < len(data) <= 4 * 1024**2:
+    def agent_resource_location(self, data: bytes, *, invocation_id: str, content_type: str):
+        if (
+            not re.fullmatch(r"(?:turn|operation):[1-9][0-9]*", invocation_id)
+            or not 0 < len(data) <= 4 * 1024**2
+        ):
             raise BusinessError("Invalid Agent resource publication")
         kind = content_type.split("/", 1)[0]
-        if content_type not in {"image/jpeg", "audio/mpeg"}:
+        general_file = invocation_id.startswith("operation:")
+        if general_file:
+            if not re.fullmatch(r"[a-z0-9][a-z0-9.+-]*/[a-z0-9][a-z0-9.+-]*", content_type):
+                raise BusinessError("Invalid Agent file MIME type")
+        elif content_type not in {"image/jpeg", "audio/mpeg"}:
             raise BusinessError("Unsupported Agent derived resource")
         key = (
             f"agent-harness/{invocation_id.replace(':', '/')}/"
-            f"{hashlib.sha256(data).hexdigest()}{_EXTENSIONS[content_type]}"
+            f"{hashlib.sha256(data).hexdigest()}{_EXTENSIONS.get(content_type, '')}"
         )
-        bucket = self._buckets[kind]
+        bucket = self._buckets["image" if general_file else kind]
+        return ObjectLocation(bucket, key)
+
+    def freeze_agent_resource(self, data: bytes, *, invocation_id: str, content_type: str):
+        """A retry reuses the immutable object; the caller retains its authorized reference."""
+        target = self.agent_resource_location(
+            data, invocation_id=invocation_id, content_type=content_type
+        )
         try:
-            return self.storage.stat(bucket, key)
+            return self.storage.stat(target.bucket, target.object_name)
         except NotFound:
-            return self.storage.put(bucket, key, io.BytesIO(data), len(data), content_type)
+            return self.storage.put(
+                target.bucket, target.object_name, io.BytesIO(data), len(data), content_type
+            )
 
     def open(self, locator: str):
         """Use as a context manager; stream with response.stream(chunk_size)."""

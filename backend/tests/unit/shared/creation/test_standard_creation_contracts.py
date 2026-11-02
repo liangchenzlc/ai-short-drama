@@ -3,7 +3,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.domain import Asset, CharacterVoice, MediaFile, ShotAsset, ShotDialogue
 from short_drama.schemas.creation.storyboard.management.storyboard import StoryboardCreate
 from short_drama.schemas.creation.writing.script.documents import ScriptSave
@@ -164,7 +164,15 @@ def test_prop_can_become_character_but_character_history_cannot_be_discarded():
         assert history.value.code == "asset_kind_incompatible"
         with session.begin():
             assert session.get(Asset, asset.id).current_version_id == pointer
-        session.info["actor"] = ActorContext(2, "other", "other@example.test", True, 1, "", "test")
+        session.info["actor"] = SessionActorContext(
+            user_id=2,
+            username="other",
+            email="other@example.test",
+            verified=True,
+            session_id=1,
+            csrf_hash="",
+            request_id="test",
+        )
         with pytest.raises(NotFound):
             assets.patch(asset.id, {"row_version": "2", "kind": "prop"})
 

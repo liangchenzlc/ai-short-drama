@@ -1,123 +1,186 @@
-"""Transaction and immutable-version boundaries for the MySQL graph saver."""
+"""Short-session persistence bound to one owner, task, Run and execution lease."""
 
 import json
+import logging
 
-from sqlalchemy import select
-
-from short_drama.agent.core.access import lock_run
+from short_drama.agent.core.access import LeaseLost, lock_run
+from short_drama.agent.core.fence import owns_execution
 from short_drama.agent.resources.contracts import reference_json
 from short_drama.core.exceptions import Conflict, NotFound
 from short_drama.dao.assistant.execution.graph import AgentGraphDAO
-from short_drama.dao.assistant.tasks.task import AgentTaskDAO
 from short_drama.domain.assistant.execution.graph import AgentGraphCheckpoint, AgentGraphWrite
-from short_drama.domain.assistant.execution.models import AgentRun
 from short_drama.utils.snowflake import next_id
+
+logger = logging.getLogger(__name__)
 
 
 class AgentGraphService:
-    def __init__(self, factory, *, owner: int, task: int, run: int, namespace: str, version: str):
+    def __init__(
+        self,
+        factory,
+        *,
+        owner_id: int,
+        task_id: int,
+        run_id: int,
+        version: str,
+        fence: tuple[int, str],
+    ):
         self.factory = factory
-        self.owner, self.task, self.run = owner, task, run
-        self.namespace, self.version = namespace, version
+        self.owner_id, self.task_id, self.run_id = owner_id, task_id, run_id
+        self.version, self.fence = version, fence
 
-    def _dao(self, session):
-        return AgentGraphDAO(session, self.owner, self.task, self.run, self.namespace)
+    def _dao(self, session, namespace):
+        return AgentGraphDAO(session, self.owner_id, self.task_id, self.run_id, namespace)
 
-    def _bound(self, session, *, lock=False):
-        # Graph writes and business settlement share the same lock order.
-        # Locking Run alone then inserting Task FKs deadlocks with tool claims.
-        locked = lock_run(session, self.run) if lock else None
-        task = AgentTaskDAO(session).task(self.task)
-        query = select(AgentRun).where(AgentRun.id == self.run)
-        run = locked[2] if locked else None
-        if not lock:
-            run = session.scalar(query)
+    def _bound(self, session):
+        # 与业务写入保持 Project -> Conversation -> Task -> Run 锁顺序。
+        rows = lock_run(session, self.run_id)
+        if rows is None:
+            raise NotFound("任务执行图不存在")
+        _, conversation, run = rows
         if (
-            task is None
-            or run is None
-            or run.task_id != task.id
-            or run.initiated_by != self.owner
-            or run.conversation_id != task.conversation_id
-            or (run.checkpoint or {}).get("engine") != self.version
+            run.task_id != self.task_id
+            or run.initiated_by != self.owner_id
+            or conversation.owner_user_id != self.owner_id
         ):
-            raise NotFound("任务执行图不存在或版本不匹配")
+            raise NotFound("任务执行图不存在")
+        if (run.checkpoint or {}).get("engine") != self.version:
+            logger.error("agent_graph_version_mismatch", extra={"run_id": self.run_id})
+            raise Conflict("执行图版本不能在任务中途切换")
+        if self.fence[1] is None or not owns_execution(run, self.fence):
+            raise LeaseLost()
 
-    def load(self, checkpoint_id=None, *, before=None, limit=100, metadata_filter=None):
+    def load(
+        self,
+        *,
+        namespace: str | None,
+        checkpoint_id=None,
+        before=None,
+        limit=None,
+        metadata_filter=None,
+    ):
         with self.factory.begin() as session:
             self._bound(session)
             result = []
-            for row in self._dao(session).checkpoints(
-                checkpoint_id, before=before, limit=limit, metadata_filter=metadata_filter
+            for row in self._dao(session, namespace).checkpoints(
+                checkpoint_id,
+                before=before,
+                limit=limit,
+                metadata_filter=metadata_filter,
+                lock=True,
             ):
                 if row.graph_version != self.version:
+                    logger.error("agent_graph_version_mismatch", extra={"run_id": self.run_id})
                     raise Conflict("执行图版本不能在任务中途切换")
                 result.append(
                     {
-                        "checkpoint": row.checkpoint,
+                        "namespace": row.namespace,
+                        "checkpoint_id": row.checkpoint_id,
+                        "codec": row.codec,
+                        "payload": row.payload,
                         "metadata": row.checkpoint_metadata,
                         "parent_id": row.parent_id,
                         "writes": [
-                            (entry.task_key, entry.channel, entry.payload["value"])
-                            for entry in self._dao(session).writes(row.checkpoint_id)
+                            (entry.task_key, entry.channel, entry.codec, entry.payload)
+                            for entry in self._dao(session, row.namespace).writes(row.checkpoint_id)
                         ],
                     }
                 )
             return result
 
-    def put(self, checkpoint, metadata, parent_id):
-        checkpoint = json.loads(reference_json(checkpoint))
+    def put(self, *, namespace, namespace_hash, checkpoint_id, parent_id, codec, payload, metadata):
         metadata = json.loads(reference_json(metadata))
         with self.factory.begin() as session:
-            self._bound(session, lock=True)
-            dao = self._dao(session)
-            # MySQL REPEATABLE READ may have taken a snapshot before waiting on
-            # the Run lock. Use a current read when checking an idempotent write.
-            existing = dao.checkpoints(checkpoint["id"], limit=1, lock=True)
+            self._bound(session)
+            dao = self._dao(session, namespace)
+            existing = dao.checkpoints(checkpoint_id, limit=1, lock=True)
             if existing:
+                row = existing[0]
                 if (
-                    existing[0].checkpoint != checkpoint
-                    or existing[0].checkpoint_metadata != metadata
+                    row.codec != codec
+                    or row.payload != payload
+                    or row.parent_id != parent_id
+                    or row.checkpoint_metadata != metadata
                 ):
                     raise Conflict("同一执行图检查点不能覆盖为不同内容")
                 return
             session.add(
                 AgentGraphCheckpoint(
                     id=next_id(),
-                    owner_user_id=self.owner,
-                    task_id=self.task,
-                    run_id=self.run,
-                    namespace=self.namespace,
-                    checkpoint_id=checkpoint["id"],
+                    owner_user_id=self.owner_id,
+                    task_id=self.task_id,
+                    run_id=self.run_id,
+                    namespace=namespace,
+                    namespace_hash=namespace_hash,
+                    checkpoint_id=checkpoint_id,
                     parent_id=parent_id,
                     graph_version=self.version,
-                    checkpoint=checkpoint,
+                    codec=codec,
+                    payload=payload,
                     checkpoint_metadata=metadata,
                 )
             )
 
-    def put_writes(self, checkpoint_id, writes, task_key, task_path, indexes):
-        payloads = [json.loads(reference_json({"value": value})) for _, value in writes]
+    def put_writes(
+        self,
+        *,
+        namespace,
+        namespace_hash,
+        checkpoint_id,
+        writes,
+        task_key,
+        task_path,
+        interrupts=(),
+        completed_operations=(),
+    ):
         with self.factory.begin() as session:
-            self._bound(session, lock=True)
-            dao = self._dao(session)
-            for (channel, _), payload, index in zip(writes, payloads, indexes, strict=True):
+            self._bound(session)
+            dao = self._dao(session, namespace)
+            for index, channel, codec, payload in writes:
                 row = dao.write(checkpoint_id, task_key, index)
                 if row is not None:
                     if index < 0:
-                        row.payload, row.channel = payload, channel
+                        row.codec, row.payload, row.channel, row.task_path = (
+                            codec,
+                            payload,
+                            channel,
+                            task_path,
+                        )
                     continue
                 session.add(
                     AgentGraphWrite(
                         id=next_id(),
-                        owner_user_id=self.owner,
-                        task_id=self.task,
-                        run_id=self.run,
-                        namespace=self.namespace,
+                        owner_user_id=self.owner_id,
+                        task_id=self.task_id,
+                        run_id=self.run_id,
+                        namespace=namespace,
+                        namespace_hash=namespace_hash,
                         checkpoint_id=checkpoint_id,
                         task_key=task_key,
                         task_path=task_path,
                         write_index=index,
                         channel=channel,
+                        codec=codec,
                         payload=payload,
                     )
                 )
+                session.flush()
+            if interrupts or completed_operations:
+                from short_drama.service.assistant.execution.waiting import (
+                    persist_interrupts_locked,
+                )
+
+                persist_interrupts_locked(
+                    session,
+                    self.run_id,
+                    namespace,
+                    checkpoint_id,
+                    task_key,
+                    interrupts,
+                    completed_operations,
+                )
+
+    def delete_thread(self, *, namespace: str | None):
+        with self.factory.begin() as session:
+            self._bound(session)
+            self._dao(session, namespace).delete_thread()

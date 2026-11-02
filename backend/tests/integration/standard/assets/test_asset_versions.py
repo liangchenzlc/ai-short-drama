@@ -8,7 +8,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from short_drama.core.exceptions import WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.dao.canvas.resources.resource_deletion import CanvasResourceDeletionDAO
 from short_drama.db.session import AppSession
 from short_drama.domain import Asset, AssetVersion, AssetVersionMediaReference, MediaFile
@@ -145,7 +145,7 @@ def test_system_bulk_and_media_slot_orm_writes_cannot_mutate_history(db_session,
 def test_private_character_history_follows_parent_asset_visibility(db_session, mysql_engine):
     item = character(db_session)
     with AppSession(mysql_engine) as session:
-        session.info["actor"] = ActorContext(
+        session.info["actor"] = SessionActorContext(
             user_id=2,
             username="outsider",
             email="outsider@example.test",

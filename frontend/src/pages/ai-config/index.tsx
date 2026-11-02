@@ -1,6 +1,8 @@
 import { ApiError, errorMessage, isCancelled } from '@host/api/http';
 import { aiConfigTabs, configTabs, useAiConfigSession } from '@host/features/ai-config/editor/AiConfigSession';
 import { AssistantGenerationPolicy } from '@host/features/ai-config/editor/AssistantGenerationPolicy';
+import { AssistantRuntimeSettings } from '@host/features/assistant/settings/AssistantRuntimeSettings';
+import { McpAccessTokens } from '@host/features/assistant/settings/McpAccessTokens';
 import { ConfigForm } from '@host/features/ai-config/editor/ConfigForm';
 import { ConfigTable } from '@host/features/ai-config/editor/ConfigTable';
 import { aiModelConfigs } from '@host/features/ai-config/editor/config-api';
@@ -306,6 +308,8 @@ export function AiConfigPage() {
         hidden={tab !== 'assistant'}
       >
         <AssistantGenerationPolicy active={tab === 'assistant'} />
+        <AssistantRuntimeSettings active={tab === 'assistant'} />
+        <McpAccessTokens active={tab === 'assistant'} />
       </div>
       {formOpen && tab !== 'assistant' && (
         <ConfigForm

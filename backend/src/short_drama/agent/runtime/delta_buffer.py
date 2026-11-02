@@ -29,7 +29,7 @@ class _DeltaBuffer:
     def flush(self):
         if self.pending and not self.disabled:
             status = self.store.save_delta(self.claim, self.pending, self.offset)
-            self.offset += len(self.pending)
+            self.offset += len(self.pending.encode("utf-8"))
             self.pending, self.last = "", time.monotonic()
             if status == "cancelled":
                 self.cancelled, self.disabled = True, True

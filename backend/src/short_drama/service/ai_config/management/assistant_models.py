@@ -12,7 +12,8 @@ from sqlalchemy import select
 
 from short_drama.agent.context.capabilities import input_capabilities
 from short_drama.agent.gateway.contracts import AgentGatewayError
-from short_drama.agent.gateway.langchain import FRAMEWORK_VERSION, LangChainGateway, select_protocol
+from short_drama.agent.gateway.inputs import select_protocol
+from short_drama.agent.gateway.langchain import FRAMEWORK_VERSION, LangChainGateway
 from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
 from short_drama.ai.model_identity import model_credential_identity
 from short_drama.core.crypto import KeyCipher
@@ -23,7 +24,7 @@ from short_drama.core.exceptions import (
     NotFound,
     WorkflowError,
 )
-from short_drama.core.identity import require_actor
+from short_drama.core.identity import SessionActorContext, require_actor, require_session_actor
 from short_drama.domain import AIModelConfig, UserModelPreference
 from short_drama.domain.identity.accounts.user import User, UserSession
 from short_drama.schemas.assistant.context.context import ModelInputsPatch
@@ -76,7 +77,7 @@ def reviewer_snapshot(session, owner_user_id, executor_snapshot, mode="auto"):
                 continue
             candidate = model_snapshot(row)
             try:
-                from short_drama.agent.gateway.langchain import select_protocol
+                from short_drama.agent.gateway.inputs import select_protocol
 
                 select_protocol(candidate)
             except Exception:
@@ -260,6 +261,8 @@ class AgentModelService(BaseService):
             return read_model(row, self.preferred_id())
 
     def _probe_identity(self, actor, *, require_session=False):
+        if require_session:
+            actor = require_session_actor(actor)
         if not self.settings.agent_enabled:
             raise WorkflowError("agent_disabled", "Agent 模式尚未启用", 503)
         user = self.session.scalar(
@@ -268,11 +271,15 @@ class AgentModelService(BaseService):
             .with_for_update()
             .execution_options(populate_existing=True)
         )
-        login = self.session.scalar(
-            select(UserSession)
-            .where(UserSession.id == actor.session_id, UserSession.user_id == actor.user_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
+        login = (
+            self.session.scalar(
+                select(UserSession)
+                .where(UserSession.id == actor.session_id, UserSession.user_id == actor.user_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if isinstance(actor, SessionActorContext)
+            else None
         )
         if (
             user is None

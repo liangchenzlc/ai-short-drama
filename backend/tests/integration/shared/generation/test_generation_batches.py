@@ -176,6 +176,7 @@ def test_shared_concurrency_two_schedulers_and_retry_receipt_replay(flow):
 
     def retry(_):
         with flow.factory() as session:
+            session.info["actor"] = flow.session.info["actor"]
             return GenerationBatchService(session, flow.settings).retry_failed(
                 batch["id"], {"item_ids": [failed["id"]]}, key
             )["id"]

@@ -150,3 +150,9 @@ class AssistantCanvasPatch(InputModel):
         if len(json.dumps(self.model_dump(mode="json"), ensure_ascii=False).encode()) > 1048576:
             raise ValueError("canvas increment exceeds 1 MiB")
         return self
+
+
+class ApplyCanvasPatch(InputModel):
+    project_id: Identifier
+    canvas_id: Annotated[str, Field(min_length=1, max_length=128)]
+    patch: AssistantCanvasPatch

@@ -294,13 +294,15 @@ def test_host_update_runtime_key_alias_and_preferences_cannot_overwrite_models(d
     workspace = CanvasWorkspaceService(db_session, cipher=CIPHER)
     models = workspace.read_models()
     assert len(models["models"]) == 1 and models["channels"] == []
-    assert models["models"][0]["selection_aliases"] == ["old-channel::legacy-model"]
+    assert models["models"][0]["id"] == "101"
+    assert models["models"][0]["model_key"] == "renamed-model"
     saved = workspace.save_preferences(
         CanvasWorkspacePreferencesRequest(
             expected_row_version=models["row_version"],
-            preferences={"textModel": "old-channel::legacy-model"},
+            preferences={"textModel": "host-101::renamed-model"},
         )
     )
+    assert saved["preferences"] == {"textModel": "host-101::renamed-model"}
     version = service.get(101).row_version
     assert version == changed.row_version + 1
     for channels in (

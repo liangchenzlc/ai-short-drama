@@ -17,7 +17,7 @@ class ResourceRef(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal[1] = 1
-    kind: Literal["image", "skill", "text", "script", "audio", "video"]
+    kind: Literal["image", "skill", "text", "script", "audio", "video", "file"]
     ref_id: Annotated[str, Field(min_length=1, max_length=240)]
     uri: Annotated[str, Field(min_length=1, max_length=2048)]
     source: Annotated[str, Field(min_length=1, max_length=80)]

@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 from short_drama.core.exceptions import BusinessError, NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.domain import AIModelConfig, MediaFile, UserCreationDraft
 from short_drama.domain.identity.accounts.user import User
 from short_drama.schemas.creation.drafts.drafts import UserCreationDraftCreate
@@ -21,8 +21,14 @@ from tests.unit.standard.storyboard.test_project_storyboard import setup_storybo
 
 
 def actor(session, project, user_id=1):
-    session.info["actor"] = ActorContext(
-        user_id, "tester", "test@example.test", True, 1, "", "draft"
+    session.info["actor"] = SessionActorContext(
+        user_id=user_id,
+        username="tester",
+        email="test@example.test",
+        verified=True,
+        session_id=1,
+        csrf_hash="",
+        request_id="draft",
     )
     session.info["resource_scope"] = (None, project)
     session.info["request_project"] = project

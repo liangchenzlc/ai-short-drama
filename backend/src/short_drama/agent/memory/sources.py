@@ -108,9 +108,7 @@ def message_sources(session, conversation_id, from_seq, to_seq, *, limit=500, me
                 AgentOperation.task_id,
                 AgentOperation.tool_name,
                 AgentOperation.finished_at,
-                AgentOperation.arguments["request_message_id"]
-                .as_string()
-                .label("request_message_id"),
+                AgentOperation.arguments["source_message_ids"].label("source_message_ids"),
             )
             .where(AgentOperation.task_id.in_(task_ids), AgentOperation.status == "succeeded")
             .with_for_update()
@@ -119,10 +117,16 @@ def message_sources(session, conversation_id, from_seq, to_seq, *, limit=500, me
         else []
     )
     explicit_memory_messages = {
-        str(operation.request_message_id)
+        str(message_id)
         for operation in operations
         if operation.tool_name
-        in {"remember_memory", "update_memory", "forget_memory", "restore_memory"}
+        in {
+            "runtime__remember_memory",
+            "runtime__update_memory",
+            "runtime__forget_memory",
+            "runtime__restore_memory",
+        }
+        for message_id in operation.source_message_ids
     }
     inputs = (
         dict(

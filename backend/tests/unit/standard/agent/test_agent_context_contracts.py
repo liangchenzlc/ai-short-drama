@@ -15,8 +15,9 @@ from pydantic import ValidationError
 from short_drama.agent.context.capabilities import input_capabilities
 from short_drama.agent.context.media import inspect_attachment, materialize_prompt
 from short_drama.agent.skill.packages import builtin_skill_packages
+from short_drama.agent.tools.registry import get_spec
 from short_drama.core.exceptions import NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
+from short_drama.core.identity import SessionActorContext
 from short_drama.schemas.assistant.context.context import SkillPatch, SkillSelection
 from short_drama.schemas.assistant.operations.runtime import MessageCreate
 from short_drama.service.assistant.context.attachment import (
@@ -145,6 +146,7 @@ def test_skill_markdown_import_reads_frontmatter_without_execution():
         b"---\nname: quiet-writing\ndescription: Concise dialogue.\n"
         b"metadata:\n  short-drama-display-name: Quiet writing\n---\n# Method\nKeep it short.",
         "SKILL.md",
+        tool_lookup=get_spec,
     )
     assert preview.compatible and preview.issues == []
     assert preview.draft.slug == "quiet-writing"
@@ -156,12 +158,12 @@ def test_skill_markdown_import_reads_frontmatter_without_execution():
 @pytest.mark.parametrize(
     "resource",
     [
-        {"path": "scripts/guide.md", "kind": "reference", "content": "text"},
+        {"path": "scripts/guide.py", "kind": "reference", "content": "text"},
         {"path": "references/guide.md", "kind": "script", "content": "text"},
         {"path": "references/run.py", "kind": "reference", "content": "text"},
     ],
 )
-def test_skill_direct_writes_cannot_bypass_script_rejection(resource):
+def test_skill_direct_writes_require_matching_script_path_and_kind(resource):
     from short_drama.schemas.skills.catalog.skill import SkillCreate, SkillPackagePatch
 
     with pytest.raises(ValidationError):
@@ -180,11 +182,14 @@ def test_skill_import_requires_metadata_and_distinguishes_absent_tags():
     from short_drama.service.skills.packages.skill_package import parse_skill_import
 
     with pytest.raises(WorkflowError, match="缺少名称"):
-        parse_skill_import(b"# Method", "method.md")
-    absent = parse_skill_import(b"---\nname: method\ndescription: Method\n---\nBody", "method.md")
+        parse_skill_import(b"# Method", "method.md", tool_lookup=get_spec)
+    absent = parse_skill_import(
+        b"---\nname: method\ndescription: Method\n---\nBody", "method.md", tool_lookup=get_spec
+    )
     explicit = parse_skill_import(
         b"---\nname: method\ndescription: Method\nmetadata:\n  short-drama-tags: []\n---\nBody",
         "method.md",
+        tool_lookup=get_spec,
     )
     assert not absent.tags_provided and explicit.tags_provided
 
@@ -212,23 +217,28 @@ def test_skill_zip_import_validates_complete_package_and_rejects_traversal():
             ]
         ),
         "shots.zip",
+        tool_lookup=get_spec,
     )
     assert preview.compatible and len(preview.draft.resources) == 1
     assert preview.draft.resources[0].path == "assets/shots.json"
     assert preview.draft.resources[0].kind == "template"
     with pytest.raises(WorkflowError) as caught:
-        parse_skill_import(archive([("../SKILL.md", "bad")]), "bad.zip")
+        parse_skill_import(archive([("../SKILL.md", "bad")]), "bad.zip", tool_lookup=get_spec)
     assert caught.value.code == "invalid_agent_skill_package"
-    with pytest.raises(WorkflowError, match="暂不支持脚本"):
-        parse_skill_import(
-            archive(
-                [
-                    ("SKILL.md", "---\nname: method\ndescription: Read rules.\n---\n# Method"),
-                    ("scripts/run.py", "raise SystemExit()"),
-                ]
-            ),
-            "scripts.zip",
-        )
+    scripts = parse_skill_import(
+        archive(
+            [
+                ("SKILL.md", "---\nname: method\ndescription: Read rules.\n---\n# Method"),
+                ("scripts/run.py", "raise SystemExit()"),
+            ]
+        ),
+        "scripts.zip",
+        tool_lookup=get_spec,
+    )
+    assert scripts.compatible
+    assert scripts.draft.resources[0].path == "scripts/run.py"
+    assert scripts.draft.resources[0].kind == "script"
+    assert scripts.draft.resources[0].content == "raise SystemExit()"
 
 
 @pytest.mark.parametrize(
@@ -245,7 +255,7 @@ def test_skill_import_rejects_ambiguous_or_executable_yaml(content):
     from short_drama.service.skills.packages.skill_package import parse_skill_import
 
     with pytest.raises(WorkflowError) as caught:
-        parse_skill_import(content.encode(), "SKILL.md")
+        parse_skill_import(content.encode(), "SKILL.md", tool_lookup=get_spec)
     assert caught.value.code == "invalid_agent_skill_package"
 
 
@@ -274,7 +284,7 @@ def test_skill_zip_import_enforces_archive_limits(case):
         else:
             stream.writestr("another/SKILL.md", "# Other")
     with pytest.raises(WorkflowError):
-        parse_skill_import(data.getvalue(), "package.zip")
+        parse_skill_import(data.getvalue(), "package.zip", tool_lookup=get_spec)
 
 
 def test_skill_exported_maximum_instructions_and_custom_resource_kind_round_trip():
@@ -293,11 +303,12 @@ def test_skill_exported_maximum_instructions_and_custom_resource_kind_round_trip
         if key in SkillMetadata.model_fields
     }
     exported = package_markdown(metadata, content.instructions, [])
-    preview = parse_skill_import(exported.encode(), "SKILL.md")
+    preview = parse_skill_import(exported.encode(), "SKILL.md", tool_lookup=get_spec)
     assert preview.compatible and preview.draft.instructions == content.instructions
     missing = parse_skill_import(
         b"---\nname: method\ndescription: Test\nallowed-tools: execute_python\n---\nMethod",
         "SKILL.md",
+        tool_lookup=get_spec,
     )
     assert not missing.compatible and any("execute_python" in issue for issue in missing.issues)
 
@@ -312,9 +323,19 @@ def test_skill_edits_have_the_same_content_boundaries_as_upload(instructions):
 
 def test_unknown_skill_identifier_is_not_an_internal_server_error():
     session = SimpleNamespace(
-        info={"actor": ActorContext(1, "creator", "test@example.test", True, 1, "hash", "test")}
+        info={
+            "actor": SessionActorContext(
+                user_id=1,
+                username="creator",
+                email="test@example.test",
+                verified=True,
+                session_id=1,
+                csrf_hash="hash",
+                request_id="test",
+            )
+        }
     )
-    service = AgentSkillService(session, SimpleNamespace(agent_enabled=True))
+    service = AgentSkillService(session, SimpleNamespace(agent_enabled=True), tool_lookup=get_spec)
     with pytest.raises(NotFound):
         service._skill("unknown.v1")
 

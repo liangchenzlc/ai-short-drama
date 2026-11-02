@@ -22,9 +22,9 @@ from short_drama.domain.assistant.memory.memory import (
     AgentMemoryJob,
     AgentMemoryRevision,
 )
+from short_drama.domain.assistant.operations.invocation import BusinessToolInvocation
 from short_drama.domain.assistant.operations.media import AgentMediaRequest
 from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask, AgentTaskInput
-from short_drama.domain.assistant.tasks.task_requirement import AgentTaskRequirement
 from short_drama.domain.assistant.undo.undo import AgentBatchUndo
 from short_drama.domain.base import Base
 from short_drama.service.base import utcnow
@@ -91,8 +91,10 @@ def _media_referenced(session, identifier):
 def _scrub_locked(session, conversation):
     tasks = _rows(session, AgentTask, AgentTask.conversation_id == conversation.id)
     runs = _rows(session, AgentRun, AgentRun.conversation_id == conversation.id)
-    if any(row.status in {"queued", "running", "waiting_media"} for row in tasks) or any(
-        row.status in {"queued", "running", "waiting_generation", "waiting_review"} for row in runs
+    if any(
+        row.status in {"queued", "running", "waiting_media", "waiting_input"} for row in tasks
+    ) or any(
+        row.status in {"queued", "running", "waiting_generation", "waiting_input"} for row in runs
     ):
         raise ValueError("Deletion cleanup cannot precede terminal execution")
     task_ids, run_ids = [row.id for row in tasks], [row.id for row in runs]
@@ -102,13 +104,9 @@ def _scrub_locked(session, conversation):
         row.error = _error_code(row.error)
     for row in _rows(session, AgentTaskInput, AgentTaskInput.task_id.in_(task_ids)):
         row.payload = {}
-    for row in _rows(session, AgentTaskRequirement, AgentTaskRequirement.task_id.in_(task_ids)):
-        # Descriptions and spans quote the user's own words; clear them with the task.
-        row.description = DELETED
-        row.quote_start, row.quote_end = 0, 0
     for row in runs:
         row.checkpoint, row.config_snapshot, row.error = {}, {}, _error_code(row.error)
-    derived_locators = set()
+    derived_locators, candidates = set(), set()
     for row in _rows(session, AgentTurn, AgentTurn.run_id.in_(run_ids)):
         for envelope in row.request_messages or []:
             for intent in envelope.get("kwargs", {}).get("hydration_intents", []):
@@ -127,11 +125,31 @@ def _scrub_locked(session, conversation):
             session.delete(row)
     for row in _rows(session, AgentToolCall, AgentToolCall.run_id.in_(run_ids)):
         row.arguments, row.result = {}, None
-        row.review_payload, row.error = None, _error_code(row.error)
+        row.error = _error_code(row.error)
     for row in _rows(session, AgentOperation, AgentOperation.task_id.in_(task_ids)):
-        if row.status in {"running", "waiting_media", "reconciling"}:
+        if row.status in {"running", "waiting_media", "waiting_input", "reconciling"}:
             raise ValueError("Deletion cleanup cannot precede operation settlement")
         row.arguments, row.result, row.changes, row.error = {}, None, [], _error_code(row.error)
+        row.wait_state = None
+        for reference in row.result_refs:
+            if reference.get("source") not in {"sandbox_artifact", "sandbox_log"}:
+                continue
+            metadata = reference.get("metadata", {})
+            if reference.get("kind") in {"image", "video", "audio"} and metadata.get(
+                "operation_id"
+            ) == str(row.id):
+                candidates.add(int(metadata["media_id"]))
+            elif f"/agent-harness/operation/{row.id}/" in reference.get("uri", ""):
+                derived_locators.add(reference["uri"])
+        row.result_refs = [
+            reference
+            for reference in row.result_refs
+            if reference.get("source") not in {"sandbox_artifact", "sandbox_log"}
+        ]
+        if row.business_invocation_id is not None:
+            receipt = session.get(BusinessToolInvocation, row.business_invocation_id)
+            if receipt is not None:
+                receipt.result, receipt.changes = None, []
     for row in _rows(session, AgentMediaRequest, AgentMediaRequest.task_id.in_(task_ids)):
         row.frozen_request, row.frozen_target, row.result = {}, {}, None
         row.error = _error_code(row.error)
@@ -144,6 +162,15 @@ def _scrub_locked(session, conversation):
     ):
         row.source_snapshot, row.reply_snapshot = {}, {}
     for row in _rows(session, AgentEvent, AgentEvent.conversation_id == conversation.id):
+        if row.event_type == "trace.block":
+            block_id = row.payload.get("block_id")
+            for reference in row.payload.get("_resources", []):
+                locator = reference.get("locator", "")
+                if (
+                    reference.get("kind") == "archive"
+                    and f"/agent-harness/operation/{block_id}/" in locator
+                ):
+                    derived_locators.add(locator)
         row.payload = (
             {"id": str(conversation.id)} if row.event_type == "conversation.deleted" else {}
         )
@@ -190,7 +217,6 @@ def _scrub_locked(session, conversation):
                 "aliases": [],
                 "tags": [],
             }
-    candidates = set()
     for attachment in _rows(
         session, AgentAttachment, AgentAttachment.conversation_id == conversation.id
     ):
@@ -207,6 +233,7 @@ def _scrub_locked(session, conversation):
             media is None
             or media.scope_user_id != conversation.owner_user_id
             or media.project_id is not None
+            or media.published_at is not None
             or _media_referenced(session, identifier)
         ):
             continue

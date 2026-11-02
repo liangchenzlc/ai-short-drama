@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentReviewStep } from '@host/types/assistant/engine';
+import type { AgentEvent } from '@host/types/assistant/engine';
 import type { DeltaChunk } from '@host/types/assistant/runtime/agent-events';
 /** Preserve partial frames across arbitrary UTF-8 network chunks. */
 export function takeSseFrames(buffer: string): {
@@ -60,16 +60,6 @@ export function latestDelta(chunks: DeltaChunk[]): string {
     .join('');
 }
 
-export const agentTaskLabels: Record<string, string> = {
-  novel: '小说',
-  script: '剧本',
-  extract: '素材提取',
-  storyboard: '分镜',
-  asset_patch: '素材修改',
-  shot_patch: '镜头修改',
-  image: '图片',
-  video: '视频',
-};
 export const modelCanCollaborate = (
   model:
     | {
@@ -79,46 +69,3 @@ export const modelCanCollaborate = (
       }
     | undefined,
 ) => !!model?.verified && model.tool_calling && model.tool_result_continuation;
-
-export function reviewTargetLabel(step: AgentReviewStep) {
-  if (typeof step.target_label === 'string' && step.target_label.trim()) return step.target_label.trim();
-  if (!step.target_id) return '本集作品';
-  const kind =
-    step.target_kind === 'asset' || step.kind === 'asset_patch'
-      ? '素材'
-      : step.target_kind === 'shot' || step.kind === 'shot_patch'
-        ? '镜头'
-        : '作品';
-  return `选定${kind}`;
-}
-/** Only frozen, user-facing settings are shown; never stringify tool/source payloads. */
-export function reviewParameterLabels(parameters: Record<string, unknown>) {
-  const labels: string[] = [];
-  if (typeof parameters.resolution === 'string' && /^(480p|720p|1080p|[124]K)$/i.test(parameters.resolution))
-    labels.push(`清晰度 ${parameters.resolution}`);
-  if (typeof parameters.aspect === 'string' && /^\d{1,2}:\d{1,2}$/.test(parameters.aspect))
-    labels.push(`画幅 ${parameters.aspect}`);
-  if (parameters.aspect === 'inherit') labels.push('画幅沿用本集');
-  if (
-    typeof parameters.duration_ms === 'number' &&
-    Number.isFinite(parameters.duration_ms) &&
-    parameters.duration_ms > 0
-  )
-    labels.push(`时长 ${parameters.duration_ms / 1000} 秒`);
-  const layouts: Record<string, string> = {
-    single: '单图',
-    four: '四宫格',
-    five: '五宫格',
-    nine: '九宫格',
-    grid4: '四宫格',
-    grid5: '五宫格',
-    grid9: '九宫格',
-    '2x2': '四宫格',
-    '3x3': '九宫格',
-  };
-  if (typeof parameters.layout === 'string' && layouts[parameters.layout])
-    labels.push(`布局 ${layouts[parameters.layout]}`);
-  if (Array.isArray(parameters.reference_media_ids))
-    labels.push(`参考图片 ${parameters.reference_media_ids.length} 张`);
-  return labels;
-}

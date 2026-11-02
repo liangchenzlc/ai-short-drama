@@ -6,7 +6,7 @@ export function withCreationView(path: string, search: string): string {
 }
 
 export function isAgentRunActive(status: string | null | undefined): boolean {
-  return !!status && ['queued', 'running', 'waiting_generation', 'waiting_review'].includes(status);
+  return !!status && ['queued', 'running', 'waiting_generation', 'waiting_input'].includes(status);
 }
 
 export function agentRunLabel(status: string | null | undefined): string {
@@ -14,7 +14,7 @@ export function agentRunLabel(status: string | null | undefined): string {
     queued: '排队中',
     running: '运行中',
     waiting_generation: '等待生成结果',
-    waiting_review: '等待确认',
+    waiting_input: '等待回答',
     succeeded: '已完成',
     failed: '运行失败',
     cancelled: '已停止',

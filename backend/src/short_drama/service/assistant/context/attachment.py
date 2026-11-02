@@ -280,7 +280,7 @@ class AgentAttachmentService(AgentConversationService):
                 ):
                     raise NotFound("Asset does not exist in the current scope")
                 if asset.project_id:
-                    require_project(self.session, asset.project_id)
+                    require_project(self.session, asset.project_id, lock=False)
                 name = asset.name
                 text_content = json.dumps(
                     {
@@ -307,7 +307,7 @@ class AgentAttachmentService(AgentConversationService):
             ):
                 raise NotFound("Media does not exist in the current scope")
             if media is not None and media.project_id:
-                require_project(self.session, media.project_id)
+                require_project(self.session, media.project_id, lock=False)
             kind = media.format_code.split("/")[0] if media else "text"
             if kind not in MAX_INPUT_BYTES:
                 raise WorkflowError("invalid_agent_attachment", "该媒体格式不支持作为对话输入", 422)

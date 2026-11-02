@@ -12,7 +12,6 @@ AGENT_PRIVATE_TABLES = frozenset(
         "agent_task_inputs",
         "agent_task_controls",
         "agent_operations",
-        "agent_task_requirements",
         "agent_memory_items",
         "agent_memory_revisions",
         "agent_memory_sources",
@@ -20,9 +19,11 @@ AGENT_PRIVATE_TABLES = frozenset(
         "agent_conversation_summaries",
         "agent_memory_jobs",
         "agent_preferences",
+        "business_tool_invocations",
         "agent_media_requests",
         "agent_graph_checkpoints",
         "agent_graph_writes",
+        "agent_execution_scopes",
     }
 )
 

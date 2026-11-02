@@ -7,12 +7,15 @@ import type {
 } from '@host/types/assistant/api';
 import type { AgentEvent, AgentMessage } from '@host/types/assistant/engine';
 import type { TaskProjection } from '@host/types/assistant/runtime/assistant-task-state';
+import { applyTraceEvent, mergeTraceBlocks } from '@host/features/assistant/runtime/assistant-trace';
 export const emptyTaskProjection = (conversationId: string): TaskProjection => ({
   conversationId,
   snapshotCursor: -1,
   deleted: false,
   tasks: {},
   operations: {},
+  traceBlocks: {},
+  traceDeltas: {},
 });
 const version = (value: string) => (/^\d+$/.test(value) ? BigInt(value) : -1n);
 export function mergeAssistantMessages(old: AgentMessage[], items: AgentMessage[]) {
@@ -80,18 +83,19 @@ export function mergeTaskSnapshot(
   for (const item of snapshot.tasks) {
     if (!tasks[item.id] || version(tasks[item.id].row_version) <= version(item.row_version)) tasks[item.id] = item;
   }
-  return {
+  return mergeTraceBlocks({
     ...state,
     snapshotCursor: Math.max(state.snapshotCursor, snapshot.snapshot_cursor),
     tasks,
     operations: mergeOperations(state.operations, snapshot.operations),
-  };
+  }, snapshot.trace_blocks ?? []);
 }
 
 /** Older replay for text may precede the snapshot; it must not rewind trace state. */
 export function applyTaskEvent(state: TaskProjection, event: AgentEvent): TaskProjection {
   if (state.deleted || event.seq <= state.snapshotCursor) return state;
-  if (event.event_type === 'conversation.deleted') return { ...state, deleted: true, tasks: {}, operations: {} };
+  if (event.event_type === 'conversation.deleted') return { ...state, deleted: true, tasks: {}, operations: {}, traceBlocks: {}, traceDeltas: {} };
+  if (event.event_type === 'trace.block' || event.event_type === 'trace.delta') return applyTraceEvent(state, event);
   if (event.event_type === 'operation.undo.completed') {
     const p = event.payload,
       receipt = p.receipt as AssistantUndoReceipt | undefined;
@@ -114,7 +118,7 @@ export function applyTaskEvent(state: TaskProjection, event: AgentEvent): TaskPr
     };
   }
   if (
-    !['step.started', 'step.waiting_media', 'step.settling_result', 'step.finished', 'step.reconciling'].includes(
+    !['step.started', 'step.waiting_media', 'step.waiting_input', 'step.settling_result', 'step.finished', 'step.reconciling'].includes(
       event.event_type,
     )
   )
@@ -135,12 +139,14 @@ export function applyTaskEvent(state: TaskProjection, event: AgentEvent): TaskPr
       ? p.outcome
       : event.event_type === 'step.waiting_media'
         ? 'waiting_media'
+        : event.event_type === 'step.waiting_input'
+          ? 'waiting_input'
         : event.event_type === 'step.reconciling'
           ? 'reconciling'
           : 'running';
-  if (!['running', 'waiting_media', 'reconciling', 'succeeded', 'failed', 'conflict'].includes(String(outcome)))
+  if (!['running', 'waiting_media', 'waiting_input', 'reconciling', 'succeeded', 'failed', 'conflict'].includes(String(outcome)))
     return state;
-  const phase = ['tool_running', 'waiting_media', 'settling_result', 'reconciling', 'terminal'].includes(
+  const phase = ['tool_running', 'waiting_media', 'waiting_input', 'settling_result', 'reconciling', 'terminal'].includes(
     String(p.phase),
   )
     ? p.phase
@@ -158,6 +164,9 @@ export function applyTaskEvent(state: TaskProjection, event: AgentEvent): TaskPr
     item_seq: typeof p.item_seq === 'number' ? p.item_seq : (old?.item_seq ?? null),
     visibility,
     label: typeof p.label === 'string' ? p.label : (old?.label ?? ''),
+    action: old?.action,
+    target: old?.target,
+    title: old?.title,
     tool_version: old?.tool_version ?? '1',
     plan_revision: typeof p.plan_revision === 'string' ? p.plan_revision : (old?.plan_revision ?? '1'),
     state_version: p.trace_version,
@@ -185,7 +194,7 @@ export function applyTaskEvent(state: TaskProjection, event: AgentEvent): TaskPr
 export function selectedTask(tasks: Record<string, AssistantTask>) {
   const items = Object.values(tasks).sort((a, b) => (version(a.id) < version(b.id) ? 1 : -1));
   return (
-    items.find((task) => ['running', 'waiting_media'].includes(task.status)) ??
+    items.find((task) => ['running', 'waiting_media', 'waiting_input'].includes(task.status)) ??
     items.find((task) => ['queued', 'paused_error', 'paused_budget', 'stopped'].includes(task.status)) ??
     null
   );

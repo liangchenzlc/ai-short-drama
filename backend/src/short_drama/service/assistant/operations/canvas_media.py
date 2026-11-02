@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
-from short_drama.core.identity import ActorContext
 from short_drama.domain import AIModelConfig, AsyncTask, CanvasTaskBinding, Project, ProjectCanvas
 from short_drama.domain.assistant.operations.media import AgentMediaRequest
 from short_drama.domain.canvas.document.canvas import CanvasNode, CanvasNodeUserState
@@ -23,6 +22,7 @@ from short_drama.service.canvas.document.canvas import CanvasService
 from short_drama.service.canvas.generation.generation import CanvasGenerationService
 from short_drama.service.canvas.generation.tasks.task import CanvasTaskService
 from short_drama.service.canvas.generation.tasks.task_outputs import generation_metadata
+from short_drama.service.identity.authentication.actor import business_actor_locked
 
 
 @contextmanager
@@ -33,7 +33,9 @@ def canvas_media_actor(session: Session, owner: int) -> Iterator[None]:
     original = {
         key: session.info[key] for key in ("actor", "resource_scope") if key in session.info
     }
-    session.info["actor"] = actor or ActorContext(owner, "", "", True, 0, "", "assistant-media")
+    session.info["actor"] = actor or business_actor_locked(
+        session, user_id=owner, request_id="assistant-media"
+    )
     try:
         yield
     finally:
@@ -84,7 +86,12 @@ def _node_state(
 
 
 def canvas_media_may_submit(session: Session, owner: int, intent: AgentMediaRequest) -> bool:
-    target = intent.frozen_target
+    return canvas_target_matches(
+        session, owner, intent.frozen_target, intent.media_kind, intent.generation_task_id
+    )
+
+
+def canvas_target_matches(session, owner, target, media_kind, generation_id):
     try:
         canvas = _canvas(session, owner, target)
     except BusinessError:
@@ -111,11 +118,11 @@ def canvas_media_may_submit(session: Session, owner: int, intent: AgentMediaRequ
     )
     return (
         node is not None
-        and node.kind == intent.media_kind
+        and node.kind == media_kind
         and str(node.row_version) == target["admission_row_version"]
         and private is not None
         and str(private.row_version) == target["admission_private_revision"]
-        and private.draft_json.get("taskId") == str(intent.generation_task_id)
+        and private.draft_json.get("taskId") == str(generation_id)
     )
 
 

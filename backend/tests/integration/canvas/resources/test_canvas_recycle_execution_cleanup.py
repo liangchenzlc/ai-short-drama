@@ -680,11 +680,17 @@ def test_external_audit_foreign_keys_preserve_terminal_execution_payload(identit
                 created_at=now,
                 updated_at=now,
             )
-            turn = AgentTurn(id=next_id(), run_id=run.id, turn_no=1)
+            from short_drama.domain.assistant.execution.scope import AgentExecutionScope
+
+            scope = AgentExecutionScope(
+                id=next_id(), owner_user_id=int(user["id"]), run_id=run.id, scope_key="root"
+            )
+            turn = AgentTurn(id=next_id(), run_id=run.id, scope_id=scope.id, turn_no=1)
             tool = AgentToolCall(
                 id=next_id(),
                 run_id=run.id,
                 turn_id=turn.id,
+                scope_id=scope.id,
                 call_index=1,
                 provider_call_id="protected-call",
                 tool_name="generate_image",
@@ -693,7 +699,7 @@ def test_external_audit_foreign_keys_preserve_terminal_execution_payload(identit
                 generation_task_id=int(task["id"]),
                 status="cancelled",
             )
-            for row in (conversation, message, run, turn, tool):
+            for row in (conversation, message, run, scope, turn, tool):
                 session.add(row)
                 session.flush()
         record = session.scalar(select(AIGenerationRecord))

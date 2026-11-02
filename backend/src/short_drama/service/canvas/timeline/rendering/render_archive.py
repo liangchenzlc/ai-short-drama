@@ -9,7 +9,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from short_drama.core.config import Settings
-from short_drama.core.identity import ActorContext
 from short_drama.domain import CanvasRenderJob, CanvasResourceUpload, MediaFile, ProjectCanvas
 from short_drama.domain.identity.accounts.user import User
 from short_drama.schemas.canvas.resources.resource import CanvasResourceRead, CanvasResourceStart
@@ -17,6 +16,7 @@ from short_drama.service.base import utcnow
 from short_drama.service.canvas.resources.resource import CHUNK_SIZE, CanvasResourceService
 from short_drama.service.canvas.timeline.timeline_renderer import RenderedTimeline
 from short_drama.service.creation.assembly.rendering.renderer import RenderCancelled
+from short_drama.service.identity.authentication.actor import business_actor_locked
 from short_drama.storage.minio import MinioStorage
 
 FILE_NAME = "timeline-render.mp4"
@@ -39,7 +39,9 @@ class CanvasRenderArchiveService(CanvasResourceService):
         self.job_id, self.project_id, self.canvas_id = job.id, job.project_id, job.canvas_id
         self.token = token
         # 此身份只由可信Worker从持久任务构造；不接受HTTP身份或开启系统请求会话。
-        session.info["actor"] = ActorContext(job.user_id, "", "", True, 0, "", "canvas-render")
+        session.info["actor"] = business_actor_locked(
+            session, user_id=job.user_id, request_id="canvas-render"
+        )
         session.info["request_project"] = job.project_id
 
     def _lease(self) -> ProjectCanvas:

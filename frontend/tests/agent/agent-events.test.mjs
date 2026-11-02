@@ -4,7 +4,7 @@ import test from 'node:test';
 import ts from 'typescript';
 const source = readFileSync(new URL('../../src/features/assistant/runtime/agent-events.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const { takeSseFrames, parseAgentEvent, sseControl, addDelta, latestDelta, reviewParameterLabels, reviewTargetLabel } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const { takeSseFrames, parseAgentEvent, sseControl, addDelta, latestDelta } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
 test('SSE chunk boundaries retain complete multiline JSON frames and ignore heartbeat comments', () => {
   const event = { seq: 9, event_type: 'run.finished', run_id: '12', payload: {}, created_at: '2026-10-03' };
@@ -24,12 +24,6 @@ test('SSE control frames remain distinct from durable events and reject malforme
   assert.equal(sseControl('event: retry\nevent: agent\ndata: {}'), null);
   assert.equal(parseAgentEvent('data: {"seq":1,"event_type":"step.started","payload":[]}'), null);
 });
-test('review settings use product labels and exclude private or unrecognized parameter fields', () => {
-  assert.deepEqual(reviewParameterLabels({ resolution: '720p', aspect: '16:9', duration_ms: 5000, layout: 'grid4', reference_media_ids: ['1'], secret: 'private JSON', system_prompt: 'private instructions' }), ['清晰度 720p', '画幅 16:9', '时长 5 秒', '布局 四宫格', '参考图片 1 张']);
-  assert.deepEqual(reviewParameterLabels({ resolution: 'private data', duration_ms: NaN, secret: 'private JSON' }), []);
-  assert.equal(reviewTargetLabel({ kind: 'image', target_kind: 'shot', target_id: '41', target_label: '第 2 镜头 · 雨夜站台' }), '第 2 镜头 · 雨夜站台');
-  assert.equal(reviewTargetLabel({ kind: 'image', target_kind: 'shot', target_id: '41' }), '选定镜头');
-});
 test('delta replay deduplicates turn and offset without comparing Unicode codepoint offsets with JS length', () => {
   const event = (turn_id, offset, delta) => ({ seq: 1, event_type: 'assistant.delta', run_id: '12', payload: { turn_id, offset, delta }, created_at: '' });
   let chunks = addDelta([], event('a', 0, '🎬'));
@@ -39,4 +33,18 @@ test('delta replay deduplicates turn and offset without comparing Unicode codepo
   assert.equal(chunks.length, 2);
   chunks = addDelta(chunks, event('b', 0, '新回复'));
   assert.equal(latestDelta(chunks), '新回复');
+});
+
+test('trace SSE payloads retain decimal identities, byte offsets and execution scope across chunks', () => {
+  const event = { seq: 12, run_id: '9007199254740993', event_type: 'trace.delta', created_at: '2026-10-30', payload: {
+    block_id: '9007199254740995', block_version: '9007199254740997', execution_scope_id: '9007199254740999',
+    parent_call_id: '9007199254741001', tool_call_id: '9007199254741003', subtask_id: '9007199254741005',
+    source: 'assistant', channel: 'stderr', offset: 7, delta: '雨🙂', created_at: '2026-10-30',
+  } };
+  const frame = `id: 12\nevent: agent\ndata: ${JSON.stringify(event)}\n\n`;
+  const first = takeSseFrames(frame.slice(0, 73));
+  assert.deepEqual(first.frames, []);
+  const complete = takeSseFrames(first.rest + frame.slice(73));
+  assert.deepEqual(parseAgentEvent(complete.frames[0]), event);
+  assert.equal(complete.rest, '');
 });

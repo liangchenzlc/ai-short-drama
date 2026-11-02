@@ -145,7 +145,14 @@ class SkillListing(SkillServiceBase):
                 .limit(remaining)
             ).all()
             items += [
-                read_skill(row, revision, preference, summary=True, resource_count=count)
+                read_skill(
+                    row,
+                    revision,
+                    preference,
+                    summary=True,
+                    resource_count=count,
+                    tool_lookup=self.tool_lookup,
+                )
                 for row, revision, preference, count in rows
             ]
         return Page(items=items, total=total + len(builtin), offset=offset, limit=limit)
